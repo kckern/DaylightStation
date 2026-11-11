@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boostState, boostRange, formatMultiplier } from './boostState.js';
+import { boostState, boostRange, formatMultiplier, boostChipLabel } from './boostState.js';
 
 const zones = [
   { id: 'cool', name: 'Cool', distance_multiplier: 0.8 }, { id: 'active', name: 'Active', distance_multiplier: 1 },
@@ -87,4 +87,18 @@ describe('formatMultiplier', () => {
     expect(formatMultiplier(null)).toBe('1');
     expect(formatMultiplier(NaN)).toBe('1');
   });
+});
+
+// The multiplier tag sits over the dial's base at every gauge size: one short
+// line, so "No strap" is the label whatever the gauge width (the long
+// "No heart-rate strap" used to take its own wide pill under big gauges).
+describe('boostChipLabel', () => {
+  const noStrap = { hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null };
+  it.each([120, 190, 260, 360])('no strap reads "No strap" on a %ipx gauge', (px) => {
+    expect(boostChipLabel(noStrap, px)).toBe('No strap');
+  });
+  it('a strapped rider reads the zone name', () => {
+    expect(boostChipLabel({ hasStrap: true, label: 'Warm', mult: 1.2 }, 360)).toBe('Warm');
+  });
+  it('no boost: empty', () => expect(boostChipLabel(null, 200)).toBe(''));
 });

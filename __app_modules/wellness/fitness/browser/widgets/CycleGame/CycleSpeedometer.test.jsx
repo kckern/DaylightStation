@@ -62,15 +62,17 @@ describe('CycleSpeedometer', () => {
     expect(getByTestId('cycle-speedometer-boost-next').textContent).toBe('Hot ×1.4');
     expect(row.className).not.toContain('no-strap');
   });
-  it('no strap: the handicap multiplier and no bar or next step; full label on a wide gauge, short on a small one', () => {
+  it('no strap: the same one-line tag reading "No strap ×0.8" at every size, no bar or next step', () => {
     const noStrap = { hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null };
-    const small = render(<CycleSpeedometer {...baseProps} size={220} boost={noStrap} />);
-    expect(small.getByTestId('cycle-speedometer-boost-chip').textContent).toBe('No strap ×0.8');
-    small.unmount();
-    const { getByTestId, queryByTestId } = render(<CycleSpeedometer {...baseProps} size={260} boost={noStrap} />);
-    expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('No heart-rate strap ×0.8');
-    expect(queryByTestId('cycle-speedometer-boost-bar')).toBeNull();
-    expect(queryByTestId('cycle-speedometer-boost-next')).toBeNull();
+    for (const size of [150, 220, 360]) {
+      const { getByTestId, queryByTestId, unmount } = render(<CycleSpeedometer {...baseProps} size={size} boost={noStrap} />);
+      const chip = getByTestId('cycle-speedometer-boost-chip');
+      expect(chip.textContent).toBe('No strap ×0.8');
+      expect(chip.className).toContain('cycle-speedometer__boost-chip--no-strap');
+      expect(queryByTestId('cycle-speedometer-boost-bar')).toBeNull();
+      expect(queryByTestId('cycle-speedometer-boost-next')).toBeNull();
+      unmount();
+    }
   });
   it('hides the bar when progress is unknown, and the next step at the top zone', () => {
     const { queryByTestId } = render(
@@ -91,15 +93,33 @@ describe('CycleSpeedometer', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} multiplier={2} boost={WARM} />);
     expect(queryByTestId('cycle-speedometer-multiplier')).toBeNull();
   });
-  it('every dial label renders, and the boost row sits outside the dial', () => {
+  it('every dial label renders; the tag sits on the dial base, the progress row below the dial', () => {
     // The default dial (120 max) labels 0 · 30 · 60 · 90 · 120; the old badge
     // covered the 120.
     const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} boost={WARM} />);
     const labels = [...container.querySelectorAll('.cycle-speedometer__tick-label')].map((t) => t.textContent);
     expect(labels).toEqual(['0', '30', '60', '90', '120']);
+    const gauge = container.querySelector('.cycle-speedometer__gauge');
+    const chip = getByTestId('cycle-speedometer-boost-chip');
+    expect(gauge.contains(chip)).toBe(true);
+    expect(container.querySelector('svg.cycle-speedometer__svg').contains(chip)).toBe(false);
+    // The tag follows the readout: it is the dial's last overlay, at its base.
+    const readout = container.querySelector('.cycle-speedometer__lower-readout');
+    expect(readout.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const row = getByTestId('cycle-speedometer-boost');
-    expect(container.querySelector('svg.cycle-speedometer__svg').contains(row)).toBe(false);
-    expect(container.querySelector('.cycle-speedometer__gauge').contains(row)).toBe(false);
+    expect(gauge.contains(row)).toBe(false);
+    expect(row.contains(getByTestId('cycle-speedometer-boost-bar'))).toBe(true);
+  });
+  it('rpm and km/h share one readout line', () => {
+    const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} speedKmh={20} />);
+    const readout = container.querySelector('.cycle-speedometer__lower-readout');
+    expect(readout.contains(getByTestId('cycle-speedometer-rpm'))).toBe(true);
+    expect(readout.contains(getByTestId('cycle-speedometer-speed'))).toBe(true);
+  });
+  it('the leader medal sits inside the odometer pill, before the distance', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} isLeader />);
+    const pill = getByTestId('cycle-speedometer-odometer');
+    expect(pill.firstElementChild).toBe(getByTestId('cycle-speedometer-leader-medal'));
   });
   it('a 180 dial shows all its labels with the boost row on', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} maxRpm={180} boost={WARM} />);

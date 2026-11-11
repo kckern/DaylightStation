@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { TAG_OVERHANG_PX } from './speedometerOverlayLayout.js';
 import {
   columnTemplateFor, fitScale, gaugeRowSize, raceLayoutMode, CHROME_BELOW_GAUGE_PX,
-  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
+  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX, SPEEDO_GAP_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE,
   wideGaugeSize, SPEEDO_ZONE_PAD_X, SPEEDO_ZONE_PAD_Y
 } from "./layoutSizing.js";
@@ -40,8 +41,8 @@ describe('gaugeRowSize', () => {
     expect(gaugeRowSize({ zoneW: 900, zoneH: 400, count: 3, gap: 28 })).toBe(280);
   });
   it('is limited by height when the band is short', () => {
-    // height path: 230-118 (odometer + boost row, the honest chrome budget) = 112; width path large → min = 112
-    expect(gaugeRowSize({ zoneW: 1200, zoneH: 230, count: 2, gap: 28 })).toBe(112);
+    // height path: 230 - CHROME_BELOW_GAUGE_PX (tag overhang + bar row + odometer) ; width path large
+    expect(gaugeRowSize({ zoneW: 1200, zoneH: 230, count: 2, gap: 16 })).toBe(230 - CHROME_BELOW_GAUGE_PX);
   });
   it('clamps to the floor for a tiny zone', () => {
     expect(gaugeRowSize({ zoneW: 50, zoneH: 50, count: 6, gap: 28 })).toBe(96);
@@ -91,9 +92,14 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
 // The boost meter sits under every gauge (above the odometer), so the chrome
 // below the dial is the odometer pill, the boost row and the gap between them.
 describe('CHROME_BELOW_GAUGE_PX budget', () => {
-  it('covers the odometer pill, the boost row and the gap between them', () => {
-    expect(BOOST_ROW_PX).toBe(40); // CycleSpeedometer.scss .cycle-speedometer__boost height
-    expect(CHROME_BELOW_GAUGE_PX).toBe(ODOMETER_CHROME_PX + BOOST_ROW_PX + SPEEDO_STACK_GAP_PX);
+  it('covers the tag overhang, the zone bar row, the odometer pill and the gaps', () => {
+    expect(BOOST_ROW_PX).toBe(22); // CycleSpeedometer.scss .cycle-speedometer__boost height
+    expect(CHROME_BELOW_GAUGE_PX).toBe(TAG_OVERHANG_PX + BOOST_ROW_PX + ODOMETER_CHROME_PX + 2 * SPEEDO_STACK_GAP_PX);
+  });
+  // The gauge is the column's hero: what sits below it is at most ~90 px
+  // (it was 118: a 40 px chip row and a 68 px odometer budget).
+  it('leaves the gauge most of the band', () => {
+    expect(CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(90);
   });
   it('solo band (floor minmax(260px, …), one gauge in a 2fr column): gauge + chrome fits', () => {
     for (const zoneH of [260, 300, 400, 500]) {
@@ -137,18 +143,19 @@ describe('wide mode gauges fit across the band', () => {
   for (const [name, { w, h }] of Object.entries(SIZES)) {
     for (const count of [4, 5, 6]) {
       it(`${count} riders at ${name}: every gauge fits across, the band leaves the top row most of the height`, () => {
-        const gauge = wideGaugeSize({ width: w, count, gap: 28 });
-        expect(count * gauge + 28 * (count - 1) + SPEEDO_ZONE_PAD_X).toBeLessThanOrEqual(w);
-        const band = Math.min(gauge + CHROME_BELOW_GAUGE_PX + SPEEDO_ZONE_PAD_Y, h * 0.46);
+        const gauge = wideGaugeSize({ width: w, count });
+        expect(count * gauge + SPEEDO_GAP_PX * (count - 1) + SPEEDO_ZONE_PAD_X).toBeLessThanOrEqual(w);
+        const band = Math.min(gauge + CHROME_BELOW_GAUGE_PX + SPEEDO_ZONE_PAD_Y, h * 0.5);
         // What SpeedoRow then measures yields the same gauge (no height clamp below it).
-        expect(gaugeRowSize({ zoneW: w - SPEEDO_ZONE_PAD_X, zoneH: band - SPEEDO_ZONE_PAD_Y, count, gap: 28,
+        expect(gaugeRowSize({ zoneW: w - SPEEDO_ZONE_PAD_X, zoneH: band - SPEEDO_ZONE_PAD_Y, count, gap: SPEEDO_GAP_PX,
           min: SPEEDO_MIN_GAUGE_WIDE, max: SPEEDO_MAX_GAUGE_WIDE })).toBeLessThanOrEqual(gauge);
-        expect(h - band).toBeGreaterThanOrEqual(h * 0.54);
+        expect(h - band).toBeGreaterThanOrEqual(h * 0.5);
       });
     }
   }
-  it('six riders on the kiosk get ~190 px gauges, above the 150 px floor', () => {
-    expect(wideGaugeSize({ width: 1301, count: 6 })).toBe(190);
+  it('six riders on the kiosk get ~200 px gauges, above the 150 px floor', () => {
+    expect(SPEEDO_GAP_PX).toBe(16);
+    expect(wideGaugeSize({ width: 1301, count: 6 })).toBe(200);
     expect(SPEEDO_MIN_GAUGE_WIDE).toBe(150);
   });
   it('the wide-mode CSS mirrors wideGaugeSize', async () => {
@@ -157,8 +164,8 @@ describe('wide mode gauges fit across the band', () => {
     const url = await import('node:url');
     const here = path.dirname(url.fileURLToPath(import.meta.url));
     const css = fs.readFileSync(path.join(here, '../../widgets/CycleGame/RaceLayoutManager.scss'), 'utf8');
-    expect(css).toMatch(/clamp\(150px, calc\(\(100cqw - 16px - 28px \* \(var\(--cg-speedo-n, 4\) - 1\)\) \/ var\(--cg-speedo-n, 4\)\), 280px\)/);
-    expect(css).toMatch(/calc\(var\(--cg-wide-gauge\) \+ 118px \+ 16px\)/);
+    expect(css).toMatch(/clamp\(150px, calc\(\(100cqw - 16px - 16px \* \(var\(--cg-speedo-n, 4\) - 1\)\) \/ var\(--cg-speedo-n, 4\)\), 280px\)/);
+    expect(css).toContain(`calc(var(--cg-wide-gauge) + ${CHROME_BELOW_GAUGE_PX}px + 16px)`);
     expect(css).toMatch(/\.race-layout-host \{\s*container-type: inline-size;/);
   });
 });
