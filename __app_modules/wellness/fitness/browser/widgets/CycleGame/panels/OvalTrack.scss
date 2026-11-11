@@ -138,3 +138,14 @@
     }
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cg-oval-track,
+  .cg-oval-track *,
+  .cg-oval-track *::before,
+  .cg-oval-track *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

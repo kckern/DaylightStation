@@ -4,6 +4,7 @@ import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
+import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
 import { povWorld, povBadges, resolveBadgeStack, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';
@@ -482,7 +483,8 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           const tgtZ = zFar + span * LOOK_AHEAD; // look high up the road
           const camZ = zNear + camDist * CAM_BEHIND;
           const camY = camDist * CAM_ELEV;
-          controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, true);
+          // Reduced motion: jump the camera to its target instead of easing there.
+          controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, !prefersReducedMotion());
         }
         controls.update(dt);
         gridMat.uniforms.uCamPos.value.copy(camera.position); // fog fade is camera-relative

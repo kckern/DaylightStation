@@ -63,3 +63,14 @@
 @include cg.cg-reduced-motion {
   .cg-chart__header .cg-chart__clock.is-final { animation: none; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cg-chart,
+  .cg-chart *,
+  .cg-chart *::before,
+  .cg-chart *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

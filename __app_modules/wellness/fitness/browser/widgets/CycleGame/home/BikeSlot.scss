@@ -155,3 +155,14 @@
     text-align: center;
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-slot,
+  .cgh-slot *,
+  .cgh-slot *::before,
+  .cgh-slot *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

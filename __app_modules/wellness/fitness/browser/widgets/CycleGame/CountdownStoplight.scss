@@ -115,3 +115,14 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .countdown-stoplight,
+  .countdown-stoplight *,
+  .countdown-stoplight *::before,
+  .countdown-stoplight *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

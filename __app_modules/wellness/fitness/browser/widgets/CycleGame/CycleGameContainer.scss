@@ -56,3 +56,22 @@
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cycle-game-container,
+  .cycle-game-container *,
+  .cycle-game-container *::before,
+  .cycle-game-container *::after,
+  .cycle-game-countdown-riders,
+  .cycle-game-countdown-riders *,
+  .cycle-game-countdown-riders *::before,
+  .cycle-game-countdown-riders *::after,
+  .cycle-game-staging,
+  .cycle-game-staging *,
+  .cycle-game-staging *::before,
+  .cycle-game-staging *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

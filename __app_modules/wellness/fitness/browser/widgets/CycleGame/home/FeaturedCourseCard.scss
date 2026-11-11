@@ -79,3 +79,14 @@
     &:active { transform: translateY(0); }
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-featured,
+  .cgh-featured *,
+  .cgh-featured *::before,
+  .cgh-featured *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

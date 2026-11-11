@@ -60,3 +60,30 @@
     box-shadow: 0 0 8px rgba(33, 230, 255, 0.5);
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-section-label--with-readout,
+  .cgh-section-label--with-readout *,
+  .cgh-section-label--with-readout *::before,
+  .cgh-section-label--with-readout *::after,
+  .cgh-volume__readout,
+  .cgh-volume__readout *,
+  .cgh-volume__readout *::before,
+  .cgh-volume__readout *::after,
+  .cgh-picker--volume .cgh-picker__sheet,
+  .cgh-picker--volume .cgh-picker__sheet *,
+  .cgh-picker--volume .cgh-picker__sheet *::before,
+  .cgh-picker--volume .cgh-picker__sheet *::after,
+  .cgh-volume-sheet,
+  .cgh-volume-sheet *,
+  .cgh-volume-sheet *::before,
+  .cgh-volume-sheet *::after,
+  .cgh-volume,
+  .cgh-volume *,
+  .cgh-volume *::before,
+  .cgh-volume *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

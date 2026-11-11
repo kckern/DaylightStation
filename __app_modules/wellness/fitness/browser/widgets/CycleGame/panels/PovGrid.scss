@@ -99,3 +99,14 @@
     will-change: transform, opacity;
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cg-pov,
+  .cg-pov *,
+  .cg-pov *::before,
+  .cg-pov *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

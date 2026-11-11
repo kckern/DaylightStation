@@ -98,3 +98,18 @@
     padding: 2px 7px;
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-tab,
+  .cgh-tab *,
+  .cgh-tab *::before,
+  .cgh-tab *::after,
+  .cgh-person,
+  .cgh-person *,
+  .cgh-person *::before,
+  .cgh-person *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

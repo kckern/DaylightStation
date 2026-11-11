@@ -238,3 +238,14 @@
     transition: none !important;
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .race-results,
+  .race-results *,
+  .race-results *::before,
+  .race-results *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

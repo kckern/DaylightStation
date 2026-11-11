@@ -38,3 +38,22 @@
     max-width: 6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-hs-section,
+  .cgh-hs-section *,
+  .cgh-hs-section *::before,
+  .cgh-hs-section *::after,
+  .cgh-highscores,
+  .cgh-highscores *,
+  .cgh-highscores *::before,
+  .cgh-highscores *::after,
+  .cgh-hs,
+  .cgh-hs *,
+  .cgh-hs *::before,
+  .cgh-hs *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

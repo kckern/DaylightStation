@@ -11,12 +11,12 @@ vi.mock('@/lib/logging/Logger.js', () => ({
 // Captures the args every PlaneGeometry() call was constructed with, so a test
 // can assert the ground-plane width without hardcoding the module's internal
 // GRID_PLANE_HALF_W constant.
-const { planeGeomCalls } = vi.hoisted(() => ({ planeGeomCalls: [] }));
+const { planeGeomCalls, lookAtCalls } = vi.hoisted(() => ({ planeGeomCalls: [], lookAtCalls: [] }));
 
 vi.mock('camera-controls', () => {
   class CC {
     constructor() { this.mouseButtons = {}; this.touches = {}; this.distance = 10; }
-    setLookAt() {} update() {} getTarget(v) { return v || { x: 0, y: 0, z: 0 }; } dispose() {}
+    setLookAt(...args) { lookAtCalls.push(args); } update() {} getTarget(v) { return v || { x: 0, y: 0, z: 0 }; } dispose() {}
   }
   CC.install = () => {};
   CC.ACTION = { NONE: 0 };
@@ -68,7 +68,22 @@ const riders = {
 };
 
 describe('PovGrid (three.js shell)', () => {
-  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; });
+  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; lookAtCalls.length = 0; });
+
+  // Camera easing is JS-driven (camera-controls damping), so the CSS guard cannot
+  // reach it: under prefers-reduced-motion the follow camera jumps to its target.
+  it.each([[true, false], [false, true]])('reduced motion=%s -> follow camera enableTransition=%s', async (reduce, expectTransition) => {
+    window.matchMedia = vi.fn(() => ({ matches: reduce }));
+    try {
+      render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+      // The first call is the un-eased initial framing; the rAF loop's follow calls come after.
+      await waitFor(() => expect(lookAtCalls.filter((a) => a[6] === expectTransition).length).toBeGreaterThan(0));
+      // Under reduced motion NO follow call eases (the initial framing is un-eased either way).
+      if (reduce) expect(lookAtCalls.every((a) => a[6] === false)).toBe(true);
+    } finally {
+      delete window.matchMedia;
+    }
+  });
 
   // 2026-07-02 fix: the ground plane used to be locked to the playable road's
   // own width (2*ROAD_HALF_W = 8 world units). At a big-gap zoom-out the

@@ -133,3 +133,42 @@
   .cycle-event-toast--entered { animation: none; }
   .cycle-event-toast__countdown-bar { animation: none; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cycle-event-toast,
+  .cycle-event-toast *,
+  .cycle-event-toast *::before,
+  .cycle-event-toast *::after,
+  .cycle-event-toast__body,
+  .cycle-event-toast__body *,
+  .cycle-event-toast__body *::before,
+  .cycle-event-toast__body *::after,
+  .cycle-event-toast__icon,
+  .cycle-event-toast__icon *,
+  .cycle-event-toast__icon *::before,
+  .cycle-event-toast__icon *::after,
+  .cycle-event-toast__text,
+  .cycle-event-toast__text *,
+  .cycle-event-toast__text *::before,
+  .cycle-event-toast__text *::after,
+  .cycle-event-toast__title,
+  .cycle-event-toast__title *,
+  .cycle-event-toast__title *::before,
+  .cycle-event-toast__title *::after,
+  .cycle-event-toast__subtitle,
+  .cycle-event-toast__subtitle *,
+  .cycle-event-toast__subtitle *::before,
+  .cycle-event-toast__subtitle *::after,
+  .cycle-event-toast__countdown,
+  .cycle-event-toast__countdown *,
+  .cycle-event-toast__countdown *::before,
+  .cycle-event-toast__countdown *::after,
+  .cycle-event-toast__countdown-bar,
+  .cycle-event-toast__countdown-bar *,
+  .cycle-event-toast__countdown-bar *::before,
+  .cycle-event-toast__countdown-bar *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

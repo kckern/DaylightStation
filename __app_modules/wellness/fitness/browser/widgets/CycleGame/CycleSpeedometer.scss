@@ -215,3 +215,14 @@
   // the ready strip's NO SIGNAL chip.
   &__parked--no-signal &__parked-title { color: cg.$cg-warn; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cycle-speedometer,
+  .cycle-speedometer *,
+  .cycle-speedometer *::before,
+  .cycle-speedometer *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

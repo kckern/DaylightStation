@@ -6,6 +6,7 @@ import { plotStartIndex } from "../../../lib/cycleGame/chartTrim.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from "./useFitGuard.js";
 import { continuousWindow, evenTicks, niceCeil, niceCeilTime } from "../../../lib/cycleGame/chartZoom.js";
+import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
 import { distanceAtTime } from "../../../lib/cycleGame/paceDelta.js";
 import { rivalTraceSamples } from "../../../lib/cycleGame/rivalTrace.js";
 import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
@@ -408,12 +409,16 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // Subscribe the imperative writer once; tear the clock down on unmount.
   useEffect(() => {
     const clock = clockRef.current;
-    const unsub = clock.subscribe((f) => {
+    const unsub = clock.subscribe((fRaw) => {
+      // Reduced motion: no easing. Jump straight to the current tick's window,
+      // tips and log/linear mix (the data still updates every tick).
+      const reduced = prefersReducedMotion();
+      const f = reduced ? 1 : fRaw;
       const m = motionRef.current;
       const pw = m.prevWin; const cw = m.curWin;
       // lin↔log crossfade from the absolute flip timestamp (LOG_TWEEN_MS).
       const target = logTargetRef.current;
-      const tw = clamp01((perfNow() - logFlipAtRef.current) / LOG_TWEEN_MS);
+      const tw = reduced ? 1 : clamp01((perfNow() - logFlipAtRef.current) / LOG_TWEEN_MS);
       logMixRef.current = logMixAtFlipRef.current + (target - logMixAtFlipRef.current) * tw;
       const winF = {
         T: lerp(pw.T, cw.T, f),

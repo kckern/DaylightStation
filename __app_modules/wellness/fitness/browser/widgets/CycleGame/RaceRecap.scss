@@ -71,3 +71,14 @@
     .race-results__countdown { display: none; }
   }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .race-recap,
+  .race-recap *,
+  .race-recap *::before,
+  .race-recap *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

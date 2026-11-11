@@ -285,3 +285,54 @@
 @include t.cg-reduced-motion {
   .cgh-sensor-warning__btn:active { transform: none; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cycle-game-home,
+  .cycle-game-home *,
+  .cycle-game-home *::before,
+  .cycle-game-home *::after,
+  .cgh-section-label,
+  .cgh-section-label *,
+  .cgh-section-label *::before,
+  .cgh-section-label *::after,
+  .cgh-empty,
+  .cgh-empty *,
+  .cgh-empty *::before,
+  .cgh-empty *::after,
+  .cgh-grid-section,
+  .cgh-grid-section *,
+  .cgh-grid-section *::before,
+  .cgh-grid-section *::after,
+  .cgh-boost-rule,
+  .cgh-boost-rule *,
+  .cgh-boost-rule *::before,
+  .cgh-boost-rule *::after,
+  .cgh-grid,
+  .cgh-grid *,
+  .cgh-grid *::before,
+  .cgh-grid *::after,
+  .cycle-game-home__start,
+  .cycle-game-home__start *,
+  .cycle-game-home__start *::before,
+  .cycle-game-home__start *::after,
+  .cgh-start-flag,
+  .cgh-start-flag *,
+  .cgh-start-flag *::before,
+  .cgh-start-flag *::after,
+  .cgh-volume-fab,
+  .cgh-volume-fab *,
+  .cgh-volume-fab *::before,
+  .cgh-volume-fab *::after,
+  .cgh-recovered-banner,
+  .cgh-recovered-banner *,
+  .cgh-recovered-banner *::before,
+  .cgh-recovered-banner *::after,
+  .cgh-sensor-warning,
+  .cgh-sensor-warning *,
+  .cgh-sensor-warning *::before,
+  .cgh-sensor-warning *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

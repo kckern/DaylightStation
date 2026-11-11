@@ -492,6 +492,55 @@ describe('DistanceChart panel', () => {
   });
 });
 
+describe('DistanceChart reduced motion', () => {
+  let frames; let seq; let nowMs; let nowSpy;
+  const flush = () => { const p = [...frames.values()]; frames.clear(); p.forEach((cb) => cb(nowMs)); };
+  const pointsAt = (reduce) => {
+    frames = new Map(); seq = 0; nowMs = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb) => { seq += 1; frames.set(seq, cb); return seq; });
+    vi.stubGlobal('cancelAnimationFrame', (id) => { frames.delete(id); });
+    nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    window.matchMedia = vi.fn(() => ({ matches: reduce }));
+    try {
+      const mk = (series, el) => (
+        <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: series[series.length - 1], distanceSeries: series } }}
+          riderLive={{ a: {} }} winCondition="distance" goalM={1000} elapsedS={el} />);
+      const { container, rerender } = render(mk([100], 1));
+      nowMs = 1000; flush();
+      rerender(mk([100, 900], 25));
+      nowMs = 1500; flush(); // half-way through the tick
+      return container.querySelector('[data-testid="race-line"]').getAttribute('points');
+    } finally {
+      vi.unstubAllGlobals(); nowSpy.mockRestore(); delete window.matchMedia;
+    }
+  };
+  it('jumps to the current tick mid-frame when reduced motion is on, and eases when it is off', () => {
+    const eased = pointsAt(false);
+    const jumped = pointsAt(true);
+    expect(jumped).not.toBe(eased);
+    // Reduced: the half-way frame already equals the end-of-tick frame.
+    frames = new Map(); // (fresh run for the end-of-tick reference)
+    const endOfTick = (() => {
+      seq = 0; nowMs = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb) => { seq += 1; frames.set(seq, cb); return seq; });
+      vi.stubGlobal('cancelAnimationFrame', (id) => { frames.delete(id); });
+      nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+      window.matchMedia = vi.fn(() => ({ matches: false }));
+      try {
+        const mk = (series, el) => (
+          <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: series[series.length - 1], distanceSeries: series } }}
+            riderLive={{ a: {} }} winCondition="distance" goalM={1000} elapsedS={el} />);
+        const { container, rerender } = render(mk([100], 1));
+        nowMs = 1000; flush();
+        rerender(mk([100, 900], 25));
+        nowMs = 2100; flush();
+        return container.querySelector('[data-testid="race-line"]').getAttribute('points');
+      } finally { vi.unstubAllGlobals(); nowSpy.mockRestore(); delete window.matchMedia; }
+    })();
+    expect(jumped).toBe(endOfTick);
+  });
+});
+
 describe('DistanceChart round axis labels', () => {
   const labelTexts = (node) => [...node.querySelectorAll('.cg-chart__axis-label')].map((l) => l.textContent);
   it('a time race snaps its y window so the labels are round (0 / 500 m / 1 km)', () => {

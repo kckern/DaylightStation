@@ -99,3 +99,14 @@
 @include t.cg-reduced-motion {
   .cg-pace { animation: none !important; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cg-pace,
+  .cg-pace *,
+  .cg-pace *::before,
+  .cg-pace *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

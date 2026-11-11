@@ -188,3 +188,18 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
   .cg-race-menu__open,
   .cg-race-menu__item { transition: none; }
 }
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cg-race-menu__open,
+  .cg-race-menu__open *,
+  .cg-race-menu__open *::before,
+  .cg-race-menu__open *::after,
+  .cg-race-menu,
+  .cg-race-menu *,
+  .cg-race-menu *::before,
+  .cg-race-menu *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
