@@ -522,7 +522,7 @@ restart to take effect.
 | `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
-| `sounds` | {} | One-shot cues `start`, `go`, `countdown`, `finish`; music `lobby`, `ready` (falls back to `lobby`), `end`; `racing` is `{ dir, ... }`, a folder of tracks picked at random. A cue that is not named plays nothing: the countdown and finish sounds are silent unless the household config names them |
+| `sounds` | {} | One-shot cues `start`, `go`, `countdown` (stoplight beat), `final_seconds` (the beep in the last ten seconds of a time race), `finish` (finish-line cue); music `lobby`, `ready` (falls back to `lobby`), `end`; `racing` is `{ dir, ... }`, a folder of tracks picked at random. A cue that is not named plays nothing. `countdown` and `finish` are optional and the household leaves them unset on purpose: the start jingle and the results outro already mark those moments |
 
 > **Distance/time *tiers* are frontend constants** in `CycleGameHome`, not config.
 > The *defaults* above are config.
@@ -903,7 +903,7 @@ played or logged.
 | `SPLIT` | each whole minute, once, unless a bigger beat fired that tick | *"2:00"* + the gap (`split`); **no toast** without a rival | |
 | `LAST_MINUTE` | 60 s left in a time race of 3 min or more, once | *"One minute left"* (`last-minute`) | starts the finale |
 | `LAST_STRETCH` | the leader at 90% of a distance race, once | *"Last stretch"* (`last-stretch`) | starts the finale |
-| `FINAL_SECONDS` | each of the last 10 s of a time race | none | `sounds.countdown` beep each second; the chart clock gets `is-final` (hero size, warm, pulsing; no pulse under reduced motion) |
+| `FINAL_SECONDS` | each of the last 10 s of a time race | none | `sounds.final_seconds` beep each second (silent when unset); the chart clock gets `is-final` (hero size, warm, pulsing; no pulse under reduced motion) |
 
 The beat toasts share a neutral accent. **Finale:** from `LAST_MINUTE` or
 `LAST_STRETCH` until the race ends the race screen root carries `is-finale`
@@ -1033,7 +1033,8 @@ master volume.
   0, except in a race's **finale** (last minute / last stretch, §11), where it
   is 0.15 (15% of master) until the race ends or is discarded.
 - **Final seconds:** each of the last ten seconds of a time race plays
-  `sounds.countdown` (the same cue the stoplight uses; silent when unset).
+  `sounds.final_seconds` (its own key, so it can be enabled without bringing back
+  the stoplight beeps; silent when unset).
 
 ---
 
@@ -1648,5 +1649,6 @@ Three levels, cheapest first.
 - **Two builds with different index versions must not share one data tree.**
   Each rebuilds the other's shards on every alternation.
 - **Kiosks need a reload** to pick up the new frontend.
-- **Countdown and finish sounds play only if the household `sounds` config names
-  them** (`countdown`, `finish`; see §6). Nothing is wrong when they are silent.
+- **Optional sounds.** `countdown`, `final_seconds` and `finish` (see §6) play only
+  if the household `sounds` config names them. The household leaves `countdown`
+  and `finish` unset on purpose, so silence there is not a fault.
