@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { render, cleanup } from '@testing-library/react';
 import GemGlyph, { glyphLook, glyphWords, segmentPath } from './GemGlyph.jsx';
+import { AREA_COLORS, AREA_WORDS } from './AreaIcon.jsx';
 
 afterEach(cleanup);
 const streak = (have, need, reach, left = 3) => ({ have, need, reach, left });
@@ -162,5 +163,10 @@ describe('GemGlyph', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
     expect(css).not.toMatch(/opacity\s*:/);
     expect(css).not.toMatch(/@keyframes|animation\s*:|__ghost/);
+  });
+
+  it('area colours mirror the server GEM_AREAS', () => {
+    expect(AREA_COLORS).toEqual({ move: '#8e5bd0', school: '#2e9e5b', games: '#ff7a2f' });
+    expect(AREA_WORDS).toEqual({ move: 'Move', school: 'School', games: 'Games' });
   });
 });
