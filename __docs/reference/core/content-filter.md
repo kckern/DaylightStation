@@ -762,27 +762,112 @@ preview store and effect words, `browser/playback.mjs` for the Player). Two jobs
 
 ### Library and stages
 
-`GET /api/v1/content-filter/library?stage=&q=` lists every matched movie with VidAngel tags
-(`media/content-filter/plex-vidangel-map.yml`) plus every title with an override, each with a
+`GET /api/v1/content-filter/library?stage=&q=` lists the films that have an EDL: every matched
+movie with VidAngel tags (`media/content-filter/plex-vidangel-map.yml`) plus every title with an
+override, kept only when a rough VidAngel EDL (`edl/<rk>.edl.yml`) or a refined one exists. Rough
+EDLs come from VidAngel and cannot be made here; the household only refines them, so a mapped
+film with no EDL yet is not listed (in no section, not counted, not found by search). It stays in
+the map, and its EDL comes from an export. Each listed film has a
 stage (`filmStage.mjs`): Rough → Running → Refined → Scenes built → Audited → Machine-certified →
 Parent-certified. Machine and parent need a passing audit that is current (its digest matches the
 refined EDL and the override, review marks excluded). A failed or interrupted run is a flag on the
 film (step and error), not a stage. Facts are cached in memory and dropped when a run settles, an
 audit lands or the film is written.
 
-Plex is asked for one thing: which movie keys are live (movie library sections only, never
-shows), once per 10 minutes. The match index is a snapshot, and a media reorg re-keys titles, so a
-film can be indexed yet gone from Plex. The response carries per-film `linked` (`true`, `false`
+The index's `unmatched` entries (works the matcher could not place, see
+[Matching EDLs to Plex](#matching-edls-to-plex)) are listed too, so they stay visible.
+
+Plex is asked for one thing: the live movies (key, title, year, duration; movie library sections
+only, never shows), once per 10 minutes. The response carries per-film `linked` (`true`, `false`
 when the key is no longer in Plex, `null` when Plex could not be read; the list never fails for
-it), `thumb` (the Plex poster through the proxy, only when linked), a `year`/`title` filled from
-Plex when the EDL lacks them, and `meta: { indexedAt, total, unlinked }`.
+it), a `year`/`title` filled from Plex when the EDL lacks them, and the match verdict
+(`filmMatch` in `domain/content-filter/plexMatch.mjs`):
+
+- `match: 'verified'`: the key is a live Plex film whose year is within one of the EDL's year
+  (VidAngel's). A runtime more than 5 minutes from the EDL's `runtimeUnalteredSec` is still
+  verified, with `runtimeWarning: { plexMin, edlMin }`: VidAngel's figure can differ from the file,
+  and the sync step is what checks the cut.
+- `match: 'unmatched'` with `unmatched: { reason, text }`: `not-in-plex` "no Plex film" (stale key,
+  or no Plex film with the title), `year-mismatch` "Plex has the 1954 film", `ambiguous` "several
+  Plex films", `contested` (several works claim one Plex film), `year-unknown`, or `duplicate`
+  "another entry has this film" (an override key whose work the index holds at another key), or
+  `runtime-mismatch` "Plex film is 29 min" (runtimes more than 25% of the longer apart).
+  With Plex unreachable, the year stored in the index decides; with none stored the film stays
+  verified.
+
+`thumb` (the Plex poster through the proxy) is set only for a linked, verified film: a key holding
+another year's film would show the wrong poster. `meta: { indexedAt, total, unlinked, verified,
+unmatched }`.
 
 The Admin library is compact 2:3 poster cards grouped by readiness in an accordion: Ready tonight
-(parent + machine), Audited, Scenes built, Refined, Running, Rough. Ready tonight, Audited and
-Running start open; open state is kept in `localStorage`. An unlinked film is dimmed with a glyph and
-its Make filter button disabled. A title search flattens the groups into one grid with stage chips.
-The stage vocabulary is `STAGES`/`STAGE_LABELS` from `filmStage.mjs`, re-exported to the browser by
-`adminWorkspace.mjs`.
+(parent + machine), Audited, Scenes built, Refined, Running, Rough. The stage groups hold verified
+films only. Below them, set apart (dashed, muted), one **Not matched to Plex** section lists every
+unmatched film as a plain row: title, year and the one-line reason, linking to the film's page.
+It starts collapsed; open state of all sections is kept in `localStorage`. Ready tonight, Audited
+and Running start open. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
+note (Plex file / VidAngel). A title search flattens the verified films into one grid with stage
+chips and filters the Not matched section alike; the "N of M films" count covers both.
+
+An unmatched film's page (`GET /:rk/review`) answers `200 { title, year, match: 'unmatched',
+unmatched }` when there is nothing to review, and the page says why the film can't be reviewed
+against a file. A key that still holds household work (a refined filter, an override, review
+marks) returns its review as usual with `match: 'unmatched', unmatched` added: the page shows the
+review with an orange "Not matched to Plex ... runs are blocked" line, and Rework and Send back are
+disabled. `POST /:rk/jobs` refuses every unmatched film with `409` and the reason, so nothing is run
+against a file that is not the film. An unmatched film whose EDL `map` set aside stays listed from
+the parked copy (`getParkedEdl`, `edl/_rekeyed/<rk>.edl.yml`); the player never reads it. The stage vocabulary is `STAGES`/`STAGE_LABELS` from
+`filmStage.mjs`, re-exported to the browser by `adminWorkspace.mjs`.
+
+### Matching EDLs to Plex
+
+`contentfilter map` builds the match index `media/content-filter/plex-vidangel-map.yml` from the
+cached VidAngel catalog (`catalog-sync`), the exported EDLs and the live Plex movies
+(`cli/contentfilter/mapCommand.mjs`, rules in `domain/content-filter/plexMatch.mjs`):
+
+- **A Plex film matches a VidAngel work only when the normalized title AND the year (±1) agree,
+  and the runtimes are not more than 25% of the longer apart** (an unknown runtime never blocks).
+  Title alone maps a shared title ("Cinderella", "Robin Hood") onto every film of that name; the
+  runtime rule keeps a 29-minute documentary of the same title and year off a 100-minute feature
+  (`runtime-mismatch`), while an extended cut (182 vs 237 min) still matches.
+- The catalog dump has no year. A work's year comes from its EDL (`year`), else from the old
+  index, else from the VidAngel API, asked only for works whose title Plex has (`--offline` asks
+  nothing; such works stay unmatched as `year-unknown`).
+- **One work maps to at most one Plex film.** Several Plex films within the year window is
+  `ambiguous`; one Plex film claimed by several works is `contested`; neither is guessed.
+- Each verified entry stores the Plex `year` and `runtimeSec`, and the work's `vidangel.year` and
+  `vidangel.runtimeSec`, with `confidence: title-year`. A work that has an EDL but no match is kept
+  under `unmatched:` (one entry per work, keyed by one of its EDL keys, preferring a key with
+  household data) with its `reason` and `plexYears`, `plexKeys` or `plexRuntimeMin`. Show entries are carried over
+  unchanged (they have no EDLs and nothing reads them).
+- **Re-key pass.** When a matched work's EDL sits at a key that is not its Plex film (a library
+  rebuild re-keyed it, or the title-only matcher put it on another year's film), the EDL moves to
+  the matched key with its `contentId` rewritten; the old file is kept in `edl/_rekeyed/`. A key
+  that already holds the work stays; the work's other EDL keys are duplicates and are left out of
+  the index. A key with household data is never moved or parked, and a key holding another work's
+  EDL is never overwritten: both are reported as blocked. Household data is every per-key store:
+  `overrides/<rk>.yml`, `jobs/<rk>.yml`, `review/<rk>.yml` and `<rk>.refine.yml`,
+  `review-history/<rk>.yml`, and media `refine/<rk>/` (transcripts); refined EDLs are keyed by work
+  and follow it. The report lists every household key that ends up a duplicate or not matched,
+  with what it holds ("has household data: override, job, review"); moving such data is a person's
+  call, never `map`'s.
+- The new file is written before the old one is moved aside, so an interrupted re-key leaves a
+  stale source next to its finished copy; the next run sets it aside as a stale duplicate. Nothing
+  in `edl/_rekeyed/` is ever overwritten (a second copy gets `.1`, `.2` ...).
+- **Wrong-film EDLs are set aside.** An EDL at a key that is a live Plex film but not the work's
+  film (title, year or runtime disagree: a duplicate, or an unmatched work's EDL on another year's
+  film such as a 2010 EDL at the 1973 film's key) would filter that film with another film's cues,
+  so `map` moves it to `edl/_rekeyed/` (unless the key has household data). Stale duplicates (key
+  gone from Plex) are set aside too. A not-matched work stays listed from its parked EDL.
+- **Guards.** `map` reads every Plex movie section and refuses `--section`. It writes nothing when
+  Plex returns 0 movies or when the verified count would drop by more than 20% from the current
+  index, unless `--force` (a dry-run prints the refusal as a warning). VidAngel year lookups pause
+  400 ms after each call and back off 1, 2, 4 s after a failure, giving up after three tries.
+- `--dry-run` prints the plan (index counts and reasons, re-keys, set-aside EDLs, blocked,
+  household keys left alone, dropped entries with why, the library films' fate before and after, every unmatched film) and writes nothing.
+  `--json` prints the same as JSON. A second run on its own output changes nothing; the index file
+  is not rewritten when it would be identical (its mtime is the library's "Index from" date).
+
+A Plex film added later under the right title and year is picked up by the next `map`.
 
 ### Pipeline runs
 

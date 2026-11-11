@@ -104,17 +104,6 @@ const filterMediaDir = () => path.join(resolveMediaDir(), 'content-filter');
 const CATALOG_PATH = () => path.join(filterMediaDir(), 'vidangel-catalog.json');
 const MAP_PATH = () => path.join(filterMediaDir(), 'plex-vidangel-map.yml');
 
-/** Normalize a title for collision-tolerant matching. */
-function normTitle(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\b(the|a|an)\b/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
 function loadVidAngelAuth() {
   const token = process.env.VIDANGEL_TOKEN;
   const profile = process.env.VIDANGEL_PROFILE;
@@ -132,7 +121,8 @@ function loadVidAngelAuth() {
 function loadPlexConfig() {
   const envToken = process.env.PLEX_TOKEN;
   const envHost = process.env.PLEX_HOST;
-  if (envToken && envHost) return { token: envToken, host: envHost };
+  // An empty PLEX_TOKEN with PLEX_HOST reads through a proxy that adds its own token (the app's /api/v1/proxy/plex).
+  if (envHost && (envToken || envToken === '')) return { token: envToken, host: envHost.replace(/\/$/, '') };
   const dataDir = resolveDataDir();
   let token = envToken;
   if (!token) token = loadYaml(path.join(dataDir, 'system', '..', 'household', 'auth', 'plex.yml'))?.token;
@@ -603,7 +593,7 @@ function snapCuesWhisper(partUrl, samples, { window, model }) {
 async function plexItems(section, { types = ['movie', 'show'] } = {}) {
   const { token, host } = loadPlexConfig();
   const fetch = async (ep) => {
-    const url = `${host}/${ep}${ep.includes('?') ? '&' : '?'}X-Plex-Token=${token}`;
+    const url = token ? `${host}/${ep}${ep.includes('?') ? '&' : '?'}X-Plex-Token=${token}` : `${host}/${ep}`;
     const res = await axios.get(url, { headers: { Accept: 'application/json' } });
     return res.data;
   };
@@ -620,49 +610,13 @@ async function plexItems(section, { types = ['movie', 'show'] } = {}) {
         title: m.title,
         year: m.year,
         plexType: m.type, // movie | show
+        runtimeSec: Number.isFinite(m.duration) ? Math.round(m.duration / 1000) : null,
         section: lib.key,
         sectionTitle: lib.title
       });
     }
   }
   return out;
-}
-
-/**
- * Offline match: Plex items against a cached VidAngel catalog.
- * Returns { matched, ambiguous, unmatched } with confidence levels.
- * Zero VidAngel API calls.
- */
-function matchOffline(plex, catalog) {
-  // Index catalog by normalized title.
-  const idx = new Map();
-  for (const c of catalog) {
-    const key = normTitle(c.title);
-    if (!key) continue;
-    if (!idx.has(key)) idx.set(key, []);
-    idx.get(key).push(c);
-  }
-  const matched = [];
-  const ambiguous = [];
-  const unmatched = [];
-  for (const p of plex) {
-    const cands = idx.get(normTitle(p.title)) || [];
-    if (!cands.length) { unmatched.push(p); continue; }
-    // Prefer a candidate whose VidAngel type aligns with the Plex type.
-    // Plex movie -> VA movie; Plex show -> VA show.
-    const sameType = cands.filter((c) => c.type === p.plexType);
-    const pool = sameType.length ? sameType : cands;
-    // Prefer entries that actually carry filter data (movies: tagCount>0).
-    const withTags = pool.filter((c) => c.tagCount > 0);
-    const finalPool = withTags.length ? withTags : pool;
-    if (finalPool.length === 1) {
-      matched.push({ plex: p, va: finalPool[0], confidence: 'high' });
-    } else {
-      // Same normalized title, multiple candidates — needs year/disambiguation.
-      ambiguous.push({ plex: p, candidates: finalPool });
-    }
-  }
-  return { matched, ambiguous, unmatched };
 }
 
 // ============================================================================
@@ -1298,81 +1252,38 @@ async function main() {
   }
 
   if (command === 'map') {
+    // Title AND year (±1) and runtime; repairs stale EDL keys. See ./contentfilter/mapCommand.mjs.
+    const { runMap, applyPlan, readEdlHeads, householdKeysIn, formatMapReport, guardMap, politeResolver } = await import('./contentfilter/mapCommand.mjs');
     if (!existsSync(CATALOG_PATH())) {
       console.error('No catalog cache. Run:  node cli/contentfilter.cli.mjs catalog-sync');
       process.exit(1);
     }
+    // One section would look like every other film left Plex: the index is built from all movie sections.
+    if (args.includes('--section')) { console.error('map reads every Plex movie section; --section is not allowed here.'); process.exit(1); }
+    const dryRun = args.includes('--dry-run');
     const catalog = JSON.parse(readFileSync(CATALOG_PATH(), 'utf8')).entries || [];
-    console.error(`Loaded catalog cache: ${catalog.length} titles. Loading Plex library…`);
-    const plex = await plexItems(flags.section, { types: ['movie', 'show'] });
-    console.error(`Plex items: ${plex.length}. Matching offline (0 VidAngel calls)…`);
-    const result = matchOffline(plex, catalog);
-    const { matched, unmatched } = result;
-    let ambiguous = result.ambiguous;
-
-    // Optional: disambiguate same-title remakes by fetching each candidate's
-    // year (the catalog dump has none). Throttled; only the ambiguous handful.
-    if (flags.resolve && ambiguous.length) {
-      const va = new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
-      console.error(`Resolving ${ambiguous.length} ambiguous titles by year (throttled)…`);
-      const stillAmbiguous = [];
-      for (const a of ambiguous) {
-        const py = a.plex.year;
-        const scored = [];
-        for (const c of a.candidates) {
-          const y = await va.yearForSlug(c.slug, c.type);
-          scored.push({ c, y });
-          await new Promise((res) => setTimeout(res, 400));
-        }
-        // Pick the candidate whose year matches the Plex year within 1.
-        const exact = py ? scored.filter((s) => s.y != null && Math.abs(s.y - py) <= 1) : [];
-        if (exact.length === 1) {
-          matched.push({ plex: a.plex, va: { ...exact[0].c, year: exact[0].y }, confidence: 'resolved-by-year' });
-          process.stderr.write(`  ✓ ${a.plex.title} (${py}) -> ${exact[0].c.slug}\n`);
-        } else {
-          a.resolvedYears = scored.map((s) => ({ slug: s.c.slug, year: s.y }));
-          stillAmbiguous.push(a);
-          process.stderr.write(`  ? ${a.plex.title} (${py}) -> unresolved [${scored.map((s) => `${s.c.slug}:${s.y}`).join(', ')}]\n`);
-        }
-      }
-      ambiguous = stillAmbiguous;
-    }
-
-    // Build the map file: plex ratingKey -> VA ref. Only high-confidence rows.
-    const map = {};
-    for (const m of matched) {
-      map[`plex:${m.plex.ratingKey}`] = {
-        title: m.plex.title,
-        plexType: m.plex.plexType,
-        vidangel: { id: m.va.id, slug: m.va.slug, type: m.va.type, tagCount: m.va.tagCount },
-        confidence: m.confidence
-      };
-    }
+    const edlDir = path.join(filterMediaDir(), 'edl');
+    const edlHeads = readEdlHeads(edlDir);
+    const oldIndex = existsSync(MAP_PATH()) ? yaml.load(readFileSync(MAP_PATH(), 'utf8')) : null;
+    console.error(`Catalog ${catalog.length} titles, ${edlHeads.length} EDLs. Loading Plex movies…`);
+    const plexMovies = await plexItems(null, { types: ['movie'] });
+    console.error(`Plex movies: ${plexMovies.length}. Matching by title, year and runtime…`);
+    const va = args.includes('--offline') ? null : new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
+    const resolveYear = va ? politeResolver((slug) => va.yearForSlug(slug, 'movie')) : null;
+    const result = await runMap({
+      catalog, edlHeads, oldIndex, plexMovies, householdKeys: householdKeysIn(filterCacheDir(), filterMediaDir()), resolveYear,
+      onProgress: (m) => process.stderr.write(`${m}\n`),
+    });
+    const refusal = guardMap({ plexCount: plexMovies.length, oldIndex, plan: result.plan, force: args.includes('--force') });
+    if (flags.json) {
+      console.log(JSON.stringify({ dryRun, refusal, counts: result.plan.counts, library: result.library, rekeys: result.plan.rekeys, park: result.plan.park, blocked: result.plan.blocked, duplicates: result.plan.duplicates, unmatched: result.plan.unmatched, diff: result.diff, household: Object.fromEntries(result.household) }, null, 2));
+    } else console.log(formatMapReport(result, { dryRun }));
+    if (refusal) console.error(`\n${dryRun ? 'WARNING (an apply would refuse)' : 'REFUSED'}: ${refusal}`);
+    if (dryRun) return;
+    if (refusal) process.exit(1);
     mkdirSync(filterMediaDir(), { recursive: true });
-    writeFileSync(MAP_PATH(), yaml.dump({
-      source: 'vidangel-catalog (offline match)',
-      counts: { matched: matched.length, ambiguous: ambiguous.length, unmatched: unmatched.length },
-      map
-    }, { lineWidth: 140 }));
-
-    if (flags.json) { console.log(JSON.stringify({ matched, ambiguous: ambiguous.slice(0, 50) }, null, 2)); return; }
-    console.error(`\n================ MAP ================`);
-    console.error(`matched (high-confidence): ${matched.length}`);
-    console.error(`ambiguous (same title, needs year): ${ambiguous.length}`);
-    console.error(`unmatched: ${unmatched.length}`);
-    const filterable = matched.filter((m) => m.va.tagCount > 0).length;
-    console.error(`of matched, have filter data now: ${filterable} (rest are shows -> per-episode)`);
-    console.error(`\nwrote ${MAP_PATH()}`);
-    console.error('\nSample matches:');
-    for (const m of matched.filter((x) => x.va.tagCount > 0).slice(0, 15)) {
-      console.error(`  [plex:${m.plex.ratingKey}] ${m.plex.title} -> ${m.va.slug} (tags=${m.va.tagCount})`);
-    }
-    if (ambiguous.length) {
-      console.error('\nSample ambiguous (resolve by year later):');
-      for (const a of ambiguous.slice(0, 8)) {
-        console.error(`  ${a.plex.title} (${a.plex.year}) -> ${a.candidates.map((c) => c.slug).join(', ')}`);
-      }
-    }
+    const out = applyPlan({ ...result, edlDir, mapPath: MAP_PATH() });
+    console.error(`\n${out.wroteIndex ? `wrote ${MAP_PATH()}` : 'index unchanged'}; moved ${out.moved} EDL(s); set aside ${out.parked} wrong-film/stale EDL(s) in edl/_rekeyed/`);
     return;
   }
 
@@ -1417,7 +1328,10 @@ Usage:
 
 Commands:
   catalog-sync          Page the FULL filterable catalog -> local cache (public, throttled; do once)
-  map [--section <id>]  Offline-match cached catalog vs your Plex library -> plex->VA map file (0 API calls)
+  map [--dry-run]       Match catalog works to Plex movies by title AND year (±1) and runtime -> plex->VA
+                        map file; move stale EDL keys to the matching film and set wrong-film EDLs aside.
+                        --dry-run writes nothing; --offline asks VidAngel for no years; --force passes
+                        the empty-Plex / verified-drop guard. No --section (reads every movie section).
   search <query>        Find filterable titles (slug, year, type, tag_count)
   works                 Popular filterable titles available on your services
   tags <slug>           Summarize a title's filter categories + tag counts
