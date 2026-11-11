@@ -28,10 +28,18 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 28px;
+    // NO scrollbar, ever (owner, 2026-11-10: a scrollbar on the kiosk lobby).
+    // The column FITS at the kiosk's 1301x745 content box in every state with
+    // ~140 px to spare (harness gate lobbyMainOverflow): tight section gaps,
+    // compact race-type cards, a value row of fixed height and no boost-rule
+    // line. Every child is flex: none, so nothing is squashed or cropped; the
+    // slack collects above Start (actions margin-top: auto).
+    gap: 14px;
     min-width: 0;
-    overflow-y: auto;
+    min-height: 0;
+    overflow: visible;
     // Everything in the main panel reads as a single centered column.
+    > * { flex: none; }
     text-align: center;
   }
 
@@ -39,7 +47,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
   }
 
   &__title {
@@ -114,7 +122,11 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    // The secondary panel may scroll its history by touch, but shows no
+    // scrollbar (owner, 2026-11-10: no scrollbars on the kiosk lobby).
     overflow-y: auto;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
   }
 }
 
@@ -129,10 +141,10 @@
   display: flex;
   align-items: baseline;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 
   &--sub {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     letter-spacing: 0.06em;
   }
 }
@@ -149,20 +161,6 @@
   flex-direction: column;
   // The grid takes its full height first and never yields it (see BikeSlot.scss).
   flex: none;
-}
-
-// One plain-text rule line in the grid section's footer. It lives inside the
-// section (which may shrink, min-height 0) and is capped at two lines, so it
-// spends the grid column's slack rather than growing the lobby.
-.cgh-boost-rule {
-  flex: 0 0 auto;
-  margin: 10px 0 0;
-  max-height: 2.8em;
-  overflow: hidden;
-  color: t.$cg-muted;
-  font-family: t.$cg-display;
-  font-size: 1rem;
-  line-height: 1.35;
 }
 
 // "Race my best": the opt-in rival switch beside Start. Off by default; on, a
@@ -337,10 +335,6 @@
   .cgh-grid-section *,
   .cgh-grid-section *::before,
   .cgh-grid-section *::after,
-  .cgh-boost-rule,
-  .cgh-boost-rule *,
-  .cgh-boost-rule *::before,
-  .cgh-boost-rule *::after,
   .cgh-grid,
   .cgh-grid *,
   .cgh-grid *::before,

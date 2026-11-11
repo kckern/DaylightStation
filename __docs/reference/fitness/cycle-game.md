@@ -300,12 +300,9 @@ The lobby is a pure presentational component; all state and handlers live in
    state when the container supplies `sensorLive` on the bike: **Ready** (small
    tick) when the cadence sensor is reporting, **No signal** (amber, icon plus
    word, class `is-no-signal`) when it is not; unknown state shows nothing, as
-   does an unclaimed slot. Under the grid, **one line states the scoring rule**
-   (`data-testid="boost-rule"`): "Harder effort goes further: your heart-rate
-   zone multiplies your distance (×{min} to ×{max})." The container feeds the
-   range as `boostRange` (`boostState.boostRange(zones, hrless_multiplier)`: the
-   lowest to highest multiplier, the strapless one included); the line is hidden
-   when every multiplier is the same.
+   does an unclaimed slot. There is no scoring-rule line under the grid: the
+   "Harder effort goes further…" hint was removed on the owner's call
+   (2026-11-10); each race gauge's boost row shows the zone multiplier.
    A claim nobody has pedalled for 30 minutes is cleared by the lobby itself
    (§5, "Stale claims clear themselves").
 4. **Rider picker** (modal) — people grouped into **Household / Family / Guests**
@@ -1709,12 +1706,21 @@ race, staging and countdown screens only.
 **The starting grid gets its space first.** A bike/ghost slot is a fixed card:
 `width: 136px; aspect-ratio: 3 / 4; flex: none`, with a fixed 96 px square device
 circle. Six fit the kiosk's main column (6 x 136 + 5 x 16 = 896 of ~965 px). The
-grid section and row are `flex: none`; the race-type cards, the value row, the
-boost line and the rail adapt around the grid, and the main column scrolls as a
-last resort, never the grid. Guarded by `CycleGameHome.raceMyBest.test.jsx` and
-the harness gate `gridTilesBroken` (every slot inside the viewport, the row and
-the main column, at its 3:4 shape) in the `lobby-garage-five` / `lobby-garage-six`
-scenes (Distance picked, "how far" row open — the state that broke).
+grid section and row are `flex: none`.
+
+**The lobby's main column never scrolls** (owner, 2026-11-10: a scrollbar on the
+kiosk). It is `overflow: visible` with every child `flex: none` and fits the
+kiosk's 1301x745 content box in every state by design: 14 px section gaps,
+compact race-type cards (12 px padding, 48 px icons, one-line name and hint), a
+fixed-height value row, and no boost-rule line (removed the same night). The
+slack collects above Start. Guarded by `CycleGameHome.raceMyBest.test.jsx` (no
+scrolling overflow in the CSS) and two harness gates: `lobbyMainOverflow`
+(`.cycle-game-home__main` scrollHeight <= clientHeight) and `gridTilesBroken`
+(every slot inside the viewport, the row and the main column, at its 3:4 shape),
+over `lobby-garage-one` / `-five` / `-six` (Distance, "How far?" open, "Race my
+best" shown), `lobby-garage-time` (Time, switch on, six bikes),
+`lobby-garage-ghost` (a picked ghost with its field on the grid) and the other
+`lobby-*` scenes.
 
 Race, staging and countdown text is sized for a viewer 2 to 3 m from the
 screen, from the type scale in `_cgTokens.scss` (`cg-type(N)`; `typeScale.test.js`

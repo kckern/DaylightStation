@@ -102,3 +102,20 @@ describe('starting grid tiles keep their shape', () => {
     expect(grid).toMatch(/flex-wrap:\s*nowrap;/);
   });
 });
+
+// No scrollbar on the lobby's main column (owner, 2026-11-10). The column must
+// FIT; the screenshot harness measures scrollHeight <= clientHeight per state
+// (lobbyMainOverflow), this guards the CSS that would bring a scrollbar back.
+describe('lobby main column never scrolls', () => {
+  const home = fs.readFileSync(path.join(here, 'CycleGameHome.scss'), 'utf8');
+  const start = home.indexOf('&__main {');
+  const main = home.slice(start, home.indexOf('\n  }', start));
+  it('declares no scrolling overflow and keeps every child at its own height', () => {
+    expect(main).not.toMatch(/overflow(-y)?:\s*(auto|scroll)/);
+    expect(main).toMatch(/overflow:\s*visible;/);
+    expect(main).toMatch(/> \* \{ flex: none; \}/);
+  });
+  it('has no boost-rule styles left', () => {
+    expect(home).not.toContain('cgh-boost-rule');
+  });
+});

@@ -11,7 +11,6 @@ import VolumeModal from "./home/VolumeModal.jsx";
 import HighScores from "./home/HighScores.jsx";
 import HistoryTable from "./home/HistoryTable.jsx";
 import FeaturedCourseCard from "./home/FeaturedCourseCard.jsx";
-import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import "./CycleGameHome.scss";
 
 // How long the "recovered your interrupted race" banner stays up before it
@@ -53,7 +52,6 @@ export default function CycleGameHome({
   onRideFeatured = null,
   resolveName = (id) => id,
   recoveredNotice = null,
-  boostRange = null,
   raceMyBest = false,
   onToggleRaceMyBest = null,
   busy = false
@@ -106,9 +104,6 @@ export default function CycleGameHome({
     ? `${silentNames.slice(0, -1).join(', ')} and ${silentNames[silentNames.length - 1]}`
     : silentNames[0];
   const silentVerb = silentNames.length > 1 ? 'are' : 'is';
-
-  const showBoostRule = !!boostRange && Number.isFinite(boostRange.min) && Number.isFinite(boostRange.max)
-    && boostRange.max > boostRange.min;
 
   // "Race my best" is opt-in and only means something without a hand-picked
   // ghost and with at most one rider (two or more race each other).
@@ -194,11 +189,6 @@ export default function CycleGameHome({
                 <GhostSlot key={r.userId} rider={r} lane={bikes.length + i + 1} />
               ))}
             </div>
-          )}
-          {showBoostRule && (
-            <p className="cgh-boost-rule" data-testid="boost-rule">
-              {`Harder effort goes further: your heart-rate zone multiplies your distance (\u00d7${formatMultiplier(boostRange.min)} to \u00d7${formatMultiplier(boostRange.max)}).`}
-            </p>
           )}
         </section>
 
@@ -317,8 +307,6 @@ CycleGameHome.propTypes = {
   onRideFeatured: PropTypes.func,
   resolveName: PropTypes.func,
   recoveredNotice: PropTypes.string,
-  // Distance multiplier span from the heart-rate zones; shown as one rule line.
-  boostRange: PropTypes.shape({ min: PropTypes.number, max: PropTypes.number }),
   // Opt-in rival (own best / ladder rival); off unless the rider switches it on.
   raceMyBest: PropTypes.bool,
   onToggleRaceMyBest: PropTypes.func,

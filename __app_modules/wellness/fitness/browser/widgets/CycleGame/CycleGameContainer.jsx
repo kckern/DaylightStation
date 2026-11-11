@@ -26,7 +26,7 @@ import { raceBeats } from "../../lib/cycleGame/raceBeats.js";
 import { resultsComparison } from "../../lib/cycleGame/resultsComparison.js";
 import { staleClaims } from "../../lib/cycleGame/staleClaims.js";
 import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
-import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
+import { boostState, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
@@ -865,10 +865,6 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [raceRiders, session, getUserVitals, resolveDisplayName, assignVersion, raceGhostRosterRiders, hrlessMultiplier]
   );
-
-  // The lobby's one-line boost rule: the lowest to highest multiplier a rider
-  // can have, the strapless one included.
-  const lobbyBoostRange = useMemo(() => boostRange(zones, hrlessMultiplier), [zones, hrlessMultiplier]);
 
   // Keep on-board RPM and sensor state live during staging + countdown so the
   // strip reacts quickly when a bike starts (or stops) reporting.
@@ -2522,7 +2518,6 @@ export default function CycleGameContainer({ onMount } = {}) {
           resolveName={resolveDisplayName}
           recoveredNotice={recoveredNotice}
           busy={startPending}
-          boostRange={lobbyBoostRange}
           raceMyBest={raceMyBest}
           onToggleRaceMyBest={onToggleRaceMyBest}
         />

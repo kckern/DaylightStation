@@ -126,10 +126,10 @@ describe('CycleGameContainer — boost meter', () => {
     .closest('.cycle-speedometer').querySelector('[data-testid="cycle-speedometer-boost"]');
   const toastText = (view) => view.queryByTestId('cycle-event-toast')?.textContent || '';
 
-  it('the lobby states the boost rule from the zone range, strapless multiplier included', () => {
+  it('the lobby shows no boost rule line (removed 2026-11-10; the gauges carry the boost)', () => {
     mockCtx = makeCtx();
     const view = render(<CycleGameContainer />);
-    expect(view.getByTestId('boost-rule').textContent).toContain('×0.8 to ×2');
+    expect(view.queryByTestId('boost-rule')).toBeNull();
   });
 
   it('each gauge carries its rider\'s boost: zone, multiplier, progress and the next step', () => {

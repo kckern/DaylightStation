@@ -20,7 +20,7 @@ const OUT = path.join(here, 'out/cycle-game');
 fs.mkdirSync(OUT, { recursive: true });
 
 const ALL = [
-  'lobby-default', 'lobby-garage-five', 'lobby-garage-six', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
+  'lobby-default', 'lobby-garage-five', 'lobby-garage-six', 'lobby-garage-one', 'lobby-garage-time', 'lobby-garage-ghost', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
   'race-two-riders-one-parked', 'race-three-riders', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
@@ -115,7 +115,8 @@ function measure() {
   out.smallestText = fonts.slice(0, 4);
   // Only text that is partly visible counts: an element wholly outside the viewport/zone
   // (a POV marker far off the road, clipped by its zone) is not on screen at all.
-  out.outsideViewport = textEls.filter((el) => { const b = el.getBoundingClientRect(); if (b.right <= 0 || b.left >= vw || b.bottom <= 0 || b.top >= vh) return false; return b.right > vw + 1 || b.bottom > vh + 1 || b.left < -1 || b.top < -1; })
+  // The lobby's records rail scrolls its own history (the secondary panel may); rows past its fold are not on screen.
+  out.outsideViewport = textEls.filter((el) => !el.closest('[data-testid="cycle-game-records"]')).filter((el) => { const b = el.getBoundingClientRect(); if (b.right <= 0 || b.left >= vw || b.bottom <= 0 || b.top >= vh) return false; return b.right > vw + 1 || b.bottom > vh + 1 || b.left < -1 || b.top < -1; })
     .map((el) => ({ t: el.textContent.trim().slice(0, 28), ...box(el) })).slice(0, 8);
   const zones = [...document.querySelectorAll('.race-layout__zone')];
   out.clippedByZone = [];
@@ -210,6 +211,9 @@ function measure() {
     out.lobbyRailClipped = [...lobbyEl.querySelectorAll('*')].filter((e) => e.offsetParent && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0 && (e.getBoundingClientRect().bottom > rb.bottom + 1 || e.getBoundingClientRect().right > rb.right + 1)).length;
     out.lobbyRailScrolls = lobbyEl.scrollHeight > lobbyEl.clientHeight + 1;
   }
+  // The lobby's main column never scrolls (no scrollbar on the kiosk, owner 2026-11-10).
+  const mainCol = document.querySelector('.cycle-game-home__main');
+  if (mainCol) out.lobbyMainOverflow = Math.max(0, mainCol.scrollHeight - mainCol.clientHeight);
   // Starting grid: every slot is a whole card — inside the viewport, inside the
   // grid row and the main column (nothing crops it), at its full 3:4 shape.
   const gridEl = document.querySelector('.cgh-grid');
@@ -367,6 +371,7 @@ for (const [label, m] of Object.entries(metrics)) {
   if (m.towerHeaderPx != null && m.towerHeaderPx < 25.5) bad.push(`tower header ${m.towerHeaderPx}px < 25.6`);
   if (m.towerHeaderClipped) bad.push(`tower header wraps/clips: ${m.towerHeaderText}`);
   if (m.towerMetricWraps && m.towerMetricWraps.length) bad.push(`tower metric wraps: ${m.towerMetricWraps.join(' | ')}`);
+  if (m.lobbyMainOverflow > 0) bad.push(`lobby main column scrolls by ${m.lobbyMainOverflow}px`);
   if (m.gridTilesBroken && m.gridTilesBroken.length) bad.push(`starting-grid tile(s) not whole: ${JSON.stringify(m.gridTilesBroken)}`);
   if (m.ghostCardOverflow && m.ghostCardOverflow.length) bad.push(`ghost card content outside its card: ${JSON.stringify(m.ghostCardOverflow)}`);
   if (m.rosterOffscreen > 0) bad.push(`${m.rosterOffscreen} roster control(s) off screen/outside card`);

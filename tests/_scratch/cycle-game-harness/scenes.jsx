@@ -68,7 +68,7 @@ const NAMES = { user_1: 'Rider A', user_2: 'Rider B', user_3: 'Rider C' };
 const homeBase = {
   raceType: 'time', raceValue: 300, people: PEOPLE, records: RECORDS, highScores: HIGH_SCORES,
   featured: FEATURED, onRideFeatured: noop, resolveName: (id) => NAMES[id] || id,
-  boostRange: { min: 0.8, max: 1.6 }, canStart: true, onStart: noop,
+  canStart: true, onStart: noop,
   masterVolume: 0.7, masterMuted: false,
 };
 
@@ -339,6 +339,25 @@ export const SCENES = {
     <Container>
       <CycleGameHome {...homeBase} raceType="distance" raceValue={300} onToggleRaceMyBest={noop}
         bikes={Array.from({ length: 5 }, (_, i) => ({ id: `bike-${i + 1}`, name: `Bike ${i + 1}`, rider: i === 2 ? 'user_1' : null, rpm: i === 2 ? 62 : 0, sensorLive: i === 2, iconSrc: BIKE(`bike-${i + 1}`) }))} />
+    </Container>) },
+  'lobby-garage-one': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase} raceType="distance" raceValue={300} onToggleRaceMyBest={noop}
+        bikes={[{ id: 'bike-1', name: 'Bike 1', rider: 'user_1', rpm: 62, sensorLive: true, iconSrc: BIKE('bike-1') }]} />
+    </Container>) },
+  'lobby-garage-time': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase} raceType="time" raceValue={300} onToggleRaceMyBest={noop} raceMyBest
+        bikes={Array.from({ length: 6 }, (_, i) => ({ id: `bike-${i + 1}`, name: `Bike ${i + 1}`, rider: i === 0 ? 'user_1' : null, rpm: i === 0 ? 62 : 0, sensorLive: i === 0, iconSrc: BIKE(`bike-${i + 1}`) }))} />
+    </Container>) },
+  // A hand-picked ghost: the value row becomes the ghost summary and the ghost's
+  // field joins the grid (six lanes in all).
+  'lobby-garage-ghost': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase} raceType="distance" raceValue={1000} onToggleRaceMyBest={noop}
+        ghost={{ displayName: 'Rider C', winCondition: 'distance', goalM: 1000 }}
+        ghostRoster={[{ userId: 'ghost:r3:user_3', displayName: 'Rider C', avatarSrc: AV('user_3') }, { userId: 'ghost:r3:user_2', displayName: 'Rider B', avatarSrc: AV('user_2') }]}
+        bikes={Array.from({ length: 4 }, (_, i) => ({ id: `bike-${i + 1}`, name: `Bike ${i + 1}`, rider: i === 0 ? 'user_1' : null, rpm: i === 0 ? 62 : 0, sensorLive: i === 0, iconSrc: BIKE(`bike-${i + 1}`) }))} />
     </Container>) },
   'lobby-garage-six': { render: () => (
     <Container>
