@@ -7,7 +7,7 @@ import path from 'node:path';
 import { createCanvas, loadImage } from 'canvas';
 import YAML from 'yaml';
 import { validateManifest } from './lib.mjs';
-import { exportSkin, packShelves, parseKey, renderSkinPreview, seamScore, sliceSheet, validateSkin, writeKeyedSheet } from './side-scroller.mjs';
+import { buildSkinBrief, exportSkin, packShelves, parseKey, renderSkinPreview, seamScore, sliceSheet, validateSkin, writeKeyedSheet } from './side-scroller.mjs';
 
 async function png(file, width, height, draw) {
   const canvas = createCanvas(width, height);
@@ -353,5 +353,23 @@ describe('skins', () => {
     const pack = packShelves([{ w: 10, h: 4 }, { w: 6, h: 8 }, { w: 10, h: 4 }], { maxWidth: 20 });
     assert.deepEqual(pack.placed.map(({ x, y }) => [x, y]), [[7, 0], [0, 0], [0, 9]]);
     assert.deepEqual([pack.width, pack.height], [17, 13]);
+  });
+});
+
+describe('skin brief', () => {
+  it('states every slot limit from the contract, expanding entity boxes', () => {
+    const brief = buildSkinBrief({
+      game: 'flyer', units: { width: 1000, height: 600, art_pixel: 2 },
+      slots: { craft: { type: 'sprite', box: [105, 54], fit: 'strict', animated: true, states: ['hurt'] }, 'entities.*': { type: 'sprite', fit: 'strict', stretch: 'vertical' }, 'terrain.fill': { type: 'texture', repeat: ['x', 'y'], scale: 2 } },
+    }, { entityBoxes: { wall: [86, 540] } });
+    assert.deepEqual(brief.grid, { scene_units: [1000, 600], units_per_art_pixel: 2, scene_in_art_pixels: [500, 300] });
+    const bySlot = Object.fromEntries(brief.slots.map((slot) => [slot.slot, slot]));
+    assert.deepEqual(bySlot.craft.max_pixels, [52, 27]);
+    assert.equal(bySlot.craft.fit, 'must fit (it is what collides)');
+    assert.deepEqual(bySlot.craft.optional_states, ['hurt']);
+    assert.deepEqual(bySlot['entities.wall'].max_pixels, [43, 270]);
+    assert.match(bySlot['entities.wall'].stretch, /slices/);
+    assert.deepEqual(bySlot['terrain.fill'].repeat, ['x', 'y']);
+    assert.ok(brief.rules.length >= 5);
   });
 });

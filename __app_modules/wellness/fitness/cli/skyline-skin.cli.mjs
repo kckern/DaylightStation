@@ -3,6 +3,7 @@
 //
 //   node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs build --skin <skin.yml> --zone-id <id>
 //        [--name <name>] [--base-zone alpine] [--root <games/_common>] [--media <media dir>]
+//   node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs brief [--base-zone alpine] [--out brief.yml]
 //   node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs install --zone-id <id> --zones-dir <household zones dir>
 //        [--media <media dir>] [--private-dev true]
 //
@@ -16,7 +17,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
-import { exportSkin } from '../../../../__capabilities/gaming/cli/gaming-assets/skins.mjs';
+import { buildSkinBrief, exportSkin } from '../../../../__capabilities/gaming/cli/gaming-assets/skins.mjs';
 import { zoneFromSkinExport } from '../server/adapters/skylineGlider/skinZone.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -50,6 +51,15 @@ export async function build({ skinPath, zoneId, name, baseZone = 'alpine', root,
   return { ok: true, outDir, zone: zoneId, distribution: exported.manifest.distribution, slots: Object.keys(exported.manifest.slots), warnings: exported.warnings };
 }
 
+/** The commissioning brief for a zone: every slot's limits, with entity boxes from the base zone. */
+export async function brief({ baseZone = 'alpine' } = {}) {
+  const contract = YAML.parse(await readFile(CONTRACT, 'utf8'));
+  const base = YAML.parse(await readFile(path.join(ADAPTERS, 'zones', `${baseZone}.yml`), 'utf8'));
+  const unitsPerSecond = (contract.units?.width ?? 1000) / 14;
+  const entityBoxes = Object.fromEntries(Object.entries(base.entities ?? {}).map(([name, def]) => [name, [Math.round(Number(def.width_s ?? 0.5) * unitsPerSecond), Math.round(Number(def.height ?? 0.1) * (contract.units?.height ?? 600))]]));
+  return buildSkinBrief(contract, { entityBoxes });
+}
+
 export async function install({ zoneId, zonesDir, media, privateDev = false }) {
   const source = path.join(zoneDir(media, zoneId), 'zone.yml');
   const zone = YAML.parse(await readFile(source, 'utf8'));
@@ -72,11 +82,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, { st
         skinPath: path.resolve(flags.skin ?? ''), zoneId: flags['zone-id'], name: flags.name, baseZone: flags['base-zone'] ?? 'alpine',
         root: path.resolve(flags.root ?? path.join(media, 'games', '_common')), media,
       });
+    } else if (command === 'brief') {
+      const out = await brief({ baseZone: flags['base-zone'] ?? 'alpine' });
+      if (flags.out) await writeFile(flags.out, YAML.stringify(out));
+      result = { ok: true, ...(flags.out ? { out: flags.out, slots: out.slots.length } : out) };
     } else if (command === 'install') {
       if (!flags['zones-dir']) throw new Error('--zones-dir is required');
       result = await install({ zoneId: flags['zone-id'], zonesDir: path.resolve(flags['zones-dir']), media, privateDev: flags['private-dev'] === 'true' });
     } else {
-      stderr.write('usage: skyline-skin.cli.mjs build|install (see header)\n');
+      stderr.write('usage: skyline-skin.cli.mjs build|brief|install (see header)\n');
       return 2;
     }
     stdout.write(`${JSON.stringify(result, null, 2)}\n`);

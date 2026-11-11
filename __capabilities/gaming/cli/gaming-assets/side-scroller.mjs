@@ -733,3 +733,54 @@ export async function renderSkinPreview({ exportDir, contractPath, out, width = 
   await writeFile(out, canvas.toBuffer('image/png'));
   return { out };
 }
+
+// ── brief ───────────────────────────────────────────────────────────────────
+
+/** The rules every side-scroller asset must pass, as stated to an artist. */
+export const ART_RULES = Object.freeze([
+  'Pixel art on one grid: every art pixel is a uniform square block; deliver at native size (1 file pixel = 1 art pixel) or at an exact integer multiple, declared as pixel_density.',
+  'Transparency is binary: every pixel fully opaque or fully transparent. No soft edges, glows or drop shadows outside the sprite.',
+  'A sprite frame has transparent margin on its edges: no backdrop or panel colour left behind the sprite.',
+  'Every frame of one animation shares one canvas size, with the subject anchored in the same place.',
+  'Anything marked repeat must wrap seamlessly on that axis (the last column continues into the first; for y, the last row into the first).',
+  'Palette: at most 15 colours plus transparent per sprite (one SNES sub-palette); with rgb555, every channel a multiple of 8.',
+  'Original art only: nothing traced or copied from an existing game.',
+]);
+
+/**
+ * A commissioning brief generated from a game's slot contract, so the spec an
+ * artist works to can never drift from what the game accepts. `entityBoxes`
+ * ({ name: [w, h] } in scene units) lets a game add its per-entity boxes.
+ */
+export function buildSkinBrief(contract, { entityBoxes = {} } = {}) {
+  const artPixel = contract.units?.art_pixel ?? 1;
+  const toPixels = (box) => (Array.isArray(box) ? [Math.floor(box[0] / artPixel), Math.floor(box[1] / artPixel)] : null);
+  const describe = (name, slot, box = slot.box) => ({
+    slot: name,
+    type: slot.type,
+    ...(box ? { max_pixels: toPixels(box), box_units: box } : {}),
+    ...(slot.fit ? { fit: slot.fit === 'strict' ? 'must fit (it is what collides)' : slot.fit } : { fit: 'should fit (cosmetic)' }),
+    ...(slot.repeat ? { repeat: slot.repeat } : {}),
+    ...(slot.scale ? { exported_scale: slot.scale } : {}),
+    ...(slot.animated ? { animated: 'an animation clip (several frames, one canvas)' } : {}),
+    ...(slot.states ? { optional_states: slot.states } : {}),
+    ...(slot.stretch ? { stretch: `${slot.stretch}: may be delivered as slices (top cap, body that repeats on y, bottom cap), all one width` } : {}),
+    ...(slot.type === 'parallax-layers' ? { layers: `up to ${slot.max ?? 'any number of'} strips, back to front; each repeats on x; height in pixels = its height on screen / ${artPixel}` } : {}),
+  });
+  const slots = [];
+  for (const [name, slot] of Object.entries(contract.slots ?? {})) {
+    if (name.endsWith('.*')) {
+      const prefix = name.slice(0, -1);
+      const entries = Object.entries(entityBoxes);
+      if (!entries.length) slots.push(describe(name, slot));
+      for (const [entity, box] of entries) slots.push(describe(`${prefix}${entity}`, slot, box));
+    } else slots.push(describe(name, slot));
+  }
+  return {
+    schema: 'game-skin-brief/v1',
+    game: contract.game,
+    grid: { scene_units: [contract.units?.width, contract.units?.height], units_per_art_pixel: artPixel, scene_in_art_pixels: [Math.floor((contract.units?.width ?? 0) / artPixel), Math.floor((contract.units?.height ?? 0) / artPixel)] },
+    rules: [...ART_RULES],
+    slots,
+  };
+}
