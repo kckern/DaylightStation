@@ -20,7 +20,7 @@ vi.mock("../schoolApi.js", () => {
     lifecycleReview: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
     learnerSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     progress: vi.fn(async () => ({ ok: true, status: 200, data: { recentScores: [] } })),
-    printPending: vi.fn(okEmpty), quizRequests: vi.fn(okEmpty), periods: vi.fn(okEmpty),
+    printPending: vi.fn(okEmpty), quizRequests: vi.fn(okEmpty), periods: vi.fn(okEmpty), calendar: vi.fn(okEmpty), putCalendar: vi.fn(okEmpty),
     assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
     staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
