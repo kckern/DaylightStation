@@ -748,7 +748,9 @@ is the preview's current study day, `currentStudyDay()`).
     Move · School · Games order, only areas with `held > 0`; a running
     day-count or a zero is never in it. Empty,
     with `economy.standings.gems-unavailable` logged, when the board cannot be
-    read).
+    read). The standings price the roster once and hand it to the board
+    (`GemBoardService.board({roster})`), so one request reads each learner's
+    school week once.
   All read-only, `no-store`; with the catalog `off` they return no learners.
 - **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.
   It looks when the screen loads (last 2 days, 5 sessions), when a workout closes,

@@ -120,6 +120,40 @@ describe('TermVerdictService.read', () => {
     expect(done.asked).toEqual(['2026-09-08', TODAY]);
   });
 
+  it('concurrent reads share one projection per live day, before the merge has landed (2026-11-10: ~50 s standings)', async () => {
+    const { service, completion } = build();
+    const reads = await Promise.all([service.read('kid', { detail: true }), service.read('kid'), service.read('kid', { detail: true })]);
+    expect(completion.asked).toEqual(['2026-09-08', TODAY]);
+    expect(reads[0].days.at(-1)).toMatchObject({ studyDay: TODAY, state: 'met' });
+    expect(reads[2]).toEqual(reads[0]);
+    // A read straight after, with the merge still queued behind the backfill, is shared too.
+    await service.read('kid');
+    expect(completion.asked).toEqual(['2026-09-08', TODAY]);
+  });
+
+  it('a shared live row is not reused across a completion input, and a failed one is retried', async () => {
+    let fail = true;
+    const completion = completionDouble();
+    const execute = completion.execute.bind(completion);
+    completion.execute = async (args) => { if (fail && !args.studyDay) { completion.asked.push('boom'); throw new Error('boom'); } return execute(args); };
+    const service = new TermVerdictService({
+      getLearnerDayCompletion: completion, cache: new MemoryCache(), academicPeriods: periods, window: { from: '2026-09-01' },
+      timezone: 'America/Los_Angeles', clock: () => new Date(NOW), freshMs: 60_000, logger: silent,
+    });
+    await expect(service.read('kid')).rejects.toThrow('boom');
+    fail = false;
+    completion.asked.length = 0;
+    const live = () => completion.asked.filter((d) => d === '2026-09-08' || d === TODAY);
+    await service.read('kid');
+    // Yesterday's row from the failed read is still shared; today is computed again.
+    expect(live()).toEqual([TODAY]);
+    await settle(); // the older days' backfill
+    service.invalidate('kid');
+    completion.asked.length = 0;
+    await service.read('kid');
+    expect(live()).toEqual(['2026-09-08', TODAY]);
+  });
+
   it('a cache from an older ladder version is discarded whole', async () => {
     const cache = new MemoryCache();
     cache.docs.set('kid/2026-fall', { version: 0, computedAt: NOW, days: { '2026-09-02': { state: 'met', computedAt: NOW } } });

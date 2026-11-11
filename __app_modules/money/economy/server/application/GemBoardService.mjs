@@ -46,12 +46,15 @@ export class GemBoardService {
   /**
    * The board for the week holding `week` (any study day; null = this week).
    * `fresh` reads the achievement evidence now rather than the minute-shared copy.
+   * `roster` is a priced week the caller already holds (`preview.roster({week, fresh})`
+   * for the same week): the board folds it instead of pricing the roster again —
+   * the fitness standings read both, and two rosters doubled every school read.
    */
-  async board({ week = null, fresh = false } = {}) {
+  async board({ week = null, fresh = false, roster: priced = null } = {}) {
     const t0 = Date.now();
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, week: null, learners: [], categories: [], cells: {}, totals: {} };
-    const [ruleset, roster] = await Promise.all([this.#rules.get(), this.#preview.roster({ week, fresh })]);
+    const [ruleset, roster] = await Promise.all([this.#rules.get(), priced ?? this.#preview.roster({ week, fresh })]);
     const ids = (roster?.learners ?? []).map((l) => l.learnerId);
     const lifetime = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, await this.#lifetime(id)])));
     for (const category of gemCategories(ruleset)) {

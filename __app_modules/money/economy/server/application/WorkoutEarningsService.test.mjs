@@ -158,6 +158,23 @@ describe('WorkoutEarningsService.standings', () => {
     const res = await make({ learners, balances: { 'learner-a': { silver: 4, gold: 0, gems: 0 } }, gemBoard }).standings();
     expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, gems: [] }]);
   });
+
+  it('prices the roster ONCE and hands it to the board (two rosters doubled every school read, 2026-11-10)', async () => {
+    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
+    const roster = vi.fn(async () => ({ contestClosed: false, learners }));
+    const board = vi.fn(async () => ({ categories: [], cells: {} }));
+    const svc = new WorkoutEarningsService({
+      preview: { roster },
+      economy: { hasUser: () => true, async peekBalance() { return { silver: 0, gold: 0, gems: 0 }; }, async getHistory() { return []; } },
+      config: { catalog: () => ({ mode: 'live' }) },
+      gemBoard: { board },
+      logger: silent,
+    });
+    await svc.standings();
+    expect(roster).toHaveBeenCalledTimes(1);
+    expect(board).toHaveBeenCalledTimes(1);
+    expect(board.mock.calls[0][0].roster).toBe(await roster.mock.results[0].value);
+  });
 });
 
 describe('WorkoutEarningsService.paid', () => {
