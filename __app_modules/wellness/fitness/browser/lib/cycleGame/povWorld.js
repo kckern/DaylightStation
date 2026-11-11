@@ -55,6 +55,58 @@ export function resolveBadgeStack(boxes = [], gapPx = 3, obstacles = []) {
   return out;
 }
 
+/**
+ * Text of a collapsed "+N" badge: the ordinals it stands for. Contiguous ranks read as a
+ * range ("4th–6th"), two split ranks as "4th & 6th", a lone rank as "4th" (the layout
+ * never collapses one rider, but the text stays honest if asked). Riders without a rank
+ * are not named; when none has a rank the badge falls back to "+N".
+ */
+export function collapsedLabel(ranks = [], count = ranks.length) {
+  const rs = [...new Set(ranks.filter((r) => Number.isFinite(r)))].sort((a, b) => a - b);
+  if (!rs.length) return count > 1 ? `+${count}` : '1 more';
+  if (rs.length === 1) return ordinal(rs[0]);
+  const contiguous = rs.every((r, i) => i === 0 || r === rs[i - 1] + 1);
+  if (contiguous) return `${ordinal(rs[0])}\u2013${ordinal(rs[rs.length - 1])}`;
+  if (rs.length === 2) return `${ordinal(rs[0])} & ${ordinal(rs[1])}`;
+  return `${ordinal(rs[0])}\u2013${ordinal(rs[rs.length - 1])}`;
+}
+
+/**
+ * Leader lines that tie a lifted badge back to its rider's card. A badge that stands
+ * directly under its card needs none; one that was pushed sideways or down by the band
+ * layout gets a line from the card's bottom edge to the badge's top edge (x clamped onto
+ * the badge). Riders folded into a "+N" badge get a line to that badge. Pure.
+ *
+ * @param {object} args
+ * @param {Array<{id:string,x:number,y:number,w:number,h:number}>} args.natural each badge's own spot (centre-x, top-y)
+ * @param {Array<{id:string,x:number,y:number}>} args.placed from layoutBadgeBands
+ * @param {Array<{x:number,y:number,w:number,h:number,ids:string[]}>} [args.mores]
+ * @param {Array<{ownerId:string,x:number,y:number,w:number,h:number}>} args.cards
+ * @param {number} [args.slackPx] displacement under which no line is drawn
+ * @returns {Array<{id:string,x1:number,y1:number,x2:number,y2:number}>}
+ */
+export function badgeLeaders({ natural = [], placed = [], mores = [], cards = [], slackPx = 6 } = {}) {
+  const nat = new Map(natural.map((b) => [b.id, b]));
+  const card = new Map(cards.map((c) => [c.ownerId, c]));
+  const lines = [];
+  const link = (id, target) => {
+    const c = card.get(id); if (!c) return;
+    const x1 = c.x;
+    const x2 = Math.min(target.x + target.w / 2 - 6, Math.max(target.x - target.w / 2 + 6, x1));
+    // Join the nearer pair of edges: card bottom to badge top when the badge hangs below
+    // the card, card top to badge bottom when the band was lifted above it.
+    const above = target.y + target.h <= c.y;
+    lines.push({ id, x1, y1: above ? c.y : c.y + c.h, x2, y2: above ? target.y + target.h : target.y });
+  };
+  placed.forEach((pl) => {
+    const n = nat.get(pl.id); if (!n) return;
+    if (Math.abs(pl.x - n.x) <= slackPx && Math.abs(pl.y - n.y) <= slackPx) return;
+    link(pl.id, { x: pl.x, y: pl.y, w: n.w, h: n.h });
+  });
+  mores.forEach((m) => (m.ids || []).forEach((id) => link(id, m)));
+  return lines;
+}
+
 /** Most badges one screen band shows; the rest collapse into a single "+N" badge. */
 export const MAX_BADGES_PER_BAND = 3;
 
@@ -101,10 +153,13 @@ export function layoutBadgeBands({ boxes = [], cards = [], fixed = [], panel = n
   const blocks = [...groups.values()].map((members) => {
     // Leader on top: rank order, ties (and unranked riders) by depth, farthest first.
     const ordered = [...members].sort((a, b) => (rankOf(a) - rankOf(b)) || (b.dist - a.dist));
-    const shown = ordered.slice(0, maxStack);
-    const rest = ordered.slice(maxStack);
+    // A "+1" names nobody, so a lone overflow rider gets its own badge: the block is the
+    // same height either way (maxStack + 1 rows), and the badge says who it is.
+    const cap = ordered.length === maxStack + 1 ? maxStack + 1 : maxStack;
+    const shown = ordered.slice(0, cap);
+    const rest = ordered.slice(cap);
     const rows = shown.map((b) => ({ id: b.id, w: b.w, h: b.h }));
-    if (rest.length) rows.push({ id: null, more: rest.length, w: moreSize.w, h: moreSize.h });
+    if (rest.length) rows.push({ id: null, more: rest.length, ids: rest.map((b) => b.id), ranks: rest.map((b) => b.rank), w: moreSize.w, h: moreSize.h });
     const w = Math.max(...rows.map((r) => r.w));
     const h = rows.reduce((n, r) => n + r.h, 0) + gapPx * (rows.length - 1);
     const x = members.reduce((n, b) => n + b.x, 0) / members.length;
@@ -141,7 +196,7 @@ export function layoutBadgeBands({ boxes = [], cards = [], fixed = [], panel = n
     let y = b.y;
     b.rows.forEach((r) => {
       if (r.id != null) placed.push({ id: r.id, x: b.x, y });
-      else mores.push({ x: b.x, y, w: r.w, h: r.h, count: r.more });
+      else mores.push({ x: b.x, y, w: r.w, h: r.h, count: r.more, ids: r.ids, label: collapsedLabel(r.ranks, r.more) });
       y += r.h + gapPx;
     });
     hidden.push(...b.hidden);

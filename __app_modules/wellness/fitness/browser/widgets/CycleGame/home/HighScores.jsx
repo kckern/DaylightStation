@@ -11,7 +11,7 @@ export function HighScores({ highScores = [], onSelectRecord, disabled = false }
   if (highScores.length === 0) return null;
   return (
     <section className="cgh-hs-section" data-testid="cycle-game-highscores">
-      <div className="cgh-section-label">High scores</div>
+      <div className="cgh-section-label" data-secondary>High scores</div>
       <div className="cgh-highscores">
         {highScores.map((hs) => (
           <button

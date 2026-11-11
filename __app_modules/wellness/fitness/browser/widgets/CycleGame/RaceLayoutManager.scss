@@ -33,7 +33,7 @@
   &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(350px, 38%); gap: 8px; }
   &--wide.race-layout--no-speedo { grid-template-rows: minmax(0, 1fr); }
   .race-layout__wide-top { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); gap: 8px; }
-  .race-layout__top3 { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px; }
+  .race-layout__top3 { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
 
   // Solo mode: main column (chart over the gauge + pace band) beside the POV
   // road as a right column at 28% of the width. Every track has an explicit

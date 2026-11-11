@@ -22,7 +22,7 @@
 // gauge's vertical center) is therefore guaranteed clear of them by construction.
 
 // Avatar diameter, as a fraction of the gauge's pixel size.
-export const AVATAR_RATIO = 0.4;
+export const AVATAR_RATIO = 0.36;
 
 // The overlay wrapper's font-size, as a fraction of the gauge's pixel size —
 // the anchor every em-based overlay child (rpm sub-line, speed hero) scales

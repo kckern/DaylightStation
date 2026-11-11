@@ -229,7 +229,7 @@ export default function CycleGameHome({
 
         <HighScores highScores={highScores} onSelectRecord={onSelectRecord} disabled={busy} />
 
-        <div className="cgh-section-label">History</div>
+        <div className="cgh-section-label" data-secondary>History</div>
         <HistoryTable records={records} onSelectRecord={onSelectRecord} disabled={busy} />
       </aside>
 

@@ -29,7 +29,7 @@ export default function FeaturedCourseCard({ ladder = null, onRide = null, resol
     <section className="cgh-featured" data-testid="featured-course-card">
       <div className="cgh-featured__head">
         <div>
-          <div className="cgh-section-label cgh-section-label--sub">This week&rsquo;s course</div>
+          <div className="cgh-section-label cgh-section-label--sub" data-secondary>This week&rsquo;s course</div>
           <h3 className="cgh-featured__title">{course.label || course.id}</h3>
         </div>
         <span className="cgh-featured__ends">{remaining > 0 ? `Ends in ${remaining}d` : 'Final day'}</span>

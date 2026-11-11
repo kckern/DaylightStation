@@ -138,3 +138,35 @@ describe('dial labels stay inside the gauge box', () => {
     }
   }
 });
+
+describe('dial numerals are readable from the bike', () => {
+  it('render at >= 24 px at 243 px and >= 28 px at 320 px, about 9-10% of the gauge', () => {
+    expect((labelFontUnits(243) * 243) / 200).toBeGreaterThanOrEqual(24 - 1e-9);
+    expect((labelFontUnits(320) * 320) / 200).toBeGreaterThanOrEqual(28 - 1e-9);
+    expect((labelFontUnits(320) * 320) / 200 / 320).toBeGreaterThan(0.09);
+    expect((labelFontUnits(320) * 320) / 200 / 320).toBeLessThan(0.1);
+  });
+  for (const maxRpm of [120, 180, 250]) {
+    for (const gaugePx of [243, 309, 320]) {
+      it(`max ${maxRpm} at ${gaugePx}px: inside the box, clear of the avatar disc and of each other`, () => {
+        const fs = labelFontUnits(gaugePx);
+        const { tickStep, labelStep } = tickStepsFor(maxRpm);
+        const labelled = buildTicks({ maxRpm, tickStep, labelStep, labelFontSize: fs }).filter((t) => t.major);
+        const avatarR = 0.36 * 100; // AVATAR_RATIO of the 200 box
+        for (const t of labelled) {
+          const b = t.labelPos.box;
+          expect(b.x).toBeGreaterThanOrEqual(0); expect(b.y).toBeGreaterThanOrEqual(0);
+          expect(b.x + b.width).toBeLessThanOrEqual(200); expect(b.y + b.height).toBeLessThanOrEqual(200);
+          // nearest point of the label box to the dial centre stays outside the avatar disc
+          const nx = Math.min(Math.max(100, b.x), b.x + b.width); const ny = Math.min(Math.max(100, b.y), b.y + b.height);
+          expect(Math.hypot(nx - 100, ny - 100)).toBeGreaterThanOrEqual(avatarR - 2) // box corners are line-height padding, not ink;
+        }
+        for (let i = 0; i < labelled.length; i++) for (let j = i + 1; j < labelled.length; j++) {
+          const a = labelled[i].labelPos.box; const c = labelled[j].labelPos.box;
+          const overlap = a.x < c.x + c.width && c.x < a.x + a.width && a.y < c.y + c.height && c.y < a.y + a.height;
+          expect(overlap).toBe(false);
+        }
+      });
+    }
+  }
+});

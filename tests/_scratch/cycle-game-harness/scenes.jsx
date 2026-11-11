@@ -223,14 +223,16 @@ function fourRiders() {
 function sixRiders() { return manyRiders(6); }
 function fiveRiders() { return manyRiders(5); }
 // Four riders bunched within 15 m of each other: the road panel's worst case for badges.
-function fourBunched() {
+function fourBunched() { return bunched([960, 955, 950, 946]); }
+// Six riders within 20 m: forces the road panel's "+N" badge (4th-6th).
+function sixBunched() { return bunched([960, 955, 950, 946, 944, 941]); }
+function bunched(dist) {
   const t = 200;
-  const dist = [960, 955, 950, 946];
   const riders = {}; const riderLive = {};
   dist.forEach((d, i) => {
     const n = i + 1; const id = `user_${n}`;
     riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, d, { wobble: 0.1 + i * 0.02 }));
-    riderLive[id] = withAvatar(id, live({ rpm: 90 - i, speedKmh: 28 - i * 0.2, placement: n, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active'][i], 0.5) }));
+    riderLive[id] = withAvatar(id, live({ rpm: 90 - i, speedKmh: 28 - i * 0.2, placement: n, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active', 'active', 'active'][i], 0.5) }));
   });
   return { winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, riders, riderLive };
 }
@@ -286,6 +288,16 @@ export const SCENES = {
           { id: 'bike-2', name: 'Bike 2', rider: null, rpm: 0, iconSrc: BIKE('bike-2') },
         ]} />
     </Container>) },
+  // A full history: the rail must show only the rows that fit whole.
+  'lobby-history-full': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase}
+        records={Array.from({ length: 12 }, (_, i) => ({ ...RECORDS[i % 4], raceId: `rx${i}`, whenDay: ['Today', 'Today', 'Yesterday', 'Mon', 'Sun', 'Sat'][Math.floor(i / 2)] }))}
+        bikes={[
+          { id: 'bike-1', name: 'Bike 1', rider: 'user_1', rpm: 62, sensorLive: true, iconSrc: BIKE('bike-1') },
+          { id: 'bike-2', name: 'Bike 2', rider: null, rpm: 0, iconSrc: BIKE('bike-2') },
+        ]} />
+    </Container>) },
   'lobby-no-signal': { render: () => (
     <Container>
       <CycleGameHome {...homeBase}
@@ -329,6 +341,7 @@ export const SCENES = {
   'race-five-riders': raceScene(fiveRiders),
   'race-six-riders': raceScene(sixRiders),
   'race-four-bunched': raceScene(fourBunched),
+  'race-six-bunched': raceScene(sixBunched),
   'race-menu-open': raceScene(soloTime),
   'race-toast-parked': toastScene(twoOneParked, { id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }),
   'race-toast-boost': toastScene(soloTime, { id: 2, variant: 'boost', icon: null, title: 'Rider A: Hot \u00d71.4' }),

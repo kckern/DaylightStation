@@ -5,7 +5,7 @@ import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
-import { povWorld, povBadges, layoutBadgeBands, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
+import { povWorld, povBadges, layoutBadgeBands, badgeLeaders, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';
 import "./PovGrid.scss";
@@ -15,6 +15,20 @@ const RACE_TICK_MS = 1000;   // matches RACE_TICK_MS data cadence
 const ROAD_HALF_W = 4;       // road spans x ∈ [-4, +4] world units
 const LANE_INSET = 0.85;     // riders spread across ±halfW*inset
 const BADGE_STACK_GAP_PX = 3; // vertical breathing room when badges de-collide
+const MAX_LEADER_LINES = 8;
+// Fills a pooled "+N" badge: the ordinals it stands for and one lane-colour dot per rider.
+// Rebuilt only when the content changes (the render loop calls this every frame).
+function fillMore(el, label, ids, colorFor = (id) => LINE_COLORS_FALLBACK) {
+  const key = `${label}|${ids.join(',')}`;
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  el.textContent = '';
+  const t = document.createElement('span'); t.textContent = label; el.appendChild(t);
+  const dots = document.createElement('span'); dots.className = 'cg-pov__more-dots';
+  ids.forEach((id) => { const d = document.createElement('i'); d.style.background = colorFor(id); dots.appendChild(d); });
+  el.appendChild(dots);
+}
+const LINE_COLORS_FALLBACK = '#8892a6';
 const GRID_MINOR_M = 1;      // minor metre mark spacing
 const GRID_MAJOR_M = 10;     // shader road-stripe spacing (visual grid density — unrelated to labels)
 // DOM metre-label spacing (audit UX §7): widened from every 10 m to every
@@ -152,6 +166,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
                                           // (once per race tick), never per frame.
   const moreEls = useRef([]);             // pooled "+N" collapse badges
   const moreSize = useRef(null);          // measured once
+  const leaderEls = useRef([]);           // pooled leader lines (lifted badge -> its rider's card)
   const horizonChipRef = useRef(null);    // pinned "LEADER +N m" plate
   const chipShownRef = useRef(false);     // horizon-chip hysteresis state
   const sceneRef = useRef(null);          // built three.js scene + pools
@@ -408,7 +423,8 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         const root = rootRef.current;
         const panel = root ? { w: root.clientWidth, h: root.clientHeight } : null;
         if (!moreSize.current && moreEls.current[0]) {
-          const m = moreEls.current[0]; m.textContent = '+9';
+          // Widest realistic content: a three-rider range with a dot per rider.
+          const m = moreEls.current[0]; fillMore(m, '10th\u201312th', ['m0', 'm1', 'm2']);
           moreSize.current = { w: m.offsetWidth, h: m.offsetHeight };
         }
         const chip = horizonChipRef.current;
@@ -429,11 +445,25 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
         });
         out.hidden.forEach((id) => { if (byId[id]) byId[id].style.visibility = 'hidden'; });
+        // Leader lines: a badge lifted off its rider (or folded into a "+N") stays tied to
+        // the card by a thin line in the rider's lane colour, drawn behind the badges.
+        const lines = badgeLeaders({
+          natural: boxes.map(({ el, ...b }) => b), placed: out.placed, mores: out.mores, cards: cardBoxes,
+        });
+        leaderEls.current.forEach((ln, i) => {
+          if (!ln) return;
+          const d = lines[i];
+          if (!d) { ln.style.visibility = 'hidden'; return; }
+          ln.setAttribute('x1', d.x1.toFixed(1)); ln.setAttribute('y1', d.y1.toFixed(1));
+          ln.setAttribute('x2', d.x2.toFixed(1)); ln.setAttribute('y2', d.y2.toFixed(1));
+          ln.style.stroke = colorOf(d.id);
+          ln.style.visibility = 'visible';
+        });
         moreEls.current.forEach((m, i) => {
           const d = out.mores[i];
           if (!m) return;
           if (!d) { m.style.visibility = 'hidden'; return; }
-          m.textContent = `+${d.count}`;
+          fillMore(m, d.label, d.ids, colorOf);
           m.style.visibility = 'visible';
           m.style.transform = `translate(${d.x.toFixed(1)}px,${d.y.toFixed(1)}px) translate(-50%,0)`;
         });
@@ -601,6 +631,11 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       </div>
       {/* Fixed-screen-size rank + gap-to-next badges (not depth-scaled), pinned
           below each card by the rAF loop. Rank/gap mirror the standings tower. */}
+      <svg className="cg-pov__leaders" aria-hidden="true">
+        {Array.from({ length: MAX_LEADER_LINES }, (_, i) => (
+          <line key={i} data-testid="pov-badge-leader" ref={(el) => { leaderEls.current[i] = el; }} style={{ visibility: 'hidden' }} />
+        ))}
+      </svg>
       <div className="cg-pov__badges" aria-hidden="true">
         {lineupIds.map((id) => (
           <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-badge"
@@ -618,7 +653,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       <div className="cg-pov__badges" aria-hidden="true">
         {[0, 1, 2].map((i) => (
           <div key={i} className="cg-pov__badge cg-pov__badge--more" data-testid="pov-badge-more"
-            ref={(el) => { moreEls.current[i] = el; }} style={{ visibility: 'hidden' }}>+9</div>
+            ref={(el) => { moreEls.current[i] = el; }} style={{ visibility: 'hidden' }} />
         ))}
       </div>
       {/* Horizon leader chip — pinned high-centre, shown only when the true gap
