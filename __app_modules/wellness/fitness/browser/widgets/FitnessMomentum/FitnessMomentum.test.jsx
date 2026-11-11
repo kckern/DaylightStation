@@ -14,9 +14,9 @@ const sessions = [{
   },
 }];
 const GEMS = [
-  { area: 'move', earned: 2, color: '#8e5bd0' },
-  { area: 'school', earned: 3, color: '#2e9e5b' },
-  { area: 'games', earned: 1, color: '#ff7a2f' },
+  { area: 'move', held: 2, color: '#8e5bd0' },
+  { area: 'school', held: 3, color: '#2e9e5b' },
+  { area: 'games', held: 1, color: '#ff7a2f' },
 ];
 const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading', gems: GEMS }] };
 let standings = STANDINGS;
@@ -40,17 +40,24 @@ import FitnessMomentum from "./FitnessMomentum.jsx";
 describe('FitnessMomentum', () => {
   beforeEach(() => { standings = STANDINGS; });
 
-  it('rail shows one chip per earned area with ×N', () => {
+  it('rail: a count under every token, plain gems in area colour, no area icons', () => {
     const { container } = render(<FitnessMomentum />);
     const rail = container.querySelectorAll('.fitness-momentum__card')[0].querySelector('button.fitness-momentum__rail');
-    expect(rail.querySelector('.fitness-momentum__silver').textContent).toContain('27');
+    expect(rail.querySelector('.fitness-momentum__silver .fitness-momentum__count').textContent).toBe('27');
     const chips = [...rail.querySelectorAll('.fitness-momentum__chip')];
     expect(chips.map((c) => c.dataset.area)).toEqual(['move', 'school', 'games']);
-    expect(chips.map((c) => c.querySelector('.fitness-momentum__times')?.textContent ?? '')).toEqual(['×2', '×3', '']);
-    // The board's own gem: the area's icon on a solid stone in the area colour.
-    expect(chips.map((c) => c.querySelector('.gem-glyph .area-icon').dataset.area)).toEqual(['move', 'school', 'games']);
-    for (const c of chips) expect(c.querySelector('.gem-glyph').dataset.look).toBe('lit');
+    expect(chips.map((c) => c.querySelector('.fitness-momentum__count').textContent)).toEqual(['2', '3', '1']);
+    expect(chips.every((c) => c.querySelector('.gem-icon.fitness-momentum__gem'))).toBe(true);
+    expect(rail.querySelector('.area-icon')).toBeNull();
+    expect(rail.querySelector('.gem-glyph')).toBeNull();
     expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. Move: 2 gems this week. School: 3 gems this week. Games: 1 gem this week. Open the gem board');
+  });
+
+  it('the Gems chip is the legend: one gem per area with its name', () => {
+    const chip = render(<FitnessMomentum />).container.querySelector('.fitness-momentum__gems-chip');
+    expect([...chip.querySelectorAll('[data-area]')].map((n) => n.textContent)).toEqual(['Move', 'School', 'Games']);
+    expect(chip.querySelectorAll('.gem-icon')).toHaveLength(3);
+    expect(chip.getAttribute('aria-label')).toBe('Open the gem board');
   });
 
   it('a child with nothing earned shows silver only', () => {
@@ -64,11 +71,11 @@ describe('FitnessMomentum', () => {
   });
 
   it('in-progress, leading and zero cells never render', () => {
-    // The rail reads only the earned roll-up: an old payload's per-cell list,
-    // a zero, a negative or an unknown area earns no chip.
+    // The rail reads only the held roll-up: an old payload's per-cell list,
+    // a zero, a negative, an unknown area or the old `earned` key earns no chip.
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0],
       move: [{ id: 'ring-contests', label: 'Ring contests', color: '#8e5bd0', cell: { state: 'leading', week: 0, streak: null, parts: [] } }],
-      gems: [{ area: 'move', earned: 0, color: '#8e5bd0' }, { area: 'school', earned: -1, color: '#2e9e5b' }, { area: 'art', earned: 2, color: '#123456' }, { area: 'games', earned: 1, color: '#ff7a2f' }] }] };
+      gems: [{ area: 'move', held: 0, color: '#8e5bd0' }, { area: 'school', held: -1, color: '#2e9e5b' }, { area: 'art', held: 2, color: '#123456' }, { area: 'school', earned: 4, color: '#2e9e5b' }, { area: 'games', held: 1, color: '#ff7a2f' }] }] };
     const { container } = render(<FitnessMomentum />);
     const rail = container.querySelector('button.fitness-momentum__rail');
     expect([...rail.querySelectorAll('.fitness-momentum__chip')].map((c) => c.dataset.area)).toEqual(['games']);

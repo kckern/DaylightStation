@@ -50,10 +50,12 @@
   // Right-sized placeholder matching the ring + total footprint, so the
   // headline doesn't reflow when the real total hydrates in.
   &__house-rings--skel { width: 5rem; height: 1.4rem; border-radius: 5px; }
+  // The Gems chip is the area legend (a gem in each area's colour, and its
+  // name) and the way into the Gem Board.
   &__gems-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.7rem;
     margin-left: 0.5rem;
     padding: 0.1rem 0.7rem;
     border: 1px solid rgba(255, 255, 255, 0.18);
@@ -65,6 +67,8 @@
     line-height: 1.35;
     cursor: pointer;
   }
+
+  &__legend { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
 
   &__zero { flex: none; color: #a9a9ae; font-size: 1.1rem; }
 
@@ -178,11 +182,12 @@
   &__weekbar.is-current &__weekfill { filter: none; }
   &__weekseg { width: 100%; display: block; }
 
-  // The foot of the card: silver, then one chip per area with gems earned this
-  // week. A button (it opens the Gem Board) as wide as the card. Each token is
-  // its picture over its number (the coin over the bank's silver, a gem over
-  // ×N), so the coin and three areas fit one line of the narrowest column at
-  // full size; the rare overflow wraps rather than shrinks.
+  // The foot of the card: silver, then one plain gem per area with gems held
+  // this week. A button (it opens the Gem Board) as wide as the card. Every
+  // token is its picture over its count (the coin over the bank's silver, a gem
+  // over its number), the pictures one size and the counts one size, so every
+  // count sits on one line. The coin and three areas fit one line of the
+  // narrowest column at full size; the rare overflow wraps rather than shrinks.
   &__rail {
     justify-self: stretch;
     align-self: stretch;
@@ -219,8 +224,6 @@
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
-  &__coin { width: var(--momentum-icon); height: var(--momentum-icon); flex: none; }
-  // The board's glyph is drawn in em with a 3.2em stone: size it so the stone
-  // is the shared icon size, and drop the glyph's ring box around it.
-  &__chip .gem-glyph { width: auto; height: auto; font-size: calc(var(--momentum-icon) / 3.2); }
+  &__coin, &__gem { width: var(--momentum-icon); height: var(--momentum-icon); flex: none; display: block; }
+  &__count { margin-top: 2px; }
 }

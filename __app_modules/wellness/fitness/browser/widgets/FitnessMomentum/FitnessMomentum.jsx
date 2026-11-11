@@ -3,7 +3,7 @@
 // tag, this week's rings (the number to read from across the garage), the four
 // Monday weeks as bars (height = rings, bands = the green/yellow/orange/red
 // zone breakdown, current week highlighted) and a rail with bank silver and one
-// chip per area the person has EARNED gems in this week. The rail opens the Gem
+// plain gem per area the person HOLDS gems in this week. The rail opens the Gem
 // Board; it sits at the foot of the card so a child can reach it on the touch
 // screen. Bars carry no numbers or dates: at four to a column they cannot be
 // read from the room, and the week's figure is the hero above them.
@@ -14,8 +14,7 @@ import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 import CoinIcon from '@/lib/icons/CoinIcon.jsx';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
-import GemGlyph from '@/lib/economy/GemBoard/GemGlyph.jsx';
-import { AREAS } from '@/lib/economy/GemBoard/AreaIcon.jsx';
+import { AREAS, AREA_COLORS, AREA_WORDS } from '@/lib/economy/GemBoard/AreaIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import GemBoardOverlay from '@/lib/economy/GemBoard/GemBoard.jsx';
 import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
@@ -95,32 +94,33 @@ function Avatar({ id, name }) {
   return <img className="fitness-momentum__avatar" src={`/api/v1/static/img/users/${id}`} alt={name} onError={() => setFailed(true)} />;
 }
 
-const AREA_WORDS = { move: 'Move', school: 'School', games: 'Games' };
-
 /**
- * The areas a person has EARNED gems in this week (`purse.gems`, rolled up by
- * the server in Move · School · Games order). Nothing in progress, leading or
- * zero ever reaches this list; anything malformed is dropped rather than drawn.
+ * The areas a person HOLDS gems in this week (`purse.gems`, rolled up by the
+ * server in Move · School · Games order). held = earned, plus a contest gem
+ * while leading: what the Gem Board draws solid. A running day-count or a zero
+ * never reaches this list; anything malformed is dropped rather than drawn.
  */
-export function earnedChips(purse) {
+export function heldChips(purse) {
   return (Array.isArray(purse?.gems) ? purse.gems : [])
-    .filter((g) => AREAS.includes(g?.area) && Number.isInteger(g.earned) && g.earned > 0 && typeof g.color === 'string');
+    .filter((g) => AREAS.includes(g?.area) && Number.isInteger(g.held) && g.held > 0 && typeof g.color === 'string');
 }
 
 /**
- * The foot of a card: bank silver, then one chip per area with gems earned
- * this week — the board's own gem (area colour, area icon) and ×N past one. A
- * child with nothing earned shows silver alone. One button, opening the board
+ * The foot of a card: bank silver, then one token per area with gems held this
+ * week. Every token is its picture over its count (the coin over the silver, a
+ * plain gem in the area's colour over its number), so the counts sit on one
+ * line. Area identity is the colour; the headline's Gems chip is the legend.
+ * A child with nothing held shows silver alone. One button, opening the board
  * on this person. Someone without a wallet gets an empty rail, which still
  * takes the row's foot height (the cards share their rows), so every card's
  * bars sit on one baseline.
  */
 function Rail({ purse, name, onOpen }) {
   if (!purse) return <span className="fitness-momentum__rail fitness-momentum__rail--empty" aria-hidden="true" />;
-  const chips = earnedChips(purse);
+  const chips = heldChips(purse);
   const words = [
     `${name}: ${purse.silver} silver`,
-    ...chips.map((g) => `${AREA_WORDS[g.area]}: ${g.earned} ${g.earned === 1 ? 'gem' : 'gems'} this week`),
+    ...chips.map((g) => `${AREA_WORDS[g.area]}: ${g.held} ${g.held === 1 ? 'gem' : 'gems'} this week`),
   ].join('. ');
   return (
     <button type="button" className="fitness-momentum__rail" aria-label={`${words}. Open the gem board`} onClick={onOpen}>
@@ -130,8 +130,8 @@ function Rail({ purse, name, onOpen }) {
       </span>
       {chips.map((g) => (
         <span key={g.area} className="fitness-momentum__chip" data-area={g.area}>
-          <GemGlyph cell={{ state: 'earned', week: 1 }} color={g.color} area={g.area} />
-          {g.earned > 1 && <span className="fitness-momentum__times">×{g.earned}</span>}
+          <GemIcon className="fitness-momentum__gem" color={g.color} solid size="1em" />
+          <span className="fitness-momentum__count">{g.held}</span>
         </span>
       ))}
     </button>
@@ -156,7 +156,7 @@ export default function FitnessMomentum() {
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
   const loading = rawSessions == null;
-  // Bank silver and the gems earned this week per learner (/api/v1/earnings/standings).
+  // Bank silver and the gems held this week per learner (/api/v1/earnings/standings).
   // Missing, failed or economy-off → empty rails; the ring bars stand alone.
   const rawStandings = useScreenData('standings');
   const purseById = useMemo(() => {
@@ -216,9 +216,13 @@ export default function FitnessMomentum() {
             </span>
           )}
         {economyOn && (
+          // The area legend, and the way into the Gem Board.
           <button type="button" className="fitness-momentum__gems-chip" onClick={() => setBoard({ focus: null })} aria-label="Open the gem board">
-            <GemIcon size="1.1em" />
-            <span>Gems</span>
+            {AREAS.map((a) => (
+              <span key={a} className="fitness-momentum__legend" data-area={a}>
+                <GemIcon size="1em" color={AREA_COLORS[a]} solid />{AREA_WORDS[a]}
+              </span>
+            ))}
           </button>
         )}
       </div>
