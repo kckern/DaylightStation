@@ -32,7 +32,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
 
   return (
     <section className="cgh-race">
-      <div className="cgh-section-label">Race type</div>
+      <div className="cgh-section-label" data-secondary>Race type</div>
       <div className="cgh-tiles cgh-tiles--three">
         <button
           type="button"
@@ -93,7 +93,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
           </div>
         ) : raceType ? (
           <div className="cgh-value" data-testid="cgh-value" key={raceType}>
-            <div className="cgh-section-label cgh-section-label--sub">
+            <div className="cgh-section-label cgh-section-label--sub" data-secondary>
               {raceType === 'distance' ? 'How far?' : 'How long?'}
             </div>
             <div className="cgh-value__row">

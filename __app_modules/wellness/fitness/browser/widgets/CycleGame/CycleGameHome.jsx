@@ -165,7 +165,7 @@ export default function CycleGameHome({
         />
 
         <section className="cgh-grid-section">
-          <div className="cgh-section-label">Starting grid</div>
+          <div className="cgh-section-label" data-secondary>Starting grid</div>
           {bikes.length === 0 && ghostRoster.length === 0 ? (
             <div className="cgh-empty">No bikes detected (equipment with a cadence sensor).</div>
           ) : (

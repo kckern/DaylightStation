@@ -66,7 +66,7 @@ export function RiderPicker({ bike, people = [], currentRiderId = null, onAssign
       <div className="cgh-picker__sheet">
         <div className="cgh-picker__head">
           <div className="cgh-picker__heading">
-            <div className="cgh-section-label cgh-section-label--sub">Assign rider</div>
+            <div className="cgh-section-label cgh-section-label--sub" data-secondary>Assign rider</div>
             <div className="cgh-picker__bike">{bike?.name || bike?.id}</div>
           </div>
           <button type="button" className="cgh-picker__close" aria-label="close" onClick={onClose}>×</button>

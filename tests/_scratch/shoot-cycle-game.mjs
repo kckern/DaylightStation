@@ -20,7 +20,7 @@ const OUT = path.join(here, 'out/cycle-game');
 fs.mkdirSync(OUT, { recursive: true });
 
 const ALL = [
-  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'staging', 'countdown',
+  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-roster', 'lobby-volume', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
   'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
@@ -39,6 +39,29 @@ for (const scene of scenes) {
 
 // Per-scene interaction run after ready, before the screenshot.
 const ACTIONS = {
+  'lobby-rider-picker': async (page) => {
+    await page.click('[data-testid="bike-bike-2"] .cgh-slot__main');
+    await page.waitForSelector('.cgh-picker', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
+  'lobby-ghost-picker': async (page) => {
+    await page.click('[data-testid="course-ghost"]');
+    await page.waitForSelector('[data-testid="ghost-picker"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
+  'lobby-ghost-roster': async (page) => {
+    await page.click('[data-testid="course-ghost"]');
+    await page.waitForSelector('[data-testid="ghost-picker"]', { timeout: 5000 });
+    await page.click('[data-testid="ghost-R3"]');
+    await page.click('[data-testid="ghost-R3"]');
+    await page.waitForSelector('[data-testid="ghost-roster"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
+  'lobby-volume': async (page) => {
+    await page.click('[data-testid="cycle-game-volume-open"]');
+    await page.waitForSelector('.cgh-picker--volume', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
   'lobby-no-signal': async (page) => {
     await page.click('[data-testid="cycle-game-start"]');
     await page.waitForSelector('[data-testid="sensor-warning"]', { timeout: 5000 });
@@ -154,11 +177,13 @@ function measure() {
   out.raceTextMinPx = raceFonts.length ? raceFonts[0].px : null;
   out.raceTextSmallest = raceFonts.slice(0, 6);
   out.raceTextBelow20 = raceFonts.filter((f) => f.px < 19.95).slice(0, 40);
-  // Lobby: content text a person reads standing at the touchscreen must be >= 20 px; the
-  // eyebrow labels and column headers are allow-listed at 16 px via data-secondary.
+  // Lobby: content text a person reads standing at the touchscreen must be >= 20 px across
+  // the WHOLE lobby (main column, rail, modals); eyebrow labels and column headers are
+  // allow-listed at 16 px via data-secondary.
+  const lobbyRoot = document.querySelector('[data-testid="cycle-game-home"]');
   const lobbyEl = document.querySelector('[data-testid="cycle-game-records"]');
-  if (lobbyEl) {
-    const lf = textEls.filter((el) => lobbyEl.contains(el) && !el.closest('[data-secondary]'))
+  if (lobbyRoot && lobbyEl) {
+    const lf = textEls.filter((el) => lobbyRoot.contains(el) && !el.closest('[data-secondary]'))
       .map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(screenPx(el)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }))
       .sort((a, b) => a.px - b.px);
     out.lobbyTextMinPx = lf.length ? lf[0].px : null;

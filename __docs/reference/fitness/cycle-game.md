@@ -1688,8 +1688,16 @@ Minimums above the step-2 floor, each gated per scene by the harness:
   all-caps eyebrows (section labels, column headers, day headers) stay at step 1,
   marked `data-secondary`. The rail is 36 rem wide. History shows only the rows
   that fit whole, most recent first (`fitHistoryRows` hides the rest and any day
-  header left without a row); it never scrolls and never clips a row. Gate:
-  `lobbyTextMinPx` at least 20 for the rail, no clipped rail element.
+  header left without a row); it never scrolls and never clips a row.
+- The whole lobby is 20 px or more except eyebrow labels: the main column (subtitle,
+  race-type tiles and hints, presets and their sub-labels, bike slots, boost-rule
+  line, sensor warning, recovered-race banner, Start) and the rider, ghost and
+  volume modals are step 2 or above. Eyebrows ("Race type", "How long?", "Starting
+  grid", modal headings) stay at step 1 and carry `data-secondary`. In the ghost
+  picker only the winner's avatar carries a metric, as a pill under the circle.
+  Gate: `lobbyTextMinPx` at least 20 across `[data-testid="cycle-game-home"]` in every
+  `lobby-*` scene, including `lobby-rider-picker`, `lobby-ghost-picker`,
+  `lobby-ghost-roster` and `lobby-volume`; no clipped rail element.
 
 The away overlay ("NO SIGNAL / Check the sensor", "PARKED / Pedal to rejoin")
 sits on two lines and hides the dial numerals while it is up, at every gauge size.

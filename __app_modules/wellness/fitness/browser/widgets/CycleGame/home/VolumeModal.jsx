@@ -18,7 +18,7 @@ export function VolumeModal({ volume = 1, muted = false, onSetVolume, onClose })
       <div className="cgh-picker__sheet cgh-volume-sheet">
         <div className="cgh-picker__head">
           <div className="cgh-picker__heading">
-            <div className="cgh-section-label cgh-section-label--sub">Master volume</div>
+            <div className="cgh-section-label cgh-section-label--sub" data-secondary>Master volume</div>
             <div className="cgh-picker__bike" data-testid="cycle-game-volume-readout">
               {muted ? 'Muted' : `${Math.round((volume ?? 0) * 100)}%`}
             </div>

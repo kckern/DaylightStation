@@ -92,7 +92,7 @@ export function GhostPicker({ candidates = [], currentGhost = null, onSelect, on
       <div className="cgh-picker__sheet">
         <div className="cgh-picker__head">
           <div className="cgh-picker__heading">
-            <div className="cgh-section-label cgh-section-label--sub">Race a ghost</div>
+            <div className="cgh-section-label cgh-section-label--sub" data-secondary>Race a ghost</div>
             <div className="cgh-picker__bike">Chase a past race · tap to focus, tap again to choose</div>
           </div>
           <button type="button" className="cgh-picker__close" aria-label="close" onClick={onClose}>×</button>
@@ -183,7 +183,7 @@ export function GhostPicker({ candidates = [], currentGhost = null, onSelect, on
             >
               ×
             </button>
-            <div className="cgh-roster__eyebrow">Starting grid</div>
+            <div className="cgh-roster__eyebrow" data-secondary>Starting grid</div>
             <h3 className="cgh-roster__title">Race against…</h3>
             <p className="cgh-roster__hint">Tap to choose riders — or just race everyone.</p>
 
