@@ -4,13 +4,19 @@ import getLogger from '@/lib/logging/Logger.js';
 
 // Stills from inside an episode, for the show screen's rail. The media
 // server keeps a preview index (BIF) per video part; a frame at any offset
-// is one GET through the app's proxy. Nine frames, evenly spaced through the
-// runtime (skipping the title card and the credits). An episode whose part
-// has no index gets null — the rail then shows the episode's own art.
+// is one GET through the app's proxy. Up to 81 frames, in runtime order,
+// evenly spaced through 5 %…95 % of it (skipping the title card and the
+// credits) and never closer than 5 s apart, so a short video gets fewer —
+// distinct — frames. Only URLs are built here; the grid loads them a few at a
+// time (episodeStillsGrid.js). An episode whose part has no index gets null —
+// the rail then shows the episode's own art.
 
-export const STILL_COUNT = 9;
-export const STILL_WIDTH = 400;
-export const STILL_HEIGHT = 225;
+export const MAX_STILLS = 81;
+export const MIN_SPACING_MS = 5000;
+// A grid cell is a third of the thumbnail, ~110 CSS px wide on the garage
+// display; 240 px covers it at its 1.39 device-pixel ratio.
+export const STILL_WIDTH = 240;
+export const STILL_HEIGHT = 135;
 const FOCUS_SETTLE_MS = 250;
 
 let _logger;
@@ -23,9 +29,18 @@ export function resetEpisodeStillsCache() { cache.clear(); }
 export const stillUrl = (partId, offsetMs) =>
   `/api/v1/proxy/plex/library/parts/${partId}/indexes/sd/${offsetMs}?w=${STILL_WIDTH}&h=${STILL_HEIGHT}`;
 
-/** The nine offsets: at 10%, 20% … 90% of the runtime. */
-export const stillOffsets = (durationMs) =>
-  Array.from({ length: STILL_COUNT }, (_, i) => Math.round((durationMs * (i + 1)) / (STILL_COUNT + 1)));
+/** How many stills a runtime can give: up to 81, at least 5 s apart. */
+export const stillCount = (durationMs) => {
+  const ms = Number(durationMs) || 0;
+  if (!(ms > 0)) return 0;
+  return Math.max(1, Math.min(MAX_STILLS, Math.floor((ms * 0.9) / MIN_SPACING_MS)));
+};
+
+/** The offsets: the middles of equal slices of 5 %…95 % of the runtime. */
+export const stillOffsets = (durationMs) => {
+  const n = stillCount(durationMs);
+  return Array.from({ length: n }, (_, i) => Math.round(durationMs * (0.05 + (0.9 * (i + 0.5)) / n)));
+};
 
 /** The part with a preview index, from a media-server metadata reply. */
 export function indexedPart(metadata) {

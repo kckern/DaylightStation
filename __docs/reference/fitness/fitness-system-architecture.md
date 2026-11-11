@@ -207,33 +207,51 @@ episode with no duration, is credited — the session is the only evidence.
 - **Episode panel** (`player/EpisodePanel.jsx`). The show screen's left column
   always shows what is inside the focused episode — the next-up one on load,
   then whatever is tapped (title strip) or reached with the pad. Top to bottom:
-  the show name (with the governed lock and voice-memo button); the **rail**
+  a **breadcrumb** "Show › Episode title" (SVG chevron; the governed lock and
+  voice-memo button at its end; no episode number); the **rail**
   (`player/EpisodeStillsRail.jsx`): the season's poster (2:3) beside a 16:9
-  **carousel** of the same height that cycles ten frames every 1.5 s — a 3×3
-  mosaic of nine stills from inside the episode, then each still whole — with a
-  short crossfade, paused while the page is hidden or the rail is off screen,
-  still (on the mosaic) under `prefers-reduced-motion`; then the title,
-  "Episode N · M min", the description (four lines), **Resume m:ss + Start
-  over** on a resumable show with a saved position (resume bar along the
-  button's foot) else **Play** (a sequential-locked episode gets Unlock or a
-  "Locked" note in the same slot); then the **history** (`completionRows`): one
-  row per time it was actually done, newest first — who (credited riders,
-  guests included, household names), when in words (`whenInWords`: Today,
-  Tuesday, 3 weeks ago, May 2025) and the circumstances (session minutes,
-  rings, other videos in that session). Nobody is listed for not having done
-  it; with no completions the panel says "Nobody has done this one yet".
-  Every image is shown whole (`object-fit: contain`), sizes are fixed by
-  aspect ratio from first paint, nothing rests at a fractional opacity, and
-  nothing is under 16px.
+  **thumbnail** of the same height with the runtime ("50 min") on a solid chip
+  in its bottom-right corner; the description (four lines) directly under the
+  rail; **Resume m:ss + Start over** on a resumable show with a saved position
+  (resume bar along the button's foot) else **Play** (a sequential-locked
+  episode gets Unlock or a "Locked" note in the same slot); then — only when
+  there is any — the **history** (`completionRows`): one row per time it was
+  actually done, newest first — who (credited riders, guests included,
+  household names), when in words (`whenInWords`: Today, Tuesday, 3 weeks ago,
+  May 2025) and the circumstances (session minutes, rings, other videos in
+  that session). Nobody is listed for not having done it, and an episode
+  nobody has done shows no history section at all. Every image is shown whole
+  (`object-fit: contain`), sizes are fixed by aspect ratio from first paint,
+  nothing rests at a fractional opacity, and nothing is under 16px.
+- **Thumbnail grid** (`player/EpisodeStillsRail.jsx`,
+  `player/episodeStillsGrid.js`). Always a 3×3 grid of stills from inside the
+  episode. The stills (runtime order) are split into nine consecutive slices,
+  one per cell (`cellPools`) — cell 0 is the opening minutes, cell 8 the
+  closing ones; with fewer than nine they are spread one per cell. Once a
+  second (`CELL_MS`) one cell, in reading order (top-left, top-centre,
+  top-right, …), moves on to the next still of its own slice with a 300 ms
+  fade-in **over** the old still, which stays solid beneath — the picture
+  keeps refreshing without changing all at once. The next still is preloaded
+  (hidden `<img>`) a tick ahead; a cell only swaps to a still that has loaded,
+  otherwise it keeps its picture and the next cell takes its turn. A still
+  that fails, or that is one flat colour (a fade to black or white — luminance
+  spread under 8 on a 16×9 canvas sample, `isFlatLuma`), is stepped over for
+  good. Until each cell has a first still loaded the episode's own art stands
+  in. Nothing advances under `prefers-reduced-motion` (static grid), while the
+  page is hidden, or while the rail is scrolled out of view.
 - **In-episode stills** (`player/useEpisodeStills.js`). One GET per focused
   episode (after focus rests 250 ms, cached per episode) to the media server's
   metadata through the app proxy, for the video part's id and whether it has
-  a preview index; the nine stills are then
-  `/api/v1/proxy/plex/library/parts/<part>/indexes/sd/<offsetMs>?w=400&h=225`
-  at 10 %…90 % of the runtime. The carousel only takes over from the
-  episode's own art once all nine have loaded. An episode whose part has no
-  index keeps its art, static (`fitness.show.stills_unavailable`); in the
-  fitness library that is 1 episode in 8,267 at the time of writing.
+  a preview index; the stills are then
+  `/api/v1/proxy/plex/library/parts/<part>/indexes/sd/<offsetMs>?w=240&h=135`
+  — up to 81 (`stillCount`: never closer than 5 s apart, so a short video gets
+  fewer), at the middles of equal slices of 5 %…95 % of the runtime (no title
+  card, no credits). Only URLs are built up front; the grid loads nine, then
+  one a second. An episode whose part has no index keeps its art, static
+  (`fitness.show.stills_unavailable`); in the fitness library that is 1
+  episode in 8,267 at the time of writing. Logs: `fitness.show.stills_loaded`
+  / `stills_failed` (hook), `fitness.show.stills_grid_live`, and sampled
+  `fitness.show.still_failed` / `still_flat` (rail).
 - **Gamepad / arrow keys.** The D-pad walks the grid (columns read from the
   grid), focus selects and puts a solid ring on the card; A / Enter plays the
   focused episode (Resume when it resumes). Focus never launches, and a locked
