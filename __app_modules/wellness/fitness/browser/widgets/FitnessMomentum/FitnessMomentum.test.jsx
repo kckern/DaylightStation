@@ -14,9 +14,9 @@ const sessions = [{
   },
 }];
 const GEMS = [
-  { area: 'move', held: 2, color: '#8e5bd0' },
-  { area: 'school', held: 3, color: '#2e9e5b' },
-  { area: 'games', held: 1, color: '#ff7a2f' },
+  { area: 'move', held: 2, color: '#1e88e5' },
+  { area: 'school', held: 3, color: '#f2c94c' },
+  { area: 'games', held: 1, color: '#2e9e5b' },
 ];
 const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading', gems: GEMS }] };
 let standings = STANDINGS;
@@ -74,8 +74,8 @@ describe('FitnessMomentum', () => {
     // The rail reads only the held roll-up: an old payload's per-cell list,
     // a zero, a negative, an unknown area or the old `earned` key earns no chip.
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0],
-      move: [{ id: 'ring-contests', label: 'Ring contests', color: '#8e5bd0', cell: { state: 'leading', week: 0, streak: null, parts: [] } }],
-      gems: [{ area: 'move', held: 0, color: '#8e5bd0' }, { area: 'school', held: -1, color: '#2e9e5b' }, { area: 'art', held: 2, color: '#123456' }, { area: 'school', earned: 4, color: '#2e9e5b' }, { area: 'games', held: 1, color: '#ff7a2f' }] }] };
+      move: [{ id: 'ring-contests', label: 'Most Rings', color: '#1e88e5', cell: { state: 'leading', week: 0, streak: null, parts: [] } }],
+      gems: [{ area: 'move', held: 0, color: '#1e88e5' }, { area: 'school', held: -1, color: '#f2c94c' }, { area: 'art', held: 2, color: '#123456' }, { area: 'school', earned: 4, color: '#f2c94c' }, { area: 'games', held: 1, color: '#2e9e5b' }] }] };
     const { container } = render(<FitnessMomentum />);
     const rail = container.querySelector('button.fitness-momentum__rail');
     expect([...rail.querySelectorAll('.fitness-momentum__chip')].map((c) => c.dataset.area)).toEqual(['games']);

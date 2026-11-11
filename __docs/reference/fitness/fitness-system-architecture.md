@@ -1033,7 +1033,7 @@ mis-bucketed home screen can be reconstructed from production logs.
 Each card's rail (bank silver + the gems held this week) is a button that opens
 the shared Gem Board focused on that person, and the headline carries a **Gems**
 chip that opens it with no focus (shown whenever the economy is not `off`). The
-chip is the area legend: a purple gem "Move", a green gem "School", an orange
+chip is the area legend: a blue gem "Move", a yellow gem "School", a green
 gem "Games" (`AREA_COLORS` / `AREA_WORDS` in `GemBoard/AreaIcon.jsx`, mirroring
 the server's `GEM_AREAS`).
 While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→

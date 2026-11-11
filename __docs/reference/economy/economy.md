@@ -421,8 +421,8 @@ the rule's own id. Rows keep the rules' order.
 
 | Default row | Label | Section | Rules folded in |
 |---|---|---|---|
-| `ring-contests` | Ring contests | move | kind `ring-contest`; activity `ring-improved` |
-| `racing` | Racing | games | `race`, `race-pb` |
+| `ring-contests` | Most Rings | move | kind `ring-contest`; activity `ring-improved` |
+| `racing` | Cycle Race | games | `race`, `race-pb` |
 | `skyline-glider` | Skyline Glider | games | `glider-act`, `glider-bells` |
 | `piano` | Piano | school | `piano-practice`, `piano-rung` |
 | `flashcards` | Flashcards | school | `card-goal`, `cards-mastered` |
@@ -437,6 +437,15 @@ Some rules keep a row of their own and take only a default section:
 | activity `board-game-level` | games |
 | anything else | school |
 
+**Labels.** A row's label is the gem's name and is written in Title Case
+("Green Week", "Most Rings", "Cycle Race"); a rule's own label is the line that
+says how it is earned and is written in sentence case, one pattern per kind:
+day-counts "<thing> on <N> days" (or "every school day" for green week and
+debrief week), contests "Most <thing>" / "Best race", milestones the
+achievement ("Book finished", "New personal best"). No ids, no parentheticals
+("(whole week)"). The detail box prints a rule's label under the row's name
+only when the two differ (ignoring case).
+
 The first rule of a row decides the row's label, section, cadence and area.
 The label is `gem.label`, else the default row's label (not when the rule named
 its own `gem.category`), else the rule's label. The section is `gem.group`,
@@ -445,9 +454,12 @@ else the default above.
 **Area and colour.** A row's `area` is its section when that is `move`,
 `school` or `games` (a custom section slug falls to `school`). A gem's colour
 comes ONLY from its area, `GEM_AREAS` in `earnings/gemBoard.mjs` (order
-`AREA_ORDER`: Move, School, Games): `move` amethyst `#8e5bd0`, `school`
-emerald `#2e9e5b`, `games` fire opal `#ff7a2f`, each with an `icon` key of the
-same name. Every row and every part carries that area and colour, so the look
+`AREA_ORDER`: Move, School, Games): `move` sapphire `#1e88e5`, `school`
+citrine `#f2c94c`, `games` emerald `#2e9e5b`, each with an `icon` key of the
+same name (`AreaIcon.jsx`: a running figure, an open book, a chess knight).
+Text or an icon drawn ON an area colour takes `inkOn(color)` (`AreaIcon.jsx`):
+dark or white, whichever has the higher WCAG contrast. All three area colours
+take dark ink (white on citrine is 1.6:1). Every row and every part carries that area and colour, so the look
 of a gem always means the same thing on an unlabeled overview.
 
 A rule whose own id equals a default row id (a rule called `reading` that sits
@@ -489,10 +501,24 @@ A cell can be `earned` and still carry a `streak` when its row folds two rules
 | `progress` | `{have, need}` or null |
 | `left`, `reach` | set only while the part is `pending` with a `progress`; see below |
 | `lastDay` | the last day a day-count rule can be worked on (the end `left` is counted to); null for other kinds and for a rule with no line this week |
-| `days[]` | `{day, state}` with `done` or `short` (did some, under the mark); `ring-days` and `activity-days` only |
+| `days[]` | `{day, state}` with `done` or `short`; day-count kinds only (`ring-days`, `activity-days`, `week-met`, `debrief-week`). For `ring-days` / `activity-days` `short` is a day with some, under the mark. For green week a day is `done` when its verdict is `met` and `short` only once it is settled (before today) and not met; for debrief week `done` is completed (late counts) and `short` is missed or rejected. Open and excused / exempt days are not listed |
 | `items[]` | `{day, label}`: the milestone achievements paid this week |
-| `score` | `{mine, best}` for a contest: the learner's score against the roster's best (rings for `ring-contest`), else null |
+| `score` | a contest's standing, else null: `mine` / `best` (raw scores; `best` only when someone leads), and for display `value` + `unit` (`rings`; `rings-vs-usual` — rings over (+) or under (−) the four-week average, whole rings; `seconds` — a race time on a distance course; `metres` — a distance on a timed course; else `points`), `course` (the race's course label, else null) and `standings[]` `{learnerId, name, value, leader}` for the whole roster, best first. A leader holds the top score and only a score above 0 leads. Race values come from the fitness achievement provider (`race` standings carry `value`/`unit` and the contest its `course`), passed through the evaluator's evidence; nothing on screen ever shows the raw score |
 | `note` | the line's note |
+
+**Green week and debrief week are day-counts.** `week-met` and `debrief-week`
+lines carry `progress` like the other day-counts, so the board draws them as a
+segmented gem in a ring. Green week: one segment per study day Monday to
+Friday inside the rule's dates, plus any other day the term grid has as a study
+day, less every day it marks `exempt` (a holiday drops out once the grid has
+reached it; a future holiday still counts until then); a segment fills when the
+day is `met`. Debrief week: one segment per owed day, less `excused` days; a
+segment fills when that day's debrief is `completed` (late counts). Both earn
+only as before (green week also needs the term grid's week row `met` or
+`exempt`), and both go `none` — a blank cell — as soon as a settled day is not
+green or a debrief is missed or rejected. While pending, `left` is the days
+still needed (`need − have`, all of them) and `reach` is `on-track`; these
+kinds' `lastDay` is Friday.
 
 **Reach.** `left` is the study days the rule can still be worked on. The count
 starts at today or the week's first day, whichever is later, and runs through
@@ -604,18 +630,31 @@ not `disabled` and is either in a state other than `none` or has days, items
 or a score (`detailParts`, the one rule the board and the box share). So a
 blank-looking cell still opens for a contest score that is not the lead or a
 day-count that fell short; a cell whose rules are all off, or with nothing
-this week, does not. The card sits over the board. Its head is tinted in the
-row's colour and carries the cell's own glyph, the row's name and the child's
-name; below it is one band per such part, the rule's label on the left and how
-it stands on the right. The label is left out when the card shows a single
-part named like the row.
+this week, does not.
+
+It is read across a garage by children, so every number goes out with its
+unit and every status is words: never a raw score, never a bare weekday, no
+translucency (the board behind is covered by a solid shade), no status hues.
+The head is the area's badge (a disc in the area colour with its icon in
+`inkOn` ink), the row's name large, then the child and what the cell holds
+("Ann · 2 gems this week", "Holding 1 gem while leading", "1 gem this week,
+and 1 more while leading", "No gem yet this week" — no `×n` here), and a large
+close button. Below, one band per part: the rule's label (left out when the
+card shows a single part named like the row), a status line, and its body.
+Two tall bodies (two contests with standings, two day strips) sit side by
+side on a wider card instead of stacking past the screen.
 
 | Part | Shows |
 |---|---|
-| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the part's colour, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (fainter, no outline: Sunday for a `ring-days` rule), an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
-| milestone | this week's items, each with its weekday, or `None this week` |
-| contest | `Won`, `Leading so far` or `Not leading`; with a score, the child's number, `best 320` beside it when a best is known, and a bar showing the one against the other |
+| day-count | `2 of 5 days · 3 more to go` (`· 3 more to go, every day left` when tight, `· can’t make it this week` when out, `Earned!`), the week Monday → Sunday as seven named days (`Mon` … `Sun`): counted days filled in the part's colour with `inkOn` text, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (no outline), and a line in words: `Done on Monday and today` / `No days done yet` |
+| contest | one sentence saying who leads and with what: `Ann leads with 5:14 on Sprint 1500`, `Ann won with 410 rings`, `Ann and Ben are tied for first with 410 rings`, `Nobody is above their usual rings yet`; then the whole roster best first (rank, name, value — `5:14`, `1,260 rings`, `36 more` / `120 fewer` for most improved), the child's own row outlined in the area colour and each leader's rank filled. A child with no score this week reads `<name>: no score yet this week` |
+| milestone | this week's items, each with when in words (`New best on Sprint 1500` … `on Tuesday` / `yesterday` / `today`), or `None yet this week` |
+| other | `Earned!`, `Won!`, `Not finished yet`, `Not this week` |
 | `unknown` | `Can’t tell yet` |
+
+Formatting helpers (`formatMeasure`, `clockTime`, `contestHeadline`,
+`streakLine`, `doneLine`, `gemsLine`) are exported from `GemDetail.jsx` and
+tested there.
 
 | Input | Does |
 |---|---|

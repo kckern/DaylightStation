@@ -1390,7 +1390,7 @@ describe('earningsByLearner', () => {
     const learner = priced('user_4', 9, { lines: [
       { status: 'earned', ruleId: 'korean-daily', label: 'Korean (each day done)', amount: { silver: 6, gems: 0 } },
       { status: 'earned', ruleId: 'green-week', label: 'Green week', amount: { silver: 0, gems: 1 } },
-      { status: 'pending', ruleId: 'scripture-week', label: 'Scripture (whole week)', amount: { silver: 0, gems: 0 } },
+      { status: 'pending', ruleId: 'scripture-week', label: 'Scripture', amount: { silver: 0, gems: 0 } },
       { status: 'earned', ruleId: 'piano-daily', label: 'Piano (each day done)', amount: { silver: 0, gems: 0 } },
     ] });
     expect(earningsByLearner(roster(learner).data).user_4.earned).toEqual([

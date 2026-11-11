@@ -141,7 +141,7 @@ describe('GemGlyph', () => {
   });
 
   it('a leading cell is a whole solid gem, no words', () => {
-    const { container } = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#ff7a2f" area="games" />);
+    const { container } = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#2e9e5b" area="games" />);
     expect(container.querySelectorAll('.gem-icon')).toHaveLength(1);
     expect(container.querySelector('.gem-glyph__pie')).toBeNull();
     expect(container.textContent).toBe('');
@@ -156,7 +156,7 @@ describe('GemGlyph', () => {
   });
 
   it('a running day-count is a pie-cut gem: a grey stone under a colour stone clipped to the done days', () => {
-    const c = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'on-track') }} color="#8e5bd0" />).container;
+    const c = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'on-track') }} color="#1e88e5" />).container;
     const pie = c.querySelector('.gem-glyph__pie');
     expect(pie).toBeTruthy();
     expect(pie.querySelector('.gem-glyph__togo .gem-icon')).toBeTruthy();
@@ -166,7 +166,7 @@ describe('GemGlyph', () => {
   });
 
   it('an earned gem with a ring is whole, not cut', () => {
-    const c = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') }} color="#2e9e5b" />).container;
+    const c = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') }} color="#f2c94c" />).container;
     expect(c.querySelector('.gem-glyph__pie')).toBeNull();
     expect(c.querySelectorAll('.gem-icon')).toHaveLength(1);
   });
@@ -199,7 +199,7 @@ describe('GemGlyph', () => {
   });
 
   it('area colours mirror the server GEM_AREAS', () => {
-    expect(AREA_COLORS).toEqual({ move: '#8e5bd0', school: '#2e9e5b', games: '#ff7a2f' });
+    expect(AREA_COLORS).toEqual({ move: '#1e88e5', school: '#f2c94c', games: '#2e9e5b' });
     expect(AREA_WORDS).toEqual({ move: 'Move', school: 'School', games: 'Games' });
   });
 });

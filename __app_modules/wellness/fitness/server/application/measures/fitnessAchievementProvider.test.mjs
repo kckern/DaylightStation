@@ -83,7 +83,11 @@ describe('createFitnessAchievementProvider', () => {
     const p = createFitnessAchievementProvider(d);
     const out = await p.week(args());
     expect(asked.week).toBe('2026-W45');
-    expect(out.contests.race).toEqual({ standings: [{ learnerId: 'kidA', score: 10000 }, { learnerId: 'kidB', score: 8000 }], closed: false });
+    // The score ranks; `value`/`unit` and the course are what a child reads (a distance course: seconds).
+    expect(out.contests.race).toEqual({
+      standings: [{ learnerId: 'kidA', score: 10000, value: 100, unit: 'seconds' }, { learnerId: 'kidB', score: 8000, value: 125, unit: 'seconds' }],
+      course: 'Sprint 1500', closed: false,
+    });
     expect((await p.week(args({ today: '2026-11-09' }))).contests.race.closed).toBe(true);
   });
 

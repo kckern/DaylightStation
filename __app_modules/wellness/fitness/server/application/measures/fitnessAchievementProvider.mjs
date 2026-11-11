@@ -137,9 +137,14 @@ export function createFitnessAchievementProvider({
     const wanted = new Set(learnerIds);
     const standings = (ladder?.standings ?? [])
       .filter((s) => wanted.has(s.userId) && !isGhost(s.userId))
-      .map((s) => ({ learnerId: s.userId, score: ladderScore(ladder.course, s.bestValue) }))
+      .map((s) => ({
+        learnerId: s.userId, score: ladderScore(ladder.course, s.bestValue),
+        // What the score was made from, for display: a distance course is raced against the clock.
+        value: s.bestValue, unit: ladder.course?.win_condition === 'distance' ? 'seconds' : 'metres',
+      }))
       .filter((s) => s.score != null);
-    return { race: { standings, closed: today != null && today > week.to } };
+    const course = ladder?.course ? (ladder.course.label || courseLabel(ladder.course.id)) : null;
+    return { race: { standings, course, closed: today != null && today > week.to } };
   }
 
   /** race-pb (milestone) */

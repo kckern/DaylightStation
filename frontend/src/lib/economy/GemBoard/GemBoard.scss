@@ -125,10 +125,11 @@
   // A section: one tinted block behind its columns, from its name down.
   &__band {
     border-radius: 0.7em;
-    background: rgba(255, 255, 255, 0.045);
-    &[data-group="move"] { background: rgba(142, 91, 208, 0.16); }
-    &[data-group="school"] { background: rgba(46, 158, 91, 0.14); }
-    &[data-group="games"] { background: rgba(255, 122, 47, 0.13); }
+    // Solid shades of the area colour over the panel (AREA_COLORS), never see-through.
+    background: #1f2330;
+    &[data-group="move"] { background: #1b2a42; }   // sapphire #1e88e5 at ~16%
+    &[data-group="school"] { background: #33312a; } // citrine #f2c94c at ~14%
+    &[data-group="games"] { background: #1b3028; }  // emerald #2e9e5b at ~16%
   }
   &__group-label {
     position: relative;
@@ -140,9 +141,10 @@
     font-weight: 700;
     color: var(--ds-text-high, #e8eef3);
     .area-icon { flex: none; width: 1.4em; height: 1.4em; }
-    &[data-group="move"] .area-icon { color: #a97ae6; }
-    &[data-group="school"] .area-icon { color: #3fc27a; }
-    &[data-group="games"] .area-icon { color: #ff9a5c; }
+    // The area's own colour on the dark band: each clears 4.5:1 there.
+    &[data-group="move"] .area-icon { color: #4aa3f0; }
+    &[data-group="school"] .area-icon { color: #f2c94c; }
+    &[data-group="games"] .area-icon { color: #3fc27a; }
   }
 
   // A column's name: starts over the column's middle and leans up to the right,
@@ -282,8 +284,9 @@
   }
 }
 
-// The box a cell opens, over the board: the cell's own glyph large, then one
-// band per rule in the row.
+
+// The box a cell opens, over the board: the area's badge and the gem's name
+// large, then one band per rule in the row.
 .gem-detail {
   position: absolute;
   inset: 0;
@@ -292,67 +295,81 @@
   align-items: center;
   justify-content: center;
 
-  &__backdrop { position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55); }
+  // The board behind is covered, not shown through: one solid shade.
+  &__backdrop { position: absolute; inset: 0; background: #0b0d13; }
 
+  // Sized from the board's own font size (useBoardFit.js), a step larger: read from across a room.
   &__card {
     --gem: #8a8fa3;
     position: relative;
     display: flex;
     flex-direction: column;
-    width: 25em;
-    max-width: 92%;
-    max-height: 92%;
+    width: 34em;
+    max-width: 94%;
+    max-height: 94%;
     box-sizing: border-box;
     overflow: hidden;
     border-radius: 1em;
     background: #222634;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 1.2em 3em rgba(0, 0, 0, 0.6);
+    border: 0.15em solid #3a4152;
+    font-size: 1.15em;
   }
 
-  // The head takes the gem's own colour, so the box reads as that gem opened up.
+  // The head: the area's badge, the gem's name large, the child and what they hold, and a close button.
   &__head {
     display: flex;
     align-items: center;
-    gap: 0.9em;
-    padding: 1em 0.8em 1em 1.2em;
+    gap: 0.8em;
+    padding: 0.8em 0.8em 0.8em 1em;
     background: #2b3042;
-    background: color-mix(in srgb, var(--gem) 24%, #222634);
-    border-bottom: 0.2em solid var(--gem);
+    border-bottom: 0.25em solid var(--gem);
   }
-  &__glyph { flex: none; display: inline-flex; font-size: 1.25em; }
-  &__glyph .gem-glyph__times { background: transparent; }
-  &__title { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-  &__row { font-size: 1.6em; font-weight: 700; }
-  &__who { font-size: 1.1em; color: var(--ds-text-mid, #94a3b8); }
+  &__badge {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.2em;
+    height: 3.2em;
+    border-radius: 50%;
+    .area-icon { width: 2em; height: 2em; }
+  }
+  &__title { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; line-height: 1.1; }
+  &__row { font-size: 1.9em; font-weight: 700; color: #ffffff; }
+  &__who { font-size: 1.15em; font-weight: 700; color: #d6dbe4; }
   &__close {
     margin-left: auto;
-    align-self: flex-start;
     flex: none;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 1.8em;
-    line-height: 1;
-    width: 1.4em;
-    height: 1.4em;
-    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.6em;
+    height: 3.6em;
+    padding: 0;
+    border: 0.12em solid #5a6378;
+    border-radius: 0.6em;
+    background: #3a4152;
+    color: #ffffff;
     cursor: pointer;
-    color: var(--ds-text-mid, #94a3b8);
-    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.14); color: var(--ds-text-high, #e8eef3); }
+    svg { width: 2em; height: 2em; }
+    &:hover, &:focus-visible { background: #4b5468; outline: none; border-color: #ffffff; }
   }
 
+  &__parts { overflow: auto; min-height: 0; }
+  // Two tall blocks side by side, a rule between them.
+  &__card.is-wide { width: 62em; }
+  &__card.is-wide &__parts { display: grid; grid-template-columns: 1fr 1fr; }
+  &__card.is-wide &__part + &__part { border-top: 0; border-left: 0.12em solid #3a4152; }
   &__part {
     display: flex;
     flex-direction: column;
-    gap: 0.6em;
-    padding: 0.9em 1.2em 1em;
-    & + & { border-top: 1px solid rgba(255, 255, 255, 0.09); }
+    gap: 0.5em;
+    padding: 0.9em 1.1em 1em;
+    & + & { border-top: 0.12em solid #3a4152; }
   }
-  &__part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
-  &__part-label { font-size: 1.1em; font-weight: 700; }
-  &__line { font-size: 1em; color: var(--ds-text-mid, #94a3b8); text-align: right; }
-  &__part[data-state="earned"] &__line, &__part[data-state="won"] &__line, &__part[data-state="leading"] &__line { color: var(--ds-text-high, #e8eef3); font-weight: 700; }
+  &__part-label { font-size: 1.05em; font-weight: 700; color: #b9c0cc; }
+  &__line { font-size: 1.35em; font-weight: 700; color: #ffffff; line-height: 1.2; }
+  &__sub { font-size: 1.05em; color: #d6dbe4; }
 
   &__items {
     margin: 0;
@@ -360,22 +377,44 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.3em;
-    li { display: flex; justify-content: space-between; gap: 1em; font-size: 1.05em; }
+    gap: 0.4em;
+    li { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; font-size: 1.25em; }
   }
-  &__when { color: var(--ds-text-low, #6b7785); }
+  &__what { font-weight: 700; color: #ffffff; }
+  &__when { flex: none; color: #d6dbe4; }
 
-  &__score { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 0.6em; row-gap: 0.4em; }
-  &__score-mine { font-size: 1.9em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  &__score-best { color: var(--ds-text-mid, #94a3b8); font-variant-numeric: tabular-nums; }
-  &__score-bar {
-    grid-column: 1 / -1;
-    height: 0.45em;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.1);
-    overflow: hidden;
-    > span { display: block; height: 100%; border-radius: inherit; }
+  &__standings {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    li {
+      display: grid;
+      grid-template-columns: 1.8em 1fr auto;
+      align-items: center;
+      gap: 0.6em;
+      padding: 0.25em 0.5em;
+      border: 0.12em solid transparent;
+      border-radius: 0.5em;
+      font-size: 1.2em;
+      color: #d6dbe4;
+    }
+    li.is-mine { background: #2f3446; color: #ffffff; font-weight: 700; }
   }
+  &__rank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6em;
+    height: 1.6em;
+    border-radius: 50%;
+    background: #3a4152;
+    color: #ffffff;
+    font-weight: 700;
+  }
+  &__value { font-weight: 700; font-variant-numeric: tabular-nums; color: #ffffff; }
 
   // Monday to Sunday, one slot a day across the box.
   &__strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.35em; }
@@ -383,19 +422,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 2.3em;
+    height: 2.4em;
     box-sizing: border-box;
     border-radius: 0.55em;
-    border: 2px solid var(--ds-text-low, #6b7785);
-    font-size: 0.95em;
-    color: var(--ds-text-mid, #94a3b8);
+    border: 0.15em solid #6b7785;
+    font-size: 1.05em;
+    font-weight: 700;
+    color: #d6dbe4;
     // Solid shades, never see-through: a day to come is a step darker than a day gone by,
-    // and a day after the rule's last is darker still and has no outline.
-    &.is-done { color: #171a24; font-weight: 700; }
-    &.is-short { color: var(--ds-text-high, #e8eef3); }
-    &.is-ahead { color: var(--ds-text-low, #6b7785); border-color: #3a4452; }
-    &.is-closed { color: #3a4452; border-color: transparent; }
-    &.is-today { box-shadow: 0 0 0 2px var(--ds-text-high, #e8eef3); color: var(--ds-text-high, #e8eef3); }
-    &.is-done.is-today { color: #171a24; }
+    // and a day after the rule's last is darker still and has no outline. A done day's
+    // ink is set inline from its fill (dark on yellow, white on blue and green).
+    &.is-short { color: #ffffff; }
+    &.is-ahead { color: #8a93a0; border-color: #3a4452; }
+    &.is-closed { color: #4a5262; border-color: transparent; }
+    &.is-today { box-shadow: 0 0 0 0.15em #ffffff; }
   }
 }

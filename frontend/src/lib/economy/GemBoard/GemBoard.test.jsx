@@ -12,10 +12,10 @@ const BOARD = {
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
   groups: [{ id: 'move', label: 'Move' }, { id: 'school', label: 'School' }],
   categories: [
-    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
-    { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
-    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
-    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
+    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
+    { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
+    { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
+    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
   ],
   cells: {
     'green-week': { a: { state: 'unknown', week: 0, streak: null, parts: [] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
@@ -43,7 +43,7 @@ describe('GemBoardGrid', () => {
     expect(container.querySelectorAll('.gem-board__grid')).toHaveLength(1);
     expect([...container.querySelectorAll('.gem-board__name')].map((n) => n.textContent)).toEqual(['Ann', 'Ben']);
     expect([...container.querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Move', 'School']);
-    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Ring contests', 'Green week', 'Reading']);
+    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Most Rings', 'Green week', 'Reading']);
     const looks = [...container.querySelectorAll('.gem-board__cell')].map((c) => c.dataset.look);
     expect(looks).toEqual(['lit', 'holding', 'unknown', 'lit', 'streak', 'none', 'none', 'none']);
     // The row label carries no gem; an empty cell is blank; fractions are gone.
@@ -79,11 +79,11 @@ describe('GemBoardGrid', () => {
     const onOpen = vi.fn();
     const { container } = render(<GemBoardGrid board={{ ...BOARD, cells }} onOpen={onOpen} />);
     const button = (label) => screen.getByLabelText(label).closest('button');
-    for (const label of ['Ben, Ring contests: not this week', 'Ann, Moved 5 days: not this week']) {
+    for (const label of ['Ben, Most Rings: not this week', 'Ann, Moved 5 days: not this week']) {
       expect(button(label)).toBeTruthy();
       expect(button(label).querySelector('.gem-glyph')).toBeTruthy(); // the same box as any other cell
     }
-    fireEvent.click(button('Ben, Ring contests: not this week'));
+    fireEvent.click(button('Ben, Most Rings: not this week'));
     expect(onOpen).toHaveBeenCalledWith('ring-contests', 'b');
     expect(button('Ben, Reading: not this week')).toBeNull(); // books from other weeks are not this week's news
     expect(button('Ann, Green week: off')).toBeNull();
@@ -110,9 +110,9 @@ describe('GemBoardGrid — areas', () => {
     ...BOARD,
     groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
     categories: [
-      { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
-      { id: 'racing', label: 'Racing', cadence: 'contest', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
-      { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+      { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', area: 'move', color: '#1e88e5', parts: [] },
+      { id: 'racing', label: 'Cycle Race', cadence: 'contest', group: 'games', area: 'games', color: '#2e9e5b', parts: [] },
+      { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', area: 'school', color: '#f2c94c', parts: [] },
     ],
     cells: {
       exercise: { a: { state: 'earned', week: 3, streak: null, parts: [] }, b: { state: 'pending', week: 0, streak: { have: 1, need: 5, left: 4, reach: 'tight', ruleId: 'moved-days' }, parts: [] } },
@@ -126,7 +126,7 @@ describe('GemBoardGrid — areas', () => {
     const heads = [...container.querySelectorAll('.gem-board__group-label')];
     expect(heads.map((n) => n.textContent)).toEqual(['Move', 'School', 'Games']);
     expect(heads.map((n) => n.querySelector('.area-icon')?.dataset.area)).toEqual(['move', 'school', 'games']);
-    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Racing']);
+    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Cycle Race']);
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
   });
 
@@ -468,9 +468,9 @@ describe('GemBoardOverlay', () => {
       ...BOARD,
       groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
       categories: [
-        { id: 'exercise', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
-        { id: 'racing', label: 'Racing', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
-        { id: 'reading', label: 'Reading', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+        { id: 'exercise', label: 'Moved 5 days', group: 'move', area: 'move', color: '#1e88e5', parts: [] },
+        { id: 'racing', label: 'Cycle Race', group: 'games', area: 'games', color: '#2e9e5b', parts: [] },
+        { id: 'reading', label: 'Reading', group: 'school', area: 'school', color: '#f2c94c', parts: [] },
       ],
       cells: {
         exercise: { a: { state: 'none', week: 0, streak: null, parts: [] } },
