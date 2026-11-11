@@ -22,7 +22,7 @@ const manifest = {
     craft: { frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, loop: 'loop' },
     collectible: { frames: ['collectible.spin.0', 'collectible.spin.1', 'collectible.spin.2'], fps: 10, loop: 'loop' },
     'weapons.bomb': { frames: ['weapons.bomb.default'] },
-    'entities.pine': { frames: ['entities.pine.tree'] },
+    'entities.pine': { frames: ['entities.pine.tree'], size: [12, 28] },
   },
   provenance: {}, files: {},
 };
@@ -31,14 +31,14 @@ describe('zoneFromSkinExport', () => {
   const zone = zoneFromSkinExport(manifest, { baseZone: alpine, id: 'test-zone', name: 'Test', assetRoot: 'fitness/skyline-glider/test-zone' });
 
   it('takes art from the skin', () => {
-    // Heights are pixels x 3 units (one grid); each band keeps its bottom edge.
+    // Heights are pixels x 2 units (one grid); each band keeps its bottom edge, snapped to the grid.
     expect(zone.layers).toEqual([
-      { id: 'sky', kind: 'image', src: 'images/layers.sky.png', parallax: 0.04, y: 0, height: 1, fallback: 'alpine-sky' },
-      { id: 'far', kind: 'image', src: 'images/layers.far.png', parallax: 0.14, y: 0.15, height: 0.7, fallback: 'alpine-far' },
-      { id: 'dust', kind: 'image', src: 'images/layers.dust.png', parallax: 1.4, y: 0.9, height: 0.1, front: true },
+      { id: 'sky', kind: 'image', src: 'images/layers.sky.png', parallax: 0.04, y: 0.28, height: 0.72, fallback: 'alpine-sky' },
+      { id: 'far', kind: 'image', src: 'images/layers.far.png', parallax: 0.14, y: 0.3833, height: 0.4667, fallback: 'alpine-far' },
+      { id: 'dust', kind: 'image', src: 'images/layers.dust.png', parallax: 1.4, y: 0.9333, height: 0.0667, front: true },
     ]);
-    expect(zone.terrain).toMatchObject({ fill: 'images/terrain.fill.png', edge: 'images/terrain.edge.png', edge_lip: alpine.terrain.edge_lip, edge_height: 0.04 });
-    expect(zone.pixel_scale).toBe(3);
+    expect(zone.terrain).toMatchObject({ fill: 'images/terrain.fill.png', edge: 'images/terrain.edge.png', edge_lip: alpine.terrain.edge_lip, edge_height: 0.0267 });
+    expect(zone.pixel_scale).toBe(2);
     expect(zone.sprites).toEqual({ sheet: 'sprites/sheet.png', frames: 'sprites/sheet.json' });
     expect(zone.craft).toEqual({ frames: ['craft.fly.0', 'craft.fly.1'], fps: 6 });
     expect(zone.weapons.bomb).toEqual({ frame: 'weapons.bomb.default' });
@@ -59,8 +59,14 @@ describe('zoneFromSkinExport', () => {
     const resolved = resolveAct(act, new Map([['test-zone', zone]]));
     expect(resolved.zone.layers[1].src).toBe('fitness/skyline-glider/test-zone/images/layers.far.png');
     expect(resolved.zone.sprites.sheet).toBe('fitness/skyline-glider/test-zone/sprites/sheet.png');
-    expect(resolved.zone.pixel_scale).toBe(3);
+    expect(resolved.zone.pixel_scale).toBe(2);
     expect(resolved.entities[0]).toMatchObject({ id: 'p1', class: 'breakable', frame: 'entities.pine.tree', draw: 'pine' });
+  });
+
+  it('refuses an entity sprite larger than the entity collision box', () => {
+    // pine: 0.5 s x 71.4 units = 35 units -> 17 px wide; 0.14 x 600 = 84 units -> 42 px tall
+    const big = { ...manifest, slots: { ...manifest.slots, 'entities.pine': { frames: ['entities.pine.tree'], size: [20, 28] } } };
+    expect(() => zoneFromSkinExport(big, { baseZone: alpine, id: 'x' })).toThrow(/pine is 20x28 px, its box holds 17x42/);
   });
 
   it('rejects exports for another game and entities the zone lacks', () => {

@@ -19,7 +19,9 @@ const snap = (units, step) => Math.round(units / step) * step;
  * on one pixel grid: layer and terrain-edge heights come from their pixel sizes,
  * and sprites draw at that grain (zone.pixel_scale) instead of stretching.
  */
-export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, artPixel = 3, sceneHeight = 600 }) {
+const UNITS_PER_SECOND = 1000 / 14;   // courseProjection: 1000 units across 14 s
+
+export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, artPixel = 2, sceneHeight = 600 }) {
   if (manifest?.schema !== 'game-skin-export/v1') throw new Error('not a game-skin-export/v1 manifest');
   if (manifest.game !== 'skyline-glider') throw new Error(`export is for ${manifest.game}, not skyline-glider`);
   if (!isObject(baseZone)) throw new Error('baseZone is required');
@@ -72,15 +74,22 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
     if (art) zone.weapons[kind] = art;
   }
   const entities = structuredClone(isObject(baseZone.entities) ? baseZone.entities : {});
-  const unknown = [];
+  const unknown = []; const oversized = [];
   for (const [slotName, slot] of Object.entries(slots)) {
     if (!slotName.startsWith('entities.')) continue;
     const entity = slotName.slice('entities.'.length);
     if (!entities[entity]) { unknown.push(entity); continue; }
+    // What you see is what collides: the sprite must fit the entity's box on the grid.
+    if (Array.isArray(slot.size)) {
+      const def = entities[entity];
+      const fits = [Math.floor((Number(def.width_s ?? 0.5) * UNITS_PER_SECOND) / artPixel), Math.floor((Number(def.height ?? 0.1) * sceneHeight) / artPixel)];
+      if (slot.size[0] > fits[0] || slot.size[1] > fits[1]) oversized.push(`${entity} is ${slot.size[0]}x${slot.size[1]} px, its box holds ${fits[0]}x${fits[1]}`);
+    }
     const art = animation(slot);
     if (art) { delete entities[entity].frame; delete entities[entity].frames; delete entities[entity].fps; Object.assign(entities[entity], art); }
   }
   if (unknown.length) throw new Error(`skin dresses entities the base zone does not define: ${unknown.join(', ')}`);
+  if (oversized.length) throw new Error(`entity sprites larger than their collision boxes: ${oversized.join('; ')}`);
   zone.entities = entities;
   return JSON.parse(JSON.stringify(zone));
 }

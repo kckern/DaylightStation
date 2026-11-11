@@ -246,6 +246,19 @@ describe('skins', () => {
     assert.ok(animated.errors.some((e) => e.includes('animated slot needs a clip')));
   });
 
+  it('checks sprites fit their boxes at the contract grid: strict is an error, loose a warning', async () => {
+    const dir = await root();
+    const { contractPath } = await catalogFixture(dir);
+    const contract = YAML.parse(await readFile(contractPath, 'utf8'));
+    contract.units.art_pixel = 2;
+    contract.slots.craft.box = [20, 20]; contract.slots.craft.fit = 'strict';       // holds 10x10; hero is 16x16
+    contract.slots['weapons.bomb'] = { type: 'sprite', box: [20, 20] };               // loose
+    await writeFile(contractPath, YAML.stringify(contract));
+    const result = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, { ...goodSlots, 'weapons.bomb': { asset: 'actor.hero', frame: 'fly.0' } }) });
+    assert.deepEqual(result.errors, ['slot craft: actor.hero is 16x16 px; the 20x20 box holds 10x10 at 2 units per pixel']);
+    assert.ok(result.warnings.includes('slot weapons.bomb: actor.hero is 16x16 px; the 20x20 box holds 10x10 at 2 units per pixel'));
+  });
+
   it('keeps private-only art out of a shippable skin', async () => {
     const dir = await root();
     const { contractPath } = await catalogFixture(dir);
@@ -263,8 +276,8 @@ describe('skins', () => {
     assert.equal(distribution, 'private-only');
     assert.deepEqual(slots.layers.layers[0], { id: 'hills', file: 'images/layers.hills.png', width: 32, height: 16, parallax: 0.3, band: [0.5, 0.5], front: false }, 'pixel_density 2 is undone');
     assert.deepEqual([slots['terrain.fill'].width, slots['terrain.fill'].height], [48, 48], 'contract scale 3 applied');
-    assert.deepEqual(slots.craft, { frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, loop: 'loop' });
-    assert.deepEqual(slots['entities.rock'], { frames: ['entities.rock.fly.0'] });
+    assert.deepEqual(slots.craft, { frames: ['craft.fly.0', 'craft.fly.1'], size: [16, 16], fps: 6, loop: 'loop' });
+    assert.deepEqual(slots['entities.rock'], { frames: ['entities.rock.fly.0'], size: [16, 16] });
     const sheet = JSON.parse(await readFile(path.join(outDir, 'sprites/sheet.json'), 'utf8'));
     assert.deepEqual(Object.keys(sheet.frames).sort(), ['craft.fly.0', 'craft.fly.1', 'entities.rock.fly.0']);
     assert.equal(provenance['backdrop.hills'].distribution, 'private-only');

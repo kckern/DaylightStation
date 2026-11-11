@@ -485,7 +485,19 @@ export async function validateSkin({ root, contractPath, skinPath }) {
     } else if (slot.type === 'sprite') {
       if (!['sprite-sheet', 'effect-sheet', 'image', 'tile-sheet'].includes(asset.kind)) errors.push(`slot ${slotName}: asset ${value.asset} kind ${asset.kind} cannot fill a sprite slot`);
       if (slot.animated && !value.clip) errors.push(`slot ${slotName}: animated slot needs a clip`);
-      resolved.sprites[slotName] = { asset: value.asset, ...refs };
+      const density = asset.pixel_density ?? 1;
+      const visible = refs.frames.map((name) => asset.frames[name]).filter(Boolean)
+        .map((frame) => (frame.content_bounds ?? frame.rect ?? [0, 0, 0, 0]).slice(2).map((v) => Math.ceil(v / density)));
+      const size = [Math.max(0, ...visible.map((v) => v[0])), Math.max(0, ...visible.map((v) => v[1]))];
+      const artPixel = contract.units?.art_pixel;
+      if (Array.isArray(slot.box) && artPixel) {
+        const fits = [Math.floor(slot.box[0] / artPixel), Math.floor(slot.box[1] / artPixel)];
+        if (size[0] > fits[0] || size[1] > fits[1]) {
+          const message = `slot ${slotName}: ${value.asset} is ${size[0]}x${size[1]} px; the ${slot.box[0]}x${slot.box[1]} box holds ${fits[0]}x${fits[1]} at ${artPixel} units per pixel`;
+          (slot.fit === 'strict' ? errors : warnings).push(message);
+        }
+      }
+      resolved.sprites[slotName] = { asset: value.asset, ...refs, size };
     }
   }
   for (const [name, slot] of Object.entries(contract.slots ?? {})) {
@@ -584,7 +596,8 @@ export async function exportSkin({ root, contractPath, skinPath, outDir }) {
       const canvas = await cropToNative({ createCanvas, image: await imageFor(asset), rect: frameRect(asset, frameName), density: asset.pixel_density ?? 1 });
       tiles.push({ name: `${slotName}.${frameName}`, canvas, w: canvas.width, h: canvas.height });
     }
-    slots[slotName] = { frames: [...new Set(ref.frames)].map((name) => `${slotName}.${name}`), ...(ref.fps ? { fps: ref.fps, loop: ref.loop } : {}) };
+    // size: the largest visible frame in native pixels, for the game's own fit checks
+    slots[slotName] = { frames: [...new Set(ref.frames)].map((name) => `${slotName}.${name}`), size: ref.size, ...(ref.fps ? { fps: ref.fps, loop: ref.loop } : {}) };
   }
   const unique = [...new Map(tiles.map((tile) => [tile.name, tile])).values()];
   if (unique.length) {
