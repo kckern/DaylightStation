@@ -21,6 +21,9 @@ const STATE_WORDS = { won: 'won', earned: 'earned', leading: 'leading', pending:
 /** A day-count the child has started and can still make: the only one drawn. */
 const runningStreak = (cell) => (cell?.streak && cell.streak.have > 0 && cell.streak.reach !== 'out' ? cell.streak : null);
 
+/** Gems the cell holds this week: earned, plus a contest gem while leading (a folded row can have both). */
+const gemCount = (cell) => Math.max(Number(cell?.week) || 0, Number(cell?.held) || 0);
+
 /** Which look a cell takes: lit, holding, streak, unknown, off or none (blank). A lead outranks a day-count: it is a gem held now. */
 export function glyphLook(cell) {
   const state = cell?.state ?? 'none';
@@ -38,7 +41,7 @@ export function glyphWords(cell) {
   const s = cell?.streak;
   const run = s ? `${s.have} of ${s.need} days, ${REACH_WORDS[s.reach] ?? 'still in reach'}` : null;
   if (glyphLook(cell) === 'lit') {
-    const gems = (cell.week ?? 0) > 1 ? `, ${cell.week} gems` : '';
+    const gems = gemCount(cell) > 1 ? `, ${gemCount(cell)} gems` : '';
     // A lit cell whose own state is not a win (a gem earned, a day-count still open) reads "earned".
     const won = state === 'won' ? 'won' : 'earned';
     return `${won}${gems}${run ? `, and ${run}` : ''}`;
@@ -131,7 +134,7 @@ export default function GemGlyph({ cell, color, area = null }) {
     <span className="gem-glyph" data-look={look} data-area={area ?? undefined} data-ringed={ringed ? '' : undefined} data-reach={streak?.reach ?? undefined}>
       {ring}
       {inner}
-      {look === 'lit' && cell.week > 1 && <span className="gem-glyph__times">×{cell.week}</span>}
+      {(look === 'lit' || look === 'holding') && gemCount(cell) > 1 && <span className="gem-glyph__times">×{gemCount(cell)}</span>}
     </span>
   );
 }

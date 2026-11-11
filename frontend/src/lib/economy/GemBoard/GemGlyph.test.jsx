@@ -97,6 +97,11 @@ describe('GemGlyph', () => {
     cleanup();
     expect(render(<GemGlyph cell={{ state: 'earned', week: 3 }} color="#fff" />).container.textContent).toBe('×3');
     cleanup();
+    // A row that folds a contest with another rule: one earned, one held by a lead = two gems drawn.
+    expect(render(<GemGlyph cell={{ state: 'earned', week: 1, held: 2 }} color="#fff" />).container.textContent).toBe('×2');
+    expect(glyphWords({ state: 'earned', week: 1, held: 2 })).toBe('earned, 2 gems');
+    cleanup();
+    expect(render(<GemGlyph cell={{ state: 'leading', week: 0, held: 1 }} color="#fff" />).container.textContent).toBe('');
     cleanup();
     // Evidence that could not be read leaves the cell blank: no question mark.
     expect(render(<GemGlyph cell={{ state: 'unknown', week: 0 }} color="#fff" />).container.textContent).toBe('');
