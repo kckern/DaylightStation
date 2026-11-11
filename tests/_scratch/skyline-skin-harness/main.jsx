@@ -16,6 +16,12 @@ const act = params.get('act') || 'mountain-pass';
 const zone = params.get('zone') || 'alpine';
 const t = Number(params.get('t') || 20);
 const alt = Number(params.get('alt') || 0.5);
+// Optional flight state: ?boost=1, ?hurt=1, ?damage=<entity-id>
+const extra = {
+  ...(params.get('boost') ? { boostRemaining: 1 } : {}),
+  ...(params.get('hurt') ? { invincibleRemaining: 1 } : {}),
+  ...(params.get('damage') ? { entityDamage: { [params.get('damage')]: 1 } } : {}),
+};
 
 async function boot() {
   const raw = await (await fetch(`/harness/course?act=${act}&zone=${zone}`)).json();
@@ -24,7 +30,7 @@ async function boot() {
   if (!checked.valid) throw new Error(`course invalid: ${checked.errors.join('; ')}`);
   const course = checked.course;
   const assets = await loadZoneAssets(course.zone, { mediaUrl: (p) => `/media/${p}` });
-  const state = { ...createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: t, altitude: alt }), collectedIds: [], destroyedIds: [] };
+  const state = { ...createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: t, altitude: alt }), collectedIds: [], destroyedIds: [], ...extra };
   window.__harness = { missing: assets.missing, frames: assets.frames ? Object.keys(assets.frames).length : 0, images: assets.images.size, zone: course.zone.id, pixel_scale: course.zone.pixel_scale };
   createRoot(document.getElementById('root')).render(<div className="stage" data-harness-ready="true"><FlightScene state={state} course={course} assets={assets}/></div>);
 }

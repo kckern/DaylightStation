@@ -11,7 +11,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:5198';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.OUT_DIR || path.join(here, 'out/skyline-skin');
 fs.mkdirSync(OUT, { recursive: true });
-const shots = (process.env.SHOTS || 'mountain-pass:alpine:40,mountain-pass:smw-placeholder:40').split(',').map((s) => { const [act, zone, t, alt] = s.split(':'); return { act, zone, t, alt: alt || '0.5' }; });
+// act:zone:time[:altitude[:extra query, e.g. hurt=1&damage=target-01]]
+const shots = (process.env.SHOTS || 'mountain-pass:alpine:40,mountain-pass:smw-placeholder:40').split(',').map((s) => { const [act, zone, t, alt, extra] = s.split(':'); return { act, zone, t, alt: alt || '0.5', extra: extra || '' }; });
 // BROWSER=firefox matches the garage kiosk (Firefox); default chromium.
 const engine = process.env.BROWSER === 'firefox' ? firefox : chromium;
 const browser = await engine.launch();
@@ -23,12 +24,12 @@ for (const shot of shots) {
   page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
   page.on('requestfailed', (r) => problems.push(`requestfailed: ${r.url()}`));
   page.on('response', (r) => { if (r.status() >= 400) problems.push(`http ${r.status()}: ${r.url()}`); });
-  await page.goto(`${BASE}/?act=${shot.act}&zone=${shot.zone}&t=${shot.t}&alt=${shot.alt}`);
+  await page.goto(`${BASE}/?act=${shot.act}&zone=${shot.zone}&t=${shot.t}&alt=${shot.alt}${shot.extra ? `&${shot.extra}` : ''}`);
   try { await page.waitForSelector('[data-harness-ready] svg.skyline-glider__scene', { timeout: 20000 }); } catch { problems.push(`never rendered: ${await page.evaluate(() => document.body.dataset.harnessError || document.body.textContent.slice(0, 200))}`); }
   await page.waitForTimeout(400);
   const info = await page.evaluate(() => window.__harness || null);
   if (info?.missing?.length) problems.push(`missing zone files: ${JSON.stringify(info.missing)}`);
-  const file = path.join(OUT, `${shot.act}--${shot.zone}--t${shot.t}${process.env.BROWSER === 'firefox' ? '--firefox' : ''}.png`);
+  const file = path.join(OUT, `${shot.act}--${shot.zone}--t${shot.t}${shot.extra ? `--${shot.extra.replace(/[^a-z0-9]+/gi, '-')}` : ''}${process.env.BROWSER === 'firefox' ? '--firefox' : ''}.png`);
   await page.screenshot({ path: file });
   console.log(JSON.stringify({ shot: `${shot.act}:${shot.zone}:${shot.t}`, file, info, problems }));
   if (problems.length) failed = true;
