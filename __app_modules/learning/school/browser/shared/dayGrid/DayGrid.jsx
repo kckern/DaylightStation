@@ -32,6 +32,7 @@ const STATE_LABEL = Object.freeze({
   partial: 'partly done',
   none: 'nothing done',
   exempt: 'a day off',
+  dayoff: 'a day off at home',
   rest: 'a day off',
   unknown: 'not known',
   future: 'not yet',

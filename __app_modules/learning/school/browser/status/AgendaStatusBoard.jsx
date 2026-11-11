@@ -222,7 +222,10 @@ function TwoWeeks({ term, anchor }) {
   const from = addDays(thisWeek, -7);
   const to = addDays(thisWeek, 6);
   const days = (term.days ?? []).filter((d) => d.studyDay >= from && d.studyDay <= to)
-    .map((d) => ({ studyDay: d.studyDay, state: d.state }));
+    .map((d) => ({
+      studyDay: d.studyDay, state: d.state, reason: d.reason,
+      label: d.dayOff && d.dayOff.tier !== 'normal' ? d.dayOff.label : null,
+    }));
   return (
     <div className="school-status-board__two-weeks">
       <ol className="school-status-board__week-letters" aria-hidden="true">

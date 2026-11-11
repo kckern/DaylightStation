@@ -47,7 +47,10 @@ function TermGrid({ term }) {
         {weekNumbers.map((n, i) => <li key={weeks[i].weekId}>{n}</li>)}
       </ol>
       <DayGrid
-        days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
+        days={(term.days ?? []).map((d) => ({
+          studyDay: d.studyDay, state: d.state, reason: d.reason,
+          label: d.dayOff && d.dayOff.tier !== 'normal' ? d.dayOff.label : null,
+        }))}
         orientation="weeks-as-columns"
         from={term.from}
         to={term.to}

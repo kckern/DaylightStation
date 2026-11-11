@@ -67,6 +67,9 @@
   // did not already use: a vacation is not a miss (grey) and not done (green),
   // and it has to read as neither from across the room.
   --school-board-exempt: #4f8fd6;
+  // A stay-home day off with nothing asked: violet, solid. Neither a vacation
+  // (blue), a miss (grey) nor done (green), and it must read as none of them.
+  --school-board-dayoff: #b98be8;
   --kind-video: #5b8dd6;  // blue — watch
   --kind-audio: #b085e6;  // violet — listen
   --kind-app:   #3fbfae;  // teal — do
@@ -3332,6 +3335,7 @@
     --grid-partial: var(--school-board-retry, #e2a33c);
     --grid-none: var(--school-board-pending);
     --grid-exempt: var(--school-board-exempt, #4f8fd6);
+    --grid-dayoff: var(--school-board-dayoff, #b98be8);
     --grid-unknown-edge: color-mix(in srgb, var(--school-board-ink) 22%, transparent);
     --grid-current: var(--school-board-ink);
     justify-content: flex-end;

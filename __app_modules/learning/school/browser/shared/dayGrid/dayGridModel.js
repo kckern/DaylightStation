@@ -21,7 +21,8 @@
  *   met      the obligation was met            green
  *   partial  some of it                         amber
  *   none     none of it                         grey
- *   exempt   the house / calendar said no work  blue   (term grid)
+ *   exempt   the house was away: no work         blue   (term grid)
+ *   dayoff   a stay-home day off, nothing asked  violet (term grid: exempt / day_off)
  *   rest     nobody asked (reading's word)      near-transparent
  *   unknown  cannot say — pending, a fault      hollow
  */
@@ -33,7 +34,17 @@ export const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export const DAY_STATES = Object.freeze(['met', 'partial', 'none', 'exempt', 'rest', 'unknown']);
+export const DAY_STATES = Object.freeze(['met', 'partial', 'none', 'exempt', 'dayoff', 'rest', 'unknown']);
+
+/**
+ * The square's state for one day row. A term row says `exempt` for both an
+ * away day and a stay-home day with nothing asked, and keeps the difference in
+ * `reason`; the grid draws them differently, so the reason picks the state.
+ */
+export function gridStateFor(row) {
+  if (row?.state === 'exempt' && row?.reason === 'day_off') return 'dayoff';
+  return row?.state ?? 'unknown';
+}
 export const ORIENTATIONS = Object.freeze(['weeks-as-rows', 'weeks-as-columns']);
 
 const KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -144,7 +155,7 @@ export function layoutDayGrid(days, { orientation = 'weeks-as-rows', from = null
       const source = rowsByDay.get(studyDay) ?? null;
       cells[row * cols + col] = {
         studyDay, row, col, weekday: d + 1, weekId,
-        state: source?.state ?? 'unknown',
+        state: source ? gridStateFor(source) : 'unknown',
         count: Number.isFinite(source?.count) ? source.count : null,
         // A day may name ITSELF — "Thanksgiving" rather than the state's
         // generic "a day off". Carried, never invented: judging stays outside

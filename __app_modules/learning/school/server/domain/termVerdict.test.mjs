@@ -127,7 +127,7 @@ describe('term bounds', () => {
     expect(weekIdFor('2026-09-13')).toBe('2026-09-07');
     expect(weekIdFor('2026-09-07')).toBe('2026-09-07');
   });
-  it('the ladder is versioned', () => { expect(VERDICT_VERSION).toBe(1); });
+  it('the ladder is versioned', () => { expect(VERDICT_VERSION).toBe(2); });
 });
 
 describe('dayVerdict — teacher hold (remediation cap)', () => {

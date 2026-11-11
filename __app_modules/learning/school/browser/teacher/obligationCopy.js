@@ -74,6 +74,8 @@ export const MUTED_EXCUSE_FALLBACK = {
   not_due_yet: 'Offered, but not due yet.',
   not_a_school_day: 'Not a school day.',
   household_calendar: 'The house is off today.',
+  day_off: 'A day off — only the kept work is asked.',
+  placeholder: 'This holiday activity is still being written.',
   weekly_satisfied: 'Done for the week.',
   no_history: 'This program keeps no record of past days.',
   suppressed_by_focus: 'Deferred for another subject today.',

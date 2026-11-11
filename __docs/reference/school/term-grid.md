@@ -20,7 +20,8 @@ an optional eighth row holding one square per week for week-level work.
 | green | `met` | every obligation the day asked was served |
 | amber | `partial` | some of it |
 | grey | `none` | none of it |
-| blue | `exempt` | nothing was asked — the house was off, the course does not meet that day, or nothing was assigned |
+| blue | `exempt` | nothing was asked — the house was away, the course does not meet that day, or nothing was assigned |
+| violet | `exempt / day_off` → grid `dayoff` | a stay-home, enrichment or major-holiday day on which nothing was left to ask — solid, full strength, never faded and never blue |
 | hollow | `unknown` | cannot say — not yet computed, a fault, or a program that keeps no history |
 
 The reading streak wall on the living-room screen is the same object turned
@@ -41,13 +42,22 @@ piano-games gate reads, then through a fixed ladder:
 1. a day after today, or not yet computed → `unknown / pending`
 2. a fault (a program that would not answer, an unreachable lock) → `unknown / <fault>`, retried after six hours
 3. nothing asked and every excuse is `no_history` → `unknown / no_history` — never blue: "cannot tell" is not "day off"
-4. nothing asked, the household calendar says off → `exempt / household_calendar`
+4. nothing asked, the household calendar says the house was away → `exempt / household_calendar`
+4b. nothing asked, a day-off tier kept nothing → `exempt / day_off`
 5. nothing asked, every course said not a school day → `exempt / not_a_school_day`
 6. nothing asked, no sections → `exempt / no_work`
 7. nothing asked, other excuses → `exempt / nothing_owed`
 8. served everything asked → `met`; some → `partial`; none → `none`
 
 Work done on an exempt day still reads `met`: the calendar never un-serves.
+A tier day that still asked for work (scripture on a stay-home day) reads
+`met` / `partial` / `none` like any other day.
+
+Each row also carries `dayOff: {tier, label} | null`, read straight from the
+household calendar for that study day, so a replayed row and a live one agree
+by construction and the grid can name the square ("Veterans Day"). The ladder
+is versioned (`VERDICT_VERSION`, now 2, since `day_off` was added); bumping it
+recomputes every cached row.
 
 **Config is not versioned.** Editing a course, a schedule or an enrollment
 re-colours the past. That is the school convention — rollups are derived,
@@ -84,10 +94,18 @@ purpose; a test pins that so the two cannot be quietly conflated.
 ## The household calendar
 
 `school.yml → calendar` takes the same shape as a syllabus `schedule`
-(`except` / `also`, each a date or `{from, to}`). A day it names as off is
-excused for every section, whatever each course's own schedule says, and
-reads blue. It is applied inside the daily agenda, so the printed paper and
-the grid can never disagree about a vacation. Weekends are ordinary days
+(`except` / `also`, each a date or `{from, to}`). Each break carries a
+[day-off tier](./day-off-tiers.md) that decides what the day still asks:
+
+| Tier | Agenda | Grid when nothing was asked |
+|---|---|---|
+| `normal` | an ordinary school day, named | (a school day) |
+| `stay-home` / `enrichment` / `major-holiday` | only the tier's kept work; the rest `excused / day_off` | violet `dayoff` |
+| `away`, or no tier | every section `excused / household_calendar` | blue `exempt` |
+
+Blue therefore means the family was away and nothing else. The calendar is
+applied inside the daily agenda, so the printed paper and the grid can never
+disagree about a vacation. Weekends are ordinary days
 unless a course or the calendar says otherwise. `daysOfWeek` is accepted but
 not used by the household.
 
@@ -97,7 +115,8 @@ An `except` span may carry a `label` (see
 [the school-day calendar](./timing-and-priority.md#7-the-school-day-calendar)),
 and a labelled span is a **named** day off: not merely a day nothing was asked
 on, but a day the house can name. `namedDayOff(day, schedule)` answers with the
-span — label and all — or with nothing.
+span — label and all — or with nothing; `dayOffTier(day, schedule)` answers with
+the covering span's tier (labelled or not), reading an untagged span as `away`.
 
 It follows `scheduleVerdict`'s precedence exactly, which is the point of it
 rather than an implementation note: the two cannot disagree about whether a day
@@ -107,9 +126,9 @@ inside a vacation range is a school day and is therefore **not** a holiday, and
 a weekend is not a named day off at all — a weekend is nobody's `except`, it is
 the ordinary rhythm of the week. Only a day the house wrote down gets a name.
 
-The Fall 2026 term is populated: Labor Day, Veterans Day, the Thanksgiving
-Wednesday-to-Friday (with that Monday and Tuesday still school days), and the
-Christmas break after the semester ends.
+The reading streak wall follows the tiers too: a stay-home or enrichment day
+still asks for reading, so an unread one is a named miss; only an `away` day or
+a major holiday draws the blue square.
 
 ### One calendar, one validation
 

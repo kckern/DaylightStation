@@ -7,7 +7,7 @@
  *   --grid-cell     square edge
  *   --grid-gap      gap between squares
  *   --grid-radius   corner (default a fifth of the cell — reads as a tile, not a dot)
- *   --grid-met / --grid-partial / --grid-none / --grid-exempt / --grid-unknown
+ *   --grid-met / --grid-partial / --grid-none / --grid-exempt / --grid-dayoff / --grid-unknown
  *   --grid-ink      the number's colour on a filled square
  *
  * The three colours are the household's existing vocabulary, not new ones:
@@ -26,6 +26,7 @@
   --grid-partial: #ffd479;
   --grid-none: rgba(255, 255, 255, 0.09);
   --grid-exempt: #4f8fd6;
+  --grid-dayoff: #b98be8;
   --grid-unknown: transparent;
   --grid-unknown-edge: rgba(255, 255, 255, 0.16);
   --grid-rest: rgba(255, 255, 255, 0.035);
@@ -71,6 +72,11 @@
   /* A DAY THE HOUSE TOOK OFF. Blue, not grey: a vacation is not a miss, and a
      grid that greyed it made a perfectly normal term look broken. */
   &[data-state='exempt'] { background: var(--grid-exempt); color: var(--grid-ink); }
+
+  /* A STAY-HOME DAY OFF with nothing asked (term row exempt / day_off). Solid,
+     full strength, its own violet: the house was home and asked nothing, which
+     is neither a vacation (blue) nor a miss (grey) nor done (green). */
+  &[data-state='dayoff'] { background: var(--grid-dayoff); color: var(--grid-ink); }
 
   /* A DAY NOBODY ASKED ABOUT (reading's word for the same idea, kept because
      the wall's server still says it). Near-transparent, no number. */

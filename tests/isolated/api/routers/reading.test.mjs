@@ -540,6 +540,20 @@ describe('the streak wall marks the household s named days off', () => {
     expect(dayIn(body, '2026-08-13').state).toBe('met');
   });
 
+  it('blue only for an away day: a stay-home day still asks for reading', async () => {
+    const tiered = {
+      except: [
+        { from: '2026-08-12', to: '2026-08-12', label: 'Stay-home day', tier: 'stay-home' },
+        { from: '2026-08-13', to: '2026-08-13', label: 'Trip', tier: 'away' },
+        { from: '2026-08-14', to: '2026-08-14', label: 'Big holiday', tier: 'major-holiday' },
+      ],
+    };
+    const body = await summaryWith({ householdCalendar: tiered });
+    expect(dayIn(body, '2026-08-12')).toMatchObject({ state: 'none', holiday: 'Stay-home day' });
+    expect(dayIn(body, '2026-08-13')).toMatchObject({ state: 'exempt', holiday: 'Trip' });
+    expect(dayIn(body, '2026-08-14')).toMatchObject({ state: 'exempt', holiday: 'Big holiday' });
+  });
+
   it('marks nothing without a household calendar, rather than inventing days off', async () => {
     const { app } = build();
     const res = await request(app).get('/api/v1/school/reading/summary?learnerId=user_5');

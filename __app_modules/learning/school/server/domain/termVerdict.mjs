@@ -18,7 +18,8 @@
  *   1  day after today, or nothing computed yet ......... unknown / pending
  *   2  completion indeterminate (a fault) ............... unknown / <the fault>
  *   2b nothing asked and every excuse is `no_history` ... unknown / no_history
- *   3  nothing asked, the house was off ................. exempt / household_calendar
+ *   3  nothing asked, the house was off (away) .......... exempt / household_calendar
+ *   3b nothing asked, a day-off tier kept nothing ....... exempt / day_off
  *   4  nothing asked, every course said not a school day  exempt / not_a_school_day
  *   5  nothing asked, no sections at all ................ exempt / no_work
  *   6  nothing asked (excused for other reasons) ........ exempt / nothing_owed
@@ -41,7 +42,7 @@ import { isoWeekday } from "./schoolCalendar.mjs";
 export { isoWeekday };
 
 /** Bump when the ladder's meaning changes; every cached row then recomputes. */
-export const VERDICT_VERSION = 1;
+export const VERDICT_VERSION = 2;
 
 export const DAY_STATES = Object.freeze(['met', 'partial', 'none', 'exempt', 'unknown']);
 
@@ -100,6 +101,10 @@ export function dayVerdict({
   if (asked === 0) {
     if (excuses.length && excuses.every((r) => r === 'no_history')) return { state: 'unknown', reason: 'no_history', ...base };
     if (excuses.includes('household_calendar')) return { state: 'exempt', reason: 'household_calendar', ...base };
+    // A stay-home / enrichment / major-holiday day with nothing left to ask:
+    // a day off the house declared while staying home. Its own solid colour on
+    // the grid, never the blue of an away day.
+    if (excuses.includes('day_off')) return { state: 'exempt', reason: 'day_off', ...base };
     if (excuses.length && excuses.every((r) => r === 'not_a_school_day' || r === 'no_history')) {
       return { state: 'exempt', reason: 'not_a_school_day', ...base };
     }

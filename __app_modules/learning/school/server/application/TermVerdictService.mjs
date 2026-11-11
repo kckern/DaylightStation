@@ -36,12 +36,14 @@ import {
   dayVerdict, weekVerdict, termDaysFor, resolveTermFor, weekIdFor, addDays, VERDICT_VERSION,
 } from "../domain/termVerdict.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
+import { dayOffTier } from "../domain/schoolCalendar.mjs";
 
 const pendingRow = (studyDay, today) => ({ ...dayVerdict({ studyDay, today }), sections: [], weekly: [] });
 
 export class TermVerdictService {
   #completion; #cache; #periods; #window; #timezone; #clock; #logger; #freshMs;
   #queues = new Map();
+  #householdSchedule = null;
   #changedAt = new Map(); // learnerId -> ms of the last completion input (see `invalidate`)
   // `${learnerId}|${day}|${today}` -> {startedMs, promise}: today's/yesterday's
   // live projections, shared while they are in flight and for `freshMs` after,
@@ -67,6 +69,10 @@ export class TermVerdictService {
   constructor({
     getLearnerDayCompletion, cache, academicPeriods, window = null,
     timezone = null, clock = () => new Date(), freshMs = 60_000, logger = console,
+    // The household calendar (`school.yml → calendar`): each row names the
+    // day off covering it, read here from the calendar itself so a replayed
+    // row and a live one agree by construction.
+    householdSchedule = null,
   } = {}) {
     if (!getLearnerDayCompletion || !cache || !academicPeriods) {
       throw new Error('TermVerdictService requires getLearnerDayCompletion, cache and academicPeriods');
@@ -79,6 +85,7 @@ export class TermVerdictService {
     this.#clock = clock;
     this.#freshMs = freshMs;
     this.#logger = logger;
+    this.#householdSchedule = householdSchedule;
   }
 
   today() {
@@ -114,8 +121,10 @@ export class TermVerdictService {
     const verdict = dayVerdict({
       studyDay, today, completion: result, sections: result.sections ?? [], computedAt,
     });
+    const off = this.#householdSchedule ? dayOffTier(studyDay, this.#householdSchedule) : null;
     return {
       ...verdict, computedAt,
+      dayOff: off ? { tier: off.tier, label: off.label } : null,
       sections: (result.sections ?? []).map(({ subject, state, reason, unknowable }) => ({ subject, state, reason, ...(unknowable ? { unknowable } : {}) })),
       weekly: (result.sections ?? []).flatMap((s) => s.weekly ?? []),
     };
@@ -306,7 +315,7 @@ export class TermVerdictService {
     const days = Object.entries(rows).sort(([a], [b]) => (a < b ? -1 : 1)).map(([studyDay, row]) => ({
       studyDay, state: row.state, reason: row.reason ?? null,
       served: row.served ?? 0, asked: row.asked ?? 0, weekday: row.weekday,
-      computedAt: row.computedAt ?? null,
+      computedAt: row.computedAt ?? null, dayOff: row.dayOff ?? null,
       ...(detail ? { sections: row.sections ?? [], weekly: row.weekly ?? [] } : {}),
     }));
     const byWeek = new Map();

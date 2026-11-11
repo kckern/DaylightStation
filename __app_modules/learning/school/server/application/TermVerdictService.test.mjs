@@ -41,6 +41,22 @@ function build({ table, cache = new MemoryCache(), window = { from: '2026-09-01'
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
+describe('TermVerdictService day-off rows', () => {
+  it('a row carries the household day off covering it, and null on a plain day', async () => {
+    const completion = completionDouble({});
+    const service = new TermVerdictService({
+      getLearnerDayCompletion: completion, cache: new MemoryCache(), academicPeriods: periods,
+      timezone: 'America/Los_Angeles', clock: () => new Date(NOW), logger: silent,
+      householdSchedule: { except: [{ from: '2026-09-07', to: '2026-09-07', label: 'Labor Day', tier: 'stay-home' }] },
+    });
+    expect((await service.computeDay('kid', '2026-09-07')).dayOff).toEqual({ tier: 'stay-home', label: 'Labor Day' });
+    expect((await service.computeDay('kid', '2026-09-08')).dayOff).toBeNull();
+    const read = await service.read('kid');
+    expect(read.days.find((d) => d.studyDay === TODAY).dayOff).toBeNull();
+    expect(read.days.find((d) => d.studyDay === '2026-09-08')).toHaveProperty('dayOff', null);
+  });
+});
+
 describe('TermVerdictService.read', () => {
   it('today and yesterday are recomputed on read; older days are queued for the background and read pending meanwhile', async () => {
     const { service, completion } = build();

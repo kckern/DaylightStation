@@ -1,4 +1,4 @@
-import { isSchoolDay, namedDayOff, validateSchedule } from "../domain/schoolCalendar.mjs";
+import { dayOffTier, isSchoolDay, validateSchedule } from "../domain/schoolCalendar.mjs";
 
 const YESTERDAY_LIMIT = 4;
 const RECENT_DAYS = 7;
@@ -339,13 +339,20 @@ export class ReadingApiService {
         // house declares Christmas. Reading still counts on a holiday — `met`
         // and `partial` are checked first, exactly as they are for a rest day,
         // because the agenda never un-serves work done on a day off.
+        //
+        // A DAY-OFF TIER decides whether reading was asked at all: a stay-home
+        // or enrichment day keeps reading, so an unread one is still a miss
+        // (named, so the child sees which day it was); an away day or a major
+        // holiday does not ask for it, and only those draw the blue square.
         const asked = isSchoolDay(day, schedule);
-        const holiday = namedDayOff(day, this.#householdSchedule);
+        const off = dayOffTier(day, this.#householdSchedule);
+        const holiday = off?.label && off.tier !== 'normal' ? off : null;
+        const readingExcused = holiday && (holiday.tier === 'away' || holiday.tier === 'major-holiday');
         let state;
         if (target === null) state = books > 0 ? 'unknown-met' : 'unknown';
         else if (target > 0 && books >= target) state = 'met';
         else if (books > 0) state = 'partial';
-        else if (holiday) state = 'exempt';
+        else if (readingExcused) state = 'exempt';
         else state = asked ? 'none' : 'rest';
         return { studyDay: day, books, target, asked, state,
           ...(holiday ? { holiday: holiday.label } : {}) };
