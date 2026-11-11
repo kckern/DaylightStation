@@ -14,6 +14,12 @@
     .cg-chart__clock-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.04em; color: cg.$cg-faint; }
     .cg-chart__clock {
       font-family: cg.$cg-mono; font-weight: 800; font-size: 2.4rem; line-height: 1; color: cg.$cg-text;
+      // Last ten seconds of a time race: one step up the scale (the hero
+      // numeral size), warm, with a once-a-second pulse.
+      &.is-final {
+        font-size: cg.$tv-num-hero; color: cg.$cg-warn;
+        animation: cg-clock-final 1s ease-in-out infinite;
+      }
     }
     .cg-chart__goal { font-size: 1.1rem; color: cg.$cg-muted; }
 
@@ -47,4 +53,13 @@
 @keyframes cg-log-chip-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cg-clock-final {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-chart__header .cg-chart__clock.is-final { animation: none; }
 }

@@ -19,6 +19,8 @@ export const CYCLE_TOAST_VARIANTS = Object.freeze([
   // A rider's heart-rate zone went UP mid-race (more distance per stroke).
   // Good news, never an alarm. Nothing is raised when it goes down.
   'boost',
+  // Race beats (raceBeats.js): neutral pacing information.
+  'halfway', 'split', 'last-minute', 'last-stretch',
 ]);
 
 let _logger;

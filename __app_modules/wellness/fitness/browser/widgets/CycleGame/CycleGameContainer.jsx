@@ -21,7 +21,9 @@ import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceSt
 import { buildAutoStartCourse } from "../../lib/cycleGame/autoStartCourse.js";
 import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
-import { dramaEventToasts } from "../../lib/cycleGame/dramaEventCopy.js";
+import { dramaEventToasts, beatToasts } from "../../lib/cycleGame/dramaEventCopy.js";
+import { raceBeats } from "../../lib/cycleGame/raceBeats.js";
+import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
 import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
@@ -112,6 +114,14 @@ function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parS
     ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID, source: 'par' }
     : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null, source: 'par' };
 }
+
+// A recorded rider's display name carries a ghost glyph ("Rider B 👻"); beat
+// toasts word the rival in a sentence, so it is dropped there.
+const plainName = (name) => String(name || '').replace(/\s*👻\s*$/u, '');
+
+// How much the racing music rises for the finale (last minute / last stretch),
+// as a share of the master volume.
+const FINALE_MUSIC_LIFT = 0.15;
 
 // The one line the results board shows for a ride ended from the race menu, in
 // place of any ladder-movement callout (it rides the same notes slot).
@@ -235,6 +245,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const soundsRef = useRef(sounds);
   soundsRef.current = sounds;
   const musicVolume = Number.isFinite(cycleGameConfig?.music_volume) ? cycleGameConfig.music_volume : 0.55;
+  const musicVolumeRef = useRef(musicVolume);
+  musicVolumeRef.current = musicVolume;
+  // The finale lift (FINALE_MUSIC_LIFT while a race is in its finale, else 0),
+  // added to the music level before the master scales it.
+  const musicLiftRef = useRef(0);
 
   // Master volume — the OFFICIAL fitness volume store (the same level the rest
   // of the app's video uses). Scales all cycle-game music + SFX; the lobby
@@ -248,6 +263,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Separate from the one-shot SFX channel (playSound). Null/absent = silent.
   const musicRef = useRef(null);
   const musicKeyRef = useRef(null);
+  // The level every music track plays at: (music_volume + finale lift) × master.
+  const musicLevel = useCallback((master = masterRef.current) => Math.max(0, Math.min(1,
+    (musicVolumeRef.current + musicLiftRef.current) * (Number.isFinite(master) ? master : 1))), []);
   const stopMusic = useCallback(() => {
     if (musicRef.current) {
       try { musicRef.current.pause(); musicRef.current.src = ''; } catch { /* ignore */ }
@@ -262,7 +280,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     try {
       const a = new Audio(url);
       a.loop = loop;
-      a.volume = Math.max(0, Math.min(1, musicVolume * masterRef.current));
+      a.volume = musicLevel();
       // Autoplay can defer until a user gesture — benign, logged at debug so a
       // "no music" report can be told apart from a genuine load failure.
       a.play().catch((err) => { log.debug('cycle_game.music_deferred', { key, error: err?.message || String(err) }); });
@@ -272,7 +290,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } catch (err) {
       log.warn('cycle_game.music_unavailable', { key, error: err?.message || String(err) });
     }
-  }, [musicVolume, stopMusic, log]);
+  }, [musicLevel, stopMusic, log]);
   // Pick a random track from the racing playlist folder.
   const pickRacingTrack = useCallback(() => {
     const r = soundsRef.current?.racing;
@@ -451,6 +469,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   // snapshot so LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/FINAL_LAP/
   // LAPPING_IMMINENT fire exactly once, on the tick they actually happen.
   const prevRaceSnapshotRef = useRef(null);
+  // Race beats (raceBeats.js): its state between ticks, whether the clock is in
+  // the final ten seconds (read at render, like gapTicksRef), and whether the
+  // race has reached its finale (last minute / last stretch).
+  const raceBeatsRef = useRef(null);
+  const finalSecondsRef = useRef(false);
+  const finalSecondsLoggedRef = useRef(false);
+  const finaleRef = useRef(false);
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -966,6 +991,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     gapTicksRef.current = new Map();
     prevSensorLostRef.current = new Set();
     prevRaceSnapshotRef.current = null;
+    raceBeatsRef.current = null;
+    finalSecondsRef.current = false;
+    finalSecondsLoggedRef.current = false;
+    finaleRef.current = false;
+    musicLiftRef.current = 0;
     tickCountRef.current = 0;
     setSaveFailed(false);
     setLadderNotes([]);
@@ -1330,6 +1360,75 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase, applySnapshot, log]);
 
+  // One tick's race beats (see the tick). A solo rider (one live rider and one
+  // replayed rival) hears the gap to the rival at halfway and each minute; a
+  // group race has no rival and gets the beats without a gap.
+  const runBeats = useCallback((state) => {
+    const meta = raceMetaRef.current;
+    const engineRiders = state.engineState?.riders || {};
+    const elapsedS = state.engineState?.elapsedS ?? 0;
+    const away = new Set([...(state.parked || []), ...(state.noSensor || [])]);
+    const liveIds = Object.keys(engineRiders).filter((id) => !engineRiders[id].isGhost);
+    const ghostIds = Object.keys(engineRiders).filter((id) => engineRiders[id].isGhost);
+    const presentIds = liveIds.filter((id) => !away.has(id));
+    const leaderM = presentIds.length
+      ? Math.max(...presentIds.map((id) => Number(engineRiders[id].cumulativeDistanceM) || 0))
+      : 0;
+    const { beats, state: next } = raceBeats({
+      winCondition: meta?.winCondition, goalM: meta?.goalM, timeCapS: meta?.timeCapS, elapsedS, leaderM
+    }, raceBeatsRef.current);
+    raceBeatsRef.current = next;
+    const finalNow = presentIds.length > 0 && beats.includes('FINAL_SECONDS');
+    finalSecondsRef.current = finalNow;
+    if (!presentIds.length || !beats.length) return;
+
+    let delta = null;
+    let rivalName;
+    const rival = ghostIds.length === 1 ? engineRiders[ghostIds[0]] : null;
+    if (liveIds.length === 1 && rival) {
+      rivalName = plainName(rival.displayName);
+      if (Array.isArray(rival.ghostRecordedSeries) && rival.ghostRecordedSeries.length) {
+        delta = paceDelta({
+          riderDistanceM: Number(engineRiders[liveIds[0]].cumulativeDistanceM) || 0,
+          elapsedS,
+          rivalSeries: rival.ghostRecordedSeries,
+          intervalS: rival.ghostIntervalS
+        });
+      }
+    }
+    beats.forEach((beat) => {
+      const isFinal = beat === 'FINAL_SECONDS';
+      if (isFinal) {
+        playSound(soundsRef.current?.countdown, { volume: masterRef.current }); // null = silent
+        if (finalSecondsLoggedRef.current) return; // logged once, when it starts
+        finalSecondsLoggedRef.current = true;
+      }
+      log.info('cycle_game.beat', {
+        raceId: meta?.raceId ?? null, beat, elapsedS, gapS: delta?.gapS ?? null, gapM: delta?.gapM ?? null
+      });
+      if ((beat === 'LAST_MINUTE' || beat === 'LAST_STRETCH') && !finaleRef.current) {
+        finaleRef.current = true;
+        musicLiftRef.current = FINALE_MUSIC_LIFT;
+        if (musicRef.current) musicRef.current.volume = musicLevel();
+        log.info('cycle_game.finale_started', { raceId: meta?.raceId ?? null, beat, elapsedS });
+      }
+      beatToasts(beat, { delta, rivalName, rivalKind: meta?.rivalKind ?? null, elapsedS })
+        .forEach((t) => showToast({ icon: null, ...t }));
+    });
+  }, [log, musicLevel, showToast]);
+
+  // The finale ends with the race (results, discard): the music lift and the
+  // final-seconds clock are dropped.
+  useEffect(() => {
+    if (phase === 'go' || phase === 'racing') return;
+    finaleRef.current = false;
+    finalSecondsRef.current = false;
+    if (musicLiftRef.current) {
+      musicLiftRef.current = 0;
+      if (musicRef.current) musicRef.current.volume = musicLevel();
+    }
+  }, [phase, musicLevel]);
+
   // ── engine-live span (wall clock) ────────────────────────────────────────
   // True for the ENTIRE go+racing span — the exact window the race-tick effect
   // below runs for. Used (instead of raw `phase`) as that effect's dependency
@@ -1462,6 +1561,13 @@ export default function CycleGameContainer({ onMount } = {}) {
       );
       raceSnapshot.events.forEach((evt) => recordDramaEvent(evt, raceSnapshot, state.engineState?.riders || {}));
       prevRaceSnapshotRef.current = raceSnapshot;
+
+      // ── Race beats — halfway, a split each minute, the last minute / last
+      // stretch, the final ten seconds. The leader is the furthest live rider
+      // who is not away; with every live rider away the beats still advance
+      // (so none fires late on their return) but nothing is shown or played.
+      // The race-ending tick has none: the results board replaces the screen.
+      if (state.phase !== 'finished') runBeats(state);
 
       // ── Cadence connectivity transitions (info) — connect/drop only, not steady
       // state. The first read seeds the map without logging. Answers "my pedaling
@@ -1735,7 +1841,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts]);
+  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts, runBeats]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again
@@ -1957,10 +2063,8 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // Keep the currently-playing track in sync with live master-volume changes.
   useEffect(() => {
-    if (musicRef.current) {
-      musicRef.current.volume = Math.max(0, Math.min(1, musicVolume * (Number.isFinite(effectiveMaster) ? effectiveMaster : 1)));
-    }
-  }, [effectiveMaster, musicVolume]);
+    if (musicRef.current) musicRef.current.volume = musicLevel(effectiveMaster);
+  }, [effectiveMaster, musicVolume, musicLevel]);
 
   // Silence everything (and cancel any pending staging) when the game unmounts.
   useEffect(() => () => {
@@ -2345,6 +2449,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           riderLive={riderLive}
           cadenceBands={cadenceBands}
           rivalKind={raceMetaRef.current?.rivalKind ?? null}
+          finalSeconds={finalSecondsRef.current}
+          finale={finaleRef.current}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
           lapLengthM={effectiveLapLength({
             lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,

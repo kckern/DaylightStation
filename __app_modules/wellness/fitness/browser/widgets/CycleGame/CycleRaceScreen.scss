@@ -21,6 +21,10 @@
       radial-gradient(140% 120% at 50% 110%, rgba(0, 0, 0, 0.92), transparent 62%),
       linear-gradient(180deg, rgba(6, 6, 12, 0.7), rgba(6, 6, 12, 0.32) 30%, rgba(6, 6, 12, 0.82));
   }
+  // Finale (last minute / last stretch): the vignette closes in a little.
+  &.is-finale &__vignette {
+    box-shadow: inset 0 0 12vmin 2vmin rgba(0, 0, 0, 0.55);
+  }
 
   // ── Race clock (framed, labeled) ────────────────────────────────────────
   &__clock-frame {

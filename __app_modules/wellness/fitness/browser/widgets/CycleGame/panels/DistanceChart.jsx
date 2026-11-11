@@ -124,7 +124,7 @@ function layoutTags(tips, win, minSepPct) {
  * its tag draw at reduced opacity; the tag shows the rider's own distance. Axis labels are an HTML overlay
  * (≥1.1rem): distance up the Y axis (gap-behind-leader in log mode), m:ss across X.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0, mode = 'sidebar', timeCapS = null }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0, mode = 'sidebar', timeCapS = null, finalSeconds = false }) {
   // Solo: one live rider and a rival. Nobody leads: no "Leader" in the header,
   // and each tag shows the rider's own distance rather than a gap to a leader.
   // The rival's WHOLE recording is drawn as a dashed trace, so the rider sees
@@ -491,7 +491,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     <div className="cg-chart" data-testid="distance-chart">
       <div className="cg-chart__header" data-testid="chart-header">
         <span className="cg-chart__clock-label">{winCondition === 'time' ? 'Time left' : 'Elapsed'}</span>
-        <span className="cg-chart__clock" data-testid="race-clock">{formatClock(clockSeconds)}</span>
+        <span className={`cg-chart__clock${finalSeconds ? ' is-final' : ''}`} data-testid="race-clock">{formatClock(clockSeconds)}</span>
         <span className="cg-chart__goal">
           {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : solo ? null : (
             <>Leader <span data-distance-readout={headerLeaderId ?? undefined}>
@@ -679,4 +679,6 @@ DistanceChart.propTypes = {
   mode: PropTypes.oneOf(['solo', 'sidebar', 'wide']),
   /** Time races: the race length; the x axis spans 0 … timeCapS from the first frame. */
   timeCapS: PropTypes.number,
+  /** The last ten seconds of a time race: the clock grows and pulses. */
+  finalSeconds: PropTypes.bool,
 };

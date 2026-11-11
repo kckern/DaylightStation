@@ -43,7 +43,8 @@ const plainName = (name) => String(name || '').replace(/\s*👻\s*$/u, '');
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true, lapLengthM = 0, rivalKind = null, soloLayout = true
+  showSpeedos = true, lapLengthM = 0, rivalKind = null, soloLayout = true,
+  finalSeconds = false, finale = false
 }) {
   const riderIds = Object.keys(riders);
   const liveIds = riderIds.filter((id) => !riders[id].isGhost);
@@ -94,7 +95,7 @@ export default function CycleRaceScreen({
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
         winCondition={winCondition} goalM={goalM} elapsedS={elapsedS}
         clockSeconds={clockSeconds} maxDistanceM={maxDistance} zoneBox={slot?.zoneBox}
-        mode={mode} timeCapS={timeCapS} />
+        mode={mode} timeCapS={timeCapS} finalSeconds={finalSeconds} />
     ),
     povGrid: () => (
       <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive}
@@ -131,7 +132,7 @@ export default function CycleRaceScreen({
   const laneVars = laneColorVars(riderIds);
 
   return (
-    <div className="cycle-race-screen" data-testid="cycle-race-screen" style={laneVars}>
+    <div className={`cycle-race-screen${finale ? ' is-finale' : ''}`} data-testid="cycle-race-screen" style={laneVars}>
       {/* Ambient background video — only mounts when a Plex id is configured (null = no video). */}
       {backgroundPlexId && (
         <video
@@ -165,5 +166,9 @@ CycleRaceScreen.propTypes = {
   lapLengthM: PropTypes.number,
   /** Who the solo rider is chasing: 'self' | 'household' | 'par' | 'ghost' | null. */
   rivalKind: PropTypes.string,
-  soloLayout: PropTypes.bool
+  soloLayout: PropTypes.bool,
+  /** The last ten seconds of a time race: the chart clock grows and pulses. */
+  finalSeconds: PropTypes.bool,
+  /** From the last minute / last stretch to the end: the vignette tightens. */
+  finale: PropTypes.bool
 };

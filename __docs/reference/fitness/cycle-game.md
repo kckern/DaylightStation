@@ -835,6 +835,30 @@ and a distance-race finisher (parked at the line, no zone) is left out. A strap
 that starts reporting mid-race is a change from no zone (the strapless
 multiplier) to the zone, so it raises the toast when that multiplier is higher.
 
+### Race beats
+
+The middle of a race has a shape. Each tick (except the race-ending one) the
+container calls `raceBeats` (`lib/cycleGame/raceBeats.js`) with the furthest
+live rider who is **not away** as the leader, keeps its state between ticks
+(reset at launch) and turns each beat into toasts with `beatToasts`
+(`dramaEventCopy.js`). A solo race (one live rider and one replayed rival)
+gets the gap to the rival from `paceDelta` (the rival's `ghostRecordedSeries`
+at this tick); a group race has no rival and no gap. While every live rider is
+away the beats still advance, so none fires late, but nothing is shown,
+played or logged.
+
+| Beat | When | Toast (variant) | Also |
+|---|---|---|---|
+| `HALFWAY` | half the time (time race) or the leader at half the goal (distance race), once | *"Halfway"*, plus *"4 s ahead of par"* / *"6 s behind your best"* in a solo race (`halfway`) | |
+| `SPLIT` | each whole minute, once, unless a bigger beat fired that tick | *"2:00"* + the gap (`split`); **no toast** without a rival | |
+| `LAST_MINUTE` | 60 s left in a time race of 3 min or more, once | *"One minute left"* (`last-minute`) | starts the finale |
+| `LAST_STRETCH` | the leader at 90% of a distance race, once | *"Last stretch"* (`last-stretch`) | starts the finale |
+| `FINAL_SECONDS` | each of the last 10 s of a time race | none | `sounds.countdown` beep each second; the chart clock gets `is-final` (hero size, warm, pulsing; no pulse under reduced motion) |
+
+The beat toasts share a neutral accent. **Finale:** from `LAST_MINUTE` or
+`LAST_STRETCH` until the race ends the race screen root carries `is-finale`
+(the vignette closes in slightly) and the racing music rises (§14).
+
 `cycle_game.cadence_change` logs every sensor connect/drop transition. There is
 no DNF toast, no DNF log, no penalty lifecycle (rolling start, §10) and no
 event markers on the chart. Riders away at a tick (parked ∪ no sensor) are
@@ -927,6 +951,12 @@ autoplay rejections; no-op on a falsy url). The container drives a lifecycle
 soundtrack — lobby loop (idle), ready cue (staging), start jingle + per-tick beeps
 (countdown), random racing track (racing), outro (results) — all scaled by the
 master volume.
+
+- **Music level** = `(music_volume + lift) × master`, clamped to 1. The lift is
+  0, except in a race's **finale** (last minute / last stretch, §11), where it
+  is 0.15 (15% of master) until the race ends or is discarded.
+- **Final seconds:** each of the last ten seconds of a time race plays
+  `sounds.countdown` (the same cue the stoplight uses; silent when unset).
 
 ---
 
@@ -1320,6 +1350,11 @@ by `raceId` (+ `elapsedS` where relevant).
   never shown: `{ variant, ageMs, reason }`; `reason` is `stale` (waited past
   6 s), `replaced` (a newer toast of the same variant) or `resolved` (a park
   notice for a rider who resumed first). See §11.
+- **`cycle_game.beat`** (INFO) — a race beat (§11): `{ raceId, beat, elapsedS,
+  gapS, gapM }` (gap to the rival in a solo race, else `null`). Once per beat;
+  `FINAL_SECONDS` is logged once, when the final ten seconds start.
+- **`cycle_game.finale_started`** (INFO) — once per race, on the beat that
+  starts the finale: `{ raceId, beat, elapsedS }`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
   It replaces `cycle_game.finish_forced`, which is no longer emitted.

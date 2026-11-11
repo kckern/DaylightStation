@@ -47,6 +47,9 @@
   &--lapping { --cycle-event-accent: #{cg.$cg-danger}; }
   // Boost: a zone going up is good news — the success green, never an alarm.
   &--boost { --cycle-event-accent: #{cg.$cg-success}; }
+  // Race beats (halfway, a minute split, last minute, last stretch): pacing
+  // information, neutral — neither good news nor an alarm.
+  &--halfway, &--split, &--last-minute, &--last-stretch { --cycle-event-accent: #{cg.$cg-muted}; }
 
   &--entered {
     animation: cycle-event-toast-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
