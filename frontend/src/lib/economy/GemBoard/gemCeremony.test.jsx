@@ -8,8 +8,8 @@ const board = (cells, week = '2026-11-02') => ({
   mode: 'live', week,
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
   categories: [
-    { id: 'race-champion', label: 'Race of the week', cadence: 'contest', color: '#ff7a2f' },
-    { id: 'perfect-sheet', label: 'Perfect worksheet', cadence: 'milestone', color: '#2e9e5b' },
+    { id: 'race-champion', label: 'Race of the week', cadence: 'contest', color: '#2e9e5b' },
+    { id: 'perfect-sheet', label: 'Perfect worksheet', cadence: 'milestone', color: '#f2c94c' },
   ],
   cells,
 });
@@ -23,7 +23,7 @@ describe('gemAwards', () => {
     const { awards, snapshot } = gemAwards(before, after);
     expect(awards).toEqual([]);
     const won = board({ ...NONE, 'race-champion': { a: cell('won', 1), b: cell('none') } });
-    expect(gemAwards(snapshot, won).awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'race-champion', ruleId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', cadence: 'contest', kind: 'won', count: 1 }]);
+    expect(gemAwards(snapshot, won).awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'race-champion', ruleId: 'race-champion', label: 'Race of the week', color: '#2e9e5b', cadence: 'contest', kind: 'won', count: 1 }]);
   });
 
   it('a lead that becomes a win is celebrated again; a count that grows celebrates the new ones', () => {
@@ -48,15 +48,15 @@ const merged = (cells, week = '2026-11-02') => ({
   mode: 'live', week,
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
   categories: [
-    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', color: '#8e5bd0' },
-    { id: 'racing', label: 'Racing', cadence: 'contest', color: '#ff7a2f' },
-    { id: 'reading', label: 'Reading', cadence: 'weekly', color: '#2e9e5b' },
+    { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', color: '#1e88e5' },
+    { id: 'racing', label: 'Cycle Race', cadence: 'contest', color: '#2e9e5b' },
+    { id: 'reading', label: 'Reading', cadence: 'weekly', color: '#f2c94c' },
   ],
   cells,
 });
 const rings = (most = 'none', improved = 'none') => ({
   state: most === 'leading' || improved === 'leading' ? 'leading' : 'none', week: 0,
-  parts: [part('ring-contest', 'Most rings this week', 'contest', most, 0, { color: '#8e5bd0' }), part('ring-improved', 'Most improved', 'contest', improved, 0, { color: '#8e5bd0' })],
+  parts: [part('ring-contest', 'Most rings this week', 'contest', most, 0, { color: '#1e88e5' }), part('ring-improved', 'Most improved', 'contest', improved, 0, { color: '#1e88e5' })],
 });
 const racing = (champion = 'none', pb = 0) => ({
   state: pb > 0 ? 'earned' : champion, week: pb,
@@ -64,7 +64,7 @@ const racing = (champion = 'none', pb = 0) => ({
 });
 const reading = (week = 0, books = 0) => ({
   state: week + books > 0 ? 'earned' : 'none', week: week + books,
-  parts: [part('reader-week', 'Story time 4 days', 'weekly', week > 0 ? 'earned' : 'none', week), part('book-finished', 'Book finished', 'milestone', books > 0 ? 'earned' : 'none', books, { color: '#2e9e5b' })],
+  parts: [part('reader-week', 'Story time 4 days', 'weekly', week > 0 ? 'earned' : 'none', week), part('book-finished', 'Book finished', 'milestone', books > 0 ? 'earned' : 'none', books, { color: '#f2c94c' })],
 });
 const rows = (a = {}, b = {}) => ({
   'ring-contests': { a: a.rings ?? rings(), b: b.rings ?? rings() },
@@ -117,13 +117,13 @@ describe('gemAwards by rule', () => {
   it('a finished book is announced as the book, a milestone, in its own colour', () => {
     const before = gemSnapshot(merged(rows({ reading: reading(1, 0) })));
     const { awards } = gemAwards(before, merged(rows({ reading: reading(1, 1) })));
-    expect(awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'book-finished', label: 'Book finished', color: '#2e9e5b', cadence: 'milestone', kind: 'earned', count: 1 }]);
+    expect(awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'book-finished', label: 'Book finished', color: '#f2c94c', cadence: 'milestone', kind: 'earned', count: 1 }]);
   });
 
   it('a count that grows on one rule celebrates only the new gems of that rule; a part with no colour takes the row’s', () => {
     const before = gemSnapshot(merged(rows({ reading: reading(1, 1), racing: racing('none', 1) })));
     const { awards } = gemAwards(before, merged(rows({ reading: reading(1, 3), racing: racing('none', 2) })));
-    expect(awards.map((x) => [x.ruleId, x.kind, x.count, x.color])).toEqual([['race-pb', 'earned', 1, '#ff7a2f'], ['book-finished', 'earned', 2, '#2e9e5b']]);
+    expect(awards.map((x) => [x.ruleId, x.kind, x.count, x.color])).toEqual([['race-pb', 'earned', 1, '#2e9e5b'], ['book-finished', 'earned', 2, '#f2c94c']]);
   });
 
   it('a lead that becomes a win is celebrated again; a lead lost is not; awards run by row, then child, then rule', () => {
@@ -256,8 +256,8 @@ describe('useGemCeremony', () => {
 describe('GemCeremony', () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); });
   const awards = [
-    { learnerId: 'a', name: 'Ann', categoryId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', kind: 'won', count: 1 },
-    { learnerId: 'b', name: 'Ben', categoryId: 'perfect-sheet', label: 'Perfect worksheet', color: '#2e9e5b', kind: 'earned', count: 2 },
+    { learnerId: 'a', name: 'Ann', categoryId: 'race-champion', label: 'Race of the week', color: '#2e9e5b', kind: 'won', count: 1 },
+    { learnerId: 'b', name: 'Ben', categoryId: 'perfect-sheet', label: 'Perfect worksheet', color: '#f2c94c', kind: 'earned', count: 2 },
   ];
   it('one card per award, plays its cue once, and dismisses once on tap or the clock', () => {
     vi.useFakeTimers();
@@ -276,8 +276,8 @@ describe('GemCeremony', () => {
   it('two gems in one row for one child are two cards, each under its own rule', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const two = [
-      { learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'reader-week', label: 'Story time 4 days', color: '#2e9e5b', cadence: 'weekly', kind: 'earned', count: 1 },
-      { learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'book-finished', label: 'Book finished', color: '#2e9e5b', cadence: 'milestone', kind: 'earned', count: 1 },
+      { learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'reader-week', label: 'Story time 4 days', color: '#f2c94c', cadence: 'weekly', kind: 'earned', count: 1 },
+      { learnerId: 'a', name: 'Ann', categoryId: 'reading', ruleId: 'book-finished', label: 'Book finished', color: '#f2c94c', cadence: 'milestone', kind: 'earned', count: 1 },
     ];
     const { container } = render(<GemCeremony awards={two} surface="t" onDone={() => {}} />);
     expect([...container.querySelectorAll('.gem-ceremony__label')].map((n) => n.textContent)).toEqual(['Story time 4 days', 'Book finished']);

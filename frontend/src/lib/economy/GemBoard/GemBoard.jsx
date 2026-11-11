@@ -33,7 +33,12 @@ import AreaIcon, { AREAS } from './AreaIcon.jsx';
 import GemDetail, { detailParts } from './GemDetail.jsx';
 import useBoardFit from './useBoardFit.js';
 import getLogger from '@/lib/logging/Logger.js';
+import { readCache, writeCache, localMonday } from '@/lib/kioskCache.js';
 import './GemBoard.scss';
+
+/** The last good board per surface, painted at once on open (kioskCache.js); bump on a payload change. */
+const BOARD_CACHE_VERSION = 1;
+const boardCacheKey = (surface) => `gemBoard.board:${surface}`;
 
 let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'gem-board' }));
@@ -79,6 +84,13 @@ export function readBoardShape() {
   } catch {
     return null;
   }
+}
+
+/** What decides the board's size: who is on it, its columns and their names, in order. */
+export function shapeSignature(board) {
+  const shape = boardShape(board);
+  if (!shape) return null;
+  return JSON.stringify([shape.learners.map((l) => [l.learnerId, l.name]), boardRowIds(shape), shape.categories.map((c) => c.label)]);
 }
 
 function saveBoardShape(board) {
@@ -141,7 +153,7 @@ export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows
  * @param {string|null} [props.cursorRowId] - with the focused child, the one cell under the cursor
  * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
  * @param {boolean} [props.pending] - `board` is only an outline (`boardShape`): the names and columns
- *   are drawn at full size, every cell is a placeholder dot and the totals are empty
+ *   are drawn at full size, every cell is blank and the totals are empty
  * @param {string} [props.weekLabel] - the totals' heading: the week the board shows
  */
 export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null, pending = false, weekLabel = 'This week' }) {
@@ -199,7 +211,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             </div>
             {layout.placed.map((g) => g.rows.map((row, i) => (
               <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
-                {pending ? <div className="gem-board__cell" role="cell"><span className="gem-board__dot" /></div> : <GemCell
+                {pending ? <div className="gem-board__cell" role="cell" /> : <GemCell
                   cell={board.cells?.[row.id]?.[l.learnerId]}
                   color={row.color}
                   area={row.area ?? row.group}
@@ -212,7 +224,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             )))}
             {pending
               ? <div className="gem-board__total" role="cell" style={at(FIRST + li, layout.totalCol)} />
-              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} ${weekLabel.toLowerCase()}`} style={at(FIRST + li, layout.totalCol)}>{week}</div>}
+              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} ${weekLabel.toLowerCase()}`} style={at(FIRST + li, layout.totalCol)}>{week > 0 ? week : null}</div>}
           </div>
         );
       })}
@@ -286,12 +298,19 @@ export default function GemBoardOverlay({
     if (!open) return undefined;
     let live = true;
     const week = weekOffset === 0 || !thisWeek.current ? null : addDays(thisWeek.current, 7 * weekOffset);
-    setState((s) => ({ ...s, loading: true, error: null }));
+    // This week opens on the last good board for this week, if this screen has one (stale while
+    // the read is out, then replaced in place). Another week's board is never shown as this one's.
+    const cached = weekOffset === 0 ? readCache(boardCacheKey(surface), { version: BOARD_CACHE_VERSION, week: localMonday() }) : null;
+    if (cached && !thisWeek.current && cached.week) thisWeek.current = cached.week;
+    setState((s) => (cached && !s.board ? { board: cached, error: null, loading: true } : { ...s, loading: true, error: null }));
     load(week)
       .then((board) => {
         if (!live) return;
         if (weekOffset === 0 && board?.week) thisWeek.current = board.week;
-        if (weekOffset === 0) saveBoardShape(board);
+        if (weekOffset === 0) {
+          saveBoardShape(board);
+          if (board?.week && board.mode !== 'off') writeCache(boardCacheKey(surface), board, { version: BOARD_CACHE_VERSION, week: board.week });
+        }
         setState({ board, error: null, loading: false });
       })
       .catch((err) => {
@@ -408,7 +427,9 @@ export default function GemBoardOverlay({
 
   // The panel's font size and the name row's height, from the board's measured size (useBoardFit.js).
   const drawn = state.board && state.board.mode !== 'off' ? state.board : shape;
-  const fit = useBoardFit(panelRef, `${open ? 1 : 0}|${drawn ? boardRowIds(drawn).join() : ''}|${state.board ? 'board' : 'outline'}|${weekOffset}`);
+  // Locked for this opening per shape (useBoardFit.js): the outline and the loaded board are one size.
+  const signature = open && drawn ? shapeSignature(drawn) : null;
+  const fit = useBoardFit(panelRef, `${open ? 1 : 0}|${state.board ? 'board' : 'outline'}|${weekOffset}`, signature);
   const fitStyle = {
     ...(fit.fontPx ? { fontSize: `${fit.fontPx}px` } : null),
     ...(fit.headEm ? { '--gem-head': `${fit.headEm}em` } : null),

@@ -94,9 +94,23 @@ describe('activity-contest', () => {
       windows: { school: WEEK }, learners: [{ ...evaluate(rs, null, { contests: contests(closed, [{ learnerId: 'kid', score: 5 }]) }), learnerName: 'Kid' }],
     });
     const open = buildGemBoard({ ruleset: rs, week: week(false) });
-    expect(open.categories[0]).toMatchObject({ id: 'racing', label: 'Racing', group: 'games', cadence: 'contest', color: '#ff7a2f' });
+    expect(open.categories[0]).toMatchObject({ id: 'racing', label: 'Cycle Race', group: 'games', cadence: 'contest', color: '#2e9e5b' });
     expect(open.cells.racing.kid.state).toBe('leading');
     expect(open.totals.kid.week).toBe(1);
     expect(buildGemBoard({ ruleset: rs, week: week(true) }).cells.racing.kid).toMatchObject({ state: 'won', week: 1 });
+  });
+});
+
+describe('activity-contest evidence carries what the score measures', () => {
+  const rs = ruleset([{ id: 'race', kind: 'activity-contest', match: { activity: 'race' }, reward: { gems: 1 } }]);
+  it('passes the readable value, its unit and the course through to the line', () => {
+    const contests = { race: { closed: false, course: 'Sprint 1500', standings: [
+      { learnerId: 'kid', score: 1e6 / 314, value: 314, unit: 'seconds' }, { learnerId: 'sib', score: 1e6 / 457, value: 457, unit: 'seconds' },
+    ] } };
+    expect(line(evaluate(rs, null, { contests }), 'race').evidence).toEqual([{ score: 1e6 / 314, best: 1e6 / 314, value: 314, unit: 'seconds', course: 'Sprint 1500' }]);
+  });
+  it('a provider that sends no value keeps the bare score', () => {
+    const contests = { race: { closed: false, standings: [{ learnerId: 'kid', score: 12 }] } };
+    expect(line(evaluate(rs, null, { contests }), 'race').evidence).toEqual([{ score: 12, best: 12 }]);
   });
 });

@@ -34,7 +34,7 @@ const preview = (over = {}) => ({
   lines: [
     { ruleId: 'korean-daily', label: 'Korean (each day done)', kind: 'section-day', status: 'earned', count: 4, amount: { silver: 8, gems: 0 },
       priced: { revision: 3, reward: { silver: 2, gems: 0 }, multiplier: 1 }, overridden: false, note: null, evidence: [] },
-    { ruleId: 'scripture-week', label: 'Scripture (whole week)', kind: 'section-week', status: 'none', count: 0, amount: { silver: 0, gems: 0 },
+    { ruleId: 'scripture-week', label: 'Scripture', kind: 'section-week', status: 'none', count: 0, amount: { silver: 0, gems: 0 },
       priced: { revision: 3, reward: { silver: 5, gems: 0 }, multiplier: 1 }, overridden: false, note: 'Not done: 2026-09-22', evidence: [] },
     { ruleId: 'rings', label: 'Rings', kind: 'ring-threshold', status: 'earned', count: 540, amount: { silver: 5, gems: 0 },
       priced: { revision: 3, rate: { rings: 100, silver: 1 }, thresholds: [], multiplier: 1 }, overridden: false, note: '460 more to 1000', evidence: [] },
@@ -92,7 +92,7 @@ describe('CoinsPanel', () => {
   it('lists every rule with its status in words and why it did not pay', async () => {
     render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
     const lines = await screen.findByRole('table', { name: /what it earns/i });
-    const scripture = within(lines).getByText('Scripture (whole week)').closest('tr');
+    const scripture = within(lines).getByText('Scripture').closest('tr');
     expect(within(scripture).getByText('Not this week')).toBeInTheDocument();
     expect(within(scripture).getByText('Not done: 2026-09-22')).toBeInTheDocument();
     const contest = within(lines).getByText('Most rings this week').closest('tr');

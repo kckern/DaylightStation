@@ -5,7 +5,7 @@ import { foldBalances } from './entities/Transaction.mjs';
 const AT = '2026-10-19T06:30:00.000Z'; // Sunday 23:30 in Los Angeles
 const tx = (over) => ({ id: over.id ?? 'x', at: AT, kind: 'earn', currency: 'silver', delta: 1, action: 'a', source: 's', ref: null, ...over });
 const opts = {
-  ruleLabels: { 'scripture-week': 'Scripture (whole week)', 'ring-contest': 'Most rings this week' },
+  ruleLabels: { 'scripture-week': 'Scripture', 'ring-contest': 'Most rings this week' },
   evidenceLabels: { 'line:isaiah': 'Isaiah 50–51 passed' },
   timezone: 'America/Los_Angeles',
 };
@@ -16,7 +16,7 @@ describe('entrySentence', () => {
     expect(entrySentence(tx({ kind: 'earn', delta: 2, action: 'payout:scripture-week', ruleId: 'scripture-week', evidenceRef: 'line:isaiah' }), opts))
       .toBe('+2 silver · Isaiah 50–51 passed');
     expect(entrySentence(tx({ kind: 'earn', delta: 5, action: 'payout:scripture-week', ruleId: 'scripture-week', evidenceRef: 'line:old' }), opts))
-      .toBe('+5 silver · Scripture (whole week)');
+      .toBe('+5 silver · Scripture');
     expect(entrySentence(tx({ kind: 'earn', delta: 1, action: 'payout:gone', ruleId: 'gone' }), opts)).toBe('+1 silver · schoolwork');
   });
   it('a prize', () => {
