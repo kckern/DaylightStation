@@ -39,6 +39,7 @@ import {
   validateManifest,
   writeYaml,
 } from "./gaming-assets/lib.mjs";
+import { exportSkin, parseKey, renderSkinPreview, renderSliceReview, sliceSheet, validateSkin, writeKeyedSheet } from "./gaming-assets/side-scroller.mjs";
 
 const HELP = `gaming-assets — audit and preview private game-art catalogs
 
@@ -79,6 +80,13 @@ Commands:
   derive-blob-set --root <common-dir> --manifest <derivations.yml>
   derive-blob-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
   derive-fence-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
+
+Side-scroller (see gaming-assets/README.md, "Side-scroller skins"):
+  slice      --root <common-dir> --source <relative.png> [--key '#009e00,#ff00ff'] [--gap 1] [--pad 1]
+             [--out <frames.yml>] [--review <review.png>] [--keyed-out <relative.png>]
+  skin-validate --root <common-dir> --contract <contract.yml> --skin <skin.yml>
+  skin-export   --root <common-dir> --contract <contract.yml> --skin <skin.yml> --out-dir <directory>
+  skin-preview  --export-dir <directory> [--contract <contract.yml>] --out <preview.png>
 
 All source paths are relative to --root. The commands never alter raw source images.
 Set DAYLIGHT_BASE_PATH to omit --root; it defaults to $DAYLIGHT_BASE_PATH/media/games/_common.
@@ -283,6 +291,31 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         break;
       case 'derive-fence-catalog':
         report = await deriveFenceConnectorCatalog({ root, manifestPath: required(parsed.flags, 'manifest'), catalogOut: required(parsed.flags, 'catalog-out') });
+        break;
+      case 'slice': {
+        const source = required(parsed.flags, 'source');
+        const file = path.resolve(root, source);
+        const slice = await sliceSheet({ file, key: parsed.flags.key ? parseKey(parsed.flags.key) : null, gap: Number(parsed.flags.gap ?? 1), pad: Number(parsed.flags.pad ?? 1) });
+        if (parsed.flags.review) await renderSliceReview({ file, slice, out: parsed.flags.review, scale: integer(parsed.flags, 'scale', 2) });
+        let keyed = null;
+        if (parsed.flags['keyed-out']) keyed = { source: parsed.flags['keyed-out'], ...(await writeKeyedSheet({ file, key: slice.key, out: path.resolve(root, parsed.flags['keyed-out']) })) };
+        const frames = Object.fromEntries(slice.frames.map((frame) => [frame.id, { rect: frame.rect, content_bounds: frame.content_bounds }]));
+        if (parsed.flags.out) await writeYaml(parsed.flags.out, { kind: 'slice-candidates', source, key: slice.key, size: [slice.width, slice.height], keyed, frames });
+        report = { source, key: slice.key, size: [slice.width, slice.height], frames: slice.frames.length, dividers: slice.dividers, keyed, out: parsed.flags.out ?? null, review: parsed.flags.review ?? null };
+        break;
+      }
+      case 'skin-validate': {
+        const result = await validateSkin({ root, contractPath: required(parsed.flags, 'contract'), skinPath: required(parsed.flags, 'skin') });
+        report = { valid: result.valid, errors: result.errors, warnings: result.warnings, assets: result.usedAssets ?? [] };
+        break;
+      }
+      case 'skin-export': {
+        const result = await exportSkin({ root, contractPath: required(parsed.flags, 'contract'), skinPath: required(parsed.flags, 'skin'), outDir: path.resolve(required(parsed.flags, 'out-dir')) });
+        report = result.ok ? { valid: true, out_dir: result.outDir, distribution: result.manifest.distribution, slots: Object.keys(result.manifest.slots), files: Object.keys(result.manifest.files).length, warnings: result.warnings } : { valid: false, errors: result.errors };
+        break;
+      }
+      case 'skin-preview':
+        report = await renderSkinPreview({ exportDir: path.resolve(required(parsed.flags, 'export-dir')), contractPath: parsed.flags.contract ?? null, out: required(parsed.flags, 'out') });
         break;
       default:
         stderr.write(`ERROR: unknown command: ${parsed.command}\n`); stdout.write(HELP); return 2;
