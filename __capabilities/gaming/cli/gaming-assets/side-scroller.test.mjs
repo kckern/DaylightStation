@@ -180,6 +180,21 @@ describe('side-scroller catalog conventions', () => {
     assert.ok(!result.errors.some((e) => e.includes('actor.hero')), 'keyed sprites pass');
   });
 
+  it('enforces a declared palette: colour count and RGB555', async () => {
+    const dir = await root();
+    const { catalogPath } = await catalogFixture(dir);
+    const catalog = YAML.parse(await readFile(catalogPath, 'utf8'));
+    catalog.assets['actor.hero'].palette = { max_colors: 1, rgb555: true };
+    catalog.assets['terrain.dirt'].palette = { max_colors: 1 };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const result = await validateManifest({ root: dir, manifestPath: catalogPath });
+    // #ff0000: 255 is not a multiple of 8, so it is off the SNES 15-bit grid.
+    assert.ok(result.errors.some((e) => e.includes('actor.hero') && e.includes('frame fly.0') && e.includes('off the RGB555 grid')), result.errors.join('\n'));
+    // the edge frame is grass + dirt: 2 colours against a 1-colour palette; the fill is 1 colour and passes.
+    assert.ok(result.errors.some((e) => e.includes('terrain.dirt') && e.includes('frame edge uses 2 colours, palette allows 1')), result.errors.join('\n'));
+    assert.ok(!result.errors.some((e) => e.includes('terrain.dirt') && e.includes('frame fill')));
+  });
+
   it('requires every frame of a clip to share one canvas size', async () => {
     const dir = await root();
     const { catalogPath } = await catalogFixture(dir);

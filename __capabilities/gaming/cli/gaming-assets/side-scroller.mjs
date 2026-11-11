@@ -332,6 +332,29 @@ export async function validateSideScrollerAsset({ file, asset, prefix, warnings 
       }
     }
   }
+  // Palette rules, per frame: at most max_colors opaque colours, and with
+  // rgb555 every channel on the SNES 15-bit grid (a multiple of 8).
+  const palette = asset.palette;
+  if (palette !== undefined) {
+    if (!palette || typeof palette !== 'object' || (palette.max_colors !== undefined && !(Number.isInteger(palette.max_colors) && palette.max_colors > 0)) || (palette.rgb555 !== undefined && typeof palette.rgb555 !== 'boolean')) {
+      errors.push(`${prefix}: palette must be { max_colors: positive integer, rgb555: boolean }`);
+    } else {
+      image ??= await decode(file);
+      for (const [name, frame] of Object.entries(frames)) {
+        const rect = frame?.rect ?? (frame?.cell && asset.geometry?.cell ? [frame.cell[0] * asset.geometry.cell[0], frame.cell[1] * asset.geometry.cell[1], ...asset.geometry.cell] : null);
+        if (!rect) continue;
+        const colours = new Set(); let offGrid = 0;
+        for (let y = rect[1]; y < rect[1] + rect[3]; y += 1) for (let x = rect[0]; x < rect[0] + rect[2]; x += 1) {
+          const p = rgbaAt(image.pixels, image.width, x, y);
+          if (!p[3]) continue;
+          colours.add((p[0] << 16) | (p[1] << 8) | p[2]);
+          if (palette.rgb555 && (p[0] % 8 || p[1] % 8 || p[2] % 8)) offGrid += 1;
+        }
+        if (palette.max_colors && colours.size > palette.max_colors) errors.push(`${prefix}: frame ${name} uses ${colours.size} colours, palette allows ${palette.max_colors}`);
+        if (offGrid) errors.push(`${prefix}: frame ${name} has ${offGrid} pixels off the RGB555 grid`);
+      }
+    }
+  }
   // A sprite's frame edge is mostly transparent. An opaque border means the
   // ripper's backdrop or panel colour was never keyed out.
   const isSprite = tags.includes('side-scroller') && !tags.includes('parallax-layer') && !tags.includes('terrain-strip');

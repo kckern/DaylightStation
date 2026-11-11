@@ -38,6 +38,7 @@ Side-scroller assets use the ordinary catalog format (`source`, `source_sha256`,
 | Measured `pixel_density` | a frame whose `pixel_density`-sized blocks are not ≥ 99.9 % one colour (resampled or off-grid art), or whose origin is off that grid. Art that is uniform at twice the declared density gets a warning. |
 | One canvas per clip | clip frames with different sizes (the game draws a clip into one box; mixed sizes pulse and drift). |
 | Keyed backdrop | sprite frames whose border is ≥ 60 % opaque: the ripper's backdrop or panel colour was never keyed out. Set `opaque_background: true` for a deliberately opaque sprite. |
+| `palette: { max_colors, rgb555 }` | a frame with more opaque colours than `max_colors`, or (with `rgb555: true`) any pixel off the SNES 15-bit grid (a channel not a multiple of 8). Emulator captures pass; fan redraws usually do not, so declare it only where it is true. One SNES sub-palette is `max_colors: 15`. |
 | `repeat: [x]` / `[x, y]` on a frame | a frame that does not tile on that axis. The wrap step must look like the image's own steps: within 1.5× the 90th percentile or the typical non-zero column step, like the steps right beside it, or the same transition as one inside the image. |
 | tag `parallax-layer` | a missing `scroll: { parallax, band: [y, height] }`, or a `default` frame that does not repeat on x. |
 | tag `terrain-strip` | no `fill` / `edge` / `ceiling_edge` frame; `fill` not repeating on x and y; an edge not repeating on x. |
