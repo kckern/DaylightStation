@@ -39,6 +39,20 @@ describe('QueryEpisodeHistory', () => {
     expect(calls[0]).toEqual({ start: '2010-01-01', end: '2026-10-22', hid: 'hh' });
   });
 
+  it('carries the circumstances: session length, rings, how many videos, and what it was called', async () => {
+    const { uc } = makeUseCase([
+      { ...session('20261022070000', 3000, 'plex:1', { 'rider-a': rider(31) }),
+        durationMs: 2760000, totalRings: 848,
+        media: { primary: { contentId: 'plex:1', title: 'Wave Race 64' }, items: [
+          { contentId: 'plex:1', playedMs: 1500000 }, { contentId: 'plex:7', playedMs: 900000 }, { contentId: 'plex:8', playedMs: 0 },
+        ] } },
+      session('20261014070000', 1000, 'plex:1', { 'rider-a': rider(28) }),
+    ]);
+    const { episodes } = await uc.execute({ episodeIds: ['plex:1'] });
+    expect(episodes['plex:1'][0]).toMatchObject({ durationMs: 2760000, totalRings: 848, videoCount: 2, primaryTitle: 'Wave Race 64' });
+    expect(episodes['plex:1'][1]).toMatchObject({ durationMs: null, totalRings: null, videoCount: 1, primaryTitle: null });
+  });
+
   it('carries the guest flag and leaves minutes null when no zone time was recorded', async () => {
     const { uc } = makeUseCase([
       session('20261022070000', 3000, 'plex:1', {

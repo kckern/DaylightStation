@@ -2,7 +2,8 @@
  * Per-rider episode history — who did an episode, and when.
  *
  * Input is one episode's sessions from GET /api/v1/fitness/sessions/episode-history
- * (newest first, each with riders {id, displayName, minutes, rings, isGuest}).
+ * (newest first, each with riders {id, displayName, minutes, rings, isGuest}
+ * and the session's circumstances: durationMs, totalRings, videoCount).
  *
  * Credit rule: a rider "did" the episode when they rode at least half of it.
  * Someone who walks in for the last few minutes was in the session but did not
@@ -57,53 +58,55 @@ export function gridBadge(sessions, episodeDurationSeconds) {
 }
 
 /**
- * The panel's "who's done it": one row per rider who did the episode (newest
- * ride first), then household members who never have, so absence reads too.
- * Riders on the bike now come first. `household` is [{id, displayName}].
+ * The panel's history: one row per time the episode was actually done,
+ * newest first — who (credited riders, guests included), when, and the
+ * circumstances (how long the session ran, rings, other videos). Nothing is
+ * listed for people who have not done it. `household` is [{id, displayName}].
  */
-export function riderSummary(sessions, episodeDurationSeconds, { household = [], activeIds = [] } = {}) {
-  const active = new Set(activeIds);
+export function completionRows(sessions, episodeDurationSeconds, { limit = 4, household = [] } = {}) {
+  // The household's names win over whatever the session recorded at the time.
   const names = new Map(household.map((m) => [m.id, m.displayName]));
-  const rows = new Map();
-  for (const s of creditedSessions(sessions, episodeDurationSeconds)) {
-    for (const r of s.riders) {
-      const row = rows.get(r.id);
-      if (row) { row.count += 1; continue; }
-      rows.set(r.id, {
-        id: r.id,
-        displayName: names.get(r.id) || r.displayName || r.id,
-        count: 1,
-        lastStartTime: s.startTime ?? null,
-        lastMinutes: Number.isFinite(r.minutes) ? r.minutes : null,
-        lastRings: Number.isFinite(r.rings) ? r.rings : null,
-        isGuest: r.isGuest === true,
-        done: true,
-      });
-    }
-  }
-  for (const m of household) {
-    if (!rows.has(m.id)) {
-      rows.set(m.id, { id: m.id, displayName: m.displayName || m.id, count: 0, lastStartTime: null, lastMinutes: null, lastRings: null, isGuest: false, done: false });
-    }
-  }
-  const list = [...rows.values()].map((row) => ({ ...row, active: active.has(row.id) }));
-  // Map order is already done-by-recency, then household order: a stable sort keeps it.
-  return list.sort((a, b) => (b.active - a.active) || (b.done - a.done));
+  return creditedSessions(sessions, episodeDurationSeconds)
+    .slice(0, limit)
+    .map((s) => {
+      const riderMinutes = s.riders.map((r) => Number(r.minutes)).filter((m) => Number.isFinite(m) && m > 0);
+      const riderRings = s.riders.map((r) => Number(r.rings)).filter((m) => Number.isFinite(m) && m > 0);
+      return {
+        sessionId: s.sessionId,
+        startTime: s.startTime ?? null,
+        riders: s.riders.map((r) => ({ id: r.id, displayName: names.get(r.id) || r.displayName || r.id, isGuest: r.isGuest === true })),
+        // The whole session when the index has it, else the longest rider's time.
+        minutes: Number.isFinite(s.durationMs) && s.durationMs > 0
+          ? Math.round(s.durationMs / 60000)
+          : (riderMinutes.length ? Math.round(Math.max(...riderMinutes)) : null),
+        rings: Number.isFinite(s.totalRings) && s.totalRings > 0
+          ? s.totalRings
+          : (riderRings.length ? riderRings.reduce((a, b) => a + b, 0) : null),
+        otherVideos: Number.isFinite(s.videoCount) ? Math.max(0, s.videoCount - 1) : 0,
+      };
+    });
 }
 
-/** Season coverage chips: how many of these episodes each household rider did. */
-export function seasonCoverage(episodes, historyFor, household = []) {
-  const list = Array.isArray(episodes) ? episodes : [];
-  return household
-    .map((m) => ({
-      id: m.id,
-      displayName: m.displayName || m.id,
-      done: list.filter((ep) => creditedSessions(historyFor(ep), ep?.duration)
-        .some((s) => s.riders.some((r) => r.id === m.id && !r.isGuest))).length,
-      total: list.length,
-    }))
-    .filter((c) => c.done > 0)
-    .sort((a, b) => b.done - a.done);
+const DAY_MS = 86400000;
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "Today", "Yesterday", "Tuesday", "3 weeks ago", "4 months ago", "May 2024" — a date in words, for the bike. */
+export function whenInWords(startTime, now = Date.now()) {
+  const t = Number(startTime);
+  if (!Number.isFinite(t) || t <= 0) return '';
+  const then = new Date(t);
+  const today = new Date(now);
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(today) - startOf(then)) / DAY_MS);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return WEEKDAYS[then.getDay()];
+  if (days < 14) return 'Last week';
+  if (days < 56) return `${Math.round(days / 7)} weeks ago`;
+  const months = (today.getFullYear() - then.getFullYear()) * 12 + (today.getMonth() - then.getMonth());
+  if (months < 12) return `${Math.max(2, months)} months ago`;
+  return `${MONTHS[then.getMonth()]} ${then.getFullYear()}`;
 }
 
 /** A small copy of an episode image — the proxy resizes on `w`/`h`. */

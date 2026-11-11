@@ -205,19 +205,35 @@ episode with no duration, is credited — the session is the only evidence.
   household rider — or if the history call fails — the chip is the plain
   media-server one, unchanged. An in-progress episode keeps its % badge.
 - **Episode panel** (`player/EpisodePanel.jsx`). The show screen's left column
-  always describes the focused episode — the next-up one on load, then whatever
-  is tapped (title strip or mosaic) or reached with the pad. Top to bottom:
-  show and season (with the governed lock and voice-memo button); a **mosaic**
-  of the season's episodes (`?w=160&h=90` thumbnails; done = full colour, not
-  done = dimmed by opacity, in progress = amber underline, focused = white
-  outline; one row up to six, then 5 or 6 wide); **coverage** chips
-  (`seasonCoverage`: each household rider's done/total for the season); the
-  hero with E#, duration and a resume bar; **Resume m:ss + Start over** on a
-  resumable show with a saved position, else **Play**; **who's done it**
-  (`riderSummary`): one row per rider with count, latest date, minutes and
-  rings — riders on the bike now first, household members who never did it
-  dimmed as "Not yet"; then the description, three lines. Household = the
-  `primary` users in the fitness config. Text is 16px+, rider names 18px.
+  always shows what is inside the focused episode — the next-up one on load,
+  then whatever is tapped (title strip) or reached with the pad. Top to bottom:
+  the show name (with the governed lock and voice-memo button); the **rail**
+  (`player/EpisodeStillsRail.jsx`): the season's poster (2:3) beside a 16:9
+  **carousel** of the same height that cycles ten frames every 1.5 s — a 3×3
+  mosaic of nine stills from inside the episode, then each still whole — with a
+  short crossfade, paused while the page is hidden or the rail is off screen,
+  still (on the mosaic) under `prefers-reduced-motion`; then the title,
+  "Episode N · M min", the description (four lines), **Resume m:ss + Start
+  over** on a resumable show with a saved position (resume bar along the
+  button's foot) else **Play** (a sequential-locked episode gets Unlock or a
+  "Locked" note in the same slot); then the **history** (`completionRows`): one
+  row per time it was actually done, newest first — who (credited riders,
+  guests included, household names), when in words (`whenInWords`: Today,
+  Tuesday, 3 weeks ago, May 2025) and the circumstances (session minutes,
+  rings, other videos in that session). Nobody is listed for not having done
+  it; with no completions the panel says "Nobody has done this one yet".
+  Every image is shown whole (`object-fit: contain`), sizes are fixed by
+  aspect ratio from first paint, nothing rests at a fractional opacity, and
+  nothing is under 16px.
+- **In-episode stills** (`player/useEpisodeStills.js`). One GET per focused
+  episode (after focus rests 250 ms, cached per episode) to the media server's
+  metadata through the app proxy, for the video part's id and whether it has
+  a preview index; the nine stills are then
+  `/api/v1/proxy/plex/library/parts/<part>/indexes/sd/<offsetMs>?w=400&h=225`
+  at 10 %…90 % of the runtime. The carousel only takes over from the
+  episode's own art once all nine have loaded. An episode whose part has no
+  index keeps its art, static (`fitness.show.stills_unavailable`); in the
+  fitness library that is 1 episode in 8,267 at the time of writing.
 - **Gamepad / arrow keys.** The D-pad walks the grid (columns read from the
   grid), focus selects and puts a solid ring on the card; A / Enter plays the
   focused episode (Resume when it resumes). Focus never launches, and a locked
@@ -1184,7 +1200,7 @@ All endpoints are under `GET/POST /api/fitness/...` (router: `__backend/src/4_ap
 | `POST` | `/api/fitness/kiosk_screenshot` | Store a whole-screen kiosk capture (garage keypad key 6) under `media/logs/fitness/screenshots/<date>/`; logs `fitness.kiosk_screenshot.saved` |
 | `GET` | `/api/fitness/sessions/dates` | List all dates with saved sessions |
 | `GET` | `/api/fitness/sessions` | Query sessions by date or date range |
-| `GET` | `/api/fitness/sessions/episode-history?episodes=` | Per-episode sessions and riders (minutes, rings, guest flag), newest first |
+| `GET` | `/api/fitness/sessions/episode-history?episodes=` | Per-episode sessions (durationMs, totalRings, videoCount, primaryTitle) and riders (minutes, rings, guest flag), newest first |
 | `GET` | `/api/fitness/sessions/:sessionId` | Session detail with decoded timeline |
 | `POST` | `/api/fitness/voice_memo` | Transcribe voice memo (Whisper → GPT-4o cleanup) |
 | `POST` | `/api/fitness/zone_led` | Sync ambient LED with current zone state |

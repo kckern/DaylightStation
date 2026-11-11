@@ -149,29 +149,43 @@
     min-height: 0;
     /* allow inner scroll areas */
 
-    /* Episode panel — always describes the focused episode (EpisodePanel.jsx).
-       Read from the bike: nothing under 16px, rider names 18px+. Static
-       opacity only for dimming; nothing here animates filter. */
+    /* Episode panel — what is inside the focused episode (EpisodePanel.jsx).
+       Read from the bike: nothing under 16px; the title and the names larger.
+       Solid colours only — the one opacity here is the carousel crossfade
+       (motion between whole frames, never a resting state). Block flow inside
+       a scroll box, so nothing is ever flex-shrunk to nothing. */
     .episode-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
+      display: block;
       min-height: 0;
       overflow-y: auto;
       @include scrollbar-hide;
       padding-right: 0.25rem;
       color: var(--ds-text-high, #fff);
+      font-size: 1rem;
+      line-height: 1.25;
+
+      > * + * { margin-top: 0.6rem; }
+      > .episode-panel__title { margin-top: 0.75rem; }
+      > .episode-panel__meta { margin-top: 0.3rem; }
+      > .episode-panel__description { margin-top: 0.5rem; }
+      > .episode-panel__actions { margin-top: 0.9rem; }
+      > .episode-history { margin-top: 1rem; }
     }
 
     .episode-panel__header {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 0.5rem;
-      flex-wrap: wrap;
-      line-height: 1.2;
+      min-height: 28px;
     }
-    .episode-panel__show { font-size: 1.35rem; font-weight: 700; }
-    .episode-panel__season { font-size: 1rem; color: var(--ds-text-mid, #bbb); }
+    .episode-panel__show {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--ds-text-mid, #bbb);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .episode-panel__header-extras {
       margin-left: auto;
       display: inline-flex;
@@ -179,98 +193,77 @@
       gap: 0.5rem;
     }
 
-    .episode-mosaic {
+    /* The rail: a 2:3 poster beside a 16:9 carousel of the same height
+       (3 : 8 widths), both sized by aspect ratio from first paint. */
+    .episode-rail {
       display: grid;
-      grid-template-columns: repeat(var(--mosaic-cols, 5), 1fr);
-      gap: 4px;
+      grid-template-columns: 3fr 8fr;
+      gap: 6px;
+      align-items: start;
     }
-    .episode-mosaic__tile {
-      position: relative;
-      aspect-ratio: 16 / 9;
-      border-radius: 4px;
+    .episode-rail__poster {
+      aspect-ratio: 2 / 3;
+      border-radius: 6px;
       overflow: hidden;
       background: var(--ds-surface-alt, #222);
-      opacity: 0.4;
-      cursor: pointer;
-
-      img { width: 100%; height: 100%; object-fit: cover; display: block; }
-      &.is-done { opacity: 1; }
-      &.is-in-progress {
-        opacity: 1;
-        box-shadow: inset 0 -4px 0 #f5a524;
-      }
-      &.is-focused {
-        opacity: 1;
-        outline: 3px solid var(--ds-text-high, #fff);
-        outline-offset: -3px;
-      }
+      img { width: 100%; height: 100%; object-fit: contain; display: block; }
     }
-    .episode-mosaic__number {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      font-size: 1rem;
-      font-weight: 700;
-    }
-
-    .season-coverage {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem 0.75rem;
-    }
-    .season-coverage__chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      font-size: 1rem;
-    }
-    .season-coverage__avatar { width: 28px; height: 28px; }
-    .season-coverage__name { font-weight: 600; }
-    .season-coverage__count { color: var(--ds-text-mid, #bbb); margin-left: 0.2rem; }
-
-    .episode-panel__hero {
+    .episode-rail__carousel {
       position: relative;
       aspect-ratio: 16 / 9;
-      border-radius: 8px;
+      border-radius: 6px;
       overflow: hidden;
-      background: var(--ds-surface-alt, #222);
-      flex-shrink: 0;
-
-      img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    }
-    .episode-panel__hero-tags {
-      position: absolute;
-      top: 0.5rem;
-      left: 0.5rem;
-      right: 0.5rem;
-      display: flex;
-      justify-content: space-between;
-    }
-    .episode-panel__pill {
       background: #000;
-      color: #fff;
-      font-size: 1rem;
-      font-weight: 700;
-      padding: 0.15rem 0.55rem;
-      border-radius: 999px;
     }
-    .episode-panel__resume-bar {
+    .episode-rail__art,
+    .episode-rail__frame {
       position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 6px;
-      background: rgba(0, 0, 0, 0.6);
-
-      div { height: 100%; background: #f5a524; }
+      inset: 0;
+      img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    }
+    .episode-rail__frame {
+      opacity: 0;
+      transition: opacity 320ms ease;
+      &.is-current { opacity: 1; }
+    }
+    /* The episode's own art stands in until all nine stills are in hand. */
+    .episode-rail__carousel.is-live .episode-rail__art { visibility: hidden; }
+    .episode-rail__mosaic {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 2px;
+      height: 100%;
+      img { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .episode-rail__frame { transition: none; }
     }
 
     .episode-panel__title {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.625rem;
       font-weight: 700;
-      line-height: 1.2;
+      line-height: 1.15;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .episode-panel__meta {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      color: var(--ds-text-mid, #bbb);
+    }
+    .episode-panel__description {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.4;
+      color: var(--ds-text-mid, #ccc);
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .episode-panel__actions {
@@ -278,66 +271,94 @@
       gap: 0.6rem;
 
       .ds-touch {
+        position: relative;
         flex: 1 1 0;
         min-width: 0;
-        font-size: 1.2rem;
+        min-height: 64px;
+        font-size: 1.25rem;
         padding: 0.6rem 0.9rem;
+        overflow: hidden;
         .ds-touch__label { display: inline-flex; align-items: center; gap: 0.5rem; }
         svg { flex-shrink: 0; }
       }
     }
-
-    .episode-riders {
-      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+    /* How far into it the resume point is: a solid bar along the button's foot. */
+    .episode-panel__resume-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 6px;
+      background: #111;
+      > span { display: block; height: 100%; background: #f5a524; }
     }
-    .episode-riders__heading {
+    /* Same slot as the button it stands in for, so the panel does not jump
+       when focus moves between a locked and an open episode. */
+    .episode-panel__locked {
+      flex: 1 1 0;
       display: flex;
-      justify-content: space-between;
-      font-size: 1rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--ds-text-mid, #bbb);
-      margin-bottom: 0.4rem;
-    }
-    .episode-rider-row {
-      display: grid;
-      grid-template-columns: 36px auto 1fr;
       align-items: center;
       gap: 0.6rem;
-
-      &.is-not-yet { opacity: 0.5; }
-      &.is-active .episode-rider-row__name { color: var(--ds-accent, #4dabf7); }
-    }
-    .episode-rider-row__avatar { width: 36px; height: 36px; }
-    .episode-rider-row__name { font-size: 1.15rem; font-weight: 700; white-space: nowrap; }
-    .episode-rider-row__facts {
-      font-size: 1rem;
+      min-height: 64px;
+      padding: 0.6rem 0.9rem;
+      border: 2px solid var(--ds-border, #444);
+      border-radius: 14px;
+      font-size: 1.125rem;
+      font-weight: 600;
       color: var(--ds-text-mid, #bbb);
-      text-align: right;
+      svg { flex-shrink: 0; }
+    }
+
+    /* History: one row per time it was done — who, when in words, and the
+       circumstances underneath. Nobody is listed for not having done it. */
+    .episode-history {
+      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+    }
+    .episode-history__empty {
+      margin: 0;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      color: var(--ds-text-mid, #bbb);
+    }
+    .episode-history__row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas: "avatars who when" "avatars facts facts";
+      column-gap: 0.6rem;
+      row-gap: 0.15rem;
+      align-items: center;
+    }
+    .episode-history__avatars {
+      grid-area: avatars;
+      display: inline-flex;
+      align-items: center;
+      .episode-history__avatar { width: 40px; height: 40px; }
+      .episode-history__avatar + .episode-history__avatar { margin-left: -10px; }
+    }
+    .episode-history__who {
+      grid-area: who;
+      font-size: 1.1875rem;
+      font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
     }
-
-    .episode-panel__locked {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 1.05rem;
-      color: var(--ds-text-mid, #bbb);
-      min-height: 64px;
+    .episode-history__when {
+      grid-area: when;
+      font-size: 1.0625rem;
+      font-weight: 700;
+      white-space: nowrap;
     }
-
-    .episode-panel__description {
-      margin: 0;
+    .episode-history__facts {
+      grid-area: facts;
       font-size: 1rem;
-      line-height: 1.4;
-      color: var(--ds-text-mid, #ccc);
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
+      font-weight: 600;
+      color: var(--ds-text-mid, #bbb);
+      white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
 
     /* Season/Episode Info Component Styling */
