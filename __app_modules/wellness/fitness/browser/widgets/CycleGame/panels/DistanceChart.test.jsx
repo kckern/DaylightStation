@@ -543,13 +543,13 @@ describe('DistanceChart reduced motion', () => {
 
 describe('DistanceChart round axis labels', () => {
   const labelTexts = (node) => [...node.querySelectorAll('.cg-chart__axis-label')].map((l) => l.textContent);
-  it('a time race snaps its y window so the labels are round (0 / 500 m / 1 km)', () => {
+  it('a time race snaps its y window so the labels are round (0 / 300 m / 600 m)', () => {
     const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 457, distanceSeries: [0, 200, 457] } };
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
         winCondition="time" timeCapS={300} elapsedS={128} />
     );
-    expect(labelTexts(getByTestId('chart-axis-y'))).toEqual(['0 m', '500 m', '1.00 km']);
+    expect(labelTexts(getByTestId('chart-axis-y'))).toEqual(['0 m', '300 m', '600 m']);
   });
   it('a distance race with an open time axis snaps its x labels to whole minutes', () => {
     const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 800, distanceSeries: [0, 400, 800] } };

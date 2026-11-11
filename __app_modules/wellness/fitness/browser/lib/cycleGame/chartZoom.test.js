@@ -54,14 +54,14 @@ import { niceCeil, niceCeilTime } from './chartZoom.js';
 
 describe('niceCeil', () => {
   it('snaps up to 1 / 2 / 2.5 / 5 times a power of ten', () => {
-    expect(niceCeil(512)).toBe(1000);
-    expect(niceCeil(1020)).toBe(2000);
+    expect(niceCeil(512)).toBe(600);
+    expect(niceCeil(1020)).toBe(1200);
     expect(niceCeil(1990)).toBe(2000);
     expect(niceCeil(2100)).toBe(2500);
-    expect(niceCeil(2600)).toBe(5000);
-    expect(niceCeil(5001)).toBe(10000);
+    expect(niceCeil(2600)).toBe(3000);
+    expect(niceCeil(5001)).toBe(6000);
     expect(niceCeil(180)).toBe(200);
-    expect(niceCeil(0.7)).toBe(1);
+    expect(niceCeil(0.7)).toBe(0.8);
   });
   it('keeps an already-round value', () => {
     expect(niceCeil(500)).toBe(500);

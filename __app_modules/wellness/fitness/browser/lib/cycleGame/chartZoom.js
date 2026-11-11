@@ -48,7 +48,9 @@ export function niceCeil(v) {
   const base = 10 ** exp;
   // Compare in units of `base` with a small tolerance so 1000 stays 1000.
   const m = v / base;
-  const step = [1, 2, 2.5, 5, 10].find((k) => m <= k + 1e-9);
+  // Fine enough that the data fills most of the axis: a 1.02 km ride gets a
+  // 1.2 km ceiling, not 2 km with half the chart empty.
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((k) => m <= k + 1e-9);
   return Math.round(step * base * 1e9) / 1e9;
 }
 
