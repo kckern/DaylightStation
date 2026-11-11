@@ -57,9 +57,17 @@ import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/s
 import { remediationDepthOf, remediationRootOf } from "../remediationDepth.mjs";
 import { sessionPassingPercent } from "../passBar.mjs";
 
+/** How long one close waits for the learner's previous close to finish pricing. */
+const PRICING_WAIT_MS = 5000;
+const NO_RECEIPT_STATES = new Set(['program_dispatched', 'external_activity_assessed']);
+/** Will this settle build a result receipt? (Only then is the week priced.) */
+const buildsReceipt = ({ state, printReceipt }) => printReceipt !== false && !NO_RECEIPT_STATES.has(state.state);
+
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone; #earningsQuote;
+  #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone; #earningsQuote; #pricingWaitMs; #setTimer; #clearTimer;
+  // learnerId → the tail of that learner's pricing chain (see `#acquirePricing`).
+  #pricing = new Map();
   #courseRecovery = new Map();
   #selfService; #realtime; #planProjection; #practiceAssessments; #remediationMaxRounds;
 
@@ -119,6 +127,11 @@ export class CloseSessionOutcome {
     // Past it the failed receipt carries no retry ticket — see `#settle`.
     remediationMaxRounds: maxRounds = null,
     earningsQuote = null,
+    // How long a close waits for the same learner's previous close to finish
+    // pricing before it gives up and prints without coin lines.
+    pricingWaitMs = PRICING_WAIT_MS,
+    // Injected timers (apps-no-global-timers); the defaults are the real ones.
+    setTimer = setTimeout, clearTimer = clearTimeout,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -160,6 +173,9 @@ export class CloseSessionOutcome {
     this.#realtime = realtime;
     this.#logger = logger;
     this.#earningsQuote = earningsQuote;
+    this.#pricingWaitMs = pricingWaitMs;
+    this.#setTimer = setTimer;
+    this.#clearTimer = clearTimer;
   }
 
   /**
@@ -411,8 +427,28 @@ export class CloseSessionOutcome {
   async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true, assignments = this.#assignments }) {
     const outcomeId = outcomeIdFor(sessionId);
     // The week's price BEFORE this grade lands, so the receipt can show the
-    // difference. Never throws (EarningsQuoteClient); null when unwired/slow.
-    const weekBefore = this.#earningsQuote ? await this.#earningsQuote.quote(state.learnerId) : null;
+    // difference — but only when a receipt will be built, and only inside this
+    // learner's pricing turn: `quote → append → settle → quote` runs one close
+    // at a time per learner, so two sheets scanned together cannot both claim
+    // the day bonus or each other's silver. A turn that cannot be had in time
+    // prices nothing (no coin lines), and never blocks the paper.
+    const pricing = this.#earningsQuote && buildsReceipt({ state, printReceipt })
+      ? await this.#acquirePricing(state.learnerId)
+      : null;
+    try {
+      const weekBefore = pricing?.acquired
+        ? await this.#earningsQuote.quote(state.learnerId, { week: state.studyDay ?? null })
+        : null;
+      return await this.#appendOutcomeAndSettle({
+        sessionId, state, unit, nowIso, signedOff, rewardOverride, result, reason, passingPercent,
+        expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore,
+      });
+    } finally {
+      pricing?.release();
+    }
+  }
+
+  async #appendOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride, result, reason, passingPercent, expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore }) {
     // The bar rides on the event only when a bar decided it and `graded`
     // stamped none — a launch or honor close has no bar to write down.
     const stampBar = state.gradedPassingPercent == null && typeof passingPercent === 'number';
@@ -435,10 +471,10 @@ export class CloseSessionOutcome {
     // `state` predates the event just appended; carry its stamp forward so the
     // receipt prints the bar that decided it rather than resolving one again.
     const settledState = stampBar ? { ...state, gradedPassingPercent: passingPercent } : state;
-    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, assignments, weekBefore });
+    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, assignments, weekBefore, pricing });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, assignments = this.#assignments, weekBefore = null }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, assignments = this.#assignments, weekBefore = null, pricing = null }) {
     // Unconditional on pass/fail and on resettling: a fail settle changes no
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
@@ -638,10 +674,18 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
-    // After the outcome and reward are persisted. A re-settle has no `weekBefore`,
-    // so it prints only the running total.
-    const weekAfter = this.#earningsQuote ? await this.#earningsQuote.quote(state.learnerId) : null;
-    const document = !printReceipt || ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
+    // After the outcome and reward are persisted, still inside this learner's
+    // pricing turn, which ends here (the print below needs no turn). A re-settle
+    // has no `weekBefore`, so it prints only the running total; a close that
+    // never got its turn prices nothing.
+    let weekAfter = null;
+    if (this.#earningsQuote && buildsReceipt({ state, printReceipt })) {
+      if (resettling || pricing?.acquired) {
+        weekAfter = await this.#earningsQuote.quote(state.learnerId, { week: state.studyDay ?? null });
+      }
+    }
+    pricing?.release();
+    const document = !buildsReceipt({ state, printReceipt }) ? null : resultDocument({
       sessionId,
       dayComplete,
       unitTitle: unit?.title ?? state.unitId,
@@ -762,6 +806,38 @@ export class CloseSessionOutcome {
    * and never something a missing/failing review queue should block the
    * settlement over.
    */
+  /**
+   * This learner's pricing turn: resolves `{acquired, release}` once every
+   * earlier close for the learner has released, or `{acquired: false}` after
+   * `#pricingWaitMs`. Either way the caller MUST call `release()` (idempotent);
+   * a waiter that gave up releases its own place at once, so it never holds
+   * up the closes behind it longer than its predecessor would have.
+   */
+  async #acquirePricing(learnerId) {
+    const key = learnerId ?? '';
+    const previous = this.#pricing.get(key) ?? Promise.resolve();
+    let open;
+    const mine = new Promise((resolve) => { open = resolve; });
+    const tail = previous.then(() => mine);
+    this.#pricing.set(key, tail);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      open();
+      tail.then(() => { if (this.#pricing.get(key) === tail) this.#pricing.delete(key); });
+    };
+    let timer;
+    const gaveUp = new Promise((resolve) => { timer = this.#setTimer(() => resolve(false), this.#pricingWaitMs); });
+    const acquired = await Promise.race([previous.then(() => true), gaveUp]);
+    this.#clearTimer(timer);
+    if (!acquired) {
+      this.#logger.warn?.('school.earnings-quote.turn-timeout', { learnerId, waitedMs: this.#pricingWaitMs });
+      release();
+    }
+    return { acquired, release };
+  }
+
   async #collectNotes(sessionId) {
     if (!this.#reviewQueue) return [];
     try {

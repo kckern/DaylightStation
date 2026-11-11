@@ -193,6 +193,26 @@ describe('EarningsPreviewService.ifDone / quote', () => {
     expect(out.totals).toEqual({ silver: 2, gems: 0 });
     expect(out.lines.find((l) => l.ruleId === 'korean').amount).toEqual({ silver: 2, gems: 0 });
   });
+
+  it('quote prices the week a study day names (a late grade prices its own week)', async () => {
+    const asked = [];
+    const service = new EarningsPreviewService({
+      rules: { get: async () => RULES_DAY },
+      schoolEvidence: { async schoolWeek({ week }) { asked.push(week); return { sectionDays: [], days: [], week: null, units: [], coverage: 'ok' }; } },
+      ringEvidence: { async standings() { return []; } },
+      learners: async () => [{ id: 'learner-a', name: 'Learner A' }],
+      clock: () => new Date('2026-10-20T17:00:00.000Z'), // Tuesday
+      timezone: TZ, logger: silent,
+    });
+    await service.quote({ learnerId: 'learner-a', week: '2026-10-15' });
+    await service.quote({ learnerId: 'learner-a' });
+    expect(asked).toEqual([{ from: '2026-10-12', to: '2026-10-18' }, { from: '2026-10-19', to: '2026-10-25' }]);
+  });
+
+  it('ifDone lines count earned amounts only', async () => {
+    const out = await buildDay().ifDone({ learnerId: 'learner-a', subject: 'language', finishesDay: true });
+    expect(out.lines.every((l) => l.silver > 0)).toBe(true);
+  });
 });
 
 describe('EarningsPreviewService.preview fresh', () => {

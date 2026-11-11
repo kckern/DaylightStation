@@ -10,7 +10,9 @@ describe('EarningsQuoteClient', () => {
     const c = new EarningsQuoteClient({ getService: () => service, logger: logger() });
     expect((await c.quote('learner1')).totals.silver).toBe(3);
     expect((await c.ifDone({ learnerId: 'learner1', subject: 'math' })).silver).toBe(2);
-    expect(service.quote).toHaveBeenCalledWith({ learnerId: 'learner1' });
+    expect(service.quote).toHaveBeenCalledWith({ learnerId: 'learner1', week: null });
+    await c.quote('learner1', { week: '2026-10-14' });
+    expect(service.quote).toHaveBeenLastCalledWith({ learnerId: 'learner1', week: '2026-10-14' });
     expect(service.ifDone).toHaveBeenCalledWith({ learnerId: 'learner1', subject: 'math', unitId: null, courseId: null, finishesDay: false });
   });
 

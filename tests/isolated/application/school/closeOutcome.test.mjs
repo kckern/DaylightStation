@@ -621,7 +621,7 @@ describe('the result receipt reaches paper', () => {
   });
 
   describe('the week\'s silver on the receipt', () => {
-    const wk = (silver, korean) => ({ totals: { silver, gems: 0 }, lines: [{ ruleId: 'korean', label: 'Korean (each day done)', amount: { silver: korean, gems: 0 } }] });
+    const wk = (silver, korean) => ({ totals: { silver, gems: 0 }, lines: [{ ruleId: 'korean', label: 'Korean (each day done)', status: 'earned', amount: { silver: korean, gems: 0 } }] });
     const seq = (...answers) => { const q = vi.fn(async () => (answers.length > 1 ? answers.shift() : answers[0])); return { quote: q }; };
 
     it('prints what the grade added and the total; quotes BEFORE outcome_recorded exists', async () => {
@@ -645,6 +645,91 @@ describe('the result receipt reaches paper', () => {
       await graded();
       await close.execute({ sessionId: SID });
       expect(thermal.lastTranscript()).not.toContain('silver');
+    });
+
+    /**
+     * A quote that reads the week off the session log as it stands, so
+     * overlapping closes see each other: 2 silver per passed sheet, and the
+     * 5-silver day bonus once two sheets are passed. Each read yields first,
+     * so two closes started together interleave.
+     */
+    const ledgerQuote = (ids) => vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      const passed = ids.filter((id) => sessions.derive(id).outcome?.result === 'passed').length;
+      const green = passed >= 2;
+      return {
+        totals: { silver: 2 * passed + (green ? 5 : 0), gems: 0 },
+        lines: [
+          { ruleId: 'math', label: 'Math (each sheet)', status: passed ? 'earned' : 'pending', amount: { silver: 2 * passed, gems: 0 } },
+          { ruleId: 'green', label: 'Whole day done', status: green ? 'earned' : 'pending', amount: { silver: green ? 5 : 0, gems: 0 } },
+        ],
+      };
+    });
+
+    it('two overlapping closes for one learner: each receipt shows only its own lines, the day bonus once', async () => {
+      const ids = [SID, 'ses_2'];
+      build({ earningsQuote: { quote: ledgerQuote(ids) } });
+      await graded({ sessionId: SID });
+      await graded({ sessionId: 'ses_2' });
+      await Promise.all(ids.map((sessionId) => close.execute({ sessionId })));
+      const receipts = thermal.transcripts();
+      expect(receipts).toHaveLength(2);
+      const own = receipts.map((t) => t.split('\n').filter((l) => l.startsWith('+')));
+      expect(own.flat().filter((l) => l === '+2 silver · Math (each sheet)')).toHaveLength(2);
+      expect(own.flat().filter((l) => l === '+5 silver · Whole day done')).toHaveLength(1);
+      expect(receipts.some((t) => t.includes('2 silver this week'))).toBe(true);
+      expect(receipts.some((t) => t.includes('9 silver this week'))).toBe(true);
+    });
+
+    it('a close stuck past the wait limit does not block the next one: it prints without coin lines', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        let calls = 0;
+        // The first close's before-quote never answers (a client with no
+        // limit of its own); the second close must not wait on it forever.
+        const quote = vi.fn(() => (++calls === 1 ? new Promise(() => {}) : Promise.resolve(wk(18, 2))));
+        build({ earningsQuote: { quote } });
+        await graded({ sessionId: SID });
+        await graded({ sessionId: 'ses_2' });
+        void close.execute({ sessionId: SID });
+        const second = close.execute({ sessionId: 'ses_2' });
+        await vi.advanceTimersByTimeAsync(10_000);
+        const result = await second;
+        expect(result.status).toBe('settled');
+        expect(thermal.lastTranscript()).not.toContain('silver');
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('quotes the week the work belongs to (a late grade prices its own study week)', async () => {
+      const quote = vi.fn(async () => wk(18, 2));
+      build({ earningsQuote: { quote } });
+      await sessions.appendEvent(SID, {
+        type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT, studyDay: '2026-07-24',
+      });
+      await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+      await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+      await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 90 });
+      await close.execute({ sessionId: SID });
+      expect(quote).toHaveBeenCalledTimes(2);
+      for (const call of quote.mock.calls) expect(call).toEqual(['kid1', { week: '2026-07-24' }]);
+    });
+
+    it('a session with no study day quotes the current week', async () => {
+      const quote = vi.fn(async () => wk(18, 2));
+      build({ earningsQuote: { quote } });
+      await graded();
+      await close.execute({ sessionId: SID });
+      for (const call of quote.mock.calls) expect(call).toEqual(['kid1', { week: null }]);
+    });
+
+    it('no receipt is built for a program close, so the week is not quoted', async () => {
+      const quote = vi.fn(async () => wk(18, 2));
+      build({ earningsQuote: { quote } });
+      await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+      await sessions.appendEvent(SID, { type: 'program_dispatched', at: clock.iso(), sessionId: SID, programId: 'demo' });
+      const result = await close.execute({ sessionId: SID, honorClose: true });
+      expect(result.status).toBe('settled');
+      expect(quote).not.toHaveBeenCalled();
     });
 
     it('a re-settle prints only the running total', async () => {

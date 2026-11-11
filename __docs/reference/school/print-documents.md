@@ -1164,10 +1164,13 @@ under the answer-sheet badge, e.g. `Worth 2 silver` or
   add (`day-met`, and `week-met` when today closes the week). It never prints
   on its own: a sheet whose own price is null prints no line at all, so a
   retry or a second sheet of a subject already done today prints nothing.
-- The price is asked once, at print time, and frozen into the retained render
-  context (`worth`). An exact reprint replays it, and a regeneration under the
-  same artifact id reuses it, so a reprint says what the sheet was worth when
-  it first came out of the tray.
+- Money on paper corresponds to payouts, not promises: the price is asked
+  at print time and **again on every reprint**, so a reprint after the subject
+  was done prints no worth line, and a changed price prints the new one. (An
+  artifact printed before the worth line existed keeps its original layout.)
+- The plan read that decides the day bonus is skipped while coins are not live
+  and cut off at 2 seconds (`school.issue.worth-plan-failed`); a cut-off read
+  claims no bonus and the sheet still prints its own price.
 - The header measure reserves one caption line for it, so the fit trial and
   the drawn page agree.
 
@@ -1185,6 +1188,19 @@ then the week's running total:
   preview) before the outcome is recorded and again before the receipt is
   built; `earnedLines(before, after)` takes the difference per rule. A line
   that only moved gems reads `+1 gem · <label>`.
+- Only **earned** amounts count, on both sides: a pending line (a ring contest
+  still being decided, a week under way) carries an amount nobody has been
+  paid, so it never prints.
+- The week quoted is the one the work belongs to (`studyDay` on the session),
+  the same week a late grade's payout settles, not necessarily the current one.
+- **One learner, one pricing turn at a time.** `quote → append outcome →
+  settle → quote` runs per learner in order, so two sheets scanned together
+  each print only their own lines and the day bonus prints once. A close that
+  cannot get its turn within 5 seconds (`school.earnings-quote.turn-timeout`)
+  prints its receipt without coin lines rather than wait; the print itself
+  runs outside the turn.
+- Nothing is quoted when no receipt is built (`program_dispatched`,
+  `external_activity_assessed`, a no-print recovery).
 - A failed sheet prints only the running total (a fail adds nothing). A
   re-settle or corrected receipt has no "before" quote, so it prints only the
   total, never a whole week as "+25".

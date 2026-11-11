@@ -942,7 +942,7 @@ describe('the worksheet header prints what the sheet is worth', () => {
   function harness({
     reward = { silver: 2, gems: 0 },
     price = { silver: 2, gems: 0, dayBonus: { silver: 5, gems: 0 }, lines: [] },
-    sections = null,
+    sections = null, live = true, project = null, planTimeoutMs = undefined,
   } = {}) {
     const clock = fakeClock();
     const sessions = new FakeSessionRepository();
@@ -973,10 +973,16 @@ describe('the worksheet header prints what the sheet is worth', () => {
     const instances = new Map();
     // The sheet's own price is the SAME `rewardFor` the Portal and the agenda
     // tape show; `ifDone` is asked only for the finishing-the-day bonus.
-    const earningsQuote = { rewardFor: vi.fn(async () => reward), ifDone: vi.fn(async () => price) };
-    const planProjection = sections
-      ? { project: vi.fn(async () => ({ plan: { entries: [] }, sections })) }
-      : null;
+    const earningsQuote = {
+      rewardFor: vi.fn(async () => (typeof reward === 'function' ? reward() : reward)),
+      ifDone: vi.fn(async () => price),
+      isLive: vi.fn(() => live),
+    };
+    const planProjection = project
+      ? { project: vi.fn(project) }
+      : sections
+        ? { project: vi.fn(async () => ({ plan: { entries: [] }, sections })) }
+        : null;
     const useCase = new IssueDocument({
       curriculum: {
         async getUnit(id) { return id === UNIT.unitId ? UNIT : null; },
@@ -1000,6 +1006,7 @@ describe('the worksheet header prints what the sheet is worth', () => {
       renderPrintDocument, allocationStore, issuedArtifacts,
       renderIssuedArtifact: new RenderIssuedWorksheetArtifact({ issuedArtifacts, renderPrintDocument, printDocuments: repository }),
       earningsQuote, ...(planProjection ? { planProjection } : {}),
+      ...(planTimeoutMs !== undefined ? { planTimeoutMs } : {}),
       clock: clock.now, rng: seededRng(11), logger: silentLogger,
     });
     const open = async (sessionId = 'ses_worth') => {
@@ -1011,16 +1018,16 @@ describe('the worksheet header prints what the sheet is worth', () => {
     return { useCase, printer, earningsQuote, planProjection, clock, open };
   }
 
-  it('prices the sheet at print time, and a reprint shows the same price without asking again', async () => {
+  it('prices the sheet at print time, and a reprint prices it again (paper never shows a stale promise)', async () => {
     requirePdftotext();
-    const { useCase, printer, earningsQuote, clock, open } = harness();
+    const prices = [{ silver: 2, gems: 0 }, { silver: 3, gems: 0 }, null];
+    const { useCase, printer, earningsQuote, clock, open } = harness({ reward: () => prices.shift() });
     const sid = await open();
     const first = await useCase.execute({ sessionId: sid });
     expect(first).toMatchObject({ status: 'issued' });
     const text = pdfText(printer.jobs[0].pdf);
     expect(text).toContain('Worth 2 silver');
     expect(text).not.toContain('finishes your day');
-    expect(earningsQuote.rewardFor).toHaveBeenCalledTimes(1);
     expect(earningsQuote.rewardFor).toHaveBeenCalledWith({
       learnerId: LEARNER, unit: { unitId: UNIT.unitId, title: 'Fractions', subject: 'math' },
     });
@@ -1030,9 +1037,40 @@ describe('the worksheet header prints what the sheet is worth', () => {
     clock.advanceMs(11 * 60_000); // past the print debounce — a REAL reprint
     const second = await useCase.execute({ sessionId: sid });
     expect(second.status).toBe('reprinted');
-    expect(earningsQuote.rewardFor).toHaveBeenCalledTimes(1);
-    expect(printer.jobs).toHaveLength(2);
-    expect(pdfText(printer.jobs[1].pdf)).toContain('Worth 2 silver');
+    expect(earningsQuote.rewardFor).toHaveBeenCalledTimes(2);
+    expect(pdfText(printer.jobs[1].pdf)).toContain('Worth 3 silver');
+
+    // Worth nothing now (the subject got done meanwhile): the line is gone.
+    clock.advanceMs(11 * 60_000);
+    await useCase.execute({ sessionId: sid });
+    expect(printer.jobs).toHaveLength(3);
+    expect(pdfText(printer.jobs[2].pdf)).not.toContain('Worth');
+  });
+
+  it('while coins are not live, neither the plan nor the economy is asked, and no line prints', async () => {
+    requirePdftotext();
+    const { useCase, printer, earningsQuote, planProjection, open } = harness({
+      live: false,
+      sections: [{ subject: 'math', obligation: { state: 'obligated' }, next: { unitId: UNIT.unitId } }],
+    });
+    await useCase.execute({ sessionId: await open() });
+    expect(planProjection.project).not.toHaveBeenCalled();
+    expect(earningsQuote.rewardFor).not.toHaveBeenCalled();
+    expect(earningsQuote.ifDone).not.toHaveBeenCalled();
+    expect(pdfText(printer.jobs[0].pdf)).not.toContain('Worth');
+  });
+
+  it('a plan read that hangs is cut off: the sheet prints its own price, no day bonus', async () => {
+    requirePdftotext();
+    const { useCase, printer, earningsQuote, open } = harness({
+      project: () => new Promise(() => {}), planTimeoutMs: 20,
+    });
+    const result = await useCase.execute({ sessionId: await open() });
+    expect(result.status).toBe('issued');
+    expect(earningsQuote.ifDone).not.toHaveBeenCalled();
+    const text = pdfText(printer.jobs[0].pdf);
+    expect(text).toContain('Worth 2 silver');
+    expect(text).not.toContain('finishes your day');
   });
 
   it('prints no worth line when there is no price', async () => {

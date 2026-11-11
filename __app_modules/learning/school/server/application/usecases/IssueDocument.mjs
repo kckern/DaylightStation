@@ -258,6 +258,8 @@ const FAILURE_COPY = Object.freeze({
   },
 });
 
+const TIMED_OUT = Symbol('timed-out');
+
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader; #realtime;
   #printDocuments; #renderPrintDocument; #allocationStore;
@@ -265,7 +267,7 @@ export class IssueDocument {
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
-  #clock; #rng; #newArtifactId; #timezone; #logger; #earningsQuote; #planProjection;
+  #clock; #rng; #newArtifactId; #timezone; #logger; #earningsQuote; #planProjection; #planTimeoutMs; #setTimer; #clearTimer;
 
   /**
    * @param {object} deps
@@ -330,7 +332,7 @@ export class IssueDocument {
     // bar printed on the sheet is the one `GradeSubmission` will stamp.
     passOverrides = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
-    newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, planProjection = null, logger = console,
+    newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, planProjection = null, planTimeoutMs = 2000, setTimer = setTimeout, clearTimer = clearTimeout, logger = console,
   } = {}) {
     this.#practiceAssessments = practiceAssessments;
     this.#realtime = realtime;
@@ -367,6 +369,9 @@ export class IssueDocument {
     this.#logger = logger;
     this.#earningsQuote = earningsQuote;
     this.#planProjection = planProjection;
+    this.#planTimeoutMs = planTimeoutMs;
+    this.#setTimer = setTimer;
+    this.#clearTimer = clearTimer;
   }
 
   /** A schema fault must be shown on the Portal, not mistaken for screen-only work. */
@@ -709,7 +714,9 @@ export class IssueDocument {
     let replayedPageCount = retained.manifest?.pageCount ?? null;
     try {
       const replay = this.#renderIssuedArtifact
-        ? await this.#renderIssuedArtifact.execute({ artifactId, artifact: retained })
+        ? await this.#renderIssuedArtifact.execute({
+          artifactId, artifact: retained, context: await this.#repricedContext({ state, retained }),
+        })
         : { bytes: retained.bytes, duplex: retained.manifest?.renderContext?.duplex ?? null };
       if (!Buffer.isBuffer(replay.bytes)) throw new Error(`issued artifact '${artifactId}' cannot be rendered`);
       replayedPageCount = replay.pageCount ?? replayedPageCount;
@@ -737,26 +744,23 @@ export class IssueDocument {
   }
 
   /**
-   * The worth line for a bank worksheet, or null. A replacement for an artifact
-   * that was already retained reuses the price that artifact was printed with;
-   * otherwise the economy is asked once, at print time.
+   * The worth line for a bank worksheet, or null — priced NOW, on every print
+   * and reprint, so paper never shows a stale promise (a reprint after the
+   * subject was done prints no line).
    *
    * The sheet's own price is `rewardFor` — the SAME answer the Portal's "print
    * my next sheet" and the agenda tape's `Next: Math +2` show, so paper and
    * screen cannot disagree. Only when this sheet is the learner's last
    * obligated section today is `ifDone` asked for the finishing-the-day bonus
-   * (`day-met` and friends, which `rewardFor` never credits to a sheet). Both
-   * run at once under the client's own time limit and never throw, so a slow,
-   * absent or not-live economy prints no worth line and never holds up paper.
+   * (`day-met` and friends, which `rewardFor` never credits to a sheet).
+   * Nothing is read while coins are not live; the plan read is cut off at
+   * `planTimeoutMs` and the prices at the client's own limit, so a slow,
+   * absent or not-live economy prints no line and never holds up paper.
    */
-  async #worthFor({ state, unit, course, replacementArtifactId }) {
-    if (!this.#earningsQuote) return null;
-    if (replacementArtifactId) {
-      let prior = null;
-      try { prior = await this.#issuedArtifacts?.get?.(replacementArtifactId) ?? null; } catch { prior = null; }
-      const stored = prior?.manifest?.renderContext;
-      if (stored && Object.hasOwn(stored, 'worth')) return stored.worth ?? null;
-    }
+  async #worthFor({ state, unit, course = null }) {
+    const quotes = this.#earningsQuote;
+    if (!quotes || !unit) return null;
+    if (typeof quotes.isLive === 'function' && !quotes.isLive()) return null;
     const learnerId = state.learnerId;
     const subject = unit.subject ?? null;
     const sections = await this.#todaysSections(learnerId);
@@ -767,12 +771,12 @@ export class IssueDocument {
     const open = (sections ?? []).filter((s) => s?.obligation?.state === 'obligated');
     const finishesDay = open.length === 1 && open[0]?.next?.unitId === unit.unitId;
     const [reward, whatIf] = await Promise.all([
-      this.#earningsQuote.rewardFor({
+      quotes.rewardFor({
         learnerId,
         unit: { unitId: unit.unitId ?? null, title: unit.title ?? null, subject, ...(elective ? { elective: true } : {}) },
       }),
       finishesDay
-        ? this.#earningsQuote.ifDone({
+        ? quotes.ifDone({
           learnerId, subject, unitId: unit.unitId ?? null,
           courseId: unit.courseId ?? course?.courseId ?? null, finishesDay: true,
         })
@@ -782,15 +786,44 @@ export class IssueDocument {
     return worthLine({ silver: reward.silver ?? 0, gems: reward.gems ?? 0, dayBonus: whatIf?.dayBonus ?? null });
   }
 
-  /** Today's plan sections for the learner, or null when there is no plan reader or it fails. */
+  /**
+   * Today's plan sections for the learner, or null when there is no plan
+   * reader, it fails, or it takes longer than `planTimeoutMs` (the full
+   * projection is not cheap, and paper does not wait on it).
+   */
   async #todaysSections(learnerId) {
     if (!this.#planProjection?.project) return null;
+    let timer;
     try {
-      const { sections = [] } = await this.#planProjection.project({ learnerId });
-      return Array.isArray(sections) ? sections : null;
+      const cut = new Promise((resolve) => { timer = this.#setTimer(() => resolve(TIMED_OUT), this.#planTimeoutMs); });
+      const out = await Promise.race([Promise.resolve().then(() => this.#planProjection.project({ learnerId })), cut]);
+      if (out === TIMED_OUT) {
+        this.#logger.warn?.('school.issue.worth-plan-failed', { learnerId, timeout: true });
+        return null;
+      }
+      return Array.isArray(out?.sections) ? out.sections : null;
     } catch (error) {
       this.#logger.warn?.('school.issue.worth-plan-failed', { learnerId, error: error?.message ?? String(error) });
       return null;
+    } finally {
+      this.#clearTimer(timer);
+    }
+  }
+
+  /**
+   * The reprint's fresh worth, as render-context overrides, for an artifact
+   * first printed with a worth slot (`renderContext.worth` recorded). Older
+   * artifacts never had the line and keep their layout. Never throws.
+   */
+  async #repricedContext({ state, retained }) {
+    const stored = retained?.manifest?.renderContext;
+    if (!stored || !Object.hasOwn(stored, 'worth')) return null;
+    try {
+      const unit = await this.#curriculum.getUnit(state.unitId);
+      return { worth: await this.#worthFor({ state, unit }) };
+    } catch (error) {
+      this.#logger.warn?.('school.issue.worth-reprice-failed', { sessionId: state.sessionId, error: error?.message ?? String(error) });
+      return { worth: null };
     }
   }
 
@@ -898,12 +931,10 @@ export class IssueDocument {
     // constant) would risk the printed sheet disagreeing with what actually
     // grades it. `null` (no bar anywhere) prints the question count alone —
     // see `RenderPrintDocument`'s `buildManifestText`.
-    // THE PRICE, priced at print time and frozen into the render context, so a
-    // reprint shows what this sheet was printed as worth (spec: before/after).
-    // An exact reprint replays the retained context (`RenderIssuedWorksheetArtifact`)
-    // and never reaches here; a REGENERATION under the same artifact id (a
-    // cancelled allocation) keeps the price the original was printed with.
-    const worth = await this.#worthFor({ state, unit, course, replacementArtifactId });
+    // THE PRICE, priced now. Recorded in the render context (the slot marks a
+    // sheet printed with a worth line); an exact reprint re-prices it
+    // (`#repricedContext`), so paper never shows a stale promise.
+    const worth = await this.#worthFor({ state, unit, course });
     const renderContext = existingInstance && instance.omr?.cardId && !existingAllocationCancelled
       ? {
         cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start,

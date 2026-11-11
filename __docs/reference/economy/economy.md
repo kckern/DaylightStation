@@ -1153,13 +1153,15 @@ built from `economyApi` (`composition/economyApi.mjs`).
   `economyApi.earningsQuote()`, which the earnings runtime binds to the
   **uncached** `EarningsPreviewService` (`useEarningsQuote`): a receipt quotes
   the week before and after one grade, which the 60 s cache would hide.
-  - `quote({learnerId})`: the current week, as `preview` returns it.
+  - `quote({learnerId, week})`: the learner's week as `preview` returns it
+    (`week` any study day in it; default the current week). Paper diffs only
+    `earned` lines.
   - `ifDone({learnerId, subject, unitId, courseId, finishesDay})`: from one
     facts read, the week priced as it is and as if `subject` were done today
     (`withSubjectDone`, pure, in `domain/earnings/whatIf.mjs`: today's section
     rows for the subject become `served`, a passed unit is added, and with
     `finishesDay` today's `days` row becomes `met`). Returns `{silver, gems,
-    dayBonus: {silver, gems}, lines}` (only lines whose amount rose), or null
+    dayBonus: {silver, gems}, lines}` (only lines whose earned amount rose), or null
     when the school evidence is unavailable or outside the term. The economy
     never decides whether a day is green; School says so (`finishesDay`).
   - School wraps both in `EarningsQuoteClient` (2 s limit, never throws,

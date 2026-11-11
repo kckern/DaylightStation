@@ -83,9 +83,9 @@ export class EarningsPreviewService {
     return this.#price(learner, ctx);
   }
 
-  /** One learner's current week, under a name callers can depend on. */
-  async quote({ learnerId } = {}) {
-    return this.preview({ learnerId });
+  /** One learner's week (`week`: any study day in it; default the current week), under a name callers can depend on. */
+  async quote({ learnerId, week = null } = {}) {
+    return this.preview({ learnerId, week });
   }
 
   /**
@@ -109,10 +109,13 @@ export class EarningsPreviewService {
       ? this.#evaluate(learner, ctx, read, withSubjectDone(read.school, { day, subject, unitId, courseId, finishesDay: true }))
       : base;
     const gain = (a, b, k) => Math.max(0, (a.totals?.[k] ?? 0) - (b.totals?.[k] ?? 0));
-    const byRule = new Map(actual.lines.map((l) => [l.ruleId, l.amount ?? { silver: 0, gems: 0 }]));
+    // Earned amounts only: a pending line's amount is not paid (yet).
+    const earned = (l) => (l.status === 'earned' ? (l.amount ?? { silver: 0, gems: 0 }) : { silver: 0, gems: 0 });
+    const byRule = new Map(actual.lines.map((l) => [l.ruleId, earned(l)]));
     const lines = full.lines.map((l) => {
       const was = byRule.get(l.ruleId) ?? { silver: 0, gems: 0 };
-      return { ruleId: l.ruleId, label: l.label, silver: Math.max(0, (l.amount?.silver ?? 0) - was.silver), gems: Math.max(0, (l.amount?.gems ?? 0) - was.gems) };
+      const now = earned(l);
+      return { ruleId: l.ruleId, label: l.label, silver: Math.max(0, (now.silver ?? 0) - was.silver), gems: Math.max(0, (now.gems ?? 0) - was.gems) };
     }).filter((l) => l.silver > 0 || l.gems > 0);
     return {
       silver: gain(base, actual, 'silver'), gems: gain(base, actual, 'gems'),

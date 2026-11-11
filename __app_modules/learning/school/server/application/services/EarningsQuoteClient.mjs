@@ -38,10 +38,11 @@ export class EarningsQuoteClient {
     this.#clearTimer = clearTimer;
   }
 
-  quote(learnerId) {
+  /** The learner's week; `week` is any study day inside it (null: the current week). */
+  quote(learnerId, { week = null } = {}) {
     return this.#call('quote', learnerId, () => {
       const service = this.#service('quote');
-      return service ? service.quote({ learnerId }) : null;
+      return service ? service.quote({ learnerId, week }) : null;
     });
   }
 
@@ -55,6 +56,11 @@ export class EarningsQuoteClient {
   /** What printing and passing this sheet adds: `{silver, gems}` or null. */
   rewardFor({ learnerId, unit } = {}) {
     return this.#call('rewardFor', learnerId, () => (this.#rewardFor ? this.#rewardFor({ learnerId, unit }) : null));
+  }
+
+  /** True while coins are live. Never throws (a failing reader is not live). */
+  isLive() {
+    try { return this.#isLive() === true; } catch { return false; }
   }
 
   #service(op) {
