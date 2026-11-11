@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape } from './GemBoard.jsx';
 
 const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
@@ -127,6 +128,17 @@ describe('GemBoardGrid — areas', () => {
     expect(heads.map((n) => n.querySelector('.area-icon')?.dataset.area)).toEqual(['move', 'school', 'games']);
     expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Racing']);
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
+  });
+
+  it('column names lean (one nowrap span per column) and the stylesheet breaks no word', () => {
+    const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
+    expect(css).not.toMatch(/overflow-wrap:\s*anywhere/);
+    expect(css).toMatch(/rotate\(-40deg\)/);
+    // The head row and the room for the last name's lean come from the measured fit.
+    expect(css).toMatch(/grid-template-rows:\s*var\(--gem-head/);
+    expect(css).toMatch(/padding-right:\s*var\(--gem-lean/);
+    const { container } = render(<GemBoardGrid board={AREAS} />);
+    expect(container.querySelectorAll('.gem-board__cat > span')).toHaveLength(3);
   });
 
   it('honest cells: a full gem with ×3 and its icon, a ringed tight gem with no tag, a blank 0-day cell, "leading" in words', () => {

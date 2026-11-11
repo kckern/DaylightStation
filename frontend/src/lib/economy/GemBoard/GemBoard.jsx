@@ -29,6 +29,7 @@ import GemIcon from '@/lib/icons/GemIcon.jsx';
 import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
 import AreaIcon, { AREAS } from './AreaIcon.jsx';
 import GemDetail, { detailParts } from './GemDetail.jsx';
+import useBoardFit from './useBoardFit.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './GemBoard.scss';
 
@@ -48,16 +49,6 @@ export async function fetchGemBoard(week = null, { fresh = true } = {}) {
   const res = await fetch(`/api/v1/earnings/gems${qs}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`gems ${res.status}`);
   return res.json();
-}
-
-/** The board's size in em (width, height), so the panel can pick the font size that fills the screen. */
-const COL_EM = 4.4;
-export function boardUnits(board) {
-  const sections = boardSections(board);
-  const cols = sections.reduce((n, g) => n + g.rows.length, 0);
-  const kids = board?.learners?.length ?? 0;
-  if (!cols || !kids) return { w: 58, h: 34 };
-  return { w: 15 + cols * COL_EM + sections.length * 0.8, h: 9.4 + kids * 4.6 };
 }
 
 const SHAPE_KEY = 'daylight.gemBoard.shape.v1';
@@ -406,13 +397,21 @@ export default function GemBoardOverlay({
     return () => document.removeEventListener('keydown', onKey, true);
   }, [open, pressKey]);
 
+  // The panel's font size and the name row's height, from the board's measured size (useBoardFit.js).
+  const drawn = state.board && state.board.mode !== 'off' ? state.board : shape;
+  const fit = useBoardFit(panelRef, `${open ? 1 : 0}|${drawn ? boardRowIds(drawn).join() : ''}|${state.board ? 'board' : 'outline'}|${weekOffset}`);
+  const fitStyle = {
+    ...(fit.fontPx ? { fontSize: `${fit.fontPx}px` } : null),
+    ...(fit.headEm ? { '--gem-head': `${fit.headEm}em` } : null),
+    ...(fit.leanEm != null ? { '--gem-lean': `${fit.leanEm}em` } : null),
+  };
+
   if (!open) return null;
   const { board, error, loading } = state;
-  const units = boardUnits(board && board.mode !== 'off' ? board : shape);
   const body = (
     <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
       <div className="gem-board__backdrop" onClick={() => close('tap')} />
-      <div className="gem-board__panel" ref={panelRef} style={{ '--gem-w': units.w, '--gem-h': units.h }}>
+      <div className="gem-board__panel" ref={panelRef} style={fitStyle}>
         <div className="gem-board__header">
           <GemIcon size="1.4em" />
           <span className="gem-board__title">Gems</span>
