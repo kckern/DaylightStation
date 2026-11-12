@@ -1,1 +1,1 @@
-export { default } from "./teacher/PianoProgramsPanel.jsx";
+export { default } from "./teacher/PianoTeacherPanels.jsx";
