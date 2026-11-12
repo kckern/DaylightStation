@@ -66,8 +66,13 @@ describe('InvadersHud', () => {
     const view = renderHud({ aimStatus: { lost: true, mode: 'pose' } });
     expect(notes()).toEqual(['Step into view']);
     view.unmount();
-    renderHud({ aimStatus: { lost: true, mode: 'manual' } });
+    renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'camera-denied' } });
     expect(notes()).toEqual(['Camera off — aim with the gamepad']);
+  });
+
+  it('tells a player who skipped calibration how to aim, without blaming the camera', () => {
+    renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'detecting' } });
+    expect(notes()).toEqual(['Gamepad aim — stick or arrow keys']);
   });
 
   it('shows the boost only with a partner: the meter while it fills, the label and seconds while it runs', () => {

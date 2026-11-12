@@ -44,8 +44,11 @@ function TierGlyph({ tier }) {
   );
 }
 
-function aimNote(aimStatus) {
-  if (aimStatus?.mode === 'manual') return 'Camera off — aim with the gamepad';
+function aimNote(aimStatus, poseStatus) {
+  // Manual aim has two causes: no camera, or a player who chose not to calibrate.
+  if (aimStatus?.mode === 'manual') {
+    return ['camera-denied', 'error'].includes(poseStatus?.state) ? 'Camera off — aim with the gamepad' : 'Gamepad aim — stick or arrow keys';
+  }
   if (aimStatus?.lost && aimStatus?.mode === 'pose') return 'Step into view';
   return null;
 }
@@ -122,7 +125,7 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
       </div>
 
       <div className="skyline-invaders__hud-notes">
-        <MomentBanner text={aimNote(aimStatus)} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
+        <MomentBanner text={aimNote(aimStatus, poseStatus)} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
         <MomentBanner text={tier?.trusted === false ? 'No trusted heart rate — small shots' : null} momentKey="tier" className="skyline-invaders__hud-note skyline-invaders__hud-note--tier" />
       </div>
     </header>

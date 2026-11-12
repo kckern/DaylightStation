@@ -174,6 +174,8 @@ function Threat({ threat, timeS, assets }) {
     <g
       data-threat={threat.type}
       data-hp={threat.hp}
+      data-x={threat.x}
+      data-y={threat.y}
       className={cls('skyline-invaders__threat', `skyline-invaders__threat--${threat.type}`, threat.hp < spec.hp && 'is-hurt')}
     >
       <PixelSprite grid={threatArt(threat.type, timeS, assets).grid} x={left} y={top} width={spec.width} height={spec.height} />
