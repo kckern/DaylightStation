@@ -257,7 +257,10 @@
 .skyline-invaders__window { position: relative; display: grid; justify-items: stretch; min-width: 0; }
 .skyline-invaders__menu .skyline-menus { --sg-icon-px: var(--sg-line); }
 .skyline-invaders__menu .skyline-menus__options button { --sg-icon-px: var(--sg-line); }
-.skyline-invaders__menu .skyline-invaders__more { top: calc(-2 * var(--sg-px)); right: calc(-2 * var(--sg-px)); }
+// The "more" button: the screen's bottom-right corner, on the street under
+// the panel, clear of every window frame (2026-11-12: it sat on the window's
+// corner) and of the round HUD that stays up behind the pause screen (top).
+.skyline-invaders__menu .skyline-invaders__more { top: auto; bottom: calc(2 * var(--sg-px)); right: 5vw; }
 
 // Best stars: gold when won, a solid dark star when not. Never faded.
 .skyline-invaders__star-row { display: inline-flex; align-items: center; gap: calc(var(--sg-px) / 2); }
@@ -330,14 +333,15 @@
   text-shadow: 0 0.06em 0 var(--si-outline);
 }
 // ── Sound ───────────────────────────────────────────────────────────────────
-// The touch "more" button opens the Sound sheet. It sits on the top-right
-// corner of every menu window a player can stop on; the round itself has no
-// touch chrome (pause is bike button 4 held, or gamepad Start).
+// The touch "more" button opens the Sound sheet. It sits in the bottom-right
+// corner of every menu screen a player can stop on, outside the window; the
+// round itself has no touch chrome (pause is bike button 4 held, or gamepad
+// Start). A solid 64 x 56 px target (at least 48 px both ways).
 .skyline-invaders__more {
-  --sg-icon-px: 0.25rem;
+  --sg-icon-px: 3px;
   position: absolute; z-index: 9; top: 2.2rem; right: 2.5rem;
   display: grid; place-items: center;
-  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0; cursor: pointer;
+  width: 64px; height: 56px; padding: 0; border: 0; border-radius: 0; cursor: pointer;
   color: var(--si-ink); background: var(--si-night); box-shadow: inset 0 0 0 0.2rem var(--si-ink);
   &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
   .sg-icon__ink { fill: none; }
