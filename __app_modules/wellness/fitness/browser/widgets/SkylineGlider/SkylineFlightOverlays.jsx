@@ -2,7 +2,7 @@ import React from 'react';
 
 // Everything that can cover the flight scene: the crash hold, the wait for the
 // first pedal stroke, a lost cadence sensor and the stall notice. Each is one
-// framed window over a dither scrim.
+// framed window on the scene, which is left as it is (no scrim).
 function Notice({ tone, title, children, testid }) {
   return <div className="skyline-glider__overlay" data-tone={tone} data-testid={testid}>
     <div className="skyline-glider__overlay-window"><h2>{title}</h2><p>{children}</p></div>

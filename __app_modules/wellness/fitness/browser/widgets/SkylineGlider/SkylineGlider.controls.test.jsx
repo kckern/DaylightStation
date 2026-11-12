@@ -201,7 +201,8 @@ describe('complete bike lifecycle',()=>{
   expect(mockCtx.fitnessSessionInstance.treasureBox.awardBonus).toHaveBeenCalledOnce();
   const writes=apiFetch.mock.calls.filter(([u,o])=>u.endsWith('/runs')&&o?.method==='POST');
   expect(writes).toHaveLength(1);expect(JSON.parse(writes[0][1].body).record.run.status).toBe('completed');
-  await press(2);expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('flights');
+  await press(2);expect(screen.getByTestId('skyline-glider-result')).toBeTruthy();
+  await press(3);expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('flights');
  });
  it('disables combat in the confidence flight while keeping menu access',async()=>{
   await mount({noWeapons:true});await launch();await press(1);await press(2);await press(3);await advance(100);

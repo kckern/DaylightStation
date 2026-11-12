@@ -37,6 +37,7 @@ vi.mock("../../identity/useIdentity.js", () => ({
 }));
 import SkylineGlider from "./SkylineGlider.jsx";
 import { FlightScene, RpmGauge } from "./SkylineGlider.jsx";
+import { SCENE_BLEED_X, SCENE_BLEED_Y, SCENE_HEIGHT, SCENE_WIDTH } from "./svgPresets.jsx";
 
 const course = { schema: 'skyline-glider-course/v1', id: 'mountain-pass', version: 1, name: 'Mountain Pass', description: 'A five minute alpine flight.', duration_s: 300, motion: { filter_s: .75, deadband_rpm: 2, response_s: 1.5, max_climb_rate: .3, max_descent_rate: .22, coast_s: 1, disconnect_grace_s: .75 }, rules: { lives: 3, invincibility_s: 1.25, restart_delay_s: 2 }, segments: [
   { id: 'open', type: 'open', start_s: 0, end_s: 300 },
@@ -298,6 +299,30 @@ describe('FlightScene zones', () => {
     const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...zoned, zone: { ...zoned.zone, layers: [], palette: { sky: '#000000' } } }} assets={assets}/>);
     expect(container.querySelector('[data-scene-sky]')).toHaveAttribute('fill', 'url(#glider-sky)');
     expect(container.querySelector('#glider-sky stop')).toHaveAttribute('stop-color', '#000000');
+  });
+
+  it('paints the sky and every backdrop past the viewBox, so a wider or taller stage has no bands', () => {
+    const num = (el, name) => Number(el.getAttribute(name) || 0);
+    const covers = (left, right) => { expect(left).toBeLessThanOrEqual(-SCENE_BLEED_X); expect(right).toBeGreaterThanOrEqual(SCENE_WIDTH + SCENE_BLEED_X); };
+    const { container, unmount } = render(<FlightScene state={{ ...flightState, courseTime: 7.3, collectedIds: [] }} course={zoned} assets={assets}/>);
+    const sky = container.querySelector('[data-scene-sky]');
+    covers(num(sky, 'x'), num(sky, 'x') + num(sky, 'width'));
+    expect(num(sky, 'y')).toBeLessThanOrEqual(-SCENE_BLEED_Y);
+    expect(num(sky, 'y') + num(sky, 'height')).toBeGreaterThanOrEqual(SCENE_HEIGHT + SCENE_BLEED_Y);
+    // The gradient stays pinned to the scene, not stretched over the bleed.
+    expect(container.querySelector('#glider-sky')).toHaveAttribute('gradientUnits', 'userSpaceOnUse');
+    const tiles = [...container.querySelectorAll('[data-layer="stars"] image')];
+    covers(Math.min(...tiles.map((t) => num(t, 'x'))), Math.max(...tiles.map((t) => num(t, 'x') + num(t, 'width'))));
+    unmount();
+    // Preset backdrops (no art loaded) also reach both edges at any scroll.
+    for (const courseTime of [0, 7.3, 13.9]) {
+      const { container: c, unmount: u } = render(<FlightScene state={{ ...flightState, courseTime, collectedIds: [] }} course={course}/>);
+      for (const layer of c.querySelectorAll('.skyline-glider__parallax')) {
+        const copies = [...layer.querySelectorAll('path')].map((p) => Number(/translate\((-?[\d.]+)/.exec(p.getAttribute('transform') || 'translate(0')[1]));
+        covers(Math.min(...copies), Math.max(...copies) + 2 * SCENE_WIDTH);
+      }
+      u();
+    }
   });
 
   it('falls back to the alpine presets when nothing has loaded', () => {

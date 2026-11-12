@@ -7,7 +7,7 @@ import { EMPTY_ZONE_ASSETS } from "../../lib/skylineGlider/zoneAssets.js";
 import { PadGlyph, PixelIcon } from "./SkylinePixelIcons.jsx";
 import {
   BackdropPreset, BellPreset, BlastPreset, BombPreset, CheckpointPreset, DEFAULT_ZONE, EntityPreset, FinishPreset,
-  GliderPreset, LaserPreset, SCENE_HEIGHT, SCENE_WIDTH, SceneDefs, TerrainPreset, hasBackdropPreset,
+  GliderPreset, LaserPreset, SCENE_BLEED_X, SCENE_FLOOR, SCENE_HEIGHT, SCENE_ROOF, SCENE_WIDTH, SceneDefs, SkyRect, TerrainPreset, hasBackdropPreset,
 } from "./svgPresets.jsx";
 
 // The flight scene is a stack of layers drawn from the act's resolved zone:
@@ -86,9 +86,11 @@ function ImageStrip({ layer, image, scroll }) {
   const y = Number(layer.y ?? 0) * SCENE_HEIGHT;
   const tileWidth = image.width * (height / image.height);
   const offset = (scroll * Number(layer.parallax ?? 0)) % tileWidth;
-  const count = Math.ceil(SCENE_WIDTH / tileWidth) + 1;
+  // Tiles start left of the viewBox and run past its right edge: the bleed.
+  const before = Math.ceil(SCENE_BLEED_X / tileWidth);
+  const count = before + Math.ceil((SCENE_WIDTH + SCENE_BLEED_X) / tileWidth) + 1;
   return <g className="skyline-glider__image-layer" data-layer={layer.id} opacity={layer.opacity ?? 1}>
-    {Array.from({ length: count }, (_, index) => <image key={index} href={image.url} x={index * tileWidth - offset} y={y} width={tileWidth + 0.5} height={height} preserveAspectRatio="none"/>)}
+    {Array.from({ length: count }, (_, index) => <image key={index} href={image.url} x={(index - before) * tileWidth - offset} y={y} width={tileWidth + 0.5} height={height} preserveAspectRatio="none"/>)}
   </g>;
 }
 
@@ -122,8 +124,8 @@ function SkinnedTerrain({ segment, terrain, fill, edge, ceilingEdge }) {
   const ceilingAt = segment.type === 'upper-terrain' ? segment.bottom : segment.type === 'corridor' ? segment.ceiling : null;
   const roof = ceilingEdge || edge;
   return <>
-    {ceilingAt != null && <rect x={segment.x} y="0" width={width} height={ceilingAt * SCENE_HEIGHT} {...rockProps('upper')}/>}
-    {floorAt != null && <rect x={segment.x} y={floorAt * SCENE_HEIGHT} width={width} height={SCENE_HEIGHT - floorAt * SCENE_HEIGHT} {...rockProps('lower')}/>}
+    {ceilingAt != null && <rect x={segment.x} y={SCENE_ROOF} width={width} height={ceilingAt * SCENE_HEIGHT - SCENE_ROOF} {...rockProps('upper')}/>}
+    {floorAt != null && <rect x={segment.x} y={floorAt * SCENE_HEIGHT} width={width} height={SCENE_FLOOR - floorAt * SCENE_HEIGHT} {...rockProps('lower')}/>}
     {floorAt != null && edge && <EdgeStrip id={`glider-edge-floor-${segment.id}`} image={edge} x={segment.x} width={width} top={floorAt * SCENE_HEIGHT - lip} height={edgeHeight}/>}
     {ceilingAt != null && roof && <EdgeStrip id={`glider-edge-roof-${segment.id}`} image={roof} flip={!ceilingEdge} x={segment.x} width={width} top={ceilingAt * SCENE_HEIGHT + lip - edgeHeight} height={edgeHeight}/>}
   </>;
@@ -155,7 +157,7 @@ function SkinnedLava({ segment, terrain, fill, edge }) {
   const edgeHeight = Number(terrain.edge_height ?? 0.06) * SCENE_HEIGHT;
   // Not the preset's .skyline-glider__lava class: its stylesheet fill would paint over the textures.
   return <g className="skyline-glider__lava-skinned">
-    <rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y} fill={fill ? 'url(#glider-lava-fill)' : undefined}/>
+    <rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_FLOOR - y} fill={fill ? 'url(#glider-lava-fill)' : undefined}/>
     {edge && <EdgeStrip id={`glider-lava-edge-${segment.id}`} image={edge} x={segment.x} width={segment.width} top={y - edgeHeight / 2} height={edgeHeight}/>}
   </g>;
 }
@@ -412,8 +414,8 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
         <image href={lavaFill.url} width={lavaFill.width} height={lavaFill.height}/>
       </pattern>
     </defs>}
-    {/* The palette sky is always painted first: a zone whose layers do not reach the top still has a sky. */}
-    <rect data-scene-sky="true" width={SCENE_WIDTH} height={SCENE_HEIGHT} fill="url(#glider-sky)"/>
+    {/* The palette sky is always painted first, over the whole stage: a zone whose layers do not reach the top still has a sky. */}
+    <SkyRect data-scene-sky="true"/>
     {layers.filter((layer) => !layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <CourseSegment key={segment.id} segment={segment} zone={zone} assets={assets} time={time}/>)}

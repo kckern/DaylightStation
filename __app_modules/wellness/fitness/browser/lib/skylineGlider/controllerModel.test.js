@@ -44,8 +44,23 @@ describe('seated game lifecycle',()=>{
  });
  it('keeps the last completed flight and does not wrap final Next to level one',()=>{
   let s={...press(start(),1),phase:'result',actId:'two',saveStatus:'saved'};
-  expect(describeSkylineControls(s)[1].label).toBe('Flights');expect(press(s,2).phase).toBe('flights');
+  expect(describeSkylineControls(s)[1]).toMatchObject({label:'No next level yet',disabled:true});expect(press(s,2)).toMatchObject({phase:'result',actId:'two'});
   expect(press(s,1)).toMatchObject({phase:'ready',actId:'two',riderId:'child'});
+ });
+ it('gives every result button its own truthful label and never names a locked next level',()=>{
+  const locked=[...acts,{id:'three',name:'Ember Caves',status:'locked'}];
+  const labels=state=>describeSkylineControls(state).map(c=>`${c.label} ${c.hint}`);
+  const s={...press(start(),1),acts:locked,phase:'result',actId:'two',saveStatus:'saved'};
+  const shown=labels(s);
+  expect(new Set(describeSkylineControls(s).map(c=>c.label)).size).toBe(4);
+  expect(shown.join(' | ')).not.toMatch(/Ember Caves/);
+  expect(describeSkylineControls(s)[1].disabled).toBe(true);
+  expect(press(s,2)).toMatchObject({phase:'result',actId:'two'});
+  const open={...s,acts:[...acts,{id:'three',name:'Ember Caves',status:'open'}]};
+  const offered=describeSkylineControls(open);
+  expect(offered[1]).toMatchObject({label:'Next level',hint:'Ember Caves',disabled:false});
+  expect(new Set(offered.map(c=>c.label)).size).toBe(4);
+  expect(press(open,2)).toMatchObject({phase:'ready',actId:'three'});
  });
  it('gates new attempts and rider changes behind saving the same terminal run',()=>{
   const s={...press(start(),1),phase:'result',saveStatus:'error'};

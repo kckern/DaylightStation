@@ -5,27 +5,45 @@ import React from 'react';
 
 export const SCENE_WIDTH = 1000;
 export const SCENE_HEIGHT = 600;
+// The stage is rarely 5:3, and the scene is drawn to fit it (meet), so the
+// viewBox never fills it alone. Everything that is backdrop (sky, parallax,
+// terrain) bleeds this far past the viewBox: to 2.3:1 wide and 4:3 tall with no
+// bands. The horizontal bleed matches the course projection's own margin.
+export const SCENE_BLEED_X = 160;
+export const SCENE_BLEED_Y = 80;
+export const SCENE_ROOF = -SCENE_BLEED_Y;
+export const SCENE_FLOOR = SCENE_HEIGHT + SCENE_BLEED_Y;
 
 export function SceneDefs({ palette = {} }) {
   return <defs>
-    <linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor={palette.sky || "#78bce8"}/><stop offset="1" stopColor={palette.horizon || "#f8d69a"}/></linearGradient>
+    <linearGradient id="glider-sky" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2={SCENE_HEIGHT}><stop stopColor={palette.sky || "#78bce8"}/><stop offset="1" stopColor={palette.horizon || "#f8d69a"}/></linearGradient>
     <linearGradient id="glider-rock" x1="0" y1="0" x2="0" y2="1"><stop stopColor={palette.rock || "#42685e"}/><stop offset="1" stopColor={palette.rock_low || "#193d38"}/></linearGradient>
   </defs>;
 }
 
-// Backdrops repeat every 1000 units; the caller translates by the scroll offset.
+// Backdrops repeat every 1000 units (each path ends where it starts, so copies
+// join without a step); the caller translates by the scroll offset.
 const BACKDROP_PATHS = {
-  'alpine-far': { className: 'far', d: 'M0 420 L130 250 260 420 420 210 590 420 760 260 1000 420 1130 250 1260 420 1420 210 1590 420 1760 260 2000 420 V600 H0Z' },
-  'alpine-middle': { className: 'middle', d: 'M0 490 L170 360 330 480 520 330 690 490 860 350 1000 470 1170 360 1330 480 1520 330 1690 490 1860 350 2000 470 V600 H0Z' },
-  'alpine-near': { className: 'near', d: 'M0 535 Q180 465 350 530 T700 510 T1000 530 Q1180 465 1350 530 T1700 510 T2000 530 V600 H0Z' },
+  'alpine-far': { className: 'far', d: `M0 420 L130 250 260 420 420 210 590 420 760 260 1000 420 1130 250 1260 420 1420 210 1590 420 1760 260 2000 420 V${SCENE_FLOOR} H0Z` },
+  'alpine-middle': { className: 'middle', d: `M0 470 L170 360 330 480 520 330 690 490 860 350 1000 470 1170 360 1330 480 1520 330 1690 490 1860 350 2000 470 V${SCENE_FLOOR} H0Z` },
+  'alpine-near': { className: 'near', d: `M0 530 Q180 465 350 530 T700 510 T1000 530 Q1180 465 1350 530 T1700 510 T2000 530 V${SCENE_FLOOR} H0Z` },
 };
 
+// The palette sky over the whole stage, bleed included.
+export function SkyRect(props) {
+  return <rect x={-SCENE_BLEED_X} y={SCENE_ROOF} width={SCENE_WIDTH + 2 * SCENE_BLEED_X} height={SCENE_FLOOR - SCENE_ROOF} fill="url(#glider-sky)" {...props}/>;
+}
+
 export function BackdropPreset({ draw, offset = 0 }) {
-  if (draw === 'alpine-sky') return <rect width={SCENE_WIDTH} height={SCENE_HEIGHT} fill="url(#glider-sky)"/>;
+  if (draw === 'alpine-sky') return <SkyRect/>;
   const preset = BACKDROP_PATHS[draw];
   if (!preset) return null;
-  return <g className={`skyline-glider__parallax skyline-glider__parallax--${preset.className}`} transform={`translate(${-(offset % SCENE_WIDTH)} 0)`}>
-    <path d={preset.d}/>
+  // Each path spans two periods; one copy a period either side of the scroll
+  // position covers the bleed on both sides at any offset.
+  const shift = -(offset % SCENE_WIDTH);
+  return <g className={`skyline-glider__parallax skyline-glider__parallax--${preset.className}`}>
+    <path d={preset.d} transform={`translate(${shift - SCENE_WIDTH} 0)`}/>
+    <path d={preset.d} transform={`translate(${shift + SCENE_WIDTH} 0)`}/>
   </g>;
 }
 
@@ -34,26 +52,26 @@ export const hasBackdropPreset = (draw) => draw === 'alpine-sky' || draw in BACK
 export function TerrainPreset({ segment, fill, edge = true }) {
   if (segment.type === 'lava') {
     const y = segment.top * SCENE_HEIGHT;
-    return <g className="skyline-glider__lava"><rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y}/><path d={`M${segment.x} ${y} H${segment.x + segment.width}`} /></g>;
+    return <g className="skyline-glider__lava"><rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_FLOOR - y}/><path d={`M${segment.x} ${y} H${segment.x + segment.width}`} /></g>;
   }
   if (segment.profilePoints?.length) {
     const points = segment.profilePoints;
     const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ');
     // A zone texture goes in style: the stylesheet's terrain fill would beat a fill attribute.
-    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" style={fill ? { fill } : undefined}/>{edge && <path d={line} className="skyline-glider__slope-edge"/>}</>;
+    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_FLOOR} L${points[0].x} ${SCENE_FLOOR} Z`} className="skyline-glider__terrain" style={fill ? { fill } : undefined}/>{edge && <path d={line} className="skyline-glider__slope-edge"/>}</>;
   }
   const width = Math.max(4, segment.width);
   if (segment.type === 'lower-terrain') {
     const y = segment.top * SCENE_HEIGHT;
     return <>
-      <rect x={segment.x} y={y} width={width} height={SCENE_HEIGHT - y} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
+      <rect x={segment.x} y={y} width={width} height={SCENE_FLOOR - y} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
       <path d={`M${segment.x} ${y} l22 24 28 -24 32 34 34 -34 H${segment.x + width}`} className="skyline-glider__snowline"/>
     </>;
   }
   if (segment.type === 'upper-terrain') {
     const y = segment.bottom * SCENE_HEIGHT;
     return <>
-      <rect x={segment.x} y="0" width={width} height={y} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
+      <rect x={segment.x} y={SCENE_ROOF} width={width} height={y - SCENE_ROOF} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
       <path d={`M${segment.x} ${y} l24 -20 28 20 30 -28 34 28 H${segment.x + width}`} className="skyline-glider__cave-edge"/>
     </>;
   }
@@ -61,8 +79,8 @@ export function TerrainPreset({ segment, fill, edge = true }) {
     const ceiling = segment.ceiling * SCENE_HEIGHT;
     const floor = segment.floor * SCENE_HEIGHT;
     return <>
-      <rect x={segment.x} y="0" width={width} height={ceiling} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
-      <rect x={segment.x} y={floor} width={width} height={SCENE_HEIGHT - floor} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
+      <rect x={segment.x} y={SCENE_ROOF} width={width} height={ceiling - SCENE_ROOF} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
+      <rect x={segment.x} y={floor} width={width} height={SCENE_FLOOR - floor} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
       <path d={`M${segment.x} ${ceiling} H${segment.x + width} M${segment.x} ${floor} H${segment.x + width}`} className="skyline-glider__corridor-edge"/>
     </>;
   }

@@ -3,7 +3,7 @@
 // One look for the HUD, the in-scene marks, the menus and the panels: a 16-bit
 // console game drawn on the scene's own pixel grid. The rules:
 //   · Flat colour and hard edges only. No blur, no soft shadow, no see-through
-//     panels; "dim" is a dither, depth is a one-pixel offset.
+//     panels and no dimmed scene; depth is a one-pixel offset.
 //   · Things you READ in flight (hearts, clock, score, rpm) are ink-outlined
 //     numerals set straight on the sky. Things you PRESS are solid plates in the
 //     colour of the bike button that does it. Things that talk are windows.
@@ -209,9 +209,11 @@
 // ── Flight HUD ──────────────────────────────────────────────────────────────
 // Readouts top left, set straight on the sky; the bike-button block top right.
 // Nothing sits over the right-hand middle of the scene, where obstacles arrive.
+// The readouts start clear of the rpm pointer, which rides up beside the gauge
+// to the top row when the glider is high (a three-digit rpm included).
 .skyline-glider__hud {
   --sg-icon-px: var(--sg-line);
-  position: absolute; z-index: 5; inset: calc(4 * var(--sg-px)) calc(5 * var(--sg-px)) auto 9.6vw;
+  position: absolute; z-index: 5; inset: calc(4 * var(--sg-px)) calc(5 * var(--sg-px)) auto 14vw;
   display: flex; align-items: center; gap: 2.2vw; min-height: 3vw;
   color: var(--sg-paper); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
   @include sg-outline;
@@ -297,14 +299,14 @@
   @include sg-frame;
 }
 
-// A notice over the flight: the scene dimmed by a one-pixel dither, one window.
+// A notice over the flight: one solid window on the scene, which stays exactly
+// as it was. Nothing dims it — a see-through or dithered layer reads as broken.
 .skyline-glider__overlay {
   position: absolute; z-index: 7; inset: 0; display: grid; place-content: center;
-  background: repeating-conic-gradient(var(--sg-ink) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--sg-line)) calc(2 * var(--sg-line));
 }
 .skyline-glider__overlay-window {
   --tone: var(--sg-paper);
-  padding: 2.2vw 4vw 2.6vw; text-align: center; background: var(--sg-night);
+  min-width: 34vw; padding: 2.6vw 4.4vw 3vw; text-align: center; background: var(--sg-night);
   @include sg-frame(var(--tone));
   h2 { margin: 0; color: var(--tone); font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
   p { margin: .5em 0 0; font-size: var(--sg-text-m); font-weight: 500; }

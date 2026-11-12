@@ -1,4 +1,6 @@
 const combat = ['laser','bomb','missile','boost'];
+// The act after the current one, only if the rider may fly it.
+const openNextAct = s => {const next=s.acts[s.acts.findIndex(a=>a.id===s.actId)+1];return next&&next.status!=='locked'?next:null};
 const chooseAct = (acts,last) => acts.find(a=>a.status==='open')?.id || acts.find(a=>a.id===last&&a.status!=='locked')?.id || acts.find(a=>a.status!=='locked')?.id || acts[0]?.id;
 export function createSkylineControlState({riders=[],acts=[],lastPlayedByRider={}}={}) {
   return { phase:'identity',riders,acts,lastPlayedByRider,riderId:null,actId:null,rosterIndex:0,steady:0,countdown:3,allowed:true,saveStatus:'idle',weaponsEnabled:false,resumeIntent:'new' };
@@ -83,7 +85,7 @@ export function reduceSkylineControl(current,event) {
       if(state.saveStatus==='error'){if(i===0){state.phase='saving';effect('retry-save')}else if(i===2)state.phase='save-details'}
       else if(state.saveStatus==='saved'){
         if(i===0)ready('new');
-        else if(i===1){const index=state.acts.findIndex(a=>a.id===state.actId),next=state.acts[index+1];if(next&&next.status!=='locked'){state.actId=next.id;effect('choose-act',{actId:next.id});ready('new')}else state.phase='flights'}
+        else if(i===1){const next=openNextAct(state);if(next){state.actId=next.id;effect('choose-act',{actId:next.id});ready('new')}}
         else if(i===2)state.phase='flights';else identity();
       }
     }else if(state.phase==='save-details'){if(i===2)state.phase='result'}
@@ -108,15 +110,17 @@ export function describeSkylineControls(s){
  case 'menu':choices=[['Resume','Pedal when ready','✓'],['Sound','Toggle on / off','♫'],['End flight','Save this attempt','×'],['Change rider','Save and finish','●']];break;
  case 'crash':choices=[['Retry checkpoint','Same rider & flight','↻'],['Restart level','From the beginning','⟲'],['Flights','Choose another','▦'],['Change rider','Save and finish','●']];break;
  case 'result':{
-  const index=s.acts.findIndex(a=>a.id===s.actId),next=s.acts[index+1];
+  // Button 2 offers the next level only when it is open; a locked or missing
+  // one is never named, and the key stays dead rather than repeating Flights.
+  const next=openNextAct(s);
   choices=s.saveStatus==='error'?[['Retry save','Keep this result','↻'],['Saving required','','—'],['Save details','Inspect error','ⓘ'],['Saving required','','—']]:
-   [['Replay',act?.name,'↻'],[next&&next.status!=='locked'?'Next level':'Flights',next?.name||'Choose a flight','→'],['Flights','Choose another','▦'],['Change rider','Someone else can fly','●']];break;
+   [['Replay',act?.name,'↻'],next?['Next level',next.name,'→']:['No next level yet','Pick a flight on 3','—'],['Flights','Choose another','▦'],['Change rider','Someone else can fly','●']];break;
  }
  case 'denied':choices=[['Admin unlock','Present admin badge','✓'],['Locked',s.accessReason||'Access required','—'],['Back','Choose rider','×'],['Change rider','Choose another','●']];break;
  case 'save-details':choices=[['Save pending','','—'],['Save pending','','—'],['Back','Return to result','×'],['Save pending','','—']];break;
  default:choices=Array.from({length:4},()=>[s.phase==='stall'?'Stalled':s.phase==='saving'?'Saving…':'Please wait','', '—']);
  }
  return choices.map(([label,hint,icon,avatarSrc],i)=>({position:i+1,action:combat[i],label,hint:hint||'',icon,avatarSrc,
-  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i)),
+  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&s.saveStatus==='saved'&&i===1&&!openNextAct(s)),
   reason:s.phase==='stall'?'This attempt will crash':null}));
 }
