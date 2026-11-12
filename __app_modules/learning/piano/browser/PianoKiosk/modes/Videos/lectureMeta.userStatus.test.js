@@ -4,20 +4,25 @@ import { lectureUserStatus } from './lectureMeta.js';
 describe('lectureUserStatus', () => {
   it('prefers user fields when present (watched), surfacing the completion date', () => {
     expect(lectureUserStatus({ userWatched: true, userPercent: 95, userCompletedAt: '2026-06-26T00:00:00Z' }))
-      .toEqual({ watched: true, percent: 95, completedAt: '2026-06-26T00:00:00Z' });
+      .toEqual({ watched: true, percent: 95, completedAt: '2026-06-26T00:00:00Z', notCounted: false });
   });
   it('prefers user fields when present (in-progress, not watched) — no completion date', () => {
-    expect(lectureUserStatus({ userWatched: false, userPercent: 40 })).toEqual({ watched: false, percent: 40, completedAt: null });
+    expect(lectureUserStatus({ userWatched: false, userPercent: 40 })).toEqual({ watched: false, percent: 40, completedAt: null, notCounted: false });
   });
   it('treats userPercent null + userWatched false as a real (unwatched) user entry', () => {
-    expect(lectureUserStatus({ userWatched: false, userPercent: null })).toEqual({ watched: false, percent: 0, completedAt: null });
+    expect(lectureUserStatus({ userWatched: false, userPercent: null })).toEqual({ watched: false, percent: 0, completedAt: null, notCounted: false });
   });
   it('never leaks device-level (Plex media-memory) signals when no user fields are present — guests and unenriched items show no badge', () => {
     // Regression: a device that another user (or this guest, in a prior
     // session) watched to completion must NOT render a watched checkmark /
     // percent for someone whose per-user record was never fetched.
-    expect(lectureUserStatus({ watchProgress: 92 })).toEqual({ watched: false, percent: 0, completedAt: null });
-    expect(lectureUserStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: false, percent: 0, completedAt: null });
-    expect(lectureUserStatus({ watchProgress: 100, playCount: 3 })).toEqual({ watched: false, percent: 0, completedAt: null });
+    expect(lectureUserStatus({ watchProgress: 92 })).toEqual({ watched: false, percent: 0, completedAt: null, notCounted: false });
+    expect(lectureUserStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: false, percent: 0, completedAt: null, notCounted: false });
+    expect(lectureUserStatus({ watchProgress: 100, playCount: 3 })).toEqual({ watched: false, percent: 0, completedAt: null, notCounted: false });
+  });
+  it('notCounted when the lesson owes a warm-up and is not credited', () => {
+    expect(lectureUserStatus({ userWatched: false, userPercent: 95, userCredit: { outcome: 'drill-owed' } }).notCounted).toBe(true);
+    expect(lectureUserStatus({ userWatched: true, userPercent: 95, userCredit: { outcome: 'drill-owed' } }).notCounted).toBe(false);
+    expect(lectureUserStatus({ userWatched: false, userPercent: 95, userCredit: { outcome: 'credited' } }).notCounted).toBe(false);
   });
 });

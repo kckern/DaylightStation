@@ -3,6 +3,9 @@ import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { generateCardPitches, evaluateMatch } from '../../../PianoFlashcards/flashcardEngine.js';
 import { ActionStaff } from '../../../components/ActionStaff.jsx';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import LessonDrill from './LessonDrill.jsx';
+import { checkInDrill } from '../../../../portable/practice/goodFaith.mjs';
+import { CHECKIN_NOTE, CHECKIN_ONE_SCALE, CHECKIN_TWO_SCALES } from './lessonCreditCopy.js';
 
 let _logger;
 function logger() {
@@ -22,7 +25,41 @@ function logger() {
  * names pitches the loop is playing right now; the prompt never asks for one,
  * so a child can always answer it.
  */
-export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches }) {
+export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches, step = { kind: 'note' }, roots = undefined, rotation = 0 }) {
+  if (open && step?.kind === 'scales') {
+    return <ScaleCheckIn count={step.count} onDismiss={onDismiss} roots={roots} rotation={rotation} />;
+  }
+  return <NoteCheckIn open={open} onDismiss={onDismiss} humanNotes={humanNotes} avoidPitches={avoidPitches} />;
+}
+
+/**
+ * The ladder's scale step: the scale drill in the paused video's place (one
+ * rep per scale). No skip and no failure state — a missed scale is simply
+ * played again; the check-in closes once every scale has passed.
+ */
+function ScaleCheckIn({ count, onDismiss, roots, rotation }) {
+  const drill = useMemo(() => {
+    const spec = checkInDrill(count, { roots, rotation });
+    return { reps: spec.sets * spec.reps, spec };
+  }, [count, roots, rotation]);
+  return (
+    <div className="piano-engagement-gate piano-engagement-gate--scales" data-testid="engagement-gate" role="dialog" aria-modal="true" aria-label="Play along to continue">
+      <p className="piano-engagement-gate__heading">{count >= 2 ? CHECKIN_TWO_SCALES : CHECKIN_ONE_SCALE}</p>
+      <div className="piano-engagement-gate__drill">
+        <LessonDrill
+          drill={drill}
+          variant="checkin"
+          context={{ checkIn: true, scales: count }}
+          onRepPassed={(n) => logger().info('piano.engagement-gate.scale-passed', { n, of: drill.reps })}
+          onComplete={() => onDismiss?.()}
+          onLeave={() => {}}
+        />
+      </div>
+    </div>
+  );
+}
+
+function NoteCheckIn({ open, onDismiss, humanNotes, avoidPitches }) {
   const { activeNotes: storeNotes } = usePianoMidiNotes();
   const activeNotes = humanNotes ?? storeNotes;
 
@@ -59,7 +96,7 @@ export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitch
       aria-label="Play along to continue"
     >
       <div className="piano-engagement-gate__content">
-        <p className="piano-engagement-gate__prompt">Still there? Play this note to continue:</p>
+        <p className="piano-engagement-gate__prompt">{CHECKIN_NOTE}</p>
         <div
           className={[
             'piano-engagement-gate__card',

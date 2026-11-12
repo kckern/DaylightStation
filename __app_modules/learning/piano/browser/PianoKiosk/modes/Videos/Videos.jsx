@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
@@ -19,6 +19,10 @@ import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
 import { useCourseTabPolicy } from './useCourseTabPolicy.js';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 import { resolveCourseGroups } from './courseGroups.js';
+import LessonDrill from './LessonDrill.jsx';
+import { buildWatchLogPayload } from './watchLog.js';
+import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
+import LessonReopenCard from './LessonReopenCard.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -316,6 +320,35 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { playing } = usePianoPlayback();
   useKeepScreenAwake('video', playing, VIDEO_WAKE_GRACE_MS);
 
+  // A lesson that owes a warm-up opens on a choice: warm up now (the drill,
+  // straight away), or watch it again from the start and play along.
+  const [reopen, setReopen] = useState(null);
+  useEffect(() => { setReopen(null); }, [lectureId]);
+  const warmSittingRef = useRef(null);
+  const owedDrill = lecture && !lecture.userWatched && lecture.userCredit?.outcome === 'drill-owed'
+    ? lecture.userCredit.drill ?? null : null;
+  const postWarmUpRep = useCallback((n) => {
+    if (!lecture || !currentUser || currentUser === 'guest') return;
+    if (!warmSittingRef.current) warmSittingRef.current = `${Date.now().toString(36)}-warm`;
+    const duration = Number(lecture.duration) || 0;
+    const percent = Number(lecture.userPercent) || 0;
+    const payload = buildWatchLogPayload({
+      contentId: lectureContentId(lecture),
+      title: lecture.label || lecture.title,
+      seconds: duration * (percent / 100),
+      duration,
+      reason: 'drill',
+      userId: currentUser,
+      engaged: true,
+      practice: {
+        sittingId: warmSittingRef.current, humanNotes: 0, practiceNotes: 0, playedSec: 0,
+        drillsPassed: n, checkIns: 0, scaleCheckIns: 0, penalties: {},
+      },
+    });
+    DaylightAPI('api/v1/play/log', payload)
+      .catch((err) => getLogger().child({ component: 'piano-videos' }).warn('piano.lesson-drill.post-failed', { lectureId, error: err?.message }));
+  }, [currentUser, lecture, lectureId]);
+
   // AFTER every hook above, not beside the cap read at the top of this
   // component: an early return there would skip the rest and break the rules of
   // hooks on the very first capped render. First branch in the render, though —
@@ -331,15 +364,28 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
       </div>
     );
   }
+  if (owedDrill && reopen === null) {
+    return (
+      <LessonReopenCard onWarmUp={() => setReopen('warmup')} onRewatch={() => setReopen('rewatch')} />
+    );
+  }
+  if (owedDrill && reopen === 'warmup') {
+    return (
+      <div className="piano-video-player piano-video-player--drill">
+        <LessonDrill drill={owedDrill} context={{ contentId: lectureId, reopened: true }} onRepPassed={postWarmUpRep} onComplete={goBack} onLeave={goBack} />
+      </div>
+    );
+  }
   return (
     <PlayerComponent
       key={lectureId}
-      lecture={lecture}
+      lecture={owedDrill && reopen === 'rewatch' ? { ...lecture, userPlayhead: 0 } : lecture}
       source={source}
       onBack={goBack}
       isSequential={isSequential}
       speedEnabled={policy.allowSpeed}
       engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
+      completionThresholdPercent={config.videos?.completion_threshold_percent ?? 90}
       engagementGateEnabled={policy.engagementGate}
       onAutoAdvance={checkpointPending || policy.autoAdvance ? handleAutoAdvance : null}
     />
