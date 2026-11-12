@@ -13,9 +13,13 @@ describe('frameCheck', () => {
     expect(frameCheck(pose(), 640, 480)).toEqual({ head: true, leftWrist: true, rightWrist: true, shoulders: true, hips: true, ok: true });
   });
 
-  it('flags a wrist past the edge or inside the margin', () => {
-    expect(frameCheck(pose({ [KP.leftWrist]: { x: 700 } }), 640, 480)).toMatchObject({ leftWrist: false, rightWrist: true, ok: false });
+  it('flags a wrist past the edge or inside the margin without failing framing', () => {
+    expect(frameCheck(pose({ [KP.leftWrist]: { x: 700 } }), 640, 480)).toMatchObject({ leftWrist: false, rightWrist: true, ok: true });
     expect(frameCheck(pose({ [KP.rightWrist]: { y: 4 } }), 640, 480).rightWrist).toBe(false);
+  });
+
+  it('fails framing when a shoulder leaves the picture', () => {
+    expect(frameCheck(pose({ [KP.leftShoulder]: { x: 700 } }), 640, 480)).toMatchObject({ shoulders: false, ok: false });
   });
 
   it('treats a low-score keypoint as out of frame', () => {

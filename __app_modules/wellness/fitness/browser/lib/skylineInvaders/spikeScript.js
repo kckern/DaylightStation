@@ -39,7 +39,7 @@ function aimSteps(subject) {
 /** The full script. Step ids are stable and appear on every log event. */
 export function buildScript() {
   return [
-    wait('framing', 'Framing check', 'Stand on the mat facing the camera. Raise both arms. Head and both wrists must stay inside the picture.', { panel: 'framing', skeleton: true, gesture: false }),
+    wait('framing', 'Framing check', 'Stand on the mat facing the camera, arms relaxed. Your head and shoulders should be inside the picture.', { panel: 'framing', skeleton: true, gesture: false }),
     wait('t1.intro', 'Test 1 of 3: pose speed', 'Four one-minute runs. Just keep waving your arms. Nothing to press until it finishes.', { test: 't1' }),
     ...poseSteps(MODEL_A),
     ...poseSteps(MODEL_B),

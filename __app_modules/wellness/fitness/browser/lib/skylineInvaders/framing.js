@@ -14,7 +14,9 @@ export const FRAME_PARTS = Object.freeze({
  * A part is in frame when every one of its keypoints scores >= minScore and
  * lies inside the image, `margin` (fraction of each side) away from the edge.
  * @returns {{ head, leftWrist, rightWrist, shoulders, hips: boolean, ok: boolean }}
- *   ok = head and both wrists in frame (what aiming needs).
+ *   ok = head and both shoulders in frame. Wrists are reported but not
+ *   required: with arms at rest they hang below a 480p frame, and aiming only
+ *   needs them while the arms are raised.
  */
 export function frameCheck(pose, width, height, { minScore = 0.3, margin = 0.02 } = {}) {
   const k = pose?.keypoints || [];
@@ -26,6 +28,6 @@ export function frameCheck(pose, width, height, { minScore = 0.3, margin = 0.02 
   Object.entries(FRAME_PARTS).forEach(([part, indices]) => {
     out[part] = width > 0 && height > 0 && indices.every((i) => inside(k[i]));
   });
-  out.ok = out.head && out.leftWrist && out.rightWrist;
+  out.ok = out.head && out.shoulders;
   return out;
 }

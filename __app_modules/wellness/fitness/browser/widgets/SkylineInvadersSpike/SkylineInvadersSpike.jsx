@@ -824,7 +824,7 @@ function SpikeInner({ log, onMount }) {
   const stepCount = steps.length;
   const poseLoading = ui.poseStatus && !ui.poseStatus.isInitialized && !ui.poseStatus.error;
   const framingWarning = step.panel === 'framing' && ui.hasPose && ui.frame && !ui.frame.ok
-    ? `Out of frame: ${[!ui.frame.head && 'head', !ui.frame.leftWrist && 'left wrist', !ui.frame.rightWrist && 'right wrist'].filter(Boolean).join(', ')}`
+    ? `Out of frame: ${[!ui.frame.head && 'head', !ui.frame.shoulders && 'shoulders'].filter(Boolean).join(', ')}`
     : null;
   const armCell = (label, arm) => (
     <div className={`sis-tile ${arm?.state === 'ok' ? '' : 'is-warn'}`}>

@@ -1,8 +1,11 @@
 // Phase 0 spike: a measurement page read from across a garage. Big type, high
 // contrast, no art.
+// Fixed to the viewport, above the fitness shell: inside the module frame the
+// page was boxed to ~1450x820 and the button row fell below the visible edge.
 .sis {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   gap: 1vh;
@@ -26,9 +29,12 @@
   .sis-step { color: #f2f5f8; font-weight: 700; }
   .sis-stat.is-bad { color: #ff5a4f; font-weight: 700; }
 
+  .sis-top, .sis-aim, .sis-mat, .sis-foot { flex-shrink: 0; }
+
   .sis-main {
     flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
     display: flex;
     gap: 2vw;
   }
@@ -36,6 +42,8 @@
   .sis-prompt {
     flex: 1 1 60%;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 1vh;
