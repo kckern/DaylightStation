@@ -20,14 +20,6 @@ const fx = (params.get('fx') || '').split(',').filter(Boolean);
 const t = Number(params.get('t') || 20);
 const alt = Number(params.get('alt') || 0.5);
 
-// freeze=<seconds> holds every animation at that moment, so a shot of a
-// half-second effect is the same picture every run.
-if (params.has('freeze')) {
-  const style = document.createElement('style');
-  style.textContent = `*, *::before, *::after { animation-play-state: paused !important; animation-delay: -${Number(params.get('freeze')) || 0}s !important; }`;
-  document.head.append(style);
-}
-
 async function boot() {
   const root = createRoot(document.getElementById('root'));
   if (scene === 'menu') { root.render(<MenuUi phase={params.get('phase') || 'identity'}/>); return; }

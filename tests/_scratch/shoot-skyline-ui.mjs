@@ -19,11 +19,13 @@ const flight = (zone, t, alt, fx = '', freeze = '0.12') => `scene=flight&act=clo
 const SHOTS = {
   'flight-target': flight('smw-placeholder', 22, 0.4, 'impacts,shots,pop'),
   'flight-bomb': flight('smw-placeholder', 62, 0.4, 'charging,flash-deny,empty'),
-  'flight-missile': flight('smw-placeholder', 118, 0.45, 'boosting,flash-ok,power'),
-  'flight-gate': flight('smw-placeholder', 199.5, 0.5, 'banner,hurt'),
+  'flight-missile': flight('smw-placeholder', 103, 0.45, 'boosting,flash-ok,power'),
+  'flight-gate': flight('smw-placeholder', 197.6, 0.5, 'banner'),
+  'flight-gate-shut': flight('smw-placeholder', 199.5, 0.5, 'hurt', '0.3'),
   'flight-alpine-target': flight('alpine', 22, 0.4, 'impacts,shots,pop'),
   'flight-alpine-bomb': flight('alpine', 62, 0.4, 'checkpoint,charging'),
-  'flight-alpine-gate': flight('alpine', 199.5, 0.5, 'hurt'),
+  'flight-alpine-gate': flight('alpine', 197.6, 0.5, 'hurt', '0.3'),
+  'flight-alpine-missile': flight('alpine', 103, 0.45, 'boosting'),
   'flight-unarmed': flight('smw-placeholder', 30, 0.5, 'unarmed'),
   'overlay-waiting': flight('smw-placeholder', 2, 0.6, 'waiting'),
   'overlay-crashed': flight('smw-placeholder', 62, 0.7, 'crashed'),
@@ -48,7 +50,12 @@ for (const [name, query] of Object.entries(SHOTS)) {
     await page.goto(`${BASE}/?${query}`);
     try { await page.waitForSelector('[data-harness-ready]', { timeout: 20000 }); } catch { problems.push(`never rendered: ${await page.evaluate(() => document.body.dataset.harnessError || document.body.textContent.slice(0, 200))}`); }
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
+    // freeze=<seconds> holds every animation at that moment of its own clock
+    // (delays included), so a half-second effect is the same picture every run.
+    const freeze = Number(new URLSearchParams(query).get('freeze'));
+    await page.evaluate((ms) => document.getAnimations().forEach((animation) => { animation.pause(); animation.currentTime = ms; }), freeze * 1000);
+    await page.waitForTimeout(150);
     const file = path.join(OUT, `${name}.png`);
     await page.screenshot({ path: file });
     execFileSync('sips', ['-Z', '905', file, '--out', path.join(OUT, `${name}--half.png`)], { stdio: 'ignore' });

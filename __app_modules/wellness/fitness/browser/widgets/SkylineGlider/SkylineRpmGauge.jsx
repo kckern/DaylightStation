@@ -1,4 +1,5 @@
 import React from 'react';
+import { PixelIcon } from './SkylinePixelIcons.jsx';
 import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 
 // The cadence ladder down the left edge: where the glider is, where the
@@ -17,8 +18,9 @@ export default function RpmGauge({ state }) {
   >
     <span className="skyline-glider__rpm-high">{state.calibration.highRpm}</span>
     <div className="skyline-glider__rpm-track">
+      <div className="skyline-glider__rpm-fill" style={{ height: `${altitude}%` }}/>
       <div className="skyline-glider__rpm-target" data-testid="rpm-target" style={{ top: `${target}%` }}/>
-      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude}%` }}><span>{rpm}</span></div>
+      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude}%` }}><PixelIcon name="pointer"/><span>{rpm}</span></div>
     </div>
     <span className="skyline-glider__rpm-low">{state.calibration.lowRpm}</span>
     <strong>RPM</strong>

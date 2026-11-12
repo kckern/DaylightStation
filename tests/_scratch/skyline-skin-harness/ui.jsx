@@ -84,14 +84,14 @@ export function MenuUi({ phase }) {
   const loading = phase === 'loading';
   const controls = describeSkylineControls(state).map((c) => (loading ? { ...c, disabled: true } : c));
   const testid = state.phase === 'denied' ? 'skyline-glider-school-lock' : ['result', 'saving'].includes(state.phase) ? 'skyline-glider-result' : state.phase === 'countdown' ? 'skyline-glider-countdown' : 'skyline-glider-lobby';
-  if (loading) return <main className="skyline-glider skyline-glider--controls" data-harness-ready="true" data-testid="skyline-glider-loading"><p>Charting the course…</p><SkylineControlPanel controls={controls} onPress={() => {}}/></main>;
+  if (loading) return <main className="skyline-glider skyline-glider--controls" data-harness-ready="true" data-testid="skyline-glider-loading"><p className="skyline-glider__notice">Charting the course…</p><SkylineControlPanel controls={controls} onPress={() => {}}/></main>;
   return <main className="skyline-glider skyline-glider--controls" data-harness-ready="true" data-testid={testid} data-control-phase={state.phase}>
-    <div>
+    <div className="skyline-glider__menu">
       <SkylineMenus state={state} riders={RIDERS} acts={ACTS} onEvent={() => {}}
         crashNote={phase === 'crash' ? 'The gate shut before you got through. Boost (bottom right) as soon as it starts closing.' : null}
         summary={state.phase === 'result' ? SUMMARY : null}/>
-      {state.phase === 'result' && !saveError && <p>Flight saved · +3 rings</p>}
-      {phase === 'flights' && <p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
+      {state.phase === 'result' && !saveError && <p className="skyline-glider__notice" data-tone="good">Flight saved · +3 rings</p>}
+      {phase === 'flights' && <p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     </div>
     <SkylineControlPanel controls={controls} onPress={() => {}}/>
   </main>;

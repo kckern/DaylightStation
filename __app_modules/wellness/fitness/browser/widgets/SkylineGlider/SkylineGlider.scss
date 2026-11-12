@@ -1,14 +1,96 @@
-.skyline-glider { --skyline-hearts: #ff7d6e; --game-hud-banner-ink: #17333f; --game-hud-banner-bg: #fff1a8; min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
-.skyline-glider--lobby { grid-template-columns: minmax(0, 1.4fr) minmax(18rem, .6fr); gap: 3rem; background: linear-gradient(135deg, #143a4a, #795945); }
-.skyline-glider h1 { font-size: clamp(3rem, 8vw, 7rem); margin: .1em 0; line-height: .9; }
-.skyline-glider__eyebrow { text-transform: uppercase; letter-spacing: .18em; color: #f3c777; }
-.skyline-glider__launch { display: grid; gap: 1rem; padding: 2rem; border-radius: 1.5rem; background: rgba(7, 24, 31, .7); box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .25); }
-.skyline-glider button { border: 0; border-radius: 999px; padding: 1rem 1.5rem; font: inherit; font-weight: 800; color: #17333f; background: #f3c777; }
-.skyline-glider button.secondary { color: #fff; background: rgba(255, 255, 255, .16); }
-.skyline-glider button:disabled { opacity: .45; }
-.skyline-glider--countdown strong { font-size: 14rem; color: #f3c777; text-shadow: 0 .08em 0 #6c4335; }
+// Skyline Glider — UI layer.
+//
+// One look for the HUD, the in-scene marks, the menus and the panels: a 16-bit
+// console game drawn on the scene's own pixel grid. The rules:
+//   · Flat colour and hard edges only. No blur, no soft shadow, no see-through
+//     panels; "dim" is a dither, depth is a one-pixel offset.
+//   · Things you READ in flight (hearts, clock, score, rpm) are ink-outlined
+//     numerals set straight on the sky. Things you PRESS are solid plates in the
+//     colour of the bike button that does it. Things that talk are windows.
+//   · The four bike buttons own four colours everywhere: the menu keys, the HUD
+//     block, the 2×2 pad glyph and the callout over the thing to hit.
+//   · Roboto Condensed only: 900 for numerals and names, 900 italic for titles
+//     and callouts, tabular figures for anything that counts.
+@use 'sass:string';
+
+// ── Tokens ──────────────────────────────────────────────────────────────────
+// Also set on the scene itself, so it draws correctly outside the game shell.
+.skyline-glider, .skyline-glider__scene {
+  --sg-ink: #17132b;          // every outline, rim and plate face
+  --sg-night: #252d6b;        // window fill
+  --sg-night-lift: #39448f;   // a row or key resting on a window
+  --sg-mute: #8088c4;         // off, spent, locked
+  --sg-paper: #fff5d6;        // text and window edge
+  --sg-gold: #ffc21a;         // score, selection, good news
+  --sg-red: #ef3350;          // refusal, hazard
+  --sg-heart: #ff4d5e;
+  // Bike buttons 1–4 (laser, bomb, missile, boost) and the lip under each key.
+  --sg-b1: #45d6f5; --sg-b1-shade: #177d9c;
+  --sg-b2: #ffc21a; --sg-b2-shade: #b5650a;
+  --sg-b3: #ff6f4d; --sg-b3-shade: #a82e1d;
+  --sg-b4: #b995ff; --sg-b4-shade: #6741c2;
+  // One UI pixel: the scene's art pixel is 0.3% of its width, so this is too.
+  --sg-px: 5px;
+  --sg-px: max(2px, round(down, 0.3vw, 1px));
+  // Outline weight for text set straight on the scene.
+  --sg-line: 3px;
+  --sg-line: max(2px, round(down, 0.18vw, 1px));
+  --sg-line-s: 2px;           // the same, for the smallest text
+  // Type scale. The kiosk is 1810 px wide: 24 / 32 / 43 / 83 / 163 px there.
+  --sg-text-s: max(13px, 1.35vw);
+  --sg-text-m: max(15px, 1.75vw);
+  --sg-text-l: max(18px, 2.4vw);
+  --sg-text-xl: max(30px, 4.6vw);
+  --sg-text-xxl: max(56px, 9vw);
+  --sg-font: var(--font-family, "Roboto Condensed", "Arial Narrow", sans-serif);
+}
+
+// Four shadows that draw a one-pixel ring `$n` pixels out with its corners left
+// open, which is what steps the corners of every frame.
+@function sg-ring($colour, $n: 1) {
+  $d: calc(#{$n} * var(--sg-px)); $m: calc(#{-$n} * var(--sg-px));
+  @return string.unquote("0 #{$m} 0 0 #{$colour}, 0 #{$d} 0 0 #{$colour}, #{$m} 0 0 0 #{$colour}, #{$d} 0 0 0 #{$colour}");
+}
+@function sg-corners($colour) {
+  $d: var(--sg-px); $m: calc(-1 * var(--sg-px));
+  @return string.unquote("#{$m} #{$m} 0 0 #{$colour}, #{$d} #{$m} 0 0 #{$colour}, #{$m} #{$d} 0 0 #{$colour}, #{$d} #{$d} 0 0 #{$colour}");
+}
+// A window or sign frame: coloured edge, ink rim, and one more pixel of ink
+// under it so it sits on the scene.
+@mixin sg-frame($edge: var(--sg-paper)) {
+  border-radius: 0;
+  box-shadow: sg-ring($edge), sg-corners(var(--sg-ink)), sg-ring(var(--sg-ink), 2), 0 calc(3 * var(--sg-px)) 0 0 var(--sg-ink);
+}
+// Text set straight on the scene: a hard ink outline with a one-step drop.
+@mixin sg-outline($line: var(--sg-line)) {
+  $l: $line; $m: calc(-1 * #{$line}); $d: calc(2 * #{$line});
+  text-shadow: $l 0 var(--sg-ink), $m 0 var(--sg-ink), 0 $l var(--sg-ink), 0 $m var(--sg-ink),
+    $l $l var(--sg-ink), $m $l var(--sg-ink), $l $m var(--sg-ink), $m $m var(--sg-ink),
+    0 $d var(--sg-ink), $l $d var(--sg-ink), $m $d var(--sg-ink);
+}
+
+// ── Shell ───────────────────────────────────────────────────────────────────
+.skyline-glider {
+  --game-hud-banner-ink: var(--sg-ink); --game-hud-banner-bg: var(--sg-gold);
+  min-height: 100%; overflow: hidden; color: var(--sg-paper); background: var(--sg-ink);
+  font-family: var(--sg-font); font-variant-numeric: tabular-nums;
+}
 .skyline-glider--flight { position: relative; display: block; padding: 0; }
-.skyline-glider__scene { width: 100vw; height: 100vh; display: block; }
+.skyline-glider__scene { width: 100vw; height: 100vh; display: block; font-family: var(--sg-font); }
+
+// ── Pixel icons and the 2×2 pad glyph ───────────────────────────────────────
+.sg-icon__ink { fill: var(--sg-ink); }
+// Printed in ink on a coloured key, an icon needs no outline of its own.
+.skyline-glider__hud-cell b .sg-icon__ink, .skyline-controls__icon .sg-icon__ink, .skyline-menus__options .sg-icon__ink { fill: none; }
+.sg-icon__body { fill: currentColor; }
+.sg-icon__lit { fill: var(--sg-paper); }
+.sg-icon--inline { display: block; flex: none; width: calc(var(--w) * var(--sg-icon-px, 3px)); height: calc(var(--h) * var(--sg-icon-px, 3px)); }
+.sg-pad__case { fill: var(--sg-ink); }
+.sg-pad__key { fill: var(--sg-mute); }
+.sg-pad__key[data-lit="true"] { fill: var(--sg-b1); &[data-slot="2"] { fill: var(--sg-b2); } &[data-slot="3"] { fill: var(--sg-b3); } &[data-slot="4"] { fill: var(--sg-b4); } }
+.sg-pad--inline { display: inline-block; flex: none; vertical-align: -.2em; width: calc(9 * var(--sg-icon-px, 3px)); height: calc(9 * var(--sg-icon-px, 3px)); }
+
+// ── Scene art (presets and effects drawn by the scene itself) ───────────────
 .skyline-glider__parallax path { stroke: none; }
 .skyline-glider__parallax--far path { fill: #527c75; opacity: .42; }
 .skyline-glider__parallax--middle path { fill: #365f59; opacity: .62; }
@@ -22,79 +104,11 @@
 .skyline-glider__finish path { fill: none; stroke: #f5d477; stroke-width: 18; filter: drop-shadow(0 0 14px rgba(255, 233, 145, .85)); }
 .skyline-glider__bell path { fill: #ffd35f; stroke: #67462f; stroke-width: 3; }
 .skyline-glider__bell circle { fill: #6b422c; }
-.skyline-glider__wind path { fill: none; stroke: rgba(255, 255, 255, .72); stroke-linecap: round; stroke-width: 5; }
 .skyline-glider__craft { transition: transform .1s linear; filter: drop-shadow(0 7px 5px rgba(13, 39, 44, .35)); }
 .skyline-glider__wing { fill: #fff2bf; stroke: #5b3d2f; stroke-linejoin: round; stroke-width: 4; }
 .skyline-glider__body { fill: #e77b4f; stroke: #5b3d2f; stroke-width: 3; }
 .skyline-glider__frame { fill: none; stroke: #533b31; stroke-linecap: round; stroke-width: 4; }
 .skyline-glider__pilot { fill: #214b5a; stroke: #fff2bf; stroke-width: 3; }
-.skyline-glider__collision-burst { animation: skyline-impact .42s ease-out 1 both; }
-.skyline-glider__collision-burst path { fill: none; stroke: #fff1a8; stroke-linecap: round; stroke-width: 7; }
-.skyline-glider__bell-pop { animation: skyline-bell-pop .55s ease-out 1 both; fill: none; stroke: #fff1a8; stroke-width: 5; }
-// The banner and hearts are kit HUD pieces (.game-hud-moment / .game-hud-life);
-// these selectors out-specify the kit's on purpose so the look never depends on
-// stylesheet load order.
-.skyline-glider .skyline-glider__checkpoint-banner { display: block; position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: 999px; color: var(--game-hud-banner-ink); background: var(--game-hud-banner-bg); font-size: 2rem; max-width: 80vw; text-align: center; font-weight: 900; animation: skyline-banner 1.5s ease-out 1 both; }
-// This rule also out-specifies the kit's reduced-motion rule, so restate it.
-@media (prefers-reduced-motion: reduce) { .skyline-glider .skyline-glider__checkpoint-banner { animation: none; } }
-// One slim bar along the top: hearts · time · score on the left, the 2×2
-// bike-button legend on the right. It replaces the in-flight button panel so
-// the right side of the scene (where obstacles arrive) stays clear.
-.skyline-glider__hud {
-  position: absolute; z-index: 5; inset: 1rem 1.5rem auto 9rem; display: flex; align-items: center; gap: 1.75rem;
-  padding: .45rem .6rem .45rem 1.5rem; border-radius: 1.4rem; color: #fff; background: rgba(9, 31, 37, .72);
-  font-size: 1.75rem; font-weight: 800; line-height: 1;
-}
-.skyline-glider .skyline-glider__hud-hearts { color: var(--skyline-hearts); letter-spacing: .08em; }
-.skyline-glider__hud-time { font-variant-numeric: tabular-nums; }
-.skyline-glider__hud-power { color: #ffcf6e; }
-.skyline-glider__hud-pad { margin-left: auto; display: grid; grid-template-columns: repeat(2, 10rem); gap: .4rem; }
-.skyline-glider__hud-cell {
-  display: flex; align-items: center; gap: .5rem; padding: .3rem .65rem; border-radius: .6rem;
-  font-size: 1.3rem; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 2px currentColor;
-  color: #83e0e9; position: relative; overflow: hidden;
-  &[data-action="bomb"] { color: #f3c777; } &[data-action="missile"] { color: #ffa797; } &[data-action="boost"] { color: #c7b4ff; }
-  b { font-size: 1.9rem; }
-  small { font-size: 1.6rem; font-weight: 800; color: #fff; white-space: nowrap; }
-  &[data-state="empty"] { opacity: .4; }
-  &[data-state="charging"] { background: linear-gradient(90deg, rgba(199, 180, 255, .35) var(--charge, 0%), rgba(255, 255, 255, .06) 0); }
-  &[data-state="active"] { background: rgba(199, 180, 255, .55); }
-  &[data-flash="ok"] { animation: skyline-cell-ok .35s ease-out 1; }
-  &[data-flash="deny"] { opacity: 1; color: #ff6a5a; animation: skyline-cell-deny .4s ease-out 1; small { color: #ffb4a8; } }
-}
-.skyline-glider__hud-menu { font-size: 1.4rem; font-weight: 700; opacity: .7; white-space: nowrap; }
-@keyframes skyline-cell-ok { from { background: rgba(140, 255, 170, .75); transform: scale(1.08); } }
-@keyframes skyline-cell-deny { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-
-// Entity roles: brackets + health pips mark what to shoot, a label marks what
-// to bomb, and a hit that does not kill flashes the thing white.
-.skyline-glider__target-brackets { fill: none; stroke: #8dfcff; stroke-width: 5; stroke-linecap: round; animation: skyline-target-pulse 1s ease-in-out infinite alternate; }
-.skyline-glider__target-pips rect { fill: rgba(9, 31, 37, .7); stroke: #8dfcff; stroke-width: 2; &[data-full="true"] { fill: #8dfcff; } }
-.skyline-glider__bomb-mark text { fill: #fff1a8; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
-.skyline-glider__missile-mark text { fill: #ffd27a; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
-.skyline-glider__shutter-warning { fill: none; stroke: #ff5a4a; stroke-width: 8; stroke-linecap: round; animation: skyline-target-pulse .25s steps(2) infinite alternate; }
-.skyline-glider__boost-mark { fill: #bff6ff; stroke: #123a4a; stroke-width: 5; paint-order: stroke; font-size: 26px; font-weight: 900; animation: skyline-target-pulse .5s ease-in-out infinite alternate; }
-.skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .3s ease-out 1 both; pointer-events: none; }
-.skyline-glider__impact { pointer-events: none; }
-.skyline-glider__impact--kill { animation: skyline-kill .35s ease-out 1 both; circle { fill: rgba(255, 241, 168, .55); } path { stroke: #fff1a8; stroke-width: 6; stroke-linecap: round; } text { fill: #8dfcff; stroke: #0b2a33; stroke-width: 5; paint-order: stroke; font-size: 34px; font-weight: 900; } }
-.skyline-glider__impact--damage { animation: skyline-spark .3s ease-out 1 both; path { fill: #fff; } }
-.skyline-glider__impact--absorbed { animation: skyline-spark .3s ease-out 1 both; circle { fill: rgba(200, 200, 200, .7); } }
-@keyframes skyline-target-pulse { from { opacity: .55; } to { opacity: 1; } }
-@keyframes skyline-entity-flash { from { opacity: .85; } to { opacity: 0; } }
-@keyframes skyline-kill { from { transform-box: fill-box; opacity: 1; } to { opacity: 0; } }
-@keyframes skyline-spark { from { opacity: 1; } to { opacity: 0; } }
-.skyline-glider__rpm-gauge { position: absolute; z-index: 4; inset: 5.5rem auto 3rem 1.25rem; width: 6.4rem; display: grid; grid-template-rows: auto 1fr auto auto; place-items: center; gap: .25rem; padding: .75rem .55rem; border: 3px solid rgba(255,255,255,.7); border-radius: 2rem; color: #fff; background: rgba(7, 28, 34, .82); box-shadow: 0 .8rem 2rem rgba(0,0,0,.28); font-weight: 900; }
-.skyline-glider__rpm-track { position: relative; width: 1rem; height: 100%; min-height: 16rem; border-radius: 999px; background: linear-gradient(to top, #e48a52, #f1cf68 48%, #62d4cf); box-shadow: inset 0 0 0 3px rgba(255,255,255,.4); }
-.skyline-glider__rpm-target { position: absolute; left: -.45rem; width: 1.9rem; height: .25rem; border-radius: 999px; background: #fff; opacity: .55; }
-.skyline-glider__rpm-chevron { position: absolute; left: 1.3rem; width: 0; height: 0; transform: translateY(-50%); border-top: .72rem solid transparent; border-bottom: .72rem solid transparent; border-right: 1.05rem solid #fff4a8; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
-.skyline-glider__rpm-chevron span { position: absolute; left: 1.35rem; top: -.9rem; min-width: 2.6rem; color: #fff; font-size: 1.3rem; text-shadow: 0 2px 3px #102f39; }
-.skyline-glider__rpm-high, .skyline-glider__rpm-low { font-size: .85rem; opacity: .8; }
-.skyline-glider__rpm-gauge strong { color: #f5d477; font-size: .85rem; letter-spacing: .12em; }
-.skyline-glider__overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(9, 25, 31, .78); backdrop-filter: blur(.35rem); }
-.skyline-glider__overlay h2 { margin: 0; font-size: 4rem; }
-.skyline-glider .skyline-glider__end { position: absolute; right: 2rem; bottom: 2rem; color: #fff; background: rgba(9, 31, 37, .72); }
-.skyline-glider .skyline-glider__mute { position: absolute; right: 2rem; bottom: 6rem; padding: .65rem 1rem; color: #fff; background: rgba(9, 31, 37, .72); }
-.skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
 .skyline-glider__scene--pixel image { image-rendering: pixelated; }
 .skyline-glider__entity-leaf { fill: #2f6b4c; stroke: #173b2b; stroke-width: 3; }
 .skyline-glider__entity-trunk { fill: #6b4630; }
@@ -112,18 +126,6 @@
 .skyline-glider__blast-outer { fill: #ff9a3c; }
 .skyline-glider__blast-spark { stroke: #fff1a8; stroke-linecap: round; stroke-width: 5; }
 .skyline-glider__blast-inner { fill: #fff1a8; }
-.skyline-glider__world { display: grid; gap: 1rem; margin-top: 1.5rem; }
-.skyline-glider__zone h3 { margin: 0 0 .5rem; font-size: 1rem; letter-spacing: .14em; text-transform: uppercase; color: #f3c777; }
-.skyline-glider__zone ol { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0; padding: 0; list-style: none; }
-.skyline-glider .skyline-glider__act { display: grid; gap: .15rem; min-width: 9rem; padding: .75rem 1rem; border-radius: 1rem; text-align: left; color: #fff; background: rgba(7, 24, 31, .6); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .18); }
-.skyline-glider .skyline-glider__act[aria-pressed="true"] { color: #17333f; background: #f3c777; box-shadow: none; }
-.skyline-glider .skyline-glider__act--locked { opacity: .55; }
-.skyline-glider__act-number { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
-.skyline-glider__act-badge { font-size: .85rem; min-height: 1.1em; }
-@keyframes skyline-impact { to { opacity: .25; transform: scale(1.2); } }
-@keyframes skyline-bell-pop { from { opacity: 1; transform: scale(.25); } to { opacity: 0; transform: scale(1.4); } }
-@keyframes skyline-banner { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
-@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: .5rem .5rem auto 6rem; font-size: 1rem; gap: .75rem; } .skyline-glider__hud-pad { grid-template-columns: repeat(2, 4.6rem); } .skyline-glider__hud-menu { display: none; } .skyline-glider__rpm-gauge { left: .5rem; width: 5rem; } }
 .skyline-glider__slope-edge { fill: none; stroke: #b6df7c; stroke-width: 8; stroke-linejoin: round; }
 .skyline-glider__lava rect { fill: #ef4f19; }
 .skyline-glider__lava path { fill: none; stroke: #ffd156; stroke-width: 8; }
@@ -133,56 +135,290 @@
 .skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--far path { fill: #695279; }
 .skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--middle path { fill: #4f3f60; }
 .skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--near path { fill: #352f48; }
+// Moves with the craft (same easing), but is not part of its sprite.
+.skyline-glider__craft-effects { transition: transform .1s linear; }
+.skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .3s steps(3, jump-none) 1 both; pointer-events: none; }
+// A stronger shot wears a hard one-pixel rim in a hotter colour.
+@each $power, $rim in (2: #ffdd66, 3: #ff963c, 4: #ff503c) {
+  .skyline-glider__shot[data-power="#{$power}"] { filter: drop-shadow(0 -2px 0 $rim) drop-shadow(0 2px 0 $rim); }
+}
 
+// ── In-scene marks: what to shoot, bomb, break or dash through ──────────────
+// All drawn in multiples of the scene's art pixel (3 scene units).
+.skyline-glider__callout, .skyline-glider__target-marks, .skyline-glider__shutter-warning,
+.skyline-glider__impact, .skyline-glider__collision-burst, .skyline-glider__bell-pop,
+.skyline-glider__wind, .skyline-glider__boost-trail { shape-rendering: crispEdges; }
+
+.skyline-glider__callout {
+  --mark: var(--sg-b2); color: var(--mark);
+  &[data-role="missile"] { --mark: var(--sg-b3); }
+  &[data-role="boost"] { --mark: var(--sg-b4); }
+  text { fill: var(--sg-paper); font-size: 27px; font-weight: 900; font-style: italic; }
+}
+.skyline-glider__callout-rim, .skyline-glider__callout-face { fill: var(--sg-ink); }
+.skyline-glider__callout-edge { fill: var(--mark); }
+// The arrow steps one pixel the way the shot goes; nothing else on a sign moves.
+.skyline-glider__callout-arrow--drop { animation: skyline-step-down .5s steps(1) infinite; }
+.skyline-glider__callout-arrow--fire, .skyline-glider__callout-arrow--dash { animation: skyline-step-right .5s steps(1) infinite; }
+// Except the boost sign, which has three seconds to be noticed.
+.skyline-glider__callout[data-role="boost"] .skyline-glider__callout-edge { animation: skyline-edge-blink .3s steps(1) infinite; }
+.skyline-glider__callout[data-role="boost"] .skyline-glider__callout-arrow--dash { animation-duration: .3s; }
+
+.skyline-glider__target-rim { fill: var(--sg-ink); }
+.skyline-glider__target-line { fill: var(--sg-b1); }
+.skyline-glider__target-brackets { transform-box: fill-box; transform-origin: center; animation: skyline-lock .6s steps(1) infinite; }
+.skyline-glider__target-pips rect[data-full="true"] { fill: var(--sg-b1); }
+.skyline-glider__target-pips rect[data-full="false"] { fill: var(--sg-night); }
+
+.skyline-glider__hazard-rim { fill: var(--sg-ink); }
+.skyline-glider__hazard-base { fill: var(--sg-red); }
+.skyline-glider__hazard-dash { fill: none; stroke: var(--sg-paper); stroke-width: 6; stroke-dasharray: 6 6; animation: skyline-hazard-march .25s steps(1) infinite; }
+
+.skyline-glider__impact { pointer-events: none; }
+.skyline-glider__impact rect, .skyline-glider__impact path, .skyline-glider__collision-burst rect, .skyline-glider__bell-pop path {
+  fill: var(--sg-paper); stroke: var(--sg-ink); stroke-width: 3; paint-order: stroke;
+}
+.skyline-glider__impact rect[data-odd="true"], .skyline-glider__collision-burst rect[data-odd="true"], .skyline-glider__bell-pop path { fill: var(--sg-gold); }
+.skyline-glider__impact--kill text {
+  fill: var(--sg-gold); stroke: var(--sg-ink); stroke-width: 9; stroke-linejoin: round; paint-order: stroke;
+  font-size: 42px; font-weight: 900; font-style: italic; animation: skyline-score-rise .5s steps(1) 1 both;
+}
+.skyline-glider__impact-burst { animation: skyline-burst .35s steps(1) 1 both; }
+// The group itself carries the scene position, so its contents do the moving.
+.skyline-glider__impact-pop { animation: skyline-spark .3s steps(1) 1 both; }
+.skyline-glider__impact--absorbed rect { fill: var(--sg-mute); }
+// Debris on the bump, then the classic flicker for as long as the glider is protected.
+.skyline-glider__collision-burst { animation: skyline-burst-hold .42s steps(1) 1 both, skyline-flicker .16s steps(1) .42s infinite; }
+.skyline-glider__bell-pop { animation: skyline-burst .45s steps(1) 1 both; }
+.skyline-glider__wind path { fill: none; stroke: var(--sg-paper); stroke-width: 3; stroke-dasharray: 15 3; }
+.skyline-glider__boost-trail path { fill: none; stroke: var(--sg-b4); stroke-width: 6; }
+.skyline-glider__boost-trail .skyline-glider__boost-trail-rim { stroke: var(--sg-ink); stroke-width: 12; }
+
+@keyframes skyline-step-down { 50% { transform: translateY(3px); } }
+@keyframes skyline-step-right { 50% { transform: translateX(3px); } }
+@keyframes skyline-edge-blink { 50% { fill: var(--sg-paper); } }
+@keyframes skyline-lock { 50% { transform: scale(1.1); } }
+@keyframes skyline-hazard-march { 50% { stroke-dashoffset: 6; } }
+@keyframes skyline-entity-flash { from { opacity: .9; } to { opacity: 0; } }
+@keyframes skyline-burst { 0% { transform: scale(.5); } 34% { transform: scale(.85); } 67% { transform: scale(1.2); } 100% { transform: scale(1.2); opacity: 0; } }
+@keyframes skyline-burst-hold { 0% { transform: scale(.6); } 34% { transform: scale(.85); } 67%, 100% { transform: scale(1.1); } }
+@keyframes skyline-flicker { 50% { opacity: 0; } }
+@keyframes skyline-spark { 0% { transform: scale(.6); } 50% { transform: scale(1.2); } 100% { transform: scale(1.2); opacity: 0; } }
+@keyframes skyline-score-rise { 0% { transform: translateY(9px); } 25% { transform: translateY(0); } 50% { transform: translateY(-6px); } 75% { transform: translateY(-9px); } 100% { transform: translateY(-9px); opacity: 0; } }
+
+// ── Flight HUD ──────────────────────────────────────────────────────────────
+// Readouts top left, set straight on the sky; the bike-button block top right.
+// Nothing sits over the right-hand middle of the scene, where obstacles arrive.
+.skyline-glider__hud {
+  --sg-icon-px: var(--sg-line);
+  position: absolute; z-index: 5; inset: calc(4 * var(--sg-px)) calc(5 * var(--sg-px)) auto 9.6vw;
+  display: flex; align-items: center; gap: 2.2vw; min-height: 3vw;
+  color: var(--sg-paper); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
+  @include sg-outline;
+}
+.skyline-glider__hud-hearts { display: flex; gap: var(--sg-line); color: var(--sg-heart); }
+.skyline-glider__hud-hearts .is-spent { color: var(--sg-night); .sg-icon__lit { fill: none; } }
+.skyline-glider__hud-time { min-width: 4ch; }
+.skyline-glider__hud-stat { display: flex; align-items: center; gap: .5vw; .sg-icon { color: var(--sg-gold); } }
+.skyline-glider__hud-targets .sg-icon { color: var(--sg-b1); }
+.skyline-glider__hud-power { color: var(--sg-gold); }
+
+.skyline-glider__hud-pad {
+  align-self: flex-start; margin-left: auto; display: grid; grid-template-columns: repeat(2, 10.4vw); gap: var(--sg-px);
+  margin-top: calc(2 * var(--sg-px)); margin-right: calc(2 * var(--sg-px)); background: var(--sg-ink); text-shadow: none;
+  @include sg-frame;
+  &[data-armed="false"] { display: none; }
+}
+.skyline-glider__hud-cell {
+  --cell: var(--sg-b1); --cell-shade: var(--sg-b1-shade);
+  display: grid; grid-template-columns: 2.9vw minmax(0, 1fr); height: 2.9vw; background: var(--sg-night);
+  &[data-action="bomb"] { --cell: var(--sg-b2); --cell-shade: var(--sg-b2-shade); }
+  &[data-action="missile"] { --cell: var(--sg-b3); --cell-shade: var(--sg-b3-shade); }
+  &[data-action="boost"] { --cell: var(--sg-b4); --cell-shade: var(--sg-b4-shade); }
+  b { --sg-icon-px: calc(var(--sg-line) + 1px); display: grid; place-items: center; background: var(--cell); color: var(--sg-ink); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--cell-shade); }
+  small { display: flex; align-items: center; padding: 0 .55vw; overflow: hidden; color: var(--sg-paper); font-size: var(--sg-text-m); font-weight: 900; white-space: nowrap; }
+  &[data-state="empty"] { --cell: var(--sg-mute); --cell-shade: var(--sg-night-lift); small { color: var(--sg-mute); } }
+  // The recharge is a bar filling the readout, in whole steps of the fill colour.
+  &[data-state="charging"] small { background: linear-gradient(90deg, var(--cell-shade) var(--charge, 0%), transparent 0); }
+  &[data-state="active"] small { background: var(--cell); color: var(--sg-ink); }
+  &[data-flash="ok"] { animation: skyline-cell-ok .3s steps(1) 1; }
+  &[data-flash="deny"] { --cell: var(--sg-red); --cell-shade: #8f1430; animation: skyline-cell-deny .32s steps(1) 1; small { background: var(--sg-red); color: var(--sg-paper); } }
+}
+.skyline-glider__hud-menu {
+  position: absolute; right: 0; top: calc(5.8vw + 8 * var(--sg-px)); display: flex; align-items: center; gap: .5vw;
+  font-size: var(--sg-text-s); font-weight: 700; white-space: nowrap;
+  @include sg-outline(var(--sg-line-s));
+  .sg-pad { box-shadow: 0 0 0 var(--sg-line-s) var(--sg-ink); }
+}
+@keyframes skyline-cell-ok { 0% { filter: brightness(2.2) saturate(.2); } 50% { filter: none; } }
+@keyframes skyline-cell-deny { 0% { transform: translateX(calc(-1 * var(--sg-px))); } 25% { transform: translateX(var(--sg-px)); } 50% { transform: translateX(calc(-1 * var(--sg-px))); } 75% { transform: none; } }
+
+// The cadence ladder, down the left edge: three flat bands (slow to fast), dark
+// above the glider's height, with the pointer and the rider's rpm beside it.
+.skyline-glider__rpm-gauge {
+  position: absolute; z-index: 4; inset: calc(4 * var(--sg-px)) auto calc(5 * var(--sg-px)) calc(5 * var(--sg-px)); width: 3.6vw;
+  display: grid; grid-template-rows: auto 1fr auto auto; justify-items: center; gap: calc(2 * var(--sg-px));
+  color: var(--sg-paper); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
+  @include sg-outline(var(--sg-line-s));
+  strong { color: var(--sg-gold); }
+}
+.skyline-glider__rpm-track {
+  position: relative; width: calc(4 * var(--sg-px)); height: 100%; min-height: 12rem;
+  background: linear-gradient(to bottom, var(--sg-b1) 0 34%, var(--sg-b2) 34% 67%, var(--sg-b3) 67% 100%);
+  box-shadow: sg-ring(var(--sg-ink)), sg-ring(var(--sg-paper), 2), sg-corners(var(--sg-paper)), sg-ring(var(--sg-ink), 3);
+  // Rungs.
+  &::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(to bottom, transparent 0 calc(3 * var(--sg-px)), var(--sg-ink) 0 calc(4 * var(--sg-px))); }
+}
+.skyline-glider__rpm-fill { position: absolute; inset: 0 0 auto; background: var(--sg-night); }
+.skyline-glider__rpm-target {
+  position: absolute; z-index: 1; left: calc(-2 * var(--sg-px)); right: calc(-2 * var(--sg-px)); height: var(--sg-px); transform: translateY(-50%);
+  background: var(--sg-paper); box-shadow: 0 0 0 var(--sg-line) var(--sg-ink);
+}
+.skyline-glider__rpm-chevron {
+  --sg-icon-px: var(--sg-px);
+  position: absolute; z-index: 2; left: 100%; transform: translateY(-50%); display: flex; align-items: center; gap: var(--sg-line);
+  margin-left: calc(2 * var(--sg-px)); color: var(--sg-paper);
+  span { font-size: var(--sg-text-l); @include sg-outline; }
+}
+
+// The cue banner and the stall notice: signs.
+.skyline-glider .skyline-glider__checkpoint-banner {
+  display: block; position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); width: max-content; max-width: 62vw;
+  padding: .7vw 1.6vw; color: var(--sg-ink); background: var(--sg-gold); font-size: var(--sg-text-m); font-weight: 900; line-height: 1.15; text-align: center;
+  animation: skyline-banner 1.5s steps(1) 1 both;
+  @include sg-frame;
+}
+// This rule also out-specifies the kit's reduced-motion rule, so restate it.
+@media (prefers-reduced-motion: reduce) { .skyline-glider .skyline-glider__checkpoint-banner { animation: none; } }
+@keyframes skyline-banner { 0% { transform: translateX(-50%) translateY(calc(-2 * var(--sg-px))); } 6%, 99% { transform: translateX(-50%); } 100% { transform: translateX(-50%); opacity: 0; } }
+.skyline-glider__stop-warning {
+  position: absolute; z-index: 6; top: 24%; left: 50%; transform: translateX(-50%); padding: .7vw 1.6vw; white-space: nowrap;
+  color: var(--sg-paper); background: var(--sg-red); font-size: var(--sg-text-m); font-weight: 900;
+  @include sg-frame;
+}
+
+// A notice over the flight: the scene dimmed by a one-pixel dither, one window.
+.skyline-glider__overlay {
+  position: absolute; z-index: 7; inset: 0; display: grid; place-content: center;
+  background: repeating-conic-gradient(var(--sg-ink) 0 25%, transparent 0 50%) 0 0 / calc(2 * var(--sg-line)) calc(2 * var(--sg-line));
+}
+.skyline-glider__overlay-window {
+  --tone: var(--sg-paper);
+  padding: 2.2vw 4vw 2.6vw; text-align: center; background: var(--sg-night);
+  @include sg-frame(var(--tone));
+  h2 { margin: 0; color: var(--tone); font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
+  p { margin: .5em 0 0; font-size: var(--sg-text-m); font-weight: 500; }
+}
+.skyline-glider__overlay[data-tone="crash"] .skyline-glider__overlay-window { --tone: var(--sg-b3); }
+.skyline-glider__overlay[data-tone="warn"] .skyline-glider__overlay-window { --tone: var(--sg-gold); }
+
+// ── Menus: a window on the left, the bike buttons on the right ──────────────
 .skyline-glider--controls {
-  position: relative; min-height: 100vh; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 3rem;
-  background: linear-gradient(135deg, #143a4a, #795945);
+  position: relative; box-sizing: border-box; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; align-content: center; gap: 4vw;
+  padding: 4vw 5vw 9vw;
+  // A banded dusk-to-day sky over a cloud bank, both in whole pixels.
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 5 64 11' shape-rendering='crispEdges'%3E%3Cpath fill='%23fff5d6' d='M29 5h5v1h-5zM5 6h5v1h-5zM27 6h9v1h-9zM3 7h9v1h-9zM26 7h11v1h-11zM42 7h5v1h-5zM2 8h11v1h-11zM17 8h5v1h-5zM25 8h13v1h-13zM41 8h7v1h-7zM54 8h5v1h-5zM1 9h13v1h-13zM16 9h7v1h-7zM24 9h15v1h-15zM40 9h9v1h-9zM53 9h7v1h-7zM1 10h13v1h-13zM15 10h35v1h-35zM52 10h9v1h-9zM1 11h13v1h-13zM15 11h35v1h-35zM52 11h9v1h-9zM1 12h13v1h-13zM15 12h35v1h-35zM52 12h9v1h-9zM0 13h64v1h-64zM0 14h64v1h-64zM0 15h64v1h-64z'/%3E%3Cpath fill='%23bfdcf7' d='M33 10h5v1h-5zM9 11h5v1h-5zM32 11h7v1h-7zM8 12h7v1h-7zM31 12h9v1h-9zM47 12h3v1h-3zM7 13h9v1h-9zM22 13h3v1h-3zM30 13h11v1h-11zM45 13h7v1h-7zM59 13h3v1h-3zM7 14h9v1h-9zM21 14h5v1h-5zM30 14h11v1h-11zM45 14h7v1h-7zM58 14h5v1h-5zM7 15h9v1h-9zM21 15h5v1h-5zM30 15h11v1h-11zM45 15h7v1h-7zM58 15h5v1h-5z'/%3E%3C/svg%3E") left bottom / calc(128 * var(--sg-px)) auto repeat-x,
+    linear-gradient(to bottom, #2c3f9e 0 16%, #3a58bd 16% 31%, #4b74d6 31% 45%, #6092ea 45% 58%, #7db0f4 58% 70%, #a3cdf9 70% 100%);
 }
-.skyline-controls {
-  padding: 1.2rem; border-radius: 1.2rem; background: rgba(7, 24, 31, .9);
-  color: var(--text-primary, #fff); z-index: 8;
-  &__heading { font-size: .85rem; font-weight: 800; margin: 0 0 1rem; }
-  &__pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-  &__position { position: absolute; top: .4rem; left: .6rem; font-size: .7rem; opacity: .65; }
-  &__icon { font-size: 2rem; line-height: 1; }
-  button {
-    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: 8rem; gap: .5rem; padding: 1rem .6rem; border-radius: .9rem;
-    border: 2px solid currentColor; border-bottom-width: 5px; background: rgba(255, 255, 255, .08); color: #83e0e9;
-    &:nth-child(2) { color: #f3c777; } &:nth-child(3) { color: #ffa797; } &:nth-child(4) { color: #c7b4ff; }
-    &:active { transform: translateY(2px); }
-    strong { font-size: 1rem; } small { font-size: .75rem; font-weight: 400; }
-  }
-  img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 50%; }
+.skyline-glider__menu { display: grid; justify-items: start; gap: calc(6 * var(--sg-px)); min-width: 0; }
+// Anything the game says outside the window: a flat ink strip, or a framed sign
+// when it is news (saved, failed).
+.skyline-glider__notice {
+  box-sizing: border-box; margin: 0; max-width: 100%; padding: .45vw 1vw; color: var(--sg-paper); background: var(--sg-ink);
+  font-size: var(--sg-text-s); font-weight: 600; line-height: 1.25;
+  &[data-tone="good"], &[data-tone="bad"] { padding: .5vw 1.2vw; font-size: var(--sg-text-m); font-weight: 900; @include sg-frame(var(--sg-ink)); }
+  &[data-tone="good"] { color: var(--sg-ink); background: var(--sg-gold); }
+  &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-red); }
 }
+// With no menu to sit under (loading, a failed load), the notice is the window.
+.skyline-glider--controls > .skyline-glider__notice {
+  padding: 2.2vw 2.8vw 2.6vw; background: var(--sg-night); font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: 1;
+  text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink);
+  @include sg-frame;
+  &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-night); font-size: var(--sg-text-l); font-style: normal; line-height: 1.15; @include sg-frame(var(--sg-red)); }
+}
+
 .skyline-menus {
-  width: 100%; max-width: 62rem; text-align: center;
-  h1 { font-size: clamp(2.5rem, 5vw, 5rem); line-height: 1.05; margin: 1rem 0; }
-  p { line-height: 1.5; }
-  &__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 2rem auto; }
+  --sg-icon-px: var(--sg-line);
+  box-sizing: border-box; width: 100%; padding: 2.2vw 2.8vw 2.6vw; text-align: left; background: var(--sg-night);
+  @include sg-frame;
+  h1 { margin: 0; font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: .95; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
+  p { margin: .55em 0 0; max-width: 32em; font-size: var(--sg-text-m); font-weight: 500; line-height: 1.2; }
+  .skyline-menus__kicker { margin: 0 0 .15em; color: var(--sg-gold); font-weight: 700; }
+
+  // The flight list: one row each, a cursor on the chosen one.
+  &__options { display: grid; gap: var(--sg-px); margin: 1.3vw 0 0; }
   &__options button {
-    display: grid; justify-items: center; gap: .8rem; border-radius: 1rem; color: var(--text-primary, #fff);
-    background: rgba(7, 24, 31, .65); border: 2px solid transparent;
-    &[aria-pressed="true"] { border-color: #f3c777; }
-    small { font-size: .8rem; font-weight: 400; }
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1vw; width: 100%;
+    padding: .55vw 1.2vw .55vw .8vw; border: 0; border-radius: 0; text-align: left; font: inherit; line-height: 1;
+    color: var(--sg-paper); background: var(--sg-night-lift);
+    strong { font-size: var(--sg-text-l); font-weight: 900; }
+    small { display: flex; align-items: center; gap: .5vw; font-size: var(--sg-text-s); font-weight: 700; }
+    &[data-status="locked"] { color: var(--sg-mute); background: transparent; box-shadow: inset 0 0 0 var(--sg-line) var(--sg-night-lift); }
+    &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); box-shadow: none; }
   }
-  img { width: 5rem; height: 5rem; object-fit: cover; border-radius: 50%; }
-  &__person { display: grid; justify-items: center; gap: 1rem; margin: 2rem; img { width: 8rem; height: 8rem; } }
-  &__count { display: block; font-size: 5rem; color: #f3c777; }
-  &__cause { font-size: 1.6rem; font-weight: 800; color: #fff1a8; }
-  &__summary { display: flex; justify-content: center; gap: 2.5rem; margin: 1.5rem 0; div { display: grid; gap: .25rem; } dt { font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; opacity: .75; } dd { margin: 0; font-size: 3rem; font-weight: 900; color: #f3c777; } }
+  &__cursor { visibility: hidden; }
+  &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: skyline-step-right .5s steps(1) infinite; }
+
+  &__person {
+    display: flex; align-items: center; gap: 2vw; margin-top: 1.6vw;
+    img { width: 11vw; height: 11vw; object-fit: cover; @include sg-frame; }
+    strong { font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
+  }
+  &__count { display: block; margin: .08em 0 0; color: var(--sg-gold); font-size: var(--sg-text-xxl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
+  p.skyline-menus__cause { margin-top: 1.1vw; padding: .8vw 1.2vw; color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }
+
+  // The tally: bells and targets add up to the score, under a sum line.
+  &__summary {
+    display: grid; margin: 1.2vw 0 0; max-width: 34vw;
+    div { display: flex; align-items: baseline; gap: .8vw; padding: .3vw 0; }
+    dt { flex: 1; display: flex; align-items: center; gap: .6vw; font-size: var(--sg-text-m); font-weight: 700;
+      &::after { content: ''; flex: 1; align-self: flex-end; height: var(--sg-line); margin-bottom: .35em; background: repeating-linear-gradient(90deg, var(--sg-mute) 0 var(--sg-line), transparent 0 calc(3 * var(--sg-line))); } }
+    dd { margin: 0; color: var(--sg-paper); font-size: var(--sg-text-l); font-weight: 900; }
+    [data-stat="bells"] .sg-icon { color: var(--sg-gold); }
+    [data-stat="targets"] .sg-icon { color: var(--sg-b1); }
+    [data-stat="score"] { margin-top: .4vw; padding-top: .6vw; border-top: var(--sg-line) solid var(--sg-paper); dt { font-weight: 900; } dd { color: var(--sg-gold); font-size: var(--sg-text-xl); line-height: .9; } }
+  }
 }
+
+// The bike buttons: four keys in the four button colours, laid out as they sit
+// on the handlebar. This is the one loud thing on a menu screen.
+.skyline-controls {
+  box-sizing: border-box; z-index: 8; width: 33vw; padding: 1.1vw 1.4vw 1.6vw; color: var(--sg-paper); background: var(--sg-ink);
+  @include sg-frame;
+  &__heading { margin: 0 0 1.1vw; font-size: var(--sg-text-s); font-weight: 700; }
+  &__pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(3 * var(--sg-px)); }
+  &__position {
+    position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.9vw; height: 1.9vw;
+    color: var(--key); background: var(--sg-ink); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
+  }
+  &__icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; min-height: 3.6vw; font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
+  button {
+    --key: var(--sg-b1); --key-shade: var(--sg-b1-shade);
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45vw;
+    min-height: 13.2vw; padding: 1.5vw .7vw calc(.9vw + 2 * var(--sg-px)); border: 0; border-radius: 0; font: inherit; text-align: center;
+    color: var(--sg-ink); background: var(--key);
+    box-shadow: inset 0 calc(-2 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink));
+    &[data-position="2"] { --key: var(--sg-b2); --key-shade: var(--sg-b2-shade); }
+    &[data-position="3"] { --key: var(--sg-b3); --key-shade: var(--sg-b3-shade); }
+    &[data-position="4"] { --key: var(--sg-b4); --key-shade: var(--sg-b4-shade); }
+    &:active:not(:disabled) { transform: translateY(var(--sg-px)); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink)); }
+    &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: calc(2 * var(--sg-px)); }
+    &:disabled { --key: var(--sg-night-lift); --key-shade: var(--sg-night); color: var(--sg-mute); }
+    strong { font-size: var(--sg-text-m); font-weight: 900; line-height: 1; }
+    small { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.05; }
+  }
+  img { width: 5.4vw; height: 5.4vw; object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skyline-glider__callout-arrow, .skyline-glider__callout-edge, .skyline-glider__target-brackets, .skyline-glider__hazard-dash,
+  .skyline-menus__cursor { animation: none !important; }
+}
+// A narrow window (a phone held upright, a split desktop): stack the two halves.
 @media (max-width: 760px) {
-  .skyline-glider--controls { grid-template-columns: minmax(0, 1fr) 16rem; gap: 1rem; padding: 1rem; }
-  .skyline-controls { padding: .75rem; button { min-height: 7rem; } }
-  .skyline-menus__options { grid-template-columns: 1fr; }
+  .skyline-glider--controls { grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6vw; padding: 5vw 5vw 14vw; }
+  .skyline-controls { width: auto; button { min-height: 26vw; } }
+  .skyline-glider__hud-menu { display: none; }
 }
-@media (max-width: 500px) {
-  .skyline-glider--controls { grid-template-columns: 1fr; gap: 1rem; align-content: start; }
-  .skyline-menus__options { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 1rem auto; }
-  .skyline-controls { width: 100%; }
-}
-.skyline-glider__shot[data-power="2"] { filter: drop-shadow(0 0 5px #ffdd66); }
-.skyline-glider__shot[data-power="3"] { filter: drop-shadow(0 0 8px #ff963c); }
-.skyline-glider__shot[data-power="4"] { filter: drop-shadow(0 0 12px #ff503c); }
-.skyline-glider__stop-warning { position: absolute; top: 7rem; left: 50%; transform: translateX(-50%); padding: .6rem 1.2rem; border-radius: 1rem; color: #fff5b8; background: #792e20; font-size: 1.4rem; font-weight: 800; }
