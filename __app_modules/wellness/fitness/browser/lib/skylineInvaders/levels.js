@@ -1,7 +1,10 @@
 // Skyline Invaders level files: schema `skyline-invaders-level/v1`.
-// Pure: no DOM, no clocks, no randomness.
+// Pure: no DOM, no clocks, no randomness of its own. The engine never imports
+// this file (one-way dependency).
+import { MUZZLE_Y, SHOT_SPEED, createGameState, step } from './engine.js';
 import { BOOST_KINDS, boostRules } from './rules.js';
-import { LEVEL_THREAT_TYPES } from './threats.js';
+import { LEVEL_THREAT_TYPES, THREATS, moveThreat, xToAim } from './threats.js';
+import { INVADERS_TUNABLES } from './tunables.js';
 
 export const LEVEL_SCHEMA = 'skyline-invaders-level/v1';
 const ID = /^[a-z][a-z0-9-]+$/;
@@ -75,13 +78,57 @@ function structure(raw) {
   return errors;
 }
 
+const BOT_STEP_S = 1 / 30;
+
+/**
+ * Play the level with a rate-limited cool-tier bot and no partner: one small
+ * shot every `fireIntervalS` at the lowest threat. Returns the final engine
+ * state. The bot aims perfectly; the fire interval is what limits it.
+ */
+export function simulateBot(level, { fireIntervalS = INVADERS_TUNABLES.fireIntervalS, seed = 1 } = {}) {
+  const interval = fireIntervalS > 0 ? fireIntervalS : INVADERS_TUNABLES.fireIntervalS;
+  let state = createGameState(level, { seed });
+  let nextFireAt = 0;
+  // The round ends itself on its timer; the cap only guards a level that was never validated.
+  const maxSteps = Math.ceil((Number(level.duration_s) || 0) / BOT_STEP_S) + 2;
+  for (let i = 0; i < maxSteps && state.phase === 'playing'; i += 1) {
+    const target = state.threats.filter((t) => t.type !== 'bomb').sort((a, b) => b.y - a.y || a.id - b.id)[0];
+    const fire = [];
+    if (target && state.time >= nextFireAt) {
+      // Lead the target: aim where it will be when the shot gets there, so a
+      // zigzagging drone does not soak up the bot's whole fire budget.
+      const flight = Math.max(0, (MUZZLE_Y - target.y) / (SHOT_SPEED + THREATS[target.type].fall));
+      fire.push({ aim: xToAim(moveThreat(target, flight).x), tier: 'small', armsUp: false, source: 'bot', at: null });
+      nextFireAt = state.time + interval;
+    }
+    state = step({ ...state, events: [] }, { aim: 0.5, tier: 'small', armsUp: false, fire, partnerRpm: null }, BOT_STEP_S, level);
+  }
+  return state;
+}
+
+/**
+ * Can a cool-tier shooter firing from the step mat pass this level? A level
+ * may ask for `reachabilityHitRate` of the bot's kills (the allowance for
+ * human aim), and for no more base HP than the bot ends with.
+ */
+export function checkReachability(level, tunables = INVADERS_TUNABLES) {
+  const bot = simulateBot(level, tunables);
+  const reachableKills = Math.floor(bot.kills * tunables.reachabilityHitRate);
+  const botBaseHpPct = Math.round((100 * bot.base.hp) / bot.base.maxHp);
+  const errors = [];
+  if (reachableKills < level.pass.kills) errors.push(`pass.kills ${level.pass.kills} is not reachable at one shot per ${tunables.fireIntervalS}s: at most ${reachableKills}`);
+  if (botBaseHpPct < (level.pass.base_hp_min ?? 0)) errors.push(`pass.base_hp_min ${level.pass.base_hp_min} is above what a cool-tier shooter holds (${botBaseHpPct})`);
+  return { reachable: !errors.length, errors, reachableKills, botBaseHpPct };
+}
+
 /**
  * Validate one level. Returns { valid, errors, level } with defaults filled;
  * `level` is null when invalid. Never throws and never changes `raw`.
- * Reachability (a bot run on the real engine) is on by default; pass
- * { reachability: false } to check structure only.
+ * Reachability (a bot run on the real engine) is on by default and runs only
+ * on a structurally sound level; pass { reachability: false } to check
+ * structure only.
  */
-export function validateLevel(raw, { reachability = true } = {}) {
+export function validateLevel(raw, { reachability = true, tunables = INVADERS_TUNABLES } = {}) {
   const errors = structure(raw);
   if (errors.length) return { valid: false, errors, level: null };
   const level = {
@@ -90,6 +137,9 @@ export function validateLevel(raw, { reachability = true } = {}) {
     max_bombers: raw.max_bombers ?? 2,
     pass: { kills: raw.pass.kills, base_hp_min: raw.pass.base_hp_min ?? 0 },
   };
-  void reachability; // wired in with the reachability check
+  if (reachability) {
+    const reach = checkReachability(level, tunables);
+    if (!reach.reachable) return { valid: false, errors: reach.errors, level: null };
+  }
   return { valid: true, errors: [], level };
 }
