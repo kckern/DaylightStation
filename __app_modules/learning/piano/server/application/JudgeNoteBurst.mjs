@@ -13,8 +13,7 @@ const KINDS = new Set(['check-in', 'end-of-lesson']);
  * burst of notes, off the critical path: the kiosk never waits on it, a
  * timeout/error/missing gateway is a 'fallback' (the deterministic verdict
  * stands), answers are cached per burst, and each (user, sitting, kind, index)
- * gets at most one model call. The end-of-lesson answer is stored where the
- * progress store reads it when it scores a borderline sitting.
+ * gets at most one model call.
  */
 export class JudgeNoteBurst {
   #gateway; #cache; #enabled; #timeoutMs; #logger; #scheduler;

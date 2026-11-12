@@ -1,7 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+vi.mock('#system/utils/FileIO.mjs', async (importOriginal) => {
+  const orig = await importOriginal();
+  return { ...orig, listFiles: vi.fn(orig.listFiles) };
+});
+import { listFiles } from '#system/utils/FileIO.mjs';
 import { JsonLessonExpectationStore, lessonExpectationDirFor } from './JsonLessonExpectationStore.mjs';
 
 const logger = () => { const calls = []; return { calls, warn: (e, d) => calls.push([e, d]), info() {}, debug() {} }; };
@@ -53,5 +58,41 @@ describe('JsonLessonExpectationStore', () => {
 
   it('dir helper', () => {
     expect(lessonExpectationDirFor('/d')).toBe(path.join('/d', 'content', 'piano', 'lesson-expectations'));
+  });
+
+  describe('refresh window', () => {
+    it('100 get() calls inside one window list the directory once', () => {
+      let t = 1000;
+      const s = new JsonLessonExpectationStore({ dir, logger: logger(), refreshMs: 5000, now: () => t });
+      s.writeLesson({ key: '10', title: 'A' }, rec('101'));
+      listFiles.mockClear();
+      for (let i = 0; i < 100; i += 1) { t += 10; expect(s.get('101')).not.toBeNull(); }
+      expect(listFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it('an outside edit is seen once the window has passed, not before', () => {
+      let t = 1000;
+      const s = new JsonLessonExpectationStore({ dir, logger: logger(), refreshMs: 5000, now: () => t });
+      s.writeLesson({ key: '10', title: 'A' }, rec('101'));
+      expect(s.get('101').targetNpm).toBe(13);
+      const file = path.join(dir, '10.json');
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.lessons['101'].targetNpm = 7;
+      fs.writeFileSync(file, JSON.stringify(doc));
+      fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+      t += 1000;
+      expect(s.get('101').targetNpm).toBe(13);
+      t += 5000;
+      expect(s.get('101').targetNpm).toBe(7);
+    });
+
+    it('the store sees its own writes immediately, inside the window', () => {
+      let t = 1000;
+      const s = new JsonLessonExpectationStore({ dir, logger: logger(), refreshMs: 5000, now: () => t });
+      expect(s.get('301')).toBeNull();
+      t += 10;
+      s.writeLessons({ key: '30', title: 'C' }, [rec('301')]);
+      expect(s.get('301')).toMatchObject({ plexId: '301', showKey: '30' });
+    });
   });
 });

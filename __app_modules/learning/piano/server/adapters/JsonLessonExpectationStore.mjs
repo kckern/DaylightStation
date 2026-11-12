@@ -18,7 +18,9 @@ const SEED_FILE = '_measured.json';
  * records, plus `_measured.json`, the audit's measured seed.
  *
  * Reads keep an index over every show file and rebuild it when any file's
- * mtime changes; an unreadable or invalid file is skipped (warned once per
+ * mtime changes — checked at most once per `refreshMs` (default 5 s; enrich
+ * calls get() per lesson, and each check stats every show file). The store's
+ * own writes invalidate at once, so a write is always seen by the next get(); an unreadable or invalid file is skipped (warned once per
  * mtime), so a half-written file can never take credit down with it.
  */
 export class JsonLessonExpectationStore {
@@ -27,10 +29,15 @@ export class JsonLessonExpectationStore {
   #index = new Map();
   #signature = null;
   #warned = new Map();
+  #refreshMs;
+  #now;
+  #lastCheck = -Infinity;
 
-  constructor({ dir, logger = console }) {
+  constructor({ dir, logger = console, refreshMs = 5000, now = () => Date.now() }) {
     this.#dir = dir;
     this.#logger = logger;
+    this.#refreshMs = refreshMs;
+    this.#now = now;
   }
 
   #showFiles() {
@@ -55,6 +62,9 @@ export class JsonLessonExpectationStore {
   }
 
   #refresh() {
+    const t = this.#now();
+    if (this.#signature !== null && t - this.#lastCheck < this.#refreshMs) return;
+    this.#lastCheck = t;
     const files = this.#showFiles();
     const sig = files.map((f) => `${f}:${fileMtimeMs(path.join(this.#dir, f))}`).join('|');
     if (sig === this.#signature) return;
@@ -121,6 +131,7 @@ export class JsonLessonExpectationStore {
     });
     writeFileAtomic(path.join(this.#dir, `${showKey}.json`), `${JSON.stringify(doc)}\n`);
     this.#signature = null;
+    this.#lastCheck = -Infinity;
     return written;
   }
 
