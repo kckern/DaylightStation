@@ -8,6 +8,8 @@ import useFitnessModule from '../../player/useFitnessModule.js';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { useGamepadKeys } from '../../lib/useGamepadKeys.js';
 import { createSkylineAudio } from '../../lib/skylineGlider/skylineAudio.js';
+import { useGameVolume } from '../../nav/useGameVolume.js';
+import { PixelIcon } from '../SkylineGlider/SkylinePixelIcons.jsx';
 import { driftAim, manualAim } from '../../lib/skylineInvaders/aimAssist.js';
 import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js';
 import { EMPTY_EFFECTS, INVADERS_LOG_NAMES, buildInvadersEffectTable, invadersSoundUrls } from '../../lib/skylineInvaders/invadersEffects.js';
@@ -28,6 +30,7 @@ import InvadersLobby, { resolveLevelId } from './InvadersLobby.jsx';
 import InvadersPoseBridge from './InvadersPoseBridge.jsx';
 import InvadersResult from './InvadersResult.jsx';
 import InvadersScene from './InvadersScene.jsx';
+import InvadersSoundSheet from './InvadersSoundSheet.jsx';
 import useInvadersAim from './useInvadersAim.js';
 import useInvadersBoost from './useInvadersBoost.js';
 import useInvadersFire from './useInvadersFire.js';
@@ -49,6 +52,10 @@ const MODULE_ID = 'skyline_invaders';
 const CAPABILITY_ID = 'fitness.skyline-invaders';
 const ROLE_MAP = Object.freeze({ loading: 'ready', lobby: 'ready', calibrating: 'ready', error: 'ready' });
 const ROUND_PHASES = Object.freeze(['countdown', 'playing', 'paused']);
+// Where the Sound sheet can be opened: every screen a player can stop on. Not
+// mid-countdown (three seconds) and not over calibration, which reads the pose.
+const SOUND_PHASES = Object.freeze(['lobby', 'playing', 'paused', 'result']);
+const BIKE_PRESS = /^([1-4])_(single|long|hold|double)$/;
 const COUNTDOWN_FROM = 3;
 const HEALTH_EVERY_MS = 20_000;   // the log ingest allows three of one event a minute
 const STICK_DEAD_ZONE = 0.2;
@@ -130,6 +137,24 @@ function SkylineInvadersGame() {
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   const goPhase = useCallback((next) => { phaseRef.current = next; setPhase(next); }, []);
 
+  // ── Sound ─────────────────────────────────────────────────────────────────
+  // The game's own volume (useGameVolume, its track in the fitness volume
+  // store), not the video level and not full gain. Every voice -- cue files,
+  // music, synth tones -- ends on the one output gain this sets.
+  const gameVolume = useGameVolume('skyline-invaders');
+  const volumeRef = useRef(gameVolume);
+  volumeRef.current = gameVolume;
+  useEffect(() => {
+    audioRef.current.setVolume(gameVolume.output);
+    log.info('skyline_invaders.audio.volume', {
+      level: gameVolume.level, muted: gameVolume.muted, isDefault: gameVolume.isDefault,
+      output: audioRef.current.getLevels?.().output ?? gameVolume.output,
+    });
+  }, [gameVolume.output, gameVolume.level, gameVolume.muted, gameVolume.isDefault, log]);
+  const [soundOpen, setSoundOpen] = useState(false);
+  const soundOpenRef = useRef(false);
+  soundOpenRef.current = soundOpen;
+
   // ── Who and what ──────────────────────────────────────────────────────────
   const session = ctx?.fitnessSessionInstance;
   const round = roundRef.current;
@@ -151,7 +176,7 @@ function SkylineInvadersGame() {
   // Callbacks read the current render through this, so none of them goes stale
   // and none of them restarts the frame loop.
   const live = useRef({});
-  live.current = { session, shooterId, mat, level, levels, riderWorld, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf };
+  live.current = { session, shooterId, mat, level, levels, riderWorld, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf, prompt };
 
   // ── Mount, levels, world, sounds ──────────────────────────────────────────
   useEffect(() => {
@@ -392,7 +417,7 @@ function SkylineInvadersGame() {
       table: buildInvadersEffectTable({ setEffects, effectTimersRef }),
       playCue: (cue) => audioRef.current.playCue(cue),
       log: effectLog, logNames: INVADERS_LOG_NAMES,
-      correlation: () => correlation, skippedReason: () => 'audio-unavailable',
+      correlation: () => correlation, skippedReason: () => (volumeRef.current.output <= 0 ? 'muted' : 'audio-unavailable'),
     });
 
     const frame = ({ nowMs, rawElapsedS, elapsedS }) => {
@@ -471,7 +496,7 @@ function SkylineInvadersGame() {
     registerLifecycle({
       onPause: () => pause('lifecycle'),
       // Also runs on mount and whenever the video is not paused: only undo a lifecycle pause.
-      onResume: () => { if (phaseRef.current === 'paused' && pausedByRef.current === 'lifecycle') resume('lifecycle'); },
+      onResume: () => { if (phaseRef.current === 'paused' && pausedByRef.current === 'lifecycle' && !soundOpenRef.current) resume('lifecycle'); },
       // Runs whenever there is no session: only a round in hand is ended.
       onSessionEnd: () => {
         if (!ROUND_PHASES.includes(phaseRef.current)) return;
@@ -494,6 +519,82 @@ function SkylineInvadersGame() {
     log.info('skyline_invaders.access.revoked', { runId: roundRef.current?.runId, shooterId, state: access.state, phase });
     if (phase === 'countdown') toLobby(); else void finalize(false, null, { then: 'lobby' });
   }, [accessGranted, access.status, access.state, phase, finalize, toLobby, log, shooterId]);
+
+  // ── The Sound sheet ───────────────────────────────────────────────────────
+  // Opened by the touch "more" button, Sound on the pause screen, or bike
+  // button 2 there. Mid-round it pauses first, and Back lands on the pause
+  // screen. It covers whatever screen it was opened over, which stays mounted.
+  const openSound = useCallback((source) => {
+    const from = phaseRef.current;
+    if (soundOpenRef.current || !SOUND_PHASES.includes(from)) return;
+    if (from === 'playing') pause('player');
+    soundOpenRef.current = true;
+    setSoundOpen(true);
+    log.info('skyline_invaders.settings.opened', { phase: from, source, runId: roundRef.current?.runId || null });
+  }, [log, pause]);
+  const closeSound = useCallback((source) => {
+    if (!soundOpenRef.current) return;
+    soundOpenRef.current = false;
+    setSoundOpen(false);
+    log.info('skyline_invaders.settings.closed', { phase: phaseRef.current, source, level: volumeRef.current.level, muted: volumeRef.current.muted });
+  }, [log]);
+  const setSoundLevel = useCallback((level, control) => {
+    const next = Math.max(0, Math.min(100, Math.round(Number(level) || 0)));
+    volumeRef.current.setLevel(next);
+    log.info('skyline_invaders.audio.level_set', { level: next, control });
+  }, [log]);
+  const stepSound = useCallback((delta, control) => {
+    const now = volumeRef.current;
+    if (delta < 0 && (now.muted || now.level <= 0)) return;
+    if (delta > 0 && now.level >= 100 && !now.muted) return;
+    setSoundLevel(now.level + delta, control);
+  }, [setSoundLevel]);
+  const toggleSound = useCallback((control) => {
+    const now = volumeRef.current;
+    now.toggleMute();
+    log.info('skyline_invaders.audio.mute_toggled', { muted: !now.muted, control });
+  }, [log]);
+
+  // The bike buttons. Invaders is played on the mat, so a bike's buttons stay
+  // with rider selection except where the game needs them: holding 4 mid-round
+  // pauses (as in Skyline Glider); on the pause screen 1 resumes, 2 opens Sound,
+  // 3 ends the round; on the Sound sheet 1 quieter, 2 louder, 3 back, 4 mute.
+  const selectorRouter = ctx?.selectorInputRouter;
+  const bikeActions = useRef({});
+  bikeActions.current = { openSound, closeSound, stepSound, toggleSound, pause, resume, finalize };
+  useEffect(() => {
+    if (!selectorRouter?.onUnclaimed) return undefined;
+    return selectorRouter.onUnclaimed((input) => {
+      const match = BIKE_PRESS.exec(input?.action || '');
+      if (!match || live.current.prompt) return false;
+      const position = Number(match[1]);
+      const single = match[2] === 'single';
+      const act = bikeActions.current;
+      const now = phaseRef.current;
+      if (soundOpenRef.current) {
+        if (single) {
+          if (position === 1) act.stepSound(-10, 'bike');
+          else if (position === 2) act.stepSound(10, 'bike');
+          else if (position === 3) act.closeSound('bike');
+          else act.toggleSound('bike');
+        }
+        return true;
+      }
+      if (now === 'paused') {
+        if (single) {
+          if (position === 1) act.resume('bike');
+          else if (position === 2) act.openSound('bike');
+          else if (position === 3) void act.finalize(false);
+        }
+        return true;
+      }
+      if (now === 'playing' && position === 4 && !single && match[2] !== 'double') {
+        act.pause('player');
+        return true;
+      }
+      return false;
+    });
+  }, [selectorRouter]);
 
   // ── Grown-up unlocks ──────────────────────────────────────────────────────
   const cancelPrompt = useCallback(() => {
@@ -608,6 +709,16 @@ function SkylineInvadersGame() {
           <span aria-hidden="true" />
         </button>
       )}
+      {/* The touch "more" button: the Sound sheet. In a round it sits beside
+          Pause in the strip under the street; on a menu screen, top right. */}
+      {SOUND_PHASES.includes(phase) && !soundOpen && !prompt && (
+        <button
+          type="button" className={`skyline-invaders__more${phase === 'playing' ? ' is-round' : phase === 'paused' ? ' is-paused' : ''}`} aria-label="Sound and settings"
+          data-testid="skyline-invaders-more" onClick={(event) => { event.currentTarget.blur(); openSound('touch'); }}
+        >
+          <PixelIcon name="more" />
+        </button>
+      )}
 
       {phase === 'loading' && (
         <section className="skyline-invaders__notice">
@@ -629,7 +740,7 @@ function SkylineInvadersGame() {
           shooter={shooterId ? { id: shooterId, name: nameOf(shooterId) } : null} candidates={people} onPickShooter={pickShooter}
           mat={mat} partner={partner} poseStatus={poseStatus} calibrated={calibrated} onCalibrate={openCalibration}
           access={{ ...access, unlocked: accessGranted }} onRequestAdmin={requestAdminOverride} onStart={() => begin()}
-          tracker={tracker} active={!prompt}
+          tracker={tracker} active={!prompt && !soundOpen}
         />
       )}
       {phase === 'calibrating' && (
@@ -645,22 +756,32 @@ function SkylineInvadersGame() {
           <p>{PAUSE_REASONS[pausedByRef.current] || PAUSE_REASONS.player}</p>
           <InvadersActions
             actions={[
-              { id: 'resume', label: 'Resume', onPress: () => resume('player') },
+              { id: 'resume', label: 'Resume', hint: 'Bike button 1', onPress: () => resume('player') },
+              { id: 'sound', label: 'Sound', hint: 'Bike button 2', onPress: () => openSound('pause-menu') },
               { id: 'end', label: 'End round', hint: 'Saves it as ended early', onPress: () => { void finalize(false); } },
             ]}
             onBack={() => resume('player')}
             tracker={tracker}
+            active={!soundOpen}
           />
-          <p className="skyline-invaders__how">Tap a button, press any key, or A on the gamepad. Left and right move between the choices.</p>
+          <p className="skyline-invaders__how">Tap a button, press any key, or A on the gamepad. Left and right move between the choices. Hold bike button 4 in a round to pause.</p>
         </section>
       )}
       {phase === 'result' && record && (
         <InvadersResult
-          record={record} saveStatus={saveState.status} level={level} nextLevel={nextLevel} tracker={tracker} active={!prompt}
+          record={record} saveStatus={saveState.status} level={level} nextLevel={nextLevel} tracker={tracker} active={!prompt && !soundOpen}
           onReplay={() => begin(roundRef.current?.level)}
           onNext={() => begin(nextLevel)}
           onLevels={toLobby}
           onRetrySave={() => { void finalize(record.run.status !== 'abandoned', record); }}
+        />
+      )}
+
+      {soundOpen && (
+        <InvadersSoundSheet
+          level={gameVolume.level} muted={gameVolume.muted} tracker={tracker} active={!prompt}
+          onLevel={(next) => setSoundLevel(next, 'touch')} onStep={(delta) => stepSound(delta, 'sheet')}
+          onToggleMute={() => toggleSound('touch')} onBack={closeSound}
         />
       )}
 

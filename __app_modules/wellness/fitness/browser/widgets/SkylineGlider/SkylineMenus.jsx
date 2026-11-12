@@ -1,7 +1,7 @@
 import React from 'react';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon } from './SkylinePixelIcons.jsx';
-import { TouchVolumeButtons } from "../../../../../../__capabilities/playback/browser/volume/TouchVolumeButtons.jsx";
+import GameSoundSheet from './GameSoundSheet.jsx';
 // Why the last attempt ended, in words a rider can act on.
 export function crashReason(flight,entity){
  if(!flight)return null;
@@ -51,12 +51,10 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
  // The sound sheet: the house touch volume strip (11 keys, 0 = off) and a mute
  // key for touch; the bike buttons beside it step the same level (1 quieter,
  // 2 louder, 4 mute, 3 back) and say so on their own keys.
- if(state.phase==='settings'){const level=sound?.level??0,muted=!!sound?.muted;return <section className="skyline-menus skyline-menus--settings" data-phase="settings" data-testid="skyline-sound-sheet">
+ if(state.phase==='settings')return <section className="skyline-menus skyline-menus--settings" data-phase="settings" data-testid="skyline-sound-sheet">
   <h1>Sound</h1>
-  <strong className="skyline-menus__readout" data-testid="skyline-sound-readout" data-muted={muted||undefined}><PixelIcon name="sound"/>{muted?'Muted':'Volume '+level}</strong>
-  <div className="skyline-menus__volume"><TouchVolumeButtons controlId="skyline-volume" currentLevel={muted?0:level} onSelect={l=>sound?.onLevel?.(l)}/></div>
-  <button type="button" className="skyline-menus__mute" aria-pressed={muted} onClick={()=>sound?.onToggleMute?.()}>{muted?'Unmute':'Mute'}</button>
- </section>}
+  <GameSoundSheet level={sound?.level??0} muted={!!sound?.muted} onLevel={l=>sound?.onLevel?.(l)} onToggleMute={()=>sound?.onToggleMute?.()} controlId="skyline-volume"/>
+ </section>;
  if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus" data-phase={state.phase}><p className="skyline-menus__kicker">{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
  const titles={menu:'Flight controls',crash:'Let’s try again',result:'Back at base',saving:'Saving your flight…',denied:'Flight locked','save-details':'Your flight is waiting to save',stall:'Stalled!'};
  return <section className="skyline-menus" data-phase={state.phase}>
