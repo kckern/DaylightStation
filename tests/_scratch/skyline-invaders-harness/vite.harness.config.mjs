@@ -65,6 +65,8 @@ export default async (env = {}) => {
   const app = await appConfigFn({ mode: 'development', command: 'serve', ...env });
   return {
     root: here,
+    // The app's own public folder, so /fonts/arcade/* (the game faces) load as on the kiosk.
+    publicDir: path.join(repoRoot, 'frontend/public'),
     // Keep the dep cache out of the (shared, symlinked) node_modules.
     cacheDir: process.env.HARNESS_CACHE || path.join(repoRoot, 'tests/_scratch/out/.vite-skyline-invaders-harness-cache'),
     define: app.define, css: app.css,

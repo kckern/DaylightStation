@@ -12,9 +12,9 @@ describe('invadersControls: one decision per screen on the four bike buttons', (
     expect(invadersAction(view, 3, 'long')).toBe('open-roster');
   });
 
-  it('waves: previous, next, change shooter, Start — Locked asks for an unlock', () => {
+  it('waves: previous, next, change defender, Start — Locked asks for an unlock', () => {
     const view = { screen: 'waves', count: 3, wave: { id: 'w1', name: 'First Light', status: 'open' }, shooterName: 'Kid' };
-    expect(labels(view)).toEqual(['Previous', 'Next', 'Change shooter', 'Start']);
+    expect(labels(view)).toEqual(['Previous', 'Next', 'Change defender', 'Start']);
     expect(invadersAction(view, 4)).toBe('start');
     expect(invadersAction({ ...view, wave: { ...view.wave, status: 'locked' } }, 4)).toBe('unlock-wave');
     expect(invadersControls({ ...view, count: 1 })[0].disabled).toBe(true);
@@ -26,9 +26,9 @@ describe('invadersControls: one decision per screen on the four bike buttons', (
     expect(invadersAction({ screen: 'ready' }, 3)).toBe('back-to-waves');
   });
 
-  it('result: replay, next wave (only when there is one), waves, change shooter; nothing until saved', () => {
+  it('result: replay, next wave (only when there is one), waves, change defender; nothing until saved', () => {
     const saved = { screen: 'result', saveStatus: 'saved', wave: { name: 'First Light' }, next: { name: 'Zigzag' } };
-    expect(labels(saved)).toEqual(['Replay', 'Next wave', 'Waves', 'Change shooter']);
+    expect(labels(saved)).toEqual(['Replay', 'Next wave', 'Waves', 'Change defender']);
     expect(invadersAction({ ...saved, next: null }, 2)).toBeNull();
     expect(invadersControls({ ...saved, saveStatus: 'saving' }).every((control) => control.disabled)).toBe(true);
     expect(invadersAction({ ...saved, saveStatus: 'error' }, 1)).toBe('retry-save');

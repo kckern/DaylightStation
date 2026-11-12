@@ -172,7 +172,7 @@
 .skyline-glider__hud-power { color: var(--sg-gold); }
 
 .skyline-glider__hud-pad {
-  align-self: flex-start; margin-left: auto; display: grid; grid-template-columns: repeat(2, 10.4vw); gap: var(--sg-px);
+  align-self: flex-start; margin-left: auto; display: grid; grid-template-columns: repeat(2, 11.6vw); gap: var(--sg-px);
   margin-top: calc(2 * var(--sg-px)); margin-right: calc(2 * var(--sg-px)); background: var(--sg-ink); text-shadow: none;
   @include sg-frame;
   &[data-armed="false"] { display: none; }
@@ -184,7 +184,7 @@
   &[data-action="missile"] { --cell: var(--sg-b3); --cell-shade: var(--sg-b3-shade); }
   &[data-action="boost"] { --cell: var(--sg-b4); --cell-shade: var(--sg-b4-shade); }
   b { --sg-icon-px: calc(var(--sg-line) + 1px); display: grid; place-items: center; background: var(--cell); color: var(--sg-ink); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--cell-shade); }
-  small { display: flex; align-items: center; padding: 0 .55vw; overflow: hidden; color: var(--sg-paper); font-size: var(--sg-text-m); font-weight: 900; white-space: nowrap; }
+  small { display: flex; align-items: center; padding: 0 .55vw; overflow: hidden; color: var(--sg-paper); font-size: var(--sg-text-m); font-weight: 900; white-space: nowrap; letter-spacing: -.04em; }   // Karmatic is wide: "Ready" and "Reloading" fit
   &[data-state="empty"] { --cell: var(--sg-mute); --cell-shade: var(--sg-night-lift); small { color: var(--sg-mute); } }
   // The recharge is a bar filling the readout, in whole steps of the fill colour.
   &[data-state="charging"] small { background: linear-gradient(90deg, var(--cell-shade) var(--charge, 0%), transparent 0); }

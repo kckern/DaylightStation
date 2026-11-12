@@ -98,10 +98,10 @@ The HUD, the in-scene marks, the menus and the bike-button panel share one look:
 
 **Rules.**
 
-- Flat colour and hard edges. No blur, no soft shadow, no see-through panel: a scene is dimmed with a one-pixel dither, and depth is a one-pixel offset.
+- Flat colour and hard edges. No blur, no soft shadow, no see-through panel, and nothing dims or dithers the scene behind a window; depth is a one-pixel offset.
 - Readouts (hearts, clock, score, rpm) are ink-outlined numerals set straight on the scene. Things the rider presses are solid plates in the colour of the button that does it. Things that talk (menus, notices over a flight) are windows: night-blue fill, cream edge, ink rim, stepped corners.
 - The four bike buttons own four colours everywhere: 1 cyan (laser), 2 gold (bomb), 3 red-orange (missile), 4 violet (boost). The same colour is on the menu key, the HUD cell, the lit square of the pad glyph and the edge of the sign over the thing to hit.
-- Roboto Condensed only: 900 for numerals and names, 900 italic for titles and signs, tabular figures for anything that counts.
+- **Karmatic Arcade** only, the 16-bit display face (Vic Fieger freeware, `frontend/public/fonts/arcade/`, note beside it; declared in `SkylineMenus.scss`, set as `--sg-font` in `_skyline-kit.scss`). It has one weight and no italic, so `font-synthesis: none` stops the browser faking either; its space is a sliver, so text carries `word-spacing: .3em` (buttons inherit it); its curly quotes are blank, so they come from Press Start 2P (`SG Quotes`, a `unicode-range` face first in the stack). Tabular figures for anything that counts. Skyline Invaders overrides `--sg-font` with its own 8-bit face.
 - Animation is stepped (`steps(1)` keyframes), never eased, and stops under `prefers-reduced-motion`.
 
 **Tokens** are custom properties on `.skyline-glider` (and on `.skyline-glider__scene`, so the scene draws correctly on its own): `--sg-ink`, `--sg-night`, `--sg-night-lift`, `--sg-mute`, `--sg-paper`, `--sg-gold`, `--sg-red`, `--sg-heart`, the button colours `--sg-b1`…`--sg-b4` with a `-shade` each, the UI pixel `--sg-px` (0.3% of the viewport width, the size of one art pixel of a skinned zone), the text outline `--sg-line`, and the type scale `--sg-text-s`…`--sg-text-xxl` (24, 32, 43, 83 and 163 px on the 1810 px kiosk; nothing in flight is smaller than `-s`). Frames come from the `sg-frame` mixin and outlined text from `sg-outline`; use them instead of writing a border or a shadow.

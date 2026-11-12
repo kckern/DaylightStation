@@ -30,11 +30,14 @@ async function hold(page, wristDx, ms, wristY = 200) {
     await run(page, 100);
   }
 }
-const pad = (page, n) => page.locator(`.skyline-controls button[data-position="${n}"]`).click();
-async function padHold(page, n) {
-  const box = await page.locator(`.skyline-controls button[data-position="${n}"]`).boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await run(page, 800); await page.mouse.up(); await run(page, 50);
-}
+// Touch keys by position; on Who's defending? the people tiles, in order.
+const pad = async (page, n) => {
+  const key = page.locator(`.skyline-invaders__key[data-position="${n}"]`);
+  if (await key.count()) return key.click();
+  return page.locator('.skyline-invaders__person').nth(n - 1).click();
+};
+// Someone else: the last people tile opens the roster.
+const padHold = (page) => page.locator('.skyline-invaders__person--more').click();
 const screen = (page, name) => page.waitForSelector(`[data-screen="${name}"]`, { timeout: 20000 });
 // Waves -> Start -> Ready: stand, reach left, reach right -> the countdown starts by itself.
 const readyAndCount = async (page) => {
@@ -64,7 +67,7 @@ async function shootFor(page, seconds) {
 const SHOTS = {
   'who': { query: 'pose=detecting&shooter=none&roster=kid,test-rider', go: async (page) => { await screen(page, 'who'); } },
   'who-nobody': { query: 'pose=detecting&shooter=none', go: async (page) => { await screen(page, 'who'); } },
-  'roster': { query: 'pose=detecting&shooter=none&roster=kid', go: async (page) => { await screen(page, 'who'); await padHold(page, 2); await screen(page, 'roster'); await pad(page, 2); } },
+  'roster': { query: 'pose=detecting&shooter=none&roster=kid', go: async (page) => { await screen(page, 'who'); await padHold(page); await screen(page, 'roster'); } },
   'waves': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); } },
   'waves-done-row': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 1); } },
   'waves-locked-row': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 2); } },
@@ -72,8 +75,8 @@ const SHOTS = {
   'locked': { query: 'pose=detecting&kiosk=1', go: async (page) => { await screen(page, 'locked'); } },
   'locked-unlock-prompt': { query: 'pose=detecting&kiosk=1', go: async (page) => { await screen(page, 'locked'); await pad(page, 1); await run(page, 300); await page.waitForSelector('.unlock-prompt'); } },
   'locked-adult-picked': { query: 'pose=detecting&kiosk=1&roster=kid&learners=kid', go: async (page) => {
-    await screen(page, 'locked'); await pad(page, 4); await screen(page, 'who'); await padHold(page, 1); await screen(page, 'roster');
-    await pad(page, 2); await pad(page, 4); await run(page, 300); await screen(page, 'locked');
+    await screen(page, 'locked'); await pad(page, 4); await screen(page, 'who'); await padHold(page); await screen(page, 'roster');
+    await page.locator('.skyline-invaders__person', { hasText: 'Test Rider' }).click(); await run(page, 300); await screen(page, 'locked');
   } },
   'ready-stand': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await screen(page, 'ready'); await run(page, 400); } },
   'ready-left': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await hold(page, 0, 1300, 900); await hold(page, 130, 500); } },
@@ -83,8 +86,8 @@ const SHOTS = {
   'in-game': { query: 'pose=detecting&partner=1&zone=hot', go: async (page) => { await start(page); await shootFor(page, 9); } },
   'in-game-gamepad-aim': { query: 'pose=camera-denied', go: async (page) => { await startDenied(page); await run(page, 4000); await page.keyboard.press('Space'); await run(page, 250); } },
   'in-game-pose-lost': { query: 'pose=detecting', go: async (page) => { await start(page); await hold(page, -60, 2500); await run(page, 1500); } },
-  'paused-by-bike': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); } },
-  'paused-sound': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); await pad(page, 2); await screen(page, 'sound'); await pad(page, 4); } },
+  'paused-by-touch': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.locator('.skyline-invaders__pause').click(); await phase(page, 'paused'); } },
+  'paused-sound': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.locator('.skyline-invaders__pause').click(); await phase(page, 'paused'); await pad(page, 2); await screen(page, 'sound'); await page.getByRole('button', { name: 'Mute', exact: true }).last().click(); } },
   'result-fell-short': { query: 'pose=camera-denied', go: async (page) => { await startDenied(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
   'result-held': { query: 'pose=detecting&zone=hot', go: async (page) => { await start(page); await shootFor(page, 31); await run(page, 1500); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
   'result-not-saved': { query: 'pose=camera-denied&save=fail', go: async (page) => { await startDenied(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="error"]'); } },
@@ -109,7 +112,7 @@ const audit = (page) => page.evaluate(() => {
   // The "more" button must sit clear of every window and panel frame.
   const more = root.querySelector('.skyline-invaders__more');
   const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-  const overlaps = more ? [...root.querySelectorAll('.skyline-menus, .skyline-controls, .skyline-invaders__hud-left, .skyline-invaders__hud-centre, .skyline-invaders__hud-right, .skyline-invaders__hud-notes > *')].filter((frame) => hit(box(more), box(frame))).map((frame) => frame.className) : [];
+  const overlaps = more ? [...root.querySelectorAll('.skyline-menus, .skyline-invaders__pause, .skyline-invaders__hud-left, .skyline-invaders__hud-centre, .skyline-invaders__hud-right, .skyline-invaders__hud-notes > *')].filter((frame) => hit(box(more), box(frame))).map((frame) => frame.className) : [];
   const moreBox = more ? box(more) : null;
   return { overlaps, moreBox, texts, buttons, width: window.innerWidth, height: window.innerHeight, scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight] };
 });

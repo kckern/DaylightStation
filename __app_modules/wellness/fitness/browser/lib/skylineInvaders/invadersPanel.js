@@ -1,6 +1,8 @@
-// The Skyline Invaders menus as the four bike buttons. Pure: what each button
+// The Skyline Invaders menu actions, at four positions. Pure: what each key
 // says on each screen (`invadersControls`), and what a press does
-// (`invadersAction`). The shell turns an action into the work.
+// (`invadersAction`). The shell draws them as touch keys and turns an action
+// into the work; the keyboard, gamepad and mat press the same positions.
+// Invaders does not listen to the bike buttons: the defender stands on the mat.
 //
 // One decision per screen. Start is always button 4, and a stomp on the mat:
 //   who      1–4 the people in the workout (hold any: everyone else)
@@ -16,6 +18,9 @@
 // person and right opens everyone else; on the lock screen accept asks a grown-up;
 // on pause accept and back resume; on the Sound sheet accept goes back, so a
 // stray foot-pad press only closes it.
+
+/** The one hint a touch key shows: the mat does the same thing. */
+export const STOMP_HINT = 'Or stomp the mat';
 
 const blank = (position, label = '', hint = '') => ({ position, label, hint, icon: '—', disabled: true });
 const key = (position, label, hint, icon, extra = {}) => ({ position, label, hint: hint || '', icon, ...extra });
@@ -44,13 +49,13 @@ export function invadersControls(view) {
       return [
         key(1, 'Previous', 'Pick a wave', '←', { disabled: (v.count || 0) < 2 }),
         key(2, 'Next', 'Pick a wave', '→', { disabled: (v.count || 0) < 2 }),
-        key(3, 'Change shooter', v.shooterName || '', '●'),
+        key(3, 'Change defender', v.shooterName || '', '●'),
         // The mat is the main action: Start says so.
-        locked ? key(4, 'Locked', 'Admin unlock', '✓') : key(4, 'Start', v.mat ? 'Or stomp the mat' : v.wave?.name || '', '✓', { disabled: !v.wave }),
+        locked ? key(4, 'Locked', 'Admin unlock', '✓') : key(4, 'Start', v.mat ? STOMP_HINT : v.wave?.name || '', '✓', { disabled: !v.wave }),
       ];
     }
     case 'locked':
-      return [key(1, 'Admin unlock', 'Grown-up fingerprint', '✓'), blank(2, 'Locked'), key(3, 'Back', 'Choose shooter', '×'), key(4, 'Change shooter', 'Someone else', '●')];
+      return [key(1, 'Admin unlock', 'Grown-up fingerprint', '✓'), blank(2, 'Locked'), key(3, 'Back', 'Choose defender', '×'), key(4, 'Change defender', 'Someone else', '●')];
     case 'ready':
       return [blank(1), blank(2), key(3, 'Back', 'Pick a wave', '×'), v.gamepad ? key(4, 'Skip', 'Gamepad aim', '✓') : blank(4, 'Reach', 'Arms out')];
     case 'paused':
@@ -59,10 +64,10 @@ export function invadersControls(view) {
       if (v.saveStatus === 'error') return [key(1, 'Retry save', 'Keep this result', '↻'), blank(2, 'Saving required'), blank(3, 'Saving required'), blank(4, 'Saving required')];
       if (v.saveStatus !== 'saved') return [1, 2, 3, 4].map((position) => blank(position, 'Saving…'));
       return [
-        key(1, 'Replay', v.mat && !v.next ? 'Or stomp the mat' : v.wave?.name || '', '↻'),
-        v.next ? key(2, 'Next wave', v.mat ? 'Or stomp the mat' : v.next.name, '→') : blank(2, 'No next wave yet'),
+        key(1, 'Replay', v.mat && !v.next ? STOMP_HINT : v.wave?.name || '', '↻'),
+        v.next ? key(2, 'Next wave', v.mat ? STOMP_HINT : v.next.name, '→') : blank(2, 'No next wave yet'),
         key(3, 'Waves', 'Pick another', '▦'),
-        key(4, 'Change shooter', 'Someone else', '●'),
+        key(4, 'Change defender', 'Someone else', '●'),
       ];
     }
     case 'sound': {

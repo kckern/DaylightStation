@@ -2,14 +2,17 @@ import React from 'react';
 import SkylineAvatar from '../SkylineGlider/SkylineAvatar.jsx';
 import GameSoundSheet from '../SkylineGlider/GameSoundSheet.jsx';
 import { FlightList } from '../SkylineGlider/SkylineMenus.jsx';
-import { PixelIcon } from '../SkylineGlider/SkylinePixelIcons.jsx';
+import { PixelIcon, iconForSymbol } from '../SkylineGlider/SkylinePixelIcons.jsx';
 import PixelSprite from '../../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
+import { STOMP_HINT } from '../../lib/skylineInvaders/invadersPanel.js';
 
-// The window half of every Skyline Invaders menu screen: one decision each, in
-// Skyline Glider's window (`.skyline-menus`). The bike-button panel beside it
-// is the shell's (SkylineControlPanel, lib/skylineInvaders/invadersPanel.js).
-// No instructions in prose: the panel says what each button does.
+// Every Skyline Invaders menu screen: one decision each, in Skyline Glider's
+// window (`.skyline-menus`). Invaders is a touch-screen game played standing on
+// the mat: people are tapped on their own tiles and each screen's actions are
+// solid keys in the window (InvadersTouchKeys). The keyboard, gamepad and mat
+// reach the same actions through lib/skylineInvaders/invadersPanel.js. No
+// instructions in prose: the keys say what they do.
 
 const LOCK_REASONS = Object.freeze({
   incomplete: 'Finish today’s school work to unlock.',
@@ -32,6 +35,47 @@ export function StarRow({ count = 0, className = '' }) {
   );
 }
 
+/**
+ * A screen's actions as touch keys. `keys` come from invadersControls; blanks
+ * are left out. A key says what it does in its label; the only hint drawn is
+ * that the mat does the same (STOMP_HINT), the rest stay as the title.
+ */
+export function InvadersTouchKeys({ keys = [], onPress }) {
+  if (!keys.length) return null;
+  return (
+    <div className="skyline-invaders__keys" role="group" aria-label="Actions" data-testid="invaders-keys">
+      {keys.map((key) => (
+        <button
+          key={key.position} type="button" className="skyline-invaders__key" data-position={key.position}
+          disabled={key.disabled} title={key.hint || undefined} onClick={() => onPress?.(key.position)}
+        >
+          {iconForSymbol(key.icon) && <span className="skyline-invaders__key-icon" aria-hidden="true"><PixelIcon name={iconForSymbol(key.icon)} /></span>}
+          <strong>{key.label}</strong>
+          {key.hint === STOMP_HINT && <small>{key.hint}</small>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** People as tiles to tap: avatar and name. `cursorId` marks the keyboard/gamepad cursor. */
+function PeopleTiles({ people = [], cursorId = null, onPick, extra = null }) {
+  return (
+    <div className="skyline-invaders__people" role="group" aria-label="People">
+      {people.map((person) => (
+        <button
+          key={person.id} type="button" className="skyline-invaders__person" data-testid={`invaders-person-${person.id}`}
+          aria-pressed={person.id === cursorId} onClick={() => onPick?.(person.id)}
+        >
+          <SkylineAvatar src={person.avatarSrc} name={person.name} />
+          <strong>{person.name}</strong>
+        </button>
+      ))}
+      {extra}
+    </div>
+  );
+}
+
 function Window({ screen, children }) {
   // (The shell's <main> is `skyline-invaders-loading` while loading.)
   return <div className="skyline-menus" data-phase={screen} data-testid={screen === 'loading' ? undefined : `skyline-invaders-${screen}`}>{children}</div>;
@@ -46,17 +90,25 @@ export default function InvadersMenus(props) {
   if (screen === 'who') {
     return (
       <Window screen="who">
-        <h1>Who’s shooting?</h1>
-        <p>{props.riders?.length ? 'Hold a button to pick someone else.' : 'Nobody is in the workout yet. Hold a button to pick anyone.'}</p>
+        <h1>Who’s defending?</h1>
+        {!props.riders?.length && <p>Nobody is in the workout yet.</p>}
+        <PeopleTiles
+          people={props.riders} onPick={props.onPick}
+          extra={(
+            <button type="button" className="skyline-invaders__person skyline-invaders__person--more" data-testid="invaders-person-more" onClick={() => props.onSomeoneElse?.()}>
+              <span className="skyline-invaders__person-icon" aria-hidden="true"><PixelIcon name="rider" /></span>
+              <strong>Someone else</strong>
+            </button>
+          )}
+        />
       </Window>
     );
   }
   if (screen === 'roster') {
-    const person = props.person;
     return (
       <Window screen="roster">
-        <h1>Pick the shooter</h1>
-        {person && <div className="skyline-menus__person"><SkylineAvatar src={person.avatarSrc} name={person.name} /><strong>{person.name}</strong></div>}
+        <h1>Pick the defender</h1>
+        <PeopleTiles people={props.everyone} cursorId={props.person?.id || null} onPick={props.onPick} />
       </Window>
     );
   }
@@ -65,7 +117,7 @@ export default function InvadersMenus(props) {
     const selected = rows.find((row) => row.id === props.selectedId) || null;
     return (
       <Window screen="waves">
-        <p className="skyline-menus__kicker">{`${props.shooterName} is shooting`}</p>
+        <p className="skyline-menus__kicker">{`${props.shooterName} is defending`}</p>
         <h1>Pick a wave</h1>
         <FlightList
           testIdPrefix="invaders"

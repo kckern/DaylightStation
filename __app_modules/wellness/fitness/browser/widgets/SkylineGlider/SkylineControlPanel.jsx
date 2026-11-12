@@ -2,13 +2,12 @@ import React, { useEffect, useRef } from 'react';
 import './SkylineMenus.scss';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon, iconForSymbol } from './SkylinePixelIcons.jsx';
-// `heading` names the buttons; a game played off the bike (Invaders) passes its own.
-export default function SkylineControlPanel({controls,onPress,heading='Your bike buttons',label='Bike controls'}){
+export default function SkylineControlPanel({controls,onPress}){
  const hold=useRef({timer:null,click:null,handled:false});
  const clear=()=>clearTimeout(hold.current.timer);
  useEffect(()=>()=>{clear();clearTimeout(hold.current.click)},[controls.map(c=>c.label).join('|')]);
- return <aside className="skyline-controls" aria-label={label}>
-  <p className="skyline-controls__heading">{heading}</p>
+ return <aside className="skyline-controls" aria-label="Bike controls">
+  <p className="skyline-controls__heading">Your bike buttons</p>
   <div className="skyline-controls__pad">{controls.map(c=><button key={c.position} type="button" data-position={c.position} data-kind={c.avatarSrc?'rider':'action'} disabled={c.disabled} title={c.reason||c.hint}
    onPointerDown={()=>{clear();hold.current.handled=false;hold.current.timer=setTimeout(()=>{hold.current.handled=true;onPress(c.position,'long')},650)}}
    onPointerUp={clear} onPointerCancel={clear} onPointerLeave={clear}

@@ -9,7 +9,6 @@ import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { useGamepadKeys } from '../../lib/useGamepadKeys.js';
 import { createSkylineAudio } from '../../lib/skylineGlider/skylineAudio.js';
 import { useGameVolume } from '../../nav/useGameVolume.js';
-import SkylineControlPanel from '../SkylineGlider/SkylineControlPanel.jsx';
 import { MoreButton } from '../SkylineGlider/SkylineFlightHud.jsx';
 import { driftAim, manualAim } from '../../lib/skylineInvaders/aimAssist.js';
 import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js';
@@ -28,7 +27,7 @@ import { announceGameAchievement, createEffectDispatcher, createFrameDriver } fr
 import { projectRunRole } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
 import InvadersCalibration from './InvadersCalibration.jsx';
 import InvadersHud from './InvadersHud.jsx';
-import InvadersMenus from './InvadersMenus.jsx';
+import InvadersMenus, { InvadersTouchKeys } from './InvadersMenus.jsx';
 import InvadersPoseBridge from './InvadersPoseBridge.jsx';
 import InvadersResult from './InvadersResult.jsx';
 import InvadersScene from './InvadersScene.jsx';
@@ -62,7 +61,6 @@ const SOUND_PHASES = Object.freeze(['lobby', 'paused', 'result']);
 const SOUND_SCREENS = Object.freeze(['who', 'roster', 'waves', 'locked', 'paused', 'result']);
 // Ready waits this long for a camera that is still starting, then plays with gamepad aim.
 const READY_CAMERA_WAIT_MS = 20_000;
-const BIKE_PRESS = /^([1-4])_(single|long|hold|double)$/;
 const COUNTDOWN_FROM = 3;
 const HEALTH_EVERY_MS = 20_000;   // the log ingest allows three of one event a minute
 const STICK_DEAD_ZONE = 0.2;
@@ -688,7 +686,7 @@ function SkylineInvadersGame() {
   if (rosterPerson) rosterPerson.avatarSrc = avatarOf(rosterPerson.id);
   const view = {
     screen,
-    riders: riders.slice(0, 4).map((rider) => ({ ...rider, avatarSrc: avatarOf(rider.id) })),
+    riders: riders.map((rider) => ({ ...rider, avatarSrc: avatarOf(rider.id) })),
     person: rosterPerson,
     count: rows.length,
     wave: screen === 'result' ? roundRef.current?.level || level : cursorRow,
@@ -760,27 +758,6 @@ function SkylineInvadersGame() {
     if (action) actRef.current(action, source);
   }, [cancelPrompt]);
 
-  // The bike buttons are the panel on every menu screen. Mid-round only a
-  // hold on 4 acts (pause, as in Skyline Glider); a bike's other presses are
-  // left to rider selection.
-  const selectorRouter = ctx?.selectorInputRouter;
-  useEffect(() => {
-    if (!selectorRouter?.onUnclaimed) return undefined;
-    return selectorRouter.onUnclaimed((input) => {
-      const match = BIKE_PRESS.exec(input?.action || '');
-      if (!match) return false;
-      const position = Number(match[1]);
-      const gesture = match[2] === 'hold' ? 'long' : match[2];
-      if (phaseRef.current === 'playing') {
-        if (position === 4 && gesture === 'long' && !live.current.prompt) { pause('player'); return true; }
-        return false;
-      }
-      if (!viewRef.current.screen || phaseRef.current === 'countdown') return false;
-      press(position, gesture, 'bike');
-      return true;
-    });
-  }, [selectorRouter, pause, press]);
-
   // Keyboard, foot pad and gamepad on a menu screen (the digits are the kiosk OS's).
   const menuActive = !!screen && !['loading'].includes(screen);
   useMenuInput(menuActive || !!prompt, (action, source) => {
@@ -828,6 +805,13 @@ function SkylineInvadersGame() {
       : { ...control, label: 'Admin fingerprint', hint: 'Waiting', icon: '—', avatarSrc: null, disabled: true }))
     : invadersControls(view);
 
+  // Touch keys: the screen's real actions. People are tiles on Who and the
+  // roster, and the Sound sheet has its own strip and Mute, so those screens
+  // keep only Back as a key.
+  const touchKeys = controls.filter((control) => control.icon !== '—'
+    && (screen !== 'who' || !!prompt) && (!['roster', 'sound'].includes(screen) || control.position === 3));
+  const everyone = people.map((person) => ({ ...person, avatarSrc: avatarOf(person.id) }));
+
   return (
     <main
       className={`skyline-invaders skyline-invaders--${phase}`}
@@ -854,6 +838,9 @@ function SkylineInvadersGame() {
         />
       )}
       {inRound && <MomentBanner text={effects.banner?.text || null} momentKey={effects.banner?.key} className="skyline-invaders__banner" />}
+      {phase === 'playing' && !prompt && (
+        <button type="button" className="skyline-invaders__pause" data-testid="skyline-invaders-pause" onClick={() => pause('player')}>Pause</button>
+      )}
       {phase === 'countdown' && <CountdownOverlay value={countdown} className="skyline-invaders__countdown" />}
 
       {screen && (
@@ -867,6 +854,7 @@ function SkylineInvadersGame() {
               <InvadersMenus
                 screen={screen} riders={view.riders} person={rosterPerson} rows={rows} selectedId={cursorRow?.id || null}
                 onSelect={(id) => chooseLevel(id)} shooterName={view.shooterName}
+                everyone={everyone} onPick={(id) => actRef.current(`pick:${id}`, 'touch')} onSomeoneElse={() => actRef.current('open-roster', 'touch')}
                 state={access.state} blockedNames={access.blockedBy.map(nameOf)}
                 reason={pausedByRef.current} waveName={roundRef.current?.level?.name || ''} error={error}
                 sound={{
@@ -875,8 +863,8 @@ function SkylineInvadersGame() {
                 }}
               />
             )}
+            <InvadersTouchKeys keys={touchKeys} onPress={(position) => press(position, 'single', 'touch')} />
           </div>
-          <SkylineControlPanel heading="Tap or press" label="Controls" controls={controls} onPress={(position, gesture) => press(position, gesture, 'touch')} />
         </section>
       )}
 

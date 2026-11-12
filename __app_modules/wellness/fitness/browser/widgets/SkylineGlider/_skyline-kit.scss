@@ -31,7 +31,10 @@
   --sg-text-l: max(18px, 2.4vw);
   --sg-text-xl: max(30px, 4.6vw);
   --sg-text-xxl: max(56px, 9vw);
-  --sg-font: var(--font-family, "Roboto Condensed", "Arial Narrow", sans-serif);
+  --sg-font: "SG Quotes", "Karmatic Arcade", "Roboto Condensed", "Arial Narrow", sans-serif;
+  font-synthesis: none;   // a pixel face has one weight and no italic: never fake them
+  word-spacing: .3em;      // Karmatic Arcade's space is a sliver: words ran together
+  button { word-spacing: inherit; }   // the UA sheet resets it on buttons
 }
 
 // Four shadows that draw a one-pixel ring `$n` pixels out with its corners left

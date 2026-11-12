@@ -60,8 +60,11 @@ async function mount(options = {}) {
   render(<SkylineInvaders />);
   await flush();
 }
-// The bike-button panel by position; a rider key waits out a double-tap.
-const pad = (n) => act(async () => { fireEvent.click(document.querySelector(`.skyline-controls button[data-position="${n}"]`)); vi.advanceTimersByTime(350); });
+// The touch keys by position; on Who's defending? the people are tiles, in order.
+const pad = (n) => act(async () => {
+  const target = document.querySelector(`.skyline-invaders__key[data-position="${n}"]`) || document.querySelectorAll('.skyline-invaders__person')[n - 1];
+  fireEvent.click(target);
+});
 // Start: button 4 on the wave list. A shooter with no reach on record would
 // go to Ready; these cases are not about it, so they play with gamepad aim.
 async function start() {
