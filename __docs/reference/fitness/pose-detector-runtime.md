@@ -9,9 +9,8 @@ For what happens to the keypoints afterwards, see `semantic-pose-pipeline.md`.
 
 - `__app_modules/wellness/fitness/browser/domain/pose/PoseDetectorService.js` — the singleton service
 - `__app_modules/wellness/fitness/browser/context/PoseContext.jsx` — React provider around it
-- `shared/contracts/crossOriginIsolation.mjs` — the isolation policy (paths, flag, env)
-- `__backend/src/4_api/middleware/platformHttp.mjs` — `createCrossOriginIsolationMiddleware` (prod)
-- `frontend/vite.config.js` — `crossOriginIsolationPlugin` (dev mirror)
+- `__backend/src/app.mjs` — global middleware that sends the isolation headers on every response (prod)
+- `frontend/vite.config.js` — `server.headers`, the same pair in dev
 - `frontend/scripts/prepare-public-assets.mjs` — copies the `.wasm` binaries into `frontend/public/`
 
 ---
@@ -68,12 +67,13 @@ Measured on the garage box (16 cores, Firefox, one still frame, 2026-11-11):
 up on a page that is not isolated. Pose still works, at roughly a third of the
 speed. The usual causes:
 
-- the flag is off (see below)
-- the page was reached over plain `http://` — browsers ignore COOP/COEP outside
-  a secure context
-- the document was not loaded at a `/fitness` URL: isolation is decided by the
-  headers of the **document**, so arriving by an in-app route change from
-  another app's page does not isolate it; a reload at `/fitness` does
+- the page was not served by this backend or the Vite dev server — e.g. a
+  static file server or proxy that does not send the two headers. This is what
+  happened in the Skyline Invaders garage spike on 2026-11-11: the build was
+  served from a localhost proxy without the headers, pose ran single-threaded
+  (~13 fps), and that number was briefly mistaken for the kiosk's
+- the page was reached over plain `http://` on a non-localhost host — browsers
+  ignore COOP/COEP outside a secure context
 
 ---
 
@@ -88,57 +88,16 @@ Cross-Origin-Embedder-Policy: credentialless
 
 ### Where the headers are set
 
-The SPA serves one `index.html` for every route, so the **request path** is the
-only thing that tells a Fitness document from any other. The middleware runs
-first in the Express stack and adds the pair to responses whose path is, or
-sits beneath, an isolated path. By default:
+The backend sends the pair on **every** response from a global middleware in
+`__backend/src/app.mjs` (since 2026-03), and the Vite dev server sends the same
+pair through `server.headers`. Every app's document is therefore isolated,
+Fitness included; there is no per-app switch.
 
-| Path | Why |
-|------|-----|
-| `/fitness` | the app |
-| `/sim-panel.html` | the HR simulator popup. It drives the app through `window.opener`, and a popup keeps its opener only if its COOP and COEP match the opener's |
+Verify on prod with `curl -sI https://<host>/fitness | grep -i cross-origin`.
 
-Matching is by whole path segment: `/fitness/menu/1` matches, `/fitnessx` and
-`/api/v1/fitness` do not. No other app's document, no `/api/*` response and no
-static asset carries the headers.
-
-Until 2026-11 the same two headers were sent on every response from the
-backend. They were narrowed to the paths above so other apps can embed
-cross-origin iframes again and are not cut off from popups they open.
-
-The Vite dev server applies the same policy from the same module, so a page
-that is isolated in prod is isolated in dev.
-
-### Turning it off
-
-The flag lives in the fitness household config and defaults to **on**:
-
-```yaml
-# household/fitness/config.yml
-cross_origin_isolation:
-  enabled: false        # default true; only an explicit false turns it off
-  # paths:              # optional; replaces the default list
-  #   - /fitness
-  #   - /sim-panel.html
-```
-
-The policy is read on every request, so no rebuild or restart is needed —
-reload the app config and then reload the kiosk page:
-
-```bash
-curl -X POST 'http://localhost:{env.ports.app}/api/v1/system/reload?app=fitness'
-```
-
-With the flag off the Fitness app runs exactly as before, minus threads: TF.js
-loads the single-threaded SIMD binary.
-
-`DAYLIGHT_CROSS_ORIGIN_ISOLATION=off` (also `0`, `false`, `no`, `disabled`) in
-the environment overrides the config in both the backend and the Vite dev
-server. It is read at request time by the backend but needs a process restart
-to change, so prefer the config flag.
-
-The backend logs the resolved policy once at boot as
-`http.cross_origin_isolation.configured` (`enabled`, `paths`, `source`).
+A 2026-11 change that narrowed the headers to `/fitness` behind a flag was
+written and then dropped before shipping: it bought Fitness nothing (it was
+already isolated) and would have removed isolation from every other app.
 
 ### What isolation changes for the page
 
@@ -156,7 +115,7 @@ styles still load, they are just requested without cookies.
 | Google Fonts stylesheet + font files | cross origin | none; public, sent without credentials anyway |
 | OpenStreetMap tiles in the session map | cross origin `<img>` | none; public tiles, loaded without cookies |
 | Strava activity link | cross origin, plain link | opens normally; the new tab gets no `window.opener` |
-| HR simulator popup (`/sim-panel.html`) | same origin | needs the same headers, which is why it is in the path list |
+| HR simulator popup (`/sim-panel.html`) | same origin | keeps `window.opener` because it carries the same headers as the app |
 | Service worker (`/sw.js`) | same origin | none; when offline it can serve the last cached shell document with whatever headers that copy had |
 
 Things that **would** break, and do not exist in the Fitness app today:
@@ -170,8 +129,8 @@ Things that **would** break, and do not exist in the Fitness app today:
   the frontend is a blob.
 - an OAuth popup that has to call back through `window.opener`.
 
-Add any of these and either the embed has to come from the same origin, or the
-path list / flag has to change.
+Add any of these and the embed has to come from the same origin (or send its
+own COEP), since the headers are global.
 
 ---
 
