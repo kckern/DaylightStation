@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 
 let _logger;
@@ -9,17 +8,21 @@ function logger() {
 }
 
 /**
- * Anti-AFK inactivity gate for sequential piano lectures. When no MIDI key is
- * pressed for `timeoutSeconds` while a sequential lecture plays, pauses the video
+ * Anti-AFK inactivity gate for sequential piano lectures. When no HUMAN note is
+ * played for `timeoutSeconds` while a sequential lecture plays, pauses the video
  * and opens the gate. The parent shows a play-along prompt and calls dismissGate()
  * on success to resume. No-op when isSequential is false.
  *
  * pause/play/isPaused should come from usePlayerController (ctrl.pause, ctrl.play,
  * () => !isPlaying) — NOT from mediaEl directly, which bypasses the Player's API.
+ *
+ * `humanNoteAt` (from useHumanNotes) is the time of the last note a PERSON
+ * played. The idle clock deliberately does not watch activeNotes: the piano's
+ * rhythm/drum loop streams notes there too, and while it ran the prompt never
+ * appeared (ops:docs/_wip/audits/2026-11-12-piano-lesson-engagement-audit.md §8.1).
  */
-export function useEngagementGate({ pause, play, isPaused, isSequential, timeoutSeconds = 90, onEngagementConfirmed }) {
+export function useEngagementGate({ pause, play, isPaused, isSequential, timeoutSeconds = 90, onEngagementConfirmed, humanNoteAt = 0 }) {
   const [gateOpen, setGateOpen] = useState(false);
-  const { activeNotes } = usePianoMidiNotes();
   const lastActivityRef = useRef(Date.now());
   const gateOpenRef = useRef(false);
 
@@ -34,13 +37,11 @@ export function useEngagementGate({ pause, play, isPaused, isSequential, timeout
   pauseRef.current = pause;
   isPausedRef.current = isPaused;
 
-  // Any MIDI note resets the idle timer.
+  // A human-played note resets the idle timer (machine notes never reach here).
   useEffect(() => {
-    if (!isSequential) return;
-    if (activeNotes && activeNotes.size > 0) {
-      lastActivityRef.current = Date.now();
-    }
-  }, [activeNotes, isSequential]);
+    if (!isSequential || !humanNoteAt) return;
+    lastActivityRef.current = Date.now();
+  }, [humanNoteAt, isSequential]);
 
   // Poll once a second; open the gate when idle too long and the video is playing.
   useEffect(() => {

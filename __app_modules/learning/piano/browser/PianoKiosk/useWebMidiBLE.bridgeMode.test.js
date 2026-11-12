@@ -57,6 +57,18 @@ describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
     expect(result.current.notes.getSnapshot().activeNotes.has(60)).toBe(false);
   });
 
+  it('feedNote puts a known MIDI channel on the note tap, and none when unknown', async () => {
+    mockAccess();
+    const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));
+    await act(async () => { await result.current.connect(); });
+    const seen = [];
+    act(() => { result.current.subscribe((e) => seen.push(e)); });
+    act(() => { result.current.feedNote('note_on', 36, 90, undefined, 9); });
+    act(() => { result.current.feedNote('note_on', 60, 70); });
+    expect(seen[0]).toMatchObject({ type: 'note_on', note: 36, channel: 9 });
+    expect('channel' in seen[1]).toBe(false);
+  });
+
   it('default acquireInput (true) still arms the input as before', async () => {
     const { input } = mockAccess();
     const { result } = renderHook(() => useWebMidiBLE({}));

@@ -24,6 +24,7 @@ import { lectureContentId, resumeSecondsFor } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
 import EngagementGate from './EngagementGate.jsx';
 import { useEngagementGate } from './useEngagementGate.js';
+import { useHumanNotes, humanActiveNotes } from '../../useHumanNotes.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
@@ -104,14 +105,20 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   useEffect(() => { endedHandledRef.current = false; }, [contentId]);
   const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
 
-  // Engagement for completion = ANY play-along. Once the student presses any key
-  // this session, the lecture counts as engaged (the inactivity gate's note also
-  // lands here). engagedRef is read at each play/log post (Part 2).
+  // Only notes a person played count for presence and engagement — the piano's
+  // rhythm/drum loop and accompaniment stream notes too (humanNoteClassifier).
+  const { humanNoteAt, humanHeld, loopPitches } = useHumanNotes({ context: { contentId } });
+  const humanNotes = useMemo(() => humanActiveNotes(activeNotes, humanHeld), [activeNotes, humanHeld]);
+
+  // Engagement for completion = ANY human play-along. Once the student plays a
+  // key this session, the lecture counts as engaged (the inactivity gate's note
+  // also lands here). engagedRef is read at each play/log post (Part 2).
   useEffect(() => {
-    if (activeNotes && activeNotes.size > 0) engagedRef.current = true;
-  }, [activeNotes]);
+    if (humanNoteAt) engagedRef.current = true;
+  }, [humanNoteAt]);
 
   const { gateOpen, dismissGate } = useEngagementGate({
+    humanNoteAt,
     pause: ctrl.pause,
     play: ctrl.play,
     isPaused: () => !isPlaying,
@@ -336,7 +343,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : handleSurfaceTap} style={{ position: 'relative' }}>
             {playerEl}
-            {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
+            {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} humanNotes={humanNotes} avoidPitches={loopPitches} />}
             {isFullscreen && fsOverlayOpen && !gateOpen && (
               <FullscreenTransportOverlay
                 isPlaying={isPlaying}

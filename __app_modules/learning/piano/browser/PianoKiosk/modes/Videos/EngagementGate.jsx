@@ -15,15 +15,27 @@ function logger() {
  * Renders a single flashcard (the same staff the Flashcards game uses) and
  * prompts the student to play it; on a correct MIDI match calls onDismiss()
  * (the parent's dismissGate). Does not unmount the video.
+ *
+ * `humanNotes` (optional): the held keys a PERSON is playing (useHumanNotes).
+ * When given, only those can answer — the piano's rhythm loop plays congas on
+ * D4–E4, inside the prompt's C3–C5 range. `avoidPitches` (optional, a getter)
+ * names pitches the loop is playing right now; the prompt never asks for one,
+ * so a child can always answer it.
  */
-export default function EngagementGate({ open, onDismiss }) {
-  const { activeNotes } = usePianoMidiNotes();
+export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches }) {
+  const { activeNotes: storeNotes } = usePianoMidiNotes();
+  const activeNotes = humanNotes ?? storeNotes;
 
   // Pick one random note when the gate opens (re-randomized each open).
-  const targetPitches = useMemo(
-    () => (open ? generateCardPitches([48, 72], 'single', false) : []),
-    [open]
-  );
+  const targetPitches = useMemo(() => {
+    if (!open) return [];
+    const avoid = avoidPitches?.() ?? null;
+    let pick = generateCardPitches([48, 72], 'single', false);
+    for (let i = 0; avoid?.size && i < 50 && pick.some((p) => avoid.has(p)); i += 1) {
+      pick = generateCardPitches([48, 72], 'single', false);
+    }
+    return pick;
+  }, [open]); // picked once per open: a later loop change must not swap the card
 
   const matched = useMemo(
     () => Boolean(open && targetPitches.length && evaluateMatch(activeNotes, targetPitches) === 'correct'),

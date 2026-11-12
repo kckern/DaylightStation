@@ -265,6 +265,35 @@ A few components appear across many modes because they are the kiosk's visual vo
   log `piano.video.skip-dropped` (sampled). In the 2026-10-28 incident a child
   pressed +30 every 200–300 ms while the video was stalled, and the saved
   lesson position jumped by minutes.
+- **Only a person's notes count for presence** (`PianoKiosk/humanNoteClassifier.js`,
+  `PianoKiosk/useHumanNotes.js`). On a sequential lecture the "still there? play
+  this note" prompt opens after `engagement_timeout_seconds` (90 s) with no note
+  *a person played*, and the lecture's `engaged` flag is set only by such a note.
+  The piano's rhythm/style button streams a drum pattern out of the same BLE-MIDI
+  port; before 2026-11-12 every one of those notes reset the timer, so the prompt
+  never appeared and lessons were credited with nobody at the piano. What the
+  piano sends (raw piano-port takes, which keep the channel): keys on channel 1,
+  the rhythm on **channel 10** (GM kick 36, side-stick 37, hi-hat 42, congas
+  62–64, triangle 80/81, shaker 82; other styles use 33–54), auto-accompaniment on
+  channels 5–9 and 11–13. The bridge forwards notes **without a channel** (payloads
+  up to p35), so the classifier drops a channel it is told about (any channel but
+  1–4) and otherwise recognises the loop by shape: a 10 s window of ≥20 notes,
+  ≥40% core GM-percussion pitches and ≥70% percussion-range pitches, held 20 s
+  (3 s when the same rhythm restarts within a minute). While it runs, notes on the
+  loop's own pitches are dropped; anything else the child plays counts. Clockwork
+  streams (≥12 onsets on a ±5 ms grid, velocity flat within 2 — playback echoed by
+  the piano) are dropped too. MIDI clock/start/stop/active-sensing never become
+  notes (the bridge and `parseMidiMessage` discard real-time bytes). The prompt
+  answers only from human-held keys and never asks for a pitch the loop is
+  playing. Measured on every piano-port take Oct–Nov 2026 with the channel
+  stripped: 99.0% of channel-1 notes kept, 97.6% of channel-10 notes dropped (the
+  rest are the 20 s arm-up); all 19 loop-only tablet takes since 2026-10-29 now
+  go ≥90 s without a human note, so the prompt fires. Child notes *on* a loop
+  pitch (D4–E4 congas) are lost while the loop runs. Logs:
+  `piano.presence.rhythm-loop` (on/off + pitches), `piano.presence.note-filtered`
+  (sampled, with reason), `piano.presence.summary` (human/machine counts on leave).
+  If the bridge payload ever adds `ch` to `note.on` frames, `usePianoBridgeNotes`
+  already passes it through and the channel rule takes over.
 - **Stall telemetry.** The kiosk registers the bridge's `GET :8770/wifi` as the
   Player's link probe (`PianoKiosk/bridgeWifiProbe.js`), so every video stall
   also logs `playback.stalled.link` with the tablet's RSSI, link speed, band,
