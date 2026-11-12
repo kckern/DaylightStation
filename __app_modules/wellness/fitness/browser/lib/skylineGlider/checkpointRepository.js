@@ -5,6 +5,8 @@ const courseId = (course) => typeof course === 'string' ? course : course?.id;
 export function writeFlightCheckpoint(userId, course, checkpoint) {
   const id = courseId(course);
   if (!userId || !id || !Number.isInteger(course?.version)) return;
+  // A finished flight is never resumable: only its terminal record may wait here.
+  if ((checkpoint.lifecycle || 'active') === 'active' && checkpoint.state?.phase === 'completed') return;
   localStorage.setItem(key(userId, id), JSON.stringify({
     schema: SCHEMA,
     course: { id, version: course.version },
@@ -33,6 +35,7 @@ export function readFlightCheckpoint(userId, course, expectedIdentity = {}) {
       return { status: 'incompatible', reason: mismatched || 'calibration' };
     }
     if (saved.lifecycle !== 'active') return { status: 'invalid', reason: 'lifecycle' };
+    if (saved.state.phase === 'completed') return { status: 'invalid', reason: 'finished' };
     return { status: 'compatible', identity: saved.identity, state: saved.state };
   } catch { return { status: 'invalid', reason: 'parse' }; }
 }

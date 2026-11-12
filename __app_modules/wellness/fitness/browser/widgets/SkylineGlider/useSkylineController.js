@@ -79,7 +79,9 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
   }
  },[configSignature,world?.riderId,dispatch]);
  useEffect(()=>{dispatch({type:'ACCESS_CHANGED',allowed:!!access?.unlocked,reason:access?.status==='loading'?'Checking flight access…':access?.state==='incomplete'?'Finish today’s schoolwork to fly.':access?.state==='unavailable'?'School status unavailable':'Admin approval required'})},[access?.unlocked,access?.state,access?.status,state.riderId,dispatch]);
- useEffect(()=>{if(saveState?.status&&saveState.status!=='idle')dispatch({type:'SAVE_CHANGED',status:saveState.status})},[saveState?.status,dispatch]);
+ // Keyed on the save object, not its status: a retry that fails fast goes
+ // error -> saving -> error in one batch, and must still leave 'saving'.
+ useEffect(()=>{if(saveState?.status&&saveState.status!=='idle')dispatch({type:'SAVE_CHANGED',status:saveState.status})},[saveState,dispatch]);
  useEffect(()=>{if(flight)dispatch({type:'FLIGHT_CHANGED',flight,weaponsEnabled:courses.find(c=>c.id===stateRef.current.actId)?.rules?.weapons?.enabled!==false})},[flight,dispatch]);
  const selectorSignature=JSON.stringify(ctx?.riderSelectors||[]);
  useEffect(()=>{

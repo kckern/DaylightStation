@@ -70,4 +70,14 @@ describe('seated game lifecycle',()=>{
   expect(press(s,4).riderId).toBe('child');
   expect(press(s,3).phase).toBe('save-details');
  });
+ it('lets the rider leave once saving is given up, with the same choices as a saved result',()=>{
+  const s={...press(start(),1),phase:'result',actId:'one',saveStatus:'unsaved'};
+  const offered=describeSkylineControls(s);
+  expect(offered.map(c=>c.label)).toEqual(['Replay','Next level','Flights','Change rider']);
+  expect(offered.every(c=>!c.disabled)).toBe(true);
+  expect(press(s,3).phase).toBe('flights');
+  expect(press(s,1).phase).toBe('ready');
+  expect(press(s,4).phase).toBe('identity');
+  expect(event({...s,phase:'saving'},{type:'SAVE_CHANGED',status:'unsaved'}).phase).toBe('result');
+ });
 });

@@ -227,6 +227,35 @@ describe('complete bike lifecycle',()=>{
   expect(writes()).toHaveLength(2);expect(writes()[1][1].body).toBe(first);
   expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Flight saved');
  });
+ it('treats a 409 for an already-saved run id as saved and clears the stuck record',async()=>{
+  // 2026-11-12 live: a saved run re-posted with different content got 409 on every retry.
+  const record={schema:'skyline-glider-run/v1',run:{id:'saved-run',status:'completed',course_id:'mountain-pass',course_version:1,started_at:'2026-10-29T10:00:00Z',ended_at:'2026-10-29T10:01:00Z',duration_s:60,reward_rings:0},rider:{user_id:'dad'},collectibles:[]};
+  const key='fitness:skyline-glider:dad:mountain-pass';
+  localStorage.setItem(key,JSON.stringify({schema:'skyline-glider-checkpoint/v4',course:{id:'mountain-pass',version:1},lifecycle:'pending_terminal',identity:{runId:'saved-run',startedAt:record.run.started_at},state:{...flightState,phase:'completed',collectedIds:[],calibration:{lowRpm:30,highRpm:100}},terminalRecord:record}));
+  const stored={...record,collectibles:['bell']};
+  await mount();
+  apiFetch.mockImplementation(async(url,options)=>options?.method==='POST'?{ok:false,status:409,json:async()=>({error:'run id already exists with different content'})}
+   :String(url).endsWith('/runs/saved-run')?{ok:true,json:async()=>({record:stored})}:{ok:true,json:async()=>({courses:[course]})});
+  await press(4);await flush();await flush();
+  expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Flight saved');
+  expect(localStorage.getItem(key)).toBeNull();
+  expect(mockLog.error.mock.calls.some(([n])=>n==='skyline_glider.flight.save_error')).toBe(false);
+  expect(mockLog.warn).toHaveBeenCalledWith('skyline_glider.flight.save_duplicate',expect.objectContaining({runId:'saved-run'}));
+  await press(3);expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('flights');
+ });
+ it('stops retrying after three failed saves, says so in words, and lets the rider leave',async()=>{
+  await mount();await launch();await press(4,'long');
+  apiFetch.mockResolvedValue({ok:false,status:500});await press(3);await flush();
+  const writes=()=>apiFetch.mock.calls.filter(([url,options])=>options?.method==='POST'&&url.endsWith('/runs'));
+  await press(1);await flush();await flush();await press(1);await flush();await flush();
+  expect(writes()).toHaveLength(3);
+  const result=screen.getByTestId('skyline-glider-result');
+  expect(result).toHaveTextContent(/could not be saved/i);
+  expect(screen.getByRole('button',{name:/Flights/})).toBeEnabled();
+  await press(1);await flush();expect(writes()).toHaveLength(3);
+  expect(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass')).toBeNull();
+  await press(3);expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('flights');
+ });
  it('freezes menu time and resumes the same ammo and run',async()=>{
   await mount();await launch();await press(2);await advance(100);
   const starts=()=>mockLog.info.mock.calls.filter(([n])=>n==='skyline_glider.flight.started');

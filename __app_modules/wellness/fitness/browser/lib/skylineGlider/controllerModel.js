@@ -35,7 +35,7 @@ export function reduceSkylineControl(current,event) {
   } else if(event.type==='SAVE_CHANGED'){
     state.saveStatus=event.status;
     if(event.status==='saving')state.phase='saving';
-    if(event.status==='error')state.phase='result';
+    if(event.status==='error'||event.status==='unsaved')state.phase='result';
     if(event.status==='saved'){
       const after=state.afterSave;state.afterSave=null;
       if(after==='identity')identity();else if(after==='restart')ready('new');else if(after==='flights')state.phase='flights';else state.phase='result';
@@ -83,7 +83,8 @@ export function reduceSkylineControl(current,event) {
       if(i===0)ready('checkpoint');else if(i===1)finish('restart');else finish(i===2?'flights':'identity');
     }else if(state.phase==='result'){
       if(state.saveStatus==='error'){if(i===0){state.phase='saving';effect('retry-save')}else if(i===2)state.phase='save-details'}
-      else if(state.saveStatus==='saved'){
+      // 'unsaved': saving was given up after repeated failures; the rider is never held.
+      else if(['saved','unsaved'].includes(state.saveStatus)){
         if(i===0)ready('new');
         else if(i===1){const next=openNextAct(state);if(next){state.actId=next.id;effect('choose-act',{actId:next.id});ready('new')}}
         else if(i===2)state.phase='flights';else identity();
@@ -121,6 +122,6 @@ export function describeSkylineControls(s){
  default:choices=Array.from({length:4},()=>[s.phase==='stall'?'Stalled':s.phase==='saving'?'Saving…':'Please wait','', '—']);
  }
  return choices.map(([label,hint,icon,avatarSrc],i)=>({position:i+1,action:combat[i],label,hint:hint||'',icon,avatarSrc,
-  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&s.saveStatus==='saved'&&i===1&&!openNextAct(s)),
+  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&['saved','unsaved'].includes(s.saveStatus)&&i===1&&!openNextAct(s)),
   reason:s.phase==='stall'?'This attempt will crash':null}));
 }

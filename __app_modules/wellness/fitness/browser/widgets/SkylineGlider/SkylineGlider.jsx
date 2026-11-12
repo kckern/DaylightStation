@@ -84,6 +84,17 @@ function buildEffectTable({ setEffects, effectTimersRef, course }) {
 }
 
 const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
+// Save attempts per run before the rider is let go with the result unsaved.
+const MAX_SAVE_ATTEMPTS = 3;
+// Why a save failed, in words a grown-up at the bike can act on.
+function saveFailureWords(error) {
+  const status = error?.httpStatus;
+  if (!status) return 'the server could not be reached';
+  if (status === 400) return 'the server refused the flight record';
+  if (status === 503) return 'flight saving is switched off on the server';
+  if (status >= 500) return `the server had a problem (${status})`;
+  return `the server answered ${status}`;
+}
 
 export { FlightScene, RpmGauge };
 
@@ -132,6 +143,7 @@ export default function SkylineGlider() {
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
   const settledRunIdsRef=useRef(new Set());
+  const saveAttemptsRef=useRef(new Map());
   const unlockGenerationRef=useRef(0);
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
@@ -146,6 +158,10 @@ export default function SkylineGlider() {
   const suspensionLoggedRef = useRef(false);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   const persistCheckpoint=useCallback((...args)=>{
+    // A run the server already holds is never written back as a flight to resume
+    // (2026-11-12: a saved run resumed under another act re-posted its id -> 409).
+    const checkpoint=args[2];
+    if(checkpoint?.lifecycle!=='pending_terminal'&&settledRunIdsRef.current.has(checkpoint?.identity?.runId))return false;
     try{writeFlightCheckpoint(...args);return true}catch(error){setStorageWarning('Local save unavailable. Keep this page open until the flight is saved.');log.warn('skyline_glider.checkpoint.storage_error',{error:error.message});return false}
   },[log]);
   const removeCheckpoint=useCallback((...args)=>{
@@ -351,6 +367,14 @@ export default function SkylineGlider() {
     return () => { active = false; };
   }, [log]);
 
+  // The run is done with this browser (saved, already saved, or given up): forget
+  // its pending record wherever it was parked, so nothing offers it again.
+  const settleRun = useCallback((record) => {
+    settledRunIdsRef.current.add(record.run.id);
+    removeCheckpoint(riderId, course);
+    if (record.rider?.user_id && record.run?.course_id) removeCheckpoint(record.rider.user_id, record.run.course_id);
+  }, [course, removeCheckpoint, riderId]);
+
   const finalize = useCallback(async (status, terminalState = flightRef.current, retryRecord = null) => {
     if (!runRef.current || finalizingRef.current) return false;
     finalizingRef.current = true;
@@ -376,7 +400,24 @@ export default function SkylineGlider() {
     });
     try {
       const response = await fetch('/api/v1/fitness/skyline-glider/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ record }) });
-      if (!response.ok) throw new Error(`save failed (${response.status})`);
+      if (response.status === 409) {
+        // The server already holds a run with this id: it was saved before. The
+        // stored record is the truth; the flight is done and the rider moves on.
+        let stored = record;
+        try {
+          const existing = await fetch(`/api/v1/fitness/skyline-glider/runs/${encodeURIComponent(record.run.id)}`);
+          if (existing.ok) stored = (await existing.json())?.record || record;
+        } catch { /* the posted record still describes the flight */ }
+        settleRun(record);
+        setSaveState({ status: 'saved', record: stored });
+        setPhase('result');
+        log.warn('skyline_glider.flight.save_duplicate', {
+          runId: record.run.id, status, riderId, equipmentId: equipment?.id,
+          courseId: record.run.course_id, storedCourseId: stored.run?.course_id || null, courseVersion: record.run.course_version,
+        });
+        return true;
+      }
+      if (!response.ok) throw Object.assign(new Error(`save failed (${response.status})`), { httpStatus: response.status });
       const rewardIdentityMatches = record.run.fitness_session_id === (fitnessSessionInstance?.sessionId || null)
         && record.rider.user_id === riderId;
       if (status === 'completed' && rewardIdentityMatches) {
@@ -392,8 +433,7 @@ export default function SkylineGlider() {
           reason: 'terminal-identity-changed',
         });
       }
-      settledRunIdsRef.current.add(record.run.id);
-      removeCheckpoint(riderId, course);
+      settleRun(record);
       if (status === 'completed') { setChosenActId(null); await refreshWorld(record.rider.user_id); }
       setSaveState({ status: 'saved', record });
       setPhase('result');
@@ -405,15 +445,27 @@ export default function SkylineGlider() {
       return true;
     } catch (saveError) {
       finalizingRef.current = false;
+      const attempts = (saveAttemptsRef.current.get(record.run.id) || 0) + 1;
+      saveAttemptsRef.current.set(record.run.id, attempts);
+      const correlation = {
+        runId: record.run.id, status, riderId, equipmentId: equipment?.id,
+        courseId: record.run.course_id, courseVersion: record.run.course_version, error: saveError.message, attempts,
+      };
+      if (attempts >= MAX_SAVE_ATTEMPTS) {
+        // Never trap the rider behind a save that keeps failing: drop the pending
+        // record and let them fly again or leave. The log keeps the evidence.
+        settleRun(record);
+        setSaveState({ status: 'unsaved', record, reason: saveFailureWords(saveError) });
+        setPhase('result');
+        log.error('skyline_glider.flight.save_abandoned', { ...correlation, record });
+        return false;
+      }
       setSaveState({ status: 'error', record });
       setPhase('result');
-      log.error('skyline_glider.flight.save_error', {
-        runId: record.run.id, status, riderId, equipmentId: equipment?.id,
-        courseId: course.id, courseVersion: course.version, error: saveError.message,
-      });
+      log.error('skyline_glider.flight.save_error', correlation);
       return false;
     }
-  }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, refreshWorld, riderId]);
+  }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, refreshWorld, riderId, settleRun]);
 
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
@@ -576,7 +628,7 @@ export default function SkylineGlider() {
         lockedSelectionRef.current=null;lockedCourseRef.current=null;
         setChosenActId(effect.actId);
       }else if(effect.type==='choose-act'){
-        if(saveState.status==='saved'){lockedCourseRef.current=null;finalizingRef.current=false}
+        if(['saved','unsaved'].includes(saveState.status)){lockedCourseRef.current=null;finalizingRef.current=false}
         setChosenActId(effect.actId);
       }
       else if(effect.type==='recover-terminal'){
@@ -655,6 +707,7 @@ export default function SkylineGlider() {
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
         return [['Bells',bells],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
+    {saveState.status==='unsaved'&&controller.state.phase==='result'&&<p className="skyline-glider__notice" data-tone="bad" role="alert">This flight could not be saved — {saveState.reason}. You can still fly again.</p>}
     {saveState.status==='saved'&&<p className="skyline-glider__notice" data-tone="good">Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
     {storageWarning&&<p className="skyline-glider__notice" role="status">{storageWarning}</p>}
     {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}

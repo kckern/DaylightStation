@@ -41,6 +41,6 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
   <h1>{titles[state.phase]||'Charting the course…'}</h1>
   {state.phase==='crash'&&crashNote&&<p className="skyline-menus__cause" data-testid="skyline-glider-crash-cause">{crashNote}</p>}
   {state.phase==='result'&&summary&&<dl className="skyline-menus__summary" data-testid="skyline-glider-summary">{summary.map(([label,value])=><div key={label} data-stat={String(label).toLowerCase()}><dt>{STAT_ICON[label]&&<PixelIcon name={STAT_ICON[label]}/>}{label}</dt><dd>{value}</dd></div>)}</dl>}
-  <p>{state.phase==='crash'?'Your rider and flight are remembered. Choose your next step.':state.phase==='denied'?state.accessReason:state.phase==='save-details'?'Retry saving from the results panel. Starting another flight waits until this record is saved.':state.phase==='result'?(state.saveStatus==='error'?'Save failed. Your result is retained for retry.':'Choose what happens next using your bike buttons.'):selected?.name}</p>
+  <p>{state.phase==='crash'?'Your rider and flight are remembered. Choose your next step.':state.phase==='denied'?state.accessReason:state.phase==='save-details'?'Retry saving from the results panel. Starting another flight waits until this record is saved.':state.phase==='result'?(state.saveStatus==='error'?'Save failed. Your result is retained for retry.':state.saveStatus==='unsaved'?'This flight could not be saved. Choose what happens next using your bike buttons.':'Choose what happens next using your bike buttons.'):selected?.name}</p>
  </section>;
 }
