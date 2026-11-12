@@ -1,0 +1,225 @@
+// Phase 0 spike: a measurement page read from across a garage. Big type, high
+// contrast, no art.
+.sis {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1vh;
+  padding: 1.5vh 2vw;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #0b0f14;
+  color: #f2f5f8;
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 2.2vh;
+
+  .sis-top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5vh 2.5vw;
+    align-items: baseline;
+    font-size: 2.6vh;
+    color: #9fb0c0;
+    font-variant-numeric: tabular-nums;
+  }
+  .sis-step { color: #f2f5f8; font-weight: 700; }
+  .sis-stat.is-bad { color: #ff5a4f; font-weight: 700; }
+
+  .sis-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    gap: 2vw;
+  }
+
+  .sis-prompt {
+    flex: 1 1 60%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1vh;
+
+    h1 { margin: 0; font-size: 7vh; line-height: 1.05; font-weight: 700; }
+    p { margin: 0; font-size: 4vh; line-height: 1.2; color: #d5dde5; }
+  }
+  .sis-how { font-size: 3vh !important; color: #9fb0c0 !important; }
+  .sis-warn { color: #ffcf5a !important; font-weight: 700; }
+  .sis-error { color: #ff5a4f !important; font-weight: 700; font-size: 4.5vh !important; }
+  .sis-good { color: #3ddc84 !important; font-weight: 700; }
+
+  .sis-count {
+    display: flex;
+    align-items: baseline;
+    gap: 1.5vw;
+    font-size: 20vh;
+    line-height: 1;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #ffcf5a;
+
+    small { font-size: 4vh; font-weight: 400; color: #9fb0c0; }
+    &.is-live { color: #3ddc84; }
+    &.sis-count--text { font-size: 7vh; }
+  }
+
+  .sis-progress {
+    height: 1.6vh;
+    background: #1d2733;
+    border-radius: 0.8vh;
+    overflow: hidden;
+    span { display: block; height: 100%; background: #3ddc84; }
+    &.sis-progress--gesture span { background: #7fd4ff; }
+  }
+
+  .sis-side {
+    flex: 0 0 30vw;
+    display: flex;
+    flex-direction: column;
+    gap: 1vh;
+    min-height: 0;
+  }
+  .sis-camera {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    border: 2px solid #2a3644;
+  }
+  .sis-skeleton {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+  &.sis--framing .sis-side { flex-basis: 52vw; }
+
+  .sis-tiles, .sis-mat {
+    display: flex;
+    gap: 1vw;
+    align-items: stretch;
+  }
+  .sis-tile {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.8vh 0.8vw;
+    background: #151c25;
+    border: 2px solid #2a3644;
+    border-radius: 0.8vh;
+    font-variant-numeric: tabular-nums;
+
+    &.is-warn { border-color: #ff5a4f; }
+  }
+  .sis-tile-label { font-size: 2vh; color: #9fb0c0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .sis-tile-value { font-size: 6vh; line-height: 1.05; font-weight: 700; }
+  .sis-tile-value--small { font-size: 3.2vh; overflow-wrap: anywhere; }
+  .sis-tile-sub { font-size: 1.9vh; color: #9fb0c0; }
+
+  .sis-mat { flex-wrap: wrap; }
+  .sis-mat .sis-tile { flex: 0 0 16vw; }
+  .sis-presses {
+    flex: 1 1 30vw;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 2.3vh;
+    line-height: 1.25;
+    color: #d5dde5;
+    font-variant-numeric: tabular-nums;
+    b { color: #f2f5f8; }
+  }
+  .sis-note { flex: 1 1 100%; margin: 0; font-size: 2vh; color: #9fb0c0; }
+
+  .sis-aim {
+    position: relative;
+    flex: 0 0 13vh;
+    border-top: 2px solid #2a3644;
+  }
+  .sis-load {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: #2c5a7a;
+    opacity: 0.7;
+  }
+  .sis-track { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .sis-track-line { stroke: #9fb0c0; stroke-width: 2; }
+  .sis-track-mid { stroke: #2a3644; stroke-width: 2; }
+  .sis-trace { fill: none; stroke: #ffcf5a; stroke-width: 3; opacity: 0.8; vector-effect: non-scaling-stroke; }
+  .sis-smooth { fill: #7fd4ff; }
+  .sis-cannon { fill: #3ddc84; &.is-lost { fill: #ff5a4f; } }
+
+  .sis-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 2vw;
+  }
+  .sis-btn {
+    min-width: 16vw;
+    padding: 1.2vh 2vw;
+    font: inherit;
+    font-size: 4vh;
+    font-weight: 700;
+    color: #f2f5f8;
+    background: #1d2733;
+    border: 2px solid #3a4a5c;
+    border-radius: 1vh;
+    cursor: pointer;
+
+    &.sis-btn--next { min-width: 30vw; background: #1f7a4a; border-color: #3ddc84; }
+  }
+
+  .sis-results {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2vh;
+    font-size: 2.4vh;
+    font-variant-numeric: tabular-nums;
+
+    table { width: 100%; border-collapse: collapse; }
+    caption { text-align: left; color: #9fb0c0; font-size: 2.2vh; padding-bottom: 0.3vh; }
+    th { text-align: left; font-weight: 400; color: #d5dde5; width: 24%; }
+    th, td { padding: 0.3vh 0.6vw; border-top: 1px solid #2a3644; }
+    td.ok { color: #3ddc84; font-weight: 700; }
+    td.bad { color: #ff5a4f; font-weight: 700; }
+  }
+  &.sis--results .sis-main { flex: 0 0 auto; }
+  &.sis--results .sis-side { flex-basis: 14vw; }
+  &.sis--results .sis-prompt h1 { font-size: 5vh; }
+  &.sis--results .sis-prompt p { font-size: 3vh; }
+
+  .sis-banner {
+    position: absolute;
+    left: 4vw;
+    right: 4vw;
+    top: 22vh;
+    z-index: 10;
+    padding: 4vh 3vw;
+    font-size: 8vh;
+    line-height: 1.1;
+    font-weight: 700;
+    text-align: center;
+    color: #0b0f14;
+    background: #ffcf5a;
+    border: 0.8vh solid #f2f5f8;
+    border-radius: 2vh;
+    overflow-wrap: anywhere;
+  }
+
+  &.sis--fatal {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    h1 { font-size: 8vh; margin: 0; }
+    .sis-fatal-text { font-size: 4vh; color: #ff5a4f; max-width: 80vw; overflow-wrap: anywhere; }
+  }
+}

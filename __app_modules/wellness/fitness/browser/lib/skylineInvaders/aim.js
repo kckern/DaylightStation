@@ -1,0 +1,218 @@
+// Skyline Invaders aim signal: BlazePose arms -> horizontal cannon position.
+// Pure and React-free so the Phase 0 spike and the game's useInvadersAim share
+// one mapping.
+//
+// Conventions
+// - Keypoints are in camera-image pixels with y down and NO horizontal flip
+//   (PoseDetectorService runs `flipHorizontal: false`).
+// - "left"/"right" arm are the player's own left/right (BlazePose anatomical
+//   naming).
+// - aimX is in SCREEN space as a mirror: 0 = screen left, 1 = screen right. A
+//   player pointing to their own right moves the cannon to the right.
+// - An arm's angle is measured from straight up: 0 deg = up, +90 = horizontal
+//   toward screen right, -90 = horizontal toward screen left, +/-180 = down.
+
+import { round } from './stats.js';
+
+export const KP = Object.freeze({
+  nose: 0, leftEye: 2, rightEye: 5,
+  leftShoulder: 11, rightShoulder: 12,
+  leftElbow: 13, rightElbow: 14,
+  leftWrist: 15, rightWrist: 16,
+  leftHip: 23, rightHip: 24,
+});
+
+export const DEFAULT_AIM_CONFIG = Object.freeze({
+  // Shoulder and wrist must both score at least this for the arm to count.
+  // Loss is judged by score, never by keypoint presence.
+  minScore: 0.4,
+  // Arm angle mapped to aimX 0 and 1. Lobby calibration replaces these.
+  leftDeg: -60,
+  rightDeg: 60,
+  // Beyond this angle from vertical the arm is hanging, not pointing.
+  maxPointDeg: 120,
+  // Shoulder->wrist length under this fraction of shoulder width means the arm
+  // points at the camera; its image angle is noise.
+  minLengthRatio: 0.25,
+});
+
+const usable = (kp) => !!kp && Number.isFinite(kp.x) && Number.isFinite(kp.y);
+const scoreOf = (kp) => (usable(kp) && Number.isFinite(kp.score) ? kp.score : 0);
+
+/** Mirrored angle from vertical of the shoulder->wrist vector, in degrees. */
+export function armAngleDeg(shoulder, wrist) {
+  return (Math.atan2(-(wrist.x - shoulder.x), -(wrist.y - shoulder.y)) * 180) / Math.PI;
+}
+
+export function angleToAimX(angleDeg, config = DEFAULT_AIM_CONFIG) {
+  return (angleDeg - config.leftDeg) / (config.rightDeg - config.leftDeg);
+}
+
+/**
+ * One arm. state: 'ok' | 'missing' | 'low_score' | 'short' | 'down'.
+ * score is min(shoulder, wrist); angleDeg/lengthRatio are reported whenever the
+ * geometry exists, even when the arm is not usable, so traces stay complete.
+ */
+export function readArm(shoulder, wrist, shoulderWidth, config = DEFAULT_AIM_CONFIG) {
+  if (!usable(shoulder) || !usable(wrist)) return { state: 'missing', score: 0, angleDeg: null, lengthRatio: null, x: null };
+  const score = Math.min(scoreOf(shoulder), scoreOf(wrist));
+  const angleDeg = armAngleDeg(shoulder, wrist);
+  const length = Math.hypot(wrist.x - shoulder.x, wrist.y - shoulder.y);
+  const lengthRatio = shoulderWidth > 0 ? length / shoulderWidth : null;
+  const x = angleToAimX(angleDeg, config);
+  let state = 'ok';
+  if (score < config.minScore) state = 'low_score';
+  else if (lengthRatio != null && lengthRatio < config.minLengthRatio) state = 'short';
+  else if (Math.abs(angleDeg) > config.maxPointDeg) state = 'down';
+  return { state, score, angleDeg, lengthRatio, x };
+}
+
+/**
+ * Aim for one pose.
+ * @returns {{ aimX: number|null, rawX: number|null, lost: boolean, usableArms: number,
+ *   weight: number, arms: { left: object, right: object } }}
+ *   aimX is clamped to 0..1; rawX is the unclamped weighted mean. Both null when lost.
+ */
+export function computeAim(pose, config = DEFAULT_AIM_CONFIG) {
+  const k = pose?.keypoints || [];
+  const ls = k[KP.leftShoulder];
+  const rs = k[KP.rightShoulder];
+  const bothShoulders = usable(ls) && usable(rs) && scoreOf(ls) >= config.minScore && scoreOf(rs) >= config.minScore;
+  const shoulderWidth = bothShoulders ? Math.hypot(ls.x - rs.x, ls.y - rs.y) : 0;
+  const arms = {
+    left: readArm(ls, k[KP.leftWrist], shoulderWidth, config),
+    right: readArm(rs, k[KP.rightWrist], shoulderWidth, config),
+  };
+  const ok = [arms.left, arms.right].filter((arm) => arm.state === 'ok');
+  const weight = ok.reduce((acc, arm) => acc + arm.score, 0);
+  if (!ok.length || weight <= 0) return { aimX: null, rawX: null, lost: true, usableArms: 0, weight: 0, arms };
+  const rawX = ok.reduce((acc, arm) => acc + arm.x * arm.score, 0) / weight;
+  return { aimX: Math.min(1, Math.max(0, rawX)), rawX, lost: false, usableArms: ok.length, weight, arms };
+}
+
+const headTopY = (k, minScore) => {
+  const nose = k[KP.nose];
+  const ls = k[KP.leftShoulder];
+  const rs = k[KP.rightShoulder];
+  if (scoreOf(nose) < minScore || scoreOf(ls) < minScore || scoreOf(rs) < minScore) return null;
+  // Roughly the crown: a quarter of the nose->shoulder drop above the nose.
+  return nose.y - 0.25 * Math.abs((ls.y + rs.y) / 2 - nose.y);
+};
+
+/** Both wrists above the head. null when the pose cannot say. */
+export function wristsAboveHead(pose, minScore = DEFAULT_AIM_CONFIG.minScore) {
+  const k = pose?.keypoints || [];
+  const top = headTopY(k, minScore);
+  const lw = k[KP.leftWrist];
+  const rw = k[KP.rightWrist];
+  if (top == null || scoreOf(lw) < minScore || scoreOf(rw) < minScore) return null;
+  return lw.y < top && rw.y < top;
+}
+
+/** Both wrists above their shoulders (the arms-up bonus posture). null when unknown. */
+export function wristsAboveShoulders(pose, minScore = DEFAULT_AIM_CONFIG.minScore) {
+  const k = pose?.keypoints || [];
+  const pairs = [[k[KP.leftShoulder], k[KP.leftWrist]], [k[KP.rightShoulder], k[KP.rightWrist]]];
+  if (pairs.some(([s, w]) => scoreOf(s) < minScore || scoreOf(w) < minScore)) return null;
+  return pairs.every(([s, w]) => w.y < s.y);
+}
+
+/**
+ * Frame-rate independent exponential smoother. A lost sample (null) holds the
+ * last value; `reset()` forgets it.
+ */
+export function createAimSmoother({ tauMs = 120 } = {}) {
+  let value = null;
+  let lastT = null;
+  return {
+    push(x, tMs) {
+      if (x == null) return value;
+      if (value == null || lastT == null) value = x;
+      else value += (1 - Math.exp(-Math.max(0, tMs - lastT) / tauMs)) * (x - value);
+      lastT = tMs;
+      return value;
+    },
+    reset() { value = null; lastT = null; },
+    get value() { return value; },
+  };
+}
+
+/**
+ * Short aim history for the fire latch. Samples are { t, x, xs, lost } where x
+ * is the unfiltered aimX and xs the smoothed one. A lost sample carries the
+ * last known values so lookups never return a hole mid-press.
+ */
+export function createAimHistory({ horizonMs = 3000 } = {}) {
+  const samples = [];
+  return {
+    push(sample) {
+      samples.push(sample);
+      while (samples.length && sample.t - samples[0].t > horizonMs) samples.shift();
+    },
+    /** Latest sample at or before t, or null. */
+    at(t) {
+      for (let i = samples.length - 1; i >= 0; i -= 1) if (samples[i].t <= t) return samples[i];
+      return null;
+    },
+    /** Samples with t0 <= t <= t1. */
+    between(t0, t1) { return samples.filter((s) => s.t >= t0 && s.t <= t1); },
+    get length() { return samples.length; },
+    clear() { samples.length = 0; },
+  };
+}
+
+export const LATCH_OFFSETS_MS = Object.freeze([100, 200, 300, 400]);
+
+const span = (list, key) => {
+  const values = list.map((s) => s[key]).filter((v) => v != null);
+  return values.length ? Math.max(...values) - Math.min(...values) : null;
+};
+
+/**
+ * What the aim was doing around a press received at tPress (same clock as the
+ * history). For `key` 'x' (unfiltered) or 'xs' (smoothed):
+ * - atPress: aim at the press; before[d]: aim d ms earlier;
+ * - throw[d] = atPress - before[d] (signed, in aimX units, + = toward screen right);
+ * - range400: max - min over the 400 ms before the press;
+ * - sampleAgeMs: how old the newest pose sample was at the press.
+ */
+export function latchBefore(history, tPress, key = 'x', offsets = LATCH_OFFSETS_MS) {
+  const now = history.at(tPress);
+  const atPress = now ? now[key] ?? null : null;
+  const before = {};
+  const thrown = {};
+  offsets.forEach((d) => {
+    const s = history.at(tPress - d);
+    const v = s ? s[key] ?? null : null;
+    before[d] = round(v, 4);
+    thrown[d] = atPress != null && v != null ? round(atPress - v, 4) : null;
+  });
+  const window = history.between(tPress - Math.max(...offsets), tPress);
+  return {
+    atPress: round(atPress, 4),
+    before,
+    throw: thrown,
+    range400: round(span(window, key), 4),
+    samples: window.length,
+    lostSamples: window.filter((s) => s.lost).length,
+    sampleAgeMs: now ? round(tPress - now.t, 1) : null,
+  };
+}
+
+/**
+ * Aim after the press: drift[d] = aim(tPress + d) - aim(tPress), plus the range
+ * over what has elapsed. Offsets not yet reached at tNow are null rather than
+ * filled from an earlier sample.
+ */
+export function latchAfter(history, tPress, tNow = Infinity, key = 'x', offsets = LATCH_OFFSETS_MS) {
+  const base = history.at(tPress);
+  const atPress = base ? base[key] ?? null : null;
+  const drift = {};
+  offsets.forEach((d) => {
+    const s = tNow >= tPress + d ? history.at(tPress + d) : null;
+    const v = s ? s[key] ?? null : null;
+    drift[d] = atPress != null && v != null ? round(v - atPress, 4) : null;
+  });
+  const end = Math.min(tNow, tPress + Math.max(...offsets));
+  return { drift, range400: round(span(history.between(tPress, end), key), 4), observedMs: round(end - tPress, 0) };
+}

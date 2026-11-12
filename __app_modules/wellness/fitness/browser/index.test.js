@@ -35,6 +35,11 @@ describe('fitness module resolution', () => {
     expect(getModuleManifest('fitness:vibration')).toBeTruthy();
   });
 
+  it('resolves the Skyline Invaders spike by deep-link id', () => {
+    expect(getModule('skyline_invaders_spike')).toBeTruthy();
+    expect(getModuleManifest('skyline_invaders_spike')?.fullscreen).toBe(true);
+  });
+
   it('returns null for an unknown id', () => {
     expect(getModule('definitely-not-a-module')).toBeNull();
   });
