@@ -104,8 +104,19 @@ A missed rep is played again; there is no failure state.
 | Source | targetNpm |
 |---|---|
 | `measured` (audit engaged sittings) | slowest engaged rate; 0 under 6/min; capped at 40 |
-| `ai` (one rubric `score` call over the caption transcript) | level 0–3 → `[0, 5, 13, 25]` (`videos.practice.level_targets`) |
+| `ai` (one rubric `score` call over the caption transcript) | level 0–3 → `videos.practice.level_targets` (code default `[0, 5, 13, 25]`; live `[0, 4, 10, 20]` since the first calibration) |
 | `default` (no captions, no measurement) | 0 — watch-only, never drills |
+
+A course listed by a collection may be a whole show or a single season of one;
+both are walked (a season's episodes keep their show as `showKey`).
+
+**First run (2026-11-12):** 3,433 lessons — 41 measured, 372 AI, 3,020 default
+(no captions: most courses other than the audited one). AI levels: 0 → 33,
+1 → 24, 2 → 288, 3 → 27. Agreement with measured engagement is weak (Spearman
+≈ 0 over 41 measured lessons — the rubric sets a floor, it does not rank), and
+with targets `[0, 5, 13, 25]` 12 % of measured lessons had an AI target above
+their slowest engaged sitting, so the live targets were lowered to
+`[0, 4, 10, 20]` (7 %).
 
 Rubric (exact copy, `lessonExpectation.mjs`): "How much of this piano lesson does
 the student spend playing the piano themselves?" — Watch only / A little /
@@ -162,7 +173,10 @@ asked **only** for an ambiguous check-in burst or a borderline final score
   Calibrate with
   `node __app_modules/learning/piano/cli/piano-legit-calibrate.cli.mjs` (60 engaged
   + 60 mash bursts + 40 preschool bursts; bar: ≥ 0.9 overall, ≥ 0.8 on ambiguous,
-  ≥ 0.9 preschool acceptance).
+  ≥ 0.9 preschool acceptance). **First calibration (2026-11-12): fails** —
+  model accuracy 0.48 (engaged 35/60 and mash 37/60 judged legit), preschool
+  acceptance 0/40, filter accuracy 0.99. The judge stays off; everything runs
+  on the deterministic filter.
 
 ## What the child sees
 
@@ -188,7 +202,7 @@ warm-up / Not counted yet / Not checked).
 | `pass_score` | 6 | school-course pass score |
 | `preschool_pass_score` | 3 | preschool-course pass score |
 | `preschool_courses` | `[]` | course (show or season) ids judged in preschool mode |
-| `level_targets` | `[0, 5, 13, 25]` | rubric level → notes/min |
+| `level_targets` | `[0, 5, 13, 25]` | rubric level → notes/min (live: `[0, 4, 10, 20]`) |
 | `drill_roots` | `[C, G, F]` | scale roots, rotating per warm-up |
 | `legacy_clients` | true | `false` once every kiosk sends `practice` |
 | `legit_model` | false | turn the legitimacy judge on (after calibration) |

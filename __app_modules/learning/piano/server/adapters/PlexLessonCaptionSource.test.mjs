@@ -9,7 +9,8 @@ const withStreams = (streams) => ({ Media: [{ Part: [{ Stream: streams }] }] });
 function client() {
   const calls = [];
   const data = {
-    '/library/collections/100/items': { MediaContainer: { Metadata: [{ ratingKey: '1', type: 'show', title: 'Show One' }, { ratingKey: '2', type: 'show', title: 'Excluded' }] } },
+    '/library/collections/100/items': { MediaContainer: { Metadata: [{ ratingKey: '1', type: 'show', title: 'Show One' }, { ratingKey: '2', type: 'show', title: 'Excluded' }, { ratingKey: '50', type: 'season', parentRatingKey: '5', parentTitle: 'Show Five', title: 'Season A' }] } },
+    '/library/metadata/50/children': { MediaContainer: { Metadata: [{ ratingKey: '51', type: 'episode', index: 3, parentIndex: 2, parentRatingKey: '50', title: 'Five-A', duration: 120000, ...withStreams([]) }] } },
     '/library/collections/300/items': { MediaContainer: { Metadata: [{ ratingKey: '3', type: 'show', title: 'Voice' }] } },
     '/library/metadata/1/allLeaves': { MediaContainer: { Metadata: [ep('11', 1, 1), ep('12', 2, 1, withStreams([{ id: 501, streamType: 3, codec: 'srt', languageCode: 'eng' }])), ep('13', 1, 2)] } },
     '/library/metadata/4': { MediaContainer: { Metadata: [{ ratingKey: '4', type: 'show', title: 'Extra Show' }] } },
@@ -40,7 +41,8 @@ describe('PlexLessonCaptionSource', () => {
     const c = client();
     const src = new PlexLessonCaptionSource({ plexClient: c, videosConfig, logger: { info() {}, warn() {} } });
     const lessons = await src.listLessons();
-    expect(lessons.map((l) => l.plexId).sort()).toEqual(['11', '12', '41']);
+    expect(lessons.map((l) => l.plexId).sort()).toEqual(['11', '12', '41', '51']);
+    expect(lessons.find((l) => l.plexId === '51')).toMatchObject({ showKey: '5', showTitle: 'Show Five', seasonKey: '50', season: 2, episode: 3 });
     expect(lessons.find((l) => l.plexId === '11')).toMatchObject({ showKey: '1', showTitle: 'Show One', season: 1, episode: 1, durationSec: 600, captionStreamId: '901', seasonKey: 's1' });
     expect(lessons.find((l) => l.plexId === '12').captionStreamId).toBe('501');
     expect(lessons.find((l) => l.plexId === '41').captionStreamId).toBeNull();
