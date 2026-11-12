@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { resolvePorts } from './vite.ports.mjs'
+import {
+  CROSS_ORIGIN_ISOLATION_HEADERS,
+  isCrossOriginIsolatedPath,
+  resolveCrossOriginIsolationPolicy,
+} from '../shared/contracts/crossOriginIsolation.mjs'
 
 // Read app port from system config (SSOT)
 // Vite runs on app.port, proxies to backend on app.port + 1
@@ -75,6 +80,34 @@ function buildIdHtmlPlugin(id) {
   };
 }
 
+/**
+ * Dev mirror of the backend's cross-origin isolation middleware
+ * (`createCrossOriginIsolationMiddleware` in 4_api/middleware/platformHttp.mjs):
+ * COOP + COEP on the Fitness documents only, from the same shared policy, so a
+ * page that is isolated in prod is isolated in dev and nothing else is.
+ *
+ * Dev has no ConfigService, so only the defaults and the env kill switch
+ * (DAYLIGHT_CROSS_ORIGIN_ISOLATION=off) apply here; the household config flag
+ * is a backend concern. Also covers `vite preview`.
+ */
+function crossOriginIsolationPlugin(env) {
+  const policy = resolveCrossOriginIsolationPolicy(null, env);
+  const middleware = (req, res, next) => {
+    const pathname = (req.url || '').split(/[?#]/)[0];
+    if (policy.enabled && isCrossOriginIsolatedPath(pathname, policy.paths)) {
+      for (const [name, value] of Object.entries(CROSS_ORIGIN_ISOLATION_HEADERS)) {
+        res.setHeader(name, value);
+      }
+    }
+    next();
+  };
+  return {
+    name: 'daylight-cross-origin-isolation',
+    configureServer(server) { server.middlewares.use(middleware); },
+    configurePreviewServer(server) { server.middlewares.use(middleware); },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env from root .env (one level up from frontend/)
@@ -91,6 +124,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       buildIdHtmlPlugin(id),
+      crossOriginIsolationPlugin(env),
     ],
     // Build id in every asset name — see buildId() for why content hashes alone
     // let a cached 502 outlive the deploy that caused it.
@@ -138,10 +172,6 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'credentialless',
-      },
       host: env.VITE_HOST || '0.0.0.0',
       port: ports.app,
       watch: {

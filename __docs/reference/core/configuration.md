@@ -45,6 +45,7 @@ DAYLIGHT_ENV={env.prod_host}                    # Environment name
 |----------|---------|---------|
 | `DAYLIGHT_BASE_PATH` | Root directory | `/media/{user}/.../DaylightStation` |
 | `DAYLIGHT_ENV` | Selects `system-local.{ENV}.yml` | `docker`, `{env.prod_host}`, `{env.dev_host}` |
+| `DAYLIGHT_CROSS_ORIGIN_ISOLATION` | Kill switch for the Fitness cross-origin isolation headers; unset means on. See [Cross-origin isolation](#cross-origin-isolation-fitness) | `off` |
 
 ---
 
@@ -823,6 +824,43 @@ getUserDir(username)              // Path to user data
 getEnv()                          // Environment name
 getPort()                         // Server port
 ```
+
+---
+
+## Cross-origin isolation (Fitness)
+
+The backend serves the Fitness documents with
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: credentialless` so the page is cross-origin
+isolated and the pose detector can run TF.js WASM on threads. The flag is in
+the fitness household app config and defaults to on:
+
+```yaml
+# household/fitness/config.yml  (app name `fitness` in householdConfig.mjs)
+cross_origin_isolation:
+  enabled: true          # default; only an explicit `false` turns it off
+  paths:                 # optional; default shown. Whole-segment prefixes.
+    - /fitness
+    - /sim-panel.html
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `cross_origin_isolation.enabled` | `true` | `false` sends neither header anywhere |
+| `cross_origin_isolation.paths` | `[/fitness, /sim-panel.html]` | Document paths that get the headers. Replaces the default list; an empty or unusable list falls back to the default |
+
+Unlike most config, this one is read **per request**
+(`getHouseholdAppConfig(null, 'fitness')`), so a change applies after
+`POST /api/v1/system/reload?app=fitness` with no restart. Reload the kiosk page
+afterwards: the headers belong to the document.
+
+`DAYLIGHT_CROSS_ORIGIN_ISOLATION=off` overrides the config, in the backend and
+in the Vite dev server (which has no ConfigService and otherwise uses the
+defaults). The policy itself is one module shared by both:
+`shared/contracts/crossOriginIsolation.mjs`.
+
+What the headers change for the page, and how to tell from the logs whether
+threads are in use: `__docs/reference/fitness/pose-detector-runtime.md`.
 
 ---
 
