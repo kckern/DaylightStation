@@ -1,7 +1,7 @@
 # Real-time Game Kit
 
-The shared machinery for games that run a live loop: Skyline Glider and the Cycle
-Race (Fitness) and the Piano Side Scroller. It is plumbing only. Each game keeps
+The shared machinery for games that run a live loop: Skyline Glider, Skyline
+Invaders and the Cycle Race (Fitness) and the Piano Side Scroller. It is plumbing only. Each game keeps
 its own rules, state shape, phases and log names.
 
 Two layers, matching the gaming capability's usual split:
@@ -18,10 +18,10 @@ Both barrels (`index.mjs`, `index.js`) are registered public entries in
 
 Placement is decided by how many current games share a thing with the same meaning.
 
-- **Tier 1, the run kit** (all three games): step runner, frame driver, tick
+- **Tier 1, the run kit** (all four games): step runner, frame driver, tick
   fraction and lerp, effect dispatcher, run roles, the game-achievement
   announcement. This is what exists today.
-- **Tier 2, scroller geometry** (Skyline and the Side Scroller): boxes, overlap
+- **Tier 2, scroller geometry** (Skyline Glider, Skyline Invaders and the Side Scroller): boxes, overlap
   queries with edge modes, swept hits. Built; see "Scroller geometry" below. It is deliberately geometry
   only; see "What was left out" below.
 - **Tier 3, stays in each game:** Skyline's flight dynamics, stall, terrain,
@@ -53,6 +53,7 @@ Edge mode is per axis: `'open'` means boxes that merely touch do not overlap,
 | Piano Side Scroller collisions and pellet sweep | open | open |
 | Skyline craft contact | closed | open |
 | Skyline point hits, blasts and sweeps | closed | closed |
+| Skyline Invaders shot sweep | closed | closed |
 
 `sweepHits` does not rank. Each game orders the results itself: Skyline takes the
 earliest entry, with entities winning ties over terrain; the Side Scroller takes
@@ -108,6 +109,15 @@ import { createFrameDriver, createTickLerp, createEffectDispatcher,
   effects go through `createEffectDispatcher`, and the existing
   `skyline_glider.effect.executed/skipped/failed` names and fields are unchanged,
   because the log store is queried by them. See [Skyline Glider](../fitness/skyline-glider.md).
+- **Skyline Invaders.** `stepFrame` sub-steps through `advance` (1/60 s,
+  `partial`, with `oncePerFrame: ['fire']` so one mat press is one volley). The
+  round loop is a `createFrameDriver`; a throwing frame logs
+  `skyline_invaders.frame.error` and the round continues. Each shot's path is
+  swept with `sweepHits` so a thin threat cannot be skipped at a low frame rate;
+  the game ranks the hits itself (lowest bottom edge first, oldest on ties).
+  Effects go through `createEffectDispatcher` with the
+  `skyline_invaders.effect.*` names; per-shot and per-threat events return a
+  null event name and log nothing. See [Skyline Invaders](../fitness/skyline-invaders.md).
 - **Cycle Race.** Its 1 s tick catches up with `dueAnchoredSteps` against the
   wall-clock anchor, capped, with the gap logged as `cycle_game.tick_catchup`
   (absent in normal play). Its motion clock is a `createTickLerp`.
@@ -215,7 +225,9 @@ meaning in two games":
 
 - **Checkpoint store.** The race keeps JSON with a 30-minute age; Skyline keeps
   identity and schema validation with no age.
-- **Seeded random.** Only the Side Scroller has real-time randomness.
+- **Seeded random.** Two games now carry seeded state (the Side Scroller and
+  Skyline Invaders), both through `mechanics/random.mjs`. It is a mechanics
+  module and still not a kit tier.
 - **Contact roles, damage tables, entity hit points.** The Side Scroller has one
   role (everything hurts). Skyline stores damage taken, the Side Scroller hp
   remaining; converting either would change state shapes that tests assert.

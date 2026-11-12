@@ -233,6 +233,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
 | Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb/missile weapons + `vulnerable_to`, gates + boost-dash shutters, step-mat bombardier, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
+| Skyline Invaders (fixed-shooter fitness game: torso-relative pose aim + calibration, step-mat fire with aim latch, zone shot tiers incl. fire = nuke, partner cadence boosts, level YAML + reachability check, seed levels, spike tunables, cross-origin isolation and pose speed) | `__docs/reference/fitness/skyline-invaders.md` |
 | Garage speaker recovery (HA plug power-cycle on dropout, cap, fitness.garage_speaker.* events) | `__docs/reference/fitness/garage-speaker-recovery.md` |
 | Fitness presence gate (admin fingerprint to open a show / start a video while the supervising adult is away; `presence_gate` config, HA presence read) | `__docs/reference/fitness/presence-gate.md` |
 | Fitness ambience tabs (date-gated `ambience` nav items: looping video + playlist + HA script, e.g. Halloween; `days`/`dates` gating) | `__docs/reference/fitness/ambience.md` |

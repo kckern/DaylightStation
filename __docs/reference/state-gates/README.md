@@ -11,7 +11,7 @@ entitlement decisions. It does not execute the gated action or decide how a deni
 capability looks in a UI.
 
 **Implementation status:** the core backend is complete. School now publishes learner
-study-day completion, Piano and Skyline Glider consume fail-closed school-completion
+study-day completion, Piano, Skyline Glider and Skyline Invaders consume fail-closed school-completion
 entitlements, Fitness publishes weekly ring totals, and School's Agenda board reads
 ring progress from `fitness.weekly-rings`. Chore, companion-media, and screen migrations remain open.
 
