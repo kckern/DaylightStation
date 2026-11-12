@@ -115,6 +115,19 @@ export function createChartDataSource(session, { configuredUsers = [] } = {}) {
         grouped[userId][metric] = values;
       }
     }
+    // A rider who earned no rings has no `<id>:rings` series on disk: persistence
+    // drops every all-zero series (PersistenceManager.encodeSeries). Missing
+    // here means ZERO rings. Left absent, buildBeatsSeries falls through to its
+    // heart_beats fallback and the replayed race chart draws the rider's
+    // cumulative heartbeats as a ring score (an all-cool warm-up read "118").
+    for (const metrics of Object.values(grouped)) {
+      if (Array.isArray(metrics.rings)) continue;
+      const len = Math.max(
+        Array.isArray(metrics.hr) ? metrics.hr.length : 0,
+        Array.isArray(metrics.beats) ? metrics.beats.length : 0,
+      );
+      if (len > 0) metrics.rings = new Array(len).fill(0);
+    }
     timelineParticipants = grouped;
   }
 
