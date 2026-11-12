@@ -56,5 +56,11 @@ sounds:
   laser: sounds/laser.mp3
   bomb: sounds/bomb.mp3
   explosion: sounds/explosion.mp3
+  missile: sounds/missile.mp3
+  boost: sounds/boost.mp3
+  hit: sounds/hit.mp3
+  target: sounds/target.mp3
+  hurt: sounds/hurt.mp3
+  deny: sounds/deny.mp3
   wind: sounds/wind.mp3
   music: sounds/music.mp3

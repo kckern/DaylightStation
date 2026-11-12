@@ -17,6 +17,7 @@ import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } fr
 import { buildSkylineGliderRun, countTargets } from "../../lib/skylineGlider/runResult.js";
 import { listUsableSkylineBikes, selectSkylineBike } from "../../lib/skylineGlider/bikeSelection.js";
 import { useIdentity } from "../../identity/useIdentity.js";
+import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isLocalDevHost } from '@/lib/kioskEnv.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
@@ -28,6 +29,7 @@ import RpmGauge from "./SkylineRpmGauge.jsx";
 import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
+import { linearLevelFromVolume, logVolumeFromLevel } from "../../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import "./SkylineGlider.scss";
 
 const SKYLINE_LOG_NAMES = {
@@ -157,6 +159,24 @@ export default function SkylineGlider() {
   const suspensionContextRef = useRef(null);
   const suspensionLoggedRef = useRef(false);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
+  // Master volume: the OFFICIAL fitness volume store, the same level the
+  // sidebar volume buttons and the Cycle Game drive (fitness/global/video).
+  // Every Skyline voice -- cue files, music, wind, synth tones -- is scaled by it.
+  const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
+  // The store holds the button level as a linear 0..1; game audio follows the
+  // house log curve (touchVolumeModel, as the music player and dance party do)
+  // so the low buttons are genuinely quiet.
+  const storeVolume = Number.isFinite(masterVol.volume) ? masterVol.volume : 1;
+  const effectiveMaster = masterVol.muted ? 0 : logVolumeFromLevel(linearLevelFromVolume(storeVolume));
+  const effectiveMasterRef = useRef(effectiveMaster);
+  effectiveMasterRef.current = effectiveMaster;
+  useEffect(() => {
+    audioRef.current.setVolume(effectiveMaster);
+    log.info('skyline_glider.audio.volume', {
+      volume: masterVol.volume, storeMuted: !!masterVol.muted, gameMuted: muted,
+      output: audioRef.current.getLevels().output,
+    });
+  }, [effectiveMaster, masterVol.volume, masterVol.muted, muted, log]);
   const persistCheckpoint=useCallback((...args)=>{
     // A run the server already holds is never written back as a flight to resume
     // (2026-11-12: a saved run resumed under another act re-posted its id -> 409).
@@ -511,7 +531,7 @@ export default function SkylineGlider() {
         log,
         logNames: SKYLINE_LOG_NAMES,
         correlation: () => correlation,
-        skippedReason: () => (muted ? 'muted' : 'audio-unavailable'),
+        skippedReason: () => (muted || effectiveMasterRef.current <= 0 ? 'muted' : 'audio-unavailable'),
       }).dispatch(telemetry.events, { courseTime: next.courseTime });
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };

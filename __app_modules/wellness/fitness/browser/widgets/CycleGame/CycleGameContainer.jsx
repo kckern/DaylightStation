@@ -29,6 +29,7 @@ import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
 import { boostState, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
+import { linearLevelFromVolume, logVolumeFromLevel } from "../../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
 import RaceMenu from "./RaceMenu.jsx";
@@ -305,7 +306,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   // of the app's video uses). Scales all cycle-game music + SFX; the lobby
   // exposes the standard TouchVolumeButtons control bound to it.
   const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
-  const effectiveMaster = masterVol.muted ? 0 : (Number.isFinite(masterVol.volume) ? masterVol.volume : 1);
+  // The store holds the button level linearly; game audio follows the house log
+  // curve (touchVolumeModel, as the music player and dance party do) so the low
+  // buttons are genuinely quiet.
+  const storeVolume = Number.isFinite(masterVol.volume) ? masterVol.volume : 1;
+  const effectiveMaster = masterVol.muted ? 0 : logVolumeFromLevel(linearLevelFromVolume(storeVolume));
   const masterRef = useRef(1);
   masterRef.current = effectiveMaster;
 
