@@ -10,6 +10,12 @@ import { ActivityRegistry } from "../application/activities/ActivityRegistry.mjs
 import { CycleGameProvider } from "../application/activities/CycleGameProvider.mjs";
 import { SkylineGliderProvider } from "../application/activities/SkylineGliderProvider.mjs";
 import { SkylineGliderCourseCatalog } from "../adapters/SkylineGliderCourseCatalog.mjs";
+import { YamlSkylineInvadersRunDatastore } from "../adapters/persistence/YamlSkylineInvadersRunDatastore.mjs";
+import { YamlSkylineInvadersProgressDatastore } from "../adapters/persistence/YamlSkylineInvadersProgressDatastore.mjs";
+import { SkylineInvadersRunService } from "../application/services/SkylineInvadersRunService.mjs";
+import { SkylineInvadersProgressService } from "../application/services/SkylineInvadersProgressService.mjs";
+import { SkylineInvadersProvider } from "../application/activities/SkylineInvadersProvider.mjs";
+import { SkylineInvadersLevelCatalog } from "../adapters/SkylineInvadersLevelCatalog.mjs";
 import { SessionGroupingService } from "../application/services/SessionGroupingService.mjs";
 import { AmbientLedAdapter } from "../adapters/AmbientLedAdapter.mjs";
 import { DanceLightingController } from "../adapters/DanceLightingController.mjs";
@@ -52,10 +58,19 @@ export function createFitnessServices(config) {
   });
   const skylineGliderRunService = new SkylineGliderRunService({ datastore: skylineGliderRunStore, progress: skylineGliderProgressService, logger });
   const skylineGliderCourseCatalog = new SkylineGliderCourseCatalog({ configService, logger });
+  const skylineInvadersRunStore = new YamlSkylineInvadersRunDatastore({ configService });
+  const skylineInvadersProgressService = new SkylineInvadersProgressService({
+    progressStore: new YamlSkylineInvadersProgressDatastore({ configService }),
+    runStore: skylineInvadersRunStore,
+    logger,
+  });
+  const skylineInvadersRunService = new SkylineInvadersRunService({ datastore: skylineInvadersRunStore, progress: skylineInvadersProgressService, logger });
+  const skylineInvadersLevelCatalog = new SkylineInvadersLevelCatalog({ configService, logger });
 
   const activityRegistry = new ActivityRegistry()
     .register(new CycleGameProvider({ cycleRaceService }))
-    .register(new SkylineGliderProvider({ runService: skylineGliderRunService }));
+    .register(new SkylineGliderProvider({ runService: skylineGliderRunService }))
+    .register(new SkylineInvadersProvider({ runService: skylineInvadersRunService }));
   const sessionGroupingService = new SessionGroupingService({ activityRegistry, sessionService, logger });
 
   // Home automation gateway (provided by composition root)
@@ -131,6 +146,9 @@ export function createFitnessServices(config) {
     skylineGliderRunService,
     skylineGliderProgressService,
     skylineGliderCourseCatalog,
+    skylineInvadersRunService,
+    skylineInvadersProgressService,
+    skylineInvadersLevelCatalog,
     sessionGroupingService,
     ambientLedController,
     danceLightingController,
