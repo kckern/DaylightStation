@@ -682,6 +682,81 @@ def _inventory_dbus(run):
          "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"], 5))
 
 
+_DEV_PATH_RE = re.compile(r"^/org/bluez/(hci\d+)/dev_([0-9A-F]{2}(?:_[0-9A-F]{2}){5})$")
+_TREE_PROPS = ("Address", "Alias", "Paired", "Trusted", "Connected", "Bonded")
+
+
+def parse_busctl_props(text, props):
+    """`busctl get-property ... P1 P2 ...` text -> {prop: value}, or None
+    unless every requested property came back (one line each, in order)."""
+    lines = [l for l in (text or "").splitlines() if l.strip()]
+    if len(lines) != len(props):
+        return None
+    out = {}
+    for prop, line in zip(props, lines):
+        sig, _, val = line.strip().partition(" ")
+        if sig == "b":
+            out[prop] = val.strip() == "true"
+        elif sig in ("s", "o"):
+            val = val.strip()
+            out[prop] = json.loads(val) if val.startswith('"') else val
+        else:
+            return None
+    return out
+
+
+def _inventory_dbus_tree(run):
+    """Per-device D-Bus reads. Used when `busctl --json` GetManagedObjects
+    fails — it exits 1 with no output while a scan has discovered devices
+    (seen on the hub, systemd 255) — so a scan can't blind the inventory."""
+    paths = []
+    for line in run(["busctl", "--system", "tree", "org.bluez", "--list"], 5).splitlines():
+        m = _DEV_PATH_RE.match(line.strip())
+        if m:
+            paths.append((line.strip(), m.group(1), m.group(2).replace("_", ":")))
+    if not paths:
+        raise RuntimeError("busctl tree listed no devices")
+
+    def read(item):
+        path, hci, mac = item
+        base = ["busctl", "--system", "get-property", "org.bluez", path, "org.bluez.Device1"]
+        try:
+            props = parse_busctl_props(run(base + list(_TREE_PROPS), 3), _TREE_PROPS)
+            if props is None:  # older BlueZ has no Bonded: bonded == paired
+                props = parse_busctl_props(run(base + list(_TREE_PROPS[:-1]), 3), _TREE_PROPS[:-1])
+                if props is not None:
+                    props["Bonded"] = props["Paired"]
+            return item, props, "ok" if props is not None else "error"
+        except subprocess.TimeoutExpired:
+            return item, None, "timeout"
+        except Exception:
+            return item, None, "error"
+
+    from concurrent.futures import ThreadPoolExecutor, wait
+    pool = ThreadPoolExecutor(max_workers=min(8, len(paths)))
+    futures = [pool.submit(read, item) for item in paths]
+    done, _ = wait(futures, timeout=BT_INFO_BUDGET)
+    pool.shutdown(wait=False, cancel_futures=True)
+    got = {f.result()[0]: f.result()[1:] for f in done}
+    out = {}
+    for item in paths:
+        _, hci, mac = item
+        props, state = got.get(item, (None, "timeout"))
+        entry = {"mac": mac, "name": (props or {}).get("Alias") or mac,
+                 "adapter": hci, "probe": state}
+        for flag in BT_FLAGS:
+            entry[flag] = (props or {}).get(flag.capitalize())
+        prev = out.get(mac)
+        if prev:
+            for flag in BT_FLAGS:
+                entry[flag] = (entry[flag] or prev[flag]) if (entry[flag] is not None or prev[flag] is not None) else None
+            entry["adapter"] = f"{prev['adapter']},{hci}"
+            if prev["probe"] == "ok":
+                entry["probe"] = "ok"
+        out[mac] = entry
+    return out
+
+
 def _inventory_bluetoothctl(run, filters=("Paired", "Bonded", "Trusted", "Connected", None)):
     names = {}
     for flt in filters:
@@ -728,7 +803,10 @@ def bt_inventory(run=_run_text):
         devs = _inventory_dbus(run)
         source = "dbus"
     except Exception:
-        devs, source = _inventory_bluetoothctl(run), "bluetoothctl"
+        try:
+            devs, source = _inventory_dbus_tree(run), "dbus-tree"
+        except Exception:
+            devs, source = _inventory_bluetoothctl(run), "bluetoothctl"
     for entry in devs.values():
         entry["source"] = source
     return devs
