@@ -1157,6 +1157,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     singalong: singalongConfig,
     savedQueryService,
     eventBus,
+    lessonGoodFaithGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-good-faith' }),
     economyService: economyApi.economyService,
     reportPlaybackSession,
     playLedger,
@@ -2203,7 +2204,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.piano = pianoRouter;
   registerPianoLessonExpectationHarvester({
     harvesterServices, contentServices, contentRegistry, configService, rootLogger,
-    decisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-expectation' }),
   });
 
   // School (portal homeschool): banks from data/content/school/{subject}/quizzes/, per-user

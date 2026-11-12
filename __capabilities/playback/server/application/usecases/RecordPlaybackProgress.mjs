@@ -303,6 +303,15 @@ export class RecordPlaybackProgress {
 
     let userProgress = null;
     if (userId && this.userVideoProgressStore) {
+      // The piano store may judge the lesson sitting first (bounded by its own
+      // deadline); a failure there never stops the record.
+      if (practice && typeof practice === 'object' && typeof this.userVideoProgressStore.prepareCredit === 'function') {
+        try {
+          await this.userVideoProgressStore.prepareCredit({ userId, plexId: assetId, practice });
+        } catch (error) {
+          this.logger.warn?.('play.log.prepare_credit_failed', { userId, assetId, error: error.message });
+        }
+      }
       try {
         userProgress = this.userVideoProgressStore.record({
           userId,

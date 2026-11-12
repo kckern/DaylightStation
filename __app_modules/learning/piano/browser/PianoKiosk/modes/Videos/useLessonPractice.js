@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { createHumanNoteClassifier, DEFAULTS as CLASSIFIER_DEFAULTS } from '../../humanNoteClassifier.js';
-import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
-import {
-  createPracticeMeter, classifyBurst, burstState, weighEvents, PRESCHOOL_PRACTICE, PRACTICE_DEFAULTS,
-} from '../../../../portable/practice/practiceScore.mjs';
-import {
-  goodFaithScore, rawScore, isBorderline, GOOD_FAITH_DEFAULTS, PRESCHOOL_POLICY,
-} from '../../../../portable/practice/goodFaith.mjs';
+import { createPracticeMeter, classifyBurst, PRESCHOOL_PRACTICE } from '../../../../portable/practice/practiceScore.mjs';
+import { sittingGoodFaithState } from '../../../../portable/practice/sittingGoodFaith.mjs';
 
 let _logger;
 function logger() {
@@ -18,6 +13,8 @@ function logger() {
 
 /** A check-in's own answer (and the 3 s after it) is not practice. */
 export const CHECK_IN_GRACE_MS = 3000;
+/** Notes kept for the sitting's good-faith log (a long, busy lesson stays well under). */
+const LOG_CAP = 8000;
 
 function newSittingId() {
   const rnd = Math.random().toString(36).slice(2, 10);
@@ -30,19 +27,22 @@ function newSittingId() {
  * Classifies every note itself (humanNoteClassifier: drum loop, accompaniment,
  * clockwork are dropped), weighs human notes for how practice-like they are
  * (practiceScore; preschool courses are lenient), counts played seconds, and
- * reports the totals on every play/log. The running score is LOGGED, never
- * rendered. When playback crosses the watch threshold with a borderline score
- * it fires one non-awaited legitimacy question (minimal MIDI log only).
+ * reports the totals on every play/log. Nothing is rendered.
+ *
+ * Past the watch threshold, an enforced lesson's report also carries the
+ * sitting's good-faith state (sittingGoodFaith: practice-like notes, notes per
+ * minute, lesson facts, the presence check-ins and how they were answered —
+ * a minimal MIDI log, nothing else). The server asks the session-level judge
+ * once per sitting from that post, while the child is still watching.
  */
 export function useLessonPractice({
-  enabled = true, isPlaying = false, targetNpm = null, preschool = false,
-  thresholdPercent = 90, getPercent = null, userId = null, contentId = null,
+  enabled = true, isPlaying = false, enforced = false, preschool = false,
+  thresholdPercent = 90, getPercent = null, getDurationSec = null, contentId = null,
 } = {}) {
   const { subscribe } = usePianoMidi() || {};
   const sittingIdRef = useRef(null);
   if (!sittingIdRef.current) sittingIdRef.current = newSittingId();
   const weighOpts = preschool ? PRESCHOOL_PRACTICE : {};
-  const policy = preschool ? PRESCHOOL_POLICY : GOOD_FAITH_DEFAULTS;
 
   const stateRef = useRef(null);
   if (!stateRef.current) {
@@ -50,6 +50,9 @@ export function useLessonPractice({
       classifier: createHumanNoteClassifier(),
       meter: createPracticeMeter(weighOpts),
       held: new Map(),
+      log: [],
+      checkInLog: [],
+      startMs: Date.now(),
       playedMs: 0,
       drillsPassed: 0,
       checkIns: 0,
@@ -57,15 +60,15 @@ export function useLessonPractice({
       legitChecks: 0,
       checkInOpen: false,
       graceUntil: 0,
-      judged: false,
+      crossed: false,
     };
   }
   const live = useRef({});
-  live.current = { isPlaying, targetNpm, getPercent, thresholdPercent, userId, contentId, preschool, policy };
+  live.current = { isPlaying, enforced, getPercent, getDurationSec, thresholdPercent, contentId, preschool };
 
   useEffect(() => {
     logger().info('piano.lesson-practice.sitting-start', {
-      sittingId: sittingIdRef.current, contentId, targetNpm, preschool,
+      sittingId: sittingIdRef.current, contentId, enforced, preschool,
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once per sitting
 
@@ -80,13 +83,18 @@ export function useLessonPractice({
           // The loop ran ~30 s before it was recognised: take its notes back.
           const pitches = s.classifier.loopPitches;
           const from = time - (CLASSIFIER_DEFAULTS.armMs + CLASSIFIER_DEFAULTS.windowMs + 5000);
-          const removed = s.meter.retract((e) => e.t >= from && pitches.has(e.note));
+          const loopNote = (e) => e.t >= from && pitches.has(e.note);
+          const removed = s.meter.retract(loopNote);
+          s.log = s.log.filter((e) => !loopNote(e));
           logger().info('piano.lesson-practice.loop-retracted', { sittingId: sittingIdRef.current, removed });
         }
         if (!v.human) return;
         if (s.checkInOpen || time < s.graceUntil) return;
         const added = s.meter.add({ t: time, note: evt.note, velocity: evt.velocity });
-        if (added) s.held.set(evt.note, added);
+        if (added) {
+          s.held.set(evt.note, added);
+          if (s.log.length < LOG_CAP) s.log.push(added);
+        }
       } else if (evt?.type === 'note_off' || (evt?.type === 'note_on' && !(evt.velocity > 0))) {
         const ev = s.held.get(evt.note);
         if (ev) {
@@ -98,47 +106,42 @@ export function useLessonPractice({
     });
   }, [enabled, subscribe]);
 
+  const pastThreshold = useCallback(() => {
+    const l = live.current;
+    if (!l.enforced || typeof l.getPercent !== 'function') return false;
+    const pct = Number(l.getPercent());
+    return Number.isFinite(pct) && pct >= l.thresholdPercent;
+  }, []);
+
+  /** The sitting's good-faith state (sittingGoodFaith) — the minimal MIDI log. */
+  const goodFaithState = useCallback(() => {
+    const s = stateRef.current;
+    const l = live.current;
+    const lessonSec = Number(typeof l.getDurationSec === 'function' ? l.getDurationSec() : 0) || 0;
+    return sittingGoodFaithState({
+      events: s.log, startMs: s.startMs, lessonSec, watchedSec: Math.floor(s.playedMs / 1000),
+      checkIns: s.checkInLog, preschool: !!l.preschool,
+    });
+  }, []);
+
   const report = useCallback(() => {
     const s = stateRef.current;
     const t = s.meter.snapshot();
-    return {
+    const out = {
       sittingId: sittingIdRef.current,
       humanNotes: t.humanNotes,
       practiceNotes: Math.floor(t.practiceNotes),
       playedSec: Math.floor(s.playedMs / 1000),
       drillsPassed: s.drillsPassed,
       checkIns: s.checkIns,
+      checkInsAnswered: s.checkInLog.filter((c) => c.answered).length,
       scaleCheckIns: s.scaleCheckIns,
       legitChecks: s.legitChecks,
       penalties: t.penalties,
     };
-  }, []);
-
-  const scoreOf = useCallback((r) => ({
-    practiceNotes: r.practiceNotes, playedSec: r.playedSec, targetNpm: live.current.targetNpm,
-  }), []);
-  const runningScore = useCallback(() => {
-    if (live.current.targetNpm == null) return null;
-    return goodFaithScore(scoreOf(report()));
-  }, [report, scoreOf]);
-
-  const fireEndOfLesson = useCallback(() => {
-    const s = stateRef.current;
-    const { userId: uid, preschool: pre } = live.current;
-    if (!uid) return;
-    s.judged = true;
-    s.legitChecks += 1;
-    const recent = weighEvents(s.meter.since(0), pre ? PRESCHOOL_PRACTICE : {})
-      .filter((e) => e.weight >= PRACTICE_DEFAULTS.legitWeight).slice(-200);
-    const verdict = classifyBurst(recent, pre ? PRESCHOOL_PRACTICE : {});
-    const body = {
-      sittingId: sittingIdRef.current, kind: 'end-of-lesson', index: 0,
-      burst: burstState(recent, verdict.stats), preschool: !!pre,
-    };
-    DaylightAPI(`api/v1/piano/users/${encodeURIComponent(uid)}/lesson-legit`, body)
-      .then((res) => logger().info('piano.lesson-practice.judge-answer', { sittingId: sittingIdRef.current, kind: 'end-of-lesson', ...res }))
-      .catch((err) => logger().warn('piano.lesson-practice.judge-failed', { sittingId: sittingIdRef.current, error: err?.message }));
-  }, []);
+    if (pastThreshold()) out.goodFaith = goodFaithState();
+    return out;
+  }, [pastThreshold, goodFaithState]);
 
   // One clock: played seconds while playing, the threshold crossing, and a
   // sampled snapshot for the log.
@@ -148,22 +151,22 @@ export function useLessonPractice({
       const s = stateRef.current;
       const l = live.current;
       if (l.isPlaying) s.playedMs += 1000;
-      if (!s.judged && l.targetNpm != null && typeof l.getPercent === 'function') {
-        const pct = Number(l.getPercent());
-        if (Number.isFinite(pct) && pct >= l.thresholdPercent) {
-          const raw = rawScore(scoreOf(report()));
-          if (isBorderline(raw, l.policy)) fireEndOfLesson();
-          else s.judged = true;
-        }
+      const t = s.meter.snapshot();
+      if (!s.crossed && pastThreshold()) {
+        s.crossed = true;
+        logger().info('piano.lesson-practice.threshold', {
+          sittingId: sittingIdRef.current, contentId: l.contentId, humanNotes: t.humanNotes,
+          practiceNotes: Math.floor(t.practiceNotes), logNotes: s.log.length, checkIns: s.checkIns,
+          playedSec: Math.floor(s.playedMs / 1000),
+        });
       }
-      const r = report();
       logger().sampled('piano.lesson-practice.snapshot', {
-        sittingId: r.sittingId, contentId: l.contentId, humanNotes: r.humanNotes, practiceNotes: r.practiceNotes,
-        playedSec: r.playedSec, runningScore: l.targetNpm == null ? null : goodFaithScore(scoreOf(r)),
+        sittingId: sittingIdRef.current, contentId: l.contentId, humanNotes: t.humanNotes,
+        practiceNotes: Math.floor(t.practiceNotes), playedSec: Math.floor(s.playedMs / 1000),
       }, { maxPerMinute: 2, aggregate: false });
     }, 1000);
     return () => clearInterval(id);
-  }, [enabled, fireEndOfLesson, report, scoreOf]);
+  }, [enabled, pastThreshold]);
 
   const setDrillsPassed = useCallback((n) => { stateRef.current.drillsPassed = Math.max(0, Math.floor(Number(n) || 0)); }, []);
 
@@ -174,9 +177,12 @@ export function useLessonPractice({
       s.checkInOpen = true;
       s.checkIns += 1;
       if (scales > 0) s.scaleCheckIns += 1;
+      s.checkInLog.push({ atMs: Date.now() - s.startMs, scales, answered: false });
     } else {
       s.checkInOpen = false;
       s.graceUntil = Date.now() + CHECK_IN_GRACE_MS;
+      const last = s.checkInLog[s.checkInLog.length - 1];
+      if (last) last.answered = true;
     }
   }, []);
 
@@ -191,8 +197,8 @@ export function useLessonPractice({
 
   return useMemo(() => ({
     sittingId: sittingIdRef.current,
-    report, runningScore, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck,
-  }), [report, runningScore, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck]);
+    report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck,
+  }), [report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck]);
 }
 
 export default useLessonPractice;

@@ -1,5 +1,5 @@
 /**
- * InMemoryLegitJudgementCache — the legitimacy judge's answers, kept in memory
+ * InMemoryLegitJudgementCache — the check-in burst judge's answers, kept in memory
  * (bounded, 6 h TTL). Keys are strings or plain objects (stable-stringified),
  * e.g. { userId, sittingId, kind: 'end-of-lesson' } for the progress store.
  * Lost on restart by design: an end-of-lesson answer that is gone simply

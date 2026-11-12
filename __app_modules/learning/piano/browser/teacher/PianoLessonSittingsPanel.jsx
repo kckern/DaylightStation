@@ -21,12 +21,17 @@ function when(iso) {
 function rate(row) {
   const played = Math.max(1, (Number(row.playedSec) || 0) / 60);
   const actual = Math.round(((Number(row.practiceNotes) || 0) / played) * 10) / 10;
-  if (row.targetNpm == null) return `${actual}/min`;
-  const source = row.expectationSource === 'ai' ? 'AI' : (row.expectationSource || 'default');
-  return `${actual}/min vs ${row.targetNpm}/min (${source})`;
+  return `${actual}/min`;
 }
 
-/** The teacher's view of each piano lesson sitting: the silent score, check-ins, warm-up and outcome. */
+/** The good-faith score: the judge's 0–10, or "no judge" when the lenient rule decided. */
+function scoreText(row) {
+  const fallback = row.scoreSource === 'fallback';
+  if (row.score == null) return fallback ? 'no judge' : '—';
+  return `${row.score}/10${fallback ? ' · no judge' : ''}`;
+}
+
+/** The teacher's view of each piano lesson sitting: the silent good-faith score, check-ins, warm-up and outcome. */
 export function lessonSittingRow(row) {
   const checkIns = `${row.checkIns ?? 0}${row.scaleCheckIns ? ` (${row.scaleCheckIns} scales)` : ''}`;
   const drill = row.drillReps ? `${row.drillReps} ${row.preschool ? 'games' : 'scales'}, passed ${row.drillsPassed ?? 0}` : '—';
@@ -34,7 +39,7 @@ export function lessonSittingRow(row) {
     when: when(row.updatedAt || row.startedAt),
     lesson: row.title || row.plexId || '',
     watched: `${row.percent ?? 0}%`,
-    score: row.score == null ? '—' : `${row.score}/10${row.reviewed ? ` · reviewed (${Number(row.reviewProbability).toFixed(2)})` : ''}`,
+    score: scoreText(row),
     checkIns,
     rate: rate(row),
     drill,

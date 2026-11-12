@@ -40,7 +40,7 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
   };
 });
 
-const lecture = { plex: '243203', label: 'Lecture 3', userWatched: false, userPlayhead: 0, expectation: { targetNpm: 13, source: 'ai', preschool: false } };
+const lecture = { plex: '243203', label: 'Lecture 3', userWatched: false, userPlayhead: 0, expectation: { enforced: true, preschool: false } };
 
 beforeEach(() => {
   fakeMedia = document.createElement('video');

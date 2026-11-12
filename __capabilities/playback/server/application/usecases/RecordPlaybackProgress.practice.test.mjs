@@ -37,4 +37,21 @@ describe('RecordPlaybackProgress forwards lesson practice', () => {
     await build({ store: { record } }).execute({ type: 'plex', assetId: 'plex:5', seconds: 10, percent: 5, userId: 'test-learner' });
     expect(record.mock.calls[0][0].practice).toBeNull();
   });
+
+  it('awaits the store\'s prepareCredit (the good-faith judgement) before recording', async () => {
+    const order = [];
+    const prepareCredit = vi.fn(async () => { await Promise.resolve(); order.push('prepare'); });
+    const record = vi.fn(() => { order.push('record'); return { newlyCompleted: false }; });
+    const practice = { sittingId: 'abc', practiceNotes: 9, goodFaith: { lesson: {}, notes: [] } };
+    await build({ store: { record, prepareCredit } }).execute({ type: 'plex', assetId: 'plex:5', seconds: 590, percent: 95, userId: 'test-learner', practice });
+    expect(prepareCredit).toHaveBeenCalledWith({ userId: 'test-learner', plexId: 'plex:5', practice });
+    expect(order).toEqual(['prepare', 'record']);
+  });
+
+  it('a failing prepareCredit never stops the record', async () => {
+    const record = vi.fn(() => ({ newlyCompleted: false }));
+    const prepareCredit = vi.fn(async () => { throw new Error('x'); });
+    await build({ store: { record, prepareCredit } }).execute({ type: 'plex', assetId: 'plex:5', seconds: 590, percent: 95, userId: 'test-learner', practice: { sittingId: 'a' } });
+    expect(record).toHaveBeenCalledTimes(1);
+  });
 });

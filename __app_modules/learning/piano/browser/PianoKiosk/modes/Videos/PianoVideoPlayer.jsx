@@ -102,26 +102,30 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const engagedRef = useRef(false);
 
   // This sitting's practice tally: human, practice-like notes and played time,
-  // reported on every play/log. The lesson's expected rate rides on the item
-  // (server-attached `expectation`); a lesson without one is not scored.
+  // reported on every play/log. The server marks a judged lesson on the item
+  // (`expectation: { enforced, preschool }`); past the watch threshold its
+  // reports carry the sitting's good-faith state for the session judge.
   const expectation = lecture?.expectation ?? null;
+  const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
   const practice = useLessonPractice({
     enabled: true,
     isPlaying,
-    targetNpm: expectation ? expectation.targetNpm : null,
+    enforced,
     preschool: !!expectation?.preschool,
     thresholdPercent: completionThresholdPercent,
     getPercent: () => {
       const el = mediaElRef.current;
       return el && el.duration > 0 ? (el.currentTime / el.duration) * 100 : 0;
     },
-    userId: currentUser,
+    getDurationSec: () => {
+      const el = mediaElRef.current;
+      return el && el.duration > 0 ? el.duration : 0;
+    },
     contentId,
   });
-  // A lesson judged by its practice: it has an expectation, a real learner is
+  // A lesson judged for good faith: it is in a judged course, a real learner is
   // watching, and it has not counted yet. Its end waits for the server's
   // answer — credit, or a warm-up first.
-  const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
   const enforcedRef = useRef(enforced);
   enforcedRef.current = enforced;
   const [drill, setDrill] = useState(null);

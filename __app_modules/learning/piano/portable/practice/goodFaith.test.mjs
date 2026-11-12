@@ -1,12 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   GOOD_FAITH_DEFAULTS, checkInStep, checkInDrill, bankSittings, goodFaithScore, rawScore,
-  isBorderline, drillForScore, creditDecision, PRESCHOOL_POLICY, policyFor,
+  drillForScore, creditDecision, PRESCHOOL_POLICY, policyFor,
 } from './goodFaith.mjs';
 
 const ROOTS = { roots: ['C', 'G', 'F'], rotation: 0 };
-const exp = (targetNpm) => ({ source: 'ai', targetNpm });
-const sit = (practiceNotes, playedSec) => ({ a: { practiceNotes, playedSec } });
 
 describe('goodFaithScore', () => {
   it('target 0 (watch-only) scores 10', () => {
@@ -22,13 +20,9 @@ describe('goodFaithScore', () => {
   it('playedSec 0 does not throw', () => {
     expect(() => goodFaithScore({ practiceNotes: 5, playedSec: 0, targetNpm: 13 })).not.toThrow();
   });
-  it('rawScore is unfloored and capped; isBorderline is [5, 7)', () => {
+  it('rawScore is unfloored and capped', () => {
     expect(rawScore({ practiceNotes: 70, playedSec: 600, targetNpm: 13 })).toBeCloseTo(5.385, 2);
     expect(rawScore({ practiceNotes: 9999, playedSec: 60, targetNpm: 13 })).toBe(10);
-    expect(isBorderline(5)).toBe(true);
-    expect(isBorderline(6.99)).toBe(true);
-    expect(isBorderline(7)).toBe(false);
-    expect(isBorderline(4.99)).toBe(false);
   });
 });
 
@@ -70,46 +64,43 @@ describe('drillForScore', () => {
   });
 });
 
-describe('creditDecision', () => {
-  const base = { percent: 95, thresholdPercent: 90, engaged: true, legacy: false, drillsPassed: 0, ...ROOTS, review: null };
+describe('creditDecision — the session-level good-faith judgement decides', () => {
+  const base = { percent: 95, thresholdPercent: 90, enforced: true, engaged: true, legacy: false, drillsPassed: 0, ...ROOTS };
+  const judged = (goodFaith, extra = {}) => ({ a: { practiceNotes: 40, checkInsAnswered: 0, goodFaith, ...extra } });
+  const unjudged = (practiceNotes, checkInsAnswered = 0) => ({ a: { practiceNotes, checkInsAnswered } });
   it('not-watched below the threshold', () => {
-    expect(creditDecision({ ...base, percent: 50, expectation: exp(13), sittings: sit(999, 600) }).outcome).toBe('not-watched');
+    expect(creditDecision({ ...base, percent: 50, sittings: judged(9) }).outcome).toBe('not-watched');
   });
   it('unenforced and legacy credit iff engaged', () => {
-    expect(creditDecision({ ...base, expectation: null, sittings: {} })).toMatchObject({ outcome: 'unenforced', credited: true });
-    expect(creditDecision({ ...base, expectation: null, sittings: {}, engaged: false })).toMatchObject({ outcome: 'unenforced', credited: false });
-    expect(creditDecision({ ...base, legacy: true, expectation: exp(13), sittings: {} })).toMatchObject({ outcome: 'legacy', credited: true });
-    expect(creditDecision({ ...base, legacy: true, expectation: exp(13), sittings: {}, engaged: false })).toMatchObject({ outcome: 'legacy', credited: false });
+    expect(creditDecision({ ...base, enforced: false, sittings: {} })).toMatchObject({ outcome: 'unenforced', credited: true });
+    expect(creditDecision({ ...base, enforced: false, sittings: {}, engaged: false })).toMatchObject({ outcome: 'unenforced', credited: false });
+    expect(creditDecision({ ...base, legacy: true, sittings: {} })).toMatchObject({ outcome: 'legacy', credited: true });
+    expect(creditDecision({ ...base, legacy: true, sittings: {}, engaged: false })).toMatchObject({ outcome: 'legacy', credited: false });
   });
-  it('score 7 → credited', () => {
-    const d = creditDecision({ ...base, expectation: exp(10), sittings: sit(70, 600) });
-    expect(d).toMatchObject({ outcome: 'credited', credited: true, score: 7 });
+  it('a judged score at or above the pass score credits', () => {
+    expect(creditDecision({ ...base, sittings: judged(7.4) })).toMatchObject({ outcome: 'credited', credited: true, score: 7.4, source: 'model', drill: null });
+    expect(creditDecision({ ...base, sittings: judged(6) })).toMatchObject({ outcome: 'credited' });
   });
-  it('score 3 with no drills → drill-owed, 4 reps; after 4 passes → credited-after-drills', () => {
-    const d = creditDecision({ ...base, expectation: exp(10), sittings: sit(30, 600) });
-    expect(d).toMatchObject({ outcome: 'drill-owed', credited: false, score: 3 });
+  it('below the pass score owes the drill sized from the floored score; the reps credit it', () => {
+    const d = creditDecision({ ...base, sittings: judged(3.6) });
+    expect(d).toMatchObject({ outcome: 'drill-owed', credited: false, score: 3.6, source: 'model' });
     expect(d.drill.reps).toBe(4);
-    const d2 = creditDecision({ ...base, drillsPassed: 4, expectation: exp(10), sittings: sit(30, 600) });
-    expect(d2).toMatchObject({ outcome: 'credited-after-drills', credited: true });
+    expect(creditDecision({ ...base, sittings: judged(5.9) }).drill.reps).toBe(2);
+    expect(creditDecision({ ...base, drillsPassed: 4, sittings: judged(3.6) })).toMatchObject({ outcome: 'credited-after-drills', credited: true });
   });
-  it('target 0 credits without drills', () => {
-    expect(creditDecision({ ...base, expectation: exp(0), sittings: {} })).toMatchObject({ outcome: 'credited', score: 10 });
+  it('the best judged sitting of the lesson stands', () => {
+    const sittings = { a: { goodFaith: 2 }, b: { goodFaith: 8 }, c: { practiceNotes: 0 } };
+    expect(creditDecision({ ...base, sittings })).toMatchObject({ outcome: 'credited', score: 8 });
   });
-  it('borderline review: raw 5.5 + 0.8 → credited reviewed; raw 6.5 + 0.3 → drill 2 reps; raw 5.5 no review → drill', () => {
-    const e = exp(10);
-    expect(creditDecision({ ...base, expectation: e, sittings: sit(55, 600), review: { probability: 0.8, source: 'model' } }))
-      .toMatchObject({ outcome: 'credited', reviewed: true });
-    const low = creditDecision({ ...base, expectation: e, sittings: sit(65, 600), review: { probability: 0.3, source: 'model' } });
-    expect(low).toMatchObject({ outcome: 'drill-owed', reviewed: true });
-    expect(low.drill.reps).toBe(2);
-    expect(creditDecision({ ...base, expectation: e, sittings: sit(55, 600) })).toMatchObject({ outcome: 'drill-owed', reviewed: false });
+  it('no judgement: the lenient rule — meaningful playing or an answered check-in credits', () => {
+    expect(creditDecision({ ...base, sittings: unjudged(6) })).toMatchObject({ outcome: 'credited', source: 'fallback', score: null });
+    expect(creditDecision({ ...base, sittings: unjudged(0, 1) })).toMatchObject({ outcome: 'credited', source: 'fallback' });
+    const d = creditDecision({ ...base, sittings: unjudged(2) });
+    expect(d).toMatchObject({ outcome: 'drill-owed', source: 'fallback', score: 0 });
+    expect(d.drill.reps).toBe(6);
   });
-  it('a review never touches a clear case', () => {
-    const e = exp(10);
-    expect(creditDecision({ ...base, expectation: e, sittings: sit(80, 600), review: { probability: 0.1, source: 'model' } }))
-      .toMatchObject({ outcome: 'credited', reviewed: false });
-    expect(creditDecision({ ...base, expectation: e, sittings: sit(30, 600), review: { probability: 0.95, source: 'model' } }))
-      .toMatchObject({ outcome: 'drill-owed', reviewed: false });
+  it('banks the lenient rule across sittings', () => {
+    expect(creditDecision({ ...base, sittings: { a: { practiceNotes: 3 }, b: { practiceNotes: 3 } } }).outcome).toBe('credited');
   });
   it('defaults are exported', () => {
     expect(GOOD_FAITH_DEFAULTS).toMatchObject({ passScore: 6, maxSittings: 12, repsPerSet: 2, checkInScaleCap: 2, realPlayingNotes: 8 });
@@ -123,12 +114,6 @@ describe('preschool policy', () => {
     expect(checkInStep({ consecutiveIdle: 1 }, P)).toEqual({ kind: 'note' });
     expect(checkInStep({ consecutiveIdle: 5 }, P)).toEqual({ kind: 'note' });
   });
-  it('borderline band sits around its pass score: [2, 4)', () => {
-    expect(isBorderline(2, P)).toBe(true);
-    expect(isBorderline(3.9, P)).toBe(true);
-    expect(isBorderline(4, P)).toBe(false);
-    expect(isBorderline(1.9, P)).toBe(false);
-  });
   it('drills are gentle rounds, not scales: 3 → none, 1–2 → one round, 0 → two', () => {
     expect(drillForScore(3, ROOTS, P)).toBeNull();
     const one = drillForScore(2, ROOTS, P);
@@ -141,12 +126,13 @@ describe('preschool policy', () => {
     expect(two.spec.rounds[1].notes).toHaveLength(3);
   });
   it('creditDecision honours the policy', () => {
-    const base = { percent: 95, thresholdPercent: 90, engaged: true, legacy: false, drillsPassed: 0, ...ROOTS, review: null };
-    expect(creditDecision({ ...base, expectation: exp(10), sittings: sit(45, 600) }, P)).toMatchObject({ outcome: 'credited', score: 4 });
-    const d = creditDecision({ ...base, expectation: exp(10), sittings: sit(15, 600) }, P);
-    expect(d).toMatchObject({ outcome: 'drill-owed', score: 1 });
+    const base = { percent: 95, thresholdPercent: 90, enforced: true, engaged: true, legacy: false, drillsPassed: 0, ...ROOTS };
+    expect(creditDecision({ ...base, sittings: { a: { goodFaith: 3.2 } } }, P)).toMatchObject({ outcome: 'credited', score: 3.2 });
+    const d = creditDecision({ ...base, sittings: { a: { goodFaith: 1.5 } } }, P);
+    expect(d).toMatchObject({ outcome: 'drill-owed', score: 1.5 });
     expect(d.drill.spec.kind).toBe('gentle');
-    expect(creditDecision({ ...base, drillsPassed: 1, expectation: exp(10), sittings: sit(15, 600) }, P).outcome).toBe('credited-after-drills');
+    expect(d.drill.reps).toBe(1);
+    expect(creditDecision({ ...base, drillsPassed: 1, sittings: { a: { goodFaith: 1.5 } } }, P).outcome).toBe('credited-after-drills');
   });
   it('policyFor picks preschool for a listed course', () => {
     expect(policyFor({ courseId: '42', preschoolCourses: ['42'] })).toBe(PRESCHOOL_POLICY);

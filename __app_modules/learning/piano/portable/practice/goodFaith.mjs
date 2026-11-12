@@ -1,9 +1,10 @@
 /**
- * goodFaith — one silent 0–10 score per lesson sitting, measured against what
- * the lesson asks for, and what follows from it: credit, a scale drill before
- * credit, and the presence check-in ladder. Pure arithmetic; no Node-only APIs
+ * goodFaith — one silent 0–10 good-faith score per lesson sitting (the
+ * session-level judgement, sittingGoodFaith.mjs) and what follows from it:
+ * credit, a scale drill before credit, and the presence check-in ladder. Pure; no Node-only APIs
  * (the kiosk imports it too). The score is never shown to a child.
  */
+import { fallbackCredited } from './sittingGoodFaith.mjs';
 
 export const GOOD_FAITH_DEFAULTS = Object.freeze({
   passScore: 6,
@@ -12,9 +13,6 @@ export const GOOD_FAITH_DEFAULTS = Object.freeze({
   hands: Object.freeze(['R', 'L', 'RL']),
   checkInScaleCap: 2,
   realPlayingNotes: 8,
-  borderlineLow: 5,
-  borderlineHigh: 7,
-  reviewPass: 0.7,
 });
 
 /**
@@ -28,8 +26,6 @@ export const PRESCHOOL_POLICY = Object.freeze({
   ...GOOD_FAITH_DEFAULTS,
   passScore: 3,
   checkInScaleCap: 0,
-  borderlineLow: 2,
-  borderlineHigh: 4,
   drillKind: 'gentle',
   preschool: true,
 });
@@ -43,7 +39,7 @@ export function policyFor({ courseId, preschoolCourses = [], passScore, preschoo
   const base = pre ? PRESCHOOL_POLICY : GOOD_FAITH_DEFAULTS;
   const override = Number(pre ? preschoolPassScore : passScore);
   if (Number.isFinite(override) && override >= 0 && override <= 10 && override !== base.passScore) {
-    return Object.freeze({ ...base, passScore: override, borderlineLow: override - 1, borderlineHigh: override + 1 });
+    return Object.freeze({ ...base, passScore: override });
   }
   return base;
 }
@@ -96,7 +92,11 @@ export function practiceNpmOf({ practiceNotes, playedSec }) {
   return (Number(practiceNotes) || 0) / Math.max(1, (Number(playedSec) || 0) / 60);
 }
 
-/** Unfloored score, capped at 10; a watch-only lesson (target 0) is 10. */
+/**
+ * Notes-per-minute against a target. Retired from credit (2026-11-12); kept
+ * only for the practice filter's calibration record (practiceScore.calibration).
+ * Unfloored, capped at 10; target 0 is 10.
+ */
 export function rawScore({ practiceNotes, playedSec, targetNpm }) {
   const target = Number(targetNpm) || 0;
   if (target <= 0) return 10;
@@ -105,10 +105,6 @@ export function rawScore({ practiceNotes, playedSec, targetNpm }) {
 
 export function goodFaithScore(input) {
   return Math.floor(rawScore(input));
-}
-
-export function isBorderline(raw, policy = GOOD_FAITH_DEFAULTS) {
-  return raw >= policy.borderlineLow && raw < policy.borderlineHigh;
 }
 
 /** The drill a score owes before credit, or null at/above the pass score. */
@@ -134,38 +130,50 @@ export function drillForScore(score, { roots, rotation = 0 } = {}, policy = GOOD
 }
 
 /**
- * The credit decision at (or after) the watch threshold.
- * @returns {{ credited, outcome, score, rawScore, practiceNpm, targetNpm, drill, reviewed }}
+ * The credit decision at (or after) the watch threshold (owner, 2026-11-12:
+ * per-lesson expectation targets no longer decide credit). The lesson's best
+ * session-level good-faith judgement decides (`sittings[*].goodFaith`, 0–10,
+ * from the decision gateway); with none — model off, timed out, or never
+ * asked — the lenient deterministic rule gives the benefit of the doubt:
+ * meaningful playing (≥ 6 practice-like notes) or an answered presence
+ * check-in credits; only nobody-there, drum-only and mash-only owe a drill.
+ * @returns {{ credited, outcome, score, source: 'model'|'fallback'|null, drill }}
  */
 export function creditDecision({
-  percent, thresholdPercent, expectation, sittings, drillsPassed = 0, engaged,
-  legacy, roots, rotation = 0, review = null,
+  percent, thresholdPercent, enforced, sittings, drillsPassed = 0, engaged,
+  legacy, roots, rotation = 0,
 } = {}, policy = GOOD_FAITH_DEFAULTS) {
-  const empty = { score: null, rawScore: null, practiceNpm: null, targetNpm: expectation?.targetNpm ?? null, drill: null, reviewed: false };
+  const empty = { score: null, source: null, drill: null };
   if (!(Number(percent) >= Number(thresholdPercent))) return { credited: false, outcome: 'not-watched', ...empty };
-  if (!expectation) return { credited: !!engaged, outcome: 'unenforced', ...empty };
+  if (!enforced) return { credited: !!engaged, outcome: 'unenforced', ...empty };
   if (legacy) return { credited: !!engaged, outcome: 'legacy', ...empty };
 
-  const bank = bankSittings(sittings);
-  const targetNpm = Number(expectation.targetNpm) || 0;
-  const raw = rawScore({ ...bank, targetNpm });
-  const practiceNpm = Math.round(practiceNpmOf(bank) * 10) / 10;
-  let score = Math.floor(raw);
-  let reviewed = false;
-  let pass = score >= policy.passScore;
-  let drillScore = score;
-  const p = Number(review?.probability);
-  if (isBorderline(raw, policy) && review && Number.isFinite(p)) {
-    reviewed = true;
-    pass = p >= policy.reviewPass;
-    // A rejected borderline sitting owes at least the smallest drill.
-    drillScore = Math.min(score, policy.passScore - 1);
+  const list = Array.isArray(sittings) ? sittings : Object.values(sittings || {});
+  const judged = list.map((s) => Number(s?.goodFaith)).filter(isScore);
+  let score;
+  let source;
+  let pass;
+  if (judged.length) {
+    score = Math.max(...judged);
+    source = 'model';
+    pass = score >= policy.passScore;
+  } else {
+    let practiceNotes = 0;
+    let checkInsAnswered = 0;
+    for (const s of list) {
+      practiceNotes += Math.max(0, Number(s?.practiceNotes) || 0);
+      checkInsAnswered += Math.max(0, Number(s?.checkInsAnswered) || 0);
+    }
+    source = 'fallback';
+    pass = fallbackCredited({ practiceNotes, checkInsAnswered });
+    score = pass ? null : 0;
   }
-  const out = { score, rawScore: Math.round(raw * 100) / 100, practiceNpm, targetNpm, reviewed };
-  if (pass) return { credited: true, outcome: 'credited', drill: null, ...out };
-  const drill = drillForScore(drillScore, { roots, rotation }, policy);
+  if (pass) return { credited: true, outcome: 'credited', score, source, drill: null };
+  const drill = drillForScore(Math.min(Math.floor(score), policy.passScore - 1), { roots, rotation }, policy);
   if (drill && (Number(drillsPassed) || 0) >= drill.reps) {
-    return { credited: true, outcome: 'credited-after-drills', drill, ...out };
+    return { credited: true, outcome: 'credited-after-drills', score, source, drill };
   }
-  return { credited: false, outcome: 'drill-owed', drill, ...out };
+  return { credited: false, outcome: 'drill-owed', score, source, drill };
 }
+
+function isScore(v) { return Number.isFinite(v) && v >= 0 && v <= 10; }

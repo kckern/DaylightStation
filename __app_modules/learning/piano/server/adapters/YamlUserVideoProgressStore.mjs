@@ -1,7 +1,7 @@
 import { YamlUserAppRecordStore } from "#system/persistence/YamlUserAppRecordStore.mjs";
 import { creditDecision, policyFor, GOOD_FAITH_DEFAULTS } from "../../portable/practice/goodFaith.mjs";
 
-const SITTING_FIELDS = ['practiceNotes', 'humanNotes', 'playedSec', 'checkIns', 'scaleCheckIns', 'drillsPassed'];
+const SITTING_FIELDS = ['practiceNotes', 'humanNotes', 'playedSec', 'checkIns', 'checkInsAnswered', 'scaleCheckIns', 'drillsPassed'];
 const intOf = (v) => Math.max(0, Math.floor(Number(v) || 0));
 
 /**
@@ -26,15 +26,21 @@ export class YamlUserVideoProgressStore {
   #records;
   #expectations;
   #sittingLog;
-  #judgements;
+  #judge;
 
-  constructor({ configService, logger = console, app = 'piano', filename = 'video-progress', lessonExpectations = null, sittingLog = null, legitJudgements = null }) {
+  /**
+   * `lessonExpectations` is the lesson index (which lessons sit in an
+   * engagement-gated course, and their show/season for preschool mode); its
+   * targets and AI ratings are NOT read for credit (owner, 2026-11-12).
+   * `sittingJudge` ({ judge, peek }) is the session-level good-faith judge.
+   */
+  constructor({ configService, logger = console, app = 'piano', filename = 'video-progress', lessonExpectations = null, sittingLog = null, sittingJudge = null }) {
     this.#configService = configService;
     this.#logger = logger;
     this.#records = new YamlUserAppRecordStore({ configService, app, filename });
     this.#expectations = lessonExpectations;
     this.#sittingLog = sittingLog;
-    this.#judgements = legitJudgements;
+    this.#judge = sittingJudge;
   }
 
   #videosConfig() {
@@ -56,19 +62,51 @@ export class YamlUserVideoProgressStore {
     return season && listed.has(season) ? season : expectation.showKey;
   }
 
-  /** What the kiosk needs to score a lesson live: its target and whether it is preschool. */
+  /** Whether a lesson's course is listed as preschool. */
+  #isPreschool(expectation) {
+    const pcfg = this.#videosConfig().practice || {};
+    const pre = Array.isArray(pcfg.preschool_courses) ? pcfg.preschool_courses : [];
+    const key = this.#courseKeyFor(expectation, pre);
+    return pre.map((c) => String(c).replace(/^plex:/, '')).includes(String(key ?? '').replace(/^plex:/, ''));
+  }
+
+  /** What the kiosk needs: the lesson is judged, and whether in preschool mode. */
   #kioskExpectation(item) {
     const e = this.#expectationFor(item.plex || item.id);
     if (!e) return null;
-    const pcfg = this.#videosConfig().practice || {};
-    const pre = Array.isArray(pcfg.preschool_courses) ? pcfg.preschool_courses : [];
-    const key = this.#courseKeyFor(e, pre);
-    const preschool = pre.map((c) => String(c).replace(/^plex:/, '')).includes(String(key ?? '').replace(/^plex:/, ''));
-    return { targetNpm: e.targetNpm, source: e.source, preschool };
+    return { enforced: true, preschool: this.#isPreschool(e) };
+  }
+
+  /**
+   * Before a play/log post is recorded: when it carries the sitting's
+   * good-faith state, ask (or join) the one judgement for that sitting. The
+   * judge bounds itself (8 s) and never rejects past here — a failure simply
+   * leaves the lenient rule in charge.
+   */
+  async prepareCredit({ userId, plexId, practice } = {}) {
+    if (!this.#judge || !this.#expectations || !practice?.sittingId || !practice.goodFaith) return;
+    const e = this.#expectationFor(plexId);
+    if (!e || this.#videosConfig().user_policies?.[userId]?.engagement_gate === false) return;
+    try {
+      await this.#judge.judge({
+        userId, sittingId: String(practice.sittingId).slice(0, 64), state: practice.goodFaith, preschool: this.#isPreschool(e),
+      });
+    } catch (err) {
+      this.#logger.warn?.('piano.lesson-good-faith.prepare-failed', { userId, error: err.message });
+    }
+  }
+
+  #judgementFor(userId, sittingId) {
+    if (!this.#judge || !sittingId) return null;
+    try {
+      const j = this.#judge.peek({ userId, sittingId: String(sittingId).slice(0, 64) });
+      const score = Number(j?.score);
+      return j && j.score != null && Number.isFinite(score) ? { score, source: j.source ?? 'model' } : null;
+    } catch { return null; }
   }
 
   /** Merge one sitting's report into the entry's banked practice (field-wise max per sitting, newest 12). */
-  #mergePractice(existing, practice, cap) {
+  #mergePractice(existing, practice, cap, judgement = null) {
     const prev = existing && typeof existing === 'object' ? existing : {};
     const sittings = { ...(prev.sittings || {}) };
     if (practice && practice.sittingId) {
@@ -76,6 +114,9 @@ export class YamlUserVideoProgressStore {
       const old = sittings[id] || {};
       const next = { at: new Date().toISOString() };
       for (const f of SITTING_FIELDS) next[f] = Math.max(intOf(old[f]), intOf(practice[f]));
+      // The sitting's good-faith judgement, once given, stays with it.
+      if (Number.isFinite(Number(old.goodFaith)) && old.goodFaith != null) next.goodFaith = Number(old.goodFaith);
+      else if (judgement) next.goodFaith = judgement.score;
       sittings[id] = next;
     }
     const kept = Object.entries(sittings).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, cap);
@@ -95,15 +136,12 @@ export class YamlUserVideoProgressStore {
     const courseId = enforced ? this.#courseKeyFor(enforced, preschoolCourses) : null;
     const policy = policyFor({ courseId, preschoolCourses, passScore: pcfg.pass_score, preschoolPassScore: pcfg.preschool_pass_score });
     const legacy = !practice && pcfg.legacy_clients !== false;
-    const review = practice?.sittingId && this.#judgements
-      ? (this.#judgements.get({ userId, sittingId: String(practice.sittingId), kind: 'end-of-lesson' }) ?? null)
-      : null;
     const roots = Array.isArray(pcfg.drill_roots) && pcfg.drill_roots.length ? pcfg.drill_roots : undefined;
     const prevOwed = existing.credit?.outcome === 'drill-owed';
     const args = {
-      percent, thresholdPercent: threshold, expectation: enforced, sittings: practiceState.sittings,
+      percent, thresholdPercent: threshold, enforced: !!enforced, sittings: practiceState.sittings,
       drillsPassed: practiceState.drillsPassed, engaged: nowEngaged, legacy, roots,
-      rotation: practiceState.rotation, review,
+      rotation: practiceState.rotation,
     };
     let decision = creditDecision(args, policy);
     if (decision.outcome === 'drill-owed' && !prevOwed) {
@@ -111,7 +149,7 @@ export class YamlUserVideoProgressStore {
       practiceState.rotation += 1;
       decision = creditDecision({ ...args, rotation: practiceState.rotation }, policy);
     }
-    return { decision, expectation: enforced, policy, review };
+    return { decision, expectation: enforced, policy };
   }
 
   #threshold() {
@@ -156,7 +194,8 @@ export class YamlUserVideoProgressStore {
     // Only the piano store judges practice; a store built without an
     // expectation source (School's material progress) keeps today's rule.
     const report = this.#expectations && practice && typeof practice === 'object' ? practice : null;
-    const practiceState = this.#mergePractice(existing.practice, report, GOOD_FAITH_DEFAULTS.maxSittings);
+    const judgement = report ? this.#judgementFor(userId, report.sittingId) : null;
+    const practiceState = this.#mergePractice(existing.practice, report, GOOD_FAITH_DEFAULTS.maxSittings, judgement);
 
     let completedAt = existing.completedAt || null;
     let credit = existing.credit ?? null;
@@ -173,23 +212,19 @@ export class YamlUserVideoProgressStore {
         credit = {
           outcome: d.outcome,
           score: d.score,
-          rawScore: d.rawScore,
-          practiceNpm: d.practiceNpm,
-          targetNpm: d.targetNpm,
-          source: judged.expectation?.source ?? null,
+          source: d.source,
           drill: d.drill ? { reps: d.drill.reps, sets: d.drill.sets, roots: d.drill.roots, spec: d.drill.spec } : null,
-          reviewed: !!d.reviewed,
-          reviewProbability: d.reviewed ? Number(judged.review?.probability) : null,
           preschool: !!judged.policy?.preschool,
           decidedAt: new Date().toISOString(),
         };
         if (d.credited) completedAt = new Date().toISOString();
-        this.#logger.info?.('piano.lesson-credit.decision', {
-          userId, key, percent: normalizedPercent, score: d.score, rawScore: d.rawScore, reviewed: !!d.reviewed,
-          reviewProbability: credit.reviewProbability, practiceNpm: d.practiceNpm, targetNpm: d.targetNpm,
-          source: credit.source, outcome: d.outcome, drillReps: d.drill?.reps ?? 0, drillsPassed: practiceState.drillsPassed,
-          preschool: credit.preschool,
-        });
+        const changed = existing.credit?.outcome !== d.outcome || existing.credit?.score !== d.score;
+        if (changed) {
+          this.#logger.info?.('piano.lesson-credit.decision', {
+            userId, key, percent: normalizedPercent, score: d.score, source: d.source, outcome: d.outcome,
+            drillReps: d.drill?.reps ?? 0, drillsPassed: practiceState.drillsPassed, preschool: credit.preschool,
+          });
+        }
         if (d.outcome === 'legacy') {
           this.#logger.sampled?.('piano.lesson-credit.legacy-client', { userId, key }, { maxPerMinute: 2, aggregate: true });
         }
@@ -229,18 +264,15 @@ export class YamlUserVideoProgressStore {
           playedSec: sit.playedSec ?? 0,
           humanNotes: sit.humanNotes ?? 0,
           practiceNotes: sit.practiceNotes ?? 0,
-          targetNpm: credit?.targetNpm ?? null,
-          expectationSource: credit?.source ?? null,
           score: credit?.score ?? null,
-          rawScore: credit?.rawScore ?? null,
-          reviewed: !!credit?.reviewed,
-          reviewProbability: credit?.reviewProbability ?? null,
+          scoreSource: credit?.source ?? null,
+          goodFaith: sit.goodFaith ?? null,
           outcome: wasCompleted ? 'already-counted' : (credit?.outcome ?? 'watching'),
           drillReps: credit?.drill?.reps ?? 0,
           drillsPassed: practiceState.drillsPassed,
           checkIns: sit.checkIns ?? 0,
+          checkInsAnswered: sit.checkInsAnswered ?? 0,
           scaleCheckIns: sit.scaleCheckIns ?? 0,
-          legitChecks: intOf(report.legitChecks),
           preschool: !!credit?.preschool,
         });
       } catch (err) {

@@ -8,7 +8,15 @@ const norm = (s) => String(s ?? '').trim().toLowerCase();
 const seedKey = (show, season, episode) => `${norm(show)}|${Number(season)}|${Number(episode)}`;
 
 /**
- * BuildLessonExpectations — writes one expectation record per piano lesson:
+ * BuildLessonExpectations — the piano lesson index (which lessons sit in an
+ * engagement-gated course, with their show/season key for preschool mode).
+ *
+ * Since 2026-11-12 (owner: "let's not trust our ratings") the nightly job runs
+ * it INDEX-ONLY: no decision gateway, no caption fetch, no rating call; an
+ * existing record is never rewritten and a new lesson gets a `default` record.
+ * Credit is decided by the session-level good-faith judge, never by these
+ * records' targets. With a gateway (a manual rebuild) it still writes one
+ * record per lesson:
  * measured (the audit's engaged sittings) → ai (one rubric `score` call over
  * the caption transcript) → default (watch-only, target 0). Idempotent: a
  * lesson whose caption hash and source are unchanged is skipped. Each record
@@ -44,7 +52,7 @@ export class BuildLessonExpectations {
     const seed = new Map();
     for (const r of this.#store.readMeasuredSeed() || []) seed.set(seedKey(r.show, r.season, r.episode), r);
     const gatewayOk = !!this.#gateway && typeof this.#gateway.evaluate === 'function';
-    if (!gatewayOk) this.#logger.warn?.('piano.lesson-expectation.no-gateway', {});
+    if (!gatewayOk) this.#logger.info?.('piano.lesson-expectation.index-only', {});
 
     const lessons = await this.#source.listLessons();
     const out = { computed: 0, skipped: 0, failed: 0, remaining: 0, noCaptions: [], calibration: null };
@@ -67,15 +75,19 @@ export class BuildLessonExpectations {
       const lesson = lessons[i];
       try {
         let srt = '';
-        if (lesson.captionStreamId) srt = await this.#source.captionText(lesson.captionStreamId);
+        const existing = this.#store.get(lesson.plexId);
+        if (!gatewayOk && existing && !forced) {
+          out.skipped += 1;
+          continue;
+        }
+        if (lesson.captionStreamId && gatewayOk) srt = await this.#source.captionText(lesson.captionStreamId);
         const cues = parseCaptionCues(srt);
         const transcript = transcriptFor(cues);
         const captionHash = transcript ? contentHash(srt) : null;
         const measured = seed.get(seedKey(lesson.showTitle, lesson.season, lesson.episode)) || null;
         const source = measured ? 'measured' : (transcript && gatewayOk ? 'ai' : 'default');
-        if (!transcript) out.noCaptions.push({ plexId: lesson.plexId, show: lesson.showTitle, title: lesson.title });
+        if (!transcript && gatewayOk) out.noCaptions.push({ plexId: lesson.plexId, show: lesson.showTitle, title: lesson.title });
 
-        const existing = this.#store.get(lesson.plexId);
         if (!forced && existing && existing.source === source && (existing.captionHash ?? null) === captionHash) {
           out.skipped += 1;
           this.#logger.debug?.('piano.lesson-expectation.skipped', { plexId: lesson.plexId, source });
@@ -109,7 +121,7 @@ export class BuildLessonExpectations {
         pending.records.push(record);
         out.computed += 1;
         this.#logger.info?.('piano.lesson-expectation.computed', { plexId: lesson.plexId, source, level: record.level, targetNpm });
-        if (!transcript) this.#logger.info?.('piano.lesson-expectation.no-captions', { plexId: lesson.plexId });
+        if (!transcript && gatewayOk) this.#logger.info?.('piano.lesson-expectation.no-captions', { plexId: lesson.plexId });
       } catch (err) {
         out.failed += 1;
         this.#logger.warn?.('piano.lesson-expectation.failed', { plexId: lesson.plexId, error: err.message });

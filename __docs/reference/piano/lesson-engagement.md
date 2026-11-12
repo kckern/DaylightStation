@@ -1,14 +1,22 @@
-# Piano lesson credit — the silent good-faith score
+# Piano lesson credit — the session good-faith judgement
 
-A piano video lesson counts when the child watched it **and played along about as
-much as that lesson asks for**. Each sitting gets one quiet score from 0 to 10; the
-child never sees it. Below the pass score the lesson asks for a short warm-up before
-it counts. During the lesson, the "still there?" check-in escalates from one note to
-scales when nobody plays between check-ins.
+A piano video lesson counts when the child watched it **and took part at the
+keyboard in good faith**. Each finished sitting gets one quiet 0–10 good-faith
+score from the decision gateway, judged on a minimal MIDI log of what was
+played; the child never sees it. Below the pass score the lesson asks for a
+short warm-up before it counts. During the lesson, the "still there?" check-in
+escalates from one note to scales when nobody plays between check-ins.
+
+**Owner ruling (2026-11-12): "let's not trust our ratings — just evaluate
+engagement by non-spam, good-faith detection via the Decision gateway."**
+Per-lesson expectation targets (AI rubric ratings and measured rates) no longer
+decide credit; the nightly rating job makes no model calls.
 
 Code: `__app_modules/learning/piano/portable/practice/` (pure rules, shared by the
-kiosk and the server), `server/adapters/YamlUserVideoProgressStore.mjs` (the credit
-decision), `browser/PianoKiosk/modes/Videos/` (live tally, warm-up, ladder).
+kiosk and the server — `sittingGoodFaith.mjs` is the judge's state and rubric,
+`goodFaith.mjs` the credit decision), `server/application/JudgeLessonSitting.mjs`
+(the gateway call), `server/adapters/YamlUserVideoProgressStore.mjs` (credit),
+`browser/PianoKiosk/modes/Videos/` (live tally, warm-up, ladder).
 
 ## What counts as a note
 
@@ -53,30 +61,86 @@ only machine streams and silence do not.
 The calibration test prints these numbers:
 `portable/practice/practiceScore.calibration.test.mjs`.
 
-## The score
+## The good-faith judgement
 
-```
-practiceNpm = practiceNotes / max(1, playedSec / 60)      (banked over the last 12 sittings)
-score       = targetNpm == 0 ? 10 : clamp(floor(10 × practiceNpm / targetNpm), 0, 10)
-```
+**One call per finished sitting**, scoped `{ app: 'piano', feature: 'lesson-good-faith' }`.
+Past the watch threshold (`videos.completion_threshold_percent`, 90) every
+play/log post from an enforced lesson carries the sitting's state; the first
+one asks the judge (`prepareCredit` before `record`), later posts join that
+answer. The lesson still has its last 10 % to play, so the child is not waiting.
+**8 s deadline**: a timeout, error, unusable answer or missing gateway is a
+final `fallback` for that sitting (no retry) and the lenient rule decides.
 
-Notes and played seconds are banked across sittings of the same lesson (each
-sitting keeps its field-wise maximum, so repeated `play/log` posts never add up).
-A lesson finished over two days scores both days' playing.
+**What the model sees** (`sittingGoodFaithState`; the server re-normalises it
+with `normaliseGoodFaithState`, so nothing else a kiosk sends reaches the model —
+no image, no audio, no identifiers):
+
+| Field | Content |
+|---|---|
+| `notes[]` | practice-like human notes as `{ pitch, onsetMs (since the sitting started), durMs, velocity }`; ≤ 200 — a longer sitting is shown as 8 evenly spaced runs of 25 |
+| `perMinute[]` | practice-like notes per minute (≤ 120 minutes) |
+| `lesson` | `lengthMin`, `watchedMin`, `preschool`, `notesPlayed`, `notesShown`, `notesSetAsideAsNoise` (mashing removed by the filter), `distinctPitches`, `playingStretches` (silence > 10 s splits) |
+| `presence` | `checkIns`, `answered`, `log[]` of `{ atMin, asked: 'note'\|'scale', answered }` |
+
+**The question** (`score`, six rungs, lowest first; school wording: "Did the
+child take part at the keyboard in good faith? Judge good faith, not skill or
+amount: some lessons ask for little playing."; preschool wording: "Any
+deliberate key pressing by a small child counts"):
+
+| Rung | Worth |
+|---|---|
+| Nobody at the keys: no notes, or only the taps that answered the presence check-ins | 0 |
+| Not in good faith: only noise (mashing, banging, one key hammered, random scatter) or one or two stray notes | 2 |
+| Doubtful: only a few scattered notes; hard to tell whether anyone was trying | 4 |
+| Good faith, sparse: someone deliberately trying what the lesson shows, even if only now and then | 7 |
+| Playing along: regular deliberate playing through the lesson | 9 |
+| Locked in: playing along steadily through the whole lesson | 10 |
+
+The score is the probability-weighted worth of the rungs, one decimal
+(`goodFaithFromAnswer`). The gateway allows at most 10 rungs, so the 0–10 scale
+is six worded rungs, not eleven.
+
+**The lenient rule** (`fallbackCredited`, used with no judgement): credit when
+the sitting(s) had **≥ 6 practice-like notes or an answered presence check-in**;
+otherwise (nobody there, drum loop only, mashing only) the largest warm-up.
+Benefit of the doubt: a judge that is off or slow never costs a child a lesson.
+
+### Calibration (2026-11-12) — passed, so the judge is on
+
+`node __app_modules/learning/piano/cli/piano-goodfaith-calibrate.cli.mjs`
+(every engagement-audit sitting + 6 synthetic mash sittings, 421 calls). The
+audit has no check-in record, so check-ins are replayed the way the kiosk opens
+them: one per 90 s without a note, all answered. Expected: engaged and
+low-touch credit; absentee, rhythm-loop and mash drill. Bar: false drills on
+engaged + low-touch ≤ 5 %, absentees caught ≥ 90 %, overall and per cohort.
+
+| | Accuracy | False drills (engaged + low-touch) | Absentees caught | Rhythm-loop caught | Mash caught |
+|---|---|---|---|---|---|
+| Overall (421) | 0.983 | 1 / 343 (0.3 %) | 57 / 60 (95 %) | 9 / 12 | 6 / 6 |
+| School (221) | 0.973 | 1 / 177 (0.6 %) | 24 / 26 (92.3 %) | 9 / 12 | 6 / 6 |
+| Preschool (200) | 0.995 | 0 / 166 | 33 / 34 (97.1 %) | — | — |
+| Lenient rule alone | — | 0 % | 31 % school / 38 % preschool (answered check-ins credit) | 0 % | 100 % |
+
+Mean scores: engaged 8.4 (school) / 8.7 (preschool), low-touch 7.5 / 7.6,
+absentee 0.5 / 0.2. Two runs gave identical numbers. Cost: ~4,600 input tokens,
+**≈ $0.0002 per sitting** ($0.08 for the whole set). The earlier burst-level
+`yesNo` judge failed the same kind of check (accuracy 0.48) and stays off.
 
 ## Credit
 
-At the watch threshold (`videos.completion_threshold_percent`, 90):
+At the watch threshold:
 
 | Case | Outcome |
 |---|---|
-| No expectation record, or the learner's `engagement_gate: false` | today's rule (watched + any play-along) — `unenforced` |
+| Lesson not in the index, or the learner's `engagement_gate: false` | today's rule (watched + any play-along) — `unenforced` |
 | Old kiosk bundle (no `practice` in the post) and `legacy_clients` not `false` | today's rule — `legacy` |
-| score ≥ pass score (6; preschool 3) | `credited` |
-| below the pass score | `drill-owed` until the warm-up's reps are passed → `credited-after-drills` |
+| best judged sitting ≥ pass score (6; preschool 3) | `credited` (`source: model`) |
+| judged below the pass score | `drill-owed`, warm-up sized from the floored score, until its reps are passed → `credited-after-drills` |
+| no judgement | the lenient rule (`source: fallback`): `credited`, or `drill-owed` at score 0 |
 
-An entry that already has `completedAt` is never re-judged. Credit is plain
-arithmetic on cached numbers; the model only advises on a borderline score (below).
+A sitting's judgement is stored on it (`practice.sittings[id].goodFaith`) and
+kept; the lesson's best judged sitting stands. An entry that already has
+`completedAt` is never re-judged.
 
 ### Warm-up size
 
@@ -90,46 +154,20 @@ Scales are the match gate's drill machinery (`gateDrill.js` + `AskSession`): an
 `exercise` spec on the `scales` collection, ionian, up-then-down, one octave.
 A missed rep is played again; there is no failure state.
 
-## The expectation record
+## The lesson index (formerly "the expectation record")
 
 `data/content/piano/lesson-expectations/<showKey>.json` (one file per show) plus
-`_measured.json` (the audit's measured lessons). Record:
+`_measured.json`. Since 2026-11-12 these files are only the **index**: a record
+means the lesson sits in an engagement-gated course, and its `showKey` /
+`seasonKey` key preschool mode. Their `targetNpm`, `level`, `levelScore` and
+`source` are kept on disk but **not read for credit**.
 
-```
-{ plexId, showKey, seasonKey, title, season, episode, durationSec,
-  source: 'measured'|'ai'|'default', targetNpm, level, levelScore, confidence, model,
-  measured: { n, minNpm, medianNpm, maxNpm } | null, captionHash, computedAt }
-```
-
-| Source | targetNpm |
-|---|---|
-| `measured` (audit engaged sittings) | slowest engaged rate; 0 under 6/min; capped at 40 |
-| `ai` (one rubric `score` call over the caption transcript) | level 0–3 → `videos.practice.level_targets` (code default `[0, 5, 13, 25]`; live `[0, 4, 10, 20]` since the first calibration) |
-| `default` (no captions, no measurement) | 0 — watch-only, never drills |
-
-A course listed by a collection may be a whole show or a single season of one;
-both are walked (a season's episodes keep their show as `showKey`).
-
-**First run (2026-11-12):** 3,433 lessons — 41 measured, 372 AI, 3,020 default
-(no captions: most courses other than the audited one). AI levels: 0 → 33,
-1 → 24, 2 → 288, 3 → 27. Agreement with measured engagement is weak (Spearman
-≈ 0 over 41 measured lessons — the rubric sets a floor, it does not rank), and
-with targets `[0, 5, 13, 25]` 12 % of measured lessons had an AI target above
-their slowest engaged sitting, so the live targets were lowered to
-`[0, 4, 10, 20]` (7 %).
-
-Rubric (exact copy, `lessonExpectation.mjs`): "How much of this piano lesson does
-the student spend playing the piano themselves?" — Watch only / A little /
-Regular / Throughout. Only tabs whose `engagement_gate` is not `false` get
-records; a season a gate-off tab cherry-picks (singing) is skipped.
-
-**The job:** `POST /api/v1/harvest/piano-lesson-expectations?limit=60[&force=true]`,
-nightly from `jobs.yml` (`piano-lesson-expectations`, `40 3 * * *`). Idempotent:
-a lesson whose caption hash and source are unchanged is skipped. The result
-reports `computed / skipped / failed / remaining`, `noCaptions`, and
-`calibration: { n, spearman, aiTargetAboveMeasuredRate }` (AI level vs measured
-engagement over the measured lessons). Model calls are scoped
-`{ app: 'piano', feature: 'lesson-expectation' }` in the AI usage ledger.
+**The job** (`piano-lesson-expectations`, nightly `40 3 * * *`,
+`POST /api/v1/harvest/piano-lesson-expectations`) runs **index-only**: no
+decision gateway, no caption fetch, no rating call. An existing record is never
+rewritten; a new lesson gets a `source: 'default'` record. The 2026-11-12 rubric
+run (3,433 lessons; Spearman ≈ 0 against measured engagement) is why the ratings
+were dropped.
 
 ## The presence ladder
 
@@ -149,34 +187,15 @@ labelled `legit` (≥ 8 legit notes, retention ≥ 0.8), `spam` (retention ≤ 0
 model. While its answer is pending the ladder holds; with the model off or timed
 out an ambiguous burst counts as legit. Preschool courses never go past step 0.
 
-## The legitimacy judge
+## The check-in burst judge (off)
 
-One `yesNo` question, scoped `{ app: 'piano', feature: 'lesson-legit-notes' }`,
-asked **only** for an ambiguous check-in burst or a borderline final score
-(raw score in [pass − 1, pass + 1): [5, 7), preschool [2, 4)).
-
-- **What it sees:** a minimal MIDI log only — `notes[]` of `{ pitch, onsetMs, durMs,
-  velocity }` (≤ 200, onsets relative to the first) and five numbers: `notes`,
-  `distinctPitches`, `pitchSpan`, `medianIoiMs`, `velocitySpread`. No image,
-  piano roll or audio. `POST /api/v1/piano/users/:userId/lesson-legit` rejects
-  anything else (400).
-- **Question:** "Is this a genuine attempt to play (practice/play-along) rather
-  than random mashing, single-key spam, or idle tapping? …"; preschool: "Is this a
-  small child genuinely trying to play along, rather than no one playing / a
-  machine? …".
-- **Async, advisory:** the kiosk never waits. 8 s deadline; a timeout, error or
-  missing gateway is `fallback` and the arithmetic stands. Answers are cached per
-  burst (in memory, 6 h); one call per (learner, sitting, kind, check-in).
-- **Borderline credit:** p ≥ 0.7 credits; p < 0.7 owes the drill sized from the
-  floored score (at least the smallest); no answer → the arithmetic score decides.
-- **Off until calibrated:** `videos.practice.legit_model: true` turns it on.
-  Calibrate with
-  `node __app_modules/learning/piano/cli/piano-legit-calibrate.cli.mjs` (60 engaged
-  + 60 mash bursts + 40 preschool bursts; bar: ≥ 0.9 overall, ≥ 0.8 on ambiguous,
-  ≥ 0.9 preschool acceptance). **First calibration (2026-11-12): fails** —
-  model accuracy 0.48 (engaged 35/60 and mash 37/60 judged legit), preschool
-  acceptance 0/40, filter accuracy 0.99. The judge stays off; everything runs
-  on the deterministic filter.
+The presence ladder can ask one `yesNo` question about an *ambiguous* check-in
+burst (`POST /api/v1/piano/users/:userId/lesson-legit`, scoped
+`lesson-legit-notes`, `videos.practice.legit_model`). Its calibration failed
+(2026-11-12: accuracy 0.48, preschool acceptance 0/40; `piano-legit-calibrate`),
+so it stays off and an ambiguous burst counts as legit. It plays no part in
+credit: the kiosk no longer asks it at the end of a lesson, and the progress store
+no longer reads its `end-of-lesson` answers (the route still accepts them from old bundles).
 
 ## What the child sees
 
@@ -191,31 +210,33 @@ lesson offers **Warm up** or **Watch again**.
 
 Teacher → piano panel "Piano lesson sittings" (`GET /api/v1/piano/users/:userId/lesson-sittings?days=14`,
 `data/users/{id}/apps/piano/lesson-sittings.yml`, newest 300): date, lesson,
-watched %, score N/10, check-ins `N (M scales)`, practice rate vs expected with its
-source, warm-up given and passed, and the outcome (Counted / Counted after
+watched %, good-faith score N/10 (`no judge` when the lenient rule decided),
+check-ins `N (M scales)`, practice-like notes per minute, warm-up given and passed, and the outcome (Counted / Counted after
 warm-up / Not counted yet / Not checked).
 
 ## Config (`household/piano/config.yml` → `videos.practice`)
 
 | Key | Default | Meaning |
 |---|---|---|
+| `good_faith_model` | false | ask the session good-faith judge (live: `true` since the 2026-11-12 calibration) |
 | `pass_score` | 6 | school-course pass score |
 | `preschool_pass_score` | 3 | preschool-course pass score |
 | `preschool_courses` | `[]` | course (show or season) ids judged in preschool mode |
-| `level_targets` | `[0, 5, 13, 25]` | rubric level → notes/min (live: `[0, 4, 10, 20]`) |
 | `drill_roots` | `[C, G, F]` | scale roots, rotating per warm-up |
 | `legacy_clients` | true | `false` once every kiosk sends `practice` |
-| `legit_model` | false | turn the legitimacy judge on (after calibration) |
+| `legit_model` | false | the check-in burst judge (failed calibration; off) |
+| `level_targets` | — | unused since 2026-11-12 (ratings no longer decide credit) |
 
 ## Log events (LogsQL)
 
 | Event | Example |
 |---|---|
-| `piano.lesson-credit.decision` (score, rawScore, reviewed, practiceNpm, targetNpm, source, outcome, preschool) | `"piano.lesson-credit.decision" AND _time:24h` |
+| `piano.lesson-good-faith.judged` (score, model, ms, notes, checkIns, levelProbabilities, inputTokens, preschool) / `fallback` (reason: timeout / error / no-score / no-gateway) | `"piano.lesson-good-faith" AND _time:24h` |
+| `piano.lesson-credit.decision` (score, source model/fallback, outcome, drillReps, preschool) — logged when the outcome or score changes | `"piano.lesson-credit.decision" AND _time:24h` |
 | `piano.lesson-credit.legacy-client` | `"piano.lesson-credit.legacy-client" AND _time:24h` |
 | `piano.video-progress.record` (gains outcome, score) | `"piano.video-progress.record" AND _time:6h` |
-| `piano.lesson-expectation.computed / skipped / failed / no-captions / run-summary / unreadable` | `"piano.lesson-expectation.run-summary" AND _time:7d` |
+| `piano.lesson-expectation.index-only / computed / run-summary` (the index job) | `"piano.lesson-expectation.run-summary" AND _time:7d` |
 | `piano.lesson-legit.judged / fallback` | `"piano.lesson-legit" AND _time:24h` |
-| `piano.lesson-practice.sitting-start / snapshot / loop-retracted / judge-answer` | `"piano.lesson-practice.snapshot" AND _time:2h` |
+| `piano.lesson-practice.sitting-start / threshold / snapshot / loop-retracted` | `"piano.lesson-practice.snapshot" AND _time:2h` |
 | `piano.lesson-drill.offered / started / rep-passed / completed / left / unavailable` | `"piano.lesson-drill" AND _time:24h` |
 | `piano.engagement-gate.open` (step, scales, consecutiveIdle) / `scale-passed` / `ladder-reset` / `ladder-hold` | `"piano.engagement-gate" AND _time:24h` |

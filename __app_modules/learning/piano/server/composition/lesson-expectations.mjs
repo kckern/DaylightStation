@@ -3,12 +3,12 @@ import { PlexLessonCaptionSource } from '../adapters/PlexLessonCaptionSource.mjs
 import { BuildLessonExpectations } from '../application/BuildLessonExpectations.mjs';
 
 /**
- * Registers the nightly lesson-expectation job. Config (videos tabs,
- * level_targets) is re-read on every run so a config reload takes effect.
- * `decisionGateway` arrives already scoped to
- * { app: 'piano', feature: 'lesson-expectation' }.
+ * Registers the nightly lesson-index job. Since 2026-11-12 it is index-only:
+ * no decision gateway, so no rating calls (owner: "let's not trust our
+ * ratings"); it only adds records for new lessons in engagement-gated courses.
+ * Config (videos tabs) is re-read on every run so a config reload takes effect.
  */
-export function registerPianoLessonExpectationHarvester({ harvesterServices, contentServices, contentRegistry, configService, decisionGateway, rootLogger }) {
+export function registerPianoLessonExpectationHarvester({ harvesterServices, contentServices, contentRegistry, configService, rootLogger }) {
   const logger = rootLogger.child({ module: 'piano-lesson-expectations' });
   try {
     const store = contentServices?.lessonExpectations;
@@ -20,7 +20,7 @@ export function registerPianoLessonExpectationHarvester({ harvesterServices, con
       return new BuildLessonExpectations({
         lessonSource: new PlexLessonCaptionSource({ plexClient: plex.client, videosConfig: videos, logger }),
         store,
-        decisionGateway,
+        decisionGateway: null,
         levelTargets: videos.practice?.level_targets,
         logger,
       });

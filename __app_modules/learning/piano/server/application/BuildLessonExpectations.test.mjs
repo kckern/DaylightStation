@@ -77,13 +77,13 @@ describe('BuildLessonExpectations', () => {
     expect(store.get('2')).toBeNull();
   });
 
-  it('no gateway → everything default with a warning', async () => {
+  it('no gateway → everything default, logged as an index-only run', async () => {
     const store = memStore();
-    const warns = [];
-    const job = new BuildLessonExpectations({ lessonSource: source([lesson('2')]), store, decisionGateway: null, logger: { ...logger, warn: (e) => warns.push(e) }, clock });
+    const infos = [];
+    const job = new BuildLessonExpectations({ lessonSource: source([lesson('2')]), store, decisionGateway: null, logger: { ...logger, info: (e) => infos.push(e) }, clock });
     await job.execute();
     expect(store.get('2')).toMatchObject({ source: 'default', targetNpm: 0 });
-    expect(warns).toContain('piano.lesson-expectation.no-gateway');
+    expect(infos).toContain('piano.lesson-expectation.index-only');
   });
 
   it('computes Spearman over measured lessons that have an AI score', async () => {
@@ -105,5 +105,17 @@ describe('BuildLessonExpectations', () => {
     const gw = gateway();
     await new BuildLessonExpectations({ lessonSource: source([lesson('2')]), store: memStore(), decisionGateway: gw, logger, clock }).execute();
     expect(gw.calls).toHaveLength(1);
+  });
+
+  it('index-only (no gateway, owner 2026-11-12): no captions fetched, no model, existing records never rewritten', async () => {
+    const store = memStore();
+    store.lessons.set('1', { plexId: '1', showKey: '1', source: 'ai', targetNpm: 13, levelScore: 2.2, captionHash: 'h' });
+    let fetched = 0;
+    const src = { listLessons: async () => [lesson('1'), lesson('2')], captionText: async () => { fetched += 1; return SRT; } };
+    const r = await new BuildLessonExpectations({ lessonSource: src, store, decisionGateway: null, logger, clock }).execute();
+    expect(fetched).toBe(0);
+    expect(store.get('1')).toMatchObject({ source: 'ai', levelScore: 2.2 });
+    expect(store.get('2')).toMatchObject({ source: 'default', showKey: '1', seasonKey: 's1' });
+    expect(r).toMatchObject({ computed: 1, skipped: 1 });
   });
 });
