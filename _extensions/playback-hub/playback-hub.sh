@@ -749,12 +749,15 @@ with_api_fallback() {
 
 curl_api() {
     local url="$1"
-    curl -sfL --connect-timeout 5 "$url" && return 0
+    # --max-time: Plex busy after a restart left this curl hanging with no
+    # bound (2026-11-12), wedging the monitor's startup before it ever watched
+    # BlueZ. Bounded, a dead API falls through to the cached playlist.
+    curl -sfL --connect-timeout 5 --max-time 20 "$url" && return 0
 
     local fallback_url
     fallback_url=$(with_api_fallback "$url")
     if [[ "$fallback_url" != "$url" ]]; then
-        curl -sfL --connect-timeout 5 "$fallback_url"
+        curl -sfL --connect-timeout 5 --max-time 20 "$fallback_url"
     else
         return 1
     fi
@@ -3042,6 +3045,19 @@ mpv_watchdog() {
 monitor() {
     profile_loop &
     PROFILE_PID=$!
+
+    # Start the link keeper FIRST — it must not wait behind the startup
+    # resume below (a slow queue API once held that for minutes).
+    # The link keeper (slot_link.py keep): pages every slot's bonded
+    # speaker on its own adapter while the slot has something to play — every
+    # 12 s, backing off to 60 s — with PSCAN heal, bounded adapter resets and
+    # one alert per outage. It only ever calls Connect; the gdbus connect
+    # handler below resumes the slot's armed/scheduled source. Replaces the
+    # bash connectivity_loop (60 s, schedule-window private slots only).
+    # A SIGKILLed daemon can leave its keeper behind; never run two.
+    pkill -f "slot_link.py --base $BASE_DIR keep" 2>/dev/null || true
+    python3 "$_SCRIPT_DIR/slot_link.py" --base "$BASE_DIR" keep &
+    CONNECTIVITY_PID=$!
     declare -A dbus_to_slot
     declare -A dbus_to_name
     declare -A dbus_to_device
@@ -3153,16 +3169,6 @@ monitor() {
     selfcheck_loop &
     SELFCHECK_PID=$!
 
-    # Start the link keeper (slot_link.py keep): pages every slot's bonded
-    # speaker on its own adapter while the slot has something to play — every
-    # 12 s, backing off to 60 s — with PSCAN heal, bounded adapter resets and
-    # one alert per outage. It only ever calls Connect; the gdbus connect
-    # handler below resumes the slot's armed/scheduled source. Replaces the
-    # bash connectivity_loop (60 s, schedule-window private slots only).
-    # A SIGKILLed daemon can leave its keeper behind; never run two.
-    pkill -f "slot_link.py --base $BASE_DIR keep" 2>/dev/null || true
-    python3 "$_SCRIPT_DIR/slot_link.py" --base "$BASE_DIR" keep &
-    CONNECTIVITY_PID=$!
 
     while read -r line; do
         for dbus_id in "${!dbus_to_slot[@]}"; do
