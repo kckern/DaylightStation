@@ -18,6 +18,8 @@ function armNumbers(samples, side) {
     score: summarize(arms.map((a) => a.score), 2),
     angleDeg: summarize(arms.filter((a) => a.state === 'ok').map((a) => a.angleDeg), 1),
     lengthRatio: summarize(arms.map((a) => a.lengthRatio), 2),
+    // Shoulder widths from the body midline, + = screen right (torso frame).
+    offset: summarize(arms.filter((a) => a.state === 'ok').map((a) => a.offset), 3),
     statePct: states,
   };
 }
@@ -120,6 +122,13 @@ export function createStepCollector({ settleMs = 0 } = {}) {
           rawXMin: rawXs.length ? round(Math.min(...rawXs), 3) : null,
           rawXMax: rawXs.length ? round(Math.max(...rawXs), 3) : null,
           clampedPct: pct(rawXs.filter((v) => v < 0 || v > 1).length, rawXs.length),
+          // Torso frame: the aim offset in shoulder widths (what calibration
+          // captures), how much of the step was measured in 3-D, and how far
+          // the torso turned and tilted while it was.
+          offset: summarize(found.map((s) => s.aim.offset), 3),
+          frame3dPct: pct(settled.filter((s) => s.aim?.frame === '3d').length, settled.length),
+          yawDeg: summarize(settled.map((s) => s.aim?.yawDeg).filter((v) => v != null), 1),
+          tiltDeg: summarize(settled.map((s) => s.aim?.tiltDeg).filter((v) => v != null), 1),
           bothArmsPct: pct(found.filter((s) => s.aim.usableArms === 2).length, settled.length),
           oneArmPct: pct(found.filter((s) => s.aim.usableArms === 1).length, settled.length),
           armsUpPct: pct(upKnown.filter((s) => s.armsUp).length, upKnown.length),

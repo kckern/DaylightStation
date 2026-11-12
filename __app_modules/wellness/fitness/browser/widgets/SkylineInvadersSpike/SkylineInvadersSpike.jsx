@@ -20,8 +20,8 @@ import { getPoseDetectorService } from "../../domain/pose/PoseDetectorService.js
 import FitnessWebcam from "../../components/FitnessWebcam.jsx";
 import { BLAZEPOSE_CONNECTIONS } from "../../lib/pose/poseConnections.js";
 import {
-  DEFAULT_AIM_CONFIG, KP, computeAim, createAimHistory, createAimSmoother,
-  latchAfter, latchBefore, wristsAboveHead, wristsAboveShoulders,
+  DEFAULT_AIM_CONFIG, KP, armsWide, computeAim, createAimHistory, createAimSmoother,
+  latchAfter, latchBefore, wristsAboveShoulders,
 } from "../../lib/skylineInvaders/aim.js";
 import { frameCheck } from "../../lib/skylineInvaders/framing.js";
 import { compactPayload, pressRate, PRESS_LATENCY_NOTE } from "../../lib/skylineInvaders/matMetrics.js";
@@ -49,6 +49,7 @@ const BATCH_PERIOD_S = 20;
 const BATCH_MAX_RECORDS = 60;
 const VIDEO_CONSTRAINTS = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' };
 const LOAD_ELEMENTS = 60;
+const AIM_2D = Object.freeze({ ...DEFAULT_AIM_CONFIG, use3D: false });
 
 const now = () => performance.now();
 const errorText = (err) => (err ? `${err.name ? `${err.name}: ` : ''}${err.message || String(err)}` : null);
@@ -174,6 +175,17 @@ function ResultsPanel({ summary }) {
       </tr>
     );
   };
+  const twistRow = (subject) => {
+    const w = summary.aim?.[subject]?.twist;
+    return (
+      <tr key={`${subject}-twist`}>
+        <th>{subject} twist</th>
+        <td className={w ? (w.peakToPeak <= 0.1 ? 'ok' : 'bad') : ''}>aim moved {fmt(w?.peakToPeak, 3)}</td>
+        <td>torso turned {fmt(w?.yawMinDeg, 0)}° to {fmt(w?.yawMaxDeg, 0)}°</td>
+        <td>3-D {fmt(w?.frame3dPct, 0)}% · lost {fmt(w?.lostPct, 0)}%</td>
+      </tr>
+    );
+  };
   const { drill, free, relay, latch } = summary.mat || {};
   return (
     <div className="sis-results">
@@ -184,7 +196,7 @@ function ResultsPanel({ summary }) {
       <table>
         <caption>Aim while holding still (0 = screen left, 1 = screen right)</caption>
         <tbody>
-          {['adult', 'kid'].flatMap((s) => [holdRow(s, 'holdLeft', 'left'), holdRow(s, 'holdCenter', 'center'), holdRow(s, 'holdRight', 'right')])}
+          {['adult', 'kid'].flatMap((s) => [holdRow(s, 'holdLeft', 'left'), holdRow(s, 'holdCenter', 'center'), holdRow(s, 'holdRight', 'right'), twistRow(s)])}
         </tbody>
       </table>
       <table>
@@ -467,6 +479,19 @@ function SpikeInner({ log, onMount }) {
     const pose = poses?.[0] || null;
     const video = videoRef.current;
     const aim = computeAim(pose);
+    // The same pose through the 2-D fallback, for the trace only: it should
+    // agree with the torso frame when the player is square to the camera and
+    // part from it as they turn.
+    const aim2d = aim.frame === '3d' ? computeAim(pose, AIM_2D) : aim;
+    // Once per change: did the detector hand over usable 3-D keypoints?
+    if (aim.frame && aim.frame !== s.aimFrame) {
+      s.aimFrame = aim.frame;
+      const k3 = pose?.keypoints3D || [];
+      log.info('aim_frame', {
+        frame: aim.frame, keypoints3D: k3.length, yawDeg: round(aim.yawDeg, 1), tiltDeg: round(aim.tiltDeg, 1),
+        shoulderWidthM: aim.frame === '3d' ? round(Math.hypot(k3[KP.leftShoulder].x - k3[KP.rightShoulder].x, k3[KP.leftShoulder].y - k3[KP.rightShoulder].y, k3[KP.leftShoulder].z - k3[KP.rightShoulder].z), 3) : null,
+      });
+    }
     const xs = s.smoother.push(aim.aimX, t);
     if (aim.aimX != null) s.lastX = aim.aimX;
     const sample = {
@@ -475,6 +500,7 @@ function SpikeInner({ log, onMount }) {
       backend: service.backend ?? null,
       hasPose: !!pose,
       aim,
+      x2d: aim2d.aimX,
       xs,
       frame: frameCheck(pose, video?.videoWidth || 0, video?.videoHeight || 0),
       armsUp: wristsAboveShoulders(pose),
@@ -485,12 +511,12 @@ function SpikeInner({ log, onMount }) {
     const step = steps[s.idx];
     if (s.collector && !s.switching && (s.phase === 'wait' || s.phase === 'measure')) s.collector.pose(sample);
 
-    // Both wrists above the head, held: "next". Must first be seen down, so
-    // arms still raised from the previous step do not trigger it.
+    // Both arms held out to the sides, held: "next". Must first be seen not
+    // wide, so arms still out from the previous step do not trigger it.
     if (step?.gesture && (s.phase === 'wait' || s.phase === 'measure')) {
-      const above = wristsAboveHead(pose);
-      if (above === false) s.gesture = { armed: true, since: null };
-      else if (above === true && s.gesture.armed) {
+      const wide = armsWide(aim);
+      if (wide === false) s.gesture = { armed: true, since: null };
+      else if (wide === true && s.gesture.armed) {
         if (s.gesture.since == null) s.gesture.since = t;
         else if (t - s.gesture.since >= GESTURE_HOLD_MS) {
           s.gesture = { armed: false, since: null };
@@ -499,7 +525,7 @@ function SpikeInner({ log, onMount }) {
       } else s.gesture.since = null;
     }
     draw(pose, sample, step);
-  }, [steps, handleInput, draw]);
+  }, [steps, handleInput, draw, log]);
 
   const onPoseStatus = useCallback((status) => {
     const s = S.current;
@@ -745,6 +771,11 @@ function SpikeInner({ log, onMount }) {
           ls: round(fresh?.aim.arms.left.score, 2), rs: round(fresh?.aim.arms.right.score, 2),
           la: fresh?.aim.arms.left.state ?? null, ra: fresh?.aim.arms.right.state ?? null,
           lDeg: round(fresh?.aim.arms.left.angleDeg, 0), rDeg: round(fresh?.aim.arms.right.angleDeg, 0),
+          // Torso frame: which one measured ('3d' | '2d'), the turn and tilt it saw,
+          // the offsets in shoulder widths, and the 2-D fallback's aim for comparison.
+          fr: fresh?.aim.frame ?? null, yaw: round(fresh?.aim.yawDeg, 0), tilt: round(fresh?.aim.tiltDeg, 0),
+          off: round(fresh?.aim.offset, 2), lOff: round(fresh?.aim.arms.left.offset, 2), rOff: round(fresh?.aim.arms.right.offset, 2),
+          x2d: round(fresh?.x2d, 3),
           wrists: fresh ? (fresh.frame.leftWrist && fresh.frame.rightWrist ? 1 : 0) : null, head: fresh ? (fresh.frame.head ? 1 : 0) : null,
           matOcc: mat ? (mat.occupied ? 1 : 0) : null, matState: mat?.detectionState ?? null, presses: s.pressTimes.length,
           load: s.load ? 1 : 0, loadFps: s.load ? s.loadMeter.live(t, 1000) : null,
@@ -776,6 +807,7 @@ function SpikeInner({ log, onMount }) {
         model: s.actualModel, backend: fresh?.backend ?? null, load: s.load, loadFps: s.load ? s.loadMeter.live(t, 1000) : null,
         poseStatus: s.pose, hasPose: !!fresh?.hasPose, aimX: fresh?.aim.aimX ?? null, lost: fresh ? fresh.aim.lost : true,
         left: fresh?.aim.arms.left ?? null, right: fresh?.aim.arms.right ?? null, frame: fresh?.frame ?? null,
+        aimFrame: fresh?.aim.frame ?? null, yawDeg: fresh?.aim.yawDeg ?? null,
         gesture: s.gesture.since != null ? Math.min(1, (t - s.gesture.since) / GESTURE_HOLD_MS) : 0,
         matId: matKey, matOccupied: mat ? !!mat.occupied : null, matDetection: mat?.detectionState ?? null,
         rearms: Object.values(s.mats).reduce((acc, m) => acc + (m.rearmsSeen || 0), 0),
@@ -830,7 +862,7 @@ function SpikeInner({ log, onMount }) {
     <div className={`sis-tile ${arm?.state === 'ok' ? '' : 'is-warn'}`}>
       <span className="sis-tile-label">{label}</span>
       <span className="sis-tile-value">{fmt(arm?.score, 2)}</span>
-      <span className="sis-tile-sub">{arm ? arm.state.replace('_', ' ') : 'no pose'}{arm?.angleDeg != null ? ` · ${fmt(arm.angleDeg, 0)}°` : ''}</span>
+      <span className="sis-tile-sub">{arm ? arm.state.replace('_', ' ') : 'no pose'}{arm?.offset != null ? ` · ${fmt(arm.offset, 1)} sw` : ''}</span>
     </div>
   );
 
@@ -860,7 +892,7 @@ function SpikeInner({ log, onMount }) {
           {framingWarning ? <p className="sis-error">{framingWarning}</p> : null}
           {step.panel === 'framing' && ui.hasPose && ui.frame?.ok ? <p className="sis-good">Framing looks good.</p> : null}
           {step.kind === 'wait' && step.id !== 'results' ? (
-            <p className="sis-how">Press any key (not 1–6), tap NEXT{step.gesture ? ', or hold both hands above your head for 2 seconds' : ''}.</p>
+            <p className="sis-how">Press any key (not 1–6), tap NEXT{step.gesture ? ', or hold both arms straight out to your sides for 2 seconds' : ''}.</p>
           ) : null}
           {step.gesture && ui.gesture > 0 ? <div className="sis-progress sis-progress--gesture"><span style={{ width: `${ui.gesture * 100}%` }} /></div> : null}
         </section>
@@ -882,7 +914,7 @@ function SpikeInner({ log, onMount }) {
               <div className={`sis-tile ${ui.lost ? 'is-warn' : ''}`}>
                 <span className="sis-tile-label">aim</span>
                 <span className="sis-tile-value">{ui.lost ? 'LOST' : fmt(ui.aimX, 2)}</span>
-                <span className="sis-tile-sub">{ui.hasPose ? '0 left · 1 right' : 'step into view'}</span>
+                <span className="sis-tile-sub">{ui.hasPose ? `0 left · 1 right · ${ui.aimFrame === '3d' ? `3-D, turned ${fmt(ui.yawDeg, 0)}°` : '2-D only (a turn will move it)'}` : 'step into view'}</span>
               </div>
               {armCell('left arm', ui.left)}
               {armCell('right arm', ui.right)}

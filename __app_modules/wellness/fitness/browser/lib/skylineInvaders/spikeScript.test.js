@@ -19,6 +19,14 @@ describe('script', () => {
     steps.filter((s) => s.id.startsWith('t2.')).forEach((s) => expect(['adult', 'kid']).toContain(s.subject));
     steps.filter((s) => s.kind === 'timed').forEach((s) => expect(s.gesture).toBe(false));
   });
+  it('has a twist step per subject, between the holds and the one-arm sweeps, and no prompt asks for arms overhead', () => {
+    const ids = steps.map((s) => s.id);
+    ['adult', 'kid'].forEach((subject) => {
+      expect(ids.indexOf(`t2.${subject}.hold_right`)).toBeLessThan(ids.indexOf(`t2.${subject}.twist`));
+      expect(ids.indexOf(`t2.${subject}.twist`)).toBeLessThan(ids.indexOf(`t2.${subject}.one_arm_left`));
+    });
+    steps.forEach((s) => expect(`${s.title} ${s.text}`).not.toMatch(/overhead|above your head|arms up|raise/i));
+  });
   it('redo restarts a timed step and steps back from a wait screen', () => {
     const drill = steps.findIndex((s) => s.id === 't3.drill');
     expect(redoTarget(steps, drill)).toBe(drill);
@@ -101,6 +109,37 @@ describe('collector and summary', () => {
     expect(n.frame.okPct).toBe(100);
     expect(n.mat).toMatchObject({ presses: 0, rearms: 0 });
     expect(n.mat.relay).toBeUndefined();
+    // Torso-frame trace: this fixture has no keypoints3D, so everything was 2-D.
+    expect(n.aim.frame3dPct).toBe(0);
+    expect(n.aim.yawDeg.max).toBeNull();
+    expect(n.aim.offset.mean).toBeCloseTo(0.75, 2);   // 60 px / 80 px shoulder width
+    expect(n.aim.left.offset.mean).toBeCloseTo(0.25, 2);
+  });
+
+  it('reports the torso turn and which frame measured it, and summarizes the twist step', () => {
+    const c = createStepCollector();
+    c.start(0);
+    for (let t = 0; t <= 4000; t += 50) {
+      const yaw = 20 * Math.sin(t / 600);
+      const s = 0.36;
+      const keypoints = Array.from({ length: 33 }, () => ({ x: 320, y: 300, score: 0.9 }));
+      const keypoints3D = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, score: 0.9 }));
+      const c0 = Math.cos((yaw * Math.PI) / 180);
+      const s0 = Math.sin((yaw * Math.PI) / 180);
+      const put = (i, side, fwd) => { keypoints3D[i] = { x: side * c0 + fwd * s0, y: 0, z: side * s0 - fwd * c0, score: 0.9 }; keypoints[i] = { x: 320 + 300 * keypoints3D[i].x, y: 200, score: 0.9 }; };
+      put(KP.leftShoulder, s / 2, 0); put(KP.rightShoulder, -s / 2, 0); put(KP.leftWrist, s / 2, 0.45); put(KP.rightWrist, -s / 2, 0.45);
+      const aim = computeAim({ keypoints, keypoints3D });
+      c.pose({ t, latencyMs: 30, hasPose: true, aim, xs: aim.aimX, frame: {}, armsUp: false });
+    }
+    const n = c.result(4000);
+    expect(n.aim.frame3dPct).toBe(100);
+    expect(n.aim.yawDeg.max - n.aim.yawDeg.min).toBeGreaterThan(35);
+    expect(n.aim.peakToPeak).toBeLessThan(0.001);
+    const summary = buildSummary({ steps: buildScript(), results: { 't2.adult.twist': { outcome: 'end', attempts: 1, numbers: n } } });
+    expect(summary.aim.adult.twist).toMatchObject({ frame3dPct: 100, lostPct: 0 });
+    expect(summary.aim.adult.twist.peakToPeak).toBeLessThan(0.001);
+    expect(summary.aim.adult.twist.yawMaxDeg - summary.aim.adult.twist.yawMinDeg).toBeGreaterThan(35);
+    expect(summary.aim.kid.twist).toBeNull();
   });
 
   it('summarizes mat steps that recorded zero presses without throwing', () => {

@@ -16,7 +16,7 @@ export const FRAME_PARTS = Object.freeze({
  * @returns {{ head, leftWrist, rightWrist, shoulders, hips: boolean, ok: boolean }}
  *   ok = head and both shoulders in frame. Wrists are reported but not
  *   required: with arms at rest they hang below a 480p frame, and aiming only
- *   needs them while the arms are raised.
+ *   needs them while the player is reaching (chest or waist height).
  */
 export function frameCheck(pose, width, height, { minScore = 0.3, margin = 0.02 } = {}) {
   const k = pose?.keypoints || [];

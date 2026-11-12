@@ -23,6 +23,8 @@ const holdOf = (n) => (n ? {
   sdSmoothed: n.aim.sdSmoothed,
   peakToPeak: n.aim.peakToPeak,
   lostPct: n.aim.lostPct,
+  offset: n.aim.offset?.mean ?? null,
+  frame3dPct: n.aim.frame3dPct ?? null,
   leftAngleDeg: n.aim.left.angleDeg.mean,
   rightAngleDeg: n.aim.right.angleDeg.mean,
   samples: n.aim.samples,
@@ -33,6 +35,7 @@ function aimOf(get, subject) {
   const sweep = n('sweep');
   const away = n('turn_away');
   const up = n('arms_low');
+  const twist = n('twist');
   const one = (suffix) => {
     const r = n(suffix);
     return r ? { lostPct: r.aim.lostPct, oneArmPct: r.aim.oneArmPct, bothArmsPct: r.aim.bothArmsPct, leftOkPct: r.aim.left.okPct, rightOkPct: r.aim.right.okPct } : null;
@@ -43,9 +46,17 @@ function aimOf(get, subject) {
     holdRight: holdOf(n('hold_right')),
     sweep: sweep ? {
       rawXMin: sweep.aim.rawXMin, rawXMax: sweep.aim.rawXMax, lostPct: sweep.aim.lostPct, clampedPct: sweep.aim.clampedPct,
+      // The player's real reach in shoulder widths: what `reach` / calibration should be.
+      offsetMin: sweep.aim.offset?.min ?? null, offsetMax: sweep.aim.offset?.max ?? null, frame3dPct: sweep.aim.frame3dPct ?? null,
       leftAngleMinDeg: sweep.aim.left.angleDeg.min, leftAngleMaxDeg: sweep.aim.left.angleDeg.max,
       rightAngleMinDeg: sweep.aim.right.angleDeg.min, rightAngleMaxDeg: sweep.aim.right.angleDeg.max,
       wristsInFramePct: Math.min(sweep.frame.leftWristPct ?? 0, sweep.frame.rightWristPct ?? 0),
+    } : null,
+    // Arms held straight out from the chest while the shoulders twist: the aim
+    // should not move (peakToPeak) although the torso did (yaw range).
+    twist: twist ? {
+      peakToPeak: twist.aim.peakToPeak, mean: twist.aim.aimX.mean, sdRaw: twist.aim.sdRaw, lostPct: twist.aim.lostPct,
+      yawMinDeg: twist.aim.yawDeg?.min ?? null, yawMaxDeg: twist.aim.yawDeg?.max ?? null, frame3dPct: twist.aim.frame3dPct ?? null,
     } : null,
     oneArmLeft: one('one_arm_left'),
     oneArmRight: one('one_arm_right'),
