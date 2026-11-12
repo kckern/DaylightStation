@@ -6,10 +6,19 @@
 // pose frame rate. Aim arrives as a plain number in the intents and may be a
 // few frames old; nothing here assumes it changes every step.
 import { nextRandom } from '../../../../../../__capabilities/gaming/portable/mechanics/random.mjs';
-import { FIELD, THREATS, moveThreat } from './threats.js';
+import { box, sweepHits } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
+import { boostRules, nukeRules } from './rules.js';
+import { killPoints } from './scoring.js';
+import { FIELD, THREATS, aimToX, clampX, moveThreat, threatBox } from './threats.js';
+import { SHOT_TIERS } from './tiers.js';
+
+export { boostRules, nukeRules };
 
 export const STEP_S = 1 / 60;
+export const SHOT_SPEED = 900;                 // scene units per second, straight up
+export const MUZZLE_Y = FIELD.groundY - 20;
 const BUILDINGS = 10;
+const BLAST_S = 0.5;                           // how long a nuke blast stays in state for the renderer
 const RANGE_X = FIELD.width - 2 * FIELD.marginX;
 
 export function createGameState(level, { seed = 1 } = {}) {
@@ -42,11 +51,14 @@ function rand(s) {
   return next.value;
 }
 
-function addThreat(s, type, x, y) {
+// `originX` is the column a zigzag swings around. The threat starts where its
+// zigzag is at age 0, so it never jumps sideways on its first step.
+function addThreat(s, type, originX, y, { phase = rand(s) * Math.PI * 2 } = {}) {
   const spec = THREATS[type];
+  const x = spec.zigzag ? clampX(originX + spec.zigzag.amplitude * Math.sin(phase)) : originX;
   const threat = {
-    id: s.nextId++, type, x, y, originX: x, hp: spec.hp, age: 0,
-    phase: rand(s) * Math.PI * 2, dir: rand(s) < 0.5 ? -1 : 1, bombIn: spec.bombEvery_s || 0,
+    id: s.nextId++, type, x, y, originX, hp: spec.hp, age: 0,
+    phase, dir: rand(s) < 0.5 ? -1 : 1, bombIn: spec.bombEvery_s || 0,
   };
   s.threats.push(threat);
   s.events.push({ type: 'threat.spawned', data: { id: threat.id, threat: type, x } });
@@ -133,12 +145,114 @@ function move(s, dt) {
   for (const bomber of droppers) addThreat(s, 'bomb', bomber.x, bomber.y + THREATS.bomber.height / 2);
 }
 
+// One aim per cannon: one cannon unless the level has two.
+function cannonAims(aim, level) {
+  return (Array.isArray(aim) ? aim : [aim]).slice(0, level.cannons === 2 ? 2 : 1);
+}
+
+// One press = one volley, however many shots it makes (spread, two cannons).
+// Accuracy and the combo are counted per volley, not per shot.
+function fireVolley(s, press, level) {
+  const spec = SHOT_TIERS[press.tier] || SHOT_TIERS.small;
+  const aims = cannonAims(press.aim, level);
+  const volley = s.nextId++;
+  let live = 0;
+  for (const aim of aims) {
+    for (const vx of spec.spread) {
+      s.shots.push({ id: s.nextId++, volley, x: aimToX(aim), y: MUZZLE_Y, vx, tier: spec.id, damage: spec.damage, halfWidth: spec.halfWidth, armsUp: !!press.armsUp });
+      live += 1;
+    }
+  }
+  s.volleys[volley] = { live, hit: false };
+  s.shotsFired += 1;
+  s.events.push({ type: 'shot.fired', data: { tier: spec.id, aim: aims[0], source: press.source || 'mat', armsUp: !!press.armsUp, pressAt: press.at ?? null } });
+}
+
+function fire(s, intents, level) {
+  for (const press of intents.fire || []) fireVolley(s, press, level);
+}
+
+// One shot of a volley is done. The first hit of a volley extends the combo;
+// a volley whose shots all leave the field without a hit breaks it.
+function settle(s, id, hit) {
+  const volley = s.volleys[id];
+  if (!volley) return;
+  if (hit && !volley.hit) { s.combo += 1; s.bestCombo = Math.max(s.bestCombo, s.combo); s.hits += 1; }
+  const next = { live: volley.live - 1, hit: volley.hit || hit };
+  if (next.live > 0) { s.volleys[id] = next; return; }
+  delete s.volleys[id];
+  if (!next.hit) { s.combo = 0; s.events.push({ type: 'shot.missed', data: {} }); }
+}
+
+// A destroyed pod breaks into drones that leave from where it was and peel apart.
+function split(s, target) {
+  const children = THREATS[target.type].splitsInto || [];
+  children.forEach((child, index) => addThreat(s, child, clampX(target.x), target.y, { phase: index % 2 ? 0 : Math.PI }));
+}
+
+function damageThreat(s, target, amount, shot, { splits = true } = {}) {
+  const hp = target.hp - amount;
+  if (hp > 0) {
+    s.threats = s.threats.map((t) => (t.id === target.id ? { ...t, hp } : t));
+    s.events.push({ type: 'threat.damaged', data: { id: target.id, threat: target.type, x: target.x, y: target.y, hp } });
+    return;
+  }
+  s.threats = s.threats.filter((t) => t.id !== target.id);
+  if (THREATS[target.type].countsAsKill !== false) s.kills += 1;
+  const points = killPoints(target.type, { combo: s.combo, armsUp: shot.armsUp });
+  s.score += points;
+  s.events.push({ type: 'threat.destroyed', data: { id: target.id, threat: target.type, x: target.x, y: target.y, points, by: shot.tier } });
+  if (splits) split(s, target);
+}
+
+// A nuke shot goes off where it meets a threat: a blast around that point,
+// not a screen wipe, so aim still matters in the fire zone. Pods caught in it
+// are destroyed outright (no split).
+function detonate(s, shot, target, level) {
+  const { radius, damage } = nukeRules(level);
+  const x = shot.x;
+  const y = threatBox(target).y1;
+  s.nukes += 1;
+  s.blasts.push({ id: s.nextId++, x, y, radius, ttl: BLAST_S });
+  s.events.push({ type: 'nuke', data: { x, y, radius } });
+  for (const threat of [...s.threats]) {
+    if (threat.id === target.id || Math.hypot(threat.x - x, threat.y - y) <= radius) damageThreat(s, threat, damage, shot, { splits: false });
+  }
+}
+
+// sweepHits does not rank, and its `at` is an x contact. A shot flies up, so
+// the first threat it meets is the one with the lowest bottom edge (ties: oldest).
+function firstHit(s, sweep) {
+  const hits = sweepHits(s.threats.map(threatBox), sweep).map((hit) => s.threats[hit.index]);
+  return hits.sort((a, b) => threatBox(b).y1 - threatBox(a).y1 || a.id - b.id)[0] || null;
+}
+
+function advanceShots(s, dt, level) {
+  const kept = [];
+  for (const shot of s.shots) {
+    const x1 = shot.x + shot.vx * dt;
+    const y1 = shot.y - SHOT_SPEED * dt;
+    // Sweep the whole path of this step so a thin threat cannot be skipped at
+    // a low frame rate.
+    const target = firstHit(s, box(Math.min(shot.x, x1) - shot.halfWidth, Math.max(shot.x, x1) + shot.halfWidth, y1, shot.y));
+    if (target) {
+      settle(s, shot.volley, true);
+      if (shot.tier === 'nuke') detonate(s, shot, target, level); else damageThreat(s, target, shot.damage, shot);
+    } else if (y1 < 0 || x1 < 0 || x1 > FIELD.width) settle(s, shot.volley, false);
+    else kept.push({ ...shot, x: x1, y: y1 });
+  }
+  s.shots = kept;
+}
+
 export function step(state, intents, dt, level) {
   if (state.phase !== 'playing' || !(dt > 0)) return state;
   const s = draft(state);
   s.time += dt;
   spawn(s, level);
   move(s, dt);
+  fire(s, intents, level);
+  advanceShots(s, dt, level);
+  s.blasts = s.blasts.map((blast) => ({ ...blast, ttl: blast.ttl - dt })).filter((blast) => blast.ttl > 0);
   // Keep the timer check last: everything above still happens on the final step.
   if (s.time >= level.duration_s) { s.phase = 'ended'; s.events.push({ type: 'level.ended', data: {} }); }
   return s;
