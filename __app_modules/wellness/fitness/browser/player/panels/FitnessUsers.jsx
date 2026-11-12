@@ -899,7 +899,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   deviceNameSource,
                   displayLabel,
                   hasGuestAssignment: !!guestAssignment
-                }, { maxPerMinute: 6, aggregate: true });
+                }, { maxPerMinute: 2, aggregate: true });
               }
               const zoneIdForGrouping = isHeartRate ? getShownZoneId(device, liveHeartRate) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';

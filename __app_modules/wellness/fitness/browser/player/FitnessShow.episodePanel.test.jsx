@@ -28,7 +28,7 @@ const mockCtx = {
   ] },
   fitnessSessionInstance: null,
 };
-vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx }));
+vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx, useFitnessSelector: (select) => select(mockCtx) }));
 vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
   DaylightMediaPath: (p) => p,

@@ -17,7 +17,7 @@ const mockCtx = {
   setMusicAutoEnabled: vi.fn(), setCurrentMedia: vi.fn(), nomusicLabels: [],
   fitnessConfiguration: { locks: {} }, governedLabels: [], governedTypes: [], plexConfig: {},
 };
-vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx }));
+vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx, useFitnessSelector: (select) => select(mockCtx) }));
 vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
   DaylightMediaPath: (p) => p,

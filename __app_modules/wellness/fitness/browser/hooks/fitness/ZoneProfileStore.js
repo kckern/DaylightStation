@@ -342,7 +342,7 @@ export class ZoneProfileStore {
           hasCustomZones,
           warmThreshold: warmZone?.min ?? null,
           zoneCount: normalizedZoneConfig.length
-        }, { maxPerMinute: 5 });
+        }, { maxPerMinute: 2 });
       }
     }
 
@@ -716,7 +716,7 @@ export class ZoneProfileStore {
           getLogger()?.sampled?.('zoneprofilestore.exit_margin_suppressed', {
             userId, heartRate, committedZoneId: state.committedZoneId, rawZoneId,
             committedMin, exitThreshold, exitMarginBpm: EXIT_MARGIN_BPM
-          }, { maxPerMinute: 10 });
+          }, { maxPerMinute: 3 });
           state.rawZoneId = state.committedZoneId;
           state.rawZoneStableSince = ts;
           state.rawSamples = 1;

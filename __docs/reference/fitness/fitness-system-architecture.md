@@ -316,6 +316,31 @@ ANT+ Sensor          Backend              WebSocket        FitnessContext      F
 
 **Key invariant:** `batchedForceUpdate()` uses `requestAnimationFrame` to coalesce multiple WebSocket messages within the same frame into a single React render.
 
+**Render gate (2026-11-11).** A sensor packet calls `batchedForceUpdate()` only
+when it changed something shown: `context/fitnessRenderGate.js` signs every
+device field except its arrival clocks (`lastSeen`, `timestamp`, …) plus the
+session-level state a packet can move (session start, user mutations, the zone
+store's output signature, the transport-stall edge), and the provider compares
+that signature after each `ingestData`. A 1 s keepalive still re-renders while
+packets flow. ANT+ sensors broadcast at ~4 Hz and the garage hears each packet
+on two dongles, so most packets repeat the last reading; before the gate every
+250 ms throttle window re-rendered (~118 per 30 s with a single sensor), now
+the provider renders at the rate readings change (~30 per 30 s per sensor).
+`UserManager.setRoster()` is not a mutation: the provider hands the roster
+builder's own output back on every render, and bumping `mutationVersion` there
+invalidated the roster cache each render and doubled every reading's renders.
+
+**Selector consumers.** The context value is a new object on every provider
+render, so every `useFitnessContext()` reader re-renders with live readings.
+Components that read only config, flags or callbacks use
+`useFitnessSelector(selector, isEqual?)` instead (shallow-equal by default) and
+re-render only when their selection changes: `ImmersiveFrame`,
+`IdentityProvider`, `FitnessModuleMenu`, `MenuMusicController`,
+`EmergencyPlaybackController`, `FitnessVideo`, `usePresenceGate`,
+`GarageHumanActivityPublisher`, `WorkoutRunner`, `FitnessInstructionContainer`,
+`useFitnessPlaylist` and the app-shell audience/pressure-mat bridges. Pinned by
+`context/FitnessContext.renderBudget.test.jsx`.
+
 ---
 
 ### Sequence 2: Session Lifecycle

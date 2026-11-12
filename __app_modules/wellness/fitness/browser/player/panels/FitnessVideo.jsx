@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { useFitnessContext } from "../../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../../context/FitnessContext.jsx";
 import { Webcam as FitnessWebcam } from "../../components/FitnessWebcam.jsx";
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
 import { heapSnapshotFields, reportMemoryMonitoringAvailability } from '@/lib/perf/memoryProbe.js';
@@ -9,7 +9,7 @@ const FitnessVideo = ({ minimal = false }) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const webcamRef = useRef(null);
-  const { toggleSidebarSizeMode } = useFitnessContext() || {};
+  const toggleSidebarSizeMode = useFitnessSelector((c) => c?.toggleSidebarSizeMode);
   
   // TELEMETRY: Track component lifecycle and resource usage
   const mountTimeRef = useRef(Date.now());

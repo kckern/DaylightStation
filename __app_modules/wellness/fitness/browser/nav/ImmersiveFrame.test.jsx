@@ -3,7 +3,8 @@ import { render } from '@testing-library/react';
 
 let mockCtx = null;
 vi.mock("../context/FitnessContext.jsx", () => ({
-  useOptionalFitnessContext: () => mockCtx
+  useOptionalFitnessContext: () => mockCtx,
+  useFitnessSelector: (select) => select(mockCtx ?? null),
 }));
 
 import ImmersiveFrame from "./ImmersiveFrame.jsx";

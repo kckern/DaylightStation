@@ -1,5 +1,5 @@
 import React from 'react';
-import { useOptionalFitnessContext } from "../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../context/FitnessContext.jsx";
 import { FitnessFrame } from "../player/frames/index.js";
 
 /**
@@ -9,8 +9,10 @@ import { FitnessFrame } from "../player/frames/index.js";
  * exactly FitnessFrame. FitnessFrame itself stays a pure layout shell.
  */
 const ImmersiveFrame = ({ hideNav = false, ...props }) => {
-  const ctx = useOptionalFitnessContext();
-  return <FitnessFrame {...props} hideNav={hideNav || Boolean(ctx?.immersive)} />;
+  // Selector, not the whole context: the frame wraps the app and must not
+  // re-render on every sensor update just to read one flag.
+  const immersive = useFitnessSelector((c) => Boolean(c?.immersive));
+  return <FitnessFrame {...props} hideNav={hideNav || immersive} />;
 };
 
 export default ImmersiveFrame;

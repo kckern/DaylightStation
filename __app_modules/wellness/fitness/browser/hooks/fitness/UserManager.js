@@ -544,8 +544,13 @@ export class UserManager {
   }
 
   setRoster(roster) {
+    // Deliberately NOT a mutation (no mutationVersion bump). The roster handed
+    // in here is the ParticipantRoster's own output, passed back by the
+    // provider on EVERY render (updateSnapshot), and nothing builds roster
+    // output from `userManager.roster`. Bumping here invalidated the roster
+    // cache on every render and made the next sensor packet look like a change,
+    // so each reading cost two provider renders (2026-11-11 render storm).
     this.roster = Array.isArray(roster) ? roster : [];
-    this.mutationVersion++;
   }
 
   assignGuest(deviceId, guestName, metadata = {}) {

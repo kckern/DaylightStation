@@ -11,7 +11,7 @@ const logSpy = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => logSpy }) }));
 vi.mock('@mantine/core', () => ({ LoadingOverlay: () => null, Alert: ({ children }) => <div>{children}</div> }));
 let mockCtx;
-vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx }));
+vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => mockCtx, useFitnessSelector: (select) => select(mockCtx) }));
 vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
   DaylightMediaPath: (p) => p,

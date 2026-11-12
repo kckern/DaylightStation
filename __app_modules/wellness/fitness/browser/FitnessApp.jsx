@@ -30,7 +30,7 @@ import { useDeviceAudience } from "../../../../__capabilities/playback/browser/s
 import { rosterAudience } from "./fitnessAudience.js";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
-import { useFitnessContext } from "./context/FitnessContext.jsx";
+import { useFitnessContext, useFitnessSelector } from "./context/FitnessContext.jsx";
 import ImmersiveFrame from "./nav/ImmersiveFrame.jsx";
 import { useFitnessUrlParams } from "./hooks/fitness/useFitnessUrlParams.js";
 import { useFitnessLaunch } from "./hooks/fitness/useFitnessLaunch.js";
@@ -68,6 +68,8 @@ registerBuiltinWidgets();
 const SCREEN_PERSISTED_SOURCES = ['sessions', 'standings'];
 // Widgets that read the injected `dashboard` screen-data source.
 const DASHBOARD_WIDGETS = new Set(['fitness:coach', 'fitness:upnext']);
+// 30 s at the provider's 4/s sensor throttle is 120; see the profiler below.
+const EXCESSIVE_PROVIDER_UPDATES_PER_30S = 125;
 const FITNESS_CHART_WIDGETS = new Set(['fitness:chart']);
 // The momentum cards' bank silver + week's gem (economy standings).
 const MOMENTUM_WIDGETS = new Set(['fitness:momentum']);
@@ -464,7 +466,12 @@ const FitnessApp = () => {
           elapsed
         });
       }
-      if (renderStats.forceUpdateCount > 100) {
+      // Sensor-driven provider updates are throttled to one per 250 ms and,
+      // since 2026-11-11, only fire when a reading actually changed (plus a
+      // 1 s keepalive). Four or more sensors each changing once a second can
+      // legitimately fill that budget (~120 per 30 s), so "excessive" means
+      // ABOVE the throttle ceiling: some path is updating unthrottled.
+      if (renderStats.forceUpdateCount > EXCESSIVE_PROVIDER_UPDATES_PER_30S) {
         logger.warn('fitness-profile-excessive-renders', {
           forceUpdateCount: renderStats.forceUpdateCount,
           renderCount: renderStats.renderCount,
@@ -1904,9 +1911,11 @@ const FLEET_DEVICE_ID = (() => {
 
 // Who is in the garage: the workout's riders, on the fleet heartbeat
 // (snapshot.audience). Nothing while no session is running.
+const sameAudience = (a, b) => a === b || (a != null && b != null && JSON.stringify(a) === JSON.stringify(b));
 const FitnessAudienceDeclarer = () => {
-  const ctx = useFitnessContext();
-  useDeviceAudience(rosterAudience(ctx?.participantRoster));
+  // Selected: re-render only when the audience itself changes, not per sensor update.
+  const audience = useFitnessSelector((c) => rosterAudience(c?.participantRoster), sameAudience);
+  useDeviceAudience(audience);
   return null;
 };
 
@@ -1917,9 +1926,12 @@ const FitnessFleetPublisher = () => {
 // Modules/challenges consume FitnessContext events; this bridge also exposes
 // the same stream at the Fitness app shell for future app-level modes.
 const PressureMatEventBridge = ({ logger }) => {
-  const { subscribeToAppEvent } = useFitnessContext();
-  useEffect(() => subscribeToAppEvent('pressure-mat', (event) => {
-    logger.info('fitness.pressure-mat', {
+  const subscribeToAppEvent = useFitnessSelector((c) => c?.subscribeToAppEvent);
+  useEffect(() => subscribeToAppEvent?.('pressure-mat', (event) => {
+    // Every mat edge (step, stomp, release) lands here — several a second while
+    // someone is on the mat. The ingest limiter refills 3/min per event, so
+    // sample at that rate and let the per-minute aggregate carry the rest.
+    logger.sampled('fitness.pressure-mat', {
       matId: event.payload.id,
       event: event.payload.event,
       steps: event.payload.steps,
@@ -1932,7 +1944,7 @@ const PressureMatEventBridge = ({ logger }) => {
       peakGradientVps: event.payload.peakGradientVps,
       pressDurationMs: event.payload.pressDurationMs,
       classifiedStomp: event.payload.classifiedStomp,
-    });
+    }, { maxPerMinute: 3, aggregate: true });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('fitness:pressure-mat', { detail: event }));
     }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useFitness } from "../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../context/FitnessContext.jsx";
 import { useIdentity } from "../identity/useIdentity.js";
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -23,7 +23,10 @@ import getLogger from '@/lib/logging/Logger.js';
  */
 const EmergencyPlaybackController = () => {
   const { phase: emergencyPhase } = useIdentity();
-  const { setVideoPlayerPaused, setEmergencyPlaybackHold } = useFitness() || {};
+  const { setVideoPlayerPaused, setEmergencyPlaybackHold } = useFitnessSelector((c) => ({
+    setVideoPlayerPaused: c?.setVideoPlayerPaused,
+    setEmergencyPlaybackHold: c?.setEmergencyPlaybackHold,
+  }));
   const emergencyActive = Boolean(emergencyPhase && emergencyPhase !== 'normal');
 
   const logger = useMemo(
