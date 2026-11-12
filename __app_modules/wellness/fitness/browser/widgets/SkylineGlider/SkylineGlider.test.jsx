@@ -120,6 +120,7 @@ describe('SkylineGlider', () => {
     expect(shutter()).toHaveAttribute('data-progress', '0');
     expect(shutter()).toHaveAttribute('data-warning', 'true');
     expect(shutter()).toHaveTextContent('BOOST');
+    expect(shutter().querySelector('.sg-pad')).toHaveAttribute('data-button', '4');
     rerender(<FlightScene state={{ ...flightState, courseTime: 9.8 }} course={gated}/>);
     expect(shutter()).toHaveAttribute('data-progress', '0.5');
     rerender(<FlightScene state={{ ...flightState, courseTime: 10 }} course={gated}/>);
@@ -134,6 +135,10 @@ describe('SkylineGlider', () => {
     render(<FlightScene state={flightState} course={{ ...course, entities, rules: { ...course.rules, weapons: { enabled: true } } }}/>);
     expect(screen.getByTestId('course-entity-crack')).toHaveTextContent('MISSILE');
     expect(screen.getByTestId('course-entity-bunker')).toHaveTextContent('BOMB');
+    // Each sign also shows which bike button does it: missile is 3, bomb is 2.
+    expect(screen.getByTestId('course-entity-crack').querySelector('.sg-pad')).toHaveAttribute('data-button', '3');
+    expect(screen.getByTestId('course-entity-bunker').querySelector('.sg-pad')).toHaveAttribute('data-button', '2');
+    expect(screen.getByTestId('course-entity-bunker').querySelector('.sg-pad [data-lit="true"]')).toHaveAttribute('data-slot', '2');
   });
   it('renders actual course geometry scrolling past a right-facing pitched glider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);

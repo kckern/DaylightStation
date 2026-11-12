@@ -4,6 +4,7 @@ import { SHUTTER_WARN_S, SKYLINE_CRAFT_GEOMETRY } from "../../lib/skylineGlider/
 import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
 import { weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { EMPTY_ZONE_ASSETS } from "../../lib/skylineGlider/zoneAssets.js";
+import { PadGlyph, PixelIcon } from "./SkylinePixelIcons.jsx";
 import {
   BackdropPreset, BellPreset, BlastPreset, BombPreset, CheckpointPreset, DEFAULT_ZONE, EntityPreset, FinishPreset,
   GliderPreset, LaserPreset, SCENE_HEIGHT, SCENE_WIDTH, SceneDefs, TerrainPreset, hasBackdropPreset,
@@ -215,35 +216,96 @@ export function shutterProgress(entity, camera) {
   return { warning: closed < 1 && camera >= entity.closes_at_s - SHUTTER_WARN_S, closed };
 }
 
-// Where a role's label sits: above the thing, kept clear of the HUD bar.
-const ROLE_LABEL = Object.freeze({ bomb: 'BOMB ↓', missile: 'MISSILE →' });
+// The scene's art grain in scene units: every mark below is built from it, so
+// brackets, plates and arrows sit on the same pixel grid as the sprites.
+const U = 3;
+
+// A rectangle with one-pixel stepped corners.
+const plate = (x, y, w, h) => `M${x + U} ${y}H${x + w - U}V${y + U}H${x + w}V${y + h - U}H${x + w - U}V${y + h}H${x + U}V${y + h - U}H${x}V${y + U}H${x + U}Z`;
+
+// What to press about a thing, as a sign: which of the four bike buttons (the
+// 2×2 block, one lit), the word, and an arrow showing where the shot goes.
+// `width` is the word's drawn width, pinned with textLength so the sign is the
+// same size whatever font the browser ends up with.
+const CALLOUT = Object.freeze({
+  bomb: { text: 'BOMB', width: 63, position: 2, arrow: 'drop' },
+  missile: { text: 'MISSILE', width: 99, position: 3, arrow: 'fire' },
+  boost: { text: 'BOOST', width: 78, position: 4, arrow: 'dash' },
+});
+const CALLOUT_HEIGHT = 13 * U;
+// Kept below the HUD, so a full-height wall still gets a readable sign.
+const CALLOUT_MIN_TOP = 105;
+
+function Callout({ role, centre, bottom }) {
+  const { text, width, position, arrow } = CALLOUT[role];
+  const glyph = 9 * U;
+  const total = 2 * U + glyph + U + width + U + glyph + 2 * U;
+  const x = centre - total / 2; const y = Math.max(bottom - CALLOUT_HEIGHT, CALLOUT_MIN_TOP);
+  return <g className={`skyline-glider__callout skyline-glider__${role}-mark`} data-role={role}>
+    <path className="skyline-glider__callout-rim" d={plate(x, y, total, CALLOUT_HEIGHT)}/>
+    <path className="skyline-glider__callout-edge" d={plate(x + U, y + U, total - 2 * U, CALLOUT_HEIGHT - 2 * U)}/>
+    <path className="skyline-glider__callout-face" d={plate(x + 2 * U, y + 2 * U, total - 4 * U, CALLOUT_HEIGHT - 4 * U)}/>
+    <PadGlyph position={position} x={x + 2 * U} y={y + 2 * U} px={U}/>
+    <text x={x + 2 * U + glyph + U} y={y + CALLOUT_HEIGHT - 3 * U - 1} textLength={width} lengthAdjust="spacingAndGlyphs">{text}</text>
+    <g className={`skyline-glider__callout-arrow skyline-glider__callout-arrow--${arrow}`}>
+      <PixelIcon name={arrow} x={x + total - 2 * U - glyph} y={y + 2 * U} px={U}/>
+    </g>
+  </g>;
+}
+
+// One corner of a target bracket as a filled L, `grow` pixels fatter for the rim.
+function corner(x, y, dx, dy, grow) {
+  const arm = 5 * U + 2 * grow; const thick = 2 * U + 2 * grow;
+  const ox = x - dx * grow; const oy = y - dy * grow;
+  return `M${ox} ${oy}h${dx * arm}v${dy * thick}h${-dx * (arm - thick)}v${dy * (arm - thick)}h${-dx * thick}Z`;
+}
 
 function TargetMarks({ entity, damage }) {
-  const pad = 10, arm = 14;
+  const pad = 3 * U;
   const left = entity.x - pad, right = entity.x + entity.width + pad;
   const top = entity.y - pad, bottom = entity.y + entity.height + pad;
   const hitPoints = entity.hit_points || 1;
   const remaining = Math.max(0, hitPoints - (damage || 0));
-  const pipWidth = 24, gap = 6;
-  const pipsLeft = entity.x + entity.width / 2 - (hitPoints * pipWidth + (hitPoints - 1) * gap) / 2;
+  const pipWidth = 6 * U, pipHeight = 3 * U, gap = U;
+  const pipsWidth = hitPoints * pipWidth + (hitPoints - 1) * gap;
+  const pipsLeft = entity.x + entity.width / 2 - pipsWidth / 2;
+  const corners = (grow) => corner(left, top, 1, 1, grow) + corner(right, top, -1, 1, grow) + corner(right, bottom, -1, -1, grow) + corner(left, bottom, 1, -1, grow);
   return <g className="skyline-glider__target-marks" data-testid={`target-marks-${entity.id}`}>
-    <path className="skyline-glider__target-brackets" d={`M${left} ${top + arm} V${top} H${left + arm} M${right - arm} ${top} H${right} V${top + arm} M${right} ${bottom - arm} V${bottom} H${right - arm} M${left + arm} ${bottom} H${left} V${bottom - arm}`}/>
+    <g className="skyline-glider__target-brackets">
+      <path className="skyline-glider__target-rim" d={corners(U)}/>
+      <path className="skyline-glider__target-line" d={corners(0)}/>
+    </g>
     {hitPoints > 1 && <g className="skyline-glider__target-pips" data-remaining={remaining}>
-      {Array.from({ length: hitPoints }, (_, index) => <rect key={index} x={pipsLeft + index * (pipWidth + gap)} y={bottom + 6} width={pipWidth} height={10} rx={3} data-full={index < remaining ? 'true' : 'false'}/>)}
+      <rect className="skyline-glider__target-rim" x={pipsLeft - U} y={bottom + 2 * U} width={pipsWidth + 2 * U} height={pipHeight + 2 * U}/>
+      {Array.from({ length: hitPoints }, (_, index) => <rect key={index} x={pipsLeft + index * (pipWidth + gap)} y={bottom + 3 * U} width={pipWidth} height={pipHeight} data-full={index < remaining ? 'true' : 'false'}/>)}
     </g>}
   </g>;
 }
 
+// The closing gap's edges: a red-and-white hazard strip along the top and
+// bottom of the opening, blinking until the gate slams.
+function HazardStrip({ x, y, width }) {
+  return <>
+    <rect className="skyline-glider__hazard-rim" x={x - U} y={y - 2 * U} width={width + 2 * U} height={4 * U}/>
+    <rect className="skyline-glider__hazard-base" x={x} y={y - U} width={width} height={2 * U}/>
+    <path className="skyline-glider__hazard-dash" d={`M${x} ${y}H${x + width}`}/>
+  </>;
+}
+
 function Shutter({ entity, assets, progress: { warning, closed } }) {
   const height = entity.height * closed;
+  const stripX = entity.x - 2 * U; const stripWidth = Math.ceil((entity.width + 4 * U) / (2 * U)) * 2 * U;
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role="boost" data-progress={Math.round(closed * 100) / 100} data-warning={warning ? 'true' : 'false'} className="skyline-glider__entity skyline-glider__entity--shutter">
     {height > 0 && (entity.slices && hasFrame(assets, entity.slices.body)
       ? <SlicedSprite id={entity.id} assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={height}/>
       : <EntityPreset entity={{ ...entity, height }}/>)}
     {warning && <>
-      <path className="skyline-glider__shutter-warning" d={`M${entity.x - 6} ${entity.y} H${entity.x + entity.width + 6} M${entity.x - 6} ${entity.y + entity.height} H${entity.x + entity.width + 6}`}/>
+      <g className="skyline-glider__shutter-warning">
+        <HazardStrip x={stripX} y={entity.y} width={stripWidth}/>
+        <HazardStrip x={stripX} y={entity.y + entity.height} width={stripWidth}/>
+      </g>
       {/* Above the gap, clear of the glider flying through it. */}
-      <text className="skyline-glider__boost-mark" x={entity.x + entity.width / 2} y={Math.max(entity.y - 36, 130)} textAnchor="middle">BOOST »</text>
+      <Callout role="boost" centre={entity.x + entity.width / 2} bottom={entity.y - 6 * U}/>
     </>}
   </g>;
 }
@@ -251,31 +313,33 @@ function Shutter({ entity, assets, progress: { warning, closed } }) {
 function Entity({ entity, assets, time, role, damage, flashKey }) {
   // A hit that did not destroy it switches to the damaged art, when the zone has some.
   const name = frameName(damage > 0 && entity.states?.damaged ? entity.states.damaged : entity, time);
-  const label = ROLE_LABEL[role];
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
     {entity.slices && hasFrame(assets, entity.slices.body)
       ? <SlicedSprite id={entity.id} assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
       : hasFrame(assets, name)
         ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
         : <EntityPreset entity={entity}/>}
-    {flashKey && <rect key={flashKey} className="skyline-glider__entity-flash" x={entity.x} y={entity.y} width={entity.width} height={entity.height} rx={8}/>}
+    {flashKey && <rect key={flashKey} className="skyline-glider__entity-flash" x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>}
     {role === 'shoot' && <TargetMarks entity={entity} damage={damage}/>}
-    {label && <g className={`skyline-glider__${role}-mark`}>
-      {/* A full-height wall would put its label under the HUD bar, so keep it in view. */}
-      <text x={entity.x + entity.width / 2} y={Math.max(entity.y - 18, 130)} textAnchor="middle">{label}</text>
-    </g>}
+    {CALLOUT[role] && <Callout role={role} centre={entity.x + entity.width / 2} bottom={entity.y - 3 * U}/>}
   </g>;
 }
 
-// A landed shot: a kill bursts and floats "+1", a hit that did not kill
+// Square debris flung out from a point: [x, y, size] in scene units.
+const KILL_CHUNKS = Object.freeze([[0, -33, 9], [24, -24, 6], [33, 0, 9], [24, 24, 6], [0, 33, 9], [-24, 24, 6], [-33, 0, 9], [-24, -24, 6]]);
+const CRASH_CHUNKS = Object.freeze([[-66, -36, 9], [-84, -54, 6], [-72, 0, 9], [-96, 0, 6], [-60, 33, 9], [-78, 48, 6], [45, -30, 9], [63, -45, 6], [60, 15, 9], [84, 24, 6]]);
+const Chunks = ({ list }) => list.map(([x, y, size], index) => <rect key={index} data-odd={index % 2 ? 'true' : 'false'} x={x - size / 2} y={y - size / 2} width={size} height={size}/>);
+// A stepped four-point spark, `r` pixels from centre to tip.
+const spark = (cx, cy) => `M${cx - U} ${cy - 3 * U}h${2 * U}v${2 * U}h${2 * U}v${2 * U}h${-2 * U}v${2 * U}h${-2 * U}v${-2 * U}h${-2 * U}v${-2 * U}h${2 * U}Z`;
+
+// A landed shot: a kill throws debris and floats "+1", a hit that did not kill
 // sparks, and a shot something shrugged off puffs grey.
 function Impact({ impact, x, y }) {
   return <g data-testid={`skyline-glider-impact-${impact.id}`} data-effect={impact.effect} transform={`translate(${x} ${y})`} className={`skyline-glider__impact skyline-glider__impact--${impact.effect}`}>
     {impact.effect === 'kill' ? <>
-      <circle r="34"/>
-      <path d="M0 -46 V-24 M0 24 V46 M-46 0 H-24 M24 0 H46 M-32 -32 L-18 -18 M18 18 L32 32 M32 -32 L18 -18 M-18 18 L-32 32"/>
-      {impact.scores !== false && <text y="-56" textAnchor="middle">+1</text>}
-    </> : impact.effect === 'damage' ? <path d="M0 -20 L5 -5 L20 0 L5 5 L0 20 L-5 5 L-20 0 L-5 -5Z"/> : <circle r="10"/>}
+      <g className="skyline-glider__impact-burst"><path d={spark(0, 0)}/><Chunks list={KILL_CHUNKS}/></g>
+      {impact.scores !== false && <text y={-18 * U} textAnchor="middle">+1</text>}
+    </> : <g className="skyline-glider__impact-pop">{impact.effect === 'damage' ? <path d={spark(0, 0)}/> : <Chunks list={[[-6, -3, 6], [3, -9, 6], [6, 6, 6]]}/>}</g>}
   </g>;
 }
 
@@ -364,15 +428,18 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
     <g className="skyline-glider__weapons">
       {(state.projectiles || []).map((shot) => <Shot key={shot.id} shot={shot} x={xAt(shot.at_s)} y={shot.altitude * projected.height} zone={zone} assets={assets} time={time}/>)}
     </g>
-    <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
+    <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -15 h42 M-18 0 h54 M6 15 h30"/></g>
     <g data-testid="skyline-glider-craft" data-facing="right" data-front-seconds={SKYLINE_CRAFT_GEOMETRY.frontSeconds} data-rear-seconds={SKYLINE_CRAFT_GEOMETRY.rearSeconds} data-radius={SKYLINE_CRAFT_GEOMETRY.radius} transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
       {hasFrame(assets, craftFrame) ? (() => {
         const height = Number(zone.craft.height ?? 0.09) * SCENE_HEIGHT;
         return <SpriteFrame assets={assets} name={craftFrame} x={-craftRear} y={-height / 2} width={craftFront + craftRear} height={height} align="xMidYMid"/>;
       })() : <GliderPreset craftFront={craftFront} craftRear={craftRear}/>}
-      {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
-      {state.boostRemaining>0&&<g data-testid="skyline-glider-boost-effect" opacity=".8"><path d="M-45 5 L-100 18 M-40 16 L-86 30" stroke="#83e0e9" strokeWidth="8" strokeLinecap="round"/></g>}
-      {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
+    </g>
+    {/* Drawn beside the craft, not inside it: the craft's own shadow and pitch stay off them. */}
+    <g className="skyline-glider__craft-effects" transform={`translate(${craftX} ${craftY})`}>
+      {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><Chunks list={CRASH_CHUNKS}/></g>}
+      {state.boostRemaining>0&&<g data-testid="skyline-glider-boost-effect" className="skyline-glider__boost-trail"><path className="skyline-glider__boost-trail-rim" d="M-42 -9 h-42 M-45 6 h-66 M-39 21 h-51"/><path d="M-45 -9 h-36 M-48 6 h-60 M-42 21 h-45"/></g>}
+      {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><path d={spark(0, -30) + spark(30, 0) + spark(0, 30) + spark(-30, 0)}/></g>)}
     </g>
     {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={(blast.blast_width_s ?? rules.blast_width_s) * projected.unitsPerSecond} height={(blast.blast_height ?? rules.blast_height) * projected.height} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}
     <g className="skyline-glider__impacts">

@@ -188,11 +188,11 @@ every colour comes from `--game-hud-*` set by the host game.
 (`CountdownOverlay`, `LifeMeter`, `ProgressMeter`, `MomentBanner`) from its
 chrome barrel, which is the piano games' single import for them. Skyline sets a
 palette block on `.skyline-glider` (banner ink and background as
-`--game-hud-banner-*`, plus its own `--skyline-hearts`) and uses `LifeMeter`
-glyphs for hearts and `MomentBanner` for its checkpoint/cue banner. The
-`--game-hud-*` prefix is reserved for the kit's contract above; a surface's own
-extra colours take its own prefix (`--skyline-hearts` is Skyline's, not the
-kit's).
+`--game-hud-banner-*`) and uses `MomentBanner` for its checkpoint/cue banner;
+its hearts are its own pixel icons, so a lost heart can stay on screen as an
+empty slot. The `--game-hud-*` prefix is reserved for the kit's contract above;
+a surface's own extra colours take its own prefix (Skyline's are `--sg-*`, see
+[Skyline Glider, Game UI](../fitness/skyline-glider.md#game-ui)).
 
 **Choosing a meter.** Segmented (`LifeMeter` notches) for a count of hits the
 player can take; continuous (`ProgressMeter`) for a trend such as time or
