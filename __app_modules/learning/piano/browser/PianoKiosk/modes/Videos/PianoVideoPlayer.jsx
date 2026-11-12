@@ -117,6 +117,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
   const practice = useLessonPractice({
     enabled: true,
+    external: true, // fed by useHumanNotes' onNote below: one classifier per player
     isPlaying: isPlaying && hasStarted,
     enforced,
     preschool: !!expectation?.preschool,
@@ -154,7 +155,12 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
 
   // Only notes a person played count for presence and engagement — the piano's
   // rhythm/drum loop and accompaniment stream notes too (humanNoteClassifier).
-  const { humanNoteAt, humanHeld, loopPitches } = useHumanNotes({ context: { contentId } });
+  // One classifier per player: the presence gate and the practice tally read
+  // the same verdicts (the tally's `ingest` is stable; held in a ref anyway).
+  const ingestRef = useRef(practice.ingest);
+  ingestRef.current = practice.ingest;
+  const onNote = useCallback((evt, verdict, loop) => ingestRef.current?.(evt, verdict, loop), []);
+  const { humanNoteAt, humanHeld, loopPitches } = useHumanNotes({ context: { contentId }, onNote });
   const humanNotes = useMemo(() => humanActiveNotes(activeNotes, humanHeld), [activeNotes, humanHeld]);
 
   // Engagement for completion = ANY human play-along. Once the student plays a

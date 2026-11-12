@@ -11,6 +11,7 @@ const api = vi.fn(async () => ({ legit: true, probability: 0.9, source: 'model' 
 vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
 
 import { useLessonPractice } from './useLessonPractice.js';
+import { createHumanNoteClassifier as makeClassifier } from '../../humanNoteClassifier.js';
 import { tallyPractice, classifyBurst } from '../../../../portable/practice/practiceScore.mjs';
 import { normaliseGoodFaithState } from '../../../../portable/practice/sittingGoodFaith.mjs';
 
@@ -114,5 +115,32 @@ describe('useLessonPractice', () => {
     const { result } = renderHook(() => useLessonPractice({ enabled: true, isPlaying: true, enforced: true, thresholdPercent: 90, getPercent: () => 99, getDurationSec: () => 900 }));
     for (const [ms, note, velocity] of rhythmLoopSitting.notes.slice(0, 3000)) emit({ type: 'note_on', note, velocity, time: T0 + ms });
     expect(result.current.report().goodFaith.lesson.notesPlayed).toBeLessThan(10);
+  });
+
+  it('external mode: no own subscription; ingest() takes the loop back exactly as the subscribed path does', () => {
+    const opts = { enabled: true, isPlaying: true, enforced: true, thresholdPercent: 90, getPercent: () => 99, getDurationSec: () => 900 };
+    const ext = renderHook(() => useLessonPractice({ ...opts, external: true }));
+    expect(listeners.size).toBe(0);
+    const own = renderHook(() => useLessonPractice(opts));
+    expect(listeners.size).toBe(1);
+    const c = makeClassifier();
+    const feed = (evt) => {
+      for (const fn of listeners) fn(evt);
+      const on = evt.type === 'note_on' && evt.velocity > 0;
+      ext.result.current.ingest(evt, on ? c.classify(evt) : null, c.loopPitches);
+    };
+    act(() => {
+      for (const [ms, note, velocity] of rhythmLoopSitting.notes.slice(0, 3000)) feed({ type: 'note_on', note, velocity, time: T0 + ms });
+      scaleUp.forEach((n, i) => {
+        feed({ type: 'note_on', note: n, velocity: 60 + i, time: T0 + 400_000 + i * 400 });
+        feed({ type: 'note_off', note: n, velocity: 0, time: T0 + 400_000 + i * 400 + 200 });
+      });
+    });
+    const a = ext.result.current.report();
+    const b = own.result.current.report();
+    expect(a.humanNotes).toBe(b.humanNotes);
+    expect(a.practiceNotes).toBe(b.practiceNotes);
+    expect(a.goodFaith.lesson.notesPlayed).toBe(b.goodFaith.lesson.notesPlayed);
+    expect(log.info).toHaveBeenCalledWith('piano.lesson-practice.loop-retracted', expect.anything());
   });
 });

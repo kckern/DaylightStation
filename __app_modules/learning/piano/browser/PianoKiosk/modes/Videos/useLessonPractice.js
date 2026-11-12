@@ -25,7 +25,10 @@ function newSittingId() {
  * useLessonPractice — one lesson sitting's live practice tally on the kiosk.
  *
  * Classifies every note itself (humanNoteClassifier: drum loop, accompaniment,
- * clockwork are dropped), weighs human notes for how practice-like they are
+ * clockwork are dropped) — or, with `external: true`, takes the verdicts of a
+ * classifier the host already runs through `ingest(evt, verdict, loopPitches)`
+ * (PianoVideoPlayer feeds it from useHumanNotes' onNote: one classifier per
+ * player), weighs human notes for how practice-like they are
  * (practiceScore; preschool courses are lenient), counts played seconds, and
  * reports the totals on every play/log. Nothing is rendered.
  *
@@ -38,6 +41,7 @@ function newSittingId() {
 export function useLessonPractice({
   enabled = true, isPlaying = false, enforced = false, preschool = false,
   thresholdPercent = 90, getPercent = null, getDurationSec = null, contentId = null,
+  external = false,
 } = {}) {
   const { subscribe } = usePianoMidi() || {};
   const sittingIdRef = useRef(null);
@@ -47,7 +51,7 @@ export function useLessonPractice({
   const stateRef = useRef(null);
   if (!stateRef.current) {
     stateRef.current = {
-      classifier: createHumanNoteClassifier(),
+      classifier: external ? null : createHumanNoteClassifier(),
       meter: createPracticeMeter(weighOpts),
       held: new Map(),
       log: [],
@@ -72,39 +76,50 @@ export function useLessonPractice({
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once per sitting
 
-  useEffect(() => {
-    if (!enabled || typeof subscribe !== 'function') return undefined;
+  /** One classified note event: verdict null for a release (note_off / velocity-0 note_on). */
+  const ingest = useCallback((evt, v, loopPitches) => {
+    if (!enabled || !evt) return;
     const s = stateRef.current;
-    return subscribe((evt) => {
-      if (evt?.type === 'note_on' && evt.velocity > 0) {
-        const time = Number.isFinite(evt.time) ? evt.time : Date.now();
-        const v = s.classifier.classify({ ...evt, time });
-        if (v.transition === 'loop-on') {
-          // The loop ran ~30 s before it was recognised: take its notes back.
-          const pitches = s.classifier.loopPitches;
-          const from = time - (CLASSIFIER_DEFAULTS.armMs + CLASSIFIER_DEFAULTS.windowMs + 5000);
-          const loopNote = (e) => e.t >= from && pitches.has(e.note);
-          const removed = s.meter.retract(loopNote);
-          s.log = s.log.filter((e) => !loopNote(e));
-          logger().info('piano.lesson-practice.loop-retracted', { sittingId: sittingIdRef.current, removed });
-        }
-        if (!v.human) return;
-        if (s.checkInOpen || time < s.graceUntil) return;
-        const added = s.meter.add({ t: time, note: evt.note, velocity: evt.velocity });
-        if (added) {
-          s.held.set(evt.note, added);
-          if (s.log.length < LOG_CAP) s.log.push(added);
-        }
-      } else if (evt?.type === 'note_off' || (evt?.type === 'note_on' && !(evt.velocity > 0))) {
-        const ev = s.held.get(evt.note);
-        if (ev) {
-          const time = Number.isFinite(evt.time) ? evt.time : Date.now();
-          ev.durMs = Math.max(0, time - ev.t);
-          s.held.delete(evt.note);
-        }
+    if (evt.type === 'note_on' && evt.velocity > 0) {
+      if (!v) return;
+      const time = Number.isFinite(evt.time) ? evt.time : Date.now();
+      if (v.transition === 'loop-on') {
+        // The loop ran ~30 s before it was recognised: take its notes back.
+        const pitches = loopPitches ?? new Set();
+        const from = time - (CLASSIFIER_DEFAULTS.armMs + CLASSIFIER_DEFAULTS.windowMs + 5000);
+        const loopNote = (e) => e.t >= from && pitches.has(e.note);
+        const removed = s.meter.retract(loopNote);
+        s.log = s.log.filter((e) => !loopNote(e));
+        logger().info('piano.lesson-practice.loop-retracted', { sittingId: sittingIdRef.current, removed });
       }
+      if (!v.human) return;
+      if (s.checkInOpen || time < s.graceUntil) return;
+      const added = s.meter.add({ t: time, note: evt.note, velocity: evt.velocity });
+      if (added) {
+        s.held.set(evt.note, added);
+        if (s.log.length < LOG_CAP) s.log.push(added);
+      }
+    } else if (evt.type === 'note_off' || evt.type === 'note_on') {
+      const ev = s.held.get(evt.note);
+      if (ev) {
+        const time = Number.isFinite(evt.time) ? evt.time : Date.now();
+        ev.durMs = Math.max(0, time - ev.t);
+        s.held.delete(evt.note);
+      }
+    }
+  }, [enabled]);
+
+  // Self-classifying mode: subscribe to the raw note tap with a classifier of our own.
+  useEffect(() => {
+    if (external || !enabled || typeof subscribe !== 'function') return undefined;
+    const s = stateRef.current;
+    return subscribe((raw) => {
+      if (!raw) return;
+      const evt = Number.isFinite(raw.time) ? raw : { ...raw, time: Date.now() };
+      const on = evt.type === 'note_on' && evt.velocity > 0;
+      ingest(evt, on ? s.classifier.classify(evt) : null, s.classifier.loopPitches);
     });
-  }, [enabled, subscribe]);
+  }, [external, enabled, subscribe, ingest]);
 
   const pastThreshold = useCallback(() => {
     const l = live.current;
@@ -197,8 +212,8 @@ export function useLessonPractice({
 
   return useMemo(() => ({
     sittingId: sittingIdRef.current,
-    report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck,
-  }), [report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck]);
+    report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck, ingest,
+  }), [report, setDrillsPassed, recordCheckIn, burstSince, noteLegitCheck, ingest]);
 }
 
 export default useLessonPractice;

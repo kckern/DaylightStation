@@ -25,8 +25,14 @@ const EMPTY = new Map();
  *     Intersect with the store's activeNotes (which sweeps lost note-offs)
  *     before matching against a prompt.
  *   loopPitches() — pitches the running rhythm loop plays (never ask for one).
+ *
+ * `onNote(evt, verdict | null, loopPitches)` (optional) receives every note
+ * event after classification — `verdict` null for a release — so a second
+ * consumer (the lesson's practice tally) reads the same verdicts instead of
+ * running a classifier of its own. `evt.time` is filled in when missing. A
+ * velocity-0 note_on is a release, never classified.
  */
-export function useHumanNotes({ enabled = true, context } = {}) {
+export function useHumanNotes({ enabled = true, context, onNote = null } = {}) {
   const { subscribe } = usePianoMidi() || {};
   const classifierRef = useRef(null);
   if (!classifierRef.current) classifierRef.current = createHumanNoteClassifier();
@@ -34,13 +40,17 @@ export function useHumanNotes({ enabled = true, context } = {}) {
   const [humanHeld, setHumanHeld] = useState(EMPTY);
   const contextRef = useRef(context);
   contextRef.current = context;
+  const onNoteRef = useRef(onNote);
+  onNoteRef.current = onNote;
 
   useEffect(() => {
     if (!enabled || typeof subscribe !== 'function') return undefined;
     const c = classifierRef.current;
     let filtered = 0;
-    const unsubscribe = subscribe((evt) => {
-      if (evt?.type === 'note_on') {
+    const unsubscribe = subscribe((raw) => {
+      if (!raw) return;
+      const evt = Number.isFinite(raw.time) ? raw : { ...raw, time: Date.now() };
+      if (evt.type === 'note_on' && evt.velocity > 0) {
         const v = c.classify(evt);
         if (v.transition) {
           logger().info('piano.presence.rhythm-loop', {
@@ -65,13 +75,15 @@ export function useHumanNotes({ enabled = true, context } = {}) {
             return next;
           });
         }
-      } else if (evt?.type === 'note_off') {
+        onNoteRef.current?.(evt, v, c.loopPitches);
+      } else if (evt.type === 'note_off' || evt.type === 'note_on') {
         setHumanHeld((prev) => {
           if (!prev.has(evt.note)) return prev;
           const next = new Map(prev);
           next.delete(evt.note);
           return next;
         });
+        onNoteRef.current?.(evt, null, c.loopPitches);
       }
     });
     return () => {

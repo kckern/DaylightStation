@@ -59,4 +59,20 @@ describe('useHumanNotes', () => {
     const held = new Map([[60, 70], [72, 70]]);
     expect([...humanActiveNotes(store, held).keys()]).toEqual([60]);
   });
+
+  it('a velocity-0 note_on is a release: it frees a held human key and is not a human note', () => {
+    const onNote = vi.fn();
+    const { result } = renderHook(() => useHumanNotes({ onNote }));
+    emit({ type: 'note_on', note: 60, velocity: 70, time: T0 });
+    const at = result.current.humanNoteAt;
+    expect(result.current.humanHeld.has(60)).toBe(true);
+    emit({ type: 'note_on', note: 60, velocity: 0, time: T0 + 300 });
+    expect(result.current.humanHeld.size).toBe(0);
+    expect(result.current.humanNoteAt).toBe(at);
+    // onNote: the verdict for the real note-on; null for the release.
+    expect(onNote).toHaveBeenCalledTimes(2);
+    expect(onNote.mock.calls[0][1]).toMatchObject({ human: true });
+    expect(onNote.mock.calls[1][1]).toBeNull();
+    expect(onNote.mock.calls[0][2]).toBeInstanceOf(Set);
+  });
 });
