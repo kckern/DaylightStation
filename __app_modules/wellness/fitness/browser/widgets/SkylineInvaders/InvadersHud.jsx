@@ -86,6 +86,7 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
   const remaining = Math.max(0, level.duration_s - state.time);
   const tierId = TIER_LABELS[tier?.tier] ? tier.tier : 'small';
   const passKills = level.pass?.kills ?? 0;
+  const killsPassed = state.kills >= passKills;
   const hp = Math.max(0, Math.ceil(state.base.hp));
   const urgent = remaining <= URGENT_S;
   return (
@@ -100,8 +101,9 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
         </div>
         <div className="skyline-invaders__hud-tally">
           <PixelSprite grid={INVADER_SPRITES.drone.frames[0]} className="skyline-invaders__hud-icon skyline-invaders__hud-icon--kills" />
-          <span className="skyline-invaders__hud-number" data-testid="invaders-kills" data-passed={state.kills >= passKills} aria-label={`${state.kills} of ${passKills} shot down`}>
-            {`${state.kills} / ${passKills}`}
+          {/* Past the pass mark the target drops away: "25 / 4" reads as a mistake. */}
+          <span className="skyline-invaders__hud-number" data-testid="invaders-kills" data-passed={killsPassed} aria-label={killsPassed ? `${state.kills} shot down, target of ${passKills} reached` : `${state.kills} of ${passKills} shot down`}>
+            {killsPassed ? `${state.kills} ✓` : `${state.kills} / ${passKills}`}
           </span>
         </div>
       </div>

@@ -27,11 +27,14 @@ export default function InvadersResult({ record, saveStatus, level, nextLevel = 
   else if (saveStatus === 'saving') actions = [{ id: 'saving', label: 'Saving…', disabled: true, onPress: () => {} }];
   else if (passed && nextLevel) actions = [{ id: 'next', label: 'Next level', hint: nextLevel.name, onPress: () => onNext?.() }, replay, levels];
   else actions = [replay, levels];
+  // Each number stands alone, with what the level asked for in small print
+  // under it. "25 of 4" reads as a mistake once a round beats its target.
+  const hpMin = level.pass.base_hp_min ?? 0;
   const rows = [
-    ['Shot down', `${run.kills} of ${level.pass.kills}`],
-    ['Score', run.score.toLocaleString('en-US')],
-    ['Best combo', `×${run.best_combo}`],
-    ['Skyline', `${run.base_hp}%`],
+    { id: 'kills', label: 'Shot down', value: String(run.kills), note: `needed ${level.pass.kills}`, met: run.kills >= level.pass.kills },
+    { id: 'score', label: 'Score', value: run.score.toLocaleString('en-US') },
+    { id: 'combo', label: 'Best combo', value: `×${run.best_combo}` },
+    { id: 'skyline', label: 'Skyline', value: `${run.base_hp}%`, ...(hpMin > 0 ? { note: `needed ${hpMin}%`, met: run.base_hp >= hpMin } : {}) },
   ];
   return (
     <section className="skyline-invaders__result" data-testid="skyline-invaders-result" data-status={run.status} data-save={saveStatus} aria-label="Round result">
@@ -43,8 +46,12 @@ export default function InvadersResult({ record, saveStatus, level, nextLevel = 
         </span>
       </header>
       <dl className="skyline-invaders__result-rows">
-        {rows.map(([label, value]) => (
-          <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+        {rows.map((row) => (
+          <div key={row.id} data-testid={`invaders-result-${row.id}`} data-met={row.note ? String(row.met) : undefined}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+            {row.note && <dd className="skyline-invaders__result-need">{row.note}</dd>}
+          </div>
         ))}
       </dl>
       {saveStatus === 'saved' && <p className="skyline-invaders__result-save" role="status">{run.reward_rings > 0 ? `Saved. +${run.reward_rings} rings` : 'Saved.'}</p>}

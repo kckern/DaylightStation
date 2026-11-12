@@ -93,7 +93,7 @@ describe('Skyline Invaders controls', () => {
     await pointAtFirstMeteor();
     await step();
     await f.seconds(1);
-    expect(kills()).toBe('1 / 1');
+    expect(kills()).toBe('1 ✓');
     expect(fired()[0]).toMatchObject({ source: 'mat', tier: 'small' });
   });
 
@@ -165,7 +165,7 @@ describe('Skyline Invaders controls', () => {
       let blasts = 0;
       for (let i = 0; i < 10 && !blasts; i += 1) { await f.frames(1); blasts = document.querySelectorAll('[data-blast]').length; }
       expect(blasts).toBe(1);
-      expect(kills()).toBe('1 / 1');
+      expect(kills()).toBe('1 ✓');
     });
     it('an untrusted heart rate fires small shots and says why', async () => {
       await fireOnce('fire', { zoneTrusted: false });
@@ -244,7 +244,7 @@ describe('Skyline Invaders controls', () => {
     expect(Math.abs(cannonX() - meteor.x)).toBeLessThanOrEqual(12);
     await keyDown(' ');
     await f.seconds(1);
-    expect(kills()).toBe('1 / 1');
+    expect(kills()).toBe('1 ✓');
     expect(fired()[0]).toMatchObject({ source: 'keyboard' });
     await f.seconds(30);
     await flush();

@@ -30,6 +30,13 @@ describe('InvadersHud', () => {
     renderHud({ state: { kills: 30, combo: 1 } });
     expect(screen.queryByTestId('invaders-combo')).toBeNull();
     expect(screen.getByTestId('invaders-kills').getAttribute('data-passed')).toBe('true');
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('30 ✓');
+  });
+
+  it('drops the target once the round is past it, so it never reads "45 / 30"', () => {
+    renderHud({ state: { kills: 45 } });
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('45 ✓');
+    expect(screen.getByLabelText('45 shot down, target of 30 reached')).toBeTruthy();
   });
 
   it('counts the time left down as m:ss and never below zero', () => {

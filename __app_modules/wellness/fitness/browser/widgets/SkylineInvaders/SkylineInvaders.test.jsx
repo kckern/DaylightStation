@@ -75,7 +75,7 @@ async function shootFirstMeteor() {
   for (let i = 0; i < 6; i += 1) { await feed(poseForAim(aim)); await f.frames(1); }
   await step();
   await f.seconds(1);
-  expect(kills()).toBe('1 / 1');
+  expect(kills()).toBe('1 ✓');
 }
 
 beforeEach(() => {
