@@ -9,6 +9,12 @@
  *   { position, color, bt_connected, paused, now_playing,
  *     volume, playlist_pos, playlist_count, armed_source }
  *
+ * Optional plain-language status from the hub (null when an older hub omits
+ * it): `status` is one of "Playing" / "Connected – idle" / "Speaker off or
+ * out of range" / "Not paired" (or "Bluetooth not answering"), `status_code`
+ * its machine key (playing|idle|absent|unpaired|unknown), `status_detail` one
+ * line of why / what the hub is doing about it.
+ *
  * `now_playing` is null when nothing is playing; otherwise has the shape
  *   { queue: { source, id }, title? }
  *
@@ -74,6 +80,9 @@ export class SlotStatus {
   /** @type {number} */ #playlist_pos;
   /** @type {number} */ #playlist_count;
   /** @type {string|null} */ #armed_source;
+  /** @type {string|null} */ #status;
+  /** @type {string|null} */ #status_code;
+  /** @type {string|null} */ #status_detail;
 
   /**
    * @param {{
@@ -143,6 +152,17 @@ export class SlotStatus {
       });
     }
     validateNowPlaying(args.now_playing);
+    for (const k of ['status', 'status_code', 'status_detail']) {
+      const v = args[k];
+      if (v !== undefined && v !== null && typeof v !== 'string') {
+        throw new ValidationError(`SlotStatus.${k} must be a string or null`, {
+          code: 'INVALID_SLOT_STATUS', field: k, value: v
+        });
+      }
+    }
+    this.#status = args.status ?? null;
+    this.#status_code = args.status_code ?? null;
+    this.#status_detail = args.status_detail ?? null;
 
     this.#position = args.position;
     this.#color = args.color;
@@ -189,6 +209,12 @@ export class SlotStatus {
   get playlist_count() { return this.#playlist_count; }
   /** @returns {string|null} */
   get armed_source() { return this.#armed_source; }
+  /** @returns {string|null} one-word status, e.g. "Speaker off or out of range" */
+  get status() { return this.#status; }
+  /** @returns {string|null} playing|idle|absent|unpaired|unknown */
+  get status_code() { return this.#status_code; }
+  /** @returns {string|null} */
+  get status_detail() { return this.#status_detail; }
 
 }
 

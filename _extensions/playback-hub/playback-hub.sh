@@ -619,117 +619,9 @@ note_reconnect_recovered() {
     rm -f "$mf" "$sf" "$dir/.connect-alerted" 2>/dev/null || true
 }
 
-# connectivity_loop — proactive Bluetooth self-heal for private headsets.
-#
-# The gdbus monitor only reacts to a headset connecting *itself*. If a bonded
-# headset is powered on but its adapter has silently dropped PSCAN (the Intel
-# BT-flapping failure that left "red" dead), the headset's reconnect pages go
-# unanswered: no event, no recovery, no alert — the operator becomes the
-# monitor. This loop closes that gap. For each PRIVATE device that is inside an
-# active schedule window (i.e. the hub *wants* it playing now) but is not
-# connected, it:
-#   1) heals the adapter's PSCAN if missing (power-cycle over D-Bus),
-#   2) issues an OUTBOUND connect — works even with PSCAN dead, because the hub
-#      pages the headset instead of waiting to be paged; the gdbus handler then
-#      starts playback on the resulting Connected event (we do NOT play here),
-#   3) after CONNECT_MISS_ALERT consecutive failures (~5 min) dispatches a
-#      single warning alert so a truly unreachable headset surfaces instead of
-#      sitting silent.
-# Reconnects are gated to schedule windows so we never hammer a headset the hub
-# has no reason to be playing (no-schedule slots, or off-hours). The alert
-# routes per alerts.on_bt_reconnect_fail in devices.yml ("log" default, or
-# "notify" for an HA phone push).
-connectivity_loop() {
-    while true; do
-        sleep "$CONNECT_CHECK_INTERVAL"
-        local count idx
-        count=$(jq '.devices | length' "$CONFIG_FILE" 2>/dev/null) || continue
-        for ((idx=0; idx<count; idx++)); do
-            local device_json slot mac name cls tag dir miss_file alert_file
-            device_json=$(jq -c ".devices[$idx]" "$CONFIG_FILE" 2>/dev/null) || continue
-            cls=$(device_class "$device_json")
-            [[ "$cls" == "private" ]] || continue
-            slot=$(jq -r '.slot' <<< "$device_json")
-            mac=$(jq -r '.mac'  <<< "$device_json")
-            name=$(jq -r '.name // "device"' <<< "$device_json")
-            [[ -z "$mac" || "$mac" == null ]] && continue
-            tag=$(device_tag "$slot" "$mac" "$name")
-            dir=$(slot_dir "$slot")
-            miss_file="$dir/.connect-misses"
-            alert_file="$dir/.connect-alerted"
-
-            # Only the hub's "should be playing now" windows drive proactive
-            # reconnects. Outside any window: clear state and leave it alone.
-            if ! active_schedule_json "$device_json" >/dev/null 2>&1; then
-                # Window closed — clear silently (not a "recovery"; the headset
-                # may still be off, we just stop chasing it).
-                rm -f "$miss_file" "$alert_file" "$dir/.connect-outage-start" 2>/dev/null || true
-                continue
-            fi
-
-            # Already linked → healthy; close out any outage (recovery event) and
-            # move on. Covers the common case where the gdbus monitor reconnected
-            # the headset and we just notice the live link here.
-            if bt_connected "$mac"; then
-                note_reconnect_recovered "$tag" "$dir"
-                continue
-            fi
-
-            # Disconnected during an active window → heal adapter + reconnect.
-            local path
-            if path=$(device_path_for_mac "$mac"); then
-                heal_adapter_pscan "$mac" "$tag" || true
-                log "$tag" "schedule-active but disconnected — attempting outbound reconnect"
-                timeout 25 busctl --system call org.bluez "$path" \
-                    org.bluez.Device1 Connect 2>/dev/null || true
-                sleep 3
-            else
-                log "$tag" "schedule-active but no BlueZ device object for $mac (unpaired?)"
-            fi
-
-            if bt_connected "$mac"; then
-                log "$tag" "reconnect succeeded"
-                logev "$tag" bt.reconnect_ok mac="$mac"
-                note_reconnect_recovered "$tag" "$dir"
-                continue
-            fi
-
-            # Still down — bump the miss counter; alert once per outage streak.
-            local misses=0
-            [[ -f "$miss_file" ]] && misses=$(cat "$miss_file" 2>/dev/null || echo 0)
-            [[ "$misses" =~ ^[0-9]+$ ]] || misses=0
-            misses=$((misses + 1))
-            echo "$misses" > "$miss_file"
-            # Stamp the outage-start epoch on the first miss so the matching
-            # bt.reconnect_recovered can report total outage duration.
-            (( misses == 1 )) && date +%s > "$dir/.connect-outage-start"
-            # Throttle: the per-tick emit was ~95% of the ledger. Keep the onset,
-            # every escalation tick (3,6,9,12 — same cadence as the adapter
-            # reset), and a coarse every-Nth heartbeat past the cap so a long
-            # outage still leaves a periodic trail without flooding.
-            if (( misses == 1 )) || should_escalate_reset "$misses" || (( misses % RECONNECT_LOG_EVERY == 0 )); then
-                logev "$tag" bt.reconnect_fail mac="$mac" misses="$misses"
-            fi
-            # Escalation: heal_adapter_pscan above is a no-op when PSCAN is
-            # present, so a controller that's wedged-but-PSCAN-healthy would
-            # otherwise retry the same gentle Connect forever. After enough
-            # consecutive misses, force a full adapter power-cycle to re-init it.
-            if should_escalate_reset "$misses"; then
-                local hci
-                if hci=$(hci_for_mac "$mac"); then
-                    log "$tag" "still down after $misses misses — escalating: power-cycling adapter $hci"
-                    logev "$tag" bt.adapter_reset hci="$hci" misses="$misses"
-                    cycle_adapter "$hci" "$tag"
-                fi
-            fi
-            if (( misses >= CONNECT_MISS_ALERT )) && [[ ! -f "$alert_file" ]]; then
-                dispatch_alert warning bt_reconnect_fail \
-                    "$name (slot $slot) is scheduled to play but unreachable for ~$((misses*CONNECT_CHECK_INTERVAL/60)) min — headset off, out of range, or BT fault"
-                : > "$alert_file"
-            fi
-        done
-    done
-}
+# Proactive reconnect lives in slot_link.py (`keep`, started by monitor()):
+# per-slot backoff, bonded-adapter Connect, PSCAN heal, bounded adapter
+# resets, one alert per outage, a structured event for every attempt.
 
 # scheduled_loop — background tick (every SCHEDULE_TICK_INTERVAL) that
 # fires matching `scheduled:` entries and handles auto-stop. Restart-safe:
@@ -1099,7 +991,10 @@ device_path_for_mac() {
     local dbus_id
     dbus_id=$(mac_to_dbus_path "$mac")
 
-    local hci
+    # Prefer the adapter that holds the BOND: a stale unpaired object for the
+    # same MAC on a lower-numbered adapter (left by a scan) must not win, or
+    # every Connect/Disconnect goes to an adapter the speaker never paired with.
+    local hci first=""
     for hci in /sys/class/bluetooth/hci*; do
         [[ -e "$hci" ]] || continue
         local adapter="${hci##*/}"
@@ -1107,12 +1002,16 @@ device_path_for_mac() {
         [[ "$adapter" == *:* ]] && continue
         local candidate="/org/bluez/${adapter}/dev_${dbus_id}"
         # Probe for an actual Device1 interface (not just an empty placeholder path)
-        if busctl --system get-property org.bluez "$candidate" org.bluez.Device1 Address >/dev/null 2>&1; then
+        local paired
+        paired=$(busctl --system get-property org.bluez "$candidate" org.bluez.Device1 Paired 2>/dev/null) || continue
+        if [[ "$paired" == "b true" ]]; then
             echo "$candidate"
             return 0
         fi
+        [[ -z "$first" ]] && first="$candidate"
     done
 
+    [[ -n "$first" ]] && { echo "$first"; return 0; }
     return 1
 }
 
@@ -1178,7 +1077,7 @@ warm_reconnect_ok() {
 
 # Fire a single best-effort outbound Connect for a headset that just dropped, so
 # a transient RF blip recovers in ~seconds instead of waiting up to
-# CONNECT_CHECK_INTERVAL for connectivity_loop's next tick. Backgrounded so it
+# the link keeper's next tick. Backgrounded so it
 # never blocks the gdbus monitor read loop, and per-slot flock-guarded so a
 # flapping link can't pile up overlapping Connect attempts. The gated connect
 # handler resumes playback once the link proves stable.
@@ -3254,9 +3153,13 @@ monitor() {
     selfcheck_loop &
     SELFCHECK_PID=$!
 
-    # Start BT connectivity self-heal loop: proactive reconnect + PSCAN heal +
-    # alert for schedule-active private headsets the gdbus monitor can't see.
-    connectivity_loop &
+    # Start the link keeper (slot_link.py keep): pages every slot's bonded
+    # speaker on its own adapter while the slot has something to play — every
+    # 12 s, backing off to 60 s — with PSCAN heal, bounded adapter resets and
+    # one alert per outage. It only ever calls Connect; the gdbus connect
+    # handler below resumes the slot's armed/scheduled source. Replaces the
+    # bash connectivity_loop (60 s, schedule-window private slots only).
+    python3 "$_SCRIPT_DIR/slot_link.py" --base "$BASE_DIR" keep &
     CONNECTIVITY_PID=$!
 
     while read -r line; do
@@ -3281,6 +3184,8 @@ monitor() {
                         _cmac=$(jq -r '.mac' <<< "$device_json")
                         log "$name" "Connected"
                         logev "$name" bt.connect mac="$_cmac"
+                        # The speaker chose the hub again: a hand-back no longer stands.
+                        rm -f "$(slot_dir "$slot")/.released"
                         # Tell the wind-down policy about the edge BEFORE the
                         # settle gate. profile_loop disconnects an ended session's
                         # device within ~1s, so waiting out BT_SETTLE_SEC first
@@ -3352,8 +3257,8 @@ monitor() {
                         if has_profile "$slot"; then profile_policy "$slot" drop >/dev/null || true; fi
                         end_session "$slot" "$name" fast
                         # Fast-path reconnect: a transient RF blip during an active
-                        # schedule window shouldn't wait up to CONNECT_CHECK_INTERVAL
-                        # for connectivity_loop. Immediately (best-effort, backgrounded)
+                        # schedule window shouldn't wait for the link keeper's
+                        # next tick. Immediately (best-effort, backgrounded)
                         # page the headset; the gated connect handler resumes once the
                         # link proves stable. Gated to active windows so an off-hours
                         # power-off (user done) isn't chased.
@@ -3463,6 +3368,7 @@ handle_cmd() {
                     skipped=$((skipped+1)); continue
                 fi
                 log "cmd" "play target=$color slot=$slot queue=$content_id volume=$volume duration=$duration_min"
+                rm -f "$(slot_dir "$slot")/.released"
                 arm_slot "$slot" "$content_id" "$volume" "$duration_min" "api"
                 # If public + disconnected, wake via HA. Don't block on BT
                 # connect — the watchdog will spawn mpv when BT comes up.
@@ -3527,6 +3433,9 @@ handle_cmd() {
                 # an override, and leaving one armed would re-grab the speaker
                 # the moment it reconnects.
                 disarm_slot "$slot"
+                # ...and tell the link keeper to leave it alone until Fix, a
+                # play, or the speaker connecting to the hub by itself.
+                : > "$(slot_dir "$slot")/.released"
                 if device_path=$(device_path_for_mac "$mac" 2>/dev/null); then
                     if timeout 25 busctl --system call org.bluez "$device_path" \
                         org.bluez.Device1 Disconnect >/dev/null 2>&1; then
@@ -3609,6 +3518,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             ;;
         stop)    stop_all ;;
         cmd)     shift; handle_cmd "$@" ;;
+        alert)   shift; dispatch_alert "$@" ;;   # used by slot_link.py keep
         profile-fallback) shift; profile_fallback "$@" ;;
         *)       echo "Usage: $0 {monitor|stop|cmd <action> <target> [args]}" ;;
     esac

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { DeviceHeader } from "./DeviceHeader.jsx";
 
@@ -96,5 +96,35 @@ describe('DeviceHeader', () => {
     });
     // default is 50, max is 75
     expect(screen.getByText('50/75')).toBeInTheDocument();
+  });
+
+  it('shows the hub\'s one-word status and its detail line', () => {
+    renderHeader({
+      slot: baseSlot,
+      status: { ...baseStatus, bt_connected: false, now_playing: null,
+        status: 'Speaker off or out of range', status_code: 'absent',
+        status_detail: 'reconnecting — 2 tries failed, next in 12 s' },
+    });
+    expect(screen.getByTestId('hub-slot-status').textContent).toBe('Speaker off or out of range');
+    expect(screen.getByTestId('hub-slot-detail').textContent).toMatch(/next in 12 s/);
+  });
+
+  it('Fix calls the hub and shows its one-line answer', async () => {
+    const onFix = vi.fn().mockResolvedValue({ ok: false, code: 'absent',
+      result: "Couldn't reach the speaker (speaker didn't answer)" });
+    renderHeader({
+      slot: baseSlot,
+      status: { ...baseStatus, status: 'Speaker off or out of range', status_code: 'absent' },
+      onFix,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /fix red/i }));
+    await waitFor(() => expect(screen.getByTestId('hub-slot-detail').textContent)
+      .toMatch(/^Couldn't reach the speaker/));
+    expect(onFix).toHaveBeenCalledOnce();
+  });
+
+  it('no Fix button without a handler', () => {
+    renderHeader({ slot: baseSlot, status: baseStatus });
+    expect(screen.queryByRole('button', { name: /fix/i })).toBeNull();
   });
 });

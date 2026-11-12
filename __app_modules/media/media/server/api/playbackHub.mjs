@@ -200,6 +200,14 @@ export function createPlaybackHubRouter({ operations, logger = console } = {}) {
     res.status(204).end();
   }));
 
+  // -- POST /fix/:color -----------------------------------------------------
+  // The owner's one button: reconnect → restart player if needed → replay,
+  // or start a 2-minute pairing scan. Body: { ok, code, result: "<one line>" }.
+  router.post('/fix/:color', asyncHandler(async (req, res) => {
+    const out = await operations.fixHubSlot.execute({ color: req.params.color });
+    res.json({ ...out, ok: out?.ok !== false });
+  }));
+
   // -- GET /verify/:color ---------------------------------------------------
   router.get('/verify/:color', asyncHandler(async (req, res) => {
     const payload = await operations.verifyAudioFlowing.execute({
@@ -254,6 +262,9 @@ function serializeSlotStatus(slot) {
       playlist_pos: slot.playlist_pos,
       playlist_count: slot.playlist_count,
       armed_source: slot.armed_source ?? null,
+      status: slot.status ?? null,
+      status_code: slot.status_code ?? null,
+      status_detail: slot.status_detail ?? null,
     };
   }
   return slot;

@@ -1,7 +1,7 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
 **Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC, 10.0.0.109)
-**Last reviewed:** 2026-07-17
+**Last reviewed:** 2026-11-11
 
 ---
 
@@ -47,6 +47,81 @@ External:
 
 ---
 
+## Just works: one word per slot, auto-reconnect, one Fix button
+
+The owner's contract: switch a speaker on and it plays; glance at the hub and
+read one true word; press **Fix** and get one plain line back. All three read
+BlueZ's ObjectManager over D-Bus (every `Device1` on every adapter — the same
+source as `/api/bt/paired`) through `slot_link.py`.
+
+**Status word** (`status` in `/api/status`, coloured on the dashboard, shown on
+the DaylightStation admin card):
+
+| Word | When |
+|------|------|
+| **Playing** | BlueZ says Connected **and** the slot's mpv is alive and not paused |
+| **Connected – idle** | Connected, but no player / paused / nothing to play |
+| **Speaker off or out of range** | BlueZ holds a bond for the MAC but no link |
+| **Not paired** | BlueZ holds **no** bond for the MAC on any adapter (Trusted alone is not a bond — the Yoto) |
+| Bluetooth not answering | BlueZ itself couldn't be read — never reported as "Not paired" |
+
+`status_code` is the machine key (`playing|idle|absent|unpaired|unknown`),
+`status_detail` one line of why ("reconnecting — 3 tries failed, next in 30 s",
+"handed back to other devices — press Fix to take it back", a Fix result).
+`reconnect` carries `{wants, reason, misses, next_at}` and `bt_adapter` the
+adapter that holds the bond.
+
+**Auto-reconnect** — the daemon starts `slot_link.py keep` (the link keeper;
+it replaced the bash `connectivity_loop`). Every 4 s it reads BlueZ once and,
+for each slot that **has something to play**, pages its bonded speaker with
+`Device1.Connect` on the adapter that holds the bond: every 12 s for the first
+minute, then 30 s, then 60 s while it stays away. When the link comes up the
+gdbus connect handler resumes the slot's armed override / scheduled queue /
+static queue exactly as before. It never pairs, unpairs or removes.
+
+| Slot shape | Chased? |
+|------------|---------|
+| static `queue`, active schedule window, or a live override | yes |
+| `class: public` | only while armed |
+| `wind_down` profile | only to resume an **open** session inside `reconnect_seconds` — never to restart a finished one |
+| no queue, no schedule (ad-hoc, e.g. the Yoto) | no |
+| handed back with `disconnect` (`slots/<N>/.released`) | no — until Fix, a `play`, or the speaker connecting by itself |
+
+Escalation: a missing PSCAN is healed and the adapter power-cycled at misses
+3/6/9/12 — **only when no other speaker is connected on that adapter** (hci0
+hosts two). One `bt_reconnect_fail` alert per outage, only when a schedule /
+override / open session wants the slot. Every attempt writes one
+`bt.reconnect` event (`result`, `attempt`, `adapter`, `reason`, `error`,
+`took_sec`, `next_in`) to `slots/<N>/events.jsonl` and the journal; recovery
+writes `bt.reconnect_recovered` (`misses`, `outage_sec`). Per-slot keeper
+state: `slots/<N>/.link.json`.
+
+**Fix** — `POST /api/fix/<color|slot>` (dashboard button; DaylightStation's
+`POST /api/v1/playback-hub/fix/:color` and the admin card's Fix button call
+it). Returns `{ok, code, result, status, status_code, status_detail}`:
+
+1. Clears a hand-back and resets the keeper's backoff.
+2. **No bond** → `"Hold the speaker's pairing button — I'll pair it the moment
+   it shows up (watching for 2 min)."` and a background job scans that slot's
+   adapter (the one already holding an object for the MAC, else a free one),
+   and the moment the speaker is seen in the scan: `Pair` → `Trusted` →
+   `Connect`. The outcome lands in `status_detail` (`slots/<N>/.fix.json`).
+3. **Bonded, not connected** → `Connect`; on failure power-cycle the adapter
+   (if it has no other live speaker) and try once more; still nothing →
+   `"Couldn't reach the speaker (speaker didn't answer) — switch it on…"`.
+4. **Connected** → waits up to 45 s for audio to move: unpauses a paused
+   player, re-connects the A2DP profile and restarts mpv if its sink is gone,
+   restarts a stalled mpv once (the watchdog respawns it and resumes from
+   `state.json`). `"Playing: <title>"` only when playback-time advances.
+
+Fix events: `fix.start`, `bt.reconnect` (`attempt=fix`), `fix.unpause`,
+`fix.audio_profile`, `fix.player_restart`, `fix.pair_scan`, `fix.pair_found`,
+`fix.pair_result`, `fix.result`. web.py is a threaded server, so status keeps
+answering while a Fix runs. Tests: `tests/test_slot_link.py` (fixture BlueZ
+states, backoff, keeper, Fix, pairing).
+
+---
+
 ## Network recovery
 
 An independent root timer can recover IPv4 lease loss and local network failures
@@ -74,6 +149,7 @@ The central cache (`cache/<plex_id>.mp3`, single-writer via `cache_manager.sh`) 
 | `playback-hub.sh` | Main daemon — BT monitoring, queue fetch/cache, mpv lifecycle, position save/restore, scheduled fires |
 | `web.py` | HTTP server (stdlib only) — dashboard + REST API on port 8080 |
 | `avrcp_dispatch.py` | Per-slot evdev → mpv IPC bridge; translates AVRCP button events to mpv commands with volume clamping |
+| `slot_link.py` | Status words, the link keeper (`keep`, auto-reconnect), Fix + bounded pairing — see "Just works" above |
 | `peak_meter.py` | `/api/verify/<color>` peak-meter helper — samples pipewire sink monitor port via `pw-cat` |
 | `validate_config.py` | Pre-flight validation of `devices.yml` (schema, MAC format, queue URLs) — called from `playback-hub.sh` on every load |
 | `sync_config.sh` | Cron-driven rsync of `devices.yml` from DaylightStation SSOT in Dropbox |
@@ -236,6 +312,7 @@ If the API is unreachable, the daemon falls back to the existing cached `playlis
 | `GET` | `/api/bt/scan` / `/api/bt/paired` | BT discovery / known-device list — see below |
 | `POST` | `/api/bt/pair` / `/api/bt/unpair` | `{mac}` |
 | `POST` | `/api/service/restart` | Restart the playback-hub daemon |
+| `POST` | `/api/fix/<color\|slot>` | Fix: reconnect → restart player → replay, or bounded pairing; `{ok, code, result}` |
 
 **`/api/bt/paired` covers every controller.** It lists each device BlueZ knows as paired, bonded, trusted or connected on ANY adapter (BlueZ ObjectManager via `busctl`, one call), with per-device `paired`/`bonded`/`trusted`/`connected`/`adapter`/`probe`/`source`. While a scan has discovered devices, `busctl --json` GetManagedObjects exits 1 with no output (systemd 255), so it then reads each `/org/bluez/hciN/dev_*` path with `busctl get-property` (`source: "dbus-tree"`). If D-Bus is unavailable it falls back to `bluetoothctl` (default controller only), probing `info` concurrently under an overall budget; a probe that times out keeps its device with `probe: "timeout"` and `null` flags — never read a missing answer as "unpaired". `/api/bt/scan`'s `paired` flag comes from the same inventory. Tests: `tests/test_bt_inventory.py`.
 
@@ -626,11 +703,13 @@ That's right for single-purpose headbands and wrong for a shared speaker.
 `disconnect` = stop + **disarm** + release. Disarming matters: an override left
 armed would re-grab the speaker the moment it reconnects.
 
-**Is the hub greedy about *taking* a device?** Only if it has `schedules`. Both
-outbound `Connect()` sites are gated on `active_schedule_json`, which is false for
-any device with no `schedules` array (a bare `queue` does not count). So a device
-configured `class: private` with `queue: ''` and no schedules is **adhoc-only** —
-the hub touches it exclusively on an explicit `/play`.
+**Is the hub greedy about *taking* a device?** Only when the slot has something
+to play — a static `queue`, an active schedule window or a live override (see
+"Just works" above). A device configured `class: private` with `queue: ''` and
+no schedules is **adhoc-only** — the hub touches it exclusively on an explicit
+`/play` or Fix. `disconnect` also writes `slots/<N>/.released`, so the link
+keeper leaves a handed-back speaker alone until Fix, a `play`, or the speaker
+connecting to the hub by itself.
 
 Prefer that shape over `class: public` for a share-with-a-phone speaker: public is
 validator-required to carry an `ha_entity_id`, and the daemon calls it as
@@ -731,7 +810,7 @@ no code change.
 
 System packages:
 ```
-mpv jq socat curl python3 python3-yaml gstreamer1.0-tools
+mpv jq socat curl python3 python3-yaml python3-dbus gstreamer1.0-tools
 pipewire wireplumber pipewire-pulse bluez
 ```
 
@@ -749,12 +828,15 @@ on boot via linger — `loginctl enable-linger kckern`):
 
 | Unit | Role | Restart after changing |
 |------|------|------------------------|
-| `playback-hub.service` | the `playback-hub.sh monitor` daemon | `playback-hub.sh` |
-| `playback-hub-web.service` | `web.py` REST API on :8080 | `web.py`, `peak_meter.py` |
+| `playback-hub.service` | the `playback-hub.sh monitor` daemon (+ its `slot_link.py keep` child) | `playback-hub.sh`, `slot_link.py` |
+| `playback-hub-web.service` | `web.py` REST API on :8080 | `web.py`, `peak_meter.py`, `slot_link.py` |
+
+Restarting `playback-hub.service` stops every slot's mpv — deploy it only when
+`/api/status` shows no slot `Playing`.
 
 ```bash
 # deploy + reload (run the systemctl as kckern with the user bus)
-scp peak_meter.py playback-hub.sh web.py {user}@{env.playback_hub_host}:~/playback-hub/
+scp peak_meter.py playback-hub.sh web.py slot_link.py {user}@{env.playback_hub_host}:~/playback-hub/
 ssh {env.playback_hub_host} 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
   systemctl --user restart playback-hub-web.service playback-hub.service'
 ```

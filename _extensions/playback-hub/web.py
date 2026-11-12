@@ -18,6 +18,8 @@ from urllib.parse import urlparse, parse_qs
 
 import yaml
 
+import slot_link
+
 PORT = 8080
 BASE = Path(os.environ.get("PLAYBACK_HUB_DIR") or Path.home() / "playback-hub")
 DEVICES_YAML = BASE / "devices.yml"
@@ -380,7 +382,9 @@ def _iso_to_epoch(ts):
         return None
 
 
-def slot_status(device):
+def slot_status(device, bt_records=None, bt_ok=False):
+    """Per-slot status. `bt_records` is one BlueZ read shared by every slot
+    (slot_link.read_records); without it, fall back to the per-adapter probe."""
     slot = device["slot"]
     color = device.get("color")
     slot_dir = SLOTS_DIR / str(slot)
@@ -388,7 +392,8 @@ def slot_status(device):
     pid_file = slot_dir / "mpv.pid"
     armed_file = slot_dir / ".armed.json"
 
-    connected = is_connected(device["mac"])
+    rec = slot_link.slot_record(bt_records, device["mac"]) if bt_ok else None
+    connected = bool(rec and rec.get("connected")) if bt_ok else is_connected(device["mac"])
     playing = pid_alive(pid_file)
 
     # Legacy fields (consumed by this hub's own /admin web UI):
@@ -459,6 +464,14 @@ def slot_status(device):
 
     # ── Postmortem observability fields (Unit G). All defensive: missing
     # files yield 0 / None, never an exception. ──
+    # ── The one word the owner reads (slot_link owns the mapping) ──
+    ctx = slot_link.slot_context(BASE, device)
+    wants = slot_link.wants_link(device, armed=ctx["armed"], released=ctx["released"],
+                                 session=ctx["session"])
+    words = slot_link.describe_slot(
+        device, rec, bt_ok, player_alive=playing, paused=paused, title=title,
+        link=ctx["link"], note=ctx["note"], wants=wants)
+
     events_path = slot_dir / "events.jsonl"
     file_count = file_playlist_count(slot_dir / "playlist.m3u")
     reconcile_ts = last_reconcile(events_path)
@@ -490,6 +503,15 @@ def slot_status(device):
         "file_playlist_count": file_count,
         "last_reconcile": reconcile_ts,
         "integrity_failures": integrity_fails,
+        # ── Plain status (Playing / Connected – idle / Speaker off or out of
+        # range / Not paired) + one line of why, and what the hub is doing ──
+        "status": words["status"],
+        "status_code": words["status_code"],
+        "status_detail": words["status_detail"],
+        "bt_adapter": rec.get("adapter") if rec else None,
+        "reconnect": {"wants": wants[0], "reason": wants[1],
+                      "misses": int(ctx["link"].get("misses") or 0),
+                      "next_at": ctx["link"].get("next_at")},
     }
 
 API_BASE = "https://daylightlocal.kckern.net"
@@ -899,6 +921,16 @@ body{
   transition:background .15s;
 }
 .ctrl-btn:active{background:var(--accent)}
+.slot-status{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.st-word{font-size:18px;font-weight:700}
+.st-playing .st-word{color:var(--green)}
+.st-idle .st-word{color:var(--accent)}
+.st-absent .st-word{color:var(--muted)}
+.st-unpaired .st-word,.st-unknown .st-word{color:var(--red)}
+.st-detail{color:var(--muted);font-size:13px;margin-bottom:10px;min-height:18px}
+.fix-btn{margin-left:auto;padding:8px 18px;border-radius:999px;border:1px solid var(--accent);
+  background:transparent;color:var(--accent);font-size:15px;font-weight:600;cursor:pointer}
+.fix-btn:disabled{opacity:.6;cursor:default}
 /* Device list */
 .dev-row{
   display:flex;align-items:center;gap:10px;padding:10px 0;
@@ -1084,8 +1116,13 @@ async function refreshDashboard(){
         <div class="card-header">
           <span class="dot ${d.connected?'on':'off'}"></span>
           <span class="card-title">${esc(d.name)}</span>
-          <span class="card-slot">Slot ${d.slot}</span>
+          <span class="card-slot">${esc(d.color||'')} &middot; Slot ${d.slot}</span>
         </div>
+        <div class="slot-status st-${esc(d.status_code||'unknown')}">
+          <span class="st-word">${esc(d.status||'')}</span>
+          <button class="fix-btn" id="fix-${d.slot}" onclick="fixSlot(${d.slot})"${fixing[d.slot]?' disabled':''}>${fixing[d.slot]?'Fixing&hellip;':'Fix'}</button>
+        </div>
+        <div class="st-detail">${esc(fixMsg[d.slot]||d.status_detail||'')}</div>
         <div class="now-playing">${d.title?esc(d.title)+' &mdash; '+fmt(d.position)+' / '+fmt(d.duration):'Not playing'}</div>
         <div class="controls">
           <button class="ctrl-btn" onclick="pbctl(${d.slot},'prev')">&#9198;</button>
@@ -1094,6 +1131,17 @@ async function refreshDashboard(){
         </div>
       </div>`).join('');
   }catch(e){console.error(e)}
+}
+
+const fixing={}, fixMsg={};
+async function fixSlot(slot){
+  fixing[slot]=true; fixMsg[slot]='Working on it…'; refreshDashboard();
+  try{
+    let r=await fetch('/api/fix/'+slot,{method:'POST'}); let j=await r.json();
+    fixMsg[slot]=j.result||'Done.';
+  }catch(e){fixMsg[slot]='The hub did not answer.'}
+  fixing[slot]=false; refreshDashboard();
+  setTimeout(()=>{delete fixMsg[slot]; refreshDashboard()},60000);
 }
 
 async function pbctl(slot,action){
@@ -1454,6 +1502,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._service_restart()
         if path == "/api/play":
             return self._post_play()
+        if path.startswith("/api/fix/"):
+            return self._fix(path[len("/api/fix/"):].strip("/"))
         self.send_error(404)
 
     def do_PUT(self):
@@ -1474,10 +1524,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _get_status(self):
         devices = read_devices()
-        results = []
-        for d in devices:
-            results.append(slot_status(d))
-        self._json(results)
+        bz = slot_link.open_bluez()
+        try:
+            records, ok = slot_link.read_records(bz)
+        finally:
+            bz.close()
+        self._json([slot_status(d, records, ok) for d in devices])
+
+    def _fix(self, target):
+        """POST /api/fix/<color|slot> — reconnect, restart the slot's player
+        if needed, confirm it plays. One plain line back in `result`."""
+        devices = read_devices()
+        device = next((d for d in devices if d.get("color") == target or str(d["slot"]) == target), None)
+        if device is None:
+            return self._json({"ok": False, "result": f"No slot called {target}."}, 404)
+        runtime = next((d for d in slot_link.load_devices(BASE) if d["slot"] == device["slot"]), device)
+        bz = slot_link.open_bluez()
+        try:
+            out = slot_link.fix_slot(BASE, runtime, bz, slot_link.Player(BASE),
+                                     configured_macs={d["mac"].upper() for d in devices})
+        except Exception as e:
+            out = {"ok": False, "code": "error", "result": f"Fix hit an error: {str(e)[:100]}"}
+        finally:
+            bz.close()
+        out.update(slot=device["slot"], color=device.get("color"))
+        try:
+            records_bz = slot_link.open_bluez()
+            records, ok = slot_link.read_records(records_bz)
+            records_bz.close()
+            st = slot_status(device, records, ok)
+            out.update(status=st["status"], status_code=st["status_code"], status_detail=st["status_detail"])
+        except Exception:
+            pass
+        self._json(out)
 
     def _get_devices(self):
         devices = []
@@ -1812,7 +1891,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
+    # Threaded: a Fix can take ~45 s (or start a 2-min pairing scan); status
+    # and every other endpoint must keep answering meanwhile.
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server.daemon_threads = True
     print(f"MusiCozy web UI running on http://0.0.0.0:{PORT}")
     try:
         server.serve_forever()

@@ -166,6 +166,15 @@ export class FakeHubGateway extends IPlaybackHubGateway {
    * @param {string} color
    * @returns {Promise<object>}
    */
+  /** Records Fix calls; returns `fixResult` (settable) or a "playing" line. */
+  fixCalls = [];
+  fixResult = null;
+
+  async fixSlot(color) {
+    this.fixCalls.push({ color });
+    return this.fixResult ?? { ok: true, code: 'playing', result: 'Playing: test' };
+  }
+
   async verifyAudio(color) {
     this.verifyCalls.push({ color });
     if (this.#verifyError) {

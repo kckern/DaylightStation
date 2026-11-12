@@ -60,6 +60,18 @@ export class IPlaybackHubGateway {
   async verifyAudio(color) {
     throw new Error('IPlaybackHubGateway.verifyAudio must be implemented');
   }
+
+  /**
+   * One-button repair for a slot: reconnect its paired speaker, restart its
+   * player if wedged, confirm audio; or, with no bond, start a bounded
+   * pairing scan. Returns the hub's one plain line.
+   *
+   * @param {string} color
+   * @returns {Promise<{ok:boolean, code:string, result:string}>}
+   */
+  async fixSlot(color) {
+    throw new Error('IPlaybackHubGateway.fixSlot must be implemented');
+  }
 }
 
 /**

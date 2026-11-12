@@ -31,6 +31,8 @@ function projectSlotStatus(slot) {
     paused: slot.paused, now_playing: slot.now_playing ?? null, volume: slot.volume,
     playlist_pos: slot.playlist_pos, playlist_count: slot.playlist_count,
     armed_source: slot.armed_source ?? null,
+    status: slot.status ?? null, status_code: slot.status_code ?? null,
+    status_detail: slot.status_detail ?? null,
   };
 }
 

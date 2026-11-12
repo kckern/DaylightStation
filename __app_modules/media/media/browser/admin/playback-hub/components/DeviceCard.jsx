@@ -38,7 +38,11 @@ export function DeviceCard({ slot, status, scheduledFires, mutations, predict, p
   return (
     <Paper withBorder p="md" className="playback-hub-device-card">
       <Stack gap="sm">
-        <DeviceHeader slot={slot} status={status} />
+        <DeviceHeader
+          slot={slot}
+          status={status}
+          onFix={mutations?.fixSlot ? () => mutations.fixSlot(slot.color) : undefined}
+        />
         <TransportRow
           slot={slot}
           status={status}

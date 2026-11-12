@@ -50,9 +50,15 @@ export function mapHubStatus(json) {
     volume: json.volume ?? null,
     playlist_pos: json.playlist_pos ?? null,
     playlist_count: json.playlist_count ?? null,
-    armed_source: json.armed_source ?? null
+    armed_source: json.armed_source ?? null,
+    status: typeof json.status === 'string' ? json.status : null,
+    status_code: typeof json.status_code === 'string' ? json.status_code : null,
+    status_detail: typeof json.status_detail === 'string' ? json.status_detail : null
   });
 }
+
+/** A Fix waits for audio (~45 s) after a reconnect attempt (~20 s, twice). */
+const FIX_TIMEOUT_MS = 120000;
 
 export class HttpPlaybackHubAdapter extends IPlaybackHubGateway {
   /** @type {string} */ #baseUrl;
@@ -172,6 +178,26 @@ export class HttpPlaybackHubAdapter extends IPlaybackHubGateway {
     return body;
   }
 
+  /**
+   * POST /api/fix/<color> — reconnect, restart the slot's player if needed,
+   * confirm it plays. The hub answers with one plain line in `result`; a 4xx
+   * with that shape (unknown slot) is returned, not thrown.
+   *
+   * @param {string} color
+   * @returns {Promise<{ok:boolean, code:string, result:string, status?:string, status_code?:string, status_detail?:string}>}
+   */
+  async fixSlot(color) {
+    const path = `/api/fix/${encodeURIComponent(color)}`;
+    const response = await this.#request('POST', path, {}, FIX_TIMEOUT_MS);
+    const body = response.body;
+    if (body && typeof body === 'object' && typeof body.result === 'string') {
+      return body;
+    }
+    throw new InfrastructureError(`playback hub ${path} returned ${response.status}`, {
+      code: 'HUB_HTTP_ERROR', status: response.status, body
+    });
+  }
+
   // -----------------------------------------------------------------------
   // Private — request shape
   // -----------------------------------------------------------------------
@@ -257,7 +283,7 @@ export class HttpPlaybackHubAdapter extends IPlaybackHubGateway {
    * received; throws InfrastructureError on network / timeout failure.
    * @private
    */
-  async #request(method, path, body) {
+  async #request(method, path, body, timeoutMs = this.#timeoutMs) {
     const url = `${this.#baseUrl}${path}`;
 
     let response;
@@ -266,15 +292,15 @@ export class HttpPlaybackHubAdapter extends IPlaybackHubGateway {
         body: body === undefined ? null : body,
         headers: { 'Accept': 'application/json' },
         responseType: 'text',
-        timeout: this.#timeoutMs
+        timeout: timeoutMs
       });
     } catch (err) {
       // HttpClient surfaces network/timeout as HttpError; map to hub errors.
       // AbortError (timeout) is coded 'TIMEOUT' by HttpError.fromNetworkError.
       if (err && (err.code === 'TIMEOUT' || err.name === 'AbortError' || err.code === 'ABORT_ERR')) {
         throw new InfrastructureError(
-          `playback hub request timeout after ${this.#timeoutMs}ms: ${method} ${path}`,
-          { code: 'HUB_TIMEOUT', timeoutMs: this.#timeoutMs, method, path }
+          `playback hub request timeout after ${timeoutMs}ms: ${method} ${path}`,
+          { code: 'HUB_TIMEOUT', timeoutMs, method, path }
         );
       }
       throw new InfrastructureError(

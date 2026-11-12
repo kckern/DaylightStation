@@ -16,6 +16,7 @@ import { UpdateDeviceConfig } from "./usecases/UpdateDeviceConfig.mjs";
 import { SaveScheduledFire } from "./usecases/SaveScheduledFire.mjs";
 import { DeleteScheduledFire } from "./usecases/DeleteScheduledFire.mjs";
 import { VerifyAudioFlowing } from "./usecases/VerifyAudioFlowing.mjs";
+import { FixHubSlot } from "./usecases/FixHubSlot.mjs";
 import { HubStatusBroadcaster } from "./runtime/HubStatusBroadcaster.mjs";
 
 export class PlaybackHubContainer {
@@ -32,6 +33,7 @@ export class PlaybackHubContainer {
   #saveScheduledFire;
   #deleteScheduledFire;
   #verifyAudioFlowing;
+  #fixHubSlot;
   #broadcaster;
 
   /**
@@ -141,6 +143,14 @@ export class PlaybackHubContainer {
       });
     }
     return this.#verifyAudioFlowing;
+  }
+
+  /** @returns {FixHubSlot} */
+  get fixHubSlot() {
+    if (!this.#fixHubSlot) {
+      this.#fixHubSlot = new FixHubSlot({ gateway: this.#gateway, logger: this.#logger });
+    }
+    return this.#fixHubSlot;
   }
 
   /** @returns {HubStatusBroadcaster} */

@@ -28,6 +28,7 @@ function makeFakeContainer(overrides = {}) {
     saveScheduledFire: { execute: overrides.saveScheduledFire ?? vi.fn() },
     deleteScheduledFire: { execute: overrides.deleteScheduledFire ?? vi.fn() },
     verifyAudioFlowing: { execute: overrides.verifyAudioFlowing ?? vi.fn() },
+    fixHubSlot: { execute: overrides.fixHubSlot ?? vi.fn() },
   };
 }
 
@@ -96,11 +97,14 @@ describe('GET /api/v1/playback-hub/status', () => {
         position: 1, color: 'red', bt_connected: true, paused: false,
         now_playing: null, volume: 50, playlist_pos: 0, playlist_count: 0,
         armed_source: null,
+        status: 'Connected – idle', status_code: 'idle', status_detail: '',
       },
       {
         position: 2, color: 'yellow', bt_connected: false, paused: true,
         now_playing: null, volume: 0, playlist_pos: 0, playlist_count: 0,
         armed_source: null,
+        status: 'Speaker off or out of range', status_code: 'absent',
+        status_detail: 'reconnecting — 3 tries failed, next in 30 s',
       },
     ];
     const fetchedAt = new Date('2026-05-27T17:00:00Z');
@@ -616,5 +620,43 @@ describe('GET /verify/:color', () => {
     const app = buildApp(container);
     const res = await request(app).get('/api/v1/playback-hub/verify/white');
     expect(res.status).toBe(502);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /fix/:color
+// ---------------------------------------------------------------------------
+
+describe('POST /fix/:color', () => {
+  it('returns the hub line and the slot\'s new status word', async () => {
+    const container = makeFakeContainer({
+      fixHubSlot: vi.fn().mockResolvedValue({
+        ok: true, code: 'pairing', result: "Hold the speaker's pairing button — I'll pair it the moment it shows up",
+        status: 'Not paired', status_code: 'unpaired',
+      }),
+    });
+    const res = await request(buildApp(container)).post('/api/v1/playback-hub/fix/yoto');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.result).toMatch(/^Hold the speaker's pairing button/);
+    expect(res.body.status).toBe('Not paired');
+    expect(container.fixHubSlot.execute).toHaveBeenCalledWith({ color: 'yoto' });
+  });
+
+  it('a truthful failure stays ok:false with HTTP 200', async () => {
+    const container = makeFakeContainer({
+      fixHubSlot: vi.fn().mockResolvedValue({ ok: false, code: 'absent', result: "Couldn't reach the speaker" }),
+    });
+    const res = await request(buildApp(container)).post('/api/v1/playback-hub/fix/green');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('504 when the hub times out', async () => {
+    const container = makeFakeContainer({
+      fixHubSlot: vi.fn().mockRejectedValue(new InfrastructureError('timed out', { code: 'HUB_TIMEOUT' })),
+    });
+    const res = await request(buildApp(container)).post('/api/v1/playback-hub/fix/green');
+    expect(res.status).toBe(504);
   });
 });

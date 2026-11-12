@@ -83,6 +83,7 @@ export async function createPlaybackHubServices(config) {
       saveScheduledFire: container.saveScheduledFire,
       deleteScheduledFire: container.deleteScheduledFire,
       verifyAudioFlowing: container.verifyAudioFlowing,
+      fixHubSlot: container.fixHubSlot,
     },
     logger,
   });
