@@ -6,10 +6,11 @@ import getLogger from '@/lib/logging/Logger.js';
 
 const REFRESH_MS = 15_000;
 const CAPABILITY_ID = 'fitness.skyline-glider';
+const LOG_SCOPE = 'skyline_glider';
 
-export function activeSkylineDecision(payload, riderId, at = Date.now()) {
+export function activeSkylineDecision(payload, riderId, at = Date.now(), capabilityId = CAPABILITY_ID) {
   return (payload?.items || [])
-    .filter((item) => item?.capabilityId === CAPABILITY_ID
+    .filter((item) => item?.capabilityId === capabilityId
       && item?.subject?.kind === 'learner'
       && item?.subject?.id === riderId
       && item?.period?.kind === 'interval'
@@ -23,7 +24,11 @@ export function activeSkylineDecision(payload, riderId, at = Date.now()) {
     .sort((left, right) => right.period.startsAt - left.period.startsAt)[0] || null;
 }
 
-export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
+// The school-day gate for a fitness game. Skyline Glider is the default; another
+// game passes its own entitlement capability id and log scope (`skyline_invaders`
+// logs `skyline_invaders.access.*` from component `skyline-invaders-access`).
+export default function useSkylineAccess(riderId, { schoolLearner, capabilityId = CAPABILITY_ID, logScope = LOG_SCOPE } = {}) {
+  const logComponent = `${logScope.replace(/_/g, '-')}-access`;
   const bypassed = isLocalDevHost() || (Boolean(riderId) && schoolLearner === false);
   const generationRef = useRef(0);
   const lastVerdictRef = useRef(null);
@@ -36,9 +41,9 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
     if (lastVerdictRef.current === signature) return;
     lastVerdictRef.current = signature;
     try {
-      getLogger().child({ component: 'skyline-glider-access' }).info('skyline_glider.access.verdict', next);
+      getLogger().child({ component: logComponent }).info(`${logScope}.access.verdict`, next);
     } catch { /* authorization never depends on telemetry */ }
-  }, []);
+  }, [logComponent, logScope]);
 
   const refresh = useCallback(async () => {
     const generation = ++generationRef.current;
@@ -56,13 +61,13 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
     }
     try {
       const payload = await DaylightAPI(`api/v1/entitlements?${new URLSearchParams({
-        capabilityId: CAPABILITY_ID,
+        capabilityId,
         subjectKind: 'learner',
         subjectId: riderId,
         periodKind: 'interval',
       })}`);
       if (generation !== generationRef.current) return;
-      const decision = activeSkylineDecision(payload, riderId);
+      const decision = activeSkylineDecision(payload, riderId, Date.now(), capabilityId);
       const unlocked = decision?.decision === 'granted'
         && decision.degraded !== true
         && decision.basisState !== 'indeterminate';
@@ -81,21 +86,21 @@ export default function useSkylineAccess(riderId, { schoolLearner } = {}) {
       if (generation !== generationRef.current) return;
       const next = { riderId, status: 'error', state: 'unavailable', unlocked: false };
       try {
-        getLogger().child({ component: 'skyline-glider-access' }).warn('skyline_glider.access.read_failed', {
+        getLogger().child({ component: logComponent }).warn(`${logScope}.access.read_failed`, {
           riderId, error: error?.message || String(error),
         });
       } catch { /* authorization never depends on telemetry */ }
       emitVerdict(next);
       setSnapshot(next);
     }
-  }, [bypassed, emitVerdict, riderId]);
+  }, [bypassed, capabilityId, emitVerdict, logComponent, logScope, riderId]);
 
   const onStateGates = useCallback((event) => {
     const current = event?.payload?.current;
-    const capabilityId = current?.capabilityId || event?.payload?.capabilityId;
+    const changedCapabilityId = current?.capabilityId || event?.payload?.capabilityId;
     const subjectId = current?.subject?.id || event?.payload?.subject?.id;
-    if (capabilityId === CAPABILITY_ID && (!subjectId || subjectId === riderId)) refresh();
-  }, [refresh, riderId]);
+    if (changedCapabilityId === capabilityId && (!subjectId || subjectId === riderId)) refresh();
+  }, [capabilityId, refresh, riderId]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   useEffect(() => {
