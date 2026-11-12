@@ -188,7 +188,8 @@ const BLAST_SPARKS = Array.from({ length: 8 }, (_, index) => (index * Math.PI) /
 export function BlastPreset({ width, height, progress }) {
   const scale = 0.4 + 0.6 * progress;
   const reach = (radians, from) => [Math.cos(radians) * (width / 2) * scale * from, Math.sin(radians) * (height / 2) * scale * from];
-  return <g opacity={1 - progress}>
+  // Grows and then is gone; never fades (flat colour, no see-through art).
+  return <g>
     <ellipse rx={(width / 2) * scale} ry={(height / 2) * scale} className="skyline-glider__blast-outer"/>
     <ellipse rx={(width / 4) * scale} ry={(height / 4) * scale} className="skyline-glider__blast-inner"/>
     {BLAST_SPARKS.map((radians) => {

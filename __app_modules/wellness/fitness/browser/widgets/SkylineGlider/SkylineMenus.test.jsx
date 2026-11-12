@@ -46,3 +46,24 @@ it('shows a fixed window of flights that follows the bike-button cursor',()=>{
  view.rerender(<SkylineMenus state={at('a7')} acts={acts} riders={riders} onEvent={()=>{}}/>);
  expect(rows().map(r=>r.match(/Flight \d+/)[0])).toEqual(['Flight 5','Flight 6','Flight 7','Flight 8','Flight 9']);
 });
+// 2026-11-11: a locked flight was drawn see-through (transparent fill, faded
+// text) and read as broken from the bike. Every flight row — open, completed,
+// locked, chosen or not — is a solid plate at full opacity.
+it('draws every flight row solid: no opacity below 1, no see-through fill',async()=>{
+ const {compile}=await import('sass');
+ const {fileURLToPath}=await import('node:url');
+ const css=compile(fileURLToPath(new URL('./SkylineGlider.scss',import.meta.url))).css;
+ const rules=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([,sel])=>sel.includes('.skyline-menus__options button'));
+ expect(rules.some(([sel])=>sel.includes('[data-status=locked]')||sel.includes('[data-status="locked"]'))).toBe(true);
+ for(const [,sel,body] of rules){
+  for(const [,v] of body.matchAll(/(?:^|;)\s*opacity:\s*([^;]+)/g))expect([sel,Number(v)]).toEqual([sel,1]);
+  expect([sel,/background(-color)?:\s*(transparent|rgba|hsla)/.test(body)]).toEqual([sel,false]);
+  expect([sel,/filter:/.test(body)]).toEqual([sel,false]);
+ }
+ const acts=[{id:'one',name:'One',status:'completed'},{id:'two',name:'Two',status:'locked'}],riders=[{id:'child',name:'Child',position:1}];
+ for(const actId of ['one','two']){
+  const {container,unmount}=render(<SkylineMenus state={{...createSkylineControlState({acts,riders}),phase:'flights',riderId:'child',actId}} acts={acts} riders={riders} onEvent={()=>{}}/>);
+  for(const el of container.querySelectorAll('.skyline-menus__options button, .skyline-menus__options button *'))expect(el.getAttribute('style')||'').not.toMatch(/opacity/);
+  unmount();
+ }
+});

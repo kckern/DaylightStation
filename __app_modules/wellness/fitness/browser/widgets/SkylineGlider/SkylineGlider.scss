@@ -20,6 +20,7 @@
   --sg-night: #252d6b;        // window fill
   --sg-night-lift: #39448f;   // a row or key resting on a window
   --sg-mute: #8088c4;         // off, spent, locked
+  --sg-locked: #b7bdf2;       // a locked flight's name, on an ink plate
   --sg-paper: #fff5d6;        // text and window edge
   --sg-gold: #ffc21a;         // score, selection, good news
   --sg-red: #ef3350;          // refusal, hazard
@@ -137,7 +138,8 @@
 .skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--near path { fill: #352f48; }
 // Moves with the craft (same easing), but is not part of its sprite.
 .skyline-glider__craft-effects { transition: transform .1s linear; }
-.skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .3s steps(3, jump-none) 1 both; pointer-events: none; }
+// A hit is one solid white frame, then gone — no fading steps.
+.skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .2s steps(1) 1 both; pointer-events: none; }
 // A stronger shot wears a hard one-pixel rim in a hotter colour.
 @each $power, $rim in (2: #ffdd66, 3: #ff963c, 4: #ff503c) {
   .skyline-glider__shot[data-power="#{$power}"] { filter: drop-shadow(0 -2px 0 $rim) drop-shadow(0 2px 0 $rim); }
@@ -199,7 +201,7 @@
 @keyframes skyline-edge-blink { 50% { fill: var(--sg-paper); } }
 @keyframes skyline-lock { 50% { transform: scale(1.1); } }
 @keyframes skyline-hazard-march { 50% { stroke-dashoffset: 6; } }
-@keyframes skyline-entity-flash { from { opacity: .9; } to { opacity: 0; } }
+@keyframes skyline-entity-flash { 0% { visibility: visible; } 100% { visibility: hidden; } }
 @keyframes skyline-burst { 0% { transform: scale(.5); } 34% { transform: scale(.85); } 67% { transform: scale(1.2); } 100% { transform: scale(1.2); opacity: 0; } }
 @keyframes skyline-burst-hold { 0% { transform: scale(.6); } 34% { transform: scale(.85); } 67%, 100% { transform: scale(1.1); } }
 @keyframes skyline-flicker { 50% { opacity: 0; } }
@@ -357,8 +359,12 @@
     color: var(--sg-paper); background: var(--sg-night-lift);
     strong { font-size: var(--sg-text-l); font-weight: 900; }
     small { display: flex; align-items: center; gap: .5vw; font-size: var(--sg-text-s); font-weight: 700; }
-    &[data-status="locked"] { color: var(--sg-mute); background: transparent; box-shadow: inset 0 0 0 var(--sg-line) var(--sg-night-lift); }
+    // Locked: a solid ink plate with the lock in full-strength lavender — never
+    // faded or see-through, which reads as broken from the bike (2026-11-11).
+    &[data-status="locked"] { color: var(--sg-locked); background: var(--sg-ink); }
     &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); box-shadow: none; }
+    // The cursor on a locked flight keeps the ink plate and puts a gold frame round it.
+    &[data-status="locked"][aria-pressed="true"] { color: var(--sg-locked); background: var(--sg-ink); box-shadow: inset 0 0 0 calc(2 * var(--sg-line)) var(--sg-gold); .skyline-menus__cursor { color: var(--sg-gold); } }
     &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: var(--sg-line); }
   }
   &__cursor { visibility: hidden; }
