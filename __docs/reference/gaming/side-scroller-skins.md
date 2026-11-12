@@ -151,8 +151,11 @@ version adds each entity's box from the base zone:
 
 - Contract: `__app_modules/wellness/fitness/server/adapters/skylineGlider/skin-contract.yml`
 - Adapter: `skinZone.mjs` turns `export.json` into a zone. Art comes from the
-  skin; gameplay (entity classes, roles, sizes, vulnerabilities, sounds, palette)
-  comes from the base zone, so a skin cannot change how a course plays.
+  skin; gameplay (entity classes, roles, sizes, vulnerabilities, palette)
+  comes from the base zone, so a skin cannot change how a course plays. Sounds
+  come from the zone's own sound set at `media/fitness/skyline-glider/_sounds/<zone-id>/`
+  when it has one, slot by slot, else from the base zone (see the Skyline Glider
+  reference, Zones).
 - One pixel grid: the adapter sets `pixel_scale: art_pixel` (2 units, where the
   game's own boxes match SNES proportions: a 16 × 16 coin), derives
   every layer's height and the terrain `edge_height` from their pixel sizes, and
@@ -179,7 +182,9 @@ node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs install \
 ```
 
 `install` refuses a private-only skin unless `--private-dev true`: installed zones
-appear on every rider's world map.
+appear on every rider's world map. Both `build` and `install` point the zone's
+`sounds:` at its sound set folder, so rebuilding or reinstalling never resets a
+zone to the base zone's sounds.
 
 ### Seeing it in the real renderer
 

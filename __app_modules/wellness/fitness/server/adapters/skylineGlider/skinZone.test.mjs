@@ -63,6 +63,19 @@ describe('zoneFromSkinExport', () => {
     expect(zone.sounds).toEqual(Object.fromEntries(Object.entries(alpine.sounds).map(([slot, src]) => [slot, `/${alpine.asset_root}/${src}`])));
   });
 
+  it('takes a zone sound set over the base zone sounds, slot by slot', () => {
+    // A zone's own sounds (media/fitness/skyline-glider/_sounds/<zone>/) win;
+    // slots the set lacks keep the base zone's file (2026-11-11: a rebuild
+    // must not throw away the smw-* sound sets).
+    const own = { bell: '/fitness/skyline-glider/_sounds/test-zone/bell.mp3', target: '/fitness/skyline-glider/_sounds/test-zone/target.mp3', music: '/fitness/skyline-glider/_sounds/test-zone/music.ogg' };
+    const zoned = zoneFromSkinExport(manifest, { baseZone: alpine, id: 'test-zone', sounds: own });
+    expect(zoned.sounds.bell).toBe(own.bell);
+    expect(zoned.sounds.target).toBe(own.target);
+    expect(zoned.sounds.music).toBe(own.music);
+    expect(zoned.sounds.crash).toBe(`/${alpine.asset_root}/${alpine.sounds.crash}`);
+    expect(Object.keys(zoned.sounds).slice(0, 3)).toEqual(['bell', 'target', 'music']);
+  });
+
   it('resolves inherited sounds to the base zone folder through resolveAct', () => {
     const resolved = resolveAct({ id: 'a1', zone: 'test-zone', entities: [] }, new Map([['test-zone', zone]]));
     expect(resolved.zone.sounds.bell).toBe('fitness/skyline-glider/alpine/sounds/bell.mp3');

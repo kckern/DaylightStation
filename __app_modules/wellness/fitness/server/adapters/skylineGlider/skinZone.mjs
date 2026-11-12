@@ -1,8 +1,9 @@
 // Turns a gaming-assets skin export (export.json) into a Skyline Glider zone.
 //
 // Art comes from the skin; everything about play (entity classes, roles,
-// sizes, vulnerabilities, sounds, palette) comes from the base zone, so a skin
-// can never change how a course plays. Slots the skin leaves empty keep the
+// sizes, vulnerabilities, palette) comes from the base zone, so a skin can
+// never change how a course plays. Sounds come from the zone's own sound set
+// when it has one, else from the base zone. Slots the skin leaves empty keep the
 // base zone's settings, which fall back to the built-in SVG art.
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
@@ -27,7 +28,7 @@ const snap = (units, step) => Math.round(units / step) * step;
  */
 const UNITS_PER_SECOND = 1000 / 14;   // courseProjection: 1000 units across 14 s
 
-export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, artPixel = 2, sceneHeight = 600 }) {
+export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, artPixel = 2, sceneHeight = 600, sounds = null }) {
   if (manifest?.schema !== 'game-skin-export/v1') throw new Error('not a game-skin-export/v1 manifest');
   if (manifest.game !== 'skyline-glider') throw new Error(`export is for ${manifest.game}, not skyline-glider`);
   if (!isObject(baseZone)) throw new Error('baseZone is required');
@@ -69,14 +70,17 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
   if (strip?.height) terrain.edge_height = Math.round(((strip.height * artPixel) / sceneHeight) * 10000) / 10000;
   zone.terrain = terrain;
 
-  // Sounds are the base zone's files: root them at the base zone's folder, since
+  // Sounds: the zone's own sound set (`sounds`, media-rooted paths from
+  // media/fitness/skyline-glider/_sounds/<zone>/) wins slot by slot. Every
+  // other slot is the base zone's file, rooted at the base zone's folder, since
   // the skin's own folder (zone.asset_root) has no sounds/ beside its art.
   const baseRoot = typeof baseZone.asset_root === 'string' ? baseZone.asset_root.replace(/\/+$/, '') : '';
-  if (isObject(baseZone.sounds) && baseRoot) {
-    zone.sounds = Object.fromEntries(Object.entries(baseZone.sounds).map(([slot, src]) => [
+  const inherited = isObject(baseZone.sounds) && baseRoot
+    ? Object.fromEntries(Object.entries(baseZone.sounds).map(([slot, src]) => [
       slot, typeof src === 'string' && !src.startsWith('/') ? `/${baseRoot}/${src}` : src,
-    ]));
-  }
+    ]))
+    : (isObject(baseZone.sounds) ? baseZone.sounds : null);
+  if (isObject(sounds) || inherited) zone.sounds = { ...(isObject(sounds) ? sounds : {}), ...Object.fromEntries(Object.entries(inherited ?? {}).filter(([slot]) => !isObject(sounds) || !(slot in sounds))) };
 
   const usesSheet = Object.values(slots).some((slot) => slot?.frames?.length);
   zone.sprites = usesSheet ? { sheet: 'sprites/sheet.png', frames: 'sprites/sheet.json' } : null;
