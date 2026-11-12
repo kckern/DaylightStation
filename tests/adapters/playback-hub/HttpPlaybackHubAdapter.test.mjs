@@ -426,6 +426,46 @@ describe('HttpPlaybackHubAdapter', () => {
   });
 
   // -----------------------------------------------------------------------
+  // fixSlot + status words
+  // -----------------------------------------------------------------------
+
+  describe('fixSlot', () => {
+    it('POSTs /api/fix/<color> and returns the hub\'s one-line result', async () => {
+      let received = null;
+      const listening = await listenWith((req, res) => {
+        received = `${req.method} ${req.url}`;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, code: 'absent', slot: 3, color: 'green',
+          result: "Couldn't reach the speaker (speaker didn't answer) — switch it on" }));
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
+      const out = await adapter.fixSlot('green');
+      expect(received).toBe('POST /api/fix/green');
+      expect(out.code).toBe('absent');
+      expect(out.result).toMatch(/^Couldn't reach the speaker/);
+    });
+
+    it('a 404 carrying a result line is returned, not thrown', async () => {
+      const listening = await listenWith((_req, res) => {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, result: 'No slot called orange.' }));
+      });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
+      expect((await adapter.fixSlot('orange')).result).toBe('No slot called orange.');
+    });
+
+    it('a 500 without a result line throws InfrastructureError', async () => {
+      const listening = await listenWith((_req, res) => { res.statusCode = 500; res.end(''); });
+      server = listening.server;
+      adapter = new HttpPlaybackHubAdapter({ httpClient: server?.httpClient, baseUrl: `http://127.0.0.1:${listening.port}` });
+      await expect(adapter.fixSlot('red')).rejects.toThrow(InfrastructureError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Constructor validation
   // -----------------------------------------------------------------------
 

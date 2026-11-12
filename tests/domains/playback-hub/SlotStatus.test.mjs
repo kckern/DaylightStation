@@ -29,6 +29,15 @@ describe('SlotStatus', () => {
       expect(s.armed_source).toBeNull();
     });
 
+    it('carries the hub\'s plain status word (null when an older hub omits it)', () => {
+      expect(new SlotStatus(baseFields).status).toBeNull();
+      const s = new SlotStatus({ ...baseFields, status: 'Speaker off or out of range',
+        status_code: 'absent', status_detail: 'reconnecting' });
+      expect([s.status, s.status_code, s.status_detail])
+        .toEqual(['Speaker off or out of range', 'absent', 'reconnecting']);
+      expect(() => new SlotStatus({ ...baseFields, status: 3 })).toThrow(ValidationError);
+    });
+
     it('accepts now_playing object with queue { source, id }', () => {
       const s = new SlotStatus({
         ...baseFields,

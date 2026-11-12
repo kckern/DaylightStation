@@ -27,6 +27,7 @@ const CONTENTION_RETRY_DELAY_MS = 500;
  * `{ ok: false, error }` instead of raising. This lets post-Play timers
  * call it safely without try/catch.
  *   verifyAudio: (color: string) => Promise<object>,
+ *   fixSlot: (color: string) => Promise<{ok, code, result}>,
  */
 export function useHubMutations({ revalidate } = {}) {
   const logger = useMemo(
@@ -197,7 +198,25 @@ export function useHubMutations({ revalidate } = {}) {
     }
   }, []);
 
-  return { sendCommand, updateDevice, saveFire, deleteFire, verifyAudio };
+  // Fix: reconnect → restart player if needed → replay (or start a 2-min
+  // pairing scan). Never throws; resolves to the hub's `{ ok, code, result }`.
+  const fixSlot = useCallback(async (color) => {
+    logger.info('fix.request', { color });
+    try {
+      const r = await fetch(`/api/v1/playback-hub/fix/${encodeURIComponent(color)}`, { method: 'POST' });
+      const body = await r.json().catch(() => ({}));
+      logger.info('fix.response', { color, status: r.status, code: body?.code, result: body?.result });
+      if (!r.ok && !body?.result) {
+        return { ok: false, result: body?.error ? `Hub error: ${body.error}` : `HTTP ${r.status}` };
+      }
+      return body;
+    } catch (err) {
+      logger.warn('fix.network-error', { color, error: err?.message });
+      return { ok: false, result: 'The hub did not answer.' };
+    }
+  }, [logger]);
+
+  return { sendCommand, updateDevice, saveFire, deleteFire, verifyAudio, fixSlot };
 }
 
 export default useHubMutations;

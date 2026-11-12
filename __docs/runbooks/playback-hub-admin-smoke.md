@@ -25,6 +25,18 @@ Open `/admin/playback-hub` in the browser.
 - [ ] BT-connected slots show `Now: <title>` (LabeledContentPicker resolved the
       queue's display title without a flicker)
 - [ ] BT-disconnected slots show `—` as the now-playing label
+- [ ] Each card shows the hub's one status word (Playing / Connected – idle /
+      Speaker off or out of range / Not paired) with its detail line, and it
+      matches `GET {hub}/api/status` → `status` for that slot
+
+### 1b. Fix
+
+- [ ] Fix on a paired speaker that is switched off returns, within ~45 s,
+      "Couldn't reach the speaker (…) — switch it on …" in the card's detail line
+- [ ] Fix on a slot that is playing returns "Playing: <title>"
+- [ ] The slot's `events.jsonl` on the hub shows `fix.start` → `bt.reconnect`
+      (`attempt=fix`) → `fix.result`. See `_extensions/playback-hub/README.md`
+      ("Just works").
 
 ### 2. Transport buttons dispatch commands
 
