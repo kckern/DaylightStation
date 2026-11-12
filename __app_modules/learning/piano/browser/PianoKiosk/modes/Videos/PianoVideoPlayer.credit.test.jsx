@@ -104,4 +104,22 @@ describe('PianoVideoPlayer — credit at the end of a lesson', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(11000); });
     expect(onAutoAdvance).toHaveBeenCalledTimes(1);
   });
+
+  it('played seconds start at the first frame, not at mount', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    api.fn = vi.fn().mockResolvedValue({ userProgress: { credit: { outcome: 'credited' } } });
+    render(<PianoVideoPlayer lecture={lecture} source="Course" onBack={vi.fn()} onAutoAdvance={vi.fn()} />);
+    await screen.findByTestId('player-stub');
+    // Autoplay blocked / a slow start: 10 s on the page, no frame yet.
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    await act(async () => { fakeMedia.dispatchEvent(new Event('playing')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    await act(async () => { fakeMedia.dispatchEvent(new Event('pause')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await act(async () => { fakeMedia.dispatchEvent(new Event('ended')); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const posts = api.fn.mock.calls.filter((c) => c[0] === 'api/v1/play/log');
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts.at(-1)[1].practice.playedSec).toBe(3);
+  });
 });

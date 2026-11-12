@@ -69,6 +69,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const { activeNotes } = usePianoMidiNotes();
   const { mediaLevel } = usePianoMix();
   const [isPlaying, setIsPlaying] = useState(true);
+  // Played time counts from the first frame (`playing`), not from mount: an
+  // autoplay block or a slow Plex start is not minutes watched. Reset per lesson.
+  const [hasStarted, setHasStarted] = useState(false);
+  const mountedAtRef = useRef(Date.now());
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
@@ -113,7 +117,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
   const practice = useLessonPractice({
     enabled: true,
-    isPlaying,
+    isPlaying: isPlaying && hasStarted,
     enforced,
     preschool: !!expectation?.preschool,
     thresholdPercent: completionThresholdPercent,
@@ -145,6 +149,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const endLessonRef = useRef(() => {});
   const proceedRef = useRef(() => {});
   useEffect(() => { endedHandledRef.current = false; }, [contentId]);
+  useEffect(() => { setHasStarted(false); mountedAtRef.current = Date.now(); }, [contentId]);
   const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
 
   // Only notes a person played count for presence and engagement — the piano's
@@ -349,6 +354,14 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
+    const onPlaying = () => setHasStarted((was) => {
+      if (!was) {
+        getLogger().child({ component: 'piano-video-player' }).debug('piano.lesson-practice.first-frame', {
+          contentId, msFromMount: Date.now() - mountedAtRef.current,
+        });
+      }
+      return true;
+    });
     const onMeta = () => {
       setDuration(mediaEl.duration || 0);
       if (mediaEl.videoWidth && mediaEl.videoHeight) setAspect(mediaEl.videoWidth / mediaEl.videoHeight);
@@ -367,6 +380,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     mediaEl.addEventListener('timeupdate', onTime);
     mediaEl.addEventListener('play', onPlay);
     mediaEl.addEventListener('pause', onPause);
+    mediaEl.addEventListener('playing', onPlaying);
+    // Resolved after frames were already flowing: the `playing` event is gone.
+    if (!mediaEl.paused && mediaEl.readyState >= 3) onPlaying();
     mediaEl.addEventListener('loadedmetadata', onMeta);
     mediaEl.addEventListener('ended', onEnded);
     onMeta();
@@ -374,6 +390,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       mediaEl.removeEventListener('timeupdate', onTime);
       mediaEl.removeEventListener('play', onPlay);
       mediaEl.removeEventListener('pause', onPause);
+      mediaEl.removeEventListener('playing', onPlaying);
       mediaEl.removeEventListener('loadedmetadata', onMeta);
       mediaEl.removeEventListener('ended', onEnded);
     };
