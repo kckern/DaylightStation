@@ -119,6 +119,9 @@ slots:
   finish:       { asset: prop.smw-goal, frame: default }
 ```
 
+A skin may also set `palette` colours, limited to the keys the contract lists in
+its top-level `palette:` (Skyline: `sky`, `horizon`, `rock`, `rock_low`).
+
 `skin-validate` is fail-closed: an unknown slot, unknown asset or frame, an
 unapproved asset, an asset of the wrong role (a sprite in a layer slot), an
 animated slot without a clip, a missing required slot, or **a private-only asset
@@ -191,7 +194,8 @@ SHOTS='mountain-pass:alpine:12,mountain-pass:<zone-id>:12,cloud-ridge:<zone-id>:
   BROWSER=firefox node tests/_scratch/shoot-skyline-skin.mjs                # → tests/_scratch/out/skyline-skin/
 ```
 
-A shot is `act:zone:time[:altitude[:state]]`; state can set `boost=1`, `hurt=1`
+Set `WORLD_DIR` to a built world (see the Skyline Glider reference, "Levels from
+config") to render its generated acts and zones. A shot is `act:zone:time[:altitude[:state]]`; state can set `boost=1`, `hurt=1`
 and `damage=<entity-id>`. `BROWSER=firefox` matches the garage kiosk. The
 shooter fails on a page error, console error, failed request or missing zone
 file. The server runs with file watching off: restart it after a code change.

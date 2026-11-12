@@ -168,6 +168,48 @@ limit, generated from the contract.
 
 See `__docs/reference/gaming/side-scroller-skins.md`.
 
+### Levels from config: course recipes and world builds
+
+A level is a zone (art, from a skin) plus an act (layout). Acts can be written by
+hand, or generated from a **course recipe** (`server/adapters/skylineGlider/courseRecipe.mjs`):
+
+```yaml
+schema: skyline-glider-recipe/v1
+id: desert-strike
+style: bombing        # bells | hills | targets | bombing | gates | mixed
+difficulty: medium    # easy | medium | hard: hill peaks, gate gaps, target hit points, terrain assist
+duration_s: 220
+seed: 7               # the same recipe and seed always give the same course
+```
+
+A style weights the features the generator lays out: bell runs, hill profiles,
+target groups, bunker fields on flat ground, towers, gates. Checkpoints land every
+60 s off terrain, weapons and bomb counts follow from what was placed, and every
+generated act must pass the game's own `validateCourse` (reachability included).
+
+A **world file** lists the levels in play order:
+
+```yaml
+schema: skyline-glider-world-build/v1
+id: my-world
+levels:
+  - { zone: grassland, skin: my-grassland-skin, name: Green Hills,
+      course: { style: bells, difficulty: easy, duration_s: 180, seed: 1 } }
+```
+
+`node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs world --world <file>`
+builds every zone from its skin and every act from its recipe, validates each act,
+and writes `world.yml`, `zones/` and `courses/` in the household layout
+(`fitness/skyline-glider/` in the household data folder), so installing a world is
+a copy. A private-only world (placeholder art) must not be installed there.
+
+Skins may also set the palette colours the contract names (`sky`, `horizon`,
+`rock`, `rock_low`); the scene always paints the palette sky beneath the layers.
+
+A twelve-level placeholder world (`media/fitness/skyline-glider/_worlds/smw-placeholder.world.yml`)
+exercises every style across twelve backdrops; render any of its levels with the
+skin harness and `WORLD_DIR` set to the built world.
+
 ### Act file
 
 An act is a course file with three additions:
