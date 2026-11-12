@@ -362,3 +362,50 @@ describe('PlanProjection — a practice-gated pass is not a stale failure', () =
     expect(logger.info.mock.calls.filter(([event]) => event === 'school.remediation.held')).toEqual([]);
   });
 });
+
+describe('PlanProjection — a preview of a coming day', () => {
+  // The fake clock reads Monday 2026-07-27; the debrief is done today.
+  const debriefLauncher = () => {
+    const seen = [];
+    return {
+      seen, id: 'school-debrief', entryAction: null, surface: null, replayable: true,
+      async status({ day = null }) {
+        seen.push(day);
+        const done = day == null;
+        return { doneToday: done, progressLabel: done ? 'Done' : 'Not started', score: null,
+          servedWork: done ? [{ unitId: 'school-debrief:daily', title: 'Debrief' }] : [] };
+      },
+      async launch() {},
+    };
+  };
+  const projectionWith = (launcher) => {
+    const { curriculum, sessions, clock } = build();
+    const assignments = new FakeAssignmentStore([{
+      learnerId: LEARNER, courses: ['math-fractions'],
+      programs: [{ programId: 'school-debrief', corpusId: null, subject: 'writing',
+        schedule: { daysOfWeek: [1, 2, 3, 4, 5, 6, 7] } }],
+    }]);
+    return new PlanProjection({
+      curriculum, assignments, sessions, launchers: new Map([['school-debrief', launcher]]),
+      clock: clock.now, logger: silentLogger,
+    });
+  };
+
+  it('never borrows today\'s done program for a later study day', async () => {
+    const launcher = debriefLauncher();
+    const { sections } = await projectionWith(launcher).project({
+      learnerId: LEARNER, now: new Date('2026-07-29T18:00:00.000Z'),
+    });
+    const writing = sections.find((s) => s.subject === 'writing');
+    expect(launcher.seen).toEqual(['2026-07-29']);
+    expect(writing.servedToday).toBe(false);
+    expect(writing.obligation.state).not.toBe('served');
+  });
+
+  it('today is still answered live', async () => {
+    const launcher = debriefLauncher();
+    const { sections } = await projectionWith(launcher).project({ learnerId: LEARNER });
+    expect(launcher.seen).toEqual([null]);
+    expect(sections.find((s) => s.subject === 'writing').obligation.state).toBe('served');
+  });
+});

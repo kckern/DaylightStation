@@ -35,6 +35,18 @@ async function withWeeklyFold({ launcher, learnerId, programInstance, studyDay, 
   return { ...status, weekly: { weekFrom: from, servedOn, satisfiedBefore: servedOn != null && servedOn < studyDay } };
 }
 
+/** A live status re-read for a day that has not happened: nothing done in it. */
+function notYetDone(status) {
+  if (!status || status.error === true) return status;
+  const progress = status.obligationProgress;
+  return {
+    ...status,
+    doneToday: false,
+    servedWork: [],
+    ...(progress && typeof progress === 'object' ? { obligationProgress: { ...progress, completed: 0 } } : {}),
+  };
+}
+
 /**
  * The status a program answers for a day it cannot replay.
  *
@@ -117,6 +129,13 @@ export async function collectProgramStatuses({
   // bypass is on file for this learner, program and `studyDay`, a day the
   // launcher did not report done reads done — see `withDayBypass`.
   dayBypasses = null,
+  // A study-day key AFTER today (a dry-run preview of a coming day). Nothing
+  // can have been done on it yet, so today's live answer must not leak into
+  // it: a debrief finished this afternoon read as Saturday's "done" on a
+  // Saturday preview (2026-11-11). A replayable launcher is asked about that
+  // day; any other keeps its live answer (its next lesson is still the best
+  // guess) with every done-ness field cleared.
+  futureDay = null,
 } = {}) {
   const programs = new Map();
   (plan?.entries ?? []).filter((entry) => entry?.program).forEach((entry) => {
@@ -192,7 +211,14 @@ export async function collectProgramStatuses({
         });
         return;
       }
-      if (day != null && launcher.replayable !== true) {
+      if (futureDay != null && day == null) {
+        status = launcher.replayable === true
+          ? await launcher.status({ userId: learnerId, programInstance, day: futureDay })
+          : notYetDone(await launcher.status({ userId: learnerId, programInstance }));
+        if (weekly && status?.error !== true) {
+          status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
+        }
+      } else if (day != null && launcher.replayable !== true) {
         status = { ...UNKNOWABLE_STATUS };
       } else {
         status = await launcher.status({
