@@ -27,6 +27,44 @@ const make = () => {
 };
 
 describe('createAimTracker', () => {
+  describe('presence (what the lobby reads, calibrated or not)', () => {
+    const fresh = () => { let t = 10_000; return { tracker: createAimTracker({ tunables, now: () => t }), tick: (ms) => { t += ms; } }; };
+    const withHead = (p, score = 0.9) => { p.keypoints[KP.nose] = { x: 320, y: 120, score }; return p; };
+    it('is empty before any pose', () => {
+      expect(fresh().tracker.presence()).toEqual({ body: false, offset: null, wide: null });
+    });
+    it('sees the body from head and shoulders alone, with no usable arm', () => {
+      const { tracker } = fresh();
+      tracker.processPoses([withHead(pose(0, 0.9, 200))].map((p) => { p.keypoints[KP.leftWrist].score = 0; p.keypoints[KP.rightWrist].score = 0; return p; }));
+      expect(tracker.presence()).toEqual({ body: true, offset: null, wide: null });
+    });
+    it('reports the raw offset in shoulder widths without a calibration', () => {
+      const { tracker } = fresh();
+      tracker.processPoses([withHead(pose(-120))]);
+      expect(tracker.presence().body).toBe(true);
+      expect(tracker.presence().offset).toBeCloseTo(1);
+      expect(tracker.presence().wide).toBe(false);
+    });
+    it('reports arms held out to both sides', () => {
+      const { tracker } = fresh();
+      const p = withHead(pose());
+      p.keypoints[KP.leftWrist] = { x: 380 + 130, y: 200, score: 0.9 };
+      p.keypoints[KP.rightWrist] = { x: 260 - 130, y: 200, score: 0.9 };
+      tracker.processPoses([p]);
+      expect(tracker.presence().wide).toBe(true);
+    });
+    it('forgets a pose older than the lost timeout', () => {
+      const { tracker, tick } = fresh();
+      tracker.processPoses([withHead(pose(-120))]);
+      tick(501);
+      expect(tracker.presence()).toEqual({ body: false, offset: null, wide: null });
+    });
+    it('does not count a body with no head in view', () => {
+      const { tracker } = fresh();
+      tracker.processPoses([pose(-120)]);
+      expect(tracker.presence().body).toBe(false);
+    });
+  });
   it('returns undefined from processPoses so the provider records no move event', () => {
     const { tracker } = make();
     expect(tracker.processPoses([pose()])).toBeUndefined();

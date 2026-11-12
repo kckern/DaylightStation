@@ -232,3 +232,92 @@
   position: absolute; z-index: 6; top: 26%; left: 50%; translate: -50% 0;
   padding: 1rem 3rem; font-size: 4rem; font-weight: 800; white-space: nowrap;
 }
+
+// ── Menu screens (lobby, calibration, pause, result) ────────────────────────
+// They sit over the still city, above the HUD (z-index 5) and the banner (6).
+// Type is sized for the garage: body copy 2rem, anything to act on 2.4rem up.
+.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice {
+  position: absolute; z-index: 8; inset: 0;
+  display: flex; flex-direction: column; gap: 1.6rem;
+  padding: 3rem 4.5rem 2.2rem;
+  color: var(--si-ink); font-size: 2rem; line-height: 1.25;
+  // Dark where the words are, clear at the bottom so the skyline stays in the picture.
+  background: linear-gradient(to bottom, rgba(7, 11, 36, 0.94) 0%, rgba(7, 11, 36, 0.86) 62%, rgba(7, 11, 36, 0.4) 100%);
+  h1 { margin: 0; font-size: 4.4rem; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 2.4rem; font-weight: 800; }
+  p { margin: 0; }
+}
+
+// Actions: the same button everywhere. The focused one wears the ring that
+// Enter, a foot-pad key or gamepad A will press.
+.skyline-invaders__actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: 1.2rem; }
+.skyline-invaders__action {
+  --si-hold: 0;
+  position: relative; overflow: hidden;
+  display: grid; align-content: center; justify-items: start; gap: 0.2rem;
+  min-height: 6rem; min-width: 14rem; padding: 0.9rem 2.2rem;
+  border: 0; border-radius: 0.8rem; cursor: pointer;
+  font: inherit; text-align: left; color: var(--si-ink);
+  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
+  b { position: relative; font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
+  small { position: relative; font-size: 1.5rem; font-weight: 600; color: var(--si-ink-dim); }
+  &.is-primary { color: var(--si-night); background: var(--si-window); box-shadow: none; small { color: var(--si-night); opacity: 0.75; } }
+  &.is-focused { outline: 0.3rem solid var(--si-ink); outline-offset: 0.3rem; }
+  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
+  &:disabled { cursor: default; color: var(--si-ink-dim); background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge); small { color: var(--si-tier-big); opacity: 1; } }
+  // The arms-wide press fills the button from the left while it is held.
+  &::before { content: ''; position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--si-hold)); background: var(--si-boost); transition: transform 100ms linear; }
+}
+.skyline-invaders__how { margin-top: auto; font-size: 1.6rem; color: var(--si-ink-dim); }
+
+// Lobby
+.skyline-invaders__lobby-head p { margin-top: 0.5rem; font-size: 2.2rem; color: var(--si-ink-dim); }
+.skyline-invaders__levels { display: flex; gap: 1.2rem; margin: 0; padding: 0; list-style: none; }
+.skyline-invaders__levels li { flex: 1 1 0; min-width: 0; max-width: 28rem; display: flex; }
+.skyline-invaders__level {
+  flex: 1; display: grid; align-content: start; justify-items: start; gap: 0.5rem; min-height: 10.5rem;
+  padding: 1.2rem 1.5rem; border: 0; border-radius: 0.8rem; cursor: pointer;
+  font: inherit; text-align: left; color: var(--si-ink);
+  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
+  b { font-size: 2.3rem; font-weight: 800; line-height: 1.1; }
+  &.is-chosen { box-shadow: inset 0 0 0 0.35rem var(--si-window); background: rgba(255, 210, 122, 0.14); }
+  &.is-locked { color: var(--si-ink-dim); b::after { content: ' 🔒'; font-size: 0.8em; } }
+  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
+}
+.skyline-invaders__level-goal { font-size: 1.6rem; color: var(--si-ink-dim); }
+.skyline-invaders__stars-row { display: inline-flex; gap: 0.3rem; font-size: 2.2rem; line-height: 1; }
+.skyline-invaders__star { color: var(--si-panel-edge); &.is-won { color: var(--si-tier-big); } }
+.skyline-invaders__crew { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 3rem; }
+.skyline-invaders__crew-line { display: flex; align-items: baseline; gap: 0.8rem; span { font-size: 1.6rem; color: var(--si-ink-dim); } b { font-size: 2.4rem; } }
+.skyline-invaders__crew-note { flex-basis: 100%; font-size: 1.7rem; color: var(--si-drone); }
+.skyline-invaders__picker { display: grid; gap: 0.8rem; }
+
+// Calibration
+.skyline-invaders__steps {
+  display: flex; gap: 0.8rem; margin: 0; padding: 0; list-style: none; counter-reset: si-step;
+  li {
+    counter-increment: si-step; padding: 0.4rem 1.3rem; border-radius: 99rem; font-size: 1.6rem; font-weight: 700;
+    color: var(--si-ink-dim); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
+    &::before { content: counter(si-step) ' '; }
+    &.is-current { color: var(--si-night); background: var(--si-window); box-shadow: none; }
+    &.is-done { color: var(--si-pass); box-shadow: inset 0 0 0 0.15rem var(--si-pass); }
+  }
+}
+.skyline-invaders__calibration-body { display: flex; align-items: center; gap: 3rem; p { margin-top: 0.8rem; font-size: 2.2rem; color: var(--si-ink-dim); } }
+.skyline-invaders__figure { flex: none; width: 17rem; height: auto; fill: var(--si-ink); }
+.skyline-invaders__figure-arms { fill: var(--si-window); }
+.skyline-invaders .skyline-invaders__calibration-alert, .skyline-invaders__calibration > p[role="alert"] { color: var(--si-tier-big); font-weight: 700; }
+.skyline-invaders__meter { display: grid; gap: 0.7rem; max-width: 70rem; p { font-size: 2rem; font-weight: 700; color: var(--si-drone); } }
+.skyline-invaders__meter-track {
+  position: relative; height: 2.6rem; border-radius: 0.6rem; background: var(--si-panel); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
+  // The body midline.
+  &::before { content: ''; position: absolute; left: 50%; top: 0.3rem; bottom: 0.3rem; width: 0.15rem; background: var(--si-panel-edge); }
+}
+.skyline-invaders__meter-dot, .skyline-invaders__meter-flag { position: absolute; top: 50%; translate: -50% -50%; }
+.skyline-invaders__meter-dot { width: 1.8rem; height: 1.8rem; background: var(--si-window); transition: left 90ms linear; }
+.skyline-invaders__meter-flag { width: 0.5rem; height: 2.6rem; background: var(--si-pass); }
+.skyline-invaders__meter-hold { height: 0.9rem; border-radius: 99rem; overflow: hidden; background: var(--game-hud-track); span { display: block; height: 100%; background: var(--si-pass); transition: width 100ms linear; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .skyline-invaders__action::before, .skyline-invaders__meter-dot, .skyline-invaders__meter-hold span { transition: none; }
+}

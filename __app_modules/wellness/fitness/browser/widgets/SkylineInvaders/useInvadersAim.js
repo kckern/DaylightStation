@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
-import { DEFAULT_AIM_CONFIG, computeAim, createAimHistory, createAimSmoother } from '../../lib/skylineInvaders/aim.js';
+import { DEFAULT_AIM_CONFIG, KP, armsWide, computeAim, createAimHistory, createAimSmoother } from '../../lib/skylineInvaders/aim.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 
 const SMOOTHER_TAU_MS = 120;
@@ -27,6 +27,7 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
   let lastSeenAt = null;
   let lost = true;
   let offset = null;
+  let seen = null;   // the last pose as the lobby reads it: { at, body, offset, wide }
   const emit = (event) => listeners.forEach((listener) => listener(event));
   const resetSmoothing = () => { smoother.reset(); armSmoothers.forEach((arm) => arm.reset()); };
   const record = (at) => history.push({ t: at, ...current });
@@ -49,6 +50,13 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
       const read = computeAim(poses?.[0] || null, config);
       // The uncalibrated torso offset (shoulder widths): what the lobby captures.
       if (!read.lost) offset = read.offset;
+      const scored = (index) => (poses?.[0]?.keypoints?.[index]?.score ?? 0) >= config.minScore;
+      seen = {
+        at,
+        body: scored(KP.nose) && scored(KP.leftShoulder) && scored(KP.rightShoulder),
+        offset: read.lost ? null : read.offset,
+        wide: armsWide(read),
+      };
       if (calibration && !read.lost) {
         current = {
           x: smoother.push(read.aimX, at),
@@ -72,6 +80,18 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
     },
     calibration: () => calibration,
     rawOffset: () => offset,
+    /**
+     * The player as the lobby and calibration read them, with or without a
+     * calibration: `body` = head and both shoulders in view (wrists may hang
+     * out of frame), `offset` = where the hands point in shoulder widths (null
+     * with no usable arm), `wide` = both arms held out to the sides (the
+     * hands-free "next"; null when it cannot be judged). All empty once the
+     * last pose is older than `poseLostAfterMs`.
+     */
+    presence() {
+      if (!seen || now() - seen.at > tunables.poseLostAfterMs) return { body: false, offset: null, wide: null };
+      return { body: seen.body, offset: seen.offset, wide: seen.wide };
+    },
     /** The aim right now. `lost` is always true in manual mode (no calibration). */
     sample() {
       if (calibration) checkLost(now());
