@@ -195,6 +195,9 @@ export function createFitnessRouter(config) {
     skylineGliderCourses = null,
     skylineGliderRuns = null,
     skylineGliderProgress = null,
+    skylineInvadersLevels = null,
+    skylineInvadersRuns = null,
+    skylineInvadersProgress = null,
     // Session lock + simulation supervision are constructed at the composition
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
@@ -304,6 +307,63 @@ export function createFitnessRouter(config) {
     logger.info?.('skyline_glider.flight.suspended', data);
     return res.status(202).json({ accepted: true });
   });
+
+  // Skyline Invaders. Levels are household data read on every request, so an
+  // empty list is a real answer (no levels installed), not an error.
+  router.get('/skyline-invaders/levels', asyncHandler(async (req, res) => {
+    if (!skylineInvadersLevels) return res.status(503).json({ error: 'Skyline Invaders levels unavailable' });
+    return res.json({ levels: skylineInvadersLevels.list(req.query.household || defaultHouseholdId) });
+  }));
+
+  // Level list for one rider with locked/open/completed status. With no rider
+  // the list shows the progression a new rider would start from.
+  router.get('/skyline-invaders/world', asyncHandler(async (req, res) => {
+    if (!skylineInvadersLevels || !skylineInvadersProgress) return res.status(503).json({ error: 'Skyline Invaders world unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const world = skylineInvadersLevels.world(householdId);
+    const riderId = typeof req.query.rider === 'string' && req.query.rider ? req.query.rider : null;
+    try {
+      return res.json({ riderId, ...await skylineInvadersProgress.worldFor(world, riderId, householdId) });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  // Admin skip-ahead. The browser collects the admin fingerprint before calling.
+  router.post('/skyline-invaders/progress/:riderId/unlock', asyncHandler(async (req, res) => {
+    if (!skylineInvadersLevels || !skylineInvadersProgress) return res.status(503).json({ error: 'Skyline Invaders world unavailable' });
+    const householdId = req.body?.household || defaultHouseholdId;
+    const levelId = req.body?.levelId;
+    if (!skylineInvadersLevels.list(householdId).some((level) => level.id === levelId)) return res.status(404).json({ error: 'level not found' });
+    try {
+      const progress = await skylineInvadersProgress.unlock(req.params.riderId, levelId, req.body?.unlockedBy || null, householdId);
+      return res.json({ progress });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  // No suspension beacon: a round is short and timed, with no resumable
+  // checkpoint, so only a finalized round is ever saved.
+  router.post('/skyline-invaders/runs', asyncHandler(async (req, res) => {
+    if (!skylineInvadersRuns) return res.status(503).json({ error: 'Skyline Invaders runs unavailable' });
+    try {
+      const result = await skylineInvadersRuns.save(req.body?.record, req.body?.household || defaultHouseholdId);
+      return res.status(result.created ? 201 : 200).json(result);
+    } catch (error) {
+      if (error?.code === 'RUN_CONFLICT') return res.status(409).json({ error: error.message });
+      if (error?.code === 'INVALID_RUN') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  router.get('/skyline-invaders/runs/:runId', asyncHandler(async (req, res) => {
+    if (!skylineInvadersRuns) return res.status(503).json({ error: 'Skyline Invaders runs unavailable' });
+    const record = await skylineInvadersRuns.get(req.params.runId, req.query.household || defaultHouseholdId);
+    return record ? res.json({ record }) : res.status(404).json({ error: 'run not found' });
+  }));
 
   // Presence gate: is the supervising adult home? Off (no HA read) unless the
   // household fitness config enables `presence_gate`. The service fails closed.
