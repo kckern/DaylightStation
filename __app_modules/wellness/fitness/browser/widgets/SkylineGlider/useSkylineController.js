@@ -2,7 +2,7 @@ import { useCallback,useEffect,useRef,useState } from 'react';
 import { DaylightImagePath } from '@/lib/api.mjs';
 import { createSkylineControlState,reduceSkylineControl,describeSkylineControls } from '../../lib/skylineGlider/controllerModel.js';
 
-export function useSkylineController({ctx,courses=[],world,access,saved,saveState,flight,onEffect,modalOpen=false}){
+export function useSkylineController({ctx,courses=[],world,access,saved,saveState,flight,sound,onEffect,modalOpen=false}){
  const latest=useRef(null);latest.current={ctx,onEffect,saved,modalOpen};
  const activeSelectorId=useRef(null);
  const selector=(ctx?.riderSelectors||[]).find(s=>s.id===activeSelectorId.current)||(ctx?.riderSelectors||[])[0];
@@ -82,6 +82,7 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
  // Keyed on the save object, not its status: a retry that fails fast goes
  // error -> saving -> error in one batch, and must still leave 'saving'.
  useEffect(()=>{if(saveState?.status&&saveState.status!=='idle')dispatch({type:'SAVE_CHANGED',status:saveState.status})},[saveState,dispatch]);
+ useEffect(()=>{if(sound)dispatch({type:'SOUND_CHANGED',level:sound.level,muted:sound.muted})},[sound?.level,sound?.muted,dispatch]);
  useEffect(()=>{if(flight)dispatch({type:'FLIGHT_CHANGED',flight,weaponsEnabled:courses.find(c=>c.id===stateRef.current.actId)?.rules?.weapons?.enabled!==false})},[flight,dispatch]);
  const selectorSignature=JSON.stringify(ctx?.riderSelectors||[]);
  useEffect(()=>{

@@ -81,3 +81,42 @@ describe('seated game lifecycle',()=>{
   expect(event({...s,phase:'saving'},{type:'SAVE_CHANGED',status:'unsaved'}).phase).toBe('result');
  });
 });
+
+describe('sound settings sheet',()=>{
+ const flying=()=>({...press(start(),1),phase:'flight',weaponsEnabled:true});
+ it('opens from the flight menu on button 2 and steps the volume with the bike buttons',()=>{
+  let s=press(flying(),4,'long');expect(s.phase).toBe('menu');
+  expect(describeSkylineControls(s)[1]).toMatchObject({label:'Sound'});
+  s=press(s,2);expect(s.phase).toBe('settings');
+  expect(reduceSkylineControl(s,{type:'PRESS',position:1}).effects).toContainEqual(expect.objectContaining({type:'volume-step',delta:-10}));
+  expect(reduceSkylineControl(s,{type:'PRESS',position:2}).effects).toContainEqual(expect.objectContaining({type:'volume-step',delta:10}));
+  expect(reduceSkylineControl(s,{type:'PRESS',position:4}).effects).toContainEqual(expect.objectContaining({type:'toggle-sound'}));
+  expect(press(s,3).phase).toBe('menu');
+ });
+ it('a touch on the more button mid-flight pauses into the sheet and Back lands on the flight menu',()=>{
+  const r=reduceSkylineControl(flying(),{type:'OPEN_SETTINGS'});
+  expect(r.state.phase).toBe('settings');expect(r.effects.map(e=>e.type)).toContain('pause');
+  expect(press(r.state,3).phase).toBe('menu');
+ });
+ it('from a lobby screen the sheet returns to that screen; a countdown returns to ready',()=>{
+  const flights=press(start(),1);
+  expect(press(event(flights,{type:'OPEN_SETTINGS'}),3).phase).toBe('flights');
+  const countdown={...flights,phase:'countdown',countdown:2};
+  const back=press(event(countdown,{type:'OPEN_SETTINGS'}),3);
+  expect(back).toMatchObject({phase:'ready',countdown:3,steady:0});
+ });
+ it('never opens over a committed stall or a save in progress',()=>{
+  for(const phase of ['stall','saving'])expect(event({...flying(),phase},{type:'OPEN_SETTINGS'}).phase).toBe(phase);
+ });
+ it('labels the sheet buttons with the live level and mute state',()=>{
+  let s=event(press(start(),1),{type:'OPEN_SETTINGS'});
+  s=event(s,{type:'SOUND_CHANGED',level:60,muted:false});
+  const c=describeSkylineControls(s);
+  expect(c.map(x=>x.label)).toEqual(['Quieter','Louder','Back','Mute']);
+  expect(c[0].hint).toMatch(/60/);
+  s=event(s,{type:'SOUND_CHANGED',level:60,muted:true});
+  expect(describeSkylineControls(s)[3].label).toBe('Unmute');
+  expect(describeSkylineControls({...s,sound:{level:100,muted:false}})[1].disabled).toBe(true);
+  expect(describeSkylineControls({...s,sound:{level:0,muted:true}})[0].disabled).toBe(true);
+ });
+});

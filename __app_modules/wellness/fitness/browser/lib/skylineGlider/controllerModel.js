@@ -16,7 +16,19 @@ export function reduceSkylineControl(current,event) {
     effect('assign-rider',{riderId:rider.id});state.saveStatus='idle';
   };
   const finish=afterSave=>{state.phase='saving';state.afterSave=afterSave;effect('finalize',{status:'abandoned'})};
-  if(event.type==='CONFIG_CHANGED'){
+  // The sound sheet: opened by the touch "more" button anywhere a rider could
+  // reasonably stop, or by button 2 of the flight menu. Mid-flight it pauses
+  // first, and Back lands on the flight menu (resuming needs pedal readiness).
+  const openSettings=()=>{
+   if(['stall','saving','loading','settings'].includes(state.phase))return;
+   if(state.phase==='flight'){state.settingsReturn='menu';effect('pause')}
+   else if(state.phase==='countdown'){state.settingsReturn='ready';state.steady=0;state.countdown=3}
+   else state.settingsReturn=state.phase;
+   state.phase='settings';
+  };
+  if(event.type==='SOUND_CHANGED'){state.sound={level:event.level,muted:!!event.muted};return {state,effects}}
+  if(event.type==='OPEN_SETTINGS')openSettings();
+  else if(event.type==='CONFIG_CHANGED'){
     state={...state,...event.config};
     if(event.resetIdentity)identity();
     if(!state.acts.some(a=>a.id===state.actId))state.actId=chooseAct(state.acts,state.lastPlayedByRider[state.riderId]);
@@ -78,7 +90,13 @@ export function reduceSkylineControl(current,event) {
       if(gesture==='long'&&i===3&&!state.flight?.stalled){state.phase='menu';effect('pause')}
       else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i]});
     }else if(state.phase==='menu'){
-      if(i===0)ready('live');else if(i===1)effect('toggle-sound');else finish(i===3?'identity':null);
+      if(i===0)ready('live');else if(i===1)openSettings();else finish(i===3?'identity':null);
+    }else if(state.phase==='settings'){
+      const level=state.sound?.level??null,muted=!!state.sound?.muted;
+      if(i===0&&!(muted||level===0))effect('volume-step',{delta:-10});
+      else if(i===1&&!(level>=100&&!muted))effect('volume-step',{delta:10});
+      else if(i===2)state.phase=state.settingsReturn||'flights';
+      else if(i===3)effect('toggle-sound');
     }else if(state.phase==='crash'){
       if(i===0)ready('checkpoint');else if(i===1)finish('restart');else finish(i===2?'flights':'identity');
     }else if(state.phase==='result'){
@@ -108,7 +126,11 @@ export function describeSkylineControls(s){
   :[['Flights','Choose another','▦'],['Change rider',rider?.name,'●'],['Back','Return to flights','×'],['Ready','Pedal at least 30 RPM','✓']];break;
  case 'countdown':choices=[['Keep pedaling','','—'],['Keep pedaling','','—'],['Cancel','Return to flights','×'],['Taking off',String(Math.ceil(s.countdown)),'✓']];break;
  case 'flight':choices=[['Laser',s.weaponsEnabled?'Unlimited bursts':'Opens in level 2','ϟ'],['Bomb',s.weaponsEnabled?(f.bombsLeft??5)+' remaining':'Opens in level 2','●'],['Missile',s.weaponsEnabled?(f.missilesLeft??3)+' remaining':'Opens in level 2','➤'],['Boost',(s.weaponsEnabled?(f.boostRechargeRemaining>0?Math.ceil(f.boostRechargeRemaining)+'s recharge':'Ready'):'Opens in level 2')+' · Hold: menu','»']];break;
- case 'menu':choices=[['Resume','Pedal when ready','✓'],['Sound','Toggle on / off','♫'],['End flight','Save this attempt','×'],['Change rider','Save and finish','●']];break;
+ case 'menu':choices=[['Resume','Pedal when ready','✓'],['Sound','Volume and mute','♫'],['End flight','Save this attempt','×'],['Change rider','Save and finish','●']];break;
+ case 'settings':{
+  const level=s.sound?.level,muted=!!s.sound?.muted,now=s.sound?(muted?'Muted':'Volume '+level):'';
+  choices=[['Quieter',now,'←'],['Louder',now,'→'],['Back',s.settingsReturn==='menu'?'Flight controls':'Return','×'],[muted?'Unmute':'Mute',muted?'Sound back on':'Silence the game','♫']];break;
+ }
  case 'crash':choices=[['Retry checkpoint','Same rider & flight','↻'],['Restart level','From the beginning','⟲'],['Flights','Choose another','▦'],['Change rider','Save and finish','●']];break;
  case 'result':{
   // Button 2 offers the next level only when it is open; a locked or missing
@@ -122,6 +144,6 @@ export function describeSkylineControls(s){
  default:choices=Array.from({length:4},()=>[s.phase==='stall'?'Stalled':s.phase==='saving'?'Saving…':'Please wait','', '—']);
  }
  return choices.map(([label,hint,icon,avatarSrc],i)=>({position:i+1,action:combat[i],label,hint:hint||'',icon,avatarSrc,
-  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&['saved','unsaved'].includes(s.saveStatus)&&i===1&&!openNextAct(s)),
+  disabled:['stall','saving','loading'].includes(s.phase)||(s.phase==='settings'&&((i===0&&(s.sound?.muted||s.sound?.level===0))||(i===1&&s.sound?.level>=100&&!s.sound?.muted)))||(s.phase==='result'&&s.saveStatus==='error'&&[1,3].includes(i))||(s.phase==='result'&&['saved','unsaved'].includes(s.saveStatus)&&i===1&&!openNextAct(s)),
   reason:s.phase==='stall'?'This attempt will crash':null}));
 }

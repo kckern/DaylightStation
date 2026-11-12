@@ -225,6 +225,11 @@
 .skyline-glider__hud-time { min-width: 4ch; }
 .skyline-glider__hud-stat { display: flex; align-items: center; gap: .5vw; .sg-icon { color: var(--sg-gold); } }
 .skyline-glider__hud-targets .sg-icon { color: var(--sg-b1); }
+// The zone's own pickup sprite, drawn the height of the bell icon it replaces.
+.skyline-glider__collectible-icon {
+  display: block; flex: none; image-rendering: pixelated; overflow: hidden;
+  height: calc(11 * var(--sg-icon-px, 3px)); width: calc(11 * var(--sg-icon-px, 3px) * var(--w) / var(--h));
+}
 .skyline-glider__hud-power { color: var(--sg-gold); }
 
 .skyline-glider__hud-pad {
@@ -248,6 +253,22 @@
   &[data-flash="ok"] { animation: skyline-cell-ok .3s steps(1) 1; }
   &[data-flash="deny"] { --cell: var(--sg-red); --cell-shade: #8f1430; animation: skyline-cell-deny .32s steps(1) 1; small { background: var(--sg-red); color: var(--sg-paper); } }
 }
+// The touch "more" button (sound and settings): an ink plate with three dots,
+// a real touch target. In flight it sits right of the bike-button block.
+.skyline-glider__more {
+  --sg-icon-px: calc(var(--sg-line) + 1px);
+  display: grid; place-items: center; box-sizing: border-box; width: max(48px, 4.4vw); height: max(48px, 4.4vw); padding: 0; border: 0;
+  color: var(--sg-paper); background: var(--sg-ink); cursor: pointer; text-shadow: none;
+  @include sg-frame;
+  .sg-icon__ink { fill: none; }
+  &:active { transform: translateY(var(--sg-px)); }
+  &:focus-visible { outline: var(--sg-line) solid var(--sg-gold); outline-offset: calc(3 * var(--sg-px)); }
+}
+.skyline-glider__hud-more { align-self: flex-start; flex: none; margin: calc(2 * var(--sg-px)) calc(2 * var(--sg-px)) 0 auto; }
+.skyline-glider__hud-pad[data-armed="true"] ~ .skyline-glider__hud-more { margin-left: calc(2 * var(--sg-px)); }
+// On a menu screen it sits in the top-right corner of the window, beside the
+// title, which never reaches that far.
+.skyline-glider__menu-more { position: absolute; z-index: 2; top: calc(4 * var(--sg-px)); right: calc(4 * var(--sg-px)); }
 .skyline-glider__hud-menu {
   position: absolute; right: 0; top: calc(5.8vw + 8 * var(--sg-px)); display: flex; align-items: center; gap: .5vw;
   font-size: var(--sg-text-s); font-weight: 700; white-space: nowrap;
@@ -265,6 +286,13 @@
   color: var(--sg-paper); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
   @include sg-outline(var(--sg-line-s));
   strong { color: var(--sg-gold); }
+  // The end labels sit clear of everything that reaches past the track's ends:
+  // its frame (three pixels of ring) and half the pointer, which rides to the
+  // very top or bottom at the altitude limits -- 2 + 7 pixels from the track
+  // (2026-11-12: at the garage's 1381x777 the 130 sat on the frame and the
+  // pointer met the 130 and the 30).
+  .skyline-glider__rpm-high { margin-bottom: calc(7 * var(--sg-px)); }
+  .skyline-glider__rpm-low { margin-top: calc(7 * var(--sg-px)); }
 }
 .skyline-glider__rpm-track {
   position: relative; width: calc(4 * var(--sg-px)); height: 100%; min-height: 12rem;
@@ -325,7 +353,7 @@
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 5 64 11' shape-rendering='crispEdges'%3E%3Cpath fill='%23fff5d6' d='M29 5h5v1h-5zM5 6h5v1h-5zM27 6h9v1h-9zM3 7h9v1h-9zM26 7h11v1h-11zM42 7h5v1h-5zM2 8h11v1h-11zM17 8h5v1h-5zM25 8h13v1h-13zM41 8h7v1h-7zM54 8h5v1h-5zM1 9h13v1h-13zM16 9h7v1h-7zM24 9h15v1h-15zM40 9h9v1h-9zM53 9h7v1h-7zM1 10h13v1h-13zM15 10h35v1h-35zM52 10h9v1h-9zM1 11h13v1h-13zM15 11h35v1h-35zM52 11h9v1h-9zM1 12h13v1h-13zM15 12h35v1h-35zM52 12h9v1h-9zM0 13h64v1h-64zM0 14h64v1h-64zM0 15h64v1h-64z'/%3E%3Cpath fill='%23bfdcf7' d='M33 10h5v1h-5zM9 11h5v1h-5zM32 11h7v1h-7zM8 12h7v1h-7zM31 12h9v1h-9zM47 12h3v1h-3zM7 13h9v1h-9zM22 13h3v1h-3zM30 13h11v1h-11zM45 13h7v1h-7zM59 13h3v1h-3zM7 14h9v1h-9zM21 14h5v1h-5zM30 14h11v1h-11zM45 14h7v1h-7zM58 14h5v1h-5zM7 15h9v1h-9zM21 15h5v1h-5zM30 15h11v1h-11zM45 15h7v1h-7zM58 15h5v1h-5z'/%3E%3C/svg%3E") left bottom / calc(128 * var(--sg-px)) auto repeat-x,
     linear-gradient(to bottom, #2c3f9e 0 16%, #3a58bd 16% 31%, #4b74d6 31% 45%, #6092ea 45% 58%, #7db0f4 58% 70%, #a3cdf9 70% 100%);
 }
-.skyline-glider__menu { display: grid; justify-items: start; gap: calc(6 * var(--sg-px)); min-width: 0; }
+.skyline-glider__menu { position: relative; display: grid; justify-items: start; gap: calc(6 * var(--sg-px)); min-width: 0; }
 // Anything the game says outside the window: a flat ink strip, or a framed sign
 // when it is news (saved, failed).
 .skyline-glider__notice {
@@ -383,6 +411,30 @@
     display: flex; align-items: center; gap: 2vw; margin-top: 1.6vw;
     img { width: 11vw; height: 11vw; object-fit: cover; @include sg-frame; }
     strong { font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
+  }
+  // The sound sheet: a readout, the house touch volume strip in the game's
+  // colours (solid plates, never see-through), and a mute key.
+  &__readout {
+    display: flex; align-items: center; gap: 1vw; margin: 1vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
+    &[data-muted] { color: var(--sg-red); }
+  }
+  &__volume {
+    margin: 1.4vw 0 0; width: min(100%, 52vw);
+    .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: var(--sg-px); width: 100%; }
+    .touch-volume-button {
+      height: max(48px, 5vw); padding: 0; border: 0; border-radius: 0; cursor: pointer; color: transparent;
+      background: var(--sg-night-lift); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-ink);
+      &.on { background: var(--sg-gold); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-b2-shade); }
+      &:first-child { background: var(--sg-ink); box-shadow: inset 0 0 0 var(--sg-line) var(--sg-red); }
+      &:first-child.active { background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430; }
+      &.active:not(:first-child) { box-shadow: inset 0 0 0 var(--sg-line) var(--sg-paper); }
+    }
+  }
+  &__mute {
+    margin: 1.4vw 0 0; min-width: 14vw; min-height: 48px; padding: .7vw 2vw; border: 0; border-radius: 0; font: inherit;
+    font-size: var(--sg-text-m); font-weight: 900; color: var(--sg-ink); background: var(--sg-paper); cursor: pointer;
+    box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-mute), sg-ring(var(--sg-ink));
+    &[aria-pressed="true"] { color: var(--sg-paper); background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430, sg-ring(var(--sg-ink)); }
   }
   &__count { display: block; margin: .08em 0 0; color: var(--sg-gold); font-size: var(--sg-text-xxl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
   p.skyline-menus__cause { margin-top: 1.1vw; padding: .8vw 1.2vw; color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }

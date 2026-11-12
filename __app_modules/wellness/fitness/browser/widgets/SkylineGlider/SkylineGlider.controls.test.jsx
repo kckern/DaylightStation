@@ -14,7 +14,7 @@ const gateMocks = vi.hoisted(() => ({
   registerAdmin: vi.fn(),
   clearUnlock: vi.fn(),
 }));
-const mockVolume = { volume: 0.4, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() };
+const mockVolume = { volume: 0.4, muted: false, source: 'global', setVolume: vi.fn(), toggleMute: vi.fn() };
 vi.mock("../../nav/usePersistentVolume.js", () => ({ usePersistentVolume: () => mockVolume }));
 vi.mock("../../context/FitnessContext.jsx", () => ({ useFitnessContext: () => mockCtx }));
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => mockLog }) }));
@@ -111,13 +111,29 @@ async function mount(options={}){
 }
 async function launch(){await press(4);await advance(4250);await advance(100)}
 describe('complete bike lifecycle',()=>{
- it('drives game audio from the shared fitness volume store, mute included',async()=>{
-  mockVolume.volume=0.4;mockVolume.muted=false;mockLog.info.mockClear();
+ it('plays an unset game at the audible default level, never the 10% video level through the curve again',async()=>{
+  // 2026-11-12: the video store level 0.1 went through the log curve to 0.0158 -- silence.
+  mockVolume.volume=0.1;mockVolume.muted=false;mockVolume.source='global';mockLog.info.mockClear();
+  await mount();
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({level:60,isDefault:true,output:expect.closeTo(0.158,3)}));
+ });
+ it('drives game audio from its own stored level (the output gain itself), mute included',async()=>{
+  mockVolume.volume=0.0631;mockVolume.muted=false;mockVolume.source='exact';mockLog.info.mockClear();
   const view=await mount();
-  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({volume:0.4,storeMuted:false,output:expect.closeTo(0.0631,3)}));
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({level:40,muted:false,output:expect.closeTo(0.0631,3)}));
   mockVolume.muted=true;view.rerender(<SkylineGlider/>);await flush();
-  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({storeMuted:true,output:0}));
-  mockVolume.muted=false;
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({muted:true,output:0}));
+  mockVolume.muted=false;mockVolume.source='global';mockVolume.volume=0.4;
+ });
+ it('the bike buttons reach the sound sheet from the flight menu and step the level',async()=>{
+  mockVolume.volume=0.1;mockVolume.source='exact';mockVolume.setVolume.mockClear();
+  await mount();await launch();await press(4,'long');await press(2);
+  expect(screen.getByTestId('skyline-sound-sheet')).toBeInTheDocument();
+  await press(2);
+  expect(mockVolume.setVolume).toHaveBeenLastCalledWith(expect.closeTo(0.158,3)); // 50 -> 60
+  await press(3);
+  expect(document.querySelector('[data-control-phase="menu"]')).not.toBeNull();
+  mockVolume.source='global';mockVolume.volume=0.4;
  });
  it('preserves the exact pending terminal record when a selector is replaced',async()=>{
   const view=await mount();await launch();await press(4,'long');

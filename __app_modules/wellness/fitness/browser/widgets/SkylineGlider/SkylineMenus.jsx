@@ -1,6 +1,7 @@
 import React from 'react';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon } from './SkylinePixelIcons.jsx';
+import { TouchVolumeButtons } from "../../../../../../__capabilities/playback/browser/volume/TouchVolumeButtons.jsx";
 // Why the last attempt ended, in words a rider can act on.
 export function crashReason(flight,entity){
  if(!flight)return null;
@@ -27,7 +28,7 @@ export function flightWindow(count,index,rows=FLIGHT_ROWS){
  const start=Math.max(0,Math.min(Math.max(0,index)-Math.floor(rows/2),count-rows));
  return {start,end:Math.min(count,start+rows)};
 }
-export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary}){
+export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary,sound}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
  // The riders are listed once: on the bike-button panel beside this, where each
  // rider sits on the button that selects them (touch or physical). The 2×2 grid
@@ -47,12 +48,21 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
   </>})()}
   <p><span className="skyline-menus__position">{acts.findIndex(a=>a.id===state.actId)+1} of {acts.length}</span> Top buttons browse. Bottom right starts.</p>
  </section>;
+ // The sound sheet: the house touch volume strip (11 keys, 0 = off) and a mute
+ // key for touch; the bike buttons beside it step the same level (1 quieter,
+ // 2 louder, 4 mute, 3 back) and say so on their own keys.
+ if(state.phase==='settings'){const level=sound?.level??0,muted=!!sound?.muted;return <section className="skyline-menus skyline-menus--settings" data-phase="settings" data-testid="skyline-sound-sheet">
+  <h1>Sound</h1>
+  <strong className="skyline-menus__readout" data-testid="skyline-sound-readout" data-muted={muted||undefined}><PixelIcon name="sound"/>{muted?'Muted':'Volume '+level}</strong>
+  <div className="skyline-menus__volume"><TouchVolumeButtons controlId="skyline-volume" currentLevel={muted?0:level} onSelect={l=>sound?.onLevel?.(l)}/></div>
+  <button type="button" className="skyline-menus__mute" aria-pressed={muted} onClick={()=>sound?.onToggleMute?.()}>{muted?'Unmute':'Mute'}</button>
+ </section>}
  if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus" data-phase={state.phase}><p className="skyline-menus__kicker">{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
  const titles={menu:'Flight controls',crash:'Let’s try again',result:'Back at base',saving:'Saving your flight…',denied:'Flight locked','save-details':'Your flight is waiting to save',stall:'Stalled!'};
  return <section className="skyline-menus" data-phase={state.phase}>
   <h1>{titles[state.phase]||'Charting the course…'}</h1>
   {state.phase==='crash'&&crashNote&&<p className="skyline-menus__cause" data-testid="skyline-glider-crash-cause">{crashNote}</p>}
-  {state.phase==='result'&&summary&&<dl className="skyline-menus__summary" data-testid="skyline-glider-summary">{summary.map(([label,value])=><div key={label} data-stat={String(label).toLowerCase()}><dt>{STAT_ICON[label]&&<PixelIcon name={STAT_ICON[label]}/>}{label}</dt><dd>{value}</dd></div>)}</dl>}
+  {state.phase==='result'&&summary&&<dl className="skyline-menus__summary" data-testid="skyline-glider-summary">{summary.map(([label,value,icon])=><div key={label} data-stat={String(label).toLowerCase()}><dt>{icon||(STAT_ICON[label]&&<PixelIcon name={STAT_ICON[label]}/>)}{label}</dt><dd>{value}</dd></div>)}</dl>}
   <p>{state.phase==='crash'?'Your rider and flight are remembered. Choose your next step.':state.phase==='denied'?state.accessReason:state.phase==='save-details'?'Retry saving from the results panel. Starting another flight waits until this record is saved.':state.phase==='result'?(state.saveStatus==='error'?'Save failed. Your result is retained for retry.':state.saveStatus==='unsaved'?'This flight could not be saved. Choose what happens next using your bike buttons.':'Choose what happens next using your bike buttons.'):selected?.name}</p>
  </section>;
 }

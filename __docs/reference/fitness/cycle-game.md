@@ -1069,6 +1069,16 @@ soundtrack — lobby loop (idle), ready cue (staging), start jingle + per-tick b
 (countdown), random racing track (racing), outro (results) — all scaled by the
 master volume.
 
+- **Master volume** is the game's own level in the fitness volume store,
+  `useGameVolume('cycle-game')` (`nav/useGameVolume.js`, model in
+  `nav/gameVolumeModel.js`), not the video level: the household plays videos at
+  about 10%, and reading that through the log curve put the race at 1.6%, which
+  was silent. The store holds the output gain itself (`logVolumeFromLevel(level)`,
+  as the music player does), so the curve applies once. An unset track plays at
+  the game default, level 60 (0.158). The lobby volume button sets the level;
+  each change logs `cycle_game.audio.volume` (`level`, `muted`, `isDefault`,
+  `output`).
+
 - **Music level** = `(music_volume + lift) × master`, clamped to 1. The lift is
   0, except in a race's **finale** (last minute / last stretch, §11), where it
   is 0.15 (15% of master) until the race ends or is discarded.

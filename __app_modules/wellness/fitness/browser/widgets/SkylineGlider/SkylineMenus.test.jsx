@@ -67,3 +67,24 @@ it('draws every flight row solid: no opacity below 1, no see-through fill',async
   unmount();
  }
 });
+it('the sound sheet uses the house touch volume buttons (no slider) and a mute key',()=>{
+ const onLevel=vi.fn(),onToggleMute=vi.fn();
+ const state={...createSkylineControlState({acts:[],riders:[]}),phase:'settings',settingsReturn:'menu',sound:{level:60,muted:false}};
+ const {container}=render(<SkylineMenus state={state} acts={[]} riders={[]} onEvent={vi.fn()} sound={{level:60,muted:false,onLevel,onToggleMute}}/>);
+ expect(container.querySelector('input[type="range"]')).toBeNull();
+ const levels=container.querySelectorAll('.touch-volume-button');
+ expect(levels).toHaveLength(11);
+ expect(container.querySelectorAll('.touch-volume-button.on')).toHaveLength(6);
+ expect(screen.getByTestId('skyline-sound-readout')).toHaveTextContent('Volume 60');
+ fireEvent.click(levels[8],{detail:0});
+ expect(onLevel).toHaveBeenCalledWith(80);
+ fireEvent.click(screen.getByRole('button',{name:'Mute'}));
+ expect(onToggleMute).toHaveBeenCalled();
+});
+it('a muted sheet says so and offers Unmute',()=>{
+ const state={...createSkylineControlState({acts:[],riders:[]}),phase:'settings',sound:{level:60,muted:true}};
+ const {container}=render(<SkylineMenus state={state} acts={[]} riders={[]} onEvent={vi.fn()} sound={{level:60,muted:true,onLevel:vi.fn(),onToggleMute:vi.fn()}}/>);
+ expect(screen.getByTestId('skyline-sound-readout')).toHaveTextContent('Muted');
+ expect(screen.getByRole('button',{name:'Unmute'})).toHaveAttribute('aria-pressed','true');
+ expect(container.querySelectorAll('.touch-volume-button.on')).toHaveLength(0);
+});

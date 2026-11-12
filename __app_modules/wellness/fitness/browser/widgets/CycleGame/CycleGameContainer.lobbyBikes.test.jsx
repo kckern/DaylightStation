@@ -10,7 +10,7 @@ vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => logSp
 let mockCtx;
 vi.mock('../../context/FitnessContext.jsx', () => ({ useFitnessContext: () => mockCtx }));
 vi.mock('../../nav/usePersistentVolume.js', () => ({
-  usePersistentVolume: () => ({ volume: 1, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() })
+  usePersistentVolume: () => ({ volume: 1, muted: false, source: 'exact', setVolume: vi.fn(), toggleMute: vi.fn() })
 }));
 
 let lastHomeProps = null;

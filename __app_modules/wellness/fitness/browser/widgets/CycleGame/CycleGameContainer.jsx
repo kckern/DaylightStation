@@ -28,8 +28,7 @@ import { staleClaims } from "../../lib/cycleGame/staleClaims.js";
 import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
 import { boostState, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
-import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
-import { linearLevelFromVolume, logVolumeFromLevel } from "../../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
+import { useGameVolume } from "../../nav/useGameVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
 import RaceMenu from "./RaceMenu.jsx";
@@ -302,15 +301,16 @@ export default function CycleGameContainer({ onMount } = {}) {
   // added to the music level before the master scales it.
   const musicLiftRef = useRef(0);
 
-  // Master volume — the OFFICIAL fitness volume store (the same level the rest
-  // of the app's video uses). Scales all cycle-game music + SFX; the lobby
-  // exposes the standard TouchVolumeButtons control bound to it.
-  const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
-  // The store holds the button level linearly; game audio follows the house log
-  // curve (touchVolumeModel, as the music player and dance party do) so the low
-  // buttons are genuinely quiet.
-  const storeVolume = Number.isFinite(masterVol.volume) ? masterVol.volume : 1;
-  const effectiveMaster = masterVol.muted ? 0 : logVolumeFromLevel(linearLevelFromVolume(storeVolume));
+  // Master volume — the Cycle Game's own level in the fitness volume store
+  // (useGameVolume), not the video level: the household plays videos at ~10%,
+  // which through the house log curve put the race at 1.6% — silent
+  // (2026-11-12). Scales all cycle-game music + SFX; the lobby's standard
+  // TouchVolumeButtons control sets it.
+  const gameVolume = useGameVolume('cycle-game');
+  const effectiveMaster = gameVolume.output;
+  useEffect(() => {
+    log.info('cycle_game.audio.volume', { level: gameVolume.level, muted: gameVolume.muted, isDefault: gameVolume.isDefault, output: effectiveMaster });
+  }, [gameVolume.level, gameVolume.muted, gameVolume.isDefault, effectiveMaster, log]);
   const masterRef = useRef(1);
   masterRef.current = effectiveMaster;
 
@@ -2375,10 +2375,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase, bikes, session, noteBikeActivity, unassignBike, log]);
 
+  // The lobby strip reports its button as a 0..1 fraction (VolumeModal); the
+  // game volume takes the button level.
+  const setGameLevel = gameVolume.setLevel;
   const onSetMasterVolume = useCallback((v) => {
-    log.info('cycle_game.volume_set', { volume: v, control: 'lobby.volume' });
-    masterVol.setVolume?.(v);
-  }, [masterVol, log]);
+    const level = Math.round((Number(v) || 0) * 100);
+    setGameLevel(level);
+    log.info('cycle_game.volume_set', { level, control: 'lobby.volume' });
+  }, [setGameLevel, log]);
 
   // "End race here" (race menu): close the race where it stands and roll to
   // results so it saves — as an incomplete ride (the controller marks it
@@ -2502,8 +2506,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           ghostCandidates={ghostCandidates}
           onSelectGhost={onSelectGhost}
           onClearGhost={onClearGhost}
-          masterVolume={masterVol.volume}
-          masterMuted={masterVol.muted}
+          masterVolume={gameVolume.level / 100}
+          masterMuted={gameVolume.muted}
           onSetMasterVolume={onSetMasterVolume}
           onStart={startRace}
           canStart={canStart}

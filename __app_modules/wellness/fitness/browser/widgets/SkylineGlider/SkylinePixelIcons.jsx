@@ -190,6 +190,12 @@ const BITMAPS = Object.freeze({
     '##.##.##',
     '##.##.##',
   ],
+  // The "more" button: sound and settings.
+  more: [
+    '###..###..###',
+    '###..###..###',
+    '###..###..###',
+  ],
   rider: [
     '...###...',
     '..#####..',
@@ -253,7 +259,7 @@ const ALL = Object.freeze({ ...BITMAPS, left: mirror(BITMAPS.right) });
 // as pictures. An unknown symbol is shown as the text it is.
 const BY_SYMBOL = Object.freeze({
   'ϟ': 'bolt', '●': 'rider', '➤': 'missile', '»': 'boost', '←': 'left', '→': 'right', '×': 'cross', '✓': 'check',
-  '▦': 'flights', '♫': 'sound', '↻': 'retry', '⟲': 'restart', 'ⓘ': 'info', '—': 'wait',
+  '▦': 'flights', '♫': 'sound', '↻': 'retry', '⟲': 'restart', 'ⓘ': 'info', '—': 'wait', '⋯': 'more',
 });
 export const iconForSymbol = (symbol) => BY_SYMBOL[symbol] || null;
 

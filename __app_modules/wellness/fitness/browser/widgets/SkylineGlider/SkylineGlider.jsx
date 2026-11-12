@@ -17,19 +17,18 @@ import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } fr
 import { buildSkylineGliderRun, countTargets } from "../../lib/skylineGlider/runResult.js";
 import { listUsableSkylineBikes, selectSkylineBike } from "../../lib/skylineGlider/bikeSelection.js";
 import { useIdentity } from "../../identity/useIdentity.js";
-import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
+import { useGameVolume } from "../../nav/useGameVolume.js";
 import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isLocalDevHost } from '@/lib/kioskEnv.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
-import SkylineFlightHud from "./SkylineFlightHud.jsx";
+import SkylineFlightHud, { CollectibleIcon, MoreButton } from "./SkylineFlightHud.jsx";
 import RpmGauge from "./SkylineRpmGauge.jsx";
 import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
-import { linearLevelFromVolume, logVolumeFromLevel } from "../../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import "./SkylineGlider.scss";
 
 const SKYLINE_LOG_NAMES = {
@@ -130,7 +129,6 @@ export default function SkylineGlider() {
   const [phase, setPhase] = useState('loading');
   const [flight, setFlight] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
-  const [muted, setMuted] = useState(false);
   const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
   const [pressFlash, setPressFlash] = useState(null);
@@ -159,24 +157,21 @@ export default function SkylineGlider() {
   const suspensionContextRef = useRef(null);
   const suspensionLoggedRef = useRef(false);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
-  // Master volume: the OFFICIAL fitness volume store, the same level the
-  // sidebar volume buttons and the Cycle Game drive (fitness/global/video).
-  // Every Skyline voice -- cue files, music, wind, synth tones -- is scaled by it.
-  const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
-  // The store holds the button level as a linear 0..1; game audio follows the
-  // house log curve (touchVolumeModel, as the music player and dance party do)
-  // so the low buttons are genuinely quiet.
-  const storeVolume = Number.isFinite(masterVol.volume) ? masterVol.volume : 1;
-  const effectiveMaster = masterVol.muted ? 0 : logVolumeFromLevel(linearLevelFromVolume(storeVolume));
+  // Game volume: Skyline's own level in the fitness volume store (useGameVolume),
+  // not the video level. The household plays videos at ~10% linear; that level
+  // fed through the log curve put the game at 1.6% -- silent (2026-11-12).
+  // Every voice -- cue files, music, wind, synth tones -- ends on this gain.
+  const gameVolume = useGameVolume('skyline-glider');
+  const effectiveMaster = gameVolume.output;
   const effectiveMasterRef = useRef(effectiveMaster);
   effectiveMasterRef.current = effectiveMaster;
   useEffect(() => {
     audioRef.current.setVolume(effectiveMaster);
     log.info('skyline_glider.audio.volume', {
-      volume: masterVol.volume, storeMuted: !!masterVol.muted, gameMuted: muted,
+      level: gameVolume.level, muted: gameVolume.muted, isDefault: gameVolume.isDefault,
       output: audioRef.current.getLevels().output,
     });
-  }, [effectiveMaster, masterVol.volume, masterVol.muted, muted, log]);
+  }, [effectiveMaster, gameVolume.level, gameVolume.muted, gameVolume.isDefault, log]);
   const persistCheckpoint=useCallback((...args)=>{
     // A run the server already holds is never written back as a flight to resume
     // (2026-11-12: a saved run resumed under another act re-posted its id -> 409).
@@ -531,7 +526,7 @@ export default function SkylineGlider() {
         log,
         logNames: SKYLINE_LOG_NAMES,
         correlation: () => correlation,
-        skippedReason: () => (muted || effectiveMasterRef.current <= 0 ? 'muted' : 'audio-unavailable'),
+        skippedReason: () => (effectiveMasterRef.current <= 0 ? 'muted' : 'audio-unavailable'),
       }).dispatch(telemetry.events, { courseTime: next.courseTime });
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
@@ -550,7 +545,7 @@ export default function SkylineGlider() {
     audioRef.current.startWind();
     driver.start();
     return () => { driver.stop(); audioRef.current.stop(); };
-  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted, drainWeapons]);
+  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, drainWeapons]);
 
   const begin = useCallback((resume = false) => {
     if (!equipment || !riderId || !course) return;
@@ -578,7 +573,13 @@ export default function SkylineGlider() {
     setSaveState({ status: 'idle', record: null });
     setFlight(next);
     setPhase('flight');
-    void audioRef.current.prime();
+    // The loops start once the audio context is running: resume() is async, and
+    // the flight effect's startWind() can run while the context is still
+    // suspended, which would leave the whole flight without music or wind.
+    void audioRef.current.prime().then((running) => {
+      if (running && phaseRef.current === 'flight') audioRef.current.startWind();
+      log.info('skyline_glider.audio.started', { running, ...audioRef.current.getLevels() });
+    });
     log.info('skyline_glider.flight.started', {
       runId: run.runId, courseId: course.id, courseVersion: course.version,
       riderId, equipmentId: equipment.id, calibration: initial.calibration, resumed: canResume,
@@ -635,7 +636,7 @@ export default function SkylineGlider() {
   };
 
   const controller = useSkylineController({
-    ctx,courses,world:riderWorld,modalOpen:adminPromptOpen||!!actUnlock,access:{...access,unlocked:accessGranted},saved,saveState,flight,
+    ctx,courses,world:riderWorld,sound:{level:gameVolume.level,muted:gameVolume.muted},modalOpen:adminPromptOpen||!!actUnlock,access:{...access,unlocked:accessGranted},saved,saveState,flight,
     onEffect:effect=>{
       log.info('skyline_glider.control.action',{action:effect.type,riderId:effect.riderId,equipmentId:effect.equipmentId,actId:effect.actId});
       if(effect.type==='assign-rider'){
@@ -686,7 +687,8 @@ export default function SkylineGlider() {
         if(runRef.current&&flightRef.current)persistCheckpoint(riderId,course,{identity:{...runRef.current,...checkpointIdentity},state:flightRef.current});
         drainWeapons.clear?.();setPhase('paused')
       }
-      else if(effect.type==='toggle-sound')setMuted(value=>{audioRef.current.setMuted(!value);return !value});
+      else if(effect.type==='toggle-sound'){gameVolume.toggleMute();log.info('skyline_glider.audio.mute_toggled',{muted:!gameVolume.muted,source:effect.source||'bike'})}
+      else if(effect.type==='volume-step'){const level=Math.max(0,Math.min(100,gameVolume.level+effect.delta));gameVolume.setLevel(level);log.info('skyline_glider.audio.level_set',{level,control:'bike'})}
       else if(effect.type==='finalize')void finalize('abandoned');
       else if(effect.type==='retry-save'){
         if(saveState.record){void finalize(saveState.record.run.status,flightRef.current,saveState.record)}
@@ -712,6 +714,10 @@ export default function SkylineGlider() {
     if(c.label==='Start'&&saved.status==='compatible')return {...c,label:'Resume',hint:'Continue this flight'};
     return c;
   });
+  const openSoundSheet=()=>{log.info('skyline_glider.settings.opened',{phase:controller.state.phase,source:'touch'});controller.dispatch({type:'OPEN_SETTINGS',source:'touch'})};
+  const soundSheet={level:gameVolume.level,muted:gameVolume.muted,
+    onLevel:level=>{gameVolume.setLevel(level);log.info('skyline_glider.audio.level_set',{level,control:'touch'})},
+    onToggleMute:()=>{gameVolume.toggleMute();log.info('skyline_glider.audio.mute_toggled',{muted:!gameVolume.muted,source:'touch'})}};
   const pressPanel=(position,gesture='single')=>controller.dispatch({type:'PRESS',position,gesture,source:'touch'});
   const chooseAct = (act) => {
     if (act.status === 'locked') { void requestActUnlock(act); return; }
@@ -723,10 +729,12 @@ export default function SkylineGlider() {
   if(phase==='error')return <main className="skyline-glider skyline-glider--controls"><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
   if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls"
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
-    <div className="skyline-glider__menu"><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}
+    <div className="skyline-glider__menu">{!['settings','saving','loading'].includes(controller.state.phase)&&!(adminPromptOpen||actUnlock)&&<MoreButton onMore={openSoundSheet} className="skyline-glider__menu-more"/>}<SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch} sound={soundSheet}
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
-        return [['Bells',bells],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
+        // A zone with its own pickup sprite (coins) is not counted in bells.
+        const sprite=!!(assets.sheet&&assets.frames?.[course?.zone?.collectible?.frames?.[0]||course?.zone?.collectible?.frame]);
+        return [[sprite?'Collected':'Bells',bells,<CollectibleIcon zone={course?.zone} assets={assets}/>],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
     {saveState.status==='unsaved'&&controller.state.phase==='result'&&<p className="skyline-glider__notice" data-tone="bad" role="alert">This flight could not be saved — {saveState.reason}. You can still fly again.</p>}
     {saveState.status==='saved'&&<p className="skyline-glider__notice" data-tone="good">Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
     {storageWarning&&<p className="skyline-glider__notice" role="status">{storageWarning}</p>}
@@ -741,7 +749,7 @@ export default function SkylineGlider() {
   return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
-    <SkylineFlightHud flight={flight} course={course} armed={!!armory.enabled} press={pressFlash}
+    <SkylineFlightHud flight={flight} course={course} assets={assets} armed={!!armory.enabled} press={pressFlash} onMore={openSoundSheet}
       targetsHit={countTargets(flight, course)}
       power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
     <SkylineFlightOverlays flight={flight}/>

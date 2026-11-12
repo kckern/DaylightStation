@@ -37,7 +37,14 @@ export function primeCueAudio(trigger = 'manual') {
     // Read the pair together when auditing (unlocked → unlock_failed = no unlock).
     logger().info('audio_cue.unlocked', { trigger });
     if (p && typeof p.catch === 'function') {
-      p.catch((err) => { _unlocked = false; el.currentTime = 0; el.muted = false; logger().warn('audio_cue.unlock_failed', { trigger, name: err?.name ?? null, message: err?.message ?? null }); });
+      p.catch((err) => {
+        // Our own synchronous pause() (or the empty src) aborts the play() we
+        // just started: an AbortError, not a refusal -- the gesture's activation
+        // stands. Only a NotAllowedError (autoplay denied) undoes the unlock.
+        if (err?.name === 'AbortError') { logger().debug('audio_cue.unlock_play_aborted', { trigger }); return; }
+        _unlocked = false; el.currentTime = 0; el.muted = false;
+        logger().warn('audio_cue.unlock_failed', { trigger, name: err?.name ?? null, message: err?.message ?? null });
+      });
     }
   } catch (err) {
     logger().warn('audio_cue.unlock_threw', { trigger, message: err?.message ?? null });

@@ -3,10 +3,9 @@
 // a synthesized tone, so populating a sound is a file drop with no code change.
 //
 // Every voice (cue files, music, wind, synth tones, the drone) ends on ONE
-// output gain = fitness master volume x mute. The level comes from the shared
-// fitness volume store (usePersistentVolume fitness/global/video, the same
-// level the sidebar volume buttons and the Cycle Game drive) via setVolume();
-// the in-game sound toggle is setMuted(). Loops sit below cues (LOOPS gains).
+// output gain = the game's own volume (useGameVolume('skyline-glider'), its
+// track in the fitness volume store) via setVolume(); 0 when muted. Loops sit
+// below cues (LOOPS gains).
 
 const CUE_FREQUENCIES = Object.freeze({
   bell: 880,
@@ -173,7 +172,9 @@ export function createSkylineAudio({
       if (output) output.gain.value = outputLevel();
     },
     getLevels() {
-      return { volume, muted, output: outputLevel() };
+      // contextState says whether anything can be heard at all (a suspended
+      // context plays nothing whatever the gain): 'running', 'suspended', 'none'.
+      return { volume, muted, output: outputLevel(), contextState: context?.state ?? 'none' };
     },
     stop() {
       if (drone) stopNode(drone);
