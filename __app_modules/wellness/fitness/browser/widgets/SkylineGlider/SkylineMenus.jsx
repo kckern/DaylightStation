@@ -19,6 +19,14 @@ export function crashReason(flight,entity){
 }
 const ACT_STATUS={locked:['lock','Admin unlock required'],completed:['check','Completed']};
 const STAT_ICON={Bells:'bell',Targets:'target'};
+// The flight list shows a fixed window of rows that follows the cursor, so any
+// number of configured flights fits the screen and the chosen one is always in
+// view. The bike buttons move the cursor; nothing scrolls on its own.
+export const FLIGHT_ROWS=5;
+export function flightWindow(count,index,rows=FLIGHT_ROWS){
+ const start=Math.max(0,Math.min(Math.max(0,index)-Math.floor(rows/2),count-rows));
+ return {start,end:Math.min(count,start+rows)};
+}
 export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
  // The riders are listed once: on the bike-button panel beside this, where each
@@ -28,12 +36,16 @@ export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summar
  if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus" data-phase="roster"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person"><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></div>}</section>}
  if(state.phase==='flights')return <section className="skyline-menus" data-phase="flights">
   <p className="skyline-menus__kicker">{rider?.name} is flying</p><h1>Pick a flight</h1>
-  <div className="skyline-menus__options">{acts.map(a=>{
+  {(()=>{const index=acts.findIndex(a=>a.id===state.actId),{start,end}=flightWindow(acts.length,index);return <>
+  <p className="skyline-menus__more" data-dir="up" data-testid="skyline-more-above" data-empty={start===0||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{start} more</p>
+  <div className="skyline-menus__options">{acts.slice(start,end).map(a=>{
    const [icon,label]=ACT_STATUS[a.status]||[null,'Ready to explore'];
    return <button key={a.id} type="button" aria-pressed={a.id===state.actId} data-status={a.status} onClick={()=>onEvent({type:'SELECT_ACT',actId:a.id})}>
     <PixelIcon name="cursor" className="skyline-menus__cursor"/><strong>{a.name}</strong><small>{icon&&<PixelIcon name={icon}/>}{label}</small>
    </button>})}</div>
-  <p>Top buttons browse. Bottom right starts.</p>
+  <p className="skyline-menus__more" data-dir="down" data-testid="skyline-more-below" data-empty={end>=acts.length||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{acts.length-end} more</p>
+  </>})()}
+  <p><span className="skyline-menus__position">{acts.findIndex(a=>a.id===state.actId)+1} of {acts.length}</span> Top buttons browse. Bottom right starts.</p>
  </section>;
  if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus" data-phase={state.phase}><p className="skyline-menus__kicker">{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
  const titles={menu:'Flight controls',crash:'Let’s try again',result:'Back at base',saving:'Saving your flight…',denied:'Flight locked','save-details':'Your flight is waiting to save',stall:'Stalled!'};

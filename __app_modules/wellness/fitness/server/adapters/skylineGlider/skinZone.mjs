@@ -69,6 +69,15 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
   if (strip?.height) terrain.edge_height = Math.round(((strip.height * artPixel) / sceneHeight) * 10000) / 10000;
   zone.terrain = terrain;
 
+  // Sounds are the base zone's files: root them at the base zone's folder, since
+  // the skin's own folder (zone.asset_root) has no sounds/ beside its art.
+  const baseRoot = typeof baseZone.asset_root === 'string' ? baseZone.asset_root.replace(/\/+$/, '') : '';
+  if (isObject(baseZone.sounds) && baseRoot) {
+    zone.sounds = Object.fromEntries(Object.entries(baseZone.sounds).map(([slot, src]) => [
+      slot, typeof src === 'string' && !src.startsWith('/') ? `/${baseRoot}/${src}` : src,
+    ]));
+  }
+
   const usesSheet = Object.values(slots).some((slot) => slot?.frames?.length);
   zone.sprites = usesSheet ? { sheet: 'sprites/sheet.png', frames: 'sprites/sheet.json' } : null;
   for (const key of ['craft', 'collectible', 'checkpoint', 'finish']) {

@@ -362,6 +362,15 @@
     &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: var(--sg-line); }
   }
   &__cursor { visibility: hidden; }
+  // Above and below the window: how many flights the buttons can still reach.
+  // Always laid out (hidden when empty) so the window never changes height.
+  &__more {
+    display: flex; align-items: center; gap: .6vw; margin: .5vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
+    &[data-empty] { visibility: hidden; }
+    &[data-dir="up"] .skyline-menus__more-icon { transform: rotate(-90deg); }
+    &[data-dir="down"] .skyline-menus__more-icon { transform: rotate(90deg); }
+  }
+  &__position { margin-right: .5em; color: var(--sg-gold); font-weight: 900; }
   &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: skyline-step-right .5s steps(1) infinite; }
 
   &__person {

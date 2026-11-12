@@ -164,7 +164,7 @@ sounds: { bell: ring.mp3, checkpoint: post.mp3, breakable: smash.mp3, crash: cra
 - The terrain `fill` is a texture locked to the course. The `edge` strip is drawn `edge_lip` above the collision line, so grass tips can be brushed without crashing. Ceilings use `ceiling_edge`, or the floor edge flipped.
 - Sprite sheets use the TexturePacker/Aseprite JSON export (`hash` or `array`). Frame names drop their extension, so `glider-1.png` is addressed as `glider-1`. Any `frame:` can be `frames: [...]` with `fps:` to animate.
 - Asset paths resolve against `asset_root` on the media mount and are served by `/api/v1/proxy/media/*` with revalidating cache headers, so replacing a file keeps its name. A path starting with `/` is media-root-relative.
-- Sounds: `bell`, `checkpoint`, `breakable`, `crash`, `restart` and `finish` are cues. `wind` and `music` loop during flight. A missing, empty or undecodable file falls back to the synthesized tone, so the alpine zone ships with empty placeholders under `media/fitness/skyline-glider/alpine/sounds/`.
+- Sounds: `bell`, `checkpoint`, `breakable`, `crash`, `restart` and `finish` are cues. `wind` and `music` loop during flight. A missing, empty or undecodable file falls back to the synthesized tone, so the alpine zone ships with empty placeholders under `media/fitness/skyline-glider/alpine/sounds/`. A zone built from a skin (`skyline-skin.cli.mjs`) inherits the base zone's sounds rooted at the base zone's folder (`/fitness/skyline-glider/alpine/sounds/bell.mp3`), since a skin folder holds art only; to give a skin its own sounds, edit `sounds:` in the installed zone file with media-rooted paths (for example `/fitness/skyline-glider/sfx/coin-collect.mp3`).
 - On each act change the lobby preloads the zone and logs `skyline_glider.assets.loaded` with `{ zoneId, images, spriteFrames, sounds, missing }`. The level is `warn` when anything other than an empty placeholder failed.
 
 ### Skins (zones built from the shared art library)
@@ -303,3 +303,14 @@ The household Fitness menu is deployment-owned configuration and is not tracked 
 - `GET /api/v1/fitness/skyline-glider/runs/:runId`
 
 Terminal results embed `gaming-result/v1`; continuous flight simulation remains owned by Fitness.
+
+## Saving a flight
+
+- A run is posted once to `POST /api/v1/fitness/skyline-glider/runs`; until the server confirms, the record waits in local storage as a `pending_terminal` checkpoint.
+- **409 means already saved.** The server holds a run with that id. The game reads the stored run (`GET …/runs/:runId`), clears the pending record under both the current act and the run's own act, shows the result as saved and logs `skyline_glider.flight.save_duplicate` (warn).
+- **Any other failure is retried at most three times** (the rider presses Retry). After the third the result says in words why it could not be saved, the pending record is dropped, Replay/Next/Flights/Change rider work as after a save, and `skyline_glider.flight.save_abandoned` (error) logs the full record so it can be re-posted by hand.
+- A finished flight is never written or read as a resumable checkpoint, and a run id the server already holds is never parked again.
+
+## Flight list
+
+The lobby's flight list shows a fixed window of five rows that follows the bike-button cursor, with "N more" above and below and the cursor's position ("5 of 14"). Any number of configured flights fits the display; nothing scrolls on its own.

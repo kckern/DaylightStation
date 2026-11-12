@@ -58,7 +58,14 @@ describe('zoneFromSkinExport', () => {
     expect(states).toEqual({ damaged: { frame: 'entities.pine.bent' } });
     expect(pinePlay).toEqual(alpine.entities.pine);
     expect(zone.entities.boulder).toEqual(alpine.entities.boulder);
-    expect(zone.sounds).toEqual(alpine.sounds);
+    // Sounds are the base zone's files, so they stay rooted at the base zone's
+    // folder: a skin folder has no sounds/ (2026-11-12: every smw-* cue 404'd).
+    expect(zone.sounds).toEqual(Object.fromEntries(Object.entries(alpine.sounds).map(([slot, src]) => [slot, `/${alpine.asset_root}/${src}`])));
+  });
+
+  it('resolves inherited sounds to the base zone folder through resolveAct', () => {
+    const resolved = resolveAct({ id: 'a1', zone: 'test-zone', entities: [] }, new Map([['test-zone', zone]]));
+    expect(resolved.zone.sounds.bell).toBe('fitness/skyline-glider/alpine/sounds/bell.mp3');
   });
 
   it('resolves through resolveAct like any zone', () => {

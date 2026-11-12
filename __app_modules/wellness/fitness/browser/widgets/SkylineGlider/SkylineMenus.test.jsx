@@ -29,3 +29,20 @@ it('names what ended the attempt in words a rider can act on',()=>{
  render(<SkylineMenus state={{phase:'crash',riders:[],acts:[]}} riders={[]} acts={[]} onEvent={()=>{}} crashNote="Hit the ground."/>);
  expect(screen.getByTestId('skyline-glider-crash-cause')).toHaveTextContent('Hit the ground.');
 });
+// 2026-11-12: fourteen configured flights ran the list off the garage display,
+// and the chosen one (driven by the bike buttons) scrolled out of sight.
+it('shows a fixed window of flights that follows the bike-button cursor',()=>{
+ const acts=Array.from({length:14},(_,i)=>({id:'a'+i,name:'Flight '+i,status:'open'})),riders=[{id:'child',name:'Child',position:1}];
+ const at=actId=>({...createSkylineControlState({acts,riders}),phase:'flights',riderId:'child',actId});
+ const rows=()=>screen.getAllByRole('button').map(b=>b.textContent);
+ const view=render(<SkylineMenus state={at('a0')} acts={acts} riders={riders} onEvent={()=>{}}/>);
+ expect(rows()).toHaveLength(5);expect(rows()[0]).toMatch(/Flight 0/);
+ expect(screen.getByText('1 of 14')).toBeVisible();
+ expect(screen.getByTestId('skyline-more-below')).toHaveTextContent('9 more');
+ view.rerender(<SkylineMenus state={at('a13')} acts={acts} riders={riders} onEvent={()=>{}}/>);
+ expect(rows()).toHaveLength(5);expect(rows().at(-1)).toMatch(/Flight 13/);
+ expect(screen.getByRole('button',{pressed:true})).toHaveTextContent('Flight 13');
+ expect(screen.getByTestId('skyline-more-above')).toHaveTextContent('9 more');
+ view.rerender(<SkylineMenus state={at('a7')} acts={acts} riders={riders} onEvent={()=>{}}/>);
+ expect(rows().map(r=>r.match(/Flight \d+/)[0])).toEqual(['Flight 5','Flight 6','Flight 7','Flight 8','Flight 9']);
+});
