@@ -233,9 +233,11 @@ If the API is unreachable, the daemon falls back to the existing cached `playlis
 | `POST` | `/api/playback/<slot>/<action>` | `toggle` / `play` / `pause` / `next` / `prev` |
 | `POST` | `/api/play` | Remote dispatch from DaylightStation — `{action,target,content_id,volume,duration_min,resume_previous}` (target = color, "all", "all-private", "all-public") |
 | `GET` | `/api/verify/<color>` | Peak-meter audio-flow check (sink monitor sample) |
-| `GET` | `/api/bt/scan` / `/api/bt/paired` | BT discovery / paired list |
+| `GET` | `/api/bt/scan` / `/api/bt/paired` | BT discovery / known-device list — see below |
 | `POST` | `/api/bt/pair` / `/api/bt/unpair` | `{mac}` |
 | `POST` | `/api/service/restart` | Restart the playback-hub daemon |
+
+**`/api/bt/paired` covers every controller.** It lists each device BlueZ knows as paired, bonded, trusted or connected on ANY adapter (BlueZ ObjectManager via `busctl`, one call), with per-device `paired`/`bonded`/`trusted`/`connected`/`adapter`/`probe`/`source`. If D-Bus is unavailable it falls back to `bluetoothctl` (default controller only), probing `info` concurrently under an overall budget; a probe that times out keeps its device with `probe: "timeout"` and `null` flags — never read a missing answer as "unpaired". `/api/bt/scan`'s `paired` flag comes from the same inventory. Tests: `tests/test_bt_inventory.py`.
 
 ---
 

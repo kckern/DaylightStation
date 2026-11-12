@@ -1,0 +1,259 @@
+{
+ "type": "a{oa{sa{sv}}}",
+ "data": [
+  {
+   "/org/bluez/hci0/dev_41_42_8D_B7_A0_11": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "41:42:8D:B7:A0:11"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "Bandou 3.0"
+     },
+     "Name": {
+      "type": "s",
+      "data": "Bandou 3.0"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": true
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci0"
+     }
+    }
+   },
+   "/org/bluez/hci0/dev_41_42_93_7B_A9_F2": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "41:42:93:7B:A9:F2"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Name": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": false
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci0"
+     }
+    }
+   },
+   "/org/bluez/hci1/dev_41_42_3A_E5_43_07": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "41:42:3A:E5:43:07"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Name": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": false
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci1"
+     }
+    }
+   },
+   "/org/bluez/hci2/dev_41_42_F0_91_27_E8": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "41:42:F0:91:27:E8"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "Bandou 3.0"
+     },
+     "Name": {
+      "type": "s",
+      "data": "Bandou 3.0"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": true
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci2"
+     }
+    }
+   },
+   "/org/bluez/hci3/dev_9C_0C_35_75_B7_75": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "9C:0C:35:75:B7:75"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "10-SYNC SPEAKER BULB"
+     },
+     "Name": {
+      "type": "s",
+      "data": "10-SYNC SPEAKER BULB"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": false
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci3"
+     }
+    }
+   },
+   "/org/bluez/hci4/dev_E8_68_E7_34_55_8E": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "E8:68:E7:34:55:8E"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "Yoto Player"
+     },
+     "Name": {
+      "type": "s",
+      "data": "Yoto Player"
+     },
+     "Paired": {
+      "type": "b",
+      "data": false
+     },
+     "Bonded": {
+      "type": "b",
+      "data": false
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": false
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci4"
+     }
+    }
+   },
+   "/org/bluez/hci7/dev_41_42_9A_E3_65_73": {
+    "org.bluez.Device1": {
+     "Address": {
+      "type": "s",
+      "data": "41:42:9A:E3:65:73"
+     },
+     "Alias": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Name": {
+      "type": "s",
+      "data": "musiCozy"
+     },
+     "Paired": {
+      "type": "b",
+      "data": true
+     },
+     "Bonded": {
+      "type": "b",
+      "data": true
+     },
+     "Trusted": {
+      "type": "b",
+      "data": true
+     },
+     "Connected": {
+      "type": "b",
+      "data": false
+     },
+     "Adapter": {
+      "type": "o",
+      "data": "/org/bluez/hci7"
+     }
+    }
+   }
+  }
+ ]
+}
