@@ -3,6 +3,7 @@ import {
   parseCaptionCues, transcriptFor, measuredTarget, levelTarget, spearman, contentHash,
 } from '../../portable/practice/lessonExpectation.mjs';
 
+const GATEWAY_TIMEOUT_MS = 30000;
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const seedKey = (show, season, episode) => `${norm(show)}|${Number(season)}|${Number(episode)}`;
 
@@ -29,6 +30,7 @@ export class BuildLessonExpectations {
     const res = await this.#gateway.evaluate(
       { title: lesson.title, durationMin: lesson.durationSec ? Math.round(lesson.durationSec / 60) : null, transcript },
       { handsOn: { type: 'score', instructions: RUBRIC_INSTRUCTIONS, levels: [...RUBRIC_LEVELS] } },
+      { timeout: GATEWAY_TIMEOUT_MS },
     );
     const a = res?.answers?.handsOn;
     const score = Number(a?.score);
@@ -46,6 +48,20 @@ export class BuildLessonExpectations {
 
     const lessons = await this.#source.listLessons();
     const out = { computed: 0, skipped: 0, failed: 0, remaining: 0, noCaptions: [], calibration: null };
+    // Records are buffered per show and written once per show.
+    let pending = { show: null, records: [] };
+    const flush = () => {
+      if (!pending.records.length) return;
+      try {
+        if (typeof this.#store.writeLessons === 'function') this.#store.writeLessons(pending.show, pending.records);
+        else for (const r of pending.records) this.#store.writeLesson(pending.show, r);
+      } catch (err) {
+        out.failed += pending.records.length;
+        out.computed -= pending.records.length;
+        this.#logger.warn?.('piano.lesson-expectation.write-failed', { showKey: pending.show?.key, error: err.message });
+      }
+      pending = { show: null, records: [] };
+    };
     let i = 0;
     for (; i < lessons.length && out.computed < max; i++) {
       const lesson = lessons[i];
@@ -88,7 +104,9 @@ export class BuildLessonExpectations {
           captionHash,
           computedAt: this.#clock().toISOString(),
         };
-        this.#store.writeLesson({ key: lesson.showKey, title: lesson.showTitle }, record);
+        if (pending.show && pending.show.key !== lesson.showKey) flush();
+        pending.show = { key: lesson.showKey, title: lesson.showTitle };
+        pending.records.push(record);
         out.computed += 1;
         this.#logger.info?.('piano.lesson-expectation.computed', { plexId: lesson.plexId, source, level: record.level, targetNpm });
         if (!transcript) this.#logger.info?.('piano.lesson-expectation.no-captions', { plexId: lesson.plexId });
@@ -97,6 +115,7 @@ export class BuildLessonExpectations {
         this.#logger.warn?.('piano.lesson-expectation.failed', { plexId: lesson.plexId, error: err.message });
       }
     }
+    flush();
     out.remaining = lessons.length - i;
     out.calibration = this.#calibration();
     this.#logger.info?.('piano.lesson-expectation.run-summary', {

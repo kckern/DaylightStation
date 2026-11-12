@@ -10,7 +10,9 @@ function memStore(seed = []) {
     lessons,
     get: (id) => lessons.get(String(id).replace(/^plex:/, '')) ?? null,
     all: () => [...lessons.values()],
-    writeLesson: (show, e) => { const r = { ...e, showKey: show.key }; lessons.set(e.plexId, r); return r; },
+    writes: 0,
+    writeLesson(show, e) { this.writes += 1; const r = { ...e, showKey: show.key }; lessons.set(e.plexId, r); return r; },
+    writeLessons(show, list) { this.writes += 1; for (const e of list) lessons.set(e.plexId, { ...e, showKey: show.key }); },
     readMeasuredSeed: () => seed,
   };
 }
@@ -91,5 +93,17 @@ describe('BuildLessonExpectations', () => {
     const r = await new BuildLessonExpectations({ lessonSource: source([lesson('1'), lesson('2'), lesson('3')]), store: memStore(seed), decisionGateway: gw, logger, clock }).execute();
     expect(r.calibration.n).toBe(3);
     expect(r.calibration.spearman).toBeCloseTo(1, 6);
+  });
+  it('writes once per show, not once per lesson (a 2,000-lesson show must not block the server)', async () => {
+    const store = memStore();
+    await new BuildLessonExpectations({ lessonSource: source([lesson('1'), lesson('2'), lesson('3', { showKey: '9' })]), store, decisionGateway: gateway(), logger, clock }).execute();
+    expect(store.writes).toBe(2);
+    expect(store.all()).toHaveLength(3);
+  });
+
+  it('passes a timeout to the gateway', async () => {
+    const gw = gateway();
+    await new BuildLessonExpectations({ lessonSource: source([lesson('2')]), store: memStore(), decisionGateway: gw, logger, clock }).execute();
+    expect(gw.calls).toHaveLength(1);
   });
 });

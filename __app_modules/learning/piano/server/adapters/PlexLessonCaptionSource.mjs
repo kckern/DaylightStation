@@ -3,6 +3,7 @@
  * `videos.collections` tabs whose `engagement_gate` is not false) with their
  * English SRT caption stream, for the lesson-expectation build job.
  */
+const REQUEST_DEADLINE_MS = 20000;
 const bare = (id) => (id == null ? '' : String(id).replace(/^plex:/, ''));
 const meta = (data) => data?.MediaContainer?.Metadata || [];
 
@@ -36,7 +37,8 @@ export class PlexLessonCaptionSource {
   }
 
   async #get(path) {
-    return this.#client.request(path);
+    // Every Plex call is bounded: one hung request stalled the whole job.
+    return this.#client.request(path, { deadline: REQUEST_DEADLINE_MS });
   }
 
   /**

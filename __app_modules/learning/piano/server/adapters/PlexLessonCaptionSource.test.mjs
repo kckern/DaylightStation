@@ -25,7 +25,7 @@ function client() {
   };
   return {
     calls,
-    request: async (p) => { calls.push(p); if (!(p in data)) throw new Error(`unexpected ${p}`); return data[p]; },
+    request: async (p, opts) => { calls.push(p); if (!(opts?.deadline > 0)) throw new Error(`no deadline on ${p}`); if (!(p in data)) throw new Error(`unexpected ${p}`); return data[p]; },
   };
 }
 

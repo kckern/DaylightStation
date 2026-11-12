@@ -37,6 +37,13 @@ describe('JsonLessonExpectationStore', () => {
     expect(lg.calls.filter(([e]) => e === 'piano.lesson-expectation.unreadable')).toHaveLength(1);
   });
 
+  it('writeLessons writes a show\'s records in one write', () => {
+    const s = new JsonLessonExpectationStore({ dir, logger: logger() });
+    s.writeLessons({ key: '10', title: 'A' }, [rec('101'), rec('102'), rec('103', { source: 'default', targetNpm: 0 })]);
+    expect(s.all()).toHaveLength(3);
+    expect(s.get('103').targetNpm).toBe(0);
+  });
+
   it('reads the measured seed', () => {
     fs.writeFileSync(path.join(dir, '_measured.json'), JSON.stringify([{ show: 'S', season: 1, episode: 2, n: 2, minNpm: 9 }]));
     const s = new JsonLessonExpectationStore({ dir, logger: logger() });

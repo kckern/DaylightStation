@@ -97,19 +97,31 @@ export class JsonLessonExpectationStore {
 
   /** Write one lesson into its show's file (tmp + rename). */
   writeLesson(show, expectation) {
+    return this.writeLessons(show, [expectation])[0] ?? null;
+  }
+
+  /**
+   * Write many lessons of one show with ONE read and ONE write (tmp + rename).
+   * A big show rewritten per lesson blocked the event loop for seconds.
+   */
+  writeLessons(show, expectations) {
     const showKey = bare(show?.key);
-    if (!showKey) throw new Error('writeLesson requires show.key');
-    const e = normalizeExpectation(expectation);
-    if (!e) throw new Error('writeLesson: invalid expectation');
+    if (!showKey) throw new Error('writeLessons requires show.key');
+    const list = (expectations || []).map((raw) => ({ raw, e: normalizeExpectation(raw) }));
+    if (list.some(({ e }) => !e)) throw new Error('writeLessons: invalid expectation');
+    if (!list.length) return [];
     ensureDir(this.#dir);
     const doc = this.readShow(showKey) || { schemaVersion: 1, show: { key: showKey, title: show.title ?? null }, lessons: {} };
     doc.schemaVersion = 1;
     doc.show = { key: showKey, title: show.title ?? doc.show?.title ?? null };
     doc.generatedAt = new Date().toISOString();
-    doc.lessons[e.plexId] = { ...e, showKey, seasonKey: expectation.seasonKey != null ? bare(expectation.seasonKey) : null };
-    writeFileAtomic(path.join(this.#dir, `${showKey}.json`), `${JSON.stringify(doc, null, 1)}\n`);
+    const written = list.map(({ raw, e }) => {
+      doc.lessons[e.plexId] = { ...e, showKey, seasonKey: raw.seasonKey != null ? bare(raw.seasonKey) : null };
+      return doc.lessons[e.plexId];
+    });
+    writeFileAtomic(path.join(this.#dir, `${showKey}.json`), `${JSON.stringify(doc)}\n`);
     this.#signature = null;
-    return doc.lessons[e.plexId];
+    return written;
   }
 
   /** The audit's measured lessons: [{ show, season, episode, n, minNpm, medianNpm, maxNpm }]. */
