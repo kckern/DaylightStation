@@ -13,6 +13,7 @@
 schema: game-skin-contract/v1
 game: skyline-glider
 units: { width: 1000, height: 600, art_pixel: 2 }   # scene units per art pixel: the zone's one pixel grid
+palette: [sky, horizon, rock, rock_low]   # colours a skin may set: the sky gradient behind the layers, the SVG rock
 slots:
   layers:            { type: parallax-layers, max: 8 }   # back to front; front: true draws over the craft
   # Terrain fill is drawn as a pattern at 1 file pixel = 1 scene unit, so it is

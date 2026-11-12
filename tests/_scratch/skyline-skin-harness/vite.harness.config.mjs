@@ -12,6 +12,7 @@ const repoRoot = path.resolve(here, '../../..');
 const PORT = Number(process.env.HARNESS_PORT || 5198);
 const MEDIA = process.env.MEDIA_DIR || path.join(process.env.DAYLIGHT_BASE_PATH || '', 'media');
 const ADAPTERS = path.join(repoRoot, '__app_modules/wellness/fitness/server/adapters/skylineGlider');
+const WORLD_DIR = process.env.WORLD_DIR || null;
 const TYPES = { '.png': 'image/png', '.json': 'application/json', '.yml': 'text/yaml', '.mp3': 'audio/mpeg' };
 
 function harness() {
@@ -29,9 +30,13 @@ function harness() {
         if (url.pathname === '/harness/course') {
           try {
             const { resolveAct } = await import(pathToFileURL(path.join(ADAPTERS, 'resolveAct.mjs')).href);
-            const act = YAML.parse(fs.readFileSync(path.join(ADAPTERS, 'acts', `${url.searchParams.get('act')}.yml`), 'utf8'));
-            const zoneId = url.searchParams.get('zone');
-            const zoneFile = zoneId === 'alpine' ? path.join(ADAPTERS, 'zones/alpine.yml') : path.join(MEDIA, 'fitness/skyline-glider', zoneId, 'zone.yml');
+            // WORLD_DIR (a built world: world.yml, zones/, courses/) is searched before the bundled acts.
+            const actName = `${url.searchParams.get('act')}.yml`;
+            const worldAct = WORLD_DIR && path.join(WORLD_DIR, 'courses', actName);
+            const act = YAML.parse(fs.readFileSync(worldAct && fs.existsSync(worldAct) ? worldAct : path.join(ADAPTERS, 'acts', actName), 'utf8'));
+            const zoneId = url.searchParams.get('zone') || act.zone;
+            const worldZone = WORLD_DIR && path.join(WORLD_DIR, 'zones', `${zoneId}.yml`);
+            const zoneFile = zoneId === 'alpine' ? path.join(ADAPTERS, 'zones/alpine.yml') : worldZone && fs.existsSync(worldZone) ? worldZone : path.join(MEDIA, 'fitness/skyline-glider', zoneId, 'zone.yml');
             const zone = YAML.parse(fs.readFileSync(zoneFile, 'utf8'));
             const course = resolveAct({ ...act, zone: zone.id }, new Map([[zone.id, zone]]));
             res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(course));

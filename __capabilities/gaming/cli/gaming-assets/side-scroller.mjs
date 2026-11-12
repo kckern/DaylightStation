@@ -444,6 +444,14 @@ export async function validateSkin({ root, contractPath, skinPath }) {
   let catalog;
   try { catalog = await loadAssetCatalog(catalogPath); } catch (error) { errors.push(`cannot load catalog: ${error.message}`); return { valid: false, errors, warnings }; }
   const resolved = { layers: [], images: {}, sprites: {} };
+  // Scene colours the game paints behind the art (sky, horizon, ...), limited to the keys it names.
+  if (skin.palette !== undefined) {
+    if (!skin.palette || typeof skin.palette !== 'object' || Array.isArray(skin.palette)) errors.push('skin palette must be a map of colours');
+    else for (const [key, colour] of Object.entries(skin.palette)) {
+      if (!(contract.palette ?? []).includes(key)) errors.push(`skin palette ${key} is not one the game uses (${(contract.palette ?? []).join(', ') || 'none'})`);
+      else if (!/^#[0-9a-f]{6}$/i.test(String(colour))) errors.push(`skin palette ${key} must be #rrggbb`);
+    }
+  }
   const usedAssets = new Set();
   const useAsset = (slotName, ref) => {
     const asset = catalog.assets?.[ref?.asset];
@@ -669,7 +677,7 @@ export async function exportSkin({ root, contractPath, skinPath, outDir }) {
     const asset = catalog.assets[id];
     return [id, { source: asset.source, source_sha256: asset.source_sha256 ?? null, license_scope: asset.license_scope, distribution: asset.distribution ?? 'private-only', provenance: asset.provenance ?? null }];
   }));
-  const manifest = { schema: 'game-skin-export/v1', skin: skin.id, game: skin.game, distribution: skin.distribution, slots, provenance, files };
+  const manifest = { schema: 'game-skin-export/v1', skin: skin.id, game: skin.game, distribution: skin.distribution, ...(skin.palette ? { palette: { ...skin.palette } } : {}), slots, provenance, files };
   await writeFile(path.join(outDir, 'export.json'), `${JSON.stringify(manifest, null, 1)}\n`);
   return { ok: true, outDir, manifest, warnings: check.warnings };
 }

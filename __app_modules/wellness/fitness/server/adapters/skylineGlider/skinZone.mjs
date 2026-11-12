@@ -39,6 +39,7 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
   zone.pixel_art = true;
   zone.pixel_scale = artPixel;
   zone.skin = { id: manifest.skin, distribution: manifest.distribution };
+  if (isObject(manifest.palette)) zone.palette = { ...(isObject(baseZone.palette) ? baseZone.palette : {}), ...manifest.palette };
 
   const layers = slots.layers?.layers;
   if (layers?.length) {

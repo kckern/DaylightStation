@@ -79,7 +79,7 @@ async function catalogFixture(dir, { layerDistribution = 'private-only', hillsTi
   await mkdir(path.dirname(catalogPath), { recursive: true });
   await writeFile(catalogPath, YAML.stringify(catalog));
   const contract = {
-    schema: 'game-skin-contract/v1', game: 'flyer', units: { width: 1000, height: 600 },
+    schema: 'game-skin-contract/v1', game: 'flyer', units: { width: 1000, height: 600 }, palette: ['sky', 'horizon'],
     slots: {
       layers: { type: 'parallax-layers', max: 4 },
       'terrain.fill': { type: 'texture', repeat: ['x', 'y'], scale: 3 },
@@ -310,6 +310,15 @@ describe('skins', () => {
     const exported = await exportSkin({ root: dir, contractPath, outDir, skinPath: await writeSkin(dir, { ...goodSlots, craft: { asset: 'actor.hero', clip: 'fly', states: { hurt: { frame: 'fly.1' } } } }) });
     assert.equal(exported.ok, true, exported.errors?.join('\n'));
     assert.deepEqual(exported.manifest.slots.craft.states, { hurt: { frames: ['craft.fly.1'] } });
+  });
+
+  it('passes a skin palette through, limited to the keys the game names', async () => {
+    const dir = await root();
+    const { contractPath } = await catalogFixture(dir);
+    const bad = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, goodSlots, { palette: { sky: 'black', ground: '#000000' } }) });
+    assert.deepEqual(bad.errors, ['skin palette sky must be #rrggbb', 'skin palette ground is not one the game uses (sky, horizon)']);
+    const exported = await exportSkin({ root: dir, contractPath, outDir: path.join(dir, 'out'), skinPath: await writeSkin(dir, goodSlots, { palette: { sky: '#000000', horizon: '#102040' } }) });
+    assert.deepEqual(exported.manifest.palette, { sky: '#000000', horizon: '#102040' });
   });
 
   it('keeps private-only art out of a shippable skin', async () => {

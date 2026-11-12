@@ -47,6 +47,11 @@ describe('zoneFromSkinExport', () => {
     expect(zone.skin).toEqual({ id: 'test-skin', distribution: 'private-only' });
   });
 
+  it('applies a skin palette over the base zone palette', () => {
+    const zoned = zoneFromSkinExport({ ...manifest, palette: { sky: '#000000' } }, { baseZone: { ...alpine, palette: { theme: 'meadow', sky: '#7ecbf0', horizon: '#ffffff' } }, id: 'z' });
+    expect(zoned.palette).toEqual({ theme: 'meadow', sky: '#000000', horizon: '#ffffff' });
+  });
+
   it('keeps gameplay from the base zone', () => {
     const { frame, states, ...pinePlay } = zone.entities.pine;
     expect(frame).toBe('entities.pine.tree');
