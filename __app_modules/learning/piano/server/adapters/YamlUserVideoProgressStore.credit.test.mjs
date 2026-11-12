@@ -160,6 +160,16 @@ describe('progress store: session good-faith credit', () => {
     expect(store.summarize([{ id: 'plex:100' }], USER).completed).toBe(0);
   });
 
+  it('enrich: the kiosk expectation carries valid drill_roots only when configured', () => {
+    piano.videos.practice.drill_roots = ['D', 'A', 'x'];
+    const { store } = make();
+    const [item] = store.enrich([{ id: 'plex:100' }], USER);
+    expect(item.expectation).toEqual({ enforced: true, preschool: false, drillRoots: ['D', 'A'] });
+    delete piano.videos.practice.drill_roots;
+    const [plain] = store.enrich([{ id: 'plex:100' }], USER);
+    expect(plain.expectation).not.toHaveProperty('drillRoots');
+  });
+
   it('a preschool course passes at 3 and owes a gentle drill below it', async () => {
     piano.videos.practice.preschool_courses = ['plex:80'];
     const { store } = make({ judge: fakeJudge({ t1: 3.2, t2: 1.5 }) });

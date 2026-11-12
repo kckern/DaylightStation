@@ -74,7 +74,11 @@ export class YamlUserVideoProgressStore {
   #kioskExpectation(item) {
     const e = this.#expectationFor(item.plex || item.id);
     if (!e) return null;
-    return { enforced: true, preschool: this.#isPreschool(e) };
+    const out = { enforced: true, preschool: this.#isPreschool(e) };
+    const raw = this.#videosConfig().practice?.drill_roots;
+    const roots = Array.isArray(raw) ? raw.filter((r) => typeof r === 'string' && /^[A-G](#|b)?$/.test(r)) : [];
+    if (roots.length) out.drillRoots = roots;
+    return out;
   }
 
   /**
