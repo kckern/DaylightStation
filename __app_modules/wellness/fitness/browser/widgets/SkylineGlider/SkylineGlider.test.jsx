@@ -289,6 +289,12 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '64 0 16 16');
   });
 
+  it('always paints the palette sky beneath the layers', () => {
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...zoned, zone: { ...zoned.zone, layers: [], palette: { sky: '#000000' } } }} assets={assets}/>);
+    expect(container.querySelector('[data-scene-sky]')).toHaveAttribute('fill', 'url(#glider-sky)');
+    expect(container.querySelector('#glider-sky stop')).toHaveAttribute('stop-color', '#000000');
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();

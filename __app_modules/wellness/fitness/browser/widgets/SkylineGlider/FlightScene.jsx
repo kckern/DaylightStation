@@ -348,6 +348,8 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
         <image href={lavaFill.url} width={lavaFill.width} height={lavaFill.height}/>
       </pattern>
     </defs>}
+    {/* The palette sky is always painted first: a zone whose layers do not reach the top still has a sky. */}
+    <rect data-scene-sky="true" width={SCENE_WIDTH} height={SCENE_HEIGHT} fill="url(#glider-sky)"/>
     {layers.filter((layer) => !layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <CourseSegment key={segment.id} segment={segment} zone={zone} assets={assets} time={time}/>)}
