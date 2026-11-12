@@ -9,6 +9,9 @@ export const gentleSubtitle = (rounds) => (rounds === 1 ? 'One quick finger game
 export const DRILL_DONE = 'That counts! Lesson done.';
 export const DRILL_START = 'Start';
 export const DRILL_NOT_NOW = 'Not now';
+export const DRILL_SAVING = 'Saving…';
+export const DRILL_SAVE_FAILED = "That didn't save. Let's try again.";
+export const DRILL_RETRY = 'Try again';
 export const DRILL_UNAVAILABLE = "The warm-up can't load right now. Try again later.";
 
 export const NOT_COUNTED_CHIP = 'Not counted yet';

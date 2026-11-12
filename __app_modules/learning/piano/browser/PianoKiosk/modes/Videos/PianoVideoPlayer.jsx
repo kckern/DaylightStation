@@ -36,6 +36,8 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 const Player = lazy(() => import("../../../../../../media/media/browser/playback.mjs"));
 
 const EMPTY_NOTES = new Map();
+/** How long the end of a lesson waits for the credit answer before ending as before. */
+export const END_POST_DEADLINE_MS = 10000;
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
 export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null, completionThresholdPercent = 90 }) {
@@ -209,7 +211,18 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const endLesson = useCallback((reason, then) => {
     if (endingRef.current) return;
     endingRef.current = true;
-    postNow(reason).then((credit) => {
+    // A stalled post must never strand a finished lesson: past the deadline the
+    // lesson ends as it always has (the server still judges the posts it gets).
+    let timer;
+    const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve('timeout'), END_POST_DEADLINE_MS); });
+    Promise.race([postNow(reason), deadline]).then((credit) => {
+      clearTimeout(timer);
+      endingRef.current = false;
+      if (credit === 'timeout') {
+        getLogger().child({ component: 'piano-lesson-drill' }).warn('piano.lesson-credit.end-post-timeout', { contentId, reason });
+        then();
+        return;
+      }
       if (credit?.outcome === 'drill-owed' && credit.drill) {
         getLogger().child({ component: 'piano-lesson-drill' }).info('piano.lesson-drill.offered', {
           contentId, score: credit.score ?? null, reps: credit.drill.reps, sets: credit.drill.sets,
@@ -226,6 +239,8 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const leave = useCallback(() => {
     const el = mediaElRef.current;
     const pct = el && el.duration > 0 ? (el.currentTime / el.duration) * 100 : 0;
+    // A second Back while the answer is still coming leaves at once.
+    if (endingRef.current) { onBack(); return; }
     if (enforcedRef.current && pct >= completionThresholdPercent) endLesson('close', onBack);
     else onBack();
   }, [completionThresholdPercent, endLesson, onBack]);
@@ -429,6 +444,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
           drill={drill}
           context={{ contentId }}
           onRepPassed={(n) => { practice.setDrillsPassed(n); postNow('drill'); }}
+          confirmLastRep={(n) => {
+            practice.setDrillsPassed(n);
+            return postNow('drill').then((credit) => credit?.outcome === 'credited-after-drills' || credit?.outcome === 'credited');
+          }}
           onComplete={proceed}
           onLeave={() => onBack()}
         />

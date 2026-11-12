@@ -7,6 +7,7 @@ import { createHumanNoteClassifier } from '../../humanNoteClassifier.js';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import {
   DRILL_TITLE, drillSubtitle, gentleSubtitle, DRILL_DONE, DRILL_START, DRILL_NOT_NOW, DRILL_UNAVAILABLE,
+  DRILL_SAVING, DRILL_SAVE_FAILED, DRILL_RETRY,
   GENTLE_CLIMB, GENTLE_ECHO,
 } from './lessonCreditCopy.js';
 import './LessonDrill.scss';
@@ -85,7 +86,12 @@ function GentleRound({ round, onPassed }) {
  * preschool courses get one or two gentle finger games instead. A missed rep
  * is simply played again — no failure state, no score on screen.
  */
-export default function LessonDrill({ drill, onRepPassed, onComplete, onLeave, context = null, variant = 'lesson' }) {
+/**
+ * `confirmLastRep(n)` (optional) → Promise<boolean>: the host saves the last
+ * rep and answers whether the lesson now counts. Only a confirmed save shows
+ * "That counts!"; a refused or failed save offers Try again — never a false yes.
+ */
+export default function LessonDrill({ drill, onRepPassed, onComplete, onLeave, confirmLastRep = null, context = null, variant = 'lesson' }) {
   const checkin = variant === 'checkin';
   const spec = drill?.spec ?? null;
   const gentle = spec?.kind === 'gentle';
@@ -98,10 +104,30 @@ export default function LessonDrill({ drill, onRepPassed, onComplete, onLeave, c
   const passedRef = useRef(0);
   const ctx = useMemo(() => ({ ...(context || {}), kind: gentle ? 'gentle' : 'scales', reps: total }), [context, gentle, total]);
 
-  const finish = useCallback(() => {
+  const markDone = useCallback(() => {
     setPhase('done');
     logger().info('piano.lesson-drill.completed', { ...ctx, passed: passedRef.current });
   }, [ctx]);
+  const confirmRef = useRef(confirmLastRep);
+  confirmRef.current = confirmLastRep;
+  const confirm = useCallback(() => {
+    setPhase('saving');
+    Promise.resolve()
+      .then(() => confirmRef.current(passedRef.current))
+      .then((ok) => {
+        if (ok) { markDone(); return; }
+        logger().warn('piano.lesson-drill.save-refused', { ...ctx, passed: passedRef.current });
+        setPhase('save-failed');
+      })
+      .catch((err) => {
+        logger().warn('piano.lesson-drill.save-failed', { ...ctx, passed: passedRef.current, error: err?.message });
+        setPhase('save-failed');
+      });
+  }, [ctx, markDone]);
+  const finish = useCallback(() => {
+    if (confirmRef.current) confirm();
+    else markDone();
+  }, [confirm, markDone]);
 
   useEffect(() => {
     if (phase !== 'done') return undefined;
@@ -112,8 +138,9 @@ export default function LessonDrill({ drill, onRepPassed, onComplete, onLeave, c
   const bank = useCallback((n) => {
     passedRef.current = n;
     logger().info('piano.lesson-drill.rep-passed', { ...ctx, n });
-    onRepPassed?.(n);
-  }, [ctx, onRepPassed]);
+    // The last rep is saved through confirmLastRep when the host gives one.
+    if (!(n >= total && confirmRef.current)) onRepPassed?.(n);
+  }, [ctx, onRepPassed, total]);
 
   const start = useCallback(async () => {
     logger().info('piano.lesson-drill.started', ctx);
@@ -183,6 +210,20 @@ export default function LessonDrill({ drill, onRepPassed, onComplete, onLeave, c
           {phase === 'intro' && <button type="button" className="lesson-drill__primary" onClick={start}>{DRILL_START}</button>}
           <button type="button" className="lesson-drill__secondary" onClick={leave}>{DRILL_NOT_NOW}</button>
         </div>
+      </section>
+    );
+  }
+
+  if (phase === 'saving' || phase === 'save-failed') {
+    return (
+      <section className="lesson-drill lesson-drill--intro" data-testid="lesson-drill" role="status">
+        <h2 className="lesson-drill__title">{phase === 'saving' ? DRILL_SAVING : DRILL_SAVE_FAILED}</h2>
+        {phase === 'save-failed' && (
+          <div className="lesson-drill__actions">
+            <button type="button" className="lesson-drill__primary" onClick={confirm}>{DRILL_RETRY}</button>
+            <button type="button" className="lesson-drill__secondary" onClick={leave}>{DRILL_NOT_NOW}</button>
+          </div>
+        )}
       </section>
     );
   }

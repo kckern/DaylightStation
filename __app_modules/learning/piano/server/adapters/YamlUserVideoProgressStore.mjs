@@ -164,7 +164,10 @@ export class YamlUserVideoProgressStore {
     if (!wasCompleted && !this.#expectations) {
       if (normalizedPercent >= threshold && nowEngaged) completedAt = new Date().toISOString();
     } else if (!wasCompleted) {
-      judged = this.#decide({ userId, existing, percent: normalizedPercent, threshold, nowEngaged, practice: report, plexId, practiceState });
+      // Judge on the furthest the lesson was ever watched: a rewatch from the
+      // start lowers `percent`, and must never undo a warm-up already owed.
+      const furthest = Math.max(normalizedPercent, Number(existing.furthestPercent) || 0, existing.credit ? threshold : 0);
+      judged = this.#decide({ userId, existing, percent: furthest, threshold, nowEngaged, practice: report, plexId, practiceState });
       const d = judged.decision;
       if (d.outcome !== 'not-watched') {
         credit = {
@@ -202,6 +205,7 @@ export class YamlUserVideoProgressStore {
       engaged: nowEngaged,
       completedAt,
     };
+    if (this.#expectations) entry.furthestPercent = Math.max(normalizedPercent, Number(existing.furthestPercent) || 0);
     if (report || existing.practice) entry.practice = practiceState;
     if (credit) entry.credit = credit;
     // Drop any legacy counter field so entries converge on the boolean.

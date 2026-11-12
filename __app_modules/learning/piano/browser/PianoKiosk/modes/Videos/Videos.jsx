@@ -328,7 +328,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const owedDrill = lecture && !lecture.userWatched && lecture.userCredit?.outcome === 'drill-owed'
     ? lecture.userCredit.drill ?? null : null;
   const postWarmUpRep = useCallback((n) => {
-    if (!lecture || !currentUser || currentUser === 'guest') return;
+    if (!lecture || !currentUser || currentUser === 'guest') return Promise.resolve(null);
     if (!warmSittingRef.current) warmSittingRef.current = `${Date.now().toString(36)}-warm`;
     const duration = Number(lecture.duration) || 0;
     const percent = Number(lecture.userPercent) || 0;
@@ -345,9 +345,15 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
         drillsPassed: n, checkIns: 0, scaleCheckIns: 0, penalties: {},
       },
     });
-    DaylightAPI('api/v1/play/log', payload)
-      .catch((err) => getLogger().child({ component: 'piano-videos' }).warn('piano.lesson-drill.post-failed', { lectureId, error: err?.message }));
+    return DaylightAPI('api/v1/play/log', payload)
+      .then((res) => res?.userProgress?.credit ?? null)
+      .catch((err) => {
+        getLogger().child({ component: 'piano-videos' }).warn('piano.lesson-drill.post-failed', { lectureId, error: err?.message });
+        return null;
+      });
   }, [currentUser, lecture, lectureId]);
+  const confirmWarmUp = useCallback((n) => Promise.resolve(postWarmUpRep(n))
+    .then((credit) => credit?.outcome === 'credited-after-drills' || credit?.outcome === 'credited'), [postWarmUpRep]);
 
   // AFTER every hook above, not beside the cap read at the top of this
   // component: an early return there would skip the rest and break the rules of
@@ -372,7 +378,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   if (owedDrill && reopen === 'warmup') {
     return (
       <div className="piano-video-player piano-video-player--drill">
-        <LessonDrill drill={owedDrill} context={{ contentId: lectureId, reopened: true }} onRepPassed={postWarmUpRep} onComplete={goBack} onLeave={goBack} />
+        <LessonDrill drill={owedDrill} context={{ contentId: lectureId, reopened: true }} onRepPassed={postWarmUpRep} confirmLastRep={confirmWarmUp} onComplete={goBack} onLeave={goBack} />
       </div>
     );
   }

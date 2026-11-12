@@ -180,4 +180,12 @@ describe('progress store: good-faith credit', () => {
     expect(b.expectation).toBeUndefined();
     expect(c.expectation).toEqual({ targetNpm: 10, source: 'ai', preschool: true });
   });
+  it('a rewatch that lowers the stored percent never blocks a warm-up from crediting (review C1)', () => {
+    const { store } = make();
+    expect(store.record({ userId: USER, plexId: '100', percent: 95, engaged: true, practice: practice('s1', 30, 600) }).credit.outcome).toBe('drill-owed');
+    store.record({ userId: USER, plexId: '100', percent: 30, engaged: true, practice: practice('s2', 0, 60) });
+    const done = store.record({ userId: USER, plexId: '100', percent: 30, engaged: true, practice: practice('warm', 0, 0, { drillsPassed: 4 }) });
+    expect(done.credit.outcome).toBe('credited-after-drills');
+    expect(done.completedAt).toBeTruthy();
+  });
 });

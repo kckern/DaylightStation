@@ -92,4 +92,16 @@ describe('PianoVideoPlayer — credit at the end of a lesson', () => {
     await act(async () => { fakeMedia.dispatchEvent(new Event('ended')); });
     expect(onAutoAdvance).toHaveBeenCalledTimes(1);
   });
+  it('a stalled end-of-lesson post never wedges the lesson: it proceeds after the deadline (review I2)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] , shouldAdvanceTime: true });
+    api.fn = vi.fn(() => new Promise(() => {}));
+    const onAutoAdvance = vi.fn();
+    render(<PianoVideoPlayer lecture={lecture} source="Course" onBack={vi.fn()} onAutoAdvance={onAutoAdvance} />);
+    await screen.findByTestId('player-stub');
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    await act(async () => { fakeMedia.dispatchEvent(new Event('ended')); });
+    expect(onAutoAdvance).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(11000); });
+    expect(onAutoAdvance).toHaveBeenCalledTimes(1);
+  });
 });

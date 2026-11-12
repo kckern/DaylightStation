@@ -22,7 +22,7 @@ const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), sampled: vi.fn(), er
 vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => log }) }));
 
 import LessonDrill from './LessonDrill.jsx';
-import { DRILL_TITLE, DRILL_DONE, GENTLE_CLIMB } from './lessonCreditCopy.js';
+import { DRILL_TITLE, DRILL_DONE, GENTLE_CLIMB, DRILL_SAVE_FAILED } from './lessonCreditCopy.js';
 
 const scaleDrill = (sets = 1, reps = 2) => ({
   reps: sets * reps,
@@ -101,5 +101,21 @@ describe('LessonDrill', () => {
     fireEvent.click(screen.getByText('Start'));
     [60, 62, 60, 64, 62].forEach((n, i) => emit({ type: 'note_on', note: n, velocity: 70, time: T0 + i * 400 }));
     expect(onRepPassed).toHaveBeenCalledWith(1);
+  });
+  it('the last rep waits for the server: confirmed → done; refused → retry, never a false "counts" (review I3)', async () => {
+    let answer = false;
+    const confirmLastRep = vi.fn(async () => answer);
+    const onComplete = vi.fn();
+    const drill = { reps: 1, spec: { kind: 'gentle', rounds: [{ type: 'echo', notes: [60, 64, 62] }] } };
+    render(<LessonDrill drill={drill} onRepPassed={vi.fn()} confirmLastRep={confirmLastRep} onComplete={onComplete} onLeave={vi.fn()} />);
+    fireEvent.click(screen.getByText('Start'));
+    [60, 64, 62].forEach((n, i) => emit({ type: 'note_on', note: n, velocity: 70, time: T0 + i * 400 }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(confirmLastRep).toHaveBeenCalledWith(1);
+    expect(screen.queryByText(DRILL_DONE)).toBe(null);
+    expect(screen.getByText(DRILL_SAVE_FAILED)).toBeTruthy();
+    answer = true;
+    await act(async () => { fireEvent.click(screen.getByText('Try again')); await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByText(DRILL_DONE)).toBeTruthy();
   });
 });
