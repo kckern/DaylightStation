@@ -3,6 +3,7 @@ import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {FitnessContext} from '../../../__app_modules/wellness/fitness/browser/context/FitnessContext.jsx';
 import {IdentityContext} from '../../../__app_modules/wellness/fitness/browser/identity/IdentityProvider.jsx';
+import { VolumeProvider } from '../../../__app_modules/wellness/fitness/browser/nav/VolumeProvider.jsx';
 import SkylineGlider from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineGlider.jsx';
 import {createSelectorInputRouter} from '../../../__app_modules/wellness/fitness/browser/lib/selectorInputRouter.js';
 import {dispatchRiderSelection} from '../../../__app_modules/wellness/fitness/browser/lib/riderSelection.js';
@@ -32,6 +33,6 @@ function Fixture(){
  const ctx={equipment,riderSelectors:selectors,selectorInputRouter:router,fitnessSessionInstance:session,users,
   getDisplayName:id=>({displayName:users.find(u=>u.id===id)?.name||id}),
   getUserByName:id=>({id,schoolLearner:gated&&id==='test-child'}),setGovernanceSuspended:()=>{}};
- return <FitnessContext.Provider value={ctx}><IdentityContext.Provider value={identity}><SkylineGlider/></IdentityContext.Provider></FitnessContext.Provider>;
+ return <FitnessContext.Provider value={ctx}><IdentityContext.Provider value={identity}><VolumeProvider><SkylineGlider/></VolumeProvider></IdentityContext.Provider></FitnessContext.Provider>;
 }
 createRoot(document.getElementById('root')).render(<Fixture/>);

@@ -1,6 +1,12 @@
 // Skyline Glider sound. A zone may name a file for every cue and loop; a cue
 // with no decodable file (missing, empty placeholder, bad format) falls back to
 // a synthesized tone, so populating a sound is a file drop with no code change.
+//
+// Every voice (cue files, music, wind, synth tones, the drone) ends on ONE
+// output gain = fitness master volume x mute. The level comes from the shared
+// fitness volume store (usePersistentVolume fitness/global/video, the same
+// level the sidebar volume buttons and the Cycle Game drive) via setVolume();
+// the in-game sound toggle is setMuted(). Loops sit below cues (LOOPS gains).
 
 const CUE_FREQUENCIES = Object.freeze({
   bell: 880,
@@ -19,7 +25,8 @@ const CUE_FREQUENCIES = Object.freeze({
   hurt: 160,
   deny: 200,
 });
-const LOOPS = Object.freeze({ wind: 0.35, music: 0.5 });
+// Loops play under the cues: music about -6 dB, wind about -12 dB below a cue.
+const LOOPS = Object.freeze({ wind: 0.25, music: 0.5 });
 const SYNTH_GAIN = 0.05;
 const SAMPLE_GAIN = 0.8;
 
@@ -36,20 +43,29 @@ export function createSkylineAudio({
   const loops = new Map();
   let buffers = new Map();
   let muted = false;
+  let volume = 1;
+  let output = null;
+
+  const clampLevel = (value) => (Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1);
+  const outputLevel = () => (muted ? 0 : volume);
 
   const ensure = () => {
     if (context || !AudioContextCtor) return !!context;
     try {
       context = new AudioContextCtor();
+      output = context.createGain();
+      output.gain.value = outputLevel();
+      output.connect(context.destination);
       master = context.createGain();
       master.gain.value = SYNTH_GAIN;
-      master.connect(context.destination);
+      master.connect(output);
       samples = context.createGain();
       samples.gain.value = SAMPLE_GAIN;
-      samples.connect(context.destination);
+      samples.connect(output);
       return true;
     } catch {
       context = null;
+      output = null;
       master = null;
       samples = null;
       return false;
@@ -132,7 +148,7 @@ export function createSkylineAudio({
       }
     },
     playCue(cue) {
-      if (muted || !ensure() || context.state !== 'running' || !CUE_FREQUENCIES[cue]) return false;
+      if (muted || volume <= 0 || !ensure() || context.state !== 'running' || !CUE_FREQUENCIES[cue]) return false;
       try {
         if (buffers.has(cue)) {
           playBuffer(buffers.get(cue));
@@ -149,9 +165,15 @@ export function createSkylineAudio({
     },
     setMuted(nextMuted) {
       muted = !!nextMuted;
-      if (!ensure()) return;
-      master.gain.value = muted ? 0 : SYNTH_GAIN;
-      samples.gain.value = muted ? 0 : SAMPLE_GAIN;
+      if (output) output.gain.value = outputLevel();
+    },
+    /** Fitness master volume, 0..1 (already 0 when the store is muted). */
+    setVolume(level) {
+      volume = clampLevel(level);
+      if (output) output.gain.value = outputLevel();
+    },
+    getLevels() {
+      return { volume, muted, output: outputLevel() };
     },
     stop() {
       if (drone) stopNode(drone);

@@ -89,4 +89,85 @@ describe('Skyline audio', () => {
     expect(audio.playCue('explosion')).toBe(true);
     expect(oscillator.frequency.value).toBe(90);
   });
+
+  // A tiny Web Audio graph: every node remembers what it feeds, so a test can
+  // walk any voice to the destination and multiply the gains on the way.
+  const graphContext = () => {
+    const destination = { name: 'destination' };
+    const node = (extra = {}) => {
+      const n = { out: null, connect: vi.fn((to) => { n.out = to; }), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn(), ...extra };
+      return n;
+    };
+    const created = { sources: [], oscillators: [] };
+    const context = {
+      state: 'running', destination, currentTime: 0, resume: vi.fn(),
+      createGain: vi.fn(() => node({ gain: { value: 1 } })),
+      createOscillator: vi.fn(() => { const o = node({ type: '', frequency: { value: 0 } }); created.oscillators.push(o); return o; }),
+      createBufferSource: vi.fn(() => { const b = node({ buffer: null, loop: false }); created.sources.push(b); return b; }),
+      decodeAudioData: vi.fn(async () => ({ duration: 1 })),
+    };
+    const levelOf = (voice) => {
+      let level = 1;
+      let at = voice.out;
+      while (at && at !== destination) { level *= at.gain ? at.gain.value : 1; at = at.out; }
+      return at === destination ? level : NaN;
+    };
+    return { context, created, levelOf };
+  };
+  const filesFetch = (slots) => vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
+
+  it('scales file cues, music, wind and synth tones by the one fitness master volume', async () => {
+    const { createSkylineAudio } = await import("./skylineAudio.js");
+    const { context, created, levelOf } = graphContext();
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; }, fetchImpl: filesFetch() });
+    audio.setVolume(0.5); // applied before the context exists
+    await audio.prime();
+    await audio.loadSounds({ bell: '/bell.mp3', music: '/music.ogg', wind: '/wind.ogg' });
+    audio.startWind();
+    audio.playCue('bell');
+    audio.playCue('crash'); // no file -> synth tone
+    const [music, wind] = [created.sources.find((s) => s.loop && levelOf(s) > 0.15), created.sources.find((s) => s.loop && levelOf(s) <= 0.15)];
+    const bell = created.sources.find((s) => !s.loop);
+    const tone = created.oscillators[0];
+    const before = [bell, music, wind, tone].map(levelOf);
+    expect(before.every((v) => v > 0)).toBe(true);
+
+    audio.setVolume(0.25);
+    const after = [bell, music, wind, tone].map(levelOf);
+    after.forEach((v, i) => expect(v).toBeCloseTo(before[i] / 2, 6));
+  });
+
+  it('keeps music and wind well below cues', async () => {
+    const { createSkylineAudio } = await import("./skylineAudio.js");
+    const { context, created, levelOf } = graphContext();
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; }, fetchImpl: filesFetch() });
+    await audio.prime();
+    await audio.loadSounds({ bell: '/bell.mp3', music: '/music.ogg', wind: '/wind.ogg' });
+    audio.startWind();
+    audio.playCue('bell');
+    const cue = levelOf(created.sources.find((s) => !s.loop));
+    const loops = created.sources.filter((s) => s.loop).map(levelOf);
+    expect(loops).toHaveLength(2);
+    loops.forEach((level) => expect(level).toBeLessThanOrEqual(cue / 2));
+  });
+
+  it('silences every voice -- loops included -- at volume 0 or on mute, and skips new cues', async () => {
+    const { createSkylineAudio } = await import("./skylineAudio.js");
+    const { context, created, levelOf } = graphContext();
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; }, fetchImpl: filesFetch() });
+    await audio.prime();
+    await audio.loadSounds({ music: '/music.ogg' });
+    audio.startWind(); // music file + synth drone
+    const voices = [...created.sources, ...created.oscillators];
+    expect(voices).toHaveLength(2);
+    audio.setVolume(0);
+    voices.forEach((v) => expect(levelOf(v)).toBe(0));
+    expect(audio.playCue('bell')).toBe(false);
+    audio.setVolume(0.8);
+    voices.forEach((v) => expect(levelOf(v)).toBeGreaterThan(0));
+    audio.setMuted(true);
+    voices.forEach((v) => expect(levelOf(v)).toBe(0));
+    expect(audio.getLevels()).toEqual({ volume: 0.8, muted: true, output: 0 });
+  });
 });
+

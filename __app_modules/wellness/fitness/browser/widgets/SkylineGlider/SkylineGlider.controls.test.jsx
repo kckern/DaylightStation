@@ -14,6 +14,8 @@ const gateMocks = vi.hoisted(() => ({
   registerAdmin: vi.fn(),
   clearUnlock: vi.fn(),
 }));
+const mockVolume = { volume: 0.4, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() };
+vi.mock("../../nav/usePersistentVolume.js", () => ({ usePersistentVolume: () => mockVolume }));
 vi.mock("../../context/FitnessContext.jsx", () => ({ useFitnessContext: () => mockCtx }));
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => mockLog }) }));
 vi.mock('@/lib/kioskEnv.js', () => ({
@@ -109,6 +111,14 @@ async function mount(options={}){
 }
 async function launch(){await press(4);await advance(4250);await advance(100)}
 describe('complete bike lifecycle',()=>{
+ it('drives game audio from the shared fitness volume store, mute included',async()=>{
+  mockVolume.volume=0.4;mockVolume.muted=false;mockLog.info.mockClear();
+  const view=await mount();
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({volume:0.4,storeMuted:false,output:0.4}));
+  mockVolume.muted=true;view.rerender(<SkylineGlider/>);await flush();
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({storeMuted:true,output:0}));
+  mockVolume.muted=false;
+ });
  it('preserves the exact pending terminal record when a selector is replaced',async()=>{
   const view=await mount();await launch();await press(4,'long');
   apiFetch.mockResolvedValue({ok:false,status:503});await press(3);await flush();
