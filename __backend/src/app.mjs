@@ -309,8 +309,6 @@ import { ContentAccessService } from "../../__capabilities/content-catalog/serve
 import { DataServiceAuthAccountRepository } from '#adapters/auth/DataServiceAuthAccountRepository.mjs';
 import { NodeAuthenticationPrimitives } from '#adapters/auth/NodeAuthenticationPrimitives.mjs';
 import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
-import { createCrossOriginIsolationMiddleware } from '#api/middleware/platformHttp.mjs';
-import { resolveCrossOriginIsolationPolicy } from '#shared/contracts/crossOriginIsolation.mjs';
 import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
 import { permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
@@ -531,28 +529,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // boundary. See the comment there.
   app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 
-  // Cross-origin isolation (SharedArrayBuffer -> TF.js WASM threads) for the
-  // Fitness documents only. Until 2026-11 these two headers went out on EVERY
-  // response; they are now scoped by path and switchable from the fitness
-  // household config (`cross_origin_isolation`) or DAYLIGHT_CROSS_ORIGIN_ISOLATION.
-  // The policy is resolved per request so `/system/reload?app=fitness` applies
-  // a config change without a restart.
-  // See __docs/reference/fitness/pose-detector-runtime.md.
-  const crossOriginIsolationPolicy = () => resolveCrossOriginIsolationPolicy(
-    configService.getHouseholdAppConfig(null, 'fitness'),
-    process.env
-  );
-  // rootLogger is declared further down, and never initialized at all on the
-  // "not configured" early return — so reach for it lazily and tolerate its
-  // absence rather than turn a logging attempt into a failed request.
-  app.use(createCrossOriginIsolationMiddleware({
-    getPolicy: crossOriginIsolationPolicy,
-    logger: {
-      warn: (event, data) => {
-        try { rootLogger.warn(event, data); } catch { /* logger not ready */ }
-      },
-    },
-  }));
+  // Enable SharedArrayBuffer for TF.js WASM multi-threaded SIMD
+  app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+    next();
+  });
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -598,12 +580,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     app: 'api',
     context: { env: process.env.NODE_ENV }
   });
-
-  try {
-    rootLogger.info('http.cross_origin_isolation.configured', crossOriginIsolationPolicy());
-  } catch (error) {
-    rootLogger.warn('http.cross_origin_isolation.policy_failed', { error: error.message });
-  }
 
   // ==========================================================================
   // Auth System
