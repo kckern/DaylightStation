@@ -5,6 +5,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import SkylineInvaders from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineInvaders/SkylineInvaders.jsx';
+import { VolumeProvider } from '../../../__app_modules/wellness/fitness/browser/nav/VolumeProvider.jsx';
 import { KP } from '../../../__app_modules/wellness/fitness/browser/lib/skylineInvaders/aim.js';
 
 // A BlazePose pose for the shoot script: shoulders 120 px apart, both wrists
@@ -21,5 +22,6 @@ window.__si.pose = (wristDx = 0, wristY = 200) => {
 };
 window.__si.feed = (wristDx, wristY) => window.__si.tracker.processPoses([window.__si.pose(wristDx, wristY)]);
 
-createRoot(document.getElementById('root')).render(<SkylineInvaders />);
+// The game's own volume lives in the fitness volume store, as in FitnessApp.
+createRoot(document.getElementById('root')).render(<VolumeProvider><SkylineInvaders /></VolumeProvider>);
 document.body.dataset.harnessReady = 'true';

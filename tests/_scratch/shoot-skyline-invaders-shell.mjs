@@ -1,7 +1,7 @@
 // Screenshots the real Skyline Invaders shell (lobby, calibration, round,
 // pause, result, fallbacks) from the backend-free harness, at the garage TV's
 // size and at the size its kiosk actually lays out (devicePixelRatio ~1.05).
-//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=lobby,calibration] [VIEWPORTS=1920x1080,1824x1026] [BROWSER=chromium] node tests/_scratch/shoot-skyline-invaders-shell.mjs
+//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=lobby,calibration] [VIEWPORTS=1920x1080,1824x1026] [BROWSER=chromium] [DPR=1.39] node tests/_scratch/shoot-skyline-invaders-shell.mjs
 // Starts nothing: run the harness server first (vite --config tests/_scratch/skyline-invaders-harness/vite.harness.config.mjs).
 // The page clock is installed, so a 30 s round takes a moment and every shot is repeatable.
 // Exits 1 on a page error, a console error, a failed request, or a control or
@@ -90,6 +90,13 @@ const SHOTS = {
   'in-game-camera-denied': { query: 'pose=camera-denied', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 4000); await page.keyboard.press('Space'); await run(page, 250); } },
   'in-game-pose-lost': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await hold(page, -60, 2500); await run(page, 1500); } },
   paused: { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 4); await click(page, 'Pause'); await phase(page, 'paused'); } },
+  // The Sound sheet: from the lobby's "more" button, and mid-round (it pauses first).
+  'lobby-sound': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, 'Sound and settings'); await page.waitForSelector('[data-testid="skyline-invaders-sound"]'); } },
+  'round-sound-muted': { query: 'pose=detecting&partner=1&zone=hot', go: async (page) => {
+    await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 3);
+    await click(page, 'Sound and settings'); await phase(page, 'paused'); await page.evaluate(() => { window.__si.bike('1_single'); window.__si.bike('4_single'); }); await run(page, 200);
+  } },
+  'paused-by-bike': { query: 'pose=detecting&partner=1', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); } },
   'result-fell-short': { query: 'pose=camera-denied', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
   'result-held': { query: 'pose=detecting&zone=hot', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 31); await run(page, 1500); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
   'result-not-saved': { query: 'pose=camera-denied&save=fail', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="error"]'); } },
@@ -106,7 +113,7 @@ const audit = (page) => page.evaluate(() => {
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0;
   };
   const box = (node) => { const r = node.getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) }; };
-  const menus = [...root.querySelectorAll('.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice')];
+  const menus = [...root.querySelectorAll('.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice, .skyline-invaders__sound')];
   const texts = menus.flatMap((menu) => [...menu.querySelectorAll('*')])
     .filter((node) => node.children.length === 0 && node.textContent.trim() && visible(node) && !node.closest('[aria-hidden="true"]'))
     .map((node) => ({ text: node.textContent.trim().slice(0, 60), px: Math.round(parseFloat(getComputedStyle(node).fontSize)), ...box(node) }));
@@ -119,7 +126,7 @@ let failed = false;
 for (const [width, height] of viewports) {
   for (const [name, shot] of Object.entries(SHOTS)) {
     if (only.length && !only.some((o) => name.startsWith(o))) continue;
-    const page = await browser.newPage({ viewport: { width, height } });
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: Number(process.env.DPR || 1) });
     const problems = [];
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error' && !/503|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text()}`); });

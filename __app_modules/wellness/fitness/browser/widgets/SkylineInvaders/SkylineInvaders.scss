@@ -183,11 +183,13 @@
 .skyline-invaders__hud-number { white-space: nowrap; }
 .skyline-invaders__hud-number[data-passed="true"] { color: var(--si-pass); }
 
-.skyline-invaders__hud-time { justify-self: center; font-size: 4.5rem; letter-spacing: 0.02em; }
+// The clock with the score beside it, centred as one group in the middle column.
+.skyline-invaders__hud-centre { grid-column: 2; display: flex; align-items: center; gap: 1.5rem; }
+.skyline-invaders__hud-time { font-size: 4.5rem; letter-spacing: 0.02em; }
 .skyline-invaders__hud-time[data-urgent="true"] { color: var(--si-danger); }
 
-// The score sits just right of the clock; the tier and boost take the far right.
-.skyline-invaders__hud-points { position: absolute; left: calc(50% + 7.5rem); top: 1.5rem; height: 4.5rem; display: flex; align-items: center; gap: 1rem; }
+// The tier and boost take the far right.
+.skyline-invaders__hud-points { display: flex; align-items: center; gap: 1rem; }
 .skyline-invaders__hud-score { color: var(--si-ink-dim); }
 .skyline-invaders__hud-combo { padding: 0.15rem 0.7rem; border-radius: 0.5rem; color: var(--si-night); background: var(--si-tier-big); text-shadow: none; }
 
@@ -215,6 +217,18 @@
   &:not([data-boost="filling"]) { color: var(--si-night); background: var(--si-boost); text-shadow: none; box-shadow: none; --game-hud-live: var(--si-night); --game-hud-track: var(--si-boost-track); }
 }
 .skyline-invaders__hud-boost-label { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; font-size: 1.9rem; white-space: nowrap; }
+
+// The garage display lays out at 1381 css px, where the bar at its full
+// widths does not fit: the kill tally ran under the clock and the score under
+// the tier (2026-11-12). There a side never gets less than it holds (the
+// clock stays centred whenever both sides fit), and the meters are narrower -- the ten
+// base blocks and the boost bar stay, nothing is dropped or made smaller to read.
+@media (max-width: 1600px) {
+  .skyline-invaders__hud { grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); column-gap: 1.5rem; padding-left: 1.75rem; padding-right: 1.75rem; }
+  .skyline-invaders__hud-left { gap: 1.5rem; }
+  .skyline-invaders .skyline-invaders__hud-base-meter { width: 9rem; }
+  .skyline-invaders__hud-boost { width: 13.5rem; }
+}
 
 // Notes are kit MomentBanners; these selectors out-specify the kit's so the
 // look does not depend on stylesheet order. They sit in the empty strip under
@@ -344,7 +358,6 @@
   span { display: block; width: 0.8rem; height: 2.2rem; background: var(--si-ink); }
   &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
 }
-.skyline-invaders.skyline-invaders--playing .skyline-invaders__hud-note--tier { right: 9.5rem; }
 
 // Pause and result sit over the round they belong to, so they are centred on it.
 .skyline-invaders__pause, .skyline-invaders__result {
@@ -376,3 +389,68 @@
 
 // Loading and load errors: one message in the middle of the sky.
 .skyline-invaders__notice { justify-content: center; padding-bottom: 14rem; p[role="alert"], p[role="status"] { font-size: 2.6rem; color: var(--si-ink-dim); } .skyline-invaders__how { margin-top: 0; } }
+
+// ── Sound ───────────────────────────────────────────────────────────────────
+// The touch "more" button opens the Sound sheet. In a round it sits beside
+// Pause in the strip under the street (the heart-rate note moves over for
+// both); on a menu screen it sits in the top-right corner, above the screen.
+.skyline-invaders__more {
+  --sg-icon-px: 0.25rem;
+  position: absolute; z-index: 9; top: 2.2rem; right: 2.5rem;
+  display: grid; place-items: center;
+  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0.8rem; cursor: pointer;
+  color: var(--si-ink); background: var(--si-night); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
+  // In a round: the strip under the street, beside Pause (or in its place while paused).
+  &.is-round { z-index: 7; top: auto; bottom: 1.1rem; right: 9rem; }
+  &.is-paused { top: auto; bottom: 1.1rem; }
+  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
+}
+.skyline-invaders.skyline-invaders--playing .skyline-invaders__hud-note--tier { right: 16rem; }
+
+// The pixel icons are Skyline Glider's (SkylinePixelIcons): drawn here in this
+// game's colours, whatever else is loaded.
+.skyline-invaders {
+  .sg-icon--inline { display: block; flex: none; width: calc(var(--w) * var(--sg-icon-px, 3px)); height: calc(var(--h) * var(--sg-icon-px, 3px)); }
+  .sg-icon__body { fill: currentColor; }
+  .sg-icon__ink { fill: none; }
+  .sg-icon__lit { fill: var(--si-night); }
+}
+
+// The sheet covers the screen it was opened over, solid: that screen stays
+// mounted underneath and must not show through.
+.skyline-invaders__sound {
+  position: absolute; z-index: 9; inset: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 2rem;
+  padding: 3rem 4.5rem 6rem;
+  color: var(--si-ink); font-size: 2rem; line-height: 1.25;
+  background: var(--si-night);
+  h1 { margin: 0; font-size: 4.4rem; font-weight: 800; line-height: 1.05; }
+  .skyline-invaders__how { margin-top: 0; }
+}
+.skyline-invaders__readout {
+  --sg-icon-px: 0.45rem;
+  display: flex; align-items: center; gap: 1.2rem;
+  color: var(--si-window); font-size: 3.4rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+  &[data-muted] { color: var(--si-danger); }
+}
+// The house touch strip (11 keys, 0 = off) in this game's colours, every key solid.
+.skyline-invaders__volume {
+  width: min(100%, 92rem);
+  .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 0.5rem; width: 100%; }
+  .touch-volume-button {
+    height: 7rem; padding: 0; border: 0; border-radius: 0.5rem; cursor: pointer; color: transparent;
+    background: #232c63; box-shadow: inset 0 -0.4rem 0 0 #141a40;
+    &.on { background: var(--si-window); box-shadow: inset 0 -0.4rem 0 0 #b88a2e; }
+    &:first-child { background: var(--si-night); box-shadow: inset 0 0 0 0.3rem var(--si-danger); }
+    &:first-child.active { background: var(--si-danger); box-shadow: none; }
+    &.active:not(:first-child) { box-shadow: inset 0 0 0 0.35rem var(--si-ink); }
+  }
+}
+
+// The garage lays out 777 css px tall: the 14rem kept clear under the pause
+// and result windows pushed the result's title off the top (2026-11-12).
+@media (max-height: 820px) {
+  .skyline-invaders__pause, .skyline-invaders__result { padding-bottom: 3rem; }
+  // The lobby: the same content, less air between the rows.
+  .skyline-invaders__lobby { padding-top: 2.2rem; gap: 1.2rem; }
+}

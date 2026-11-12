@@ -150,10 +150,14 @@ export default function InvadersLobby({
       </ol>
 
       <div className="skyline-invaders__crew">
-        <p className="skyline-invaders__crew-line" data-testid="invaders-shooter">
-          <span>Shooter</span>
-          <b>{shooter ? shooter.name : 'Nobody yet'}</b>
-        </p>
+        {/* With nobody on the mat the picker below asks the question; a
+            "Nobody yet" line above it only cost the garage screen a row. */}
+        {shooter && (
+          <p className="skyline-invaders__crew-line" data-testid="invaders-shooter">
+            <span>Shooter</span>
+            <b>{shooter.name}</b>
+          </p>
+        )}
         {partner && (
           <p className="skyline-invaders__crew-line" data-testid="invaders-partner">
             <span>Boost partner</span>
@@ -164,17 +168,17 @@ export default function InvadersLobby({
         {!mat && <p className="skyline-invaders__crew-note" role="status">No step mat found — fire with the gamepad or Space</p>}
       </div>
 
-      {picking && (
+      {/* While picking, the names and the lobby's own action share one row:
+          stacked, they ran off the bottom of the garage's 777 px screen. */}
+      {picking ? (
         <div className="skyline-invaders__picker" role="group" aria-label="Who is shooting?">
           <h2>Who is shooting?</h2>
-          <div className="skyline-invaders__actions">{people.map(button)}</div>
           {!people.length && <p role="status">Nobody is in the session yet. Join the workout first.</p>}
+          <div className="skyline-invaders__actions skyline-invaders__actions--lobby">{actions.map(button)}</div>
         </div>
+      ) : (
+        <div className="skyline-invaders__actions skyline-invaders__actions--lobby">{actions.map(button)}</div>
       )}
-
-      <div className="skyline-invaders__actions skyline-invaders__actions--lobby">
-        {actions.filter((action) => !people.includes(action)).map(button)}
-      </div>
       <p className="skyline-invaders__how">
         {`Tap a button, press any key, or A on the gamepad.${open.length > 1 ? ' Left and right change the level.' : ''}${handsFree ? ' Or hold both arms straight out to your sides.' : ''}`}
       </p>

@@ -26,6 +26,9 @@ vi.mock('../../context/PoseContext.jsx', () => ({ PoseProvider: ({ children }) =
 vi.mock('./InvadersPoseBridge.jsx', () => ({ default: (props) => { h.bridge = props; return null; } }));
 vi.mock('../../lib/skylineGlider/skylineAudio.js', () => ({ createSkylineAudio: () => h.audio }));
 vi.mock('../../lib/useGamepadKeys.js', () => ({ useGamepadKeys: () => {} }));
+// The game's own volume lives in the fitness volume store (VolumeProvider);
+// these suites are not about it (SkylineInvaders.sound.test.jsx is).
+vi.mock('../../nav/usePersistentVolume.js', () => ({ usePersistentVolume: () => ({ volume: 0.6, muted: false, source: 'global', setVolume: () => {}, toggleMute: () => {} }) }));
 
 import SkylineInvaders from './SkylineInvaders.jsx';
 import { manifest } from './index.jsx';
@@ -89,7 +92,7 @@ beforeEach(() => {
   h.clearUnlock = vi.fn();
   h.audio = {
     loadSounds: vi.fn(async () => ({ loaded: [], missing: [] })), prime: vi.fn(async () => true),
-    playCue: vi.fn(() => true), setMuted: vi.fn(), stop: vi.fn(),
+    playCue: vi.fn(() => true), setMuted: vi.fn(), setVolume: vi.fn(), stop: vi.fn(),
   };
 });
 // Unmount while the fake clock is still in place, so every cleanup runs against it.

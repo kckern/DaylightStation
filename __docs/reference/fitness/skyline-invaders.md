@@ -74,6 +74,18 @@ A second rider on a connected bike (anyone but the shooter) fills the boost mete
 
 One key meaning on every menu (`menuKeys.js`): arrows move, any plain key or gamepad A accepts, Escape or B goes back. Digits 1–6 are never acted on, because the garage kiosk's OS binds them.
 
+### Sound
+
+Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the track `fitness-game-skyline-invaders/global/game` in the fitness volume store), never the video level and never full gain. The stored value is the output gain itself (curve applied once); an unset track plays at level 60 (0.158). Every voice -- cue files, the music loop, synth tones -- ends on the one output gain of the shared Skyline audio engine, 0 when muted. See `nav/gameVolumeModel.js`.
+
+The **Sound sheet** (`InvadersSoundSheet.jsx`, its body the shared `SkylineGlider/GameSoundSheet.jsx`) shows the level, the house touch volume strip (11 keys, 0 = off, no slider) and Back / Quieter / Louder / Mute. It opens from:
+
+- **Touch:** the "more" button (three dots) -- top right on the lobby, pause and result screens; beside Pause in a round. Mid-round it pauses first and Back lands on the pause screen.
+- **Keys, foot pad, gamepad:** Sound on the pause screen. In the sheet Back has the focus, so a stray foot-pad press only closes it; Escape or B goes back.
+- **Bike buttons:** hold 4 in a round to pause; on the pause screen 1 resumes, 2 opens Sound, 3 ends the round; in the sheet 1 quieter, 2 louder, 3 back, 4 mute. Elsewhere (lobby, result, a single press mid-round) the bike's buttons stay with rider selection.
+
+A workout resume never restarts the round under an open sheet.
+
 ## Threats
 
 Scene units, 1000 × 600, ground at y = 540.
@@ -154,7 +166,7 @@ media: fitness/skyline-invaders/sounds/<slot>.mp3
 
 Level files and `world.yml` are read on every request, so an edit shows on the next lobby load with no restart.
 
-Sound slots: `laser`, `missile`, `hit`, `target`, `explosion`, `crash` (the nuke rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, unchanged.
+Sound slots: `laser`, `missile`, `hit`, `target`, `explosion`, `crash` (the nuke rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, at the game's own volume (see Sound).
 
 A run record carries `run` (`id`, `level_id`, `started_at`, `ended_at`, `status`, `duration_s`, `score`, `kills`, `stars`, `base_hp`, `shots_fired`, `hits`, `best_combo`, `nukes`, `boosts_used`, `reward_rings`, optional `fitness_session_id`, `mat_equipment_id`, `partner_id`), `rider.user_id`, and an embedded `gaming-result/v1` block, where a failed round is a completed session with a `loss` outcome.
 
@@ -224,6 +236,9 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.round.saved` / `.round.save_error` | `status`, `retried` / `error` | |
 | `.reward.awarded` / `.reward.skipped` | `rings`, `stars` / `reason` | |
 | `.boost.partner` | partner bike and rider, `when` | |
+| `.audio.volume` | `level`, `muted`, `isDefault`, `output` | on mount and every change; `output` is the gain every voice ends on |
+| `.settings.opened` / `.settings.closed` | `phase`, `source` (`touch`, `pause-menu`, `bike`) / `level`, `muted` | the Sound sheet |
+| `.audio.level_set` / `.audio.mute_toggled` | `level` / `muted`, `control` (`touch`, `sheet`, `bike`) | |
 | `.access.verdict`, `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied` | `riderId`, `reason`, `adminUserId` | |
 | `.progress.unlock_requested` / `_granted` / `_denied` / `_error` | `riderId`, `levelId`, `adminUserId`, `reason`, `error` | |
 

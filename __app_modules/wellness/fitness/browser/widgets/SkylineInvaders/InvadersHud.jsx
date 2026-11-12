@@ -108,11 +108,14 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
         </div>
       </div>
 
-      <span className="skyline-invaders__hud-time" data-testid="invaders-time" data-urgent={urgent}>{formatClock(remaining)}</span>
-
-      <div className="skyline-invaders__hud-points">
-        <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
-        {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Combo ${state.combo}`}>{`×${state.combo}`}</span>}
+      {/* The clock and the score as one centred group, so the score never runs
+          under the tier and boost on the far right (1381 px garage, 2026-11-12). */}
+      <div className="skyline-invaders__hud-centre">
+        <span className="skyline-invaders__hud-time" data-testid="invaders-time" data-urgent={urgent}>{formatClock(remaining)}</span>
+        <div className="skyline-invaders__hud-points">
+          <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
+          {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Combo ${state.combo}`}>{`×${state.combo}`}</span>}
+        </div>
       </div>
 
       <div className="skyline-invaders__hud-right">
