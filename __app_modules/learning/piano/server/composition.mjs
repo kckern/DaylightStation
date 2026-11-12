@@ -16,9 +16,11 @@ import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
 import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
 import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
+import { JudgeNoteBurst } from './application/JudgeNoteBurst.mjs';
+import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
-export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection}) {
+export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection, legitDecisionGateway = null}) {
   const pianoStudioDatastore = new YamlPianoStudioDatastore({
     configService,
     userService,
@@ -174,6 +176,16 @@ export async function createPianoModule({configService, userService, rootLogger,
     config: () => configService.getHouseholdAppConfig(null, 'piano')?.pianoChallenge ?? {},
     timezone: configService.getTimezone?.() || null,
   });
+  // Legitimacy judge (advisory, async; off until videos.practice.legit_model).
+  // `legitDecisionGateway` arrives scoped to { app: 'piano', feature: 'lesson-legit-notes' }.
+  const judgeNoteBurst = contentServices?.legitJudgements ? new JudgeNoteBurst({
+    decisionGateway: legitDecisionGateway,
+    cache: contentServices.legitJudgements,
+    enabled: () => configService.getHouseholdAppConfig?.(null, 'piano')?.videos?.practice?.legit_model === true,
+    timeoutMs: 8000,
+    scheduler: new NodeAsyncScheduler(),
+    logger: rootLogger.child({ module: 'piano-lesson-legit' }),
+  }) : null;
   const router = createPianoRouter({
     pianoContainer,
     // LATE-BOUND on purpose. `schoolLearnerDirectory` is constructed a little
@@ -196,6 +208,8 @@ export async function createPianoModule({configService, userService, rootLogger,
       ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
       : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
     exerciseBank,
+    lessonSittingLog: contentServices?.lessonSittingLog ?? null,
+    judgeNoteBurst,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 

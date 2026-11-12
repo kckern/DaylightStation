@@ -297,6 +297,18 @@ export function createPracticeMeter(options = {}) {
       }
       return finishTally(closed.humanNotes + open.length, practice, penalties);
     },
+    /**
+     * Take back events of the OPEN stretch (and the since() window) that turn
+     * out to be machine — the rhythm loop is only recognised ~20 s after it
+     * starts, and it streams without a 2 s gap, so its notes are all still
+     * in the open stretch. Returns how many were removed.
+     */
+    retract(predicate) {
+      const before = open.length;
+      open = open.filter((e) => !predicate(e));
+      all = all.filter((e) => !predicate(e));
+      return before - open.length;
+    },
     /** Events added at or after tMs (most recent ~400 kept). */
     since(tMs) {
       return all.filter((e) => e.t >= tMs);

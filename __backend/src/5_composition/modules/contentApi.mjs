@@ -23,6 +23,9 @@ import { ContentAlternatesService } from "../../../../__capabilities/content-cat
 import { checkSchedule } from "../../../../__capabilities/device-dispatch/server/application/scheduleCheck.mjs";
 
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from "../../../../__app_modules/learning/piano/server/adapters/YamlUserVideoProgressStore.mjs";
+import { JsonLessonExpectationStore, lessonExpectationDirFor } from "../../../../__app_modules/learning/piano/server/adapters/JsonLessonExpectationStore.mjs";
+import { YamlLessonSittingLog } from "../../../../__app_modules/learning/piano/server/adapters/YamlLessonSittingLog.mjs";
+import { InMemoryLegitJudgementCache } from "../../../../__app_modules/learning/piano/server/adapters/InMemoryLegitJudgementCache.mjs";
 
 import { validateSearchQuery } from "../../../../__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs";
 
@@ -65,7 +68,17 @@ export function createApiRouters(config) {
 
   // Per-user video course progress store (piano kiosk). Injected into the play
   // router (write side, via /play/log) and exposed for the piano router (read side).
-  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger });
+  // Per-lesson "how much playing does this lesson ask for" records (nightly job).
+  const lessonExpectations = configService?.getDataDir
+    ? new JsonLessonExpectationStore({ dir: lessonExpectationDirFor(configService.getDataDir()), logger })
+    : null;
+  // One row per lesson sitting for the teacher console. Only the PIANO store is
+  // given expectations + the log; School's material store stays unchanged.
+  const lessonSittingLog = configService ? new YamlLessonSittingLog({ configService, logger }) : null;
+  // The legitimacy judge's answers; the piano router writes, this store reads
+  // the end-of-lesson answer when it scores a borderline sitting.
+  const legitJudgements = new InMemoryLegitJudgementCache();
+  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger, lessonExpectations, sittingLog: lessonSittingLog, legitJudgements });
 
   const { localMediaAdapter, getLocalMediaResource, getLocalMediaThumbnail, getContentMediaResource } = createMediaResourceOperations({ registry, mediaBasePath, cacheBasePath, dataPath, logger, config });
 
@@ -125,6 +138,9 @@ export function createApiRouters(config) {
       contentCatalog,
       savedQueryService,
       userVideoProgressStore,
+      lessonExpectations,
+      lessonSittingLog,
+      legitJudgements,
       markContentWatched,
     }
   };

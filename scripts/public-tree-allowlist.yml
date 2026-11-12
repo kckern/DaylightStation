@@ -44,6 +44,8 @@ largeText:
   - __backend/package-lock.json
   - __app_modules/learning/school/satellites/ti86-app/gui/screens.yml
   - __app_modules/learning/piano/browser/PianoApp.scss
+  # Engagement-audit calibration sittings (anonymised: labels, relative note times only).
+  - __app_modules/learning/piano/portable/practice/__fixtures__/audit-sittings.json
   - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx
   - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx
   - __app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/ScorePlayer.jsx

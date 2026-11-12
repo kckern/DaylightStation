@@ -12,6 +12,7 @@ const routeInventory = [
   ['post', '/users/:userId/game-budget/credits'], ['post', '/users/:userId/challenges/prepare'],
   ['get', '/users/:userId/piano-challenge-profile'], ['put', '/users/:userId/piano-challenge-profile'],
   ['post', '/users/:userId/school-piano-challenges/:descriptorId/completion'],
+  ['get', '/users/:userId/lesson-sittings'], ['post', '/users/:userId/lesson-legit'],
   ['get', '/programs'], ['get', '/programs/:programId'], ['get', '/users/:userId/learning'],
   ['put', '/users/:userId/enrollments/:programId'], ['put', '/users/:userId/pending-checkpoints/:contentId'],
   ['delete', '/users/:userId/enrollments/:programId'], ['get', '/users/:userId/program-assignments'],

@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import { tallyPractice, classifyBurst, PRESCHOOL_PRACTICE } from './practiceScore.mjs';
 import { goodFaithScore, PRESCHOOL_POLICY, GOOD_FAITH_DEFAULTS } from './goodFaith.mjs';
 import { mashSittings } from './__fixtures__/mash.mjs';
+import { cutBursts } from './__fixtures__/bursts.mjs';
 
 const FIXTURE = new URL('./__fixtures__/audit-sittings.json', import.meta.url);
 const sittings = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
@@ -21,21 +22,6 @@ const TARGET = { 'play-along': 13, 'low-touch': 5 };
 const evs = (notes) => notes.map(([t, note, velocity]) => ({ t: Math.round(t * 1000), note, velocity }));
 const mevs = (notes) => notes.map(([t, note, velocity]) => ({ t, note, velocity }));
 const pct = (xs, p) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
-
-/** Deterministic 8–40-note bursts cut from a note list. */
-export function cutBursts(notes, maxBursts = 3) {
-  const out = [];
-  let i = 0;
-  let k = 0;
-  while (i < notes.length && out.length < maxBursts) {
-    const len = 8 + ((k * 13) % 33);
-    const slice = notes.slice(i, i + len);
-    if (slice.length >= 8) out.push(slice);
-    i += len + 40;
-    k += 1;
-  }
-  return out;
-}
 
 describe('practice weighting calibration', () => {
   const engaged = sittings.filter((s) => s.label === 'engaged' && s.notes.length >= 16);

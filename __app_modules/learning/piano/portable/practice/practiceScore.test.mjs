@@ -91,6 +91,13 @@ describe('createPracticeMeter', () => {
     expect(a.penalties).toEqual(b.penalties);
   });
 
+  it('retract removes open-stretch events that turned out to be machine', () => {
+    const m = createPracticeMeter();
+    for (const e of melody(10)) m.add(e);
+    expect(m.retract((e) => e.note === 60)).toBeGreaterThan(0);
+    expect(m.snapshot().humanNotes).toBeLessThan(10);
+  });
+
   it('since(t) returns events at or after t; reset clears', () => {
     const m = createPracticeMeter();
     for (const e of melody(10)) m.add(e);
