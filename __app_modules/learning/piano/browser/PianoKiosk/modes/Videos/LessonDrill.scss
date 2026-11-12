@@ -1,0 +1,65 @@
+// LessonDrill — the warm-up before a lesson counts. Solid surfaces only (no
+// translucency): it replaces the video, it does not sit over it.
+.lesson-drill {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 1.5rem 2rem;
+  box-sizing: border-box;
+  background: var(--piano-bg, #16161b);
+  color: var(--piano-ink, #f1f1f4);
+  text-align: center;
+  font-family: inherit;
+
+  &__title { margin: 0; font-size: 3rem; line-height: 1.12; font-weight: 800; max-width: 22ch; }
+  &__subtitle { margin: 0; font-size: 2rem; color: var(--piano-ink, #f1f1f4); }
+  &__actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
+  &__primary, &__secondary, &__leave {
+    min-height: 4.5rem; padding: 0 2.75rem; border-radius: var(--r-pill, 999px);
+    font-size: 1.7rem; font-weight: 700; border: 0; cursor: pointer;
+  }
+  &__primary { background: var(--piano-accent, #5fe39a); color: var(--piano-accent-ink, #07210f); }
+  &__secondary, &__leave { background: var(--piano-surface-2, #2a2a33); color: var(--piano-ink, #f1f1f4); }
+
+  &--run { justify-content: stretch; padding: 0.75rem 1rem 1rem; gap: 0.75rem; }
+  &__stage { position: relative; flex: 1 1 auto; width: 100%; min-height: 0; display: flex; }
+  &__stage > * { flex: 1 1 auto; min-width: 0; }
+  &__progress { margin: 0; font-size: 1.6rem; font-weight: 800; }
+  &__leave { align-self: flex-end; min-height: 2.75rem; font-size: 1.05rem; }
+
+  &--done .lesson-drill__title { color: var(--piano-accent, #5fe39a); font-size: 2.6rem; }
+
+  &__gentle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; }
+  &__ask { margin: 0; font-size: 2.2rem; font-weight: 800; }
+  &__slots { display: flex; gap: 1rem; list-style: none; margin: 0; padding: 0; }
+  &__slot {
+    display: grid; place-items: center;
+    width: 5.5rem; height: 5.5rem; border-radius: 1rem;
+    background: var(--piano-surface-2, #2a2a33);
+    border: 3px solid var(--piano-border, #34343f);
+    font-size: 2.2rem; font-weight: 800;
+    &--on { background: var(--piano-accent, #5fe39a); color: var(--piano-accent-ink, #07210f); border-color: var(--piano-accent, #5fe39a); }
+  }
+}
+
+// The reopen card: a lesson that owes a warm-up, opened again.
+.lesson-reopen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.25rem; width: 100%; height: 100%; padding: 2rem; box-sizing: border-box;
+  background: var(--piano-bg, #16161b); color: var(--piano-ink, #f1f1f4); text-align: center;
+  &__title { margin: 0; font-size: 2.4rem; font-weight: 800; }
+  &__body { margin: 0; font-size: 1.45rem; max-width: 36ch; line-height: 1.35; color: var(--piano-ink, #f1f1f4); }
+  &__actions { display: flex; gap: 1rem; margin-top: 0.5rem; }
+  &__primary, &__secondary {
+    min-height: 3.75rem; padding: 0 2.25rem; border-radius: var(--r-pill, 999px);
+    font-size: 1.35rem; font-weight: 700; border: 0; cursor: pointer;
+  }
+  &__primary { background: var(--piano-accent, #5fe39a); color: var(--piano-accent-ink, #07210f); }
+  &__secondary { background: var(--piano-surface-2, #2a2a33); color: var(--piano-ink, #f1f1f4); }
+}

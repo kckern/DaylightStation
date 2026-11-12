@@ -231,6 +231,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
+| Piano lesson credit (silent good-faith score, per-lesson expectation, presence ladder, drill before credit, preschool mode, legitimacy judge) | `__docs/reference/piano/lesson-engagement.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
 | Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb/missile weapons + `vulnerable_to`, gates + boost-dash shutters, step-mat bombardier, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
 | Skyline Invaders (fixed-shooter fitness game: torso-relative pose aim + calibration, step-mat fire with aim latch, zone shot tiers incl. fire = nuke, partner cadence boosts, level YAML + reachability check, seed levels, spike tunables, cross-origin isolation and pose speed) | `__docs/reference/fitness/skyline-invaders.md` |

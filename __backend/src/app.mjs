@@ -53,6 +53,7 @@ import { createFitnessServicesRuntime } from "../../__app_modules/wellness/fitne
 import { createFitnessReceiptRuntime } from "../../__app_modules/wellness/fitness/server/receipt-runtime.mjs";
 import { createFitnessApiRuntime } from "../../__app_modules/wellness/fitness/server/api-runtime.mjs";
 import {createPianoModule} from "../../__app_modules/learning/piano/server/composition.mjs";
+import { registerPianoLessonExpectationHarvester } from "../../__app_modules/learning/piano/server/composition/lesson-expectations.mjs";
 /**
  * DDD App Factory
  *
@@ -2196,9 +2197,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // enrichment for the /courses/:id/playable + /courses/progress endpoints.
   const { router: pianoRouter, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate } = await createPianoModule({
     configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, PianoConfigProjection,
+    legitDecisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-legit-notes' }),
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
   });
   v1Routers.piano = pianoRouter;
+  registerPianoLessonExpectationHarvester({
+    harvesterServices, contentServices, contentRegistry, configService, rootLogger,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-expectation' }),
+  });
 
   // School (portal homeschool): banks from data/content/school/{subject}/quizzes/, per-user
   // append-only attempt log under data/users/{id}/apps/school/attempts/, plus

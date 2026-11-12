@@ -55,4 +55,13 @@ describe('LessonList', () => {
     expect(screen.getByText('Three').closest('button')).toBeDisabled();
     expect(screen.getByText('Two').closest('button')).not.toBeDisabled();
   });
+  it('shows "Not counted yet" with the hint on a lesson that owes a warm-up (no score)', () => {
+    const { container } = render(<LessonList onPlay={vi.fn()} lessons={[
+      ep(101, 'Owed lesson', { userWatched: false, userPercent: 95, userCredit: { outcome: 'drill-owed', drill: { reps: 4 } } }),
+    ]} />);
+    expect(screen.getByText('Not counted yet')).toBeInTheDocument();
+    expect(screen.getByText('Play along, or do the warm-up to count it.')).toBeInTheDocument();
+    expect(container.querySelector('.piano-episode__check')).toBeNull();
+    expect(container.textContent).not.toMatch(/\/10|score/i);
+  });
 });

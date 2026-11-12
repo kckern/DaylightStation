@@ -1559,6 +1559,15 @@
     padding: 0.22em 0.45em; border-radius: 0.25rem; pointer-events: none;
   }
   &__check-mark { font-size: 0.8rem; flex: 0 0 auto; }
+  // "Not counted yet" — watched, but the lesson owes a warm-up. Solid ivory
+  // on charcoal: words, not a status hue.
+  &__chip {
+    position: absolute; left: 6px; bottom: 10px;
+    background: #f1f1f4; color: #16161b;
+    font-size: 0.78rem; font-weight: 800; line-height: 1;
+    padding: 0.3em 0.55em; border-radius: 0.25rem; pointer-events: none;
+  }
+  &__hint { display: block; flex-basis: 100%; color: var(--piano-ink, #f1f1f4); font-size: 0.85rem; margin-top: 0.1rem; }
   &__check-date { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   &__bar {
     position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.45);
@@ -1571,7 +1580,7 @@
     font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums;
     line-height: 1; padding: 0.2em 0.4em; border-radius: 0.25rem; pointer-events: none;
   }
-  &__label { display: flex; gap: 0.4rem; padding: 0.5rem; align-items: baseline; }
+  &__label { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem; align-items: baseline; }
   &__num { color: var(--piano-accent-text); font-weight: 700; font-size: 0.85rem; flex: 0 0 auto; }
   &__title {
     font-size: 0.95rem; line-height: 1.25;
@@ -3497,4 +3506,13 @@
 @keyframes piano-unit-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
+}
+
+/* The ladder's scale check-in: solid, it replaces the paused frame. */
+.piano-engagement-gate--scales {
+  flex-direction: column; justify-content: flex-start; gap: 0.5rem; padding: 0.75rem;
+  background: var(--piano-bg, #16161b);
+  .piano-engagement-gate__heading { margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; text-align: center; }
+  .piano-engagement-gate__drill { flex: 1 1 auto; width: 100%; min-height: 0; display: flex; }
+  .piano-engagement-gate__drill > * { flex: 1 1 auto; }
 }

@@ -102,7 +102,7 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoLearnCoachService = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
+export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoLearnCoachService = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, lessonSittingLog = null, judgeNoteBurst = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   if (typeof idFactory !== 'function') throw new Error('createPianoRouter: idFactory required');
   if (!producerRecords) throw new Error('createPianoRouter: producerRecords required');
@@ -490,6 +490,43 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
   }));
 
   // Learning programs are policy over the bank, not another copy of its notes.
+  // Teacher console: each piano lesson sitting with its silent good-faith score.
+  router.get('/users/:userId/lesson-sittings', asyncHandler((req, res) => {
+    if (!lessonSittingLog) return res.status(501).json({ error: 'Lesson sittings unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(404).json({ error: 'Unknown user' });
+    const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 90);
+    const sinceIso = new Date(Date.now() - days * 86400000).toISOString();
+    res.json({ sittings: lessonSittingLog.list(req.params.userId, { sinceIso }) || [] });
+  }));
+
+  // Legitimacy judge for a burst of notes (async, advisory). The body is a
+  // minimal MIDI log ONLY: notes[].{pitch, onsetMs, durMs, velocity} + stats.
+  const NOTE_KEYS = new Set(['pitch', 'onsetMs', 'durMs', 'velocity']);
+  const STAT_KEYS = new Set(['notes', 'distinctPitches', 'pitchSpan', 'medianIoiMs', 'velocitySpread']);
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const validBurst = (burst) => {
+    if (!burst || typeof burst !== 'object' || Array.isArray(burst)) return false;
+    if (Object.keys(burst).some((k) => k !== 'notes' && k !== 'stats')) return false;
+    const { notes, stats } = burst;
+    if (!Array.isArray(notes) || notes.length > 200) return false;
+    for (const n of notes) {
+      if (!n || typeof n !== 'object' || Object.keys(n).some((k) => !NOTE_KEYS.has(k))) return false;
+      if (!isNum(n.pitch) || !isNum(n.onsetMs) || !isNum(n.velocity) || !(n.durMs === null || n.durMs === undefined || isNum(n.durMs))) return false;
+    }
+    if (!stats || typeof stats !== 'object' || Object.keys(stats).some((k) => !STAT_KEYS.has(k) || !isNum(stats[k]))) return false;
+    return true;
+  };
+  router.post('/users/:userId/lesson-legit', asyncHandler(async (req, res) => {
+    if (!judgeNoteBurst) return res.status(501).json({ error: 'Legitimacy judge unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(404).json({ error: 'Unknown user' });
+    const { sittingId, kind, index = 0, burst, preschool = false } = req.body || {};
+    if (typeof sittingId !== 'string' || !sittingId || sittingId.length > 64) return res.status(400).json({ error: 'sittingId required' });
+    if (kind !== 'check-in' && kind !== 'end-of-lesson') return res.status(400).json({ error: 'kind must be check-in or end-of-lesson' });
+    if (!Number.isInteger(index) || index < 0 || index > 1000) return res.status(400).json({ error: 'index must be a small integer' });
+    if (!validBurst(burst)) return res.status(400).json({ error: 'burst must be { notes: [{pitch, onsetMs, durMs, velocity}] (≤200), stats }' });
+    res.json(await judgeNoteBurst.execute({ userId: req.params.userId, sittingId, kind, index, burst, preschool: preschool === true }));
+  }));
+
   router.get('/programs', asyncHandler((_req, res) => {
     if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
     res.json({ programs: pianoLearningService.programs() });

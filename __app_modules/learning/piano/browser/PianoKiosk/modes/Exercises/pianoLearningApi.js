@@ -42,6 +42,7 @@ export const pianoLearningApi = {
   assignments: (userId) => request(`users/${encodeURIComponent(userId)}/program-assignments`),
   putAssignments: (userId, body) => request(`users/${encodeURIComponent(userId)}/program-assignments`, { method: 'PUT', body }),
   programs: () => request('programs'),
+  lessonSittings: (userId, days = 14) => request(`users/${encodeURIComponent(userId)}/lesson-sittings?days=${encodeURIComponent(days)}`),
 };
 
 export default pianoLearningApi;

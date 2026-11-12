@@ -96,7 +96,10 @@ export function lectureUserStatus(item) {
   if (isUserScoped(item)) {
     const pct = num(item.userPercent);
     const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
-    return { watched: !!item.userWatched, percent, completedAt: item.userCompletedAt || null };
+    const watched = !!item.userWatched;
+    // Watched far enough, but the lesson owes a warm-up before it counts.
+    const notCounted = !watched && item.userCredit?.outcome === 'drill-owed';
+    return { watched, percent, completedAt: item.userCompletedAt || null, notCounted };
   }
-  return { watched: false, percent: 0, completedAt: null };
+  return { watched: false, percent: 0, completedAt: null, notCounted: false };
 }

@@ -384,6 +384,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Hardware + setup | `ops:docs/reference/piano/kiosk-setup.md` |
 | Game engines | [piano-games.md](./piano-games.md) |
 | Game time budget + match gate | [games-budget-gate.md](./games-budget-gate.md) |
+| Video lesson credit (silent good-faith score, per-lesson expectation, presence ladder, warm-up before credit, preschool mode) | [lesson-engagement.md](./lesson-engagement.md) |
 | Game platform (host, chrome kit, families) | [piano-game-platform.md](./piano-game-platform.md) |
 | Grid addressing (keys→squares: permutations, config, difficulty ladder) | [grid-addressing.md](./grid-addressing.md) |
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
