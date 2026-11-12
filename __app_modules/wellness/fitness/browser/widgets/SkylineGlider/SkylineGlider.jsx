@@ -433,10 +433,18 @@ export default function SkylineGlider() {
         return true;
       }
       if (!response.ok) throw Object.assign(new Error(`save failed (${response.status})`), { httpStatus: response.status });
-      const rewardIdentityMatches = record.run.fitness_session_id === (fitnessSessionInstance?.sessionId || null)
+      // A sessionless run omits fitness_session_id (undefined): normalise both sides
+      // or every flight flown without a session reads as an identity change.
+      const rewardIdentityMatches = (record.run.fitness_session_id || null) === (fitnessSessionInstance?.sessionId || null)
         && record.rider.user_id === riderId;
-      if (status === 'completed' && rewardIdentityMatches) {
-        fitnessSessionInstance?.treasureBox?.awardBonus?.({
+      const treasureBox = fitnessSessionInstance?.sessionId ? fitnessSessionInstance?.treasureBox : null;
+      if (status === 'completed' && rewardIdentityMatches && !treasureBox?.awardBonus) {
+        // Rings live in the session's treasure box; with no session there is nothing to pay into.
+        log.info('skyline_glider.reward.skipped', {
+          runId: record.run.id, riderId: record.rider.user_id, fitnessSessionId: record.run.fitness_session_id || null, reason: 'no-fitness-session',
+        });
+      } else if (status === 'completed' && rewardIdentityMatches) {
+        treasureBox.awardBonus({
           idempotencyKey: `rpm-flight:${record.run.id}:completion:${riderId}`,
           userId: riderId, rings: record.run.reward_rings, zoneId: 'skyline-glider', color: '#e0a85b',
           source: 'skyline-glider', metadata: { courseId: course.id, collectibles: record.collectibles.length },

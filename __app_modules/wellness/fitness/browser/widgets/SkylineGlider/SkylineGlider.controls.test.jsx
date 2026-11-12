@@ -230,6 +230,28 @@ describe('complete bike lifecycle',()=>{
   await press(2);expect(screen.getByTestId('skyline-glider-result')).toBeTruthy();
   await press(3);expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('flights');
  });
+ it('does not call a sessionless completed flight an identity change',async()=>{
+  // 2026-11-12: a rider completed a course with no fitness session open; the run
+  // record omits fitness_session_id (undefined) and the strict compare to null
+  // logged reward.skipped 'terminal-identity-changed' for an unchanged rider.
+  mockCtx.fitnessSessionInstance.sessionId=null;mockCtx.fitnessSessionInstance.treasureBox=null;
+  await mount({duration:2});await launch();await advance(2500);await flush();
+  expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Flight saved');
+  const skips=mockLog.warn.mock.calls.concat(mockLog.info.mock.calls).filter(([n])=>n==='skyline_glider.reward.skipped');
+  expect(skips).toHaveLength(1);
+  expect(skips[0][1].reason).toBe('no-fitness-session');
+ });
+ it('still skips the reward when the rider changed before the save returned',async()=>{
+  await mount({duration:2});await launch();
+const prior=await apiFetch('/courses');
+  apiFetch.mockImplementation(async(url,options)=>{
+   if(options?.method==='POST'&&url.endsWith('/runs'))mockCtx.fitnessSessionInstance.sessionId='fs-other';
+   return prior;
+  });
+  await advance(2500);await flush();
+  expect(mockLog.warn).toHaveBeenCalledWith('skyline_glider.reward.skipped',expect.objectContaining({reason:'terminal-identity-changed'}));
+  expect(mockCtx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
+ });
  it('disables combat in the confidence flight while keeping menu access',async()=>{
   await mount({noWeapons:true});await launch();await press(1);await press(2);await press(3);await advance(100);
   expect(screen.queryByTestId('skyline-glider-bombs')).toBeNull();
