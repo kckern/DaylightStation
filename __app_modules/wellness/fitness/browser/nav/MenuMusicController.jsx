@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import useMenuMusic from "./useMenuMusic.js";
-import { useFitnessContext } from "../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../context/FitnessContext.jsx";
 import { useIdentity } from "../identity/useIdentity.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -26,9 +26,8 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
  * memo-specific shape.
  */
 const MenuMusicController = ({ isActive, trackChangeKey, volume, trackUrls }) => {
-  const ctx = useFitnessContext();
-  const voiceMemoOpen = !!ctx?.voiceMemoOverlayState?.open;
-  const feedbackRecording = !!ctx?.feedbackRecordingActive;
+  const voiceMemoOpen = useFitnessSelector((c) => !!c?.voiceMemoOverlayState?.open);
+  const feedbackRecording = useFitnessSelector((c) => !!c?.feedbackRecordingActive);
 
   // Emergency phase: 'normal' | 'triggering' | 'locked'. Anything other than
   // 'normal' means a shutdown ceremony / lockdown is on screen — the ambient

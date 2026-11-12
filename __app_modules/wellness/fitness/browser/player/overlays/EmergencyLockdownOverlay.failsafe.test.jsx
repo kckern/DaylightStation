@@ -19,6 +19,8 @@ vi.mock("../hooks/audioCuePlayer.js", () => ({
 vi.mock("../../context/FitnessContext.jsx", () => ({
   __esModule: true,
   useFitness: () => ({ fitnessConfiguration: {}, userCollections: { all: [] } }),
+  useFitnessSelector: (select) => select({ fitnessConfiguration: {}, userCollections: { all: [] } }),
+  shallowEqualSelection: (a, b) => a === b,
 }));
 vi.mock("../hooks/useGovernanceAudioDuck.js", () => ({
   __esModule: true, playCueOnce: ({ onDone } = {}) => { onDone?.(); return true; },

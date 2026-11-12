@@ -30,7 +30,7 @@ The Fitness app automatically logs memory/performance profiles every **30 second
 | `fitness-profile-snapshot-series-warning` | warn | Snapshot pruning failing |
 | `fitness-profile-treasurebox-warning` | warn | Timeline > 800 points |
 | `fitness-profile-orphan-timer` | error | Tick timer running without session |
-| `fitness-profile-excessive-renders` | warn | forceUpdate count > 100 |
+| `fitness-profile-excessive-renders` | warn | forceUpdate count > 125 per 30 s (above the 4/s sensor throttle ceiling) |
 
 ---
 
@@ -112,7 +112,7 @@ ssh {hosts.prod} 'docker logs -f {docker.container}' 2>&1 | \
 |--------|-------------|-------------------|
 | `chartCacheSize` | Chart participant cache | - |
 | `chartDropoutMarkers` | Dropout markers stored | - |
-| `forceUpdateCount` | React forceUpdate calls | > 100 |
+| `forceUpdateCount` | React forceUpdate calls | > 125 |
 | `renderCount` | Total render count | - |
 
 ---
@@ -168,7 +168,14 @@ ssh {hosts.prod} 'docker logs {docker.container} 2>&1' | grep 'orphan-timer'
 
 #### 4. Render Thrashing
 
-**Symptom:** `forceUpdateCount` > 100 in 30 seconds
+**Symptom:** `forceUpdateCount` > 125 in 30 seconds
+
+Sensor traffic alone cannot get there: the provider re-renders only when a
+reading actually changed (plus a 1 s keepalive while packets flow), and at
+most once per 250 ms — 120 per 30 s. A one-sensor game (Skyline Glider, a race)
+sits near 30, a two-sensor workout near 60; four or more sensors each changing
+every second can approach the 120 ceiling legitimately. Above it, something is
+calling `forceUpdate` outside the throttle.
 
 **Cause:** Infinite re-render loop, often from:
 - State update in useEffect without proper deps

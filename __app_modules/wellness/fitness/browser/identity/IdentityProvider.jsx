@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
-import { useFitness } from "../context/FitnessContext.jsx";
+import { useFitnessSelector, shallowEqualSelection } from "../context/FitnessContext.jsx";
 import { wsService } from '@/services/WebSocketService.js';
 import useEmergencyLockdown, {
   PHASE_NORMAL, PHASE_TRIGGERING, PHASE_LOCKED,
@@ -53,7 +53,15 @@ export const IdentityContext = createContext(null);
 export function IdentityProvider({ children }) {
   const emergency = useEmergencyLockdown();
 
-  const { fitnessConfiguration, userCollections } = useFitness();
+  // Selected, not the whole context: this provider wraps the app, and reading
+  // useFitness() re-rendered it (and its value's consumers) on every sensor
+  // update. It needs the config and the configured-user list, which is rebuilt
+  // per render but holds the same user objects — compare it element-wise.
+  const { fitnessConfiguration, configuredUsers } = useFitnessSelector(
+    (c) => ({ fitnessConfiguration: c?.fitnessConfiguration, configuredUsers: c?.userCollections?.all }),
+    (a, b) => a.fitnessConfiguration === b.fitnessConfiguration
+      && shallowEqualSelection(a.configuredUsers ?? null, b.configuredUsers ?? null),
+  );
 
   // Unlock state surface.
   const [activeLock, setActiveLock] = useState(null);
@@ -97,7 +105,7 @@ export function IdentityProvider({ children }) {
   // Roster SSOT for resolving a matched userId → display name (same source the
   // participant grid uses). Held in a ref so the async match closure reads live.
   const rosterRef = useRef([]);
-  rosterRef.current = Array.isArray(userCollections?.all) ? userCollections.all : [];
+  rosterRef.current = Array.isArray(configuredUsers) ? configuredUsers : [];
 
   // Resolve a matched userId → { name, avatarSrc } using the roster (slug/id/name
   // match) + avatar-by-slug convention. Ported from useUnlock.js.

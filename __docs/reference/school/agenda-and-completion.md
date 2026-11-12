@@ -107,7 +107,11 @@ weekend day, chosen differently from a weekday:
 3. **Never advance** — a lesson from a module that has not opened is never
    offered on a weekend.
 
-One pass serves the day, as on any day. Weekday behaviour is unchanged. See
+One pass serves the day, as on any day. On such a weekend no other section
+offers anything (no card, no session, no disc) — the scripture item is the
+whole day. A program settled without play (`excused: true`: a co-progress lock,
+a day bypass) on a day that does not ask for its section stays excused, never
+served. Weekday behaviour is unchanged. See
 [Day-off tiers](./day-off-tiers.md#weekend-scripture).
 
 ## Focus days and chaining

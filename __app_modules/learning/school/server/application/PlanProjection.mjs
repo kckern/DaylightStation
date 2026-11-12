@@ -425,12 +425,17 @@ export class PlanProjection {
     // access checks, but only the current linked deck is a daily obligation.
     const agendaPlan = { ...plan, entries: plan.entries.filter((entry) => !entry.linkedUnitId
       || !['completed', 'locked', 'dormant', 'upcoming'].includes(entry.status)) };
+    const judgedDay = day ?? studyDayForInstant(at.getTime(), { timezone: this.#timezone });
+    const liveDay = studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone });
     const statuses = programStatuses ?? await collectProgramStatuses({
       plan: agendaPlan, learnerId, launchers: this.#launchers, logger: this.#logger,
       logEvent: launcherFailedEvent,
       declaredEntryActions: this.#resolveDeclaredEntryActions(),
       day,
-      studyDay: day ?? studyDayForInstant(at.getTime(), { timezone: this.#timezone }),
+      studyDay: judgedDay,
+      // A preview of a coming day (`now` after today): today's done-ness must
+      // not leak into it. See `collectProgramStatuses`'s `futureDay`.
+      futureDay: day == null && judgedDay > liveDay ? judgedDay : null,
       dayBypasses: this.#dayBypasses,
     });
 

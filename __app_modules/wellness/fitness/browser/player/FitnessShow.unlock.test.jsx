@@ -27,7 +27,8 @@ vi.mock('@mantine/core', () => ({
 // FitnessContext supplies governance/locks config. Tests swap `mockCtx`.
 let mockCtx;
 vi.mock("../context/FitnessContext.jsx", () => ({
-  useFitness: () => mockCtx
+  useFitness: () => mockCtx,
+  useFitnessSelector: (select) => select(mockCtx),
 }));
 
 // Image/URL helpers — return the input so <img src> stays simple.

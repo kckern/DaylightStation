@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs
 import path from 'node:path';
 import YAML from 'yaml';
 import { materializeAssetCatalog, resolveConnectorFrame, resolveHeightTransition, resolvePrefabLayers, resolveTerrainFrame, validateAssetCatalog, validatePrefabCatalog } from "../../portable/assets.mjs";
+import { validateSideScrollerAsset } from "./side-scroller.mjs";
 import { compileTopDownScene, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, resolveLayeredAssetAnimation, resolveRiggedAssetAnimation, resolveRiggedAnimationState, validatePresentationCatalog } from "../../../../shared/presentation/scenes/index.mjs";
 
 const IMAGE_EXTENSIONS = new Set(['.png']);
@@ -1009,6 +1010,7 @@ export async function validateManifest({ root, manifestPath }) {
         if (stale.length) errors.push(`${prefix}: frame ${frameName} declares absent forbidden-color exception: ${stale.map((color) => `#${color}`).join(', ')}`);
       }
     }
+    errors.push(...await validateSideScrollerAsset({ file, asset, prefix, warnings }));
     if (asset.animation?.mode === 'state-machine' && geometry.layout === 'grid') {
       const { createCanvas, loadImage } = await import('canvas');
       decodedImage ??= await loadImage(file);

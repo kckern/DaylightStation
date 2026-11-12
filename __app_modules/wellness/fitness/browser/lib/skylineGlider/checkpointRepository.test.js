@@ -31,6 +31,15 @@ describe('Skyline Glider checkpoint repository', () => {
     writeFlightCheckpoint('test-rider', { ...course, version: 1 }, { identity, state: { courseTime: 1 } });
     expect(readFlightCheckpoint('test-rider', course, identity)).toMatchObject({ status: 'incompatible', reason: 'course-identity' });
   });
+  it('never stores or resumes a finished flight as an active checkpoint', () => {
+    // 2026-11-12: a completed run's state was written as an active checkpoint under
+    // the act the rider browsed to next; Resume replayed it there and re-posted the
+    // saved run id with different content (409 forever).
+    writeFlightCheckpoint('test-rider', course, { identity, state: { courseTime: 200, phase: 'completed' } });
+    expect(localStorage.getItem('fitness:skyline-glider:test-rider:mountain-pass')).toBeNull();
+    localStorage.setItem('fitness:skyline-glider:test-rider:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v4', course, lifecycle: 'active', identity, state: { courseTime: 200, phase: 'completed' } }));
+    expect(readFlightCheckpoint('test-rider', course, identity)).toMatchObject({ status: 'invalid', reason: 'finished' });
+  });
   it('preserves the exact terminal record for retry and never exposes it as resumable', () => {
     const record = { schema: 'skyline-glider-run/v1', run: { id: 'run-1', status: 'completed' } };
     writeFlightCheckpoint('test-rider', course, { identity, state: { courseTime: 300 }, lifecycle: 'pending_terminal', terminalRecord: record });

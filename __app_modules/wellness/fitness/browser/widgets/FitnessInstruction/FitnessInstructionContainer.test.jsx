@@ -88,7 +88,8 @@ vi.mock('@/lib/api.mjs', () => ({
 const fitnessCtx = vi.hoisted(() => ({ value: null }));
 vi.mock("../../context/FitnessContext.jsx", async (importOriginal) => ({
   ...(await importOriginal()),
-  useOptionalFitnessContext: () => fitnessCtx.value
+  useOptionalFitnessContext: () => fitnessCtx.value,
+  useFitnessSelector: (select) => select(fitnessCtx.value ?? null),
 }));
 
 const logsFor = (bucket, event) =>

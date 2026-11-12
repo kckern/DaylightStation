@@ -14,7 +14,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import getLogger from '@/lib/logging/Logger.js';
-import { useFitness } from '../context/FitnessContext.jsx';
+import { useFitnessSelector } from '../context/FitnessContext.jsx';
 
 let _logger;
 const logger = () => (_logger ??= getLogger().child({ component: 'presence-gate' }));
@@ -130,7 +130,7 @@ const snapshot = () => state;
  * @returns {{ enabled: boolean, required: boolean, settled: boolean, reason: string, unlockMinutes: number, grant: Function, refresh: Function }}
  */
 export default function usePresenceGate(kind) {
-  const { fitnessConfiguration } = useFitness() || {};
+  const fitnessConfiguration = useFitnessSelector((c) => c?.fitnessConfiguration);
   const raw = fitnessConfiguration?.fitness?.presence_gate ?? fitnessConfiguration?.presence_gate;
   const config = useMemo(() => normalizePresenceGateConfig(raw), [raw]);
   const store = useSyncExternalStore(subscribe, snapshot, snapshot);

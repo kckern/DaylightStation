@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
-import { useOptionalFitnessContext } from "../../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../../context/FitnessContext.jsx";
 import WorkoutRunner from "./WorkoutRunner.jsx";
 import ExerciseBrowser from "./ExerciseBrowser.jsx";
 import WorkoutBuilder from "./WorkoutBuilder.jsx";
@@ -58,8 +58,7 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
   // crashes on. CycleGameContainer reads the context the same way (its RESULTS go
   // to its own /cycle-races store, which is why it is not the precedent for the
   // recording below — a strength run belongs on the session record).
-  const fitnessCtx = useOptionalFitnessContext();
-  const fitnessSession = fitnessCtx?.fitnessSessionInstance ?? null;
+  const fitnessSession = useFitnessSelector((c) => c?.fitnessSessionInstance ?? null);
   const fitnessSessionRef = useRef(fitnessSession);
   fitnessSessionRef.current = fitnessSession;
 

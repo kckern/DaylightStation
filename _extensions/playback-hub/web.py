@@ -599,6 +599,243 @@ def refresh_queue(slot, queue_url, shuffle=False):
     return False
 
 # ---------------------------------------------------------------------------
+# Bluetooth inventory — every device the hub knows, across ALL controllers
+# ---------------------------------------------------------------------------
+#
+# The hub runs one controller per slot. `bluetoothctl devices` / `info` only
+# see the DEFAULT controller, so a speaker bonded to hci2 vanished from
+# /api/bt/paired while it was connected and playing (2026-11-10, GREEN slot 3).
+# The primary source is BlueZ's ObjectManager over D-Bus, which reports every
+# Device1 on every adapter with its flags in one ~50 ms call. bluetoothctl is
+# the fallback, probed concurrently; a probe that times out keeps its device
+# (probe: "timeout") — absence of an answer is never "unpaired".
+
+BT_FLAGS = ("paired", "bonded", "trusted", "connected")
+BT_INFO_TIMEOUT = 3      # per `bluetoothctl info` call (fallback path)
+BT_INFO_BUDGET = 6       # overall budget for all fallback info probes
+_MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
+
+
+def _dbus_val(v):
+    return v.get("data") if isinstance(v, dict) and "type" in v else v
+
+
+def parse_bluez_objects(text):
+    """busctl --json=short GetManagedObjects output -> {MAC: entry}."""
+    doc = json.loads(text)
+    data = doc.get("data", doc) if isinstance(doc, dict) else doc
+    objs = data[0] if isinstance(data, list) else data
+    out = {}
+    for path, ifaces in (objs or {}).items():
+        dev = (ifaces or {}).get("org.bluez.Device1")
+        if not dev:
+            continue
+        mac = str(_dbus_val(dev.get("Address")) or "").upper()
+        if not _MAC_RE.match(mac):
+            continue
+        adapter = str(_dbus_val(dev.get("Adapter")) or "").rsplit("/", 1)[-1] or None
+        name = _dbus_val(dev.get("Alias")) or _dbus_val(dev.get("Name")) or mac
+        entry = {"mac": mac, "name": name, "adapter": adapter, "probe": "ok"}
+        for flag in BT_FLAGS:
+            entry[flag] = bool(_dbus_val(dev.get(flag.capitalize())))
+        prev = out.get(mac)
+        if prev:  # same MAC on two adapters: OR the flags, keep both adapters
+            for flag in BT_FLAGS:
+                entry[flag] = entry[flag] or prev[flag]
+            entry["adapter"] = ",".join(a for a in (prev["adapter"], adapter) if a)
+        out[mac] = entry
+    return out
+
+
+def parse_bt_devices(text):
+    """`bluetoothctl devices [Filter]` output -> [(MAC, name)]."""
+    found = []
+    for line in (text or "").splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) >= 2 and parts[0] == "Device" and _MAC_RE.match(parts[1]):
+            found.append((parts[1].upper(), parts[2] if len(parts) > 2 else parts[1]))
+    return found
+
+
+def parse_bt_info(text):
+    """`bluetoothctl info MAC` output -> {flag: bool}, or None when the
+    controller does not know the device ("Device X not available")."""
+    flags = {}
+    for line in (text or "").splitlines():
+        key, sep, val = line.strip().partition(":")
+        if sep and key.lower() in BT_FLAGS:
+            flags[key.lower()] = val.strip().lower() == "yes"
+    if not flags:
+        return None
+    for flag in BT_FLAGS:
+        flags.setdefault(flag, False)
+    return flags
+
+
+def _run_text(argv, timeout):
+    return subprocess.run(argv, capture_output=True, timeout=timeout).stdout.decode(errors="replace")
+
+
+def _inventory_dbus(run):
+    return parse_bluez_objects(run(
+        ["busctl", "--system", "--json=short", "call", "org.bluez", "/",
+         "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"], 5))
+
+
+_DEV_PATH_RE = re.compile(r"^/org/bluez/(hci\d+)/dev_([0-9A-F]{2}(?:_[0-9A-F]{2}){5})$")
+_TREE_PROPS = ("Address", "Alias", "Paired", "Trusted", "Connected", "Bonded")
+
+
+def parse_busctl_props(text, props):
+    """`busctl get-property ... P1 P2 ...` text -> {prop: value}, or None
+    unless every requested property came back (one line each, in order)."""
+    lines = [l for l in (text or "").splitlines() if l.strip()]
+    if len(lines) != len(props):
+        return None
+    out = {}
+    for prop, line in zip(props, lines):
+        sig, _, val = line.strip().partition(" ")
+        if sig == "b":
+            out[prop] = val.strip() == "true"
+        elif sig in ("s", "o"):
+            val = val.strip()
+            out[prop] = json.loads(val) if val.startswith('"') else val
+        else:
+            return None
+    return out
+
+
+def _inventory_dbus_tree(run):
+    """Per-device D-Bus reads. Used when `busctl --json` GetManagedObjects
+    fails — it exits 1 with no output while a scan has discovered devices
+    (seen on the hub, systemd 255) — so a scan can't blind the inventory."""
+    paths = []
+    for line in run(["busctl", "--system", "tree", "org.bluez", "--list"], 5).splitlines():
+        m = _DEV_PATH_RE.match(line.strip())
+        if m:
+            paths.append((line.strip(), m.group(1), m.group(2).replace("_", ":")))
+    if not paths:
+        raise RuntimeError("busctl tree listed no devices")
+
+    def read(item):
+        path, hci, mac = item
+        base = ["busctl", "--system", "get-property", "org.bluez", path, "org.bluez.Device1"]
+        try:
+            props = parse_busctl_props(run(base + list(_TREE_PROPS), 3), _TREE_PROPS)
+            if props is None:  # older BlueZ has no Bonded: bonded == paired
+                props = parse_busctl_props(run(base + list(_TREE_PROPS[:-1]), 3), _TREE_PROPS[:-1])
+                if props is not None:
+                    props["Bonded"] = props["Paired"]
+            return item, props, "ok" if props is not None else "error"
+        except subprocess.TimeoutExpired:
+            return item, None, "timeout"
+        except Exception:
+            return item, None, "error"
+
+    from concurrent.futures import ThreadPoolExecutor, wait
+    pool = ThreadPoolExecutor(max_workers=min(8, len(paths)))
+    futures = [pool.submit(read, item) for item in paths]
+    done, _ = wait(futures, timeout=BT_INFO_BUDGET)
+    pool.shutdown(wait=False, cancel_futures=True)
+    got = {f.result()[0]: f.result()[1:] for f in done}
+    out = {}
+    for item in paths:
+        _, hci, mac = item
+        props, state = got.get(item, (None, "timeout"))
+        entry = {"mac": mac, "name": (props or {}).get("Alias") or mac,
+                 "adapter": hci, "probe": state}
+        for flag in BT_FLAGS:
+            entry[flag] = (props or {}).get(flag.capitalize())
+        prev = out.get(mac)
+        if prev:
+            for flag in BT_FLAGS:
+                entry[flag] = (entry[flag] or prev[flag]) if (entry[flag] is not None or prev[flag] is not None) else None
+            entry["adapter"] = f"{prev['adapter']},{hci}"
+            if prev["probe"] == "ok":
+                entry["probe"] = "ok"
+        out[mac] = entry
+    return out
+
+
+def _inventory_bluetoothctl(run, filters=("Paired", "Bonded", "Trusted", "Connected", None)):
+    names = {}
+    for flt in filters:
+        argv = ["bluetoothctl", "devices"] + ([flt] if flt else [])
+        try:
+            for mac, name in parse_bt_devices(run(argv, 5)):
+                names.setdefault(mac, name)
+        except Exception:
+            continue
+    out = {}
+    if not names:
+        return out
+
+    def probe(mac):
+        try:
+            return mac, parse_bt_info(run(["bluetoothctl", "info", mac], BT_INFO_TIMEOUT)), "ok"
+        except subprocess.TimeoutExpired:
+            return mac, None, "timeout"
+        except Exception:
+            return mac, None, "error"
+
+    from concurrent.futures import ThreadPoolExecutor, wait
+    pool = ThreadPoolExecutor(max_workers=min(8, len(names)))
+    futures = [pool.submit(probe, mac) for mac in names]
+    done, _ = wait(futures, timeout=BT_INFO_BUDGET)
+    pool.shutdown(wait=False, cancel_futures=True)
+    results = {f.result()[0]: f.result()[1:] for f in done}
+    for mac, name in names.items():
+        flags, probe_state = results.get(mac, (None, "timeout"))
+        entry = {"mac": mac, "name": name, "adapter": None, "probe": probe_state}
+        if flags is None and probe_state == "ok":
+            entry["probe"] = "unknown"  # listed, but info had no flags
+        for flag in BT_FLAGS:
+            entry[flag] = (flags or {}).get(flag)  # None = not determined
+        out[mac] = entry
+    return out
+
+
+def bt_inventory(run=_run_text):
+    """{MAC: entry} for every device BlueZ knows on any controller.
+    entry: mac, name, adapter, paired, bonded, trusted, connected, probe,
+    source. Flags are None when the probe could not determine them."""
+    try:
+        devs = _inventory_dbus(run)
+        source = "dbus"
+    except Exception:
+        try:
+            devs, source = _inventory_dbus_tree(run), "dbus-tree"
+        except Exception:
+            devs, source = _inventory_bluetoothctl(run), "bluetoothctl"
+    for entry in devs.values():
+        entry["source"] = source
+    return devs
+
+
+def bt_known(entry):
+    """Paired OR bonded OR trusted OR connected — or undetermined (a probe
+    that failed keeps its device; it was listed for a reason)."""
+    if entry.get("probe") != "ok":
+        return True
+    return any(entry.get(flag) for flag in BT_FLAGS)
+
+
+def with_slot_config(entry, configured):
+    cfg = configured.get(entry["mac"].upper())
+    entry["configured"] = bool(cfg)
+    if cfg:
+        entry["configured_slot"] = cfg["slot"]
+    return entry
+
+
+def bt_paired_list(run=_run_text, devices=None):
+    configured = {d["mac"].upper(): d for d in (devices if devices is not None else read_devices())}
+    inv = bt_inventory(run)
+    out = [with_slot_config(e, configured) for e in inv.values() if bt_known(e)]
+    out.sort(key=lambda e: (e.get("configured_slot") or 999, e["mac"]))
+    return out
+
+# ---------------------------------------------------------------------------
 # HTML frontend (inlined)
 # ---------------------------------------------------------------------------
 
@@ -1377,7 +1614,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._json({"ok": r is not None, "response": r})
 
     def _bt_scan(self):
-        # Run scan then list all devices with paired status
+        # Run a scan, then list discovered devices (default controller) plus
+        # every device any controller knows; flags come from bt_inventory.
         try:
             subprocess.run(
                 ["bluetoothctl", "--timeout", "10", "scan", "on"],
@@ -1385,85 +1623,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
         except Exception:
             pass
-        # Get all discovered devices
         try:
-            out = subprocess.check_output(
-                ["bluetoothctl", "devices"],
-                stderr=subprocess.DEVNULL, timeout=5
-            ).decode()
+            discovered = parse_bt_devices(_run_text(["bluetoothctl", "devices"], 5))
         except Exception:
-            return self._json([])
-        devices = read_devices()
-        configured = {d["mac"].upper(): d for d in devices}
+            discovered = []
+        inv = bt_inventory()
+        configured = {d["mac"].upper(): d for d in read_devices()}
         results = []
-        for line in out.strip().splitlines():
-            parts = line.split(None, 2)
-            if len(parts) >= 3 and parts[0] == "Device":
-                mac = parts[1]
-                name = parts[2]
-                # Check if paired
-                paired = False
-                try:
-                    info = subprocess.check_output(
-                        ["bluetoothctl", "info", mac],
-                        stderr=subprocess.DEVNULL, timeout=3
-                    ).decode()
-                    paired = "Paired: yes" in info
-                except Exception:
-                    pass
-                entry = {"mac": mac, "name": name, "paired": paired}
-                cfg = configured.get(mac.upper())
-                if cfg:
-                    entry["configured"] = True
-                    entry["configured_slot"] = cfg["slot"]
-                else:
-                    entry["configured"] = False
-                results.append(entry)
+        seen = set()
+        for mac, name in discovered + [(m, e["name"]) for m, e in inv.items()]:
+            if mac in seen:
+                continue
+            seen.add(mac)
+            known = inv.get(mac)
+            entry = {"mac": mac, "name": name, "paired": False}
+            if known:
+                entry.update({k: known[k] for k in BT_FLAGS + ("adapter", "probe")})
+                entry["paired"] = bt_known(known)
+            results.append(with_slot_config(entry, configured))
         self._json(results)
 
     def _bt_paired(self):
-        # Return only paired devices with their configured status
-        try:
-            out = subprocess.check_output(
-                ["bluetoothctl", "devices", "Paired"],
-                stderr=subprocess.DEVNULL, timeout=5
-            ).decode()
-        except Exception:
-            # Fallback: list all and filter
-            try:
-                out = subprocess.check_output(
-                    ["bluetoothctl", "devices"],
-                    stderr=subprocess.DEVNULL, timeout=5
-                ).decode()
-            except Exception:
-                return self._json([])
-        devices = read_devices()
-        configured = {d["mac"].upper(): d for d in devices}
-        results = []
-        for line in out.strip().splitlines():
-            parts = line.split(None, 2)
-            if len(parts) >= 3 and parts[0] == "Device":
-                mac = parts[1]
-                name = parts[2]
-                # Verify paired
-                try:
-                    info = subprocess.check_output(
-                        ["bluetoothctl", "info", mac],
-                        stderr=subprocess.DEVNULL, timeout=3
-                    ).decode()
-                    if "Paired: yes" not in info:
-                        continue
-                except Exception:
-                    continue
-                entry = {"mac": mac, "name": name, "paired": True}
-                cfg = configured.get(mac.upper())
-                if cfg:
-                    entry["configured"] = True
-                    entry["configured_slot"] = cfg["slot"]
-                else:
-                    entry["configured"] = False
-                results.append(entry)
-        self._json(results)
+        # Every device known as paired/bonded/trusted/connected on ANY
+        # controller, with its flags. Never drops a device on a slow probe.
+        self._json(bt_paired_list())
 
     def _bt_pair(self):
         body = self._read_body()

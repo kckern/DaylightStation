@@ -26,10 +26,15 @@ vi.mock('@/services/WebSocketService.js', () => ({
     connect: () => {},
   },
 }));
-vi.mock("../context/FitnessContext.jsx", () => ({
-  __esModule: true,
-  useFitness: () => ({ fitnessConfiguration: {}, userCollections: { all: [{ id: 'kc', name: 'KC' }] } }),
-}));
+vi.mock("../context/FitnessContext.jsx", () => {
+  const ctx = { fitnessConfiguration: {}, userCollections: { all: [{ id: 'kc', name: 'KC' }] } };
+  return {
+    __esModule: true,
+    useFitness: () => ctx,
+    useFitnessSelector: (select) => select(ctx),
+    shallowEqualSelection: (a, b) => a === b,
+  };
+});
 // Chime: resolve immediately so granted verdicts settle in tests. `autoDone`
 // is controllable so a test can HOLD the success screen (chime pending) and
 // exercise the cancel-during-granted race.

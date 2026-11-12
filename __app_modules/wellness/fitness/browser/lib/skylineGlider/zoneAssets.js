@@ -24,15 +24,15 @@ async function browserJson(url) {
 export function zoneImagePaths(zone) {
   const paths = new Set();
   for (const layer of zone?.layers || []) if (layer.kind === 'image' && layer.src) paths.add(layer.src);
-  for (const field of ['fill', 'edge', 'ceiling_edge']) if (zone?.terrain?.[field]) paths.add(zone.terrain[field]);
+  for (const field of ['fill', 'edge', 'ceiling_edge', 'lava_fill', 'lava_edge']) if (zone?.terrain?.[field]) paths.add(zone.terrain[field]);
   if (zone?.sprites?.sheet) paths.add(zone.sprites.sheet);
   return [...paths];
 }
 
 /**
  * Accepts the TexturePacker / Aseprite JSON "hash" ({ frames: { name: { frame } } })
- * and "array" ({ frames: [{ filename, frame }] }) exports. Names lose their
- * file extension, so `glider-1.png` is addressed as `glider-1`.
+ * and "array" ({ frames: [{ filename, frame }] }) exports. Names lose an image
+ * file extension, so `glider-1.png` is addressed as `glider-1`; `craft.fly.0` stays.
  */
 export function parseSpriteFrames(json) {
   const raw = json?.frames;
@@ -42,7 +42,8 @@ export function parseSpriteFrames(json) {
   const frames = {};
   for (const [name, frame] of entries) {
     if (!name || !frame || ![frame.x, frame.y, frame.w, frame.h].every(Number.isFinite)) continue;
-    frames[String(name).replace(/\.[a-z0-9]+$/i, '')] = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+    // Only a real image extension is dropped: a name like `craft.fly.0` keeps its last part.
+    frames[String(name).replace(/\.(?:png|gif|jpe?g|webp|bmp|aseprite|ase)$/i, '')] = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
   }
   return frames;
 }

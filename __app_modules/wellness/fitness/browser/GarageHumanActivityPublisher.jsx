@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
-import { useFitnessContext } from "./context/FitnessContext.jsx";
+import { useFitnessSelector } from "./context/FitnessContext.jsx";
 
 /** Keeps Home Assistant's garage shutdown guard aligned with this kiosk. */
 export function GarageHumanActivityPublisher({ deviceId, emulationOpen }) {
-  const fitness = useFitnessContext();
+  // Three booleans, selected: this publisher must not re-render on every
+  // sensor update, only when one of them flips.
+  const { sessionActive, emulatorInContext, liveHrParticipant } = useFitnessSelector((fitness) => ({
+    sessionActive: Boolean(fitness?.isSessionActive),
+    emulatorInContext: fitness?.activeApp?.id === 'emulator' || fitness?.overlayApp?.id === 'emulator',
+    liveHrParticipant: fitness?.activeHeartRateParticipants?.some((participant) => participant.isActive !== false) ?? false,
+  }));
   const logger = useMemo(() => getLogger().child({ component: 'garage-human-activity' }), []);
   const hadHrParticipant = useRef(false);
   const firstReport = useRef(true);
   const pending = useRef(Promise.resolve());
-  const sessionActive = Boolean(fitness?.isSessionActive);
-  const emulatorActive = Boolean(emulationOpen || fitness?.activeApp?.id === 'emulator' || fitness?.overlayApp?.id === 'emulator');
-  const liveHrParticipant = fitness?.activeHeartRateParticipants?.some((participant) => participant.isActive !== false) ?? false;
+  const emulatorActive = Boolean(emulationOpen || emulatorInContext);
 
   // A brief strap dropout does not mean the workout ended. The session end is
   // the authority for releasing HR protection.

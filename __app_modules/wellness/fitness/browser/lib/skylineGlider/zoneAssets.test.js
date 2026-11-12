@@ -12,11 +12,21 @@ describe('zone assets', () => {
     expect(zoneImagePaths(zone)).toEqual(['z/far.png', 'z/rock.png', 'z/grass.png', 'z/sprites.png']);
   });
 
+  it('includes the lava fill and surface', () => {
+    expect(zoneImagePaths({ terrain: { lava_fill: 'z/lava.png', lava_edge: 'z/lava-top.png' } })).toEqual(['z/lava.png', 'z/lava-top.png']);
+  });
+
   it('reads hash and array sprite exports and drops file extensions', () => {
     expect(parseSpriteFrames({ frames: { 'glider-1.png': { frame: { x: 0, y: 0, w: 32, h: 16 } }, bad: {} } }))
       .toEqual({ 'glider-1': { x: 0, y: 0, w: 32, h: 16 } });
     expect(parseSpriteFrames({ frames: [{ filename: 'tree.png', frame: { x: 32, y: 0, w: 16, h: 32 } }] }))
       .toEqual({ tree: { x: 32, y: 0, w: 16, h: 32 } });
+  });
+
+  it('drops only image extensions, so dotted frame names stay distinct', () => {
+    const frame = { x: 0, y: 0, w: 8, h: 8 };
+    expect(Object.keys(parseSpriteFrames({ frames: { 'craft.fly.0': { frame }, 'craft.fly.1': { frame }, 'boom.gif': { frame } } })))
+      .toEqual(['craft.fly.0', 'craft.fly.1', 'boom']);
   });
 
   it('reports each failed file and keeps the ones that loaded', async () => {

@@ -372,3 +372,16 @@ Ground-contact frames require measured visible bounds and a custom anchor at the
 - `validate` is read-only and exits `1` for catalog failures; invocation errors exit `2`.
 - Every asset path is resolved beneath `--root`; traversal outside the private game-media root is rejected.
 - Raw art is never moved, renamed, recompressed, or overwritten by this tool.
+
+## Side-scroller skins
+
+`side-scroller.mjs` adds what side-scrolling games need on top of the catalog:
+`slice` (frames and panel canvases from hand-packed ripper sheets, with a keyed
+transparent copy), side-scroller checks inside `validate` (measured
+`pixel_density`, one canvas per clip, unkeyed backdrops, seam checks for
+`repeat` frames, `parallax-layer` and `terrain-strip` conventions,
+`distribution: private-only | shippable`), and skins: `skin-validate`,
+`skin-export` and `skin-preview`. Games import the public entry `skins.mjs`
+(`validateSkin`, `exportSkin`), never `side-scroller.mjs` directly.
+
+Full reference: `__docs/reference/gaming/side-scroller-skins.md`.

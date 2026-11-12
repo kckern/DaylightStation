@@ -268,6 +268,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/wellness/nutribot/server/composition/webNutribotProxy.mjs': 'composition',
   '__app_modules/wellness/nutribot/server/composition/report-renderer.mjs': 'composition',
   '__capabilities/gaming/cli/gaming-assets.cli.mjs': null,
+  '__capabilities/gaming/cli/gaming-assets/skins.mjs': null,
   '__capabilities/gaming/portable/assets.mjs': null,
   '__capabilities/gaming/portable/experience/index.mjs': null,
   '__capabilities/gaming/portable/kernel/canonical.mjs': null,
