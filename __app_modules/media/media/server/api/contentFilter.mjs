@@ -279,6 +279,14 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const notMatched = verdict?.match === 'unmatched' ? { match: 'unmatched', unmatched: verdict.unmatched } : null;
       try {
         const review = await contentFilterReview.get({ ratingKey: key(req) });
+        // The list is the latest audit's rows: a film with none (never run here) or a stale one,
+        // and nothing queued or running, gets its audit now. jobs.audit debounces per film.
+        const open = review.job && (review.job.status === 'queued' || review.job.status === 'running');
+        const reason = !review.audit ? 'missing' : (!review.audit.fresh && !review.audit.running ? 'stale' : null);
+        if (jobs?.audit && reason && !open) {
+          logger.info?.('content_filter.review.audit_requested', { ratingKey: key(req), reason });
+          jobs.audit(key(req))?.catch?.(() => {});
+        }
         res.json(notMatched ? { ...review, ...notMatched } : review);
       } catch (e) {
         if (notMatched && e.status === 404) return res.json({ title: verdict.title, year: verdict.year, ...notMatched });

@@ -353,3 +353,29 @@ describe('ContentFilterReview: a mark survives the padding of the re-audit', () 
     expect((await b.review.get({ ratingKey: '9' })).reviewed).toBe(0);
   });
 });
+
+describe('ContentFilterReview.get for every film with a filter (2026-11-12, T2 empty list)', () => {
+  it('reads a film with only a rough EDL: no certification, rows from the audit', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state, audit: null });
+    const r = await review.get({ ratingKey: '9' });
+    expect(r.hasRefined).toBe(false);
+    expect(r.certification.level).toBe('none');
+    expect(r.rows).toEqual([]);
+    expect(r.signOff.parent).toBeNull();
+  });
+  it('a rough film shows the rough rows once an audit of the raw EDL lands', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state });
+    expect((await review.get({ ratingKey: '9' })).rows.map((x) => x.id)).toEqual(['cue:va1', 'cue:va2']);
+  });
+  it('a refined film reports hasRefined: true', async () => {
+    const { review } = setup();
+    expect((await review.get({ ratingKey: '9' })).hasRefined).toBe(true);
+  });
+  it('other actions still need a refined filter (404)', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state });
+    await expect(review.nudgeCue({ ratingKey: '9', cueId: 'va1', nudge: { in: 110.1, out: 110.7 } })).rejects.toMatchObject({ status: 404 });
+  });
+});
