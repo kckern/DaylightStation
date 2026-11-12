@@ -78,6 +78,41 @@ check(YOTO in by and by[YOTO]["paired"] is False and by[YOTO]["trusted"] is True
 check(len(lst) == 7, f"7 known devices, got {len(lst)}")
 check([e["mac"] for e in lst][:2] == [GREEN, BLUE], "sorted by configured slot")
 
+# --- busctl --json fails mid-scan (exit 1, no output): per-device tree ----
+TREE = """/
+/org/bluez
+/org/bluez/hci0
+/org/bluez/hci0/dev_41_42_8D_B7_A0_11
+/org/bluez/hci0/dev_41_42_8D_B7_A0_11/sep1
+/org/bluez/hci2
+/org/bluez/hci2/dev_41_42_F0_91_27_E8
+/org/bluez/hci4/dev_E8_68_E7_34_55_8E
+"""
+GP = ("busctl", "--system", "get-property", "org.bluez")
+D1 = "org.bluez.Device1"
+P6 = ("Address", "Alias", "Paired", "Trusted", "Connected", "Bonded")
+table = {
+    BUSCTL_ARGV: "",
+    ("busctl", "--system", "tree", "org.bluez", "--list"): TREE,
+    GP + ("/org/bluez/hci0/dev_41_42_8D_B7_A0_11", D1) + P6:
+        f's "{BLUE}"\ns "Bandou 3.0"\nb true\nb true\nb true\nb true\n',
+    GP + ("/org/bluez/hci2/dev_41_42_F0_91_27_E8", D1) + P6:
+        subprocess.TimeoutExpired("busctl", 3),
+    # older BlueZ: no Bonded -> 6-prop call is partial, 5-prop call succeeds
+    GP + ("/org/bluez/hci4/dev_E8_68_E7_34_55_8E", D1) + P6:
+        f's "{YOTO}"\ns "Yoto \\"Player\\""\nb false\nb true\nb false\n',
+    GP + ("/org/bluez/hci4/dev_E8_68_E7_34_55_8E", D1) + P6[:-1]:
+        f's "{YOTO}"\ns "Yoto \\"Player\\""\nb false\nb true\nb false\n',
+}
+by = {e["mac"]: e for e in web.bt_paired_list(run=runner(table), devices=SLOTS)}
+check(by.get(BLUE, {}).get("source") == "dbus-tree", "json failure -> dbus-tree source")
+check(by[BLUE]["connected"] is True and by[BLUE]["adapter"] == "hci0", "BLUE via tree")
+check(GREEN in by and by[GREEN]["probe"] == "timeout" and by[GREEN]["adapter"] == "hci2",
+      "GREEN kept on timeout, adapter from its path")
+check(by.get(YOTO, {}).get("trusted") is True and by[YOTO]["bonded"] is False
+      and by[YOTO]["name"] == 'Yoto "Player"', "no-Bonded BlueZ + quoted alias")
+check(web.parse_busctl_props('b true\n', ("Paired", "Trusted")) is None, "partial -> None")
+
 # --- parse_bt_info ----------------------------------------------------------
 f = web.parse_bt_info(INFO_BLUE)
 check(f == {"paired": True, "bonded": True, "trusted": True, "connected": True}, f"info flags {f}")
