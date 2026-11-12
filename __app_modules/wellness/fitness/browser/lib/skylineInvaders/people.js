@@ -28,14 +28,22 @@ export function listInvadersPeople(ctx) {
 const isPerson = (id) => !!id && id !== 'guest' && !String(id).startsWith('device:');
 
 /**
- * Who is actually riding: the fitness session's roster (heart-rate straps),
- * plus the mat's assigned rider. These are the shooters the lobby offers; anyone
- * else is behind a hold. Pure.
+ * Who is in the workout: the fitness session's roster (heart-rate straps), plus
+ * the person assigned to the mat. These are the shooters the lobby offers; anyone
+ * else is behind a hold. Invaders is played standing on the mat, so the order is
+ * the mat's person, then people not on a bike, then bike riders (most likely the
+ * boost partner). Pure.
+ * @param {string[]} [bikeRiderIds] people assigned to a bike right now
  * @returns {string[]}
  */
-export function listSessionRiderIds(ctx, mat = null) {
-  const ids = (ctx?.participantRoster || []).map(idOf).filter(isPerson).map(String);
-  if (isPerson(mat?.riderId)) ids.push(String(mat.riderId));
+export function listSessionRiderIds(ctx, mat = null, bikeRiderIds = []) {
+  const roster = (ctx?.participantRoster || []).map(idOf).filter(isPerson).map(String);
+  const onBike = new Set((bikeRiderIds || []).filter(isPerson).map(String));
+  const ids = [
+    ...(isPerson(mat?.riderId) ? [String(mat.riderId)] : []),
+    ...roster.filter((id) => !onBike.has(id)),
+    ...roster.filter((id) => onBike.has(id)),
+  ];
   return [...new Set(ids)];
 }
 

@@ -41,7 +41,7 @@ The last reach starts the countdown by itself. The two reaches become `{ left, r
 - One `pressure-mat:step` from **the shooter's mat** fires one volley. Steps from any other mat are ignored (and logged, sampled). A stomp does not fire: the same press has already produced its step.
 - To fire again the shooter steps off and back on. Measured on the garage hardware this gives about 1 to 1.3 shots a second, which is why `fireIntervalS` is `1.0`.
 - **Aim latch.** A shot uses the aim from `aimLatchMs` before the press, because stepping throws the arms. The tracker keeps a short aim history for this.
-- The shooter is the mat's assigned rider; the "Who's shooting?" screen asks when the mat has none. A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
+- The shooter is the person assigned to the mat; the "Who's shooting?" screen asks when the mat has none. Invaders is played standing, not riding: no screen says "rider" or "bike" (only the boost partner rides), and the button panel is headed "Tap or press". A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
 - Fallbacks for testing and no-mat play: Space or F, gamepad A or RT.
 
 ### Heart-rate zone tiers
@@ -70,12 +70,12 @@ A second rider on a connected bike (anyone but the shooter) fills the boost mete
 
 ### Menus
 
-Every menu screen is one decision: Skyline Glider's window on the left (`.skyline-menus`, `InvadersMenus.jsx`) and the four bike buttons on the right (Glider's `SkylineControlPanel`), set over the still city. What each button says and does is `lib/skylineInvaders/invadersPanel.js` (pure, tested). No instructions in prose: the buttons say what they do.
+Every menu screen is one decision: Skyline Glider's window on the left (`.skyline-menus`, `InvadersMenus.jsx`) and the four-button panel on the right (Glider's `SkylineControlPanel`, with the heading "Tap or press"; the same four positions are the bike buttons, touch, keys and gamepad), set over the still city. What each button says and does is `lib/skylineInvaders/invadersPanel.js` (pure, tested). No instructions in prose: the buttons say what they do.
 
 | Screen | 1 | 2 | 3 | 4 | Mat stomp |
 |---|---|---|---|---|---|
-| Who's shooting? (session riders on their buttons) | rider | rider | rider | rider (empty keys: Other riders) | |
-| Other riders (hold any key on Who) | Previous | Next | Back | Choose | |
+| Who's shooting? (people in the workout on their buttons: the mat's person, then people not on a bike, then bike riders) | person | person | person | person (empty keys: Someone else) | |
+| Pick the shooter (hold any key on Who) | Previous | Next | Back | Choose | |
 | Pick a wave | Previous | Next | Change shooter | Start (locked wave: Admin unlock) | Start |
 | Round locked (school day) | Admin unlock | — | Back | Change shooter | |
 | Ready | — | — | Back | Skip (gamepad connected only) | |
@@ -87,7 +87,7 @@ Start is always button 4 or a stomp on the shooter's mat (`pressure-mat:stomp`; 
 
 **The wave list** is Glider's flight list (`FlightList` in `SkylineMenus.jsx`): a five-row window that follows the cursor, "N more" above and below, each row with a status word — **Done** with the best stars (pixel stars: gold when won, solid ink when not, never faded), **New**, or a pixel lock and **Locked**. Under the list the chosen wave says what tells it apart: the sprite and name of the threat it brings in first, its kill target and its time ("New: Drones · Shoot down 20 · 3:00", `lib/skylineInvaders/waves.js`). The seed waves are genuinely different (meteors, then drones, pods, bombers), so they stay separate rows.
 
-**Keys, foot pad, gamepad** (`useMenuInput`; the digits 1–6 are never acted on, the garage kiosk's OS binds them): left = 1, right = 2, Escape/B = 3, Enter/A/any foot-pad key = 4. Exceptions: on Who's shooting, accept takes the first rider and right opens Other riders; on the lock screen accept is Admin unlock; on Paused accept and back resume; on the Sound sheet accept is Back, so a stray foot-pad press only closes it. While the admin fingerprint prompt is up only Cancel (3, or Escape/B) acts.
+**Keys, foot pad, gamepad** (`useMenuInput`; the digits 1–6 are never acted on, the garage kiosk's OS binds them): left = 1, right = 2, Escape/B = 3, Enter/A/any foot-pad key = 4. Exceptions: on Who's shooting, accept takes the first person and right opens Pick the shooter; on the lock screen accept is Admin unlock; on Paused accept and back resume; on the Sound sheet accept is Back, so a stray foot-pad press only closes it. While the admin fingerprint prompt is up only Cancel (3, or Escape/B) acts.
 
 ### Sound
 
@@ -95,7 +95,7 @@ Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the t
 
 The **Sound sheet** (`InvadersSoundSheet.jsx`, its body the shared `SkylineGlider/GameSoundSheet.jsx`) shows the level, the house touch volume strip (11 keys, 0 = off, no slider) and Back / Quieter / Louder / Mute. It opens from:
 
-- **Touch:** the "more" button (three dots, a solid 64 × 56 px key) in the bottom-right corner of the Who, Other riders, wave list, lock, pause and result screens, on the street under the panel and clear of every window, the panel and the round HUD. A round has no touch chrome: pause first.
+- **Touch:** the "more" button (three dots, a solid 64 × 56 px key) in the bottom-right corner of the Who, Pick the shooter, wave list, lock, pause and result screens, on the street under the panel and clear of every window, the panel and the round HUD. A round has no touch chrome: pause first.
 - **Keys, foot pad, gamepad:** Sound on the pause screen. In the sheet Back has the focus, so a stray foot-pad press only closes it; Escape or B goes back.
 - **Bike buttons:** hold 4 in a round to pause; on the pause screen 2 opens Sound; in the sheet 1 quieter, 2 louder, 3 back, 4 mute. On every menu screen the bike buttons are the panel; mid-round a single press stays with rider selection.
 
@@ -203,11 +203,11 @@ A route answers 503 when its service is not wired. There is no suspension beacon
 
 A school learner needs the `fitness.skyline-invaders` entitlement, granted by `school.day-complete` (see [State Gates](../state-gates/README.md)).
 
-**The gate follows the riders, not the pick.** The learners gated are everyone in the fitness session's roster (heart-rate straps) and the mat's rider who is known to be a school learner, plus the shooter unless known not to be one (`gateLearnerIds` in `lib/skylineInvaders/people.js`). The round opens only when every one of them has the entitlement (`useSkylineGroupAccess` in Skyline Glider's `useSkylineAccess.js`, called with this capability id and the `skyline_invaders` log scope). So a child who picks a grown-up as the shooter while riding still sees the lock.
+**The gate follows the workout, not the pick.** The learners gated are everyone in the fitness session's roster (heart-rate straps) and the mat's person who is known to be a school learner, plus the shooter unless known not to be one (`gateLearnerIds` in `lib/skylineInvaders/people.js`). The round opens only when every one of them has the entitlement (`useSkylineGroupAccess` in Skyline Glider's `useSkylineAccess.js`, called with this capability id and the `skyline_invaders` log scope). So a child in the workout who picks a grown-up as the shooter still sees the lock.
 
-The shooter picker offers the session's riders (roster and mat rider); everyone else in the household is behind a press-and-hold on "Other riders".
+The shooter picker offers the people in the workout (roster and the mat's person); everyone else in the household is behind a press-and-hold on "Someone else".
 
-While locked, the game shows only the lock screen (`InvadersLocked.jsx`, Skyline Glider's `denied` pattern): "Round locked — Finish today's school work to unlock." with "School first: <names>" for the learners it waits on, and the four bike buttons: 1 Admin unlock (admin fingerprint), 3 Back and 4 Change shooter (both open the shooter picker). Gamepad A / Enter is Admin unlock, B / Escape is Back. An admin unlock covers the learners riding at that moment; anyone new joining asks again. Losing access mid-round ends the round.
+While locked, the game shows only the lock screen (the `locked` screen of `InvadersMenus.jsx`, Skyline Glider's `denied` pattern): "Round locked — Finish today's school work to unlock." with "School first: <names>" for the learners it waits on, and the four-button panel: 1 Admin unlock (admin fingerprint), 3 Back and 4 Change shooter (both open the shooter picker). Gamepad A / Enter is Admin unlock, B / Escape is Back. An admin unlock covers the learners in the workout at that moment; anyone new joining asks again. Losing access mid-round ends the round.
 
 ## Menu tile
 

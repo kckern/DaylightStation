@@ -47,7 +47,7 @@ export default function InvadersMenus(props) {
     return (
       <Window screen="who">
         <h1>Who’s shooting?</h1>
-        <p>{props.riders?.length ? 'Hold a button for other riders.' : 'Nobody is riding yet. Hold a button for other riders.'}</p>
+        <p>{props.riders?.length ? 'Hold a button to pick someone else.' : 'Nobody is in the workout yet. Hold a button to pick anyone.'}</p>
       </Window>
     );
   }
@@ -55,7 +55,7 @@ export default function InvadersMenus(props) {
     const person = props.person;
     return (
       <Window screen="roster">
-        <h1>Other riders</h1>
+        <h1>Pick the shooter</h1>
         {person && <div className="skyline-menus__person"><SkylineAvatar src={person.avatarSrc} name={person.name} /><strong>{person.name}</strong></div>}
       </Window>
     );

@@ -204,7 +204,7 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
     h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
     expect(menuScreen()).toBe('who');
-    expect(padLabels()).toEqual(['Kid', 'Other riders', 'Other riders', 'Other riders']);
+    expect(padLabels()).toEqual(['Kid', 'Someone else', 'Someone else', 'Someone else']);
     await pad(1);
     expect(h.ctx.fitnessSessionInstance.setEquipmentUser).toHaveBeenCalledWith('step-mat', 'kid');
     expect(menuScreen()).toBe('waves');
@@ -214,7 +214,7 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
   it('keeps everyone else behind a hold: the roster browses and chooses', async () => {
     h.ctx = makeCtx({ matRider: null });
     await mount();
-    expect(screen.getByTestId('skyline-invaders-who').textContent).toContain('Nobody is riding yet');
+    expect(screen.getByTestId('skyline-invaders-who').textContent).toContain('Nobody is in the workout yet');
     await pad(1);
     expect(menuScreen()).toBe('who');
     await padHold(2);
@@ -582,7 +582,7 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
       expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
       await pad(4);
       // Only the riders are offered; the grown-up is behind the hold.
-      expect(padLabels()).toEqual(['Kid', 'Other riders', 'Other riders', 'Other riders']);
+      expect(padLabels()).toEqual(['Kid', 'Someone else', 'Someone else', 'Someone else']);
       await padHold(1);
       await pad(2);
       expect(screen.getByTestId('skyline-invaders-roster').textContent).toContain('Test Rider');

@@ -4,9 +4,9 @@ import { invadersAction, invadersControls, pressForMenuKey, stompAction } from '
 const labels = (view) => invadersControls(view).map((control) => control.label);
 
 describe('invadersControls: one decision per screen on the four bike buttons', () => {
-  it('who: the riders on their buttons, the rest say Other riders (hold)', () => {
+  it('who: the riders on their buttons, the rest say Someone else (hold)', () => {
     const view = { screen: 'who', riders: [{ id: 'kid', name: 'Kid', avatarSrc: 'a.png' }] };
-    expect(labels(view)).toEqual(['Kid', 'Other riders', 'Other riders', 'Other riders']);
+    expect(labels(view)).toEqual(['Kid', 'Someone else', 'Someone else', 'Someone else']);
     expect(invadersAction(view, 1)).toBe('pick:kid');
     expect(invadersAction(view, 2)).toBeNull();
     expect(invadersAction(view, 3, 'long')).toBe('open-roster');

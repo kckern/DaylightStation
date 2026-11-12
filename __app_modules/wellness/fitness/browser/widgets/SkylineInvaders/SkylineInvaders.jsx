@@ -185,10 +185,14 @@ function SkylineInvadersGame() {
   const people = useMemo(() => listInvadersPeople(ctx), [ctx?.participantRoster, ctx?.users, ctx?.userCollections, ctx?.usersConfig]);   // eslint-disable-line react-hooks/exhaustive-deps
   const nameOf = useCallback((id) => people.find((person) => person.id === id)?.name || id, [people]);
   const boost = useInvadersBoost({ equipment: ctx?.equipment, session, shooterId });
-  // The shooters on offer are the people riding; the school gate is every
-  // learner riding plus the shooter, so a grown-up picked as the shooter never
-  // opens the round for a child who has school left (people.js, gateLearnerIds).
-  const sessionRiderIds = listSessionRiderIds(ctx, mat);
+  // The shooters on offer are the people in the workout, the mat's person first
+  // and bike riders last; the school gate is every learner in the workout plus
+  // the shooter, so a grown-up picked as the shooter never opens the round for
+  // a child who has school left (people.js, gateLearnerIds).
+  const bikeRiderIds = (Array.isArray(ctx?.equipment) ? ctx.equipment : [])
+    .filter((item) => item?.id != null && String(item.id) !== mat?.equipmentId)
+    .map((item) => session?.getEquipmentRider?.(item.id)).filter(Boolean);
+  const sessionRiderIds = listSessionRiderIds(ctx, mat, bikeRiderIds);
   const sessionKey = sessionRiderIds.join('|');
   const riders = useMemo(() => sessionRiderIds.map((id) => people.find((person) => person.id === id) || { id, name: id }), [sessionKey, people]);   // eslint-disable-line react-hooks/exhaustive-deps
   const gateIds = gateLearnerIds({ shooterId, riderIds: sessionRiderIds, learnerOf: (id) => ctx?.getUserByName?.(id)?.schoolLearner });
@@ -872,7 +876,7 @@ function SkylineInvadersGame() {
               />
             )}
           </div>
-          <SkylineControlPanel controls={controls} onPress={(position, gesture) => press(position, gesture, 'touch')} />
+          <SkylineControlPanel heading="Tap or press" label="Controls" controls={controls} onPress={(position, gesture) => press(position, gesture, 'touch')} />
         </section>
       )}
 

@@ -22,8 +22,14 @@ describe('listInvadersPeople', () => {
 describe('listSessionRiderIds', () => {
   it('is the roster plus the mat rider, without guests or bare devices', () => {
     const ctx = { participantRoster: [{ id: 'kid' }, { profileId: 'guest' }, { id: 'device:123' }, { name: 'Kid', id: 'kid' }] };
-    expect(listSessionRiderIds(ctx, { riderId: 'test-rider' })).toEqual(['kid', 'test-rider']);
+    expect(listSessionRiderIds(ctx, { riderId: 'test-rider' })).toEqual(['test-rider', 'kid']);
     expect(listSessionRiderIds({}, null)).toEqual([]);
+  });
+
+  it('puts the mat person first and bike riders last: Invaders is played standing', () => {
+    const ctx = { participantRoster: [{ id: 'cyclist' }, { id: 'stander' }, { id: 'mat-kid' }] };
+    expect(listSessionRiderIds(ctx, { riderId: 'mat-kid' }, ['cyclist'])).toEqual(['mat-kid', 'stander', 'cyclist']);
+    expect(listSessionRiderIds(ctx, null, ['cyclist', 'guest'])).toEqual(['stander', 'mat-kid', 'cyclist']);
   });
 });
 

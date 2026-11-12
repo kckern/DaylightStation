@@ -3,7 +3,7 @@
 // (`invadersAction`). The shell turns an action into the work.
 //
 // One decision per screen. Start is always button 4, and a stomp on the mat:
-//   who      1–4 the riders in the session (hold any: other riders)
+//   who      1–4 the people in the workout (hold any: everyone else)
 //   roster   1 previous  2 next  3 back  4 choose
 //   waves    1 previous  2 next  3 change shooter  4 start (locked: admin unlock)
 //   locked   1 admin unlock  3 back  4 change shooter
@@ -12,8 +12,8 @@
 //   result   1 replay  2 next wave  3 waves  4 change shooter
 //   sound    1 quieter  2 louder  3 back  4 mute
 // Keys and the gamepad (the digits are the kiosk OS's): left = 1, right = 2,
-// back = 3, accept = 4. Exceptions: on the rider screen accept takes the first
-// rider and right opens the others; on the lock screen accept asks a grown-up;
+// back = 3, accept = 4. Exceptions: on the who screen accept takes the first
+// person and right opens everyone else; on the lock screen accept asks a grown-up;
 // on pause accept and back resume; on the Sound sheet accept goes back, so a
 // stray foot-pad press only closes it.
 
@@ -33,12 +33,12 @@ export function invadersControls(view) {
       return [1, 2, 3, 4].map((position) => {
         const rider = riders[position - 1];
         return rider
-          ? key(position, rider.name, 'Hold: other riders', '●', { avatarSrc: rider.avatarSrc })
-          : key(position, 'Other riders', 'Hold', '●');
+          ? key(position, rider.name, 'Hold: someone else', '●', { avatarSrc: rider.avatarSrc })
+          : key(position, 'Someone else', 'Hold', '●');
       });
     }
     case 'roster':
-      return [key(1, 'Previous', 'Browse riders', '←'), key(2, 'Next', 'Browse riders', '→'), key(3, 'Back', 'Riders on bikes', '×'), key(4, 'Choose', v.person?.name || '', '✓', { disabled: !v.person })];
+      return [key(1, 'Previous', 'Browse people', '←'), key(2, 'Next', 'Browse people', '→'), key(3, 'Back', 'In the workout', '×'), key(4, 'Choose', v.person?.name || '', '✓', { disabled: !v.person })];
     case 'waves': {
       const locked = v.wave?.status === 'locked';
       return [
