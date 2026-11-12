@@ -239,6 +239,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Rider card HR trend (whole-session sparkline: collecting state, log time axis, tick glide, threshold-exact colour) | `__docs/reference/fitness/rider-hr-trend.md` |
 | Fitness item identity vs launch context (episode's own season/show for art, titles, history; playlist/menu it was launched from as `launchContext`; playlist pages as grid groups) | `__docs/reference/fitness/item-identity-vs-launch-context.md` |
 | Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `__docs/reference/fitness/suggestions.md` |
+| Side-scroller skins (shared pixel-art library for side-scrolling games: `gaming-assets slice` for ripper sheets, side-scroller catalog checks, game slot contracts, skins, `skin-export`, distribution gate; Skyline Glider zones from skins, `pixel_scale` one-grid rendering, course recipes + world builds (levels as config), real-renderer harness) | `__docs/reference/gaming/side-scroller-skins.md` |
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |

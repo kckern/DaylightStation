@@ -1,0 +1,35 @@
+# Skyline Glider's slot contract for gaming-assets skins.
+#
+# Every art slot the flight renderer (browser/widgets/SkylineGlider/FlightScene.jsx)
+# can draw from a file. A skin fills any subset; an unfilled slot keeps the
+# built-in SVG art. `gaming-assets skin-validate` checks a skin against this
+# file; `cli/skyline-skin.cli.mjs` turns an exported skin into a zone.
+#
+# Boxes are scene units (the scene is 1000 x 600). A skinned zone draws every
+# sprite at art_pixel units per pixel (zone.pixel_scale), aligned in its box, so
+# box / art_pixel is the largest visible sprite: craft 52 x 27, bell 16 x 16.
+# fit: strict (gameplay: what you see is what collides) makes an oversized
+# sprite an error; other slots only warn. Entity boxes come from the base zone.
+schema: game-skin-contract/v1
+game: skyline-glider
+units: { width: 1000, height: 600, art_pixel: 2 }   # scene units per art pixel: the zone's one pixel grid
+palette: [sky, horizon, rock, rock_low]   # colours a skin may set: the sky gradient behind the layers, the SVG rock
+slots:
+  layers:            { type: parallax-layers, max: 8 }   # back to front; front: true draws over the craft
+  # Terrain fill is drawn as a pattern at 1 file pixel = 1 scene unit, so it is
+  # enlarged by art_pixel on export to sit on the same pixel grid as everything else.
+  terrain.fill:         { type: texture, repeat: [x, y], scale: 2 }
+  terrain.edge:         { type: strip, repeat: [x] }
+  terrain.ceiling_edge: { type: strip, repeat: [x] }
+  terrain.lava_fill:    { type: texture, repeat: [x, y], scale: 2 }
+  terrain.lava_edge:    { type: strip, repeat: [x] }   # the lava surface
+  craft:             { type: sprite, animated: true, box: [105, 54], fit: strict, states: [boost, hurt] }
+  collectible:       { type: sprite, box: [32, 32], fit: strict }
+  checkpoint:        { type: sprite, box: [80, 440] }
+  finish:            { type: sprite, box: [120, 430] }
+  weapons.laser:     { type: sprite, box: [52, 14] }    # right edge is the shot's tip
+  weapons.bomb:      { type: sprite, box: [24, 30] }
+  weapons.missile:   { type: sprite, box: [42, 16] }
+  weapons.blast:     { type: sprite, box: [86, 96] }    # blast_width_s 1.2 x 71.43, blast_height 0.16 x 600; frames step by progress, once
+  entities.*:        { type: sprite, fit: strict, stretch: vertical, states: [damaged] }   # one per entity class; box from the base zone (checked by skinZone).
+                                                                       # slices: { top, body, bottom } for walls/posts; gates take pieces: { top, bottom, shutter }

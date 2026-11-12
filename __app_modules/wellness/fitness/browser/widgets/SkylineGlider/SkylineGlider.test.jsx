@@ -120,6 +120,7 @@ describe('SkylineGlider', () => {
     expect(shutter()).toHaveAttribute('data-progress', '0');
     expect(shutter()).toHaveAttribute('data-warning', 'true');
     expect(shutter()).toHaveTextContent('BOOST');
+    expect(shutter().querySelector('.sg-pad')).toHaveAttribute('data-button', '4');
     rerender(<FlightScene state={{ ...flightState, courseTime: 9.8 }} course={gated}/>);
     expect(shutter()).toHaveAttribute('data-progress', '0.5');
     rerender(<FlightScene state={{ ...flightState, courseTime: 10 }} course={gated}/>);
@@ -134,6 +135,10 @@ describe('SkylineGlider', () => {
     render(<FlightScene state={flightState} course={{ ...course, entities, rules: { ...course.rules, weapons: { enabled: true } } }}/>);
     expect(screen.getByTestId('course-entity-crack')).toHaveTextContent('MISSILE');
     expect(screen.getByTestId('course-entity-bunker')).toHaveTextContent('BOMB');
+    // Each sign also shows which bike button does it: missile is 3, bomb is 2.
+    expect(screen.getByTestId('course-entity-crack').querySelector('.sg-pad')).toHaveAttribute('data-button', '3');
+    expect(screen.getByTestId('course-entity-bunker').querySelector('.sg-pad')).toHaveAttribute('data-button', '2');
+    expect(screen.getByTestId('course-entity-bunker').querySelector('.sg-pad [data-lit="true"]')).toHaveAttribute('data-slot', '2');
   });
   it('renders actual course geometry scrolling past a right-facing pitched glider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
@@ -219,6 +224,80 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('course-entity-tree-1')).toHaveAttribute('data-class', 'breakable');
     expect(screen.queryByTestId('course-entity-tree-2')).toBeNull();
     expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '80 0 32 32');
+  });
+
+  it('draws sprites at the zone pixel scale, aligned in their box, when pixel_scale is set', () => {
+    const scaled = { ...zoned, zone: { ...zoned.zone, pixel_scale: 3 } };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={scaled} assets={assets}/>);
+    const coin = screen.getByTestId('course-collectible-bell').querySelector('svg');
+    // a 16 px coin at 3 units per pixel is 48 units, centred on the 32-unit box at (-16, -16)
+    expect(coin).toHaveAttribute('width', '48');
+    expect(coin).toHaveAttribute('x', '-24');
+    expect(coin).toHaveAttribute('preserveAspectRatio', 'none');
+  });
+
+  it('paints a zone texture on slopes, not just flat terrain', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...zoned, segments: [slope] }} assets={assets}/>);
+    // style, not a fill attribute: the stylesheet's terrain fill would win over an attribute
+    expect(screen.getByTestId('course-segment-slope').querySelector('path[data-slope]').style.fill).toBe('url(#glider-terrain-fill)');
+  });
+
+  it('draws a sliced entity as caps plus a body repeated down its box', () => {
+    const wall = { id: 'wall-1', class: 'solid', draw: 'barrier', at_s: 11, altitude: 1, width_s: 0.8, height: 0.5, slices: { top: 'coin', body: 'ship-1' } };
+    const scaled = { ...zoned, zone: { ...zoned.zone, pixel_scale: 2 }, entities: [wall] };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={scaled} assets={assets}/>);
+    const sliced = screen.getByTestId('course-entity-wall-1').querySelector('[data-sliced]');
+    // 300 units tall: a 16 px coin cap (32 units) on top, then one body rect patterned with the
+    // 32 x 16 ship frame at 2 units per pixel, filling the remaining 268 units without seams.
+    const body = sliced.querySelector('[data-slice="body"]');
+    expect(Number(body.getAttribute('height'))).toBeCloseTo(268, 5);
+    expect(body.getAttribute('fill')).toBe('url(#slice-wall-1)');
+    const pattern = sliced.querySelector('pattern#slice-wall-1');
+    expect(pattern).toHaveAttribute('height', '32');
+    expect(pattern.querySelector('svg')).toHaveAttribute('viewBox', '0 0 32 16');
+    const cap = [...sliced.querySelectorAll(':scope > svg')];
+    expect(cap).toHaveLength(1);
+    expect(cap[0]).toHaveAttribute('viewBox', '64 0 16 16');
+  });
+
+  it('draws lava from the zone files and slope edges along the profile', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    const lava = { id: 'lava', type: 'lava', start_s: 12, end_s: 20, top: .9 };
+    const skinned = { ...zoned, segments: [slope, lava], zone: { ...zoned.zone, terrain: { fill: 'z/rock.png', edge: 'z/grass.png', lava_fill: 'z/lava.png', lava_edge: 'z/lava-top.png' } } };
+    const images = new Map([...assets.images, ['z/grass.png', { url: '/m/grass.png', width: 16, height: 16 }], ['z/lava.png', { url: '/m/lava.png', width: 32, height: 32 }], ['z/lava-top.png', { url: '/m/lava-top.png', width: 16, height: 8 }]]);
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={skinned} assets={{ ...assets, images }}/>);
+    const slopeEl = screen.getByTestId('course-segment-slope');
+    expect(slopeEl.querySelector('.skyline-glider__slope-edge')).toBeNull();
+    const pieces = slopeEl.querySelectorAll('[data-slope-edge] > g');
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0].getAttribute('transform')).toMatch(/skewY\(-/);
+    expect(pieces[1].getAttribute('transform')).toMatch(/skewY\((?!-)/);
+    const lavaEl = screen.getByTestId('course-segment-lava');
+    expect(lavaEl.querySelector('[data-lava-surface]')).toHaveAttribute('fill', 'url(#glider-lava-fill)');
+    // the preset class carries a stylesheet fill that would paint over the textures
+    expect(lavaEl.querySelector('.skyline-glider__lava')).toBeNull();
+    expect(lavaEl.querySelector('#glider-lava-edge-lava image')).toHaveAttribute('href', '/m/lava-top.png');
+    expect(container.querySelector('#glider-lava-fill image')).toHaveAttribute('href', '/m/lava.png');
+  });
+
+  it('switches to state art: craft boost and hurt, entity damaged', () => {
+    const stated = { ...zoned, zone: { ...zoned.zone, craft: { ...zoned.zone.craft, states: { boost: { frame: 'coin' }, hurt: { frame: 'asteroid' } } } },
+      entities: [{ id: 'rock-1', class: 'solid', frame: 'asteroid', states: { damaged: { frame: 'coin' } }, at_s: 11, altitude: 0.7, width_s: 0.8, height: 0.12 }] };
+    const viewBox = () => screen.getByTestId('skyline-glider-craft').querySelector('svg').getAttribute('viewBox');
+    const { rerender } = render(<FlightScene state={{ ...flightState, collectedIds: [], boostRemaining: 1, invincibleRemaining: 0 }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('64 0 16 16');
+    rerender(<FlightScene state={{ ...flightState, collectedIds: [], invincibleRemaining: 1 }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('80 0 32 32');
+    rerender(<FlightScene state={{ ...flightState, collectedIds: [], invincibleRemaining: 0, entityDamage: { 'rock-1': 1 } }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('0 0 32 16');
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '64 0 16 16');
+  });
+
+  it('always paints the palette sky beneath the layers', () => {
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...zoned, zone: { ...zoned.zone, layers: [], palette: { sky: '#000000' } } }} assets={assets}/>);
+    expect(container.querySelector('[data-scene-sky]')).toHaveAttribute('fill', 'url(#glider-sky)');
+    expect(container.querySelector('#glider-sky stop')).toHaveAttribute('stop-color', '#000000');
   });
 
   it('falls back to the alpine presets when nothing has loaded', () => {

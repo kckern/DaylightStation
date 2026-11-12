@@ -1,5 +1,6 @@
 import React from 'react';
 import SkylineAvatar from './SkylineAvatar.jsx';
+import { PixelIcon } from './SkylinePixelIcons.jsx';
 // Why the last attempt ended, in words a rider can act on.
 export function crashReason(flight,entity){
  if(!flight)return null;
@@ -16,16 +17,30 @@ export function crashReason(flight,entity){
  }
  return null;
 }
+const ACT_STATUS={locked:['lock','Admin unlock required'],completed:['check','Completed']};
+const STAT_ICON={Bells:'bell',Targets:'target'};
 export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
- const person=r=><><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></>;
  // The riders are listed once: on the bike-button panel beside this, where each
  // rider sits on the button that selects them (touch or physical). The 2×2 grid
  // of the same four riders that used to sit here duplicated it (2026-11-10).
- if(state.phase==='identity')return <section className="skyline-menus skyline-menus--identity" data-testid="skyline-identity"><h1>Who’s flying?</h1><p>Press your rider button on the pad. Hold for other riders.</p></section>;
- if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person">{person(r)}</div>}</section>}
- if(state.phase==='flights')return <section className="skyline-menus"><p>{rider?.name} is flying</p><h1>Pick a flight</h1><p>Top buttons browse. Bottom right starts.</p><div className="skyline-menus__options">{acts.map(a=><button key={a.id} aria-pressed={a.id===state.actId} onClick={()=>onEvent({type:'SELECT_ACT',actId:a.id})}><strong>{a.name}</strong><small>{a.status==='locked'?'🔒 Admin unlock required':a.status==='completed'?'✓ Completed':'Ready to explore'}</small></button>)}</div></section>;
- if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus"><p>{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
+ if(state.phase==='identity')return <section className="skyline-menus skyline-menus--identity" data-phase="identity" data-testid="skyline-identity"><h1>Who’s flying?</h1><p>Press your rider button on the pad. Hold for other riders.</p></section>;
+ if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus" data-phase="roster"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person"><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></div>}</section>}
+ if(state.phase==='flights')return <section className="skyline-menus" data-phase="flights">
+  <p className="skyline-menus__kicker">{rider?.name} is flying</p><h1>Pick a flight</h1>
+  <div className="skyline-menus__options">{acts.map(a=>{
+   const [icon,label]=ACT_STATUS[a.status]||[null,'Ready to explore'];
+   return <button key={a.id} type="button" aria-pressed={a.id===state.actId} data-status={a.status} onClick={()=>onEvent({type:'SELECT_ACT',actId:a.id})}>
+    <PixelIcon name="cursor" className="skyline-menus__cursor"/><strong>{a.name}</strong><small>{icon&&<PixelIcon name={icon}/>}{label}</small>
+   </button>})}</div>
+  <p>Top buttons browse. Bottom right starts.</p>
+ </section>;
+ if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus" data-phase={state.phase}><p className="skyline-menus__kicker">{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
  const titles={menu:'Flight controls',crash:'Let’s try again',result:'Back at base',saving:'Saving your flight…',denied:'Flight locked','save-details':'Your flight is waiting to save',stall:'Stalled!'};
- return <section className="skyline-menus"><h1>{titles[state.phase]||'Charting the course…'}</h1>{state.phase==='crash'&&crashNote&&<p className="skyline-menus__cause" data-testid="skyline-glider-crash-cause">{crashNote}</p>}{state.phase==='result'&&summary&&<dl className="skyline-menus__summary" data-testid="skyline-glider-summary">{summary.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}<p>{state.phase==='crash'?'Your rider and flight are remembered. Choose your next step.':state.phase==='denied'?state.accessReason:state.phase==='save-details'?'Retry saving from the results panel. Starting another flight waits until this record is saved.':state.phase==='result'?(state.saveStatus==='error'?'Save failed. Your result is retained for retry.':'Choose what happens next using your bike buttons.'):selected?.name}</p></section>;
+ return <section className="skyline-menus" data-phase={state.phase}>
+  <h1>{titles[state.phase]||'Charting the course…'}</h1>
+  {state.phase==='crash'&&crashNote&&<p className="skyline-menus__cause" data-testid="skyline-glider-crash-cause">{crashNote}</p>}
+  {state.phase==='result'&&summary&&<dl className="skyline-menus__summary" data-testid="skyline-glider-summary">{summary.map(([label,value])=><div key={label} data-stat={String(label).toLowerCase()}><dt>{STAT_ICON[label]&&<PixelIcon name={STAT_ICON[label]}/>}{label}</dt><dd>{value}</dd></div>)}</dl>}
+  <p>{state.phase==='crash'?'Your rider and flight are remembered. Choose your next step.':state.phase==='denied'?state.accessReason:state.phase==='save-details'?'Retry saving from the results panel. Starting another flight waits until this record is saved.':state.phase==='result'?(state.saveStatus==='error'?'Save failed. Your result is retained for retry.':'Choose what happens next using your bike buttons.'):selected?.name}</p>
+ </section>;
 }

@@ -29,9 +29,9 @@ The simulation and its plumbing come from the gaming [real-time kit](../gaming/r
 
 ## Weapons
 
-During flight, top-left fires laser, top-right drops a bomb, bottom-left launches a guided missile and bottom-right boosts the craft forward. The 2×2 panel is not drawn during flight; the HUD bar across the top shows hearts, time remaining, bells, targets and (when above 1×) heart-rate power on the left, and a 2×2 legend of the four actions on the right in their physical positions, each with its ammunition or recharge. Every press flashes its legend cell: green when it fires, red with the reason (`Reloading`, `Empty`, `Charging`, `Wait`) plus a short deny tone when it does not, logged as `skyline_glider.input.refused` (`action`, `reason`). Holding bottom-right opens a labeled menu for Resume, Sound, End flight and Change rider. The menu freezes simulation; resuming requires pedal readiness and preserves ammunition. A committed stall completes before the menu can open. Sensor loss still permits ending the flight. No attack or menu input reassigns the rider.
+During flight, top-left fires laser, top-right drops a bomb, bottom-left launches a guided missile and bottom-right boosts the craft forward. The 2×2 panel is not drawn during flight. The HUD shows hearts (spent ones stay as dark slots), time remaining, bells, targets and (when above 1×) heart-rate power as outlined readouts at the top left, and a 2×2 block of the four actions at the top right in their physical positions, each with its ammunition or recharge. Every press flashes its cell: a white flash when it fires, red with the reason (`Reloading`, `Empty`, `Charging`, `Wait`) plus a short deny tone when it does not, logged as `skyline_glider.input.refused` (`action`, `reason`). Holding bottom-right opens a labeled menu for Resume, Sound, End flight and Change rider. The menu freezes simulation; resuming requires pedal readiness and preserves ammunition. A committed stall completes before the menu can open. Sensor loss still permits ending the flight. No attack or menu input reassigns the rider.
 
-The HUD hearts are the shared kit's `LifeMeter` (glyph variant) and the checkpoint/cue banner is its `MomentBanner`; their colours come from a `--game-hud-*` palette block on `.skyline-glider`. See [HUD set](../gaming/realtime-kit.md#hud-set).
+The checkpoint/cue banner is the shared kit's `MomentBanner`; its colours come from a `--game-hud-*` palette block on `.skyline-glider`. See [HUD set](../gaming/realtime-kit.md#hud-set). The hearts are drawn by the game (`PixelIcon`), not the kit's `LifeMeter`, so that lost hearts can be shown.
 
 | Input | Laser | Bomb | Missile | Boost |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ On the garage's 8BitDo SFC30 (standard mapping in Firefox), that is the bottom f
 - **Impacts:** every shot that lands leaves a short-lived (`impact_s`, 0.35 s) record in `impacts` with `effect` `damage` (a hit that did not kill: the entity flashes white and a high tick plays), `kill` (a burst and a floating "+1", `target` cue) or `absorbed` (a grey puff and the deny tone, for an entity that weapon cannot hurt). A shot into terrain simply ends, with no impact. Each is logged as `skyline_glider.flight.weapon.hit` (`shotId`, `weapon`, `effect`, `entityId`, `damage`, `hitPoints`).
 - **Heart-rate power:** the locked rider’s trusted, eligible zone profile, at most ten seconds old, sets basic/warm/hot/fire damage to 1/2/3/4. Cool, active, missing, stale and unknown zones use basic power. Each shot snapshots its power. Bomb blast dimensions scale by 1/1.25/1.5/1.75. A monitor is optional; conserved basic bombs can clear mandatory barriers. More physical resistance can raise effort without changing cadence/altitude.
 - **Vulnerability** defaults by class: `breakable` → laser, bomb and missile, `solid` → bomb only, `scenery` → nothing. An entity definition or placement can set `vulnerable_to: [laser, bomb, missile]` (or `[]`). A destroyed solid stops being a wall.
-- **Role** tells the rider what to do with an entity and drives its marking: `shoot` draws pulsing crosshair brackets and, for `hit_points` above 1, health pips that empty as it is damaged; `bomb` (also inferred from `required_weapon: bomb`) labels it "BOMB ↓"; `missile` (also inferred from `required_weapon: missile`) labels it "MISSILE →"; `avoid` and `scenery` add nothing. A shutter is marked separately: its gap edges blink red and "BOOST »" shows above the gap for the 3 s before it closes. Set `role` on a zone entity definition or a placement. Only `shoot`, `bomb` and `missile` entities score as targets (HUD ◎, the "+1", the `target` cue and the saved `targets`); breaking an `avoid` entity just shatters it. Courses with no roles keep the older rule that any weapon kill scores. An unarmed act (`weapons.enabled: false`) shows `shoot` entities as `avoid`, since nothing there can be shot.
+- **Role** tells the rider what to do with an entity and drives its marking: `shoot` draws stepping corner brackets and, for `hit_points` above 1, health pips that empty as it is damaged; `bomb` (also inferred from `required_weapon: bomb`) puts a BOMB sign over it; `missile` (also inferred from `required_weapon: missile`) a MISSILE sign; `avoid` and `scenery` add nothing. A shutter is marked separately: a red-and-white hazard strip runs along its gap edges and a BOOST sign shows above the gap for the 3 s before it closes. Each sign carries the 2×2 pad glyph with that action's button lit and an arrow for where the shot goes (see [Game UI](#game-ui)). Set `role` on a zone entity definition or a placement. Only `shoot`, `bomb` and `missile` entities score as targets (the HUD target count, the "+1", the `target` cue and the saved `targets`); breaking an `avoid` entity just shatters it. Courses with no roles keep the older rule that any weapon kill scores. An unarmed act (`weapons.enabled: false`) shows `shoot` entities as `avoid`, since nothing there can be shot.
 - A crash clears shots and blasts in flight. A checkpoint restart restores what was destroyed at that checkpoint, as it does for crash-broken breakables.
 - Kills are recorded per entity as `laser`, `bomb`, `missile` or `crash`. The run saves `targets` (laser, bomb and missile kills), `shots_fired`, `bombs_dropped`, `missiles_fired` and `boosts_used` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Game score adds weapon targets to bells; reward rings do not change. Positive integer `hit_points` supports tougher targets. Partial target damage persists and rolls back with checkpoints.
 - Fire keys are ignored with Ctrl, Cmd or Alt held and while typing in a field. A fire key never also activates a focused on-screen button.
@@ -90,6 +90,31 @@ Sound slots `laser`, `bomb`, `missile`, `explosion`, `boost`, `hit`, `target`, `
 A crash names its cause on the crash menu ("Hit the ground…", "Crashed into the cracked wall. Fire a missile…", "Hit the gate. … fly through it", "The gate shut before you got through. Boost…", "Crashed into a tower. Fly over it, or drop a bomb…", "Out of hearts — shoot the bracketed targets…"). The result screen lists bells, targets (armed acts), score and bumps. On the ready screen after Resume or Retry checkpoint, buttons 1–3 read "End flight", because they end and save that attempt.
 
 Logged events: `skyline_glider.flight.weapon.fired` (`weapon`, `count`, `bombsLeft` for bombs), `skyline_glider.flight.bomb.detonated` (`shotId`, `atSeconds`, `altitude`), `skyline_glider.flight.entity.destroyed` (`entityId`, `by`), `skyline_glider.input.gamepad` once per pad seen during a flight, and `skyline_glider.input.fire` per press (`action`, `source` `gamepad`|`keyboard`, `button` index and `padId`, or `key`). `skyline_glider.flight.gate.cleared` (`gateId`, `shutter`, `boostOffset`) fires when the craft's tail passes a gate, and `boost.activated` carries `cameraTime`. Per-second flight samples include `bombsLeft` and `boostOffset`. `skyline_glider.flight.crashed` carries `cause`, `segmentId`/`entityId`, and the `courseTime`, `altitude`, `filteredRpm` and `rawRpm` at the moment of the crash.
+
+## Game UI
+
+The HUD, the in-scene marks, the menus and the bike-button panel share one look: a 16-bit console game drawn on the scene's pixel grid. It lives in `browser/widgets/SkylineGlider/`: `SkylineGlider.scss` (tokens and every rule), `SkylinePixelIcons.jsx` (icons and the pad glyph), `SkylineFlightHud.jsx`, `SkylineRpmGauge.jsx`, `SkylineFlightOverlays.jsx`, `SkylineMenus.jsx`, `SkylineControlPanel.jsx`, and the mark components in `FlightScene.jsx` (`Callout`, `TargetMarks`, `HazardStrip`, `Impact`).
+
+**Rules.**
+
+- Flat colour and hard edges. No blur, no soft shadow, no see-through panel: a scene is dimmed with a one-pixel dither, and depth is a one-pixel offset.
+- Readouts (hearts, clock, score, rpm) are ink-outlined numerals set straight on the scene. Things the rider presses are solid plates in the colour of the button that does it. Things that talk (menus, notices over a flight) are windows: night-blue fill, cream edge, ink rim, stepped corners.
+- The four bike buttons own four colours everywhere: 1 cyan (laser), 2 gold (bomb), 3 red-orange (missile), 4 violet (boost). The same colour is on the menu key, the HUD cell, the lit square of the pad glyph and the edge of the sign over the thing to hit.
+- Roboto Condensed only: 900 for numerals and names, 900 italic for titles and signs, tabular figures for anything that counts.
+- Animation is stepped (`steps(1)` keyframes), never eased, and stops under `prefers-reduced-motion`.
+
+**Tokens** are custom properties on `.skyline-glider` (and on `.skyline-glider__scene`, so the scene draws correctly on its own): `--sg-ink`, `--sg-night`, `--sg-night-lift`, `--sg-mute`, `--sg-paper`, `--sg-gold`, `--sg-red`, `--sg-heart`, the button colours `--sg-b1`…`--sg-b4` with a `-shade` each, the UI pixel `--sg-px` (0.3% of the viewport width, the size of one art pixel of a skinned zone), the text outline `--sg-line`, and the type scale `--sg-text-s`…`--sg-text-xxl` (24, 32, 43, 83 and 163 px on the 1810 px kiosk; nothing in flight is smaller than `-s`). Frames come from the `sg-frame` mixin and outlined text from `sg-outline`; use them instead of writing a border or a shadow.
+
+**Icons** are bitmaps in `SkylinePixelIcons.jsx` (`#` body, `o` highlight), outlined in ink automatically, so nothing depends on the kiosk's symbol or emoji fonts. `PixelIcon` sizes itself from `--sg-icon-px` in HTML, or takes `x`/`y`/`px` in scene units inside the flight scene. The control model still names its buttons with text symbols; `iconForSymbol` maps each to a bitmap, and a test fails if the model gains a symbol with no bitmap. `PadGlyph` is the 2×2 block with one button lit.
+
+**Marks in the scene** are built in multiples of 3 scene units (`U`, one art pixel at `pixel_scale: 3`). A sign's word is pinned with `textLength`, so its plate is the same size in any font.
+
+**Seeing it.** `tests/_scratch/skyline-skin-harness/` renders every screen without a backend (`?scene=flight&act=…&zone=…&t=…&fx=…` for the HUD and marks over the real scene, `?scene=menu&phase=…` for each menu and the panel), and `tests/_scratch/shoot-skyline-ui.mjs` screenshots them all at kiosk size and half size:
+
+```bash
+HARNESS_PORT=5197 MEDIA_DIR=<media dir> node_modules/.bin/vite --config tests/_scratch/skyline-skin-harness/vite.harness.config.mjs
+BASE_URL=http://127.0.0.1:5197 OUT_DIR=<out dir> node tests/_scratch/shoot-skyline-ui.mjs
+```
 
 ## Persistence
 
@@ -141,6 +166,74 @@ sounds: { bell: ring.mp3, checkpoint: post.mp3, breakable: smash.mp3, crash: cra
 - Asset paths resolve against `asset_root` on the media mount and are served by `/api/v1/proxy/media/*` with revalidating cache headers, so replacing a file keeps its name. A path starting with `/` is media-root-relative.
 - Sounds: `bell`, `checkpoint`, `breakable`, `crash`, `restart` and `finish` are cues. `wind` and `music` loop during flight. A missing, empty or undecodable file falls back to the synthesized tone, so the alpine zone ships with empty placeholders under `media/fitness/skyline-glider/alpine/sounds/`.
 - On each act change the lobby preloads the zone and logs `skyline_glider.assets.loaded` with `{ zoneId, images, spriteFrames, sounds, missing }`. The level is `warn` when anything other than an empty placeholder failed.
+
+### Skins (zones built from the shared art library)
+
+A zone can also be generated from a gaming-assets **skin**: the art comes from
+the shared library at `media/games/_common` (catalogued, validated, licence- and
+distribution-tracked), the gameplay from a base zone. Skyline's slots are in
+`server/adapters/skylineGlider/skin-contract.yml`;
+`cli/skyline-skin.cli.mjs build` exports a skin into
+`media/fitness/skyline-glider/<zone>/` with a generated `zone.yml`, and
+`install` copies it into the household zones folder (private-only placeholder
+skins are refused unless `--private-dev true`).
+
+A generated zone sets `pixel_scale` (scene units per art pixel, 2): every
+sprite then draws at exactly that grain, aligned in its box, rather than
+stretching to the box, and layer and terrain-edge heights come from their pixel
+sizes, so the whole scene sits on one pixel grid. Hand-written zones may set
+`pixel_scale` too. Frame names in a sheet may contain dots (`craft.fly.0`);
+only an image extension (`.png`, `.gif`, ...) is dropped from a name.
+
+Skinned zones can also dress lava (`terrain.lava_fill`, `terrain.lava_edge`),
+slopes (the edge strip follows the profile), tall entities and gate pieces
+(vertical slices), and states (craft `boost` / `hurt`, entity `damaged`).
+`skyline-skin.cli.mjs brief` writes the commissioning brief: every slot's pixel
+limit, generated from the contract.
+
+See `__docs/reference/gaming/side-scroller-skins.md`.
+
+### Levels from config: course recipes and world builds
+
+A level is a zone (art, from a skin) plus an act (layout). Acts can be written by
+hand, or generated from a **course recipe** (`server/adapters/skylineGlider/courseRecipe.mjs`):
+
+```yaml
+schema: skyline-glider-recipe/v1
+id: desert-strike
+style: bombing        # bells | hills | targets | bombing | gates | mixed
+difficulty: medium    # easy | medium | hard: hill peaks, gate gaps, target hit points, terrain assist
+duration_s: 220
+seed: 7               # the same recipe and seed always give the same course
+```
+
+A style weights the features the generator lays out: bell runs, hill profiles,
+target groups, bunker fields on flat ground, towers, gates. Checkpoints land every
+60 s off terrain, weapons and bomb counts follow from what was placed, and every
+generated act must pass the game's own `validateCourse` (reachability included).
+
+A **world file** lists the levels in play order:
+
+```yaml
+schema: skyline-glider-world-build/v1
+id: my-world
+levels:
+  - { zone: grassland, skin: my-grassland-skin, name: Green Hills,
+      course: { style: bells, difficulty: easy, duration_s: 180, seed: 1 } }
+```
+
+`node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs world --world <file>`
+builds every zone from its skin and every act from its recipe, validates each act,
+and writes `world.yml`, `zones/` and `courses/` in the household layout
+(`fitness/skyline-glider/` in the household data folder), so installing a world is
+a copy. A private-only world (placeholder art) must not be installed there.
+
+Skins may also set the palette colours the contract names (`sky`, `horizon`,
+`rock`, `rock_low`); the scene always paints the palette sky beneath the layers.
+
+A twelve-level placeholder world (`media/fitness/skyline-glider/_worlds/smw-placeholder.world.yml`)
+exercises every style across twelve backdrops; render any of its levels with the
+skin harness and `WORLD_DIR` set to the built world.
 
 ### Act file
 

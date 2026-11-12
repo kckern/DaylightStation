@@ -11,7 +11,6 @@ import { weaponPower } from "../../lib/skylineGlider/weaponPower.js";
 import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
 import { scoresAsTarget, weaponRefusal, weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
-import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
 import { createSkylineAudio } from "../../lib/skylineGlider/skylineAudio.js";
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from "../../lib/skylineGlider/checkpointRepository.js";
@@ -25,6 +24,8 @@ import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
 import SkylineFlightHud from "./SkylineFlightHud.jsx";
+import RpmGauge from "./SkylineRpmGauge.jsx";
+import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
@@ -84,7 +85,7 @@ function buildEffectTable({ setEffects, effectTimersRef, course }) {
 
 const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
 
-export { FlightScene };
+export { FlightScene, RpmGauge };
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
 // Text cues are timed to what is on screen, so they follow the camera, not a
@@ -103,28 +104,6 @@ function zonesFromCourses(courses) {
     zones.get(id).acts.push({ id: item.id, name: item.name, act: item.act ?? null, status: 'open' });
   }
   return [...zones.values()];
-}
-
-export function RpmGauge({ state }) {
-  const rpm = Math.max(0, Math.round(state.rawRpm || 0));
-  const altitude = altitudeToTrackPercent(state.altitude);
-  const target = altitudeToTrackPercent(state.targetAltitude);
-  return <aside
-    className="skyline-glider__rpm-gauge"
-    role="meter"
-    aria-label="Cadence altitude"
-    aria-valuemin={state.calibration.lowRpm}
-    aria-valuemax={state.calibration.highRpm}
-    aria-valuenow={rpm}
-  >
-    <span className="skyline-glider__rpm-high">{state.calibration.highRpm}</span>
-    <div className="skyline-glider__rpm-track">
-      <div className="skyline-glider__rpm-target" data-testid="rpm-target" style={{ top: `${target}%` }}/>
-      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude}%` }}><span>{rpm}</span></div>
-    </div>
-    <span className="skyline-glider__rpm-low">{state.calibration.lowRpm}</span>
-    <strong>RPM</strong>
-  </aside>;
 }
 
 export default function SkylineGlider() {
@@ -668,18 +647,18 @@ export default function SkylineGlider() {
     log.info('skyline_glider.act.chosen', { riderId, actId: act.id, status: act.status });
   };
 
-  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls" data-testid="skyline-glider-loading"><p>Charting the course…</p><SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/></main>;
-  if(phase==='error')return <main className="skyline-glider skyline-glider--controls"><p role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
+  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls" data-testid="skyline-glider-loading"><p className="skyline-glider__notice">Charting the course…</p><SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/></main>;
+  if(phase==='error')return <main className="skyline-glider skyline-glider--controls"><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
   if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls"
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
-    <div><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}
+    <div className="skyline-glider__menu"><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
         return [['Bells',bells],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
-    {saveState.status==='saved'&&<p>Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
-    {storageWarning&&<p role="status">{storageWarning}</p>}
-    {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
-    {(adminPromptOpen||actUnlock)&&<p>Present an admin badge to unlock. Bottom-left cancels.</p>}
+    {saveState.status==='saved'&&<p className="skyline-glider__notice" data-tone="good">Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
+    {storageWarning&&<p className="skyline-glider__notice" role="status">{storageWarning}</p>}
+    {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
+    {(adminPromptOpen||actUnlock)&&<p className="skyline-glider__notice">Present an admin badge to unlock. Bottom-left cancels.</p>}
     </div>
     <SkylineControlPanel controls={panelControls} onPress={pressPanel}/>
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
@@ -692,10 +671,7 @@ export default function SkylineGlider() {
     <SkylineFlightHud flight={flight} course={course} armed={!!armory.enabled} press={pressFlash}
       targetsHit={countTargets(flight, course)}
       power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
-    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
-    {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
-    {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
+    <SkylineFlightOverlays flight={flight}/>
     <MomentBanner text={bannerText} momentKey={bannerText} className="skyline-glider__checkpoint-banner"/>
-    {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
   </main>;
 }
