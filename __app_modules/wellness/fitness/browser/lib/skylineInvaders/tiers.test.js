@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INVADERS_TUNABLES } from './tunables.js';
 import { SHOT_TIERS, shotTier } from './tiers.js';
-import { trustedZoneId, weaponPower } from '../skylineGlider/weaponPower.js';
+import { trustedZoneId, weaponPower, zonePower } from '../skylineGlider/weaponPower.js';
 
 const now = 100000;
 const reading = { zoneTrusted: true, zoneReadingEligible: true, zoneReadingAt: now, currentZoneId: 'warm' };
@@ -29,6 +29,13 @@ describe('shotTier', () => {
     expect(trustedZoneId({ ...reading, zoneReadingAt: now + 1 }, now)).toBeNull();
     expect(trustedZoneId({ ...reading, zoneReadingAt: now - 10001 }, now)).toBeNull();
     expect(trustedZoneId({ ...reading, currentZoneId: undefined }, now)).toBeNull();
+  });
+  it('reads the clock itself when no time is given', () => {
+    expect(shotTier({ ...reading, currentZoneId: 'hot', zoneReadingAt: Date.now() })).toEqual({ tier: 'spread', zoneId: 'hot', trusted: true });
+    expect(shotTier({ ...reading, currentZoneId: 'hot', zoneReadingAt: Date.now() - 60000 }).trusted).toBe(false);
+  });
+  it('ranks a zone id as a power without needing a profile', () => {
+    expect(['cool', 'active', 'warm', 'hot', 'fire', null, 'purple'].map(zonePower)).toEqual([1, 1, 2, 3, 4, 1, 1]);
   });
   it('describes each tier as damage, hitbox and spread', () => {
     expect(SHOT_TIERS.small).toMatchObject({ damage: 1, spread: [0] });

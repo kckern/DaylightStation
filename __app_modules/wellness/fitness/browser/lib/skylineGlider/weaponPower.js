@@ -9,7 +9,10 @@ export function trustedZoneId(profile, now = Date.now()) {
   return profile.currentZoneId || null;
 }
 
+/** Power for a zone id: 1 cool/active/unknown, 2 warm, 3 hot, 4 fire. */
+export const zonePower = (zoneId) => TIERS[zoneId] || 1;
+
 // A disconnected strap's last zone must never remain a permanent power-up.
 export function weaponPower(profile, now = Date.now()) {
-  return TIERS[trustedZoneId(profile, now)] || 1;
+  return zonePower(trustedZoneId(profile, now));
 }

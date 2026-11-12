@@ -1,4 +1,4 @@
-import { trustedZoneId, weaponPower } from '../skylineGlider/weaponPower.js';
+import { trustedZoneId, zonePower } from '../skylineGlider/weaponPower.js';
 
 // spread = horizontal speed (scene units/s) of each shot in the volley.
 // The nuke shot does no damage of its own: its blast does (engine.js).
@@ -10,8 +10,12 @@ export const SHOT_TIERS = Object.freeze({
 });
 const BY_POWER = ['small', 'big', 'spread', 'nuke'];
 
-/** The shooter's tier, plus whether a trusted zone backs it (for the HUD note). */
-export function shotTier(profile, now = Date.now()) {
+/**
+ * The shooter's tier, plus whether a trusted zone backs it (for the HUD note).
+ * `now` defaults to the current time inside trustedZoneId, which keeps the
+ * clock out of this file.
+ */
+export function shotTier(profile, now) {
   const zoneId = trustedZoneId(profile, now);
-  return { tier: BY_POWER[weaponPower(profile, now) - 1], zoneId, trusted: zoneId !== null };
+  return { tier: BY_POWER[zonePower(zoneId) - 1], zoneId, trusted: zoneId !== null };
 }
