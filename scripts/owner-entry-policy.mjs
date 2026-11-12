@@ -400,6 +400,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/gaming/browser/platform/ui/OptionalRendererBoundary.jsx': null,
   '__capabilities/gaming/browser/platform/ui/OutcomeReveal.jsx': null,
   '__capabilities/gaming/browser/platform/ui/PartyStage.jsx': null,
+  '__capabilities/gaming/browser/platform/ui/PixelSprite.jsx': null,
   '__capabilities/gaming/browser/platform/ui/RevealPanel.jsx': null,
   '__capabilities/gaming/browser/platform/ui/Scoreboard.jsx': null,
   '__capabilities/gaming/browser/platform/ui/SegmentedSecretText.jsx': null,

@@ -3,6 +3,7 @@
  * 3 variants (Crab, Squid, Wide-body), each with 2 animation frames.
  * Uses currentColor for fill so parent can tint via CSS color/--hue.
  */
+import PixelSprite from '../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
 
 // Each variant is an 11×8 grid. 1 = filled pixel, 0 = empty.
 // Two frames per variant for the "march" animation.
@@ -84,9 +85,6 @@ const VARIANTS = [
   },
 ];
 
-const GRID_W = 11;
-const GRID_H = 8;
-
 /**
  * Render a classic pixel-art space invader as an inline SVG.
  *
@@ -97,30 +95,7 @@ const GRID_H = 8;
  */
 export function InvaderSprite({ variant = 0, frame = 0, className = '' }) {
   const v = VARIANTS[variant % VARIANTS.length];
-  const grid = v.frames[frame % v.frames.length];
-
-  const rects = [];
-  for (let y = 0; y < GRID_H; y++) {
-    for (let x = 0; x < GRID_W; x++) {
-      if (grid[y][x]) {
-        rects.push(
-          <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} />
-        );
-      }
-    }
-  }
-
-  return (
-    <svg
-      className={`invader-sprite ${className}`.trim()}
-      viewBox={`0 0 ${GRID_W} ${GRID_H}`}
-      fill="currentColor"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      {rects}
-    </svg>
-  );
+  return <PixelSprite grid={v.frames[frame % v.frames.length]} className={`invader-sprite ${className}`.trim()} />;
 }
 
 export default InvaderSprite;
