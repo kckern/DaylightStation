@@ -181,7 +181,7 @@ installed policy declares:
 
 | Producer fact | Gate/entitlement consumer |
 |---|---|
-| `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games` and `fitness.skyline-glider` |
+| `school.day.complete` on `interval/school-day:YYYY-MM-DD` | `school.day-complete` -> fail-closed `piano.games`, `fitness.skyline-glider` and `fitness.skyline-invaders` |
 | `fitness.weekly.rings` on `interval/fitness-week:FROM:TO` | `fitness.weekly-rings` progress -> Agenda ring count |
 | `kiosk.friction-score` on `interval/kiosk-day:DEVICE:YYYY-MM-DD` | `kiosk.friction-ok` -> fail-open `kiosk.access` |
 

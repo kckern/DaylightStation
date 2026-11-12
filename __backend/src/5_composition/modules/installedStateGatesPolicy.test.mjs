@@ -9,4 +9,9 @@ describe('installed State Gates policy', () => {
       failure_posture: 'fail_closed',
     });
   });
+
+  it('gates Skyline Invaders on the same fail-closed school-day decision', () => {
+    expect(INSTALLED_STATE_GATES_POLICY.policy_revision).toBeGreaterThan(3);
+    expect(INSTALLED_STATE_GATES_POLICY.entitlements['fitness.skyline-invaders']).toEqual({ gate: 'school.day-complete', failure_posture: 'fail_closed' });
+  });
 });
