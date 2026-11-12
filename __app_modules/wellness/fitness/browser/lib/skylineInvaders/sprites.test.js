@@ -2,6 +2,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { INVADER_SPRITES, SPRITE_GRID, SPRITE_PIXEL } from './sprites.js';
+import { THREATS } from './threats.js';
 import { InvaderSprite } from '../../../../../learning/piano/browser/components/InvaderSprite.jsx';
 
 const THREAT_TYPES = ['meteor', 'drone', 'pod', 'bomber'];
@@ -24,6 +25,21 @@ describe('Skyline Invaders sprites', () => {
   it('draws on an 11 x 8 grid at 4 scene units per art pixel', () => {
     expect(SPRITE_GRID).toEqual({ columns: 11, rows: 8 });
     expect(SPRITE_PIXEL).toBe(4);
+  });
+
+  // The scene stretches each sprite over its hitbox. A hitbox that is not a
+  // whole number of art pixels would blur the grid and misplace the edges.
+  it.each(THREAT_TYPES)('%s hitbox is a whole multiple of the 11 x 8 grid, with square pixels', (type) => {
+    const { width, height } = THREATS[type];
+    expect(width % SPRITE_GRID.columns).toBe(0);
+    expect(height % SPRITE_GRID.rows).toBe(0);
+    expect(width / SPRITE_GRID.columns).toBe(height / SPRITE_GRID.rows);
+  });
+
+  it('the bomb hitbox fits its own 4 x 5 grid at the shared art pixel', () => {
+    const [frame] = INVADER_SPRITES.bomb.frames;
+    expect(THREATS.bomb.width).toBe(frame[0].length * SPRITE_PIXEL);
+    expect(THREATS.bomb.height).toBe(frame.length * SPRITE_PIXEL);
   });
 
   it.each(THREAT_TYPES)('%s has two 11x8 frames that differ', (type) => {
