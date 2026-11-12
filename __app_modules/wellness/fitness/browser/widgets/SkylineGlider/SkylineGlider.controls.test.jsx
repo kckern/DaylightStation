@@ -114,7 +114,7 @@ describe('complete bike lifecycle',()=>{
  it('drives game audio from the shared fitness volume store, mute included',async()=>{
   mockVolume.volume=0.4;mockVolume.muted=false;mockLog.info.mockClear();
   const view=await mount();
-  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({volume:0.4,storeMuted:false,output:0.4}));
+  expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({volume:0.4,storeMuted:false,output:expect.closeTo(0.0631,3)}));
   mockVolume.muted=true;view.rerender(<SkylineGlider/>);await flush();
   expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.audio.volume',expect.objectContaining({storeMuted:true,output:0}));
   mockVolume.muted=false;

@@ -29,6 +29,7 @@ import RpmGauge from "./SkylineRpmGauge.jsx";
 import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
+import { linearLevelFromVolume, logVolumeFromLevel } from "../../../../../../__capabilities/playback/browser/volume/touchVolumeModel.js";
 import "./SkylineGlider.scss";
 
 const SKYLINE_LOG_NAMES = {
@@ -162,7 +163,11 @@ export default function SkylineGlider() {
   // sidebar volume buttons and the Cycle Game drive (fitness/global/video).
   // Every Skyline voice -- cue files, music, wind, synth tones -- is scaled by it.
   const masterVol = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video' });
-  const effectiveMaster = masterVol.muted ? 0 : (Number.isFinite(masterVol.volume) ? masterVol.volume : 1);
+  // The store holds the button level as a linear 0..1; game audio follows the
+  // house log curve (touchVolumeModel, as the music player and dance party do)
+  // so the low buttons are genuinely quiet.
+  const storeVolume = Number.isFinite(masterVol.volume) ? masterVol.volume : 1;
+  const effectiveMaster = masterVol.muted ? 0 : logVolumeFromLevel(linearLevelFromVolume(storeVolume));
   const effectiveMasterRef = useRef(effectiveMaster);
   effectiveMasterRef.current = effectiveMaster;
   useEffect(() => {
