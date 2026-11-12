@@ -197,6 +197,7 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
 
   it('assigns the picked shooter to the mat', async () => {
     h.ctx = makeCtx({ matRider: null });
+    h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
     await press('Kid');
     expect(h.ctx.fitnessSessionInstance.setEquipmentUser).toHaveBeenCalledWith('step-mat', 'kid');
@@ -434,12 +435,13 @@ describe('SkylineInvaders — finishing a round', () => {
 });
 
 describe('SkylineInvaders — school-day access and level unlocks', () => {
-  it('shows Ask a grown-up to a school learner without the entitlement, who cannot start', async () => {
+  it('shows the lock screen to a school learner without the entitlement, who cannot start', async () => {
     h.localDev = false;
     h.entitlement = entitlement('denied');
     await mount();
     expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
-    expect(button(/Ask a grown-up/)).toBeTruthy();
+    expect(button(/Admin unlock/)).toBeTruthy();
+    await key('Escape');
     await key('Enter');
     await f.seconds(4);
     expect(screen.queryByTestId('skyline-invaders-play')?.getAttribute('data-phase')).not.toBe('playing');
@@ -451,7 +453,7 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     h.entitlement = entitlement('denied');
     h.registerAdmin = vi.fn(async () => ({ matched: true, userId: 'test-rider' }));
     await mount();
-    await press(/Ask a grown-up/);
+    await press(/Admin unlock/);
     await flush();
     expect(h.registerAdmin).toHaveBeenCalledWith('skyline_invaders');
     expect(logged('skyline_invaders.access.override_granted')[0]).toMatchObject({ riderId: 'kid', adminUserId: 'test-rider' });
@@ -465,10 +467,10 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     h.localDev = false;
     h.entitlement = entitlement('denied');
     await mount();
-    await press(/Ask a grown-up/);
+    await press(/Admin unlock/);
     await flush();
     expect(logged('skyline_invaders.access.override_denied')).toHaveLength(1);
-    expect(button(/Ask a grown-up/)).toBeTruthy();
+    expect(button(/Admin unlock/)).toBeTruthy();
   });
 
   it('ends the round and returns to the lobby when access is revoked mid-round', async () => {
@@ -480,7 +482,7 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     await act(async () => { vi.advanceTimersByTime(16_000); });
     await flush();
     expect(postedRecords(routes).map((record) => record.run.status)).toEqual(['abandoned']);
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
   });
 
   it('unlocks a locked level through an admin and then offers it', async () => {
@@ -496,6 +498,67 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     expect(String(url)).toContain('/skyline-invaders/progress/kid/unlock');
     expect(JSON.parse(options.body)).toEqual({ levelId: 'invaders-test-2', unlockedBy: 'test-rider' });
     expect(button(/Second Wave/).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // 2026-11-12 (Fable review): the shooter list offered every household member,
+  // so a child could pick a grown-up (not a learner) and play past the school
+  // gate. The gate follows who is riding, never the pick.
+  describe('the gate follows the riders, not the pick', () => {
+    const learners = (id) => ({ id, schoolLearner: id === 'kid' });
+    const holdOthers = async () => {
+      const others = button(/Other riders/);
+      await act(async () => { fireEvent.pointerDown(others); vi.advanceTimersByTime(700); fireEvent.pointerUp(others); });
+    };
+
+    it('picking a grown-up does not open a round while a child with school left is riding', async () => {
+      h.localDev = false;
+      h.entitlement = entitlement('denied', 'kid');
+      h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
+      h.ctx.getUserByName = learners;
+      await mount();
+      expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
+      await press(/Change shooter/);
+      const picker = screen.getByRole('group', { name: 'Who is shooting?' });
+      // Only the riders are offered; the grown-up is behind the hold.
+      expect(within(picker).queryByRole('button', { name: 'Test Rider' })).toBeNull();
+      await holdOthers();
+      await press('Test Rider');
+      await flush();
+      expect(screen.getByTestId('skyline-invaders').getAttribute('data-shooter-id')).toBe('test-rider');
+      expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
+      expect(screen.getByTestId('invaders-locked-for').textContent).toContain('Kid');
+      expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
+      await key('Enter');
+      await f.seconds(4);
+      expect(logged('skyline_invaders.level.start')).toHaveLength(0);
+    });
+
+    it('a grown-up with no learner riding plays without a lock', async () => {
+      h.localDev = false;
+      h.entitlement = entitlement('denied', 'kid');
+      h.ctx = makeCtx({ matRider: null });
+      h.ctx.participantRoster = [{ id: 'test-rider', name: 'Test Rider' }];
+      h.ctx.getUserByName = learners;
+      await mount();
+      await press('Test Rider');
+      await flush();
+      expect(screen.queryByTestId('skyline-invaders-locked')).toBeNull();
+      await startRound();
+    });
+
+    it('the lock screen is the only thing on screen: no level cards behind it', async () => {
+      h.localDev = false;
+      h.entitlement = entitlement('denied', 'kid');
+      await mount();
+      const locked = screen.getByTestId('skyline-invaders-locked');
+      expect(within(locked).getByRole('heading', { name: 'Round locked' })).toBeTruthy();
+      expect(locked.textContent).toContain('Finish today’s school work to unlock.');
+      expect(screen.queryByTestId('skyline-invaders-lobby')).toBeNull();
+      expect(document.querySelectorAll('[data-level]')).toHaveLength(0);
+      expect(within(locked).getAllByRole('button').map((b) => b.querySelector('strong')?.textContent)).toEqual(['Admin unlock', 'Locked', 'Back', 'Change shooter']);
+      await act(async () => { fireEvent.click(within(locked).getAllByRole('button')[2]); });
+      expect(screen.getByRole('group', { name: 'Who is shooting?' })).toBeTruthy();
+    });
   });
 
   it('treats every level as open when the world map cannot be read', async () => {

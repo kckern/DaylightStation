@@ -14,7 +14,7 @@ vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: (...args) => mocks.api(...args) }
 vi.mock('@/lib/kioskEnv.js', () => ({ isLocalDevHost: () => mocks.localDev }));
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: (context) => { mocks.components.push(context.component); return mocks.log; } }) }));
 
-import useSkylineAccess, { activeSkylineDecision } from "./useSkylineAccess.js";
+import useSkylineAccess, { activeSkylineDecision, combineLearnerVerdicts, useSkylineGroupAccess } from "./useSkylineAccess.js";
 
 const decision = (overrides = {}) => ({
   capabilityId: 'fitness.skyline-glider',
@@ -117,5 +117,48 @@ describe('useSkylineAccess with a capability id', () => {
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.unlocked).toBe(false);
     expect(mocks.log.warn).toHaveBeenCalledWith('skyline_invaders.access.read_failed', expect.objectContaining({ error: 'offline' }));
+  });
+});
+
+describe('useSkylineGroupAccess: every riding learner gates the round', () => {
+  const now = () => Date.now();
+  const grant = (id, decisionValue = 'granted') => decision({
+    capabilityId: 'fitness.skyline-invaders', decision: decisionValue, subject: { kind: 'learner', id },
+    period: { kind: 'interval', id: 'school-day:2026-10-07', startsAt: now() - 60_000, endsAt: now() + 3_600_000 },
+    validFrom: now() - 60_000, validUntil: now() + 3_600_000,
+  });
+  const OPTS = { capabilityId: 'fitness.skyline-invaders', logScope: 'skyline_invaders' };
+  beforeEach(() => {
+    mocks.localDev = false;
+    mocks.log = { info: vi.fn(), warn: vi.fn() };
+    mocks.api = vi.fn(async (url) => {
+      const id = new URLSearchParams(url.split('?')[1]).get('subjectId');
+      return { items: [grant(id, id === 'kid' ? 'denied' : 'granted')] };
+    });
+  });
+
+  it('is locked when any learner is, and names who it waits on', async () => {
+    const { result } = renderHook(() => useSkylineGroupAccess(['other-kid', 'kid'], OPTS));
+    await waitFor(() => expect(result.current.status).toBe('locked'));
+    expect(result.current).toMatchObject({ unlocked: false, state: 'incomplete', blockedBy: ['kid'], learners: ['kid', 'other-kid'] });
+  });
+
+  it('opens when every learner has finished, and is not gated with no learner', async () => {
+    const { result } = renderHook(() => useSkylineGroupAccess(['other-kid'], OPTS));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.unlocked).toBe(true);
+    const none = renderHook(() => useSkylineGroupAccess([], OPTS));
+    expect(none.result.current).toMatchObject({ unlocked: true, state: 'not_gated' });
+  });
+
+  it('a failed read locks as unavailable', async () => {
+    mocks.api = vi.fn(async () => { throw new Error('offline'); });
+    const { result } = renderHook(() => useSkylineGroupAccess(['kid'], OPTS));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current).toMatchObject({ unlocked: false, state: 'unavailable' });
+  });
+
+  it('combines verdicts purely', () => {
+    expect(combineLearnerVerdicts(['a'], {})).toMatchObject({ status: 'loading', unlocked: false });
   });
 });

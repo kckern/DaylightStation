@@ -24,3 +24,34 @@ export function listInvadersPeople(ctx) {
   }
   return [...people.values()];
 }
+
+const isPerson = (id) => !!id && id !== 'guest' && !String(id).startsWith('device:');
+
+/**
+ * Who is actually riding: the fitness session's roster (heart-rate straps),
+ * plus the mat's assigned rider. These are the shooters the lobby offers; anyone
+ * else is behind a hold. Pure.
+ * @returns {string[]}
+ */
+export function listSessionRiderIds(ctx, mat = null) {
+  const ids = (ctx?.participantRoster || []).map(idOf).filter(isPerson).map(String);
+  if (isPerson(mat?.riderId)) ids.push(String(mat.riderId));
+  return [...new Set(ids)];
+}
+
+/**
+ * The school learners whose school day gates this round: everyone riding who
+ * is a learner, and the shooter. The shooter is gated unless known not to be a
+ * learner (`schoolLearner === false`); a session rider only when known to be
+ * one, so a guest strap never locks the game. The gate follows the riders,
+ * never the pick: choosing a grown-up as the shooter leaves a riding child's
+ * gate in force. Pure.
+ * @param {(id: string) => boolean|undefined} learnerOf  `ctx.getUserByName(id)?.schoolLearner`
+ * @returns {string[]} sorted
+ */
+export function gateLearnerIds({ shooterId = null, riderIds = [], learnerOf = () => undefined } = {}) {
+  const ids = new Set();
+  if (isPerson(shooterId) && learnerOf(shooterId) !== false) ids.add(String(shooterId));
+  for (const id of riderIds) if (isPerson(id) && learnerOf(id) === true) ids.add(String(id));
+  return [...ids].sort();
+}

@@ -11,85 +11,24 @@
 //     block, the 2×2 pad glyph and the callout over the thing to hit.
 //   · Roboto Condensed only: 900 for numerals and names, 900 italic for titles
 //     and callouts, tabular figures for anything that counts.
-@use 'sass:string';
+@use 'skyline-kit' as *;
 
 // ── Tokens ──────────────────────────────────────────────────────────────────
 // Also set on the scene itself, so it draws correctly outside the game shell.
-.skyline-glider, .skyline-glider__scene {
-  --sg-ink: #17132b;          // every outline, rim and plate face
-  --sg-night: #252d6b;        // window fill
-  --sg-night-lift: #39448f;   // a row or key resting on a window
-  --sg-mute: #8088c4;         // off, spent, locked
-  --sg-locked: #b7bdf2;       // a locked flight's name, on an ink plate
-  --sg-paper: #fff5d6;        // text and window edge
-  --sg-gold: #ffc21a;         // score, selection, good news
-  --sg-red: #ef3350;          // refusal, hazard
-  --sg-heart: #ff4d5e;
-  // Bike buttons 1–4 (laser, bomb, missile, boost) and the lip under each key.
-  --sg-b1: #45d6f5; --sg-b1-shade: #177d9c;
-  --sg-b2: #ffc21a; --sg-b2-shade: #b5650a;
-  --sg-b3: #ff6f4d; --sg-b3-shade: #a82e1d;
-  --sg-b4: #b995ff; --sg-b4-shade: #6741c2;
-  // One UI pixel: the scene's art pixel is 0.3% of its width, so this is too.
-  --sg-px: 5px;
-  --sg-px: max(2px, round(down, 0.3vw, 1px));
-  // Outline weight for text set straight on the scene.
-  --sg-line: 3px;
-  --sg-line: max(2px, round(down, 0.18vw, 1px));
-  --sg-line-s: 2px;           // the same, for the smallest text
-  // Type scale. The kiosk is 1810 px wide: 24 / 32 / 43 / 83 / 163 px there.
-  --sg-text-s: max(13px, 1.35vw);
-  --sg-text-m: max(15px, 1.75vw);
-  --sg-text-l: max(18px, 2.4vw);
-  --sg-text-xl: max(30px, 4.6vw);
-  --sg-text-xxl: max(56px, 9vw);
-  --sg-font: var(--font-family, "Roboto Condensed", "Arial Narrow", sans-serif);
-}
-
-// Four shadows that draw a one-pixel ring `$n` pixels out with its corners left
-// open, which is what steps the corners of every frame.
-@function sg-ring($colour, $n: 1) {
-  $d: calc(#{$n} * var(--sg-px)); $m: calc(#{-$n} * var(--sg-px));
-  @return string.unquote("0 #{$m} 0 0 #{$colour}, 0 #{$d} 0 0 #{$colour}, #{$m} 0 0 0 #{$colour}, #{$d} 0 0 0 #{$colour}");
-}
-@function sg-corners($colour) {
-  $d: var(--sg-px); $m: calc(-1 * var(--sg-px));
-  @return string.unquote("#{$m} #{$m} 0 0 #{$colour}, #{$d} #{$m} 0 0 #{$colour}, #{$m} #{$d} 0 0 #{$colour}, #{$d} #{$d} 0 0 #{$colour}");
-}
-// A window or sign frame: coloured edge, ink rim, and one more pixel of ink
-// under it so it sits on the scene.
-@mixin sg-frame($edge: var(--sg-paper)) {
-  border-radius: 0;
-  box-shadow: sg-ring($edge), sg-corners(var(--sg-ink)), sg-ring(var(--sg-ink), 2), 0 calc(3 * var(--sg-px)) 0 0 var(--sg-ink);
-}
-// Text set straight on the scene: a hard ink outline with a one-step drop.
-@mixin sg-outline($line: var(--sg-line)) {
-  $l: $line; $m: calc(-1 * #{$line}); $d: calc(2 * #{$line});
-  text-shadow: $l 0 var(--sg-ink), $m 0 var(--sg-ink), 0 $l var(--sg-ink), 0 $m var(--sg-ink),
-    $l $l var(--sg-ink), $m $l var(--sg-ink), $l $m var(--sg-ink), $m $m var(--sg-ink),
-    0 $d var(--sg-ink), $l $d var(--sg-ink), $m $d var(--sg-ink);
-}
+.skyline-glider, .skyline-glider__scene { @include sg-tokens; }
 
 // ── Shell ───────────────────────────────────────────────────────────────────
 .skyline-glider {
   --game-hud-banner-ink: var(--sg-ink); --game-hud-banner-bg: var(--sg-gold);
-  min-height: 100%; overflow: hidden; color: var(--sg-paper); background: var(--sg-ink);
+  // The menu screens' sky is SkylineMenus.scss (.skyline-menu-screen); only the flight is on ink.
+  min-height: 100%; overflow: hidden; color: var(--sg-paper);
   font-family: var(--sg-font); font-variant-numeric: tabular-nums;
 }
-.skyline-glider--flight { position: relative; display: block; padding: 0; }
+.skyline-glider--flight { position: relative; display: block; padding: 0; background: var(--sg-ink); }
 .skyline-glider__scene { width: 100vw; height: 100vh; display: block; font-family: var(--sg-font); }
 
-// ── Pixel icons and the 2×2 pad glyph ───────────────────────────────────────
-.sg-icon__ink { fill: var(--sg-ink); }
-// Printed in ink on a coloured key, an icon needs no outline of its own.
-.skyline-glider__hud-cell b .sg-icon__ink, .skyline-controls__icon .sg-icon__ink, .skyline-menus__options .sg-icon__ink { fill: none; }
-.sg-icon__body { fill: currentColor; }
-.sg-icon__lit { fill: var(--sg-paper); }
-.sg-icon--inline { display: block; flex: none; width: calc(var(--w) * var(--sg-icon-px, 3px)); height: calc(var(--h) * var(--sg-icon-px, 3px)); }
-.sg-pad__case { fill: var(--sg-ink); }
-.sg-pad__key { fill: var(--sg-mute); }
-.sg-pad__key[data-lit="true"] { fill: var(--sg-b1); &[data-slot="2"] { fill: var(--sg-b2); } &[data-slot="3"] { fill: var(--sg-b3); } &[data-slot="4"] { fill: var(--sg-b4); } }
-.sg-pad--inline { display: inline-block; flex: none; vertical-align: -.2em; width: calc(9 * var(--sg-icon-px, 3px)); height: calc(9 * var(--sg-icon-px, 3px)); }
+// Pixel icons and the pad glyph: SkylineMenus.scss. On a HUD key an icon needs no outline.
+.skyline-glider__hud-cell b .sg-icon__ink { fill: none; }
 
 // ── Scene art (presets and effects drawn by the scene itself) ───────────────
 .skyline-glider__parallax path { stroke: none; }
@@ -344,15 +283,6 @@
 .skyline-glider__overlay[data-tone="crash"] .skyline-glider__overlay-window { --tone: var(--sg-b3); }
 .skyline-glider__overlay[data-tone="warn"] .skyline-glider__overlay-window { --tone: var(--sg-gold); }
 
-// ── Menus: a window on the left, the bike buttons on the right ──────────────
-.skyline-glider--controls {
-  position: relative; box-sizing: border-box; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; align-content: center; gap: 4vw;
-  padding: 4vw 5vw 9vw;
-  // A banded dusk-to-day sky over a cloud bank, both in whole pixels.
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 5 64 11' shape-rendering='crispEdges'%3E%3Cpath fill='%23fff5d6' d='M29 5h5v1h-5zM5 6h5v1h-5zM27 6h9v1h-9zM3 7h9v1h-9zM26 7h11v1h-11zM42 7h5v1h-5zM2 8h11v1h-11zM17 8h5v1h-5zM25 8h13v1h-13zM41 8h7v1h-7zM54 8h5v1h-5zM1 9h13v1h-13zM16 9h7v1h-7zM24 9h15v1h-15zM40 9h9v1h-9zM53 9h7v1h-7zM1 10h13v1h-13zM15 10h35v1h-35zM52 10h9v1h-9zM1 11h13v1h-13zM15 11h35v1h-35zM52 11h9v1h-9zM1 12h13v1h-13zM15 12h35v1h-35zM52 12h9v1h-9zM0 13h64v1h-64zM0 14h64v1h-64zM0 15h64v1h-64z'/%3E%3Cpath fill='%23bfdcf7' d='M33 10h5v1h-5zM9 11h5v1h-5zM32 11h7v1h-7zM8 12h7v1h-7zM31 12h9v1h-9zM47 12h3v1h-3zM7 13h9v1h-9zM22 13h3v1h-3zM30 13h11v1h-11zM45 13h7v1h-7zM59 13h3v1h-3zM7 14h9v1h-9zM21 14h5v1h-5zM30 14h11v1h-11zM45 14h7v1h-7zM58 14h5v1h-5zM7 15h9v1h-9zM21 15h5v1h-5zM30 15h11v1h-11zM45 15h7v1h-7zM58 15h5v1h-5z'/%3E%3C/svg%3E") left bottom / calc(128 * var(--sg-px)) auto repeat-x,
-    linear-gradient(to bottom, #2c3f9e 0 16%, #3a58bd 16% 31%, #4b74d6 31% 45%, #6092ea 45% 58%, #7db0f4 58% 70%, #a3cdf9 70% 100%);
-}
 .skyline-glider__menu { position: relative; display: grid; justify-items: start; gap: calc(6 * var(--sg-px)); min-width: 0; }
 // Anything the game says outside the window: a flat ink strip, or a framed sign
 // when it is news (saved, failed).
@@ -364,131 +294,17 @@
   &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-red); }
 }
 // With no menu to sit under (loading, a failed load), the notice is the window.
-.skyline-glider--controls > .skyline-glider__notice {
+.skyline-menu-screen > .skyline-glider__notice {
   padding: 2.2vw 2.8vw 2.6vw; background: var(--sg-night); font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: 1;
   text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink);
   @include sg-frame;
   &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-night); font-size: var(--sg-text-l); font-style: normal; line-height: 1.15; @include sg-frame(var(--sg-red)); }
 }
 
-.skyline-menus {
-  --sg-icon-px: var(--sg-line);
-  box-sizing: border-box; width: 100%; padding: 2.2vw 2.8vw 2.6vw; text-align: left; background: var(--sg-night);
-  @include sg-frame;
-  h1 { margin: 0; font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: .95; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
-  p { margin: .55em 0 0; max-width: 32em; font-size: var(--sg-text-m); font-weight: 500; line-height: 1.2; }
-  .skyline-menus__kicker { margin: 0 0 .15em; color: var(--sg-gold); font-weight: 700; }
-
-  // The flight list: one row each, a cursor on the chosen one.
-  &__options { display: grid; gap: var(--sg-px); margin: 1.3vw 0 0; }
-  &__options button {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1vw; width: 100%;
-    padding: .55vw 1.2vw .55vw .8vw; border: 0; border-radius: 0; text-align: left; font: inherit; line-height: 1;
-    color: var(--sg-paper); background: var(--sg-night-lift);
-    strong { font-size: var(--sg-text-l); font-weight: 900; }
-    small { display: flex; align-items: center; gap: .5vw; font-size: var(--sg-text-s); font-weight: 700; }
-    // Locked: a solid ink plate with the lock in full-strength lavender — never
-    // faded or see-through, which reads as broken from the bike (2026-11-11).
-    &[data-status="locked"] { color: var(--sg-locked); background: var(--sg-ink); }
-    &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); box-shadow: none; }
-    // The cursor on a locked flight keeps the ink plate and puts a gold frame round it.
-    &[data-status="locked"][aria-pressed="true"] { color: var(--sg-locked); background: var(--sg-ink); box-shadow: inset 0 0 0 calc(2 * var(--sg-line)) var(--sg-gold); .skyline-menus__cursor { color: var(--sg-gold); } }
-    &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: var(--sg-line); }
-  }
-  &__cursor { visibility: hidden; }
-  // Above and below the window: how many flights the buttons can still reach.
-  // Always laid out (hidden when empty) so the window never changes height.
-  &__more {
-    display: flex; align-items: center; gap: .6vw; margin: .5vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
-    &[data-empty] { visibility: hidden; }
-    &[data-dir="up"] .skyline-menus__more-icon { transform: rotate(-90deg); }
-    &[data-dir="down"] .skyline-menus__more-icon { transform: rotate(90deg); }
-  }
-  &__position { margin-right: .5em; color: var(--sg-gold); font-weight: 900; }
-  &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: skyline-step-right .5s steps(1) infinite; }
-
-  &__person {
-    display: flex; align-items: center; gap: 2vw; margin-top: 1.6vw;
-    img { width: 11vw; height: 11vw; object-fit: cover; @include sg-frame; }
-    strong { font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
-  }
-  // The sound sheet: a readout, the house touch volume strip in the game's
-  // colours (solid plates, never see-through), and a mute key.
-  &__readout {
-    display: flex; align-items: center; gap: 1vw; margin: 1vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
-    &[data-muted] { color: var(--sg-red); }
-  }
-  &__volume {
-    margin: 1.4vw 0 0; width: min(100%, 52vw);
-    .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: var(--sg-px); width: 100%; }
-    .touch-volume-button {
-      height: max(48px, 5vw); padding: 0; border: 0; border-radius: 0; cursor: pointer; color: transparent;
-      background: var(--sg-night-lift); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-ink);
-      &.on { background: var(--sg-gold); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-b2-shade); }
-      &:first-child { background: var(--sg-ink); box-shadow: inset 0 0 0 var(--sg-line) var(--sg-red); }
-      &:first-child.active { background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430; }
-      &.active:not(:first-child) { box-shadow: inset 0 0 0 var(--sg-line) var(--sg-paper); }
-    }
-  }
-  &__mute {
-    margin: 1.4vw 0 0; min-width: 14vw; min-height: 48px; padding: .7vw 2vw; border: 0; border-radius: 0; font: inherit;
-    font-size: var(--sg-text-m); font-weight: 900; color: var(--sg-ink); background: var(--sg-paper); cursor: pointer;
-    box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-mute), sg-ring(var(--sg-ink));
-    &[aria-pressed="true"] { color: var(--sg-paper); background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430, sg-ring(var(--sg-ink)); }
-  }
-  &__count { display: block; margin: .08em 0 0; color: var(--sg-gold); font-size: var(--sg-text-xxl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
-  p.skyline-menus__cause { margin-top: 1.1vw; padding: .8vw 1.2vw; color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }
-
-  // The tally: bells and targets add up to the score, under a sum line.
-  &__summary {
-    display: grid; margin: 1.2vw 0 0; max-width: 34vw;
-    div { display: flex; align-items: baseline; gap: .8vw; padding: .3vw 0; }
-    dt { flex: 1; display: flex; align-items: center; gap: .6vw; font-size: var(--sg-text-m); font-weight: 700;
-      &::after { content: ''; flex: 1; align-self: flex-end; height: var(--sg-line); margin-bottom: .35em; background: repeating-linear-gradient(90deg, var(--sg-mute) 0 var(--sg-line), transparent 0 calc(3 * var(--sg-line))); } }
-    dd { margin: 0; color: var(--sg-paper); font-size: var(--sg-text-l); font-weight: 900; }
-    [data-stat="bells"] .sg-icon { color: var(--sg-gold); }
-    [data-stat="targets"] .sg-icon { color: var(--sg-b1); }
-    [data-stat="score"] { margin-top: .4vw; padding-top: .6vw; border-top: var(--sg-line) solid var(--sg-paper); dt { font-weight: 900; } dd { color: var(--sg-gold); font-size: var(--sg-text-xl); line-height: .9; } }
-  }
-}
-
-// The bike buttons: four keys in the four button colours, laid out as they sit
-// on the handlebar. This is the one loud thing on a menu screen.
-.skyline-controls {
-  box-sizing: border-box; z-index: 8; width: 33vw; padding: 1.1vw 1.4vw 1.6vw; color: var(--sg-paper); background: var(--sg-ink);
-  @include sg-frame;
-  &__heading { margin: 0 0 1.1vw; font-size: var(--sg-text-s); font-weight: 700; }
-  &__pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(3 * var(--sg-px)); }
-  &__position {
-    position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.9vw; height: 1.9vw;
-    color: var(--key); background: var(--sg-ink); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
-  }
-  &__icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; min-height: 3.6vw; font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
-  button {
-    --key: var(--sg-b1); --key-shade: var(--sg-b1-shade);
-    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45vw;
-    min-height: 13.2vw; padding: 1.5vw .7vw calc(.9vw + 2 * var(--sg-px)); border: 0; border-radius: 0; font: inherit; text-align: center;
-    color: var(--sg-ink); background: var(--key);
-    box-shadow: inset 0 calc(-2 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink));
-    &[data-position="2"] { --key: var(--sg-b2); --key-shade: var(--sg-b2-shade); }
-    &[data-position="3"] { --key: var(--sg-b3); --key-shade: var(--sg-b3-shade); }
-    &[data-position="4"] { --key: var(--sg-b4); --key-shade: var(--sg-b4-shade); }
-    &:active:not(:disabled) { transform: translateY(var(--sg-px)); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink)); }
-    &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: calc(2 * var(--sg-px)); }
-    &:disabled { --key: var(--sg-night-lift); --key-shade: var(--sg-night); color: var(--sg-mute); }
-    strong { font-size: var(--sg-text-m); font-weight: 900; line-height: 1; }
-    small { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.05; }
-  }
-  img { width: 5.4vw; height: 5.4vw; object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .skyline-glider__callout-arrow, .skyline-glider__callout-edge, .skyline-glider__target-brackets, .skyline-glider__hazard-dash,
-  .skyline-menus__cursor { animation: none !important; }
+  .skyline-glider__callout-arrow, .skyline-glider__callout-edge, .skyline-glider__target-brackets, .skyline-glider__hazard-dash { animation: none !important; }
 }
 // A narrow window (a phone held upright, a split desktop): stack the two halves.
 @media (max-width: 760px) {
-  .skyline-glider--controls { grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6vw; padding: 5vw 5vw 14vw; }
-  .skyline-controls { width: auto; button { min-height: 26vw; } }
   .skyline-glider__hud-menu { display: none; }
 }

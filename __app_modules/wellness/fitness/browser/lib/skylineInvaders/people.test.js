@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listInvadersPeople } from './people.js';
+import { gateLearnerIds, listInvadersPeople, listSessionRiderIds } from './people.js';
 
 describe('listInvadersPeople', () => {
   it('lists the people in the session first, then the rest of the household, once each', () => {
@@ -16,5 +16,24 @@ describe('listInvadersPeople', () => {
   });
   it('leaves the guest out: a guest has no heart-rate zone, progress or rings', () => {
     expect(listInvadersPeople({ users: [{ id: 'guest', name: 'Guest' }, { id: 'kid', name: 'Kid' }] })).toEqual([{ id: 'kid', name: 'Kid' }]);
+  });
+});
+
+describe('listSessionRiderIds', () => {
+  it('is the roster plus the mat rider, without guests or bare devices', () => {
+    const ctx = { participantRoster: [{ id: 'kid' }, { profileId: 'guest' }, { id: 'device:123' }, { name: 'Kid', id: 'kid' }] };
+    expect(listSessionRiderIds(ctx, { riderId: 'test-rider' })).toEqual(['kid', 'test-rider']);
+    expect(listSessionRiderIds({}, null)).toEqual([]);
+  });
+});
+
+describe('gateLearnerIds', () => {
+  const learnerOf = (id) => ({ kid: true, 'test-rider': false })[id];
+  it('gates a riding learner even when a grown-up is the shooter', () => {
+    expect(gateLearnerIds({ shooterId: 'test-rider', riderIds: ['kid', 'test-rider'], learnerOf })).toEqual(['kid']);
+  });
+  it('gates the shooter unless known not to be a learner; a rider only when known to be one', () => {
+    expect(gateLearnerIds({ shooterId: 'someone', riderIds: ['unknown-strap'], learnerOf })).toEqual(['someone']);
+    expect(gateLearnerIds({ shooterId: 'test-rider', riderIds: ['test-rider'], learnerOf })).toEqual([]);
   });
 });

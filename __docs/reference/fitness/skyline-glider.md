@@ -94,7 +94,7 @@ Logged events: `skyline_glider.flight.weapon.fired` (`weapon`, `count`, `bombsLe
 
 ## Game UI
 
-The HUD, the in-scene marks, the menus and the bike-button panel share one look: a 16-bit console game drawn on the scene's pixel grid. It lives in `browser/widgets/SkylineGlider/`: `SkylineGlider.scss` (tokens and every rule), `SkylinePixelIcons.jsx` (icons and the pad glyph), `SkylineFlightHud.jsx`, `SkylineRpmGauge.jsx`, `SkylineFlightOverlays.jsx`, `SkylineMenus.jsx`, `SkylineControlPanel.jsx`, and the mark components in `FlightScene.jsx` (`Callout`, `TargetMarks`, `HazardStrip`, `Impact`).
+The HUD, the in-scene marks, the menus and the bike-button panel share one look: a 16-bit console game drawn on the scene's pixel grid. It lives in `browser/widgets/SkylineGlider/`: `_skyline-kit.scss` (tokens, pixel ring and frame mixins), `SkylineMenus.scss` (the menu screen `.skyline-menu-screen`, the window `.skyline-menus`, the bike-button panel `.skyline-controls` and the pixel icons — shared with Skyline Invaders, imported by `SkylineMenus.jsx` and `SkylineControlPanel.jsx`), `SkylineGlider.scss` (everything flight-only), `SkylinePixelIcons.jsx` (icons and the pad glyph), `SkylineFlightHud.jsx`, `SkylineRpmGauge.jsx`, `SkylineFlightOverlays.jsx`, `SkylineMenus.jsx`, `SkylineControlPanel.jsx`, and the mark components in `FlightScene.jsx` (`Callout`, `TargetMarks`, `HazardStrip`, `Impact`).
 
 **Rules.**
 

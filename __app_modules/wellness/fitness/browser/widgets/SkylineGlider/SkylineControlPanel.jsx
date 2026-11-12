@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import './SkylineMenus.scss';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon, iconForSymbol } from './SkylinePixelIcons.jsx';
 export default function SkylineControlPanel({controls,onPress}){

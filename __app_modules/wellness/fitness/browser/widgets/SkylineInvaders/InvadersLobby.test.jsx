@@ -23,7 +23,8 @@ const DETECTING = { state: 'detecting', fps: 13 };
 function renderLobby(over = {}) {
   const props = {
     levels, world, chosenLevelId: null, onChooseLevel: vi.fn(), onRequestUnlock: vi.fn(),
-    shooter: { id: 'kid', name: 'Kid' }, candidates: [{ id: 'kid', name: 'Kid' }, { id: 'test-rider', name: 'Test Rider' }], onPickShooter: vi.fn(),
+    shooter: { id: 'kid', name: 'Kid' }, candidates: [{ id: 'kid', name: 'Kid' }, { id: 'test-rider', name: 'Test Rider' }], onPickShooter: vi.fn(), onChangeShooter: vi.fn(),
+    others: [{ id: 'grown-up', name: 'Grown Up' }],
     mat: { equipmentId: 'step-mat', matId: 'mat-a1' }, partner: null,
     poseStatus: DETECTING, calibrated: true, onCalibrate: vi.fn(),
     access: { unlocked: true, state: 'complete' }, onRequestAdmin: vi.fn(), onStart: vi.fn(),
@@ -81,11 +82,26 @@ describe('InvadersLobby', () => {
     expect(within(rows[0]).getByRole('button', { name: /^Start/ })).toBeTruthy();
   });
 
-  it('lets the shooter be changed after one is set', () => {
-    const { props } = renderLobby();
+  it('asks the shell to change the shooter, and picks from the riders while it does', () => {
+    const { props, rerender } = renderLobby();
     fireEvent.click(screen.getByRole('button', { name: 'Change shooter' }));
+    expect(props.onChangeShooter).toHaveBeenCalled();
+    rerender(<InvadersLobby {...props} picking />);
     fireEvent.click(within(screen.getByRole('group', { name: 'Who is shooting?' })).getByRole('button', { name: 'Test Rider' }));
     expect(props.onPickShooter).toHaveBeenCalledWith('test-rider');
+  });
+
+  it('keeps anyone not riding behind a hold on Other riders', () => {
+    vi.useFakeTimers();
+    const { props } = renderLobby({ shooter: null });
+    const picker = screen.getByRole('group', { name: 'Who is shooting?' });
+    expect(within(picker).queryByRole('button', { name: 'Grown Up' })).toBeNull();
+    const others = within(picker).getByRole('button', { name: /Other riders/ });
+    fireEvent.click(others);
+    expect(within(picker).queryByRole('button', { name: 'Grown Up' })).toBeNull();
+    act(() => { fireEvent.pointerDown(others); vi.advanceTimersByTime(700); fireEvent.pointerUp(others); });
+    fireEvent.click(within(picker).getByRole('button', { name: 'Grown Up' }));
+    expect(props.onPickShooter).toHaveBeenCalledWith('grown-up');
   });
 
   it('disables Start without a shooter and says why', () => {
@@ -98,13 +114,10 @@ describe('InvadersLobby', () => {
     expect(props.onStart).not.toHaveBeenCalled();
   });
 
-  it('swaps Start for Ask a grown-up while school-day access is locked', () => {
+  it('never starts while school-day access is locked (the shell shows the lock screen)', () => {
     const { props } = renderLobby({ access: { unlocked: false, state: 'incomplete' } });
-    expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Ask a grown-up/ }));
-    expect(props.onRequestAdmin).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /^Start/ }).disabled).toBe(true);
     key('Enter');
-    expect(props.onRequestAdmin).toHaveBeenCalledTimes(2);
     expect(props.onStart).not.toHaveBeenCalled();
   });
 

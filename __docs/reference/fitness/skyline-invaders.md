@@ -186,7 +186,13 @@ A route answers 503 when its service is not wired. There is no suspension beacon
 
 ## Access gate
 
-A school learner needs the `fitness.skyline-invaders` entitlement, granted by `school.day-complete` (see [State Gates](../state-gates/README.md)). Without it the lobby shows "Ask a grown-up", and an admin fingerprint overrides for the session. The hook is Skyline Glider's `useSkylineAccess`, called with this capability id and the `skyline_invaders` log scope. Losing access mid-round ends the round.
+A school learner needs the `fitness.skyline-invaders` entitlement, granted by `school.day-complete` (see [State Gates](../state-gates/README.md)).
+
+**The gate follows the riders, not the pick.** The learners gated are everyone in the fitness session's roster (heart-rate straps) and the mat's rider who is known to be a school learner, plus the shooter unless known not to be one (`gateLearnerIds` in `lib/skylineInvaders/people.js`). The round opens only when every one of them has the entitlement (`useSkylineGroupAccess` in Skyline Glider's `useSkylineAccess.js`, called with this capability id and the `skyline_invaders` log scope). So a child who picks a grown-up as the shooter while riding still sees the lock.
+
+The shooter picker offers the session's riders (roster and mat rider); everyone else in the household is behind a press-and-hold on "Other riders".
+
+While locked, the game shows only the lock screen (`InvadersLocked.jsx`, Skyline Glider's `denied` pattern): "Round locked — Finish today's school work to unlock." with "School first: <names>" for the learners it waits on, and the four bike buttons: 1 Admin unlock (admin fingerprint), 3 Back and 4 Change shooter (both open the shooter picker). Gamepad A / Enter is Admin unlock, B / Escape is Back. An admin unlock covers the learners riding at that moment; anyone new joining asks again. Losing access mid-round ends the round.
 
 ## Menu tile
 
@@ -239,7 +245,8 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.audio.volume` | `level`, `muted`, `isDefault`, `output` | on mount and every change; `output` is the gain every voice ends on |
 | `.settings.opened` / `.settings.closed` | `phase`, `source` (`touch`, `pause-menu`, `bike`) / `level`, `muted` | the Sound sheet |
 | `.audio.level_set` / `.audio.mute_toggled` | `level` / `muted`, `control` (`touch`, `sheet`, `bike`) | |
-| `.access.verdict`, `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied` | `riderId`, `reason`, `adminUserId` | |
+| `.access.verdict` | `learners`, `status`, `state`, `unlocked`, `blockedBy` | one line per change of verdict |
+| `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied`, `.access.locked_choice` | `riderId`, `learners`, `reason`, `adminUserId` / `choice` | |
 | `.progress.unlock_requested` / `_granted` / `_denied` / `_error` | `riderId`, `levelId`, `adminUserId`, `reason`, `error` | |
 
 Server (`fitness.skyline_invaders.*`): `level.invalid` (`file`, `id`), `run.saved`, `progress.rebuilt` (`riderId`, `completed`), `progress.unlocked`, `progress.record_failed`.

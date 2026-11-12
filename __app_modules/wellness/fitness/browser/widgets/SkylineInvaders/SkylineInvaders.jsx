@@ -15,11 +15,11 @@ import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js'
 import { EMPTY_EFFECTS, INVADERS_LOG_NAMES, buildInvadersEffectTable, invadersSoundUrls } from '../../lib/skylineInvaders/invadersEffects.js';
 import { validateLevel } from '../../lib/skylineInvaders/levels.js';
 import { listInvadersMats, selectInvadersMat } from '../../lib/skylineInvaders/matSelection.js';
-import { listInvadersPeople } from '../../lib/skylineInvaders/people.js';
+import { gateLearnerIds, listInvadersPeople, listSessionRiderIds } from '../../lib/skylineInvaders/people.js';
 import { buildSkylineInvadersRun } from '../../lib/skylineInvaders/runResult.js';
 import { shotTier } from '../../lib/skylineInvaders/tiers.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
-import useSkylineAccess from '../SkylineGlider/useSkylineAccess.js';
+import { useSkylineGroupAccess } from '../SkylineGlider/useSkylineAccess.js';
 import { CountdownOverlay, MomentBanner } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
 import { announceGameAchievement, createEffectDispatcher, createFrameDriver } from '../../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
 import { projectRunRole } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
@@ -27,6 +27,7 @@ import InvadersActions from './InvadersActions.jsx';
 import InvadersCalibration from './InvadersCalibration.jsx';
 import InvadersHud from './InvadersHud.jsx';
 import InvadersLobby, { resolveLevelId } from './InvadersLobby.jsx';
+import InvadersLocked from './InvadersLocked.jsx';
 import InvadersPoseBridge from './InvadersPoseBridge.jsx';
 import InvadersResult from './InvadersResult.jsx';
 import InvadersScene from './InvadersScene.jsx';
@@ -114,6 +115,7 @@ function SkylineInvadersGame() {
   const [world, setWorld] = useState(null);
   const [chosenLevelId, setChosenLevelId] = useState(null);
   const [pickedShooter, setPickedShooter] = useState(null);
+  const [choosingShooter, setChoosingShooter] = useState(false);
   const [game, setGame] = useState(null);
   const [effects, setEffects] = useState(EMPTY_EFFECTS);
   const [poseStatus, setPoseStatus] = useState({ state: 'loading' });
@@ -163,8 +165,16 @@ function SkylineInvadersGame() {
   const people = useMemo(() => listInvadersPeople(ctx), [ctx?.participantRoster, ctx?.users, ctx?.userCollections, ctx?.usersConfig]);   // eslint-disable-line react-hooks/exhaustive-deps
   const nameOf = useCallback((id) => people.find((person) => person.id === id)?.name || id, [people]);
   const boost = useInvadersBoost({ equipment: ctx?.equipment, session, shooterId });
-  const access = useSkylineAccess(shooterId, { schoolLearner: shooterId ? ctx?.getUserByName?.(shooterId)?.schoolLearner : undefined, capabilityId: CAPABILITY_ID, logScope: 'skyline_invaders' });
-  const accessGranted = access.unlocked || (!!shooterId && accessOverride?.riderId === shooterId);
+  // The shooters on offer are the people riding; the school gate is every
+  // learner riding plus the shooter, so a grown-up picked as the shooter never
+  // opens the round for a child who has school left (people.js, gateLearnerIds).
+  const sessionRiderIds = listSessionRiderIds(ctx, mat);
+  const sessionKey = sessionRiderIds.join('|');
+  const riders = useMemo(() => sessionRiderIds.map((id) => people.find((person) => person.id === id) || { id, name: id }), [sessionKey, people]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const gateIds = gateLearnerIds({ shooterId, riderIds: sessionRiderIds, learnerOf: (id) => ctx?.getUserByName?.(id)?.schoolLearner });
+  const access = useSkylineGroupAccess(gateIds, { capabilityId: CAPABILITY_ID, logScope: 'skyline_invaders' });
+  // A grown-up's unlock is for these learners: anyone else joining asks again.
+  const accessGranted = access.unlocked || (!!shooterId && !!accessOverride && accessOverride.key === access.key);
   const riderWorld = world?.riderId === shooterId ? world : null;
   const level = round?.level || levels.find((item) => item.id === resolveLevelId(levels, riderWorld, chosenLevelId)) || null;
 
@@ -176,7 +186,7 @@ function SkylineInvadersGame() {
   // Callbacks read the current render through this, so none of them goes stale
   // and none of them restarts the frame loop.
   const live = useRef({});
-  live.current = { session, shooterId, mat, level, levels, riderWorld, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf, prompt };
+  live.current = { session, shooterId, mat, level, levels, riderWorld, access, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf, prompt };
 
   // ── Mount, levels, world, sounds ──────────────────────────────────────────
   useEffect(() => {
@@ -258,7 +268,6 @@ function SkylineInvadersGame() {
     if (priorShooterRef.current === shooterId) return;
     const prior = priorShooterRef.current;
     priorShooterRef.current = shooterId;
-    setAccessOverride((current) => (current?.riderId === shooterId ? current : null));
     setChosenLevelId(null);
     if (prior && tracker.calibration()) {
       tracker.setCalibration(null);
@@ -588,6 +597,10 @@ function SkylineInvadersGame() {
         }
         return true;
       }
+      if (lockedRef.current && single && [1, 3, 4].includes(position)) {
+        pressLockedRef.current(position);
+        return true;
+      }
       if (now === 'playing' && position === 4 && !single && match[2] !== 'double') {
         act.pause('player');
         return true;
@@ -605,20 +618,21 @@ function SkylineInvadersGame() {
   const requestAdminOverride = useCallback(async () => {
     const riderId = live.current.shooterId;
     if (!riderId) return;
+    const { key, learners } = live.current.access;
     const generation = ++unlockGenerationRef.current;
     setPrompt({ kind: 'access' });
-    log.info('skyline_invaders.access.override_requested', { riderId });
+    log.info('skyline_invaders.access.override_requested', { riderId, learners });
     const result = await live.current.registerAdmin(MODULE_ID);
     if (generation !== unlockGenerationRef.current) return;
     if (!result?.matched || !result.userId) {
-      log.info('skyline_invaders.access.override_denied', { riderId, reason: result?.reason || 'denied' });
+      log.info('skyline_invaders.access.override_denied', { riderId, learners, reason: result?.reason || 'denied' });
       return;   // the prompt shows the denial; Cancel or its timeout closes it
     }
     // The admin authorizes; the shooter stays the player and the one who is paid.
-    setAccessOverride({ riderId, adminUserId: result.userId });
+    setAccessOverride({ key, riderId, adminUserId: result.userId });
     setPrompt(null);
     live.current.clearUnlock?.();
-    log.info('skyline_invaders.access.override_granted', { riderId, adminUserId: result.userId });
+    log.info('skyline_invaders.access.override_granted', { riderId, learners, adminUserId: result.userId });
   }, [log]);
   const requestLevelUnlock = useCallback(async (locked) => {
     const riderId = live.current.shooterId;
@@ -653,6 +667,7 @@ function SkylineInvadersGame() {
     const now = live.current;
     if (now.mat) now.session?.setEquipmentUser?.(now.mat.equipmentId, userId);
     setPickedShooter(userId);
+    setChoosingShooter(false);
     log.info('skyline_invaders.lobby.shooter_picked', { shooterId: userId, matEquipmentId: now.mat?.equipmentId || null, previous: now.shooterId });
   }, [log]);
   const chooseLevel = useCallback((levelId) => {
@@ -664,6 +679,22 @@ function SkylineInvadersGame() {
     goPhase('calibrating');
   }, [goPhase, log, tracker]);
   const onPoseStatus = useCallback((next) => setPoseStatus(next), []);
+
+  // ── The lock screen ───────────────────────────────────────────────────────
+  // Shown instead of the lobby while the riders' school day keeps the round
+  // shut; never while the verdict is still loading, never over the picker.
+  const locked = !!shooterId && !choosingShooter && !accessGranted && access.status !== 'loading';
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked && phase === 'lobby';
+  const pressLocked = useCallback((position) => {
+    if (position === 1) void requestAdminOverride();
+    else if (position === 3 || position === 4) {
+      setChoosingShooter(true);
+      log.info('skyline_invaders.access.locked_choice', { choice: position === 3 ? 'back' : 'change-shooter', shooterId: live.current.shooterId });
+    }
+  }, [log, requestAdminOverride]);
+  const pressLockedRef = useRef(pressLocked);
+  pressLockedRef.current = pressLocked;
 
   // ── Render ────────────────────────────────────────────────────────────────
   const inRound = ROUND_PHASES.includes(phase);
@@ -734,10 +765,17 @@ function SkylineInvadersGame() {
           <p className="skyline-invaders__how">Tap the button, press any key, or A on the gamepad.</p>
         </section>
       )}
-      {phase === 'lobby' && (
+      {phase === 'lobby' && locked && (
+        <InvadersLocked
+          state={access.state} blockedNames={access.blockedBy.map(nameOf)} active={!prompt && !soundOpen}
+          onPress={pressLocked}
+        />
+      )}
+      {phase === 'lobby' && !locked && (
         <InvadersLobby
           levels={levels} world={riderWorld} chosenLevelId={chosenLevelId} onChooseLevel={chooseLevel} onRequestUnlock={requestLevelUnlock}
-          shooter={shooterId ? { id: shooterId, name: nameOf(shooterId) } : null} candidates={people} onPickShooter={pickShooter}
+          shooter={shooterId ? { id: shooterId, name: nameOf(shooterId) } : null} candidates={riders} others={people} onPickShooter={pickShooter}
+          picking={choosingShooter} onChangeShooter={() => setChoosingShooter(true)} onCancelPick={() => setChoosingShooter(false)}
           mat={mat} partner={partner} poseStatus={poseStatus} calibrated={calibrated} onCalibrate={openCalibration}
           access={{ ...access, unlocked: accessGranted }} onRequestAdmin={requestAdminOverride} onStart={() => begin()}
           tracker={tracker} active={!prompt && !soundOpen}

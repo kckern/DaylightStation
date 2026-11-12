@@ -1,4 +1,5 @@
 import React from 'react';
+import './SkylineMenus.scss';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon } from './SkylinePixelIcons.jsx';
 import GameSoundSheet from './GameSoundSheet.jsx';

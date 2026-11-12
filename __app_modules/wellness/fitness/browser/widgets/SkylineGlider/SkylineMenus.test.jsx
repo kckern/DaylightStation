@@ -52,7 +52,7 @@ it('shows a fixed window of flights that follows the bike-button cursor',()=>{
 it('draws every flight row solid: no opacity below 1, no see-through fill',async()=>{
  const {compile}=await import('sass');
  const {fileURLToPath}=await import('node:url');
- const css=compile(fileURLToPath(new URL('./SkylineGlider.scss',import.meta.url))).css;
+ const css=compile(fileURLToPath(new URL('./SkylineMenus.scss',import.meta.url))).css;
  const rules=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([,sel])=>sel.includes('.skyline-menus__options button'));
  expect(rules.some(([sel])=>sel.includes('[data-status=locked]')||sel.includes('[data-status="locked"]'))).toBe(true);
  for(const [,sel,body] of rules){

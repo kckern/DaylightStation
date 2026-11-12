@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActionButton, useActionFocus } from './InvadersActions.jsx';
 import { formatClock } from './InvadersHud.jsx';
 import './SkylineInvaders.scss';
@@ -56,7 +56,11 @@ function cameraNote(poseStatus, calibrated) {
  * @param {{ levels: object[], next: string|null }|null} props.world   null = every level open
  * @param {string|null} props.chosenLevelId
  * @param {{ id: string, name: string }|null} props.shooter
- * @param {{ id: string, name: string }[]} props.candidates
+ * @param {{ id: string, name: string }[]} props.candidates   who is riding (the session): the shooters on offer
+ * @param {{ id: string, name: string }[]} [props.others]      everyone else, behind a hold on "Other riders"
+ * @param {boolean} [props.picking]        the shell has asked for the picker (Change shooter)
+ * @param {function} [props.onChangeShooter]  open the picker
+ * @param {function} [props.onCancelPick]     close it again
  * @param {{ equipmentId: string, matId: string }|null} props.mat
  * @param {{ riderId: string, name: string }|null} props.partner
  * @param {{ state: string }} props.poseStatus
@@ -67,14 +71,18 @@ function cameraNote(poseStatus, calibrated) {
  */
 export default function InvadersLobby({
   levels, world = null, chosenLevelId = null, onChooseLevel, onRequestUnlock,
-  shooter = null, candidates = [], onPickShooter,
+  shooter = null, candidates = [], others = [], onPickShooter, picking: pickingAsked = false, onChangeShooter, onCancelPick,
   mat = null, partner = null, poseStatus = null, calibrated = false, onCalibrate,
   access = { unlocked: true, state: null }, onRequestAdmin, onStart,
   tracker = null, active = true,
 }) {
-  const [changing, setChanging] = useState(false);
-  useEffect(() => { setChanging(false); }, [shooter?.id]);
-  const picking = !shooter || changing;
+  const picking = !shooter || pickingAsked;
+  // Anyone not riding is one hold away, never one tap: the shooter is meant to
+  // be someone in the workout. The school gate follows the riders either way.
+  const [showOthers, setShowOthers] = useState(false);
+  useEffect(() => { if (!picking) setShowOthers(false); }, [picking]);
+  const holdTimer = useRef(null);
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
   const currentId = resolveLevelId(levels, world, chosenLevelId);
   const open = levels.filter((level) => statusOf(world, level.id) !== 'locked');
   const poseState = poseStatus?.state || 'loading';
@@ -84,7 +92,8 @@ export default function InvadersLobby({
   let main;
   if (!shooter) main = [{ ...start, disabled: true, hint: 'Pick who is shooting' }];
   else if (access.status === 'loading') main = [{ ...start, disabled: true, hint: 'Checking school…' }];
-  else if (!access.unlocked) main = [{ id: 'admin', label: 'Ask a grown-up', hint: ACCESS_HINTS[access.state] || 'Locked for now', onPress: () => onRequestAdmin?.() }];
+  // A locked round has its own screen (InvadersLocked); here Start just waits.
+  else if (!access.unlocked) main = [{ ...start, disabled: true, hint: ACCESS_HINTS[access.state] || 'Locked for now' }];
   else if (calibrated) main = [start, { id: 'calibrate', label: 'Recalibrate', onPress: () => onCalibrate?.() }];
   else if (poseState === 'detecting') {
     main = [
@@ -93,9 +102,13 @@ export default function InvadersLobby({
     ];
   } else main = [{ ...start, hint: cameraOff ? 'Gamepad or arrow keys aim' : 'Gamepad aim until the camera is ready' }];
 
-  const people = picking ? candidates.map((person) => ({ id: `pick-${person.id}`, label: person.name, onPress: () => { setChanging(false); onPickShooter?.(person.id); } })) : [];
+  const pickable = picking ? [...candidates, ...(showOthers ? others.filter((person) => !candidates.some((rider) => rider.id === person.id)) : [])] : [];
+  const people = pickable.map((person) => ({ id: `pick-${person.id}`, label: person.name, onPress: () => onPickShooter?.(person.id) }));
+  const holdForOthers = picking && !showOthers && others.some((person) => !candidates.some((rider) => rider.id === person.id))
+    ? [{ id: 'others', label: 'Other riders', hint: 'Hold', hold: true, onPress: () => setShowOthers(true) }]
+    : [];
   // While a shooter is being picked the names come first: they are what the next press should choose.
-  const actions = [...people, ...main, ...(!picking && candidates.length > 1 ? [{ id: 'change-shooter', label: 'Change shooter', onPress: () => setChanging(true) }] : [])];
+  const actions = [...people, ...holdForOthers, ...main, ...(!picking && (candidates.length > 1 || others.length > 0) ? [{ id: 'change-shooter', label: 'Change shooter', onPress: () => onChangeShooter?.() }] : [])];
 
   const moveLevel = (direction) => {
     const at = open.findIndex((level) => level.id === currentId);
@@ -105,10 +118,25 @@ export default function InvadersLobby({
   const { focused, hold, press } = useActionFocus({
     actions, active, axis: 'column', tracker: picking ? null : tracker,
     onOther: moveLevel,
-    onBack: () => setChanging(false),
+    onBack: () => onCancelPick?.(),
   });
   const button = (action) => {
     const index = actions.indexOf(action);
+    if (action.hold) {
+      // Touch: press and hold. Keys and the gamepad: the focused button is a deliberate choice already.
+      const cancel = () => clearTimeout(holdTimer.current);
+      return (
+        <button
+          key={action.id} type="button" className={cls('skyline-invaders__action', index === focused && 'is-focused')} data-action={action.id}
+          onPointerDown={() => { cancel(); holdTimer.current = setTimeout(() => action.onPress(), 650); }}
+          onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
+          onClick={(event) => event.currentTarget.blur()}
+        >
+          <b>{action.label}</b>
+          <small>{action.hint}</small>
+        </button>
+      );
+    }
     return <ActionButton key={action.id} action={action} primary={action === main[0]} focused={index === focused} hold={index === 0 ? hold : 0} onPress={() => press(index)} />;
   };
   const handsFree = !picking && !!tracker && poseState === 'detecting' && !main[0].disabled;

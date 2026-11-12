@@ -179,6 +179,7 @@ describe('Skyline Invaders controls', () => {
 
   it('co-op: the mat fires for the shooter whoever stands on it, at the shooter\'s tier', async () => {
     h.ctx = makeCtx({ matRider: null, profile: (id) => zoneProfile(id === 'kid' ? 'warm' : 'fire') });
+    h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
     await press('Kid');
     await start();
@@ -232,6 +233,7 @@ describe('Skyline Invaders controls', () => {
   it('keyboard round: no camera and no mat, Space fires, the arrows aim, and the round is saved with its stars', async () => {
     h.ctx = makeCtx({ matRider: null });
     h.ctx.equipment = h.ctx.equipment.filter((item) => item.id !== 'step-mat');
+    h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
     await status('camera-denied');
     expect(screen.getByText(/No step mat found/)).toBeTruthy();
