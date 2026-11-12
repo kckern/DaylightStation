@@ -70,14 +70,15 @@ it('chooses the model from fps under load', () => {
 });
 
 describe('collector and summary', () => {
-  const pose = (deg) => {
+  // Both wrists shifted `px` toward the player's right (image left) at shoulder
+  // height. Shoulder width 80, default reach 1.5 -> aimX = 0.5 + px / 240.
+  const pose = (px) => {
     const keypoints = Array.from({ length: 33 }, () => ({ x: 320, y: 300, score: 0.9 }));
-    const rad = (deg * Math.PI) / 180;
     keypoints[KP.nose] = { x: 320, y: 140, score: 0.9 };
     keypoints[KP.leftShoulder] = { x: 360, y: 200, score: 0.9 };
     keypoints[KP.rightShoulder] = { x: 280, y: 200, score: 0.9 };
-    keypoints[KP.leftWrist] = { x: 360 - 120 * Math.sin(rad), y: 200 - 120 * Math.cos(rad), score: 0.9 };
-    keypoints[KP.rightWrist] = { x: 280 - 120 * Math.sin(rad), y: 200 - 120 * Math.cos(rad), score: 0.9 };
+    keypoints[KP.leftWrist] = { x: 360 - px, y: 200, score: 0.9 };
+    keypoints[KP.rightWrist] = { x: 280 - px, y: 200, score: 0.9 };
     return { keypoints };
   };
 
@@ -85,9 +86,9 @@ describe('collector and summary', () => {
     const c = createStepCollector({ settleMs: 2000 });
     c.start(0);
     for (let t = 0; t <= 10000; t += 40) {
-      // Moving into place for 2 s, then holding at +30 deg with +/-1.2 deg wobble.
-      const deg = t < 2000 ? -30 + (60 * t) / 2000 : 30 + (t % 80 ? 1.2 : -1.2);
-      const aim = computeAim(pose(deg));
+      // Moving into place for 2 s, then holding at aimX 0.75 (60 px) with +/-2.4 px wobble.
+      const px = t < 2000 ? -60 + (120 * t) / 2000 : 60 + (t % 80 ? 2.4 : -2.4);
+      const aim = computeAim(pose(px));
       c.pose({ t, latencyMs: 25, hasPose: true, aim, xs: aim.aimX, frame: { head: true, leftWrist: true, rightWrist: true, ok: true }, armsUp: true });
     }
     const n = c.result(10000);
@@ -102,12 +103,24 @@ describe('collector and summary', () => {
     expect(n.mat.relay).toBeUndefined();
   });
 
+  it('summarizes mat steps that recorded zero presses without throwing', () => {
+    const c = createStepCollector();
+    c.start(0);
+    const n = c.result(15000, { drill: true });
+    expect(n.mat.presses).toBe(0);
+    const summary = buildSummary({
+      session: { sid: 'sis-empty' }, steps: buildScript(), complete: true,
+      results: { 't3.drill': { outcome: 'end', attempts: 1, numbers: n }, 't3.free': { outcome: 'end', attempts: 1, numbers: n } },
+    });
+    expect(summary.mat.free).toMatchObject({ presses: 0, onMatP50Ms: null, intervalP50Ms: null });
+  });
+
   it('reports loss episodes and mat presses with latch numbers', () => {
     const c = createStepCollector();
     const history = createAimHistory();
     c.start(0);
     for (let t = 0; t <= 5000; t += 50) {
-      const aim = t >= 2000 && t < 3000 ? computeAim(null) : computeAim(pose(0.02 * t - 50));
+      const aim = t >= 2000 && t < 3000 ? computeAim(null) : computeAim(pose(0.048 * t - 120));
       history.push({ t, x: aim.aimX, xs: aim.aimX, lost: aim.lost });
       c.pose({ t, latencyMs: 30, hasPose: !aim.lost, aim, xs: aim.aimX, frame: {}, armsUp: null });
     }
@@ -125,8 +138,8 @@ describe('collector and summary', () => {
     expect(n.mat.intervalMs.max).toBe(2200);
     expect(n.mat.drill.presses).toBe(3);
     expect(n.mat.relay.deliveryExcessMs.max).toBe(30);
-    // 0.02 deg/ms over 200 ms = 4 deg = 4/120 of the aim range.
-    expect(n.mat.latch.raw.throwAbs[200].p50).toBeCloseTo(4 / 120, 3);
+    // 0.048 px/ms over 200 ms = 9.6 px = 9.6/240 of the aim range.
+    expect(n.mat.latch.raw.throwAbs[200].p50).toBeCloseTo(0.04, 3);
     expect(n.mat.latch.presses).toBe(3);
 
     const steps = buildScript();

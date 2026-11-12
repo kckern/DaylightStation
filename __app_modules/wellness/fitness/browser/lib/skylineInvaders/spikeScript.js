@@ -25,13 +25,13 @@ function aimSteps(subject) {
   const who = subject === 'kid' ? 'Kid' : 'Adult';
   const s = (suffix, durationS, title, text, extra = {}) => timed(`t2.${subject}.${suffix}`, durationS, `${who}: ${title}`, text, { test: 't2', subject, skeleton: true, ...extra });
   return [
-    s('sweep', 30, 'sweep', 'Both arms straight, hands together. Sweep slowly from far LEFT, over the top, to far RIGHT and back. Straight up is the middle.'),
-    s('hold_left', 10, 'hold LEFT', 'Point both arms to the far LEFT of the screen and FREEZE.', { leadS: 4, settleS: 2 }),
-    s('hold_center', 10, 'hold CENTER', 'Point both arms straight UP and FREEZE.', { leadS: 4, settleS: 2 }),
-    s('hold_right', 10, 'hold RIGHT', 'Point both arms to the far RIGHT of the screen and FREEZE.', { leadS: 4, settleS: 2 }),
+    s('sweep', 30, 'sweep', 'Arms out in front at chest height, hands together. Sweep slowly from far LEFT to far RIGHT and back. Pointing at the screen is the middle.'),
+    s('hold_left', 10, 'hold LEFT', 'Point both arms out to your far LEFT, chest height, and FREEZE.', { leadS: 4, settleS: 2 }),
+    s('hold_center', 10, 'hold CENTER', 'Point both arms straight at the screen, chest height, and FREEZE.', { leadS: 4, settleS: 2 }),
+    s('hold_right', 10, 'hold RIGHT', 'Point both arms out to your far RIGHT, chest height, and FREEZE.', { leadS: 4, settleS: 2 }),
     s('one_arm_left', 20, 'LEFT arm only', 'Right arm down at your side. Sweep your LEFT arm slowly left and right.', { leadS: 4 }),
     s('one_arm_right', 20, 'RIGHT arm only', 'Left arm down at your side. Sweep your RIGHT arm slowly left and right.', { leadS: 4 }),
-    s('arms_up', 20, 'arms up', 'Both hands high above your head. Lean them a little left and right.', { leadS: 4 }),
+    s('arms_low', 20, 'arms low', 'Both arms pointing forward at WAIST height. Sweep them a little left and right.', { leadS: 4 }),
     s('turn_away', 5, 'turn away', 'Turn your back to the camera, or step half out of view.', { leadS: 4 }),
   ];
 }
@@ -43,7 +43,7 @@ export function buildScript() {
     wait('t1.intro', 'Test 1 of 3: pose speed', 'Four one-minute runs. Just keep waving your arms. Nothing to press until it finishes.', { test: 't1' }),
     ...poseSteps(MODEL_A),
     ...poseSteps(MODEL_B),
-    wait('t2.adult.intro', 'Test 2 of 3: aiming (adult)', 'You aim with your arms. Straight up is the middle; lean both arms left or right to move the marker. Follow each prompt.', { test: 't2', subject: 'adult', model: 'auto', load: true }),
+    wait('t2.adult.intro', 'Test 2 of 3: aiming (adult)', 'You aim with your arms. Pointing at the screen is the middle; reach left or right to move the marker. No need to raise your arms overhead. Follow each prompt.', { test: 't2', subject: 'adult', model: 'auto', load: true }),
     ...aimSteps('adult'),
     wait('kid.intro', "Kid's turn", 'Swap places. Kid stands on the mat facing the camera, then continue.', { test: 't2', subject: 'kid', model: 'auto', load: true, skeleton: true }),
     ...aimSteps('kid'),

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DEFAULT_AIM_CONFIG, KP, angleToAimX, armAngleDeg, computeAim, createAimHistory, createAimSmoother,
+  DEFAULT_AIM_CONFIG, KP, offsetToAimX, armAngleDeg, computeAim, createAimHistory, createAimSmoother,
   latchAfter, latchBefore, wristsAboveHead, wristsAboveShoulders,
 } from './aim.js';
 
@@ -36,48 +36,65 @@ describe('arm angle and mapping', () => {
     expect(Math.abs(armAngleDeg({ x: 100, y: 100 }, { x: 100, y: 200 }))).toBeCloseTo(180);
   });
 
-  it('maps the configured range onto 0..1', () => {
-    expect(angleToAimX(-60)).toBeCloseTo(0);
-    expect(angleToAimX(0)).toBeCloseTo(0.5);
-    expect(angleToAimX(60)).toBeCloseTo(1);
-    expect(angleToAimX(10, { leftDeg: -40, rightDeg: 40 })).toBeCloseTo(0.625);
+  it('maps the wrist offset from the midline onto 0..1, mirrored', () => {
+    // shoulder width 80, default reach 1.5 -> 120 px from the midline is the edge.
+    expect(offsetToAimX(320, 320, 80)).toBeCloseTo(0.5);
+    expect(offsetToAimX(200, 320, 80)).toBeCloseTo(1); // player's right = image left = screen right
+    expect(offsetToAimX(440, 320, 80)).toBeCloseTo(0);
+    expect(offsetToAimX(240, 320, 80, { reach: 1 })).toBeCloseTo(1);
   });
 });
 
+// Shoulders 360/280: width 80, midline 320. A wrist placed directly in image x.
+const at = (lx, rx, { y = SHOULDER_Y, leftScore = 0.9, rightScore = 0.9 } = {}) => {
+  const pose = poseWith({ left: 0, right: 0 });
+  pose.keypoints[KP.leftWrist] = { x: lx, y, score: leftScore };
+  pose.keypoints[KP.rightWrist] = { x: rx, y, score: rightScore };
+  return pose;
+};
+
 describe('computeAim', () => {
-  it('centers when both arms point straight up', () => {
-    const aim = computeAim(poseWith({ left: 0, right: 0 }));
+  it('centers when both arms reach toward the screen (wrists over the shoulders)', () => {
+    const aim = computeAim(at(L_SHOULDER.x - 10, R_SHOULDER.x + 10));
     expect(aim.lost).toBe(false);
     expect(aim.usableArms).toBe(2);
     expect(aim.aimX).toBeCloseTo(0.5);
   });
 
-  it('moves toward screen right when the player points to their right', () => {
-    expect(computeAim(poseWith({ left: 30, right: 30 })).aimX).toBeCloseTo(0.75);
-    expect(computeAim(poseWith({ left: -30, right: -30 })).aimX).toBeCloseTo(0.25);
+  it('does not need the arms raised: waist-height forward reach also centers', () => {
+    expect(computeAim(at(330, 310, { y: SHOULDER_Y + 60 })).aimX).toBeCloseTo(0.5);
+  });
+
+  it('moves toward screen right when the player reaches to their right', () => {
+    expect(computeAim(at(260, 260)).aimX).toBeCloseTo(0.75);
+    expect(computeAim(at(380, 380)).aimX).toBeCloseTo(0.25);
+  });
+
+  it('reaches the edge with an arm fully out to the side', () => {
+    expect(computeAim(poseWith({ left: 90, right: 90 })).aimX).toBeCloseTo(1);
+    expect(computeAim(poseWith({ left: -90, right: -90 })).aimX).toBeCloseTo(0);
   });
 
   it('clamps aimX but reports the unclamped value', () => {
-    const aim = computeAim(poseWith({ left: 90, right: 90 }));
+    const aim = computeAim(at(100, 100));
     expect(aim.aimX).toBe(1);
-    expect(aim.rawX).toBeCloseTo(1.25);
+    expect(aim.rawX).toBeCloseTo(0.5 + 220 / 240);
   });
 
   it('weights the arms by keypoint score', () => {
-    // left arm at 0 deg (x = 0.5) score 0.9; right arm at 60 deg (x = 1) score 0.45.
-    const aim = computeAim(poseWith({ left: 0, right: 60, leftScore: 0.9, rightScore: 0.45 }));
+    const aim = computeAim(at(320, 200, { leftScore: 0.9, rightScore: 0.45 }));
     expect(aim.aimX).toBeCloseTo((0.5 * 0.9 + 1 * 0.45) / 1.35);
   });
 
   it('uses the one usable arm', () => {
-    const lowScore = computeAim(poseWith({ left: 30, right: -60, rightScore: 0.1 }));
+    const lowScore = computeAim(at(260, 400, { rightScore: 0.1 }));
     expect(lowScore.usableArms).toBe(1);
     expect(lowScore.arms.right.state).toBe('low_score');
     expect(lowScore.aimX).toBeCloseTo(0.75);
 
-    const hanging = computeAim(poseWith({ left: -30, right: 175 }));
+    const hanging = computeAim(poseWith({ left: -90, right: 175 }));
     expect(hanging.arms.right.state).toBe('down');
-    expect(hanging.aimX).toBeCloseTo(0.25);
+    expect(hanging.aimX).toBe(0);
   });
 
   it('judges loss by score, not by keypoint presence', () => {
@@ -94,12 +111,18 @@ describe('computeAim', () => {
     expect(computeAim(poseWith({ left: 170, right: -170 })).lost).toBe(true);
   });
 
-  it('rejects an arm pointed at the camera', () => {
+  it('accepts an arm pointed at the camera (it reads as near center)', () => {
     const pose = poseWith({ left: 0, right: 0 });
     pose.keypoints[KP.rightWrist] = { x: R_SHOULDER.x - 3, y: R_SHOULDER.y - 5, score: 0.9 };
     const aim = computeAim(pose);
-    expect(aim.arms.right.state).toBe('short');
-    expect(aim.usableArms).toBe(1);
+    expect(aim.arms.right.state).toBe('ok');
+    expect(aim.usableArms).toBe(2);
+  });
+
+  it('has no aim without both shoulders', () => {
+    const pose = poseWith({ left: 0, right: 0 });
+    pose.keypoints[KP.leftShoulder] = { ...L_SHOULDER, score: 0.1 };
+    expect(computeAim(pose).lost).toBe(true);
   });
 });
 

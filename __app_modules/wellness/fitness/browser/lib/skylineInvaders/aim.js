@@ -9,8 +9,14 @@
 //   naming).
 // - aimX is in SCREEN space as a mirror: 0 = screen left, 1 = screen right. A
 //   player pointing to their own right moves the cannon to the right.
-// - An arm's angle is measured from straight up: 0 deg = up, +90 = horizontal
-//   toward screen right, -90 = horizontal toward screen left, +/-180 = down.
+// - Aim is the wrist's HORIZONTAL offset from the body's midline (midpoint of
+//   the shoulders), in shoulder widths. Height does not matter: the camera is
+//   2-D, so an arm reaching toward the screen projects onto the shoulder and
+//   reads as center; reaching out to the side reads as that side. Nobody has
+//   to raise their arms above their head. `reach` shoulder widths from the
+//   midline maps to the screen edge (both hands together, reaching to one side).
+// - An arm's angle (0 deg = up, +90 = toward screen right, +/-180 = down) is
+//   still computed for the trace, but it does not drive aim.
 
 import { round } from './stats.js';
 
@@ -26,14 +32,13 @@ export const DEFAULT_AIM_CONFIG = Object.freeze({
   // Shoulder and wrist must both score at least this for the arm to count.
   // Loss is judged by score, never by keypoint presence.
   minScore: 0.4,
-  // Arm angle mapped to aimX 0 and 1. Lobby calibration replaces these.
-  leftDeg: -60,
-  rightDeg: 60,
-  // Beyond this angle from vertical the arm is hanging, not pointing.
-  maxPointDeg: 120,
-  // Shoulder->wrist length under this fraction of shoulder width means the arm
-  // points at the camera; its image angle is noise.
-  minLengthRatio: 0.25,
+  // Wrist offset from the midline, in shoulder widths, that maps to the screen
+  // edge. Lobby calibration replaces this per player.
+  // Hands together reaching to one side sit ~1.5 widths out.
+  reach: 1.5,
+  // A wrist this many shoulder widths below its shoulder is hanging, not
+  // pointing; the other arm aims alone.
+  downRatio: 1.1,
 });
 
 const usable = (kp) => !!kp && Number.isFinite(kp.x) && Number.isFinite(kp.y);
@@ -44,26 +49,32 @@ export function armAngleDeg(shoulder, wrist) {
   return (Math.atan2(-(wrist.x - shoulder.x), -(wrist.y - shoulder.y)) * 180) / Math.PI;
 }
 
-export function angleToAimX(angleDeg, config = DEFAULT_AIM_CONFIG) {
-  return (angleDeg - config.leftDeg) / (config.rightDeg - config.leftDeg);
+/**
+ * Mirrored screen position for a wrist: 0.5 at the body midline, 0/1 when the
+ * wrist is `reach` shoulder widths out. Image x is not flipped, so a wrist at
+ * smaller image x (the player's right) moves the cannon to screen right.
+ */
+export function offsetToAimX(wristX, midX, shoulderWidth, config = DEFAULT_AIM_CONFIG) {
+  return 0.5 + (midX - wristX) / (2 * config.reach * shoulderWidth);
 }
 
 /**
- * One arm. state: 'ok' | 'missing' | 'low_score' | 'short' | 'down'.
- * score is min(shoulder, wrist); angleDeg/lengthRatio are reported whenever the
- * geometry exists, even when the arm is not usable, so traces stay complete.
+ * One arm. state: 'ok' | 'missing' | 'low_score' | 'no_body' | 'down'.
+ * score is min(shoulder, wrist); angleDeg/lengthRatio/x are reported whenever
+ * the geometry exists, even when the arm is not usable, so traces stay complete.
  */
-export function readArm(shoulder, wrist, shoulderWidth, config = DEFAULT_AIM_CONFIG) {
+export function readArm(shoulder, wrist, body, config = DEFAULT_AIM_CONFIG) {
   if (!usable(shoulder) || !usable(wrist)) return { state: 'missing', score: 0, angleDeg: null, lengthRatio: null, x: null };
   const score = Math.min(scoreOf(shoulder), scoreOf(wrist));
   const angleDeg = armAngleDeg(shoulder, wrist);
+  const sw = body?.shoulderWidth || 0;
   const length = Math.hypot(wrist.x - shoulder.x, wrist.y - shoulder.y);
-  const lengthRatio = shoulderWidth > 0 ? length / shoulderWidth : null;
-  const x = angleToAimX(angleDeg, config);
+  const lengthRatio = sw > 0 ? length / sw : null;
+  const x = sw > 0 ? offsetToAimX(wrist.x, body.midX, sw, config) : null;
   let state = 'ok';
   if (score < config.minScore) state = 'low_score';
-  else if (lengthRatio != null && lengthRatio < config.minLengthRatio) state = 'short';
-  else if (Math.abs(angleDeg) > config.maxPointDeg) state = 'down';
+  else if (!(sw > 0)) state = 'no_body';
+  else if ((wrist.y - shoulder.y) / sw > config.downRatio) state = 'down';
   return { state, score, angleDeg, lengthRatio, x };
 }
 
@@ -78,10 +89,12 @@ export function computeAim(pose, config = DEFAULT_AIM_CONFIG) {
   const ls = k[KP.leftShoulder];
   const rs = k[KP.rightShoulder];
   const bothShoulders = usable(ls) && usable(rs) && scoreOf(ls) >= config.minScore && scoreOf(rs) >= config.minScore;
-  const shoulderWidth = bothShoulders ? Math.hypot(ls.x - rs.x, ls.y - rs.y) : 0;
+  const body = bothShoulders
+    ? { shoulderWidth: Math.hypot(ls.x - rs.x, ls.y - rs.y), midX: (ls.x + rs.x) / 2 }
+    : null;
   const arms = {
-    left: readArm(ls, k[KP.leftWrist], shoulderWidth, config),
-    right: readArm(rs, k[KP.rightWrist], shoulderWidth, config),
+    left: readArm(ls, k[KP.leftWrist], body, config),
+    right: readArm(rs, k[KP.rightWrist], body, config),
   };
   const ok = [arms.left, arms.right].filter((arm) => arm.state === 'ok');
   const weight = ok.reduce((acc, arm) => acc + arm.score, 0);

@@ -7,7 +7,7 @@ import { drillResult, intervalsOf, relayTiming } from './matMetrics.js';
 import { LATCH_OFFSETS_MS } from './aim.js';
 import { pct, round, stddev, summarize } from './stats.js';
 
-const ARM_STATES = ['ok', 'missing', 'low_score', 'short', 'down'];
+const ARM_STATES = ['ok', 'missing', 'low_score', 'no_body', 'down'];
 
 function armNumbers(samples, side) {
   const arms = samples.map((s) => s.aim?.arms?.[side]).filter(Boolean);

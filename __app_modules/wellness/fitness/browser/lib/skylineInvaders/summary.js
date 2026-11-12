@@ -32,7 +32,7 @@ function aimOf(get, subject) {
   const n = (suffix) => get(`t2.${subject}.${suffix}`);
   const sweep = n('sweep');
   const away = n('turn_away');
-  const up = n('arms_up');
+  const up = n('arms_low');
   const one = (suffix) => {
     const r = n(suffix);
     return r ? { lostPct: r.aim.lostPct, oneArmPct: r.aim.oneArmPct, bothArmsPct: r.aim.bothArmsPct, leftOkPct: r.aim.left.okPct, rightOkPct: r.aim.right.okPct } : null;
@@ -54,7 +54,7 @@ function aimOf(get, subject) {
   };
 }
 
-const latchOf = (n) => (n ? {
+const latchOf = (n) => (n?.mat?.latch ? {
   presses: n.mat.latch.presses,
   aimLostAtPress: n.mat.latch.aimLostAtPress,
   sampleAgeP50Ms: n.mat.latch.sampleAgeMs.p50,
@@ -81,7 +81,8 @@ export function buildSummary({ session = {}, steps = [], results = {}, complete 
   const timedSteps = steps.filter((s) => s.kind === 'timed');
   const drill = get('t3.drill');
   const free = get('t3.free');
-  const relaySource = free || drill;
+  // Relay numbers exist only on a step that recorded presses.
+  const relaySource = [free, drill].find((r) => r?.mat?.relay) || null;
   return {
     ...session,
     complete,
@@ -95,8 +96,9 @@ export function buildSummary({ session = {}, steps = [], results = {}, complete 
     },
     aim: { adult: aimOf(get, 'adult'), kid: aimOf(get, 'kid') },
     mat: {
-      drill: drill ? { ...drill.mat.drill, intervalMs: undefined, intervalP50Ms: drill.mat.drill.intervalMs.p50, intervalP95Ms: drill.mat.drill.intervalMs.p95, intervalMinMs: drill.mat.drill.intervalMs.min, stomps: drill.mat.stomps, rearms: drill.mat.rearms, onMatP50Ms: drill.mat.onMatMs.p50 } : null,
-      free: free ? { presses: free.mat.presses, perSec: free.mat.perSec, intervalP50Ms: free.mat.intervalMs.p50, intervalP95Ms: free.mat.intervalMs.p95, stomps: free.mat.stomps, rearms: free.mat.rearms, onMatP50Ms: free.mat.onMatMs.p50 } : null,
+      // A step with zero presses has no interval/onMat numbers: every read is optional.
+      drill: drill ? { ...drill.mat.drill, intervalMs: undefined, intervalP50Ms: drill.mat.drill?.intervalMs?.p50 ?? null, intervalP95Ms: drill.mat.drill?.intervalMs?.p95 ?? null, intervalMinMs: drill.mat.drill?.intervalMs?.min ?? null, stomps: drill.mat.stomps, rearms: drill.mat.rearms, onMatP50Ms: drill.mat.onMatMs?.p50 ?? null } : null,
+      free: free ? { presses: free.mat.presses, perSec: free.mat.perSec, intervalP50Ms: free.mat.intervalMs?.p50 ?? null, intervalP95Ms: free.mat.intervalMs?.p95 ?? null, stomps: free.mat.stomps, rearms: free.mat.rearms, onMatP50Ms: free.mat.onMatMs?.p50 ?? null } : null,
       relay: relaySource ? {
         absoluteLatencyMs: null,
         note: relaySource.mat.relay.note,
@@ -108,7 +110,7 @@ export function buildSummary({ session = {}, steps = [], results = {}, complete 
         backendToAppP95Ms: relaySource.mat.relay.backendToAppMs.p95,
         deviceClockPresses: relaySource.mat.relay.deviceClockPresses,
         backendClockPresses: relaySource.mat.relay.backendClockPresses,
-        from: free ? 't3.free' : 't3.drill',
+        from: relaySource === free ? 't3.free' : 't3.drill',
       } : null,
       latch: latchOf(free),
     },
