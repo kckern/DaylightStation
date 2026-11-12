@@ -143,3 +143,20 @@ export function spearman(xs, ys) {
   }
   return dx && dy ? num / Math.sqrt(dx * dy) : null;
 }
+
+/**
+ * A stable content hash (two FNV-1a 32-bit passes → 16 hex chars). Pure JS so
+ * application code needs no node:crypto; it detects changed captions/bursts,
+ * it is not a security primitive.
+ */
+export function contentHash(text) {
+  const s = String(text ?? '');
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193 ^ s.length;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (c + i), 0x01000193) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   measuredTarget, levelTarget, parseCaptionCues, transcriptFor, normalizeExpectation, spearman,
-  RUBRIC_INSTRUCTIONS, RUBRIC_LEVELS, LEVEL_TARGETS_DEFAULT, DEFAULT_TARGET_NPM,
+  RUBRIC_INSTRUCTIONS, RUBRIC_LEVELS, LEVEL_TARGETS_DEFAULT, DEFAULT_TARGET_NPM, contentHash,
 } from './lessonExpectation.mjs';
 
 const SRT = `1
@@ -61,5 +61,10 @@ describe('lessonExpectation helpers', () => {
     expect(RUBRIC_LEVELS[0]).toMatch(/^Watch only/);
     expect(LEVEL_TARGETS_DEFAULT).toEqual([0, 5, 13, 25]);
     expect(DEFAULT_TARGET_NPM).toBe(0);
+  });
+  it('contentHash is stable and changes with content', () => {
+    expect(contentHash('abc')).toBe(contentHash('abc'));
+    expect(contentHash('abc')).not.toBe(contentHash('abd'));
+    expect(contentHash('abc')).toMatch(/^[0-9a-f]{16}$/);
   });
 });
