@@ -769,18 +769,37 @@
 // resolved attempt only after the final note's verdict has been on screen; the
 // confirmed notes swell once, then settle. A transition on ds motion tokens —
 // no keyframes — and under reduced motion the colour alone carries it.
+//
+// THE SWELL MOVES A WHOLE NOTE, NEVER A NOTEHEAD. It used to be written on
+// `.sequence-note-hit`, which on SvgSequenceStaff is the bare `<ellipse>` —
+// a sibling of its stem, carrying its own `rotate(-12, cx, cy)` attribute. A
+// CSS `transform` REPLACES that attribute, and `transform-origin` re-pivots
+// it: the instant the hold began, every green head swung ~40px off its stem
+// (rotation now about twice its own centre), shed its tilt while it scaled,
+// and on settle snapped back to the displaced pivot until the stage left —
+// "notes fall off their stems when they turn green". The swell is now on the
+// column group (`.action-staff__note-group`: head, stem, ledgers, accidental),
+// so the head keeps its own transform and the note grows as one unit.
+// On the abc stage the class is already on `g.abcjs-note` (head + stem), but a
+// beamed note's beam is a separate element — scaling it alone would pull its
+// stem off the beam, so beamed notes (`exercise-note-beamed`) keep the colour
+// and skip the swell. Pinned by ExerciseNotation.swell.test.js.
 .piano-exercise-run.is-resolve-held {
-  .exercise-note-done, .exercise-note-hit, .sequence-note-hit {
+  .exercise-note-done:not(.exercise-note-beamed),
+  .exercise-note-hit:not(.exercise-note-beamed),
+  .action-staff__note-group[data-stem-state='hit'] {
     transform-box: fill-box;
     transform-origin: center;
     transition: transform var(--ds-motion-base, 200ms) var(--ds-motion-easing, ease-out);
   }
   &.is-resolve-passed:not(.is-resolve-settled) {
-    .exercise-note-done, .exercise-note-hit, .sequence-note-hit { transform: scale(1.18); }
+    .exercise-note-done:not(.exercise-note-beamed),
+    .exercise-note-hit:not(.exercise-note-beamed),
+    .action-staff__note-group[data-stem-state='hit'] { transform: scale(1.18); }
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .piano-exercise-run.is-resolve-held {
-    .exercise-note-done, .exercise-note-hit, .sequence-note-hit { transition: none; transform: none !important; }
+    .exercise-note-done, .exercise-note-hit, .action-staff__note-group { transition: none; transform: none !important; }
   }
 }

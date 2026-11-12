@@ -168,6 +168,9 @@ export default function ExerciseNotation({ instance, eventIndex = 0, activeNotes
         const wrongs = judged ? [...(recorded?.values() ?? [])].filter((v) => v.state === 'wrong' && Number.isFinite(v.midi)) : [];
         note.els.forEach((element) => {
           element.classList.remove(...FEEDBACK);
+          // A beamed note keeps its colour but never swells: its beam is not in
+          // this group, so scaling the group would pull the stem off the beam.
+          element.classList.toggle('exercise-note-beamed', Boolean(note.beamed));
           if (preview) return;
           if (judged) {
             element.classList.add(verdictClass ?? (index === eventIndex ? 'exercise-note-next' : 'exercise-note-todo'));

@@ -482,6 +482,16 @@ note never vanishes unseen. There is no rep hold at the end of the run; the
 existing `RESOLVE_HOLD_MS` owns that. Timed runs, single-note units and stages
 other than keys never hold.
 
+During the resolve hold the confirmed notes swell once (`scale(1.18)`, then
+settle). The swell moves a **whole note**: on the sequence staff it targets the
+column group (`.action-staff__note-group[data-stem-state='hit']` — head, stem,
+ledgers, accidental), never the notehead ellipse, which owns its own
+`rotate(-12, cx, cy)`; a CSS transform on the head replaces that attribute and
+swung green heads off their stems. On the ABC stage the class sits on
+`g.abcjs-note` (head + stem); a beamed note (`exercise-note-beamed`) keeps its
+colour but does not swell, because its beam is a separate element. Pinned by
+`ExerciseNotation.swell.test.jsx`.
+
 Logs: `piano.exercise-rep-completed {repIndex, unit, holdMs}` and
 `piano.exercise-rep-hold-released {repIndex, endedBy: timer | next-input | reset}`.
 

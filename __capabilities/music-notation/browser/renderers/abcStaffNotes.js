@@ -30,7 +30,10 @@ export function collectStaffNotes(tune) {
           const abs = el.abselem;
           const els = (abs?.elemset && abs.elemset.length ? abs.elemset : abs?.heads) || [];
           const midi = el.midiPitches?.[0]?.pitch ?? null;
-          bucket.push({ midi, eventIndex: position, els: Array.from(els).filter(Boolean) });
+          // `beamed`: abcjs draws a beam as its own element, outside the note's
+          // group, so a caller that transforms the note must know to leave a
+          // beamed one alone (ExerciseNotation's resolve swell).
+          bucket.push({ midi, eventIndex: position, els: Array.from(els).filter(Boolean), beamed: Boolean(abs?.beam) });
         });
         positions.set(key, eventIndex);
       });
