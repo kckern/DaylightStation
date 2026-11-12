@@ -8,8 +8,8 @@ Three abstraction layers that convert raw BlazePose keypoints into meaningful bo
 - frontend/src/modules/Fitness/lib/pose/poseActions.js
 - frontend/src/modules/Fitness/lib/pose/exercisePatterns.js
 - frontend/src/modules/Fitness/domain/pose/SemanticMoveDetector.js
-- frontend/src/modules/Fitness/domain/pose/PoseDetectorService.js (upstream)
-- frontend/src/modules/Fitness/context/PoseContext.jsx (upstream)
+- __app_modules/wellness/fitness/browser/domain/pose/PoseDetectorService.js (upstream; backend, threads and model switching are in `pose-detector-runtime.md`)
+- __app_modules/wellness/fitness/browser/context/PoseContext.jsx (upstream)
 
 ---
 

@@ -50,7 +50,32 @@ const DEFAULT_CONFIG = {
   smoothingFactor: 0.5, // 0 = no smoothing, 1 = max smoothing (0.5-0.8 recommended)
   velocityDamping: 0.3, // Limit sudden jumps
   maxVelocity: 300, // Max pixels/frame a keypoint can move
+  // WASM thread pool size. 'auto' = half the logical cores, capped at
+  // MAX_AUTO_WASM_THREADS; a positive integer pins it. Only honoured when the
+  // page is cross-origin isolated — without SharedArrayBuffer TF.js loads its
+  // single-threaded binary whatever this says.
+  wasmThreads: 'auto',
 };
+
+// TF.js's own default is one thread per logical core (16 on the garage box).
+// The 2026-11-11 measurement that justified isolation was taken at 8.
+const MAX_AUTO_WASM_THREADS = 8;
+
+/**
+ * How many WASM threads to ask TF.js for.
+ *
+ * @returns {number} 1 when the page is not cross-origin isolated (threads are
+ *   unavailable), otherwise the requested count clamped to the core count, or
+ *   for 'auto' half the cores capped at MAX_AUTO_WASM_THREADS.
+ */
+export function resolveWasmThreadCount({ requested = 'auto', crossOriginIsolated = false, hardwareConcurrency } = {}) {
+  if (!crossOriginIsolated) return 1;
+  const cores = Number.isFinite(hardwareConcurrency) && hardwareConcurrency >= 1
+    ? Math.floor(hardwareConcurrency)
+    : 1;
+  if (Number.isInteger(requested) && requested >= 1) return Math.min(requested, cores);
+  return Math.max(1, Math.min(MAX_AUTO_WASM_THREADS, Math.floor(cores / 2)));
+}
 
 class PoseDetectorService {
   constructor(options = {}) {
@@ -85,16 +110,45 @@ class PoseDetectorService {
     // Temporal smoothing state
     this.smoothedPoses = null;
     this.lastPoseTimestamp = 0;
+
+    // The model the LIVE detector was built with. `config.modelType` is only
+    // what was asked for; the two differ while a model loads, and differed
+    // permanently before 2026-11 when a switch raced the first load.
+    this.detectorModelType = null;
+    // Detector builds/disposals run one at a time through this chain.
+    this._detectorOp = null;
+    // True while the detector is being torn down or built: the loop keeps
+    // ticking but skips inference.
+    this._rebuilding = false;
+    // The inference currently awaiting the detector, so a rebuild can let it
+    // finish before disposing the model under it.
+    this._inflight = null;
+    // Bumped by dispose(): a build that finishes after it must not install.
+    this._generation = 0;
+    this._initPromise = null;
+    this.tfWasm = null;
+    this.threadInfo = { crossOriginIsolated: false, requestedThreads: 1, threads: null };
   }
   
   /**
-   * Initialize TensorFlow.js and load the pose detection model
+   * Initialize TensorFlow.js and load the pose detection model.
+   *
+   * Concurrent callers share one load: PoseProvider calls initialize() and
+   * start() back to back, and start() calls initialize() again while the first
+   * is still awaiting the model. Two loads built two detectors and leaked one.
    */
-  async initialize() {
-    if (this.isInitialized) return;
-    
+  initialize() {
+    if (this.isInitialized) return Promise.resolve();
+    if (!this._initPromise) {
+      this._initPromise = this._initialize().finally(() => { this._initPromise = null; });
+    }
+    return this._initPromise;
+  }
+
+  async _initialize() {
     this.onLoadingChange(true);
-    
+    const generation = this._generation;
+
     try {
       // Dynamic import TensorFlow.js modules
       // Positional: the webgl and cpu imports register backends as a side effect,
@@ -106,26 +160,36 @@ class PoseDetectorService {
         import('@tensorflow/tfjs-backend-cpu'),
         import('@tensorflow-models/pose-detection'),
       ]);
-      
+
       this.tf = tfCore;
+      this.tfWasm = tfBackendWasm;
       this.poseDetection = poseDetection;
 
-      // Tell TFJS where to find .wasm files (served from public/ via Vite)
+      // Tell TFJS where to find .wasm files. They are copied from the npm
+      // package into frontend/public by the `prebuild` hook
+      // (frontend/scripts/prepare-public-assets.mjs) and served same-origin at
+      // the site root. The pthread worker script is NOT a file: tfjs 4.x
+      // inlines it and starts workers from a blob: URL.
       if (tfBackendWasm.setWasmPaths) {
         tfBackendWasm.setWasmPaths('/');
       }
 
+      // Thread pool size must be set before the wasm backend initializes.
+      this._configureWasmThreads();
+
       // Initialize backend with fallback
       this.backend = await this._initializeBackend();
-      logger().info('pose_detector.backend_selected', { backend: this.backend });
-      
+      this._logBackendSelected('init');
+
       // Create detector
-      await this._createDetector();
-      
+      await this._createDetector(generation);
+      // The model may have been switched while this one was loading.
+      await this._syncDetector({ reason: 'changed_during_load' });
+
       this.isInitialized = true;
       this.onLoadingChange(false);
-      
-      logger().info('pose_detector.initialized');
+
+      logger().info('pose_detector.initialized', { modelType: this.detectorModelType, backend: this.backend });
     } catch (error) {
       logger().error('pose_detector.init_failed', { error: error.message || error });
       this.onError(error);
@@ -133,7 +197,69 @@ class PoseDetectorService {
       throw error;
     }
   }
-  
+
+  /**
+   * Decide the WASM thread count and hand it to TF.js.
+   *
+   * Threads need SharedArrayBuffer, which needs a cross-origin isolated page:
+   * the backend serves /fitness with COOP same-origin + COEP credentialless
+   * (see __docs/reference/fitness/pose-detector-runtime.md). When the page is not
+   * isolated nothing is set and TF.js loads its single-threaded SIMD binary.
+   */
+  _configureWasmThreads() {
+    const crossOriginIsolated = typeof globalThis !== 'undefined' && globalThis.crossOriginIsolated === true;
+    const hardwareConcurrency = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined;
+    const requestedThreads = resolveWasmThreadCount({
+      requested: this.config.wasmThreads,
+      crossOriginIsolated,
+      hardwareConcurrency,
+    });
+    this.threadInfo = { crossOriginIsolated, requestedThreads, threads: null, hardwareConcurrency: hardwareConcurrency ?? null };
+
+    if (crossOriginIsolated && typeof this.tfWasm?.setThreadsCount === 'function') {
+      this.tfWasm.setThreadsCount(requestedThreads);
+    }
+  }
+
+  /**
+   * Log which backend won and how many threads it actually has.
+   *
+   * `threads` is what XNNPACK reports after init, not what was asked for; it
+   * is null for webgl/cpu. A wasm backend on a page that is not isolated is
+   * worth a warning of its own: it works, at a third of the speed.
+   */
+  _logBackendSelected(reason) {
+    let threads = null;
+    if (this.backend === 'wasm' && typeof this.tfWasm?.getThreadsCount === 'function') {
+      try {
+        threads = this.tfWasm.getThreadsCount();
+      } catch (e) {
+        threads = null;
+      }
+    }
+    this.threadInfo = { ...this.threadInfo, threads };
+    const { crossOriginIsolated, requestedThreads, hardwareConcurrency } = this.threadInfo;
+
+    logger().info('pose_detector.backend_selected', {
+      backend: this.backend,
+      reason,
+      crossOriginIsolated,
+      threads,
+      requestedThreads,
+      hardwareConcurrency: hardwareConcurrency ?? null,
+      isSecureContext: typeof globalThis !== 'undefined' ? globalThis.isSecureContext === true : false,
+      modelType: this.config.modelType,
+    });
+
+    if (this.backend === 'wasm' && !crossOriginIsolated) {
+      logger().warn('pose_detector.wasm_single_threaded', {
+        reason: 'page is not cross-origin isolated',
+        isSecureContext: typeof globalThis !== 'undefined' ? globalThis.isSecureContext === true : false,
+        hint: 'needs COOP same-origin + COEP credentialless on the document, over https; see fitness cross_origin_isolation config',
+      });
+    }
+  }
+
   /**
    * Initialize TensorFlow backend with fallback chain
    */
@@ -165,23 +291,118 @@ class PoseDetectorService {
   }
   
   /**
-   * Create the BlazePose detector
+   * Create the BlazePose detector for the currently configured model.
+   *
+   * Records the model the detector was ACTUALLY built with. Callers must have
+   * disposed any previous detector first (see _disposeDetector).
    */
-  async _createDetector() {
+  async _createDetector(generation = this._generation) {
     const model = this.poseDetection.SupportedModels.BlazePose;
-    
+    // Snapshot: config can change while the model downloads.
+    const modelType = this.config.modelType;
+
     const detectorConfig = {
       runtime: 'tfjs',
       enableSmoothing: this.config.enableSmoothing,
-      modelType: this.config.modelType,
+      modelType,
     };
-    
-    this.detector = await this.poseDetection.createDetector(model, detectorConfig);
-    
+
+    const detector = await this.poseDetection.createDetector(model, detectorConfig);
+
+    if (generation !== this._generation) {
+      // The service was disposed while the model loaded. Installing it now
+      // would leave a detector nothing will ever dispose.
+      try { detector.dispose(); } catch (e) { /* already gone */ }
+      throw new Error('PoseDetectorService disposed during detector load');
+    }
+
+    this.detector = detector;
+    this.detectorModelType = modelType;
+
     // Warm up with a dummy inference
     await this._warmup();
   }
-  
+
+  /**
+   * Dispose the live detector, if any. Never throws.
+   */
+  _disposeDetector() {
+    const detector = this.detector;
+    this.detector = null;
+    this.detectorModelType = null;
+    if (!detector) return false;
+    try {
+      detector.dispose();
+    } catch (e) {
+      logger().warn('pose_detector.detector_dispose_failed', { error: e.message || e });
+    }
+    return true;
+  }
+
+  /**
+   * Make the live detector match `config.modelType`, disposing the old one.
+   *
+   * Serialized: calls queue behind any build already running, and each run
+   * loops until the detector matches whatever the config says by then — so a
+   * burst of switches (full → lite → full) ends on the last one asked for and
+   * never leaves two detectors alive.
+   *
+   * The detection loop is not stopped. `_rebuilding` makes it skip inference
+   * while the detector is swapped, and an inference already awaiting the old
+   * detector is allowed to finish before that detector is disposed.
+   *
+   * If the new model cannot be built, the previous model is restored so
+   * detection keeps working, and the error is reported.
+   */
+  _syncDetector({ force = false, reason = 'config' } = {}) {
+    const run = async () => {
+      let forced = force;
+      while (forced || !this.detector || this.detectorModelType !== this.config.modelType) {
+        forced = false;
+        const from = this.detectorModelType;
+        const to = this.config.modelType;
+        const generation = this._generation;
+        const startedAt = performance.now();
+        this._rebuilding = true;
+        try {
+          if (this._inflight) {
+            try { await this._inflight; } catch (e) { /* reported by the loop */ }
+          }
+          const disposedPrevious = this._disposeDetector();
+          await this._createDetector(generation);
+          this.smoothedPoses = null;
+          logger().info('pose_detector.model_switched', {
+            from,
+            to: this.detectorModelType,
+            reason,
+            backend: this.backend,
+            disposedPrevious,
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+        } catch (error) {
+          logger().error('pose_detector.model_switch_failed', { from, to, reason, error: error.message || error });
+          if (generation !== this._generation) throw error;
+          if (from && from !== to && !this.detector) {
+            this.config = { ...this.config, modelType: from };
+            try {
+              await this._createDetector(generation);
+              logger().warn('pose_detector.model_switch_reverted', { to: from, attempted: to });
+            } catch (revertError) {
+              logger().error('pose_detector.model_switch_revert_failed', { to: from, error: revertError.message || revertError });
+            }
+          }
+          this.onError(error);
+          throw error;
+        } finally {
+          this._rebuilding = false;
+        }
+      }
+    };
+    const op = (this._detectorOp || Promise.resolve()).catch(() => {}).then(run);
+    this._detectorOp = op;
+    return op;
+  }
+
   /**
    * Warm up the model with a dummy canvas
    */
@@ -268,7 +489,7 @@ class PoseDetectorService {
           this.metrics.fps = Math.round((this.metrics.frameCount * 1000) / elapsed);
           this.metrics.frameCount = 0;
           this.metrics.lastFpsUpdate = timestamp;
-          this.onMetricsUpdate({ ...this.metrics, backend: this.backend, modelType: this.config.modelType });
+          this.onMetricsUpdate({ ...this.metrics, backend: this.backend, modelType: this.detectorModelType || this.config.modelType, threads: this.threadInfo.threads });
         }
       }
       
@@ -279,47 +500,67 @@ class PoseDetectorService {
   }
   
   /**
-   * Switch backend dynamically
+   * Switch backend dynamically. Queues behind any detector build in progress;
+   * the detector is disposed before the backend changes (its tensors belong to
+   * the old backend) and rebuilt after.
    */
-  async _switchBackend(newBackend) {
-    if (this.backend === newBackend) return;
-    
-    logger().info('pose_detector.backend_switching', { from: this.backend, to: newBackend });
-    // Don't fully stop, just pause loop
-    const wasRunning = this.isRunning;
-    this.isRunning = false;
-    
-    try {
-      await this.tf.setBackend(newBackend);
-      await this.tf.ready();
-      this.backend = newBackend;
-      
-      // Re-create detector
-      if (this.detector) {
-        this.detector.dispose();
-        this.detector = null;
+  _switchBackend(newBackend) {
+    if (this.backend === newBackend) return Promise.resolve();
+
+    const run = async () => {
+      if (this.backend === newBackend) return;
+      logger().info('pose_detector.backend_switching', { from: this.backend, to: newBackend });
+      const generation = this._generation;
+      this._rebuilding = true;
+      try {
+        if (this._inflight) {
+          try { await this._inflight; } catch (e) { /* reported by the loop */ }
+        }
+        this._disposeDetector();
+        await this.tf.setBackend(newBackend);
+        await this.tf.ready();
+        this.backend = newBackend;
+        this._logBackendSelected('switch');
+        await this._createDetector(generation);
+        this.smoothedPoses = null;
+      } catch (e) {
+        logger().error('pose_detector.backend_switch_failed', { backend: newBackend, error: e.message || e });
+        // Try to keep detecting on whatever backend is active.
+        if (!this.detector && generation === this._generation) {
+          try {
+            await this._createDetector(generation);
+          } catch (recreateError) {
+            logger().error('pose_detector.detector_recreate_failed', { error: recreateError.message || recreateError });
+          }
+        }
+      } finally {
+        this._rebuilding = false;
       }
-      await this._createDetector();
-      
-      if (wasRunning) {
-        this.isRunning = true;
-        this._runDetectionLoop();
-      }
-    } catch (e) {
-      logger().error('pose_detector.backend_switch_failed', { backend: newBackend, error: e.message || e });
-      // Try to resume anyway
-      if (wasRunning) {
-        this.isRunning = true;
-        this._runDetectionLoop();
-      }
-    }
+    };
+    const op = (this._detectorOp || Promise.resolve()).catch(() => {}).then(run);
+    this._detectorOp = op;
+    return op;
   }
 
   /**
-   * Run a single inference pass
+   * Run a single inference pass, tracked so a detector rebuild can wait for it.
    */
   async _runInference() {
-    if (!this.detector || !this.videoSource) return;
+    if (!this.detector || !this.videoSource || this._rebuilding) return;
+    const pass = this._infer();
+    this._inflight = pass;
+    try {
+      await pass;
+    } finally {
+      if (this._inflight === pass) this._inflight = null;
+    }
+  }
+
+  async _infer() {
+    // Hold the detector for the whole pass: `this.detector` can be replaced
+    // by a model switch while this awaits.
+    const detector = this.detector;
+    if (!detector || !this.videoSource) return;
     
     // Skip if video not ready
     if (this.videoSource.readyState < 2) {
@@ -341,7 +582,7 @@ class PoseDetectorService {
     const startTime = performance.now();
     
     try {
-      const poses = await this.detector.estimatePoses(this.videoSource, {
+      const poses = await detector.estimatePoses(this.videoSource, {
         maxPoses: this.config.maxPoses,
         flipHorizontal: false, // We handle mirroring in rendering
         scoreThreshold: this.config.scoreThreshold,
@@ -382,7 +623,7 @@ class PoseDetectorService {
         fps: this.metrics.fps,
         latencyMs: this.metrics.latencyMs,
         backend: this.backend,
-        modelType: this.config.modelType,
+        modelType: this.detectorModelType || this.config.modelType,
       });
     } catch (error) {
       logger().error('pose_detector.inference_error', { error: error.message || error });
@@ -391,28 +632,42 @@ class PoseDetectorService {
   }
   
   /**
-   * Update configuration (some changes require detector recreation)
+   * Update configuration. A `modelType` change disposes the live detector and
+   * builds a new one (see _syncDetector); a `backend` change switches backend.
+   *
+   * Safe to call before or during initialize(): the change is recorded and
+   * applied as soon as the first model has loaded.
    */
-  async updateConfig(newConfig) {
-    const needsRecreate = newConfig.modelType && newConfig.modelType !== this.config.modelType;
-    const needsBackendSwitch = newConfig.backend && newConfig.backend !== this.backend;
-    
-    this.config = { ...this.config, ...newConfig };
-    
-    if (needsBackendSwitch && this.isInitialized) {
-      await this._switchBackend(newConfig.backend);
+  async updateConfig(newConfig = {}) {
+    const next = { ...newConfig };
+    if (next.modelType !== undefined && !Object.values(MODEL_TYPES).includes(next.modelType)) {
+      logger().warn('pose_detector.unknown_model_type', { modelType: next.modelType, keeping: this.config.modelType });
+      delete next.modelType;
     }
 
-    if (needsRecreate && this.isInitialized) {
-      const wasRunning = this.isRunning;
-      this.stop();
-      await this._createDetector();
-      if (wasRunning) {
-        this.start();
+    const needsBackendSwitch = next.backend && next.backend !== this.backend;
+    this.config = { ...this.config, ...next };
+
+    if (!this.isInitialized) {
+      if (next.modelType) {
+        logger().info('pose_detector.model_switch_deferred', {
+          to: next.modelType,
+          loading: this._initPromise !== null,
+        });
       }
+      return;
+    }
+
+    if (needsBackendSwitch) {
+      await this._switchBackend(next.backend);
+    }
+
+    if (this.detectorModelType !== this.config.modelType) {
+      logger().info('pose_detector.model_switching', { from: this.detectorModelType, to: this.config.modelType });
+      await this._syncDetector({ reason: 'config' });
     }
   }
-  
+
   /**
    * Set target inference FPS
    */
@@ -521,11 +776,10 @@ class PoseDetectorService {
    */
   dispose() {
     this.stop();
-    
-    if (this.detector) {
-      this.detector.dispose();
-      this.detector = null;
-    }
+    // Any model still loading must not install itself after this.
+    this._generation += 1;
+
+    this._disposeDetector();
     
     // Dispose TensorFlow variables
     if (this.tf) {
@@ -546,7 +800,11 @@ class PoseDetectorService {
       isInitialized: this.isInitialized,
       isRunning: this.isRunning,
       backend: this.backend,
-      modelType: this.config.modelType,
+      // The model actually loaded; `requestedModelType` is what config asks for.
+      modelType: this.detectorModelType || this.config.modelType,
+      requestedModelType: this.config.modelType,
+      crossOriginIsolated: this.threadInfo.crossOriginIsolated,
+      threads: this.threadInfo.threads,
       metrics: { ...this.metrics },
     };
   }
@@ -555,9 +813,35 @@ class PoseDetectorService {
 // Singleton instance
 let instance = null;
 
+const CALLBACK_KEYS = ['onPoseUpdate', 'onError', 'onLoadingChange', 'onMetricsUpdate'];
+
+/**
+ * Get the shared service, creating it on first use.
+ *
+ * When the instance already exists the options are still applied: callbacks
+ * are rebound to the new consumer and config keys go through updateConfig().
+ * They used to be dropped, so a second consumer asking for `modelType: 'lite'`
+ * was handed the existing `full` detector with no sign anything was ignored.
+ */
 export const getPoseDetectorService = (options = {}) => {
   if (!instance) {
     instance = new PoseDetectorService(options);
+    return instance;
+  }
+
+  const configPatch = {};
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined) continue;
+    if (CALLBACK_KEYS.includes(key)) {
+      if (typeof value === 'function') instance[key] = value;
+    } else if (instance.config[key] !== value) {
+      configPatch[key] = value;
+    }
+  }
+  if (Object.keys(configPatch).length > 0) {
+    instance.updateConfig(configPatch).catch((error) => {
+      logger().error('pose_detector.shared_config_update_failed', { error: error.message || error });
+    });
   }
   return instance;
 };

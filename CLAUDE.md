@@ -234,6 +234,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
 | Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb/missile weapons + `vulnerable_to`, gates + boost-dash shutters, step-mat bombardier, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
 | Garage speaker recovery (HA plug power-cycle on dropout, cap, fitness.garage_speaker.* events) | `__docs/reference/fitness/garage-speaker-recovery.md` |
+| Pose detector runtime (BlazePose backend + WASM threads, `/fitness` cross-origin isolation headers + `cross_origin_isolation` flag, model switching) | `__docs/reference/fitness/pose-detector-runtime.md` |
 | Fitness presence gate (admin fingerprint to open a show / start a video while the supervising adult is away; `presence_gate` config, HA presence read) | `__docs/reference/fitness/presence-gate.md` |
 | Fitness ambience tabs (date-gated `ambience` nav items: looping video + playlist + HA script, e.g. Halloween; `days`/`dates` gating) | `__docs/reference/fitness/ambience.md` |
 | Rider card HR trend (whole-session sparkline: collecting state, log time axis, tick glide, threshold-exact colour) | `__docs/reference/fitness/rider-hr-trend.md` |
