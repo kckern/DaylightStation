@@ -223,7 +223,7 @@ export default function SkylineGlider() {
     setPressFlash({ position, ok: !refusal, reason: refusal, key });
     const timer = setTimeout(() => setPressFlash((current) => current?.key === key ? null : current), refusal ? 700 : 350);
     effectTimersRef.current.add(timer);
-    // A boost already running is not a refusal worth a buzz: the cell says "Boosting".
+    // A boost already running is not a refusal worth a buzz: the cell says "Boost!".
     if (refusal && refusal !== 'active') {
       audioRef.current.playCue('deny');
       log.info('skyline_glider.input.refused', { action, reason: refusal, courseTime: flightRef.current?.courseTime ?? null });

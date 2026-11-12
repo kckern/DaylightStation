@@ -23,7 +23,7 @@ export default function InvadersResult({ record, saveStatus, level }) {
   const rows = [
     { id: 'kills', label: 'Shot down', value: String(run.kills), note: `needed ${level.pass.kills}`, met: run.kills >= level.pass.kills },
     { id: 'skyline', label: 'Skyline', value: `${run.base_hp}%`, ...(hpMin > 0 ? { note: `needed ${hpMin}%`, met: run.base_hp >= hpMin } : {}) },
-    { id: 'combo', label: 'Best combo', value: `×${run.best_combo}` },
+    { id: 'combo', label: 'Best combo', value: `x${run.best_combo}` },
     { id: 'score', label: 'Score', value: run.score.toLocaleString('en-US') },
   ];
   return (

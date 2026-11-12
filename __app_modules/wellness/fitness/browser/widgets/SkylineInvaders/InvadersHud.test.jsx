@@ -23,19 +23,19 @@ describe('InvadersHud', () => {
     expect(screen.getByTestId('invaders-kills').textContent).toBe('7 / 30');
     expect(screen.getByTestId('invaders-kills').getAttribute('data-passed')).toBe('false');
     expect(screen.getByTestId('invaders-score').textContent).toBe('2,340');
-    expect(screen.getByTestId('invaders-combo').textContent).toBe('×3');
+    expect(screen.getByTestId('invaders-combo').textContent).toBe('x3');
   });
 
   it('hides the combo at one or none, and marks the kills once the pass mark is reached', () => {
     renderHud({ state: { kills: 30, combo: 1 } });
     expect(screen.queryByTestId('invaders-combo')).toBeNull();
     expect(screen.getByTestId('invaders-kills').getAttribute('data-passed')).toBe('true');
-    expect(screen.getByTestId('invaders-kills').textContent).toBe('30 ✓');
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('30');
   });
 
   it('drops the target once the round is past it, so it never reads "45 / 30"', () => {
     renderHud({ state: { kills: 45 } });
-    expect(screen.getByTestId('invaders-kills').textContent).toBe('45 ✓');
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('45');
     expect(screen.getByLabelText('45 shot down, target of 30 reached')).toBeTruthy();
   });
 
@@ -66,7 +66,7 @@ describe('InvadersHud', () => {
     view.unmount();
     renderHud({ tier: { tier: 'small', zoneId: null, trusted: false } });
     expect(screen.getByTestId('invaders-tier').getAttribute('data-tier')).toBe('small');
-    expect(notes()).toEqual(['No trusted heart rate — small shots']);
+    expect(notes()).toEqual(['No heart rate: small shots']);
   });
 
   it('tells the shooter how to get their aim back', () => {

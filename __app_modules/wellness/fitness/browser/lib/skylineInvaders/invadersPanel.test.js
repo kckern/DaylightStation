@@ -3,7 +3,7 @@ import { invadersAction, invadersControls, pressForMenuKey, stompAction } from '
 
 const labels = (view) => invadersControls(view).map((control) => control.label);
 
-describe('invadersControls: one decision per screen on the four bike buttons', () => {
+describe('invadersControls: one decision per screen, as four touch keys', () => {
   it('who: the riders on their buttons, the rest say Someone else (hold)', () => {
     const view = { screen: 'who', riders: [{ id: 'kid', name: 'Kid', avatarSrc: 'a.png' }] };
     expect(labels(view)).toEqual(['Kid', 'Someone else', 'Someone else', 'Someone else']);

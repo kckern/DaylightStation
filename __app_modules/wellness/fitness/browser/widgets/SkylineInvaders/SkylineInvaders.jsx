@@ -132,6 +132,8 @@ function SkylineInvadersGame() {
   const [pickedShooter, setPickedShooter] = useState(null);
   const [choosingShooter, setChoosingShooter] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  // The roster's cursor shows only once a key or gamepad moves it: under touch a gold tile reads as already chosen.
+  const [rosterCursor, setRosterCursor] = useState(false);
   const [rosterIndex, setRosterIndex] = useState(0);
   const gamepadConnected = useGamepadConnected();
   const [game, setGame] = useState(null);
@@ -712,9 +714,9 @@ function SkylineInvadersGame() {
       return list[(index + delta + list.length) % list.length];
     };
     switch (action) {
-      case 'open-roster': setRosterOpen(true); setRosterIndex(0); break;
-      case 'roster-prev': setRosterIndex((index) => index - 1); break;
-      case 'roster-next': setRosterIndex((index) => index + 1); break;
+      case 'open-roster': setRosterOpen(true); setRosterIndex(0); setRosterCursor(false); break;
+      case 'roster-prev': setRosterIndex((index) => index - 1); setRosterCursor(true); break;
+      case 'roster-next': setRosterIndex((index) => index + 1); setRosterCursor(true); break;
       case 'close-roster': setRosterOpen(false); break;
       case 'roster-choose': { const person = viewRef.current.person; if (person && people_.length) pickShooter(person.id); break; }
       case 'wave-prev': case 'wave-next': { const next = at(viewRef.current.wave, action === 'wave-next' ? 1 : -1); if (next) chooseLevel(next.id); break; }
@@ -852,7 +854,7 @@ function SkylineInvadersGame() {
             {screen === 'result' && record && <InvadersResult record={record} saveStatus={saveState.status} level={roundRef.current?.level || level} />}
             {!['ready', 'result'].includes(screen) && (
               <InvadersMenus
-                screen={screen} riders={view.riders} person={rosterPerson} rows={rows} selectedId={cursorRow?.id || null}
+                screen={screen} riders={view.riders} person={rosterCursor ? rosterPerson : null} rows={rows} selectedId={cursorRow?.id || null}
                 onSelect={(id) => chooseLevel(id)} shooterName={view.shooterName}
                 everyone={everyone} onPick={(id) => actRef.current(`pick:${id}`, 'touch')} onSomeoneElse={() => actRef.current('open-roster', 'touch')}
                 state={access.state} blockedNames={access.blockedBy.map(nameOf)}

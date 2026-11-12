@@ -16,7 +16,7 @@ const ACTIONS = Object.freeze([
 ]);
 
 export const REFUSAL_TEXT = Object.freeze({
-  cooldown: 'Reloading', empty: 'Empty', recharging: 'Charging', paused: 'Wait', off: 'Level 2', active: 'Boosting',
+  cooldown: 'Reload', empty: 'Empty', recharging: 'Charge', paused: 'Wait', off: 'Lvl 2', active: 'Boost!',
 });
 
 function readout(action, flight, course) {

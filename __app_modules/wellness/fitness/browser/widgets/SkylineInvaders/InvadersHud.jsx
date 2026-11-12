@@ -4,6 +4,7 @@ import { LifeMeter, MomentBanner, ProgressMeter } from '../../../../../../__capa
 import { boostRules } from '../../lib/skylineInvaders/rules.js';
 import { BOOST_LABELS } from '../../lib/skylineInvaders/invadersEffects.js';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
+import { PixelIcon } from '../SkylineGlider/SkylinePixelIcons.jsx';
 import './SkylineInvaders.scss';
 
 // In-round header, read from across the garage. Left: how the city is doing
@@ -101,7 +102,7 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
           <PixelSprite grid={INVADER_SPRITES.drone.frames[0]} className="skyline-invaders__hud-icon skyline-invaders__hud-icon--kills" />
           {/* Past the pass mark the target drops away: "25 / 4" reads as a mistake. */}
           <span className="skyline-invaders__hud-number" data-testid="invaders-kills" data-passed={killsPassed} aria-label={killsPassed ? `${state.kills} shot down, target of ${passKills} reached` : `${state.kills} of ${passKills} shot down`}>
-            {killsPassed ? `${state.kills} ✓` : `${state.kills} / ${passKills}`}
+            {killsPassed ? <>{state.kills}<PixelIcon name="check" /></> : `${state.kills} / ${passKills}`}
           </span>
         </div>
       </div>
@@ -112,7 +113,7 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
         <span className="skyline-invaders__hud-time" data-testid="invaders-time" data-urgent={urgent}>{formatClock(remaining)}</span>
         <div className="skyline-invaders__hud-points">
           <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
-          {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Combo ${state.combo}`}>{`×${state.combo}`}</span>}
+          {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Combo ${state.combo}`}>{`x${state.combo}`}</span>}
         </div>
       </div>
 
@@ -129,7 +130,7 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
 
       <div className="skyline-invaders__hud-notes">
         <MomentBanner text={aimNote(aimStatus)} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
-        <MomentBanner text={tier?.trusted === false ? 'No trusted heart rate — small shots' : null} momentKey="tier" className="skyline-invaders__hud-note skyline-invaders__hud-note--tier" />
+        <MomentBanner text={tier?.trusted === false ? 'No heart rate: small shots' : null} momentKey="tier" className="skyline-invaders__hud-note skyline-invaders__hud-note--tier" />
       </div>
     </header>
   );

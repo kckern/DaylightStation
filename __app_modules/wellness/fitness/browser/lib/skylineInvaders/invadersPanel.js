@@ -90,7 +90,7 @@ export function invadersControls(view) {
 
 /**
  * What a press means on a screen. `gesture` is single | long | double; only
- * the rider screen listens to a hold. `null` = nothing.
+ * the who screen listens to a hold. `null` = nothing.
  * @returns {string|null}
  */
 export function invadersAction(view, position, gesture = 'single') {

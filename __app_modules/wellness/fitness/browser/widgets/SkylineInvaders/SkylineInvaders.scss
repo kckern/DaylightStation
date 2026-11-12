@@ -214,7 +214,7 @@
 
 .skyline-invaders__hud-boost {
   --game-hud-live: var(--si-boost);
-  display: grid; gap: 0.5rem; width: 12rem; padding: 0.55rem 1rem 0.7rem; border-radius: 0.8rem;
+  display: grid; gap: 0.5rem; width: auto; min-width: 12rem; padding: 0.55rem 1rem 0.7rem; border-radius: 0.8rem;   // sized to its label: "Rapid fire 6s" in Press Start 2P
   color: var(--si-boost); background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
   .game-hud-progress { height: 0.9rem; }
   &:not([data-boost="filling"]) { color: var(--si-night); background: var(--si-boost); text-shadow: none; box-shadow: none; --game-hud-live: var(--si-night); --game-hud-track: var(--si-boost-track); }
@@ -236,8 +236,6 @@
   .skyline-invaders__tier-glyph { height: 2.6rem; }
   // The boost meter stacks under the tier rather than running off the right edge.
   .skyline-invaders__hud-right { flex-direction: column; align-items: flex-end; gap: .5rem; }
-  .skyline-invaders__hud-boost { width: auto; min-width: 12rem; }
-  .skyline-invaders__hud-boost { width: 13.5rem; }
 }
 
 // Notes are kit MomentBanners; these selectors out-specify the kit's so the
@@ -245,9 +243,10 @@
 // the street: beside the cannon, where the shooter is already looking, and
 // clear of the sky, where a note would hide what is falling.
 .skyline-invaders .skyline-invaders__hud-note { position: absolute; bottom: 1.1rem; text-shadow: none; white-space: nowrap; }
-.skyline-invaders .skyline-invaders__hud-note--aim { left: 2.5rem; padding: 0.6rem 2rem; font-size: 3rem; }
+.skyline-invaders .skyline-invaders__hud-note--aim { left: 2.5rem; padding: 0.6rem 2rem; font-size: 2rem; }
 .skyline-invaders .skyline-invaders__hud-note--tier {
-  right: 2.5rem; padding: 0.6rem 1.4rem; border-radius: 0.8rem; font-size: 1.9rem; font-weight: 700;
+  // Left of the touch Pause key (bottom right), never under it.
+  right: 11rem; padding: 0.6rem 1.4rem; border-radius: 0.8rem; font-size: 1.4rem; font-weight: 700;
   color: var(--si-ink); background: var(--si-panel); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
 }
 
@@ -289,7 +288,9 @@
 // The result: the Glider tally, with what the wave asked for under each number.
 .skyline-invaders__summary {
   max-width: none;
-  dt small { margin-left: .6vw; color: var(--sg-locked); font-size: var(--sg-text-s); font-weight: 700; }
+  // What the wave asked for sits on its own line under the label, so a row never wraps word by word.
+  dt:has(small) { display: grid; align-content: center; }
+  dt small { color: var(--sg-locked); font-size: var(--sg-text-s); font-weight: 700; white-space: nowrap; }
   [data-met="true"] dd { color: var(--si-pass); }
   [data-met="false"] dd { color: var(--sg-red); }
 }
@@ -383,7 +384,7 @@
 }
 .skyline-invaders__key-icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; }
 .skyline-invaders__people {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: calc(3 * var(--sg-px));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: calc(3 * var(--sg-px));
   margin-top: 1.4vw; max-height: 52vh; overflow-y: auto;
 }
 .skyline-invaders__person {
@@ -391,7 +392,8 @@
   min-height: 10rem; padding: .9rem .5rem; border: 0; border-radius: 0; font: inherit; cursor: pointer;
   color: var(--sg-paper); background: var(--sg-night-lift); box-shadow: sg-ring(var(--sg-ink));
   img { width: 5.5rem; height: 5.5rem; object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
-  strong { font-size: var(--sg-text-m); font-weight: 900; line-height: 1; }
+  // A tile holds ~9 Press Start 2P glyphs; a longer name wraps inside it.
+  strong { max-width: 100%; font-size: var(--sg-text-s); font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; text-align: center; }
   &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); }
   &:active { transform: translateY(var(--sg-px)); }
   &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: calc(2 * var(--sg-px)); }

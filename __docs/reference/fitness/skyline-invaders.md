@@ -34,7 +34,7 @@ Folded into the way to the round: Start on the wave list goes to the **Ready** s
 1. **"Stand on the mat."** Head and shoulders in view for one second is enough; wrists at rest may hang out of frame.
 2. **"Reach left…"**, then **"…now right."**, both hands at chest height, held still for about a second each. A live meter shows the hands and the captured left reach.
 
-The last reach starts the countdown by itself. The two reaches become `{ left, right }` in shoulder widths and map to the screen edges, so a child and an adult both cover the full width. A span under one shoulder width is rejected ("Reach further apart.") and the reach steps repeat. Without a camera (denied or failed) there is no Ready screen: Start goes straight to the countdown and the HUD wears a "Gamepad aim" badge. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) does the same. The panel offers Back (3), and Skip (4, gamepad aim) only when a gamepad is connected. Changing the defender clears the calibration. It is held in memory for the mounted game only.
+The last reach starts the countdown by itself. The two reaches become `{ left, right }` in shoulder widths and map to the screen edges, so a child and an adult both cover the full width. A span under one shoulder width is rejected ("Reach further apart.") and the reach steps repeat. Without a camera (denied or failed) there is no Ready screen: Start goes straight to the countdown and the HUD wears a "Gamepad aim" badge. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) does the same. The Ready screen offers Back, and Skip (gamepad aim) only when a gamepad is connected. Changing the defender clears the calibration. It is held in memory for the mounted game only.
 
 ### Fire: step on the mat
 
@@ -55,7 +55,7 @@ The defender's trusted zone, at most ten seconds old, picks the shot. It is the 
 | hot | Spread | three shots fanning out, 1 damage each |
 | fire | Nuke | every shot detonates on the first threat it meets |
 
-With no trusted reading the HUD says "No trusted heart rate — small shots". In co-op, where a partner steps on the mat, the aimer's zone still powers the shot.
+With no trusted reading the HUD says "No heart rate: small shots". In co-op, where a partner steps on the mat, the aimer's zone still powers the shot.
 
 **Nuke.** The blast is a circle around the impact point (`nuke.radius`, default 160 scene units; `nuke.damage`, default 3), not a screen wipe, so aim still matters. Pods caught in it are destroyed without splitting. A full-HP bomber (4 HP) survives one blast at the default damage.
 
