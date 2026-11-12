@@ -95,7 +95,7 @@ Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the t
 
 The **Sound sheet** (`InvadersSoundSheet.jsx`, its body the shared `SkylineGlider/GameSoundSheet.jsx`) shows the level, the house touch volume strip (11 keys, 0 = off, no slider) and Back / Quieter / Louder / Mute. It opens from:
 
-- **Touch:** the "more" button (three dots) on the top-right corner of the Who, Other riders, wave list, lock, pause and result windows. A round has no touch chrome: pause first.
+- **Touch:** the "more" button (three dots, a solid 64 × 56 px key) in the bottom-right corner of the Who, Other riders, wave list, lock, pause and result screens, on the street under the panel and clear of every window, the panel and the round HUD. A round has no touch chrome: pause first.
 - **Keys, foot pad, gamepad:** Sound on the pause screen. In the sheet Back has the focus, so a stray foot-pad press only closes it; Escape or B goes back.
 - **Bike buttons:** hold 4 in a round to pause; on the pause screen 2 opens Sound; in the sheet 1 quieter, 2 louder, 3 back, 4 mute. On every menu screen the bike buttons are the panel; mid-round a single press stays with rider selection.
 

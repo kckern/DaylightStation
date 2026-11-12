@@ -854,8 +854,9 @@ function SkylineInvadersGame() {
 
       {screen && (
         <section className="skyline-menu-screen skyline-invaders__menu" data-testid="skyline-invaders-menu" aria-label="Skyline Invaders menu">
+          {/* Bottom-right of the screen, clear of the window, the panel and the HUD. */}
+          {SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}
           <div className="skyline-invaders__window">
-            {SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}
             {screen === 'ready' && <InvadersCalibration tracker={tracker} poseStatus={poseStatus} waveName={level?.name || ''} onDone={() => { setCalibrated(true); begin(); }} />}
             {screen === 'result' && record && <InvadersResult record={record} saveStatus={saveState.status} level={roundRef.current?.level || level} />}
             {!['ready', 'result'].includes(screen) && (
