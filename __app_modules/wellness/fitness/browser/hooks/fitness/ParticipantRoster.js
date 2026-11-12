@@ -233,7 +233,7 @@ export class ParticipantRoster {
       presentUserCount,
       anonymousDeviceCount: anonymousDevices.length,
       preferGroupLabels,
-    }, { maxPerMinute: 6, aggregate: true });
+    }, { maxPerMinute: 2, aggregate: true });
 
     const roster = [];
 
@@ -673,7 +673,7 @@ export class ParticipantRoster {
         displayLabel,
         preferGroupLabels,
         shouldPreferGroupLabel
-      }, { maxPerMinute: 6, aggregate: true });
+      }, { maxPerMinute: 2, aggregate: true });
     }
 
     // Get status from ActivityMonitor if available

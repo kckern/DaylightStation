@@ -14,7 +14,8 @@ vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
 let mockCtx;
 vi.mock("../context/FitnessContext.jsx", () => ({
   useFitness: () => mockCtx,
-  useFitnessContext: () => mockCtx
+  useFitnessContext: () => mockCtx,
+  useFitnessSelector: (select) => select(mockCtx),
 }));
 
 // The menu loads its item list from the fitness API; return a single Dance Party item.

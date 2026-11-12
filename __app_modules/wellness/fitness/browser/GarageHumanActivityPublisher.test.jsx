@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
   api: vi.fn().mockResolvedValue({ ok: true }),
   context: { isSessionActive: false, activeHeartRateParticipants: [] },
 }));
-vi.mock("./context/FitnessContext.jsx", () => ({ useFitnessContext: () => mocks.context }));
+vi.mock("./context/FitnessContext.jsx", () => ({
+  useFitnessContext: () => mocks.context,
+  useFitnessSelector: (select) => select(mocks.context),
+}));
 vi.mock("../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: mocks.api }));
 vi.mock("../../../../frontend/src/lib/logging/Logger.js", () => ({ default: () => ({ child: () => ({ info() {}, warn() {} }) }) }));
 

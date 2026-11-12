@@ -11,7 +11,8 @@ vi.mock("./useMenuMusic.js", () => ({
 
 let mockCtx;
 vi.mock("../context/FitnessContext.jsx", () => ({
-  useFitnessContext: () => mockCtx
+  useFitnessContext: () => mockCtx,
+  useFitnessSelector: (select) => select(mockCtx),
 }));
 
 vi.mock("../identity/useIdentity.js", () => ({

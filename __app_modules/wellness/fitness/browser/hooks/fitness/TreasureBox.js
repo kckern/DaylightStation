@@ -600,7 +600,7 @@ export class FitnessTreasureBox {
         profileId,
         hasGlobalZones: this.globalZones.length > 0,
         isEntityId
-      }, { maxPerMinute: 5 });
+      }, { maxPerMinute: 2 });
     }
     if (!profileId) {
       this._log('missing_profile_id_for_entity', { entityOrUserId });

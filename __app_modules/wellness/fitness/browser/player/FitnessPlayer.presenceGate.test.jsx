@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 const fixture = vi.hoisted(() => ({ presence: null, context: null, identity: null, duck: 1, cueAudio: null, videoVolume: null, playerHandle: null }));
-vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => fixture.context, useFitnessContext: () => fixture.context }));
+vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => fixture.context, useFitnessContext: () => fixture.context, useFitnessSelector: (select) => select(fixture.context) }));
 vi.mock('../identity/useIdentity.js', () => ({ useIdentity: () => fixture.identity }));
 vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
 vi.mock('@/lib/api.mjs', () => ({

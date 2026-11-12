@@ -3,7 +3,7 @@ import { createSelectorInputRouter } from '../lib/selectorInputRouter.js';
 import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { publishLiveMemos } from '../lib/liveSessionStore.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useLayoutEffect, useReducer } from 'react';
 import {
   FitnessSession,
   setFitnessTimeouts,
@@ -51,6 +51,7 @@ import { buildConfiguredDeviceIdSet, filterGhostRpmDevices } from "../hooks/fitn
 // Phase 5 SSOT: Zone metadata — single source for zone system info
 import { buildZoneMetadata } from "../hooks/fitness/zoneMetadata.js";
 import { buildReviewOverlayState, isOverlayMemoMissing } from "../player/overlays/voiceMemoReviewState.js";
+import { sensorRenderSignature, SENSOR_KEEPALIVE_MS } from "./fitnessRenderGate.js";
 
 // Phase 4 SSOT: Display name resolution
 import {
@@ -162,15 +163,87 @@ export const useFitnessContext = () => {
 // eslint-disable-next-line react-refresh/only-export-components -- useOptionalFitnessContext is co-located with its Context/Provider (standard pattern); 3 consumers, splitting out of scope for a lint pass
 export const useOptionalFitnessContext = () => useContext(FitnessContext);
 
+/**
+ * Subscribe-with-selector access to the fitness context (2026-11-11).
+ *
+ * The provider re-renders whenever a live reading changes (up to ~4/s while
+ * sensors stream). Every `useFitnessContext()` consumer re-renders with it,
+ * because the context value is a fresh object each time — including
+ * components that only read config, flags or callbacks. A component that
+ * reads through `useFitnessSelector` re-renders only when what it SELECTED
+ * changes (shallow-equal for objects/arrays), so it sits out sensor traffic.
+ *
+ * The store context's value is stable for the provider's lifetime; the
+ * provider publishes each committed value to it from a layout effect. The
+ * selector runs against the latest value during render, so a selector
+ * consumer is never behind a `useFitnessContext` sibling.
+ *
+ * Without a provider the selector sees `null` (mirrors
+ * `useOptionalFitnessContext`) — write selectors as `(c) => c?.field`.
+ */
+const FitnessStoreContext = createContext(null);
+
+const createFitnessStore = () => {
+  const listeners = new Set();
+  const store = {
+    value: null,
+    getSnapshot: () => store.value,
+    subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+    publish: (value) => {
+      store.value = value;
+      listeners.forEach((listener) => { try { listener(); } catch { /* listener owns its errors */ } });
+    },
+  };
+  return store;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- selector hook is co-located with its Context/Provider (standard pattern)
+export function shallowEqualSelection(a, b) {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(b, key) || !Object.is(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- selector hook is co-located with its Context/Provider (standard pattern)
+export function useFitnessSelector(selector, isEqual = shallowEqualSelection) {
+  // Only the (stable) store context is read: reading FitnessContext here too
+  // would subscribe this component to every provider render again.
+  const store = useContext(FitnessStoreContext);
+  const selected = selector(store ? store.getSnapshot() : null);
+  const [, rerender] = useReducer((n) => n + 1, 0);
+  const latest = useRef({ selector, selected, isEqual });
+  latest.current = { selector, selected, isEqual };
+  useLayoutEffect(() => {
+    if (!store) return undefined;
+    const check = () => {
+      const { selector: select, selected: previous, isEqual: equal } = latest.current;
+      let next;
+      try { next = select(store.getSnapshot()); } catch { rerender(); return; }
+      if (!equal(previous, next)) rerender();
+    };
+    const unsubscribe = store.subscribe(check);
+    // A publish may have landed between this render and the subscription.
+    check();
+    return unsubscribe;
+  }, [store]);
+  return selected;
+}
+
 // Custom hook for fitness playlist management
 // eslint-disable-next-line react-refresh/only-export-components -- useFitnessPlaylist is co-located with its Context/Provider (standard pattern); 1 consumer, splitting out of scope for a lint pass
 export const useFitnessPlaylist = () => {
-  const context = useFitnessContext();
-  return {
-    selectedPlaylistId: context.selectedPlaylistId,
-    setSelectedPlaylistId: context.setSelectedPlaylistId,
-    playlists: context.plexConfig?.music_playlists || []
-  };
+  const { selectedPlaylistId, setSelectedPlaylistId, playlists } = useFitnessSelector((context) => ({
+    selectedPlaylistId: context?.selectedPlaylistId,
+    setSelectedPlaylistId: context?.setSelectedPlaylistId,
+    playlists: context?.plexConfig?.music_playlists,
+  }));
+  return { selectedPlaylistId, setSelectedPlaylistId, playlists: playlists || [] };
 };
 
 // Alias for compatibility
@@ -395,6 +468,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
   const updateThrottleRef = useRef({ lastUpdateTime: 0, timer: null });
+  const sensorSignatureRef = useRef(null);
+  const fitnessStoreRef = useRef(null);
   
   // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
   const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
@@ -1570,8 +1645,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               emit: (selection) => emitAppEvent('rider-select', selection, selection.equipmentId || 'rider-selector', { persist: false }),
               toast: (selection) => riderToastRef.current?.(selection),
             });
-          } else session.ingestData(data);
-          batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
+            batchedForceUpdate();
+            return;
+          }
+          session.ingestData(data);
+          // Most sensor packets repeat the last reading (4 Hz broadcast, two
+          // dongles). Re-render only when something shown changed, plus a 1 s
+          // keepalive while packets flow. See fitnessRenderGate.js.
+          const signature = sensorRenderSignature(session);
+          const changed = signature !== sensorSignatureRef.current;
+          sensorSignatureRef.current = signature;
+          if (changed || (Date.now() - updateThrottleRef.current.lastUpdateTime) >= SENSOR_KEEPALIVE_MS) {
+            batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
+          }
         }
       );
 
@@ -3168,9 +3254,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getUserByDevice: resolveUserByDevice
   };
 
+  // Selector consumers read the newest value during their own render, and are
+  // told about each commit here (see useFitnessSelector).
+  if (!fitnessStoreRef.current) fitnessStoreRef.current = createFitnessStore();
+  fitnessStoreRef.current.value = value;
+  useLayoutEffect(() => {
+    fitnessStoreRef.current.publish(value);
+  });
+
   return (
-    <FitnessContext.Provider value={value}>
-      {children}
-    </FitnessContext.Provider>
+    <FitnessStoreContext.Provider value={fitnessStoreRef.current}>
+      <FitnessContext.Provider value={value}>
+        {children}
+      </FitnessContext.Provider>
+    </FitnessStoreContext.Provider>
   );
 };

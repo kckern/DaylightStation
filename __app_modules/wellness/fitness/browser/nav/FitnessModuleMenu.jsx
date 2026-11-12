@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
 import { getModuleManifest } from "../index.js";
 import useModuleStorage from "../player/useModuleStorage.js";
-import { useFitness } from "../context/FitnessContext.jsx";
+import { useFitnessSelector } from "../context/FitnessContext.jsx";
 import { useIdentity } from "../identity/useIdentity.js";
 import UnlockPrompt from "../player/overlays/UnlockPrompt.jsx";
 import LockIcon from "../player/overlays/LockIcon.jsx";
@@ -41,7 +41,10 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack: _onBack
   // Config-driven locks map (e.g. { dance_party: ['user_1','user_9'] }). A
   // module is gated iff locks[id] is a non-empty array. Surfaced via the unified
   // fitness config (root + nested fitness block).
-  const { fitnessConfiguration, captureDisabled } = useFitness();
+  const { fitnessConfiguration, captureDisabled } = useFitnessSelector((c) => ({
+    fitnessConfiguration: c?.fitnessConfiguration,
+    captureDisabled: c?.captureDisabled,
+  }));
   const locks = useMemo(() => {
     const cfg = fitnessConfiguration || {};
     return cfg.locks || cfg.fitness?.locks || {};
