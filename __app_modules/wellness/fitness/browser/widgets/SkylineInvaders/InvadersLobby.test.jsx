@@ -164,6 +164,14 @@ describe('InvadersLobby', () => {
     expect(props.onPickShooter).toHaveBeenCalledWith('kid');
   });
 
+  it('only tells the players to do what they can do: arms and mat, or gamepad and keys', () => {
+    const first = renderLobby();
+    expect(screen.getByTestId('invaders-howto').textContent).toBe('Point both arms to aim. Step onto the mat to fire.');
+    first.unmount();
+    renderLobby({ mat: null, calibrated: false, poseStatus: { state: 'camera-denied' } });
+    expect(screen.getByTestId('invaders-howto').textContent).toBe('Aim with the gamepad stick or the arrow keys. Press A or Space to fire.');
+  });
+
   it('names the boost partner only when there is one', () => {
     const first = renderLobby();
     expect(screen.queryByTestId('invaders-partner')).toBeNull();

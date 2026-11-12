@@ -321,3 +321,53 @@
 @media (prefers-reduced-motion: reduce) {
   .skyline-invaders__action::before, .skyline-invaders__meter-dot, .skyline-invaders__meter-hold span { transition: none; }
 }
+
+// Behind a menu the city is a backdrop: no aim line, no cannon marker.
+.skyline-invaders--lobby, .skyline-invaders--calibrating, .skyline-invaders--loading, .skyline-invaders--error {
+  .skyline-invaders__aim-line, .skyline-invaders__cannon-marker { display: none; }
+}
+
+// Round chrome owned by the shell.
+// The 3-2-1: centre of the sky, over a still round.
+.skyline-invaders .skyline-invaders__countdown {
+  position: absolute; z-index: 7; inset: 0; pointer-events: none;
+  font-size: 22rem; font-weight: 800; line-height: 1; color: var(--si-window);
+  text-shadow: 0 0.06em 0 var(--si-outline);
+}
+// Pause, for a finger. It sits in the strip under the street, in the corner,
+// where nothing falls and no shot flies. The heart-rate note moves over for it.
+.skyline-invaders__pause-button {
+  position: absolute; z-index: 7; right: 2.5rem; bottom: 1.1rem;
+  display: flex; align-items: center; justify-content: center; gap: 0.7rem;
+  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0.8rem; cursor: pointer;
+  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
+  span { display: block; width: 0.8rem; height: 2.2rem; background: var(--si-ink); }
+  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
+}
+.skyline-invaders.skyline-invaders--playing .skyline-invaders__hud-note--tier { right: 9.5rem; }
+
+// Pause and result sit over the round they belong to, so they are centred on it.
+.skyline-invaders__pause, .skyline-invaders__result {
+  justify-content: center; padding-bottom: 14rem;
+  background: rgba(7, 11, 36, 0.86);
+  .skyline-invaders__how { margin-top: 0; }
+}
+.skyline-invaders__pause > p:not(.skyline-invaders__how) { font-size: 2.2rem; color: var(--si-ink-dim); }
+
+.skyline-invaders__result-head {
+  display: grid; justify-items: start; gap: 0.6rem;
+  p { font-size: 2rem; font-weight: 700; color: var(--si-ink-dim); }
+  h1 { font-size: 6rem; }
+}
+.skyline-invaders__result[data-status="completed"] h1 { color: var(--si-window); }
+.skyline-invaders__stars-row--result { font-size: 5rem; gap: 0.6rem; }
+.skyline-invaders__result-rows {
+  display: flex; flex-wrap: wrap; gap: 1.2rem; margin: 0;
+  div { display: grid; gap: 0.3rem; min-width: 13rem; padding: 0.9rem 1.5rem; border-radius: 0.8rem; background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge); }
+  dt { font-size: 1.6rem; font-weight: 600; color: var(--si-ink-dim); }
+  dd { margin: 0; font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+}
+.skyline-invaders__result-save { font-size: 2.2rem; font-weight: 700; color: var(--si-pass); &[role="alert"] { color: var(--si-tier-big); } }
+
+// Loading and load errors: one message in the middle of the sky.
+.skyline-invaders__notice { justify-content: center; padding-bottom: 14rem; p[role="alert"], p[role="status"] { font-size: 2.6rem; color: var(--si-ink-dim); } .skyline-invaders__how { margin-top: 0; } }

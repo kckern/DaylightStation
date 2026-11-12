@@ -117,7 +117,10 @@ export default function InvadersLobby({
     <section className="skyline-invaders__lobby" data-testid="skyline-invaders-lobby" aria-label="Skyline Invaders lobby">
       <header className="skyline-invaders__lobby-head">
         <h1>Skyline Invaders</h1>
-        <p>Point both arms to aim. Step onto the mat to fire.</p>
+        {/* Only what these players can do right now: no arm aim without a camera, no mat step without a mat. */}
+        <p data-testid="invaders-howto">
+          {`${cameraOff ? 'Aim with the gamepad stick or the arrow keys.' : 'Point both arms to aim.'} ${mat ? 'Step onto the mat to fire.' : 'Press A or Space to fire.'}`}
+        </p>
       </header>
 
       <ol className="skyline-invaders__levels" aria-label="Levels">

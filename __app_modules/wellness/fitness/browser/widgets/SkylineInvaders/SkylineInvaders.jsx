@@ -97,7 +97,7 @@ function SkylineInvadersGame() {
   const ctx = useFitnessContext();
   const { registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
   const { registerLifecycle } = useFitnessModule(MODULE_ID);
-  const log = useMemo(() => getLogger().child({ component: 'skyline-invaders' }), []);
+  const log = useMemo(() => getLogger().child({ app: 'fitness', component: 'skyline-invaders' }), []);
   const tracker = useInvadersAim();
 
   const [phase, setPhase] = useState('loading');

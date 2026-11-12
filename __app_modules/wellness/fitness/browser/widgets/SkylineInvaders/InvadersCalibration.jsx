@@ -59,7 +59,7 @@ function Figure({ step }) {
  * @param {function} props.onSkip     leave with gamepad aim
  */
 export default function InvadersCalibration({ tracker, poseStatus = null, onDone, onSkip }) {
-  const log = useMemo(() => getLogger().child({ component: 'skyline-invaders-calibration' }), []);
+  const log = useMemo(() => getLogger().child({ app: 'fitness', component: 'skyline-invaders-calibration' }), []);
   const [step, setStep] = useState('framing');
   const [view, setView] = useState({ body: false, offset: null, hold: 0 });
   const [message, setMessage] = useState(null);
