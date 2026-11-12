@@ -45,6 +45,24 @@ describe('Skyline Invaders service wiring', () => {
     });
   });
 
+  // The record exactly as the browser's run builder shapes it (plan Task 11),
+  // after the JSON hop the HTTP route puts it through. A retry of the same
+  // save must read back equal from YAML, or the reward retry would be a 409.
+  it('a retried save of the full run record is a repeat on disk, and a changed one conflicts', async () => {
+    const metrics = { duration_s: 179.87, score: 340, kills: 12, stars: 2, base_hp: 80, shots_fired: 40, hits: 14, best_combo: 6, nukes: 1, boosts_used: 2 };
+    const full = JSON.parse(JSON.stringify({
+      schema: 'skyline-invaders-run/v1',
+      run: { id: 'run-full', level_id: 'invaders-1-1', started_at: '2026-11-11T17:00:00.000Z', ended_at: '2026-11-11T17:03:00.000Z', status: 'completed', ...metrics, reward_rings: 20, fitness_session_id: 'fs-1', mat_equipment_id: 'step-mat', partner_id: 'test-partner' },
+      rider: { user_id: 'test-rider' },
+      result: { schema: 'gaming-result/v1', experience_id: 'skyline-invaders', status: 'completed', started_at: '2026-11-11T17:00:00.000Z', ended_at: '2026-11-11T17:03:00.000Z', participants: [{ id: 'test-rider' }, { id: 'test-partner' }], outcome: { kind: 'completed', score: 340, winner_ids: ['test-rider'] }, metrics },
+    }));
+    const { skylineInvadersRunService } = services();
+    expect((await skylineInvadersRunService.save(full, 'home')).created).toBe(true);
+    expect((await services().skylineInvadersRunService.save(structuredClone(full), 'home')).created).toBe(false);
+    expect(await skylineInvadersRunService.get('run-full', 'home')).toEqual(full);
+    await expect(skylineInvadersRunService.save({ ...full, run: { ...full.run, score: 341 } }, 'home')).rejects.toMatchObject({ code: 'RUN_CONFLICT' });
+  });
+
   // createFitnessApiRouter needs the whole application graph, so it is not
   // built here. A mistyped service key would hand the router `undefined` and
   // every route would answer 503; this pins the three hand-offs to real keys.
