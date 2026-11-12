@@ -12,6 +12,7 @@ import * as FitnessSessionApp from "./widgets/FitnessSessionApp/index.jsx";
 import * as CycleChallengeDemo from "./widgets/CycleChallengeDemo/index.jsx";
 import * as CycleGame from "./widgets/CycleGame/index.jsx";
 import * as SkylineGlider from "./widgets/SkylineGlider/index.jsx";
+import * as SkylineInvaders from "./widgets/SkylineInvaders/index.jsx";
 import * as SkylineInvadersSpike from "./widgets/SkylineInvadersSpike/index.jsx";
 import * as DancePartyWidget from "./widgets/DancePartyWidget/index.jsx";
 import * as FingerprintManager from "./widgets/FingerprintManager/index.jsx";
@@ -31,6 +32,7 @@ const REGISTRY_KEYS = {
   'fitness:cycle-challenge-demo': CycleChallengeDemo,
   'fitness:cycle-game': CycleGame,
   'fitness:skyline-glider': SkylineGlider,
+  'fitness:skyline-invaders': SkylineInvaders,
   'fitness:skyline-invaders-spike': SkylineInvadersSpike,
   'fitness:dance-party': DancePartyWidget,
   'fitness:fingerprint-manager': FingerprintManager,
@@ -51,6 +53,7 @@ const LEGACY_ID_MAP = {
   'cycle_challenge_demo': 'fitness:cycle-challenge-demo',
   'cycle_game': 'fitness:cycle-game',
   'skyline_glider': 'fitness:skyline-glider',
+  'skyline_invaders': 'fitness:skyline-invaders',
   'skyline_invaders_spike': 'fitness:skyline-invaders-spike',
   'dance_party': 'fitness:dance-party',
   'fingerprint_manager': 'fitness:fingerprint-manager',

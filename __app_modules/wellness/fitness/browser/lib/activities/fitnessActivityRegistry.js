@@ -1,5 +1,6 @@
 import CycleGamePoster from "./CycleGamePoster.jsx";
 import SkylineGliderPoster from "./SkylineGliderPoster.jsx";
+import SkylineInvadersPoster from "./SkylineInvadersPoster.jsx";
 
 /**
  * Registry mapping a backend activity `type` to its frontend presentation.
@@ -17,6 +18,12 @@ const REGISTRY = {
     accent: '#e0a85b',
     Poster: SkylineGliderPoster,
     overlayKey: 'flight-bands',
+  },
+  'skyline-invaders': {
+    label: (n) => `${n} ${n === 1 ? 'round' : 'rounds'}`,
+    accent: '#7bd88f',
+    Poster: SkylineInvadersPoster,
+    overlayKey: 'round-bands',
   },
 };
 

@@ -44,6 +44,12 @@ describe('fitness module resolution', () => {
     expect(getModule('definitely-not-a-module')).toBeNull();
   });
 
+  it('resolves Skyline Invaders by route and registry key', () => {
+    expect(getModule('skyline_invaders')).toBeTruthy();
+    expect(getModule('skyline-invaders')).toBeTruthy();
+    expect(getModuleManifest('fitness:skyline-invaders')).toMatchObject({ id: 'skyline_invaders', fullscreen: true });
+  });
+
   it('resolves Skyline Glider by route and registry key', () => {
     expect(getModule('skyline_glider')).toBeTruthy();
     expect(getModule('skyline-glider')).toBeTruthy();

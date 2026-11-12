@@ -40,4 +40,12 @@ describe('fitnessActivityRegistry', () => {
     expect(primaryActivity([])).toBeNull();
     expect(primaryActivity([{ type: 'a', count: 2 }, { type: 'b', count: 5 }]).type).toBe('b');
   });
+
+  it('presents Skyline Invaders rounds', () => {
+    const display = getActivityDisplay('skyline-invaders');
+    expect(display.label(1)).toBe('1 round');
+    expect(display.label(3)).toBe('3 rounds');
+    expect(display.overlayKey).toBe('round-bands');
+    expect(display.Poster).toBeTypeOf('function');
+  });
 });
