@@ -47,6 +47,9 @@ const memoryStorage = (seed = {}) => {
 let f;
 let storage;
 const press = (name) => act(async () => { fireEvent.click(screen.getByRole('button', { name })); });
+const pad = (n) => act(async () => { fireEvent.click(document.querySelector(`.skyline-controls button[data-position="${n}"]`)); vi.advanceTimersByTime(350); });
+const status = (state) => act(async () => { h.bridge.onStatus({ state, fps: 13, latency: 70, backend: 'wasm', modelType: 'full', error: null }); });
+const menuScreen = () => document.querySelector('[data-screen]')?.getAttribute('data-screen') || null;
 const keyDown = (key) => act(async () => { fireEvent.keyDown(window, { key }); });
 const bike = (action) => {
   let consumed;
@@ -67,7 +70,8 @@ async function mount(seed = {}) {
   await flush();
 }
 async function start() {
-  await press(/^Start/);
+  await status('camera-denied');   // no Ready screen: straight to the countdown
+  await pad(4);
   await f.seconds(3.1);
   expect(phase()).toBe('playing');
 }
@@ -100,7 +104,7 @@ describe('Skyline Invaders — game volume', () => {
 });
 
 describe('Skyline Invaders — the Sound sheet by touch', () => {
-  it('opens from the lobby "more" button, sets the level, mutes, and goes back', async () => {
+  it('opens from the wave list "more" button, sets the level, mutes, and goes back', async () => {
     await mount();
     await press('Sound and settings');
     expect(sheet()).not.toBeNull();
@@ -113,35 +117,30 @@ describe('Skyline Invaders — the Sound sheet by touch', () => {
     expect(readout()).toBe('Volume 80');
     expect(lastOutput()).toBeCloseTo(0.398, 2);
     expect(JSON.parse(storage.data.get(GAME_KEY)).level).toBeCloseTo(0.398, 2);
-    await press(/^Mute Bike/);
+    await press('Mute');
     expect(readout()).toBe('Muted');
     expect(lastOutput()).toBe(0);
-    await press(/^Unmute Bike/);
+    await pad(4);   // the panel's Unmute
     expect(lastOutput()).toBeCloseTo(0.398, 2);
-    await press(/^Back/);
+    await pad(3);
     expect(sheet()).toBeNull();
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(menuScreen()).toBe('waves');
   });
 
-  it('mid-round the "more" button pauses first; Back lands on the pause screen', async () => {
+  it('a round has no "more" button; the pause screen has it and Sound, and Back lands on the pause screen', async () => {
     await mount();
     await start();
+    expect(screen.queryByRole('button', { name: 'Sound and settings' })).toBeNull();
+    await keyDown('Escape');
+    expect(phase()).toBe('paused');
     await press('Sound and settings');
-    expect(phase()).toBe('paused');
     expect(sheet()).not.toBeNull();
-    expect(logged('skyline_invaders.round.paused').at(-1)).toMatchObject({ reason: 'player' });
-    await press(/^Back/);
+    await pad(3);
     expect(sheet()).toBeNull();
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
-    expect(phase()).toBe('paused');
-  });
-
-  it('the pause screen offers Sound', async () => {
-    await mount();
-    await start();
-    await press('Pause');
-    await press(/^Sound Bike/);
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
+    await pad(2);
     expect(sheet()).not.toBeNull();
+    expect(phase()).toBe('paused');
   });
 
   it('a workout resume does not restart the round under the open sheet', async () => {
@@ -175,15 +174,17 @@ describe('Skyline Invaders — the Sound sheet by bike buttons', () => {
     expect(readout()).toBe('Volume 70');
     bike('3_single');
     expect(sheet()).toBeNull();
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
     bike('1_single');
     expect(phase()).toBe('playing');
     expect(logged('skyline_invaders.audio.level_set').map((d) => d.control)).toContain('bike');
   });
 
-  it('in the lobby the bike buttons stay with rider selection (not swallowed)', async () => {
+  it('on a menu screen the bike buttons are the panel', async () => {
     await mount();
-    expect(bike('2_single')).toBe(false);
+    expect(menuScreen()).toBe('waves');
+    expect(bike('4_single')).toBe(true);
+    expect(phase()).toBe('calibrating');
   });
 
   it('mid-round a single press is not taken: only a hold of 4 pauses', async () => {
@@ -195,21 +196,22 @@ describe('Skyline Invaders — the Sound sheet by bike buttons', () => {
 });
 
 describe('Skyline Invaders — the Sound sheet by keys, foot pad and gamepad', () => {
-  it('Back has the focus; right moves to Quieter; Enter presses it; Escape closes', async () => {
+  it('left is quieter, right louder; Escape closes', async () => {
     await mount();
     await press('Sound and settings');
-    await keyDown('ArrowRight');
-    await keyDown('Enter');
+    await keyDown('ArrowLeft');
     expect(readout()).toBe('Volume 50');
+    await keyDown('ArrowRight'); await keyDown('ArrowRight');
+    expect(readout()).toBe('Volume 70');
     await keyDown('Escape');
     expect(sheet()).toBeNull();
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(menuScreen()).toBe('waves');
   });
 
   it('the lobby does not act on keys while the sheet is open', async () => {
     await mount();
     await press('Sound and settings');
-    await keyDown('Enter');      // Back, not Start
+    await keyDown('Enter');      // a stray foot-pad press only closes the sheet: Back, not Start
     expect(phase()).toBe('lobby');
     expect(sheet()).toBeNull();
   });

@@ -10,7 +10,10 @@ const show = (run, pass = { kills: 4, base_hp_min: 40 }) => render(
 );
 const row = (id) => {
   const node = screen.getByTestId(`invaders-result-${id}`);
-  return { met: node.getAttribute('data-met'), parts: [...node.children].map((child) => child.textContent) };
+  // Label, number, and what was asked for (in small print beside the label).
+  const label = node.querySelector('dt').firstChild.textContent;
+  const note = node.querySelector('dt small')?.textContent;
+  return { met: node.getAttribute('data-met'), parts: [label, node.querySelector('dd').textContent, ...(note ? [note] : [])] };
 };
 
 describe('InvadersResult — the numbers against what the level asked for', () => {

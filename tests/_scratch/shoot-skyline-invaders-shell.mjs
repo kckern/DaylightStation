@@ -30,20 +30,20 @@ async function hold(page, wristDx, ms, wristY = 200) {
     await run(page, 100);
   }
 }
-const calibrate = async (page) => {
-  await click(page, /Calibrate/);
-  await phase(page, 'calibrating');
-  await hold(page, 0, 1300, 900);
-  await hold(page, 130, 1100);
-  await hold(page, -130, 1100);
-  await phase(page, 'lobby');
-};
-const start = async (page, name = /^Start/) => {
-  await click(page, name);
+const pad = (page, n) => page.locator(`.skyline-controls button[data-position="${n}"]`).click();
+async function padHold(page, n) {
+  const box = await page.locator(`.skyline-controls button[data-position="${n}"]`).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await run(page, 800); await page.mouse.up(); await run(page, 50);
+}
+const screen = (page, name) => page.waitForSelector(`[data-screen="${name}"]`, { timeout: 20000 });
+// Waves -> Start -> Ready: stand, reach left, reach right -> the countdown starts by itself.
+const readyAndCount = async (page) => {
+  await screen(page, 'waves'); await pad(page, 4); await screen(page, 'ready');
+  await hold(page, 0, 1300, 900); await hold(page, 130, 1100); await hold(page, -130, 1100);
   await phase(page, 'countdown');
-  await run(page, 3100);
-  await phase(page, 'playing');
 };
+const start = async (page) => { await readyAndCount(page); await run(page, 3100); await phase(page, 'playing'); };
+const startDenied = async (page) => { await screen(page, 'waves'); await pad(page, 4); await phase(page, 'countdown'); await run(page, 3100); await phase(page, 'playing'); };
 // Aim at the lowest threat and step on the mat, once a second.
 async function shootFor(page, seconds) {
   for (let s = 0; s < seconds; s += 1) {
@@ -61,45 +61,33 @@ async function shootFor(page, seconds) {
   }
 }
 
-// name -> { query, go(page) }. `go` leaves the page in the state to photograph.
 const SHOTS = {
-  'lobby-vision-loading': { query: 'pose=loading', go: async (page) => { await phase(page, 'lobby'); } },
-  'lobby-uncalibrated': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); } },
-  'lobby-pick-shooter': { query: 'pose=detecting&shooter=none', go: async (page) => { await phase(page, 'lobby'); } },
-  'lobby-camera-denied-no-mat': { query: 'pose=camera-denied&mat=none', go: async (page) => { await phase(page, 'lobby'); } },
-  'lobby-calibrated-partner': { query: 'pose=detecting&partner=1', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); } },
-  'lobby-arms-wide-hold': { query: 'pose=detecting', go: async (page) => {
-    await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300);
-    // Both arms out to the sides, held for half the press.
-    for (let t = 0; t < 600; t += 100) {
-      await page.evaluate(() => { const p = window.__si.pose(0); p.keypoints[15].x = 380 + 170; p.keypoints[16].x = 260 - 170; window.__si.tracker.processPoses([p]); });
-      await run(page, 100);
-    }
+  'who': { query: 'pose=detecting&shooter=none&roster=kid,test-rider', go: async (page) => { await screen(page, 'who'); } },
+  'who-nobody': { query: 'pose=detecting&shooter=none', go: async (page) => { await screen(page, 'who'); } },
+  'roster': { query: 'pose=detecting&shooter=none&roster=kid', go: async (page) => { await screen(page, 'who'); await padHold(page, 2); await screen(page, 'roster'); await pad(page, 2); } },
+  'waves': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); } },
+  'waves-done-row': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 1); } },
+  'waves-locked-row': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 2); } },
+  'waves-sound': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await page.getByRole('button', { name: 'Sound and settings' }).click(); await screen(page, 'sound'); } },
+  'locked': { query: 'pose=detecting&kiosk=1', go: async (page) => { await screen(page, 'locked'); } },
+  'locked-unlock-prompt': { query: 'pose=detecting&kiosk=1', go: async (page) => { await screen(page, 'locked'); await pad(page, 1); await run(page, 300); await page.waitForSelector('.unlock-prompt'); } },
+  'locked-adult-picked': { query: 'pose=detecting&kiosk=1&roster=kid&learners=kid', go: async (page) => {
+    await screen(page, 'locked'); await pad(page, 4); await screen(page, 'who'); await padHold(page, 1); await screen(page, 'roster');
+    await pad(page, 2); await pad(page, 4); await run(page, 300); await screen(page, 'locked');
   } },
-  'lobby-school-locked': { query: 'pose=detecting&kiosk=1', go: async (page) => { await phase(page, 'lobby'); await page.getByRole('button', { name: /Ask a grown-up/ }).waitFor(); } },
-  'lobby-unlock-prompt': { query: 'pose=detecting&kiosk=1', go: async (page) => { await phase(page, 'lobby'); await click(page, /Ask a grown-up/); await run(page, 300); await page.waitForSelector('.unlock-prompt'); } },
-  'calibration-1-framing-looking': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await phase(page, 'calibrating'); await run(page, 400); } },
-  'calibration-1-framing-seen': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await hold(page, 0, 600, 900); } },
-  'calibration-2-left-holding': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await hold(page, 0, 1300, 900); await hold(page, 130, 500); } },
-  'calibration-3-right-holding': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await hold(page, 0, 1300, 900); await hold(page, 130, 1100); await hold(page, -130, 500); } },
-  'calibration-too-narrow': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await hold(page, 0, 1300, 900); await hold(page, 55, 1100); await hold(page, -55, 1100); await hold(page, 0, 200, 900); } },
-  'calibration-no-hands-pressed': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await hold(page, 0, 1300, 900); await click(page, /Use this position/); await hold(page, 0, 200, 900); } },
-  'calibration-camera-denied': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, /Calibrate/); await page.evaluate(() => window.__si.status('camera-denied')); await run(page, 200); } },
-  countdown: { query: 'pose=detecting&partner=1', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await click(page, /^Start/); await phase(page, 'countdown'); await run(page, 1200); } },
-  'in-game': { query: 'pose=detecting&partner=1&zone=hot', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 9); } },
-  'in-game-camera-denied': { query: 'pose=camera-denied', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 4000); await page.keyboard.press('Space'); await run(page, 250); } },
-  'in-game-pose-lost': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await hold(page, -60, 2500); await run(page, 1500); } },
-  paused: { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 4); await click(page, 'Pause'); await phase(page, 'paused'); } },
-  // The Sound sheet: from the lobby's "more" button, and mid-round (it pauses first).
-  'lobby-sound': { query: 'pose=detecting', go: async (page) => { await phase(page, 'lobby'); await click(page, 'Sound and settings'); await page.waitForSelector('[data-testid="skyline-invaders-sound"]'); } },
-  'round-sound-muted': { query: 'pose=detecting&partner=1&zone=hot', go: async (page) => {
-    await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 3);
-    await click(page, 'Sound and settings'); await phase(page, 'paused'); await page.evaluate(() => { window.__si.bike('1_single'); window.__si.bike('4_single'); }); await run(page, 200);
-  } },
-  'paused-by-bike': { query: 'pose=detecting&partner=1', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); } },
-  'result-fell-short': { query: 'pose=camera-denied', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
-  'result-held': { query: 'pose=detecting&zone=hot', go: async (page) => { await phase(page, 'lobby'); await calibrate(page); await hold(page, 0, 300); await start(page); await shootFor(page, 31); await run(page, 1500); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
-  'result-not-saved': { query: 'pose=camera-denied&save=fail', go: async (page) => { await phase(page, 'lobby'); await start(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="error"]'); } },
+  'ready-stand': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await screen(page, 'ready'); await run(page, 400); } },
+  'ready-left': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await hold(page, 0, 1300, 900); await hold(page, 130, 500); } },
+  'ready-right': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await hold(page, 0, 1300, 900); await hold(page, 130, 1100); await hold(page, -130, 500); } },
+  'ready-too-narrow': { query: 'pose=detecting', go: async (page) => { await screen(page, 'waves'); await pad(page, 4); await hold(page, 0, 1300, 900); await hold(page, 55, 1100); await hold(page, -55, 1100); await hold(page, 0, 200, 900); } },
+  countdown: { query: 'pose=detecting&partner=1', go: async (page) => { await readyAndCount(page); await run(page, 1200); } },
+  'in-game': { query: 'pose=detecting&partner=1&zone=hot', go: async (page) => { await start(page); await shootFor(page, 9); } },
+  'in-game-gamepad-aim': { query: 'pose=camera-denied', go: async (page) => { await startDenied(page); await run(page, 4000); await page.keyboard.press('Space'); await run(page, 250); } },
+  'in-game-pose-lost': { query: 'pose=detecting', go: async (page) => { await start(page); await hold(page, -60, 2500); await run(page, 1500); } },
+  'paused-by-bike': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); } },
+  'paused-sound': { query: 'pose=detecting&partner=1', go: async (page) => { await start(page); await shootFor(page, 2); await page.evaluate(() => window.__si.bike('4_hold')); await phase(page, 'paused'); await pad(page, 2); await screen(page, 'sound'); await pad(page, 4); } },
+  'result-fell-short': { query: 'pose=camera-denied', go: async (page) => { await startDenied(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
+  'result-held': { query: 'pose=detecting&zone=hot', go: async (page) => { await start(page); await shootFor(page, 31); await run(page, 1500); await phase(page, 'result'); await page.waitForSelector('[data-save="saved"]'); } },
+  'result-not-saved': { query: 'pose=camera-denied&save=fail', go: async (page) => { await startDenied(page); await run(page, 31000); await phase(page, 'result'); await page.waitForSelector('[data-save="error"]'); } },
   'error-no-levels': { query: 'levels=none', go: async (page) => { await phase(page, 'error'); } },
   'error-levels-unavailable': { query: 'levels=fail', go: async (page) => { await phase(page, 'error'); } },
 };
@@ -113,7 +101,7 @@ const audit = (page) => page.evaluate(() => {
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0;
   };
   const box = (node) => { const r = node.getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) }; };
-  const menus = [...root.querySelectorAll('.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice, .skyline-invaders__sound')];
+  const menus = [...root.querySelectorAll('.skyline-invaders__menu')];
   const texts = menus.flatMap((menu) => [...menu.querySelectorAll('*')])
     .filter((node) => node.children.length === 0 && node.textContent.trim() && visible(node) && !node.closest('[aria-hidden="true"]'))
     .map((node) => ({ text: node.textContent.trim().slice(0, 60), px: Math.round(parseFloat(getComputedStyle(node).fontSize)), ...box(node) }));

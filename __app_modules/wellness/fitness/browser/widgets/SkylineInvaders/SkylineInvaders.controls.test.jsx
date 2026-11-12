@@ -60,8 +60,13 @@ async function mount(options = {}) {
   render(<SkylineInvaders />);
   await flush();
 }
-async function start(name = /^Start/) {
-  await press(name);
+// The bike-button panel by position; a rider key waits out a double-tap.
+const pad = (n) => act(async () => { fireEvent.click(document.querySelector(`.skyline-controls button[data-position="${n}"]`)); vi.advanceTimersByTime(350); });
+// Start: button 4 on the wave list. A shooter with no reach on record would
+// go to Ready; these cases are not about it, so they play with gamepad aim.
+async function start() {
+  await pad(4);
+  if (screen.queryByTestId('skyline-invaders')?.getAttribute('data-phase') === 'calibrating') await status('camera-denied');
   await f.seconds(3.1);
   expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('playing');
 }
@@ -83,16 +88,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('Skyline Invaders controls', () => {
-  it('solo core loop: calibrate in the lobby, start, point, step, and the kill counts', async () => {
+  it('solo core loop: Start, Ready (stand, reach left, right), point, step, and the kill counts', async () => {
     await mount();
     await status('detecting');
-    await press(/Calibrate/);
+    await pad(4);
     await hold(pose(0, { wristY: 900 }), 1300);   // standing in view, hands hanging out of frame
     await hold(pose(120), 1100);                  // far left
     await hold(pose(-120), 1100);                 // far right
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
     await feed(pose(0));
-    await start();
+    await f.seconds(3.1);
     await pointAtFirstMeteor();
     await step();
     await f.seconds(1);
@@ -181,7 +186,7 @@ describe('Skyline Invaders controls', () => {
     h.ctx = makeCtx({ matRider: null, profile: (id) => zoneProfile(id === 'kid' ? 'warm' : 'fire') });
     h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
-    await press('Kid');
+    await pad(1);
     await start();
     await f.frames(1);
     await step();
@@ -236,8 +241,7 @@ describe('Skyline Invaders controls', () => {
     h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
     await status('camera-denied');
-    expect(screen.getByText(/No step mat found/)).toBeTruthy();
-    await press('Kid');
+    await pad(1);
     await start();
     await f.frames(2);
     const meteor = firstMeteor();

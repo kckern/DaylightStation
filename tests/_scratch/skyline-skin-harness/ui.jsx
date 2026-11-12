@@ -7,7 +7,7 @@
 import React from 'react';
 import { FlightScene } from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/FlightScene.jsx';
 import RpmGauge from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineRpmGauge.jsx';
-import SkylineFlightHud, { MoreButton } from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineFlightHud.jsx';
+import SkylineFlightHud from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineFlightHud.jsx';
 import SkylineFlightOverlays from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineFlightOverlays.jsx';
 import SkylineMenus from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineMenus.jsx';
 import SkylineControlPanel from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineGlider/SkylineControlPanel.jsx';
@@ -56,7 +56,7 @@ export function FlightUi({ state, course, assets, fx }) {
   return <main className="skyline-glider skyline-glider--flight" data-harness-ready="true" data-testid="skyline-glider-flight">
     <FlightScene state={state} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={state}/>
-    <SkylineFlightHud flight={state} course={course} assets={assets} armed={!has(fx, 'unarmed')} press={press} targetsHit={3} power={has(fx, 'power') ? 3 : 1} onMore={() => {}}/>
+    <SkylineFlightHud flight={state} course={course} armed={!has(fx, 'unarmed')} press={press} targetsHit={3} power={has(fx, 'power') ? 3 : 1}/>
     <SkylineFlightOverlays flight={state}/>
     <MomentBanner text={banner} momentKey={banner} className="skyline-glider__checkpoint-banner"/>
   </main>;
@@ -77,22 +77,17 @@ const ACTS = [
 const SUMMARY = [['Bells', 41], ['Targets', 9], ['Score', 50], ['Bumps', 2]];
 
 export function MenuUi({ phase }) {
-  // settings / settings-muted: the sound sheet opened from the flight menu.
-  const muted = phase === 'settings-muted';
-  if (phase.startsWith('settings')) phase = 'settings';
-  const sound = { level: 60, muted };
   const base = { ...createSkylineControlState({ riders: RIDERS, acts: ACTS }), riderId: 'kid-a', actId: 'cloud-ridge', weaponsEnabled: true, cadence: { rpm: 47 }, countdown: 2.4 };
   const saveError = phase === 'result-error';
   const state = { ...base, phase: saveError ? 'result' : phase, saveStatus: saveError ? 'error' : phase === 'result' ? 'saved' : 'idle',
-    accessReason: 'Finish today’s school work to unlock flying.', rosterIndex: 1, settingsReturn: 'menu', sound };
+    accessReason: 'Finish today’s school work to unlock flying.', rosterIndex: 1 };
   const loading = phase === 'loading';
   const controls = describeSkylineControls(state).map((c) => (loading ? { ...c, disabled: true } : c));
   const testid = state.phase === 'denied' ? 'skyline-glider-school-lock' : ['result', 'saving'].includes(state.phase) ? 'skyline-glider-result' : state.phase === 'countdown' ? 'skyline-glider-countdown' : 'skyline-glider-lobby';
-  if (loading) return <main className="skyline-glider skyline-glider--controls" data-harness-ready="true" data-testid="skyline-glider-loading"><p className="skyline-glider__notice">Charting the course…</p><SkylineControlPanel controls={controls} onPress={() => {}}/></main>;
-  return <main className="skyline-glider skyline-glider--controls" data-harness-ready="true" data-testid={testid} data-control-phase={state.phase}>
+  if (loading) return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-harness-ready="true" data-testid="skyline-glider-loading"><p className="skyline-glider__notice">Charting the course…</p><SkylineControlPanel controls={controls} onPress={() => {}}/></main>;
+  return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-harness-ready="true" data-testid={testid} data-control-phase={state.phase}>
     <div className="skyline-glider__menu">
-      {state.phase !== 'settings' && <MoreButton onMore={() => {}} className="skyline-glider__menu-more"/>}
-      <SkylineMenus state={state} riders={RIDERS} acts={ACTS} onEvent={() => {}} sound={{ ...sound, onLevel: () => {}, onToggleMute: () => {} }}
+      <SkylineMenus state={state} riders={RIDERS} acts={ACTS} onEvent={() => {}}
         crashNote={phase === 'crash' ? 'The gate shut before you got through. Boost (bottom right) as soon as it starts closing.' : null}
         summary={state.phase === 'result' ? SUMMARY : null}/>
       {state.phase === 'result' && !saveError && <p className="skyline-glider__notice" data-tone="good">Flight saved · +3 rings</p>}

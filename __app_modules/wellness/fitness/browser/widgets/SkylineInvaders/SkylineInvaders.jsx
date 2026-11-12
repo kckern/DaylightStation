@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
-import { DaylightMediaPath } from '@/lib/api.mjs';
+import { DaylightImagePath, DaylightMediaPath } from '@/lib/api.mjs';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { PoseProvider } from '../../context/PoseContext.jsx';
 import { useIdentity } from '../../identity/useIdentity.js';
@@ -9,7 +9,8 @@ import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
 import { useGamepadKeys } from '../../lib/useGamepadKeys.js';
 import { createSkylineAudio } from '../../lib/skylineGlider/skylineAudio.js';
 import { useGameVolume } from '../../nav/useGameVolume.js';
-import { PixelIcon } from '../SkylineGlider/SkylinePixelIcons.jsx';
+import SkylineControlPanel from '../SkylineGlider/SkylineControlPanel.jsx';
+import { MoreButton } from '../SkylineGlider/SkylineFlightHud.jsx';
 import { driftAim, manualAim } from '../../lib/skylineInvaders/aimAssist.js';
 import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js';
 import { EMPTY_EFFECTS, INVADERS_LOG_NAMES, buildInvadersEffectTable, invadersSoundUrls } from '../../lib/skylineInvaders/invadersEffects.js';
@@ -19,30 +20,32 @@ import { gateLearnerIds, listInvadersPeople, listSessionRiderIds } from '../../l
 import { buildSkylineInvadersRun } from '../../lib/skylineInvaders/runResult.js';
 import { shotTier } from '../../lib/skylineInvaders/tiers.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
+import { invadersAction, invadersControls, pressForMenuKey, stompAction } from '../../lib/skylineInvaders/invadersPanel.js';
+import { resolveLevelId, waveRows } from '../../lib/skylineInvaders/waves.js';
 import { useSkylineGroupAccess } from '../SkylineGlider/useSkylineAccess.js';
 import { CountdownOverlay, MomentBanner } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
 import { announceGameAchievement, createEffectDispatcher, createFrameDriver } from '../../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
 import { projectRunRole } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
-import InvadersActions from './InvadersActions.jsx';
 import InvadersCalibration from './InvadersCalibration.jsx';
 import InvadersHud from './InvadersHud.jsx';
-import InvadersLobby, { resolveLevelId } from './InvadersLobby.jsx';
-import InvadersLocked from './InvadersLocked.jsx';
+import InvadersMenus from './InvadersMenus.jsx';
 import InvadersPoseBridge from './InvadersPoseBridge.jsx';
 import InvadersResult from './InvadersResult.jsx';
 import InvadersScene from './InvadersScene.jsx';
-import InvadersSoundSheet from './InvadersSoundSheet.jsx';
 import useInvadersAim from './useInvadersAim.js';
 import useInvadersBoost from './useInvadersBoost.js';
 import useInvadersFire from './useInvadersFire.js';
 import useMenuInput from './useMenuInput.js';
 import './SkylineInvaders.scss';
 
-// The Skyline Invaders shell: loads the levels, runs the lobby and calibration,
-// drives the engine from a frame loop, and saves the round.
+// The Skyline Invaders shell: loads the levels, runs the menu screens, drives
+// the engine from a frame loop, and saves the round.
 //
 // Phases: loading -> lobby <-> calibrating -> countdown -> playing <-> paused
 // -> result (-> lobby or another countdown); `error` from loading.
+// Every menu screen is one decision on Skyline Glider's window and bike-button
+// panel (lib/skylineInvaders/invadersPanel.js): who (riders) / roster (others),
+// waves, locked (school day), ready (calibration), paused, result, sound.
 //
 // What a frame reads (aim, tier, cadence, queued presses) comes from refs and
 // hooks that never re-render the game: the pose runs at its own rate, as low
@@ -55,7 +58,10 @@ const ROLE_MAP = Object.freeze({ loading: 'ready', lobby: 'ready', calibrating: 
 const ROUND_PHASES = Object.freeze(['countdown', 'playing', 'paused']);
 // Where the Sound sheet can be opened: every screen a player can stop on. Not
 // mid-countdown (three seconds) and not over calibration, which reads the pose.
-const SOUND_PHASES = Object.freeze(['lobby', 'playing', 'paused', 'result']);
+const SOUND_PHASES = Object.freeze(['lobby', 'paused', 'result']);
+const SOUND_SCREENS = Object.freeze(['who', 'roster', 'waves', 'locked', 'paused', 'result']);
+// Ready waits this long for a camera that is still starting, then plays with gamepad aim.
+const READY_CAMERA_WAIT_MS = 20_000;
 const BIKE_PRESS = /^([1-4])_(single|long|hold|double)$/;
 const COUNTDOWN_FROM = 3;
 const HEALTH_EVERY_MS = 20_000;   // the log ingest allows three of one event a minute
@@ -64,11 +70,6 @@ const REWARD_COLOR = '#7bd88f';
 const POSE_CONFIG = Object.freeze({
   temporalSmoothing: false, maxPoses: 1, modelType: INVADERS_TUNABLES.poseModelType,
   ...(INVADERS_TUNABLES.poseBackend ? { backend: INVADERS_TUNABLES.poseBackend } : {}),
-});
-const PAUSE_REASONS = Object.freeze({
-  player: 'Take a breath. The clock is stopped.',
-  lifecycle: 'The workout is paused. The clock is stopped.',
-  hidden: 'The screen was away. The clock is stopped.',
 });
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
@@ -81,6 +82,22 @@ const newRunId = () => globalThis.crypto?.randomUUID?.() || `invaders-${Date.now
 const postJson = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 // Stick first, then the D-pad, then held arrow keys: -1 (left) .. 1 (right).
+const readPads = () => { try { return Array.from(navigator.getGamepads?.() || []).filter(Boolean); } catch { return []; } };
+// Gamepad Start (standard button 9) pauses a round.
+const startPressed = () => readPads().some((pad) => !!pad.buttons?.[9]?.pressed);
+
+/** Whether a gamepad is plugged in: the Ready screen offers Skip only then. */
+function useGamepadConnected() {
+  const [connected, setConnected] = useState(() => readPads().length > 0);
+  useEffect(() => {
+    const update = () => setConnected(readPads().length > 0);
+    window.addEventListener('gamepadconnected', update);
+    window.addEventListener('gamepaddisconnected', update);
+    return () => { window.removeEventListener('gamepadconnected', update); window.removeEventListener('gamepaddisconnected', update); };
+  }, []);
+  return connected;
+}
+
 function readAimAxis(held) {
   let pads = [];
   try { pads = Array.from(navigator.getGamepads?.() || []); } catch { pads = []; }
@@ -116,10 +133,13 @@ function SkylineInvadersGame() {
   const [chosenLevelId, setChosenLevelId] = useState(null);
   const [pickedShooter, setPickedShooter] = useState(null);
   const [choosingShooter, setChoosingShooter] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterIndex, setRosterIndex] = useState(0);
+  const gamepadConnected = useGamepadConnected();
   const [game, setGame] = useState(null);
   const [effects, setEffects] = useState(EMPTY_EFFECTS);
   const [poseStatus, setPoseStatus] = useState({ state: 'loading' });
-  const [calibrated, setCalibrated] = useState(false);
+  const [, setCalibrated] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [accessOverride, setAccessOverride] = useState(null);
@@ -415,7 +435,8 @@ function SkylineInvadersGame() {
     const current = roundRef.current;
     const lvl = current.level;
     const correlation = { runId: current.runId, levelId: lvl.id };
-    const held = { left: false, right: false };
+    // `start`: held at the round's first frame, so the press that began it never pauses it.
+    const held = { left: false, right: false, start: startPressed() };
     let health = { startedAt: performance.now(), frames: 0, longFrames: 0 };
     // One line per cue would flood the log store: every effect line is rate-limited.
     const effectLog = {
@@ -447,6 +468,9 @@ function SkylineInvadersGame() {
       }
       // No live pose: the stick or the arrow keys steer; left alone, a lost
       // pose drifts toward the threat nearest the ground.
+      const start = startPressed();
+      if (start && !held.start) { held.start = true; pause('player'); return; }
+      held.start = start;
       const sample = tracker.sample();
       const axis = readAimAxis(held);
       if (sample.mode === 'manual' || (sample.lost && axis !== 0)) tracker.setAim(manualAim(sample.x, axis, elapsedS));
@@ -564,51 +588,6 @@ function SkylineInvadersGame() {
     log.info('skyline_invaders.audio.mute_toggled', { muted: !now.muted, control });
   }, [log]);
 
-  // The bike buttons. Invaders is played on the mat, so a bike's buttons stay
-  // with rider selection except where the game needs them: holding 4 mid-round
-  // pauses (as in Skyline Glider); on the pause screen 1 resumes, 2 opens Sound,
-  // 3 ends the round; on the Sound sheet 1 quieter, 2 louder, 3 back, 4 mute.
-  const selectorRouter = ctx?.selectorInputRouter;
-  const bikeActions = useRef({});
-  bikeActions.current = { openSound, closeSound, stepSound, toggleSound, pause, resume, finalize };
-  useEffect(() => {
-    if (!selectorRouter?.onUnclaimed) return undefined;
-    return selectorRouter.onUnclaimed((input) => {
-      const match = BIKE_PRESS.exec(input?.action || '');
-      if (!match || live.current.prompt) return false;
-      const position = Number(match[1]);
-      const single = match[2] === 'single';
-      const act = bikeActions.current;
-      const now = phaseRef.current;
-      if (soundOpenRef.current) {
-        if (single) {
-          if (position === 1) act.stepSound(-10, 'bike');
-          else if (position === 2) act.stepSound(10, 'bike');
-          else if (position === 3) act.closeSound('bike');
-          else act.toggleSound('bike');
-        }
-        return true;
-      }
-      if (now === 'paused') {
-        if (single) {
-          if (position === 1) act.resume('bike');
-          else if (position === 2) act.openSound('bike');
-          else if (position === 3) void act.finalize(false);
-        }
-        return true;
-      }
-      if (lockedRef.current && single && [1, 3, 4].includes(position)) {
-        pressLockedRef.current(position);
-        return true;
-      }
-      if (now === 'playing' && position === 4 && !single && match[2] !== 'double') {
-        act.pause('player');
-        return true;
-      }
-      return false;
-    });
-  }, [selectorRouter]);
-
   // ── Grown-up unlocks ──────────────────────────────────────────────────────
   const cancelPrompt = useCallback(() => {
     unlockGenerationRef.current += 1;
@@ -659,42 +638,178 @@ function SkylineInvadersGame() {
     setPrompt(null);
     live.current.clearUnlock?.();
   }, [log, refreshWorld]);
-  // While the fingerprint prompt is up, the only key that acts is the way out.
-  useMenuInput(!!prompt, (action) => { if (action === 'back') cancelPrompt(); });
 
-  // ── Lobby handlers ────────────────────────────────────────────────────────
+  // ── Who is shooting, which wave ───────────────────────────────────────────
   const pickShooter = useCallback((userId) => {
     const now = live.current;
     if (now.mat) now.session?.setEquipmentUser?.(now.mat.equipmentId, userId);
     setPickedShooter(userId);
     setChoosingShooter(false);
+    setRosterOpen(false);
     log.info('skyline_invaders.lobby.shooter_picked', { shooterId: userId, matEquipmentId: now.mat?.equipmentId || null, previous: now.shooterId });
   }, [log]);
   const chooseLevel = useCallback((levelId) => {
     setChosenLevelId(levelId);
     log.info('skyline_invaders.lobby.level_chosen', { levelId, shooterId: live.current.shooterId });
   }, [log]);
-  const openCalibration = useCallback(() => {
-    log.info('skyline_invaders.lobby.calibration_opened', { shooterId: live.current.shooterId, pose: poseStatusRef.current.state, recalibrating: !!tracker.calibration() });
+  // Start: the Ready screen (stand on the mat, reach left, now right) unless
+  // this shooter's reach is already known or there is no camera to aim with,
+  // in which case straight to the countdown with gamepad aim.
+  const startRound = useCallback((target) => {
+    const pose = poseStatusRef.current.state;
+    if (tracker.calibration() || pose === 'camera-denied' || pose === 'error') { begin(target); return; }
+    if (target) setChosenLevelId(target.id);
+    log.info('skyline_invaders.lobby.calibration_opened', { shooterId: live.current.shooterId, pose });
     goPhase('calibrating');
-  }, [goPhase, log, tracker]);
+  }, [begin, goPhase, log, tracker]);
   const onPoseStatus = useCallback((next) => setPoseStatus(next), []);
 
-  // ── The lock screen ───────────────────────────────────────────────────────
-  // Shown instead of the lobby while the riders' school day keeps the round
-  // shut; never while the verdict is still loading, never over the picker.
+  // ── The screen ────────────────────────────────────────────────────────────
+  // The lock: shown instead of the wave list while the riders' school day
+  // keeps the round shut; never while the verdict is loading, never over the picker.
   const locked = !!shooterId && !choosingShooter && !accessGranted && access.status !== 'loading';
-  const lockedRef = useRef(locked);
-  lockedRef.current = locked && phase === 'lobby';
-  const pressLocked = useCallback((position) => {
-    if (position === 1) void requestAdminOverride();
-    else if (position === 3 || position === 4) {
-      setChoosingShooter(true);
-      log.info('skyline_invaders.access.locked_choice', { choice: position === 3 ? 'back' : 'change-shooter', shooterId: live.current.shooterId });
+  let screen = null;
+  if (soundOpen) screen = 'sound';
+  else if (phase === 'loading' || phase === 'error' || phase === 'paused' || phase === 'result') screen = phase;
+  else if (phase === 'calibrating') screen = 'ready';
+  else if (phase === 'lobby') screen = !shooterId || choosingShooter ? (rosterOpen ? 'roster' : 'who') : locked ? 'locked' : 'waves';
+  const rows = useMemo(() => waveRows(levels, riderWorld), [levels, riderWorld]);
+  const cursorRow = rows.find((row) => row.id === chosenLevelId) || rows.find((row) => row.id === level?.id) || rows[0] || null;
+  const record = saveState.record;
+  const nextLevel = record?.run.status === 'completed'
+    ? levels.slice(levels.findIndex((item) => item.id === record.run.level_id) + 1).find((item) => riderWorld?.levels?.find((entry) => entry.id === item.id)?.status !== 'locked') || null
+    : null;
+  const avatarOf = (id) => DaylightImagePath(`users/${id}`);
+  const rosterPerson = people.length ? { ...people[((rosterIndex % people.length) + people.length) % people.length] } : null;
+  if (rosterPerson) rosterPerson.avatarSrc = avatarOf(rosterPerson.id);
+  const view = {
+    screen,
+    riders: riders.slice(0, 4).map((rider) => ({ ...rider, avatarSrc: avatarOf(rider.id) })),
+    person: rosterPerson,
+    count: rows.length,
+    wave: screen === 'result' ? roundRef.current?.level || level : cursorRow,
+    shooterName: shooterId ? nameOf(shooterId) : '',
+    mat: !!mat,
+    gamepad: gamepadConnected,
+    saveStatus: saveState.status,
+    next: nextLevel,
+    sound: { level: gameVolume.level, muted: gameVolume.muted },
+  };
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  // ── One press, from any input ─────────────────────────────────────────────
+  const act = (action, source) => {
+    const now = live.current;
+    log.info('skyline_invaders.control.action', { action, screen: viewRef.current.screen, source, shooterId: now.shooterId });
+    if (action.startsWith('pick:')) { pickShooter(action.slice(5)); return; }
+    const people_ = peopleRef.current;
+    const at = (row, delta) => {
+      const list = rowsRef.current;
+      const index = Math.max(0, list.findIndex((item) => item.id === row?.id));
+      return list[(index + delta + list.length) % list.length];
+    };
+    switch (action) {
+      case 'open-roster': setRosterOpen(true); setRosterIndex(0); break;
+      case 'roster-prev': setRosterIndex((index) => index - 1); break;
+      case 'roster-next': setRosterIndex((index) => index + 1); break;
+      case 'close-roster': setRosterOpen(false); break;
+      case 'roster-choose': { const person = viewRef.current.person; if (person && people_.length) pickShooter(person.id); break; }
+      case 'wave-prev': case 'wave-next': { const next = at(viewRef.current.wave, action === 'wave-next' ? 1 : -1); if (next) chooseLevel(next.id); break; }
+      case 'change-shooter':
+        if (phaseRef.current === 'result') toLobby();
+        setChoosingShooter(true); setRosterOpen(false);
+        break;
+      case 'start': startRound(now.levels.find((item) => item.id === viewRef.current.wave?.id)); break;
+      case 'unlock-wave': { const target = now.levels.find((item) => item.id === viewRef.current.wave?.id); if (target) void requestLevelUnlock(target); break; }
+      case 'admin-unlock': void requestAdminOverride(); break;
+      case 'back-to-waves': goPhase('lobby'); break;
+      case 'skip-calibration': begin(); break;
+      case 'resume': resume(source); break;
+      case 'open-sound': openSound(source); break;
+      case 'end-round': void finalize(false); break;
+      case 'replay': begin(roundRef.current?.level); break;
+      case 'next-wave': if (viewRef.current.next) begin(viewRef.current.next); break;
+      case 'waves': toLobby(); break;
+      case 'retry-save': { const saved = live.current.saveState.record; if (saved) void finalize(saved.run.status !== 'abandoned', saved); break; }
+      case 'quieter': stepSound(-10, source); break;
+      case 'louder': stepSound(10, source); break;
+      case 'close-sound': closeSound(source); break;
+      case 'toggle-mute': toggleSound(source); break;
+      case 'retry-load': setLoadAttempt((attempt) => attempt + 1); break;
+      default: break;
     }
-  }, [log, requestAdminOverride]);
-  const pressLockedRef = useRef(pressLocked);
-  pressLockedRef.current = pressLocked;
+  };
+  const actRef = useRef(act);
+  actRef.current = act;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const peopleRef = useRef(people);
+  peopleRef.current = people;
+  const press = useCallback((position, gesture, source) => {
+    if (live.current.prompt) {
+      // While the fingerprint prompt is up, the only press that acts is the way out.
+      if (position === 3) cancelPrompt();
+      return;
+    }
+    const action = invadersAction(viewRef.current, position, gesture);
+    if (action) actRef.current(action, source);
+  }, [cancelPrompt]);
+
+  // The bike buttons are the panel on every menu screen. Mid-round only a
+  // hold on 4 acts (pause, as in Skyline Glider); a bike's other presses are
+  // left to rider selection.
+  const selectorRouter = ctx?.selectorInputRouter;
+  useEffect(() => {
+    if (!selectorRouter?.onUnclaimed) return undefined;
+    return selectorRouter.onUnclaimed((input) => {
+      const match = BIKE_PRESS.exec(input?.action || '');
+      if (!match) return false;
+      const position = Number(match[1]);
+      const gesture = match[2] === 'hold' ? 'long' : match[2];
+      if (phaseRef.current === 'playing') {
+        if (position === 4 && gesture === 'long' && !live.current.prompt) { pause('player'); return true; }
+        return false;
+      }
+      if (!viewRef.current.screen || phaseRef.current === 'countdown') return false;
+      press(position, gesture, 'bike');
+      return true;
+    });
+  }, [selectorRouter, pause, press]);
+
+  // Keyboard, foot pad and gamepad on a menu screen (the digits are the kiosk OS's).
+  const menuActive = !!screen && !['loading'].includes(screen);
+  useMenuInput(menuActive || !!prompt, (action, source) => {
+    if (live.current.prompt) { if (action === 'back') cancelPrompt(); return; }
+    const hit = pressForMenuKey(viewRef.current.screen, action);
+    if (hit) press(hit[0], hit[1], source);
+  });
+
+  // A stomp on the shooter's mat: Start on the wave list, go on after a saved round.
+  const subscribeToAppEvent = ctx?.subscribeToAppEvent;
+  const stompArmed = screen === 'waves' || (screen === 'result' && saveState.status === 'saved');
+  useEffect(() => {
+    if (!stompArmed || !subscribeToAppEvent) return undefined;
+    return subscribeToAppEvent('pressure-mat:stomp', (event) => {
+      const matId = live.current.mat?.matId;
+      if (matId && String(event?.payload?.id ?? event?.source) !== String(matId)) return;
+      if (live.current.prompt) return;
+      const action = stompAction(viewRef.current);
+      if (action) actRef.current(action, 'stomp');
+    });
+  }, [stompArmed, subscribeToAppEvent]);
+
+  // Ready: the camera went away, or never came up: play with gamepad aim.
+  useEffect(() => {
+    if (phase !== 'calibrating') return undefined;
+    if (['camera-denied', 'error'].includes(poseStatus.state)) { begin(); return undefined; }
+    if (poseStatus.state !== 'loading') return undefined;
+    const timer = setTimeout(() => {
+      log.info('skyline_invaders.lobby.calibration.camera_timeout', { waitedMs: READY_CAMERA_WAIT_MS });
+      begin();
+    }, READY_CAMERA_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [phase, poseStatus.state, begin, log]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   const inRound = ROUND_PHASES.includes(phase);
@@ -702,17 +817,19 @@ function SkylineInvadersGame() {
   const sceneState = game || idle;
   const sample = tracker.sample();
   const partner = boost.partner ? { ...boost.partner, name: nameOf(boost.partner.riderId) } : null;
-  const record = saveState.record;
-  const nextLevel = record?.run.status === 'completed'
-    ? levels.slice(levels.findIndex((item) => item.id === record.run.level_id) + 1).find((item) => riderWorld?.levels?.find((entry) => entry.id === item.id)?.status !== 'locked') || null
-    : null;
   const testId = phase === 'loading' ? 'skyline-invaders-loading' : inRound || phase === 'result' ? 'skyline-invaders-play' : 'skyline-invaders';
+  const controls = prompt
+    ? invadersControls(view).map((control) => (control.position === 3
+      ? { ...control, label: 'Cancel', hint: 'Back to the game', icon: '×', avatarSrc: null, disabled: false }
+      : { ...control, label: 'Admin fingerprint', hint: 'Waiting', icon: '—', avatarSrc: null, disabled: true }))
+    : invadersControls(view);
 
   return (
     <main
       className={`skyline-invaders skyline-invaders--${phase}`}
       data-testid={testId}
       data-phase={phase}
+      data-screen={screen || undefined}
       data-run-role={projectRunRole(phase, ROLE_MAP)}
       data-level-id={level?.id || undefined}
       data-shooter-id={shooterId || undefined}
@@ -734,93 +851,28 @@ function SkylineInvadersGame() {
       )}
       {inRound && <MomentBanner text={effects.banner?.text || null} momentKey={effects.banner?.key} className="skyline-invaders__banner" />}
       {phase === 'countdown' && <CountdownOverlay value={countdown} className="skyline-invaders__countdown" />}
-      {phase === 'playing' && (
-        <button type="button" className="skyline-invaders__pause-button" aria-label="Pause" onClick={(event) => { event.currentTarget.blur(); pause('player'); }}>
-          <span aria-hidden="true" />
-          <span aria-hidden="true" />
-        </button>
-      )}
-      {/* The touch "more" button: the Sound sheet. In a round it sits beside
-          Pause in the strip under the street; on a menu screen, top right. */}
-      {SOUND_PHASES.includes(phase) && !soundOpen && !prompt && (
-        <button
-          type="button" className={`skyline-invaders__more${phase === 'playing' ? ' is-round' : phase === 'paused' ? ' is-paused' : ''}`} aria-label="Sound and settings"
-          data-testid="skyline-invaders-more" onClick={(event) => { event.currentTarget.blur(); openSound('touch'); }}
-        >
-          <PixelIcon name="more" />
-        </button>
-      )}
 
-      {phase === 'loading' && (
-        <section className="skyline-invaders__notice">
-          <h1>Skyline Invaders</h1>
-          <p role="status">Loading the levels…</p>
+      {screen && (
+        <section className="skyline-menu-screen skyline-invaders__menu" data-testid="skyline-invaders-menu" aria-label="Skyline Invaders menu">
+          <div className="skyline-invaders__window">
+            {SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}
+            {screen === 'ready' && <InvadersCalibration tracker={tracker} poseStatus={poseStatus} waveName={level?.name || ''} onDone={() => { setCalibrated(true); begin(); }} />}
+            {screen === 'result' && record && <InvadersResult record={record} saveStatus={saveState.status} level={roundRef.current?.level || level} />}
+            {!['ready', 'result'].includes(screen) && (
+              <InvadersMenus
+                screen={screen} riders={view.riders} person={rosterPerson} rows={rows} selectedId={cursorRow?.id || null}
+                onSelect={(id) => chooseLevel(id)} shooterName={view.shooterName}
+                state={access.state} blockedNames={access.blockedBy.map(nameOf)}
+                reason={pausedByRef.current} waveName={roundRef.current?.level?.name || ''} error={error}
+                sound={{
+                  level: gameVolume.level, muted: gameVolume.muted,
+                  onLevel: (next) => setSoundLevel(next, 'touch'), onToggleMute: () => toggleSound('touch'),
+                }}
+              />
+            )}
+          </div>
+          <SkylineControlPanel controls={controls} onPress={(position, gesture) => press(position, gesture, 'touch')} />
         </section>
-      )}
-      {phase === 'error' && (
-        <section className="skyline-invaders__notice" data-testid="skyline-invaders-error">
-          <h1>Skyline Invaders</h1>
-          <p role="alert">{error}</p>
-          <InvadersActions actions={[{ id: 'retry', label: 'Try again', onPress: () => setLoadAttempt((attempt) => attempt + 1) }]} />
-          <p className="skyline-invaders__how">Tap the button, press any key, or A on the gamepad.</p>
-        </section>
-      )}
-      {phase === 'lobby' && locked && (
-        <InvadersLocked
-          state={access.state} blockedNames={access.blockedBy.map(nameOf)} active={!prompt && !soundOpen}
-          onPress={pressLocked}
-        />
-      )}
-      {phase === 'lobby' && !locked && (
-        <InvadersLobby
-          levels={levels} world={riderWorld} chosenLevelId={chosenLevelId} onChooseLevel={chooseLevel} onRequestUnlock={requestLevelUnlock}
-          shooter={shooterId ? { id: shooterId, name: nameOf(shooterId) } : null} candidates={riders} others={people} onPickShooter={pickShooter}
-          picking={choosingShooter} onChangeShooter={() => setChoosingShooter(true)} onCancelPick={() => setChoosingShooter(false)}
-          mat={mat} partner={partner} poseStatus={poseStatus} calibrated={calibrated} onCalibrate={openCalibration}
-          access={{ ...access, unlocked: accessGranted }} onRequestAdmin={requestAdminOverride} onStart={() => begin()}
-          tracker={tracker} active={!prompt && !soundOpen}
-        />
-      )}
-      {phase === 'calibrating' && (
-        <InvadersCalibration
-          tracker={tracker} poseStatus={poseStatus}
-          onDone={() => { setCalibrated(true); goPhase('lobby'); }}
-          onSkip={() => goPhase('lobby')}
-        />
-      )}
-      {phase === 'paused' && (
-        <section className="skyline-invaders__pause" data-testid="skyline-invaders-pause" aria-label="Paused">
-          <h1>Paused</h1>
-          <p>{PAUSE_REASONS[pausedByRef.current] || PAUSE_REASONS.player}</p>
-          <InvadersActions
-            actions={[
-              { id: 'resume', label: 'Resume', hint: 'Bike button 1', onPress: () => resume('player') },
-              { id: 'sound', label: 'Sound', hint: 'Bike button 2', onPress: () => openSound('pause-menu') },
-              { id: 'end', label: 'End round', hint: 'Saves it as ended early', onPress: () => { void finalize(false); } },
-            ]}
-            onBack={() => resume('player')}
-            tracker={tracker}
-            active={!soundOpen}
-          />
-          <p className="skyline-invaders__how">Tap a button, press any key, or A on the gamepad. Left and right move between the choices. Hold bike button 4 in a round to pause.</p>
-        </section>
-      )}
-      {phase === 'result' && record && (
-        <InvadersResult
-          record={record} saveStatus={saveState.status} level={level} nextLevel={nextLevel} tracker={tracker} active={!prompt && !soundOpen}
-          onReplay={() => begin(roundRef.current?.level)}
-          onNext={() => begin(nextLevel)}
-          onLevels={toLobby}
-          onRetrySave={() => { void finalize(record.run.status !== 'abandoned', record); }}
-        />
-      )}
-
-      {soundOpen && (
-        <InvadersSoundSheet
-          level={gameVolume.level} muted={gameVolume.muted} tracker={tracker} active={!prompt}
-          onLevel={(next) => setSoundLevel(next, 'touch')} onStep={(delta) => stepSound(delta, 'sheet')}
-          onToggleMute={() => toggleSound('touch')} onBack={closeSound}
-        />
       )}
 
       <UnlockPrompt

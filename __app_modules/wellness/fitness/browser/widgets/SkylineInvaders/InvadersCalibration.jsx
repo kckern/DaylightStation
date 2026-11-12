@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { calibrationFromSamples } from '../../lib/skylineInvaders/aim.js';
-import InvadersActions from './InvadersActions.jsx';
 import './SkylineInvaders.scss';
 
-// Arm-aim calibration: stand in view, reach left, reach right. About ten
-// seconds, and built so nobody can be stuck in it:
-//   - each step finishes by itself when the pose is held still,
-//   - each step can also be finished by a press (touch, any key, gamepad A),
-//   - Skip is on screen at every step and leaves with gamepad aim.
+// The Ready screen's window: arm-aim calibration folded into the way to the
+// countdown. Stand on the mat, reach left, now right; each step finishes by
+// itself when the pose is held still, and the last one starts the round.
+// Without the camera the shell never comes here (gamepad aim, straight to the
+// countdown); with a gamepad connected its panel offers Skip.
 // Framing asks for head and shoulders only: at rest the wrists hang below the
 // camera frame. No step asks for the arms above the shoulders.
 
@@ -20,11 +19,7 @@ const SIDE_MIN = 0.4;          // a reach starts this far from the midline, so r
 const METER_REACH = 2;         // shoulder widths shown each side of the midline
 
 const STEPS = Object.freeze(['framing', 'left', 'right']);
-const COPY = Object.freeze({
-  framing: { title: 'Stand on the mat and face the screen', body: 'The camera needs to see your head and shoulders.' },
-  left: { title: 'Reach both hands to your left and hold still', body: 'As far as is comfortable, at chest height. Hold for one second.' },
-  right: { title: 'Now reach both hands to your right and hold still', body: 'As far as is comfortable, at chest height. Hold for one second.' },
-});
+const TITLES = Object.freeze({ framing: 'Stand on the mat.', left: 'Reach left…', right: '…now right.' });
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 const round2 = (value) => Math.round(value * 100) / 100;
 const cls = (...names) => names.filter(Boolean).join(' ');
@@ -56,9 +51,9 @@ function Figure({ step }) {
  * @param {object} props.tracker      aim tracker: `presence()` and `setCalibration()`
  * @param {{ state: string, error?: string }} props.poseStatus
  * @param {function} props.onDone     (calibration) => void, after the tracker has it
- * @param {function} props.onSkip     leave with gamepad aim
+ * @param {string} [props.waveName]
  */
-export default function InvadersCalibration({ tracker, poseStatus = null, onDone, onSkip }) {
+export default function InvadersCalibration({ tracker, poseStatus = null, onDone, waveName = '' }) {
   const log = useMemo(() => getLogger().child({ app: 'fitness', component: 'skyline-invaders-calibration' }), []);
   const [step, setStep] = useState('framing');
   const [view, setView] = useState({ body: false, offset: null, hold: 0 });
@@ -88,7 +83,7 @@ export default function InvadersCalibration({ tracker, poseStatus = null, onDone
     if (!calibration) {
       w.attempts += 1;
       log.warn('skyline_invaders.lobby.calibration.too_narrow', { left: round2(w.left), right: round2(offset), attempt: w.attempts });
-      setMessage('Reach further apart. Let’s try that again.');
+      setMessage('Reach further apart.');
       goTo('left', 'too-narrow');
       return;
     }
@@ -136,52 +131,25 @@ export default function InvadersCalibration({ tracker, poseStatus = null, onDone
     return () => clearInterval(timer);
   }, [unavailable, capture, goTo]);
 
-  // The press: always does something, and says so when it cannot.
-  const pressOn = () => {
-    const w = work.current;
-    if (w.done) return;
-    if (w.step === 'framing') { goTo('left', 'pressed'); return; }
-    const offset = w.run.length ? mean(w.run) : live.current.tracker.presence().offset;
-    if (offset === null) { setMessage('I can’t see your hands. Hold them out to the side at chest height, then press again.'); return; }
-    capture(offset, 'pressed');
-  };
-  const skip = () => {
-    log.info('skyline_invaders.lobby.calibration.skipped', { step: work.current.step, pose: poseState, elapsedMs: Date.now() - work.current.startedAt });
-    onSkip?.();
-  };
-
-  if (unavailable) {
-    return (
-      <section className="skyline-invaders__calibration" data-testid="skyline-invaders-calibration" data-step="unavailable" aria-label="Arm aim calibration">
-        <h1>Arm aim needs the camera</h1>
-        <p role="alert">{`The camera is not available${poseStatus?.error ? ` (${poseStatus.error})` : ''}. You can still play: aim with the gamepad stick or the arrow keys.`}</p>
-        <InvadersActions actions={[{ id: 'skip', label: 'Aim with the gamepad', onPress: skip }]} onBack={skip} />
-      </section>
-    );
-  }
-
-  const copy = COPY[step];
+  const copyTitle = TITLES[step];
   const index = STEPS.indexOf(step);
   const dot = view.offset === null ? null : 50 + Math.max(-1, Math.min(1, view.offset / METER_REACH)) * 50;
   const captured = work.current.left === null || step === 'left' ? null : 50 + Math.max(-1, Math.min(1, work.current.left / METER_REACH)) * 50;
-  const status = poseState === 'loading' ? 'Vision engine loading…'
-    : step === 'framing' ? (view.body ? 'I can see you. Hold there.' : 'Looking for you…')
-      : view.offset === null ? 'Lift your hands into view' : view.hold > 0 ? 'Hold still…' : `Reach to your ${step}`;
   return (
-    <section className="skyline-invaders__calibration" data-testid="skyline-invaders-calibration" data-step={step} aria-label="Arm aim calibration">
-      <ol className="skyline-invaders__steps" aria-label="Calibration steps">
-        {['Stand', 'Left', 'Right'].map((label, i) => (
-          <li key={label} className={cls(i < index && 'is-done', i === index && 'is-current')} aria-current={i === index ? 'step' : undefined}>{label}</li>
-        ))}
-      </ol>
-      <div className="skyline-invaders__calibration-body">
+    <div className="skyline-menus skyline-invaders__ready" data-phase="ready" data-testid="skyline-invaders-calibration" data-step={unavailable ? 'unavailable' : step} aria-label="Ready">
+      <p className="skyline-menus__kicker">{waveName}</p>
+      <div className="skyline-invaders__ready-body">
         <Figure step={step} />
         <div>
-          <h1>{copy.title}</h1>
-          <p>{copy.body}</p>
-          {message && <p className="skyline-invaders__calibration-alert" role="alert">{message}</p>}
+          <h1>{copyTitle}</h1>
+          <ol className="skyline-invaders__steps" aria-label="Steps">
+            {['Stand', 'Left', 'Right'].map((label, i) => (
+              <li key={label} className={cls(i < index && 'is-done', i === index && 'is-current')} aria-current={i === index ? 'step' : undefined}>{label}</li>
+            ))}
+          </ol>
         </div>
       </div>
+      {message && <p className="skyline-invaders__ready-alert" role="alert">{message}</p>}
       <div className="skyline-invaders__meter" data-testid="invaders-calibration-meter" data-seen={view.body || view.offset !== null}>
         <div className="skyline-invaders__meter-track">
           {captured !== null && <span className="skyline-invaders__meter-flag" style={{ left: `${captured}%` }} />}
@@ -190,16 +158,8 @@ export default function InvadersCalibration({ tracker, poseStatus = null, onDone
         <div className="skyline-invaders__meter-hold" role="progressbar" aria-label="Hold" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(view.hold * 100)}>
           <span style={{ width: `${view.hold * 100}%` }} />
         </div>
-        <p role="status">{status}</p>
       </div>
-      <InvadersActions
-        actions={[
-          { id: 'continue', label: step === 'framing' ? 'Continue' : 'Use this position', hint: 'Or just hold still', onPress: pressOn },
-          { id: 'skip', label: 'Skip — use the gamepad', onPress: skip },
-        ]}
-        onBack={skip}
-      />
-      <p className="skyline-invaders__how">Tap a button, press any key, or A on the gamepad. Escape or B skips.</p>
-    </section>
+      <p className="skyline-invaders__legend">Point to aim · Step to fire</p>
+    </div>
   );
 }

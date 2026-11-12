@@ -40,6 +40,14 @@ let f;
 const logged = (name, method = 'info') => h.log[method].mock.calls.filter(([event]) => event === name).map(([, data]) => data);
 const button = (name) => screen.getByRole('button', { name });
 const press = (name) => act(async () => { fireEvent.click(button(name)); });
+// The bike-button panel: every menu screen's controls, by position (1–4).
+const key4 = (n) => document.querySelector(`.skyline-controls button[data-position="${n}"]`);
+// A rider key waits out a double-tap (300 ms) before it counts as one press.
+const pad = (n) => act(async () => { fireEvent.click(key4(n)); vi.advanceTimersByTime(350); });
+const padHold = (n) => act(async () => { fireEvent.pointerDown(key4(n)); vi.advanceTimersByTime(700); fireEvent.pointerUp(key4(n)); fireEvent.click(key4(n)); vi.advanceTimersByTime(350); });
+const gamepads = (list) => Object.defineProperty(navigator, 'getGamepads', { value: () => list, configurable: true, writable: true });
+const padLabels = () => [1, 2, 3, 4].map((n) => key4(n).querySelector('strong').textContent);
+const menuScreen = () => document.querySelector('[data-testid="skyline-invaders"], [data-testid="skyline-invaders-play"]')?.getAttribute('data-screen') || null;
 const key = (k, init = {}) => act(async () => { fireEvent.keyDown(window, { key: k, ...init }); });
 const step = (id = 'mat-a1', type = 'pressure-mat:step') => act(async () => { h.ctx.__emitAppEvent(type, { id }); });
 const feed = (p) => act(async () => { h.bridge.tracker.processPoses(p ? [p] : []); });
@@ -62,9 +70,11 @@ async function mount(options = {}) {
   await flush();
   return view;
 }
-// Start from the lobby and sit through the 3-2-1.
-async function startRound(name = /^Start/) {
-  await press(name);
+// Start from the wave list and sit through the 3-2-1. Without a camera there is
+// no Ready screen: straight to the countdown with gamepad aim.
+async function startRound() {
+  await status('camera-denied');
+  await pad(4);
   await f.seconds(3.1);
   expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('playing');
 }
@@ -111,7 +121,7 @@ describe('SkylineInvaders — levels and the frame loop', () => {
     render(<SkylineInvaders />);
     expect(screen.getByTestId('skyline-invaders-loading')).toBeTruthy();
     await flush();
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(menuScreen()).toBe('waves');
     expect(logged('skyline_invaders.mounted')[0]).toMatchObject({ sessionId: 'fs-test', mats: 1, poseModel: 'full' });
     expect(logged('skyline_invaders.levels.loaded')[0]).toMatchObject({ levels: 1 });
   });
@@ -133,12 +143,13 @@ describe('SkylineInvaders — levels and the frame loop', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/Levels unavailable/);
     await press(/Try again/);
     await flush();
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(menuScreen()).toBe('waves');
   });
 
   it('counts 3, 2, 1 and then plays, logging the start with the level and a numeric seed', async () => {
     await mount();
-    await press(/^Start/);
+    await status('camera-denied');
+    await pad(4);
     const countdown = () => document.querySelector('.game-hud-countdown')?.textContent;
     expect(countdown()).toBe('3');
     await f.seconds(1);
@@ -188,66 +199,109 @@ describe('SkylineInvaders — levels and the frame loop', () => {
 });
 
 describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
-  it('notes that the vision engine is loading without blocking Start', async () => {
-    await mount();
-    await status('loading');
-    expect(screen.getByText(/Vision engine loading/)).toBeTruthy();
-    expect(button(/^Start/).disabled).toBe(false);
-  });
-
-  it('assigns the picked shooter to the mat', async () => {
+  it('asks who is shooting, from the riders, when the mat has nobody; the pick goes on the mat', async () => {
     h.ctx = makeCtx({ matRider: null });
     h.ctx.participantRoster = [{ id: 'kid', name: 'Kid' }];
     await mount();
-    await press('Kid');
+    expect(menuScreen()).toBe('who');
+    expect(padLabels()).toEqual(['Kid', 'Other riders', 'Other riders', 'Other riders']);
+    await pad(1);
     expect(h.ctx.fitnessSessionInstance.setEquipmentUser).toHaveBeenCalledWith('step-mat', 'kid');
-    expect(screen.getByTestId('invaders-shooter').textContent).toContain('Kid');
+    expect(menuScreen()).toBe('waves');
+    expect(screen.getByTestId('skyline-invaders-waves').textContent).toContain('Kid is shooting');
   });
 
-  it('calibrates from the lobby and then starts the round in pose mode', async () => {
+  it('keeps everyone else behind a hold: the roster browses and chooses', async () => {
+    h.ctx = makeCtx({ matRider: null });
+    await mount();
+    expect(screen.getByTestId('skyline-invaders-who').textContent).toContain('Nobody is riding yet');
+    await pad(1);
+    expect(menuScreen()).toBe('who');
+    await padHold(2);
+    expect(menuScreen()).toBe('roster');
+    expect(padLabels()).toEqual(['Previous', 'Next', 'Back', 'Choose']);
+    await pad(2);
+    expect(screen.getByTestId('skyline-invaders-roster').textContent).toContain('Test Rider');
+    await pad(4);
+    expect(screen.getByTestId('skyline-invaders').getAttribute('data-shooter-id')).toBe('test-rider');
+  });
+
+  it('one decision per screen: the wave list is the waves and four buttons, no prose', async () => {
+    await mount({ levels: [testLevel(), testLevel({ id: 'invaders-test-2', name: 'Second Wave', waves: [{ at: 0, rate_s: 2, spawn: { drone: 1 } }] })] });
+    expect(menuScreen()).toBe('waves');
+    expect(padLabels()).toEqual(['Previous', 'Next', 'Change shooter', 'Start']);
+    expect(key4(4).textContent).toContain('Or stomp the mat');
+    const waves = screen.getByTestId('skyline-invaders-waves');
+    expect(waves.textContent).not.toMatch(/Space|any key|Tap a button|Vision engine|Calibrate/);
+    expect(screen.getByTestId('invaders-wave-detail').textContent).toBe('New: Meteors · Shoot down 1 · 0:30');
+    await pad(2);
+    expect(screen.getByTestId('invaders-wave-detail').textContent).toBe('New: Drones · Shoot down 1 · 0:30');
+    expect(screen.getByTestId('skyline-invaders').getAttribute('data-level-id')).toBe('invaders-test-2');
+  });
+
+  it('a stomp on the shooter\'s mat is Start; another mat\'s stomp is not', async () => {
+    await mount();
+    await status('camera-denied');
+    await step('mat-other', 'pressure-mat:stomp');
+    expect(menuScreen()).toBe('waves');
+    await step('mat-a1', 'pressure-mat:stomp');
+    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
+  });
+
+  it('Ready: stand, reach left, now right — and the countdown starts by itself in pose mode', async () => {
     await mount();
     await status('detecting');
-    await press(/Calibrate/);
-    expect(screen.getByTestId('skyline-invaders-calibration')).toBeTruthy();
+    await pad(4);
+    expect(menuScreen()).toBe('ready');
+    expect(padLabels()[3]).toBe('Reach');
+    expect(key4(4).disabled).toBe(true);
     const hold = async (p, ms) => { for (let t = 0; t < ms; t += 100) { await feed(p); await f.frames(1); } };
     await hold(pose(0, { wristY: 900, score: 0.9 }), 1300);   // standing, hands out of frame
     await hold(pose(140), 1100);                              // both hands to the player's left
     await hold(pose(-140), 1100);
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
     expect(h.bridge.tracker.calibration()).toMatchObject({ left: expect.any(Number), right: expect.any(Number) });
+    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
     await feed(pose(0));
-    await startRound();
+    await f.seconds(3.1);
     expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'pose' });
   });
 
-  it('skipping calibration returns to the lobby with gamepad aim', async () => {
+  it('Ready offers Skip only with a gamepad connected', async () => {
+    gamepads([{ axes: [0, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false })) }]);
     await mount();
     await status('detecting');
-    await press(/Calibrate/);
-    await press(/Skip/);
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
-    expect(h.bridge.tracker.calibration()).toBeNull();
+    await pad(4);
+    expect(padLabels()[3]).toBe('Skip');
+    await pad(4);
+    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
+    gamepads([]);
   });
 
-  it('plays with gamepad aim when the camera is denied, and says so in the HUD', async () => {
+  it('Ready gives up on a camera that never starts and plays with gamepad aim', async () => {
     await mount();
-    await status('camera-denied', { error: 'Permission denied' });
-    expect(screen.queryByRole('button', { name: /Calibrate/ })).toBeNull();
+    await pad(4);
+    expect(menuScreen()).toBe('ready');
+    await f.seconds(20.1);
+    expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
+  });
+
+  it('plays with gamepad aim when the camera is denied, and the HUD wears a Gamepad aim badge', async () => {
+    await mount();
     await startRound();
-    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Camera off — aim with the gamepad');
+    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Gamepad aim');
   });
 
   it('pauses on the module lifecycle and resumes with it', async () => {
     await mount();
     await startRound();
     await act(async () => h.lifecycle.onPause());
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
     expect(logged('skyline_invaders.round.paused')[0]).toMatchObject({ reason: 'lifecycle' });
     const frozen = screen.getByTestId('invaders-time').textContent;
     await f.seconds(3);
     expect(screen.getByTestId('invaders-time').textContent).toBe(frozen);
     await act(async () => h.lifecycle.onResume());
-    expect(screen.queryByTestId('skyline-invaders-pause')).toBeNull();
+    expect(screen.queryByTestId('skyline-invaders-paused')).toBeNull();
     await f.seconds(2);
     expect(screen.getByTestId('invaders-time').textContent).not.toBe(frozen);
   });
@@ -256,7 +310,7 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
     await mount();
     await act(async () => { h.lifecycle.onResume(); h.lifecycle.onSessionEnd(); });
     await flush();
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    expect(menuScreen()).toBe('waves');
     expect(postedRecords(routes)).toHaveLength(0);
   });
 
@@ -266,16 +320,24 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
     await key('Escape');
     expect(logged('skyline_invaders.round.paused')[0]).toMatchObject({ reason: 'player' });
     await act(async () => h.lifecycle.onResume());
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
-    await press(/Resume/);
-    expect(screen.queryByTestId('skyline-invaders-pause')).toBeNull();
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
+    await pad(1);
+    expect(screen.queryByTestId('skyline-invaders-paused')).toBeNull();
   });
 
-  it('offers a pause button on screen during play', async () => {
+  it('has no touch chrome in a round; holding bike button 4 or gamepad Start pauses', async () => {
+    h.ctx.selectorInputRouter = { onUnclaimed: (fn) => { h.bike = fn; return () => {}; } };
     await mount();
     await startRound();
-    await press(/Pause/);
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    await act(async () => { h.bike({ action: '4_hold' }); });
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
+    await pad(1);
+    const pressed = Array.from({ length: 16 }, (_, i) => ({ pressed: i === 9 }));
+    gamepads([{ axes: [0, 0], buttons: pressed }]);
+    await f.frames(2);
+    gamepads([]);
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
   });
 
   it('pauses when the page is hidden', async () => {
@@ -284,7 +346,7 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     visibility.mockRestore();
-    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
+    expect(screen.getByTestId('skyline-invaders-paused')).toBeTruthy();
   });
 
   it('drops a mat step made while paused', async () => {
@@ -369,7 +431,7 @@ describe('SkylineInvaders — finishing a round', () => {
     await startRound();
     await f.seconds(2);
     await key('Escape');
-    await press(/End round/);
+    await pad(3);
     await flush();
     expect(postedRecords(routes).map((record) => record.run.status)).toEqual(['abandoned']);
     expect(screen.getByTestId('skyline-invaders-result').textContent).toContain('Round ended');
@@ -393,23 +455,24 @@ describe('SkylineInvaders — finishing a round', () => {
     await flush();
     expect(screen.getByRole('alert').textContent).toMatch(/not saved/i);
     expect(logged('skyline_invaders.round.save_error', 'error')).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: /Replay|Play again|Levels/ })).toBeNull();
+    expect(padLabels()).toEqual(['Retry save', 'Saving required', 'Saving required', 'Saving required']);
     expect(h.ctx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
-    await press(/Retry save/);
+    await pad(1);
     await flush();
     const records = postedRecords(routes);
     expect(records).toHaveLength(2);
     expect(records[1]).toEqual(records[0]);
     expect(h.ctx.fitnessSessionInstance.treasureBox.awardBonus).toHaveBeenCalledTimes(1);
-    expect(button(/Play again/)).toBeTruthy();
+    expect(padLabels()[0]).toBe('Replay');
   });
 
-  it('plays again with a new run, and returns to the lobby from Levels', async () => {
+  it('plays again with a new run (a stomp replays a saved round), and returns to the waves', async () => {
     await mount();
     await startRound();
     await f.seconds(30.5);
     await flush();
-    await press(/Try again/);
+    expect(padLabels()).toEqual(['Replay', 'No next wave yet', 'Waves', 'Change shooter']);
+    await step('mat-a1', 'pressure-mat:stomp');
     await f.seconds(3.1);
     expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('playing');
     const starts = logged('skyline_invaders.level.start');
@@ -418,8 +481,8 @@ describe('SkylineInvaders — finishing a round', () => {
     expect(screen.getByTestId('invaders-time').textContent).toBe('0:30');
     await f.seconds(30.5);
     await flush();
-    await press(/Levels/);
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
+    await pad(3);
+    expect(menuScreen()).toBe('waves');
   });
 
   it('shows the stars and the round numbers on the result', async () => {
@@ -470,6 +533,9 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     await press(/Admin unlock/);
     await flush();
     expect(logged('skyline_invaders.access.override_denied')).toHaveLength(1);
+    // The prompt shows the denial until it is cancelled (3); the lock stays.
+    expect(padLabels()[2]).toBe('Cancel');
+    await pad(3);
     expect(button(/Admin unlock/)).toBeTruthy();
   });
 
@@ -493,6 +559,8 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
     expect(button(/Second Wave/).getAttribute('data-status')).toBe('locked');
     routes.world.mockImplementation(async () => ({ ok: true, status: 200, json: async () => worldOf('open') }));
     await press(/Second Wave/);
+    expect(padLabels()[3]).toBe('Locked');
+    await pad(4);
     await flush();
     const [url, options] = routes.unlock.mock.calls[0];
     expect(String(url)).toContain('/skyline-invaders/progress/kid/unlock');
@@ -505,11 +573,6 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
   // gate. The gate follows who is riding, never the pick.
   describe('the gate follows the riders, not the pick', () => {
     const learners = (id) => ({ id, schoolLearner: id === 'kid' });
-    const holdOthers = async () => {
-      const others = button(/Other riders/);
-      await act(async () => { fireEvent.pointerDown(others); vi.advanceTimersByTime(700); fireEvent.pointerUp(others); });
-    };
-
     it('picking a grown-up does not open a round while a child with school left is riding', async () => {
       h.localDev = false;
       h.entitlement = entitlement('denied', 'kid');
@@ -517,12 +580,13 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
       h.ctx.getUserByName = learners;
       await mount();
       expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
-      await press(/Change shooter/);
-      const picker = screen.getByRole('group', { name: 'Who is shooting?' });
+      await pad(4);
       // Only the riders are offered; the grown-up is behind the hold.
-      expect(within(picker).queryByRole('button', { name: 'Test Rider' })).toBeNull();
-      await holdOthers();
-      await press('Test Rider');
+      expect(padLabels()).toEqual(['Kid', 'Other riders', 'Other riders', 'Other riders']);
+      await padHold(1);
+      await pad(2);
+      expect(screen.getByTestId('skyline-invaders-roster').textContent).toContain('Test Rider');
+      await pad(4);
       await flush();
       expect(screen.getByTestId('skyline-invaders').getAttribute('data-shooter-id')).toBe('test-rider');
       expect(screen.getByTestId('skyline-invaders-locked')).toBeTruthy();
@@ -540,7 +604,8 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
       h.ctx.participantRoster = [{ id: 'test-rider', name: 'Test Rider' }];
       h.ctx.getUserByName = learners;
       await mount();
-      await press('Test Rider');
+      expect(padLabels()[0]).toBe('Test Rider');
+      await pad(1);
       await flush();
       expect(screen.queryByTestId('skyline-invaders-locked')).toBeNull();
       await startRound();
@@ -555,9 +620,10 @@ describe('SkylineInvaders — school-day access and level unlocks', () => {
       expect(locked.textContent).toContain('Finish today’s school work to unlock.');
       expect(screen.queryByTestId('skyline-invaders-lobby')).toBeNull();
       expect(document.querySelectorAll('[data-level]')).toHaveLength(0);
-      expect(within(locked).getAllByRole('button').map((b) => b.querySelector('strong')?.textContent)).toEqual(['Admin unlock', 'Locked', 'Back', 'Change shooter']);
-      await act(async () => { fireEvent.click(within(locked).getAllByRole('button')[2]); });
-      expect(screen.getByRole('group', { name: 'Who is shooting?' })).toBeTruthy();
+      expect(padLabels()).toEqual(['Admin unlock', 'Locked', 'Back', 'Change shooter']);
+      expect(screen.queryByTestId('skyline-invaders-waves')).toBeNull();
+      await pad(3);
+      expect(menuScreen()).toBe('who');
     });
   });
 

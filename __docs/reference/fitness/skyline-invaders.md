@@ -9,7 +9,7 @@ Code: engine and rules in `__app_modules/wellness/fitness/browser/lib/skylineInv
 - A level is one timed round. There are no lives: a threat that reaches the ground costs skyline (base HP) and stars, and the round always runs to its timer.
 - A round passes when the shooter has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Passing a level opens the next one in world order.
 - Stars: 1 = pass, 2 = skyline at 75% or more, 3 = no damage. A pass pays 10 / 20 / 30 rings.
-- Phases: `loading → lobby ↔ calibrating → countdown → playing ↔ paused → result`. Escape, gamepad B and the on-screen pause button pause the clock. A paused Fitness session or a hidden tab pauses it too.
+- Phases: `loading → lobby ↔ calibrating → countdown → playing ↔ paused → result`. Holding bike button 4, gamepad Start, gamepad B and Escape pause the clock; a round has no touch chrome. A paused Fitness session or a hidden tab pauses it too.
 - The result screen shows each number alone with what the level asked for under it ("Shot down 25, needed 18"), green when met and red when short. A new round is not offered until the record is saved.
 - The HUD shows skyline, kills against the target (`7 / 18`, then `25 ✓` once the target is reached), time left, score, combo, the shot tier and the boost meter.
 
@@ -29,21 +29,19 @@ The cannon follows where the hands are **relative to the player's own torso**. T
 
 ### Calibration
 
-Per shooter, in the lobby, about ten seconds (`InvadersCalibration.jsx`):
+Folded into the way to the round: Start on the wave list goes to the **Ready** screen (`InvadersCalibration.jsx`, about ten seconds) unless this shooter's reach is already known:
 
-1. **Framing.** Stand on the mat facing the screen. Head and shoulders in view for one second is enough; wrists at rest may hang out of frame.
-2. **Reach left**, then **reach right**, both hands at chest height, held still for about a second each.
+1. **"Stand on the mat."** Head and shoulders in view for one second is enough; wrists at rest may hang out of frame.
+2. **"Reach left…"**, then **"…now right."**, both hands at chest height, held still for about a second each. A live meter shows the hands and the captured left reach.
 
-The two reaches become `{ left, right }` in shoulder widths and map to the screen edges, so a child and an adult both cover the full width. A span under one shoulder width is rejected and the reach steps repeat. Every step can also be finished with a press (touch, any key, gamepad A), and Skip is always on screen and leaves with gamepad aim. Changing the shooter clears the calibration. It is held in memory for the mounted game only.
-
-On menus, both arms held out to the sides for one second is the hands-free press (`useArmsWideHold.js`).
+The last reach starts the countdown by itself. The two reaches become `{ left, right }` in shoulder widths and map to the screen edges, so a child and an adult both cover the full width. A span under one shoulder width is rejected ("Reach further apart.") and the reach steps repeat. Without a camera (denied or failed) there is no Ready screen: Start goes straight to the countdown and the HUD wears a "Gamepad aim" badge. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) does the same. The panel offers Back (3), and Skip (4, gamepad aim) only when a gamepad is connected. Changing the shooter clears the calibration. It is held in memory for the mounted game only.
 
 ### Fire: step on the mat
 
 - One `pressure-mat:step` from **the shooter's mat** fires one volley. Steps from any other mat are ignored (and logged, sampled). A stomp does not fire: the same press has already produced its step.
 - To fire again the shooter steps off and back on. Measured on the garage hardware this gives about 1 to 1.3 shots a second, which is why `fireIntervalS` is `1.0`.
 - **Aim latch.** A shot uses the aim from `aimLatchMs` before the press, because stepping throws the arms. The tracker keeps a short aim history for this.
-- The shooter is the mat's assigned rider; the lobby offers a picker when the mat has none. A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
+- The shooter is the mat's assigned rider; the "Who's shooting?" screen asks when the mat has none. A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
 - Fallbacks for testing and no-mat play: Space or F, gamepad A or RT.
 
 ### Heart-rate zone tiers
@@ -72,7 +70,24 @@ A second rider on a connected bike (anyone but the shooter) fills the boost mete
 
 ### Menus
 
-One key meaning on every menu (`menuKeys.js`): arrows move, any plain key or gamepad A accepts, Escape or B goes back. Digits 1–6 are never acted on, because the garage kiosk's OS binds them.
+Every menu screen is one decision: Skyline Glider's window on the left (`.skyline-menus`, `InvadersMenus.jsx`) and the four bike buttons on the right (Glider's `SkylineControlPanel`), set over the still city. What each button says and does is `lib/skylineInvaders/invadersPanel.js` (pure, tested). No instructions in prose: the buttons say what they do.
+
+| Screen | 1 | 2 | 3 | 4 | Mat stomp |
+|---|---|---|---|---|---|
+| Who's shooting? (session riders on their buttons) | rider | rider | rider | rider (empty keys: Other riders) | |
+| Other riders (hold any key on Who) | Previous | Next | Back | Choose | |
+| Pick a wave | Previous | Next | Change shooter | Start (locked wave: Admin unlock) | Start |
+| Round locked (school day) | Admin unlock | — | Back | Change shooter | |
+| Ready | — | — | Back | Skip (gamepad connected only) | |
+| Paused | Resume | Sound | End round | — | |
+| Result (once saved) | Replay | Next wave (only when open) | Waves | Change shooter | next wave after a pass, else Replay |
+| Sound | Quieter | Louder | Back | Mute | |
+
+Start is always button 4 or a stomp on the shooter's mat (`pressure-mat:stomp`; another mat's stomp is ignored). The panel's Start key says "Or stomp the mat" when there is a mat.
+
+**The wave list** is Glider's flight list (`FlightList` in `SkylineMenus.jsx`): a five-row window that follows the cursor, "N more" above and below, each row with a status word — **Done** with the best stars (pixel stars: gold when won, solid ink when not, never faded), **New**, or a pixel lock and **Locked**. Under the list the chosen wave says what tells it apart: the sprite and name of the threat it brings in first, its kill target and its time ("New: Drones · Shoot down 20 · 3:00", `lib/skylineInvaders/waves.js`). The seed waves are genuinely different (meteors, then drones, pods, bombers), so they stay separate rows.
+
+**Keys, foot pad, gamepad** (`useMenuInput`; the digits 1–6 are never acted on, the garage kiosk's OS binds them): left = 1, right = 2, Escape/B = 3, Enter/A/any foot-pad key = 4. Exceptions: on Who's shooting, accept takes the first rider and right opens Other riders; on the lock screen accept is Admin unlock; on Paused accept and back resume; on the Sound sheet accept is Back, so a stray foot-pad press only closes it. While the admin fingerprint prompt is up only Cancel (3, or Escape/B) acts.
 
 ### Sound
 
@@ -80,9 +95,9 @@ Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the t
 
 The **Sound sheet** (`InvadersSoundSheet.jsx`, its body the shared `SkylineGlider/GameSoundSheet.jsx`) shows the level, the house touch volume strip (11 keys, 0 = off, no slider) and Back / Quieter / Louder / Mute. It opens from:
 
-- **Touch:** the "more" button (three dots) -- top right on the lobby, pause and result screens; beside Pause in a round. Mid-round it pauses first and Back lands on the pause screen.
+- **Touch:** the "more" button (three dots) on the top-right corner of the Who, Other riders, wave list, lock, pause and result windows. A round has no touch chrome: pause first.
 - **Keys, foot pad, gamepad:** Sound on the pause screen. In the sheet Back has the focus, so a stray foot-pad press only closes it; Escape or B goes back.
-- **Bike buttons:** hold 4 in a round to pause; on the pause screen 1 resumes, 2 opens Sound, 3 ends the round; in the sheet 1 quieter, 2 louder, 3 back, 4 mute. Elsewhere (lobby, result, a single press mid-round) the bike's buttons stay with rider selection.
+- **Bike buttons:** hold 4 in a round to pause; on the pause screen 2 opens Sound; in the sheet 1 quieter, 2 louder, 3 back, 4 mute. On every menu screen the bike buttons are the panel; mid-round a single press stays with rider selection.
 
 A workout resume never restarts the round under an open sheet.
 
@@ -220,8 +235,9 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.world.loaded` / `.world.error` | `riderId`, `next` / `error` | |
 | `.assets.loaded` / `.assets.error` | `sounds`, `missing: [{ slot, reason }]` | `reason: empty` is a placeholder |
 | `.lobby.shooter_picked`, `.lobby.level_chosen` | `shooterId`, `matEquipmentId`, `previous` / `levelId` | |
-| `.lobby.calibration_opened`, `.lobby.calibration_reset` | `shooterId`, `pose`, `recalibrating` / `reason` | |
-| `.lobby.calibration.started`, `.step`, `.too_narrow`, `.skipped`, `.closed` | `step`, `how` (`held` or a press), `attempt`, `elapsedMs`; `left`, `right` on too_narrow | |
+| `.control.action` | `action`, `screen`, `source` (touch, bike, key, gamepad, stomp), `shooterId` | one line per menu press |
+| `.lobby.calibration_opened`, `.lobby.calibration_reset`, `.lobby.calibration.camera_timeout` | `shooterId`, `pose` / `reason` / `waitedMs` | |
+| `.lobby.calibration.started`, `.step`, `.too_narrow`, `.closed` | `step`, `how` (`held` or `too-narrow`), `attempt`, `elapsedMs`; `left`, `right` on too_narrow | |
 | `.lobby.calibrated` | `left`, `right`, `span`, `how`, `attempts`, `elapsedMs` | the range in shoulder widths |
 | `.pose.camera_ready`, `.pose.camera_unavailable` | `enabled` / `error` | |
 | `.pose.state` | `state` (`loading`, `detecting`, `error`, `camera-denied`), `backend`, `modelType`, `error` | on change |
@@ -285,7 +301,7 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 
 **Every shot is small.** The shooter has no trusted zone: no monitor, a stale reading (over ten seconds) or an ineligible one. `level.start` records `tier` and `tierTrusted`.
 
-**The cannon will not follow the arms.** Without a calibration the game is in gamepad aim (`aimMode: manual` on `level.start`). Calibrate in the lobby. If the HUD says "Step into view", the arms' keypoints are under `keypointMinScore`: an arm crossing behind the body drops out and the other carries the aim.
+**The cannon will not follow the arms.** Without a calibration the game is in gamepad aim (`aimMode: manual` on `level.start`). Start a wave: the Ready screen calibrates. If the HUD says "Step into view", the arms' keypoints are under `keypointMinScore`: an arm crossing behind the body drops out and the other carries the aim.
 
 **The boost meter is missing.** No partner: no connected bike with a rider other than the shooter (`skyline_invaders.boost.partner` logs when one is found).
 

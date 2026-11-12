@@ -70,7 +70,7 @@
 .skyline-invaders__sky-stop--mid { stop-color: var(--si-dusk); }
 .skyline-invaders__sky-stop--low { stop-color: var(--si-haze); }
 .skyline-invaders__stars rect { fill: var(--si-star); }
-.skyline-invaders__stars rect.is-dim { opacity: 0.45; }
+.skyline-invaders__stars rect.is-dim { fill: var(--si-ink-dim); }
 .skyline-invaders__far rect { fill: var(--si-far); }
 .skyline-invaders__ground { fill: var(--si-ground); }
 .skyline-invaders__street { fill: var(--si-street); }
@@ -247,93 +247,74 @@
   padding: 1rem 3rem; font-size: 4rem; font-weight: 800; white-space: nowrap;
 }
 
-// ── Menu screens (lobby, calibration, pause, result) ────────────────────────
-// They sit over the still city, above the HUD (z-index 5) and the banner (6).
-// Type is sized for the garage: body copy 2rem, anything to act on 2.4rem up.
-.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice {
-  position: absolute; z-index: 8; inset: 0;
-  display: flex; flex-direction: column; gap: 1.6rem;
-  padding: 3rem 4.5rem 2.2rem;
-  color: var(--si-ink); font-size: 2rem; line-height: 1.25;
-  // Dark where the words are, clear at the bottom so the skyline stays in the picture.
-  background: linear-gradient(to bottom, rgba(7, 11, 36, 0.94) 0%, rgba(7, 11, 36, 0.86) 62%, rgba(7, 11, 36, 0.4) 100%);
-  h1 { margin: 0; font-size: 4.4rem; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
-  h2 { margin: 0; font-size: 2.4rem; font-weight: 800; }
-  p { margin: 0; }
+// ── Menu screens ────────────────────────────────────────────────────────────
+// Skyline Glider's window and bike-button panel (SkylineMenus.scss), set over
+// the still city instead of Glider's day sky. The windows are solid; the city
+// behind them is the picture, not a backdrop to read through.
+.skyline-invaders .skyline-invaders__menu {
+  position: absolute; z-index: 8; inset: 0; min-height: 0; background: none;
+}
+.skyline-invaders__window { position: relative; display: grid; justify-items: stretch; min-width: 0; }
+.skyline-invaders__menu .skyline-menus { --sg-icon-px: var(--sg-line); }
+.skyline-invaders__menu .skyline-menus__options button { --sg-icon-px: var(--sg-line); }
+.skyline-invaders__menu .skyline-invaders__more { top: calc(-2 * var(--sg-px)); right: calc(-2 * var(--sg-px)); }
+
+// Best stars: gold when won, a solid dark star when not. Never faded.
+.skyline-invaders__star-row { display: inline-flex; align-items: center; gap: calc(var(--sg-px) / 2); }
+.skyline-invaders__star { display: inline-grid; color: var(--sg-ink); &[data-won="true"] { color: var(--sg-gold); } }
+.skyline-menus__options button[aria-pressed="true"] .skyline-invaders__star[data-won="true"] { color: var(--sg-paper); }
+.skyline-menus__options button .sg-icon__ink { fill: none; }
+.skyline-invaders__star-row--result { --sg-icon-px: calc(1.6 * var(--sg-px)); margin-top: 1vw; gap: var(--sg-px); }
+
+// Under the wave list: what this wave brings in, its target and its time.
+.skyline-invaders__wave-detail {
+  display: flex; align-items: center; gap: 1vw; margin: 1.2vw 0 0; max-width: none;
+  font-size: var(--sg-text-m); font-weight: 700;
+}
+.skyline-invaders__wave-threat { flex: none; width: auto; height: 2.6vw; }
+
+// The result: the Glider tally, with what the wave asked for under each number.
+.skyline-invaders__summary {
+  max-width: none;
+  dt small { margin-left: .6vw; color: var(--sg-locked); font-size: var(--sg-text-s); font-weight: 700; }
+  [data-met="true"] dd { color: var(--si-pass); }
+  [data-met="false"] dd { color: var(--sg-red); }
+}
+.skyline-invaders__save {
+  display: inline-block; margin: 1vw 0 0; padding: .4vw 1vw; font-size: var(--sg-text-m); font-weight: 900;
+  color: var(--sg-paper); background: var(--sg-ink);
+  &[data-tone="good"] { color: var(--sg-ink); background: var(--sg-gold); }
+  &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-red); }
 }
 
-// Actions: the same button everywhere. The focused one wears the ring that
-// Enter, a foot-pad key or gamepad A will press.
-.skyline-invaders__actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: 1.2rem; }
-.skyline-invaders__action {
-  --si-hold: 0;
-  position: relative; overflow: hidden;
-  display: grid; align-content: center; justify-items: start; gap: 0.2rem;
-  min-height: 6rem; min-width: 14rem; padding: 0.9rem 2.2rem;
-  border: 0; border-radius: 0.8rem; cursor: pointer;
-  font: inherit; text-align: left; color: var(--si-ink);
-  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
-  b { position: relative; font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
-  small { position: relative; font-size: 1.5rem; font-weight: 600; color: var(--si-ink-dim); }
-  &.is-primary { color: var(--si-night); background: var(--si-window); box-shadow: none; small { color: var(--si-night); opacity: 0.75; } }
-  &.is-focused { outline: 0.3rem solid var(--si-ink); outline-offset: 0.3rem; }
-  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
-  &:disabled { cursor: default; color: var(--si-ink-dim); background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge); small { color: var(--si-tier-big); opacity: 1; } }
-  // The arms-wide press fills the button from the left while it is held.
-  &::before { content: ''; position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--si-hold)); background: var(--si-boost); transition: transform 100ms linear; }
-}
-.skyline-invaders__how { margin-top: auto; font-size: 1.6rem; color: var(--si-ink-dim); }
-
-// Lobby
-.skyline-invaders__lobby-head p { margin-top: 0.5rem; font-size: 2.2rem; color: var(--si-ink-dim); }
-.skyline-invaders__levels { display: flex; gap: 1.2rem; margin: 0; padding: 0; list-style: none; }
-.skyline-invaders__levels li { flex: 1 1 0; min-width: 0; max-width: 28rem; display: flex; }
-.skyline-invaders__level {
-  flex: 1; display: grid; align-content: start; justify-items: start; gap: 0.5rem; min-height: 10.5rem;
-  padding: 1.2rem 1.5rem; border: 0; border-radius: 0.8rem; cursor: pointer;
-  font: inherit; text-align: left; color: var(--si-ink);
-  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
-  b { font-size: 2.3rem; font-weight: 800; line-height: 1.1; }
-  &.is-chosen { box-shadow: inset 0 0 0 0.35rem var(--si-window); background: rgba(255, 210, 122, 0.14); }
-  &.is-locked { color: var(--si-ink-dim); b::after { content: ' 🔒'; font-size: 0.8em; } }
-  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
-}
-.skyline-invaders__level-goal { font-size: 1.6rem; color: var(--si-ink-dim); }
-.skyline-invaders__stars-row { display: inline-flex; gap: 0.3rem; font-size: 2.2rem; line-height: 1; }
-.skyline-invaders__star { color: var(--si-panel-edge); &.is-won { color: var(--si-tier-big); } }
-.skyline-invaders__crew { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 3rem; }
-.skyline-invaders__crew-line { display: flex; align-items: baseline; gap: 0.8rem; span { font-size: 1.6rem; color: var(--si-ink-dim); } b { font-size: 2.4rem; } }
-.skyline-invaders__crew-note { flex-basis: 100%; font-size: 1.7rem; color: var(--si-drone); }
-.skyline-invaders__picker { display: grid; gap: 0.8rem; }
-
-// Calibration
+// Ready: the figure, the step, and the reach meter.
+.skyline-invaders__ready-body { display: flex; align-items: center; gap: 2.4vw; }
+.skyline-invaders__ready-alert { padding: .5vw 1vw; color: var(--sg-ink); background: var(--sg-gold); font-weight: 900; }
+.skyline-invaders__legend { color: var(--sg-gold); font-weight: 900; }
 .skyline-invaders__steps {
-  display: flex; gap: 0.8rem; margin: 0; padding: 0; list-style: none; counter-reset: si-step;
+  display: flex; gap: var(--sg-px); margin: 1vw 0 0; padding: 0; list-style: none; counter-reset: si-step;
   li {
-    counter-increment: si-step; padding: 0.4rem 1.3rem; border-radius: 99rem; font-size: 1.6rem; font-weight: 700;
-    color: var(--si-ink-dim); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
+    counter-increment: si-step; padding: .3vw .9vw; font-size: var(--sg-text-s); font-weight: 900;
+    color: var(--sg-locked); background: var(--sg-ink);
     &::before { content: counter(si-step) ' '; }
-    &.is-current { color: var(--si-night); background: var(--si-window); box-shadow: none; }
-    &.is-done { color: var(--si-pass); box-shadow: inset 0 0 0 0.15rem var(--si-pass); }
+    &.is-current { color: var(--sg-ink); background: var(--sg-gold); }
+    &.is-done { color: var(--sg-ink); background: var(--si-pass); }
   }
 }
-.skyline-invaders__calibration-body { display: flex; align-items: center; gap: 3rem; p { margin-top: 0.8rem; font-size: 2.2rem; color: var(--si-ink-dim); } }
-.skyline-invaders__figure { flex: none; width: 17rem; height: auto; fill: var(--si-ink); }
-.skyline-invaders__figure-arms { fill: var(--si-window); }
-.skyline-invaders .skyline-invaders__calibration-alert, .skyline-invaders__calibration > p[role="alert"] { color: var(--si-tier-big); font-weight: 700; }
-.skyline-invaders__meter { display: grid; gap: 0.7rem; max-width: 70rem; p { font-size: 2rem; font-weight: 700; color: var(--si-drone); } }
+.skyline-invaders__figure { flex: none; width: 11vw; height: auto; fill: var(--sg-paper); }
+.skyline-invaders__figure-arms { fill: var(--sg-gold); }
+.skyline-invaders__meter { display: grid; gap: var(--sg-px); margin-top: 1.2vw; }
 .skyline-invaders__meter-track {
-  position: relative; height: 2.6rem; border-radius: 0.6rem; background: var(--si-panel); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
-  // The body midline.
-  &::before { content: ''; position: absolute; left: 50%; top: 0.3rem; bottom: 0.3rem; width: 0.15rem; background: var(--si-panel-edge); }
+  position: relative; height: 2.4vw; background: var(--sg-ink);
+  &::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: var(--sg-line); background: var(--sg-night-lift); }
 }
 .skyline-invaders__meter-dot, .skyline-invaders__meter-flag { position: absolute; top: 50%; translate: -50% -50%; }
-.skyline-invaders__meter-dot { width: 1.8rem; height: 1.8rem; background: var(--si-window); transition: left 90ms linear; }
-.skyline-invaders__meter-flag { width: 0.5rem; height: 2.6rem; background: var(--si-pass); }
-.skyline-invaders__meter-hold { height: 0.9rem; border-radius: 99rem; overflow: hidden; background: var(--game-hud-track); span { display: block; height: 100%; background: var(--si-pass); transition: width 100ms linear; } }
+.skyline-invaders__meter-dot { width: 1.8vw; height: 1.8vw; background: var(--sg-gold); transition: left 90ms linear; }
+.skyline-invaders__meter-flag { width: var(--sg-px); height: 2.4vw; background: var(--si-pass); }
+.skyline-invaders__meter-hold { height: var(--sg-px); background: var(--sg-ink); span { display: block; height: 100%; background: var(--si-pass); transition: width 100ms linear; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .skyline-invaders__action::before, .skyline-invaders__meter-dot, .skyline-invaders__meter-hold span { transition: none; }
+  .skyline-invaders__meter-dot, .skyline-invaders__meter-hold span { transition: none; }
 }
 
 // Behind a menu the city is a backdrop: no aim line, no cannon marker.
@@ -348,109 +329,16 @@
   font-size: 22rem; font-weight: 800; line-height: 1; color: var(--si-window);
   text-shadow: 0 0.06em 0 var(--si-outline);
 }
-// Pause, for a finger. It sits in the strip under the street, in the corner,
-// where nothing falls and no shot flies. The heart-rate note moves over for it.
-.skyline-invaders__pause-button {
-  position: absolute; z-index: 7; right: 2.5rem; bottom: 1.1rem;
-  display: flex; align-items: center; justify-content: center; gap: 0.7rem;
-  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0.8rem; cursor: pointer;
-  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
-  span { display: block; width: 0.8rem; height: 2.2rem; background: var(--si-ink); }
-  &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
-}
-
-// Pause and result sit over the round they belong to, so they are centred on it.
-.skyline-invaders__pause, .skyline-invaders__result {
-  justify-content: center; padding-bottom: 14rem;
-  background: rgba(7, 11, 36, 0.86);
-  .skyline-invaders__how { margin-top: 0; }
-}
-.skyline-invaders__pause > p:not(.skyline-invaders__how) { font-size: 2.2rem; color: var(--si-ink-dim); }
-
-.skyline-invaders__result-head {
-  display: grid; justify-items: start; gap: 0.6rem;
-  p { font-size: 2rem; font-weight: 700; color: var(--si-ink-dim); }
-  h1 { font-size: 6rem; }
-}
-.skyline-invaders__result[data-status="completed"] h1 { color: var(--si-window); }
-.skyline-invaders__stars-row--result { font-size: 5rem; gap: 0.6rem; }
-.skyline-invaders__result-rows {
-  display: flex; flex-wrap: wrap; gap: 1.2rem; margin: 0;
-  div { display: grid; align-content: start; gap: 0.3rem; min-width: 13rem; padding: 0.9rem 1.5rem; border-radius: 0.8rem; background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge); }
-  dt { font-size: 1.6rem; font-weight: 600; color: var(--si-ink-dim); }
-  dd { margin: 0; font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-  // What the level asked for, under the number it is measured against.
-  dd.skyline-invaders__result-need { font-size: 1.6rem; font-weight: 600; color: var(--si-ink-dim); }
-  div[data-met="true"] dd:not(.skyline-invaders__result-need) { color: var(--si-pass); }
-  div[data-met="false"] { box-shadow: inset 0 0 0 0.2rem var(--si-danger); }
-  div[data-met="false"] dd { color: var(--si-danger); }
-}
-.skyline-invaders__result-save { font-size: 2.2rem; font-weight: 700; color: var(--si-pass); &[role="alert"] { color: var(--si-tier-big); } }
-
-// Loading and load errors: one message in the middle of the sky.
-.skyline-invaders__notice { justify-content: center; padding-bottom: 14rem; p[role="alert"], p[role="status"] { font-size: 2.6rem; color: var(--si-ink-dim); } .skyline-invaders__how { margin-top: 0; } }
-
 // ── Sound ───────────────────────────────────────────────────────────────────
-// The touch "more" button opens the Sound sheet. In a round it sits beside
-// Pause in the strip under the street (the heart-rate note moves over for
-// both); on a menu screen it sits in the top-right corner, above the screen.
+// The touch "more" button opens the Sound sheet. It sits on the top-right
+// corner of every menu window a player can stop on; the round itself has no
+// touch chrome (pause is bike button 4 held, or gamepad Start).
 .skyline-invaders__more {
   --sg-icon-px: 0.25rem;
   position: absolute; z-index: 9; top: 2.2rem; right: 2.5rem;
   display: grid; place-items: center;
-  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0.8rem; cursor: pointer;
-  color: var(--si-ink); background: var(--si-night); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
-  // In a round: the strip under the street, beside Pause (or in its place while paused).
-  &.is-round { z-index: 7; top: auto; bottom: 1.1rem; right: 9rem; }
-  &.is-paused { top: auto; bottom: 1.1rem; }
+  width: 5.5rem; height: 4.6rem; padding: 0; border: 0; border-radius: 0; cursor: pointer;
+  color: var(--si-ink); background: var(--si-night); box-shadow: inset 0 0 0 0.2rem var(--si-ink);
   &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
-}
-.skyline-invaders.skyline-invaders--playing .skyline-invaders__hud-note--tier { right: 16rem; }
-
-// The pixel icons are Skyline Glider's (SkylinePixelIcons): drawn here in this
-// game's colours, whatever else is loaded.
-.skyline-invaders {
-  .sg-icon--inline { display: block; flex: none; width: calc(var(--w) * var(--sg-icon-px, 3px)); height: calc(var(--h) * var(--sg-icon-px, 3px)); }
-  .sg-icon__body { fill: currentColor; }
   .sg-icon__ink { fill: none; }
-  .sg-icon__lit { fill: var(--si-night); }
-}
-
-// The sheet covers the screen it was opened over, solid: that screen stays
-// mounted underneath and must not show through.
-.skyline-invaders__sound {
-  position: absolute; z-index: 9; inset: 0;
-  display: flex; flex-direction: column; justify-content: center; gap: 2rem;
-  padding: 3rem 4.5rem 6rem;
-  color: var(--si-ink); font-size: 2rem; line-height: 1.25;
-  background: var(--si-night);
-  h1 { margin: 0; font-size: 4.4rem; font-weight: 800; line-height: 1.05; }
-  .skyline-invaders__how { margin-top: 0; }
-}
-.skyline-invaders__readout {
-  --sg-icon-px: 0.45rem;
-  display: flex; align-items: center; gap: 1.2rem;
-  color: var(--si-window); font-size: 3.4rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
-  &[data-muted] { color: var(--si-danger); }
-}
-// The house touch strip (11 keys, 0 = off) in this game's colours, every key solid.
-.skyline-invaders__volume {
-  width: min(100%, 92rem);
-  .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 0.5rem; width: 100%; }
-  .touch-volume-button {
-    height: 7rem; padding: 0; border: 0; border-radius: 0.5rem; cursor: pointer; color: transparent;
-    background: #232c63; box-shadow: inset 0 -0.4rem 0 0 #141a40;
-    &.on { background: var(--si-window); box-shadow: inset 0 -0.4rem 0 0 #b88a2e; }
-    &:first-child { background: var(--si-night); box-shadow: inset 0 0 0 0.3rem var(--si-danger); }
-    &:first-child.active { background: var(--si-danger); box-shadow: none; }
-    &.active:not(:first-child) { box-shadow: inset 0 0 0 0.35rem var(--si-ink); }
-  }
-}
-
-// The garage lays out 777 css px tall: the 14rem kept clear under the pause
-// and result windows pushed the result's title off the top (2026-11-12).
-@media (max-height: 820px) {
-  .skyline-invaders__pause, .skyline-invaders__result { padding-bottom: 3rem; }
-  // The lobby: the same content, less air between the rows.
-  .skyline-invaders__lobby { padding-top: 2.2rem; gap: 1.2rem; }
 }

@@ -102,45 +102,14 @@ describe('InvadersCalibration', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/Reach further apart/);
   });
 
-  it('can be driven by hand on every step: a press continues past framing and takes the reach as it stands', () => {
-    const { props } = mount();
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
-    expect(step()).toBe('left');
-    reach(-1.3); tick(150);
-    key('Enter');
-    expect(step()).toBe('right');
-    reach(1.1); tick(150);
-    fireEvent.click(screen.getByRole('button', { name: /Use this position/ }));
-    expect(props.onDone).toHaveBeenCalledWith({ left: expect.closeTo(-1.3), right: expect.closeTo(1.1) });
-  });
-
-  it('says what is missing when a reach is pressed with no hands in view, and stays put', () => {
+  // The Ready screen's window: the step in a few words, the meter, the input
+  // map. No buttons and no instructions in prose: the shell's panel has Back
+  // (and Skip, with a gamepad); without a camera the shell never comes here.
+  it('is a window with the step, the meter and the input map, and no buttons', () => {
     mount();
-    passFraming();
-    stand();
-    key('Enter');
-    expect(step()).toBe('left');
-    expect(screen.getByRole('alert').textContent).toMatch(/hands/i);
-  });
-
-  it('skips from any step by button, Escape or gamepad B', () => {
-    const { props } = mount();
-    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
-    key('Escape');
-    expect(props.onSkip).toHaveBeenCalledTimes(2);
-  });
-
-  it('shows why and offers only the skip when the camera is unavailable', () => {
-    const { props } = mount({ poseStatus: { state: 'camera-denied', error: 'Permission denied' } });
-    expect(screen.getByRole('alert').textContent).toMatch(/camera/i);
-    expect(screen.getAllByRole('button')).toHaveLength(1);
-    key('Enter');
-    expect(props.onSkip).toHaveBeenCalledTimes(1);
-  });
-
-  it('says the vision engine is still loading while it is', () => {
-    mount({ poseStatus: { state: 'loading' } });
-    expect(screen.getByText(/Vision engine loading/)).toBeTruthy();
+    expect(screen.getByRole('heading').textContent).toBe('Stand on the mat.');
+    expect(screen.getByText('Point to aim · Step to fire')).toBeTruthy();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
   it('logs each step it reaches', () => {

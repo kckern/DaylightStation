@@ -22,6 +22,5 @@ window.__si.pose = (wristDx = 0, wristY = 200) => {
 };
 window.__si.feed = (wristDx, wristY) => window.__si.tracker.processPoses([window.__si.pose(wristDx, wristY)]);
 
-// The game's own volume lives in the fitness volume store, as in FitnessApp.
 createRoot(document.getElementById('root')).render(<VolumeProvider><SkylineInvaders /></VolumeProvider>);
 document.body.dataset.harnessReady = 'true';

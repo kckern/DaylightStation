@@ -190,6 +190,19 @@ const BITMAPS = Object.freeze({
     '##.##.##',
     '##.##.##',
   ],
+  // A won star (Skyline Invaders' best result). An unwon one is the same
+  // star in a solid darker colour, never a faded one.
+  star: [
+    '....#....',
+    '....#....',
+    '...###...',
+    '#########',
+    '.#######.',
+    '..#####..',
+    '..##.##..',
+    '.##...##.',
+    '.#.....#.',
+  ],
   // The "more" button: sound and settings.
   more: [
     '###..###..###',

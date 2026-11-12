@@ -12,13 +12,19 @@ const harnessLevel = (id, name, over = {}) => ({
   schema: 'skyline-invaders-level/v1', id, name, duration_s: 30, pass: { kills: 4 },
   waves: [{ at: 0, rate_s: 1.2, spawn: { meteor: 3, drone: 2, pod: 1 } }], boost: { fill_s: 6 }, ...over,
 });
-const HARNESS_LEVELS = [harnessLevel('invaders-1-1', 'First Wave'), harnessLevel('invaders-1-2', 'Drone Swarm'), harnessLevel('invaders-1-3', 'Bomber Run')];
+const HARNESS_LEVELS = [
+  harnessLevel('invaders-1-1', 'First Light', { waves: [{ at: 0, rate_s: 1.2, spawn: { meteor: 1 } }] }),
+  harnessLevel('invaders-1-2', 'Zigzag', { waves: [{ at: 0, rate_s: 1.2, spawn: { meteor: 3, drone: 1 } }] }),
+  harnessLevel('invaders-1-3', 'Split Decision', { waves: [{ at: 0, rate_s: 1.2, spawn: { meteor: 2, drone: 1, pod: 1 } }] }),
+  harnessLevel('invaders-1-4', 'Bomber Run', { waves: [{ at: 0, rate_s: 1.2, spawn: { meteor: 2, drone: 1 } }, { at: 10, rate_s: 6, spawn: { bomber: 1 } }, { at: 16, rate_s: 1.2, spawn: { meteor: 2, pod: 1 } }] }),
+];
 const HARNESS_WORLD = {
   riderId: 'kid', next: 'invaders-1-2',
   levels: [
-    { id: 'invaders-1-1', name: 'First Wave', status: 'completed', best: { stars: 2, score: 940 } },
-    { id: 'invaders-1-2', name: 'Drone Swarm', status: 'open' },
-    { id: 'invaders-1-3', name: 'Bomber Run', status: 'locked' },
+    { id: 'invaders-1-1', name: 'First Light', status: 'completed', best: { stars: 2, score: 940 } },
+    { id: 'invaders-1-2', name: 'Zigzag', status: 'open' },
+    { id: 'invaders-1-3', name: 'Split Decision', status: 'locked' },
+    { id: 'invaders-1-4', name: 'Bomber Run', status: 'locked' },
   ],
 };
 
