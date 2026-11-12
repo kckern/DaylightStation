@@ -73,6 +73,14 @@ describe('InvadersLobby', () => {
     expect(props.onPickShooter).toHaveBeenCalledWith('test-rider');
   });
 
+  it('while picking, the names and the lobby action share one row (fits the 777 px garage screen)', () => {
+    const { container } = renderLobby({ shooter: null });
+    const rows = container.querySelectorAll('.skyline-invaders__actions');
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByRole('button', { name: 'Test Rider' })).toBeTruthy();
+    expect(within(rows[0]).getByRole('button', { name: /^Start/ })).toBeTruthy();
+  });
+
   it('lets the shooter be changed after one is set', () => {
     const { props } = renderLobby();
     fireEvent.click(screen.getByRole('button', { name: 'Change shooter' }));

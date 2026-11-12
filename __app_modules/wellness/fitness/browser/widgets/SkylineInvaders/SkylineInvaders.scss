@@ -451,4 +451,6 @@
 // and result windows pushed the result's title off the top (2026-11-12).
 @media (max-height: 820px) {
   .skyline-invaders__pause, .skyline-invaders__result { padding-bottom: 3rem; }
+  // The lobby: the same content, less air between the rows.
+  .skyline-invaders__lobby { padding-top: 2.2rem; gap: 1.2rem; }
 }
