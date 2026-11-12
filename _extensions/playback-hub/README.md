@@ -87,29 +87,41 @@ static queue exactly as before. It never pairs, unpairs or removes.
 | no queue, no schedule (ad-hoc, e.g. the Yoto) | no |
 | handed back with `disconnect` (`slots/<N>/.released`) | no — until Fix, a `play`, or the speaker connecting by itself |
 
-Escalation: a missing PSCAN is healed and the adapter power-cycled at misses
-3/6/9/12 — **only when no other speaker is connected on that adapter** (hci0
-hosts two). One `bt_reconnect_fail` alert per outage, only when a schedule /
-override / open session wants the slot. Every attempt writes one
-`bt.reconnect` event (`result`, `attempt`, `adapter`, `reason`, `error`,
-`took_sec`, `next_in`) to `slots/<N>/events.jsonl` and the journal; recovery
-writes `bt.reconnect_recovered` (`misses`, `outage_sec`). Per-slot keeper
-state: `slots/<N>/.link.json`.
+Escalation: a missing PSCAN is healed, and after **3 min** of outage the
+adapter is power-cycled — at most every 3 min, at most 4 times per outage, and
+**only when no other speaker is connected on that adapter** (hci0 hosts two)
+and no Fix pairing scan is running on it. One `bt_reconnect_fail` alert per
+outage, only when a schedule / override / open session wants the slot.
+`InProgress`/`NoReply` from Connect is not a failure: BlueZ is still
+connecting, so the caller polls `Connected` for 15 s.
+
+Logs: every attempt is one `bt.reconnect` line in the journal (`result`,
+`attempt`, `adapter`, `reason`, `error`, `took_sec`, `next_in`); the 5 MB
+`slots/<N>/events.jsonl` ledger keeps the onset, every 30th failure, every
+success, `bt.adapter_reset` and `bt.reconnect_recovered` (`misses`,
+`outage_sec`) — the per-attempt rate is what used to rotate real events out.
+Per-slot keeper state: `slots/<N>/.link.json`. A daemon restart kills any
+stale keeper before starting one. Any override (`play`, scheduled fire) clears
+a hand-back.
 
 **Fix** — `POST /api/fix/<color|slot>` (dashboard button; DaylightStation's
 `POST /api/v1/playback-hub/fix/:color` and the admin card's Fix button call
 it). Returns `{ok, code, result, status, status_code, status_detail}`:
 
-1. Clears a hand-back and resets the keeper's backoff.
+1. Clears a hand-back, resets the keeper's backoff and holds the keeper off
+   while Fix owns the link (no racing Connects).
 2. **No bond** → `"Hold the speaker's pairing button — I'll pair it the moment
    it shows up (watching for 2 min)."` and a background job scans that slot's
    adapter (the one already holding an object for the MAC, else a free one),
-   and the moment the speaker is seen in the scan: `Pair` → `Trusted` →
-   `Connect`. The outcome lands in `status_detail` (`slots/<N>/.fix.json`).
-3. **Bonded, not connected** → `Connect`; on failure power-cycle the adapter
-   (if it has no other live speaker) and try once more; still nothing →
-   `"Couldn't reach the speaker (speaker didn't answer) — switch it on…"`.
-4. **Connected** → waits up to 45 s for audio to move: unpauses a paused
+   and the moment the speaker is seen in the scan: `Pair` (if BlueZ refuses a
+   bare `Device1.Pair`, retried through `bluetoothctl --agent NoInputNoOutput`
+   with stdin held open) → `Trusted` → `Connect`. The outcome lands in `status_detail` (`slots/<N>/.fix.json`).
+3. **Bonded, not connected** → `Connect`; if the speaker didn't answer,
+   power-cycle the adapter (if it has no other live speaker) and try once
+   more; still nothing → `"Couldn't reach the speaker (speaker didn't answer)
+   — switch it on…"`. A speaker that lost its link key says so instead
+   ("forgotten the hub — needs re-pairing").
+4. **Connected** → waits up to 25 s for audio to move: unpauses a paused
    player, re-connects the A2DP profile and restarts mpv if its sink is gone,
    restarts a stalled mpv once (the watchdog respawns it and resumes from
    `state.json`). `"Playing: <title>"` only when playback-time advances.

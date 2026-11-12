@@ -35,11 +35,14 @@ A2DP_SINK_UUID = "0000110b-0000-1000-8000-00805f9b34fb"
 
 TICK_SEC = 4                 # keeper wake-up; per-slot attempts follow the backoff
 CONNECT_TIMEOUT_SEC = 20     # one outbound Connect (page timeout is ~5 s; BlueZ may retry)
-ESCALATE_EVERY = 3           # adapter power-cycle at misses 3, 6, 9, 12 ...
-ESCALATE_MAX = 12            # ... and no further: past that it's the speaker, not the adapter
+ESCALATE_AFTER_SEC = 180     # adapter power-cycle only after 3 min of outage ...
+ESCALATE_GAP_SEC = 180       # ... at most every 3 min ...
+ESCALATE_MAX = 4             # ... and at most 4 per outage: past that it's the speaker, not the adapter
+LEDGER_EVERY = 30            # events.jsonl gets attempt 1, every 30th, and results; the journal gets all
 ALERT_AFTER_MISSES = 5       # one alert per outage, only while a schedule/override wants it
 PAIR_WINDOW_SEC = 120        # Fix on an unpaired slot scans this long for the speaker
-FIX_PLAY_WAIT_SEC = 45       # Fix waits this long for audio to start after the link is up
+FIX_PLAY_WAIT_SEC = 25       # Fix waits this long for audio to start after the link is up
+FIX_CONNECT_TIMEOUT_SEC = 10 # per Fix Connect; worst case 10+4+10+25 s stays under a 60 s proxy
 FIX_NOTE_TTL_SEC = 600       # a Fix/pairing note shows in status for this long
 
 STATUS_WORDS = {
@@ -55,6 +58,7 @@ _ERROR_WORDS = (
     ("page-timeout", "speaker didn't answer"),
     ("host is down", "speaker didn't answer"),
     ("hostdown", "speaker didn't answer"),
+    ("key-missing", "speaker forgot this hub"),
     ("profile-unavailable", "speaker refused audio"),
     ("inprogress", "already connecting"),
     ("in progress", "already connecting"),
@@ -81,6 +85,30 @@ def plain_error(err):
 # ---------------------------------------------------------------------------
 # Pure logic — status, wants, backoff
 # ---------------------------------------------------------------------------
+
+def _busy_error(err):
+    e = (err or "").lower().replace(".", "")
+    if "page-timeout" in e:            # the speaker really didn't answer
+        return False
+    return e == "timeout" or any(k in e for k in ("inprogress", "in progress", "noreply",
+                                                  "did not receive a reply", "timed out"))
+
+
+def wait_connected(bluez, path, clock=time.time, sleep=time.sleep, within=15):
+    """BlueZ keeps connecting after a D-Bus caller gives up (NoReply) and a
+    second caller gets InProgress — so poll Connected instead of calling that
+    a failure."""
+    end = clock() + within
+    while clock() < end:
+        try:
+            for r in bluez.devices():
+                if r.get("path") == path and r.get("connected"):
+                    return True
+        except Exception:
+            pass
+        sleep(1)
+    return False
+
 
 def bonded(rec):
     return bool(rec and (rec.get("paired") or rec.get("bonded")))
@@ -122,8 +150,16 @@ def backoff_sec(misses):
     return 60
 
 
-def should_escalate(misses):
-    return ESCALATE_EVERY <= misses <= ESCALATE_MAX and misses % ESCALATE_EVERY == 0
+def should_escalate(outage_sec, since_last_reset_sec, resets_done):
+    """Power-cycle a lonely adapter only for a sustained outage, spaced out and
+    bounded — a speaker that was simply switched off must not churn its
+    adapter (and a pairing scan on it) every half-minute."""
+    return (outage_sec >= ESCALATE_AFTER_SEC and since_last_reset_sec >= ESCALATE_GAP_SEC
+            and resets_done < ESCALATE_MAX)
+
+
+def ledger_worthy(attempt):
+    return attempt == 1 or attempt % LEDGER_EVERY == 0
 
 
 def _minutes(value):
@@ -296,12 +332,16 @@ def device_tag(device):
     return f"slot={device['slot']} mac={device['mac']} name={device.get('name') or 'device'}"
 
 
-def logev(base, device, evt, **fields):
+def logev(base, device, evt, ledger=True, **fields):
     """Same contract as the daemon's logev: a human line on stderr (journal)
-    and one JSON object per line in slots/<N>/events.jsonl."""
+    and one JSON object per line in slots/<N>/events.jsonl. `ledger=False`
+    keeps a high-rate event in the journal only (the 5 MB ledger is for
+    events that matter a week later)."""
     kv = " ".join(f"{k}={v}" for k, v in fields.items())
     print(f"[{time.strftime('%H:%M:%S')}] [{device_tag(device)}] evt={evt} {kv}".rstrip(),
           file=sys.stderr, flush=True)
+    if not ledger:
+        return
     d = slot_dir(base, device["slot"])
     try:
         d.mkdir(parents=True, exist_ok=True)
@@ -476,6 +516,16 @@ def adapter_has_pscan(hci):
     return "PSCAN" in out.split()
 
 
+def pairing_on(base, adapter, now=None):
+    """True while a Fix pairing scan is running on this adapter (any slot)."""
+    now = time.time() if now is None else now
+    for note in Path(base).glob("slots/*/.fix.json"):
+        n = read_json(note) or {}
+        if n.get("state") == "pairing" and n.get("adapter") == adapter and (n.get("until") or 0) > now:
+            return True
+    return False
+
+
 def others_connected_on(records, adapter, mac):
     return [r for r in records if r.get("adapter") == adapter and r.get("connected")
             and (r.get("mac") or "").upper() != (mac or "").upper()]
@@ -620,10 +670,14 @@ class Keeper:
                     self._save(slot, {"misses": 0, "wants": True, "reason": "unpaired"})
                 actions[slot] = "unpaired"
                 continue
+            with self.lock:
+                if slot in self.inflight:
+                    actions[slot] = "inflight"
+                    continue
             if link.get("reason") != reason or not link.get("wants"):
                 link = dict(link, wants=True, reason=reason)
                 self._save(slot, link)
-            if now < (link.get("next_at") or 0):
+            if now < (link.get("next_at") or 0) or now < (link.get("hold_until") or 0):
                 actions[slot] = "waiting"
                 continue
             with self.lock:
@@ -646,7 +700,8 @@ class Keeper:
             link = self._link(slot)
             misses = int(link.get("misses") or 0)
             adapter = rec.get("adapter")
-            lonely = not others_connected_on(records, adapter, device["mac"])
+            lonely = (not others_connected_on(records, adapter, device["mac"])
+                      and not pairing_on(self.base, adapter, self.clock()))
             if lonely and adapter and not self.pscan(adapter):
                 logev(self.base, device, "bt.adapter_heal", adapter=adapter, why="pscan_missing")
                 cycle_adapter(bz, adapter, self.sleep)
@@ -656,6 +711,8 @@ class Keeper:
                 ok = True
             took = round(self.clock() - t0, 1)
             now = self.clock()
+            if not ok and _busy_error(err):
+                ok = wait_connected(bz, rec["path"], self.clock, self.sleep)
             if ok:
                 logev(self.base, device, "bt.reconnect", result="ok", attempt=misses + 1,
                       adapter=adapter, reason=reason, took_sec=took)
@@ -666,15 +723,19 @@ class Keeper:
                 return
             misses += 1
             delay = backoff_sec(misses)
-            logev(self.base, device, "bt.reconnect", result="fail", attempt=misses, adapter=adapter,
-                  reason=reason, error=plain_error(err), took_sec=took, next_in=delay)
-            if lonely and should_escalate(misses):
-                logev(self.base, device, "bt.adapter_reset", adapter=adapter, misses=misses)
+            link.setdefault("outage_start", now)
+            logev(self.base, device, "bt.reconnect", ledger=ledger_worthy(misses), result="fail",
+                  attempt=misses, adapter=adapter, reason=reason, error=plain_error(err),
+                  took_sec=took, next_in=delay)
+            resets = int(link.get("resets") or 0)
+            if lonely and should_escalate(now - link["outage_start"], now - (link.get("last_reset_at") or 0), resets):
+                logev(self.base, device, "bt.adapter_reset", adapter=adapter, misses=misses,
+                      outage_sec=int(now - link["outage_start"]))
                 cycle_adapter(bz, adapter, self.sleep)
+                link.update(resets=resets + 1, last_reset_at=self.clock())
                 now = self.clock()
             link.update(misses=misses, next_at=now + delay, wants=True, reason=reason,
                         last_error=plain_error(err), last_attempt_at=now)
-            link.setdefault("outage_start", now)
             if (misses >= ALERT_AFTER_MISSES and not link.get("alerted")
                     and reason in ("schedule", "armed", "session")):
                 link["alerted"] = True
@@ -732,6 +793,38 @@ def choose_pair_adapter(records, mac, configured_macs):
     return adapters[0] if adapters else "hci0"
 
 
+def bluetoothctl_pair(adapter, mac, bluez, clock=time.time, sleep=time.sleep, within=30):
+    """Second route to a bond when a bare Device1.Pair is refused (BlueZ may
+    want an agent): bluetoothctl with a NoInputNoOutput agent, stdin held open
+    until BlueZ reports Paired (piped bluetoothctl exits — and abandons the
+    pairing — the moment stdin closes)."""
+    try:
+        addr = subprocess.run(["busctl", "--system", "get-property", "org.bluez", f"/org/bluez/{adapter}",
+                               "org.bluez.Adapter1", "Address"], capture_output=True, text=True,
+                              timeout=5).stdout.split('"')[1]
+    except Exception:
+        return False
+    proc = subprocess.Popen(["bluetoothctl", "--agent", "NoInputNoOutput"], stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+    try:
+        proc.stdin.write(f"default-agent\nselect {addr}\npair {mac}\n")
+        proc.stdin.flush()
+        end = clock() + within
+        while clock() < end:
+            for r in read_records(bluez)[0]:
+                if r.get("adapter") == adapter and r.get("mac") == mac and bonded(r):
+                    return True
+            sleep(1)
+        return False
+    finally:
+        try:
+            proc.stdin.write("quit\n")
+            proc.stdin.close()
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
 def _note(base, device, **data):
     data.setdefault("at", time.time())
     write_json(slot_dir(base, device["slot"]) / ".fix.json", data)
@@ -742,7 +835,7 @@ _PAIR_LOCK = threading.Lock()
 
 
 def pair_job(base, device, bluez_factory=open_bluez, *, clock=time.time, sleep=time.sleep,
-             window=PAIR_WINDOW_SEC, configured_macs=()):
+             window=PAIR_WINDOW_SEC, configured_macs=(), pair_fallback=bluetoothctl_pair):
     """Scan the chosen adapter until the speaker shows (RSSI seen in THIS scan),
     then Pair + Trust + Connect. Bounded by `window`. Returns the result line."""
     mac = device["mac"].upper()
@@ -781,6 +874,10 @@ def pair_job(base, device, bluez_factory=open_bluez, *, clock=time.time, sleep=t
         if not bonded(found):
             logev(base, device, "fix.pair_found", adapter=adapter, rssi=found.get("rssi"))
             ok, err = bz.pair(found["path"], 60)
+            if not ok and "alreadyexists" not in err.lower().replace(".", ""):
+                logev(base, device, "fix.pair_retry", route="bluetoothctl", error=plain_error(err))
+                if pair_fallback(adapter, mac, bz, clock, sleep):
+                    ok, err = True, ""
             if not ok and "alreadyexists" not in err.lower().replace(".", ""):
                 msg = f"Saw the speaker but pairing failed ({plain_error(err)}) — hold its pairing button and press Fix again."
                 logev(base, device, "fix.pair_result", result="fail", adapter=adapter, error=plain_error(err))
@@ -835,10 +932,13 @@ def fix_slot(base, device, bluez, player, *, clock=time.time, sleep=time.sleep,
         (d / ".released").unlink()
     except OSError:
         pass
-    write_json(d / ".link.json", {"misses": 0, "next_at": 0})
+    # Hold the keeper off while Fix owns the link, so the two never race a
+    # Connect (the loser would read InProgress as "speaker off").
+    write_json(d / ".link.json", {"misses": 0, "next_at": 0, "hold_until": clock() + 90})
     logev(base, device, "fix.start")
 
     def done(ok, code, result):
+        write_json(d / ".link.json", {"misses": 0, "next_at": 0})
         logev(base, device, "fix.result", code=code, result=result)
         _note(base, device, state="done", message=result if code != "playing" else "")
         return {"ok": ok, "code": code, "result": result}
@@ -849,6 +949,7 @@ def fix_slot(base, device, bluez, player, *, clock=time.time, sleep=time.sleep,
     rec = slot_record(records, device["mac"])
     if not (rec and rec.get("connected")) and not bonded(rec):
         starter = pair_starter or (lambda dev: start_pair_job(base, dev, configured_macs))
+        write_json(d / ".link.json", {"misses": 0, "next_at": 0})
         starter(device)
         result = ("Hold the speaker's pairing button — I'll pair it the moment it shows up "
                   f"(watching for {PAIR_WINDOW_SEC // 60} min).")
@@ -857,13 +958,23 @@ def fix_slot(base, device, bluez, player, *, clock=time.time, sleep=time.sleep,
 
     if not rec.get("connected"):
         adapter = rec.get("adapter")
-        ok, err = bluez.connect(rec["path"], CONNECT_TIMEOUT_SEC)
+        ok, err = bluez.connect(rec["path"], FIX_CONNECT_TIMEOUT_SEC)
+        if not ok and _busy_error(err):
+            ok = wait_connected(bluez, rec["path"], clock, sleep)
         logev(base, device, "bt.reconnect", result="ok" if ok else "fail", attempt="fix",
               adapter=adapter, reason="fix", error=plain_error(err) if not ok else "")
-        if not ok and not others_connected_on(records, adapter, device["mac"]):
+        if not ok and plain_error(err) == "speaker forgot this hub":
+            return done(False, "forgotten",
+                        "The speaker has forgotten the hub — hold its pairing button; the hub still "
+                        "holds the old bond, so it needs re-pairing from the Bluetooth tab.")
+        if (not ok and plain_error(err) == "speaker didn't answer"
+                and not others_connected_on(records, adapter, device["mac"])
+                and not pairing_on(base, adapter, clock())):
             logev(base, device, "bt.adapter_reset", adapter=adapter, misses="fix")
             cycle_adapter(bluez, adapter, sleep)
-            ok, err = bluez.connect(rec["path"], CONNECT_TIMEOUT_SEC)
+            ok, err = bluez.connect(rec["path"], FIX_CONNECT_TIMEOUT_SEC)
+            if not ok and _busy_error(err):
+                ok = wait_connected(bluez, rec["path"], clock, sleep)
             logev(base, device, "bt.reconnect", result="ok" if ok else "fail", attempt="fix-after-reset",
                   adapter=adapter, reason="fix", error=plain_error(err) if not ok else "")
         if not ok:

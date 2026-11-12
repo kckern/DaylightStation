@@ -241,8 +241,14 @@ class Backoff(unittest.TestCase):
         self.assertEqual(max(seq), 60)
         self.assertEqual(seq, sorted(seq))
 
-    def test_adapter_reset_is_bounded(self):
-        self.assertEqual([m for m in range(1, 40) if sl.should_escalate(m)], [3, 6, 9, 12])
+    def test_adapter_reset_needs_a_sustained_outage_and_is_bounded(self):
+        self.assertFalse(sl.should_escalate(60, 9e9, 0))      # speaker just switched off
+        self.assertTrue(sl.should_escalate(180, 9e9, 0))
+        self.assertFalse(sl.should_escalate(400, 60, 1))      # spaced at least 3 min
+        self.assertFalse(sl.should_escalate(3600, 9e9, 4))    # at most 4 per outage
+
+    def test_ledger_keeps_onset_and_every_30th(self):
+        self.assertEqual([a for a in range(1, 100) if sl.ledger_worthy(a)], [1, 30, 60, 90])
 
 
 class KeeperLoop(unittest.TestCase):
@@ -273,7 +279,8 @@ class KeeperLoop(unittest.TestCase):
         # 30 s backoff; +4 s on the ticks that also power-cycle the adapter
         self.assertTrue(all(30 <= g <= 40 for g in gaps[4:9]), gaps)
         fails = [e for e in events(self.base, 1) if e["evt"] == "bt.reconnect"]
-        self.assertEqual(len(fails), len(attempts))
+        # every attempt goes to the journal; the ledger keeps the onset + every 30th
+        self.assertEqual(len(fails), len([a for a in range(1, len(attempts) + 1) if sl.ledger_worthy(a)]))
         self.assertEqual(fails[0]["result"], "fail")
         self.assertEqual(fails[0]["error"], "speaker didn't answer")
         self.assertEqual(fails[0]["adapter"], "hci1")
@@ -284,17 +291,21 @@ class KeeperLoop(unittest.TestCase):
     def test_adapter_reset_only_when_no_other_speaker_is_on_it(self):
         bz = FakeBlueZ([rec(RED, "hci0"), rec(BLUE, "hci0", connected=True)])
         k = self.keeper(bz)
-        for _ in range(40):
+        for _ in range(120):
             k.tick()
             self.clock.sleep(sl.TICK_SEC)
         self.assertNotIn("power", bz.kinds())   # BLUE is playing on hci0
         bz2 = FakeBlueZ([rec(RED, "hci1"), rec(BLUE, "hci0", connected=True)])
         self.base = make_base(self.devices)
         k2 = self.keeper(bz2)
-        for _ in range(40):
+        for _ in range(30):                      # 2 min: no reset for a speaker merely off
             k2.tick()
             self.clock.sleep(sl.TICK_SEC)
-        self.assertIn(("power", "hci1", False), bz2.calls)
+        self.assertNotIn("power", bz2.kinds())
+        for _ in range(30):                      # past 3 min of outage: one reset
+            k2.tick()
+            self.clock.sleep(sl.TICK_SEC)
+        self.assertEqual(bz2.calls.count(("power", "hci1", False)), 1)
 
     def test_speaker_switched_on_is_connected_and_recovery_logged(self):
         bz = FakeBlueZ([rec(RED, "hci1")])
@@ -351,6 +362,33 @@ class Fix(unittest.TestCase):
 
     def fix(self, bz, player, **kw):
         return sl.fix_slot(self.base, self.dev, bz, player, clock=self.clock, sleep=self.clock.sleep, **kw)
+
+    def test_busy_connect_is_polled_not_called_a_failure(self):
+        bz = FakeBlueZ([rec(RED, "hci1")], err="org.bluez.Error.InProgress: In Progress")
+        orig = bz.devices
+        n = {"i": 0}
+
+        def devices():
+            n["i"] += 1
+            if n["i"] >= 3:                       # the keeper's Connect lands
+                bz.records[0]["connected"] = True
+            return orig()
+        bz.devices = devices
+        out = self.fix(bz, FakePlayer([{"alive": False}, {"alive": True, "time": 1.0},
+                                       {"alive": True, "time": 2.0, "title": "T"}]))
+        self.assertEqual(out["code"], "playing")
+        self.assertNotIn("power", bz.kinds())
+
+    def test_fix_holds_the_keeper_off_while_it_runs(self):
+        seen = {}
+
+        class Spy(FakeBlueZ):
+            def connect(s2, path, timeout=0):
+                seen["link"] = json.loads((self.base / "slots/1/.link.json").read_text())
+                return super().connect(path, timeout)
+        self.fix(Spy([rec(RED, "hci1")]), FakePlayer([{"alive": False}]))
+        self.assertGreater(seen["link"]["hold_until"], self.clock.t)
+        self.assertNotIn("hold_until", json.loads((self.base / "slots/1/.link.json").read_text()))
 
     def test_paired_but_off_reports_truthfully_after_a_real_attempt(self):
         bz = FakeBlueZ([rec(RED, "hci1")])
@@ -437,11 +475,22 @@ class Fix(unittest.TestCase):
 
     def test_pair_job_gives_up_after_the_window(self):
         bz = FakeBlueZ([rec(RED, "hci4", paired=False)])
-        msg = sl.pair_job(self.base, self.dev, lambda: bz, clock=self.clock, sleep=self.clock.sleep)
+        msg = sl.pair_job(self.base, self.dev, lambda: bz, clock=self.clock, sleep=self.clock.sleep,
+                          pair_fallback=lambda *a: self.fail("must not pair an unseen speaker"))
         self.assertIn("Didn't see the speaker in 2 minutes", msg)
         self.assertNotIn("pair", bz.kinds())
         note = json.loads((self.base / "slots/1/.fix.json").read_text())
         self.assertEqual(note["state"], "failed")
+
+    def test_refused_pair_retries_through_an_agent(self):
+        records = [rec(RED, "hci4", paired=False, rssi=-50)]
+        bz = FakeBlueZ(records, connect_ok=True)
+        bz.pair = lambda path, timeout=0: (False, "org.bluez.Error.AuthenticationFailed: no agent")
+        used = []
+        msg = sl.pair_job(self.base, self.dev, lambda: bz, clock=self.clock, sleep=self.clock.sleep,
+                          pair_fallback=lambda *a: used.append(a[0]) or True)
+        self.assertEqual(used, ["hci4"])
+        self.assertTrue(msg.startswith("Paired and connected"), msg)
 
     def test_pair_adapter_choice_prefers_existing_object_then_a_free_adapter(self):
         records = [rec(BLUE, "hci0"), rec(RED, "hci1"), rec("AA:BB:CC:DD:EE:FF", "hci2", paired=False)]

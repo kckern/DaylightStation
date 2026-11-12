@@ -101,7 +101,15 @@ def read_devices():
     doc = _load_config_doc()
     return [normalize_device(d) for d in doc.get("devices", [])]
 
+_DEVICES_LOCK = threading.Lock()
+
+
 def write_devices(devices):
+    with _DEVICES_LOCK:
+        _write_devices(devices)
+
+
+def _write_devices(devices):
     """Persist devices back to devices.yml, preserving queue_base and
     top-level keys. Falls back to writing JSON if yaml isn't available
     (won't happen in practice since we import yaml)."""
@@ -394,6 +402,11 @@ def slot_status(device, bt_records=None, bt_ok=False):
 
     rec = slot_link.slot_record(bt_records, device["mac"]) if bt_ok else None
     connected = bool(rec and rec.get("connected")) if bt_ok else is_connected(device["mac"])
+    words_ok = bt_ok
+    if not bt_ok and connected:
+        # The one-call read failed but the per-adapter probe sees the link:
+        # a connected slot's word doesn't depend on the bond, so say it.
+        rec, words_ok = {"connected": True, "paired": True}, True
     playing = pid_alive(pid_file)
 
     # Legacy fields (consumed by this hub's own /admin web UI):
@@ -469,7 +482,7 @@ def slot_status(device, bt_records=None, bt_ok=False):
     wants = slot_link.wants_link(device, armed=ctx["armed"], released=ctx["released"],
                                  session=ctx["session"])
     words = slot_link.describe_slot(
-        device, rec, bt_ok, player_alive=playing, paused=paused, title=title,
+        device, rec, words_ok, player_alive=playing, paused=paused, title=title,
         link=ctx["link"], note=ctx["note"], wants=wants)
 
     events_path = slot_dir / "events.jsonl"
@@ -1891,7 +1904,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Threaded: a Fix can take ~45 s (or start a 2-min pairing scan); status
+    # Threaded: a Fix can take ~55 s (or start a 2-min pairing scan); status
     # and every other endpoint must keep answering meanwhile.
     server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.daemon_threads = True

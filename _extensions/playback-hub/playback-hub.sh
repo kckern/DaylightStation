@@ -17,8 +17,6 @@ WARM_REUSE_WINDOW=120      # seconds after a teardown during which a reconnect f
 WATCHDOG_INTERVAL=5        # seconds between mpv liveness checks (tight respawn)
 SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
 SELFCHECK_INTERVAL=300     # seconds between self-check (missed fires, orphans)
-CONNECT_CHECK_INTERVAL=60  # seconds between BT connectivity checks for schedule-active private headsets
-CONNECT_MISS_ALERT=5       # consecutive failed reconnects (~CONNECT_MISS_ALERT*CONNECT_CHECK_INTERVAL s) before alerting
 CONNECT_ESCALATE_MISSES=3  # consecutive failed reconnects before escalating to a full adapter power-cycle (then repeats every multiple) — clears a wedged controller that won't hold a link even WITH PSCAN present
 CONNECT_ESCALATE_MAX=12    # stop power-cycling the adapter past this many misses — a wedged controller clears within the first few resets; beyond that it's the headset (off / out of range), so keep retrying Connect + alert but stop churning the adapter
 BT_WAKE_TIMEOUT=60         # max seconds to wait for BT after HA turn_on
@@ -42,7 +40,6 @@ ORPHAN_SINK_TICKS=1            # consecutive watchdog ticks a slot's sink must b
 ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
 CROSS_BLEED_INTERVAL=1         # seconds between fast cross-bleed guard ticks (2026-07-17). A dedicated tight loop (SEPARATE from the 5s watchdog) that parses the live pw-link graph and, ONLY when a real doubling is measured (a bluez sink fed by >1 mpv stream), fast-reaps the migrated orphan — the slot whose OWN sink is absent from the graph while its mpv is alive. Shrinks the audible cross-bleed window from ~WATCHDOG_INTERVAL (5s) to ~1s. Safe by construction: a legit stream's own sink IS present, so it is never reaped; and the reaper fires only when doubling is actually observed, so a benign sub-second A2DP renegotiation blip (sink briefly absent, no doubling yet) does NOT trigger a spurious reap.
 HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
-RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
 SILENT_SLOT_ALERT_SEC=300      # GUARDRAIL: seconds a slot may be BT-connected + should-be-playing (armed or in an active schedule window) but have NO live mpv before we dispatch a `slot_silent` alert. Catches the 2026-07-06 failure mode where start_playback bailed EVERY tick (WirePlumber bluez monitor seat-gated off → no A2DP sink → resolve_audio_device fails before spawning mpv), leaving slots "connected but silent" with no mpv.start and no heartbeat — invisible for 8 days. Cleared the instant mpv is alive; alert fires once per outage streak.
 AUDIO_DEVICE_PROBE_TIMEOUT=4     # seconds for a one-shot PipeWire/mpv sink probe; never let recovery detection wedge the watchdog
 AUDIO_RECOVERY_FAILURES=3        # consecutive sink-related launch failures before restarting the audio stack
@@ -364,6 +361,9 @@ arm_slot() {
     else
         ttl_sec=$(( OVERRIDE_TTL_MIN * 60 ))
     fi
+    # Any override (api play, scheduled fire) wants the speaker back: a
+    # hand-back no longer stands, or the link keeper would never page it.
+    rm -f "$dir/.released"
     payload=$(jq -n \
         --arg queue "$queue" \
         --arg vol "$volume" \
@@ -1139,7 +1139,7 @@ heal_adapter_pscan() {
 # escalation path existed — the slot just retried the same gentle Connect every
 # tick forever; observed green/slot3 dropping at 17:57 and never recovering).
 # Escalate at CONNECT_ESCALATE_MISSES and then every multiple thereafter (giving
-# a built-in backoff of ~CONNECT_ESCALATE_MISSES*CONNECT_CHECK_INTERVAL s between
+# a built-in backoff of ~CONNECT_ESCALATE_MISSES ticks between
 # resets) UP TO CONNECT_ESCALATE_MAX, after which we stop: a wedged controller
 # clears within the first few cycles, so continued failure means the headset is
 # simply off/out of range and power-cycling its adapter forever is futile churn.
@@ -3159,6 +3159,8 @@ monitor() {
     # one alert per outage. It only ever calls Connect; the gdbus connect
     # handler below resumes the slot's armed/scheduled source. Replaces the
     # bash connectivity_loop (60 s, schedule-window private slots only).
+    # A SIGKILLed daemon can leave its keeper behind; never run two.
+    pkill -f "slot_link.py --base $BASE_DIR keep" 2>/dev/null || true
     python3 "$_SCRIPT_DIR/slot_link.py" --base "$BASE_DIR" keep &
     CONNECTIVITY_PID=$!
 
