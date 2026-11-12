@@ -1,4 +1,4 @@
-// Skyline Invaders simulation. Pure: no DOM, no clocks, no Math.random. All
+// Skyline Invaders simulation. Pure: no DOM, no clocks, no unseeded randomness. All
 // randomness is the Mulberry32 state carried in `state.rng`, so a seed and a
 // list of inputs replay to the same round.
 //
@@ -6,7 +6,7 @@
 // pose frame rate. Aim arrives as a plain number in the intents and may be a
 // few frames old; nothing here assumes it changes every step.
 import { nextRandom } from '../../../../../../__capabilities/gaming/portable/mechanics/random.mjs';
-import { box, sweepHits } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
+import { advance, box, sweepHits } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
 import { boostRules, nukeRules } from './rules.js';
 import { killPoints } from './scoring.js';
 import { FIELD, THREATS, aimToX, clampX, moveThreat, threatBox } from './threats.js';
@@ -18,9 +18,15 @@ export const STEP_S = 1 / 60;
 export const SHOT_SPEED = 900;                 // scene units per second, straight up
 export const MUZZLE_Y = FIELD.groundY - 20;
 const BUILDINGS = 10;
+const EPS = 1e-9;
+const MIN_AUTO_FIRE_S = 0.05;                  // auto-fire never runs faster than this, whatever a level asks
 const BLAST_S = 0.5;                           // how long a nuke blast stays in state for the renderer
 const RANGE_X = FIELD.width - 2 * FIELD.marginX;
 
+/**
+ * A fresh round of `level` (a validated level, see levels.js). The same seed
+ * gives the same threats in the same columns.
+ */
 export function createGameState(level, { seed = 1 } = {}) {
   return {
     phase: 'playing', time: 0, rng: Number(seed) >>> 0, nextId: 1,
@@ -53,15 +59,12 @@ function rand(s) {
 
 // `originX` is the column a zigzag swings around. The threat starts where its
 // zigzag is at age 0, so it never jumps sideways on its first step.
-function addThreat(s, type, originX, y, { phase = rand(s) * Math.PI * 2 } = {}) {
+function addThreat(s, type, originX, y, { from, phase = 0, dir = 1 }) {
   const spec = THREATS[type];
   const x = spec.zigzag ? clampX(originX + spec.zigzag.amplitude * Math.sin(phase)) : originX;
-  const threat = {
-    id: s.nextId++, type, x, y, originX, hp: spec.hp, age: 0,
-    phase, dir: rand(s) < 0.5 ? -1 : 1, bombIn: spec.bombEvery_s || 0,
-  };
+  const threat = { id: s.nextId++, type, x, y, originX, hp: spec.hp, age: 0, phase, dir, bombIn: spec.bombEvery_s || 0 };
   s.threats.push(threat);
-  s.events.push({ type: 'threat.spawned', data: { id: threat.id, threat: type, x } });
+  s.events.push({ type: 'threat.spawned', data: { id: threat.id, threat: type, x, from } });
   return threat;
 }
 
@@ -72,10 +75,10 @@ function wavesAt(level, time) {
   return { wave: level.waves[index], next: level.waves[index + 1] || null };
 }
 
-function pickType(s, wave) {
+function pickType(wave, roll) {
   const mix = Object.keys(wave.spawn).sort();   // sorted: the pick must not depend on YAML key order
   const total = mix.reduce((sum, type) => sum + wave.spawn[type], 0);
-  let pick = rand(s) * total;
+  let pick = roll * total;
   for (const type of mix) {
     pick -= wave.spawn[type];
     if (pick < 0) return type;
@@ -86,9 +89,15 @@ function pickType(s, wave) {
 function spawn(s, level) {
   while (s.time >= s.nextSpawnAt) {
     const { wave, next } = wavesAt(level, s.nextSpawnAt);
-    let type = pickType(s, wave);
+    // Every spawn draws the same four numbers, used or not, and nothing else
+    // draws any. So what falls and where depends on the seed and the level
+    // only, never on the frame rate or on what the player shot down.
+    const roll = { type: rand(s), x: rand(s), phase: rand(s), dir: rand(s) };
+    let type = pickType(wave, roll.type);
     if (type === 'bomber' && s.threats.filter((t) => t.type === 'bomber').length >= (level.max_bombers ?? 2)) type = 'meteor';
-    addThreat(s, type, FIELD.marginX + rand(s) * RANGE_X, type === 'bomber' ? FIELD.bomberY : FIELD.spawnY);
+    addThreat(s, type, FIELD.marginX + roll.x * RANGE_X, type === 'bomber' ? FIELD.bomberY : FIELD.spawnY, {
+      from: 'wave', phase: roll.phase * Math.PI * 2, dir: roll.dir < 0.5 ? -1 : 1,
+    });
     // A wave spawns every rate_s until the next wave's `at`; the next wave
     // then starts on its own time, not on this wave's beat.
     const beat = s.nextSpawnAt + wave.rate_s;
@@ -142,19 +151,22 @@ function move(s, dt) {
     if (threat.y >= FIELD.groundY) impact(s, threat); else kept.push(threat);
   }
   s.threats = kept;
-  for (const bomber of droppers) addThreat(s, 'bomb', bomber.x, bomber.y + THREATS.bomber.height / 2);
+  for (const bomber of droppers) addThreat(s, 'bomb', bomber.x, bomber.y + THREATS.bomber.height / 2, { from: 'bomber' });
 }
 
-// One aim per cannon: one cannon unless the level has two.
-function cannonAims(aim, level) {
-  return (Array.isArray(aim) ? aim : [aim]).slice(0, level.cannons === 2 ? 2 : 1);
+// One aim per cannon: one cannon unless the level has two. A twin boost adds
+// a cannon that mirrors the first.
+function cannonAims(s, aim, level) {
+  const aims = (Array.isArray(aim) ? aim : [aim]).slice(0, level.cannons === 2 ? 2 : 1);
+  if (s.boost.active?.kind === 'twin') aims.push(1 - aims[0]);
+  return aims;
 }
 
 // One press = one volley, however many shots it makes (spread, two cannons).
 // Accuracy and the combo are counted per volley, not per shot.
 function fireVolley(s, press, level) {
   const spec = SHOT_TIERS[press.tier] || SHOT_TIERS.small;
-  const aims = cannonAims(press.aim, level);
+  const aims = cannonAims(s, press.aim, level);
   const volley = s.nextId++;
   let live = 0;
   for (const aim of aims) {
@@ -168,8 +180,42 @@ function fireVolley(s, press, level) {
   s.events.push({ type: 'shot.fired', data: { tier: spec.id, aim: aims[0], source: press.source || 'mat', armsUp: !!press.armsUp, pressAt: press.at ?? null } });
 }
 
-function fire(s, intents, level) {
-  for (const press of intents.fire || []) fireVolley(s, press, level);
+function fire(s, intents, dt, level) {
+  const presses = [...(intents.fire || [])];
+  // The mat cannot deliver a high rate, so rapid fire shoots by itself, at
+  // the continuous aim and tier. Every shot that falls due inside this step
+  // is fired, so the rate does not drop when steps are long.
+  if (s.boost.active?.kind === 'rapid') {
+    const interval = Math.max(MIN_AUTO_FIRE_S, boostRules(level).rapid_interval_s);
+    let wait = s.autoFireIn;
+    while (wait < dt - EPS) {
+      presses.push({ aim: intents.aim, tier: intents.tier, armsUp: intents.armsUp, source: 'auto', at: null });
+      wait += interval;
+    }
+    s.autoFireIn = wait - dt;
+  }
+  for (const press of presses) fireVolley(s, press, level);
+}
+
+// The partner's cadence fills the meter; a full meter starts the next boost
+// in the level's rotation. The meter rests while a boost is running.
+function advanceBoost(s, intents, dt, level) {
+  const rules = boostRules(level);
+  if (s.boost.active) {
+    const remaining = s.boost.active.remaining - dt;
+    if (remaining > 0) { s.boost.active = { ...s.boost.active, remaining }; return; }
+    s.events.push({ type: 'boost.ended', data: { kind: s.boost.active.kind } });
+    s.boost.active = null;
+    return;
+  }
+  if (!Number.isFinite(intents.partnerRpm)) return;   // null = no partner
+  const effort = Math.min(1, Math.max(0, (intents.partnerRpm - rules.min_rpm) / (rules.full_rpm - rules.min_rpm)));
+  s.boost.meter = Math.min(1, s.boost.meter + (effort * dt) / rules.fill_s);
+  if (s.boost.meter < 1) return;
+  const kind = rules.rotation[s.boost.next % rules.rotation.length];
+  s.boost = { meter: 0, next: s.boost.next + 1, used: s.boost.used + 1, active: { kind, remaining: rules.duration_s } };
+  s.autoFireIn = 0;
+  s.events.push({ type: 'boost.activated', data: { kind } });
 }
 
 // One shot of a volley is done. The first hit of a volley extends the combo;
@@ -187,7 +233,7 @@ function settle(s, id, hit) {
 // A destroyed pod breaks into drones that leave from where it was and peel apart.
 function split(s, target) {
   const children = THREATS[target.type].splitsInto || [];
-  children.forEach((child, index) => addThreat(s, child, clampX(target.x), target.y, { phase: index % 2 ? 0 : Math.PI }));
+  children.forEach((child, index) => addThreat(s, child, clampX(target.x), target.y, { from: 'split', phase: index % 2 ? 0 : Math.PI }));
 }
 
 function damageThreat(s, target, amount, shot, { splits = true } = {}) {
@@ -244,16 +290,42 @@ function advanceShots(s, dt, level) {
   s.shots = kept;
 }
 
+/**
+ * The round `dt` seconds later. Returns a new state and leaves `state` alone;
+ * returns `state` itself when the round has ended or no time passed.
+ *
+ * intents: { aim, tier, armsUp, fire: [{ aim, tier, armsUp, source, at }], partnerRpm }
+ * `aim` is 0..1 (0 = screen left), or [aim, aim] on a two-cannon level.
+ * `armsUp` only multiplies points. `partnerRpm` null means no partner.
+ *
+ * Events are appended to `state.events` and never cleared here. A game loop
+ * should call stepFrame, which starts each frame with an empty list.
+ */
 export function step(state, intents, dt, level) {
   if (state.phase !== 'playing' || !(dt > 0)) return state;
   const s = draft(state);
   s.time += dt;
   spawn(s, level);
   move(s, dt);
-  fire(s, intents, level);
+  advanceBoost(s, intents, dt, level);
+  fire(s, intents, dt, level);
   advanceShots(s, dt, level);
   s.blasts = s.blasts.map((blast) => ({ ...blast, ttl: blast.ttl - dt })).filter((blast) => blast.ttl > 0);
   // Keep the timer check last: everything above still happens on the final step.
   if (s.time >= level.duration_s) { s.phase = 'ended'; s.events.push({ type: 'level.ended', data: {} }); }
   return s;
+}
+
+/**
+ * One animation frame: clears last frame's events, then folds fixed sub-steps
+ * so the round plays the same at any frame rate. `intents.fire` is used by the
+ * first sub-step only (one press, one volley); aim and tier stay continuous.
+ * A frame with no elapsed time runs no step, so its presses are not fired:
+ * hold them for the next frame.
+ */
+export function stepFrame(state, intents, elapsedS, level) {
+  return advance({ ...state, events: [] }, intents, Math.max(0, Number(elapsedS) || 0), {
+    step: (st, input, dt) => step(st, input, dt, level),
+    stepS: STEP_S, remainder: 'partial', oncePerFrame: ['fire'],
+  }).state;
 }

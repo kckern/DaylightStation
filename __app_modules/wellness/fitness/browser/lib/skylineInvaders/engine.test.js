@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createGameState, step } from './engine.js';
+import { boostRules, createGameState, nukeRules, step, stepFrame } from './engine.js';
 import { FIELD, THREATS } from './threats.js';
 import { LEVEL_SCHEMA } from './levels.js';
 
@@ -352,5 +352,170 @@ describe('engine: nuke', () => {
     expect(first.blasts[0]).toMatchObject({ x: 500, radius: 160 });
     expect(first.blasts[0].ttl).toBeGreaterThan(0);
     expect(run(first, lvl, 1).blasts).toEqual([]);
+  });
+});
+
+describe('engine: partner boost', () => {
+  const boosted = (lvl, kind, over = {}) => ({ ...seeded(lvl), boost: { meter: 0, next: 1, used: 1, active: { kind, remaining: 8 } }, ...over });
+
+  it('re-exports the level rules it plays by', () => {
+    expect(boostRules(level()).rotation).toEqual(['rapid', 'shield', 'twin']);
+    expect(nukeRules(level())).toEqual({ radius: 160, damage: 3 });
+  });
+  it('has no meter movement without a partner', () => {
+    const lvl = level();
+    expect(run(seeded(lvl), lvl, 10, idle({ partnerRpm: null })).boost.meter).toBe(0);
+  });
+  it('fills with cadence and fires the boosts in rotation', () => {
+    const lvl = level({ duration_s: 300 });
+    const rules = boostRules(lvl);
+    let state = run(seeded(lvl), lvl, rules.fill_s + 0.1, idle({ partnerRpm: rules.full_rpm }));
+    expect(state.boost.active).toMatchObject({ kind: 'rapid' });
+    expect(state.boost.meter).toBe(0);
+    expect(eventsOf(state, 'boost.activated')).toEqual([{ type: 'boost.activated', data: { kind: 'rapid' } }]);
+    state = run(state, lvl, rules.duration_s + rules.fill_s + 0.2, idle({ partnerRpm: rules.full_rpm }));
+    expect(state.boost.active).toMatchObject({ kind: 'shield' });
+    expect(state.boost.used).toBe(2);
+    expect(eventsOf(state, 'boost.ended')).toEqual([{ type: 'boost.ended', data: { kind: 'rapid' } }]);
+  });
+  it('fills in proportion to effort between the minimum and full cadence', () => {
+    const lvl = level();
+    const rules = boostRules(lvl);
+    const half = (rules.min_rpm + rules.full_rpm) / 2;
+    expect(run(seeded(lvl), lvl, rules.fill_s / 2, idle({ partnerRpm: half })).boost.meter).toBeCloseTo(0.25, 2);
+    expect(run(seeded(lvl), lvl, rules.fill_s / 2, idle({ partnerRpm: rules.full_rpm * 3 })).boost.meter).toBeCloseTo(0.5, 2);
+  });
+  it('fills at the same pace at 13 frames per second as at 60', () => {
+    const lvl = level();
+    const meter = (dt) => run(seeded(lvl), lvl, 10, idle({ partnerRpm: 90 }), dt).boost.meter;
+    expect(meter(1 / 13)).toBeCloseTo(meter(1 / 60), 2);
+  });
+  it('does not fill below the minimum cadence, nor while a boost is active', () => {
+    const lvl = level();
+    const rules = boostRules(lvl);
+    expect(run(seeded(lvl), lvl, 30, idle({ partnerRpm: rules.min_rpm })).boost.meter).toBe(0);
+    expect(run(boosted(lvl, 'shield'), lvl, 5, idle({ partnerRpm: rules.full_rpm })).boost.meter).toBe(0);
+  });
+  it('ignores a cadence that is not a number', () => {
+    const lvl = level();
+    for (const junk of [NaN, undefined, 'fast']) expect(run(seeded(lvl), lvl, 5, idle({ partnerRpm: junk })).boost.meter).toBe(0);
+  });
+  it('uses the fill time, duration and rotation the level sets', () => {
+    const lvl = level({ boost: { fill_s: 2, duration_s: 1, rotation: ['twin'] } });
+    const state = run(seeded(lvl), lvl, 2.1, idle({ partnerRpm: 200 }));
+    expect(state.boost.active).toMatchObject({ kind: 'twin' });
+    expect(run(state, lvl, 1.1).boost.active).toBeNull();
+  });
+  it('rapid fire auto-fires at the continuous aim and tier', () => {
+    const lvl = level();
+    const state = run(boosted(lvl, 'rapid'), lvl, 1, idle({ aim: 0.25, tier: 'big' }));
+    expect(state.shotsFired).toBeGreaterThanOrEqual(3);
+    expect(eventsOf(state, 'shot.fired').every((e) => e.data.source === 'auto' && e.data.tier === 'big' && e.data.aim === 0.25)).toBe(true);
+  });
+  it('rapid fire keeps its rate at a low frame rate', () => {
+    const lvl = level();
+    const shots = (dt) => run(boosted(lvl, 'rapid'), lvl, 2, idle(), dt).shotsFired;
+    expect(shots(1 / 60)).toBe(8); // every 0.25 s, the first on the first step
+    expect(shots(1 / 13)).toBe(8);
+    expect(shots(0.5)).toBe(8);    // slower than the fire interval: no shots are lost
+  });
+  it('caps the auto-fire rate, so a level with a tiny interval cannot stall a step', () => {
+    const lvl = level({ boost: { rapid_interval_s: 1e-12 } });
+    expect(run(boosted(lvl, 'rapid'), lvl, 1).shotsFired).toBe(20); // at most one every 0.05 s
+  });
+  it('stops auto-firing when the rapid boost runs out', () => {
+    const lvl = level();
+    const state = run(boosted(lvl, 'rapid', { boost: { meter: 0, next: 1, used: 1, active: { kind: 'rapid', remaining: 1 } } }), lvl, 3);
+    expect(state.boost.active).toBeNull();
+    expect(state.shotsFired).toBe(4);
+  });
+  it('a press during rapid fire still fires', () => {
+    const lvl = level();
+    const state = step(boosted(lvl, 'rapid'), idle({ fire: [press({ aim: 0.1 })] }), 1 / 60, lvl);
+    expect(eventsOf(state, 'shot.fired').map((e) => e.data.source)).toEqual(['mat', 'auto']);
+  });
+  it('a shield absorbs ground impacts', () => {
+    const lvl = level();
+    const state = step({ ...boosted(lvl, 'shield'), threats: [at('meteor', 500, FIELD.groundY - 1)] }, idle(), 0.1, lvl);
+    expect(state.base.hp).toBe(100);
+    expect(state.base.buildings.every(Boolean)).toBe(true);
+    expect(state.threats).toEqual([]);
+    expect(eventsOf(state, 'base.hit')[0].data).toMatchObject({ shielded: true, damage: 0, hp: 100 });
+  });
+  it('a twin boost adds a mirrored cannon', () => {
+    const lvl = level();
+    const state = step(boosted(lvl, 'twin'), idle({ fire: [{ aim: 0.2, tier: 'small' }] }), 1 / 60, lvl);
+    expect(state.shots.map((s) => Math.round(s.x))).toEqual([236, 764]);
+    expect(state.shotsFired).toBe(1);
+  });
+});
+
+describe('stepFrame', () => {
+  it('fires a press once however many sub-steps the frame takes, and keeps every sub-step event', () => {
+    const lvl = level();
+    const state = stepFrame(seeded(lvl), idle({ fire: [{ aim: 0.5, tier: 'small' }] }), 0.1, lvl);
+    expect(state.shotsFired).toBe(1);
+    expect(state.time).toBeCloseTo(0.1);
+    expect(eventsOf(state, 'shot.fired')).toHaveLength(1);
+  });
+  it('starts each frame with an empty event list', () => {
+    const lvl = level();
+    const first = stepFrame(createGameState(lvl, { seed: 7 }), idle(), 0.05, lvl);
+    expect(first.events.some((e) => e.type === 'threat.spawned')).toBe(true);
+    expect(stepFrame(first, idle(), 0.05, lvl).events).toEqual([]);
+  });
+  it('does not change the intents it was given', () => {
+    const lvl = level();
+    const intents = idle({ fire: [press()] });
+    stepFrame(seeded(lvl), intents, 0.1, lvl);
+    expect(intents.fire).toHaveLength(1);
+  });
+  it('plays the same round from 13 Hz frames as from 60 Hz frames', () => {
+    const lvl = level({ waves: [{ at: 0, spawn: { meteor: 2, drone: 1, pod: 1, bomber: 1 }, rate_s: 1 }] });
+    // The same presses at the same round times, delivered on different frame grids.
+    const play = (fps) => {
+      let state = createGameState(lvl, { seed: 9 });
+      let fired = 0;
+      const spawned = [];
+      for (let i = 1; i <= Math.round(20 * fps); i += 1) {
+        const due = Math.floor((i / fps) / 1.5);
+        const fire = due > fired ? [press({ aim: 0.5, tier: 'spread' })] : [];
+        fired = due;
+        state = stepFrame(state, idle({ fire }), 1 / fps, lvl);
+        spawned.push(...eventsOf(state, 'threat.spawned').filter((e) => e.data.from === 'wave').map((e) => e.data.x));
+      }
+      return { state, spawned };
+    };
+    const slow = play(13);
+    const fast = play(60);
+    expect(slow.state.time).toBeCloseTo(fast.state.time, 6);
+    expect(slow.state.shotsFired).toBe(fast.state.shotsFired);
+    // What falls, and where, depends on the seed and the level only: not on
+    // the frame rate and not on what the player shot down.
+    expect(slow.spawned.length).toBeGreaterThanOrEqual(20); // t = 0..19; the one at t = 20 sits on the boundary
+    expect(slow.spawned.slice(0, 20)).toEqual(fast.spawned.slice(0, 20));
+    expect(slow.state.kills).toBeGreaterThan(0);
+  });
+  it('spawns the same columns whatever the player does', () => {
+    const lvl = level({ waves: [{ at: 0, spawn: { pod: 1, bomber: 1 }, rate_s: 1 }] });
+    const columns = (state, intents) => eventsOf(run(state, lvl, 20, intents), 'threat.spawned').filter((e) => e.data.from === 'wave').map((e) => e.data.x);
+    const fresh = createGameState(lvl, { seed: 3 });
+    const rapid = { ...fresh, boost: { meter: 0, next: 1, used: 1, active: { kind: 'rapid', remaining: 60 } } };
+    const watched = columns(fresh, idle());
+    const played = columns(rapid, idle({ tier: 'big' })); // pods split, bombers die and respawn
+    expect(played.length).toBeGreaterThanOrEqual(20);
+    expect(played).toEqual(watched);
+  });
+  it('ends the round mid-frame and stops there', () => {
+    const lvl = level({ duration_s: 30 });
+    const state = stepFrame({ ...seeded(lvl), time: 29.95 }, idle(), 0.1, lvl);
+    expect(state.phase).toBe('ended');
+    expect(state.time).toBeLessThan(30.02);
+    expect(eventsOf(state, 'level.ended')).toHaveLength(1);
+  });
+  it('treats a missing or negative frame time as no time at all', () => {
+    const lvl = level();
+    const state = seeded(lvl);
+    for (const elapsed of [0, -1, NaN, undefined]) expect(stepFrame(state, idle(), elapsed, lvl).time).toBe(0);
   });
 });
