@@ -59,7 +59,7 @@ export function useEngagementGate({
   ladderDeps.current = { burstSince, judgeBurst, recordCheckIn, realPlayingNotes, policy };
 
   // Ladder state for this sitting.
-  const ladder = useRef({ consecutiveIdle: 0, lastAnsweredAt: null, checkIns: 0, judge: null });
+  const ladder = useRef({ consecutiveIdle: 0, lastAnsweredAt: null, checkIns: 0, judge: null, scalesAsked: 0 });
 
   // A human-played note resets the idle timer (machine notes never reach here).
   useEffect(() => {
@@ -124,7 +124,12 @@ export function useEngagementGate({
             legitNotes: b?.legitNotes ?? 0, verdict: b?.verdict ?? null, probability: null, source: 'pending',
           });
         }
-        const next = checkInStep({ consecutiveIdle: l.consecutiveIdle }, ladderDeps.current.policy);
+        let next = checkInStep({ consecutiveIdle: l.consecutiveIdle }, ladderDeps.current.policy);
+        if (next.kind === 'scales') {
+          // Rotation for the drill roots: scales already asked this sitting.
+          next = { ...next, scaleIndex: l.scalesAsked };
+          l.scalesAsked += next.count;
+        }
         l.checkIns += 1;
         gateOpenRef.current = true;
         setStep(next);

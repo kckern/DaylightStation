@@ -31,19 +31,29 @@ describe('useEngagementGate — ladder', () => {
     const g = setup();
     expect(g.idleOpen()).toEqual({ kind: 'note' });
     g.answer(burst('spam', 1));
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 1 });
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 });
     g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2 });
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
     g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2 });
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
     expect(g.recordCheckIn).toHaveBeenCalledWith({ open: true, scales: 2 });
     expect(g.recordCheckIn).toHaveBeenCalledWith({ open: false });
+  });
+
+  it('scaleIndex counts the scales already asked this sitting (1, 2, 2 → 0, 1, 3)', () => {
+    const g = setup();
+    g.idleOpen(); g.answer();
+    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 1, scaleIndex: 0 });
+    g.answer();
+    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2, scaleIndex: 1 });
+    g.answer();
+    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2, scaleIndex: 3 });
   });
 
   it('8+ legit notes since the answer drop back to a note (RF5)', () => {
     const g = setup();
     g.idleOpen(); g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 1 });
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 });
     g.answer(burst('legit', 10));
     expect(g.idleOpen()).toEqual({ kind: 'note' });
   });
@@ -64,7 +74,7 @@ describe('useEngagementGate — ladder', () => {
     act(() => { vi.advanceTimersByTime(1000); });
     expect(judgeBurst).toHaveBeenCalledTimes(1);
     expect(judgeBurst.mock.calls[0][0]).toMatchObject({ kind: 'check-in' });
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 1 }); // pending → hold
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 }); // pending → hold
     expect(judgeBurst).toHaveBeenCalledTimes(1);
     g.answer(burst('ambiguous', 9));
     act(() => { vi.advanceTimersByTime(1000); });
@@ -75,7 +85,7 @@ describe('useEngagementGate — ladder', () => {
     g.answer(burst('ambiguous', 9));
     act(() => { vi.advanceTimersByTime(1000); });
     await act(async () => { resolve({ legit: false, probability: 0.2, source: 'model' }); await Promise.resolve(); await Promise.resolve(); });
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2 });
+    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
 
     g.answer(burst('ambiguous', 9));
     act(() => { vi.advanceTimersByTime(1000); });

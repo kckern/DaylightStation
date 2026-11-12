@@ -25,9 +25,9 @@ function logger() {
  * names pitches the loop is playing right now; the prompt never asks for one,
  * so a child can always answer it.
  */
-export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches, step = { kind: 'note' }, roots = undefined, rotation = 0 }) {
+export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches, step = { kind: 'note' }, roots = undefined, rotation = 0, rootsSource = null }) {
   if (open && step?.kind === 'scales') {
-    return <ScaleCheckIn count={step.count} onDismiss={onDismiss} roots={roots} rotation={rotation} />;
+    return <ScaleCheckIn count={step.count} scaleIndex={step.scaleIndex ?? 0} onDismiss={onDismiss} roots={roots} rotation={rotation} rootsSource={rootsSource} />;
   }
   return <NoteCheckIn open={open} onDismiss={onDismiss} humanNotes={humanNotes} avoidPitches={avoidPitches} />;
 }
@@ -37,11 +37,14 @@ export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitch
  * rep per scale). No skip and no failure state — a missed scale is simply
  * played again; the check-in closes once every scale has passed.
  */
-function ScaleCheckIn({ count, onDismiss, roots, rotation }) {
+function ScaleCheckIn({ count, scaleIndex, onDismiss, roots, rotation, rootsSource }) {
   const drill = useMemo(() => {
     const spec = checkInDrill(count, { roots, rotation });
     return { reps: spec.sets * spec.reps, spec };
   }, [count, roots, rotation]);
+  useEffect(() => {
+    logger().info('piano.engagement-gate.scale-roots', { roots: drill.spec.roots, source: rootsSource, count, scaleIndex });
+  }, [drill, rootsSource, count, scaleIndex]);
   return (
     <div className="piano-engagement-gate piano-engagement-gate--scales" data-testid="engagement-gate" role="dialog" aria-modal="true" aria-label="Play along to continue">
       <p className="piano-engagement-gate__heading">{count >= 2 ? CHECKIN_TWO_SCALES : CHECKIN_ONE_SCALE}</p>

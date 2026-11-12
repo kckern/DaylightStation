@@ -28,6 +28,7 @@ import LessonDrill from './LessonDrill.jsx';
 import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
 import { PRESCHOOL_POLICY, GOOD_FAITH_DEFAULTS } from '../../../../portable/practice/goodFaith.mjs';
 import { useEngagementGate } from './useEngagementGate.js';
+import { checkInRoots } from '../../../../portable/practice/lessonKey.mjs';
 import { useHumanNotes, humanActiveNotes } from '../../useHumanNotes.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
@@ -106,6 +107,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // (`expectation: { enforced, preschool }`); past the watch threshold its
   // reports carry the sitting's good-faith state for the session judge.
   const expectation = lecture?.expectation ?? null;
+  // Check-in scales: the lesson's key when its title names one, else the
+  // household's drill_roots, else C/G/F — rotated by the ladder's scaleIndex.
+  const checkIn = useMemo(() => checkInRoots({ title, drillRoots: expectation?.drillRoots }), [title, expectation]);
   const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
   const practice = useLessonPractice({
     enabled: true,
@@ -467,7 +471,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : handleSurfaceTap} style={{ position: 'relative' }}>
             {playerEl}
-            {gateOpen && <EngagementGate open={gateOpen} step={gateStep} onDismiss={dismissGate} humanNotes={humanNotes} avoidPitches={loopPitches} />}
+            {gateOpen && <EngagementGate open={gateOpen} step={gateStep} onDismiss={dismissGate} humanNotes={humanNotes} avoidPitches={loopPitches} roots={checkIn.roots} rotation={gateStep?.scaleIndex ?? 0} rootsSource={checkIn.source} />}
             {isFullscreen && fsOverlayOpen && !gateOpen && (
               <FullscreenTransportOverlay
                 isPlaying={isPlaying}

@@ -180,6 +180,13 @@ nobody plays between check-ins:
 | 1 | idle again, no real playing since the last answer | one scale — "Welcome back! One quick scale, then the lesson carries on." |
 | 2+ | again | two scales (cap) — "Let's wake those fingers up — two quick scales, then back to the lesson." |
 
+**Which scales.** A check-in scale is in the lesson's key when its title names one
+("C Position", "G Position", "A Major Scale", "Bb Major Scale" → A#, "key of D");
+else the household's `drill_roots`; else C, G, F. The roots rotate per scale asked
+in the sitting (the step's `scaleIndex`), so a second check-in with no known key
+starts on G, not C again. A minor key or "a Major 7 chord" is not read as a key.
+Roots are spelt as the drill knows them (sharps): a flat key becomes its sharp.
+
 **Real playing** resets the ladder: ≥ 8 *legit* notes since the last answer (+3 s).
 A legit note is human with practice weight ≥ 0.5. The burst between check-ins is
 labelled `legit` (≥ 8 legit notes, retention ≥ 0.8), `spam` (retention ≤ 0.4,
@@ -222,7 +229,7 @@ warm-up / Not counted yet / Not checked).
 | `pass_score` | 6 | school-course pass score |
 | `preschool_pass_score` | 3 | preschool-course pass score |
 | `preschool_courses` | `[]` | course (show or season) ids judged in preschool mode |
-| `drill_roots` | `[C, G, F]` | scale roots, rotating per warm-up |
+| `drill_roots` | `[C, G, F]` | scale roots, rotating per warm-up; also the check-in scales when the lesson title names no key (reaches the kiosk as `expectation.drillRoots`) |
 | `legacy_clients` | true | `false` once every kiosk sends `practice` |
 | `legit_model` | false | the check-in burst judge (failed calibration; off) |
 | `level_targets` | — | unused since 2026-11-12 (ratings no longer decide credit) |
@@ -239,4 +246,4 @@ warm-up / Not counted yet / Not checked).
 | `piano.lesson-legit.judged / fallback` | `"piano.lesson-legit" AND _time:24h` |
 | `piano.lesson-practice.sitting-start / threshold / snapshot / loop-retracted` | `"piano.lesson-practice.snapshot" AND _time:2h` |
 | `piano.lesson-drill.offered / started / rep-passed / completed / left / unavailable` | `"piano.lesson-drill" AND _time:24h` |
-| `piano.engagement-gate.open` (step, scales, consecutiveIdle) / `scale-passed` / `ladder-reset` / `ladder-hold` | `"piano.engagement-gate" AND _time:24h` |
+| `piano.engagement-gate.open` (step, scales, consecutiveIdle) / `scale-roots` (roots, source title/config/default, count, scaleIndex) / `scale-passed` / `ladder-reset` / `ladder-hold` | `"piano.engagement-gate" AND _time:24h` |

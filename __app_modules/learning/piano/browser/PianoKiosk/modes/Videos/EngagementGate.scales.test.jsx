@@ -45,4 +45,11 @@ describe('EngagementGate steps', () => {
     expect(drillProps.last.drill.spec.sets).toBe(2);
     expect(drillProps.last.drill.reps).toBe(2);
   });
+
+  it('rotates the given roots and logs which roots it asked for', () => {
+    log.info.mockReset();
+    render(<EngagementGate open step={{ kind: 'scales', count: 1, scaleIndex: 1 }} onDismiss={vi.fn()} roots={['C', 'G', 'F']} rotation={1} rootsSource="default" />);
+    expect(drillProps.last.drill.spec.roots[0]).toBe('G');
+    expect(log.info).toHaveBeenCalledWith('piano.engagement-gate.scale-roots', { roots: ['G', 'F', 'C'], source: 'default', count: 1, scaleIndex: 1 });
+  });
 });
