@@ -2,7 +2,7 @@
 // marks over the real scene, the flight overlays, each menu phase and the
 // bike-button panel. Writes <name>.png at kiosk size and <name>--half.png at
 // half size (how it reads from across the garage).
-//   BASE_URL=http://127.0.0.1:5197 OUT_DIR=/tmp/shots [ONLY=menu-flights,flight-gate] node tests/_scratch/shoot-skyline-ui.mjs
+//   BASE_URL=http://127.0.0.1:5197 OUT_DIR=/tmp/shots [ONLY=menu-flights,flight-gate] [VIEWPORT=700x1000] node tests/_scratch/shoot-skyline-ui.mjs
 // Fails (exit 1) on a page error, a console error, a failed request or a page
 // that never renders.
 import { chromium, firefox } from 'playwright';
@@ -35,13 +35,14 @@ const SHOTS = {
     .map((phase) => [`menu-${phase}`, `scene=menu&phase=${phase}&freeze=0.5`])),
 };
 const only = (process.env.ONLY || '').split(',').filter(Boolean);
+const [width, height] = (process.env.VIEWPORT || '1810x1086').split('x').map(Number); // the garage kiosk's content area
 const engine = process.env.BROWSER === 'chromium' ? chromium : firefox; // the garage kiosk is Firefox
 const browser = await engine.launch();
 let failed = false;
 for (const [name, query] of Object.entries(SHOTS)) {
   if (only.length && !only.some((o) => name.startsWith(o))) continue;
   {
-    const page = await browser.newPage({ viewport: { width: 1810, height: 1086 } });
+    const page = await browser.newPage({ viewport: { width, height } });
     const problems = [];
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
@@ -58,7 +59,7 @@ for (const [name, query] of Object.entries(SHOTS)) {
     await page.waitForTimeout(150);
     const file = path.join(OUT, `${name}.png`);
     await page.screenshot({ path: file });
-    execFileSync('sips', ['-Z', '905', file, '--out', path.join(OUT, `${name}--half.png`)], { stdio: 'ignore' });
+    execFileSync('sips', ['-Z', String(Math.round(Math.max(width, height) / 2)), file, '--out', path.join(OUT, `${name}--half.png`)], { stdio: 'ignore' });
     if (problems.length) { failed = true; console.log(JSON.stringify({ name, file, problems })); } else console.log(file);
     await page.close();
   }

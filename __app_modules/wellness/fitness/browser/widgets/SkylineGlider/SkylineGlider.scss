@@ -357,6 +357,7 @@
     small { display: flex; align-items: center; gap: .5vw; font-size: var(--sg-text-s); font-weight: 700; }
     &[data-status="locked"] { color: var(--sg-mute); background: transparent; box-shadow: inset 0 0 0 var(--sg-line) var(--sg-night-lift); }
     &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); box-shadow: none; }
+    &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: var(--sg-line); }
   }
   &__cursor { visibility: hidden; }
   &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: skyline-step-right .5s steps(1) infinite; }
