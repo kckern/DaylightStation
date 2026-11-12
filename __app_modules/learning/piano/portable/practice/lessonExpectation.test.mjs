@@ -67,4 +67,10 @@ describe('lessonExpectation helpers', () => {
     expect(contentHash('abc')).not.toBe(contentHash('abd'));
     expect(contentHash('abc')).toMatch(/^[0-9a-f]{16}$/);
   });
+  it('normalizeExpectation keeps a missing levelScore/confidence as null, not 0', () => {
+    const e = normalizeExpectation({ plexId: '1', source: 'measured', targetNpm: 9, levelScore: null, confidence: null, durationSec: null });
+    expect(e.levelScore).toBeNull();
+    expect(e.confidence).toBeNull();
+    expect(e.durationSec).toBeNull();
+  });
 });

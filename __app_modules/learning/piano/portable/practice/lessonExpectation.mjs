@@ -83,6 +83,8 @@ export function transcriptFor(cues, maxChars = TRANSCRIPT_MAX_CHARS) {
   return out;
 }
 
+const numOrNull = (v) => (v == null || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+
 function bareId(id) {
   if (id == null) return null;
   const s = String(id).replace(/^plex:/, '');
@@ -101,12 +103,12 @@ export function normalizeExpectation(raw) {
     title: raw.title ?? null,
     season: raw.season ?? null,
     episode: raw.episode ?? null,
-    durationSec: Number.isFinite(Number(raw.durationSec)) ? Number(raw.durationSec) : null,
+    durationSec: numOrNull(raw.durationSec),
     source: raw.source,
     targetNpm,
     level,
-    levelScore: Number.isFinite(Number(raw.levelScore)) ? Number(raw.levelScore) : null,
-    confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : null,
+    levelScore: numOrNull(raw.levelScore),
+    confidence: numOrNull(raw.confidence),
     model: raw.model ?? null,
     measured: raw.measured && typeof raw.measured === 'object' ? raw.measured : null,
     captionHash: raw.captionHash ?? null,
