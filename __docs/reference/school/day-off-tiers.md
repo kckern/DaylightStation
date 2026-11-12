@@ -157,6 +157,30 @@ The weekday lessons keep their schedule. A weekend item is owed (`obligated`)
 even when it is backlog, which a weekday excuses as `optional_backlog`. An
 `away` day excuses weekend scripture like everything else.
 
+**The weekend item is the whole day.** On a weekend that asks for it, every
+other section is excused (`not_a_school_day`) *and offers nothing*: no card on
+the printed agenda, no session opened, no disc on the status board, no `next`
+in the preview — before or after the scripture item is done. (Printed beside
+the scripture card, a Saturday civilization or piano card read as owed work.)
+Work actually done stays served, and a course that explicitly schedules the
+weekend (`daysOfWeek` with 6 or 7) is still owed — that is configuration, not
+a default. A learner without weekend scripture keeps the old rest-day sheet:
+nothing owed, every optional lesson printed with its code. So does an `away`
+weekend, which asks for nothing.
+
+**Settled is not performed.** A program can report a day done with nobody
+having played — a piano co-progress lock, a grown-up's day bypass, a teacher
+excusal (`excused: true` on the program status). On a day that asks for the
+section that settles it; on a day that does not (a weekend, a household day
+off, a section a tier drops) the section stays excused with the day's reason,
+so it never reaches the term grid or the coins as served. Real play on a day
+off still serves.
+
+**Previewing a coming day.** `GET .../agenda/preview?studyDay=` for a day after
+today never borrows today's program results: a replayable launcher is asked
+about that day, any other keeps its live next lesson with nothing marked done.
+(Before 2026-11-11 a debrief finished today showed as Saturday's "done".)
+
 ## Coins and gems
 
 - **Green Week** stays a five-part gem over the weekday school days. Weekend

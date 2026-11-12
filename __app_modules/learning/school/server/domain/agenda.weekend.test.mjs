@@ -111,3 +111,98 @@ describe('weekend scripture: backlog, then review, never advance', () => {
     expect(run(entries, SATURDAY).obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
   });
 });
+
+describe('weekend scripture: the only thing on a weekend', () => {
+  const weekdays = { daysOfWeek: [1, 2, 3, 4, 5] };
+  const civics = (status = 'available') => ({
+    unitId: 'civ-1', title: 'A state', subject: 'civilization', courseId: 'atlas', module: 'm1', sequence: 1,
+    program: null, elective: false, status, timing: null, timingState: 'available', schedule: weekdays,
+  });
+  const piano = { unitId: 'piano-course:x', subject: 'arts', program: 'piano-course', programInstance: 'x',
+    elective: false, status: 'available', timingState: 'available', schedule: weekdays, cadence: 'daily' };
+  const debrief = { unitId: 'school-debrief:daily', subject: 'writing', program: 'school-debrief', programInstance: null,
+    elective: false, status: 'available', timingState: 'available', schedule: weekdays, cadence: 'daily' };
+  const statuses = [
+    { programId: 'piano-course', programInstance: 'x', status: { doneToday: false } },
+    { programId: 'school-debrief', programInstance: null, status: { doneToday: false } },
+  ];
+  const scripture = () => [
+    ...week('w1', ['completed', 'completed', 'completed', 'available', 'locked']),
+    ...week('w2', ['completed', 'available', 'locked', 'locked', 'locked']),
+  ];
+  const all = (entries, day, sessions = []) => planDailyAgenda({
+    plan: { entries }, sessions, programStatuses: statuses, now: `${day}T18:00:00.000Z`,
+  }).sections;
+  const bySubject = (sections) => Object.fromEntries(sections.map((s) => [s.subject, s]));
+
+  it('offers no other subject beside the weekend scripture item', () => {
+    const s = bySubject(all([...scripture(), civics(), piano, debrief], SATURDAY));
+    expect(s.scripture.next.unitId).toBe('w1-d4');
+    expect(s.scripture.obligation.state).toBe('obligated');
+    for (const subject of ['civilization', 'arts', 'writing']) {
+      expect(s[subject].next).toBeNull();
+      expect(s[subject].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+      expect(s[subject].servedToday).toBe(false);
+    }
+  });
+
+  it('stays scripture-only after the weekend item is done', () => {
+    const sessions = [pass('w1-d4', `${SATURDAY}T17:00:00.000Z`)];
+    const s = bySubject(all([...scripture(), civics(), piano], SATURDAY, sessions));
+    expect(s.scripture.obligation.state).toBe('served');
+    expect(s.civilization.next).toBeNull();
+    expect(s.arts.next).toBeNull();
+  });
+
+  it('a learner without weekend scripture keeps the optional weekend offers', () => {
+    const plain = scripture().map(({ weekendPolicy: _p, ...rest }) => ({ ...rest, schedule: weekdays }));
+    const s = bySubject(all([...plain, civics(), piano], SATURDAY));
+    expect(s.civilization.next.unitId).toBe('civ-1');
+    expect(s.arts.next.unitId).toBe('piano-course:x');
+    expect(s.civilization.obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+  });
+
+  it('an away weekend excuses scripture and keeps the old optional offers', () => {
+    const calendar = { except: [{ from: SATURDAY, to: SATURDAY, label: 'Trip', tier: 'away' }] };
+    const sections = planDailyAgenda({
+      plan: { entries: [...scripture(), civics()] }, programStatuses: statuses,
+      now: `${SATURDAY}T18:00:00.000Z`, householdSchedule: calendar,
+    }).sections;
+    const s = bySubject(sections);
+    expect(s.scripture.obligation).toEqual({ state: 'excused', reason: 'household_calendar' });
+    expect(s.civilization.next.unitId).toBe('civ-1');
+  });
+
+  it('a weekday is unchanged', () => {
+    const s = bySubject(all([...scripture(), civics(), piano], '2026-11-10'));
+    expect(s.civilization.next.unitId).toBe('civ-1');
+    expect(s.arts.next.unitId).toBe('piano-course:x');
+  });
+});
+
+describe('a program settled without play on a day that does not ask for it', () => {
+  const weekdays = { daysOfWeek: [1, 2, 3, 4, 5] };
+  const piano = { unitId: 'piano-course:x', subject: 'arts', program: 'piano-course', programInstance: 'x',
+    elective: false, status: 'available', timingState: 'available', schedule: weekdays, cadence: 'daily' };
+  const arts = (status, day) => planDailyAgenda({
+    plan: { entries: [piano] },
+    programStatuses: [{ programId: 'piano-course', programInstance: 'x', status }],
+    now: `${day}T18:00:00.000Z`,
+  }).sections.find((s) => s.subject === 'arts');
+
+  it('a co-progress lock or day bypass on a Saturday is not counted as served', () => {
+    const section = arts({ doneToday: true, excused: true, servedWork: [] }, SATURDAY);
+    expect(section.obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+  });
+
+  it('real play on a Saturday still counts', () => {
+    const section = arts({ doneToday: true, servedWork: [{ unitId: 'l1', title: 'L1' }] }, SATURDAY);
+    expect(section.obligation.state).toBe('served');
+  });
+
+  it('on a weekday the lock still settles the owed day', () => {
+    const section = arts({ doneToday: true, excused: true, servedWork: [] }, '2026-11-10');
+    expect(section.obligation.state).toBe('served');
+  });
+});
+

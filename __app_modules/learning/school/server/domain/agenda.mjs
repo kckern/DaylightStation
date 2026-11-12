@@ -594,6 +594,21 @@ export function planDailyAgenda({
     // colours only the first as a day the house took off.
     // The weekend item is owed even when it is backlog (which a weekday
     // excuses as `optional_backlog`) or a review of completed work.
+    // SETTLED IS NOT PERFORMED. A program can report a day done with nobody
+    // having played (a co-progress lock, a grown-up's day bypass, a teacher
+    // excusal: `excused: true`). On a day that asks for the section that
+    // settles the obligation; on a day that does not, there was nothing to
+    // settle, and reading it as `served` counted a weekend piano lock toward
+    // the term grid and the coins (a served Saturday also holds the weekly
+    // coin back for Sunday). Real play still serves any day.
+    const settledOnly = obligationServed && !nonElectivePassedToday
+      && !nonElectiveList.some((e) => {
+        const status = e.program ? programStatusFor(programStatuses, e) : null;
+        return status?.doneToday === true && status?.excused !== true;
+      });
+    if (settledOnly && (tierDropsSection || noSchoolToday)) {
+      obligation = { state: 'excused', reason: tierDropsSection ? 'day_off' : (householdOff ? 'household_calendar' : 'not_a_school_day') };
+    }
     if (weekendPick && !obligationServed && obligation.state !== 'faulted') {
       obligation = { state: 'obligated', reason: null };
     }
@@ -691,8 +706,30 @@ export function planDailyAgenda({
       // which sections are off today. Deleted before the sections are
       // returned — nothing outside this function reads it yet.
       _notASchoolDay: noSchoolToday || tierDropsSection,
+      // Internal: this section carries a weekend-policy course that the day
+      // still asks for (not excused by the household calendar or a tier).
+      _weekendAsks: weekendTrack.length > 0 && !householdOff && !tierDropsSection,
     };
   });
+
+  // A WEEKEND-SCRIPTURE DAY OFFERS NOTHING ELSE (owner ruling, 2026-11-11).
+  // On a weekend that asks the learner for the weekend scripture item, that
+  // item is the whole day: every other section's ordinary next lesson stays
+  // off the paper and the board, even though its obligation was already
+  // excused. Printed beside the scripture card, a Saturday civilization or
+  // piano card read as owed work and opened a session for it. Work actually
+  // done stays served, and an obligated section (a course that explicitly
+  // schedules the weekend) is left alone. A learner without weekend
+  // scripture keeps the old rest-day sheet with its optional offers.
+  if (sections.some((section) => section._weekendAsks)) {
+    sections.forEach((section) => {
+      if (section._weekendAsks || section.obligation.state !== 'excused') return;
+      section.next = null;
+      section.catchUp = false;
+      section.lockedRemedy = null;
+      section.timingNotice = null;
+    });
+  }
 
   // Urgent focus entries reserve extra blocks by deferring only lower-ranked
   // flexible subject offers. The agenda remains in its normal subject order;
@@ -731,6 +768,7 @@ export function planDailyAgenda({
   sections.forEach((section) => {
     delete section._subjectPosition;
     delete section._notASchoolDay;
+    delete section._weekendAsks;
   });
 
   return { sections, dayOff: tierSpan ? { tier: tierSpan.tier, label: tierSpan.label } : null };
