@@ -18,11 +18,23 @@ kiosk and the server — `sittingGoodFaith.mjs` is the judge's state and rubric,
 (the gateway call), `server/adapters/YamlUserVideoProgressStore.mjs` (credit),
 `browser/PianoKiosk/modes/Videos/` (live tally, warm-up, ladder).
 
+**Played time** (the judge's "minutes watched") counts only while the video
+plays, from its first frame (`playing`): an autoplay block or a slow start
+before the first frame is not watched time (`piano.lesson-practice.first-frame`,
+debug, logs the wait).
+
+**Expectation reads** — `JsonLessonExpectationStore` re-checks its show files at
+most every 5 s (`refreshMs`); its own writes are seen at once.
+
 ## What counts as a note
 
 1. **Human only** — `humanNoteClassifier` drops the piano's rhythm/drum loop,
    accompaniment channels and clockwork streams. The kiosk also takes back notes
-   on the loop's pitches from the ~30 s before the loop is recognised.
+   on the loop's pitches from the ~30 s before the loop is recognised. One
+   classifier per lesson player: `useHumanNotes` classifies and hands every
+   verdict to the practice tally (`useLessonPractice({ external: true })` →
+   `ingest`), so the presence gate and the tally never disagree. A velocity-0
+   `note_on` is a release.
 2. **Not a check-in answer** — notes played while a check-in is open, and for 3 s
    after it is answered, are not practice.
 3. **Practice-like** — `practiceScore.mjs` weighs each note (1 = full):
