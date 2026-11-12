@@ -1,0 +1,11 @@
+# Level 2: introduces drones, which zigzag as they fall.
+schema: skyline-invaders-level/v1
+id: invaders-1-2
+name: Zigzag
+duration_s: 180
+pass: { kills: 20, base_hp_min: 40 }
+cannons: 1
+waves:
+  - { at: 0, spawn: { meteor: 3, drone: 1 }, rate_s: 4.0 }
+  - { at: 60, spawn: { meteor: 1, drone: 1 }, rate_s: 3.5 }
+  - { at: 120, spawn: { meteor: 1, drone: 2 }, rate_s: 3.2 }

@@ -1,0 +1,12 @@
+# Level 1: meteors only, falling straight, one every 3.5 to 4.5 s. A shooter
+# who manages one shot every 2 s still clears it.
+schema: skyline-invaders-level/v1
+id: invaders-1-1
+name: First Light
+duration_s: 180
+pass: { kills: 18, base_hp_min: 40 }
+cannons: 1
+waves:
+  - { at: 0, spawn: { meteor: 1 }, rate_s: 4.5 }
+  - { at: 60, spawn: { meteor: 1 }, rate_s: 4.0 }
+  - { at: 120, spawn: { meteor: 1 }, rate_s: 3.5 }

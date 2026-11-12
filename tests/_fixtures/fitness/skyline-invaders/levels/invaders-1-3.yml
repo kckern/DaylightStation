@@ -1,0 +1,11 @@
+# Level 3: introduces pods (two hits, then they split into two drones).
+schema: skyline-invaders-level/v1
+id: invaders-1-3
+name: Split Decision
+duration_s: 210
+pass: { kills: 26, base_hp_min: 30 }
+cannons: 1
+waves:
+  - { at: 0, spawn: { meteor: 2, drone: 1 }, rate_s: 4.0 }
+  - { at: 50, spawn: { meteor: 4, drone: 1, pod: 1 }, rate_s: 4.2 }
+  - { at: 130, spawn: { meteor: 3, drone: 1, pod: 1 }, rate_s: 4.0 }

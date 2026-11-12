@@ -1,0 +1,16 @@
+# Level 4: introduces bombers. Each bomber wave is shorter than its rate_s, so
+# it spawns exactly one bomber on every seed: two per round, at 60 s and 150 s.
+schema: skyline-invaders-level/v1
+id: invaders-1-4
+name: Bomber Run
+duration_s: 240
+pass: { kills: 30, base_hp_min: 30 }
+cannons: 1
+max_bombers: 1
+nuke: { radius: 160, damage: 3 }
+waves:
+  - { at: 0, spawn: { meteor: 2, drone: 1 }, rate_s: 4.0 }
+  - { at: 60, spawn: { bomber: 1 }, rate_s: 6 }
+  - { at: 66, spawn: { meteor: 4, drone: 2, pod: 1 }, rate_s: 4.2 }
+  - { at: 150, spawn: { bomber: 1 }, rate_s: 6 }
+  - { at: 156, spawn: { meteor: 4, drone: 2, pod: 1 }, rate_s: 3.8 }
