@@ -10,8 +10,9 @@ keep:
   - frontend/public/fonts/surround/*.woff2
   - frontend/public/fonts/atkinson-hyperlegible-next/*.woff2
   - frontend/public/fonts/kongtext.ttf
-  # Skyline games' pixel faces; licences beside them (OFL-Press-Start-2P.txt, README-Karmatic-Arcade.txt).
+  # Skyline games' pixel faces; licences beside them (OFL-Press-Start-2P.txt, LICENSE-SNES-Mario-Paint.txt).
   - frontend/public/fonts/arcade/*.ttf
+  - frontend/public/fonts/arcade/*.otf
   - __backend/assets/fonts/roboto-condensed/*.ttf
   - __backend/assets/fonts/atkinson-hyperlegible/*.ttf
   - __backend/assets/fonts/kongtext/kongtext.ttf
