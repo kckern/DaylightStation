@@ -377,6 +377,50 @@ The **authoritative** source is #3 (ZoneProfileStore). All UI components and gov
 
 ## Hysteresis & Stabilization
 
+### At a glance: every anti-flap mechanism
+
+A rider whose HR sits on a zone boundary passes through these in order. Each
+one answers a different question; none is redundant with another (see
+`governance-history.md`, Eras 9–12, for the ones that were tried and removed).
+
+| # | Mechanism | Where | Value | Source | What it stops |
+|---|-----------|-------|-------|--------|---------------|
+| 0 | Slew gate | `hrPlausibility.js` (DeviceManager) | ≥25 BPM jump within 2s is held for one packet | code (`HR_SLEW_MAX_DELTA_BPM`, `HR_SLEW_WINDOW_MS`) | single corrupt packets (e.g. 204 BPM) |
+| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s | code (`UPWARD_CONFIRM_SAMPLES`, `UPWARD_CONFIRM_MS`) | one packet claiming a higher zone |
+| 1b | **Exit margin** (Schmitt trigger) | `ZoneProfileStore#applyHysteresis` | stay in the committed zone until HR < zone floor − **5 BPM** | code (`EXIT_MARGIN_BPM`) — not configurable | HR drifting ±1–3 BPM around a floor |
+| 1c | Commit cooldown | `ZoneProfileStore#applyHysteresis` | a change within **5s** of the last commit… | code (`HYSTERESIS_COOLDOWN_MS`) | rapid back-and-forth toggling |
+| 1d | Stability hold | `ZoneProfileStore#applyHysteresis` | …must hold steady **3s** before it commits | code (`HYSTERESIS_STABILITY_MS`) | (with 1c) noisy toggling |
+| 1e | HR-loss grace | `UserManager.js` | committed zone kept through a **5s** reading gap | code (`HR_LOSS_GRACE_MS`) | strap dropouts reading as Cool |
+| 2a | Grace period | `GovernanceEngine` phase logic | `warning` countdown before `locked` | config `grace_period_seconds` (code default 0 = lock at once; live: 30) | a brief dip locking the video |
+| 2b | Warning cooldown | `GovernanceEngine._setPhase` | after recovering to `unlocked`, no new `warning` for N s | config `warning_cooldown_seconds` (no code default = off; live: 30) | repeat warnings from a rider bobbing at the floor |
+| 3a | Already-met hold | `GovernanceEngine._alreadyMetHoldSeconds` | a challenge met at its start must be held N s | config `challenge_already_met_hold_seconds` (default 10) | challenges completing on their first tick |
+| 3b | Hold dip grace | `GovernanceEngine.evaluateChallengeZone` | a dip of ≤N s below the zone keeps the already-met hold | config `challenge_hold_dip_grace_seconds` (default 3) | one sub-zone sample failing a challenge |
+| 3c | Configured hold | `GovernanceEngine.evaluateChallengeZone` | rider must hold the zone N s, any dip resets | config `challenge_hold_seconds` (default 0 = instant; live: 0) | — (a strict hold by choice) |
+
+Things to know when reading the table:
+
+- **Layer 1 governs; display does not wait for it.** Governance, challenges and
+  TreasureBox read the *committed* zone. Zone LEDs, badges and the chart read
+  `displayZoneId` (the raw HR-derived zone), so a rider at 122 BPM held in
+  Active by the exit margin (floor 125) shows the lower zone's colour while
+  still counting as Active (`governance-history.md`, Era 12).
+- **The exit margin is per zone floor, for every downgrade.** It is measured
+  from the floor of the zone the rider is *committed to*: Hot → Warm, Warm →
+  Active and Active → Cool all need HR 5 BPM under the floor being left. A drop
+  past that line still goes through the cooldown/stability rules (1c/1d).
+  Entering a zone has no margin: the floor itself counts, after 1a.
+- **Unlocking is never damped** (Layer 2 below). Only the way down has grace.
+- Logs: `zoneprofilestore.exit_margin_suppressed` (sampled, 3/min),
+  `fitness.zone_state.transition` with `commitPath`,
+  `governance.warning_suppressed` (once per cooldown episode),
+  `governance.challenge.already_met_at_start`.
+- The **live values** above are from the household fitness config
+  (`household/fitness/config.yml`, `governance:` block) as of 2026-11-13; that
+  file is the authority, not this table.
+
+Challenge holds (3a–3c) are documented in full in `governance-engine.md`,
+"Optional zone holds".
+
 ### Layer 1: ZoneProfileStore (Zone Jitter Prevention)
 
 Prevents rapid visual toggling when HR hovers near zone boundaries (e.g., 99-101 BPM flickering between Cool and Active).

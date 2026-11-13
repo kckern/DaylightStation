@@ -159,9 +159,13 @@ grace deadline.
 
 **Where jitter is absorbed instead**: debouncing lives one layer down, in
 `ZoneProfileStore` zone hysteresis (see ZoneProfileStore under Core Components above):
-the first zone change commits instantly, a second change within 5s must hold
-steady for 3s before it commits, and a downgrade is suppressed while HR stays
-within 5 bpm of the committed zone's floor. The engine reads those stabilized
+the first trusted zone commits instantly, an upward change needs two samples
+spanning 1s, a second change within 5s must hold steady for 3s before it
+commits, and a downgrade is suppressed while HR stays within 5 bpm of the
+committed zone's floor (`EXIT_MARGIN_BPM`, a code constant, not config). The
+full list of anti-flap mechanisms, with values and which are config, is the
+table in `governance-system-architecture.md`, "Hysteresis & Stabilization → At
+a glance". The engine reads those stabilized
 zones, so it can unlock at once without flickering. On the way down, the
 grace period (`warning` phase) and the post-recovery warning cooldown
 (`warning_cooldown_seconds`) keep a brief dip from locking the video; during
