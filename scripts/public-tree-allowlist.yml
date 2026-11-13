@@ -10,6 +10,8 @@ keep:
   - frontend/public/fonts/surround/*.woff2
   - frontend/public/fonts/atkinson-hyperlegible-next/*.woff2
   - frontend/public/fonts/kongtext.ttf
+  # Skyline games' pixel faces; licences beside them (OFL-Press-Start-2P.txt, README-Karmatic-Arcade.txt).
+  - frontend/public/fonts/arcade/*.ttf
   - __backend/assets/fonts/roboto-condensed/*.ttf
   - __backend/assets/fonts/atkinson-hyperlegible/*.ttf
   - __backend/assets/fonts/kongtext/kongtext.ttf
@@ -44,6 +46,13 @@ largeText:
   - __backend/package-lock.json
   - __app_modules/learning/school/satellites/ti86-app/gui/screens.yml
   - __app_modules/learning/piano/browser/PianoApp.scss
+  # Hand-written, grown past 100 KB (2026-11-13): the school lifecycle composition,
+  # the cycle-game container and three reference docs.
+  - __app_modules/learning/school/server/composition/schoolLifecycle.mjs
+  - __app_modules/wellness/fitness/browser/widgets/CycleGame/CycleGameContainer.jsx
+  - __docs/reference/fitness/cycle-game.md
+  - __docs/reference/fitness/fitness-system-architecture.md
+  - __docs/reference/school/print-documents.md
   # Engagement-audit calibration sittings (anonymised: labels, relative note times only).
   - __app_modules/learning/piano/portable/practice/__fixtures__/audit-sittings.json
   - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx
