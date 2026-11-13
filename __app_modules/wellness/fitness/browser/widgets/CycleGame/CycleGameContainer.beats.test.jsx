@@ -17,8 +17,9 @@ vi.mock("../../context/FitnessContext.jsx", () => ({
   useFitnessContext: () => mockCtx
 }));
 
+const mockVolume = vi.hoisted(() => ({ volume: 1, muted: false, source: 'exact' }));
 vi.mock("../../nav/usePersistentVolume.js", () => ({
-  usePersistentVolume: () => ({ volume: 1, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() })
+  usePersistentVolume: () => ({ ...mockVolume, setVolume: vi.fn(), toggleMute: vi.fn() })
 }));
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
@@ -212,6 +213,20 @@ describe('CycleGameContainer — race beats', () => {
     // The finale is announced once for the whole race (the last stretch never
     // fires in a time race).
     expect(logsOf('info', 'cycle_game.finale_started')).toEqual([expect.objectContaining({ beat: 'LAST_MINUTE', elapsedS: 120 })]);
+  });
+
+  // 2026-11-12: the race read the video level (10%) through the log curve and
+  // played at 1.6% — silent. An unset game volume plays at the game default.
+  it('an unset game volume races audibly at the game default, whatever the video level', async () => {
+    Object.assign(mockVolume, { volume: 0.1, source: 'global' });
+    try {
+      mockCtx = makeCtx({ cycle_ace: 'user_1' });
+      const view = render(<CycleGameContainer />);
+      await start(view, 'time', 'short');
+      ticksUntil(view, 10);
+      expect(racingTrack().volume).toBeCloseTo(0.5 * 0.158, 3);
+      expect(logsOf('info', 'cycle_game.audio.volume').at(-1)).toMatchObject({ level: 60, isDefault: true });
+    } finally { Object.assign(mockVolume, { volume: 1, source: 'exact' }); }
   });
 
   it('a group race has no rival: halfway without a gap, no split toasts, the last minute', () => {

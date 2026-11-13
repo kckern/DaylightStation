@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { courseGate, keyOf } from './subcourses.js';
 import { lectureUserStatus } from './lectureMeta.js';
+import { NOT_COUNTED_CHIP, NOT_COUNTED_HINT } from './lessonCreditCopy.js';
 import LockIcon from "../../../../../../wellness/fitness/browser/lock-indicator.mjs";
 
 function fmt(sec) {
@@ -39,9 +40,10 @@ export default function LessonList({ lessons, sections = null, onPlay, sequentia
             {locked && <span className="piano-episode__lock" aria-label="Later"><LockIcon /></span>}
             {!locked && st.watched && !checkpointPending && <span className="piano-episode__check" aria-label="Completed"><span className="piano-episode__check-mark">✓</span></span>}
             {!locked && !st.watched && st.percent > 0 && <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>}
+            {!locked && st.notCounted && <span className="piano-episode__chip">{NOT_COUNTED_CHIP}</span>}
             {dur && <span className="piano-episode__duration">{dur}</span>}
           </div>
-          <div className="piano-episode__label"><span className="piano-episode__title">{item.label || item.title}</span>{checkpointPending && <small>Exercise checkpoint due</small>}</div>
+          <div className="piano-episode__label"><span className="piano-episode__title">{item.label || item.title}</span>{checkpointPending && <small>Exercise checkpoint due</small>}{st.notCounted && <small className="piano-episode__hint">{NOT_COUNTED_HINT}</small>}</div>
           {current && <span className="psc-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>Play</span>}
         </button>
       </li>

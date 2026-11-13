@@ -58,6 +58,8 @@ export default async (env = {}) => {
   ];
   return {
     root: here,
+    // The app's own public folder, so /fonts/arcade/* (the game faces) load as on the kiosk.
+    publicDir: path.join(repoRoot, 'frontend/public'),
     cacheDir: path.join(repoRoot, 'tests/_scratch/out/.vite-skyline-harness-cache'),
     define: app.define, css: app.css,
     plugins: [...(app.plugins || []), harness()],

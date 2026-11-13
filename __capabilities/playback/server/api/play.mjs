@@ -60,8 +60,11 @@ export function createPlayRouter(config) {
    * - watched_duration: number (optional) - Duration watched this session
    */
   router.post('/log', asyncHandler(async (req, res) => {
+    // A piano lesson's good-faith state (a MIDI log, up to 200 notes) is not
+    // repeated into the log store on every post; its size stands in for it.
+    const gf = req.body?.practice?.goodFaith;
     logger.info?.('play.log.request_received', {
-      body: req.body,
+      body: gf ? { ...req.body, practice: { ...req.body.practice, goodFaith: { notes: Array.isArray(gf.notes) ? gf.notes.length : 0 } } } : req.body,
       headers: { 'content-type': req.headers['content-type'] }
     });
 

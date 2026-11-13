@@ -73,4 +73,15 @@ describe('audioCuePlayer', () => {
     await Promise.resolve();
     expect(isCueAudioUnlocked()).toBe(true);
   });
+
+  // 2026-11-12: every prime logged unlocked -> unlock_failed (190 a week, all
+  // AbortError). The prime's own synchronous pause() aborts the play() it just
+  // started, which is not an autoplay refusal: the unlock stands.
+  it('an AbortError from the prime\'s own pause() is not a refusal: the unlock stands', async () => {
+    global.Audio = class extends FakeAudio { play() { this.playCalls += 1; return Promise.reject(Object.assign(new Error('The fetching process for the media resource was aborted'), { name: 'AbortError' })); } };
+    __resetCueAudioForTest();
+    primeCueAudio('gesture:pointerdown');
+    await Promise.resolve(); await Promise.resolve();
+    expect(isCueAudioUnlocked()).toBe(true);
+  });
 });

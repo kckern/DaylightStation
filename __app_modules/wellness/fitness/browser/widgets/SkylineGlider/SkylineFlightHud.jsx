@@ -16,7 +16,7 @@ const ACTIONS = Object.freeze([
 ]);
 
 export const REFUSAL_TEXT = Object.freeze({
-  cooldown: 'Reloading', empty: 'Empty', recharging: 'Charging', paused: 'Wait', off: 'Level 2', active: 'Boosting',
+  cooldown: 'Reload', empty: 'Empty', recharging: 'Charge', paused: 'Wait', off: 'Lvl 2', active: 'Boost!',
 });
 
 function readout(action, flight, course) {
@@ -34,7 +34,29 @@ function cellState(action, flight) {
   return 'ready';
 }
 
-export default function SkylineFlightHud({ flight, course, armed, targetsHit, power, press }) {
+// The pickup counter wears the zone's own collectible: the first frame of its
+// sprite (a coin on the SMW coin levels), or the bell where the zone draws the
+// built-in bell. Never a bell beside coins (2026-11-12).
+export function CollectibleIcon({ zone, assets }) {
+  const spec = zone?.collectible;
+  const name = spec?.frames?.[0] || spec?.frame || null;
+  const frame = name && assets?.sheet ? assets.frames?.[name] : null;
+  if (!frame) return <PixelIcon name="bell"/>;
+  return <svg className="skyline-glider__collectible-icon" data-collectible="sprite" aria-hidden="true" focusable="false"
+    viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`} style={{ '--w': frame.w, '--h': frame.h }} preserveAspectRatio="xMidYMid meet">
+    <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
+  </svg>;
+}
+
+// The touch "more" button: opens the sound sheet. The bike buttons reach the
+// same sheet through the flight menu (hold 4, then 2).
+export function MoreButton({ onMore, className = '' }) {
+  return <button type="button" className={`skyline-glider__more ${className}`.trim()} aria-label="Sound and settings" onClick={onMore} data-testid="skyline-glider-more">
+    <PixelIcon name="more"/>
+  </button>;
+}
+
+export default function SkylineFlightHud({ flight, course, assets, armed, targetsHit, power, press, onMore }) {
   const hearts = Math.max(0, Math.floor(flight.lives || 0));
   const slots = Math.max(hearts, Math.floor(course.rules?.lives || 0));
   const recharge = boostRules(course).recharge_s;
@@ -43,7 +65,7 @@ export default function SkylineFlightHud({ flight, course, armed, targetsHit, po
       {Array.from({ length: slots }, (_, index) => <PixelIcon key={index} name="heart" className={index < hearts ? '' : 'is-spent'}/>)}
     </span>
     <span className="skyline-glider__hud-time">{formatTime(course.duration_s - cameraTime(flight))}</span>
-    <span className="skyline-glider__hud-stat" aria-label="Bells collected"><PixelIcon name="bell"/>{flight.collectedIds.length}</span>
+    <span className="skyline-glider__hud-stat" data-testid="skyline-glider-collected" aria-label="Collected"><CollectibleIcon zone={course.zone} assets={assets}/>{flight.collectedIds.length}</span>
     {armed && <span className="skyline-glider__hud-stat skyline-glider__hud-targets" data-testid="skyline-glider-targets" aria-label="Targets destroyed"><PixelIcon name="target"/>{targetsHit}</span>}
     {armed && power > 1 && <span className="skyline-glider__hud-stat skyline-glider__hud-power" data-testid="skyline-glider-power" aria-label="Heart-rate power"><PixelIcon name="bolt"/>{power}×</span>}
     <div className="skyline-glider__hud-pad" aria-label="Bike buttons" data-armed={armed ? 'true' : 'false'}>
@@ -63,6 +85,7 @@ export default function SkylineFlightHud({ flight, course, armed, targetsHit, po
       })}
     </div>
     {armed && <span className="skyline-glider__hud-menu">Hold <PadGlyph position={4}/> for menu</span>}
+    {onMore && <MoreButton onMore={onMore} className="skyline-glider__hud-more"/>}
   </header>;
 }
 

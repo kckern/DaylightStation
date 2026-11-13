@@ -204,6 +204,12 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/device-dispatch/server/application/guards/authenticate.mjs': 'application',
   '__capabilities/device-dispatch/server/composition/voiceTrigger.mjs': 'composition',
   '__app_modules/learning/piano/server/adapters/YamlUserVideoProgressStore.mjs': 'adapters',
+  // Piano lesson credit (2026-11-12): expectation records, sitting log, legitimacy cache, nightly job.
+  '__app_modules/learning/piano/server/adapters/JsonLessonExpectationStore.mjs': 'adapters',
+  '__app_modules/learning/piano/server/adapters/YamlLessonSittingLog.mjs': 'adapters',
+  '__app_modules/learning/piano/server/adapters/InMemoryLegitJudgementCache.mjs': 'adapters',
+  '__app_modules/learning/piano/server/composition/lesson-expectations.mjs': 'composition',
+  '__app_modules/learning/piano/server/composition/lesson-good-faith.mjs': 'composition',
   '__capabilities/content-catalog/server/adapters/ContentPrefixConfigSource.mjs': 'adapters',
   '__capabilities/content-catalog/server/adapters/PrewarmHttpStatusClient.mjs': 'adapters',
   '__app_modules/media/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs': 'adapters',

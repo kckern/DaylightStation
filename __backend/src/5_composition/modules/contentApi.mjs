@@ -23,6 +23,10 @@ import { ContentAlternatesService } from "../../../../__capabilities/content-cat
 import { checkSchedule } from "../../../../__capabilities/device-dispatch/server/application/scheduleCheck.mjs";
 
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from "../../../../__app_modules/learning/piano/server/adapters/YamlUserVideoProgressStore.mjs";
+import { JsonLessonExpectationStore, lessonExpectationDirFor } from "../../../../__app_modules/learning/piano/server/adapters/JsonLessonExpectationStore.mjs";
+import { YamlLessonSittingLog } from "../../../../__app_modules/learning/piano/server/adapters/YamlLessonSittingLog.mjs";
+import { InMemoryLegitJudgementCache } from "../../../../__app_modules/learning/piano/server/adapters/InMemoryLegitJudgementCache.mjs";
+import { createLessonSittingJudge } from "../../../../__app_modules/learning/piano/server/composition/lesson-good-faith.mjs";
 
 import { validateSearchQuery } from "../../../../__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs";
 
@@ -57,7 +61,7 @@ import { createWatchCompletionRules } from "#shared/contracts/media/watchComplet
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, sequenceStore = null, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
+  const { registry, sequenceStore = null, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, lessonGoodFaithGateway = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
 
   const { contentCatalog, contentIdResolver, aliasResolver, contentQueryService, siblingsService } = createContentQueryContext({ prefixAliases, registry, logger, configService, mediaProgressMemory });
 
@@ -65,7 +69,20 @@ export function createApiRouters(config) {
 
   // Per-user video course progress store (piano kiosk). Injected into the play
   // router (write side, via /play/log) and exposed for the piano router (read side).
-  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger });
+  // The piano lesson index (which lessons are judged; show/season for preschool
+  // mode). Its ratings/targets are not read for credit (2026-11-12).
+  const lessonExpectations = configService?.getDataDir
+    ? new JsonLessonExpectationStore({ dir: lessonExpectationDirFor(configService.getDataDir()), logger })
+    : null;
+  // One row per lesson sitting for the teacher console. Only the PIANO store is
+  // given expectations + the log; School's material store stays unchanged.
+  const lessonSittingLog = configService ? new YamlLessonSittingLog({ configService, logger }) : null;
+  // The check-in burst judge's answers (piano router; off unless legit_model).
+  const legitJudgements = new InMemoryLegitJudgementCache();
+  // The session-level good-faith judge: one scoped gateway call per finished
+  // sitting, asked from the play/log path (videos.practice.good_faith_model).
+  const sittingJudge = createLessonSittingJudge({ decisionGateway: lessonGoodFaithGateway, configService, logger });
+  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger, lessonExpectations, sittingLog: lessonSittingLog, sittingJudge });
 
   const { localMediaAdapter, getLocalMediaResource, getLocalMediaThumbnail, getContentMediaResource } = createMediaResourceOperations({ registry, mediaBasePath, cacheBasePath, dataPath, logger, config });
 
@@ -125,6 +142,9 @@ export function createApiRouters(config) {
       contentCatalog,
       savedQueryService,
       userVideoProgressStore,
+      lessonExpectations,
+      lessonSittingLog,
+      legitJudgements,
       markContentWatched,
     }
   };

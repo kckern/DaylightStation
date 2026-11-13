@@ -1,0 +1,10 @@
+// Teacher console: one row per piano lesson sitting. Read up close; plain table.
+.piano-sittings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  th { text-align: left; font-weight: 700; padding: 6px 8px; border-bottom: 2px solid #d8d0bf; white-space: nowrap; }
+  td { padding: 6px 8px; border-bottom: 1px solid #ebe5d8; vertical-align: top; }
+  td:nth-child(2) { max-width: 22ch; }
+}

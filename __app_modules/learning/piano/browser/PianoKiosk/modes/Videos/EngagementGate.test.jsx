@@ -8,8 +8,9 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 }));
 
 const evaluateMatch = vi.fn(() => 'idle');
+const picks = { queue: [] };
 vi.mock('../../../PianoFlashcards/flashcardEngine.js', () => ({
-  generateCardPitches: () => [60],
+  generateCardPitches: () => (picks.queue.length ? [picks.queue.shift()] : [60]),
   evaluateMatch: (...a) => evaluateMatch(...a),
 }));
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   midiState.activeNotes = new Map();
   evaluateMatch.mockReset();
   evaluateMatch.mockReturnValue('idle');
+  picks.queue = [];
 });
 
 describe('EngagementGate', () => {
@@ -61,5 +63,17 @@ describe('EngagementGate', () => {
     const onDismiss = vi.fn();
     render(<EngagementGate open={true} onDismiss={onDismiss} />);
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('answers only from the human-held keys when given (a loop conga on the target does not count)', () => {
+    midiState.activeNotes = new Map([[60, { note: 60 }]]); // the store sees the loop's note
+    render(<EngagementGate open={true} onDismiss={vi.fn()} humanNotes={new Map()} />);
+    expect(evaluateMatch).toHaveBeenCalledWith(new Map(), [60]);
+  });
+
+  it('never asks for a pitch the rhythm loop is playing', () => {
+    picks.queue = [62, 64, 63, 65];
+    render(<EngagementGate open={true} onDismiss={vi.fn()} avoidPitches={() => new Set([62, 63, 64])} />);
+    expect(screen.getByTestId('action-staff').getAttribute('data-target')).toBe('[65]');
   });
 });

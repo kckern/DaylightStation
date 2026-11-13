@@ -5,6 +5,7 @@ import { createPlayRouter } from "./play.mjs";
 import { RecordPlaybackProgress } from "../application/usecases/RecordPlaybackProgress.mjs";
 import { RegistryContentCatalogGateway } from "../../../content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
+let lastLogger;
 const makeRouter = (store) => {
   const app = express();
   app.use(express.json());
@@ -16,6 +17,7 @@ const makeRouter = (store) => {
   const registry = { get: () => null, adapters: { get: () => null } };
   const contentCatalog = new RegistryContentCatalogGateway({ registry });
   const logger = { info: vi.fn(), warn: vi.fn() };
+  lastLogger = logger;
   const recordPlaybackProgress = new RecordPlaybackProgress({
     contentCatalog,
     mediaProgressMemory,
@@ -56,5 +58,15 @@ describe('POST /play/log user delegation', () => {
       .post('/api/v1/play/log')
       .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'user_3', engaged: true });
     expect(res.status).toBe(200);
+  });
+
+  it('a piano good-faith state reaches the store whole but is not repeated into the request log', async () => {
+    const store = { record: vi.fn().mockReturnValue({}), prepareCredit: vi.fn(async () => {}) };
+    const goodFaith = { lesson: {}, presence: {}, perMinute: [1], notes: [{ pitch: 60, onsetMs: 0, durMs: 1, velocity: 9 }] };
+    await request(makeRouter(store)).post('/api/v1/play/log')
+      .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'u', practice: { sittingId: 's', goodFaith } });
+    expect(store.prepareCredit.mock.calls[0][0].practice.goodFaith).toEqual(goodFaith);
+    const logged = lastLogger.info.mock.calls.find(([e]) => e === 'play.log.request_received')[1];
+    expect(logged.body.practice.goodFaith).toEqual({ notes: 1 });
   });
 });

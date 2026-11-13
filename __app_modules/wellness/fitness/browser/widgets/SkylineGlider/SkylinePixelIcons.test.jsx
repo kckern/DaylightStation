@@ -7,7 +7,7 @@ import { createSkylineControlState, describeSkylineControls } from '../../lib/sk
 it('has a drawn icon for every symbol the control model puts on a button', () => {
   const acts = [{ id: 'one', name: 'One', status: 'open' }, { id: 'two', name: 'Two', status: 'locked' }];
   const base = { ...createSkylineControlState({ acts, riders: [] }), actId: 'one', weaponsEnabled: true };
-  const phases = ['identity', 'roster', 'flights', 'ready', 'countdown', 'flight', 'menu', 'crash', 'result', 'denied', 'save-details', 'stall', 'saving'];
+  const phases = ['identity', 'roster', 'flights', 'ready', 'countdown', 'flight', 'menu', 'settings', 'crash', 'result', 'denied', 'save-details', 'stall', 'saving'];
   const symbols = new Set(phases.flatMap((phase) => [
     ...describeSkylineControls({ ...base, phase }),
     ...describeSkylineControls({ ...base, phase, saveStatus: 'error', resumeIntent: 'live' }),

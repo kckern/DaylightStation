@@ -19,11 +19,17 @@ import Icon from '../../../ui/icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
+import { useLessonPractice } from './useLessonPractice.js';
 import useSyncedPlaybackRate from './useSyncedPlaybackRate.js';
 import { lectureContentId, resumeSecondsFor } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
 import EngagementGate from './EngagementGate.jsx';
+import LessonDrill from './LessonDrill.jsx';
+import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
+import { PRESCHOOL_POLICY, GOOD_FAITH_DEFAULTS } from '../../../../portable/practice/goodFaith.mjs';
 import { useEngagementGate } from './useEngagementGate.js';
+import { checkInRoots } from '../../../../portable/practice/lessonKey.mjs';
+import { useHumanNotes, humanActiveNotes } from '../../useHumanNotes.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
@@ -31,9 +37,11 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 const Player = lazy(() => import("../../../../../../media/media/browser/playback.mjs"));
 
 const EMPTY_NOTES = new Map();
+/** How long the end of a lesson waits for the credit answer before ending as before. */
+export const END_POST_DEADLINE_MS = 10000;
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null }) {
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null, completionThresholdPercent = 90 }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -61,6 +69,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const { activeNotes } = usePianoMidiNotes();
   const { mediaLevel } = usePianoMix();
   const [isPlaying, setIsPlaying] = useState(true);
+  // Played time counts from the first frame (`playing`), not from mount: an
+  // autoplay block or a slow Plex start is not minutes watched. Reset per lesson.
+  const [hasStarted, setHasStarted] = useState(false);
+  const mountedAtRef = useRef(Date.now());
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
@@ -94,6 +106,40 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const { currentUser } = usePianoUser();
   const engagedRef = useRef(false);
 
+  // This sitting's practice tally: human, practice-like notes and played time,
+  // reported on every play/log. The server marks a judged lesson on the item
+  // (`expectation: { enforced, preschool }`); past the watch threshold its
+  // reports carry the sitting's good-faith state for the session judge.
+  const expectation = lecture?.expectation ?? null;
+  // Check-in scales: the lesson's key when its title names one, else the
+  // household's drill_roots, else C/G/F — rotated by the ladder's scaleIndex.
+  const checkIn = useMemo(() => checkInRoots({ title, drillRoots: expectation?.drillRoots }), [title, expectation]);
+  const enforced = Boolean(expectation && currentUser && currentUser !== 'guest' && !lecture?.userWatched);
+  const practice = useLessonPractice({
+    enabled: true,
+    external: true, // fed by useHumanNotes' onNote below: one classifier per player
+    isPlaying: isPlaying && hasStarted,
+    enforced,
+    preschool: !!expectation?.preschool,
+    thresholdPercent: completionThresholdPercent,
+    getPercent: () => {
+      const el = mediaElRef.current;
+      return el && el.duration > 0 ? (el.currentTime / el.duration) * 100 : 0;
+    },
+    getDurationSec: () => {
+      const el = mediaElRef.current;
+      return el && el.duration > 0 ? el.duration : 0;
+    },
+    contentId,
+  });
+  // A lesson judged for good faith: it is in a judged course, a real learner is
+  // watching, and it has not counted yet. Its end waits for the server's
+  // answer — credit, or a warm-up first.
+  const enforcedRef = useRef(enforced);
+  enforcedRef.current = enforced;
+  const [drill, setDrill] = useState(null);
+  const endingRef = useRef(false);
+
   // Per-user auto-advance: fire once per lecture from the `ended` event. The
   // shared Player ALSO reacts to `ended` (its end-of-content advance calls
   // `clear` → onBack); the route's goBack ignores that call while an
@@ -101,17 +147,44 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const onAutoAdvanceRef = useRef(onAutoAdvance);
   onAutoAdvanceRef.current = onAutoAdvance;
   const endedHandledRef = useRef(false);
+  const endLessonRef = useRef(() => {});
+  const proceedRef = useRef(() => {});
   useEffect(() => { endedHandledRef.current = false; }, [contentId]);
+  useEffect(() => { setHasStarted(false); mountedAtRef.current = Date.now(); }, [contentId]);
   const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
 
-  // Engagement for completion = ANY play-along. Once the student presses any key
-  // this session, the lecture counts as engaged (the inactivity gate's note also
-  // lands here). engagedRef is read at each play/log post (Part 2).
-  useEffect(() => {
-    if (activeNotes && activeNotes.size > 0) engagedRef.current = true;
-  }, [activeNotes]);
+  // Only notes a person played count for presence and engagement — the piano's
+  // rhythm/drum loop and accompaniment stream notes too (humanNoteClassifier).
+  // One classifier per player: the presence gate and the practice tally read
+  // the same verdicts (the tally's `ingest` is stable; held in a ref anyway).
+  const ingestRef = useRef(practice.ingest);
+  ingestRef.current = practice.ingest;
+  const onNote = useCallback((evt, verdict, loop) => ingestRef.current?.(evt, verdict, loop), []);
+  const { humanNoteAt, humanHeld, loopPitches } = useHumanNotes({ context: { contentId }, onNote });
+  const humanNotes = useMemo(() => humanActiveNotes(activeNotes, humanHeld), [activeNotes, humanHeld]);
 
-  const { gateOpen, dismissGate } = useEngagementGate({
+  // Engagement for completion = ANY human play-along. Once the student plays a
+  // key this session, the lecture counts as engaged (the inactivity gate's note
+  // also lands here). engagedRef is read at each play/log post (Part 2).
+  useEffect(() => {
+    if (humanNoteAt) engagedRef.current = true;
+  }, [humanNoteAt]);
+
+  // The ladder asks the legitimacy judge about an ambiguous burst between
+  // check-ins — async, never awaited by the video.
+  const judgeBurst = useCallback((req) => {
+    if (!currentUser || currentUser === 'guest') return Promise.resolve({ legit: null, source: 'disabled' });
+    practice.noteLegitCheck();
+    return DaylightAPI(`api/v1/piano/users/${encodeURIComponent(currentUser)}/lesson-legit`, {
+      ...req, sittingId: practice.sittingId, preschool: !!expectation?.preschool,
+    });
+  }, [currentUser, practice, expectation]);
+  const { gateOpen, step: gateStep, dismissGate } = useEngagementGate({
+    burstSince: practice.burstSince,
+    judgeBurst,
+    recordCheckIn: practice.recordCheckIn,
+    policy: expectation?.preschool ? PRESCHOOL_POLICY : GOOD_FAITH_DEFAULTS,
+    humanNoteAt,
     pause: ctrl.pause,
     play: ctrl.play,
     isPaused: () => !isPlaying,
@@ -122,15 +195,17 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     onEngagementConfirmed: () => { engagedRef.current = true; },
   });
 
+  const leaveRef = useRef(() => onBack());
   // Header breadcrumb: the source show (tap → back to the course) › this lecture.
   usePianoBreadcrumb(useMemo(() => [
-    ...(source ? [{ label: source, onClick: onBack }] : []),
+    ...(source ? [{ label: source, onClick: () => leaveRef.current() }] : []),
     ...(title ? [{ label: title }] : []),
-  ], [source, title, onBack]));
+  ], [source, title]));
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   const { rate, cycleRate: handleCycleRate } = useSyncedPlaybackRate(mediaEl, playerRef);
-  usePianoWatchLog({
+  const { postNow } = usePianoWatchLog({
     mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef,
+    practiceReport: practice.report,
     // The gate's own timeout: a lecture shorter than this is never asked.
     askAfterSeconds: isSequential && engagementGateEnabled ? engagementTimeoutSeconds : undefined,
   });
@@ -140,9 +215,57 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // listener. When a completion coordinator exists, suppress only that natural
   // end clear so the route can choose checkpoint, next lesson, or course end.
   const handlePlayerClear = useCallback(() => {
-    if (mediaElRef.current?.ended && onAutoAdvanceRef.current) return;
+    if (mediaElRef.current?.ended && (onAutoAdvanceRef.current || enforcedRef.current)) return;
     onBack();
   }, [onBack]);
+
+  // After the lesson: on to the next one (auto-advance) or back to the course.
+  const proceed = useCallback(() => {
+    if (onAutoAdvanceRef.current) onAutoAdvanceRef.current();
+    else onBack();
+  }, [onBack]);
+
+  // The end of an enforced lesson (natural end, or leaving past the watch
+  // threshold): one post, and the server says whether a warm-up comes first.
+  const endLesson = useCallback((reason, then) => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    // A stalled post must never strand a finished lesson: past the deadline the
+    // lesson ends as it always has (the server still judges the posts it gets).
+    let timer;
+    const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve('timeout'), END_POST_DEADLINE_MS); });
+    Promise.race([postNow(reason), deadline]).then((credit) => {
+      clearTimeout(timer);
+      endingRef.current = false;
+      if (credit === 'timeout') {
+        getLogger().child({ component: 'piano-lesson-drill' }).warn('piano.lesson-credit.end-post-timeout', { contentId, reason });
+        then();
+        return;
+      }
+      if (credit?.outcome === 'drill-owed' && credit.drill) {
+        getLogger().child({ component: 'piano-lesson-drill' }).info('piano.lesson-drill.offered', {
+          contentId, score: credit.score ?? null, reps: credit.drill.reps, sets: credit.drill.sets,
+          roots: credit.drill.roots ?? [], kind: credit.drill.spec?.kind ?? null,
+        });
+        setDrill(credit.drill);
+        return;
+      }
+      then();
+    });
+  }, [postNow, contentId]);
+
+  // Back/breadcrumb: past the watch threshold, an enforced lesson asks first.
+  const leave = useCallback(() => {
+    const el = mediaElRef.current;
+    const pct = el && el.duration > 0 ? (el.currentTime / el.duration) * 100 : 0;
+    // A second Back while the answer is still coming leaves at once.
+    if (endingRef.current) { onBack(); return; }
+    if (enforcedRef.current && pct >= completionThresholdPercent) endLesson('close', onBack);
+    else onBack();
+  }, [completionThresholdPercent, endLesson, onBack]);
+  leaveRef.current = leave;
+  endLessonRef.current = endLesson;
+  proceedRef.current = proceed;
 
   // Own memo, keyed ONLY on content. The Player derives its media identity from
   // this object; a fresh object for the same lecture remounts the video and
@@ -237,11 +360,24 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
+    const onPlaying = () => setHasStarted((was) => {
+      if (!was) {
+        getLogger().child({ component: 'piano-video-player' }).debug('piano.lesson-practice.first-frame', {
+          contentId, msFromMount: Date.now() - mountedAtRef.current,
+        });
+      }
+      return true;
+    });
     const onMeta = () => {
       setDuration(mediaEl.duration || 0);
       if (mediaEl.videoWidth && mediaEl.videoHeight) setAspect(mediaEl.videoWidth / mediaEl.videoHeight);
     };
     const onEnded = () => {
+      if (enforcedRef.current && !endedHandledRef.current) {
+        endedHandledRef.current = true;
+        endLessonRef.current('ended', proceedRef.current);
+        return;
+      }
       if (!onAutoAdvanceRef.current || endedHandledRef.current) return;
       endedHandledRef.current = true;
       getLogger().child({ component: 'piano-video-player' }).info('piano.video.auto-advance', { contentId });
@@ -250,6 +386,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     mediaEl.addEventListener('timeupdate', onTime);
     mediaEl.addEventListener('play', onPlay);
     mediaEl.addEventListener('pause', onPause);
+    mediaEl.addEventListener('playing', onPlaying);
+    // Resolved after frames were already flowing: the `playing` event is gone.
+    if (!mediaEl.paused && mediaEl.readyState >= 3) onPlaying();
     mediaEl.addEventListener('loadedmetadata', onMeta);
     mediaEl.addEventListener('ended', onEnded);
     onMeta();
@@ -257,6 +396,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       mediaEl.removeEventListener('timeupdate', onTime);
       mediaEl.removeEventListener('play', onPlay);
       mediaEl.removeEventListener('pause', onPause);
+      mediaEl.removeEventListener('playing', onPlaying);
       mediaEl.removeEventListener('loadedmetadata', onMeta);
       mediaEl.removeEventListener('ended', onEnded);
     };
@@ -328,6 +468,24 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     );
   }
 
+  if (drill) {
+    return (
+      <div className="piano-video-player piano-video-player--drill">
+        <LessonDrill
+          drill={drill}
+          context={{ contentId }}
+          onRepPassed={(n) => { practice.setDrillsPassed(n); postNow('drill'); }}
+          confirmLastRep={(n) => {
+            practice.setDrillsPassed(n);
+            return postNow('drill').then((credit) => credit?.outcome === 'credited-after-drills' || credit?.outcome === 'credited');
+          }}
+          onComplete={proceed}
+          onLeave={() => onBack()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="piano-video-player piano-video-player--playalong">
       {/* Upper row: video + transport (left, sized to the video aspect) and the
@@ -336,7 +494,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : handleSurfaceTap} style={{ position: 'relative' }}>
             {playerEl}
-            {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
+            {gateOpen && <EngagementGate open={gateOpen} step={gateStep} onDismiss={dismissGate} humanNotes={humanNotes} avoidPitches={loopPitches} roots={checkIn.roots} rotation={gateStep?.scaleIndex ?? 0} rootsSource={checkIn.source} />}
             {isFullscreen && fsOverlayOpen && !gateOpen && (
               <FullscreenTransportOverlay
                 isPlaying={isPlaying}

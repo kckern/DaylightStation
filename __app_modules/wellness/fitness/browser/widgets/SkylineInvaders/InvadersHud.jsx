@@ -6,6 +6,7 @@ import { boostRules, fireRules } from '../../lib/skylineInvaders/rules.js';
 import { WEAPON_STEPS, bombReady, weaponTier } from '../../lib/skylineInvaders/tiers.js';
 import { BOOST_LABELS } from '../../lib/skylineInvaders/invadersEffects.js';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
+import { PixelIcon } from '../SkylineGlider/SkylinePixelIcons.jsx';
 import './SkylineInvaders.scss';
 
 // In-round header, read from across the garage. Left: how the city is doing
@@ -21,11 +22,11 @@ export function formatClock(seconds) {
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
 
-// What to do about the aim, when there is something to do.
+// A badge, not instructions: what the aim is doing when it is not following the defender.
 function aimNote(aimStatus, poseStatus) {
   const camera = poseStatus?.state;
-  if (camera === 'camera-denied' || camera === 'error') return 'Camera off — aim with the gamepad';
-  if (camera && camera !== 'detecting') return 'Camera starting — aim with the gamepad';
+  if (camera === 'camera-denied' || camera === 'error') return 'Gamepad aim';
+  if (camera && camera !== 'detecting') return 'Camera starting';
   if (aimStatus?.lost) return 'Step into view';
   return null;
 }
@@ -44,7 +45,8 @@ function Weapon({ state, level }) {
     <div className="skyline-invaders__hud-weapon" data-testid="invaders-weapon" data-tier={weaponTier(state.weapon)} data-bomb={ready}>
       <ol className="skyline-invaders__hud-ladder" aria-label={`Weapon: ${WEAPON_STEPS[at]}`}>
         {WEAPON_STEPS.map((label, index) => (
-          <li key={label} data-step={index} className={index === at ? 'is-current' : index < at ? 'is-done' : undefined}>{label}</li>
+          // Only the weapon in hand is spelled out; the other steps are pips (the 8-bit face is a full em per glyph).
+          <li key={label} data-step={index} className={index === at ? 'is-current' : index < at ? 'is-done' : undefined} aria-label={label}>{index === at ? label : ''}</li>
         ))}
       </ol>
       <div className="skyline-invaders__hud-gauge skyline-invaders__hud-gauge--power" data-testid="invaders-power" data-full={ready}>
@@ -89,12 +91,12 @@ function Boost({ state, level }) {
  */
 export default function InvadersHud({ state, level, gesture = null, aimStatus = null, poseStatus = null, partner = null }) {
   const remaining = Math.max(0, level.duration_s - state.time);
+  const note = aimNote(aimStatus, poseStatus);
+  const controls = GESTURE_INFO[gesture]?.label || null;
   const passKills = level.pass?.kills ?? 0;
   const killsPassed = state.kills >= passKills;
   const hp = Math.max(0, Math.ceil(state.base.hp));
   const urgent = remaining <= URGENT_S;
-  const note = aimNote(aimStatus, poseStatus);
-  const controls = GESTURE_INFO[gesture]?.label || null;
   return (
     <header className="skyline-invaders__hud" data-testid="skyline-invaders-hud" data-pose={poseStatus?.state || undefined} data-urgent={urgent} data-gesture={gesture || undefined}>
       <ProgressMeter className="skyline-invaders__hud-clock" value={remaining} maximum={level.duration_s} label="Time left" />
@@ -109,16 +111,19 @@ export default function InvadersHud({ state, level, gesture = null, aimStatus = 
           <PixelSprite grid={INVADER_SPRITES.drone.frames[0]} className="skyline-invaders__hud-icon skyline-invaders__hud-icon--kills" />
           {/* Past the pass mark the target drops away: "25 / 4" reads as a mistake. */}
           <span className="skyline-invaders__hud-number" data-testid="invaders-kills" data-passed={killsPassed} aria-label={killsPassed ? `${state.kills} shot down, target of ${passKills} reached` : `${state.kills} of ${passKills} shot down`}>
-            {killsPassed ? `${state.kills} ✓` : `${state.kills} / ${passKills}`}
+            {killsPassed ? <>{state.kills}<PixelIcon name="check" /></> : `${state.kills} / ${passKills}`}
           </span>
         </div>
       </div>
 
-      <span className="skyline-invaders__hud-time" data-testid="invaders-time" data-urgent={urgent}>{formatClock(remaining)}</span>
-
-      <div className="skyline-invaders__hud-points">
-        <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
-        {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Streak ${state.combo}`}>{`×${state.combo}`}</span>}
+      {/* The clock and the score as one centred group, so the score never runs
+          under the weapon plate and boost on the far right (1381 px garage, 2026-11-12). */}
+      <div className="skyline-invaders__hud-centre">
+        <span className="skyline-invaders__hud-time" data-testid="invaders-time" data-urgent={urgent}>{formatClock(remaining)}</span>
+        <div className="skyline-invaders__hud-points">
+          <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
+          {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Streak ${state.combo}`}>{`x${state.combo}`}</span>}
+        </div>
       </div>
 
       <div className="skyline-invaders__hud-right">
@@ -129,7 +134,7 @@ export default function InvadersHud({ state, level, gesture = null, aimStatus = 
       <div className="skyline-invaders__hud-notes">
         <MomentBanner text={note} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
         {/* The controls in use, unless the aim note needs the strip. */}
-        {controls && !note && <span className="skyline-invaders__hud-note skyline-invaders__hud-note--controls" data-testid="invaders-controls">{`Aim: ${controls}`}</span>}
+        {controls && !note && <span className="skyline-invaders__hud-note skyline-invaders__hud-note--controls" data-testid="invaders-controls">{controls}</span>}
       </div>
     </header>
   );

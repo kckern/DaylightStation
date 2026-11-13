@@ -1,67 +1,47 @@
 import React from 'react';
-import InvadersActions from './InvadersActions.jsx';
-import './SkylineInvaders.scss';
+import { StarRow } from './InvadersMenus.jsx';
 
-// The end of a round: how it went, whether it is saved, and what to do next.
-// A new round is not offered until the record is saved, so a result can never
-// be lost by playing over it.
+// The end of a round, in Skyline Glider's "Back at base" window: the stars,
+// each number against what the wave asked for, and whether it is saved. What
+// comes next is on the touch keys (replay, next wave, waves, change
+// defender), offered only once the record is saved, so a result can never be
+// lost by playing over it. Exit is there saved or not.
 
 const TITLES = Object.freeze({ completed: 'Skyline held!', failed: 'Skyline fell short', abandoned: 'Round ended' });
-const cls = (...names) => names.filter(Boolean).join(' ');
 
 /**
  * @param {object} props
  * @param {object} props.record        the skyline-invaders-run/v1 record being saved
  * @param {'saving'|'saved'|'error'} props.saveStatus
  * @param {object} props.level         the level that was played
- * @param {object|null} props.nextLevel the next open level after a pass, if any
- * @param {object} [props.tracker]     aim tracker: the arms-wide press takes the first action
- * @param {function} [props.onExit]    leave the game; no Exit button without it
  */
-export default function InvadersResult({ record, saveStatus, level, nextLevel = null, onReplay, onNext, onLevels, onRetrySave, onExit, tracker = null, active = true }) {
+export default function InvadersResult({ record, saveStatus, level }) {
   const run = record.run;
-  const passed = run.status === 'completed';
-  const replay = { id: 'replay', label: run.status === 'failed' ? 'Try again' : 'Play again', onPress: () => onReplay?.() };
-  const levels = { id: 'levels', label: 'Levels', onPress: () => onLevels?.() };
-  // The way out is always there, saved or not: nobody should have to reload the page to leave.
-  const exit = onExit ? [{ id: 'exit', label: 'Exit', hint: saveStatus === 'saved' ? 'Leave the game' : 'Leave without waiting', onPress: () => onExit('button') }] : [];
-  let actions;
-  if (saveStatus === 'error') actions = [{ id: 'retry-save', label: 'Retry save', hint: 'Needed before the next round', onPress: () => onRetrySave?.() }, ...exit];
-  else if (saveStatus === 'saving') actions = [{ id: 'saving', label: 'Saving…', disabled: true, onPress: () => {} }, ...exit];
-  else if (passed && nextLevel) actions = [{ id: 'next', label: 'Next level', hint: nextLevel.name, onPress: () => onNext?.() }, replay, levels, ...exit];
-  else actions = [replay, levels, ...exit];
-  // Each number stands alone, with what the level asked for in small print
-  // under it. "25 of 4" reads as a mistake once a round beats its target.
   const hpMin = level.pass.base_hp_min ?? 0;
+  // Each number stands alone, with what the wave asked for beside it. "25 of 4"
+  // reads as a mistake once a round beats its target.
   const rows = [
     { id: 'kills', label: 'Shot down', value: String(run.kills), note: `needed ${level.pass.kills}`, met: run.kills >= level.pass.kills },
-    { id: 'score', label: 'Score', value: run.score.toLocaleString('en-US') },
-    { id: 'combo', label: 'Best streak', value: `×${run.best_combo}` },
     { id: 'skyline', label: 'Skyline', value: `${run.base_hp}%`, ...(hpMin > 0 ? { note: `needed ${hpMin}%`, met: run.base_hp >= hpMin } : {}) },
+    { id: 'combo', label: 'Best streak', value: `x${run.best_combo}` },
+    { id: 'score', label: 'Score', value: run.score.toLocaleString('en-US') },
   ];
   return (
-    <section className="skyline-invaders__result" data-testid="skyline-invaders-result" data-status={run.status} data-save={saveStatus} aria-label="Round result">
-      <header className="skyline-invaders__result-head">
-        <p>{level.name}</p>
-        <h1>{TITLES[run.status] || TITLES.abandoned}</h1>
-        <span className="skyline-invaders__stars-row skyline-invaders__stars-row--result" role="img" aria-label={`${run.stars} of 3 stars`}>
-          {[1, 2, 3].map((n) => <span key={n} className={cls('skyline-invaders__star', n <= run.stars && 'is-won')} aria-hidden="true">★</span>)}
-        </span>
-      </header>
-      <dl className="skyline-invaders__result-rows">
+    <div className="skyline-menus" data-phase="result" data-testid="skyline-invaders-result" data-status={run.status} data-save={saveStatus}>
+      <p className="skyline-menus__kicker">{level.name}</p>
+      <h1>{TITLES[run.status] || TITLES.abandoned}</h1>
+      <StarRow count={run.stars} className="skyline-invaders__star-row--result" />
+      <dl className="skyline-menus__summary skyline-invaders__summary">
         {rows.map((row) => (
-          <div key={row.id} data-testid={`invaders-result-${row.id}`} data-met={row.note ? String(row.met) : undefined}>
-            <dt>{row.label}</dt>
+          <div key={row.id} data-stat={row.id} data-testid={`invaders-result-${row.id}`} data-met={row.note ? String(row.met) : undefined}>
+            <dt>{row.label}{row.note && <small>{row.note}</small>}</dt>
             <dd>{row.value}</dd>
-            {row.note && <dd className="skyline-invaders__result-need">{row.note}</dd>}
           </div>
         ))}
       </dl>
-      {saveStatus === 'saved' && <p className="skyline-invaders__result-save" role="status">{run.reward_rings > 0 ? `Saved. +${run.reward_rings} rings` : 'Saved.'}</p>}
-      {saveStatus === 'saving' && <p className="skyline-invaders__result-save" role="status">Saving the round…</p>}
-      {saveStatus === 'error' && <p className="skyline-invaders__result-save" role="alert">This round is not saved yet. Retry before playing again.</p>}
-      <InvadersActions actions={actions} active={active} tracker={saveStatus === 'saved' ? tracker : null} onBack={saveStatus === 'saved' ? onLevels : undefined} />
-      <p className="skyline-invaders__how">Tap a button, press any key, or A on the gamepad. Left and right move between the choices.</p>
-    </section>
+      {saveStatus === 'saved' && <p className="skyline-invaders__save" data-tone="good" role="status">{run.reward_rings > 0 ? `Saved · +${run.reward_rings} rings` : 'Saved'}</p>}
+      {saveStatus === 'saving' && <p className="skyline-invaders__save" role="status">Saving…</p>}
+      {saveStatus === 'error' && <p className="skyline-invaders__save" data-tone="bad" role="alert">Not saved yet. Retry save before the next round.</p>}
+    </div>
   );
 }

@@ -15,7 +15,7 @@ vi.mock("../../context/FitnessContext.jsx", () => ({
 // The container reads the official fitness volume store; stub it here (this is a
 // lifecycle smoke test, not a volume test — and there's no VolumeProvider).
 vi.mock("../../nav/usePersistentVolume.js", () => ({
-  usePersistentVolume: () => ({ volume: 1, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() })
+  usePersistentVolume: () => ({ volume: 1, muted: false, source: 'exact', setVolume: vi.fn(), toggleMute: vi.fn() })
 }));
 
 import CycleGameContainer from "./CycleGameContainer.jsx";

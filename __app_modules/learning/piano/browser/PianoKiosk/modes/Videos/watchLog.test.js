@@ -30,3 +30,13 @@ describe('buildWatchLogPayload', () => {
     expect(p).toMatchObject({ userId: 'user_3', engaged: true });
   });
 });
+
+describe('buildWatchLogPayload practice', () => {
+  it('carries practice only when given', async () => {
+    const { buildWatchLogPayload: build } = await import('./watchLog.js');
+    const base = { contentId: 'plex:1', seconds: 50, duration: 100 };
+    expect(build(base).practice).toBeUndefined();
+    const practice = { sittingId: 'a', humanNotes: 3, practiceNotes: 2, playedSec: 40, drillsPassed: 0 };
+    expect(build({ ...base, practice }).practice).toEqual(practice);
+  });
+});

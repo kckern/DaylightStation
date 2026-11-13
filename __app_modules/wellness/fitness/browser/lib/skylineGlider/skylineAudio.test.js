@@ -167,7 +167,7 @@ describe('Skyline audio', () => {
     voices.forEach((v) => expect(levelOf(v)).toBeGreaterThan(0));
     audio.setMuted(true);
     voices.forEach((v) => expect(levelOf(v)).toBe(0));
-    expect(audio.getLevels()).toEqual({ volume: 0.8, muted: true, output: 0 });
+    expect(audio.getLevels()).toEqual({ volume: 0.8, muted: true, output: 0, contextState: 'running' });
   });
 });
 

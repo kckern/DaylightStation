@@ -224,10 +224,15 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
 
   // `at` (optional) is the already-resolved event time in epoch ms (see
   // stampNote). Local sources (on-screen keys, dev keys) omit it and get receipt.
-  const applyNoteOn = useCallback((note, velocity, at) => {
+  // `channel` (0-based) rides along on the tap when the source knows it (Web MIDI
+  // always; the bridge only if its frame carries `ch`) — humanNoteClassifier
+  // uses it to drop the piano's rhythm/accompaniment channels.
+  const applyNoteOn = useCallback((note, velocity, at, channel) => {
     const time = Number.isFinite(at) ? at : Date.now();
     storeRef.current.noteOn(note, velocity, time);
-    emit({ type: 'note_on', note, velocity, time });
+    emit(Number.isInteger(channel)
+      ? { type: 'note_on', note, velocity, time, channel }
+      : { type: 'note_on', note, velocity, time });
   }, [emit]);
 
   const applyNoteOff = useCallback((note, at) => {
@@ -260,7 +265,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     const parsed = parseMidiMessage(event.data);
     if (!parsed) return;
     if (parsed.type === 'note_on') {
-      applyNoteOn(parsed.note, parsed.velocity, stampNote(webMidiEventEpochMs(event), 'webmidi'));
+      applyNoteOn(parsed.note, parsed.velocity, stampNote(webMidiEventEpochMs(event), 'webmidi'), parsed.channel);
     } else if (parsed.type === 'note_off') {
       applyNoteOff(parsed.note, stampNote(webMidiEventEpochMs(event), 'webmidi'));
     }
@@ -802,8 +807,8 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // bridge-fed note is inbound only, not something we're relaying out).
   // `t` (optional) is the bridge's epoch-ms MIDI event time (payload p20+).
   // Older payloads omit it; the note then lands at receipt time exactly as before.
-  const feedNote = useCallback((type, note, velocity, t) => {
-    if (type === 'note_on') applyNoteOn(note, velocity, stampNote(t, 'bridge'));
+  const feedNote = useCallback((type, note, velocity, t, channel) => {
+    if (type === 'note_on') applyNoteOn(note, velocity, stampNote(t, 'bridge'), channel);
     else if (type === 'note_off') applyNoteOff(note, stampNote(t, 'bridge'));
   }, [applyNoteOn, applyNoteOff]);
 

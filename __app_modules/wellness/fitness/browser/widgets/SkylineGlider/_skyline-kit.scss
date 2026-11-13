@@ -1,0 +1,62 @@
+// Shared look of the Skyline games' menu screens (Skyline Glider, Skyline
+// Invaders): the tokens and the pixel ring/frame mixins. SkylineGlider.scss
+// states the rules of the look.
+@use 'sass:string';
+
+@mixin sg-tokens {
+  --sg-ink: #17132b;          // every outline, rim and plate face
+  --sg-night: #252d6b;        // window fill
+  --sg-night-lift: #39448f;   // a row or key resting on a window
+  --sg-mute: #8088c4;         // off, spent, locked
+  --sg-locked: #b7bdf2;       // a locked flight's name, on an ink plate
+  --sg-paper: #fff5d6;        // text and window edge
+  --sg-gold: #ffc21a;         // score, selection, good news
+  --sg-red: #ef3350;          // refusal, hazard
+  --sg-heart: #ff4d5e;
+  // Bike buttons 1–4 (laser, bomb, missile, boost) and the lip under each key.
+  --sg-b1: #45d6f5; --sg-b1-shade: #177d9c;
+  --sg-b2: #ffc21a; --sg-b2-shade: #b5650a;
+  --sg-b3: #ff6f4d; --sg-b3-shade: #a82e1d;
+  --sg-b4: #b995ff; --sg-b4-shade: #6741c2;
+  // One UI pixel: the scene's art pixel is 0.3% of its width, so this is too.
+  --sg-px: 5px;
+  --sg-px: max(2px, round(down, 0.3vw, 1px));
+  // Outline weight for text set straight on the scene.
+  --sg-line: 3px;
+  --sg-line: max(2px, round(down, 0.18vw, 1px));
+  --sg-line-s: 2px;           // the same, for the smallest text
+  // Type scale. The kiosk is 1810 px wide: 24 / 32 / 43 / 83 / 163 px there.
+  --sg-text-s: max(13px, 1.35vw);
+  --sg-text-m: max(15px, 1.75vw);
+  --sg-text-l: max(18px, 2.4vw);
+  --sg-text-xl: max(30px, 4.6vw);
+  --sg-text-xxl: max(56px, 9vw);
+  --sg-font: "SG Quotes", "Karmatic Arcade", "Roboto Condensed", "Arial Narrow", sans-serif;
+  font-synthesis: none;   // a pixel face has one weight and no italic: never fake them
+  word-spacing: .3em;      // Karmatic Arcade's space is a sliver: words ran together
+  button { word-spacing: inherit; }   // the UA sheet resets it on buttons
+}
+
+// Four shadows that draw a one-pixel ring `$n` pixels out with its corners left
+// open, which is what steps the corners of every frame.
+@function sg-ring($colour, $n: 1) {
+  $d: calc(#{$n} * var(--sg-px)); $m: calc(#{-$n} * var(--sg-px));
+  @return string.unquote("0 #{$m} 0 0 #{$colour}, 0 #{$d} 0 0 #{$colour}, #{$m} 0 0 0 #{$colour}, #{$d} 0 0 0 #{$colour}");
+}
+@function sg-corners($colour) {
+  $d: var(--sg-px); $m: calc(-1 * var(--sg-px));
+  @return string.unquote("#{$m} #{$m} 0 0 #{$colour}, #{$d} #{$m} 0 0 #{$colour}, #{$m} #{$d} 0 0 #{$colour}, #{$d} #{$d} 0 0 #{$colour}");
+}
+// A window or sign frame: coloured edge, ink rim, and one more pixel of ink
+// under it so it sits on the scene.
+@mixin sg-frame($edge: var(--sg-paper)) {
+  border-radius: 0;
+  box-shadow: sg-ring($edge), sg-corners(var(--sg-ink)), sg-ring(var(--sg-ink), 2), 0 calc(3 * var(--sg-px)) 0 0 var(--sg-ink);
+}
+// Text set straight on the scene: a hard ink outline with a one-step drop.
+@mixin sg-outline($line: var(--sg-line)) {
+  $l: $line; $m: calc(-1 * #{$line}); $d: calc(2 * #{$line});
+  text-shadow: $l 0 var(--sg-ink), $m 0 var(--sg-ink), 0 $l var(--sg-ink), 0 $m var(--sg-ink),
+    $l $l var(--sg-ink), $m $l var(--sg-ink), $l $m var(--sg-ink), $m $m var(--sg-ink),
+    0 $d var(--sg-ink), $l $d var(--sg-ink), $m $d var(--sg-ink);
+}

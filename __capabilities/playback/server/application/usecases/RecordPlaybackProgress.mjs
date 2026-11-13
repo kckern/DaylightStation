@@ -92,6 +92,8 @@ export class RecordPlaybackProgress {
 
   async execute({
     type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged,
+    // The piano kiosk's lesson-practice report; opaque here, judged by the store.
+    practice = null,
     // `deviceId` names the surface (threaded from the request, not the body).
     // `naturalEnd`/`status` distinguish finishing from merely stopping — only a
     // natural end may be reported as watched.
@@ -301,6 +303,15 @@ export class RecordPlaybackProgress {
 
     let userProgress = null;
     if (userId && this.userVideoProgressStore) {
+      // The piano store may judge the lesson sitting first (bounded by its own
+      // deadline); a failure there never stops the record.
+      if (practice && typeof practice === 'object' && typeof this.userVideoProgressStore.prepareCredit === 'function') {
+        try {
+          await this.userVideoProgressStore.prepareCredit({ userId, plexId: assetId, practice });
+        } catch (error) {
+          this.logger.warn?.('play.log.prepare_credit_failed', { userId, assetId, error: error.message });
+        }
+      }
       try {
         userProgress = this.userVideoProgressStore.record({
           userId,
@@ -309,6 +320,8 @@ export class RecordPlaybackProgress {
           seconds: normalizedSeconds,
           duration: estimatedDuration,
           engaged: !!engaged,
+          practice: practice && typeof practice === 'object' ? practice : null,
+          title: itemMetadata?.title || title || null,
         });
       } catch (error) {
         this.logger.warn?.('play.log.user_progress_failed', { userId, assetId, error: error.message });

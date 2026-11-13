@@ -1,10 +1,11 @@
-// Renders the real SkylineInvaders shell (lobby, controls intro, round, result)
+// Renders the real SkylineInvaders shell (lobby, calibration, round, result)
 // against stubbed edges: fitness context, pose bridge, identity, and a level
 // API answered by the harness server. Driven by tests/_scratch/shoot-skyline-invaders-shell.mjs.
 //   /shell.html?pose=detecting&shooter=none&mat=none&partner=1&controls=none|twist&levels=none|fail
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import SkylineInvaders from '../../../__app_modules/wellness/fitness/browser/widgets/SkylineInvaders/SkylineInvaders.jsx';
+import { VolumeProvider } from '../../../__app_modules/wellness/fitness/browser/nav/VolumeProvider.jsx';
 import { KP } from '../../../__app_modules/wellness/fitness/browser/lib/skylineInvaders/aim.js';
 
 // A BlazePose pose for the shoot script: shoulders 120 px apart, elbows hanging
@@ -30,5 +31,5 @@ window.__si.feed = (deg) => window.__si.tracker.processPoses([window.__si.pose(d
 // The aim (0..1) as a wiper tilt.
 window.__si.feedAim = (aim) => window.__si.feed((aim - 0.5) * 100);
 
-createRoot(document.getElementById('root')).render(<SkylineInvaders onClose={() => { document.body.dataset.closed = 'true'; }} />);
+createRoot(document.getElementById('root')).render(<VolumeProvider><SkylineInvaders onClose={() => { document.body.dataset.closed = 'true'; }} /></VolumeProvider>);
 document.body.dataset.harnessReady = 'true';

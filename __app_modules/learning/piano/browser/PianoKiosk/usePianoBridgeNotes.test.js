@@ -136,7 +136,18 @@ describe('usePianoBridgeNotes', () => {
       ws.onopen?.();
       ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 60, velocity: 100 }) });
     });
-    expect(onNote).toHaveBeenCalledWith('note_on', 60, 100, undefined);
+    expect(onNote).toHaveBeenCalledWith('note_on', 60, 100, undefined, undefined);
+  });
+
+  it('passes a frame\'s MIDI channel `ch` through when the payload sends one', async () => {
+    const onNote = vi.fn();
+    renderHook(() => usePianoBridgeNotes({ onNote }));
+    const ws = instances[0];
+    await act(async () => {
+      ws.onopen?.();
+      ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 36, velocity: 90, t: 5, ch: 9 }) });
+    });
+    expect(onNote).toHaveBeenCalledWith('note_on', 36, 90, 5, 9);
   });
 
   it('calls onNote with note_off for a note.off frame', async () => {
@@ -159,7 +170,7 @@ describe('usePianoBridgeNotes', () => {
       ws.onmessage?.({ data: JSON.stringify({ type: 'note.on', note: 60, velocity: 100, t: 1800000000123 }) });
       ws.onmessage?.({ data: JSON.stringify({ type: 'note.off', note: 60, t: 1800000000456 }) });
     });
-    expect(onNote).toHaveBeenNthCalledWith(1, 'note_on', 60, 100, 1800000000123);
+    expect(onNote).toHaveBeenNthCalledWith(1, 'note_on', 60, 100, 1800000000123, undefined);
     expect(onNote).toHaveBeenNthCalledWith(2, 'note_off', 60, 0, 1800000000456);
   });
 

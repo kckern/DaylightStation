@@ -9,6 +9,8 @@ export function createSkylineAudio() {
     prime: async () => true,
     playCue: (cue) => { window.__si.cues.push(cue); return true; },
     setMuted: () => {},
+    setVolume: () => {},
+    getLevels: () => ({ output: 0 }),
     stop: () => {},
   };
 }

@@ -22,19 +22,19 @@ describe('InvadersHud', () => {
     expect(screen.getByTestId('invaders-kills').textContent).toBe('7 / 30');
     expect(screen.getByTestId('invaders-kills').getAttribute('data-passed')).toBe('false');
     expect(screen.getByTestId('invaders-score').textContent).toBe('2,340');
-    expect(screen.getByTestId('invaders-combo').textContent).toBe('×3');
+    expect(screen.getByTestId('invaders-combo').textContent).toBe('x3');
   });
 
   it('hides the combo at one or none, and marks the kills once the pass mark is reached', () => {
     renderHud({ state: { kills: 30, combo: 1 } });
     expect(screen.queryByTestId('invaders-combo')).toBeNull();
     expect(screen.getByTestId('invaders-kills').getAttribute('data-passed')).toBe('true');
-    expect(screen.getByTestId('invaders-kills').textContent).toBe('30 ✓');
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('30');
   });
 
   it('drops the target once the round is past it, so it never reads "45 / 30"', () => {
     renderHud({ state: { kills: 45 } });
-    expect(screen.getByTestId('invaders-kills').textContent).toBe('45 ✓');
+    expect(screen.getByTestId('invaders-kills').textContent).toBe('45');
     expect(screen.getByLabelText('45 shot down, target of 30 reached')).toBeTruthy();
   });
 
@@ -55,7 +55,8 @@ describe('InvadersHud', () => {
     expect(screen.getByTestId('invaders-time').getAttribute('data-urgent')).toBe('true');
   });
 
-  const ladder = () => [...screen.getByTestId('invaders-weapon').querySelectorAll('li')].map((li) => [li.textContent, li.className]);
+  // Only the weapon in hand is spelled out; every step is named for a screen reader.
+  const ladder = () => [...screen.getByTestId('invaders-weapon').querySelectorAll('li')].map((li) => [li.getAttribute('aria-label'), li.className]);
 
   it('shows the weapon ladder with the weapon in hand lit', () => {
     const view = renderHud();
@@ -96,7 +97,7 @@ describe('InvadersHud', () => {
 
   it('names the controls in use, and makes way for an aim note', () => {
     const view = renderHud({ gesture: 'twist' });
-    expect(screen.getByTestId('invaders-controls').textContent).toBe('Aim: Twist');
+    expect(screen.getByTestId('invaders-controls').textContent).toBe('Twist');
     expect(screen.getByTestId('skyline-invaders-hud').getAttribute('data-gesture')).toBe('twist');
     expect(notes()).toEqual([]);
     view.unmount();
@@ -109,12 +110,12 @@ describe('InvadersHud', () => {
     expect(notes()).toEqual(['Step into view']);
     view.unmount();
     renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'camera-denied' } });
-    expect(notes()).toEqual(['Camera off — aim with the gamepad']);
+    expect(notes()).toEqual(['Gamepad aim']);
   });
 
-  it('says the camera is still starting, rather than asking the shooter to step into view', () => {
+  it('says the camera is still starting, rather than asking the defender to step into view', () => {
     renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'loading' } });
-    expect(notes()).toEqual(['Camera starting — aim with the gamepad']);
+    expect(notes()).toEqual(['Camera starting']);
   });
 
   it('shows the boost only with a partner: the meter while it fills, the label and seconds while it runs', () => {

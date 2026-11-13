@@ -1,17 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-const midiState = { activeNotes: new Map() };
-vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => midiState,
-  usePianoMidiNotes: () => midiState,
-}));
-
 import { useEngagementGate } from './useEngagementGate.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
-  midiState.activeNotes = new Map();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -95,17 +88,31 @@ describe('useEngagementGate', () => {
     expect(pause).toHaveBeenCalled();
   });
 
-  it('MIDI activity resets the idle timer (gate does not open if notes keep coming)', () => {
+  it('a human note resets the idle timer (gate does not open if notes keep coming)', () => {
     const pause = vi.fn();
     const play = vi.fn();
     const isPaused = vi.fn(() => false);
-    const { result, rerender } = renderHook(() =>
-      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 3 })
-    );
-    // 2s pass, then a note is pressed (resets), then 2 more seconds — total 4s but never 3s idle
+    const { result, rerender } = renderHook(({ humanNoteAt }) =>
+      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 3, humanNoteAt }),
+    { initialProps: { humanNoteAt: 0 } });
+    // 2s pass, then a note is played (resets), then 2 more seconds — total 4s but never 3s idle
     act(() => { vi.advanceTimersByTime(2000); });
-    act(() => { midiState.activeNotes = new Map([[60, { note: 60 }]]); rerender(); });
+    act(() => { rerender({ humanNoteAt: Date.now() }); });
     act(() => { vi.advanceTimersByTime(2000); });
     expect(result.current.gateOpen).toBe(false);
+  });
+
+  it('opens on time while only machine notes arrive (humanNoteAt never moves)', () => {
+    // The rhythm loop streams ~12 notes/s into activeNotes; the gate must not see them.
+    const pause = vi.fn();
+    const { result, rerender } = renderHook(({ humanNoteAt }) =>
+      useEngagementGate({ pause, play: vi.fn(), isPaused: () => false, isSequential: true, timeoutSeconds: 3, humanNoteAt }),
+    { initialProps: { humanNoteAt: 0 } });
+    for (let i = 0; i < 14; i += 1) {
+      act(() => { vi.advanceTimersByTime(250); });
+      rerender({ humanNoteAt: 0 });
+    }
+    expect(result.current.gateOpen).toBe(true);
+    expect(pause).toHaveBeenCalled();
   });
 });

@@ -281,7 +281,10 @@ function TargetMark({ threat }) {
 }
 
 // Practice targets for the controls intro: a ring over a lane (or a pair of
-// lanes), lit while the cannon stands under it and ticked once it has been reached.
+// lanes), lit while the cannon stands under it and ticked once it has been
+// reached. They sit low, just over the rooftops: the card and its keys take
+// the top of the screen.
+const PRACTICE_Y = 452;
 function PracticeTargets({ targets }) {
   return (
     <g className="skyline-invaders__practice">
@@ -289,9 +292,9 @@ function PracticeTargets({ targets }) {
         const centre = target.lanes.reduce((sum, lane) => sum + laneX(lane), 0) / target.lanes.length;
         return (
           <g key={target.id} data-practice-target={target.id} data-lit={!!target.lit} data-reached={!!target.reached} className={cls('skyline-invaders__practice-target', target.lit && 'is-lit', target.reached && 'is-reached')}>
-            <circle cx={centre} cy="380" r="46" />
-            <circle className="skyline-invaders__practice-core" cx={centre} cy="380" r="18" />
-            {target.reached && <path className="skyline-invaders__practice-tick" d={`M ${centre - 20} 380 l 14 16 l 26 -34`} />}
+            <circle cx={centre} cy={PRACTICE_Y} r="40" />
+            <circle className="skyline-invaders__practice-core" cx={centre} cy={PRACTICE_Y} r="16" />
+            {target.reached && <path className="skyline-invaders__practice-tick" d={`M ${centre - 18} ${PRACTICE_Y} l 12 14 l 24 -30`} />}
           </g>
         );
       })}

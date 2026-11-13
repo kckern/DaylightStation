@@ -957,6 +957,15 @@ Flat segments = rest/cool zone (no rings).
 Steep segments = hot/fire zone (high ring rate).
 ```
 
+**A saved rider with no rings series earned zero rings.** Persistence drops
+every all-zero series (`PersistenceManager.encodeSeries`), so a rider who stayed
+in cool/rest has `<id>:beats` on disk but no `<id>:rings`. When the session
+detail replays the race chart, `sessionDataAdapter.js` serves such a rider a
+zero `rings` series. Without it `buildBeatsSeries` falls through to its legacy
+`heart_beats` fallback and plots cumulative **heartbeats** on the RINGS axis — an
+all-cool 70-second warm-up read "118" (2026-11-12). Payouts, standings and the
+session list read `summary.participants[id].rings` and were never affected.
+
 ### Strap reassignment: stints move as deltas
 
 Rings, beats, zones and activity are all keyed by **user id**; a `SessionEntity`

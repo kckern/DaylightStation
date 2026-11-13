@@ -115,7 +115,10 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
           const msg = JSON.parse(e.data);
           if (msg.type === 'note.on') {
             // `t` = epoch ms of the MIDI event (payload p20+); undefined on older payloads.
-            onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0, msg.t);
+            // `ch` (0-based MIDI channel) is optional: payloads up to p35 omit it,
+            // and the rhythm loop is then recognised by shape (humanNoteClassifier).
+            onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0, msg.t,
+              Number.isInteger(msg.ch) ? msg.ch : undefined);
           } else if (msg.type === 'note.off') {
             onNoteRef.current?.('note_off', msg.note, 0, msg.t);
           } else if (msg.type === 'status' && 'speakerOk' in msg) {

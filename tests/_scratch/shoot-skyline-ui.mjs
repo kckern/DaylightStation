@@ -2,7 +2,9 @@
 // marks over the real scene, the flight overlays, each menu phase and the
 // bike-button panel. Writes <name>.png at kiosk size and <name>--half.png at
 // half size (how it reads from across the garage).
-//   BASE_URL=http://127.0.0.1:5197 OUT_DIR=/tmp/shots [ONLY=menu-flights,flight-gate] [VIEWPORT=700x1000] node tests/_scratch/shoot-skyline-ui.mjs
+//   BASE_URL=http://127.0.0.1:5197 OUT_DIR=/tmp/shots [ONLY=menu-flights,flight-gate] [VIEWPORT=700x1000] [DPR=1.39] node tests/_scratch/shoot-skyline-ui.mjs
+// The garage display: VIEWPORT=1381x777 DPR=1.39. flight-coin-level needs the
+// harness started with WORLD_DIR pointing at the smw-placeholder world.
 // Fails (exit 1) on a page error, a console error, a failed request or a page
 // that never renders.
 import { chromium, firefox } from 'playwright';
@@ -31,18 +33,22 @@ const SHOTS = {
   'overlay-crashed': flight('smw-placeholder', 62, 0.7, 'crashed'),
   'overlay-reconnect': flight('alpine', 40, 0.5, 'reconnect'),
   'overlay-stall': flight('smw-placeholder', 40, 0.5, 'stall'),
-  ...Object.fromEntries(['identity', 'roster', 'flights', 'ready', 'countdown', 'menu', 'crash', 'result', 'result-error', 'denied', 'save-details', 'loading']
+  'flight-coin-level': 'scene=flight&act=smw-green-hills-bells&zone=smw-green-hills&t=30&alt=0.5&fx=&freeze=0.12',
+  'flight-rpm-top': flight('smw-placeholder', 30, 0, ''),
+  'flight-rpm-bottom': flight('smw-placeholder', 30, 1, ''),
+  ...Object.fromEntries(['identity', 'roster', 'flights', 'ready', 'countdown', 'menu', 'settings', 'settings-muted', 'crash', 'result', 'result-error', 'denied', 'save-details', 'loading']
     .map((phase) => [`menu-${phase}`, `scene=menu&phase=${phase}&freeze=0.5`])),
 };
 const only = (process.env.ONLY || '').split(',').filter(Boolean);
 const [width, height] = (process.env.VIEWPORT || '1810x1086').split('x').map(Number); // the garage kiosk's content area
 const engine = process.env.BROWSER === 'chromium' ? chromium : firefox; // the garage kiosk is Firefox
-const browser = await engine.launch();
+// Muted twice over: the Invaders harness stubs the game's audio engine, and the browser itself has no volume.
+const browser = await engine.launch(engine === firefox ? { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } : { args: ['--mute-audio'] });
 let failed = false;
 for (const [name, query] of Object.entries(SHOTS)) {
   if (only.length && !only.some((o) => name.startsWith(o))) continue;
   {
-    const page = await browser.newPage({ viewport: { width, height } });
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: Number(process.env.DPR || 1) });
     const problems = [];
     page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`); });
@@ -59,7 +65,8 @@ for (const [name, query] of Object.entries(SHOTS)) {
     await page.waitForTimeout(150);
     const file = path.join(OUT, `${name}.png`);
     await page.screenshot({ path: file });
-    execFileSync('sips', ['-Z', String(Math.round(Math.max(width, height) / 2)), file, '--out', path.join(OUT, `${name}--half.png`)], { stdio: 'ignore' });
+    // The half-size copy uses macOS sips; elsewhere only the full-size shot is written.
+    try { execFileSync('sips', ['-Z', String(Math.round(Math.max(width, height) / 2)), file, '--out', path.join(OUT, `${name}--half.png`)], { stdio: 'ignore' }); } catch { /* no sips */ }
     if (problems.length) { failed = true; console.log(JSON.stringify({ name, file, problems })); } else console.log(file);
     await page.close();
   }

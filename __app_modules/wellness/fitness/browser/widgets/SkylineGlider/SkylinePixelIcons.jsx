@@ -190,6 +190,25 @@ const BITMAPS = Object.freeze({
     '##.##.##',
     '##.##.##',
   ],
+  // A won star (Skyline Invaders' best result). An unwon one is the same
+  // star in a solid darker colour, never a faded one.
+  star: [
+    '....#....',
+    '....#....',
+    '...###...',
+    '#########',
+    '.#######.',
+    '..#####..',
+    '..##.##..',
+    '.##...##.',
+    '.#.....#.',
+  ],
+  // The "more" button: sound and settings.
+  more: [
+    '###..###..###',
+    '###..###..###',
+    '###..###..###',
+  ],
   rider: [
     '...###...',
     '..#####..',
@@ -253,7 +272,7 @@ const ALL = Object.freeze({ ...BITMAPS, left: mirror(BITMAPS.right) });
 // as pictures. An unknown symbol is shown as the text it is.
 const BY_SYMBOL = Object.freeze({
   'ϟ': 'bolt', '●': 'rider', '➤': 'missile', '»': 'boost', '←': 'left', '→': 'right', '×': 'cross', '✓': 'check',
-  '▦': 'flights', '♫': 'sound', '↻': 'retry', '⟲': 'restart', 'ⓘ': 'info', '—': 'wait',
+  '▦': 'flights', '♫': 'sound', '↻': 'retry', '⟲': 'restart', 'ⓘ': 'info', '—': 'wait', '⋯': 'more',
 });
 export const iconForSymbol = (symbol) => BY_SYMBOL[symbol] || null;
 

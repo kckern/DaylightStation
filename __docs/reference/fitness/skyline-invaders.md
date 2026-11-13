@@ -1,28 +1,28 @@
 # Skyline Invaders
 
-A fixed-shooter Fitness game. Threats fall on a skyline; the shooter stands on a step mat, aims the cannon with a body gesture they picked for themselves, and steps to keep the cannon firing. Kills and firing time move the weapon up a ladder, and a partner on a bike can pedal up boosts. Opens at `/fitness/module/skyline_invaders`.
+A fixed-shooter Fitness game. Threats fall on a skyline; the defender stands on a step mat, aims the cannon with a body gesture they picked for themselves, and steps to keep the cannon firing. Kills and firing time move the weapon up a ladder, and a partner on a bike can pedal up boosts. Opens at `/fitness/module/skyline_invaders`.
 
 Code: engine and rules in `__app_modules/wellness/fitness/browser/lib/skylineInvaders/`, the widget in `browser/widgets/SkylineInvaders/`, server in `server/` (adapters, services, `api/fitness.mjs`).
 
 ## Play contract
 
 - A level is one timed round. There are no lives: a threat that reaches the ground costs skyline (base HP), stars and the kill streak, and the round always runs to its timer.
-- A round passes when the shooter has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Every World 1 level asks for kills only (`base_hp_min: 0`); the skyline decides the stars. Passing a level opens the next one in world order.
+- A round passes when the defender has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Every World 1 level asks for kills only (`base_hp_min: 0`); the skyline decides the stars. Passing a level opens the next one in world order.
 - Stars: 1 = pass, 2 = skyline at 75% or more, 3 = no damage. A pass pays 10 / 20 / 30 rings.
-- Phases: `loading → lobby ↔ controls → countdown → playing ↔ paused → result`. Escape, gamepad B and the on-screen pause button pause the clock. A paused Fitness session or a hidden tab pauses it too. Escape or B during the 3-2-1 goes back to the lobby.
+- Phases: `loading → lobby ↔ controls`, then `lobby → ready → countdown → playing ↔ paused → result`. The touch Pause key, gamepad Start, gamepad B and Escape pause the clock. A paused Fitness session or a hidden tab pauses it too. Escape or B during the 3-2-1 goes back to the wave list.
 - The result screen shows each number alone with what the level asked for under it ("Shot down 25, needed 12"), green when met and red when short. A new round is not offered until the record is saved.
 - The HUD shows skyline, kills against the target (`7 / 12`, then `25 ✓` once the target is reached), time left, score, the kill streak, the weapon ladder with its power meter and fuel gauge, the controls in use, and the boost meter.
 
 ### Leaving
 
-`SkylineInvaders` takes `onClose` from `FitnessModuleContainer` (the game is fullscreen and covers the nav, so this is the only way out short of a reload). Exit is a button in the lobby, the pause menu, the result screen and the loading and error screens. Escape or gamepad B leaves from the lobby and the load screens.
+`SkylineInvaders` takes `onClose` from `FitnessModuleContainer` (the game is fullscreen and covers the nav, so this is the only way out short of a reload). **Exit** is a touch key of its own (position 6 in `invadersPanel.js`, a paper key beside the screen's coloured ones) on Who's defending, the wave list, the lock screen, the pause screen, the result screen and the loading and error screens. It is drawn only when the host gave the game an `onClose`. On the keys and the gamepad, down is Exit on each of those screens, and Escape or B is Exit on Who's defending (the first screen) and on the error and loading screens. Ready, the roster, the Sound sheet and the controls intro have Back instead.
 
-- From the lobby, the load screens and a saved result: the game closes.
-- Mid-round (from the pause menu): the round is finalized as `abandoned`, the save is started with `keepalive`, and the game closes without waiting for it.
-- From a result whose save failed: one more save is attempted on the way out.
-- During the countdown there is no menu: Escape or B returns to the lobby and nothing is saved.
+- From a menu and from a saved result: the game closes.
+- Mid-round (from the pause screen): the round is finalized as `abandoned`, the save is started with `keepalive`, and the game closes without waiting for it.
+- From a result still saving or whose save failed: Exit is there all the same; a failed save gets one more try on the way out.
+- During the countdown there is no menu: Escape or B returns to the wave list and nothing is saved.
 
-Every exit logs `skyline_invaders.exit` with `phase`, `how` (`button` or `back`) and `round` (`abandoned`, `saved`, `saving`, `error`, or null). The foot pad sends plain letters, and a plain letter presses the focused button, so the foot pad reaches Exit only when Exit has the focus; the arrows (keyboard or gamepad) move the focus, and touch presses any button.
+Every exit logs `skyline_invaders.exit` with `phase`, `how` (`touch`, `key`, `gamepad`) and `round` (`abandoned`, `saved`, `saving`, `error`, or null). The foot pad sends plain letters, which are "accept" (key 4), so the foot pad does not reach Exit; touch, the arrow keys and the gamepad do.
 
 ## Inputs
 
@@ -51,27 +51,30 @@ Sign conventions, for anyone reading traces:
 
 `offset` (wrist offset from the shoulder midpoint at a fixed gain, `offsetReachSw` 1.2) is the release-one gesture without its calibration. It is computed on every frame for the trace and is not offered to players.
 
-**Lost and held.** A gesture that cannot read its signal (arms down, a wrist unseen) holds the aim. The player is lost only when the torso (both shoulders) has been out of view for `poseLostAfterMs` (800). While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running. With the camera denied or failed, or before it has seen anyone, aim is manual: gamepad left stick or the arrow keys. The game never blocks on the camera.
+**Lost and held.** A gesture that cannot read its signal (arms down, a wrist unseen) holds the aim. The defender is lost only when the torso (both shoulders) has been out of view for `poseLostAfterMs` (800). While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running. With the camera denied or failed, or before it has seen anyone, aim is manual (gamepad left stick or the arrow keys) and the HUD wears a "Gamepad aim" badge. The game never blocks on the camera.
 
 `InvadersPoseBridge.jsx` is the only pose-context consumer. Poses reach the game through `tracker.processPoses`, not React state, so the round does not re-render at the pose rate. The detector runs with `maxPoses: 1` and `temporalSmoothing: false`; the tracker applies the one smoothing filter (`aimSmoothingMs`, 120) to `aim` gestures.
 
 ### Picking controls
 
-There is no calibration. A rider with no saved choice is sent from the lobby to the controls intro (`InvadersControls.jsx`) before their first round; a rider with one goes straight to Start and has "Change controls" in the lobby. With the camera off the intro is skipped and the round starts on gamepad aim.
+There is no calibration. A defender with a camera and no saved choice gets **Pick controls** where Start would be on the wave list (key 4, or a stomp), which opens the controls intro before their first round. A defender with a saved choice gets Start, and a **Controls** key (position 5, named after their gesture; up on the keys) to change it. With the camera off there is no intro and the round starts on gamepad aim; with the camera still starting, Start is offered and the round plays on the default gesture.
 
-The intro shows the eight gestures one card at a time. Each card has a stick-figure demo of the movement (`GestureDemo.jsx`, an SVG animated by the stylesheet), the gesture's name and one line of instruction. During the card the real cannon follows the rider with that gesture, and three practice targets are drawn: the left edge lane, the middle pair, the right edge lane. A target lights while the cannon is under it and is ticked once the cannon has rested there for `tryoutTargetHoldMs` (400). A target counts only when the cannon arrives on it, so starting a card in the middle does not tick the centre. Nothing falls and nothing is scored.
+The intro is the `controls` screen of `InvadersMenus.jsx`, one gesture per card, driven by `useInvadersTryout.js`. The card sits in the menu window at the top of the screen: a stick-figure demo of the movement (`GestureDemo.jsx`, an SVG animated by the stylesheet), the gesture's name, one line of instruction, how many targets are lit, and the card's clock. Under it the real cannon follows the defender with that gesture, and three practice targets are drawn in the sky: the left edge lane, the middle pair, the right edge lane. A target lights while the cannon is under it and is ticked once the cannon has rested there for `tryoutTargetHoldMs` (400). A target counts only when the cannon arrives on it, so starting a card in the middle does not tick the centre. Nothing falls and nothing is scored.
 
-| Input | Does |
-|---|---|
-| Step on the mat | next card |
-| Stomp on the mat | pick this card |
-| Buttons (touch; arrows move the focus; any plain key or gamepad A presses it) | Use these controls, Next, Back, Not now / Keep mine |
-| Up / down (keyboard or gamepad) | previous / next card |
-| Escape or B | leave without picking |
+| Key | Touch label | Mat | Keys / gamepad |
+|---|---|---|---|
+| 1 | Back (the card before) | | left |
+| 2 | Next ("Or step on the mat") | step | right |
+| 3 | Not now, or Keep mine with a saved choice | | Escape / B |
+| 4 | Use these ("Or stomp the mat") | stomp | Enter / A / any foot-pad key |
 
 A card moves on by itself after `tryoutCardS` (20 s), so all eight take under three minutes with nobody pressing anything.
 
-The choice is saved **per rider** with their progress (`POST /progress/:riderId/controls`, the `controls` field of the progress file) and comes back with the world map. If the save fails the choice still holds for the session. On menus other than the intro, both arms held out to the sides for one second is the hands-free press (`useArmsWideHold.js`).
+The choice is saved **per defender** with their progress (`POST /progress/:riderId/controls`, the `controls` field of the progress file) and comes back with the world map. If the save fails the choice still holds for the session.
+
+### Ready
+
+Start on the wave list goes to the **Ready** screen (`InvadersReady.jsx`): "Stand on the mat." Once head and shoulders have been in view for a second the countdown starts by itself; wrists at rest may hang out of frame. The screen shows the one line of how the defender's own gesture works and how to fire. Nothing is measured: no reach-left and reach-right steps. Without a camera (denied or failed) there is no Ready screen and Start goes straight to the countdown. A camera still starting after 20 s (`READY_CAMERA_WAIT_MS`) does the same. Ready offers Back, and Skip (gamepad aim) only when a gamepad is connected. Replay and Next wave on the result go straight to the countdown.
 
 ### Lanes
 
@@ -83,9 +86,9 @@ The cannon's lane is lit from the street to the top of the sky, and the threat t
 
 ### Fire: steps fuel a stream
 
-- A `pressure-mat:step` from **the shooter's mat** buys `fuelPerStepS` (1.5 s) of fuel, up to `fuelCapS` (5 s). While there is fuel the cannon fires a volley every `streamIntervalS` (0.25 s) by itself, the first one on the step. Spamming the mat only fills the tank. Steps from any other mat are ignored (and logged, sampled).
+- A `pressure-mat:step` from **the defender's mat** buys `fuelPerStepS` (1.5 s) of fuel, up to `fuelCapS` (5 s). While there is fuel the cannon fires a volley every `streamIntervalS` (0.25 s) by itself, the first one on the step. Spamming the mat only fills the tank. Steps from any other mat are ignored (and logged, sampled).
 - The fuel gauge is in the HUD and as a bar under the cannon. An empty tank reads "Step!".
-- The shooter is the mat's assigned rider; the lobby offers a picker when the mat has none. A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
+- The player is the **defender**: the person assigned to the mat; the "Who's defending?" screen asks when the mat has none. Invaders is played standing on the mat and driven by touch, not riding: no screen says "rider", "shooter" or "bike" (only the boost partner rides), and the game never listens to the bike buttons. (Code, logs and saved records still call the defender `shooterId` / `rider.user_id`.) A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
 - Without a mat: Space or F, gamepad A or RT buy fuel the same way.
 
 ### Power meter and the weapon ladder
@@ -105,7 +108,7 @@ Every shot does 1 damage. A stream left idle for `weaponIdleDropS` (8 s) drops o
 
 ### Partner boosts
 
-A second rider on a connected bike (anyone but the shooter) fills the boost meter by pedalling. With no partner the meter is hidden.
+A second rider on a connected bike (anyone but the defender) fills the boost meter by pedalling. With no partner the meter is hidden.
 
 - Fill rate scales from nothing at `min_rpm` (40) to full at `full_rpm` (90). At full effort the meter fills in `fill_s` (20 s).
 - A full meter starts the next boost in the rotation for `duration_s` (8 s); the meter rests while a boost runs.
@@ -114,7 +117,39 @@ A second rider on a connected bike (anyone but the shooter) fills the boost mete
 
 ### Menus
 
-One key meaning on every menu (`menuKeys.js`): arrows move, any plain key or gamepad A accepts, Escape or B goes back. Digits 1–6 are never acted on, because the garage kiosk's OS binds them.
+Invaders is a **touch-screen** game: the defender stands on the mat, so nothing depends on the bike buttons (they are not listened to at all). Every menu screen is one decision in one centred window (`.skyline-menus`, `InvadersMenus.jsx`) over the still city: people are tiles to tap, and the screen's actions are solid touch keys under it (`InvadersTouchKeys`). What each key says and does is `lib/skylineInvaders/invadersPanel.js` (pure, tested), at four positions that the keyboard, gamepad and mat press too; a blank position draws no key. Two more keys sit past the four: **Controls** (position 5, on the wave list) and **Exit** (position 6), paper-coloured so the four colours stay the screen's decision. Keys carry their label only; the hints drawn are "Or stomp the mat" and "Or step on the mat" (`DRAWN_HINTS`) where the mat does the same thing.
+
+| Screen | Touch | Keys 1 / 2 / 3 / 4 | Mat stomp |
+|---|---|---|---|
+| Who's defending? | a tile per person in the workout (the mat's person, then people not on a bike, then bike riders), and **Someone else**; key Exit | first four people; Escape / B / down = Exit | |
+| Pick the defender (from Someone else) | a tile per household member | Previous / Next / Back / Choose (a cursor on the tiles) | |
+| Pick a wave | tap a row; keys Previous, Next, Change defender, Start (locked wave: Locked → admin unlock; no controls picked yet: Pick controls), then Controls and Exit | same; up = Controls, down = Exit | Start (or Pick controls) |
+| Pick your controls | Back, Next, Not now / Keep mine, Use these | 1 / 2 / 3 / 4 | step = Next, stomp = Use these |
+| Round locked (school day) | Admin unlock, Back, Change defender, Exit | 1 / — / 3 / 4; down = Exit | |
+| Ready | Back; Skip with a gamepad connected | — / — / 3 / 4 | |
+| Round | **Pause** (a solid key on the street strip, bottom right, where nothing falls) | gamepad Start, B, Escape | fire |
+| Paused | Resume, Sound, End round, Exit | 1 / 2 / 3; down = Exit | |
+| Result (once saved) | Replay, Next wave (only when open), Waves, Change defender, Exit (Exit also while saving or unsaved) | 1 / 2 / 3 / 4; down = Exit | next wave after a pass, else Replay |
+| Sound | the sheet's own volume strip and Mute; key Back | Quieter / Louder / Back / Mute | |
+
+Start is the Start key or a stomp on the defender's mat (`pressure-mat:stomp`; another mat's stomp is ignored).
+
+**The wave list** is Glider's flight list (`FlightList` in `SkylineMenus.jsx`): a five-row window that follows the cursor, "N more" above and below, each row with a status word — **Done** with the best stars (pixel stars: gold when won, solid ink when not, never faded), **New**, or a pixel lock and **Locked**. Under the list the chosen wave says what tells it apart: the sprite and name of the threat it brings in first, its kill target and its time ("New: Drones · Shoot down 20 · 3:00", `lib/skylineInvaders/waves.js`). The seed waves each bring in a different threat (meteors, then drones, pods, bombers), so they stay separate rows.
+
+**Keys, foot pad, gamepad** (`useMenuInput`; the digits 1–6 are never acted on, the garage kiosk's OS binds them): left = 1, right = 2, Escape/B = 3, Enter/A/any foot-pad key = 4, up = 5 (Controls), down = 6 (Exit). Exceptions: on Who's defending, accept takes the first person, right opens Pick the defender and Escape/B is Exit; on the lock screen accept is Admin unlock; on Paused accept and back resume; on the Sound sheet accept is Back, so a stray foot-pad press only closes it. While the admin fingerprint prompt is up only Cancel (3, or Escape/B) acts.
+
+**Type.** The whole game, Glider's shared menu windows included, is set in **Press Start 2P** (SIL OFL, `frontend/public/fonts/arcade/`, licence beside it; declared in `SkylineMenus.scss`), the 8-bit face. Nothing is smaller than 22 px on the garage display; titles are a size down from Glider's, since every glyph is a full em wide.
+
+### Sound
+
+Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the track `fitness-game-skyline-invaders/global/game` in the fitness volume store), never the video level and never full gain. The stored value is the output gain itself (curve applied once); an unset track plays at level 60 (0.158). Every voice -- cue files, the music loop, synth tones -- ends on the one output gain of the shared Skyline audio engine, 0 when muted. See `nav/gameVolumeModel.js`.
+
+The **Sound sheet** (the `sound` screen of `InvadersMenus.jsx`, its body the shared `SkylineGlider/GameSoundSheet.jsx`) shows the level, the house touch volume strip (11 keys, 0 = off, no slider), Mute and a Back key. It opens from:
+
+- **Touch:** the "more" button (three dots, a solid 64 × 56 px key) in the bottom-right corner of the Who, Pick the defender, wave list, lock, pause and result screens, on the street and clear of every window and the round HUD; in a round, Pause first, then Sound.
+- **Keys, foot pad, gamepad:** Sound on the pause screen; left and right step the level. In the sheet Back has the focus, so a stray foot-pad press only closes it; Escape or B goes back.
+
+A workout resume never restarts the round under an open sheet.
 
 ## Threats
 
@@ -208,7 +243,7 @@ media: fitness/skyline-invaders/sounds/<slot>.mp3
 
 Level files and `world.yml` are read on every request, so an edit shows on the next lobby load with no restart.
 
-Sound slots: `laser`, `missile` (bomb ready), `hit`, `target`, `explosion`, `crash` (the bomb's rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, unchanged.
+Sound slots: `laser`, `missile` (bomb ready), `hit`, `target`, `explosion`, `crash` (the bomb's rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, at the game's own volume (see Sound).
 
 A run record carries `run` (`id`, `level_id`, `started_at`, `ended_at`, `status`, `duration_s`, `score`, `kills`, `stars`, `base_hp`, `shots_fired`, `hits`, `best_combo`, `bombs`, `boosts_used`, `steps`, `firing_s`, `weapon_peak`, `reward_rings`, optional `fitness_session_id`, `mat_equipment_id`, `partner_id`, `gesture`), `rider.user_id`, and an embedded `gaming-result/v1` block, where a failed round is a completed session with a `loss` outcome. Records saved before this release have `nukes` and no `bombs`, `steps`, `firing_s`, `weapon_peak` or `gesture`.
 
@@ -229,7 +264,13 @@ A route answers 503 when its service is not wired. There is no suspension beacon
 
 ## Access gate
 
-A school learner needs the `fitness.skyline-invaders` entitlement, granted by `school.day-complete` (see [State Gates](../state-gates/README.md)). Without it the lobby shows "Ask a grown-up", and an admin fingerprint overrides for the session. The hook is Skyline Glider's `useSkylineAccess`, called with this capability id and the `skyline_invaders` log scope. Losing access mid-round ends the round.
+A school learner needs the `fitness.skyline-invaders` entitlement, granted by `school.day-complete` (see [State Gates](../state-gates/README.md)).
+
+**The gate follows the workout, not the pick.** The learners gated are everyone in the fitness session's roster (heart-rate straps) and the mat's person who is known to be a school learner, plus the defender unless known not to be one (`gateLearnerIds` in `lib/skylineInvaders/people.js`). The round opens only when every one of them has the entitlement (`useSkylineGroupAccess` in Skyline Glider's `useSkylineAccess.js`, called with this capability id and the `skyline_invaders` log scope). So a child in the workout who picks a grown-up as the defender still sees the lock.
+
+The defender picker offers the people in the workout (roster and the mat's person); everyone else in the household is behind a press-and-hold on "Someone else".
+
+While locked, the game shows only the lock screen (the `locked` screen of `InvadersMenus.jsx`, Skyline Glider's `denied` pattern): "Round locked — Finish today's school work to unlock." with "School first: <names>" for the learners it waits on, and its keys: Admin unlock (admin fingerprint), Back and Change defender (both open the defender picker). Gamepad A / Enter is Admin unlock, B / Escape is Back. An admin unlock covers the learners in the workout at that moment; anyone new joining asks again. Losing access mid-round ends the round.
 
 ## Menu tile
 
@@ -257,9 +298,11 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.world.loaded` / `.world.error` | `riderId`, `next`, `gesture` / `error` | |
 | `.assets.loaded` / `.assets.error` | `sounds`, `missing: [{ slot, reason }]` | `reason: empty` is a placeholder |
 | `.lobby.shooter_picked`, `.lobby.level_chosen` | `shooterId`, `matEquipmentId`, `previous` / `levelId` | |
-| `.controls.opened` / `.closed` | `tryoutId`, `shooterId`, `current`, `first`, `pose` | the controls intro |
+| `.control.action` | `action`, `screen`, `source` (touch, key, gamepad, step, stomp), `shooterId` | one line per menu press |
+| `.lobby.ready_opened`, `.lobby.ready.started`, `.lobby.ready.in_view`, `.lobby.ready.camera_timeout` | `shooterId`, `pose`, `gesture` / `elapsedMs` / `waitedMs` | the Ready screen |
+| `.controls.opened` / `.closed` | `tryoutId`, `shooterId`, `current`, `first`, `pose`, `source` | the controls intro |
 | `.controls.tryout` | `tryoutId`, `shooterId`, `gesture`, `how`, `ms`, `reached`, `leftMs`, `centreMs`, `rightMs`, `visits`, `laneChanges`, `pose`, `poseFps` | one per card; see below |
-| `.controls.chosen` | `tryoutId`, `shooterId`, `gesture`, `label`, `how` (`stomp`, `button`), `previous`, `saved` | |
+| `.controls.chosen` | `tryoutId`, `shooterId`, `gesture`, `label`, `how` (`stomp`, `touch`, `key`, `gamepad`), `previous`, `saved` | |
 | `.controls.save_error` | `shooterId`, `gesture`, `error` | the choice holds for the session only |
 | `.pose.camera_ready`, `.pose.camera_unavailable` | `enabled` / `error` | |
 | `.pose.state` | `state` (`loading`, `detecting`, `error`, `camera-denied`), `backend`, `modelType`, `error` | on change |
@@ -274,7 +317,7 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.round.weapon.level`, `.round.bomb.ready`, `.round.bomb`, `.round.boost.activated`, `.round.base.hit` and other `.round.<engine event>` | the event's data | per-volley and per-threat events are not logged |
 | `.round.paused` / `.round.resumed` | `reason` (`player`, `lifecycle`, `hidden`), `time` / `how`, `pausedBy` | |
 | `.round.session_ended`, `.access.revoked` | `phase`, `state` | the round was ended from outside |
-| `.exit` | `phase`, `how` (`button`, `back`), `runId`, `levelId`, `shooterId`, `round`, `time` | the game was closed |
+| `.exit` | `phase`, `how` (`touch`, `key`, `gamepad`), `runId`, `levelId`, `shooterId`, `round`, `time` | the game was closed |
 | `.effect.executed` / `.skipped` / `.failed` | `eventType`, `effectId`, `reason` | sampled |
 | `.render.health` | `frames`, `longFrames`, `fps`, `windowMs`, `pose`, `poseFps`, `poseLatency`, `threats`, `shots` | every 20 s of play |
 | `.frame.error` | `error` | sampled; the round continues |
@@ -282,7 +325,11 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.round.saved` / `.round.save_error` | `status`, `retried` / `error` | |
 | `.reward.awarded` / `.reward.skipped` | `rings`, `stars` / `reason` | |
 | `.boost.partner` | partner bike and rider, `when` | |
-| `.access.verdict`, `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied` | `riderId`, `reason`, `adminUserId` | |
+| `.audio.volume` | `level`, `muted`, `isDefault`, `output` | on mount and every change; `output` is the gain every voice ends on |
+| `.settings.opened` / `.settings.closed` | `phase`, `source` (`touch`, `pause-menu`, `bike`) / `level`, `muted` | the Sound sheet |
+| `.audio.level_set` / `.audio.mute_toggled` | `level` / `muted`, `control` (`touch`, `sheet`, `bike`) | |
+| `.access.verdict` | `learners`, `status`, `state`, `unlocked`, `blockedBy` | one line per change of verdict |
+| `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied`, `.access.locked_choice` | `riderId`, `learners`, `reason`, `adminUserId` / `choice` | |
 | `.progress.unlock_requested` / `_granted` / `_denied` / `_error` | `riderId`, `levelId`, `adminUserId`, `reason`, `error` | |
 
 Server (`fitness.skyline_invaders.*`): `level.invalid` (`file`, `id`), `run.saved`, `progress.rebuilt` (`riderId`, `completed`), `progress.unlocked`, `progress.controls` (`riderId`, `gesture`), `progress.record_failed`.
@@ -314,7 +361,7 @@ Both events carry the header `kind` (`round` or `tryout`), `runId` (the round's 
 | `lost` | 1 = no torso in view |
 | `armL`, `armR` | arm state: 0 ok, 1 down, 2 low score, 3 missing, 4 no body |
 | `target` | controls intro only: 1 left, 2 centre, 3 right while the cannon is on that practice target, else 0 |
-| `step` | 1 when the shooter stepped (or stomped) on the mat since the last row |
+| `step` | 1 when the defender stepped (or stomped) on the mat since the last row |
 
 Every gesture's signal is computed from every frame, whichever gesture is active. Push strokes, hops and mat steps that fall between two rows are written on the next row.
 
@@ -324,7 +371,7 @@ One row per volley, written when the volley settles. Columns (`SHOT_TRACE_COLS`)
 
 ### `skyline_invaders.controls.tryout`
 
-One per card of the controls intro. `leftMs`, `centreMs`, `rightMs` are how long after the card opened the cannon arrived on each target on the visit that held (null = never reached). `visits` counts arrivals per target: more than one before a target is reached means the aim passed through without settling. `how` says how the card ended (`step`, `button`, `key`, `timeout`, `chosen-stomp`, `chosen-button`, `closed`).
+One per card of the controls intro. `leftMs`, `centreMs`, `rightMs` are how long after the card opened the cannon arrived on each target on the visit that held (null = never reached). `visits` counts arrivals per target: more than one before a target is reached means the aim passed through without settling. `how` says how the card ended (`step`, `touch`, `key`, `gamepad`, `timeout`, `chosen-stomp`, `chosen-touch`, `chosen-key`, `chosen-gamepad`, `closed`).
 
 ### Analyzing a session
 
@@ -467,7 +514,7 @@ What the numbers mean. **Still-noise** is the spread of a gesture's signal over 
 | `poseLostAfterMs` | 800 | no torso for this long = lost |
 | `armsUpHoldMs` | 300 | hold before the arms-up bonus counts |
 | `aimSmoothingMs` | 120 | time constant of the aim filter (`aim` gestures) |
-| `defaultGesture` | `wiper` | played with when a rider has not picked one |
+| `defaultGesture` | `wiper` | played with when a defender has not picked one |
 | `wiperMaxDeg`, `wiperMinForearmSw` | 50, 0.3 | wiper: edge angle; shortest usable forearm |
 | `twistMaxDeg`, `twistSign` | 35, −1 | twist: edge angle; sign of yaw that is a right turn |
 | `wingsMaxDeg`, `wingsMinSpanSw` | 30, 1.5 | wings: edge angle; least wrist spacing |
@@ -501,7 +548,7 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 
 **Pose is slow (around 13 fps).** A page served without cross-origin isolation runs the pose model single-threaded. The TF.js WASM backend needs `SharedArrayBuffer` for its threads, and the browser grants that only when the document response carries `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. The app and the dev server set both, but anything that serves the page another way (a proxy that rewrites headers, a static host, a test harness) may not. This was the Phase 0 lesson: without isolation the lite and the full model both ran at about 13 fps, so the limit was the single-threaded CPU backend, not the model size. Check `self.crossOriginIsolated` in the kiosk's console (it must be `true`), then `skyline_invaders.pose.metrics` for `fps` and `backend`. The engine is frame-rate independent and plays the same at 13 Hz aim; the cannon is only less smooth.
 
-**Stepping does nothing.** `skyline_invaders.fire.no_mat` means no mat hardware id reached the game; `fire.other_mat` means steps are arriving from a mat that is not the shooter's. Pick the shooter on the right mat in the lobby. The first `fire.armed` line names the mat in use, and each step that counts logs `skyline_invaders.fuel`.
+**Stepping does nothing.** `skyline_invaders.fire.no_mat` means no mat hardware id reached the game; `fire.other_mat` means steps are arriving from a mat that is not the defender's. Pick the defender on the right mat. The first `fire.armed` line names the mat in use, and each step that counts logs `skyline_invaders.fuel`.
 
 **The weapon keeps dropping back to Single.** The stream was idle for `weaponIdleDropS`. `level.end` records `steps`, `firingS` and `weaponPeak`.
 
@@ -509,14 +556,14 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 
 **Twist steers the wrong way.** Flip `twistSign` in `tunables.js` (see the sign convention under Aim).
 
-**A rider is asked to pick controls again.** Their progress file has no `controls` (it was deleted and rebuilt from the run log), or the save failed (`skyline_invaders.controls.save_error`).
+**A defender is asked to pick controls again.** Their progress file has no `controls` (it was deleted and rebuilt from the run log), or the save failed (`skyline_invaders.controls.save_error`).
 
-**The boost meter is missing.** No partner: no connected bike with a rider other than the shooter (`skyline_invaders.boost.partner` logs when one is found).
+**The boost meter is missing.** No partner: no connected bike with a rider other than the defender (`skyline_invaders.boost.partner` logs when one is found).
 
 **A round did not save.** The result screen holds on "Retry save" and logs `round.save_error`. A 409 means a different record already has that run id.
 
 ## Not verified live
 
-The game is covered by unit and widget tests and by backend-free screenshots of the shell (`tests/_scratch/shoot-skyline-invaders*.mjs`, which stub the audio and mute the browser). Nothing in this release has been played on the garage display. The first live check after a deploy: the lobby lists the four levels, the controls intro follows a rider on each card, a step starts the stream, a stomp drops a ready bomb, Exit returns to the Fitness menu, `pose.trace` and `shot.trace` batches arrive in the log store, and a finished round appears under `fitness/log/skyline-invaders/`.
+The game is covered by unit and widget tests and by backend-free screenshots of the shell (`tests/_scratch/shoot-skyline-invaders*.mjs`, which stub the audio and mute the browser). Nothing in this release has been played on the garage display. The first live check after a deploy: the wave list shows the four waves, the controls intro follows the defender on each card, Ready passes when they stand in view, a step starts the stream, a stomp drops a ready bomb, Exit returns to the Fitness menu, `pose.trace` and `shot.trace` batches arrive in the log store, and a finished round appears under `fitness/log/skyline-invaders/`.
 
 Open questions that only the garage can answer: the sign of `twist`, whether `keypoints3D` wrist depth is steady enough for `sprinkler`, whether the mat classifies a deliberate stomp reliably enough to be the "pick" and "bomb" input, and whether a 60 KB trace event every 20 s is within what the log store accepts per line.
