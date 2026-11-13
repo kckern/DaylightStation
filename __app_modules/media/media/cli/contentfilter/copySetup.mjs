@@ -20,8 +20,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
  * @param {Function} ctx.getJson
  * @param {string} [ctx.verb] - for the progress line
  * @param {boolean} [ctx.skipTranscript] - visual-only runs: never transcribe; use a cached one if present, else null
+ * @param {(s: { src: string, partId: string, size: number|null, kind: string }) => void} [ctx.onSource] - told the source before the (slow) transcription starts
  */
-export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb = 'Working on', skipTranscript = false }) {
+export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb = 'Working on', skipTranscript = false, onSource = null }) {
   const { token, host } = loadPlexConfig();
   const meta = (await getJson(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`))?.MediaContainer?.Metadata?.[0];
   const parts = (meta?.Media || []).flatMap((m) => m.Part || []);
@@ -36,6 +37,7 @@ export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, g
   const { src } = source;
   console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.source.chosen', rk, kind: source.kind, ...(source.reason ? { reason: source.reason } : {}) }));
   const partId = String(part.id);
+  onSource?.({ src, partId, size: part.size ?? null, kind: source.kind });
 
   const workDir = path.join(mediaFilterDir, 'refine', rk);
   mkdirSync(path.join(workDir, 'art'), { recursive: true });
