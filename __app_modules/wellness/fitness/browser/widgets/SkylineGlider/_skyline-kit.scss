@@ -38,10 +38,10 @@
   --sg-text-l: max(18px, #{sgvw(2.4)});
   --sg-text-xl: max(30px, #{sgvw(4.6)});
   --sg-text-xxl: max(56px, #{sgvw(9)});
-  --sg-font: "SG Quotes", "Karmatic Arcade", "Roboto Condensed", "Arial Narrow", sans-serif;
+  // SNES Mario Paint has letters, digits and  !$%&()+,-./=?×÷ only: apostrophes,
+  // quotes, colons and the rest fall through to the next pixel face.
+  --sg-font: "SNES Mario Paint", "Press Start 2P", "Roboto Condensed", "Arial Narrow", sans-serif;
   font-synthesis: none;   // a pixel face has one weight and no italic: never fake them
-  word-spacing: .3em;      // Karmatic Arcade's space is a sliver: words ran together
-  button { word-spacing: inherit; }   // the UA sheet resets it on buttons
 }
 
 // Four shadows that draw a one-pixel ring `$n` pixels out with its corners left

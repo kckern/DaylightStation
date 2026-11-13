@@ -4,12 +4,10 @@
 @use 'skyline-kit' as *;
 
 // The two games' faces, served from public/fonts/arcade (licences beside them;
-// no CDN, the kiosk must render offline). Karmatic Arcade is Skyline Glider's
+// no CDN, the kiosk must render offline). SNES Mario Paint is Skyline Glider's
 // 16-bit display face; Press Start 2P is Skyline Invaders' 8-bit face.
-@font-face { font-family: "Karmatic Arcade"; src: url("/fonts/arcade/karmatic-arcade.ttf") format("truetype"); font-display: block; }
+@font-face { font-family: "SNES Mario Paint"; src: url("/fonts/arcade/snes-mario-paint.otf") format("opentype"); font-display: block; }
 @font-face { font-family: "Press Start 2P"; src: url("/fonts/arcade/press-start-2p.ttf") format("truetype"); font-display: block; }
-// Karmatic Arcade's curly quotes are blank glyphs ("Who's" drew as "WHO S"): borrow them.
-@font-face { font-family: "SG Quotes"; src: url("/fonts/arcade/press-start-2p.ttf") format("truetype"); unicode-range: U+2018-2019, U+201C-201D; font-display: block; }
 
 // ── Pixel icons and the 2×2 pad glyph ───────────────────────────────────────
 .sg-icon__ink { fill: var(--sg-ink); }
