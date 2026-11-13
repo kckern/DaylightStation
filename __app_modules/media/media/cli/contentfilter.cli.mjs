@@ -1113,6 +1113,9 @@ async function main() {
 
   if (command === 'scenes') {
     const { runScenes, SCENES_USAGE } = await import('./contentfilter/scenesCommand.mjs');
+    // As refine does: the bootstrap needs it, and the filter worker's staged runs only set the data/media dirs
+    // (2026-11-12: every worker-run scenes step failed "DAYLIGHT_BASE_PATH not set").
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
     const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(SCENES_USAGE); process.exit(1); }
