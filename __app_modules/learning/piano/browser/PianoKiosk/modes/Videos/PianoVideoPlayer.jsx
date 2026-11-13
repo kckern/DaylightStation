@@ -26,7 +26,7 @@ import useReloadGuard from '../../useReloadGuard.js';
 import EngagementGate from './EngagementGate.jsx';
 import LessonDrill from './LessonDrill.jsx';
 import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
-import { PRESCHOOL_POLICY, GOOD_FAITH_DEFAULTS } from '../../../../portable/practice/goodFaith.mjs';
+import { ladderConfig } from '../../../../portable/practice/presenceLadder.mjs';
 import { useEngagementGate } from './useEngagementGate.js';
 import { checkInRoots } from '../../../../portable/practice/lessonKey.mjs';
 import { useHumanNotes, humanActiveNotes } from '../../useHumanNotes.js';
@@ -41,7 +41,7 @@ const EMPTY_NOTES = new Map();
 export const END_POST_DEADLINE_MS = 10000;
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null, completionThresholdPercent = 90 }) {
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null, completionThresholdPercent = 90, presenceLadder = null }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -179,11 +179,18 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       ...req, sittingId: practice.sittingId, preschool: !!expectation?.preschool,
     });
   }, [currentUser, practice, expectation]);
+  // The presence ladder's rules for this lesson (presenceLadder.mjs): preschool
+  // courses stay on one note; every interval is capped at the idle timeout.
+  const preschoolCourse = !!expectation?.preschool;
+  const ladder = useMemo(
+    () => ladderConfig(presenceLadder, { baseTimeoutSeconds: engagementTimeoutSeconds, preschool: preschoolCourse }),
+    [presenceLadder, engagementTimeoutSeconds, preschoolCourse],
+  );
   const { gateOpen, step: gateStep, dismissGate } = useEngagementGate({
     burstSince: practice.burstSince,
     judgeBurst,
     recordCheckIn: practice.recordCheckIn,
-    policy: expectation?.preschool ? PRESCHOOL_POLICY : GOOD_FAITH_DEFAULTS,
+    ladder,
     humanNoteAt,
     pause: ctrl.pause,
     play: ctrl.play,
@@ -191,7 +198,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     // Per-user policy (piano.yml videos.user_policies): a user with
     // engagement_gate:false watches passively — the anti-AFK gate never opens.
     isSequential: isSequential && engagementGateEnabled,
-    timeoutSeconds: engagementTimeoutSeconds,
     onEngagementConfirmed: () => { engagedRef.current = true; },
   });
 

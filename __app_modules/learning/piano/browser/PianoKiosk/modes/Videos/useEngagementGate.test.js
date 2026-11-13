@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 import { useEngagementGate } from './useEngagementGate.js';
+import { ladderConfig } from '../../../../portable/practice/presenceLadder.mjs';
+
+const L2 = ladderConfig({ intervals_seconds: [2] }, { baseTimeoutSeconds: 2 });
+const L3 = ladderConfig({ intervals_seconds: [3] }, { baseTimeoutSeconds: 3 });
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -16,7 +20,7 @@ describe('useEngagementGate', () => {
     const play = vi.fn();
     const isPaused = vi.fn(() => false);
     const { result } = renderHook(() =>
-      useEngagementGate({ pause, play, isPaused, isSequential: false, timeoutSeconds: 2 })
+      useEngagementGate({ pause, play, isPaused, isSequential: false, ladder: L2 })
     );
     act(() => { vi.advanceTimersByTime(5000); });
     expect(result.current.gateOpen).toBe(false);
@@ -28,7 +32,7 @@ describe('useEngagementGate', () => {
     const play = vi.fn();
     const isPaused = vi.fn(() => false);
     const { result } = renderHook(() =>
-      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 2 })
+      useEngagementGate({ pause, play, isPaused, isSequential: true, ladder: L2 })
     );
     act(() => { vi.advanceTimersByTime(2500); });
     expect(result.current.gateOpen).toBe(true);
@@ -40,7 +44,7 @@ describe('useEngagementGate', () => {
     const play = vi.fn();
     const isPaused = vi.fn(() => true);
     const { result } = renderHook(() =>
-      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 2 })
+      useEngagementGate({ pause, play, isPaused, isSequential: true, ladder: L2 })
     );
     act(() => { vi.advanceTimersByTime(2500); });
     expect(result.current.gateOpen).toBe(false);
@@ -53,7 +57,7 @@ describe('useEngagementGate', () => {
     const isPaused = vi.fn(() => paused);
     const onConfirmed = vi.fn();
     const { result } = renderHook(() =>
-      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 2, onEngagementConfirmed: onConfirmed })
+      useEngagementGate({ pause, play, isPaused, isSequential: true, ladder: L2, onEngagementConfirmed: onConfirmed })
     );
     act(() => { vi.advanceTimersByTime(2500); });
     expect(result.current.gateOpen).toBe(true);
@@ -77,7 +81,7 @@ describe('useEngagementGate', () => {
         play: () => {},
         isPaused: () => false,
         isSequential: true,
-        timeoutSeconds: 2,
+        ladder: L2,
       })
     );
     for (let i = 0; i < 40; i += 1) {
@@ -93,7 +97,7 @@ describe('useEngagementGate', () => {
     const play = vi.fn();
     const isPaused = vi.fn(() => false);
     const { result, rerender } = renderHook(({ humanNoteAt }) =>
-      useEngagementGate({ pause, play, isPaused, isSequential: true, timeoutSeconds: 3, humanNoteAt }),
+      useEngagementGate({ pause, play, isPaused, isSequential: true, ladder: L3, humanNoteAt }),
     { initialProps: { humanNoteAt: 0 } });
     // 2s pass, then a note is played (resets), then 2 more seconds — total 4s but never 3s idle
     act(() => { vi.advanceTimersByTime(2000); });
@@ -106,7 +110,7 @@ describe('useEngagementGate', () => {
     // The rhythm loop streams ~12 notes/s into activeNotes; the gate must not see them.
     const pause = vi.fn();
     const { result, rerender } = renderHook(({ humanNoteAt }) =>
-      useEngagementGate({ pause, play: vi.fn(), isPaused: () => false, isSequential: true, timeoutSeconds: 3, humanNoteAt }),
+      useEngagementGate({ pause, play: vi.fn(), isPaused: () => false, isSequential: true, ladder: L3, humanNoteAt }),
     { initialProps: { humanNoteAt: 0 } });
     for (let i = 0; i < 14; i += 1) {
       act(() => { vi.advanceTimersByTime(250); });

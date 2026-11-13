@@ -6,91 +6,158 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({ defa
 vi.mock('./useLessonPractice.js', () => ({ CHECK_IN_GRACE_MS: 3000 }));
 
 import { useEngagementGate } from './useEngagementGate.js';
-import { PRESCHOOL_POLICY } from '../../../../portable/practice/goodFaith.mjs';
+import { ladderConfig } from '../../../../portable/practice/presenceLadder.mjs';
 
 beforeEach(() => { vi.useFakeTimers(); Object.values(log).forEach((f) => f.mockReset()); });
 afterEach(() => { vi.useRealTimers(); });
 
 const stats = { notes: 0, distinctPitches: 0, pitchSpan: 0, medianIoiMs: 0, velocitySpread: 0 };
 const burst = (verdict, legitNotes = 0) => ({ events: [], verdict, legitNotes, stats });
+const LADDER = ladderConfig({ intervals_seconds: [60, 60, 50, 40] }, { baseTimeoutSeconds: 60 });
+const INTERVAL = [60, 60, 50, 40, 40];
+const logged = (event) => log.info.mock.calls.filter((c) => c[0] === event).map((c) => c[1]);
 
-function setup({ bursts, judgeBurst = null, policy } = {}) {
+function setup({ judgeBurst = null, ladder = LADDER } = {}) {
   let current = burst('spam');
   const recordCheckIn = vi.fn();
-  const hook = renderHook(() => useEngagementGate({
-    pause: vi.fn(), play: vi.fn(), isPaused: () => false, isSequential: true, timeoutSeconds: 2,
-    burstSince: () => current, judgeBurst, recordCheckIn, ...(policy ? { policy } : {}),
-  }));
-  const idleOpen = () => { act(() => { vi.advanceTimersByTime(2500); }); return hook.result.current.step; };
+  const burstSince = vi.fn(() => current);
+  const hook = renderHook(({ humanNoteAt }) => useEngagementGate({
+    pause: vi.fn(), play: vi.fn(), isPaused: () => false, isSequential: true, humanNoteAt,
+    burstSince, judgeBurst, recordCheckIn, ladder,
+  }), { initialProps: { humanNoteAt: 0 } });
+  const rung = () => hook.result.current.step.rung ?? 0;
+  /** Wait out the current rung's interval (plus a second) with no notes. */
+  const idleOpen = () => {
+    const wait = (INTERVAL[Math.min(rung(), 4)] + 1.5) * 1000;
+    for (let t = 0; t < wait && !hook.result.current.gateOpen; t += 500) act(() => { vi.advanceTimersByTime(500); });
+    expect(hook.result.current.gateOpen).toBe(true);
+    return hook.result.current.step;
+  };
   const answer = (next) => { act(() => { hook.result.current.dismissGate(); }); current = next ?? burst('spam'); };
-  return { hook, idleOpen, answer, recordCheckIn, set: (b) => { current = b; } };
+  /** Notes every 2 s for `sec` seconds (the idle clock never runs out). */
+  const play = (sec) => {
+    for (let t = 0; t < sec * 1000; t += 2000) {
+      act(() => { vi.advanceTimersByTime(2000); });
+      hook.rerender({ humanNoteAt: Date.now() });
+    }
+  };
+  return { hook, idleOpen, answer, play, recordCheckIn, burstSince, set: (b) => { current = b; } };
 }
 
-describe('useEngagementGate — ladder', () => {
-  it('note → 1 scale → 2 scales → 2 scales with only the answers between', () => {
+/** Climb to `target` with nothing but the answers in between. */
+function climbTo(g, target) {
+  g.idleOpen();
+  for (let r = 1; r <= target; r++) { g.answer(); g.idleOpen(); }
+}
+
+describe('useEngagementGate — presence ladder', () => {
+  it('none between answers climbs note → rung1 → rung2 → rung3 → rung4 → rung4', () => {
     const g = setup();
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
-    g.answer(burst('spam', 1));
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 });
-    g.answer();
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
-    g.answer();
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
-    expect(g.recordCheckIn).toHaveBeenCalledWith({ open: true, scales: 2 });
+    const steps = [g.idleOpen()];
+    for (let i = 0; i < 5; i++) { g.answer(); steps.push(g.idleOpen()); }
+    expect(steps.map((s) => s.rung)).toEqual([0, 1, 2, 3, 4, 4]);
+    expect(steps[0]).toEqual({ kind: 'note', rung: 0 });
+    expect(steps[3]).toMatchObject({ kind: 'scales', count: 1, hands: ['RL'] });
+    expect(steps[4]).toMatchObject({ kind: 'scales', count: 2, hands: ['RL', 'RL'] });
+    expect(g.recordCheckIn).toHaveBeenCalledWith({ open: true, rung: 0, scales: 0, minimal: false });
+    expect(g.recordCheckIn).toHaveBeenCalledWith({ open: true, rung: 3, scales: 1, minimal: true });
     expect(g.recordCheckIn).toHaveBeenCalledWith({ open: false });
   });
 
-  it('scaleIndex counts the scales already asked this sitting (1, 2, 2 → 0, 1, 3)', () => {
+  it('scaleIndex counts the scales already asked this sitting (1, 2, 1 → 0, 1, 3)', () => {
     const g = setup();
     g.idleOpen(); g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 1, scaleIndex: 0 });
+    expect(g.idleOpen()).toMatchObject({ rung: 1, scaleIndex: 0 });
     g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2, scaleIndex: 1 });
+    expect(g.idleOpen()).toMatchObject({ rung: 2, scaleIndex: 1 });
     g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'scales', count: 2, scaleIndex: 3 });
+    expect(g.idleOpen()).toMatchObject({ rung: 3, scaleIndex: 3 });
   });
 
-  it('8+ legit notes since the answer drop back to a note (RF5)', () => {
+  it('the gate waits the rung\'s interval', () => {
     const g = setup();
-    g.idleOpen(); g.answer();
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 });
-    g.answer(burst('legit', 10));
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
+    climbTo(g, 2);
+    expect(logged('piano.engagement-gate.interval')).toContainEqual({ rung: 2, seconds: 50 });
+    g.answer();
+    // Now at rung 2: a 50 s interval before the next check-in.
+    act(() => { vi.advanceTimersByTime(49000); });
+    expect(g.hook.result.current.gateOpen).toBe(false);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(g.hook.result.current.gateOpen).toBe(true);
   });
 
-  it('mashing (spam) between check-ins escalates', () => {
+  it('practice resets to note and the interval back to the first', () => {
     const g = setup();
-    g.idleOpen(); g.answer(burst('spam', 3));
-    expect(g.idleOpen().kind).toBe('scales');
+    climbTo(g, 3);
+    g.answer(burst('legit', 40));
+    g.play(180);
+    const s = g.idleOpen();
+    expect(s.kind).toBe('note');
+    expect(logged('piano.engagement-gate.rung')).toContainEqual(expect.objectContaining({ from: 3, to: 0, evidence: 'practice' }));
+    expect(logged('piano.engagement-gate.interval')).toContainEqual({ rung: 0, seconds: 60 });
+    expect(g.recordCheckIn).toHaveBeenLastCalledWith({ open: true, rung: 0, scales: 0, minimal: false });
   });
 
-  it('an ambiguous burst sends one judge request; pending holds, 0.9 resets, 0.2 escalates, fallback resets (RF6)', async () => {
+  it('partial steps down one', () => {
+    const g = setup();
+    climbTo(g, 3);
+    g.answer(burst('legit', 9));
+    g.play(300);
+    expect(g.idleOpen().rung).toBe(2);
+    expect(logged('piano.engagement-gate.rung')).toContainEqual(expect.objectContaining({ from: 3, to: 2, evidence: 'partial' }));
+  });
+
+  it('answer notes are not evidence (RF4): burstSince is asked from the answer + 3 s', () => {
+    const g = setup();
+    g.idleOpen();
+    const answeredAt = Date.now();
+    g.answer(burst('spam', 0));
+    g.burstSince.mockClear();
+    g.idleOpen();
+    expect(g.burstSince).toHaveBeenCalled();
+    for (const call of g.burstSince.mock.calls) expect(call[0]).toBe(answeredAt + 3000);
+  });
+
+  it('top rung logs once per sitting', () => {
+    const g = setup();
+    climbTo(g, 4);
+    g.answer(); g.idleOpen();
+    g.answer(burst('legit', 40)); g.play(180); g.idleOpen(); // back to the note
+    g.answer(); g.idleOpen(); g.answer(); g.idleOpen(); g.answer(); g.idleOpen(); g.answer(); g.idleOpen(); // into 4 again
+    expect(g.hook.result.current.step.rung).toBe(4);
+    expect(logged('piano.engagement-gate.top-rung')).toHaveLength(1);
+    expect(logged('piano.engagement-gate.top-rung')[0]).toMatchObject({ minimal: 4 });
+  });
+
+  it('an ambiguous burst sends one judge request; pending holds, legit resets, not-legit climbs, fallback goes by the rate', async () => {
     let resolve;
     const judgeBurst = vi.fn(() => new Promise((r) => { resolve = r; }));
     const g = setup({ judgeBurst });
     g.idleOpen(); g.answer();
-    g.idleOpen(); // scales 1
-    g.answer(burst('ambiguous', 9));
+    g.idleOpen(); // rung 1
+    g.answer(burst('ambiguous', 30));
     act(() => { vi.advanceTimersByTime(1000); });
     expect(judgeBurst).toHaveBeenCalledTimes(1);
     expect(judgeBurst.mock.calls[0][0]).toMatchObject({ kind: 'check-in' });
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 1 }); // pending → hold
+    expect(g.idleOpen().rung).toBe(1); // pending → hold
+    expect(logged('piano.engagement-gate.ladder-hold')).toHaveLength(1);
     expect(judgeBurst).toHaveBeenCalledTimes(1);
-    g.answer(burst('ambiguous', 9));
+
+    g.answer(burst('ambiguous', 30));
     act(() => { vi.advanceTimersByTime(1000); });
     await act(async () => { resolve({ legit: true, probability: 0.9, source: 'model' }); await Promise.resolve(); await Promise.resolve(); });
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
+    expect(g.idleOpen().rung).toBe(0); // 30 legit notes in ~1 min → practice
 
     g.answer(burst('spam')); g.idleOpen(); // up to 1
-    g.answer(burst('ambiguous', 9));
+    g.answer(burst('ambiguous', 30));
     act(() => { vi.advanceTimersByTime(1000); });
     await act(async () => { resolve({ legit: false, probability: 0.2, source: 'model' }); await Promise.resolve(); await Promise.resolve(); });
-    expect(g.idleOpen()).toMatchObject({ kind: 'scales', count: 2 });
+    expect(g.idleOpen().rung).toBe(2);
 
-    g.answer(burst('ambiguous', 9));
+    g.answer(burst('ambiguous', 30));
     act(() => { vi.advanceTimersByTime(1000); });
     await act(async () => { resolve({ legit: null, probability: null, source: 'fallback' }); await Promise.resolve(); await Promise.resolve(); });
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
+    expect(g.idleOpen().rung).toBe(0);
   });
 
   it('the gate opens and dismisses normally while a judge promise never settles', () => {
@@ -98,16 +165,26 @@ describe('useEngagementGate — ladder', () => {
     const g = setup({ judgeBurst });
     g.idleOpen(); g.answer(burst('ambiguous', 9));
     expect(g.idleOpen()).toBeTruthy();
-    expect(g.hook.result.current.gateOpen).toBe(true);
     act(() => { g.hook.result.current.dismissGate(); });
     expect(g.hook.result.current.gateOpen).toBe(false);
   });
 
-  it('preschool never leaves the single note', () => {
-    const g = setup({ policy: PRESCHOOL_POLICY });
+  it('every sitting starts at the note: a new mount (new video or sitting) after a climb opens rung 0, not minimal (owner 2026-11-13)', () => {
+    const g1 = setup();
+    climbTo(g1, 3);
+    g1.hook.unmount();
+    const g2 = setup();
+    expect(g2.idleOpen()).toEqual({ kind: 'note', rung: 0 });
+    expect(g2.recordCheckIn).toHaveBeenCalledWith({ open: true, rung: 0, scales: 0, minimal: false });
+  });
+
+  it('preschool never leaves the single note, and still marks minimal check-ins', () => {
+    const pre = ladderConfig({}, { preschool: true, baseTimeoutSeconds: 60 });
+    const g = setup({ ladder: pre });
     g.idleOpen(); g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
+    expect(g.idleOpen()).toEqual({ kind: 'note', rung: 0 });
     g.answer();
-    expect(g.idleOpen()).toEqual({ kind: 'note' });
+    expect(g.idleOpen()).toEqual({ kind: 'note', rung: 0 });
+    expect(g.recordCheckIn).toHaveBeenLastCalledWith({ open: true, rung: 0, scales: 0, minimal: true });
   });
 });
