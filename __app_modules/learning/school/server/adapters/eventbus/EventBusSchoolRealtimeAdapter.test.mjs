@@ -104,3 +104,10 @@ it('a counted printed sheet is a completion input, so a day it finishes is notic
   await bus.handlers.get('school')({ event: 'printed-activity-complete', learnerId: 'kid', corpusId: 'beeloo:maze' });
   expect(change).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid', event: 'printed-activity-complete' }));
 });
+
+it('an assessment change carries the study day of the session it settled', () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  gateway.sessionOutcomeRecorded({ learnerId: 'kid', unitId: 'u', sessionId: 's', result: 'passed', studyDay: '2026-11-13' });
+  expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'assessment-changed', learnerId: 'kid', unitId: 'u', sessionId: 's', studyDay: '2026-11-13' } });
+});

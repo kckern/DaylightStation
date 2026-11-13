@@ -82,7 +82,7 @@ import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
 import CoinCeremony from "./CoinCeremony.jsx";
 import { useCoinCeremony } from "./useCoinCeremony.js";
-import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
+import { SCHOOL_REFRESH_EVENTS, DAY_SCOPED_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -782,7 +782,10 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     }
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
-    if ((event === 'story-read' || event === 'printed-activity-complete') && eventStudyDay && eventStudyDay !== studyDay) return;
+    // A piece of work that belongs to another study day (a late scan,
+    // yesterday's lesson) has nothing to say about today's board. Not every
+    // event: a backdated book-log undo still changes today's reading circle.
+    if (DAY_SCOPED_EVENTS.has(event) && eventStudyDay && eventStudyDay !== studyDay) return;
 
     schoolLog.selfService('status-board.refresh', {
       source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,

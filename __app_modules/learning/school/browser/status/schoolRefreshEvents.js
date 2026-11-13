@@ -17,12 +17,23 @@ export const COINS_MAX_WAIT_MS = 3_000;
 export const SCHOOL_REFRESH_EVENTS = new Set([
   'session-issued',
   'session-grade-changed',
+  'assessment-changed',
   'story-read',
   'printed-activity-complete',
   'book-log-changed',
   'piano-lesson-complete',
   'program-day-bypass-changed',
   COINS_CHANGED,
+]);
+
+/**
+ * Events that name one piece of work done on one study day. The board drops
+ * one whose `studyDay` is not the day it shows.
+ */
+export const DAY_SCOPED_EVENTS = new Set([
+  'story-read',
+  'printed-activity-complete',
+  'assessment-changed',
 ]);
 
 /**

@@ -495,8 +495,16 @@ Refreshes are scoped to what changed:
 | Mount, 5-minute poll (visible tab only) | Every learner + rings |
 | `omr` scan event naming a learner | That learner (digest, plan, term) |
 | `omr` scan event naming nobody | Every learner |
-| `school` event (`session-issued`, `story-read`, …) | That learner |
+| `school` event in `SCHOOL_REFRESH_EVENTS` (`session-issued`, `story-read`, `assessment-changed`, …) | That learner |
 | `fitness.weekly-rings` State Gate event | Rings + that learner |
+
+`assessment-changed` is what every session settled away from the tablet sends
+(fitness, a TV launch, a language day, the review queue), so the circle turns
+green at once rather than on the poll. The events in `DAY_SCOPED_EVENTS`
+(`story-read`, `printed-activity-complete`, `assessment-changed`) name one piece
+of work on one study day; the board ignores one whose `studyDay` is not the day
+it shows. A backdated `book-log-changed` still re-reads, because it changes
+today's reading circle.
 
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on

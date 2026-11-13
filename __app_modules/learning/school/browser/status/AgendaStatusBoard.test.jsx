@@ -754,7 +754,7 @@ describe('a scan updates the board immediately', () => {
     expect(schoolApi.teacherDay.mock.calls.length).toBe(calls);
   });
 
-  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed', 'session-grade-changed'])(
+  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed', 'session-grade-changed', 'assessment-changed'])(
     're-reads immediately on a relevant %s event for a displayed learner',
     async (event) => {
       schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
@@ -832,6 +832,7 @@ describe('a scan updates the board immediately', () => {
     school.cb({ event: 'story-read', learnerId: 'learner2', studyDay: '2026-08-26' });
     school.cb({ event: 'story-read', learnerId: 'learner1', studyDay: '2026-08-25' });
     school.cb({ event: 'reader-heartbeat', learnerId: 'learner1', studyDay: '2026-08-26' });
+    school.cb({ event: 'assessment-changed', learnerId: 'learner1', studyDay: '2026-08-25' });
 
     expect(schoolApi.teacherDay.mock.calls.length).toBe(before);
   });

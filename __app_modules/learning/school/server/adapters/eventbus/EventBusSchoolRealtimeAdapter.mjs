@@ -113,8 +113,8 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
 
   languageDayCompleted(fact) { return this.#publish('school.language.day-complete', fact); }
   cardPracticeDayCompleted(fact) { return this.#publish('school.card-ladder.day-complete', fact); }
-  #assessmentChanged({ learnerId, unitId, sessionId }) {
-    if (unitId) return this.#broadcast('school', { event: 'assessment-changed', learnerId, unitId, sessionId });
+  #assessmentChanged({ learnerId, unitId, sessionId, studyDay = null }) {
+    if (unitId) return this.#broadcast('school', { event: 'assessment-changed', learnerId, unitId, sessionId, ...(studyDay ? { studyDay } : {}) });
   }
   sessionOutcomeRecorded(fact) {
     const published = this.#publish('school.session.outcome-recorded', fact);
