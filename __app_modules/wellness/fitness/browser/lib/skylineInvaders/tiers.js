@@ -1,21 +1,21 @@
-import { trustedZoneId, zonePower } from '../skylineGlider/weaponPower.js';
-
-// spread = horizontal speed (scene units/s) of each shot in the volley.
-// The nuke shot does no damage of its own: its blast does (engine.js).
+// The weapon ladder. The power meter (kills and firing time, engine.js) moves
+// the shooter up it; heart-rate zone no longer picks the shot.
+//
+// A volley is one beat of the stream: every entry in `shots` leaves the cannon
+// at once. dx = sideways offset from the cannon (scene units), vx = sideways
+// speed (scene units per second).
 export const SHOT_TIERS = Object.freeze({
-  small: Object.freeze({ id: 'small', damage: 1, halfWidth: 6, spread: Object.freeze([0]) }),
-  big: Object.freeze({ id: 'big', damage: 2, halfWidth: 16, spread: Object.freeze([0]) }),
-  spread: Object.freeze({ id: 'spread', damage: 1, halfWidth: 6, spread: Object.freeze([-150, 0, 150]) }),
-  nuke: Object.freeze({ id: 'nuke', damage: 0, halfWidth: 10, spread: Object.freeze([0]) }),
+  small: Object.freeze({ id: 'small', label: 'Single', damage: 1, halfWidth: 6, shots: Object.freeze([Object.freeze({ dx: 0, vx: 0 })]) }),
+  double: Object.freeze({ id: 'double', label: 'Double', damage: 1, halfWidth: 6, shots: Object.freeze([Object.freeze({ dx: -14, vx: 0 }), Object.freeze({ dx: 14, vx: 0 })]) }),
+  spread: Object.freeze({ id: 'spread', label: 'Spread', damage: 1, halfWidth: 6, shots: Object.freeze([Object.freeze({ dx: 0, vx: -150 }), Object.freeze({ dx: 0, vx: 0 }), Object.freeze({ dx: 0, vx: 150 })]) }),
 });
-const BY_POWER = ['small', 'big', 'spread', 'nuke'];
 
-/**
- * The shooter's tier, plus whether a trusted zone backs it (for the HUD note).
- * `now` defaults to the current time inside trustedZoneId, which keeps the
- * clock out of this file.
- */
-export function shotTier(profile, now) {
-  const zoneId = trustedZoneId(profile, now);
-  return { tier: BY_POWER[zonePower(zoneId) - 1], zoneId, trusted: zoneId !== null };
-}
+/** Weapon level -> shot tier. The top level also charges bombs. */
+export const WEAPON_LADDER = Object.freeze(['small', 'double', 'spread']);
+export const TOP_WEAPON_LEVEL = WEAPON_LADDER.length - 1;
+/** The ladder as the HUD shows it: the three streams, then the bomb a full meter buys at the top. */
+export const WEAPON_STEPS = Object.freeze(['Single', 'Double', 'Spread', 'Bomb']);
+
+export const weaponTier = (weapon) => WEAPON_LADDER[Math.min(TOP_WEAPON_LEVEL, Math.max(0, weapon?.level || 0))];
+/** A bomb is ready: top of the ladder with a full meter. */
+export const bombReady = (weapon) => (weapon?.level || 0) >= TOP_WEAPON_LEVEL && (weapon?.meter || 0) >= 1;

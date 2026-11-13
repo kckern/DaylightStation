@@ -37,6 +37,7 @@ describe('Skyline Invaders service wiring', () => {
 
     const world = await skylineInvadersProgressService.worldFor(skylineInvadersLevelCatalog.world('home'), 'test-rider', 'home');
     expect(world).toEqual({
+      controls: null,
       next: 'invaders-1-2',
       levels: [
         { id: 'invaders-1-1', name: 'invaders-1-1', status: 'completed', best: { stars: 2, score: 340 } },

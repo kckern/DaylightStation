@@ -35,7 +35,12 @@ function refuseBackend() {
           if (query.get('levels') === 'fail') return json({ error: 'unavailable' }, 503);
           return json({ levels: query.get('levels') === 'none' ? [] : HARNESS_LEVELS });
         }
-        if (url === '/api/v1/fitness/skyline-invaders/world') return json(HARNESS_WORLD);
+        // `?controls=none` is a rider who has not picked their controls; any other value is the saved gesture.
+        if (url === '/api/v1/fitness/skyline-invaders/world') {
+          const gesture = query.get('controls') || 'wiper';
+          return json({ ...HARNESS_WORLD, controls: gesture === 'none' ? null : { gesture } });
+        }
+        if (/^\/api\/v1\/fitness\/skyline-invaders\/progress\/[^/]+\/controls$/.test(url)) return json({ controls: { gesture: 'saved' } });
         if (url === '/api/v1/fitness/skyline-invaders/runs') return query.get('save') === 'fail' ? json({ error: 'down' }, 503) : json({ created: true }, 201);
         // `?kiosk=1` turns the school-day gate on: the learner's day is not done.
         if (url === '/api/v1/entitlements') {
@@ -73,6 +78,8 @@ export default async (env = {}) => {
         { find: /^\.\/InvadersPoseBridge\.jsx$/, replacement: path.join(here, 'stubs/poseBridge.jsx') },
         { find: /^.*\/player\/useFitnessModule\.js$/, replacement: path.join(here, 'stubs/fitnessModule.js') },
         { find: /^.*\/identity\/useIdentity\.js$/, replacement: path.join(here, 'stubs/identity.js') },
+        // Silent: the harness never makes a sound (stubs/audio.js).
+        { find: /^.*\/skylineGlider\/skylineAudio\.js$/, replacement: path.join(here, 'stubs/audio.js') },
         { find: /^@\/hooks\/useWebSocket\.js$/, replacement: path.join(here, 'stubs/webSocket.js') },
         { find: /^@\/lib\/kioskEnv\.js$/, replacement: path.join(here, 'stubs/kioskEnv.js') },
         ...Object.entries(app.resolve?.alias || {}).map(([find, replacement]) => ({ find, replacement })),

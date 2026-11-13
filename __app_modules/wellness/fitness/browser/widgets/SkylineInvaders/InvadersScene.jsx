@@ -1,18 +1,21 @@
 import React from 'react';
 import PixelSprite from '../../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
-import { MUZZLE_Y } from '../../lib/skylineInvaders/engine.js';
+import { MUZZLE_Y, fireRules } from '../../lib/skylineInvaders/engine.js';
+import { LANES, LANE_WIDTH, laneOfX, laneX, nextTarget } from '../../lib/skylineInvaders/lanes.js';
 import { FIELD, THREATS, aimToX } from '../../lib/skylineInvaders/threats.js';
+import { SHOT_TIERS, bombReady, weaponTier } from '../../lib/skylineInvaders/tiers.js';
 import { INVADER_SPRITES, SPRITE_PIXEL } from '../../lib/skylineInvaders/sprites.js';
 import './SkylineInvaders.scss';
 
 // The playfield: a city at night, drawn in the engine's 1000 x 600 scene units.
 // Pure render. Every moving thing is placed from `state`, and animation time
 // is `state.time`, so a paused round is a still picture and a replay draws the
-// same frames. The only time the stylesheet owns is the cannon's glide and the
-// short effect animations.
+// same frames. The only time the stylesheet owns is the short effect
+// animations. The cannon does not glide: it stands on a lane centre, and a
+// shot leaves from exactly where it is drawn.
 //
 // Colour rule (SkylineInvaders.scss): what falls is cold, what the players own
-// is warm. Shots take the colour of the heart-rate zone that earned them.
+// is warm. Shots take the colour of the weapon level that fires them.
 
 // ── Art lookup: the skin hook. Nothing else reads sprites.js for a threat or
 // the cannon, so a skin export can swap these two functions later. ──────────
@@ -61,7 +64,7 @@ const FAR_BLOCKS = Object.freeze(Array.from({ length: Math.ceil(WIDE.width / 40)
   width: 40,
   height: snap(28 + noise(i + 400) * 84),
 })));
-const TIERS = Object.freeze(['small', 'big', 'spread', 'nuke']);
+const TIERS = Object.freeze(Object.keys(SHOT_TIERS));
 
 // Windows are the holes fully walled in by the building's own pixels. They are
 // lit while the building stands and go dark when it falls.
@@ -201,13 +204,12 @@ function Shot({ shot }) {
   return (
     <g className={cls('skyline-invaders__shot', `skyline-invaders__shot--${shot.tier}`)}>
       <rect className="skyline-invaders__shot-trail" x={x} y={y + SHOT_HEIGHT} width={width} height={SHOT_HEIGHT * 3} fill={`url(#si-trail-${TIERS.includes(shot.tier) ? shot.tier : 'small'})`} />
-      {shot.tier === 'nuke' && <circle className="skyline-invaders__shot-halo" cx={shot.x} cy={shot.y} r={22} />}
       <rect data-shot={shot.tier} className="skyline-invaders__shot-head" x={x} y={y} width={width} height={SHOT_HEIGHT} />
     </g>
   );
 }
 
-// A nuke going off. The disc is the true blast radius for its whole life, so
+// A bomb going off. The disc is the true blast radius for its whole life, so
 // what the picture covers is what the engine destroyed; the ring, the core and
 // the debris move outward over the half second the engine keeps the blast.
 function Blast({ blast }) {
@@ -237,26 +239,92 @@ function Blast({ blast }) {
   );
 }
 
+// The cannon's lane, lit from the street to the top of the sky: where a shot
+// will go. Faint ticks along the street mark every lane edge.
+function Lanes({ x, tier }) {
+  return (
+    <g className={cls('skyline-invaders__lanes', `skyline-invaders__cannon--${tier}`)}>
+      <defs>
+        <linearGradient id="si-column" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="skyline-invaders__column-stop skyline-invaders__column-stop--top" />
+          <stop offset="1" className="skyline-invaders__column-stop skyline-invaders__column-stop--low" />
+        </linearGradient>
+      </defs>
+      {Array.from({ length: LANES + 1 }, (_, i) => (
+        <rect key={i} className="skyline-invaders__lane-tick" x={FIELD.marginX + i * LANE_WIDTH - 1} y={FIELD.groundY - 10} width="2" height="10" />
+      ))}
+      {x.map((value, index) => (
+        <g key={index} data-column data-lane={laneOfX(value)}>
+          <rect className="skyline-invaders__column" x={value - LANE_WIDTH / 2} y="0" width={LANE_WIDTH} height={FIELD.groundY} fill="url(#si-column)" />
+          <rect className="skyline-invaders__column-edge" x={value - LANE_WIDTH / 2} y="0" width="3" height={FIELD.groundY} />
+          <rect className="skyline-invaders__column-edge" x={value + LANE_WIDTH / 2 - 3} y="0" width="3" height={FIELD.groundY} />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+// Corner brackets around the threat the next shot will meet.
+function TargetMark({ threat }) {
+  const spec = THREATS[threat.type] || THREATS.meteor;
+  const pad = 10;
+  const left = threat.x - spec.width / 2 - pad;
+  const right = threat.x + spec.width / 2 + pad;
+  const top = threat.y - spec.height / 2 - pad;
+  const bottom = threat.y + spec.height / 2 + pad;
+  const arm = 14;
+  const d = [
+    `M ${left} ${top + arm} V ${top} H ${left + arm}`, `M ${right - arm} ${top} H ${right} V ${top + arm}`,
+    `M ${right} ${bottom - arm} V ${bottom} H ${right - arm}`, `M ${left + arm} ${bottom} H ${left} V ${bottom - arm}`,
+  ].join(' ');
+  return <path data-target={threat.id} className="skyline-invaders__target" d={d} />;
+}
+
+// Practice targets for the controls intro: a ring over a lane (or a pair of
+// lanes), lit while the cannon stands under it and ticked once it has been reached.
+function PracticeTargets({ targets }) {
+  return (
+    <g className="skyline-invaders__practice">
+      {targets.map((target) => {
+        const centre = target.lanes.reduce((sum, lane) => sum + laneX(lane), 0) / target.lanes.length;
+        return (
+          <g key={target.id} data-practice-target={target.id} data-lit={!!target.lit} data-reached={!!target.reached} className={cls('skyline-invaders__practice-target', target.lit && 'is-lit', target.reached && 'is-reached')}>
+            <circle cx={centre} cy="380" r="46" />
+            <circle className="skyline-invaders__practice-core" cx={centre} cy="380" r="18" />
+            {target.reached && <path className="skyline-invaders__practice-tick" d={`M ${centre - 20} 380 l 14 16 l 26 -34`} />}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 const OUTLINE = Object.freeze([[-SPRITE_PIXEL, 0], [SPRITE_PIXEL, 0], [0, -SPRITE_PIXEL]]);
-function Cannon({ x, tier, twin, rapid, assets }) {
+const FUEL_BAR = Object.freeze({ width: 96, height: 16, y: FIELD.groundY + 14 });
+function Cannon({ x, tier, twin, rapid, ready, fuel, assets }) {
   const { grid } = cannonArt(assets);
   return (
     <g
       data-cannon
       data-x={x}
+      data-lane={laneOfX(x)}
       data-tier={tier}
-      className={cls('skyline-invaders__cannon', `skyline-invaders__cannon--${tier}`, twin && 'is-twin', rapid && 'is-rapid')}
+      className={cls('skyline-invaders__cannon', `skyline-invaders__cannon--${tier}`, twin && 'is-twin', rapid && 'is-rapid', ready && 'is-bomb-ready')}
       style={{ transform: `translate(${x}px, 0px)` }}
     >
-      <line data-aim-line className="skyline-invaders__aim-line" x1="0" x2="0" y1={MUZZLE_Y - 20} y2="0" />
       {/* The cannon passes in front of the buildings: a dark outline keeps it apart from them. */}
       {OUTLINE.map(([dx, dy]) => (
         <PixelSprite key={`${dx},${dy}`} grid={grid} className="skyline-invaders__cannon-outline" x={-CANNON.width / 2 + dx} y={FIELD.groundY - CANNON.height + dy} width={CANNON.width} height={CANNON.height} />
       ))}
       <PixelSprite grid={grid} className="skyline-invaders__cannon-body" x={-CANNON.width / 2} y={FIELD.groundY - CANNON.height} width={CANNON.width} height={CANNON.height} />
       <rect className="skyline-invaders__muzzle" x={-SPRITE_PIXEL * 1.5} y={FIELD.groundY - CANNON.height} width={SPRITE_PIXEL * 3} height={SPRITE_PIXEL} />
-      {/* Where the cannon is, readable at a glance in the empty strip under the street. */}
-      <path className="skyline-invaders__cannon-marker" d={`M -18 ${FIELD.groundY + 34} L 0 ${FIELD.groundY + 12} L 18 ${FIELD.groundY + 34} Z`} />
+      {/* Fuel, under the cannon, where the shooter is already looking. */}
+      {fuel && !twin && (
+        <g data-fuel-bar data-empty={!(fuel.value > 0)} className={cls('skyline-invaders__fuel-bar', !(fuel.value > 0) && 'is-empty')}>
+          <rect className="skyline-invaders__fuel-track" x={-FUEL_BAR.width / 2} y={FUEL_BAR.y} width={FUEL_BAR.width} height={FUEL_BAR.height} />
+          <rect className="skyline-invaders__fuel-fill" x={-FUEL_BAR.width / 2} y={FUEL_BAR.y} width={FUEL_BAR.width * Math.min(1, Math.max(0, fuel.value / fuel.cap))} height={FUEL_BAR.height} />
+        </g>
+      )}
     </g>
   );
 }
@@ -294,17 +362,22 @@ function Pop({ pop }) {
  * @param {object} props
  * @param {object} props.state    engine state (engine.js)
  * @param {object} props.level    the validated level being played
- * @param {number|number[]} props.aim  0..1 per cannon; two values only on a two-cannon level
+ * @param {number|number[]} props.aim  0..1 per cannon (a lane centre); two values only on a two-cannon level
  * @param {boolean} [props.twin]  a twin boost is running: draw the mirrored cannon
- * @param {string} [props.tier]   the shooter's shot tier, for the cannon and aim line colour
+ * @param {boolean} [props.live]  a round (or a tryout) is on: draw the lit lane, the target mark and the fuel bar
+ * @param {object[]} [props.targets] practice targets for the controls intro: [{ id, lanes, lit, reached }]
  * @param {object} [props.effects] `{ pops, shakeKey, shakeKind }` from invadersEffects.js
  * @param {object} [props.assets] skin assets (unused until skins land)
  */
-export default function InvadersScene({ state, level, aim, twin = false, tier = 'small', effects = null, assets = null }) {
+export default function InvadersScene({ state, level, aim, twin = false, live = true, targets = null, effects = null, assets = null }) {
   const aims = (Array.isArray(aim) ? aim : [aim]).slice(0, level?.cannons === 2 ? 2 : 1);
   const cannons = aims.map((value) => ({ x: aimToX(value), twin: false }));
   if (twin) cannons.push({ x: aimToX(1 - (typeof aims[0] === 'number' ? aims[0] : 0.5)), twin: true });
   const active = state.boost?.active || null;
+  const tier = weaponTier(state.weapon);
+  const ready = bombReady(state.weapon);
+  const fuel = live && !targets ? { value: state.fuel || 0, cap: fireRules(level).fuel_cap_s } : null;
+  const marked = live ? [...new Set(cannons.map((cannon) => nextTarget(state.threats, cannon.x, SHOT_TIERS[tier].halfWidth)).filter(Boolean))] : [];
   const shake = effects?.shakeKey ? `${effects.shakeKind || 'hit'}-${effects.shakeKey % 2 ? 'b' : 'a'}` : 'none';
   // The first tenth of a second of a blast lights the whole sky.
   const flash = state.blasts.reduce((most, blast) => Math.max(most, (blast.ttl - 0.4) / 0.1), 0);
@@ -319,9 +392,12 @@ export default function InvadersScene({ state, level, aim, twin = false, tier = 
     >
       <g data-shake={shake} className="skyline-invaders__stage">
         <Backdrop />
+        {live && <Lanes x={cannons.map((cannon) => cannon.x)} tier={ready ? 'bomb' : tier} />}
         <Base buildings={state.base.buildings} />
+        {targets && <PracticeTargets targets={targets} />}
         <g className="skyline-invaders__threats">
           {state.threats.map((threat) => <Threat key={threat.id} threat={threat} timeS={state.time} assets={assets} />)}
+          {marked.map((threat) => <TargetMark key={threat.id} threat={threat} />)}
         </g>
         <g className="skyline-invaders__shots">
           {state.shots.map((shot) => <Shot key={shot.id} shot={shot} />)}
@@ -331,7 +407,7 @@ export default function InvadersScene({ state, level, aim, twin = false, tier = 
           {state.blasts.map((blast) => <Blast key={blast.id} blast={blast} />)}
         </g>
         {cannons.map((cannon, index) => (
-          <Cannon key={index} x={cannon.x} tier={tier} twin={cannon.twin} rapid={active?.kind === 'rapid'} assets={assets} />
+          <Cannon key={index} x={cannon.x} tier={ready ? 'bomb' : tier} twin={cannon.twin} rapid={active?.kind === 'rapid'} ready={ready} fuel={fuel} assets={assets} />
         ))}
         {active?.kind === 'shield' && (
           <path

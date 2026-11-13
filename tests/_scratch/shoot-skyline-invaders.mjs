@@ -1,6 +1,6 @@
 // Screenshots every Skyline Invaders harness scene at 1920x1080 (the garage
 // TV) plus a quarter-size copy (how it reads from across the room).
-//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=battle,tier] [VIEWPORT=1810x1040] [BROWSER=chromium] node tests/_scratch/shoot-skyline-invaders.mjs
+//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=battle,weapon] [VIEWPORT=1810x1040] [BROWSER=chromium] node tests/_scratch/shoot-skyline-invaders.mjs
 // Starts nothing: run the harness server first. Exits 1 on a page error, a
 // console error, a failed request or a scene that never renders.
 import { chromium, firefox } from 'playwright';
@@ -15,14 +15,15 @@ const OUT = process.env.OUT_DIR || path.join(here, 'out/skyline-invaders');
 fs.mkdirSync(OUT, { recursive: true });
 // freeze = seconds into every CSS animation at which the picture is taken.
 const SHOTS = {
-  battle: 0.15, 'tier-small': 0.15, 'tier-big': 0.15, 'tier-spread': 0.15, 'tier-nuke': 0.15,
-  'nuke-start': 0.06, 'nuke-late': 0.15, shield: 0.4, twin: 0.15, rapid: 0.15,
-  'pose-lost': 0.4, manual: 0.4, 'last-seconds': 0.15, start: 0.15,
+  battle: 0.15, 'weapon-single': 0.15, 'weapon-double': 0.15, 'weapon-spread': 0.15, 'bomb-ready': 0.15, 'out-of-fuel': 0.15,
+  'bomb-start': 0.06, 'bomb-late': 0.15, 'edge-lane-left': 0.15, 'edge-lane-right': 0.15, shield: 0.4, twin: 0.15, rapid: 0.15,
+  'pose-lost': 0.4, 'camera-off': 0.4, 'last-seconds': 0.15, start: 0.15,
 };
 const only = (process.env.ONLY || '').split(',').filter(Boolean);
 const [width, height] = (process.env.VIEWPORT || '1920x1080').split('x').map(Number);
 const engine = process.env.BROWSER === 'chromium' ? chromium : firefox;   // the garage kiosk is Firefox
-const browser = await engine.launch();
+// Muted twice over: the harness stubs the game's audio engine, and the browser itself has no volume.
+const browser = await engine.launch(engine === firefox ? { firefoxUserPrefs: { 'media.volume_scale': '0.0' } } : { args: ['--mute-audio'] });
 let failed = false;
 for (const [name, freeze] of Object.entries(SHOTS)) {
   if (only.length && !only.some((o) => name.startsWith(o))) continue;

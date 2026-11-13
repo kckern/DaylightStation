@@ -18,8 +18,8 @@ if (!fixture) {
   const f = fixture();
   root.render(
     <main className="skyline-invaders skyline-invaders--play" data-harness-ready>
-      <InvadersScene state={f.state} level={f.level} aim={f.aim} twin={f.twin} tier={f.tier.tier} effects={f.effects} />
-      <InvadersHud state={f.state} level={f.level} tier={f.tier} aimStatus={f.aimStatus} poseStatus={{ state: 'detecting' }} partner={f.partner} shooterName={f.shooterName} />
+      <InvadersScene state={f.state} level={f.level} aim={f.aim} twin={f.twin} effects={f.effects} live />
+      <InvadersHud state={f.state} level={f.level} gesture={f.gesture} aimStatus={f.aimStatus} poseStatus={f.poseStatus || { state: 'detecting' }} partner={f.partner} />
       {f.effects?.banner && <MomentBanner text={f.effects.banner.text} momentKey={f.effects.banner.key} className="skyline-invaders__banner" />}
     </main>,
   );

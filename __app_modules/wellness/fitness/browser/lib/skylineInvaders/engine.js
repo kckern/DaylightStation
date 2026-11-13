@@ -7,12 +7,13 @@
 // few frames old; nothing here assumes it changes every step.
 import { nextRandom } from '../../../../../../__capabilities/gaming/portable/mechanics/random.mjs';
 import { advance, box, sweepHits } from '../../../../../../__capabilities/gaming/portable/realtime/index.mjs';
-import { boostRules, nukeRules } from './rules.js';
+import { LANES, LANE_WIDTH, laneOfX, laneX, nearestThreat } from './lanes.js';
+import { boostRules, fireRules, nukeRules } from './rules.js';
 import { killPoints } from './scoring.js';
 import { FIELD, THREATS, aimToX, clampX, moveThreat, threatBox } from './threats.js';
-import { SHOT_TIERS } from './tiers.js';
+import { SHOT_TIERS, TOP_WEAPON_LEVEL, bombReady, weaponTier } from './tiers.js';
 
-export { boostRules, nukeRules };
+export { boostRules, fireRules, nukeRules };
 
 export const STEP_S = 1 / 60;
 export const SHOT_SPEED = 900;                 // scene units per second, straight up
@@ -20,7 +21,8 @@ export const MUZZLE_Y = FIELD.groundY - 20;
 const BUILDINGS = 10;
 const EPS = 1e-9;
 const MIN_AUTO_FIRE_S = 0.05;                  // auto-fire never runs faster than this, whatever a level asks
-const BLAST_S = 0.5;                           // how long a nuke blast stays in state for the renderer
+const BLAST_S = 0.5;                           // how long a bomb blast stays in state for the renderer
+const BOMB_EMPTY_Y = 250;                      // where a bomb goes off when the sky is empty
 const RANGE_X = FIELD.width - 2 * FIELD.marginX;
 
 /**
@@ -33,8 +35,12 @@ export function createGameState(level, { seed = 1 } = {}) {
     nextSpawnAt: level.waves[0].at,
     threats: [], shots: [], blasts: [], volleys: {},
     base: { hp: 100, maxHp: 100, buildings: Array.from({ length: BUILDINGS }, () => true) },
-    score: 0, kills: 0, combo: 0, bestCombo: 0, shotsFired: 0, hits: 0, nukes: 0,
-    boost: { meter: 0, next: 0, used: 0, active: null }, autoFireIn: 0,
+    score: 0, kills: 0, combo: 0, bestCombo: 0, shotsFired: 0, hits: 0, bombs: 0,
+    // Fuel is seconds of stream left; steps buy it. streamIn is the wait to the next volley.
+    fuel: 0, streamIn: 0, steps: 0, firingS: 0,
+    // level indexes tiers.js WEAPON_LADDER; meter 0..1; idleS = seconds since the stream last ran.
+    weapon: { level: 0, meter: 0, idleS: 0, peak: 0 },
+    boost: { meter: 0, next: 0, used: 0, active: null },
     events: [],
   };
 }
@@ -47,7 +53,7 @@ function draft(state) {
     threats: [...state.threats], shots: [...state.shots], blasts: [...state.blasts],
     volleys: { ...state.volleys },
     base: { ...state.base, buildings: [...state.base.buildings] },
-    boost: { ...state.boost }, events: [...state.events],
+    weapon: { ...state.weapon }, boost: { ...state.boost }, events: [...state.events],
   };
 }
 
@@ -59,10 +65,11 @@ function rand(s) {
 
 // `originX` is the column a zigzag swings around. The threat starts where its
 // zigzag is at age 0, so it never jumps sideways on its first step.
-function addThreat(s, type, originX, y, { from, phase = 0, dir = 1 }) {
+function addThreat(s, level, type, originX, y, { from, phase = 0, dir = 1 }) {
   const spec = THREATS[type];
   const x = spec.zigzag ? clampX(originX + spec.zigzag.amplitude * Math.sin(phase)) : originX;
-  const threat = { id: s.nextId++, type, x, y, originX, hp: spec.hp, age: 0, phase, dir, bombIn: spec.bombEvery_s || 0 };
+  const fall = level?.fall?.[type] ?? spec.fall;
+  const threat = { id: s.nextId++, type, x, y, originX, hp: spec.hp, fall, age: 0, phase, dir, bombIn: spec.bombEvery_s || 0 };
   s.threats.push(threat);
   s.events.push({ type: 'threat.spawned', data: { id: threat.id, threat: type, x, from } });
   return threat;
@@ -95,7 +102,11 @@ function spawn(s, level) {
     const roll = { type: rand(s), x: rand(s), phase: rand(s), dir: rand(s) };
     let type = pickType(wave, roll.type);
     if (type === 'bomber' && s.threats.filter((t) => t.type === 'bomber').length >= (level.max_bombers ?? 2)) type = 'meteor';
-    addThreat(s, type, FIELD.marginX + roll.x * RANGE_X, type === 'bomber' ? FIELD.bomberY : FIELD.spawnY, {
+    // Threats come down lane centres, so the cannon (which sits on one) can
+    // always line up with them. A level may keep them to a run of lanes.
+    const [lo, hi] = level.spawn_lanes || [0, LANES - 1];
+    const lane = Math.min(hi, lo + Math.floor(roll.x * (hi - lo + 1)));
+    addThreat(s, level, type, laneX(lane), type === 'bomber' ? FIELD.bomberY : FIELD.spawnY, {
       from: 'wave', phase: roll.phase * Math.PI * 2, dir: roll.dir < 0.5 ? -1 : 1,
     });
     // A wave spawns every rate_s until the next wave's `at`; the next wave
@@ -125,7 +136,8 @@ function knockOutBuildings(s, x) {
   return lost;
 }
 
-// A threat reached the ground. It costs base HP (and stars); it never ends the round.
+// A threat reached the ground. It costs base HP (and stars) and the kill
+// streak; it never ends the round.
 function impact(s, threat) {
   const shielded = s.boost.active?.kind === 'shield';
   const damage = shielded ? 0 : THREATS[threat.type].baseDamage || 0;
@@ -133,11 +145,12 @@ function impact(s, threat) {
   if (damage > 0) {
     s.base.hp = Math.max(0, s.base.hp - damage);
     buildings = knockOutBuildings(s, threat.x);
+    s.combo = 0;
   }
   s.events.push({ type: 'base.hit', data: { threat: threat.type, x: threat.x, damage, shielded, hp: s.base.hp, buildings } });
 }
 
-function move(s, dt) {
+function move(s, dt, level) {
   const kept = [];
   const droppers = [];
   for (const prior of s.threats) {
@@ -151,7 +164,7 @@ function move(s, dt) {
     if (threat.y >= FIELD.groundY) impact(s, threat); else kept.push(threat);
   }
   s.threats = kept;
-  for (const bomber of droppers) addThreat(s, 'bomb', bomber.x, bomber.y + THREATS.bomber.height / 2, { from: 'bomber' });
+  for (const bomber of droppers) addThreat(s, level, 'bomb', bomber.x, bomber.y + THREATS.bomber.height / 2, { from: 'bomber' });
 }
 
 // One aim per cannon: one cannon unless the level has two. A twin boost adds
@@ -162,39 +175,110 @@ function cannonAims(s, aim, level) {
   return aims;
 }
 
-// One press = one volley, however many shots it makes (spread, two cannons).
-// Accuracy and the combo are counted per volley, not per shot.
-function fireVolley(s, press, level) {
-  const spec = SHOT_TIERS[press.tier] || SHOT_TIERS.small;
-  const aims = cannonAims(s, press.aim, level);
+// One beat of the stream = one volley, however many shots it makes (double,
+// spread, two cannons). Accuracy is counted per volley, not per shot. Every
+// shot leaves from the cannon's own x: where it is drawn is where it fires.
+function fireVolley(s, intents, source, level) {
+  const spec = SHOT_TIERS[weaponTier(s.weapon)];
+  const aims = cannonAims(s, intents.aim, level);
   const volley = s.nextId++;
   let live = 0;
   for (const aim of aims) {
-    for (const vx of spec.spread) {
-      s.shots.push({ id: s.nextId++, volley, x: aimToX(aim), y: MUZZLE_Y, vx, tier: spec.id, damage: spec.damage, halfWidth: spec.halfWidth, armsUp: !!press.armsUp });
+    for (const shot of spec.shots) {
+      s.shots.push({ id: s.nextId++, volley, x: aimToX(aim) + shot.dx, y: MUZZLE_Y, vx: shot.vx, tier: spec.id, damage: spec.damage, halfWidth: spec.halfWidth, armsUp: !!intents.armsUp });
       live += 1;
     }
   }
   s.volleys[volley] = { live, hit: false };
   s.shotsFired += 1;
-  s.events.push({ type: 'shot.fired', data: { tier: spec.id, aim: aims[0], source: press.source || 'mat', armsUp: !!press.armsUp, pressAt: press.at ?? null } });
+  const x = aimToX(aims[0]);
+  s.events.push({ type: 'shot.fired', data: { volley, tier: spec.id, aim: aims[0], x, lane: laneOfX(x), source, armsUp: !!intents.armsUp, target: nearestThreat(s.threats, x) } });
 }
 
-function fire(s, intents, dt, level) {
-  const presses = [...(intents.fire || [])];
-  // The mat cannot deliver a high rate, so rapid fire shoots by itself, at
-  // the continuous aim and tier. Every shot that falls due inside this step
-  // is fired, so the rate does not drop when steps are long.
-  if (s.boost.active?.kind === 'rapid') {
-    const interval = Math.max(MIN_AUTO_FIRE_S, boostRules(level).rapid_interval_s);
-    let wait = s.autoFireIn;
-    while (wait < dt - EPS) {
-      presses.push({ aim: intents.aim, tier: intents.tier, armsUp: intents.armsUp, source: 'auto', at: null });
-      wait += interval;
-    }
-    s.autoFireIn = wait - dt;
+function addFuel(s, press, rules) {
+  s.fuel = Math.min(rules.fuel_cap_s, s.fuel + rules.fuel_per_step_s);
+  s.steps += 1;
+  s.events.push({ type: 'fuel.added', data: { source: press?.source || 'mat', fuel: s.fuel, pressAt: press?.at ?? null } });
+}
+
+// A bomb: a blast around the lowest threat in the cannon's lane, or with that
+// lane clear around the nearest threat, or in the empty sky above the cannon.
+// It spends the full power meter. Pods caught in it are destroyed outright
+// (no split).
+function dropBomb(s, intents, press, level) {
+  const { radius, damage } = nukeRules(level);
+  const cannonX = aimToX(cannonAims(s, intents.aim, level)[0]);
+  const live = s.threats.filter((threat) => threat.type !== 'bomb');
+  const lowest = (a, b) => b.y - a.y || a.id - b.id;
+  const target = live.filter((threat) => Math.abs(threat.x - cannonX) <= LANE_WIDTH / 2).sort(lowest)[0]
+    || [...live].sort((a, b) => Math.abs(a.x - cannonX) - Math.abs(b.x - cannonX) || lowest(a, b))[0];
+  const x = target ? target.x : cannonX;
+  const y = target ? target.y : BOMB_EMPTY_Y;
+  s.weapon.meter = 0;
+  s.bombs += 1;
+  s.blasts.push({ id: s.nextId++, x, y, radius, ttl: BLAST_S });
+  s.events.push({ type: 'bomb', data: { x, y, radius, source: press?.source || 'mat' } });
+  const shot = { armsUp: false, tier: 'bomb' };
+  for (const threat of [...s.threats]) {
+    if (Math.hypot(threat.x - x, threat.y - y) <= radius) damageThreat(s, threat, damage, shot, { splits: false });
   }
-  for (const press of presses) fireVolley(s, press, level);
+}
+
+// Steps buy fuel; fuel runs the stream. Every volley that falls due inside
+// this step is fired, so the rate does not drop when steps are long. A stomp
+// is a step that also drops the bomb when one is ready. Rapid fire (the
+// partner's boost) runs the stream faster and burns no fuel. Returns the
+// seconds of this step the stream was firing.
+function stream(s, intents, dt, level) {
+  const rules = fireRules(level);
+  for (const press of intents.steps || []) addFuel(s, press, rules);
+  for (const press of intents.stomps || []) {
+    addFuel(s, press, rules);
+    if (bombReady(s.weapon)) dropBomb(s, intents, press, level);
+  }
+  const rapid = s.boost.active?.kind === 'rapid';
+  const burn = rapid ? dt : Math.min(dt, s.fuel);
+  if (!(burn > EPS)) { if (s.fuel <= EPS) s.fuel = 0; s.streamIn = 0; return 0; }
+  const interval = Math.max(MIN_AUTO_FIRE_S, rapid ? boostRules(level).rapid_interval_s : rules.stream_interval_s);
+  let wait = s.streamIn;
+  while (wait < burn - EPS) {
+    fireVolley(s, intents, rapid ? 'rapid' : 'stream', level);
+    wait += interval;
+  }
+  s.streamIn = wait - burn;
+  if (!rapid) s.fuel = s.fuel - dt > EPS ? s.fuel - dt : 0;
+  s.firingS += burn;
+  return burn;
+}
+
+// Kills and firing time fill the power meter. A full meter moves the weapon
+// up a level; at the top it stays full, which is a bomb ready for a stomp.
+// A stream left idle for `idle_drop_s` costs a level and whatever the meter held.
+function advanceWeapon(s, burn, kills, dt, level) {
+  const rules = fireRules(level);
+  const weapon = s.weapon;
+  const wasReady = bombReady(weapon);
+  weapon.meter += kills * rules.power_per_kill + burn * rules.power_per_firing_s;
+  if (burn > 0) weapon.idleS = 0;
+  else {
+    weapon.idleS += dt;
+    if (weapon.idleS >= rules.idle_drop_s && (weapon.level > 0 || weapon.meter > 0)) {
+      weapon.level = Math.max(0, weapon.level - 1);
+      weapon.meter = 0;
+      weapon.idleS = 0;
+      s.events.push({ type: 'weapon.level', data: { level: weapon.level, tier: weaponTier(weapon), reason: 'idle' } });
+    }
+  }
+  if (weapon.meter < 1) return;
+  if (weapon.level < TOP_WEAPON_LEVEL) {
+    weapon.level += 1;
+    weapon.meter = 0;
+    weapon.peak = Math.max(weapon.peak, weapon.level);
+    s.events.push({ type: 'weapon.level', data: { level: weapon.level, tier: weaponTier(weapon), reason: 'power' } });
+    return;
+  }
+  weapon.meter = 1;
+  if (!wasReady) s.events.push({ type: 'bomb.ready', data: {} });
 }
 
 // The partner's cadence fills the meter; a full meter starts the next boost
@@ -206,6 +290,7 @@ function advanceBoost(s, intents, dt, level) {
     if (remaining > 0) { s.boost.active = { ...s.boost.active, remaining }; return; }
     s.events.push({ type: 'boost.ended', data: { kind: s.boost.active.kind } });
     s.boost.active = null;
+    s.streamIn = 0;
     return;
   }
   if (!Number.isFinite(intents.partnerRpm)) return;   // null = no partner
@@ -214,29 +299,32 @@ function advanceBoost(s, intents, dt, level) {
   if (s.boost.meter < 1) return;
   const kind = rules.rotation[s.boost.next % rules.rotation.length];
   s.boost = { meter: 0, next: s.boost.next + 1, used: s.boost.used + 1, active: { kind, remaining: rules.duration_s } };
-  s.autoFireIn = 0;
+  s.streamIn = 0;
   s.events.push({ type: 'boost.activated', data: { kind } });
 }
 
-// One shot of a volley is done. The first hit of a volley extends the combo;
-// a volley whose shots all leave the field without a hit breaks it.
+// One shot of a volley is done. A volley counts as a hit once, on its first
+// shot to land; when its last shot is done the volley is settled.
 function settle(s, id, hit) {
   const volley = s.volleys[id];
   if (!volley) return;
-  if (hit && !volley.hit) { s.combo += 1; s.bestCombo = Math.max(s.bestCombo, s.combo); s.hits += 1; }
+  if (hit && !volley.hit) s.hits += 1;
   const next = { live: volley.live - 1, hit: volley.hit || hit };
   if (next.live > 0) { s.volleys[id] = next; return; }
   delete s.volleys[id];
-  if (!next.hit) { s.combo = 0; s.events.push({ type: 'shot.missed', data: {} }); }
+  s.events.push({ type: 'volley.settled', data: { volley: id, hit: next.hit } });
 }
 
 // A destroyed pod breaks into drones that leave from where it was and peel apart.
-function split(s, target) {
+function split(s, target, level) {
   const children = THREATS[target.type].splitsInto || [];
-  children.forEach((child, index) => addThreat(s, child, clampX(target.x), target.y, { from: 'split', phase: index % 2 ? 0 : Math.PI }));
+  children.forEach((child, index) => addThreat(s, level, child, clampX(target.x), target.y, { from: 'split', phase: index % 2 ? 0 : Math.PI }));
 }
 
-function damageThreat(s, target, amount, shot, { splits = true } = {}) {
+// The combo is a kill streak: each kill extends it, and a threat reaching the
+// ground ends it. A stream fires through empty sky all the time, so a missed
+// volley costs nothing.
+function damageThreat(s, target, amount, shot, { splits = true, level = null } = {}) {
   const hp = target.hp - amount;
   if (hp > 0) {
     s.threats = s.threats.map((t) => (t.id === target.id ? { ...t, hp } : t));
@@ -244,26 +332,11 @@ function damageThreat(s, target, amount, shot, { splits = true } = {}) {
     return;
   }
   s.threats = s.threats.filter((t) => t.id !== target.id);
-  if (THREATS[target.type].countsAsKill !== false) s.kills += 1;
+  if (THREATS[target.type].countsAsKill !== false) { s.kills += 1; s.combo += 1; s.bestCombo = Math.max(s.bestCombo, s.combo); }
   const points = killPoints(target.type, { combo: s.combo, armsUp: shot.armsUp });
   s.score += points;
   s.events.push({ type: 'threat.destroyed', data: { id: target.id, threat: target.type, x: target.x, y: target.y, points, by: shot.tier } });
-  if (splits) split(s, target);
-}
-
-// A nuke shot goes off where it meets a threat: a blast around that point,
-// not a screen wipe, so aim still matters in the fire zone. Pods caught in it
-// are destroyed outright (no split).
-function detonate(s, shot, target, level) {
-  const { radius, damage } = nukeRules(level);
-  const x = shot.x;
-  const y = threatBox(target).y1;
-  s.nukes += 1;
-  s.blasts.push({ id: s.nextId++, x, y, radius, ttl: BLAST_S });
-  s.events.push({ type: 'nuke', data: { x, y, radius } });
-  for (const threat of [...s.threats]) {
-    if (threat.id === target.id || Math.hypot(threat.x - x, threat.y - y) <= radius) damageThreat(s, threat, damage, shot, { splits: false });
-  }
+  if (splits) split(s, target, level);
 }
 
 // sweepHits does not rank, and its `at` is an x contact. A shot flies up, so
@@ -283,7 +356,7 @@ function advanceShots(s, dt, level) {
     const target = firstHit(s, box(Math.min(shot.x, x1) - shot.halfWidth, Math.max(shot.x, x1) + shot.halfWidth, y1, shot.y));
     if (target) {
       settle(s, shot.volley, true);
-      if (shot.tier === 'nuke') detonate(s, shot, target, level); else damageThreat(s, target, shot.damage, shot);
+      damageThreat(s, target, shot.damage, shot, { level });
     } else if (y1 < 0 || x1 < 0 || x1 > FIELD.width) settle(s, shot.volley, false);
     else kept.push({ ...shot, x: x1, y: y1 });
   }
@@ -294,8 +367,10 @@ function advanceShots(s, dt, level) {
  * The round `dt` seconds later. Returns a new state and leaves `state` alone;
  * returns `state` itself when the round has ended or no time passed.
  *
- * intents: { aim, tier, armsUp, fire: [{ aim, tier, armsUp, source, at }], partnerRpm }
- * `aim` is 0..1 (0 = screen left), or [aim, aim] on a two-cannon level.
+ * intents: { aim, armsUp, steps: [{ source, at }], stomps: [{ source, at }], partnerRpm }
+ * `aim` is 0..1 (0 = screen left), or [aim, aim] on a two-cannon level; the
+ * shell passes the centre of the cannon's lane. `steps` are mat steps (or fire
+ * buttons): each buys fuel. `stomps` are steps that also drop a ready bomb.
  * `armsUp` only multiplies points. `partnerRpm` null means no partner.
  *
  * Events are appended to `state.events` and never cleared here. A game loop
@@ -304,12 +379,14 @@ function advanceShots(s, dt, level) {
 export function step(state, intents, dt, level) {
   if (state.phase !== 'playing' || !(dt > 0)) return state;
   const s = draft(state);
+  const killsBefore = s.kills;
   s.time += dt;
   spawn(s, level);
-  move(s, dt);
+  move(s, dt, level);
   advanceBoost(s, intents, dt, level);
-  fire(s, intents, dt, level);
+  const burn = stream(s, intents, dt, level);
   advanceShots(s, dt, level);
+  advanceWeapon(s, burn, s.kills - killsBefore, dt, level);
   s.blasts = s.blasts.map((blast) => ({ ...blast, ttl: blast.ttl - dt })).filter((blast) => blast.ttl > 0);
   // Keep the timer check last: everything above still happens on the final step.
   if (s.time >= level.duration_s) { s.phase = 'ended'; s.events.push({ type: 'level.ended', data: {} }); }
@@ -318,14 +395,14 @@ export function step(state, intents, dt, level) {
 
 /**
  * One animation frame: clears last frame's events, then folds fixed sub-steps
- * so the round plays the same at any frame rate. `intents.fire` is used by the
- * first sub-step only (one press, one volley); aim and tier stay continuous.
- * A frame with no elapsed time runs no step, so its presses are not fired:
- * hold them for the next frame.
+ * so the round plays the same at any frame rate. `intents.steps` and
+ * `intents.stomps` are used by the first sub-step only (one press, one tank
+ * of fuel); aim stays continuous. A frame with no elapsed time runs no step,
+ * so its presses are not counted: hold them for the next frame.
  */
 export function stepFrame(state, intents, elapsedS, level) {
   return advance({ ...state, events: [] }, intents, Math.max(0, Number(elapsedS) || 0), {
     step: (st, input, dt) => step(st, input, dt, level),
-    stepS: STEP_S, remainder: 'partial', oncePerFrame: ['fire'],
+    stepS: STEP_S, remainder: 'partial', oncePerFrame: ['steps', 'stomps'],
   }).state;
 }

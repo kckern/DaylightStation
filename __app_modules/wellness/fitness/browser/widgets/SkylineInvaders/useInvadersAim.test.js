@@ -6,180 +6,253 @@ vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => mockL
 
 import useInvadersAim, { createAimTracker } from './useInvadersAim.js';
 import { KP } from '../../lib/skylineInvaders/aim.js';
+import { laneAim } from '../../lib/skylineInvaders/lanes.js';
+import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
+import { handsPose, poseForAim, poseForLane, standingPose, wiperPose } from './invadersTestKit.js';
 
-// 33 BlazePose keypoints by index. Shoulders at x 380 / 260 (width 120, midline 320), y 200.
-// Both wrists sit wristDx px from their own shoulder: wristDx < 0 = toward image-left = the
-// player's right = screen right. Default height is the chest; wristY < 200 is above the shoulders.
-const pose = (wristDx = 0, score = 0.9, wristY = 200) => {
-  const keypoints = Array.from({ length: 33 }, () => ({ x: 0, y: 0, score: 0 }));
-  keypoints[KP.leftShoulder] = { x: 380, y: 200, score };
-  keypoints[KP.rightShoulder] = { x: 260, y: 200, score };
-  keypoints[KP.leftWrist] = { x: 380 + wristDx, y: wristY, score };
-  keypoints[KP.rightWrist] = { x: 260 + wristDx, y: wristY, score };
-  return { keypoints };
-};
-const tunables = { aimLatchMs: 200, keypointMinScore: 0.3, poseLostAfterMs: 500, armsUpHoldMs: 300 };
-const make = () => {
+const make = (gesture = 'wiper', tunables = INVADERS_TUNABLES) => {
   let t = 10_000;
-  const tracker = createAimTracker({ tunables, now: () => t });
-  tracker.setCalibration({ left: -1, right: 1 });
-  return { tracker, tick: (ms) => { t += ms; }, at: () => t };
+  const tracker = createAimTracker({ tunables, now: () => t, gesture });
+  // Feed the same pose for `ms`, a frame every 80 ms, the way the camera does.
+  const hold = (pose, ms = 800) => { for (let elapsed = 0; elapsed < ms; elapsed += 80) { t += 80; tracker.processPoses([pose]); } };
+  return { tracker, hold, tick: (ms) => { t += ms; }, feed: (pose) => tracker.processPoses([pose]), at: () => t };
 };
 
 describe('createAimTracker', () => {
-  describe('presence (what the lobby reads, calibrated or not)', () => {
-    const fresh = () => { let t = 10_000; return { tracker: createAimTracker({ tunables, now: () => t }), tick: (ms) => { t += ms; } }; };
-    const withHead = (p, score = 0.9) => { p.keypoints[KP.nose] = { x: 320, y: 120, score }; return p; };
+  describe('presence (what the lobby reads)', () => {
     it('is empty before any pose', () => {
-      expect(fresh().tracker.presence()).toEqual({ body: false, offset: null, wide: null });
+      expect(make().tracker.presence()).toEqual({ body: false, wide: null });
     });
     it('sees the body from head and shoulders alone, with no usable arm', () => {
-      const { tracker } = fresh();
-      tracker.processPoses([withHead(pose(0, 0.9, 200))].map((p) => { p.keypoints[KP.leftWrist].score = 0; p.keypoints[KP.rightWrist].score = 0; return p; }));
-      expect(tracker.presence()).toEqual({ body: true, offset: null, wide: null });
-    });
-    it('reports the raw offset in shoulder widths without a calibration', () => {
-      const { tracker } = fresh();
-      tracker.processPoses([withHead(pose(-120))]);
-      expect(tracker.presence().body).toBe(true);
-      expect(tracker.presence().offset).toBeCloseTo(1);
-      expect(tracker.presence().wide).toBe(false);
+      const { tracker, feed } = make();
+      feed(standingPose());
+      expect(tracker.presence()).toEqual({ body: true, wide: null });
     });
     it('reports arms held out to both sides', () => {
-      const { tracker } = fresh();
-      const p = withHead(pose());
-      p.keypoints[KP.leftWrist] = { x: 380 + 130, y: 200, score: 0.9 };
-      p.keypoints[KP.rightWrist] = { x: 260 - 130, y: 200, score: 0.9 };
-      tracker.processPoses([p]);
+      const { tracker, feed } = make();
+      feed(handsPose([-1.6, 1.6]));
       expect(tracker.presence().wide).toBe(true);
+      feed(handsPose(0.5));
+      expect(tracker.presence().wide).toBe(false);
     });
-    it('forgets a pose older than the lost timeout', () => {
-      const { tracker, tick } = fresh();
-      tracker.processPoses([withHead(pose(-120))]);
-      tick(501);
-      expect(tracker.presence()).toEqual({ body: false, offset: null, wide: null });
-    });
-    it('does not count a body with no head in view', () => {
-      const { tracker } = fresh();
-      tracker.processPoses([pose(-120)]);
+    it('forgets a pose older than the lost timeout, and does not count a body with no head in view', () => {
+      const { tracker, feed, tick } = make();
+      feed(wiperPose());
+      tick(INVADERS_TUNABLES.poseLostAfterMs + 1);
+      expect(tracker.presence()).toEqual({ body: false, wide: null });
+      const headless = wiperPose();
+      headless.keypoints[KP.nose].score = 0;
+      feed(headless);
       expect(tracker.presence().body).toBe(false);
     });
   });
+
   it('returns undefined from processPoses so the provider records no move event', () => {
-    const { tracker } = make();
-    expect(tracker.processPoses([pose()])).toBeUndefined();
+    expect(make().tracker.processPoses([wiperPose()])).toBeUndefined();
   });
-  it('reports a centred aim for hands in front of the chest, in pose mode', () => {
-    const { tracker } = make();
-    tracker.processPoses([pose()]);
-    expect(tracker.sample()).toMatchObject({ lost: false, mode: 'pose' });
-    expect(tracker.sample().x).toBeCloseTo(0.5);
+
+  it('starts in manual mode, centred, and switches to pose mode once the camera has seen a torso', () => {
+    const { tracker, feed } = make();
+    expect(tracker.sample()).toMatchObject({ mode: 'manual', lost: true, lane: 4, x: laneAim(4), gesture: 'wiper' });
+    feed(wiperPose());
+    expect(tracker.sample()).toMatchObject({ mode: 'pose', lost: false });
   });
-  it('keeps the last aim through a low-score pose and reports lost after the timeout', () => {
-    const { tracker, tick } = make();
-    const events = [];
-    tracker.subscribe((event) => events.push(event));
-    tracker.processPoses([pose(-80)]);
-    const held = tracker.sample().x;
-    tick(100); tracker.processPoses([pose(-80, 0.05)]);
-    expect(tracker.sample()).toMatchObject({ x: held, lost: false });
-    tick(600); tracker.processPoses([]);
-    expect(tracker.sample()).toMatchObject({ x: held, lost: true });
-    tick(50); tracker.processPoses([pose(-80)]);
-    expect(tracker.sample().lost).toBe(false);
-    expect(events).toEqual(['acquired', 'lost', 'acquired']);
+
+  describe('lanes', () => {
+    it('stands the cannon on the centre of the lane the gesture points at', () => {
+      const { tracker, hold } = make();
+      hold(poseForLane(6));
+      expect(tracker.sample()).toMatchObject({ lane: 6, x: laneAim(6) });
+      expect(tracker.sample().raw).toBeCloseTo(laneAim(6), 2);
+      hold(poseForLane(1));
+      expect(tracker.sample().lane).toBe(1);
+    });
+    it('reaches both edge lanes', () => {
+      const { tracker, hold } = make();
+      hold(wiperPose(50));
+      expect(tracker.sample().lane).toBe(7);
+      hold(wiperPose(-50));
+      expect(tracker.sample().lane).toBe(0);
+    });
+    it('holds its lane against a small wobble across the boundary', () => {
+      const { tracker, hold } = make();
+      hold(poseForLane(3));
+      // Lane 3 ends at 0.5: a wobble to 0.52 is inside the quarter-lane hysteresis.
+      hold(poseForAim(0.52));
+      expect(tracker.sample().lane).toBe(3);
+      hold(poseForAim(0.56));
+      expect(tracker.sample().lane).toBe(4);
+    });
+    it('freezes the lane for a moment after a mat step, while the raw aim keeps moving', () => {
+      const { tracker, hold, at, feed, tick } = make();
+      hold(poseForLane(3));
+      tracker.freezeLane(150, at());
+      tick(80); feed(poseForLane(6));
+      tick(60); feed(poseForLane(6));
+      expect(tracker.sample().lane).toBe(3);
+      expect(tracker.sample().raw).toBeGreaterThan(0.5);
+      hold(poseForLane(6), 400);
+      expect(tracker.sample().lane).toBe(6);
+    });
+    it('a zero freeze is off', () => {
+      const { tracker, hold, at } = make();
+      hold(poseForLane(3));
+      tracker.freezeLane(0, at());
+      hold(poseForLane(6), 400);
+      expect(tracker.sample().lane).toBe(6);
+    });
   });
-  it('reports lost when the pose stream itself stops arriving', () => {
-    const { tracker, tick } = make();
-    const events = [];
-    tracker.subscribe((event) => events.push(event));
-    tracker.processPoses([pose(-80)]);
-    const held = tracker.sample().x;
-    tick(400);
-    expect(tracker.sample().lost).toBe(false);
-    tick(200);                                    // 600 ms with no frame at all
-    expect(tracker.sample()).toMatchObject({ x: held, lost: true });
-    tracker.sample();
-    expect(events).toEqual(['acquired', 'lost']);
+
+  describe('lost and held', () => {
+    it('arms that drop only hold the aim: the player is not lost while the torso is in view', () => {
+      const { tracker, hold } = make();
+      hold(poseForLane(6));
+      hold(standingPose(), 3000);
+      expect(tracker.sample()).toMatchObject({ lane: 6, lost: false, mode: 'pose' });
+    });
+    it('reports lost after the torso has been gone for the timeout, keeping the aim', () => {
+      const { tracker, hold, feed, tick } = make();
+      const heard = [];
+      tracker.subscribe((event) => heard.push(event));
+      hold(poseForLane(6));
+      tick(100); feed(null);
+      expect(tracker.sample().lost).toBe(false);
+      tick(INVADERS_TUNABLES.poseLostAfterMs); feed(null);
+      expect(tracker.sample()).toMatchObject({ lost: true, lane: 6, mode: 'pose' });
+      feed(wiperPose());
+      expect(tracker.sample().lost).toBe(false);
+      expect(heard).toEqual(['acquired', 'lost', 'acquired']);
+    });
+    it('reports lost when the pose stream itself stops arriving', () => {
+      const { tracker, hold, tick } = make();
+      hold(poseForLane(2));
+      tick(INVADERS_TUNABLES.poseLostAfterMs + 1);
+      expect(tracker.sample().lost).toBe(true);
+    });
+    it('manual aim moves the cannon through the lanes, and a live pose takes over again', () => {
+      const { tracker, hold } = make();
+      tracker.setAim(0.95);
+      expect(tracker.sample()).toMatchObject({ lane: 7, raw: 0.95 });
+      tracker.setAim(4);
+      expect(tracker.sample().raw).toBe(1);
+      hold(poseForLane(2));
+      expect(tracker.sample().lane).toBe(2);
+    });
   });
-  it('latches the aim from before the press', () => {
-    const { tracker, tick, at } = make();
-    tracker.processPoses([pose(-100)]);           // t0: aiming right
-    const before = tracker.sample().x;
-    tick(250); tracker.processPoses([pose(100)]); // the step throws the aim left
-    expect(tracker.sample().x).toBeLessThan(before);
-    expect(tracker.latched(at()).x).toBeCloseTo(before, 1);
+
+  it('arms-up counts only after it has been held for the hold time', () => {
+    const { tracker, feed, tick } = make();
+    const up = handsPose(0.2, { drop: -0.5 });
+    feed(up);
+    expect(tracker.sample().armsUp).toBe(false);
+    tick(INVADERS_TUNABLES.armsUpHoldMs); feed(up);
+    expect(tracker.sample().armsUp).toBe(true);
+    tick(80); feed(handsPose(0.2, { drop: 0.5 }));
+    expect(tracker.sample().armsUp).toBe(false);
   });
-  it('arms-up counts only after it has been held for the hold time at the latched moment', () => {
-    const { tracker, tick, at } = make();
-    tracker.processPoses([pose(0, 0.9, 80)]);
-    tick(100); tracker.processPoses([pose(0, 0.9, 80)]);
-    expect(tracker.latched(at() + 200).armsUp).toBe(false);   // held 100 ms at the latched moment
-    tick(400); tracker.processPoses([pose(0, 0.9, 80)]);
-    tick(200); tracker.processPoses([pose(0, 0.9, 80)]);
-    expect(tracker.latched(at()).armsUp).toBe(true);          // held 500 ms by then
-    tick(50); tracker.processPoses([pose(0, 0.9, 300)]);      // arms drop to the waist
-    tick(250); tracker.processPoses([pose(0, 0.9, 300)]);
-    expect(tracker.latched(at()).armsUp).toBe(false);
+
+  it('gives a lane per arm for a two-cannon level, from a gesture that reads each arm', () => {
+    const { tracker, hold } = make();
+    const split = wiperPose(0);
+    // Left forearm tilted hard to screen left, right forearm hard to screen right.
+    split.keypoints[KP.leftWrist] = { x: 390 + 61, y: 300 - 51, score: 0.9 };
+    split.keypoints[KP.rightWrist] = { x: 250 - 61, y: 300 - 51, score: 0.9 };
+    hold(split);
+    expect(tracker.sample().perArm).toEqual([laneAim(0), laneAim(7)]);
+    const { tracker: drag, hold: holdDrag } = make('drag');
+    holdDrag(handsPose(0.5));
+    expect(drag.sample().perArm).toEqual([null, null]);
   });
-  it('a lost pose ends the arms-up hold', () => {
-    const { tracker, tick, at } = make();
-    tracker.processPoses([pose(0, 0.9, 80)]);
-    tick(400); tracker.processPoses([pose(0, 0.9, 80)]);
-    tick(700); tracker.processPoses([]);                      // lost
-    tick(300); tracker.processPoses([]);
-    expect(tracker.sample()).toMatchObject({ lost: true, armsUp: false });
-    expect(tracker.latched(at()).armsUp).toBe(false);
+
+  describe('gesture kinds', () => {
+    it('plays the gesture it was made with, falls back to the default, and switches without moving the cannon', () => {
+      expect(make('twist').tracker.gesture()).toBe('twist');
+      expect(make('telekinesis').tracker.gesture()).toBe('wiper');
+      const { tracker, hold } = make();
+      hold(poseForLane(6));
+      tracker.setGesture('hop');
+      expect(tracker.sample()).toMatchObject({ gesture: 'hop', lane: 6 });
+      tracker.setGesture('nope');
+      expect(tracker.gesture()).toBe('hop');
+    });
+    it('drag: a hand held out slides the cannon, and dropping it stops the cannon where it is', () => {
+      const { tracker, hold } = make('drag');
+      hold(handsPose(1), 400);          // full speed right: 0.8 screens a second
+      const moved = tracker.sample().raw;
+      expect(moved).toBeGreaterThan(0.7);
+      expect(moved).toBeLessThan(0.9);
+      hold(handsPose(0.1), 800);        // inside the dead zone
+      expect(tracker.sample().raw).toBeCloseTo(moved);
+      hold(handsPose(1, { drop: 1.5 }), 800);   // arms down
+      expect(tracker.sample().raw).toBeCloseTo(moved);
+      hold(handsPose(-1), 2000);
+      expect(tracker.sample()).toMatchObject({ raw: 0, lane: 0 });
+    });
+    it('push: a swipe shoves the cannon, it glides on, and it comes to rest on a lane centre', () => {
+      const { tracker, feed, tick, hold } = make('push');
+      feed(handsPose(0.1)); tick(80);
+      feed(handsPose(0.5)); tick(80);
+      feed(handsPose(0.9));
+      const during = tracker.sample().raw;
+      expect(during).toBeGreaterThan(0.5);
+      hold(handsPose(0.9), 240);        // the hand has stopped: the cannon glides on
+      expect(tracker.sample().raw).toBeGreaterThan(during);
+      hold(handsPose(0.9), 2000);
+      const rest = tracker.sample();
+      expect(rest.raw).toBeCloseTo(laneAim(rest.lane));
+      expect(rest.lane).toBeGreaterThan(4);
+      const settled = rest.raw;
+      hold(handsPose(0.9), 1000);       // a still hand does nothing
+      expect(tracker.sample().raw).toBe(settled);
+    });
+    it('push: bringing the hand back does not pull the cannon back', () => {
+      const { tracker, feed, tick, hold } = make('push');
+      feed(handsPose(0.1)); tick(80); feed(handsPose(0.6)); tick(80); feed(handsPose(1.1));
+      hold(handsPose(1.1), 2000);
+      const rest = tracker.sample().lane;
+      tick(80); feed(handsPose(0.6)); tick(80); feed(handsPose(0.1));
+      hold(handsPose(0.1), 1000);
+      expect(tracker.sample().lane).toBe(rest);
+    });
+    it('hop: each trigger moves the cannon exactly one lane, and it stops at the edge', () => {
+      const { tracker, hold } = make('hop');
+      const DOWN = handsPose([-0.6, 0.6], { drop: 1.4 });
+      const RIGHT_UP = handsPose([-0.6, 0.6], { drop: [1.4, 0] });
+      const LEFT_OUT = handsPose([-1.5, 0.6], { drop: [0.6, 1.4] });
+      hold(DOWN, 400);
+      expect(tracker.sample().lane).toBe(4);
+      hold(RIGHT_UP, 400);
+      expect(tracker.sample()).toMatchObject({ lane: 5, raw: laneAim(5) });
+      hold(DOWN, 400); hold(RIGHT_UP, 400); hold(DOWN, 400); hold(RIGHT_UP, 400); hold(DOWN, 400); hold(RIGHT_UP, 400);
+      expect(tracker.sample().lane).toBe(7);
+      hold(DOWN, 400); hold(LEFT_OUT, 400);
+      expect(tracker.sample().lane).toBe(6);
+    });
   });
-  it('smooths each arm for a two-cannon level', () => {
-    const { tracker, tick } = make();
-    tracker.processPoses([pose(-60)]);
-    const [left0, right0] = tracker.sample().perArm;
-    expect(left0).toBeLessThan(right0);                       // player's left arm = left cannon
-    tick(80); tracker.processPoses([pose(60)]);
-    const [left1, right1] = tracker.sample().perArm;
-    expect(left1).toBeLessThan(left0);
-    expect(left1).toBeGreaterThan(0);                         // raw would be 0: the jump is eased
-    expect(right1).toBeLessThan(right0);
-  });
-  it('without calibration it has no pose aim; manual nudges still move it', () => {
-    let t = 0;
-    const tracker = createAimTracker({ tunables, now: () => t });
-    tracker.processPoses([pose()]);
-    expect(tracker.sample()).toMatchObject({ x: 0.5, mode: 'manual' });
-    tracker.nudge(0.2);
-    expect(tracker.sample().x).toBeCloseTo(0.7);
-    tracker.setAim(2);
-    expect(tracker.sample().x).toBe(1);
-  });
-  it('manual aim is not latched back in time', () => {
-    let t = 0;
-    const tracker = createAimTracker({ tunables, now: () => t });
-    tracker.setAim(0.2);
-    t += 300; tracker.setAim(0.8);
-    expect(tracker.latched(t + 100).x).toBeCloseTo(0.8);   // 200 ms earlier it was 0.2
-  });
-  it('exposes the uncalibrated offset for calibration capture', () => {
-    const { tracker } = make();
-    tracker.processPoses([pose(-90)]);
-    expect(tracker.rawOffset()).toBeCloseTo(0.75);   // 90 px / 120 px shoulder width, toward screen right
-  });
-  it('captures the offset before any calibration exists', () => {
-    const tracker = createAimTracker({ tunables, now: () => 0 });
-    tracker.processPoses([pose(-90)]);
-    expect(tracker.rawOffset()).toBeCloseTo(0.75);
+
+  it('keeps the last pose and every gesture\'s reading of it for the trace recorder', () => {
+    const { tracker, feed, at } = make('twist');
+    expect(tracker.frame()).toBeNull();
+    const pose = wiperPose(25);
+    feed(pose);
+    const frame = tracker.frame();
+    expect(frame.at).toBe(at());
+    expect(frame.pose).toBe(pose);
+    expect(frame.signals.wiper.aim).toBeCloseTo(0.75);
+    expect(frame.signals).toHaveProperty('offset');
+    expect(frame.signals).toHaveProperty('push');
+    expect(frame.signals).toHaveProperty('hop');
   });
 });
 
 describe('useInvadersAim', () => {
-  it('returns one stable tracker and logs pose acquired / lost', () => {
-    const { result, rerender, unmount } = renderHook(() => useInvadersAim({ tunables }));
+  it('returns one stable tracker and logs pose acquired / lost with the lane and the gesture', () => {
+    const { result, rerender, unmount } = renderHook(() => useInvadersAim({ gesture: 'wings' }));
     const tracker = result.current;
     rerender();
     expect(result.current).toBe(tracker);
-    tracker.setCalibration({ left: -1, right: 1 });
-    tracker.processPoses([pose()]);
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_invaders.pose.acquired', expect.any(Object));
+    tracker.processPoses([wiperPose()]);
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_invaders.pose.acquired', expect.objectContaining({ lane: expect.any(Number), gesture: 'wings' }));
     unmount();
   });
 });

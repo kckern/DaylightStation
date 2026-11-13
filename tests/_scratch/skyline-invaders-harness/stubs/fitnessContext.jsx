@@ -4,7 +4,6 @@
 const params = new URLSearchParams(location.search);
 const listeners = new Map();
 const riders = { 'step-mat': params.get('shooter') === 'none' ? null : 'kid', bike: params.get('partner') ? 'test-rider' : null };
-const zone = params.get('zone') || 'warm';
 const ctx = {
   equipment: [
     ...(params.get('mat') === 'none' ? [] : [{ id: 'step-mat', type: 'pressure_mat', pressure_mat: 'mat-a1' }]),
@@ -18,7 +17,6 @@ const ctx = {
     getEquipmentRider: (id) => riders[id] || null,
     setEquipmentUser: (id, userId) => { riders[id] = userId; },
     getEquipmentCadence: () => ({ rpm: 95, connected: !!riders.bike }),
-    zoneProfileStore: { getProfile: () => ({ zoneTrusted: true, zoneReadingEligible: true, zoneReadingAt: Date.now(), currentZoneId: zone }) },
   },
   getUserByName: (id) => ({ id, schoolLearner: true }),
   subscribeToAppEvent: (type, callback) => {
@@ -29,6 +27,8 @@ const ctx = {
   setGovernanceSuspended: () => {},
 };
 window.__si = window.__si || {};
-window.__si.step = (id = 'mat-a1') => listeners.get('pressure-mat:step')?.forEach((callback) => callback({ type: 'pressure-mat:step', payload: { id }, source: id, timestamp: Date.now() }));
+const emit = (type) => (id = 'mat-a1') => listeners.get(type)?.forEach((callback) => callback({ type, payload: { id }, source: id, timestamp: Date.now() }));
+window.__si.step = emit('pressure-mat:step');
+window.__si.stomp = emit('pressure-mat:stomp');
 export const useFitnessContext = () => ctx;
 export default { useFitnessContext };

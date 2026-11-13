@@ -4,7 +4,18 @@
 
 const RIDER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 
+// The aim gestures a rider may choose (browser: lib/skylineInvaders/gestures.js
+// GESTURES). Kept here as well so the server never stores a value the game
+// cannot play.
+export const SKYLINE_INVADERS_GESTURES = Object.freeze(['wiper', 'twist', 'wings', 'wheel', 'sprinkler', 'drag', 'push', 'hop']);
+
 const empty = () => ({ schema: 'skyline-invaders-progress/v1', completed: {}, unlocked: [] });
+
+function invalidGesture() {
+  const error = new Error(`gesture must be one of ${SKYLINE_INVADERS_GESTURES.join(', ')}`);
+  error.code = 'INVALID_GESTURE';
+  return error;
+}
 
 function invalidRider() {
   const error = new Error('invalid rider id');
@@ -66,8 +77,25 @@ export class SkylineInvadersProgressService {
     return rebuilt;
   }
 
+  /** The level map for a rider, plus the controls they chose (`controls: { gesture } | null`). */
   async worldFor(world, riderId, householdId) {
-    return buildWorldProgress(world, riderId ? await this.get(riderId, householdId) : undefined);
+    const progress = riderId ? await this.get(riderId, householdId) : undefined;
+    const gesture = progress?.controls?.gesture;
+    return { ...buildWorldProgress(world, progress), controls: SKYLINE_INVADERS_GESTURES.includes(gesture) ? { gesture } : null };
+  }
+
+  /**
+   * Remember the aim gesture a rider picked. This is the one part of a
+   * progress file that cannot be rebuilt from the run log: a deleted file
+   * sends the rider through the controls intro again.
+   */
+  async setControls(riderId, gesture, householdId) {
+    if (!SKYLINE_INVADERS_GESTURES.includes(gesture)) throw invalidGesture();
+    const progress = await this.get(riderId, householdId);
+    const next = { ...progress, controls: { gesture, at: new Date().toISOString() } };
+    await this.progressStore.save(riderId, next, householdId);
+    this.logger.info?.('fitness.skyline_invaders.progress.controls', { riderId, gesture });
+    return next;
   }
 
   async rebuild(riderId, householdId) {

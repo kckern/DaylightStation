@@ -33,23 +33,23 @@ describe('Skyline Invaders effects', () => {
   it('maps each engine event to its cue', () => {
     const { dispatcher, played } = setup();
     dispatcher.dispatch([
-      { type: 'shot.fired', data: { tier: 'small' } }, { type: 'shot.fired', data: { tier: 'nuke' } },
+      { type: 'shot.fired', data: { tier: 'small' } }, { type: 'bomb.ready', data: {} },
       { type: 'threat.damaged', data: { id: 4, x: 1, y: 1 } }, kill(1),
       { type: 'base.hit', data: { damage: 10, x: 400, buildings: [3] } }, { type: 'base.hit', data: { damage: 0, shielded: true } },
       { type: 'boost.activated', data: { kind: 'shield' } }, { type: 'level.ended', data: {} },
-      { type: 'shot.missed', data: {} }, { type: 'threat.spawned', data: {} }, { type: 'boost.ended', data: { kind: 'shield' } },
+      { type: 'volley.settled', data: {} }, { type: 'fuel.added', data: {} }, { type: 'threat.spawned', data: {} }, { type: 'boost.ended', data: { kind: 'shield' } },
     ], { time: 12 });
     expect(played).toEqual(['laser', 'missile', 'hit', 'target', 'hurt', 'deny', 'boost', 'finish']);
   });
 
-  // Every shot in the fire zone is a nuke. It has to land as an event, so it
+  // A bomb is the round's big moment. It has to land as an event, so it
   // gets two cues at once (the boom and a longer low rumble under it), which no
   // other event in the game does.
-  it('gives a nuke a boom and a rumble together, and the longest shake', () => {
+  it('gives a bomb a boom and a rumble together, and the longest shake', () => {
     const { dispatcher, played, effects } = setup();
-    dispatcher.dispatch([{ type: 'nuke', data: { x: 400, y: 200, radius: 160 } }], { time: 3 });
+    dispatcher.dispatch([{ type: 'bomb', data: { x: 400, y: 200, radius: 160 } }], { time: 3 });
     expect(played).toEqual(['explosion', 'crash']);
-    expect(effects()).toMatchObject({ shakeKey: 1, shakeKind: 'nuke' });
+    expect(effects()).toMatchObject({ shakeKey: 1, shakeKind: 'bomb' });
     vi.advanceTimersByTime(299);
     expect(effects().shakeKey).toBe(1);
     vi.advanceTimersByTime(1);
@@ -89,10 +89,10 @@ describe('Skyline Invaders effects', () => {
     const { dispatcher, effects } = setup();
     dispatcher.dispatch([{ type: 'base.hit', data: { x: 1, damage: 10 } }], { time: 1 });
     vi.advanceTimersByTime(150);
-    dispatcher.dispatch([{ type: 'nuke', data: {} }], { time: 1.15 });
-    expect(effects()).toMatchObject({ shakeKey: 2, shakeKind: 'nuke' });
+    dispatcher.dispatch([{ type: 'bomb', data: {} }], { time: 1.15 });
+    expect(effects()).toMatchObject({ shakeKey: 2, shakeKind: 'bomb' });
     vi.advanceTimersByTime(60);            // the first shake's timer has fired
-    expect(effects()).toMatchObject({ shakeKey: 2, shakeKind: 'nuke' });
+    expect(effects()).toMatchObject({ shakeKey: 2, shakeKind: 'bomb' });
     vi.advanceTimersByTime(240);
     expect(effects().shakeKey).toBe(0);
   });
@@ -115,7 +115,7 @@ describe('Skyline Invaders effects', () => {
 
   it('forgets each timer once it has fired', () => {
     const { dispatcher, timers } = setup();
-    dispatcher.dispatch([kill(1), { type: 'nuke', data: {} }], { time: 1 });
+    dispatcher.dispatch([kill(1), { type: 'bomb', data: {} }], { time: 1 });
     expect(timers.current.size).toBe(2);
     vi.advanceTimersByTime(600);
     expect(timers.current.size).toBe(0);
@@ -123,11 +123,11 @@ describe('Skyline Invaders effects', () => {
 
   it('logs round events under skyline_invaders.*, but not the per-shot and per-threat ones', () => {
     const { dispatcher, log } = setup();
-    dispatcher.dispatch([{ type: 'nuke', data: { x: 1 } }, { type: 'shot.fired', data: { tier: 'small' } }, kill(1)], { time: 1 });
+    dispatcher.dispatch([{ type: 'bomb', data: { x: 1 } }, { type: 'shot.fired', data: { tier: 'small' } }, kill(1)], { time: 1 });
     const names = log.info.mock.calls.map(([name]) => name);
-    expect(names).toEqual(expect.arrayContaining(['skyline_invaders.round.nuke', 'skyline_invaders.effect.executed']));
-    expect(names.filter((name) => name.startsWith('skyline_invaders.round.'))).toEqual(['skyline_invaders.round.nuke']);
-    expect(log.info).toHaveBeenCalledWith('skyline_invaders.round.nuke', expect.objectContaining({ runId: 'r', time: 1, x: 1 }));
+    expect(names).toEqual(expect.arrayContaining(['skyline_invaders.round.bomb', 'skyline_invaders.effect.executed']));
+    expect(names.filter((name) => name.startsWith('skyline_invaders.round.'))).toEqual(['skyline_invaders.round.bomb']);
+    expect(log.info).toHaveBeenCalledWith('skyline_invaders.round.bomb', expect.objectContaining({ runId: 'r', time: 1, x: 1 }));
   });
 
   it('logs a cue the audio engine could not play as skipped', () => {
@@ -140,5 +140,16 @@ describe('Skyline Invaders effects', () => {
     const urls = invadersSoundUrls((path) => `/m/${path}`);
     expect(urls.laser).toBe('/m/fitness/skyline-invaders/sounds/laser.mp3');
     expect(Object.keys(urls)).toEqual([...INVADERS_SOUND_SLOTS]);
+  });
+
+  it('announces a weapon level gained and a bomb ready, and only sounds a level lost', () => {
+    const { dispatcher, played, effects } = setup();
+    dispatcher.dispatch([{ type: 'weapon.level', data: { level: 1, tier: 'double', reason: 'power' } }], { time: 5 });
+    expect(effects().banner).toMatchObject({ text: 'Double shot!' });
+    dispatcher.dispatch([{ type: 'bomb.ready', data: {} }], { time: 6 });
+    expect(effects().banner).toMatchObject({ text: 'Bomb ready — STOMP!' });
+    dispatcher.dispatch([{ type: 'weapon.level', data: { level: 0, tier: 'small', reason: 'idle' } }], { time: 7 });
+    expect(effects().banner).toMatchObject({ text: 'Bomb ready — STOMP!' });
+    expect(played).toEqual(['boost', 'missile', 'deny']);
   });
 });

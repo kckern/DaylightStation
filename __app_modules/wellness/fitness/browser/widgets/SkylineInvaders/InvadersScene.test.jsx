@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import InvadersScene, { BUILDING_SIZE, buildingX, cannonArt, skyStars, threatArt } from './InvadersScene.jsx';
 import { createGameState } from '../../lib/skylineInvaders/engine.js';
+import { LANES, LANE_WIDTH, laneAim, laneX } from '../../lib/skylineInvaders/lanes.js';
 import { FIELD, THREATS, aimToX } from '../../lib/skylineInvaders/threats.js';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
 
@@ -62,15 +63,58 @@ describe('InvadersScene', () => {
     expect(q(scene({ aim: [0.2, 0.8] }), '[data-cannon]')).toHaveLength(1);
   });
 
-  // Pose arrives at about 13 fps. The cannon is moved by a CSS transform so the
-  // stylesheet can glide it between pose frames; an x attribute would snap.
-  it('moves the cannon with a style transform, drawn around its own origin', () => {
-    const cannon = scene({ aim: 0.25 }).querySelector('[data-cannon]');
-    expect(cannon.style.transform).toBe(`translate(${aimToX(0.25)}px, 0px)`);
+  it('stands the cannon on its lane with a style transform, drawn around its own origin', () => {
+    const cannon = scene({ aim: laneAim(2) }).querySelector('[data-cannon]');
+    expect(cannon.style.transform).toBe(`translate(${laneX(2)}px, 0px)`);
+    expect(cannon.getAttribute('data-lane')).toBe('2');
     const sprite = cannon.querySelector('svg.skyline-invaders__cannon-body');
     expect(Number(sprite.getAttribute('x'))).toBe(-22);
     expect(Number(sprite.getAttribute('y')) + Number(sprite.getAttribute('height'))).toBe(FIELD.groundY);
-    expect(cannon.querySelector('.skyline-invaders__cannon-marker')).not.toBeNull();
+  });
+
+  it('lights the full height of the cannon lane, one column per cannon', () => {
+    const container = scene({ aim: laneAim(5) });
+    const columns = q(container, '[data-column]');
+    expect(columns.map((n) => n.getAttribute('data-lane'))).toEqual(['5']);
+    const column = columns[0].querySelector('.skyline-invaders__column');
+    expect(Number(column.getAttribute('x'))).toBeCloseTo(laneX(5) - LANE_WIDTH / 2);
+    expect(Number(column.getAttribute('width'))).toBeCloseTo(LANE_WIDTH);
+    expect(Number(column.getAttribute('y'))).toBe(0);
+    expect(Number(column.getAttribute('height'))).toBe(FIELD.groundY);
+    expect(q(container, '.skyline-invaders__lane-tick')).toHaveLength(LANES + 1);
+    expect(q(scene({ aim: laneAim(1), twin: true }), '[data-column]').map((n) => n.getAttribute('data-lane'))).toEqual(['1', '6']);
+  });
+
+  it('marks the threat the next shot will meet: the lowest one in the cannon column', () => {
+    const threats = [threat('meteor', laneX(3), 120, 1), threat('meteor', laneX(3), 330, 2), threat('drone', laneX(6), 400, 3)];
+    const container = scene({ aim: laneAim(3), state: state({ threats }) });
+    expect(q(container, '[data-target]').map((n) => n.getAttribute('data-target'))).toEqual(['2']);
+    expect(q(scene({ aim: laneAim(0), state: state({ threats }) }), '[data-target]')).toHaveLength(0);
+  });
+
+  it('draws the fuel under the cannon, and flags an empty tank', () => {
+    const half = scene({ state: state({ fuel: 2.5 }) }).querySelector('[data-fuel-bar]');
+    const track = Number(half.querySelector('.skyline-invaders__fuel-track').getAttribute('width'));
+    expect(Number(half.querySelector('.skyline-invaders__fuel-fill').getAttribute('width'))).toBeCloseTo(track / 2);
+    expect(half.getAttribute('data-empty')).toBe('false');
+    expect(scene({ state: state({ fuel: 0 }) }).querySelector('[data-fuel-bar]').getAttribute('data-empty')).toBe('true');
+  });
+
+  it('behind a menu it is a backdrop: no lit lane, no target mark, no fuel bar', () => {
+    const container = scene({ live: false, state: state({ threats: [threat('meteor', 500, 300)] }) });
+    expect(q(container, '[data-column], [data-target], [data-fuel-bar]')).toHaveLength(0);
+    expect(q(container, '[data-cannon]')).toHaveLength(1);
+  });
+
+  it('draws the practice targets for the controls intro, lit and ticked as they are reached', () => {
+    const targets = [{ id: 'left', lanes: [0], lit: true, reached: false }, { id: 'centre', lanes: [3, 4], lit: false, reached: true }, { id: 'right', lanes: [7], lit: false, reached: false }];
+    const container = scene({ targets });
+    const drawn = q(container, '[data-practice-target]');
+    expect(drawn.map((n) => [n.getAttribute('data-practice-target'), n.getAttribute('data-lit'), n.getAttribute('data-reached')])).toEqual([['left', 'true', 'false'], ['centre', 'false', 'true'], ['right', 'false', 'false']]);
+    expect(Number(drawn[0].querySelector('circle').getAttribute('cx'))).toBeCloseTo(laneX(0));
+    expect(Number(drawn[1].querySelector('circle').getAttribute('cx'))).toBeCloseTo((laneX(3) + laneX(4)) / 2);
+    expect(drawn[1].querySelector('.skyline-invaders__practice-tick')).not.toBeNull();
+    expect(q(container, '[data-fuel-bar]')).toHaveLength(0);      // nothing is fired in a tryout
   });
 
   // The scene is 5:3 on a 16:9 screen. The sky and street run on past the field
@@ -81,11 +125,12 @@ describe('InvadersScene', () => {
     expect(Number(sky.getAttribute('x')) + Number(sky.getAttribute('width'))).toBeGreaterThanOrEqual(FIELD.width + 200);
   });
 
-  it('draws an aim line from each muzzle, coloured by the shot tier', () => {
-    const container = scene({ aim: 0.25, tier: 'nuke' });
-    expect(q(container, '[data-cannon] [data-aim-line]')).toHaveLength(1);
-    expect(container.querySelector('[data-cannon]').getAttribute('data-tier')).toBe('nuke');
+  it('colours the cannon by the weapon in hand, and by the bomb once one is ready', () => {
     expect(scene().querySelector('[data-cannon]').getAttribute('data-tier')).toBe('small');
+    expect(scene({ state: state({ weapon: { level: 1, meter: 0, idleS: 0, peak: 1 } }) }).querySelector('[data-cannon]').getAttribute('data-tier')).toBe('double');
+    const ready = scene({ state: state({ weapon: { level: 2, meter: 1, idleS: 0, peak: 2 } }) }).querySelector('[data-cannon]');
+    expect(ready.getAttribute('data-tier')).toBe('bomb');
+    expect(ready.classList.contains('is-bomb-ready')).toBe(true);
   });
 
   it('knocks out buildings the engine marked as hit', () => {
@@ -109,12 +154,12 @@ describe('InvadersScene', () => {
   });
 
   it('draws shots by tier, blasts by radius, and the shield', () => {
-    const shots = [{ id: 1, x: 500, y: 300, tier: 'big', halfWidth: 16 }, { id: 2, x: 600, y: 300, tier: 'nuke', halfWidth: 10 }];
+    const shots = [{ id: 1, x: 500, y: 300, tier: 'double', halfWidth: 16 }, { id: 2, x: 600, y: 300, tier: 'spread', halfWidth: 6 }];
     const blasts = [{ id: 3, x: 400, y: 200, radius: 160, ttl: 0.4 }];
     const boost = { meter: 0, next: 2, used: 2, active: { kind: 'shield', remaining: 5 } };
     const container = scene({ state: state({ shots, blasts, boost }) });
-    expect(q(container, '[data-shot]').map((n) => n.getAttribute('data-shot'))).toEqual(['big', 'nuke']);
-    const big = container.querySelector('[data-shot="big"]');
+    expect(q(container, '[data-shot]').map((n) => n.getAttribute('data-shot'))).toEqual(['double', 'spread']);
+    const big = container.querySelector('[data-shot="double"]');
     expect(Number(big.getAttribute('width'))).toBe(32);
     expect(Number(big.getAttribute('x'))).toBe(500 - 16);
     expect(container.querySelector('[data-blast]').getAttribute('r')).toBe('160');
@@ -135,13 +180,13 @@ describe('InvadersScene', () => {
   });
 
   it('draws effect pops: points for a kill, and a shake that restarts on each new key', () => {
-    const effects = { pops: [{ key: 'k1', kind: 'kill', x: 300, y: 200, points: 22, threat: 'drone' }, { key: 'k2', kind: 'impact', x: 500, y: 540 }], shakeKey: 3, shakeKind: 'nuke', banner: null };
+    const effects = { pops: [{ key: 'k1', kind: 'kill', x: 300, y: 200, points: 22, threat: 'drone' }, { key: 'k2', kind: 'impact', x: 500, y: 540 }], shakeKey: 3, shakeKind: 'bomb', banner: null };
     const container = scene({ effects });
     expect(container.querySelector('[data-pop="kill"] text').textContent).toBe('+22');
     expect(container.querySelector('[data-pop="impact"]')).not.toBeNull();
     const stage = container.querySelector('[data-shake]');
-    expect(stage.getAttribute('data-shake')).toBe('nuke-b');
-    expect(scene({ effects: { ...effects, shakeKey: 4 } }).querySelector('[data-shake]').getAttribute('data-shake')).toBe('nuke-a');
+    expect(stage.getAttribute('data-shake')).toBe('bomb-b');
+    expect(scene({ effects: { ...effects, shakeKey: 4 } }).querySelector('[data-shake]').getAttribute('data-shake')).toBe('bomb-a');
     expect(scene().querySelector('[data-shake]').getAttribute('data-shake')).toBe('none');
   });
 });

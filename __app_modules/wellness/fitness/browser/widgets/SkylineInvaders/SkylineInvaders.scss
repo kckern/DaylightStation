@@ -3,8 +3,9 @@
 //
 // Colour rule: what falls on the city is cold (lilac, cyan, pink, ice); what
 // the players own is warm (window light, shots, blasts). A shot takes the
-// colour of the heart-rate zone that earned it, so the shooter can read their
-// zone off the cannon. The partner's boost is mint, the one colour neither side uses.
+// colour of the weapon level that fires it, so the shooter can read their
+// weapon off the cannon and its lit lane. The partner's boost is mint, the one
+// colour neither side uses.
 .skyline-invaders {
   // Sky and city
   --si-night: #070b24;
@@ -23,7 +24,7 @@
   --si-pod: #ff7ac0;
   --si-bomber: #e9edff;
   --si-bomb: #e9edff;       // the bomber's colour: a bomb is a piece of it
-  // What the players fire, by heart-rate zone
+  // What the players fire, by weapon level: single, double, spread, bomb
   --si-tier-small: #e6f7ff;
   --si-tier-big: #ffd84a;
   --si-tier-spread: #ff9a3d;
@@ -48,8 +49,6 @@
   --game-hud-banner-ink: var(--si-night);
   --game-hud-banner-bg: var(--si-window);
   --game-hud-shadow: 0 0.08em 0 var(--si-outline);
-  // The cannon glides between pose frames (about 13 a second, so ~77 ms apart).
-  --si-glide: 90ms;
 
   position: relative;
   width: 100%;
@@ -88,15 +87,13 @@
 .skyline-invaders__pip[data-pip="off"] { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0.55; }
 
 .skyline-invaders__shot--small, .skyline-invaders__cannon--small { --si-tier: var(--si-tier-small); }
-.skyline-invaders__shot--big, .skyline-invaders__cannon--big { --si-tier: var(--si-tier-big); }
+.skyline-invaders__shot--double, .skyline-invaders__cannon--double { --si-tier: var(--si-tier-big); }
 .skyline-invaders__shot--spread, .skyline-invaders__cannon--spread { --si-tier: var(--si-tier-spread); }
-.skyline-invaders__shot--nuke, .skyline-invaders__cannon--nuke { --si-tier: var(--si-tier-nuke); }
+.skyline-invaders__cannon--bomb { --si-tier: var(--si-tier-nuke); }
 .skyline-invaders__shot-head { fill: var(--si-tier); }
 .skyline-invaders__trail-stop { stop-color: var(--si-tier); }
 .skyline-invaders__trail-stop--head { stop-opacity: 0.7; }
 .skyline-invaders__trail-stop--tail { stop-opacity: 0; }
-.skyline-invaders__shot--nuke .skyline-invaders__shot-head { fill: var(--si-white-hot); }
-.skyline-invaders__shot-halo { fill: var(--si-tier); opacity: 0.45; }
 
 .skyline-invaders__blast-stop--core { stop-color: var(--si-white-hot); stop-opacity: 1; }
 .skyline-invaders__blast-stop--mid { stop-color: var(--si-tier-spread); stop-opacity: 0.85; }
@@ -106,12 +103,36 @@
 .skyline-invaders__blast-debris { fill: var(--si-tier-big); }
 .skyline-invaders__sky-flash { fill: var(--si-white-hot); }
 
-.skyline-invaders__cannon { color: var(--si-cannon); transition: transform var(--si-glide) linear; }
+// The cannon stands on a lane centre and does not glide: a shot leaves from
+// exactly where it is drawn.
+.skyline-invaders__cannon { color: var(--si-cannon); }
 .skyline-invaders__cannon.is-twin { color: var(--si-boost); }
+.skyline-invaders__cannon.is-bomb-ready .skyline-invaders__cannon-body { color: var(--si-tier-nuke); }
 .skyline-invaders__cannon-outline { color: var(--si-outline); }
-.skyline-invaders__muzzle, .skyline-invaders__cannon-marker { fill: var(--si-tier); }
-.skyline-invaders__aim-line { stroke: var(--si-tier); stroke-width: 2; stroke-dasharray: 4 14; opacity: 0.5; }
-.skyline-invaders__cannon.is-rapid .skyline-invaders__aim-line { stroke-dasharray: 10 6; opacity: 0.75; }
+.skyline-invaders__muzzle { fill: var(--si-tier); }
+
+// The lit lane above the cannon: where the next shot goes.
+.skyline-invaders__column-stop { stop-color: var(--si-tier); }
+.skyline-invaders__column-stop--top { stop-opacity: 0.05; }
+.skyline-invaders__column-stop--low { stop-opacity: 0.3; }
+.skyline-invaders__column-edge { fill: var(--si-tier); opacity: 0.55; }
+.skyline-invaders__lane-tick { fill: var(--si-star); opacity: 0.5; }
+// The threat the next shot will meet.
+.skyline-invaders__target { fill: none; stroke: var(--si-white-hot); stroke-width: 5; stroke-linecap: square; }
+
+// Fuel, under the cannon.
+.skyline-invaders__fuel-track { fill: var(--si-night); stroke: var(--si-ink-dim); stroke-width: 2; }
+.skyline-invaders__fuel-fill { fill: var(--si-boost); }
+.skyline-invaders__fuel-bar.is-empty .skyline-invaders__fuel-track { stroke: var(--si-danger); stroke-width: 4; }
+
+// Practice targets (controls intro).
+.skyline-invaders__practice-target circle { fill: none; stroke: var(--si-ink-dim); stroke-width: 6; stroke-dasharray: 14 10; }
+.skyline-invaders__practice-target .skyline-invaders__practice-core { fill: var(--si-ink-dim); stroke: none; opacity: 0.5; }
+.skyline-invaders__practice-target.is-reached circle { stroke: var(--si-pass); stroke-dasharray: none; }
+.skyline-invaders__practice-target.is-reached .skyline-invaders__practice-core { fill: var(--si-pass); opacity: 0.25; }
+.skyline-invaders__practice-target.is-lit circle { stroke: var(--si-window); stroke-dasharray: none; stroke-width: 10; }
+.skyline-invaders__practice-target.is-lit .skyline-invaders__practice-core { fill: var(--si-window); opacity: 1; }
+.skyline-invaders__practice-tick { fill: none; stroke: var(--si-pass); stroke-width: 9; stroke-linecap: square; }
 
 .skyline-invaders__shield { fill: var(--si-boost); fill-opacity: 0.1; stroke: var(--si-boost); stroke-width: 5; }
 .skyline-invaders__shield.is-fading { opacity: 0.3; }
@@ -131,8 +152,8 @@
 // remounting the scene: the scene alternates -a and -b.
 .skyline-invaders__stage[data-shake="hit-a"] { animation: si-shake-a 200ms linear 1; }
 .skyline-invaders__stage[data-shake="hit-b"] { animation: si-shake-b 200ms linear 1; }
-.skyline-invaders__stage[data-shake="nuke-a"] { animation: si-shake-a 300ms linear 1; }
-.skyline-invaders__stage[data-shake="nuke-b"] { animation: si-shake-b 300ms linear 1; }
+.skyline-invaders__stage[data-shake="bomb-a"] { animation: si-shake-a 300ms linear 1; }
+.skyline-invaders__stage[data-shake="bomb-b"] { animation: si-shake-b 300ms linear 1; }
 
 @keyframes si-shake-a { 0%, 100% { transform: none; } 20% { transform: translate(-6px, 4px); } 40% { transform: translate(5px, -4px); } 60% { transform: translate(-4px, -2px); } 80% { transform: translate(3px, 2px); } }
 @keyframes si-shake-b { 0%, 100% { transform: none; } 20% { transform: translate(-6px, 4px); } 40% { transform: translate(5px, -4px); } 60% { transform: translate(-4px, -2px); } 80% { transform: translate(3px, 2px); } }
@@ -186,35 +207,43 @@
 .skyline-invaders__hud-time { justify-self: center; font-size: 4.5rem; letter-spacing: 0.02em; }
 .skyline-invaders__hud-time[data-urgent="true"] { color: var(--si-danger); }
 
-// The score sits just right of the clock; the tier and boost take the far right.
+// The score sits just right of the clock; the weapon panel and boost take the far right.
 .skyline-invaders__hud-points { position: absolute; left: calc(50% + 7.5rem); top: 1.5rem; height: 4.5rem; display: flex; align-items: center; gap: 1rem; }
 .skyline-invaders__hud-score { color: var(--si-ink-dim); }
 .skyline-invaders__hud-combo { padding: 0.15rem 0.7rem; border-radius: 0.5rem; color: var(--si-night); background: var(--si-tier-big); text-shadow: none; }
 
-.skyline-invaders__hud-right { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 1.5rem; min-width: 0; }
-.skyline-invaders__hud-tier {
-  display: flex; align-items: center; gap: 0.9rem; padding: 0.5rem 1.3rem 0.5rem 0.8rem; border-radius: 0.8rem;
-  color: var(--si-tier); background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem currentColor;
-  &[data-tier="small"] { --si-tier: var(--si-tier-small); }
-  &[data-tier="big"] { --si-tier: var(--si-tier-big); }
-  &[data-tier="spread"] { --si-tier: var(--si-tier-spread); }
-  &[data-tier="nuke"] { --si-tier: var(--si-tier-nuke); }
+.skyline-invaders__hud-right { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 0.8rem; min-width: 0; }
+// Weapon ladder, power meter and fuel gauge in one panel.
+.skyline-invaders__hud-weapon {
+  display: grid; gap: 0.35rem; width: 20rem; padding: 0.5rem 0.7rem 0.6rem; border-radius: 0.8rem;
+  background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
+  &[data-bomb="true"] { box-shadow: inset 0 0 0 0.25rem var(--si-tier-nuke); }
 }
-.skyline-invaders__tier-glyph { height: 3.4rem; width: auto; flex: none; fill: currentColor; }
-.skyline-invaders__hud-tier-text {
-  display: grid; gap: 0.25rem;
-  small { font-size: 1.5rem; font-weight: 700; color: var(--si-ink-dim); }
-  b { font-size: 2.5rem; }
+.skyline-invaders__hud-ladder {
+  display: flex; gap: 0.2rem; margin: 0; padding: 0; list-style: none; font-size: 1.4rem; font-weight: 800; line-height: 1.1;
+  li { flex: 1 1 0; padding: 0.15rem 0; border-radius: 0.35rem; text-align: center; color: var(--si-ink-dim); text-shadow: none; }
+  li.is-done { color: var(--si-ink); }
+  li.is-current { color: var(--si-night); background: var(--si-window); }
+  li.is-current[data-step="3"] { background: var(--si-tier-nuke); color: var(--si-white-hot); }
+}
+.skyline-invaders__hud-gauge {
+  display: grid; grid-template-columns: 4.6rem 1fr; align-items: center; gap: 0.5rem; font-size: 1.4rem; line-height: 1;
+  b { font-weight: 800; color: var(--si-ink-dim); text-shadow: none; }
+  .game-hud-progress { height: 1rem; }
+  &--power { --game-hud-live: var(--si-tier-big); }
+  &--power[data-full="true"] { --game-hud-live: var(--si-tier-nuke); b { color: var(--si-tier-nuke); } }
+  &--fuel { --game-hud-live: var(--si-boost); }
+  &--fuel[data-empty="true"] b { color: var(--si-danger); }
 }
 
 .skyline-invaders__hud-boost {
   --game-hud-live: var(--si-boost);
-  display: grid; gap: 0.5rem; width: 16rem; padding: 0.55rem 1rem 0.7rem; border-radius: 0.8rem;
+  display: grid; gap: 0.5rem; width: 11.5rem; padding: 0.55rem 0.8rem 0.7rem; border-radius: 0.8rem;
   color: var(--si-boost); background: var(--si-panel); box-shadow: inset 0 0 0 0.2rem var(--si-panel-edge);
   .game-hud-progress { height: 0.9rem; }
   &:not([data-boost="filling"]) { color: var(--si-night); background: var(--si-boost); text-shadow: none; box-shadow: none; --game-hud-live: var(--si-night); --game-hud-track: var(--si-boost-track); }
 }
-.skyline-invaders__hud-boost-label { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; font-size: 1.9rem; white-space: nowrap; }
+.skyline-invaders__hud-boost-label { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; font-size: 1.4rem; white-space: nowrap; }
 
 // Notes are kit MomentBanners; these selectors out-specify the kit's so the
 // look does not depend on stylesheet order. They sit in the empty strip under
@@ -222,8 +251,8 @@
 // clear of the sky, where a note would hide what is falling.
 .skyline-invaders .skyline-invaders__hud-note { position: absolute; bottom: 1.1rem; text-shadow: none; white-space: nowrap; }
 .skyline-invaders .skyline-invaders__hud-note--aim { left: 2.5rem; padding: 0.6rem 2rem; font-size: 3rem; }
-.skyline-invaders .skyline-invaders__hud-note--tier {
-  right: 2.5rem; padding: 0.6rem 1.4rem; border-radius: 0.8rem; font-size: 1.9rem; font-weight: 700;
+.skyline-invaders .skyline-invaders__hud-note--controls {
+  right: 9.5rem; padding: 0.6rem 1.4rem; border-radius: 0.8rem; font-size: 1.9rem; font-weight: 700;
   color: var(--si-ink); background: var(--si-panel); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
 }
 
@@ -233,10 +262,10 @@
   padding: 1rem 3rem; font-size: 4rem; font-weight: 800; white-space: nowrap;
 }
 
-// ── Menu screens (lobby, calibration, pause, result) ────────────────────────
+// ── Menu screens (lobby, pause, result) ─────────────────────────────────────
 // They sit over the still city, above the HUD (z-index 5) and the banner (6).
 // Type is sized for the garage: body copy 2rem, anything to act on 2.4rem up.
-.skyline-invaders__lobby, .skyline-invaders__calibration, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice {
+.skyline-invaders__lobby, .skyline-invaders__pause, .skyline-invaders__result, .skyline-invaders__notice {
   position: absolute; z-index: 8; inset: 0;
   display: flex; flex-direction: column; gap: 1.6rem;
   padding: 3rem 4.5rem 2.2rem;
@@ -292,39 +321,74 @@
 .skyline-invaders__crew-note { flex-basis: 100%; font-size: 1.7rem; color: var(--si-drone); }
 .skyline-invaders__picker { display: grid; gap: 0.8rem; }
 
-// Calibration
-.skyline-invaders__steps {
-  display: flex; gap: 0.8rem; margin: 0; padding: 0; list-style: none; counter-reset: si-step;
-  li {
-    counter-increment: si-step; padding: 0.4rem 1.3rem; border-radius: 99rem; font-size: 1.6rem; font-weight: 700;
-    color: var(--si-ink-dim); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
-    &::before { content: counter(si-step) ' '; }
-    &.is-current { color: var(--si-night); background: var(--si-window); box-shadow: none; }
-    &.is-done { color: var(--si-pass); box-shadow: inset 0 0 0 0.15rem var(--si-pass); }
-  }
+// ── Controls intro ──────────────────────────────────────────────────────────
+// The scene fills the screen behind; the card sits across the top so the
+// practice targets, the skyline and the cannon stay in view under it.
+.skyline-invaders__controls { position: absolute; z-index: 8; inset: 0; color: var(--si-ink); font-size: 2rem; line-height: 1.25; p { margin: 0; } }
+.skyline-invaders__controls-card {
+  position: absolute; inset: 0 0 auto 0; height: 33rem;
+  display: flex; align-items: center; gap: 3rem; padding: 2rem 4.5rem 2.5rem;
+  background: linear-gradient(to bottom, rgba(7, 11, 36, 0.96) 0%, rgba(7, 11, 36, 0.9) 80%, rgba(7, 11, 36, 0) 100%);
 }
-.skyline-invaders__calibration-body { display: flex; align-items: center; gap: 3rem; p { margin-top: 0.8rem; font-size: 2.2rem; color: var(--si-ink-dim); } }
-.skyline-invaders__figure { flex: none; width: 17rem; height: auto; fill: var(--si-ink); }
-.skyline-invaders__figure-arms { fill: var(--si-window); }
-.skyline-invaders .skyline-invaders__calibration-alert, .skyline-invaders__calibration > p[role="alert"] { color: var(--si-tier-big); font-weight: 700; }
-.skyline-invaders__meter { display: grid; gap: 0.7rem; max-width: 70rem; p { font-size: 2rem; font-weight: 700; color: var(--si-drone); } }
-.skyline-invaders__meter-track {
-  position: relative; height: 2.6rem; border-radius: 0.6rem; background: var(--si-panel); box-shadow: inset 0 0 0 0.15rem var(--si-panel-edge);
-  // The body midline.
-  &::before { content: ''; position: absolute; left: 50%; top: 0.3rem; bottom: 0.3rem; width: 0.15rem; background: var(--si-panel-edge); }
+.skyline-invaders__controls-text {
+  flex: 1; min-width: 0; display: grid; gap: 0.9rem;
+  h1 { margin: 0; font-size: 6rem; font-weight: 800; line-height: 1; color: var(--si-window); }
 }
-.skyline-invaders__meter-dot, .skyline-invaders__meter-flag { position: absolute; top: 50%; translate: -50% -50%; }
-.skyline-invaders__meter-dot { width: 1.8rem; height: 1.8rem; background: var(--si-window); transition: left 90ms linear; }
-.skyline-invaders__meter-flag { width: 0.5rem; height: 2.6rem; background: var(--si-pass); }
-.skyline-invaders__meter-hold { height: 0.9rem; border-radius: 99rem; overflow: hidden; background: var(--game-hud-track); span { display: block; height: 100%; background: var(--si-pass); transition: width 100ms linear; } }
+.skyline-invaders__controls-step { font-size: 1.8rem; font-weight: 700; color: var(--si-ink-dim); }
+.skyline-invaders__controls-how { font-size: 3rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
+.skyline-invaders__controls-task { font-size: 2.2rem; font-weight: 700; color: var(--si-drone); }
+.skyline-invaders__controls-timer { height: 0.8rem; max-width: 50rem; border-radius: 99rem; overflow: hidden; background: var(--game-hud-track); span { display: block; height: 100%; background: var(--si-ink-dim); transition: width 1s linear; } }
+.skyline-invaders__controls-dots {
+  position: absolute; left: 4.5rem; bottom: 1.2rem; display: flex; gap: 0.7rem; margin: 0; padding: 0; list-style: none;
+  li { width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--si-panel-edge); }
+  li.is-mine { background: var(--si-pass); }
+  li.is-current { background: var(--si-window); outline: 0.25rem solid var(--si-ink); outline-offset: 0.15rem; }
+}
+.skyline-invaders__controls-foot {
+  position: absolute; inset: auto 0 0 0; display: grid; gap: 0.7rem; padding: 0.8rem 4.5rem 1.1rem;
+  background: linear-gradient(to top, rgba(7, 11, 36, 0.96) 0%, rgba(7, 11, 36, 0.9) 75%, rgba(7, 11, 36, 0) 100%);
+  .skyline-invaders__how { margin: 0; font-size: 2rem; font-weight: 700; color: var(--si-ink); }
+  .skyline-invaders__action { min-height: 4.6rem; padding: 0.5rem 1.8rem; }
+}
+
+// The gesture demo: a stick figure the size of the card.
+.skyline-invaders__demo {
+  flex: none; height: 27rem; width: auto; padding: 0.5rem; border-radius: 1.2rem;
+  background: var(--si-panel); box-shadow: inset 0 0 0 0.25rem var(--si-panel-edge);
+  fill: none; stroke-linecap: round; stroke-linejoin: round;
+}
+.skyline-invaders__demo-body { stroke: var(--si-ink); stroke-width: 9; fill: none; }
+.skyline-invaders__demo-body circle { fill: var(--si-ink); stroke: none; }
+.skyline-invaders__demo-arm { stroke: var(--si-window); stroke-width: 11; }
+.skyline-invaders__demo-arm--faint { opacity: 0.45; }
+.skyline-invaders__demo-hand { fill: var(--si-window); stroke: none; }
+.skyline-invaders__demo-prop { stroke: var(--si-drone); stroke-width: 6; fill: none; }
+// Each moving part turns about the joint named here (viewBox units).
+.skyline-invaders__demo-move { animation: 1.6s ease-in-out infinite alternate; }
+.skyline-invaders__demo-move--elbow-left { transform-origin: 62px 116px; animation-name: si-demo-tilt; }
+.skyline-invaders__demo-move--elbow-right { transform-origin: 138px 116px; animation-name: si-demo-tilt; }
+.skyline-invaders__demo-move--chest { transform-origin: 100px 74px; animation-name: si-demo-bank; }
+.skyline-invaders__demo-move--wheel { transform-origin: 100px 108px; animation-name: si-demo-tilt; }
+.skyline-invaders__demo-move--sweep { transform-origin: 100px 74px; animation-name: si-demo-sweep; }
+.skyline-invaders__demo-move--turn { transform-origin: 100px 74px; animation-name: si-demo-turn; }
+.skyline-invaders__demo-move--shoulder-left { transform-origin: 70px 74px; }
+.skyline-invaders__demo-move--shoulder-right { transform-origin: 130px 74px; }
+.skyline-invaders__demo-move--hold { animation: si-demo-hold 3.2s ease-in-out infinite; }
+.skyline-invaders__demo-move--swipe { animation: si-demo-swipe 1.8s linear infinite; }
+.skyline-invaders__demo-move--hop-right { animation: si-demo-hop-right 2.4s steps(1, end) infinite; }
+.skyline-invaders__demo-move--hop-left { animation: si-demo-hop-left 2.4s steps(1, end) infinite; }
+@keyframes si-demo-tilt { from { transform: rotate(-42deg); } to { transform: rotate(42deg); } }
+@keyframes si-demo-bank { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
+@keyframes si-demo-sweep { from { transform: skewX(34deg); } to { transform: skewX(-34deg); } }
+@keyframes si-demo-turn { from { transform: translateX(-16px) scaleX(0.62); } 50% { transform: none; } to { transform: translateX(16px) scaleX(0.62); } }
+// The arm hangs at 0deg; -88deg lifts it straight out to the picture's right.
+@keyframes si-demo-hold { 0%, 12% { transform: rotate(0deg); } 28%, 82% { transform: rotate(-88deg); } 96%, 100% { transform: rotate(0deg); } }
+@keyframes si-demo-swipe { 0%, 30% { transform: rotate(-12deg); } 42% { transform: rotate(-92deg); } 55% { transform: rotate(-92deg); } 100% { transform: rotate(-12deg); } }
+@keyframes si-demo-hop-right { 0% { transform: rotate(-88deg); } 25%, 100% { transform: rotate(0deg); } }
+@keyframes si-demo-hop-left { 0% { transform: rotate(0deg); } 50% { transform: rotate(88deg); } 75%, 100% { transform: rotate(0deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .skyline-invaders__action::before, .skyline-invaders__meter-dot, .skyline-invaders__meter-hold span { transition: none; }
-}
-
-// Behind a menu the city is a backdrop: no aim line, no cannon marker.
-.skyline-invaders--lobby, .skyline-invaders--calibrating, .skyline-invaders--loading, .skyline-invaders--error {
-  .skyline-invaders__aim-line, .skyline-invaders__cannon-marker { display: none; }
+  .skyline-invaders__action::before { transition: none; }
 }
 
 // Round chrome owned by the shell.
@@ -335,7 +399,7 @@
   text-shadow: 0 0.06em 0 var(--si-outline);
 }
 // Pause, for a finger. It sits in the strip under the street, in the corner,
-// where nothing falls and no shot flies. The heart-rate note moves over for it.
+// where nothing falls and no shot flies. The controls note sits beside it.
 .skyline-invaders__pause-button {
   position: absolute; z-index: 7; right: 2.5rem; bottom: 1.1rem;
   display: flex; align-items: center; justify-content: center; gap: 0.7rem;
@@ -344,7 +408,6 @@
   span { display: block; width: 0.8rem; height: 2.2rem; background: var(--si-ink); }
   &:focus-visible { outline: 0.3rem solid var(--si-drone); outline-offset: 0.3rem; }
 }
-.skyline-invaders.skyline-invaders--playing .skyline-invaders__hud-note--tier { right: 9.5rem; }
 
 // Pause and result sit over the round they belong to, so they are centred on it.
 .skyline-invaders__pause, .skyline-invaders__result {

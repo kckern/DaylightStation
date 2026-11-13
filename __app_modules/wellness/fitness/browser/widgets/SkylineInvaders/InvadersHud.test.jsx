@@ -5,13 +5,12 @@ import InvadersHud, { formatClock } from './InvadersHud.jsx';
 import { createGameState } from '../../lib/skylineInvaders/engine.js';
 
 const level = { id: 'invaders-test', duration_s: 90, cannons: 1, pass: { kills: 30, base_hp_min: 0 }, waves: [{ at: 0, spawn: { meteor: 1 }, rate_s: 2 }] };
-const TIER = { tier: 'spread', zoneId: 'hot', trusted: true };
 
 function renderHud(over = {}) {
   const { state: stateOver = {}, ...props } = over;
   const state = { ...createGameState(level, { seed: 1 }), ...stateOver };
   return render(
-    <InvadersHud state={state} level={level} tier={TIER} aimStatus={{ lost: false, mode: 'pose' }} poseStatus={{ state: 'detecting' }} partner={null} shooterName="test-rider" {...props} />,
+    <InvadersHud state={state} level={level} gesture="wiper" aimStatus={{ lost: false, mode: 'pose' }} poseStatus={{ state: 'detecting' }} partner={null} {...props} />,
   );
 }
 const notes = () => screen.queryAllByRole('status').map((node) => node.textContent).filter(Boolean);
@@ -56,17 +55,53 @@ describe('InvadersHud', () => {
     expect(screen.getByTestId('invaders-time').getAttribute('data-urgent')).toBe('true');
   });
 
-  it('names the shot tier, and says why it is small when no heart rate can be trusted', () => {
+  const ladder = () => [...screen.getByTestId('invaders-weapon').querySelectorAll('li')].map((li) => [li.textContent, li.className]);
+
+  it('shows the weapon ladder with the weapon in hand lit', () => {
     const view = renderHud();
-    const badge = screen.getByTestId('invaders-tier');
-    expect(badge.getAttribute('data-tier')).toBe('spread');
-    expect(within(badge).getByText('Spread')).toBeTruthy();
-    expect(within(badge).getByText('test-rider')).toBeTruthy();
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('small');
+    expect(ladder()).toEqual([['Single', 'is-current'], ['Double', ''], ['Spread', ''], ['Bomb', '']]);
+    view.unmount();
+    renderHud({ state: { weapon: { level: 2, meter: 0.4, idleS: 0, peak: 2 } } });
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('spread');
+    expect(ladder()).toEqual([['Single', 'is-done'], ['Double', 'is-done'], ['Spread', 'is-current'], ['Bomb', '']]);
+    expect(screen.getByLabelText('Weapon: Spread')).toBeTruthy();
+  });
+
+  it('shows the power meter filling, and tells the shooter to stomp when a bomb is ready', () => {
+    const view = renderHud({ state: { weapon: { level: 1, meter: 0.4, idleS: 0, peak: 1 } } });
+    const power = screen.getByTestId('invaders-power');
+    expect(within(power).getByText('Power')).toBeTruthy();
+    expect(within(power).getByLabelText('Power 40%').firstChild.style.width).toBe('40%');
+    expect(power.getAttribute('data-full')).toBe('false');
+    view.unmount();
+    renderHud({ state: { weapon: { level: 2, meter: 1, idleS: 0, peak: 2 } } });
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-bomb')).toBe('true');
+    expect(within(screen.getByTestId('invaders-power')).getByText('Stomp!')).toBeTruthy();
+    expect(screen.getByLabelText('Bomb ready: stomp to drop it')).toBeTruthy();
+    expect(ladder()[3]).toEqual(['Bomb', 'is-current']);
+  });
+
+  it('shows the fuel gauge against the tank, and tells the shooter to step when it is empty', () => {
+    const view = renderHud({ state: { fuel: 2.5 } });
+    const fuel = screen.getByTestId('invaders-fuel');
+    expect(within(fuel).getByText('Fuel')).toBeTruthy();
+    expect(within(fuel).getByLabelText('Fuel 50%').firstChild.style.width).toBe('50%');
+    expect(fuel.getAttribute('data-empty')).toBe('false');
+    view.unmount();
+    renderHud({ state: { fuel: 0 } });
+    expect(screen.getByTestId('invaders-fuel').getAttribute('data-empty')).toBe('true');
+    expect(within(screen.getByTestId('invaders-fuel')).getByText('Step!')).toBeTruthy();
+  });
+
+  it('names the controls in use, and makes way for an aim note', () => {
+    const view = renderHud({ gesture: 'twist' });
+    expect(screen.getByTestId('invaders-controls').textContent).toBe('Aim: Twist');
+    expect(screen.getByTestId('skyline-invaders-hud').getAttribute('data-gesture')).toBe('twist');
     expect(notes()).toEqual([]);
     view.unmount();
-    renderHud({ tier: { tier: 'small', zoneId: null, trusted: false } });
-    expect(screen.getByTestId('invaders-tier').getAttribute('data-tier')).toBe('small');
-    expect(notes()).toEqual(['No trusted heart rate — small shots']);
+    renderHud({ aimStatus: { lost: true, mode: 'pose' } });
+    expect(screen.queryByTestId('invaders-controls')).toBeNull();
   });
 
   it('tells the shooter how to get their aim back', () => {
@@ -77,9 +112,9 @@ describe('InvadersHud', () => {
     expect(notes()).toEqual(['Camera off — aim with the gamepad']);
   });
 
-  it('tells a player who skipped calibration how to aim, without blaming the camera', () => {
-    renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'detecting' } });
-    expect(notes()).toEqual(['Gamepad aim — stick or arrow keys']);
+  it('says the camera is still starting, rather than asking the shooter to step into view', () => {
+    renderHud({ aimStatus: { lost: true, mode: 'manual' }, poseStatus: { state: 'loading' } });
+    expect(notes()).toEqual(['Camera starting — aim with the gamepad']);
   });
 
   it('shows the boost only with a partner: the meter while it fills, the label and seconds while it runs', () => {

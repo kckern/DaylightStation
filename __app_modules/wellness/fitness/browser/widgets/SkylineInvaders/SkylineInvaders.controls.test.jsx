@@ -1,6 +1,6 @@
 // Whole rounds played through the real shell, engine, hooks, scene and HUD,
 // with only the edges faked: app events for the mat, a pose stream through the
-// bridge, a zone profile, a bike. No assertion here is conditional: a
+// bridge, a bike. No assertion here is conditional: a
 // precondition that fails (no meteor on screen, say) fails the test by name.
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -27,9 +27,10 @@ vi.mock('../../lib/skylineGlider/skylineAudio.js', () => ({ createSkylineAudio: 
 vi.mock('../../lib/useGamepadKeys.js', () => ({ useGamepadKeys: () => {} }));
 
 import SkylineInvaders from './SkylineInvaders.jsx';
-import { aimToX, xToAim } from '../../lib/skylineInvaders/threats.js';
+import { laneX } from '../../lib/skylineInvaders/lanes.js';
+import { xToAim } from '../../lib/skylineInvaders/threats.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
-import { TEST_CALIBRATION, flush, installFrames, makeCtx, pose, poseForAim, postedRecords, routeFetch, testLevel, zoneProfile } from './invadersTestKit.js';
+import { flush, installFrames, makeCtx, poseForAim, poseForLane, postedRecords, routeFetch, standingPose, testLevel, wiperPose } from './invadersTestKit.js';
 
 let routes;
 let f;
@@ -37,33 +38,37 @@ const press = (name) => act(async () => { fireEvent.click(screen.getByRole('butt
 const keyDown = (key) => act(async () => { fireEvent.keyDown(window, { key }); });
 const keyUp = (key) => act(async () => { fireEvent.keyUp(window, { key }); });
 const step = (id = 'mat-a1', type = 'pressure-mat:step') => act(async () => { h.ctx.__emitAppEvent(type, { id }); });
+const stomp = (id = 'mat-a1') => step(id, 'pressure-mat:stomp');
 const feed = (p) => act(async () => { h.bridge.tracker.processPoses(p ? [p] : []); });
 const hold = async (p, ms) => { for (let t = 0; t < ms; t += 100) { await feed(p); await f.frames(1); } };
 const status = (state) => act(async () => { h.bridge.onStatus({ state, fps: 13, latency: 70, backend: 'wasm', modelType: 'full', error: null }); });
+const phase = () => document.querySelector('.skyline-invaders').getAttribute('data-phase');
 const hud = () => screen.getByTestId('skyline-invaders-hud').textContent;
 const kills = () => screen.getByTestId('invaders-kills').textContent;
-const cannonX = () => Number(document.querySelector('[data-cannon]').getAttribute('data-x'));
-const shots = (tier) => document.querySelectorAll(tier ? `[data-shot="${tier}"]` : '[data-shot]');
-const fired = () => h.log.sampled.mock.calls.filter(([name]) => name === 'skyline_invaders.fire').map(([, data]) => data);
+const cannon = () => document.querySelector('[data-cannon]');
+const cannonX = () => Number(cannon().getAttribute('data-x'));
+const cannonLane = () => Number(cannon().getAttribute('data-lane'));
+const shots = (tier) => [...document.querySelectorAll(tier ? `[data-shot="${tier}"]` : '[data-shot]')];
+const logged = (name) => [...h.log.info.mock.calls, ...h.log.sampled.mock.calls, ...h.log.warn.mock.calls, ...h.log.error.mock.calls].filter(([event]) => event === name).map(([, data]) => data);
+const fuelPct = () => parseFloat(screen.getByTestId('invaders-fuel').querySelector('.game-hud-progress span').style.width);
 const firstMeteor = () => {
   const meteor = document.querySelector('[data-threat="meteor"]');
   expect(meteor, 'a meteor should be on screen').not.toBeNull();
   return { x: Number(meteor.getAttribute('data-x')), y: Number(meteor.getAttribute('data-y')) };
 };
 
-async function mount(options = {}) {
+// A rider who already has controls, unless the test is about picking them.
+async function mount({ onClose, ...options } = {}) {
   f = installFrames();
-  routes = routeFetch(options);
-  render(<SkylineInvaders />);
+  routes = routeFetch({ controls: { gesture: 'wiper' }, ...options });
+  render(<SkylineInvaders onClose={onClose} />);
   await flush();
 }
 async function start(name = /^Start/) {
   await press(name);
   await f.seconds(3.1);
-  expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('playing');
+  expect(phase()).toBe('playing');
 }
-// Calibration without the lobby flow, for the cases that are not about it.
-const calibrate = () => act(async () => { h.bridge.tracker.setCalibration(TEST_CALIBRATION); });
 async function pointAtFirstMeteor() {
   await f.frames(2);
   const meteor = firstMeteor();
@@ -80,114 +85,206 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('Skyline Invaders controls', () => {
-  it('solo core loop: calibrate in the lobby, start, point, step, and the kill counts', async () => {
-    await mount();
+  it('first time: pick controls in the intro, start, point, step, and the kill counts', async () => {
+    await mount({ controls: null });
     await status('detecting');
-    await press(/Calibrate/);
-    await hold(pose(0, { wristY: 900 }), 1300);   // standing in view, hands hanging out of frame
-    await hold(pose(120), 1100);                  // far left
-    await hold(pose(-120), 1100);                 // far right
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
-    await feed(pose(0));
+    expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
+    await press(/Pick your controls/);
+    expect(phase()).toBe('controls');
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wipers');
+    // The tryout: the real cannon follows the wiper gesture and lights the left target.
+    await hold(wiperPose(0), 300);
+    await hold(poseForLane(0), 1500);
+    expect(cannonLane()).toBe(0);
+    expect(document.querySelector('[data-practice-target="left"]').getAttribute('data-reached')).toBe('true');
+    await stomp();                                   // stomp = pick this one
+    await flush();
+    expect(phase()).toBe('lobby');
+    expect(routes.controls).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'wiper' });
+    expect(logged('skyline_invaders.controls.chosen')[0]).toMatchObject({ shooterId: 'kid', gesture: 'wiper', how: 'stomp', previous: null, saved: true });
+    expect(logged('skyline_invaders.controls.tryout')[0]).toMatchObject({ shooterId: 'kid', gesture: 'wiper', how: 'chosen-stomp', reached: 1, leftMs: expect.any(Number), rightMs: null });
     await start();
     await pointAtFirstMeteor();
     await step();
-    await f.seconds(1);
-    expect(kills()).toBe('1 ✓');
-    expect(fired()[0]).toMatchObject({ source: 'mat', tier: 'small' });
+    await f.seconds(1.2);
+    expect(kills()).toMatch(/^[1-9] ✓$/);
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ gesture: 'wiper', gestureChosen: true, aimMode: 'pose' });
   });
 
-  it('aim latch: a shot uses the aim from before the step, not the lurch that comes with it', async () => {
-    await mount();
-    await calibrate();
+  it('the intro walks the cards with mat steps and saves the one that is stomped on', async () => {
+    await mount({ controls: null });
+    await status('detecting');
+    await press(/Pick your controls/);
+    await step();
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
+    await step();
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wings');
+    expect(h.bridge.tracker.gesture()).toBe('wings');
+    await step('mat-b2');                            // someone else's mat
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wings');
+    await press(/^Back/);
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
+    await stomp();
+    await flush();
+    expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'twist' });
+    expect(screen.getByTestId('invaders-controls-chosen').textContent).toBe('ControlsTwist');
+    expect(h.bridge.tracker.gesture()).toBe('twist');
+    expect(logged('skyline_invaders.controls.tryout').map((entry) => [entry.gesture, entry.how])).toEqual([['wiper', 'step'], ['twist', 'step'], ['wings', 'button'], ['twist', 'chosen-stomp']]);
+  });
+
+  it('a card moves on by itself, and a choice that cannot be saved still holds for the session', async () => {
+    await mount({ controls: null });
+    routes.controls.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    await status('detecting');
+    await press(/Pick your controls/);
+    await f.seconds(INVADERS_TUNABLES.tryoutCardS + 0.3);
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
+    expect(logged('skyline_invaders.controls.tryout')[0]).toMatchObject({ gesture: 'wiper', how: 'timeout', reached: 0 });
+    await press(/Use these controls/);
+    await flush();
+    expect(logged('skyline_invaders.controls.save_error')).toHaveLength(1);
+    expect(logged('skyline_invaders.controls.chosen')[0]).toMatchObject({ gesture: 'twist', how: 'button', saved: false });
+    expect(screen.getByRole('button', { name: /^Start/ })).toBeTruthy();
+  });
+
+  it('a rider with saved controls goes straight to Start, and can change them without losing them by backing out', async () => {
+    await mount({ controls: { gesture: 'sprinkler' } });
+    await status('detecting');
+    expect(screen.getByTestId('invaders-controls-chosen').textContent).toBe('ControlsSprinkler');
+    expect(h.bridge.tracker.gesture()).toBe('sprinkler');
+    await press(/Change controls/);
+    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Sprinkler');   // opens on their own
+    await step();
+    expect(h.bridge.tracker.gesture()).toBe('drag');
+    await press(/Keep Sprinkler/);
+    expect(phase()).toBe('lobby');
+    expect(h.bridge.tracker.gesture()).toBe('sprinkler');
+    expect(routes.controls).not.toHaveBeenCalled();
     await start();
-    await hold(poseForAim(0.25), 700);
-    await f.frames(2);                 // 200 ms with no new pose, then...
-    await feed(poseForAim(0.9));       // ...the arms fly as the foot comes down
+    await hold(standingPose(), 300);
+    expect(screen.getByTestId('invaders-controls').textContent).toBe('Aim: Sprinkler');
+  });
+
+  it('lanes: the cannon stands on a lane centre and a shot leaves from where it is drawn', async () => {
+    await mount();
+    await start();
+    await hold(poseForLane(2), 700);
+    expect(cannonX()).toBeCloseTo(laneX(2));
+    expect(document.querySelector('[data-column]').getAttribute('data-lane')).toBe('2');
     await step();
     await f.frames(1);
-    expect(fired()).toHaveLength(1);
-    expect(fired()[0].aim).toBeCloseTo(0.25, 1);
-    expect(Math.abs(fired()[0].aim - 0.9)).toBeGreaterThan(0.4);
+    expect(shots()).toHaveLength(1);
+    expect(Number(shots()[0].getAttribute('x')) + Number(shots()[0].getAttribute('width')) / 2).toBeCloseTo(cannonX());
+    // The aim moves on; the stream follows the cannon, with no latch to an older aim.
+    await hold(poseForLane(6), 700);
+    expect(cannonX()).toBeCloseTo(laneX(6));
+    const newest = shots().sort((a, b) => Number(b.getAttribute('y')) - Number(a.getAttribute('y')))[0];
+    expect(Number(newest.getAttribute('x')) + Number(newest.getAttribute('width')) / 2).toBeCloseTo(laneX(6));
   });
 
-  it('mirroring: hands moved toward image-left move the cannon right', async () => {
+  it('mirroring: forearms tilted toward image-left move the cannon right', async () => {
     await mount();
-    await calibrate();
     await start();
-    await hold(pose(0), 500);
+    await hold(wiperPose(0), 500);
     const centre = cannonX();
-    await hold(pose(-60), 500);
+    await hold(wiperPose(30), 500);
     expect(cannonX()).toBeGreaterThan(centre + 100);
-    expect(centre).toBeCloseTo(aimToX(0.5), 0);
   });
 
-  it('mat filter: another mat and a stomp on the shooter\'s mat fire nothing', async () => {
+  it('the cannon marks the threat it will hit', async () => {
+    await mount();
+    await start();
+    const meteor = await pointAtFirstMeteor();
+    expect(cannonX()).toBeCloseTo(meteor.x);
+    expect(document.querySelectorAll('[data-target]')).toHaveLength(1);
+  });
+
+  it('one step fuels a stream: it fires by itself for a second and a half, then asks for another step', async () => {
+    await mount();
+    await start();
+    expect(screen.getByTestId('invaders-fuel').getAttribute('data-empty')).toBe('true');
+    expect(screen.getByTestId('invaders-fuel').textContent).toContain('Step!');
+    await step();
+    await f.frames(1);
+    expect(shots()).toHaveLength(1);
+    expect(fuelPct()).toBeGreaterThan(25);
+    await f.seconds(1);
+    expect(shots().length).toBeGreaterThanOrEqual(2);       // more volleys, no more steps
+    await f.seconds(2);
+    expect(shots()).toHaveLength(0);
+    expect(screen.getByTestId('invaders-fuel').getAttribute('data-empty')).toBe('true');
+    expect(logged('skyline_invaders.fuel')).toEqual([expect.objectContaining({ source: 'mat', fuel: 1.5 })]);
+  });
+
+  it('spamming the mat only fills the tank', async () => {
+    await mount();
+    await start();
+    for (let i = 0; i < 8; i += 1) await step();
+    await f.frames(1);
+    expect(fuelPct()).toBeGreaterThan(95);
+    expect(shots()).toHaveLength(1);                          // eight steps, still one volley this beat
+  });
+
+  it('mat filter: another mat does nothing', async () => {
     h.ctx.equipment.push({ id: 'spare-mat', type: 'pressure_mat', pressure_mat: 'mat-b2' });
     await mount();
     await start();
     await step('mat-b2');
-    await step('mat-a1', 'pressure-mat:stomp');
+    await stomp('mat-b2');
     await f.frames(2);
     expect(shots()).toHaveLength(0);
-    await step('mat-a1');
+    expect(fuelPct()).toBe(0);
+  });
+
+  it('power meter: firing and kills move the weapon up, announced on screen', async () => {
+    await mount({ levels: [testLevel({ fire: { power_per_firing_s: 1.2 } })] });
+    await start();
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('small');
+    await step();
+    await f.seconds(1.2);
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('double');
+    expect(screen.getByText('Double shot!')).toBeTruthy();
+    expect(shots('double').length).toBeGreaterThan(0);
+    await step();
+    await f.seconds(1);
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('spread');
+    expect(logged('skyline_invaders.round.weapon.level').map((entry) => entry.tier)).toEqual(['double', 'spread']);
+  });
+
+  it('stomp bomb: a full meter at the top says STOMP, and a stomp blasts and spends it', async () => {
+    await mount({ levels: [testLevel({ fire: { power_per_firing_s: 4 } })] });
+    await start();
+    await stomp();                                   // not ready yet: a stomp is a step
     await f.frames(1);
-    expect(shots()).toHaveLength(1);
+    expect(document.querySelectorAll('[data-blast]')).toHaveLength(0);
+    expect(fuelPct()).toBeGreaterThan(25);
+    await f.seconds(1);
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-bomb')).toBe('true');
+    expect(screen.getByTestId('invaders-power').textContent).toContain('Stomp!');
+    expect(screen.getByText('Bomb ready — STOMP!')).toBeTruthy();
+    expect(cannon().getAttribute('data-tier')).toBe('bomb');
+    await stomp();
+    await f.frames(1);
+    expect(document.querySelectorAll('[data-blast]')).toHaveLength(1);
+    expect(screen.getByTestId('invaders-weapon').getAttribute('data-bomb')).toBe('false');
+    expect(logged('skyline_invaders.round.bomb')).toHaveLength(1);
   });
 
-  describe('tiers follow the shooter\'s heart-rate zone', () => {
-    const fireOnce = async (zone, over) => {
-      h.ctx = makeCtx({ profile: () => zoneProfile(zone, over) });
-      await mount();
-      await start();
-      await f.frames(1);
-      await step();
-      await f.frames(1);
-    };
-    it('warm fires one big shot', async () => {
-      await fireOnce('warm');
-      expect(shots('big')).toHaveLength(1);
-      expect(screen.getByTestId('invaders-tier').getAttribute('data-tier')).toBe('big');
-    });
-    it('hot fires a spread of three', async () => {
-      await fireOnce('hot');
-      expect(shots('spread')).toHaveLength(3);
-    });
-    it('fire launches a nuke that blasts where it meets a threat', async () => {
-      h.ctx = makeCtx({ profile: () => zoneProfile('fire') });
-      await mount();
-      await calibrate();
-      await start();
-      await pointAtFirstMeteor();
-      await step();
-      await f.frames(1);
-      expect(shots('nuke')).toHaveLength(1);
-      let blasts = 0;
-      for (let i = 0; i < 10 && !blasts; i += 1) { await f.frames(1); blasts = document.querySelectorAll('[data-blast]').length; }
-      expect(blasts).toBe(1);
-      expect(kills()).toBe('1 ✓');
-    });
-    it('an untrusted heart rate fires small shots and says why', async () => {
-      await fireOnce('fire', { zoneTrusted: false });
-      expect(shots('small')).toHaveLength(1);
-      expect(hud()).toContain('No trusted heart rate — small shots');
-    });
-  });
-
-  it('co-op: the mat fires for the shooter whoever stands on it, at the shooter\'s tier', async () => {
-    h.ctx = makeCtx({ matRider: null, profile: (id) => zoneProfile(id === 'kid' ? 'warm' : 'fire') });
+  it('co-op: the mat fires for the shooter whoever stands on it', async () => {
+    h.ctx = makeCtx({ matRider: null });
     await mount();
     await press('Kid');
+    await flush();
     await start();
     await f.frames(1);
     await step();
     await f.frames(1);
-    expect(shots('big')).toHaveLength(1);
-    expect(shots('nuke')).toHaveLength(0);
-    expect(hud()).toContain('Kid');
+    expect(shots()).toHaveLength(1);
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ shooterId: 'kid' });
   });
 
-  it('partner boost: a rider at full cadence fills the meter and rapid fire shoots by itself', async () => {
+  it('partner boost: a rider at full cadence fills the meter and rapid fire shoots with an empty tank', async () => {
     h.ctx.riders.bike = 'test-rider';
     h.ctx.state.cadence = { rpm: 100, connected: true };
     await mount({ levels: [testLevel({ boost: { fill_s: 2, duration_s: 4, rotation: ['rapid'] } })] });
@@ -198,7 +295,7 @@ describe('Skyline Invaders controls', () => {
     expect(screen.getByTestId('invaders-boost').textContent).toContain('Rapid fire');
     await f.frames(3);
     expect(shots().length).toBeGreaterThan(0);
-    expect(fired().every((shot) => shot.source === 'auto')).toBe(true);
+    expect(fuelPct()).toBe(0);
     expect(h.log.sampled.mock.calls.filter(([name]) => name === 'skyline_invaders.round.boost.activated')).toHaveLength(1);
   });
 
@@ -209,27 +306,37 @@ describe('Skyline Invaders controls', () => {
     expect(screen.queryByTestId('invaders-boost')).toBeNull();
   });
 
+  it('arms that drop while stepping do not lose the player: the cannon holds its lane', async () => {
+    await mount();
+    await status('detecting');
+    await start();
+    await hold(poseForLane(6), 700);
+    await hold(standingPose(), 3000);
+    expect(cannonLane()).toBe(6);
+    expect(hud()).not.toContain('Step into view');
+    expect(logged('skyline_invaders.pose.lost')).toHaveLength(0);
+  });
+
   it('pose lost: the HUD asks the shooter back, the clock keeps running, and the cannon drifts to the lowest threat', async () => {
     await mount();
-    await calibrate();
+    await status('detecting');
     await start();
     await f.frames(2);
     const meteor = firstMeteor();
-    const away = meteor.x > 500 ? 0.1 : 0.9;
-    await hold(poseForAim(away), 500);
+    await hold(poseForLane(meteor.x > 500 ? 0 : 7), 500);
     expect(hud()).not.toContain('Step into view');
     const before = { x: cannonX(), time: screen.getByTestId('invaders-time').textContent };
     await f.seconds((INVADERS_TUNABLES.poseLostAfterMs + 200) / 1000);
     expect(hud()).toContain('Step into view');
-    await f.seconds(2);
+    await f.seconds(3);
     expect(screen.getByTestId('invaders-time').textContent).not.toBe(before.time);
     expect(Math.abs(cannonX() - meteor.x)).toBeLessThan(Math.abs(before.x - meteor.x) - 50);
   });
 
-  it('keyboard round: no camera and no mat, Space fires, the arrows aim, and the round is saved with its stars', async () => {
+  it('keyboard round: no camera and no mat, Space fuels the stream, the arrows move the cannon lane by lane, and the round is saved with its stars', async () => {
     h.ctx = makeCtx({ matRider: null });
     h.ctx.equipment = h.ctx.equipment.filter((item) => item.id !== 'step-mat');
-    await mount();
+    await mount({ controls: null });
     await status('camera-denied');
     expect(screen.getByText(/No step mat found/)).toBeTruthy();
     await press('Kid');
@@ -239,22 +346,106 @@ describe('Skyline Invaders controls', () => {
     const arrow = meteor.x > cannonX() ? 'ArrowRight' : 'ArrowLeft';
     await keyDown(arrow);
     let frames = 0;
-    while (Math.abs(cannonX() - meteor.x) > 12 && frames < 60) { await f.frames(1, 16); frames += 1; }
+    while (cannonX() !== meteor.x && frames < 90) { await f.frames(1, 16); frames += 1; }
     await keyUp(arrow);
-    expect(Math.abs(cannonX() - meteor.x)).toBeLessThanOrEqual(12);
+    expect(cannonX()).toBe(meteor.x);
     await keyDown(' ');
-    await f.seconds(1);
-    expect(kills()).toBe('1 ✓');
-    expect(fired()[0]).toMatchObject({ source: 'keyboard' });
+    await f.seconds(1.2);
+    expect(kills()).toMatch(/^[1-9] ✓$/);
+    expect(logged('skyline_invaders.fuel')[0]).toMatchObject({ source: 'keyboard' });
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'manual', gestureChosen: false });
     await f.seconds(30);
     await flush();
     const result = screen.getByTestId('skyline-invaders-result');
     expect(result.getAttribute('data-status')).toBe('completed');
     expect(result.getAttribute('data-save')).toBe('saved');
     const [record] = postedRecords(routes);
-    expect(record.run).toMatchObject({ status: 'completed', kills: 1 });
+    expect(record.run).toMatchObject({ status: 'completed', steps: 1, gesture: 'wiper' });
+    expect(record.run.kills).toBeGreaterThanOrEqual(1);
+    expect(record.run.shots_fired).toBeGreaterThanOrEqual(5);
     expect(record.run.mat_equipment_id).toBeUndefined();
     expect(record.run.stars).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText(`${record.run.stars} of 3 stars`)).toBeTruthy();
+    expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ gesture: 'wiper', steps: 1, tally: expect.objectContaining({ keyboard: 1, stream: record.run.shots_fired }) });
+  });
+});
+
+describe('Skyline Invaders exit', () => {
+  it('leaves from the lobby by the Exit button, and by Escape', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await press(/^Exit/);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'lobby', how: 'button', round: null });
+    await keyDown('Escape');
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(logged('skyline_invaders.exit')[1]).toMatchObject({ how: 'back' });
+    expect(postedRecords(routes)).toHaveLength(0);
+  });
+
+  it('leaving mid-round from the pause menu saves the round as abandoned and closes at once', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await start();
+    await step();
+    await f.seconds(2);
+    await keyDown('Escape');
+    expect(phase()).toBe('paused');
+    await press(/^Exit/);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await flush();
+    const [record] = postedRecords(routes);
+    expect(record.run).toMatchObject({ status: 'abandoned', steps: 1 });
+    expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'paused', how: 'button', round: 'abandoned', runId: record.run.id });
+    expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ status: 'abandoned' });
+  });
+
+  it('leaving does not wait for a save that fails', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    routes.runs.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    await start();
+    await keyDown('Escape');
+    await press(/^Exit/);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(logged('skyline_invaders.round.save_error')).toHaveLength(1);
+  });
+
+  it('leaves from the result screen, saved or not, and tries a failed save once more on the way out', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    routes.runs.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+    await start();
+    await f.seconds(31);
+    await flush();
+    expect(screen.getByTestId('skyline-invaders-result').getAttribute('data-save')).toBe('error');
+    await press(/^Exit/);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(postedRecords(routes)).toHaveLength(2);
+    expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'result', round: 'error' });
+  });
+
+  it('Escape during the countdown goes back to the lobby without saving anything', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await press(/^Start/);
+    await f.seconds(1);
+    expect(phase()).toBe('countdown');
+    await keyDown('Escape');
+    expect(phase()).toBe('lobby');
+    await f.seconds(4);
+    expect(phase()).toBe('lobby');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(postedRecords(routes)).toHaveLength(0);
+    expect(logged('skyline_invaders.level.countdown_cancelled')).toHaveLength(1);
+  });
+
+  it('offers no Exit when the host gave no way to close', async () => {
+    await mount();
+    expect(screen.queryByRole('button', { name: /^Exit/ })).toBeNull();
+    await keyDown('Escape');
+    expect(phase()).toBe('lobby');
   });
 });

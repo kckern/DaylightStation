@@ -4,7 +4,7 @@ schema: skyline-invaders-level/v1
 id: invaders-1-4
 name: Bomber Run
 duration_s: 240
-pass: { kills: 30, base_hp_min: 30 }
+pass: { kills: 28, base_hp_min: 0 }
 cannons: 1
 max_bombers: 1
 nuke: { radius: 160, damage: 3 }

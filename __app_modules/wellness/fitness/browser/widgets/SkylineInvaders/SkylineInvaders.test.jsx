@@ -30,7 +30,7 @@ vi.mock('../../lib/useGamepadKeys.js', () => ({ useGamepadKeys: () => {} }));
 import SkylineInvaders from './SkylineInvaders.jsx';
 import { manifest } from './index.jsx';
 import { xToAim } from '../../lib/skylineInvaders/threats.js';
-import { TEST_CALIBRATION, flush, installFrames, makeCtx, pose, poseForAim, postedRecords, routeFetch, testLevel, zoneProfile } from './invadersTestKit.js';
+import { flush, installFrames, makeCtx, poseForAim, postedRecords, routeFetch, testLevel, wiperPose } from './invadersTestKit.js';
 
 let routes;
 let f;
@@ -67,15 +67,15 @@ async function startRound(name = /^Start/) {
 }
 // Point at the first meteor on screen, step on the mat, and wait for the shot to land.
 async function shootFirstMeteor() {
-  await act(async () => { h.bridge.tracker.setCalibration(TEST_CALIBRATION); });
   await f.frames(2);
   const meteor = document.querySelector('[data-threat="meteor"]');
   expect(meteor, 'a meteor should be on screen').not.toBeNull();
   const aim = xToAim(Number(meteor.getAttribute('data-x')));
   for (let i = 0; i < 6; i += 1) { await feed(poseForAim(aim)); await f.frames(1); }
   await step();
-  await f.seconds(1);
-  expect(kills()).toBe('1 ✓');
+  await f.seconds(1.2);
+  // One step fuels a stream: it takes the meteor aimed at, and any other that crosses that lane.
+  expect(kills()).toMatch(/^[1-9] ✓$/);
 }
 
 beforeEach(() => {
@@ -151,25 +151,26 @@ describe('SkylineInvaders — levels and the frame loop', () => {
     expect(h.ctx.setGovernanceSuspended).toHaveBeenCalledWith(true);
   });
 
-  it('turns one mat step into exactly one shot, and ignores other mats and stomps', async () => {
+  it('turns a mat step into fuel for the stream, and ignores other mats', async () => {
     await mount();
     await startRound();
+    await step('mat-other');
+    await f.frames(1);
+    expect(document.querySelectorAll('[data-shot]')).toHaveLength(0);
     await step();
     await f.frames(1);
     expect(document.querySelectorAll('[data-shot]')).toHaveLength(1);
-    await step('mat-other');
-    await step('mat-a1', 'pressure-mat:stomp');
-    await f.frames(1);
-    expect(document.querySelectorAll('[data-shot]')).toHaveLength(1);
+    expect(screen.getByTestId('invaders-fuel').getAttribute('data-empty')).toBe('false');
   });
 
   it('logs a frame that throws and keeps drawing', async () => {
     await mount();
     await startRound();
-    const good = h.ctx.state.profile;
-    h.ctx.state.profile = () => { h.ctx.state.profile = good; throw new Error('profile exploded'); };
-    await f.frames(1);
-    expect(h.log.sampled.mock.calls.filter(([name]) => name === 'skyline_invaders.frame.error')[0][1]).toMatchObject({ error: 'profile exploded', levelId: 'invaders-test' });
+    const good = h.ctx.fitnessSessionInstance.getEquipmentCadence;
+    h.ctx.fitnessSessionInstance.getEquipmentCadence = () => { h.ctx.fitnessSessionInstance.getEquipmentCadence = good; throw new Error('cadence exploded'); };
+    h.ctx.riders.bike = 'test-rider';
+    await f.frames(2);
+    expect(h.log.sampled.mock.calls.filter(([name]) => name === 'skyline_invaders.frame.error')[0][1]).toMatchObject({ error: 'cadence exploded', levelId: 'invaders-test' });
     const before = screen.getByTestId('invaders-time').textContent;
     await f.seconds(2);
     expect(screen.getByTestId('invaders-time').textContent).not.toBe(before);
@@ -184,11 +185,11 @@ describe('SkylineInvaders — levels and the frame loop', () => {
   });
 });
 
-describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
-  it('notes that the vision engine is loading without blocking Start', async () => {
+describe('SkylineInvaders — lobby, controls, pose and lifecycle', () => {
+  it('notes that the camera is starting without blocking Start', async () => {
     await mount();
     await status('loading');
-    expect(screen.getByText(/Vision engine loading/)).toBeTruthy();
+    expect(screen.getByText(/Camera starting/)).toBeTruthy();
     expect(button(/^Start/).disabled).toBe(false);
   });
 
@@ -200,35 +201,39 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
     expect(screen.getByTestId('invaders-shooter').textContent).toContain('Kid');
   });
 
-  it('calibrates from the lobby and then starts the round in pose mode', async () => {
-    await mount();
+  it('plays the gesture saved with the rider\'s progress, in pose mode, and logs it with the round', async () => {
+    await mount({ controls: { gesture: 'twist' } });
     await status('detecting');
-    await press(/Calibrate/);
-    expect(screen.getByTestId('skyline-invaders-calibration')).toBeTruthy();
-    const hold = async (p, ms) => { for (let t = 0; t < ms; t += 100) { await feed(p); await f.frames(1); } };
-    await hold(pose(0, { wristY: 900, score: 0.9 }), 1300);   // standing, hands out of frame
-    await hold(pose(140), 1100);                              // both hands to the player's left
-    await hold(pose(-140), 1100);
-    expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
-    expect(h.bridge.tracker.calibration()).toMatchObject({ left: expect.any(Number), right: expect.any(Number) });
-    await feed(pose(0));
+    expect(h.bridge.tracker.gesture()).toBe('twist');
+    expect(logged('skyline_invaders.world.loaded', 'debug')[0]).toMatchObject({ riderId: 'kid', gesture: 'twist' });
+    await feed(wiperPose(0));
     await startRound();
-    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'pose' });
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'pose', gesture: 'twist', gestureChosen: true });
+    await f.seconds(30.5);
+    await flush();
+    expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ gesture: 'twist' });
+    expect(postedRecords(routes)[0].run.gesture).toBe('twist');
   });
 
-  it('skipping calibration returns to the lobby with gamepad aim', async () => {
+  it('opens the controls intro for a rider with none saved, and closing it returns to the lobby on the default gesture', async () => {
     await mount();
     await status('detecting');
-    await press(/Calibrate/);
-    await press(/Skip/);
+    await press(/Pick your controls/);
+    expect(screen.getByTestId('skyline-invaders-controls')).toBeTruthy();
+    expect(logged('skyline_invaders.controls.opened')[0]).toMatchObject({ shooterId: 'kid', current: null, first: true });
+    await press(/^Next/);
+    expect(h.bridge.tracker.gesture()).toBe('twist');
+    await press(/^Not now/);
     expect(screen.getByTestId('skyline-invaders-lobby')).toBeTruthy();
-    expect(h.bridge.tracker.calibration()).toBeNull();
+    expect(h.bridge.tracker.gesture()).toBe('wiper');
+    expect(routes.controls).not.toHaveBeenCalled();
+    expect(logged('skyline_invaders.controls.closed')).toHaveLength(1);
   });
 
   it('plays with gamepad aim when the camera is denied, and says so in the HUD', async () => {
     await mount();
     await status('camera-denied', { error: 'Permission denied' });
-    expect(screen.queryByRole('button', { name: /Calibrate/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /controls/ })).toBeNull();
     await startRound();
     expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Camera off — aim with the gamepad');
   });
@@ -295,10 +300,9 @@ describe('SkylineInvaders — lobby, calibration, pose and lifecycle', () => {
 
   it('logs pose acquired and lost as the tracker changes', async () => {
     await mount();
-    await act(async () => { h.bridge.tracker.setCalibration(TEST_CALIBRATION); });
-    await feed(pose(0));
+    await feed(wiperPose(0));
     expect(logged('skyline_invaders.pose.acquired')).toHaveLength(1);
-    await f.seconds(0.7);
+    await f.seconds(1);
     await feed(null);
     expect(logged('skyline_invaders.pose.lost')).toHaveLength(1);
   });
@@ -332,7 +336,8 @@ describe('SkylineInvaders — finishing a round', () => {
     expect(screen.getByTestId('skyline-invaders-result').textContent).toContain('Skyline held!');
     const records = postedRecords(routes);
     expect(records).toHaveLength(1);
-    expect(records[0].run).toMatchObject({ status: 'completed', level_id: 'invaders-test', fitness_session_id: 'fs-test', mat_equipment_id: 'step-mat', kills: 1 });
+    expect(records[0].run).toMatchObject({ status: 'completed', level_id: 'invaders-test', fitness_session_id: 'fs-test', mat_equipment_id: 'step-mat', steps: 1 });
+    expect(records[0].run.kills).toBeGreaterThanOrEqual(1);
     expect(records[0].rider.user_id).toBe('kid');
     expect(announced).not.toHaveBeenCalled();
     expect(h.ctx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
@@ -389,7 +394,7 @@ describe('SkylineInvaders — finishing a round', () => {
     await flush();
     expect(screen.getByRole('alert').textContent).toMatch(/not saved/i);
     expect(logged('skyline_invaders.round.save_error', 'error')).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: /Replay|Play again|Levels/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Replay|Play again|Levels|Exit/ })).toBeNull();
     expect(h.ctx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
     await press(/Retry save/);
     await flush();
@@ -426,7 +431,7 @@ describe('SkylineInvaders — finishing a round', () => {
     await flush();
     const result = within(screen.getByTestId('skyline-invaders-result'));
     expect(result.getByLabelText(/of 3 stars/)).toBeTruthy();
-    for (const label of ['Shot down', 'Score', 'Best combo', 'Skyline']) expect(result.getByText(label)).toBeTruthy();
+    for (const label of ['Shot down', 'Score', 'Best streak', 'Skyline']) expect(result.getByText(label)).toBeTruthy();
   });
 });
 

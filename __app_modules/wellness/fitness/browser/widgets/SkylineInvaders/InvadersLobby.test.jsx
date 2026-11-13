@@ -25,7 +25,7 @@ function renderLobby(over = {}) {
     levels, world, chosenLevelId: null, onChooseLevel: vi.fn(), onRequestUnlock: vi.fn(),
     shooter: { id: 'kid', name: 'Kid' }, candidates: [{ id: 'kid', name: 'Kid' }, { id: 'test-rider', name: 'Test Rider' }], onPickShooter: vi.fn(),
     mat: { equipmentId: 'step-mat', matId: 'mat-a1' }, partner: null,
-    poseStatus: DETECTING, calibrated: true, onCalibrate: vi.fn(),
+    poseStatus: DETECTING, controls: { gesture: 'wiper' }, onPickControls: vi.fn(),
     access: { unlocked: true, state: 'complete' }, onRequestAdmin: vi.fn(), onStart: vi.fn(),
     ...over,
   };
@@ -100,27 +100,77 @@ describe('InvadersLobby', () => {
     expect(props.onStart).not.toHaveBeenCalled();
   });
 
-  it('leads with Calibrate for an uncalibrated pose player and keeps gamepad start as the second action', () => {
-    const { props } = renderLobby({ calibrated: false });
-    fireEvent.click(screen.getByRole('button', { name: /Calibrate/ }));
-    expect(props.onCalibrate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: /Start with gamepad aim/ }));
-    expect(props.onStart).toHaveBeenCalledTimes(1);
+  it('sends a shooter who has not picked their controls to the intro before they can start', () => {
+    const { props } = renderLobby({ controls: null });
+    expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
+    const pick = screen.getByRole('button', { name: /Pick your controls/ });
+    expect(pick.classList.contains('is-primary')).toBe(true);
+    fireEvent.click(pick);
+    key('Enter');
+    expect(props.onPickControls).toHaveBeenCalledTimes(2);
+    expect(props.onStart).not.toHaveBeenCalled();
   });
 
-  it('does not block on a loading camera: Start works and the note says the vision engine is loading', () => {
-    const { props } = renderLobby({ calibrated: false, poseStatus: { state: 'loading' } });
-    expect(screen.getByText(/Vision engine loading/)).toBeTruthy();
+  it('a shooter with saved controls goes straight to Start, with Change controls beside it', () => {
+    const { props } = renderLobby({ controls: { gesture: 'twist' } });
+    expect(screen.getByRole('button', { name: /^Start/ }).classList.contains('is-primary')).toBe(true);
+    expect(screen.getByTestId('invaders-controls-chosen').textContent).toBe('ControlsTwist');
+    const change = screen.getByRole('button', { name: /Change controls/ });
+    expect(change.textContent).toContain('Twist');
+    fireEvent.click(change);
+    expect(props.onPickControls).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a saved gesture the game no longer has', () => {
+    renderLobby({ controls: { gesture: 'offset' } });
+    expect(screen.getByRole('button', { name: /Pick your controls/ })).toBeTruthy();
+  });
+
+  it('does not block on a loading camera: Start works on gamepad aim and the note says the camera is starting', () => {
+    const { props } = renderLobby({ controls: null, poseStatus: { state: 'loading' } });
+    expect(screen.getByText(/Camera starting/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^Start/ }));
     expect(props.onStart).toHaveBeenCalledTimes(1);
   });
 
-  it('says how to aim when the camera is unavailable, and starts without calibration', () => {
-    const { props } = renderLobby({ calibrated: false, poseStatus: { state: 'camera-denied' } });
+  it('says how to aim when the camera is unavailable, and starts without any controls picked', () => {
+    const { props } = renderLobby({ controls: null, poseStatus: { state: 'camera-denied' } });
     expect(screen.getByText(/Camera off/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Calibrate/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /controls/ })).toBeNull();
     key('Enter');
     expect(props.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('says whether the camera can see the shooter', () => {
+    vi.useFakeTimers();
+    let body = false;
+    renderLobby({ tracker: { presence: () => ({ body, wide: null }) } });
+    expect(screen.getByTestId('invaders-camera-note').textContent).toBe('Stand on the mat where the camera can see you');
+    body = true;
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByTestId('invaders-camera-note').textContent).toBe('The camera can see you');
+  });
+
+  it('has an Exit button, and Escape leaves the game', () => {
+    const onExit = vi.fn();
+    renderLobby({ onExit });
+    fireEvent.click(screen.getByRole('button', { name: /^Exit/ }));
+    expect(onExit).toHaveBeenLastCalledWith('button');
+    key('Escape');
+    expect(onExit).toHaveBeenLastCalledWith('back');
+    expect(screen.getByText(/Escape or B leaves the game/)).toBeTruthy();
+  });
+
+  it('Escape closes the shooter picker before it leaves the game, and there is no Exit without a way out', () => {
+    const onExit = vi.fn();
+    const first = renderLobby({ onExit });
+    fireEvent.click(screen.getByRole('button', { name: 'Change shooter' }));
+    key('Escape');
+    expect(onExit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: 'Who is shooting?' })).toBeNull();
+    first.unmount();
+    renderLobby();
+    expect(screen.queryByRole('button', { name: /^Exit/ })).toBeNull();
   });
 
   it('presses the primary action with Enter or any foot-pad letter, and moves the level with the arrows among open levels', () => {
@@ -150,11 +200,11 @@ describe('InvadersLobby', () => {
   });
 
   it('moves between the actions with up and down', () => {
-    const { props } = renderLobby({ calibrated: false });
+    const { props } = renderLobby();
     key('ArrowDown');
     key('Enter');
-    expect(props.onStart).toHaveBeenCalledTimes(1);
-    expect(props.onCalibrate).not.toHaveBeenCalled();
+    expect(props.onPickControls).toHaveBeenCalledTimes(1);
+    expect(props.onStart).not.toHaveBeenCalled();
   });
 
   it('notes a missing step mat and still lets the shooter be picked', () => {
@@ -166,9 +216,9 @@ describe('InvadersLobby', () => {
 
   it('only tells the players to do what they can do: arms and mat, or gamepad and keys', () => {
     const first = renderLobby();
-    expect(screen.getByTestId('invaders-howto').textContent).toBe('Point both arms to aim. Step onto the mat to fire.');
+    expect(screen.getByTestId('invaders-howto').textContent).toBe('Elbows in, hands up. Tilt your forearms left and right like wipers. Step on the mat to fire, and keep stepping to keep firing.');
     first.unmount();
-    renderLobby({ mat: null, calibrated: false, poseStatus: { state: 'camera-denied' } });
+    renderLobby({ mat: null, controls: null, poseStatus: { state: 'camera-denied' } });
     expect(screen.getByTestId('invaders-howto').textContent).toBe('Aim with the gamepad stick or the arrow keys. Press A or Space to fire.');
   });
 
@@ -183,7 +233,7 @@ describe('InvadersLobby', () => {
   it('starts hands-free when both arms are held out to the sides', () => {
     vi.useFakeTimers();
     let wide = false;
-    const tracker = { presence: () => ({ body: true, offset: null, wide }) };
+    const tracker = { presence: () => ({ body: true, wide }) };
     const { props } = renderLobby({ tracker });
     act(() => vi.advanceTimersByTime(300));
     wide = true;

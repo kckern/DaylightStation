@@ -1,45 +1,67 @@
 import { useEffect, useMemo, useRef } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
-import { DEFAULT_AIM_CONFIG, KP, armsWide, computeAim, createAimHistory, createAimSmoother } from '../../lib/skylineInvaders/aim.js';
+import { KP, createAimSmoother } from '../../lib/skylineInvaders/aim.js';
+import { GESTURE_INFO, gestureConfig, isGesture, readGestures } from '../../lib/skylineInvaders/gestures.js';
+import { LANES, laneAim, laneOfAim, snapLane } from '../../lib/skylineInvaders/lanes.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 
-const SMOOTHER_TAU_MS = 120;
-const HISTORY_MS = 1500;
+const MAX_POSE_GAP_MS = 250;   // drag and push integrate over pose frames; a stall is not a long push
 const clamp01 = (value) => Math.min(1, Math.max(0, value));
 
 /**
  * The aim state for one game, with no React in it. Poses arrive through
  * `processPoses` (registered as a PoseContext move detector by
  * InvadersPoseBridge) at the pose rate, about 13 Hz on the garage box; the
- * frame loop reads `sample()` and the fire hook reads `latched(pressAt)`.
+ * frame loop reads `sample()`.
  *
- * `now` and the press timestamps passed to `latched` must share one clock
- * (epoch ms: app events carry Date.now()).
+ * Three things live here:
+ * - the raw aim (0..1), from the active gesture (gestures.js), the stick, or
+ *   the lost-pose drift. How a gesture moves it depends on its kind: an `aim`
+ *   gesture sets it (through the one smoothing filter), `velocity` (drag)
+ *   and `impulse` (push) carry it along, and `hop` moves the lane itself;
+ * - the cannon's lane, snapped from the raw aim with hysteresis (lanes.js).
+ *   `sample().x` is the centre of that lane: where the cannon is drawn and
+ *   where every shot leaves from;
+ * - whether the player is lost: no torso (both shoulders) for
+ *   `poseLostAfterMs`. Arms that drop or cannot be read only HOLD the aim.
+ *
+ * There is no calibration: every gesture has a fixed gain.
  */
-export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Date.now() } = {}) {
-  const smoother = createAimSmoother({ tauMs: SMOOTHER_TAU_MS });
-  const armSmoothers = [createAimSmoother({ tauMs: SMOOTHER_TAU_MS }), createAimSmoother({ tauMs: SMOOTHER_TAU_MS })];
-  const history = createAimHistory({ horizonMs: HISTORY_MS });
+export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Date.now(), gesture = tunables.defaultGesture } = {}) {
+  const config = gestureConfig(tunables);
+  const smoother = createAimSmoother({ tauMs: tunables.aimSmoothingMs });
+  const armSmoothers = [createAimSmoother({ tauMs: tunables.aimSmoothingMs }), createAimSmoother({ tauMs: tunables.aimSmoothingMs })];
   const listeners = new Set();
-  let config = { ...DEFAULT_AIM_CONFIG, minScore: tunables.keypointMinScore };
-  let calibration = null;
-  let current = { x: 0.5, perArm: [null, null], armsUp: false, armsUpSince: null };
-  let lastSeenAt = null;
+  const snap = (aim, lane) => snapLane(aim, lane, { hysteresis: tunables.laneHysteresis });
+  let active = isGesture(gesture) ? gesture : tunables.defaultGesture;
+  let memory = null;          // what the stateful gestures (offset, push, hop) remember between frames
+  let glide = 0;              // push: the cannon's speed, screens per second
+  let raw = 0.5;
+  let lane = laneOfAim(raw);
+  let armLanes = [null, null];
+  let armsUp = false;
+  let armsUpSince = null;
+  let lastPoseAt = null;
+  let lastBodyAt = null;
+  let everSeen = false;
   let lost = true;
-  let offset = null;
-  let seen = null;   // the last pose as the lobby reads it: { at, body, offset, wide }
+  let freezeUntil = 0;
+  let seen = null;            // the last pose as the lobby reads it: { at, body, wide }
+  let frame = null;           // the last pose and every gesture's reading of it, for the trace recorder
   const emit = (event) => listeners.forEach((listener) => listener(event));
   const resetSmoothing = () => { smoother.reset(); armSmoothers.forEach((arm) => arm.reset()); };
-  const record = (at) => history.push({ t: at, ...current });
 
-  // Loss is judged by time since the last usable arm, both when a poor frame
-  // arrives and when the frame loop asks: a stalled camera sends no frames.
+  // Loss is judged by time since the torso was last seen, both when a poor
+  // frame arrives and when the frame loop asks: a stalled camera sends no frames.
   const checkLost = (at) => {
-    if (lost || lastSeenAt === null || at - lastSeenAt <= tunables.poseLostAfterMs) return;
+    if (lost || lastBodyAt === null || at - lastBodyAt <= tunables.poseLostAfterMs) return;
     lost = true;
     resetSmoothing();
-    current = { ...current, armsUp: false, armsUpSince: null };   // the aim is held, the bonus posture is not
-    record(at);
+    memory = null;
+    glide = 0;
+    armsUp = false;            // the aim is held, the bonus posture is not
+    armsUpSince = null;
+    armLanes = [null, null];
     emit('lost');
   };
 
@@ -47,85 +69,111 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
     // PoseContext stores a truthy return as a move event: return nothing.
     processPoses(poses) {
       const at = now();
-      const read = computeAim(poses?.[0] || null, config);
-      // The uncalibrated torso offset (shoulder widths): what the lobby captures.
-      if (!read.lost) offset = read.offset;
-      const scored = (index) => (poses?.[0]?.keypoints?.[index]?.score ?? 0) >= config.minScore;
-      seen = {
-        at,
-        body: scored(KP.nose) && scored(KP.leftShoulder) && scored(KP.rightShoulder),
-        offset: read.lost ? null : read.offset,
-        wide: armsWide(read),
-      };
-      if (calibration && !read.lost) {
-        current = {
-          x: smoother.push(read.aimX, at),
-          perArm: read.perArm.map((value, index) => (value === null ? null : armSmoothers[index].push(value, at))),
-          armsUp: read.armsUp,
-          armsUpSince: read.armsUp ? (current.armsUpSince ?? at) : null,
-        };
-        lastSeenAt = at;
-        record(at);
-        if (lost) { lost = false; emit('acquired'); }
-        return;
+      const pose = poses?.[0] || null;
+      const prevArmLanes = armLanes;
+      const dtMs = lastPoseAt === null ? 0 : Math.min(MAX_POSE_GAP_MS, Math.max(0, at - lastPoseAt));
+      lastPoseAt = at;
+      const signals = readGestures(pose, memory, at, config);
+      memory = signals.memory;
+      frame = { at, pose, signals };
+      const scored = (index) => (pose?.keypoints?.[index]?.score ?? 0) >= config.minScore;
+      seen = { at, body: signals.body && scored(KP.nose), wide: signals.wide };
+      if (!signals.body) { checkLost(at); return; }
+      lastBodyAt = at;
+      everSeen = true;
+      const signal = signals[active];
+      const kind = GESTURE_INFO[active].kind;
+      armLanes = [null, null];
+      let hopped = false;
+      if (kind === 'aim') {
+        // No usable reading: hold. The filter keeps its value, so the aim picks
+        // up from where it was when the reading comes back.
+        if (signal.aim !== null) raw = smoother.push(signal.aim, at);
+        if (signal.perArm) armLanes = signal.perArm.map((value, index) => (value === null ? null : snap(armSmoothers[index].push(value, at), prevArmLanes[index])));
+      } else if (kind === 'velocity') {
+        // Rate control: the gesture gives a speed, and the aim is where that
+        // speed has carried it. Arms down is speed 0: the cannon stays.
+        raw = clamp01(raw + (signal.velocity * dtMs) / 1000);
+      } else if (kind === 'impulse') {
+        // A stroke drives the cannon; after it the cannon glides on, slowed by
+        // friction, and comes to rest on the centre of a lane.
+        if (signal.stroke) glide = signal.velocity;
+        else glide *= Math.exp(-dtMs / tunables.pushFrictionMs);
+        if (Math.abs(glide) < tunables.pushSettleSpeed) {
+          if (glide !== 0) raw = laneAim(laneOfAim(raw));
+          glide = 0;
+        } else {
+          raw = clamp01(raw + (glide * dtMs) / 1000);
+          if (raw === 0 || raw === 1) glide = 0;
+        }
+      } else if (signal.hop) {
+        // A hop moves the cannon one whole lane, whatever the raw aim was doing.
+        lane = Math.min(LANES - 1, Math.max(0, lane + signal.hop));
+        raw = laneAim(lane);
+        hopped = true;
       }
-      checkLost(at);
-      if (!lost) record(at);
+      // A mat step throws the arms: the lane holds for a moment after one.
+      if (!hopped && at >= freezeUntil) lane = snap(raw, lane);
+      armsUp = signals.armsUp;
+      armsUpSince = armsUp ? (armsUpSince ?? at) : null;
+      if (lost) { lost = false; emit('acquired'); }
     },
-    /** `{ left, right }` in shoulder widths (calibrationFromSamples), or null for manual aim only. */
-    setCalibration(next) {
-      calibration = next || null;
-      config = { ...config, calibration };
+    /** Switch the aim gesture. The cannon stays where it is. */
+    setGesture(next) {
+      if (!isGesture(next) || next === active) return;
+      active = next;
+      memory = null;
+      glide = 0;
       resetSmoothing();
+      armLanes = [null, null];
     },
-    calibration: () => calibration,
-    rawOffset: () => offset,
+    gesture: () => active,
     /**
-     * The player as the lobby and calibration read them, with or without a
-     * calibration: `body` = head and both shoulders in view (wrists may hang
-     * out of frame), `offset` = where the hands point in shoulder widths (null
-     * with no usable arm), `wide` = both arms held out to the sides (the
-     * hands-free "next"; null when it cannot be judged). All empty once the
-     * last pose is older than `poseLostAfterMs`.
+     * The player as the lobby reads them: `body` = head and both shoulders in
+     * view (wrists may hang out of frame), `wide` = both arms held out to the
+     * sides (the hands-free "next"; null when it cannot be judged). Both empty
+     * once the last pose is older than `poseLostAfterMs`.
      */
     presence() {
-      if (!seen || now() - seen.at > tunables.poseLostAfterMs) return { body: false, offset: null, wide: null };
-      return { body: seen.body, offset: seen.offset, wide: seen.wide };
-    },
-    /** The aim right now. `lost` is always true in manual mode (no calibration). */
-    sample() {
-      if (calibration) checkLost(now());
-      return { ...current, lost: calibration ? lost : true, mode: calibration ? 'pose' : 'manual' };
+      if (!seen || now() - seen.at > tunables.poseLostAfterMs) return { body: false, wide: null };
+      return { body: seen.body, wide: seen.wide };
     },
     /**
-     * The aim a mat press at `atMs` fires with: the pose from `aimLatchMs`
-     * earlier, because stepping throws the arms. Arms-up counts only when it
-     * had been held for `armsUpHoldMs` by then. Manual aim is not moved by a
-     * step, so it is used as it stands.
+     * The aim right now. `x` is the centre of the cannon's lane (what the
+     * engine fires from and the scene draws); `raw` is the aim before the
+     * lane snap. `mode` is 'manual' until the camera has seen a torso, and
+     * `lost` is always true then.
      */
-    latched(atMs) {
-      if (!calibration) return { x: current.x, perArm: current.perArm, armsUp: false };
-      const then = atMs - tunables.aimLatchMs;
-      const sample = history.at(then) || current;
-      const held = sample.armsUpSince != null && then - sample.armsUpSince >= tunables.armsUpHoldMs;
-      return { x: sample.x, perArm: sample.perArm, armsUp: !!sample.armsUp && held };
+    sample() {
+      const at = now();
+      if (everSeen) checkLost(at);
+      const held = armsUp && armsUpSince !== null && at - armsUpSince >= tunables.armsUpHoldMs;
+      return {
+        x: laneAim(lane), raw, lane,
+        perArm: armLanes.map((value) => (value === null ? null : laneAim(value))),
+        armsUp: held, lost: everSeen ? lost : true, mode: everSeen ? 'pose' : 'manual', gesture: active,
+      };
     },
-    /** Manual aim (gamepad, keyboard, drift assist). A live pose overrides it on its next frame. */
-    nudge(delta) { current = { ...current, x: clamp01(current.x + delta) }; record(now()); },
-    setAim(x) { current = { ...current, x: clamp01(x) }; record(now()); },
+    /** The last pose and every gesture's reading of it: `{ at, pose, signals }`, or null. For the trace recorder. */
+    frame: () => frame,
+    /** Hold the cannon's lane for `ms` from `at` (a mat step). The raw aim keeps moving. */
+    freezeLane(ms = tunables.stepLaneFreezeMs, at = now()) { if (ms > 0) freezeUntil = Math.max(freezeUntil, at + ms); },
+    /** Manual aim (gamepad, keyboard, drift assist). A live pose overrides it on its next usable frame. */
+    setAim(x) { raw = clamp01(x); lane = snap(raw, lane); glide = 0; },
     /** Hear 'acquired' / 'lost'. Returns the unsubscribe. */
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
 }
 
 /** One stable tracker per mounted game. Never reads PoseContext. */
-export default function useInvadersAim({ tunables = INVADERS_TUNABLES } = {}) {
+export default function useInvadersAim({ tunables = INVADERS_TUNABLES, gesture } = {}) {
   const log = useMemo(() => getLogger().child({ component: 'skyline-invaders-aim' }), []);
   const ref = useRef(null);
-  if (!ref.current) ref.current = createAimTracker({ tunables });
+  if (!ref.current) ref.current = createAimTracker({ tunables, gesture });
   const tracker = ref.current;
   useEffect(() => tracker.subscribe((event) => {
-    log.info(`skyline_invaders.pose.${event}`, { aim: tracker.sample().x });
+    const sample = tracker.sample();
+    log.info(`skyline_invaders.pose.${event}`, { aim: sample.raw, lane: sample.lane, gesture: sample.gesture });
   }), [tracker, log]);
   return tracker;
 }

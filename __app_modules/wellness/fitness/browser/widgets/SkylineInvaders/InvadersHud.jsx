@@ -1,17 +1,18 @@
 import React from 'react';
 import PixelSprite from '../../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
 import { LifeMeter, MomentBanner, ProgressMeter } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
-import { boostRules } from '../../lib/skylineInvaders/rules.js';
+import { GESTURE_INFO } from '../../lib/skylineInvaders/gestures.js';
+import { boostRules, fireRules } from '../../lib/skylineInvaders/rules.js';
+import { WEAPON_STEPS, bombReady, weaponTier } from '../../lib/skylineInvaders/tiers.js';
 import { BOOST_LABELS } from '../../lib/skylineInvaders/invadersEffects.js';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
 import './SkylineInvaders.scss';
 
 // In-round header, read from across the garage. Left: how the city is doing
 // and kills against the pass mark. Centre: the clock, with the score beside
-// it. Right: what the shooter is firing and (with a partner on the bike) the boost. Pure render:
+// it. Right: the weapon ladder with its power meter and fuel gauge, and (with a partner on the bike) the boost. Pure render:
 // no effects, no timers. Every number comes from the engine state.
 
-export const TIER_LABELS = Object.freeze({ small: 'Small', big: 'Big', spread: 'Spread', nuke: 'Nuke' });
 const URGENT_S = 10;
 
 /** Seconds as m:ss, rounded up so the clock reads 0:00 only when time is up. */
@@ -20,37 +21,42 @@ export function formatClock(seconds) {
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
 
-// The shot as it looks in the sky: one thin bolt, one wide bolt, a fan of
-// three, or a warhead inside its blast ring.
-function TierGlyph({ tier }) {
-  return (
-    <svg className="skyline-invaders__tier-glyph" viewBox="0 0 44 32" aria-hidden="true">
-      {tier === 'big' && <rect x="14" y="3" width="16" height="26" />}
-      {tier === 'spread' && (
-        <g strokeWidth="5" stroke="currentColor" strokeLinecap="square">
-          <line x1="22" y1="28" x2="6" y2="6" />
-          <line x1="22" y1="28" x2="22" y2="4" />
-          <line x1="22" y1="28" x2="38" y2="6" />
-        </g>
-      )}
-      {tier === 'nuke' && (
-        <>
-          <circle cx="22" cy="16" r="6" />
-          <circle cx="22" cy="16" r="12.5" fill="none" stroke="currentColor" strokeWidth="3" />
-        </>
-      )}
-      {!['big', 'spread', 'nuke'].includes(tier) && <rect x="19" y="3" width="6" height="26" />}
-    </svg>
-  );
+// What to do about the aim, when there is something to do.
+function aimNote(aimStatus, poseStatus) {
+  const camera = poseStatus?.state;
+  if (camera === 'camera-denied' || camera === 'error') return 'Camera off — aim with the gamepad';
+  if (camera && camera !== 'detecting') return 'Camera starting — aim with the gamepad';
+  if (aimStatus?.lost) return 'Step into view';
+  return null;
 }
 
-function aimNote(aimStatus, poseStatus) {
-  // Manual aim has two causes: no camera, or a player who chose not to calibrate.
-  if (aimStatus?.mode === 'manual') {
-    return ['camera-denied', 'error'].includes(poseStatus?.state) ? 'Camera off — aim with the gamepad' : 'Gamepad aim — stick or arrow keys';
-  }
-  if (aimStatus?.lost && aimStatus?.mode === 'pose') return 'Step into view';
-  return null;
+// The weapon ladder, the power meter that climbs it, and the fuel that fires
+// it. The ladder reads left to right; the lit step is the weapon in hand, and
+// the last step lights when a full meter at the top has a bomb waiting.
+function Weapon({ state, level }) {
+  const rules = fireRules(level);
+  const ready = bombReady(state.weapon);
+  const at = ready ? WEAPON_STEPS.length - 1 : Math.min(WEAPON_STEPS.length - 2, Math.max(0, state.weapon?.level || 0));
+  const power = Math.round(Math.min(1, Math.max(0, state.weapon?.meter || 0)) * 100);
+  const fuel = Math.max(0, state.fuel || 0);
+  const empty = !(fuel > 0);
+  return (
+    <div className="skyline-invaders__hud-weapon" data-testid="invaders-weapon" data-tier={weaponTier(state.weapon)} data-bomb={ready}>
+      <ol className="skyline-invaders__hud-ladder" aria-label={`Weapon: ${WEAPON_STEPS[at]}`}>
+        {WEAPON_STEPS.map((label, index) => (
+          <li key={label} data-step={index} className={index === at ? 'is-current' : index < at ? 'is-done' : undefined}>{label}</li>
+        ))}
+      </ol>
+      <div className="skyline-invaders__hud-gauge skyline-invaders__hud-gauge--power" data-testid="invaders-power" data-full={ready}>
+        <b>{ready ? 'Stomp!' : 'Power'}</b>
+        <ProgressMeter value={power} label={ready ? 'Bomb ready: stomp to drop it' : `Power ${power}%`} />
+      </div>
+      <div className="skyline-invaders__hud-gauge skyline-invaders__hud-gauge--fuel" data-testid="invaders-fuel" data-empty={empty}>
+        <b>{empty ? 'Step!' : 'Fuel'}</b>
+        <ProgressMeter value={fuel} maximum={rules.fuel_cap_s} label={empty ? 'Out of fuel: step on the mat' : `Fuel ${Math.round((100 * fuel) / rules.fuel_cap_s)}%`} />
+      </div>
+    </div>
+  );
 }
 
 function Boost({ state, level }) {
@@ -76,21 +82,21 @@ function Boost({ state, level }) {
  * @param {object} props
  * @param {object} props.state        engine state
  * @param {object} props.level        the validated level being played
- * @param {{tier: string, trusted: boolean}} props.tier   shotTier() result
+ * @param {string} [props.gesture]    the aim gesture in use (gestures.js)
  * @param {{lost: boolean, mode: 'pose'|'manual'}} [props.aimStatus]
  * @param {{state: string}} [props.poseStatus]            pose bridge status
  * @param {{riderId: string}|null} [props.partner]        the rider powering the boost, if any
- * @param {string} [props.shooterName]
  */
-export default function InvadersHud({ state, level, tier, aimStatus = null, poseStatus = null, partner = null, shooterName = '' }) {
+export default function InvadersHud({ state, level, gesture = null, aimStatus = null, poseStatus = null, partner = null }) {
   const remaining = Math.max(0, level.duration_s - state.time);
-  const tierId = TIER_LABELS[tier?.tier] ? tier.tier : 'small';
   const passKills = level.pass?.kills ?? 0;
   const killsPassed = state.kills >= passKills;
   const hp = Math.max(0, Math.ceil(state.base.hp));
   const urgent = remaining <= URGENT_S;
+  const note = aimNote(aimStatus, poseStatus);
+  const controls = GESTURE_INFO[gesture]?.label || null;
   return (
-    <header className="skyline-invaders__hud" data-testid="skyline-invaders-hud" data-pose={poseStatus?.state || undefined} data-urgent={urgent}>
+    <header className="skyline-invaders__hud" data-testid="skyline-invaders-hud" data-pose={poseStatus?.state || undefined} data-urgent={urgent} data-gesture={gesture || undefined}>
       <ProgressMeter className="skyline-invaders__hud-clock" value={remaining} maximum={level.duration_s} label="Time left" />
 
       <div className="skyline-invaders__hud-left">
@@ -112,23 +118,18 @@ export default function InvadersHud({ state, level, tier, aimStatus = null, pose
 
       <div className="skyline-invaders__hud-points">
         <span className="skyline-invaders__hud-score" data-testid="invaders-score" aria-label={`Score ${state.score}`}>{state.score.toLocaleString('en-US')}</span>
-        {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Combo ${state.combo}`}>{`×${state.combo}`}</span>}
+        {state.combo > 1 && <span className="skyline-invaders__hud-combo" data-testid="invaders-combo" aria-label={`Streak ${state.combo}`}>{`×${state.combo}`}</span>}
       </div>
 
       <div className="skyline-invaders__hud-right">
-        <div className="skyline-invaders__hud-tier" data-testid="invaders-tier" data-tier={tierId}>
-          <TierGlyph tier={tierId} />
-          <span className="skyline-invaders__hud-tier-text">
-            {shooterName && <small>{shooterName}</small>}
-            <b>{TIER_LABELS[tierId]}</b>
-          </span>
-        </div>
+        <Weapon state={state} level={level} />
         {partner && <Boost state={state} level={level} />}
       </div>
 
       <div className="skyline-invaders__hud-notes">
-        <MomentBanner text={aimNote(aimStatus, poseStatus)} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
-        <MomentBanner text={tier?.trusted === false ? 'No trusted heart rate — small shots' : null} momentKey="tier" className="skyline-invaders__hud-note skyline-invaders__hud-note--tier" />
+        <MomentBanner text={note} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
+        {/* The controls in use, unless the aim note needs the strip. */}
+        {controls && !note && <span className="skyline-invaders__hud-note skyline-invaders__hud-note--controls" data-testid="invaders-controls">{`Aim: ${controls}`}</span>}
       </div>
     </header>
   );

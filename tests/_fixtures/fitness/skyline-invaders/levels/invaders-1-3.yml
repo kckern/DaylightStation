@@ -1,9 +1,10 @@
-# Level 3: introduces pods (two hits, then they split into two drones).
+# Level 3: introduces pods (two hits, then they split into two drones), and
+# opens all eight lanes.
 schema: skyline-invaders-level/v1
 id: invaders-1-3
 name: Split Decision
 duration_s: 210
-pass: { kills: 26, base_hp_min: 30 }
+pass: { kills: 22, base_hp_min: 0 }
 cannons: 1
 waves:
   - { at: 0, spawn: { meteor: 2, drone: 1 }, rate_s: 4.0 }

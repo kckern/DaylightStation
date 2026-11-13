@@ -46,5 +46,6 @@ export function moveThreat(threat, dt) {
   const x = spec.zigzag
     ? clampX(threat.originX + spec.zigzag.amplitude * Math.sin((2 * Math.PI * age) / spec.zigzag.period_s + threat.phase))
     : threat.x;
-  return { ...threat, x, y: threat.y + spec.fall * dt, age };
+  // A level may slow or speed a threat type: the threat carries its own fall.
+  return { ...threat, x, y: threat.y + (threat.fall ?? spec.fall) * dt, age };
 }

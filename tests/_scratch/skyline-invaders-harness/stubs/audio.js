@@ -1,0 +1,15 @@
+// Harness-only stand-in for the Skyline audio engine: no AudioContext, no
+// sound. The screenshot runs must be silent on whatever machine runs them.
+window.__si = window.__si || {};
+window.__si.cues = [];
+export const SKYLINE_SOUND_SLOTS = Object.freeze(['laser', 'missile', 'hit', 'target', 'explosion', 'crash', 'hurt', 'deny', 'boost', 'finish', 'music']);
+export function createSkylineAudio() {
+  return {
+    loadSounds: async () => ({ loaded: [], missing: [] }),
+    prime: async () => true,
+    playCue: (cue) => { window.__si.cues.push(cue); return true; },
+    setMuted: () => {},
+    stop: () => {},
+  };
+}
+export default { createSkylineAudio };

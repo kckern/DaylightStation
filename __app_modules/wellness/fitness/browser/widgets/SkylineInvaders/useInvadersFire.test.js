@@ -15,122 +15,111 @@ const bus = () => {
     has: (type) => listeners.has(type),
   };
 };
-const tracker = (over = {}) => ({ latched: vi.fn((at) => ({ x: 0.25, perArm: [0.2, 0.8], armsUp: true, at })), sample: () => ({ x: 0.9, perArm: [null, null], armsUp: false }), ...over });
+const tracker = () => ({ freezeLane: vi.fn() });
+const pad = (pressed = []) => ({ index: 0, id: 'test-pad', buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+function frames() {
+  let queue = [];
+  vi.stubGlobal('requestAnimationFrame', (cb) => { queue.push(cb); return queue.length; });
+  vi.stubGlobal('cancelAnimationFrame', () => { queue = []; });
+  return () => act(() => { const due = queue; queue = []; due.forEach((cb) => cb(0)); });
+}
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe('useInvadersFire', () => {
-  it('queues one shot per step on the shooter mat, with the latched aim and the press time', () => {
-    const b = bus(); const aim = tracker(); const onFire = vi.fn();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: aim, getTier: () => 'big', onFire }));
+  it('queues a step from the shooter mat with its press time, and holds the cannon lane for the throw', () => {
+    const b = bus(); const aim = tracker(); const onPress = vi.fn();
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: aim, onPress }));
     act(() => { b.emit('pressure-mat:step', 'mat-a1', 5000); });
-    expect(aim.latched).toHaveBeenCalledWith(5000);
-    expect(result.current()).toEqual([{ aim: 0.25, tier: 'big', armsUp: true, source: 'mat', at: 5000 }]);
-    expect(result.current()).toEqual([]);
-    expect(onFire).toHaveBeenCalledWith(expect.objectContaining({ source: 'mat', matId: 'mat-a1' }));
+    expect(aim.freezeLane).toHaveBeenCalledWith(undefined, 5000);
+    expect(result.current()).toEqual({ steps: [{ source: 'mat', at: 5000 }], stomps: [] });
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
+    expect(onPress).toHaveBeenCalledWith({ kind: 'step', source: 'mat', at: 5000, matId: 'mat-a1' });
+  });
+  it('queues a stomp from the shooter mat as a stomp, not a step', () => {
+    const b = bus();
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }));
+    act(() => { b.emit('pressure-mat:stomp', 'mat-a1', 6000); });
+    expect(result.current()).toEqual({ steps: [], stomps: [{ source: 'mat', at: 6000 }] });
   });
   it('keeps presses in order until the frame loop drains them', () => {
     const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }));
     act(() => { b.emit('pressure-mat:step', 'mat-a1', 5000); b.emit('pressure-mat:step', 'mat-a1', 6000); });
-    expect(result.current().map((shot) => shot.at)).toEqual([5000, 6000]);
+    expect(result.current().steps.map((press) => press.at)).toEqual([5000, 6000]);
   });
-  it('ignores other mats, and never listens to stomps', () => {
+  it('ignores steps and stomps from other mats', () => {
     const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
-    act(() => { b.emit('pressure-mat:step', 'mat-b2'); });
-    expect(result.current()).toEqual([]);
-    expect(b.has('pressure-mat:stomp')).toBe(false);
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }));
+    act(() => { b.emit('pressure-mat:step', 'mat-b2'); b.emit('pressure-mat:stomp', 'mat-b2'); });
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
+    expect(mockLog.sampled).toHaveBeenCalledWith('skyline_invaders.fire.other_mat', { from: 'mat-b2', matId: 'mat-a1' }, expect.any(Object));
   });
   it('matches the mat by the event source when the payload has no id, whatever the id type', () => {
     const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: '7', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: '7', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }));
     act(() => { b.raw('pressure-mat:step', { type: 'pressure-mat:step', payload: { event: 'pressed' }, source: 7, timestamp: 5000 }); });
-    expect(result.current()).toHaveLength(1);
+    expect(result.current().steps).toHaveLength(1);
   });
-  it('gives two aims on a two-cannon level', () => {
-    const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', cannons: 2, subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
-    act(() => { b.emit('pressure-mat:step', 'mat-a1'); });
-    expect(result.current()[0].aim).toEqual([0.2, 0.8]);
+  it('says so when there is no mat to listen to', () => {
+    renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: bus().subscribeToAppEvent, tracker: tracker() }));
+    expect(mockLog.warn).toHaveBeenCalledWith('skyline_invaders.fire.no_mat', { matId: null, hasEventBus: true });
   });
-  it('fires both cannons from the one aim when an arm is not visible', () => {
-    const b = bus();
-    const aim = tracker({ latched: () => ({ x: 0.25, perArm: [0.2, null], armsUp: false }) });
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', cannons: 2, subscribeToAppEvent: b.subscribeToAppEvent, tracker: aim, getTier: () => 'small' }));
-    act(() => { b.emit('pressure-mat:step', 'mat-a1'); });
-    expect(result.current()[0].aim).toBe(0.25);
-  });
-  it('fires from the keyboard with the current aim, not on repeat, not while typing', () => {
-    const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
-    const input = document.createElement('input');
-    document.body.appendChild(input);
+  it('adds fuel from Space or F and drops a bomb from B, not on repeat, not while typing, and does not freeze the lane', () => {
+    const aim = tracker();
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: aim }));
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
       window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b' }));
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x' }));
     });
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); });
     input.remove();
-    expect(result.current()).toEqual([expect.objectContaining({ aim: 0.9, source: 'keyboard' })]);
+    const presses = result.current();
+    expect(presses.steps.map((press) => press.source)).toEqual(['keyboard', 'keyboard']);
+    expect(presses.stomps.map((press) => press.source)).toEqual(['keyboard']);
+    expect(aim.freezeLane).not.toHaveBeenCalled();
   });
-  it('keeps Space from pressing a focused button', () => {
-    renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: bus().subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
-    const button = document.createElement('button');
-    document.body.appendChild(button);
-    button.focus();
-    const down = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
-    const up = new KeyboardEvent('keyup', { key: ' ', bubbles: true, cancelable: true });
-    act(() => { button.dispatchEvent(down); button.dispatchEvent(up); });
-    expect(down.defaultPrevented).toBe(true);
-    expect(up.defaultPrevented).toBe(true);
-    expect(document.activeElement).not.toBe(button);
-    button.remove();
+  it('adds fuel from gamepad A or RT and drops a bomb from X or Y, on the button edge', () => {
+    const run = frames();
+    let buttons = [];
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker(), getGamepads: () => [pad(buttons)] }));
+    run();                      // first poll: nothing held
+    buttons = [0]; run(); run();  // A down, held for two polls
+    buttons = []; run();
+    buttons = [2]; run();
+    buttons = []; run();
+    buttons = [7, 3]; run();
+    const presses = result.current();
+    expect(presses.steps).toHaveLength(2);
+    expect(presses.stomps).toHaveLength(2);
+    expect(presses.steps[0].source).toBe('gamepad');
   });
-  it('fires from a gamepad button edge', () => {
-    let pressed = false;
-    const frames = [];
-    vi.stubGlobal('requestAnimationFrame', (cb) => { frames.push(cb); return frames.length; });
-    vi.stubGlobal('cancelAnimationFrame', () => {});
-    const getGamepads = () => [{ index: 0, id: 'pad', buttons: [{ pressed, value: pressed ? 1 : 0 }] }];
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: bus().subscribeToAppEvent, tracker: tracker(), getTier: () => 'small', getGamepads }));
-    act(() => { frames.shift()(); });       // primes: held state recorded, nothing fired
-    pressed = true;
-    act(() => { frames.shift()(); });
-    act(() => { frames.shift()(); });       // still held: no second shot
-    expect(result.current()).toEqual([expect.objectContaining({ source: 'gamepad' })]);
-  });
-  it('a button already held when polling starts does not fire', () => {
-    const frames = [];
-    vi.stubGlobal('requestAnimationFrame', (cb) => { frames.push(cb); return frames.length; });
-    vi.stubGlobal('cancelAnimationFrame', () => {});
-    const getGamepads = () => [{ index: 0, id: 'pad', buttons: [{ pressed: true, value: 1 }] }];
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, subscribeToAppEvent: bus().subscribeToAppEvent, tracker: tracker(), getTier: () => 'small', getGamepads }));
-    act(() => { frames.shift()(); });
-    act(() => { frames.shift()(); });
-    expect(result.current()).toEqual([]);
+  it('a button already held when polling starts does not count', () => {
+    const run = frames();
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: null, tracker: tracker(), getGamepads: () => [pad([0, 2])] }));
+    run(); run();
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
   });
   it('drops everything and unsubscribes when disabled', () => {
     const b = bus();
-    const { result, rerender } = renderHook(({ enabled }) => useInvadersFire({ enabled, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }), { initialProps: { enabled: true } });
+    const { result, rerender } = renderHook(({ enabled }) => useInvadersFire({ enabled, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }), { initialProps: { enabled: true } });
     act(() => { b.emit('pressure-mat:step', 'mat-a1'); });
     rerender({ enabled: false });
-    expect(result.current()).toEqual([]);
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
     expect(b.has('pressure-mat:step')).toBe(false);
+    expect(b.has('pressure-mat:stomp')).toBe(false);
   });
   it('clear() drops queued presses (pause)', () => {
     const b = bus();
-    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }));
-    act(() => { b.emit('pressure-mat:step', 'mat-a1'); });
+    const { result } = renderHook(() => useInvadersFire({ enabled: true, matId: 'mat-a1', subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker() }));
+    act(() => { b.emit('pressure-mat:step', 'mat-a1'); b.emit('pressure-mat:stomp', 'mat-a1'); });
     result.current.clear();
-    expect(result.current()).toEqual([]);
-  });
-  it('logs what it is listening to, and warns when there is no mat to fire from', () => {
-    const b = bus();
-    const { rerender } = renderHook(({ matId }) => useInvadersFire({ enabled: true, matId, subscribeToAppEvent: b.subscribeToAppEvent, tracker: tracker(), getTier: () => 'small' }), { initialProps: { matId: 'mat-a1' } });
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_invaders.fire.armed', expect.objectContaining({ matId: 'mat-a1' }));
-    rerender({ matId: null });
-    expect(mockLog.warn).toHaveBeenCalledWith('skyline_invaders.fire.no_mat', expect.any(Object));
+    expect(result.current()).toEqual({ steps: [], stomps: [] });
   });
 });

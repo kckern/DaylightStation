@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildSkylineInvadersRun } from './runResult.js';
 
 const level = { id: 'invaders-1-1', pass: { kills: 10, base_hp_min: 50 } };
-const state = { time: 180, kills: 12, score: 340, bestCombo: 6, shotsFired: 40, hits: 14, nukes: 1, base: { hp: 80, maxHp: 100 }, boost: { used: 2 } };
+const state = { time: 180, kills: 12, score: 340, bestCombo: 6, shotsFired: 40, hits: 14, bombs: 1, steps: 22, firingS: 31.337, weapon: { peak: 2 }, base: { hp: 80, maxHp: 100 }, boost: { used: 2 } };
 const args = (over = {}) => ({ runId: 'run-1', level, riderId: 'kid', partnerId: 'dad', fitnessSessionId: 'fs-1', matEquipmentId: 'step-mat', startedAt: '2026-11-11T17:00:00.000Z', endedAt: '2026-11-11T17:03:00.000Z', state, ended: true, ...over });
 
 // The values gaming-result/v1 allows (__capabilities/gaming/portable/experience/result.mjs).
@@ -14,7 +14,7 @@ describe('buildSkylineInvadersRun', () => {
     const record = buildSkylineInvadersRun(args());
     expect(record).toMatchObject({
       schema: 'skyline-invaders-run/v1',
-      run: { id: 'run-1', level_id: 'invaders-1-1', status: 'completed', started_at: '2026-11-11T17:00:00.000Z', ended_at: '2026-11-11T17:03:00.000Z', duration_s: 180, score: 340, kills: 12, stars: 2, base_hp: 80, shots_fired: 40, hits: 14, best_combo: 6, nukes: 1, boosts_used: 2, reward_rings: 20, fitness_session_id: 'fs-1', mat_equipment_id: 'step-mat', partner_id: 'dad' },
+      run: { id: 'run-1', level_id: 'invaders-1-1', status: 'completed', started_at: '2026-11-11T17:00:00.000Z', ended_at: '2026-11-11T17:03:00.000Z', duration_s: 180, score: 340, kills: 12, stars: 2, base_hp: 80, shots_fired: 40, hits: 14, best_combo: 6, bombs: 1, boosts_used: 2, steps: 22, firing_s: 31.34, weapon_peak: 2, reward_rings: 20, fitness_session_id: 'fs-1', mat_equipment_id: 'step-mat', partner_id: 'dad' },
       rider: { user_id: 'kid' },
       result: { schema: 'gaming-result/v1', experience_id: 'skyline-invaders', status: 'completed', participants: [{ id: 'kid' }, { id: 'dad' }], outcome: { kind: 'completed', score: 340, winner_ids: ['kid'] }, metrics: { kills: 12, stars: 2 } },
     });
@@ -46,6 +46,6 @@ describe('buildSkylineInvadersRun', () => {
   });
   it('rounds the duration and tolerates a state without the optional counters', () => {
     const bare = { time: 61.23456, kills: 0, score: 0, shotsFired: 0, hits: 0, base: { hp: 100, maxHp: 100 } };
-    expect(buildSkylineInvadersRun(args({ state: bare })).run).toMatchObject({ duration_s: 61.23, best_combo: 0, nukes: 0, boosts_used: 0 });
+    expect(buildSkylineInvadersRun(args({ state: bare })).run).toMatchObject({ duration_s: 61.23, best_combo: 0, bombs: 0, boosts_used: 0 });
   });
 });

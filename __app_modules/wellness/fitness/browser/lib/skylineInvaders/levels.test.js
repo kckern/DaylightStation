@@ -21,7 +21,23 @@ describe('validateLevel (structure)', () => {
     expect(result.errors).toEqual([]);
     expect(result.level).toMatchObject({ nuke: { radius: 120, damage: 4 }, boost: { fill_s: 15, rotation: ['shield', 'rapid'] } });
   });
+  it('accepts the optional fire rules, fall speeds and spawn lanes', () => {
+    const result = validateLevel(level({ fire: { fuel_per_step_s: 2, fuel_cap_s: 6 }, fall: { meteor: 50, drone: 40 }, spawn_lanes: [1, 6] }), { reachability: false });
+    expect(result.errors).toEqual([]);
+    expect(result.level).toMatchObject({ fire: { fuel_per_step_s: 2 }, fall: { meteor: 50 }, spawn_lanes: [1, 6] });
+  });
   it.each([
+    [{ fire: 'fast' }, /fire must be an object/],
+    [{ fire: { fuel_per_step_s: 0 } }, /fire\.fuel_per_step_s/],
+    [{ fire: { shots: 3 } }, /fire\.shots is not a fire rule/],
+    [{ fall: 50 }, /fall must be an object/],
+    [{ fall: { meteor: 0 } }, /fall\.meteor/],
+    [{ fall: { bomber: 20 } }, /fall\.bomber is not a falling threat/],
+    [{ fall: { squid: 20 } }, /fall\.squid/],
+    [{ spawn_lanes: [6, 1] }, /spawn_lanes/],
+    [{ spawn_lanes: [0, 8] }, /spawn_lanes/],
+    [{ spawn_lanes: [1.5, 3] }, /spawn_lanes/],
+    [{ spawn_lanes: 3 }, /spawn_lanes/],
     [{ schema: 'nope' }, /schema/],
     [{ id: 'Bad Id' }, /id/],
     [{ id: 7 }, /id/],
@@ -75,57 +91,83 @@ describe('validateLevel (structure)', () => {
 });
 
 describe('reachability', () => {
-  const tunables = { ...INVADERS_TUNABLES, fireIntervalS: 1.5, reachabilityHitRate: 0.6 };
-  const easy = level({ duration_s: 120, pass: { kills: 10, base_hp_min: 50 }, waves: [{ at: 0, spawn: { meteor: 1 }, rate_s: 2.5 }] });
+  const tunables = INVADERS_TUNABLES;
+  const easy = level({ duration_s: 120, pass: { kills: 10, base_hp_min: 0 }, waves: [{ at: 0, spawn: { meteor: 1 }, rate_s: 2.5 }] });
+  const perfect = { ...tunables, botLaneErrorRate: 0 };
 
-  it('the bot is deterministic and limited by the fire interval', () => {
-    const a = simulateBot(easy, tunables);
-    expect(simulateBot(easy, tunables)).toEqual(a);
+  it('the bot is deterministic for a seed and differs across seeds', () => {
+    const a = simulateBot(easy, { seed: 4, tunables });
+    expect(simulateBot(easy, { seed: 4, tunables })).toEqual(a);
     expect(a.phase).toBe('ended');
-    expect(a.shotsFired).toBeLessThanOrEqual(Math.ceil(easy.duration_s / tunables.fireIntervalS));
-    expect(a.kills).toBeGreaterThan(20);
+    expect(simulateBot(easy, { seed: 5, tunables }).score).not.toBe(a.score);
   });
-  it('the bot plays at cool tier with no partner: small shots, no nukes, no boosts', () => {
+  it('the bot fires the way a child does: it steps for fuel and the stream does the shooting', () => {
+    const bot = simulateBot(easy, { tunables });
+    expect(bot.steps).toBeGreaterThan(20);
+    expect(bot.steps).toBeLessThanOrEqual(Math.ceil(easy.duration_s / tunables.botStepIntervalS) + 1);
+    expect(bot.shotsFired).toBeGreaterThan(bot.steps);            // a stream, not one shot per step
+    expect(bot.firingS).toBeLessThanOrEqual(bot.steps * tunables.fuelPerStepS + 1e-6);
+    expect(bot.weapon.peak).toBeGreaterThan(0);                   // the power meter is in play
+  });
+  it('the bot has no partner and never drops a bomb', () => {
     const mixed = level({ duration_s: 120, waves: [{ at: 0, spawn: { meteor: 2, drone: 1, pod: 1, bomber: 1 }, rate_s: 2 }] });
-    const bot = simulateBot(mixed, tunables);
-    expect(bot).toMatchObject({ nukes: 0, boost: { used: 0, meter: 0 } });
+    const bot = simulateBot(mixed, { tunables });
+    expect(bot).toMatchObject({ bombs: 0, boost: { used: 0, meter: 0 } });
     expect(bot.kills).toBeGreaterThan(0);
-    expect(bot.hits).toBeLessThanOrEqual(bot.shotsFired);
   });
-  it('the bot leads a zigzagging drone instead of shooting where it was', () => {
-    const drones = level({ duration_s: 120, waves: [{ at: 0, spawn: { drone: 1 }, rate_s: 3 }] });
-    const bot = simulateBot(drones, tunables);
-    expect(bot.hits / bot.shotsFired).toBeGreaterThan(0.8);
+  it('a bot that never misreads a lane holds the whole skyline on a sparse level', () => {
+    const bot = simulateBot(easy, { tunables: perfect });
+    expect(bot.base.hp).toBe(100);
+    expect(bot.kills).toBeGreaterThanOrEqual(46);
   });
-  it('accepts a level a cool-tier shooter can pass', () => {
-    expect(checkReachability(easy, tunables)).toMatchObject({ reachable: true, errors: [], reachableKills: expect.any(Number), botBaseHpPct: expect.any(Number) });
+  it('the realistic bot lets threats through: it misses, where the perfect one never does', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const real = simulateBot(easy, { seed, tunables });
+      expect(real.base.hp).toBeLessThan(100);
+      expect(real.kills).toBeLessThan(simulateBot(easy, { seed, tunables: perfect }).kills);
+    }
+  });
+  it('a higher lane-error rate makes the same level harder', () => {
+    const hp = (rate) => [1, 2, 3, 4, 5, 6].reduce((sum, seed) => sum + simulateBot(easy, { seed, tunables: { ...tunables, botLaneErrorRate: rate } }).base.hp, 0);
+    expect(hp(0.6)).toBeLessThan(hp(0.2));
+  });
+  it('accepts a level a child on the mat can pass', () => {
+    expect(checkReachability(easy, tunables)).toMatchObject({ reachable: true, errors: [], reachableKills: expect.any(Number), botBaseHpPct: expect.any(Number), reachableBaseHp: expect.any(Number) });
     expect(validateLevel(easy, { tunables }).valid).toBe(true);
-  });
-  it('checks against the garage fire rate when no tunables are given', () => {
     expect(checkReachability(easy)).toEqual(checkReachability(easy, INVADERS_TUNABLES));
-    expect(validateLevel(easy).valid).toBe(true);
   });
-  it('rejects a kill target above what the fire rate allows, and says how many are reachable', () => {
-    const greedy = { ...easy, pass: { kills: 200, base_hp_min: 50 } };
+  it('rejects a kill target above what the bot reaches, and says how many are reachable', () => {
+    const greedy = { ...easy, pass: { kills: 200, base_hp_min: 0 } };
     const result = validateLevel(greedy, { tunables });
     expect(result.valid).toBe(false);
     expect(result.level).toBeNull();
     expect(result.errors.join('\n')).toMatch(/pass\.kills 200 is not reachable.*at most \d+/);
   });
-  it('allows a level only the share of the bot\'s kills a person can be asked for', () => {
-    const bot = simulateBot(easy, tunables);
+  it('holds a level to the worst seed, and to the share of the bot\'s kills a person can be asked for', () => {
+    const worst = Math.min(...tunables.reachabilitySeeds.map((seed) => simulateBot(easy, { seed, tunables }).kills));
     const reach = checkReachability(easy, tunables);
-    expect(reach.reachableKills).toBe(Math.floor(bot.kills * 0.6));
+    expect(reach.reachableKills).toBe(Math.floor(worst * 0.6));
     expect(validateLevel({ ...easy, pass: { kills: reach.reachableKills, base_hp_min: 0 } }, { tunables }).valid).toBe(true);
     expect(validateLevel({ ...easy, pass: { kills: reach.reachableKills + 1, base_hp_min: 0 } }, { tunables }).valid).toBe(false);
   });
-  it('rejects a base floor the bot cannot hold', () => {
-    const flood = level({ duration_s: 120, pass: { kills: 5, base_hp_min: 100 }, waves: [{ at: 0, spawn: { meteor: 1 }, rate_s: 0.4 }] });
-    expect(validateLevel(flood, { tunables }).errors.join('\n')).toMatch(/base_hp_min/);
+  it('holds the skyline floor to what the realistic bot kept, less the margin', () => {
+    const reach = checkReachability(easy, tunables);
+    expect(reach.reachableBaseHp).toBe(Math.max(0, reach.botBaseHpPct - tunables.reachabilityBaseHpMargin));
+    expect(validateLevel({ ...easy, pass: { kills: 5, base_hp_min: reach.reachableBaseHp } }, { tunables }).valid).toBe(true);
+    const over = validateLevel({ ...easy, pass: { kills: 5, base_hp_min: reach.reachableBaseHp + 1 } }, { tunables });
+    expect(over.valid).toBe(false);
+    expect(over.errors.join('\n')).toMatch(/base_hp_min/);
   });
-  it('a slower spike fire rate makes the same level harder to pass', () => {
-    const slow = simulateBot(easy, { ...tunables, fireIntervalS: 4 });
-    expect(slow.kills).toBeLessThan(simulateBot(easy, tunables).kills);
+  it('rejects the level that shipped unpassable: 18 kills and 40% skyline on full-speed meteors in every lane', () => {
+    const shipped = level({
+      id: 'invaders-1-1', duration_s: 180, pass: { kills: 18, base_hp_min: 40 },
+      waves: [{ at: 0, spawn: { meteor: 1 }, rate_s: 4.5 }, { at: 60, spawn: { meteor: 1 }, rate_s: 4.0 }, { at: 120, spawn: { meteor: 1 }, rate_s: 3.5 }],
+    });
+    const result = validateLevel(shipped, { tunables });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/base_hp_min 40 is above what a shooter on the mat holds/);
+    // The perfect bot is what let it through.
+    expect(validateLevel(shipped, { tunables: perfect }).valid).toBe(true);
   });
   it('skips the bot when asked for structure only, and when the structure is already wrong', () => {
     const greedy = { ...easy, pass: { kills: 200 } };

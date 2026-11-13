@@ -19,6 +19,11 @@ function app(over = {}) {
       if (riderId === 'bad!') throw coded('INVALID_RIDER');
       return { levels: world.levels.map((row) => ({ ...row, status: 'open' })), next: riderId ? 'invaders-1-1' : null };
     },
+    setControls: async (riderId, gesture) => {
+      if (riderId === 'bad!') throw coded('INVALID_RIDER');
+      if (gesture !== 'twist') throw coded('INVALID_GESTURE');
+      return { controls: { gesture, at: 'now' } };
+    },
     unlock: async (riderId, levelId, unlockedBy) => {
       if (riderId === 'bad!') throw coded('INVALID_RIDER');
       unlocks.push({ riderId, levelId, unlockedBy });
@@ -81,6 +86,16 @@ describe('Skyline Invaders HTTP API', () => {
     expect(server.unlocks).toHaveLength(1);
   });
 
+  it('saves the controls a rider picked and rejects a gesture or rider it cannot use', async () => {
+    const server = app();
+    const saved = await request(server).post('/api/fitness/skyline-invaders/progress/kid/controls').send({ gesture: 'twist' });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ controls: { gesture: 'twist' } });
+    expect((await request(server).post('/api/fitness/skyline-invaders/progress/kid/controls').send({ gesture: 'nope' })).status).toBe(400);
+    expect((await request(server).post('/api/fitness/skyline-invaders/progress/kid/controls').send({})).status).toBe(400);
+    expect((await request(server).post('/api/fitness/skyline-invaders/progress/bad!/controls').send({ gesture: 'twist' })).status).toBe(400);
+  });
+
   it('reports 503 when the services are absent', async () => {
     const server = express();
     server.use(express.json());
@@ -88,6 +103,7 @@ describe('Skyline Invaders HTTP API', () => {
     expect((await request(server).get('/api/fitness/skyline-invaders/levels')).status).toBe(503);
     expect((await request(server).get('/api/fitness/skyline-invaders/world')).status).toBe(503);
     expect((await request(server).post('/api/fitness/skyline-invaders/progress/kid/unlock').send({ levelId: 'x' })).status).toBe(503);
+    expect((await request(server).post('/api/fitness/skyline-invaders/progress/kid/controls').send({ gesture: 'twist' })).status).toBe(503);
     expect((await request(server).post('/api/fitness/skyline-invaders/runs').send({ record: {} })).status).toBe(503);
     expect((await request(server).get('/api/fitness/skyline-invaders/runs/run-1')).status).toBe(503);
   });

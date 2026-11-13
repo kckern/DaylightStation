@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SkylineInvadersRunService } from './SkylineInvadersRunService.mjs';
-import { SkylineInvadersProgressService, buildWorldProgress } from './SkylineInvadersProgressService.mjs';
+import { SKYLINE_INVADERS_GESTURES, SkylineInvadersProgressService, buildWorldProgress } from './SkylineInvadersProgressService.mjs';
 
 const record = (over = {}, rider = 'test-rider') => ({ schema: 'skyline-invaders-run/v1', run: { id: 'run-1', level_id: 'invaders-1-1', started_at: '2026-11-11T17:00:00.000Z', ended_at: '2026-11-11T17:03:00.000Z', status: 'completed', duration_s: 180, score: 340, kills: 12, stars: 2, ...over }, rider: { user_id: rider } });
 const memoryRuns = () => { const rows = new Map(); return { rows, create: async (r) => { rows.set(r.run.id, r); return `${r.run.id}.yml`; }, findById: async (id) => rows.get(id) ?? null, findByDate: async () => [...rows.values()], findAll: async () => [...rows.values()] }; };
@@ -106,6 +106,30 @@ describe('SkylineInvadersProgressService', () => {
     expect(first.unlocked_by['invaders-1-3']).toMatchObject({ user_id: 'admin' });
     expect((await service.unlock('test-rider', 'invaders-1-3', 'admin', 'home')).unlocked).toEqual(['invaders-1-3']);
     await expect(service.get('../etc', 'home')).rejects.toMatchObject({ code: 'INVALID_RIDER' });
+  });
+  it('remembers the controls a rider picked, per rider, and serves them with the world', async () => {
+    const progressStore = memoryProgress();
+    const service = new SkylineInvadersProgressService({ progressStore, runStore: memoryRuns(), logger: nullLogger });
+    expect((await service.worldFor(world, 'test-rider', 'home')).controls).toBeNull();
+    expect((await service.worldFor(world, null, 'home')).controls).toBeNull();
+    const saved = await service.setControls('test-rider', 'twist', 'home');
+    expect(saved.controls).toMatchObject({ gesture: 'twist', at: expect.any(String) });
+    expect((await service.worldFor(world, 'test-rider', 'home')).controls).toEqual({ gesture: 'twist' });
+    expect((await service.worldFor(world, 'other-rider', 'home')).controls).toBeNull();
+    // Choosing controls keeps the completions, and a completion keeps the controls.
+    await service.recordRun(record(), 'home');
+    await service.setControls('test-rider', 'hop', 'home');
+    expect(progressStore.rows.get('test-rider')).toMatchObject({ controls: { gesture: 'hop' }, completed: { 'invaders-1-1': { stars: 2 } } });
+  });
+  it('rejects a gesture the game does not have, a bad rider id, and ignores a stored value it does not know', async () => {
+    const progressStore = memoryProgress();
+    const service = new SkylineInvadersProgressService({ progressStore, runStore: memoryRuns(), logger: nullLogger });
+    await expect(service.setControls('test-rider', 'telekinesis', 'home')).rejects.toMatchObject({ code: 'INVALID_GESTURE' });
+    await expect(service.setControls('test-rider', undefined, 'home')).rejects.toMatchObject({ code: 'INVALID_GESTURE' });
+    await expect(service.setControls('../x', 'twist', 'home')).rejects.toMatchObject({ code: 'INVALID_RIDER' });
+    progressStore.rows.set('test-rider', { schema: 'skyline-invaders-progress/v1', completed: {}, unlocked: [], controls: { gesture: 'offset' } });
+    expect((await service.worldFor(world, 'test-rider', 'home')).controls).toBeNull();
+    expect(SKYLINE_INVADERS_GESTURES).toEqual(['wiper', 'twist', 'wings', 'wheel', 'sprinkler', 'drag', 'push', 'hop']);
   });
   it('requires both stores', () => { expect(() => new SkylineInvadersProgressService({ progressStore: memoryProgress() })).toThrow(/progressStore and runStore/); });
 });

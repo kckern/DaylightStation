@@ -15,14 +15,16 @@ const RESULT_OUTCOME = Object.freeze({ completed: 'completed', failed: 'loss', a
  * @param {boolean} args.ended true when the round ran to its timer; false when it was ended early
  * @param {object} args.state the final engine state
  */
-export function buildSkylineInvadersRun({ runId, level, riderId, partnerId, fitnessSessionId, matEquipmentId, startedAt, endedAt, state, ended }) {
+export function buildSkylineInvadersRun({ runId, level, riderId, partnerId, fitnessSessionId, matEquipmentId, startedAt, endedAt, state, ended, gesture = null }) {
   const outcome = levelOutcome(state, level);
   const status = !ended ? 'abandoned' : outcome.passed ? 'completed' : 'failed';
   const stars = status === 'completed' ? outcome.stars : 0;
   const metrics = {
     duration_s: round2(state.time), score: state.score, kills: state.kills, stars,
     base_hp: outcome.baseHpPct, shots_fired: state.shotsFired, hits: state.hits,
-    best_combo: state.bestCombo || 0, nukes: state.nukes || 0, boosts_used: state.boost?.used || 0,
+    best_combo: state.bestCombo || 0, bombs: state.bombs || 0, boosts_used: state.boost?.used || 0,
+    // shots_fired and hits count volleys (one beat of the stream), not single shots.
+    steps: state.steps || 0, firing_s: round2(state.firingS || 0), weapon_peak: state.weapon?.peak || 0,
   };
   return {
     schema: 'skyline-invaders-run/v1',
@@ -32,6 +34,7 @@ export function buildSkylineInvadersRun({ runId, level, riderId, partnerId, fitn
       ...(fitnessSessionId ? { fitness_session_id: fitnessSessionId } : {}),
       ...(matEquipmentId ? { mat_equipment_id: matEquipmentId } : {}),
       ...(partnerId ? { partner_id: partnerId } : {}),
+      ...(gesture ? { gesture } : {}),
     },
     rider: { user_id: riderId },
     result: {

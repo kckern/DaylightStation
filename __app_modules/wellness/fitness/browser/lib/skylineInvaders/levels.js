@@ -1,9 +1,11 @@
 // Skyline Invaders level files: schema `skyline-invaders-level/v1`.
 // Pure: no DOM, no clocks, no randomness of its own. The engine never imports
 // this file (one-way dependency).
+import { nextRandom } from '../../../../../../__capabilities/gaming/portable/mechanics/random.mjs';
 import { MUZZLE_Y, SHOT_SPEED, createGameState, step } from './engine.js';
-import { BOOST_KINDS, boostRules } from './rules.js';
-import { LEVEL_THREAT_TYPES, THREATS, moveThreat, xToAim } from './threats.js';
+import { LANES, laneAim, laneOfX } from './lanes.js';
+import { BOOST_KINDS, FIRE_KEYS, boostRules } from './rules.js';
+import { LEVEL_THREAT_TYPES, THREATS, moveThreat } from './threats.js';
 import { INVADERS_TUNABLES } from './tunables.js';
 
 export const LEVEL_SCHEMA = 'skyline-invaders-level/v1';
@@ -53,6 +55,36 @@ function boostErrors(boost) {
   return errors;
 }
 
+function fireErrors(fire) {
+  if (fire == null) return [];
+  if (!isObject(fire)) return ['fire must be an object'];
+  const errors = [];
+  for (const [key, value] of Object.entries(fire)) {
+    if (!FIRE_KEYS.includes(key)) errors.push(`fire.${key} is not a fire rule (${FIRE_KEYS.join(', ')})`);
+    else if (!(num(value) && value > 0)) errors.push(`fire.${key} must be a number > 0`);
+  }
+  return errors;
+}
+
+// Per-level fall speeds, by threat type, in scene units per second.
+function fallErrors(fall) {
+  if (fall == null) return [];
+  if (!isObject(fall)) return ['fall must be an object'];
+  const errors = [];
+  for (const [type, value] of Object.entries(fall)) {
+    if (!THREATS[type] || !(THREATS[type].fall > 0)) errors.push(`fall.${type} is not a falling threat`);
+    else if (!(num(value) && value > 0)) errors.push(`fall.${type} must be a number > 0`);
+  }
+  return errors;
+}
+
+// The run of lanes threats may spawn in: [first, last], both inside 0..LANES-1.
+function spawnLaneErrors(lanes) {
+  if (lanes == null) return [];
+  const ok = Array.isArray(lanes) && lanes.length === 2 && lanes.every((lane) => Number.isInteger(lane) && lane >= 0 && lane < LANES) && lanes[0] <= lanes[1];
+  return ok ? [] : [`spawn_lanes must be [first, last] within 0..${LANES - 1}`];
+}
+
 function structure(raw) {
   if (!isObject(raw)) return ['level is not an object'];
   const errors = [];
@@ -74,51 +106,82 @@ function structure(raw) {
       if (num(wave?.at)) priorAt = Math.max(priorAt, wave.at);
     });
   }
-  errors.push(...nukeErrors(raw.nuke), ...boostErrors(raw.boost));
+  errors.push(...nukeErrors(raw.nuke), ...boostErrors(raw.boost), ...fireErrors(raw.fire), ...fallErrors(raw.fall), ...spawnLaneErrors(raw.spawn_lanes));
   return errors;
 }
 
 const BOT_STEP_S = 1 / 30;
 
 /**
- * Play the level with a rate-limited cool-tier bot and no partner: one small
- * shot every `fireIntervalS` at the lowest threat. Returns the final engine
- * state. The bot aims perfectly; the fire interval is what limits it.
+ * Play the level the way a child on the mat does, with no partner: step on
+ * the mat every `botStepIntervalS` while anything is falling (each step buys
+ * fuel and the stream fires by itself), and move the cannon a lane at a time
+ * toward the lowest threat. The bot is deliberately imperfect, because the
+ * perfect one is how a level that no child could pass was shipped:
+ * - it re-chooses its lane only every `botDecisionS`;
+ * - for `botLaneErrorRate` of the threats it lines up one lane to the side
+ *   and never corrects (a child whose aim does not reach that lane), so about
+ *   that share of what falls gets through;
+ * - the cannon takes `botLaneMoveS` to cross each lane;
+ * - it never drops a bomb.
+ * Which threats it misreads depends on the seed and the threat only, so a
+ * seed replays. Returns the final engine state.
  */
-export function simulateBot(level, { fireIntervalS = INVADERS_TUNABLES.fireIntervalS, seed = 1 } = {}) {
-  const interval = fireIntervalS > 0 ? fireIntervalS : INVADERS_TUNABLES.fireIntervalS;
+export function simulateBot(level, { seed = 1, tunables = INVADERS_TUNABLES } = {}) {
   let state = createGameState(level, { seed });
-  let nextFireAt = 0;
+  // One draw per threat, from the seed and the threat's id: 0..1 for whether
+  // it is misread, then which side.
+  const misread = (id) => {
+    const first = nextRandom(((Number(seed) >>> 0) * 2654435761 + id * 40503) >>> 0);
+    if (first.value >= tunables.botLaneErrorRate) return 0;
+    return nextRandom(first.state).value < 0.5 ? -1 : 1;
+  };
+  let lane = Math.floor(LANES / 2);
+  let goal = lane;
+  let nextDecisionAt = 0;
+  let nextMoveAt = 0;
+  let nextStepAt = 0;
   // The round ends itself on its timer; the cap only guards a level that was never validated.
   const maxSteps = Math.ceil((Number(level.duration_s) || 0) / BOT_STEP_S) + 2;
   for (let i = 0; i < maxSteps && state.phase === 'playing'; i += 1) {
     const target = state.threats.filter((t) => t.type !== 'bomb').sort((a, b) => b.y - a.y || a.id - b.id)[0];
-    const fire = [];
-    if (target && state.time >= nextFireAt) {
-      // Lead the target: aim where it will be when the shot gets there, so a
-      // zigzagging drone does not soak up the bot's whole fire budget.
-      const flight = Math.max(0, (MUZZLE_Y - target.y) / (SHOT_SPEED + THREATS[target.type].fall));
-      fire.push({ aim: xToAim(moveThreat(target, flight).x), tier: 'small', armsUp: false, source: 'bot', at: null });
-      nextFireAt = state.time + interval;
+    if (target && state.time >= nextDecisionAt) {
+      // Lead the target: aim at the lane it will be in when a shot gets there.
+      const flight = Math.max(0, (MUZZLE_Y - target.y) / (SHOT_SPEED + (target.fall ?? THREATS[target.type].fall)));
+      const wanted = laneOfX(moveThreat(target, flight).x);
+      const side = misread(target.id);
+      goal = wanted + side >= 0 && wanted + side < LANES ? wanted + side : wanted - side;
+      nextDecisionAt = state.time + tunables.botDecisionS;
     }
-    state = step({ ...state, events: [] }, { aim: 0.5, tier: 'small', armsUp: false, fire, partnerRpm: null }, BOT_STEP_S, level);
+    if (lane !== goal && state.time >= nextMoveAt) {
+      lane += Math.sign(goal - lane);
+      nextMoveAt = state.time + tunables.botLaneMoveS;
+    }
+    const steps = [];
+    if (target && state.time >= nextStepAt) {
+      steps.push({ source: 'bot', at: null });
+      nextStepAt = state.time + tunables.botStepIntervalS;
+    }
+    state = step({ ...state, events: [] }, { aim: laneAim(lane), armsUp: false, steps, stomps: [], partnerRpm: null }, BOT_STEP_S, level);
   }
   return state;
 }
 
 /**
- * Can a cool-tier shooter firing from the step mat pass this level? A level
- * may ask for `reachabilityHitRate` of the bot's kills (the allowance for
- * human aim), and for no more base HP than the bot ends with.
+ * Can a child on the step mat pass this level? The bot plays it on each of
+ * `reachabilitySeeds`, and the level is held to the worst of them: it may ask
+ * for `reachabilityHitRate` of the bot's kills, and for no more skyline than
+ * the bot kept, less `reachabilityBaseHpMargin`.
  */
 export function checkReachability(level, tunables = INVADERS_TUNABLES) {
-  const bot = simulateBot(level, tunables);
-  const reachableKills = Math.floor(bot.kills * tunables.reachabilityHitRate);
-  const botBaseHpPct = Math.round((100 * bot.base.hp) / bot.base.maxHp);
+  const runs = tunables.reachabilitySeeds.map((seed) => simulateBot(level, { seed, tunables }));
+  const reachableKills = Math.floor(Math.min(...runs.map((bot) => bot.kills)) * tunables.reachabilityHitRate);
+  const botBaseHpPct = Math.min(...runs.map((bot) => Math.round((100 * bot.base.hp) / bot.base.maxHp)));
+  const reachableBaseHp = Math.max(0, botBaseHpPct - tunables.reachabilityBaseHpMargin);
   const errors = [];
-  if (reachableKills < level.pass.kills) errors.push(`pass.kills ${level.pass.kills} is not reachable at one shot per ${tunables.fireIntervalS}s: at most ${reachableKills}`);
-  if (botBaseHpPct < (level.pass.base_hp_min ?? 0)) errors.push(`pass.base_hp_min ${level.pass.base_hp_min} is above what a cool-tier shooter holds (${botBaseHpPct})`);
-  return { reachable: !errors.length, errors, reachableKills, botBaseHpPct };
+  if (reachableKills < level.pass.kills) errors.push(`pass.kills ${level.pass.kills} is not reachable from the step mat: at most ${reachableKills}`);
+  if (reachableBaseHp < (level.pass.base_hp_min ?? 0)) errors.push(`pass.base_hp_min ${level.pass.base_hp_min} is above what a shooter on the mat holds: at most ${reachableBaseHp} (the bot kept ${botBaseHpPct})`);
+  return { reachable: !errors.length, errors, reachableKills, botBaseHpPct, reachableBaseHp };
 }
 
 /**

@@ -16,24 +16,27 @@ const cls = (...names) => names.filter(Boolean).join(' ');
  * @param {object} props.level         the level that was played
  * @param {object|null} props.nextLevel the next open level after a pass, if any
  * @param {object} [props.tracker]     aim tracker: the arms-wide press takes the first action
+ * @param {function} [props.onExit]    leave the game; no Exit button without it
  */
-export default function InvadersResult({ record, saveStatus, level, nextLevel = null, onReplay, onNext, onLevels, onRetrySave, tracker = null, active = true }) {
+export default function InvadersResult({ record, saveStatus, level, nextLevel = null, onReplay, onNext, onLevels, onRetrySave, onExit, tracker = null, active = true }) {
   const run = record.run;
   const passed = run.status === 'completed';
   const replay = { id: 'replay', label: run.status === 'failed' ? 'Try again' : 'Play again', onPress: () => onReplay?.() };
   const levels = { id: 'levels', label: 'Levels', onPress: () => onLevels?.() };
+  // The way out is always there, saved or not: nobody should have to reload the page to leave.
+  const exit = onExit ? [{ id: 'exit', label: 'Exit', hint: saveStatus === 'saved' ? 'Leave the game' : 'Leave without waiting', onPress: () => onExit('button') }] : [];
   let actions;
-  if (saveStatus === 'error') actions = [{ id: 'retry-save', label: 'Retry save', hint: 'Needed before the next round', onPress: () => onRetrySave?.() }];
-  else if (saveStatus === 'saving') actions = [{ id: 'saving', label: 'Saving…', disabled: true, onPress: () => {} }];
-  else if (passed && nextLevel) actions = [{ id: 'next', label: 'Next level', hint: nextLevel.name, onPress: () => onNext?.() }, replay, levels];
-  else actions = [replay, levels];
+  if (saveStatus === 'error') actions = [{ id: 'retry-save', label: 'Retry save', hint: 'Needed before the next round', onPress: () => onRetrySave?.() }, ...exit];
+  else if (saveStatus === 'saving') actions = [{ id: 'saving', label: 'Saving…', disabled: true, onPress: () => {} }, ...exit];
+  else if (passed && nextLevel) actions = [{ id: 'next', label: 'Next level', hint: nextLevel.name, onPress: () => onNext?.() }, replay, levels, ...exit];
+  else actions = [replay, levels, ...exit];
   // Each number stands alone, with what the level asked for in small print
   // under it. "25 of 4" reads as a mistake once a round beats its target.
   const hpMin = level.pass.base_hp_min ?? 0;
   const rows = [
     { id: 'kills', label: 'Shot down', value: String(run.kills), note: `needed ${level.pass.kills}`, met: run.kills >= level.pass.kills },
     { id: 'score', label: 'Score', value: run.score.toLocaleString('en-US') },
-    { id: 'combo', label: 'Best combo', value: `×${run.best_combo}` },
+    { id: 'combo', label: 'Best streak', value: `×${run.best_combo}` },
     { id: 'skyline', label: 'Skyline', value: `${run.base_hp}%`, ...(hpMin > 0 ? { note: `needed ${hpMin}%`, met: run.base_hp >= hpMin } : {}) },
   ];
   return (

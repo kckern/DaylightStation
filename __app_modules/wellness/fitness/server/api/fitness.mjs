@@ -345,6 +345,19 @@ export function createFitnessRouter(config) {
     }
   }));
 
+  // The aim gesture a rider picked in the controls intro. Saved per rider, so
+  // each child keeps their own on a shared screen.
+  router.post('/skyline-invaders/progress/:riderId/controls', asyncHandler(async (req, res) => {
+    if (!skylineInvadersProgress) return res.status(503).json({ error: 'Skyline Invaders world unavailable' });
+    try {
+      const progress = await skylineInvadersProgress.setControls(req.params.riderId, req.body?.gesture, req.body?.household || defaultHouseholdId);
+      return res.json({ controls: { gesture: progress.controls.gesture } });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER' || error?.code === 'INVALID_GESTURE') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
   // No suspension beacon: a round is short and timed, with no resumable
   // checkpoint, so only a finalized round is ever saved.
   router.post('/skyline-invaders/runs', asyncHandler(async (req, res) => {
