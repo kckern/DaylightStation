@@ -1,7 +1,12 @@
 import { YamlUserAppRecordStore } from "#system/persistence/YamlUserAppRecordStore.mjs";
 import { creditDecision, policyFor, GOOD_FAITH_DEFAULTS } from "../../portable/practice/goodFaith.mjs";
+import { TOP_RUNG } from "../../portable/practice/presenceLadder.mjs";
 
-const SITTING_FIELDS = ['practiceNotes', 'humanNotes', 'playedSec', 'checkIns', 'checkInsAnswered', 'scaleCheckIns', 'drillsPassed'];
+// peakRung / minimalCheckIns: the sitting's presence ladder (presenceLadder.mjs)
+// — the highest check-in rung reached and how many check-ins were answered with
+// no real playing since the one before. Per sitting only: every lesson video
+// starts the ladder at the note (owner, 2026-11-13), so nothing carries over.
+const SITTING_FIELDS = ['practiceNotes', 'humanNotes', 'playedSec', 'checkIns', 'checkInsAnswered', 'scaleCheckIns', 'drillsPassed', 'peakRung', 'minimalCheckIns'];
 const intOf = (v) => Math.max(0, Math.floor(Number(v) || 0));
 
 /**
@@ -118,6 +123,7 @@ export class YamlUserVideoProgressStore {
       const old = sittings[id] || {};
       const next = { at: new Date().toISOString() };
       for (const f of SITTING_FIELDS) next[f] = Math.max(intOf(old[f]), intOf(practice[f]));
+      next.peakRung = Math.min(TOP_RUNG, next.peakRung);
       // The sitting's good-faith judgement, once given, stays with it.
       if (Number.isFinite(Number(old.goodFaith)) && old.goodFaith != null) next.goodFaith = Number(old.goodFaith);
       else if (judgement) next.goodFaith = judgement.score;
@@ -127,6 +133,20 @@ export class YamlUserVideoProgressStore {
     const map = Object.fromEntries(kept);
     const drillsPassed = Math.max(0, ...kept.map(([, v]) => intOf(v.drillsPassed)));
     return { sittings: map, drillsPassed, rotation: intOf(prev.rotation) };
+  }
+
+  /**
+   * A sitting whose merged peak rung first reaches the top of the presence
+   * ladder (two hands-together scales) is logged once — the early warning the
+   * teacher console and the owner push read.
+   */
+  #noteTopRung({ userId, key, plexId, existing, practiceState, sittingId }) {
+    const before = intOf(existing?.practice?.sittings?.[sittingId]?.peakRung);
+    const sit = practiceState.sittings[sittingId];
+    if (!sit || before >= TOP_RUNG || sit.peakRung < TOP_RUNG) return;
+    const e = this.#expectationFor(plexId);
+    const preschool = e ? this.#isPreschool(e) : false;
+    this.#logger.info?.('piano.presence-ladder.top-rung', { userId, key, sittingId, minimalCheckIns: sit.minimalCheckIns, preschool });
   }
 
   /** Judge credit for an entry at this post. */
@@ -256,6 +276,7 @@ export class YamlUserVideoProgressStore {
       userId, key, percent: normalizedPercent, engaged: nowEngaged, completed: !!completedAt,
       ...(credit ? { outcome: credit.outcome, score: credit.score ?? null } : {}),
     });
+    if (report?.sittingId) this.#noteTopRung({ userId, key, plexId, existing, practiceState, sittingId: String(report.sittingId).slice(0, 64) });
     if (report?.sittingId && this.#sittingLog) {
       try {
         const sit = practiceState.sittings[String(report.sittingId).slice(0, 64)] || {};
@@ -277,6 +298,8 @@ export class YamlUserVideoProgressStore {
           checkIns: sit.checkIns ?? 0,
           checkInsAnswered: sit.checkInsAnswered ?? 0,
           scaleCheckIns: sit.scaleCheckIns ?? 0,
+          peakRung: sit.peakRung ?? 0,
+          minimalCheckIns: sit.minimalCheckIns ?? 0,
           preschool: !!credit?.preschool,
         });
       } catch (err) {
