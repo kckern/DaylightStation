@@ -47,15 +47,14 @@ export class EnrollLearner {
    * @param {string} args.syllabusId
    * @param {string} args.enrolledBy - a roster id that must pass TeacherGate
    *   (the gate is a required constructor dependency and is always asserted)
-   * @param {string|null} [args.pin]
    * @param {boolean} [args.rematerialize] - re-run the materializer over an
    *   existing entry, re-shuffling any `shuffle_once` ordering
    * @param {string|null} [args.baseUpdatedAt] - the assignment `updatedAt` the
    *   caller loaded; a mismatch is refused rather than silently clobbered
    * @returns {Promise<object>} the stored assignment record
    */
-  async execute({ learnerId, syllabusId, timingAnchorId = null, enrolledBy = null, pin = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
-    this.#teacherGate.assert({ userId: enrolledBy, pin, action: 'enrollment.put', context: { learnerId, syllabusId } });
+  async execute({ learnerId, syllabusId, timingAnchorId = null, enrolledBy = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
+    this.#teacherGate.assert({ userId: enrolledBy, action: 'enrollment.put', context: { learnerId, syllabusId } });
 
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
 

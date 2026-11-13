@@ -12,10 +12,10 @@ describe('teacherWorkspaceApi', () => {
   });
 
   it('sends agenda idempotency in both header and body for compatibility', async () => {
-    await teacherWorkspaceApi.agendaDispatch('user_4', { dispatchedBy: 'teacher', pin: '1234' }, 'agenda-1');
+    await teacherWorkspaceApi.agendaDispatch('user_4', { dispatchedBy: 'teacher' }, 'agenda-1');
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/learners/user_4/agenda/dispatch', expect.objectContaining({
       method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'agenda-1' }),
-      body: JSON.stringify({ dispatchedBy: 'teacher', pin: '1234', idempotencyKey: 'agenda-1' }),
+      body: JSON.stringify({ dispatchedBy: 'teacher', idempotencyKey: 'agenda-1' }),
     }));
   });
 
@@ -26,28 +26,19 @@ describe('teacherWorkspaceApi', () => {
     }));
   });
 
-  it('uses same-origin credentials for status and unlock without exposing a cookie token', async () => {
-    await teacherWorkspaceApi.authStatus();
-    await teacherWorkspaceApi.unlock('parent', '4321');
-    expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/school/teacher/auth/status', expect.objectContaining({ credentials: 'same-origin' }));
-    expect(fetch).toHaveBeenNthCalledWith(2, '/api/v1/school/teacher/auth/unlock', expect.objectContaining({
-      credentials: 'same-origin', body: JSON.stringify({ userId: 'parent', pin: '4321' }),
-    }));
-  });
-
-  it('attaches one-use grants only to the sensitive apply request', async () => {
+  it('sends no step-up header on any write', async () => {
     await teacherWorkspaceApi.adjustGrade('ses_1', { apply: false });
-    await teacherWorkspaceApi.adjustGrade('ses_1', { apply: true }, 'grant-1');
+    await teacherWorkspaceApi.adjustGrade('ses_1', { apply: true });
     expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('X-Teacher-Step-Up');
-    expect(fetch.mock.calls[1][1].headers).toMatchObject({ 'X-Teacher-Step-Up': 'grant-1' });
+    expect(fetch.mock.calls[1][1].headers).not.toHaveProperty('X-Teacher-Step-Up');
   });
 
-  it('returns a protected postview as a blob with the step-up header', async () => {
-    const result = await teacherWorkspaceApi.artifactPostview('art/1', 'grant-2');
+  it('returns a postview as a blob, read as the named teacher', async () => {
+    const result = await teacherWorkspaceApi.artifactPostview('art/1', 'parent');
     expect(result.ok).toBe(true);
     expect(result.data).toBeInstanceOf(Blob);
-    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/postview.pdf', expect.objectContaining({
-      credentials: 'same-origin', headers: { 'X-Teacher-Step-Up': 'grant-2' },
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/postview.pdf?by=parent', expect.objectContaining({
+      credentials: 'same-origin', headers: {},
     }));
   });
 

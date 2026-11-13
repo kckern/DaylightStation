@@ -18,8 +18,7 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
   // Structural changes to a child's program are two-tap (the module's
   // arm→confirm house pattern): first tap names the consequence, second acts.
   const [armed, setArmed] = useState(null); // 'enroll' | 'rematerialize' | 'unenroll' | null
-  // A real dialog (PinPrompt's pattern): focus lands inside on open, Tab
-  // wraps, Escape closes.
+  // A real dialog: focus lands inside on open, Tab wraps, Escape closes.
   const drawerRef = useRef(null);
   const closeRef = useRef(null);
   useEffect(() => { closeRef.current?.focus(); }, []);
@@ -43,12 +42,12 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
     onClose?.();
   };
 
-  const enroll = (rematerialize) => run(rematerialize ? 'rematerialize' : 'enroll', ({ actorId, pin }) => schoolApi.enroll(learner.id, {
-    syllabusId: choice, rematerialize, enrolledBy: actorId, pin, baseUpdatedAt,
+  const enroll = (rematerialize) => run(rematerialize ? 'rematerialize' : 'enroll', ({ actorId }) => schoolApi.enroll(learner.id, {
+    syllabusId: choice, rematerialize, enrolledBy: actorId, baseUpdatedAt,
   }), { onSuccess: after(rematerialize ? 'enrollment-rematerialized' : 'enrollment-created') });
 
-  const unenroll = () => run('unenroll', ({ actorId, pin }) => schoolApi.unenroll(learner.id, courseId, {
-    removedBy: actorId, pin, baseUpdatedAt,
+  const unenroll = () => run('unenroll', ({ actorId }) => schoolApi.unenroll(learner.id, courseId, {
+    removedBy: actorId, baseUpdatedAt,
   }), { onSuccess: after('enrollment-removed') });
 
   return (

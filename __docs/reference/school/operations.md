@@ -10,14 +10,14 @@ node cli/school.mjs ops completion learner3
 node cli/school.mjs ops status learner3
 node cli/school.mjs ops monitor learner3 learner4
 node cli/school.mjs ops monitor learner3 learner4 --watch --interval 15
-node cli/school.mjs ops timeline learner3 --limit 50 --teacher parent
-node cli/school.mjs ops session ses_123 --teacher parent
+node cli/school.mjs ops timeline learner3 --limit 50
+node cli/school.mjs ops session ses_123
 node cli/school.mjs ops gates learner3
 node cli/school.mjs ops review            # every question waiting on a mark
 node cli/school.mjs ops review ses_123    # one session's queue
 node cli/school.mjs ops audit --since 2026-08-01T00:00:00Z
 node cli/school.mjs ops agenda-preview learner3 --output /tmp/learner3-agenda.png
-node cli/school.mjs ops artifact art_123 --view manifest --teacher parent
+node cli/school.mjs ops artifact art_123 --view manifest
 node cli/school.mjs ops launch-preview learner3 --subject arts
 ```
 
@@ -25,10 +25,9 @@ node cli/school.mjs ops launch-preview learner3 --subject arts
 the current assignment, and today's sessions. `monitor` observes one or more
 learners once or continuously.
 
-`timeline` and `session` are the incident-investigation pair. These teacher
-record reads, artifact manifest/original reads, and postview reads first unlock
-with `--teacher ID`; only postview additionally requires a
-one-use scoped step-up. `gates` joins the
+`timeline` and `session` are the incident-investigation pair. They, and the
+`artifact` manifest/original/postview reads, take no `--teacher`: they read,
+and only writes name a teacher. `gates` joins the
 current completion, assignment, milestone, and pass-override projections.
 `agenda-preview` renders without minting sessions or tokens. Artifact manifest
 reads identify the durable worksheet recipe; PDF reads project that recipe
@@ -36,10 +35,9 @@ through the current rendering engine.
 
 Use `--base-url URL` or `SCHOOL_BASE_URL` to target another lifecycle API.
 
-**The teacher PIN is retired (2026-09-11, `school.yml` `teacher.pin: null`).**
-The gate identifies the grown-up by `--teacher ID` alone, which must be an adult
-listed in `teachers:`. Every command's `--pin-env NAME` is now optional and only
-matters if a household puts a PIN back; the examples below omit it.
+Every write names its grown-up with `--teacher ID`, which must be an adult on
+the roster listed in `teachers:` (any adult when the key is absent). That id is
+the whole of a write's authority.
 
 ### A subject that will not turn green
 
@@ -207,29 +205,22 @@ grown-ups too.
 
 ## Teacher workspace authorization
 
-The browser's selected profile is attribution, not authority. The first
-protected record read or write for that profile unlocks a process-local
-capability through
-`POST /api/v1/school/teacher/auth/unlock`; the server returns only expiry
-metadata and keeps the random token in an HttpOnly, SameSite=Strict cookie.
-The cookie idles out after 10 minutes and has a 30-minute absolute lifetime. A
-server restart deliberately invalidates every browser session. The workspace
-checks status at startup, exposes an explicit **Lock** action, and pauses and
-replays at most one write when an expired session needs to be unlocked again.
+The browser remembers the picked teacher in localStorage — across reloads and
+tabs — until **Sign out** on the header chip forgets it. Every write carries
+that id (`actorId`, or the route's own field: `by`, `decidedBy`, `issuedBy`…),
+and the server holds no teacher session: `TeacherGate` checks the id on each
+call — a grown-up on the live roster, listed in `school.yml` `teachers:` when
+the key is present. Agenda dispatch, grade corrections and retractions, bulk
+regrades, superseding a frozen period and rendering a postview PDF pass the
+same check as any other write.
 
-PIN text is held only by the visible prompt while its request is in flight. It
-is never put in React context, browser storage, logs, or an ordinary mutation
-body. Agenda dispatch, applying or retracting a grade correction, applying a
-bulk regrade, superseding a frozen period, and rendering a postview PDF require
-the PIN again. That confirmation mints a two-minute, one-use grant bound to the
-exact action and learner, bank, session/adjustment, period, or artifact. The
-client sends the grant in `X-Teacher-Step-Up`; the server consumes any presented
-grant whether it matches or not.
+A write tapped with nobody picked opens the picker and is replayed once a
+teacher is chosen; dismissing the picker drops it. A 403 shows the server's
+sentence on the panel and is not retried. The gated reads (a child's reading
+shelf and detail, debriefs, sentence-ladder and card-ladder teacher reads)
+name the teacher on the query string the same way.
 
-CLI mutation commands remain compatible with a literal `pin` body. Protected
-teacher record/artifact reads perform an unlock for that invocation, forward
-the returned cookie internally, and never print or persist the capability
-token; postview additionally mints and consumes its scoped one-use grant.
+The CLI sends `--teacher ID` as the write's actor field and nothing else.
 
 ## Simulate
 
@@ -284,8 +275,7 @@ node cli/school.mjs ops reassign assessment_123 --from learner3 --to learner4 \
 ```
 
 Without `--apply`, commands either call a server preview endpoint or print the
-exact redacted request and do not mutate School. A PIN, if one is configured
-again, is read only from the `--pin-env` variable and never printed. Assignment/enrollment operations
+exact request and do not mutate School. Assignment/enrollment operations
 read the current assignment revision; grade correction/retraction accept the
 session base revision. Agenda dispatch sends one caller-selected idempotency key
 in both header and body. A retry with the same payload replays its receipt; a

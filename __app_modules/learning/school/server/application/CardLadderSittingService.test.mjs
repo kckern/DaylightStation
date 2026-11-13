@@ -477,9 +477,9 @@ describe('CardLadderSittingService', () => {
   });
 
   it('fold: the teacher gate refuses a non-teacher', async () => {
-    const teacherGate = { assert: vi.fn(() => { throw new Error('teacher PIN required'); }) };
+    const teacherGate = { assert: vi.fn(() => { throw new Error('Only a listed teacher can do this.'); }) };
     const { service } = make({ teacherGate, attempts: [] });
-    await expect(service.fold({ learnerId: 'test-learner', actorId: 'test-learner', pin: null })).rejects.toThrow(/teacher/);
+    await expect(service.fold({ learnerId: 'test-learner', actorId: 'test-learner' })).rejects.toThrow(/teacher/);
     expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ action: 'card-ladder.fold', context: { learnerId: 'test-learner' } }));
   });
 
@@ -493,11 +493,11 @@ describe('CardLadderSittingService', () => {
     store.s.status.words.gawi = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
     const attempts = [{ id: 'att_2', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'gawi', correct: false, transport: 'paper' }];
     const { service } = make({ store, attempts, teacherGate: { assert: vi.fn() } });
-    await expect(service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' })).resolves.toEqual({ learnerId: 'test-learner', folded: 1, demoted: ['gawi'] });
+    await expect(service.fold({ learnerId: 'test-learner', actorId: 'parent' })).resolves.toEqual({ learnerId: 'test-learner', folded: 1, demoted: ['gawi'] });
     expect(store.s.status.words.gawi.state).toBe('familiar');
     expect(store.s.days[TODAY].sittings).toEqual({});
     expect(store.s.days[TODAY].atOpen).toBeNull();
-    await expect(service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' })).resolves.toEqual({ learnerId: 'test-learner', folded: 0, demoted: [] });
+    await expect(service.fold({ learnerId: 'test-learner', actorId: 'parent' })).resolves.toEqual({ learnerId: 'test-learner', folded: 0, demoted: [] });
   });
 
   it('open writes once: fold, plan and sitting row in one transaction', async () => {
@@ -903,7 +903,7 @@ describe('CardLadderSittingService — graded and transition events (plan 4, spe
     store.s.status.words.gawi = { ...emptyWordV3(), state: 'claimed', introducedDay: '2026-09-20' };
     const attempts = [{ id: 'att_2', at: '2026-09-22T20:00:00.000Z', bankId: `${DECK}-quiz@abcdef`, itemId: 'gawi', correct: false, transport: 'paper' }];
     const { service, logger } = make({ store, attempts, teacherGate: { assert: vi.fn() } });
-    await service.fold({ learnerId: 'test-learner', actorId: 'parent', pin: '1234' });
+    await service.fold({ learnerId: 'test-learner', actorId: 'parent' });
     expect(calls(logger, 'school.card-ladder.transition')).toEqual([expect.objectContaining({
       learnerId: 'test-learner', sittingId: null, mode: 'live', wordId: 'gawi', source: 'paper', to: { state: 'familiar', stage: null },
     })]);
@@ -912,7 +912,7 @@ describe('CardLadderSittingService — graded and transition events (plan 4, spe
 
 describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, spec §6)', () => {
   const gate = () => ({ assert: vi.fn() });
-  const who = { learnerId: 'test-learner', deckId: DECK, actorId: 'parent', pin: '1234' };
+  const who = { learnerId: 'test-learner', deckId: DECK, actorId: 'parent' };
   function adminStore() {
     const store = dueStore(2);
     store.s.status.words.gawi = { ...store.s.status.words.gawi, lastGraded: { day: '2026-09-20', task: '3.3', correct: false } };
@@ -937,7 +937,7 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     for (const call of adminCalls(service)) await expect(call()).rejects.toThrow(/grown-up/);
     expect(teacherGate.assert).toHaveBeenCalledTimes(6);
     for (const [args] of teacherGate.assert.mock.calls) {
-      expect(args).toEqual({ userId: 'parent', pin: '1234', action: 'card-ladder.admin', context: { learnerId: 'test-learner' } });
+      expect(args).toEqual({ userId: 'parent', action: 'card-ladder.admin', context: { learnerId: 'test-learner' } });
     }
     expect(store.s).toEqual(before);
   });

@@ -13,8 +13,8 @@ authority.
 
 It is derived from the state machines themselves, not from the feature list:
 `sessions/sessionEvents.mjs#TRANSITIONS`, `agenda.mjs`'s obligation ladder,
-`learnerDay.js#joinLearnerDay`, and the gate declarations in
-`TeacherCapabilitySessions.mjs`. Where the model says a path exists, the path
+`learnerDay.js#joinLearnerDay`, and the gate in
+`TeacherGate.mjs`. Where the model says a path exists, the path
 exists whether or not a button does.
 
 ---
@@ -26,85 +26,57 @@ lists roster ids, and `GET /teachers` resolves them against the live roster per
 request. When the key is absent the gate falls back to any adult — role is
 authority, and a pre-console install keeps working.
 
-Three tiers of authority, and every write names its tier.
+There is one tier of authority, and every write pays it.
 
 ```mermaid
 stateDiagram-v2
     direction LR
     [*] --> Anonymous
-    Anonymous --> Claimed: pick a teacher in the profile picker
-    note right of Claimed
-        Attribution only.
-        localStorage. Buys nothing.
+    Anonymous --> Picked: pick a teacher in the profile picker
+    note right of Picked
+        localStorage. Every write
+        carries this id.
     end note
-    Claimed --> Unlocked: POST auth/unlock with the console PIN
-    Unlocked --> Claimed: idle 10 min / absolute 30 min / Lock / server restart
-    Unlocked --> Granted: POST auth/step-up, action + resource
-    Granted --> Unlocked: grant spent, or 2 min elapsed
-    Unlocked --> [*]
+    Picked --> Picked: tap the chip, pick someone else
+    Picked --> Anonymous: Sign out, or the id leaves the teacher roster
 ```
 
-| Tier | Carrier | Lifetime | Buys |
-|---|---|---|---|
-| **Claim** | `localStorage`, client-side | until Lock, or the id leaves the teacher roster (survives reloads and new tabs) | attribution on writes — nothing else |
-| **Capability** | HttpOnly `SameSite=Strict` cookie | 10 min idle, 30 min absolute | every ordinary teacher write |
-| **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the nine high-consequence actions below |
-
-The PIN exists only inside the prompt. It is never held in shared state, never
-in browser storage, never in a log, and never in an ordinary mutation body; it
-exists only in the prompt's own local state while it is being typed, and is
-cleared when the prompt closes.
-
-**The nine step-up actions** (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`),
-with the resource each is scoped to:
-
-| Action | Scoped to | Why it costs extra |
+| What | Carrier | Lifetime |
 |---|---|---|
-| `agenda.dispatch` | `learnerId` | mints tokens and drives a physical printer |
-| `attempts.regrade` | `bankId` | rewrites what a batch of history *means* |
-| `sessions.grade-adjust` | `sessionId` | overrides a machine verdict about a child |
-| `sessions.grade-adjustment.retract` | `sessionId/adjustmentId` | withdraws that override |
-| `sessions.settle` | `sessionId` | writes a mark **no machine produced** |
-| `artifact.postview` | `artifactId` | renders a marked-up copy of a child's work |
-| `report-card.close` | `learnerId/periodId` — **only when `supersede: true`** | replaces a record a family already has |
-| `books.reading.reassign` | `readingId` | changes **whose** reading year a book belongs to |
-| `books.reading.delete` | `readingId` | destroys a record of what a child read |
+| **The picked teacher** | `localStorage`, client-side | until **Sign out** (the header chip) or the id leaves the teacher roster; survives reloads and new tabs |
+| **The acting id on a write** | the request itself — `actorId`, `by`, `userId`, `gradedBy`, `settledBy`, `issuedBy`… per route | that one request |
 
-A first freeze of a period needs the capability only. Re-closing one needs a
-grant, because the record already exists in someone's hands.
+The server holds no teacher session. `TeacherGate.assert({ userId, action,
+context })` (`TeacherGate.mjs`) decides every teacher write, per call:
 
-The Set and `teacherResource` must **agree**: `requiresTeacherStepUp` is
-derived from the resource being non-null, so a name in the Set with no resource
-branch requires nothing at all — a step-up that silently buys a free pass looks
-exactly like one that works.
+1. the id must be a **grown-up on the live roster** — an unreadable roster
+   refuses everyone (`Cannot verify who is asking — try again.`);
+2. when `teachers:` is present, the id must be **listed in it**
+   (`Only a listed teacher can do this.`).
 
-**That list is closed, and it is not the same vocabulary as the audit log.**
-Every teacher write names an `action` when it calls `teacherGate.assert`, and
-most of those names — `artifact.reprint`, `curriculum-exception.apply`,
-`curriculum-exception.retract`, `sessions.reassign` — exist only to say what
-was attempted in the log. A console that asks `POST auth/step-up` for one of
-them is asking the server to mint a grant it has no definition for; the answer
-is 403 and the only correct client behaviour is not to ask. Everything outside
-the nine runs on the capability cookie, which is the full gate the routes
-check.
+Both accessors are read per call, never snapshotted, so a roster or
+`teachers:` change applies to the next write. Every refusal logs
+`school.teacher-gate.refused {action, userId, reason, …context}` with
+`reason` one of `roster-unreadable`, `not-a-grown-up`, `not-a-teacher`. The
+`action` names what was attempted — `sessions.settle`, `artifact.reprint`,
+`books.reading.delete` — and exists for the log; it does not change the
+price. Settling a session, correcting a mark, re-closing a report card and
+deleting a reading pass the same check as resolving one review item.
 
-**A 403 is a loop, not a wall.** `useTeacherWrite` invalidates the capability,
-opens the PIN prompt, and replays the blocked call exactly once. A tap made
-before any teacher is claimed is stashed and replayed after the picker
-resolves; a *cancelled* picker drops the stash rather than firing it later as a
-ghost write.
+The gated teacher reads — a child's reading shelf and reading detail,
+debriefs, the sentence-ladder `/teacher/*` reads, the card-ladder admin reads —
+take the same id on the query (`?by=`, or `?actorId=` on card-ladder) and the
+same check, so a child's book grant does not open them.
 
-**Every path out of the PIN prompt settles the write that opened it.** A
-refused step-up is retryable only while the PIN is still a plausible cause — a
-wrong PIN, or a service the browser could not reach — and the dialog stays open
-for another attempt. Once the server has accepted that PIN and still refused
-the action, no PIN can help: the prompt closes and the caller is settled with
-the server's own words, which surface as the panel's error. A refusal that
-neither settles nor retries would leave the teacher with a dialog nothing can
-close over a write that never resolves, and no error anywhere. An install with
-no PIN configured skips the prompt and unlocks on its own, and that path keeps
-the same promise: a refused unlock or step-up settles the write with
-`refused: true` and the server's words.
+**A 403 is a wall, not a loop.** `useTeacherWrite` sends the picked teacher's
+id as `actorId`, and a refused write surfaces the server's own sentence as the
+panel's error — "That teacher isn’t allowed to make this change." when the
+response carries none — and is not retried: no prompt can change the answer,
+only picking a different teacher can. A tap made before any teacher is picked
+is stashed, the picker opens, and the stash is replayed once a teacher is
+chosen; a *dismissed* picker drops the stash rather than firing it later as a
+ghost write. An install whose picker has nobody in it says so ("No teacher is
+set up to sign in, so nothing was saved.") instead of waiting on it.
 
 ---
 
@@ -167,7 +139,7 @@ danger, then the full revision history with an undo per row. Five of those
 verbs make the child's record smaller — a deleted day of evidence, an
 un-finish, a re-date out of the counted window, a move to a sibling, a deleted
 reading — and each requires a reason that is *delivered* to the child
-(invariant 1). Move and delete are the two step-ups in §1's table. Every write
+(invariant 1). Every write
 carries `baseRevisionCount` and a stale one is refused, never merged
 (invariant 5). A shelf that could not be read shows a named error and **no edit
 controls at all**, deep link included: a damaged year of evidence must never
@@ -195,7 +167,7 @@ the last run's status and notes, and the history, with changes the brakes held
 back. An applied change that is still the setting's latest and still in force
 has **Undo**, which puts the value back and holds it for the dwell (5 study
 days). Every control, reads included, is teacher-gated and live only; the
-acting teacher is the capability session's. Details:
+acting teacher is the picked one, sent as `actorId`. Details:
 [`card-ladder.md`](card-ladder.md#grown-up-word-controls-spec-6) and its
 [tuning section](card-ladder.md#tuning-cardladdertuningservice-spec-7).
 
@@ -345,18 +317,18 @@ reassignment could not legally follow a reward until it became legal here.
 
 ### What a teacher can do, per state
 
-| Session state | Teacher's move | Where | Gate |
-|---|---|---|---|
-| `created` | abandon with a reason | Operations → Stuck sessions | capability |
-| `issued` / `reprinted` | reprint the exact artifact; abandon | Session inspector → Issued materials; Operations | capability |
-| `media_dispatched` / `media_stalled` | abandon | Operations | capability |
-| `submitted` | resolve the review items that block grading | Queue → Grading and review | capability |
-| `graded` / `outcome_recorded`, and `submitted` with every question marked | settle it by hand — see §5 for what it cannot finish | Session inspector → Settle this by hand | **step-up** |
-| `graded` | correct the mark; retract a correction | Session inspector → Fix a marked answer | **step-up** |
-| `outcome_recorded` (`needs_remediation`), while no retake has been opened | offer another try | Session inspector → Offer another try | capability |
-| `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector | **step-up** |
-| any | give credit for work the tech lost — attest the unit | Student → Operations | capability |
-| any | move the work to the right child | Student → Operations | capability |
+| Session state | Teacher's move | Where |
+|---|---|---|
+| `created` | abandon with a reason | Operations → Stuck sessions |
+| `issued` / `reprinted` | reprint the exact artifact; abandon | Session inspector → Issued materials; Operations |
+| `media_dispatched` / `media_stalled` | abandon | Operations |
+| `submitted` | resolve the review items that block grading | Queue → Grading and review |
+| `graded` / `outcome_recorded`, and `submitted` with every question marked | settle it by hand — see §5 for what it cannot finish | Session inspector → Settle this by hand |
+| `graded` | correct the mark; retract a correction | Session inspector → Fix a marked answer |
+| `outcome_recorded` (`needs_remediation`), while no retake has been opened | offer another try | Session inspector → Offer another try |
+| `rewarded` | correct the mark — the effective grade and its reward reconcile | Session inspector |
+| any | give credit for work the tech lost — attest the unit | Student → Operations |
+| any | move the work to the right child | Student → Operations |
 
 The session inspector presents those moves from the server's
 `school.teacher-session/v5` capability map. A newly created session says **Not
@@ -593,13 +565,13 @@ default, reason required, self-graded flashcard rows skipped. Report cards are
 **not** re-frozen — the report names the affected sessions so a teacher
 supersedes deliberately.
 
-| Correction mechanism | Scope | Writes | Gate |
-|---|---|---|---|
-| Resolve a review item | one question | queue verdict + child note | capability |
-| Fix a marked answer | one session | `grade_adjusted` | **step-up** |
-| Retract a correction | one adjustment | `grade_adjustment_retracted` | **step-up** |
-| Systematic regrade | one bank × date range | corrective attempts | **step-up** |
-| Settle it by hand | one session | `graded` + teacher note + `outcome_recorded` | **step-up** |
+| Correction mechanism | Scope | Writes |
+|---|---|---|
+| Resolve a review item | one question | queue verdict + child note |
+| Fix a marked answer | one session | `grade_adjusted` |
+| Retract a correction | one adjustment | `grade_adjustment_retracted` |
+| Systematic regrade | one bank × date range | corrective attempts |
+| Settle it by hand | one session | `graded` + teacher note + `outcome_recorded` |
 
 Four of the five are preview-first. Resolving a review item as `correct` or
 `incorrect` applies on the **first tap** — the mark itself is the whole
@@ -610,8 +582,9 @@ been written.
 **Settling by hand** finishes work that came back and stalled on the way to an
 outcome. One tap of **Settle it** does three things in this order:
 
-1. `graded`, flagged `settle`, which is what buys it the step-up: a settle
-   carries no verdicts, so without that flag it would meet no gate at all;
+1. `graded`, flagged `settle`, which is what puts it through the teacher
+   gate (`sessions.settle`): a settle carries no verdicts, so without that
+   flag it would meet no gate at all;
 2. the mandatory reason is delivered **to the child** as a teacher note (the
    agenda's "Notes for you", the student panel);
 3. `outcome_recorded`, because grading and stopping there would leave the
@@ -691,7 +664,7 @@ when its retained artifact is a PNG whose manifest names this session, and only
 on an install with a receipt printer wired (`GetTeacherSession`, mirroring
 `ReprintResultReceiptArtifact`'s own checks). **See the marked sheet** — the
 postview, the child's sheet with the marks drawn on it — is offered once the
-session is `graded` or later, behind the `artifact.postview` step-up.
+session is `graded` or later, fetched for the picked teacher.
 
 **The print cooldown arms from confirmed prints only.** A `failed` annotation
 never touches it, and an `issued` event carrying `confirmed: false` — a

@@ -75,17 +75,16 @@ export class GetCompanionFinishCode {
    * @param {object} args
    * @param {string} args.sessionId - the session whose sheet is stuck
    * @param {string|null} [args.revealedBy] - the acting teacher's stamp
-   * @param {string|object|null} [args.pin] - console PIN, or the capability proof
    * @returns {Promise<{schema: string, sessionId: string, lessonId: string|null,
    *   gated: boolean, available: boolean, reason: string|null, finishCode: string|null,
    *   earned: boolean, satisfiedAt: string|null, satisfiedVia: string|null,
    *   codeRef: string|null, revealedAt: string|null}>}
    */
-  async execute({ sessionId, revealedBy = null, pin = null } = {}) {
+  async execute({ sessionId, revealedBy = null } = {}) {
     // FIRST, before a single read. A refusal must not be able to tell a caller
     // whether the lesson has a companion, let alone whether a code exists.
     this.#teacherGate.assert({
-      userId: revealedBy, pin, action: 'companion.finish-code.reveal', context: { sessionId },
+      userId: revealedBy, action: 'companion.finish-code.reveal', context: { sessionId },
     });
     if (typeof sessionId !== 'string' || !sessionId.trim()) throw new ValidationError('sessionId is required');
 

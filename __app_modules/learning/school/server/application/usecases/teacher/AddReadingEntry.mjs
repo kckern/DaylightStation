@@ -17,9 +17,9 @@ export class AddReadingEntry {
 
   async execute({
     learnerId, readingId, on, page = null, minutes = null, note = null,
-    reason = null, by = null, pin = null, idempotencyKey = null, baseRevisionCount,
+    reason = null, by = null, idempotencyKey = null, baseRevisionCount,
   } = {}) {
-    this.#context.assert({ op: OPS.ENTRY_ADD, userId: by, pin, learnerId, readingId });
+    this.#context.assert({ op: OPS.ENTRY_ADD, userId: by, learnerId, readingId });
     const reading = await this.#context.reading(learnerId, readingId);
     const revisionCount = Array.isArray(reading?.revisions) ? reading.revisions.length : 0;
 
@@ -52,7 +52,7 @@ export class AddReadingEntry {
     }
 
     const applied = await applyReadingOperation(this.#context, {
-      learnerId, reading, op: OPS.ENTRY_ADD, by, pin, reason,
+      learnerId, reading, op: OPS.ENTRY_ADD, by, reason,
       entry: {
         on, page, minutes, source: 'teacher', at: this.#context.now(),
         ...(note ? { note } : {}),

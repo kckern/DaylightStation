@@ -9,7 +9,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from "../../../../../frontend/src/lib/identity/ProfilePicker.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
-import PinPrompt from "./panels/PinPrompt.jsx";
 import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { schoolApi } from "../schoolApi.js";
@@ -49,7 +48,7 @@ const PHONE_QUERY = '(max-width: 760px)';
 
 function TeacherShell({ PianoProgramsPanel }) {
   const {
-    status, configured, teachers, currentTeacher, claim, release, authorization,
+    status, configured, teachers, currentTeacher, claim, release,
     pickerOpen, openPicker, closePicker,
   } = useTeacherProfile();
   const initial = useMemo(() => parseTeacherPath(window.location.pathname), []);
@@ -221,10 +220,10 @@ function TeacherShell({ PianoProgramsPanel }) {
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (
             <div className="teacher-console__identity">
-              <button type="button" className="teacher-console__chip" onClick={openPicker} title={authorization.active ? 'Teacher tools unlocked' : 'Choose teacher'}>
-                {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span><i aria-label={authorization.active ? 'Unlocked' : 'Locked'}>{authorization.active ? '●' : '○'}</i></> : <span>Teacher tools</span>}
+              <button type="button" className="teacher-console__chip" onClick={openPicker} title={currentTeacher ? 'Switch teacher' : 'Choose teacher'}>
+                {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span></> : <span>Teacher tools</span>}
               </button>
-              {currentTeacher && <button type="button" className="teacher-console__lock" onClick={release}>Lock</button>}
+              {currentTeacher && <button type="button" className="teacher-console__sign-out" onClick={release}>Sign out</button>}
             </div>
           )}
         </header>
@@ -274,7 +273,6 @@ function TeacherShell({ PianoProgramsPanel }) {
           <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />
-        <PinPrompt />
         <ProfilePicker open={pickerOpen} users={teachers} activeId={currentTeacher?.id} onPick={claim} onDismiss={closePicker} timeoutMs={600000} title="Who’s teaching?" />
       </div>
     </div>

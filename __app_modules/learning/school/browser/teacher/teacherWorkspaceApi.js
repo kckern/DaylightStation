@@ -33,12 +33,6 @@ async function requestBlob(path, { headers = {} } = {}) {
 }
 
 export const teacherWorkspaceApi = {
-  authStatus: () => request('/auth/status'),
-  unlock: (userId, pin) => request('/auth/unlock', { method: 'POST', body: { userId, pin } }),
-  lock: () => request('/auth/lock', { method: 'POST', body: {} }),
-  stepUp: ({ pin, action, resource }) => request('/auth/step-up', {
-    method: 'POST', body: { pin, action, resource },
-  }),
   timeline: (learnerId, { limit = 100, before = null, unitId = null } = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
@@ -52,9 +46,9 @@ export const teacherWorkspaceApi = {
   },
   // One child's reading shelf, for a grown-up. The child reads the same view
   // through `/books/:learnerId/shelf` with a launch grant; a grown-up holds no
-  // launch, so the learner is the URL's and the console capability is the gate.
-  // GETs carry the picked teacher as `?by=`: with no console PIN there is no
-  // capability cookie, and a read that names nobody is refused as a stranger.
+  // launch, so the learner is the URL's and the picked teacher is the gate:
+  // GETs carry them as `?by=`, and a read that names nobody is refused as a
+  // stranger.
   readingShelf: (learnerId, by = null) => request(`/learners/${encodeURIComponent(learnerId)}/reading${byQuery(by)}`),
   // One reading, every entry, and the full `revisions` list the editor undoes
   // from — plus the `baseRevisionCount` every write below must carry back, and
@@ -95,19 +89,17 @@ export const teacherWorkspaceApi = {
   // check-in or finish must land on, and the mode a new reading defaults to.
   // The quick-log sheet's read; the console works none of this out itself.
   bookReaders: (isbn, by = null) => request(`/books/${encodeURIComponent(isbn)}/readers${byQuery(by)}`),
-  undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
+  undoReadingRevision: (learnerId, readingId, body) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,
-    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+    { method: 'POST', body },
   ),
-  // The two step-up verbs. The grant rides in `X-Teacher-Step-Up`, is one-use,
-  // and is scoped to this reading id alone (teacher.md §1).
-  moveReading: (learnerId, readingId, body, grantToken = null) => request(
+  moveReading: (learnerId, readingId, body) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/reassign`,
-    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+    { method: 'POST', body },
   ),
-  deleteReading: (learnerId, readingId, body, grantToken = null) => request(
+  deleteReading: (learnerId, readingId, body) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
-    { method: 'DELETE', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+    { method: 'DELETE', body },
   ),
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
@@ -119,51 +111,40 @@ export const teacherWorkspaceApi = {
   curriculumExceptions: () => request('/curriculum-exceptions'),
   answerSheet: (cardId) => request(`/answer-sheets/${encodeURIComponent(cardId)}`),
   learnerAnswerSheets: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/answer-sheets`),
-  changeCurriculumException: (body, grantToken = null) => request('/curriculum-exceptions', {
-    method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
-  }),
-  retractCurriculumException: (exceptionId, body, grantToken = null) => request(
-    `/curriculum-exceptions/${encodeURIComponent(exceptionId)}/retract`, {
-      method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
-    },
+  changeCurriculumException: (body) => request('/curriculum-exceptions', { method: 'POST', body }),
+  retractCurriculumException: (exceptionId, body) => request(
+    `/curriculum-exceptions/${encodeURIComponent(exceptionId)}/retract`, { method: 'POST', body },
   ),
   agendaDispatchPreview: (learnerId, learnerName = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/agenda/dispatch/preview`,
     { method: 'POST', body: { learnerName } },
   ),
-  agendaDispatch: (learnerId, body, idempotencyKey, grantToken = null) => request(
+  agendaDispatch: (learnerId, body, idempotencyKey) => request(
     `/learners/${encodeURIComponent(learnerId)}/agenda/dispatch`,
-    { method: 'POST', body: { ...body, idempotencyKey }, headers: {
-      'Idempotency-Key': idempotencyKey,
-      ...(grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
-    } },
+    { method: 'POST', body: { ...body, idempotencyKey }, headers: { 'Idempotency-Key': idempotencyKey } },
   ),
-  adjustGrade: (sessionId, body, grantToken = null) => request(
-    `/sessions/${encodeURIComponent(sessionId)}/grade-adjustments`, { method: 'POST', body,
-      headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+  adjustGrade: (sessionId, body) => request(
+    `/sessions/${encodeURIComponent(sessionId)}/grade-adjustments`, { method: 'POST', body },
   ),
-  retractGradeAdjustment: (sessionId, adjustmentId, body, grantToken = null) => request(
+  retractGradeAdjustment: (sessionId, adjustmentId, body) => request(
     `/sessions/${encodeURIComponent(sessionId)}/grade-adjustments/${encodeURIComponent(adjustmentId)}/retract`,
-    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+    { method: 'POST', body },
   ),
   // The escape hatch for a broken read-along. A POST, because the reveal is
-  // recorded on the server — and because the capability cookie only becomes an
-  // authorization on a request that carries a body. Its answer is never cached
-  // and never held anywhere but the component that asked for it.
-  revealCompanionFinishCode: (sessionId, body, grantToken = null) => request(
+  // recorded on the server and the body names who asked. Its answer is never
+  // cached and never held anywhere but the component that asked for it.
+  revealCompanionFinishCode: (sessionId, body) => request(
     `/sessions/${encodeURIComponent(sessionId)}/companion-finish-code`,
-    { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
+    { method: 'POST', body },
   ),
   artifact: (artifactId) => request(`/artifacts/${encodeURIComponent(artifactId)}`),
   artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original`),
-  reprintArtifact: (artifactId, body, idempotencyKey, grantToken = null) => request(
-    `/artifacts/${encodeURIComponent(artifactId)}/reprint`, { method: 'POST', body: { ...body, idempotencyKey }, headers: {
-      'Idempotency-Key': idempotencyKey, ...(grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
-    } },
+  reprintArtifact: (artifactId, body, idempotencyKey) => request(
+    `/artifacts/${encodeURIComponent(artifactId)}/reprint`, { method: 'POST', body: { ...body, idempotencyKey },
+      headers: { 'Idempotency-Key': idempotencyKey } },
   ),
-  artifactPostview: (artifactId, grantToken) => requestBlob(
-    `/artifacts/${encodeURIComponent(artifactId)}/postview.pdf`,
-    { headers: { 'X-Teacher-Step-Up': grantToken } },
+  artifactPostview: (artifactId, by = null) => requestBlob(
+    `/artifacts/${encodeURIComponent(artifactId)}/postview.pdf${byQuery(by)}`,
   ),
 };
 

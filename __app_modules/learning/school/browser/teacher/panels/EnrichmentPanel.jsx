@@ -22,8 +22,8 @@ export default function EnrichmentPanel({ kids = [] }) {
     isEmpty: (d) => !(d?.entries ?? []).length,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrichment' });
-  const retract = (e) => run(`retract:${e.id}`, ({ actorId, pin }) => schoolApi.retract({
-    kind: 'enrichment', entryId: e.id, retractedBy: actorId, pin,
+  const retract = (e) => run(`retract:${e.id}`, ({ actorId }) => schoolApi.retract({
+    kind: 'enrichment', entryId: e.id, retractedBy: actorId,
   }), { onSuccess: entries.retry });
   const [form, setForm] = useState(EMPTY_FORM);
   const [open, setOpen] = useState(false);
@@ -33,8 +33,8 @@ export default function EnrichmentPanel({ kids = [] }) {
     [field]: f[field].includes(id) ? f[field].filter((x) => x !== id) : [...f[field], id],
   }));
 
-  const save = () => run('save', ({ actorId, pin }) => schoolApi.postEnrichment({
-    recordedBy: actorId, pin, title: form.title, from: form.from,
+  const save = () => run('save', ({ actorId }) => schoolApi.postEnrichment({
+    recordedBy: actorId, title: form.title, from: form.from,
     to: form.to || null, note: form.note || null,
     learnerIds: form.learnerIds, subjectIds: form.subjectIds,
     kind: form.kind,

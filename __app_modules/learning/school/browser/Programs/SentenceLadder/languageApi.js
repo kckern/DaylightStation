@@ -231,9 +231,7 @@ export const languageApi = {
   ),
 
   // -- the teacher console's reads ----------------------------------------
-  // Same history, behind the console's capability cookie (sent by the
-  // browser on its own) instead of a launch grant. `by` names the picked
-  // teacher for a household with no PIN; the server prefers the cookie's.
+  // Same history, for the picked teacher (`by`) instead of a launch grant.
   teacherCourses: (learnerId, by) => req(`/teacher/${enc(learnerId)}/courses?by=${enc(by ?? '')}`),
   teacherHistory: (learnerId, corpus, by) => req(`/teacher/${enc(learnerId)}/history?corpus=${enc(corpus)}&by=${enc(by ?? '')}`),
   teacherRecordingBlob: (learnerId, corpus, seq, by) => blobAt(

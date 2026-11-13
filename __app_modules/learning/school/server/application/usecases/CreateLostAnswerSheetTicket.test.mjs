@@ -9,9 +9,9 @@ describe('CreateLostAnswerSheetTicket', () => {
       tokens, teacherGate,
       clock: () => new Date('2026-08-13T12:00:00.000Z'), rng: () => 0, ttlMinutes: 15,
     });
-    const result = await useCase.execute({ cardId: '1234567', requestedBy: 'kckern', pin: '4321' });
+    const result = await useCase.execute({ cardId: '1234567', requestedBy: 'kckern' });
     expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'answer-sheet.lost-ticket', userId: 'kckern', pin: '4321',
+      action: 'answer-sheet.lost-ticket', userId: 'kckern',
     }));
     expect(result).toMatchObject({
       status: 'issued', cardId: '1234567', expiresAt: '2026-08-13T12:15:00.000Z',

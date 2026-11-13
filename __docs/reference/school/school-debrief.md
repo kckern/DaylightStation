@@ -304,7 +304,7 @@ Under `/api/v1/school/debrief/`.
 
 Learner routes need the grant header. Teacher routes go through the teacher
 gate and require a teacher id: `?by=<teacherId>` on GET, `by` in the JSON body on
-POST, plus the PIN or capability proof. A malformed day or range is a 400.
+POST. A malformed day or range is a 400.
 
 ## Operations
 
@@ -332,7 +332,7 @@ POST, plus the PIN or capability proof. A malformed day or range is a 400.
   replies, the entries, and, on a completed day, a "We talked about it" button
   (posts `discussed`; shows "Talked about" afterwards).
 - **Excuse, reject, re-score:** the teacher console's Debriefs tab, behind the
-  teacher PIN gate. Excuse pays nothing and does not block the week bonus (but a
+  teacher gate. Excuse pays nothing and does not block the week bonus (but a
   week with no completed day earns no week bonus); reject pays nothing and
   blocks it. Re-score asks the AI again for a fallback day: it replaces the
   level, reason and hook, and replaces the questions only while none has been answered. Once

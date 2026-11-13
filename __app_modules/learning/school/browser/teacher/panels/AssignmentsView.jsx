@@ -2,7 +2,7 @@
  * AssignmentsView — what this learner is enrolled in, now EDITABLE (wave 3,
  * teacher.assignments.edit): courses and standalone units picked from the
  * published curriculum, saved through the gate (PUT assignments carries the
- * teacher stamp + pin), server-authoritative refresh. A 404 read is "nothing
+ * teacher stamp), server-authoritative refresh. A 404 read is "nothing
  * assigned yet" — an empty state that still offers Edit, never an error —
  * hence PanelFrame's `alwaysRender`: the editable body survives empty/error.
  */
@@ -80,12 +80,11 @@ export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0
   const otherPrograms = (record.data?.programs ?? [])
     .filter((entry) => !['story-time', 'book-log'].includes(entry?.programId));
 
-  const save = () => run('save', ({ actorId, pin }) => schoolApi.putAssignments(learnerId, {
+  const save = () => run('save', ({ actorId }) => schoolApi.putAssignments(learnerId, {
     courses: mergeEntries(record.data?.courses, draft.courses, 'courseId'),
     units: mergeEntries(record.data?.units, draft.units, 'unitId'),
     programs: draft.programs,
     assignedBy: actorId,
-    pin,
     // Concurrent-edit guard (B14): what we LOADED; a stale save is refused
     // with a friendly reload message instead of silently clobbering.
     baseUpdatedAt: record.data?.updatedAt ?? null,

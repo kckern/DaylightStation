@@ -38,9 +38,9 @@ export class AddReadingForLearner {
   async execute({
     learnerId, isbn, progressMode = 'page', pageCount = null, openedOn = null,
     where = 'starting', page = null, finishedOn = null,
-    reason = null, by = null, pin = null, idempotencyKey = null,
+    reason = null, by = null, idempotencyKey = null,
   } = {}) {
-    this.#context.assert({ op: OPS.READING_ADD, userId: by, pin, learnerId });
+    this.#context.assert({ op: OPS.READING_ADD, userId: by, learnerId });
     if (isBlank(learnerId)) throw new ValidationError('learnerId is required');
     if (isBlank(isbn)) throw new ValidationError('isbn is required');
     if (!PROGRESS_MODES.includes(progressMode)) throw new ValidationError(`unknown progress mode: ${progressMode}`);

@@ -26,12 +26,12 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
   const [reason, setReason] = useState('');
 
   const dismiss = (r, key) => {
-    run(key, ({ actorId, pin }) => schoolApi.quizRequestDismiss({
+    run(key, ({ actorId }) => schoolApi.quizRequestDismiss({
       // kind + sessionId ride along so the server dismisses EXACTLY this row
       // — a retake ask and a flag on the same bank are different sentences.
       unitId: r.unitId ?? null, bankId: r.bankId ?? null,
       kind: r.kind ?? null, sessionId: r.sessionId ?? null, userId: r.userId,
-      dismissedBy: actorId, pin, reason: reason.trim(),
+      dismissedBy: actorId, reason: reason.trim(),
     }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); onChanged?.(); } });
   };
 

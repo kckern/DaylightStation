@@ -9,7 +9,7 @@
  *
  * @module Admin/School/GraderBar
  */
-import { Alert, Group, PasswordInput, Select, Text } from '@mantine/core';
+import { Alert, Group, Select, Text } from '@mantine/core';
 
 /**
  * @param {object} props
@@ -17,13 +17,13 @@ import { Alert, Group, PasswordInput, Select, Text } from '@mantine/core';
  * @param {string|null} props.graderId
  * @param {object|null} props.grader
  * @param {(id: string|null) => void} props.onChange
- * @param {string} props.action - what the sign-in unlocks, for the empty-state copy
+ * @param {string} props.action - what the sign-in allows, for the empty-state copy
  * @param {string} props.label - the picker's label; it must name what this
  *   screen actually does, or a planning page reads "Marking as"
  */
 export default function GraderBar({
   adults, graderId, grader, onChange, action = 'sign off', label = 'Marking as',
-  teachersConfigured = null, pin = undefined, onPinChange = null,
+  teachersConfigured = null,
 }) {
   if (!adults.length) {
     // The teachers read is still in flight: say nothing yet rather than
@@ -60,15 +60,6 @@ export default function GraderBar({
         allowDeselect={false}
         w={240}
       />
-      {onPinChange && (
-        <PasswordInput
-          label="Teacher PIN"
-          placeholder="If configured"
-          value={pin ?? ''}
-          onChange={(e) => onPinChange(e.currentTarget.value)}
-          w={140}
-        />
-      )}
     </Group>
   );
 

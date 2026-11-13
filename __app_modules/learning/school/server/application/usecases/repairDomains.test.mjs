@@ -29,7 +29,7 @@ describe('RecordAttestation', () => {
   it('gate-checked, reason mandatory, appended with attribution', async () => {
     const log = new YamlAttestationLog({ configService });
     const uc = new RecordAttestation({ log, teacherGate: passingGate(), clock: () => new Date('2026-08-06T12:00:00Z'), idGen: () => 'att_1' });
-    const { entry } = await uc.execute({ learnerId: 'learner4', unitId: 'math-fractions.02', reason: 'OMR reader was down; graded on paper by hand', attestedBy: 'kckern', pin: '7410' });
+    const { entry } = await uc.execute({ learnerId: 'learner4', unitId: 'math-fractions.02', reason: 'OMR reader was down; graded on paper by hand', attestedBy: 'kckern' });
     expect(entry).toMatchObject({ id: 'att_1', learnerId: 'learner4', unitId: 'math-fractions.02', attestedBy: 'kckern' });
     expect(log.list({ learnerId: 'learner4' }).length).toBe(1);
     await expect(uc.execute({ learnerId: 'learner4', unitId: 'u', reason: '  ', attestedBy: 'kckern' })).rejects.toThrow(/reason/);
@@ -90,7 +90,7 @@ describe('ReassignEvidence', () => {
       { sessionId: 'ses_2', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-06T11:00:00Z' },
     ]);
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), clock: () => new Date('2026-08-06T12:00:00Z') });
-    const out = await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+    const out = await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' });
     expect(out.moved).toBe(1);
     expect(ds.shards.get('learner4:2026-08-06').map((a) => a.sessionId)).toEqual(['ses_2']);
     expect(ds.shards.get('learner3:2026-08-06')[0]).toMatchObject({ sessionId: 'ses_1', attributedTo: 'learner3', reassignedFrom: 'learner4', reassignedBy: 'kckern' });
@@ -108,7 +108,7 @@ describe('ReassignEvidence', () => {
     ds.seed('learner4', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-06T10:00:00Z' }]);
     const auditLog = { append: vi.fn(async () => {}) };
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), auditLog, clock: () => new Date('2026-08-06T12:00:00Z') });
-    await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+    await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' });
     expect(auditLog.append).toHaveBeenCalledWith({
       at: '2026-08-06T12:00:00.000Z', fromLearnerId: 'learner4', toLearnerId: 'learner3',
       day: '2026-08-06', assessmentId: 'ses_1', moved: 1, reassignedBy: 'kckern',
@@ -119,7 +119,7 @@ describe('ReassignEvidence', () => {
     const ds = mkDatastore();
     ds.seed('learner4', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-06T10:00:00Z' }]);
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate() });
-    await expect(uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' }))
+    await expect(uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' }))
       .resolves.toMatchObject({ moved: 1 });
   });
 
@@ -129,7 +129,7 @@ describe('ReassignEvidence', () => {
     const auditLog = { append: vi.fn(async () => { throw new Error('disk full'); }) };
     const logger = { warn: vi.fn() };
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), auditLog, logger, clock: () => new Date('2026-08-06T12:00:00Z') });
-    await expect(uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' }))
+    await expect(uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' }))
       .resolves.toMatchObject({ moved: 1 });
     expect(ds.shards.get('learner3:2026-08-06')[0]).toMatchObject({ sessionId: 'ses_1' });
     expect(logger.warn).toHaveBeenCalledWith('school.reassign.audit-failed', expect.anything());
@@ -179,7 +179,7 @@ describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', 
     const log = new YamlAttestationLog({ configService });
     const notes = noteStore();
     const uc = new RecordAttestation({ log, teacherGate: passingGate(), notes, clock: () => new Date('2026-08-06T12:00:00Z'), idGen: () => 'att_1' });
-    await uc.execute({ learnerId: 'learner4', unitId: 'math-fractions.02', reason: 'graded on paper', attestedBy: 'kckern', pin: '7410' });
+    await uc.execute({ learnerId: 'learner4', unitId: 'math-fractions.02', reason: 'graded on paper', attestedBy: 'kckern' });
     expect(notes.append).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: 'learner4', from: 'kckern',
       note: expect.stringMatching(/verified you completed.*It counts/),
@@ -191,7 +191,7 @@ describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', 
     ds.seed('learner4', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-06T10:00:00Z' }]);
     const notes = noteStore();
     const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), notes, clock: () => new Date('2026-08-06T12:00:00Z') });
-    await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+    await uc.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' });
     // Sorted, so this asserts WHICH TWO children were told, not the order the
     // use case told them in. The literal used to read as from-then-to and
     // passed only because those two ids happened to sort that way.
@@ -201,7 +201,7 @@ describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', 
     ds.seed('learner4', '2026-08-07', [{ sessionId: 'ses_9', itemId: 'q1', attributedTo: 'learner4', at: '2026-08-07T10:00:00Z' }]);
     const broken = { append: vi.fn(async () => { throw new Error('offline'); }) };
     const uc2 = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), notes: broken, clock: () => new Date('2026-08-07T12:00:00Z') });
-    await expect(uc2.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-07', assessmentId: 'ses_9', reassignedBy: 'kckern', pin: '7410' }))
+    await expect(uc2.execute({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-07', assessmentId: 'ses_9', reassignedBy: 'kckern' }))
       .resolves.toMatchObject({ moved: 1 });
   });
 
@@ -211,7 +211,7 @@ describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', 
     await log.append({ id: 'att_1', at: 't', attestedBy: 'kckern', learnerId: 'learner4', unitId: 'math-fractions.02', reason: 'r' });
     const notes = noteStore();
     const uc = new RetractTeacherRecord({ stores: { enrichment: null, attestation: log, note: null }, teacherGate: passingGate(), notes });
-    await uc.execute({ kind: 'attestation', entryId: 'att_1', retractedBy: 'kckern', pin: '7410' });
+    await uc.execute({ kind: 'attestation', entryId: 'att_1', retractedBy: 'kckern' });
     expect(notes.append).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: 'learner4',
       note: expect.stringMatching(/completion mark.*removed.*back on your list/),
@@ -244,7 +244,7 @@ describe('advocacy wave 6 — retractions (B15)', () => {
       teacherGate: passingGate(),
     });
     await expect(uc.execute({ kind: 'enrichment', entryId: 'ghost', retractedBy: 'kckern' })).rejects.toThrow(/entry/);
-    await uc.execute({ kind: 'enrichment', entryId: 'enr_1', retractedBy: 'kckern', pin: '7410' });
+    await uc.execute({ kind: 'enrichment', entryId: 'enr_1', retractedBy: 'kckern' });
     expect(enrichment.list({ learnerId: 'learner4' })).toEqual([]);
   });
 });
@@ -276,10 +276,10 @@ describe('admin advocacy #15 — period rails', () => {
       store, teacherGate: passingGate(),
       frozenPeriodIds: async () => ['fall-2026'],
     });
-    await expect(uc.execute({ periods: [P({ periodId: 'renamed-fall' })], editedBy: 'kckern', pin: '7410' }))
+    await expect(uc.execute({ periods: [P({ periodId: 'renamed-fall' })], editedBy: 'kckern' }))
       .rejects.toThrow(/fall-2026/);
     expect(store.replacePeriods).not.toHaveBeenCalled();
-    await expect(uc.execute({ periods: [P()], editedBy: 'kckern', pin: '7410' })).resolves.toBeTruthy();
+    await expect(uc.execute({ periods: [P()], editedBy: 'kckern' })).resolves.toBeTruthy();
   });
 });
 

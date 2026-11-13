@@ -38,9 +38,8 @@ describe('tokenResolver — cookie transport', () => {
   });
 
   it('picks its own cookie out of a jar that holds others', () => {
-    // The teacher cookie shares this header, and so does anything else the
-    // browser is carrying for the origin.
-    const { req } = run({ cookie: `daylight_teacher_session=abc; ${SESSION_COOKIE}=${token()}; other=1` });
+    // The header carries anything else the browser holds for the origin.
+    const { req } = run({ cookie: `another_session=abc; ${SESSION_COOKIE}=${token()}; other=1` });
     expect(req.user?.sub).toBe('kckern');
   });
 

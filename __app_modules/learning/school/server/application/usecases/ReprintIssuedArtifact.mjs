@@ -25,9 +25,9 @@ export class ReprintIssuedArtifact {
     this.#exceptions = curriculumExceptions;
   }
 
-  async execute({ artifactId, reprintedBy, pin, idempotencyKey, apply = false } = {}) {
+  async execute({ artifactId, reprintedBy, idempotencyKey, apply = false } = {}) {
     if (!present(artifactId) || !present(idempotencyKey)) throw new ValidationError('artifactId and idempotencyKey are required');
-    this.#teacherGate.assert({ userId: reprintedBy, pin,
+    this.#teacherGate.assert({ userId: reprintedBy,
       action: apply ? 'artifact.reprint' : 'artifact.reprint.preview', context: { artifactId } });
     const artifact = await this.#artifacts.get(artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', artifactId);

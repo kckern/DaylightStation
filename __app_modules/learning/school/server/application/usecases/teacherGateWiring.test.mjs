@@ -12,18 +12,18 @@ import { PrintService } from "../PrintService.mjs";
 import { GuestForbiddenError } from "../../domain/errors.mjs";
 
 const refusingGate = () => ({
-  assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }),
+  assert: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }),
 });
 const passingGate = () => ({ assert: vi.fn() });
 const grownUps = { assert: vi.fn() };
 
 describe('TeacherGate wiring', () => {
-  it('ResolveReviewItem consults the gate with userId+pin+action and stops on refusal', async () => {
+  it('ResolveReviewItem consults the gate with userId+action and stops on refusal', async () => {
     const gate = refusingGate();
     const uc = new ResolveReviewItem({ reviewQueue: { resolve: vi.fn() }, grownUps, teacherGate: gate });
-    await expect(uc.execute({ sessionId: 's', itemId: 'i', verdict: 'correct', gradedBy: 'kckern', pin: '9' }))
+    await expect(uc.execute({ sessionId: 's', itemId: 'i', verdict: 'correct', gradedBy: 'kckern' }))
       .rejects.toThrow(GuestForbiddenError);
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '9', action: 'review.resolve', context: { sessionId: 's', itemId: 'i' } });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', action: 'review.resolve', context: { sessionId: 's', itemId: 'i' } });
     expect(grownUps.assert).not.toHaveBeenCalled();
   });
 
@@ -31,8 +31,8 @@ describe('TeacherGate wiring', () => {
     const gate = passingGate();
     const store = { put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps, teacherGate: gate });
-    await uc.execute({ learnerId: 'learner4', courses: ['math'], units: [], assignedBy: 'kckern', pin: '4321' });
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put', context: { learnerId: 'learner4' } });
+    await uc.execute({ learnerId: 'learner4', courses: ['math'], units: [], assignedBy: 'kckern' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', action: 'assignments.put', context: { learnerId: 'learner4' } });
     expect(store.put).toHaveBeenCalled();
   });
 
@@ -40,7 +40,7 @@ describe('TeacherGate wiring', () => {
     const gate = refusingGate();
     const getReportCard = { execute: vi.fn() };
     const uc = new CloseAcademicPeriod({ getReportCard, datastore: {}, grownUps, teacherGate: gate });
-    await expect(uc.execute({ learnerId: 'learner4', periodId: 'p', closedBy: 'kckern', pin: 'x' }))
+    await expect(uc.execute({ learnerId: 'learner4', periodId: 'p', closedBy: 'kckern' }))
       .rejects.toThrow(GuestForbiddenError);
     expect(getReportCard.execute).not.toHaveBeenCalled();
   });
@@ -53,10 +53,10 @@ describe('TeacherGate wiring', () => {
       bankReader: {}, pdfReader: {}, userService: { getHouseholdRoster: () => [] },
       teacherGate: gate,
     });
-    await expect(svc.approve({ requestId: 'r', approver: 'kckern', pin: 'x' })).rejects.toThrow(GuestForbiddenError);
-    await expect(svc.deny({ requestId: 'r', approver: 'kckern', pin: 'x' })).rejects.toThrow(GuestForbiddenError);
+    await expect(svc.approve({ requestId: 'r', approver: 'kckern' })).rejects.toThrow(GuestForbiddenError);
+    await expect(svc.deny({ requestId: 'r', approver: 'kckern' })).rejects.toThrow(GuestForbiddenError);
     expect(ds.readPrintPending).not.toHaveBeenCalled();
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.approve', context: { requestId: 'r' } });
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.deny', context: { requestId: 'r' } });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', action: 'print.approve', context: { requestId: 'r' } });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', action: 'print.deny', context: { requestId: 'r' } });
   });
 });

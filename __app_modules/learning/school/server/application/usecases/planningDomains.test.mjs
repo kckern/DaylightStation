@@ -98,8 +98,8 @@ describe('gated planning use cases', () => {
     const store = new YamlAcademicPeriodStore({ configService, fallback: null });
     const gate = passingGate();
     const uc = new SetAcademicPeriods({ store, teacherGate: gate, clock: () => new Date('2026-08-06T00:00:00Z') });
-    const out = await uc.execute({ periods: [PERIOD], editedBy: 'kckern', pin: '7410' });
-    expect(gate.assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'kckern', pin: '7410', action: 'periods.edit' }));
+    const out = await uc.execute({ periods: [PERIOD], editedBy: 'kckern' });
+    expect(gate.assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'kckern', action: 'periods.edit' }));
     expect(out.periods.map((p) => p.periodId)).toEqual(['2026-fall']);
     expect(store.listPeriods().length).toBe(1);
   });
@@ -156,7 +156,7 @@ describe('gated planning use cases', () => {
       clock: () => new Date('2026-08-06T12:00:00Z'), idGen: () => 'enr_1',
     });
     const out = await uc.execute({
-      recordedBy: 'kckern', pin: '7410', learnerIds: ['learner4', 'learner3'],
+      recordedBy: 'kckern', learnerIds: ['learner4', 'learner3'],
       from: '2026-08-10', to: '2026-08-14', title: 'Yellowstone trip',
       subjectIds: ['science', 'history'], note: 'Geysers + fort tour',
     });

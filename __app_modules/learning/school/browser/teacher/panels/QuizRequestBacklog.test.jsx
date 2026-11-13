@@ -2,17 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import QuizRequestBacklog from "./QuizRequestBacklog.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "../TeacherProfileContext.jsx";
-import PinPrompt from "./PinPrompt.jsx";
-
-vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
-  authStatus: vi.fn(async () => {
-    const userId = localStorage.getItem('school-teacher-claim');
-    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
-  }),
-  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
-  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
-  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
-} }));
 
 vi.mock("../../schoolApi.js", () => ({
   schoolApi: {
@@ -32,7 +21,7 @@ function ShellProbe() {
   const { currentTeacher } = useTeacherProfile();
   return <span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>;
 }
-const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /><ShellProbe /></TeacherProfileProvider>);
+const mount = (ui) => render(<TeacherProfileProvider>{ui}<ShellProbe /></TeacherProfileProvider>);
 const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
 beforeEach(() => {

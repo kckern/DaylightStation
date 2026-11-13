@@ -1172,9 +1172,9 @@ export class CardLadderSittingService {
    * The teacher's "apply scanned quiz": the same fold `open` runs, on demand,
    * for every word package the learner has a card-ladder assignment in.
    */
-  async fold({ learnerId, actorId = null, pin = null } = {}) {
+  async fold({ learnerId, actorId = null } = {}) {
     if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
-    this.#teacherGate.assert({ userId: actorId, pin, action: 'card-ladder.fold', context: { learnerId } });
+    this.#teacherGate.assert({ userId: actorId, action: 'card-ladder.fold', context: { learnerId } });
     const enrollments = await this.#enrollments(learnerId);
     if (!enrollments.length) throw new EntityNotFoundError('card-ladder assignment', learnerId);
     const today = this.#today();
@@ -1215,10 +1215,10 @@ export class CardLadderSittingService {
   // logs `school.card-ladder.admin` and a `transition` (source `admin`) for
   // each word whose state or stage it changed.
 
-  async #admin({ learnerId, deckId, actorId, pin }) {
+  async #admin({ learnerId, deckId, actorId }) {
     if (this.#mode !== 'live') throw new ValidationError('card-ladder admin is answered by the live card ladder only');
     if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
-    this.#teacherGate.assert({ userId: actorId, pin, action: 'card-ladder.admin', context: { learnerId } });
+    this.#teacherGate.assert({ userId: actorId, action: 'card-ladder.admin', context: { learnerId } });
     await this.#assertAssigned(learnerId, deckId);
     const { deck, lexicon, pkg } = await this.#load(deckId);
     const day = this.#today();
@@ -1264,8 +1264,8 @@ export class CardLadderSittingService {
    * Every word of the package the learner can meet, with its ladder state and
    * its judged typed answers from the last 14 study days, newest first.
    */
-  async adminWords({ learnerId, deckId, actorId = null, pin = null } = {}) {
-    const { deck, lexicon, pkg, day, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+  async adminWords({ learnerId, deckId, actorId = null } = {}) {
+    const { deck, lexicon, pkg, day, store } = await this.#admin({ learnerId, deckId, actorId });
     const status = store.readStatus(learnerId, pkg);
     const typed = new Map();
     for (let back = 0; back < ADMIN_TYPED_DAYS; back += 1) {
@@ -1320,8 +1320,8 @@ export class CardLadderSittingService {
    * glance (when, how long, how the graded answers went). Read only — the
    * grown-up's "day by day" list, never a write.
    */
-  async adminDays({ learnerId, deckId, actorId = null, pin = null } = {}) {
-    const { pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+  async adminDays({ learnerId, deckId, actorId = null } = {}) {
+    const { pkg, store } = await this.#admin({ learnerId, deckId, actorId });
     const all = store.listDays(learnerId, pkg);
     const days = all.slice(-ADMIN_DAY_LIST).reverse();
     return {
@@ -1335,9 +1335,9 @@ export class CardLadderSittingService {
    * the spoken takes kept that day. Speaking is never graded, so a take is
    * its own list (by word, take number) rather than a verdict on an answer.
    */
-  async adminDay({ learnerId, deckId, day, actorId = null, pin = null } = {}) {
+  async adminDay({ learnerId, deckId, day, actorId = null } = {}) {
     if (!STUDY_DAY.test(String(day ?? ''))) throw new ValidationError('day must be YYYY-MM-DD');
-    const { lexicon, pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    const { lexicon, pkg, store } = await this.#admin({ learnerId, deckId, actorId });
     if (!store.listDays(learnerId, pkg).includes(day)) throw new EntityNotFoundError('card-ladder day', day);
     const dayFile = store.readDay(learnerId, pkg, day);
     const word = (id) => {
@@ -1354,21 +1354,21 @@ export class CardLadderSittingService {
   }
 
   /** One kept take's audio, for the grown-up's player. Null when it is not on file. */
-  async adminRecording({ learnerId, deckId, day, wordId, take, actorId = null, pin = null } = {}) {
+  async adminRecording({ learnerId, deckId, day, wordId, take, actorId = null } = {}) {
     if (!STUDY_DAY.test(String(day ?? ''))) throw new ValidationError('day must be YYYY-MM-DD');
-    const { pkg } = await this.#admin({ learnerId, deckId, actorId, pin });
+    const { pkg } = await this.#admin({ learnerId, deckId, actorId });
     if (typeof this.#recordings?.open !== 'function') return null;
     return this.#recordings.open({ package: pkg, learnerId, day, wordId, take: Number(take) });
   }
 
   /** Reset to new: a fresh record — nothing kept, `notYetCarry` included. */
-  async adminReset({ learnerId, deckId, wordId, actorId = null, pin = null } = {}) {
-    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'reset', () => ({ word: emptyWordV3() }));
+  async adminReset({ learnerId, deckId, wordId, actorId = null } = {}) {
+    return this.#adminWord({ learnerId, deckId, wordId, actorId }, 'reset', () => ({ word: emptyWordV3() }));
   }
 
   /** Mastered at `stage`, due after that stage's gap scaled by the day's tuned `review.gapScale`. */
-  async adminMarkMastered({ learnerId, deckId, wordId, stage, actorId = null, pin = null } = {}) {
-    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, 'mastered',
+  async adminMarkMastered({ learnerId, deckId, wordId, stage, actorId = null } = {}) {
+    return this.#adminWord({ learnerId, deckId, wordId, actorId }, 'mastered',
       (word, { day, settings }) => ({ word: markMastered(word, { stage, day, gapScale: settings?.review?.gapScale ?? 1 }) }), { stage });
   }
 
@@ -1378,12 +1378,12 @@ export class CardLadderSittingService {
    * the only pending thing plans what comes next (or credits the day) instead
    * of leaving the child on a "done" summary. A day never opened is untouched.
    */
-  async adminExclude({ learnerId, deckId, wordId, excluded = true, actorId = null, pin = null } = {}) {
+  async adminExclude({ learnerId, deckId, wordId, excluded = true, actorId = null } = {}) {
     if (typeof excluded !== 'boolean') throw new ValidationError('excluded must be true or false');
     const prepare = async ({ deck, lexicon, pkg, store }) => ({
       deck, lexicon, media: this.#media(deck, lexicon), pool: await this.#pool(store.readStatus(learnerId, pkg), deck, learnerId),
     });
-    return this.#adminWord({ learnerId, deckId, wordId, actorId, pin }, excluded ? 'exclude' : 'include', (word, ctx) => {
+    return this.#adminWord({ learnerId, deckId, wordId, actorId }, excluded ? 'exclude' : 'include', (word, ctx) => {
       const next = { ...word, excluded };
       if (!excluded || !ctx.dayFile.atOpen) return { word: next };
       const status = { ...ctx.status, words: { ...ctx.status.words, [wordId]: next } };
@@ -1400,8 +1400,8 @@ export class CardLadderSittingService {
    * introduced keep their state. The current deck and any deck the learner is
    * still enrolled in are refused: the next open would silently re-add them.
    */
-  async adminDropDeck({ learnerId, deckId, dropDeckId, actorId = null, pin = null } = {}) {
-    const { pkg, day, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+  async adminDropDeck({ learnerId, deckId, dropDeckId, actorId = null } = {}) {
+    const { pkg, day, store } = await this.#admin({ learnerId, deckId, actorId });
     if (typeof dropDeckId !== 'string' || !dropDeckId) throw new ValidationError('dropDeckId is required');
     const enrolled = (await this.#enrollments(learnerId)).some((row) => (row.deckId ?? row.corpusId) === dropDeckId);
     if (dropDeckId === deckId || enrolled) {
@@ -1421,8 +1421,8 @@ export class CardLadderSittingService {
    * from now on, and the item records who re-graded it. Word state is NOT
    * rewritten — reset / mark mastered do that.
    */
-  async adminRegrade({ learnerId, deckId, day, itemId, pass, actorId = null, pin = null } = {}) {
-    const { pkg, store, lexicon } = await this.#admin({ learnerId, deckId, actorId, pin });
+  async adminRegrade({ learnerId, deckId, day, itemId, pass, actorId = null } = {}) {
+    const { pkg, store, lexicon } = await this.#admin({ learnerId, deckId, actorId });
     if (!this.#judgementCache) throw new ValidationError('the judgement cache is not configured');
     if (typeof day !== 'string' || !DAY_PATTERN.test(day)) throw new ValidationError('day must be YYYY-MM-DD');
     if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');

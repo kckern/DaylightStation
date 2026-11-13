@@ -22,19 +22,11 @@ vi.mock("./teacherWorkspaceApi.js", () => ({
     lessonPreviewUrl: () => '',
   },
 }));
-const teacherAuth = vi.hoisted(() => ({
-  requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-}));
 vi.mock("./TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }] }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: teacherAuth.requestAuthorization,
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -243,11 +235,7 @@ describe('SessionInspector detail coherence', () => {
     expect(teacherWorkspaceApi.reprintArtifact.mock.calls[0][0]).toBe('rcpt_1');
   });
 
-  // `artifact.reprint` is ReprintIssuedArtifact's audit label; it is not one of
-  // the server's STEP_UP_ACTIONS, so asking for a grant under that name opened
-  // a PIN dialog nothing could satisfy and the print never happened. The
-  // capability cookie is the whole authority the reprint route checks.
-  it('prints a second copy without asking for a step-up grant', async () => {
+  it('prints a second copy as the picked teacher', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
     teacherWorkspaceApi.reprintArtifact
       .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, artifactId: 'art_1' } })
@@ -257,10 +245,8 @@ describe('SessionInspector detail coherence', () => {
     const now = await screen.findByRole('button', { name: 'Print now' });
     now.click();
     await waitFor(() => expect(teacherWorkspaceApi.reprintArtifact).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[1][1]).toMatchObject({ apply: true });
-    // No grant token argument — there is no grant to carry.
+    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[1][1]).toMatchObject({ apply: true, reprintedBy: 'teacher_1' });
     expect(teacherWorkspaceApi.reprintArtifact.mock.calls[1]).toHaveLength(3);
-    expect(teacherAuth.requestAuthorization.mock.calls.every(([arg]) => arg?.action == null)).toBe(true);
   });
 });
 

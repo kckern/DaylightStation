@@ -192,7 +192,6 @@ const request = (apply = false) => ({
   marks: ['B', 'B', 'B'],
   reason: 'scripture bubbles were entered in the math row window',
   recoveredBy: 'parent',
-  pin: '7410',
   idempotencyKey: 'user_4-2026-08-31-wrong-worksheet',
   expectedReplacementRows: { start: 4, end: 9 },
   apply,

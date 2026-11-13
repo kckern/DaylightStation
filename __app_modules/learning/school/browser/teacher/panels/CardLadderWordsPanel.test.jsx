@@ -28,8 +28,6 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
     currentTeacher: { id: 'teacher_1', name: 'teacher_1' },
     openPicker: vi.fn(),
     pickerOpen: false,
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
   }),
 }));
 
@@ -118,9 +116,9 @@ describe('rendering the word table', () => {
     expect(screen.getByText('apple')).toBeTruthy();
     expect(screen.getByText('배')).toBeTruthy();
     expect(screen.getByText('pear')).toBeTruthy();
-    // The GET is teacher-gated (TeacherGate.assert checks isAdult(userId)
-    // before it ever looks at the capability/pin), so the read must carry
-    // the acting teacher's id or the server refuses it with a 403.
+    // The GET is teacher-gated (TeacherGate.assert checks isAdult(userId)),
+    // so the read must carry the acting teacher's id or the server refuses
+    // it with a 403.
     expect(cardLadderAdminApi.words).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1');
   });
 
@@ -399,7 +397,7 @@ describe('Tuning', () => {
     const section = await screen.findByRole('region', { name: 'Tuning' });
     fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on Monday, Sep 21' }));
     await waitFor(() => expect(cardLadderAdminApi.undoTuning).toHaveBeenCalledWith(
-      expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', setting: 'batch.newPerDay', pin: null }),
+      expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', setting: 'batch.newPerDay' }),
     ));
     await waitFor(() => expect(cardLadderAdminApi.tuning).toHaveBeenCalledTimes(2));
   });

@@ -29,9 +29,9 @@ export class ReassignEvidence {
     this.#logger = logger;
   }
 
-  async execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = {}) {
+  async execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null } = {}) {
     this.#teacherGate.assert({
-      userId: reassignedBy, pin, action: 'evidence.reassign',
+      userId: reassignedBy, action: 'evidence.reassign',
       context: { fromLearnerId, toLearnerId, day, assessmentId },
     });
     if (typeof fromLearnerId !== 'string' || !fromLearnerId.trim()) throw new ValidationError('fromLearnerId is required');

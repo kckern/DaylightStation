@@ -8,7 +8,6 @@ import { ReplaceUnreadableCard } from "../application/usecases/ReplaceUnreadable
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
 import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
-import { TeacherCapabilitySessions as TeacherCapabilitySessions } from "../application/TeacherCapabilitySessions.mjs";
 import { renderSessionResultPng as renderSessionResultPng } from "../rendering/documents/SessionResultRenderer.mjs";
 import { studyDayForInstant as studyDayForInstant } from "../domain/studyDay.mjs";
 import { GetSchoolReport as GetSchoolReport } from "../application/GetSchoolReport.mjs";
@@ -74,7 +73,7 @@ export async function buildWorksheetPlatforms({ configService, rootLogger, logge
 }
 
 export async function createSchoolLifecycleRuntime(dependencies) {
-  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, notificationService, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
+  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, notificationService, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
   const { SetAcademicPeriods: SetAcademicPeriods } = await import("../application/usecases/SetAcademicPeriods.mjs");
   const { SetPassOverride: SetPassOverride } = await import("../application/usecases/SetPassOverride.mjs");
   const { SetMilestones: SetMilestones } = await import("../application/usecases/SetMilestones.mjs");
@@ -276,16 +275,6 @@ try {
       schoolLifecycleLogger.error('school.state-gates-producer.wiring-failed', { error: err.message });
     }
   }
-  const teacherCapabilitySessions = new TeacherCapabilitySessions({
-    teacherGate: schoolTeacherGate,
-    tokenFactory: () => crypto.randomBytes(32).toString('base64url'),
-  });
-  schoolTeacherGate.bindCapabilitySessions(teacherCapabilitySessions);
-  if (typeof dependencies.schoolLifecycle.teacherGate?.bindCapabilitySessions === 'function'
-      && dependencies.schoolLifecycle.teacherGate !== schoolTeacherGate) {
-    dependencies.schoolLifecycle.teacherGate.bindCapabilitySessions(teacherCapabilitySessions);
-  }
-
   // Presence hook: same adapter, `presence_hook` block of school.yml. Same
   // guard and its own try/catch for the same reason as above.
   // Exposed from the runtime so the card-tap handler and the HTTP sources share it.
@@ -357,9 +346,8 @@ try {
           const { SchoolGradingHookAdapter } = await import("../adapters/SchoolGradingHookAdapter.mjs");
           gradingHook = new SchoolGradingHookAdapter({
             gateway: homeAutomationAdapters.haGateway,
-            // Same accessor/call shape `getPrintTeacherPin` above uses for this
-            // same `school.yml` — the household-id arg is accepted for the
-            // adapter's contract but this module always resolves against `null`.
+            // The household-id arg is accepted for the adapter's contract but
+            // this module always resolves `school.yml` against `null`.
             loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
             resolveStudent: learnerDisplayName,
             logger: rootLogger.child({ module: 'school-grading-hook' }),
@@ -894,14 +882,7 @@ try {
       learnerIds: async () => (await schoolLearnerDirectory.listLearners()).map((l) => l.id ?? l.learnerId).filter(Boolean),
       logger: rootLogger.child({ module: 'school-earn-rules' }),
     }),
-    teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
-    // Read per request, never snapshotted — clearing the PIN in school.yml
-    // takes effect on the next config reload rather than the next restart.
-    teacherPinRequired: () => {
-      const pin = schoolTeacherConfig.pin();
-      return typeof pin === 'string' && pin.length > 0;
-    },
     openRemediation: dependencies.schoolLifecycle.useCases?.openRemediation ?? null,
     closeSessionOutcome: dependencies.schoolLifecycle.useCases?.closeSessionOutcome ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
@@ -927,12 +908,6 @@ try {
     renderPrintDocument: dependencies.schoolLifecycle.renderPrintDocument ?? null,
     printDocumentsRepo: dependencies.schoolLifecycle.stores?.printDocuments ?? null,
     printAllocationStore: dependencies.schoolLifecycle.stores?.allocationStore ?? null,
-    // Teacher-key gate: answer keys deny until `print.teacherPin` is set in
-    // the household school config and matched via `?pin=`.
-    getPrintTeacherPin: () => {
-      const schoolConfig = configService.getHouseholdAppConfig(null, 'school') || {};
-      return schoolConfig.print?.teacherPin != null ? String(schoolConfig.print.teacherPin) : null;
-    },
     // Report cards, period close, teacher digest (Task 6, spec R5b).
     getReportCard,
     closeAcademicPeriod,
@@ -997,7 +972,6 @@ try {
     studyGrants: dependencies.schoolStudyGrants,
     // The console's grown-up read of a child's history (`/teacher/*`).
     teacherGate: schoolTeacherGate,
-    teacherCapabilitySessions,
     logger: rootLogger.child({ module: 'school-language-api' })
   });
   v1Routers.school.use('/sentence-ladder', sentenceLadderRouter);

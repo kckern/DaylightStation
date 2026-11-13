@@ -412,6 +412,6 @@ media root, beside the other School UI cues.
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing
-it — enabling the console, changing a printer, fixing a teacher PIN — does
+it — enabling the console, changing a printer, adding a teacher — does
 nothing until the container restarts. If a config change "didn't take,"
 restart before you debug anything else.

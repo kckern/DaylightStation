@@ -17,10 +17,10 @@ export class CreateLostAnswerSheetTicket {
     this.#logger = logger;
   }
 
-  async execute({ cardId, requestedBy, pin = null } = {}) {
+  async execute({ cardId, requestedBy } = {}) {
     if (!/^\d{7}$/.test(cardId ?? '')) throw new Error('cardId must be 7 digits');
     this.#teacherGate.assert({
-      userId: requestedBy, pin, action: 'answer-sheet.lost-ticket', context: { cardId },
+      userId: requestedBy, action: 'answer-sheet.lost-ticket', context: { cardId },
     });
     const now = this.#clock();
     const record = mintToken({

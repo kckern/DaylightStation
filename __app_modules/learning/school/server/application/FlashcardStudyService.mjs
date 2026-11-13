@@ -117,9 +117,9 @@ export class FlashcardStudyService {
     })));
     return { learnerId: userId, decks: rows };
   }
-  async teacherReport({ learnerId, actorId = null, pin = null } = {}) {
+  async teacherReport({ learnerId, actorId = null } = {}) {
     if (!this.#teacherGate?.assert) throw new Error('flashcard teacher report is not configured');
-    this.#teacherGate.assert({ userId: actorId, pin, action: 'flashcard-teacher-report', context: { learnerId } });
+    this.#teacherGate.assert({ userId: actorId, action: 'flashcard-teacher-report', context: { learnerId } });
     const report = await this.report({ userId: learnerId }); const state = this.#store.read(learnerId); const now = new Date(this.#now());
     const decks = report.decks.map((deck) => {
       const cards = Object.entries(state.cards ?? {}).filter(([key]) => key.startsWith(`${deck.id}/`)).map(([key, progress]) => ({
@@ -169,10 +169,10 @@ export class FlashcardStudyService {
     });
     return result;
   }
-  repair({ learnerId, deckId, cardId, action, actorId = null, pin = null } = {}) {
+  repair({ learnerId, deckId, cardId, action, actorId = null } = {}) {
     if (!this.#teacherGate?.assert) throw new Error('flashcard teacher repair is not configured');
     if (!['forget', 'rollback'].includes(action)) throw new Error('flashcard repair action must be forget or rollback');
-    this.#teacherGate.assert({ userId: actorId, pin, action: `flashcard-${action}`, context: { learnerId, deckId, cardId } });
+    this.#teacherGate.assert({ userId: actorId, action: `flashcard-${action}`, context: { learnerId, deckId, cardId } });
     const now = new Date(this.#now()); let result;
     this.#store.update(learnerId, (state) => {
       state.events ??= []; const key = `${deckId}/${cardId}`; const progress = state.cards[key];
@@ -190,9 +190,9 @@ export class FlashcardStudyService {
     });
     return { card: result };
   }
-  async migrateProfile({ learnerId, deckId, actorId = null, pin = null, dryRun = true } = {}) {
+  async migrateProfile({ learnerId, deckId, actorId = null, dryRun = true } = {}) {
     if (!this.#teacherGate?.assert) throw new Error('flashcard profile migration is not configured');
-    this.#teacherGate.assert({ userId: actorId, pin, action: 'flashcard-profile-migration', context: { learnerId, deckId, dryRun } });
+    this.#teacherGate.assert({ userId: actorId, action: 'flashcard-profile-migration', context: { learnerId, deckId, dryRun } });
     const deck = await this.getDeck(deckId);
     const launch = await this.#policies.resolveLaunch({ userId: learnerId, deck });
     const nextProfiles = Object.fromEntries(deck.cards.map((card) => [card.cardId, this.#policies.resolveCard({ card, launch })]));

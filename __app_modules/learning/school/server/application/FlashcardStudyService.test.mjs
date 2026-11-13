@@ -78,7 +78,7 @@ describe('FlashcardStudyService', () => {
     ] };
     const assert = vi.fn();
     const service = new FlashcardStudyService({ ...deps, teacherGate: { assert }, progressStore: { update: (_u, fn) => { state = fn(state); return state; }, read: () => structuredClone(state) }, decks: { getFlashcardDeck: async () => faced, listFlashcardDecks: async () => [faced] } });
-    const report = await service.teacherReport({ learnerId: 'kid', actorId: 'parent', pin: null });
+    const report = await service.teacherReport({ learnerId: 'kid', actorId: 'parent' });
     expect(assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'parent', action: 'flashcard-teacher-report', context: { learnerId: 'kid' } }));
     const [only] = report.decks;
     expect(only.sessions.map((session) => session.sessionId)).toEqual(['s2', 's1']);

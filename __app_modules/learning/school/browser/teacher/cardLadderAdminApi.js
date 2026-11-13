@@ -6,10 +6,9 @@
  * BASE, the way `schoolApi.js` (`/api/v1/school`) can't be reused either
  * without editing a file outside this directory.
  *
- * `pin` travels as `null` on every write; the school router's own middleware
- * fills it in from the `daylight_teacher_session` cookie when the body's pin
- * is `null` — the same contract every other teacher-console write panel
- * relies on (see `useTeacherWrite.js`).
+ * Every call names the picked teacher as `actorId` — in the body of a write,
+ * in the query of a read — the same contract every other teacher-console
+ * write panel relies on (see `useTeacherWrite.js`).
  */
 const BASE = '/api/v1/school/card-ladder/admin';
 
@@ -31,10 +30,7 @@ async function request(path, { method = 'GET', body } = {}) {
 export const cardLadderAdminApi = {
   // Every word the learner can meet, its ladder state, and its judged typed
   // answers from the last 14 study days (card-ladder.md "Grown-up word
-  // controls"). `actorId` rides the query string — this is the one admin read
-  // that is a GET, so it carries no body for the school router's cookie-pin
-  // middleware to patch; the route falls back to reading `pin` off the (empty)
-  // body the JSON parser still attaches, so no `pin` param is sent here.
+  // controls"). A GET, so `actorId` rides the query string.
   words: (learnerId, deckId, actorId = null) => {
     const query = new URLSearchParams({ learnerId, deckId });
     if (actorId) query.set('actorId', actorId);
@@ -52,7 +48,7 @@ export const cardLadderAdminApi = {
     if (actorId) query.set('actorId', actorId);
     return request(`/day?${query}`);
   },
-  /** An <audio src> for one kept take; the browser sends the console cookie itself. */
+  /** An <audio src> for one kept take, named for the picked teacher like the reads. */
   recordingUrl: (learnerId, deckId, day, wordId, take, actorId = null) => {
     const query = new URLSearchParams({ learnerId, deckId, day, wordId, take: String(take) });
     if (actorId) query.set('actorId', actorId);
@@ -65,7 +61,7 @@ export const cardLadderAdminApi = {
   regrade: (body) => request('/regrade', { method: 'POST', body }),
   // The tuning agent's values vs defaults, its last status + notes, and its
   // history (card-ladder.md "Tuning"). A GET, so `actorId` rides the query
-  // like `words` above; the route derives the teacher from the cookie first.
+  // like `words` above.
   tuning: (learnerId, deckId, actorId = null) => {
     const query = new URLSearchParams({ learnerId, deckId });
     if (actorId) query.set('actorId', actorId);

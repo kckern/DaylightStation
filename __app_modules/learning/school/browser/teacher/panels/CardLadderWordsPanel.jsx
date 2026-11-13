@@ -137,17 +137,17 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   const [resetArmed, setResetArmed] = useState(false);
   const reset = async () => {
     const saved = await run(resetKey, ({ actorId }) => cardLadderAdminApi.reset({
-      learnerId, deckId, wordId: word.wordId, actorId, pin: null,
+      learnerId, deckId, wordId: word.wordId, actorId,
     }));
     if (saved) setResetArmed(false);
   };
 
   const markMastered = () => run(masteredKey, ({ actorId }) => cardLadderAdminApi.markMastered({
-    learnerId, deckId, wordId: word.wordId, stage: Number(stagePick), actorId, pin: null,
+    learnerId, deckId, wordId: word.wordId, stage: Number(stagePick), actorId,
   }));
 
   const toggleExclude = () => run(excludeKey, ({ actorId }) => cardLadderAdminApi.exclude({
-    learnerId, deckId, wordId: word.wordId, excluded: !word.excluded, actorId, pin: null,
+    learnerId, deckId, wordId: word.wordId, excluded: !word.excluded, actorId,
   }));
 
   // The judgement cache is shared by every learner studying this package
@@ -161,7 +161,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
       `“${answer.typed}” was judged an exact match, and re-grading a shared word affects every learner studying this package. Mark it wrong anyway?`,
     )) return;
     run(regradeKey(answer), ({ actorId }) => cardLadderAdminApi.regrade({
-      learnerId, deckId, day: answer.day, itemId: answer.itemId, pass, actorId, pin: null,
+      learnerId, deckId, day: answer.day, itemId: answer.itemId, pass, actorId,
     }));
   };
 
@@ -238,7 +238,7 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, deckLabel, run
   const droppable = new Set(droppableDecks ?? []);
   const key = (id) => `drop-deck:${id}`;
   const drop = (dropDeckId) => run(key(dropDeckId), ({ actorId }) => cardLadderAdminApi.dropDeck({
-    learnerId, deckId, dropDeckId, actorId, pin: null,
+    learnerId, deckId, dropDeckId, actorId,
   }));
   return (
     <div className="teacher-card-ladder__pool">
@@ -298,7 +298,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
   const data = record.data;
   const key = (day, setting) => `undo:${day}:${setting}`;
   const undo = (day, change) => rawRun(key(day, change.setting), ({ actorId: actor }) => cardLadderAdminApi.undoTuning({
-    learnerId, deckId, setting: change.setting, actorId: actor, pin: null,
+    learnerId, deckId, setting: change.setting, actorId: actor,
   }), {
     onSuccess: () => { teacherLog.write('saved', { panel: PANEL, learnerId, deckId, key: key(day, change.setting) }); record.retry(); },
   });
@@ -383,9 +383,8 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
  *   learner's other card-ladder enrollments, so the new-word pool names them.
  */
 export default function CardLadderWordsPanel({ learnerId, deckId, title = null, deckTitles = {} }) {
-  // The GET is teacher-gated: TeacherGate.assert checks isAdult(userId)
-  // BEFORE it ever looks at the capability/pin, so an actorId-less read is
-  // refused with a 403 regardless of the cookie. `useTeacherProfileOptional`
+  // The GET is teacher-gated: TeacherGate.assert checks isAdult(userId), so
+  // an actorId-less read is refused with a 403. `useTeacherProfileOptional`
   // (not the throwing `useTeacherProfile`) because a fetch, unlike a write,
   // must not crash a screen it is mounted on outside the console.
   const profile = useTeacherProfileOptional();

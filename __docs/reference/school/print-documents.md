@@ -369,9 +369,8 @@ This preview writes only the requested PDF; it does not create an enrollment,
 worksheet instance, published revision, allocation, or OMR card record.
 
 For a real multi-lesson issue, `POST /api/v1/school/lifecycle/worksheets/compose` accepts
-`{ "sessionIds": ["…"], "issuedBy": "teacher-id", "pin": null }` from the
-browser, where the router replaces the null proof with its HttpOnly teacher
-capability. Raw-PIN CLI clients remain supported. The operation creates (or reuses) the immutable per-lesson
+`{ "sessionIds": ["…"], "issuedBy": "teacher-id" }`; `issuedBy` must pass the
+teacher gate (a grown-up listed in `teachers:`). The operation creates (or reuses) the immutable per-lesson
 instances, publishes one composed document per 50-row card, persists each
 section's row ownership in the allocation, and appends the corresponding
 issue/reprint event to every participating session. This is the production
@@ -526,11 +525,10 @@ Two **varieties** exist at the request level:
 student pages plus appended dense answer pages (namespaced entries — bare
 numbers for questions, `Fill-in (passage N): blank n:`, `Matching:`). The
 fit/pagination decision is computed identically with or without the key, so a
-key can never disagree with the sheet it answers. Keys are gated: `teacher=1`
-requires a pin matching the household school config's `print.teacherPin`,
-and denies when unset or wrong (see §9, trust model) — `pin=` on the GET for
-a bare key read, `teacherPin` in the `POST /print/render` body when the key
-combines with a card mint (`freshCard=1&teacher=1`).
+key can never disagree with the sheet it answers. `teacher=1` asks for the key
+and needs no secret (see §9, trust model) — on the GET for a bare key read, in
+the `POST /print/render` body when the key combines with a card mint
+(`freshCard=1&teacher=1`).
 
 **Variants** are per-student shuffles of one document (variant 0 unmarked;
 variant 1 prints as "Form B", etc.). `retake=1` mints a fresh card at the
@@ -866,9 +864,8 @@ Each old record links to its replacement with `supersededReason:
 answer-sheet-lost`, the replacement card and record ids, the reporting teacher,
 and the timestamp.
 
-Loss recovery is a teacher-console write guarded by the normal teacher role and
-active capability (or a raw PIN from a compatible non-browser client). It is
-available in two forms:
+Loss recovery is a teacher-console write guarded by the normal teacher gate on
+the reporting teacher's id. It is available in two forms:
 
 - `POST /api/v1/school/lifecycle/answer-sheets/:cardId/lost` performs the
   replacement immediately.
@@ -899,22 +896,22 @@ render**, safe to bookmark, refresh, and share a link to — repeating it never
 mutates anything.
 
 **Card-minting renders are `POST /print/render`, not the GET (punch 5b).**
-Minting or spending a card is a mutation, and a teacher pin is a secret —
-neither belongs on a GET, whose URL lands in browser history, proxy access
-logs, and `Referer` headers. The GET 400s
+Minting or spending a card is a mutation, and a mutation does not belong on a
+GET, whose URL lands in browser history, proxy access logs, and `Referer`
+headers. The GET 400s
 (`{ error: 'card-minting renders require POST /print/render' }`) if it sees
-`card=`, `freshCard=`, or `teacherPin=` in the query string; those three (plus
-everything else the GET accepts) move into the JSON body of
+`card=` or `freshCard=` in the query string; those two (plus everything else
+the GET accepts) move into the JSON body of
 `POST /print/render: { id, variety, learnerName, learnerId, card, freshCard,
-startRow, teacherPin, date, rev, variant, retake, teacher }`. Both routes
-render through the same shared logic, so the allocation semantics below are
-identical either way — only the transport (and where the pin lives) differs.
+startRow, date, rev, variant, retake, teacher }`. Both routes render through
+the same shared logic, so the allocation semantics below are identical either
+way — only the transport differs.
 
 **`GET /print/<7 digits>` is a card lookup**, and stays a GET — it is a pure
 read, not a mint. The card number is the one thing printed in large digits on
 the sheet in a child's hand, so it is enough by itself: the path resolves the
 card's newest usable allocation and reproduces its exact sheet (adoption
-semantics — the record's rev/variant/rows/learner govern; `teacher=1&pin=`
+semantics — the record's rev/variant/rows/learner govern; `teacher=1`
 works on top for its key, same as the plain-document GET). An unknown card
 404s with Hamming-1 live near-miss suggestions, the same courtesy a
 mis-bubbled scan gets. Bare 7-digit *document* ids are reserved at validation
@@ -924,7 +921,7 @@ time so the shape can never be ambiguous.
 |---|---|---|
 | `variety=omr\|hand` | **default `omr`** — card-backed (the main mode) unless `hand` is asked for | GET or POST |
 | `learnerId=` | whose sheet. **Required for quiz-archetype omr renders** (or an explicit `card=`) — without it two siblings would share one sheet identity. Worksheets may stay anonymous; teacher renders are reads and stay exempt | GET or POST |
-| `teacher=1&pin=` | append the answer key; pin must match `print.teacherPin`. `pin=` stays a GET query param — a bare teacher-key read never mints | GET or POST (POST's body key is `teacherPin`, not `pin`) |
+| `teacher=1` | append the answer key. A bare teacher-key read never mints | GET or POST |
 | `rev=` | pin a 9-hex published revision (default: latest published) | GET or POST |
 | `variant=0..999` | per-student shuffle variant | GET or POST |
 | `card=NNNNNNN` | reproduce (or extend) a specific physical card | **POST body only** |
@@ -1687,8 +1684,9 @@ row-capacity arithmetic.
 - Coverage is client-reported and there is no server-side cross-check. For a LAN
   household app this is an accepted threat model — the child who would forge it
   could equally read the code off a sibling's sheet — but it is a real limit.
-- `GET /print/<card>?teacher=1&pin=…` renders the teacher key, which prints the
-  finish code. It is PIN-gated, but the PIN travels in a query string.
+- `GET /print/<card>?teacher=1` renders the teacher key, which prints the
+  finish code. Nothing gates it: anyone on the household network who knows
+  the card number can read the code.
 
 ## 9. Trust model and known limits
 
@@ -1697,7 +1695,7 @@ row-capacity arithmetic.
 Every issued worksheet recipe retained by `YamlIssuedArtifactStore` is
 immutable. Teacher Open PDF and Reprint render that recipe with the current
 engine while preserving the artifact id, Student No., allocation, and row range.
-Direct printing requires a fresh teacher confirmation plus an idempotency key,
+Direct printing requires the reprinting teacher's id plus an idempotency key,
 and appends `reprinted` only after the printer confirms. Historical replay never allocates a
 new answer card. A lost card must use the replacement flow, which commits the
 new identity only after successful printing.
@@ -1714,14 +1712,13 @@ effective result PNG routes render the decoded OMR evidence; they are labeled
 as rendered/reconstructed artifacts because the device does not provide a
 physical scan photograph.
 
-Print endpoints are unauthenticated household surfaces; the only privileged
-artifact is the answer key, gated by `print.teacherPin` (school config,
-boot-cached). A bare teacher-key read (`teacher=1&pin=` on the GET) still
-rides the query string — visible in access logs and browser history — an
-accepted trade at household scale: **it gates children, not adversaries.**
-Card-minting renders (`freshCard=`/`card=`, and a key combined with either)
-moved to `POST /print/render`'s JSON body (punch 5b) precisely because that
-render also mutates state — a mutation's pin belongs in a body, not a URL.
+Print endpoints are unauthenticated household surfaces, the answer key
+included: `teacher=1` renders it with no secret. That is an accepted trade at
+household scale — the key lives where a grown-up asks for it, and a child who
+went looking could as easily read a sibling's marked sheet. Card-minting
+renders (`freshCard=`/`card=`, and a key combined with either) go to
+`POST /print/render`'s JSON body (punch 5b) because that render mutates state,
+and a mutation belongs in a body, not a URL.
 
 Known, accepted limits (each was reviewed, not overlooked):
 
@@ -1754,7 +1751,7 @@ Known, accepted limits (each was reviewed, not overlooked):
 | Content (sources) | `data/content/school/catalog/documents/` — hand-authored, by taxonomy path (CLI: `--source-root`) |
 | Content (artifacts) | `data/content/school/print-documents/` — `published/`, `derived-banks/`, `allocations/` only (CLI: `--content-root`) |
 | Evidence | `data/users/{id}/apps/school/attempts/` (shared with the on-screen engine) |
-| Config | `data/household/school/school.yml` → `print.teacherPin` |
+| Config | `data/household/school/school.yml` → `scan` (`ambiguousFallback`, `leniencyRowsPerCredit`) |
 
 Curriculum units reference a print quiz as `document: print/<id-path>@<rev>`
 — the rev is pinned at authoring time, so a republish never silently changes

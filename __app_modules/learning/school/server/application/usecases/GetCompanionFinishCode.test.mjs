@@ -81,7 +81,7 @@ describe('GetCompanionFinishCode', () => {
   it('hands a grown-up the code for a companion nobody has satisfied', async () => {
     const { useCase } = build();
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({
       schema: 'school.companion-finish-code/v1',
@@ -100,7 +100,7 @@ describe('GetCompanionFinishCode', () => {
     const before = structuredClone(codes.state.record);
     const { useCase } = build({ companionCodes: codes });
 
-    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(codes.state.record.satisfiedAt).toBeNull();
     expect(codes.state.record.satisfiedBy).toBeNull();
@@ -113,7 +113,7 @@ describe('GetCompanionFinishCode', () => {
     const codes = codeStore();
     const { useCase } = build({ companionCodes: codes });
 
-    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(codes.state.record.reveals).toEqual([{
       at: '2026-08-27T15:30:00.000Z', by: 'kckern', sessionId: 'ses_1',
@@ -126,22 +126,22 @@ describe('GetCompanionFinishCode', () => {
     });
     const { useCase } = build({ companionCodes: codes });
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({ earned: true, satisfiedVia: 'readalong', finishCode: 'ACE' });
   });
 
   it('refuses before it reads anything when the gate says no', async () => {
     const codes = codeStore();
-    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) };
     const { useCase } = build({ companionCodes: codes, teacherGate });
 
-    await expect(useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: 'nope' }))
+    await expect(useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' }))
       .rejects.toThrow(GuestForbiddenError);
     expect(codes.get).not.toHaveBeenCalled();
     expect(codes.update).not.toHaveBeenCalled();
     expect(teacherGate.assert).toHaveBeenCalledWith({
-      userId: 'kckern', pin: 'nope', action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' },
+      userId: 'kckern', action: 'companion.finish-code.reveal', context: { sessionId: 'ses_1' },
     });
   });
 
@@ -149,7 +149,7 @@ describe('GetCompanionFinishCode', () => {
     const codes = codeStore();
     const { useCase } = build({ companionCodes: codes, unitRecord: unit({ enabled: false }) });
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({ gated: false, available: false, finishCode: null, reason: 'no-companion' });
     expect(codes.update).not.toHaveBeenCalled();
@@ -159,7 +159,7 @@ describe('GetCompanionFinishCode', () => {
     const codes = codeStore();
     const { useCase } = build({ companionCodes: codes, unitRecord: unit({ participation: 'optional' }) });
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({ gated: false, available: false, finishCode: null, reason: 'companion-optional' });
     expect(codes.update).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe('GetCompanionFinishCode', () => {
     const codes = codeStore(null);
     const { useCase } = build({ companionCodes: codes });
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({ gated: true, available: false, finishCode: null, reason: 'not-issued' });
     expect(codes.update).not.toHaveBeenCalled();
@@ -179,7 +179,7 @@ describe('GetCompanionFinishCode', () => {
     const codes = codeStore({ ...unsatisfied(), code: null });
     const { useCase } = build({ companionCodes: codes });
 
-    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    const result = await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(result).toMatchObject({ gated: true, available: false, finishCode: null, reason: 'code-unusable' });
     expect(codes.update).not.toHaveBeenCalled();
@@ -189,7 +189,7 @@ describe('GetCompanionFinishCode', () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
     const { useCase } = build({ logger });
 
-    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234' });
+    await useCase.execute({ sessionId: 'ses_1', revealedBy: 'kckern' });
 
     expect(logger.info).toHaveBeenCalledWith('school.companion-code.revealed', expect.objectContaining({
       sessionId: 'ses_1', lessonId: LESSON, revealedBy: 'kckern', earned: false,

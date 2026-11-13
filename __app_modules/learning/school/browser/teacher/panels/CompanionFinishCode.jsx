@@ -11,8 +11,8 @@
  * unblocking a sheet, not certifying a lesson.
  *
  * NOTHING IS FETCHED UNTIL ASKED. There is no code on screen — and none in this
- * component's memory — until a teacher deliberately requests it and confirms
- * with the PIN, and "Hide it" puts it away again. This surface lives on a
+ * component's memory — until a teacher deliberately requests it, and "Hide
+ * it" puts it away again. This surface lives on a
  * household screen where the child it is a secret from can walk past.
  */
 import { useState } from 'react';
@@ -37,14 +37,9 @@ export function CompanionFinishCode({ sessionId, embedded = false }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'companion-finish-code' });
   const key = `finish-code:${sessionId}`;
 
-  const reveal = () => run(key, ({ actorId, pin, stepUpToken }) => (
-    teacherWorkspaceApi.revealCompanionFinishCode(sessionId, { revealedBy: actorId, pin }, stepUpToken)
-  ), {
-    // A fresh confirmation, scoped to this one session. An unlocked console
-    // left open is not consent to hand over a child's gate.
-    stepUp: { action: 'companion.finish-code.reveal', resource: sessionId },
-    onSuccess: setRevealed,
-  });
+  const reveal = () => run(key, ({ actorId }) => (
+    teacherWorkspaceApi.revealCompanionFinishCode(sessionId, { revealedBy: actorId })
+  ), { onSuccess: setRevealed });
 
   const Tag = embedded ? 'div' : 'section';
   return (

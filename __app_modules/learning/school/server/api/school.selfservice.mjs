@@ -183,7 +183,7 @@ export function createSchoolSelfServiceRouter({
   }
 
   // --- print my next sheet (Portal bank strip, piano kiosk) -----------------
-  // No code and no PIN, so the body is read for exactly two things and nothing
+  // No code, so the body is read for exactly two things and nothing
   // else: an optional subject and the device asking (the learner is the
   // path). The use case refuses a learner off the roster and a subject that
   // is not in that learner's plan; those are the only non-200 answers here,

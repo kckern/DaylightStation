@@ -14,8 +14,6 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
     currentTeacher: { id: 'test-user', name: 'test-user' },
     openPicker: vi.fn(),
     pickerOpen: false,
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
   }),
 }));
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";

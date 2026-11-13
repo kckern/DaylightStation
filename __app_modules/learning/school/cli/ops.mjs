@@ -15,14 +15,14 @@ Read-only:
   school ops completion <learner> [--base-url URL]
   school ops status <learner> [--base-url URL]
   school ops monitor <learner...> [--watch] [--interval 15]
-  school ops timeline <learner> --teacher ID [--pin-env NAME] [--limit 50] [--before ISO] [--unit ID]
-  school ops session <session> --teacher ID [--pin-env NAME]
+  school ops timeline <learner> [--limit 50] [--before ISO] [--unit ID]
+  school ops session <session>
   school ops gates <learner>
   school ops review [session]
   school ops term <learner> [--term ID] [--grid]
   school ops audit [--since ISO]
   school ops sweep [--leak-after-hours 2]   (answer-sheet card hygiene, dry run)
-  school ops artifact <artifact> --teacher ID [--pin-env NAME] [--view manifest|original|postview] [--output FILE]
+  school ops artifact <artifact> [--view manifest|original|postview] [--output FILE]
   school ops agenda-preview <learner> [--name NAME] [--output agenda.png]
   school ops launch-preview <learner> --subject ID [--continue] [--resolve]
                                       [--origin URL] [--path /school]
@@ -33,21 +33,21 @@ default, add --apply):
                             [--pick ID] [--day YYYY-MM-DD] [--at ISO] [--apply]
 
 Dry-run/preview by default; add --apply to write:
-  school ops assign <learner> --file plan.yml --teacher ID [--pin-env NAME] [--apply]
-  school ops enroll <learner> --syllabus ID --teacher ID [--pin-env NAME] [--apply]
-  school ops rematerialize <learner> --syllabus ID --teacher ID [--pin-env NAME] [--apply]
-  school ops abandon <session> --learner ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
-  school ops agenda-dispatch <learner> --teacher ID [--pin-env NAME] [--name NAME] [--idempotency-key KEY] [--apply]
-  school ops course-outcome-recover <session> --teacher ID [--pin-env NAME] [--apply]
-  school ops grade-adjust <session> --percent N --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
-  school ops grade-retract <session> --adjustment ID --reason TEXT --teacher ID [--pin-env NAME] [--base-revision N] [--apply]
-  school ops completion-credit <learner> --unit ID --reason TEXT --teacher ID [--pin-env NAME] [--apply]
-  school ops completion-credit-retract <entry> --teacher ID [--pin-env NAME] [--apply]
-  school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID [--pin-env NAME] [--to-day YYYY-MM-DD] [--apply]
+  school ops assign <learner> --file plan.yml --teacher ID [--apply]
+  school ops enroll <learner> --syllabus ID --teacher ID [--apply]
+  school ops rematerialize <learner> --syllabus ID --teacher ID [--apply]
+  school ops abandon <session> --learner ID --reason TEXT --teacher ID [--apply]
+  school ops agenda-dispatch <learner> --teacher ID [--name NAME] [--idempotency-key KEY] [--apply]
+  school ops course-outcome-recover <session> --teacher ID [--apply]
+  school ops grade-adjust <session> --percent N --reason TEXT --teacher ID [--base-revision N] [--apply]
+  school ops grade-retract <session> --adjustment ID --reason TEXT --teacher ID [--base-revision N] [--apply]
+  school ops completion-credit <learner> --unit ID --reason TEXT --teacher ID [--apply]
+  school ops completion-credit-retract <entry> --teacher ID [--apply]
+  school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID [--to-day YYYY-MM-DD] [--apply]
   school ops review-resolve <session> --item ID --verdict correct|incorrect|void --teacher ID [--note TEXT] [--apply]
-  school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID [--pin-env NAME] [--apply]
-  school ops term-rebuild <learner|--all> --teacher ID [--pin-env NAME] [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
-  school ops sweep --teacher ID [--pin-env NAME] [--leak-after-hours 2] --apply
+  school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID [--apply]
+  school ops term-rebuild <learner|--all> --teacher ID [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
+  school ops sweep --teacher ID [--leak-after-hours 2] --apply
 
 sweep runs the nightly answer-sheet pass now: card windows a failed print left
 behind are vacated (held for that unit's regeneration, so the card keeps no
@@ -65,7 +65,7 @@ read refuses a learner id that is not in school.yml students: a typo is a
 well-formed id, and appending under it would print success while counting the
 read against nobody. --pick is an idempotency key: the same one twice records
 one read. read is the MANUAL path for a story a child finished — a book read on a lap,
-a mis-scanned sticker. It needs no PIN and no running server: it appends
+a mis-scanned sticker. It needs no running server: it appends
 straight to the study-day-sharded reading log the story-time launcher counts,
 which the server re-reads on every status call. Because there is no bus, it
 records the read WITHOUT the on-screen ceremony a real living-room finish gets.
@@ -76,18 +76,17 @@ subject's lane shut: the child cannot print the next page until it is ruled.
 review-resolve rules one question; ruling the last one grades and settles the
 session. void needs --note, because the child sees the question missing.
 
-launch-preview writes NOTHING and needs no PIN: it is a link generator. The
+launch-preview writes NOTHING: it is a link generator. The
 URL it prints opens a learner's launch card exactly as the wall panel would
 draw it — same resolver, same card builder — with every button dead. No code is
 minted, no session opens, nothing prints.
 
-Base URLs ending in either /school or /school/lifecycle are accepted. Teacher
-PINs are read only from the named environment variable and are never printed.
+Base URLs ending in either /school or /school/lifecycle are accepted.
 Commands always emit one stable JSON document; PDF/PNG bytes require --output.
 `;
 
 const VALUE_OPTIONS = new Set([
-  '--base-url', '--interval', '--file', '--teacher', '--pin-env', '--syllabus',
+  '--base-url', '--interval', '--file', '--teacher', '--syllabus',
   '--learner', '--reason', '--limit', '--before', '--unit', '--since', '--view',
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
@@ -163,17 +162,6 @@ async function snapshot(fetchImpl, base, learnerId) {
   return { schema: 'school.ops-status/v1', learnerId, completion, assignment, sessions: sessions.sessions ?? sessions };
 }
 
-// The teacher PIN was retired 2026-09-11 (school.yml `teacher.pin: null`):
-// TeacherGate now identifies the grown-up by --teacher alone. --pin-env stays
-// for a household that puts a PIN back; omitted, the request carries none.
-function pinFrom(argv, env) {
-  const name = option(argv, '--pin-env');
-  if (!name) return null;
-  const pin = env[name];
-  if (!pin) throw new Error(`environment variable ${name} is empty`);
-  return pin;
-}
-
 function requiredOption(argv, name, message = `${name} is required`) {
   const value = option(argv, name);
   if (value === null || value === '') throw new Error(message);
@@ -192,11 +180,11 @@ function print(value, stdout) {
   stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function redactedRequest({ method, url, body, headers = {} }) {
+function previewRequest({ method, url, body, headers = {} }) {
   return {
     method, url,
     ...(Object.keys(headers).length ? { headers } : {}),
-    ...(body ? { body: { ...body, ...(Object.hasOwn(body, 'pin') ? { pin: '[from environment]' } : {}) } } : {}),
+    ...(body ? { body } : {}),
   };
 }
 
@@ -208,24 +196,8 @@ async function writeDownload({ fetchImpl, base, requestPath, output, headers = {
   return { output: target, bytes: result.bytes.length, contentType: result.contentType };
 }
 
-async function teacherProof({ fetchImpl, school, teacher, pin }) {
-  const unlockResponse = await fetchImpl(`${school}/teacher/auth/unlock`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: teacher, pin }),
-  });
-  if (!unlockResponse.ok) throw await responseError(unlockResponse);
-  const cookie = unlockResponse.headers?.get?.('set-cookie')?.split(';')[0];
-  if (!cookie) throw new Error('teacher unlock did not return a session cookie');
-  return { cookie, async stepUp(action, resource) {
-    const result = await requestJson(fetchImpl, school, '/teacher/auth/step-up', {
-      method: 'POST', headers: { Cookie: cookie }, body: JSON.stringify({ pin, action, resource }),
-    });
-    return result.grantToken;
-  } };
-}
-
 export async function runOps({
-  argv, fetchImpl = globalThis.fetch, env = process.env, stdout = process.stdout,
+  argv, fetchImpl = globalThis.fetch, stdout = process.stdout,
   // Injected by tests only; production resolves the real singleton lazily, so
   // no command that never touches the data tree pays for loading it.
   configService = null,
@@ -262,20 +234,12 @@ export async function runOps({
   }
   if (command === 'timeline') {
     if (!args[0]) throw new Error('timeline requires a learner id');
-    const teacher = requiredOption(rest, '--teacher', '--teacher ID is required for a teacher record read');
-    const proof = await teacherProof({ fetchImpl, school: base.school, teacher, pin: pinFrom(rest, env) });
     const suffix = query({ limit: option(rest, '--limit'), before: option(rest, '--before'), unitId: option(rest, '--unit') });
-    print(await requestJson(fetchImpl, base.school, `/teacher/learners/${enc(args[0])}/timeline${suffix}`, {
-      headers: { Cookie: proof.cookie },
-    }), stdout); return 0;
+    print(await requestJson(fetchImpl, base.school, `/teacher/learners/${enc(args[0])}/timeline${suffix}`), stdout); return 0;
   }
   if (command === 'session') {
     if (!args[0]) throw new Error('session requires a session id');
-    const teacher = requiredOption(rest, '--teacher', '--teacher ID is required for a teacher record read');
-    const proof = await teacherProof({ fetchImpl, school: base.school, teacher, pin: pinFrom(rest, env) });
-    print(await requestJson(fetchImpl, base.school, `/teacher/sessions/${enc(args[0])}`, {
-      headers: { Cookie: proof.cookie },
-    }), stdout); return 0;
+    print(await requestJson(fetchImpl, base.school, `/teacher/sessions/${enc(args[0])}`), stdout); return 0;
   }
   if (command === 'gates') {
     if (!args[0]) throw new Error('gates requires a learner id');
@@ -312,16 +276,15 @@ export async function runOps({
     const all = rest.includes('--all');
     if (!args[0] && !all) throw new Error('term-rebuild requires a learner id or --all');
     const teacher = requiredOption(rest, '--teacher', '--teacher ID is required to rebuild term verdicts');
-    const pin = pinFrom(rest, env);
     const body = {
       termId: option(rest, '--term') ?? null, from: option(rest, '--from') ?? null, to: option(rest, '--to') ?? null,
-      force: rest.includes('--force'), userId: teacher, pin,
+      force: rest.includes('--force'), userId: teacher,
     };
     const learners = all
       ? (await requestJson(fetchImpl, base.school, '/learners').catch(() => ({ learners: [] }))).learners?.map((l) => l.id ?? l.learnerId ?? l) ?? []
       : [args[0]];
     if (!apply) {
-      print({ schema: 'school.term-rebuild-preview/v1', dryRun: true, learners, request: redactedRequest({ method: 'POST', url: `${base.lifecycle}/learners/<id>/term/rebuild`, body }) }, stdout);
+      print({ schema: 'school.term-rebuild-preview/v1', dryRun: true, learners, request: previewRequest({ method: 'POST', url: `${base.lifecycle}/learners/<id>/term/rebuild`, body }) }, stdout);
       return 0;
     }
     const results = [];
@@ -336,7 +299,7 @@ export async function runOps({
   // A LINK GENERATOR, and deliberately nothing more. Hand-rolling base64url
   // for a JSON blob is exactly the friction the preview route exists to
   // remove, so the tool that removes it must not reintroduce ceremony of its
-  // own: no PIN, no teacher unlock, no writes. `--resolve` additionally fetches
+  // own: no writes. `--resolve` additionally fetches
   // the card so the terminal can answer "does this course's poster resolve?"
   // without opening a browser — still a read, still mints nothing.
   if (command === 'launch-preview') {
@@ -464,7 +427,6 @@ export async function runOps({
     const body = { dryRun: !apply, ...(leakAfterHours ? { leakAfterHours } : {}) };
     if (apply) {
       body.decidedBy = requiredOption(rest, '--teacher', 'sweep --apply requires --teacher');
-      body.pin = pinFrom(rest, env);
     }
     print(await requestJson(fetchImpl, base.lifecycle, '/maintenance/answer-sheets/sweep', {
       method: 'POST', body: JSON.stringify(body),
@@ -489,25 +451,18 @@ export async function runOps({
     const artifactId = args[0];
     if (!artifactId) throw new Error('artifact requires an artifact id');
     const view = option(rest, '--view', 'manifest');
-    const teacher = requiredOption(rest, '--teacher', '--teacher ID is required for an artifact read');
-    const proof = await teacherProof({ fetchImpl, school: base.school, teacher, pin: pinFrom(rest, env) });
-    const headers = { Cookie: proof.cookie };
     if (view === 'manifest') {
-      print(await requestJson(fetchImpl, base.school, `/teacher/artifacts/${enc(artifactId)}`, { headers }), stdout); return 0;
+      print(await requestJson(fetchImpl, base.school, `/teacher/artifacts/${enc(artifactId)}`), stdout); return 0;
     }
     if (!['original', 'postview'].includes(view)) throw new Error('--view must be manifest, original, or postview');
     const output = requiredOption(rest, '--output', '--output FILE is required for a PDF or PNG view');
-    if (view === 'postview') {
-      headers['X-Teacher-Step-Up'] = await proof.stepUp('artifact.postview', artifactId);
-    }
     const saved = await writeDownload({ fetchImpl, base: base.school,
-      requestPath: `/teacher/artifacts/${enc(artifactId)}/${view}.pdf`, output, headers });
+      requestPath: `/teacher/artifacts/${enc(artifactId)}/${view}.pdf`, output });
     print({ schema: 'school.ops-download/v1', kind: `artifact-${view}`, artifactId, ...saved }, stdout); return 0;
   }
 
   const teacher = option(rest, '--teacher');
   if (!teacher) throw new Error('--teacher ID is required for a teacher operation');
-  const pin = pinFrom(rest, env);
   let method = 'POST'; let requestBase = base.lifecycle; let requestPath; let body; let headers = {};
   let previewViaApi = false;
 
@@ -518,22 +473,22 @@ export async function runOps({
     const current = await requestJson(fetchImpl, base.lifecycle, `/assignments/${enc(learnerId)}`).catch(() => null);
     method = 'PUT'; requestPath = `/assignments/${enc(learnerId)}`;
     body = { courses: plan.courses ?? plan.enrollments ?? [], units: plan.units ?? plan.standaloneWork ?? [],
-      programs: plan.programs ?? [], assignedBy: teacher, pin, baseUpdatedAt: current?.updatedAt ?? undefined };
+      programs: plan.programs ?? [], assignedBy: teacher, baseUpdatedAt: current?.updatedAt ?? undefined };
   } else if (command === 'enroll' || command === 'rematerialize') {
     const learnerId = args[0]; const syllabusId = option(rest, '--syllabus');
     if (!learnerId || !syllabusId) throw new Error(`${command} requires learner id and --syllabus ID`);
     const current = await requestJson(fetchImpl, base.lifecycle, `/assignments/${enc(learnerId)}`).catch(() => null);
     requestPath = `/enrollments/${enc(learnerId)}`;
-    body = { syllabusId, rematerialize: command === 'rematerialize', enrolledBy: teacher, pin,
+    body = { syllabusId, rematerialize: command === 'rematerialize', enrolledBy: teacher,
       baseUpdatedAt: current?.updatedAt ?? undefined };
   } else if (command === 'abandon') {
     const sessionId = args[0]; const learnerId = option(rest, '--learner'); const reason = option(rest, '--reason');
     if (!sessionId || !learnerId || !reason) throw new Error('abandon requires session, --learner, and --reason');
-    requestPath = `/sessions/${enc(sessionId)}/abandon`; body = { learnerId, reason, decidedBy: teacher, pin };
+    requestPath = `/sessions/${enc(sessionId)}/abandon`; body = { learnerId, reason, decidedBy: teacher };
   } else if (command === 'agenda-dispatch') {
     const learnerId = args[0]; if (!learnerId) throw new Error('agenda-dispatch requires a learner id');
     requestBase = base.school; requestPath = `/teacher/learners/${enc(learnerId)}/agenda/dispatch${apply ? '' : '/preview'}`;
-    body = apply ? { learnerName: option(rest, '--name'), dispatchedBy: teacher, pin }
+    body = apply ? { learnerName: option(rest, '--name'), dispatchedBy: teacher }
       : { learnerName: option(rest, '--name') };
     if (apply) {
       const key = requiredOption(rest, '--idempotency-key', '--idempotency-key KEY is required with --apply');
@@ -542,7 +497,7 @@ export async function runOps({
   } else if (command === 'course-outcome-recover') {
     const sessionId = args[0]; if (!sessionId) throw new Error('course-outcome-recover requires a session id');
     requestBase = base.school; requestPath = `/teacher/sessions/${enc(sessionId)}/course-outcome-recovery`;
-    previewViaApi = true; body = { recoveredBy: teacher, pin, apply };
+    previewViaApi = true; body = { recoveredBy: teacher, apply };
   } else if (command === 'grade-adjust') {
     const sessionId = args[0]; if (!sessionId) throw new Error('grade-adjust requires a session id');
     requestBase = base.school; requestPath = `/teacher/sessions/${enc(sessionId)}/grade-adjustments`; previewViaApi = true;
@@ -551,43 +506,43 @@ export async function runOps({
       totalCount: optionalNumber(rest, '--total'),
       missedItemIds: option(rest, '--missed')?.split(',').map((item) => item.trim()).filter(Boolean),
       itemVerdicts: verdictsFile ? yaml.load(fs.readFileSync(verdictsFile, 'utf8')) : undefined,
-      reason: requiredOption(rest, '--reason'), adjustedBy: teacher, pin,
+      reason: requiredOption(rest, '--reason'), adjustedBy: teacher,
       baseSeq: optionalNumber(rest, '--base-revision', '--base-seq'), apply };
   } else if (command === 'grade-retract') {
     const sessionId = args[0]; const adjustmentId = option(rest, '--adjustment');
     if (!sessionId || !adjustmentId) throw new Error('grade-retract requires session and --adjustment ID');
     requestBase = base.school; requestPath = `/teacher/sessions/${enc(sessionId)}/grade-adjustments/${enc(adjustmentId)}/retract`;
-    previewViaApi = true; body = { reason: requiredOption(rest, '--reason'), retractedBy: teacher, pin,
+    previewViaApi = true; body = { reason: requiredOption(rest, '--reason'), retractedBy: teacher,
       baseSeq: optionalNumber(rest, '--base-revision', '--base-seq'), apply };
   } else if (command === 'completion-credit') {
     const learnerId = args[0]; const unitId = option(rest, '--unit');
     if (!learnerId || !unitId) throw new Error('completion-credit requires learner and --unit ID');
     requestBase = base.school; requestPath = '/attestations';
-    body = { learnerId, unitId, reason: requiredOption(rest, '--reason'), attestedBy: teacher, pin };
+    body = { learnerId, unitId, reason: requiredOption(rest, '--reason'), attestedBy: teacher };
   } else if (command === 'completion-credit-retract') {
     if (!args[0]) throw new Error('completion-credit-retract requires an entry id');
     requestBase = base.school; requestPath = '/retract';
-    body = { kind: 'attestation', entryId: args[0], retractedBy: teacher, pin };
+    body = { kind: 'attestation', entryId: args[0], retractedBy: teacher };
   } else if (command === 'regrade') {
     const bankId = args[0]; if (!bankId) throw new Error('regrade requires a bank id');
     requestBase = base.school; requestPath = '/attempts/regrade'; previewViaApi = true;
     body = { bankId, fromDay: requiredOption(rest, '--from-day'), toDay: option(rest, '--to-day'),
-      reason: requiredOption(rest, '--reason'), regradedBy: teacher, pin, apply };
+      reason: requiredOption(rest, '--reason'), regradedBy: teacher, apply };
   } else if (command === 'review-resolve') {
     const sessionId = args[0]; if (!sessionId) throw new Error('review-resolve requires a session id');
     const itemId = requiredOption(rest, '--item');
     requestPath = `/sessions/${enc(sessionId)}/review/${enc(itemId)}`;
-    body = { verdict: requiredOption(rest, '--verdict'), note: option(rest, '--note'), gradedBy: teacher, pin };
+    body = { verdict: requiredOption(rest, '--verdict'), note: option(rest, '--note'), gradedBy: teacher };
   } else if (command === 'reassign') {
     const assessmentId = args[0]; const fromLearnerId = option(rest, '--from'); const toLearnerId = option(rest, '--to');
     if (!assessmentId || !fromLearnerId || !toLearnerId) throw new Error('reassign requires assessment, --from ID, and --to ID');
     requestBase = base.school; requestPath = '/reassign';
-    body = { fromLearnerId, toLearnerId, day: requiredOption(rest, '--day'), assessmentId, reassignedBy: teacher, pin };
+    body = { fromLearnerId, toLearnerId, day: requiredOption(rest, '--day'), assessmentId, reassignedBy: teacher };
   } else throw new Error(`unknown school ops command: ${command}`);
 
   if (!apply && !previewViaApi) {
     print({ schema: 'school.ops-dry-run/v1', dryRun: true,
-      request: redactedRequest({ method, url: `${requestBase}${requestPath}`, body, headers }) }, stdout);
+      request: previewRequest({ method, url: `${requestBase}${requestPath}`, body, headers }) }, stdout);
     return 0;
   }
   const result = await requestJson(fetchImpl, requestBase, requestPath, { method, headers, body: JSON.stringify(body) });

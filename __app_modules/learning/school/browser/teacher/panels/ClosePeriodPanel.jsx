@@ -2,7 +2,7 @@
  * ClosePeriodPanel — freeze the selected period's report card (wave 4,
  * teacher.period.close). Two-tap confirm; an already-frozen period offers
  * supersede (the prior freeze is archived server-side, never destroyed).
- * The write carries the teacher stamp + pin; refresh is server-authoritative.
+ * The write carries the teacher stamp; refresh is server-authoritative.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -27,12 +27,9 @@ export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = nu
   const [armed, setArmed] = useState(false);
 
   const alreadyClosed = frozen.state === 'ok';
-  const close = () => run('close', ({ actorId, pin, stepUpToken }) => schoolApi.closePeriod({
-    learnerId, periodId, closedBy: actorId, pin, supersede: alreadyClosed,
-  }, stepUpToken), {
-    onSuccess: () => { setArmed(false); frozen.retry(); onClosed?.(); },
-    stepUp: alreadyClosed ? { action: 'report-card.close', resource: `${learnerId}/${periodId}` } : null,
-  });
+  const close = () => run('close', ({ actorId }) => schoolApi.closePeriod({
+    learnerId, periodId, closedBy: actorId, supersede: alreadyClosed,
+  }), { onSuccess: () => { setArmed(false); frozen.retry(); onClosed?.(); } });
 
   if (frozen.state === 'loading') return null;
   return (

@@ -122,10 +122,10 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
     const gate = { assert: vi.fn(() => { throw new GuestForbiddenError('no'); }) };
     const store = ds();
     const svc = makeService({ teacherGate: gate, datastore: store });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', pin: 'x', reason: 'r' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', reason: 'r' }))
       .rejects.toThrow(GuestForbiddenError);
     expect(store.saveQuizRequests).not.toHaveBeenCalled();
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'quizrequests.dismiss' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', action: 'quizrequests.dismiss' });
   });
 
   it('a missing reason is refused — the child is told why, always', async () => {
@@ -140,7 +140,7 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
       datastore: ds(), userService: users, logger: silent, now: () => 1000,
       teacherGate: { assert: () => {} }, teacherNotesRef: () => noteStore,
     });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', pin: '1', reason: 'We will do this one together next week' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', reason: 'We will do this one together next week' }))
       .resolves.toEqual({ dismissed: true });
     expect(saved).toEqual([requests[1]]);
     expect(noteStore.append).toHaveBeenCalledWith(expect.objectContaining({

@@ -207,7 +207,7 @@ describe('UndoReadingRevision', () => {
     expect(home.learnerId).toBe(LEARNER);
     expect(notes).toHaveBeenCalledTimes(2);
     expect(notes.mock.calls.map((call) => call[0].learnerId)).toEqual([SIBLING, LEARNER]);
-    // Inherits the verb it undoes, which is a step-up scoped to the reading.
+    // Inherits the verb it undoes, scoped to the reading.
     expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
       action: 'books.reading.reassign',
       context: expect.objectContaining({ readingId: 'rdg_a' }),

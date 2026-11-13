@@ -29,9 +29,9 @@ describe('teacherLog write category', () => {
   });
 
   it('emits a refusal at warn, not error — a refused write is not a broken console', () => {
-    teacherLog.writeRefused('blocked-on-pin', { panel: 'enrollment', status: 403 });
-    expect(warn).toHaveBeenCalledWith('teacher.write.blocked-on-pin', {
-      panel: 'enrollment', status: 403, detail: 'blocked-on-pin',
+    teacherLog.writeRefused('blocked-on-claim', { panel: 'enrollment', status: 403 });
+    expect(warn).toHaveBeenCalledWith('teacher.write.blocked-on-claim', {
+      panel: 'enrollment', status: 403, detail: 'blocked-on-claim',
     });
     expect(info).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();

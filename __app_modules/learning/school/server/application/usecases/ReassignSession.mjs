@@ -46,11 +46,10 @@ export class ReassignSession {
    * @param {string} args.toLearnerId - the child it actually belongs to
    * @param {string} args.reason - why; mandatory, and stored in the event
    * @param {string|null} [args.reassignedBy] - the acting teacher's stamp
-   * @param {string|object|null} [args.pin] - console pin or capability tokens
    */
-  async execute({ sessionId, toLearnerId, reason, reassignedBy = null, pin = null } = {}) {
+  async execute({ sessionId, toLearnerId, reason, reassignedBy = null } = {}) {
     this.#teacherGate.assert({
-      userId: reassignedBy, pin, action: 'sessions.reassign',
+      userId: reassignedBy, action: 'sessions.reassign',
       context: { sessionId, toLearnerId },
     });
     if (typeof sessionId !== 'string' || !sessionId.trim()) throw new ValidationError('sessionId is required');

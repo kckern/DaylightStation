@@ -20,9 +20,9 @@ export class UpdateReadingEntry {
 
   async execute({
     learnerId, readingId, entryId, patch = {}, reason = null,
-    by = null, pin = null, baseRevisionCount,
+    by = null, baseRevisionCount,
   } = {}) {
-    this.#context.assert({ op: OPS.ENTRY_UPDATE, userId: by, pin, learnerId, readingId });
+    this.#context.assert({ op: OPS.ENTRY_UPDATE, userId: by, learnerId, readingId });
     const clean = normalize(patch);
     const reading = await this.#context.reading(learnerId, readingId);
     assertFreshRevisions(reading, baseRevisionCount);
@@ -33,7 +33,7 @@ export class UpdateReadingEntry {
     const window = clean.on !== undefined ? await this.#context.countedWindow(learnerId) : null;
 
     return applyReadingOperation(this.#context, {
-      learnerId, reading, op: OPS.ENTRY_UPDATE, entryId, patch: clean, by, pin, reason, window,
+      learnerId, reading, op: OPS.ENTRY_UPDATE, entryId, patch: clean, by, reason, window,
     });
   }
 }

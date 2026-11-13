@@ -83,11 +83,11 @@ export class ResolveReviewItem {
    * @throws {EntityNotFoundError} nothing with that itemId is queued
    */
   async execute({
-    sessionId, itemId, verdict, gradedBy = null, note = null, internalNote = null, pin = null,
+    sessionId, itemId, verdict, gradedBy = null, note = null, internalNote = null,
   } = {}) {
-    // TeacherGate (spec §1) subsumes the grown-up rule and adds role + pin;
+    // TeacherGate (spec §1) subsumes the grown-up rule and adds the teacher role;
     // absent (pre-console composition, paper flows' tests) → legacy gate.
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, pin, action: 'review.resolve', context: { sessionId, itemId } });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, action: 'review.resolve', context: { sessionId, itemId } });
     else this.#grownUps.assert(gradedBy, 'Only a grown-up can sign off schoolwork', {
       action: 'review.resolve', sessionId, itemId,
     });

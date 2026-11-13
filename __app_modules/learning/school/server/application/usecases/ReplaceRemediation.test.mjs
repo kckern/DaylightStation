@@ -48,7 +48,7 @@ describe('ReplaceRemediation', () => {
     const result = await h.useCase.execute({
       sessionId: PARENT, currentSessionId: RETRY,
       reason: 'the worksheet wording and worked example were corrected',
-      replacedBy: 'parent', pin: '7410', idempotencyKey: 'repair-user_4-place-value-v2',
+      replacedBy: 'parent', idempotencyKey: 'repair-user_4-place-value-v2',
     });
 
     expect(result).toMatchObject({
@@ -56,7 +56,7 @@ describe('ReplaceRemediation', () => {
       newSessionId: 'ses_replacement_1', variant: 2,
     });
     expect(h.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'parent', pin: '7410', action: 'sessions.remediation.replace',
+      userId: 'parent', action: 'sessions.remediation.replace',
     }));
     expect(h.sessions.derive('ses_replacement_1')).toMatchObject({
       state: 'created', terminal: false, learnerId: 'user_4', unitId: 'place-value',
@@ -76,7 +76,7 @@ describe('ReplaceRemediation', () => {
     await failedWithRetry(h.sessions, h.clock);
     const args = {
       sessionId: PARENT, currentSessionId: RETRY, reason: 'corrected wording',
-      replacedBy: 'parent', pin: '7410', idempotencyKey: 'same-request',
+      replacedBy: 'parent', idempotencyKey: 'same-request',
     };
     const first = await h.useCase.execute(args);
     const second = await h.useCase.execute(args);
@@ -90,7 +90,7 @@ describe('ReplaceRemediation', () => {
     await failedWithRetry(h.sessions, h.clock, { retryState: 'submitted' });
     await expect(h.useCase.execute({
       sessionId: PARENT, currentSessionId: RETRY, reason: 'changed content',
-      replacedBy: 'parent', pin: '7410', idempotencyKey: 'too-late',
+      replacedBy: 'parent', idempotencyKey: 'too-late',
     })).rejects.toThrow(/learner evidence|submitted/iu);
     expect(h.sessions.ids()).toEqual([PARENT, RETRY]);
     expect(h.sessions.derive(RETRY).state).toBe('submitted');

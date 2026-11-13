@@ -11,9 +11,6 @@ import { mountTeacherReadingRoutes } from "./school.teacherReading.mjs";
 import { mountCardLadderRoutes } from "./school.cardLadder.mjs";
 
 export function createSchoolRouter({
-  // () => boolean. Whether school.yml still configures a console PIN. The
-  // console reads this to decide whether to ask for one at all.
-  teacherPinRequired = () => false,
   schoolErrors = {},
   coreErrors = {},
   slugify,
@@ -79,7 +76,6 @@ export function createSchoolRouter({
   // The coin bank's panel door (`OpenBankAtPanel`): a face tap in, a
   // short-lived bank launch target out. Null hides the route (404).
   openBankAtPanel = null,
-  teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
   closeSessionOutcome = null,
@@ -134,36 +130,6 @@ export function createSchoolRouter({
   const { ValidationError, EntityNotFoundError, DomainInvariantError } = coreErrors;
   const router = express.Router();
   if (presenceMiddleware) router.use(presenceMiddleware);
-  const cookieValue = (req, name) => {
-    const raw = req.get('cookie') ?? '';
-    for (const part of raw.split(';')) {
-      const separator = part.indexOf('=');
-      if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
-      try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return null; }
-    }
-    return null;
-  };
-  const capabilityProof = (req) => {
-    const capabilityToken = cookieValue(req, 'daylight_teacher_session');
-    return capabilityToken ? {
-      capabilityToken,
-      stepUpToken: req.get('X-Teacher-Step-Up') ?? null,
-    } : null;
-  };
-  const teacherCookie = (req, value, maxAge) => {
-    const secure = req.secure || String(req.get('X-Forwarded-Proto') ?? '').split(',')[0].trim() === 'https';
-    return `daylight_teacher_session=${value}; Path=/api/v1/school; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
-  };
-  // Cookie capabilities ride the existing `pin` argument into TeacherGate.
-  // A literal body PIN always wins, preserving every deployed client/CLI.
-  router.use((req, _res, next) => {
-    if (!req.path.startsWith('/teacher/auth/')
-        && req.body && typeof req.body === 'object' && req.body.pin == null) {
-      const proof = capabilityProof(req);
-      if (proof) req.body.pin = proof;
-    }
-    next();
-  });
   let warnedMaterialsConfigMissing = false;
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
@@ -195,46 +161,6 @@ export function createSchoolRouter({
         return sendInternalError(res, { error: 'internal' });
       });
   };
-
-  // Frontend contract: unlock sets the HttpOnly cookie; ordinary writes then
-  // need no PIN body. Sensitive calls first POST /step-up and send the returned
-  // one-use grant in X-Teacher-Step-Up. Raw PIN bodies remain valid everywhere.
-  router.post('/teacher/auth/unlock', wrap(async (req, res) => {
-    if (!teacherCapabilitySessions) throw new EntityNotFoundError('teacher authorization', 'not configured');
-    const body = req.body || {};
-    const unlocked = teacherCapabilitySessions.unlock({ userId: body.userId ?? body.actorId ?? null, pin: body.pin });
-    res.set('Cache-Control', 'no-store');
-    res.set('Set-Cookie', teacherCookie(req, encodeURIComponent(unlocked.capabilityToken), 1800));
-    const { capabilityToken: _secret, ...status } = unlocked;
-    res.json({ active: true, ...status });
-  }));
-  router.get('/teacher/auth/status', wrap(async (req, res) => {
-    if (!teacherCapabilitySessions) return res.json({ active: false, pinRequired: false });
-    // `pinRequired` exists so the console can stop ASKING for something the
-    // server does not want. TeacherGate has always skipped the PIN check when
-    // none is configured, but the console prompted anyway — it had no way to
-    // know, so removing the PIN from config made the dialog unanswerable
-    // instead of unnecessary. With this, an unset PIN means the console
-    // unlocks silently and the grown-up is identified by who they picked.
-    res.set('Cache-Control', 'no-store').json({
-      ...teacherCapabilitySessions.status(cookieValue(req, 'daylight_teacher_session')),
-      pinRequired: teacherPinRequired(),
-    });
-  }));
-  router.post('/teacher/auth/step-up', wrap(async (req, res) => {
-    if (!teacherCapabilitySessions) throw new EntityNotFoundError('teacher authorization', 'not configured');
-    const body = req.body || {};
-    res.set('Cache-Control', 'no-store').json(teacherCapabilitySessions.stepUp({
-      capabilityToken: cookieValue(req, 'daylight_teacher_session'),
-      pin: body.pin,
-      action: body.action, resource: body.resource,
-    }));
-  }));
-  router.post('/teacher/auth/lock', wrap(async (req, res) => {
-    const locked = teacherCapabilitySessions?.lock(cookieValue(req, 'daylight_teacher_session')) ?? { locked: false };
-    res.set('Set-Cookie', teacherCookie(req, '', 0));
-    res.json(locked);
-  }));
 
   router.get('/roster', wrap(async (req, res) => res.json(
     (await schoolResourceService?.listLearners?.()) ?? schoolService.getRoster(),
@@ -347,13 +273,13 @@ export function createSchoolRouter({
   // Warnings and the allocation result ride response headers so the body can
   // stay a plain PDF.
   //
-  // Card-minting is a MUTATION (it allocates/consumes a card) and a teacher
-  // pin is a secret — neither belongs on a GET, whose URL lands in browser
-  // history, proxy access logs, and Referer headers. `POST /print/render`
-  // (below, registered with the other fixed routes) carries card=/freshCard=
-  // /teacherPin= — and everything else this handler reads — in the JSON
-  // body instead. The GET splat stays a plain, repeatable proof render and
-  // 400s if it sees any of those three query params, naming the POST route.
+  // Card-minting is a MUTATION (it allocates/consumes a card) — it does not
+  // belong on a GET, whose URL lands in browser history, proxy access logs,
+  // and Referer headers. `POST /print/render` (below, registered with the
+  // other fixed routes) carries card=/freshCard= — and everything else this
+  // handler reads — in the JSON body instead. The GET splat stays a plain,
+  // repeatable proof render and 400s if it sees either card param, naming
+  // the POST route.
   // Both routes share the render body via the local `renderPrintResponse`
   // helper so the allocation semantics can't drift between them.
   // The FIXED /print routes must register BEFORE the /print/*id splat below —
@@ -393,10 +319,7 @@ export function createSchoolRouter({
     return res.type('application/pdf').send(pdf);
   }));
   // Card-minting render, moved off the GET splat (see the comment block
-  // above). Body mirrors the query params the splat used to accept, plus
-  // `teacherPin` — the GET's `pin=` name stays GET-only (a bare teacher-key
-  // READ never mints and was never blocked here); a mutating render's pin
-  // belongs in a body, never a URL.
+  // above). Body mirrors the query params the splat used to accept.
   router.post('/print/render', wrap(async (req, res) => {
     if (!schoolPrintAccess?.isRenderable?.()) return res.status(503).json({ error: 'print-render-unavailable' });
     return renderPrintResponse(parsePrintRequest(req.body || {}, { jsonBody: true }), res);
@@ -405,11 +328,10 @@ export function createSchoolRouter({
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
     if (!schoolPrintAccess?.isRenderable?.()) return res.status(503).json({ error: 'print-render-unavailable' });
-    // card=/freshCard=/teacherPin= mint or spend a card, or carry a secret —
-    // none belong in a GET query string. POST /print/render is the mutating
-    // path now; a plain proof render (no card params) renders exactly as
-    // before.
-    if (req.query.card !== undefined || req.query.freshCard !== undefined || req.query.teacherPin !== undefined) {
+    // card=/freshCard= mint or spend a card — neither belongs in a GET query
+    // string. POST /print/render is the mutating path now; a plain proof
+    // render (no card params) renders exactly as before.
+    if (req.query.card !== undefined || req.query.freshCard !== undefined) {
       return res.status(400).json({ error: 'card-minting renders require POST /print/render' });
     }
     // `id` is explicitly LAST: the path segment is the id, always — a stray
@@ -433,12 +355,6 @@ export function createSchoolRouter({
         error: `no sheet found for card ${result.cardId}`,
         ...(result.nearMissCardIds.length ? { nearMissCardIds: result.nearMissCardIds } : {}),
       });
-    }
-    if (result.kind === 'teacher_disabled') {
-      return res.status(403).json({ error: 'teacher keys are disabled: set print.teacherPin in the school household config' });
-    }
-    if (result.kind === 'teacher_pin_required') {
-      return res.status(403).json({ error: 'teacher key requires the correct pin=<value>' });
     }
     if (result.warnings.length) res.set('X-School-Print-Warnings', JSON.stringify(result.warnings));
     if (result.allocation) res.set('X-School-Print-Allocation', JSON.stringify(result.allocation));
@@ -467,7 +383,6 @@ export function createSchoolRouter({
       learnerName: textQuery(value('learnerName')),
       date: textQuery(value('date')),
       teacher: boolean('teacher'),
-      pin: textQuery(jsonBody ? toParamString(raw.teacherPin) : raw.pin),
       rev: textQuery(value('rev')),
       variant: optionalInteger('variant', 0, 0, 999),
       freshCard: optionalBoolean('freshCard'),
@@ -524,13 +439,13 @@ export function createSchoolRouter({
   }));
   router.post('/flashcards/:deckId/repair', wrap((req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-    const { learnerId, cardId, action, actorId, pin = null } = req.body || {};
-    res.json(flashcardStudy.repair({ learnerId, deckId: req.params.deckId, cardId, action, actorId, pin }));
+    const { learnerId, cardId, action, actorId } = req.body || {};
+    res.json(flashcardStudy.repair({ learnerId, deckId: req.params.deckId, cardId, action, actorId }));
   }));
   router.post('/flashcards/:deckId/migrate-profile', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-    const { learnerId, actorId, pin = null, dryRun = true } = req.body || {};
-    res.json(await flashcardStudy.migrateProfile({ learnerId, deckId: req.params.deckId, actorId, pin, dryRun: dryRun !== false }));
+    const { learnerId, actorId, dryRun = true } = req.body || {};
+    res.json(await flashcardStudy.migrateProfile({ learnerId, deckId: req.params.deckId, actorId, dryRun: dryRun !== false }));
   }));
   router.post('/flashcards/:sessionId/heartbeat', wrap((req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
@@ -554,8 +469,8 @@ export function createSchoolRouter({
   }));
   router.post('/flashcards/teacher-report', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-    const { learnerId, actorId, pin = null } = req.body || {};
-    res.json(await flashcardStudy.teacherReport({ learnerId, actorId, pin }));
+    const { learnerId, actorId } = req.body || {};
+    res.json(await flashcardStudy.teacherReport({ learnerId, actorId }));
   }));
   router.get('/flashcards/:deckId/summary', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
@@ -568,8 +483,8 @@ export function createSchoolRouter({
   // The card ladder (any word package): a flashcard enrollment in `policy.mode:
   // card-ladder`. Its own module, like the teacher reading workspace.
   mountCardLadderRoutes({
-    router, wrap, cardLadderStudy, cardLadderTest, stageScreen: cardLadderStageScreen, capabilityProof,
-    teacherCapabilitySessions, cardLadderTuning, sendFileResource,
+    router, wrap, cardLadderStudy, cardLadderTest, stageScreen: cardLadderStageScreen,
+    cardLadderTuning, sendFileResource,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {
@@ -599,8 +514,8 @@ export function createSchoolRouter({
     res.json(await schoolApiSessions.listQuizRequests({ materialId: req.query.materialId || null }));
   }));
   router.post('/quiz-requests/dismiss', wrap(async (req, res) => {
-    const { unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, pin = null, reason } = req.body || {};
-    res.json(await schoolService.dismissQuizRequest({ unitId, bankId, kind, sessionId, userId, dismissedBy, pin, reason }));
+    const { unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, reason } = req.body || {};
+    res.json(await schoolService.dismissQuizRequest({ unitId, bankId, kind, sessionId, userId, dismissedBy, reason }));
   }));
   // Kid-safe like /quiz-requests: a child asks for another go; the row lands
   // on the teacher's backlog (student-advocacy A2).
@@ -628,11 +543,11 @@ export function createSchoolRouter({
   }));
   router.post('/print/:requestId/approve', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');
-    res.json(await printService.approve({ requestId: req.params.requestId, approver: req.body?.approver, pin: req.body?.pin ?? null }));
+    res.json(await printService.approve({ requestId: req.params.requestId, approver: req.body?.approver }));
   }));
   router.post('/print/:requestId/deny', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');
-    res.json(await printService.deny({ requestId: req.params.requestId, approver: req.body?.approver, pin: req.body?.pin ?? null }));
+    res.json(await printService.deny({ requestId: req.params.requestId, approver: req.body?.approver }));
   }));
 
   // Materials framework (catalog + per-unit progress/quiz gates). The panel
@@ -851,7 +766,7 @@ export function createSchoolRouter({
     const periodId = requiredTextQuery(body.periodId, 'periodId');
     const closedBy = requiredTextQuery(body.closedBy, 'closedBy');
     const frozen = await closeAcademicPeriod.execute({
-      learnerId, periodId, closedBy, supersede: body.supersede === true, pin: body.pin ?? null,
+      learnerId, periodId, closedBy, supersede: body.supersede === true,
     });
     return res.status(201).json(frozen);
   }));
@@ -859,8 +774,8 @@ export function createSchoolRouter({
   // --- wave-6 advocacy -------------------------------------------------------
   router.post('/retract', wrap(async (req, res) => {
     if (!retractTeacherRecord) throw new EntityNotFoundError('retraction', 'not configured');
-    const { kind, entryId, retractedBy = null, pin = null } = req.body || {};
-    res.json(await retractTeacherRecord.execute({ kind, entryId, retractedBy, pin }));
+    const { kind, entryId, retractedBy = null } = req.body || {};
+    res.json(await retractTeacherRecord.execute({ kind, entryId, retractedBy }));
   }));
   router.get('/transcript', wrap(async (req, res) => {
     if (!getTranscript) return res.json(null);
@@ -906,14 +821,14 @@ export function createSchoolRouter({
   }));
   router.post('/attestations', wrap(async (req, res) => {
     if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
-    const { learnerId, unitId, reason, attestedBy = null, pin = null } = req.body || {};
-    res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy, pin }));
+    const { learnerId, unitId, reason, attestedBy = null } = req.body || {};
+    res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy }));
   }));
 
   // Study-day program excusals: a grown-up letting one learner off one day's
   // program obligation (today, the piano lesson). Attestation-weight — day
-  // scoped, reversible, fully attributed — so no step-up grant, just the
-  // teacherGate assert the use case already makes.
+  // scoped, reversible, fully attributed — so just the teacherGate assert the
+  // use case already makes.
   router.get('/program-day-bypasses', wrap(async (req, res) => {
     if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
     res.set('Cache-Control', 'no-store')
@@ -921,14 +836,14 @@ export function createSchoolRouter({
   }));
   router.post('/program-day-bypasses', wrap(async (req, res) => {
     if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
-    const { learnerId, programId = 'piano-course', reason, decidedBy = null, pin = null } = req.body || {};
-    res.status(201).json(await manageProgramDayBypass.grant({ learnerId, programId, reason, decidedBy, pin }));
+    const { learnerId, programId = 'piano-course', reason, decidedBy = null } = req.body || {};
+    res.status(201).json(await manageProgramDayBypass.grant({ learnerId, programId, reason, decidedBy }));
   }));
   router.post('/program-day-bypasses/:bypassId/retract', wrap(async (req, res) => {
     if (!manageProgramDayBypass) throw new EntityNotFoundError('program day bypasses', 'not configured');
-    const { reason, retractedBy = null, pin = null } = req.body || {};
+    const { reason, retractedBy = null } = req.body || {};
     res.json(await manageProgramDayBypass.retract({
-      bypassId: req.params.bypassId, reason, retractedBy, pin,
+      bypassId: req.params.bypassId, reason, retractedBy,
     }));
   }));
   router.get('/teacher-notes', wrap((req, res) => {
@@ -941,8 +856,8 @@ export function createSchoolRouter({
   }));
   router.post('/teacher-notes', wrap(async (req, res) => {
     if (!recordTeacherNote) throw new EntityNotFoundError('teacher notes', 'not configured');
-    const { learnerId, note, from = null, pin = null } = req.body || {};
-    res.status(201).json(await recordTeacherNote.execute({ learnerId, note, from, pin }));
+    const { learnerId, note, from = null } = req.body || {};
+    res.status(201).json(await recordTeacherNote.execute({ learnerId, note, from }));
   }));
   // A day's attempts grouped by assessment — the reassignment picker's read.
   router.get('/attempts-summary', wrap((req, res) => {
@@ -953,8 +868,8 @@ export function createSchoolRouter({
   }));
   router.post('/reassign', wrap(async (req, res) => {
     if (!reassignEvidence) throw new EntityNotFoundError('reassignment', 'not configured');
-    const { fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = req.body || {};
-    res.json(await reassignEvidence.execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy, pin }));
+    const { fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null } = req.body || {};
+    res.json(await reassignEvidence.execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy }));
   }));
   // Re-credit a whole work session. The route above moves attempt EVENTS and
   // can only reach work a machine recorded answers for; this appends one
@@ -963,8 +878,8 @@ export function createSchoolRouter({
   // so a stale panel cannot assert who the work currently belongs to.
   router.post('/reassign-session', wrap(async (req, res) => {
     if (!reassignSession) throw new EntityNotFoundError('session reassignment', 'not configured');
-    const { sessionId, toLearnerId, reason, reassignedBy = null, pin = null } = req.body || {};
-    res.json(await reassignSession.execute({ sessionId, toLearnerId, reason, reassignedBy, pin }));
+    const { sessionId, toLearnerId, reason, reassignedBy = null } = req.body || {};
+    res.json(await reassignSession.execute({ sessionId, toLearnerId, reason, reassignedBy }));
   }));
 
   // --- wave-4 records --------------------------------------------------------
@@ -1004,8 +919,8 @@ export function createSchoolRouter({
   // --- wave-3 planning domains ---------------------------------------------
   router.put('/periods', wrap(async (req, res) => {
     if (!setAcademicPeriods) throw new EntityNotFoundError('periods editing', 'not configured');
-    const { periods, editedBy = null, pin = null, baseHistoryLength } = req.body || {};
-    res.json(await setAcademicPeriods.execute({ periods, editedBy, pin, baseHistoryLength }));
+    const { periods, editedBy = null, baseHistoryLength } = req.body || {};
+    res.json(await setAcademicPeriods.execute({ periods, editedBy, baseHistoryLength }));
   }));
   router.get('/calendar', wrap(async (req, res) => {
     if (!getHouseholdCalendar) throw new EntityNotFoundError('household calendar', 'not configured');
@@ -1014,9 +929,9 @@ export function createSchoolRouter({
   router.put('/calendar', wrap(async (req, res) => {
     if (!setHouseholdCalendar) throw new EntityNotFoundError('calendar editing', 'not configured');
     const {
-      except, dayOffTiers = null, activities = [], assignTo = [], editedBy = null, pin = null, baseRevision,
+      except, dayOffTiers = null, activities = [], assignTo = [], editedBy = null, baseRevision,
     } = req.body || {};
-    res.json(await setHouseholdCalendar.execute({ except, dayOffTiers, activities, assignTo, editedBy, pin, baseRevision }));
+    res.json(await setHouseholdCalendar.execute({ except, dayOffTiers, activities, assignTo, editedBy, baseRevision }));
   }));
   router.get('/periods-meta', wrap((req, res) => {
     res.json({ historyLength: schoolRecordsQuery?.periodHistoryLength?.() ?? 0 });
@@ -1026,8 +941,8 @@ export function createSchoolRouter({
   }));
   router.put('/pass-overrides/:unitId', wrap(async (req, res) => {
     if (!setPassOverride) throw new EntityNotFoundError('pass overrides', 'not configured');
-    const { percent = null, editedBy = null, pin = null } = req.body || {};
-    res.json(await setPassOverride.execute({ unitId: req.params.unitId, percent, editedBy, pin }));
+    const { percent = null, editedBy = null } = req.body || {};
+    res.json(await setPassOverride.execute({ unitId: req.params.unitId, percent, editedBy }));
   }));
   router.get('/milestones', wrap(async (req, res) => {
     if (!milestoneStatuses) return res.json({ milestones: [] });
@@ -1035,8 +950,8 @@ export function createSchoolRouter({
   }));
   router.put('/milestones', wrap(async (req, res) => {
     if (!setMilestones) throw new EntityNotFoundError('milestones', 'not configured');
-    const { learnerId, milestones, editedBy = null, pin = null, baseHistoryLength } = req.body || {};
-    res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin, baseHistoryLength }));
+    const { learnerId, milestones, editedBy = null, baseHistoryLength } = req.body || {};
+    res.json(await setMilestones.execute({ learnerId, milestones, editedBy, baseHistoryLength }));
   }));
   router.get('/enrichment', wrap((req, res) => {
     res.json({ entries: schoolRecordsQuery?.enrichment?.({
@@ -1048,8 +963,8 @@ export function createSchoolRouter({
   }));
   router.post('/enrichment', wrap(async (req, res) => {
     if (!recordEnrichment) throw new EntityNotFoundError('enrichment log', 'not configured');
-    const { recordedBy = null, pin = null, learnerIds = [], from, to = null, title, subjectIds = [], note = null } = req.body || {};
-    res.status(201).json(await recordEnrichment.execute({ recordedBy, pin, learnerIds, from, to, title, subjectIds, note }));
+    const { recordedBy = null, learnerIds = [], from, to = null, title, subjectIds = [], note = null } = req.body || {};
+    res.status(201).json(await recordEnrichment.execute({ recordedBy, learnerIds, from, to, title, subjectIds, note }));
   }));
 
   router.get('/teacher/today', wrap(async (req, res) => {
@@ -1120,17 +1035,17 @@ export function createSchoolRouter({
     }
   }));
   // What school work pays (economy earn rules). Reads are the economy's own
-  // /api/v1/earnings; writes live HERE so the teacher capability cookie
-  // (scoped to /api/v1/school) reaches the gate like every teacher write.
+  // /api/v1/earnings; writes live HERE so they reach the school teacher gate
+  // like every teacher write.
   router.put('/teacher/economy/earn-rates/:learnerId', wrap(async (req, res) => {
     if (!manageEarnRules) throw new EntityNotFoundError('earn rules', 'not configured');
-    const { actorId = null, pin = null, patch = {} } = req.body || {};
-    res.json(await manageEarnRules.setLearnerRates({ learnerId: req.params.learnerId, patch, actorId, pin }));
+    const { actorId = null, patch = {} } = req.body || {};
+    res.json(await manageEarnRules.setLearnerRates({ learnerId: req.params.learnerId, patch, actorId }));
   }));
   router.put('/teacher/economy/earn-rules', wrap(async (req, res) => {
     if (!manageEarnRules) throw new EntityNotFoundError('earn rules', 'not configured');
-    const { actorId = null, pin = null, doc = null } = req.body || {};
-    res.json(await manageEarnRules.setHouseholdRules({ doc, actorId, pin }));
+    const { actorId = null, doc = null } = req.body || {};
+    res.json(await manageEarnRules.setHouseholdRules({ doc, actorId }));
   }));
   router.post('/teacher/curriculum-exceptions', wrap(async (req, res) => {
     if (!manageCurriculumException) throw new EntityNotFoundError('curriculum exceptions', 'not configured');
@@ -1199,12 +1114,11 @@ export function createSchoolRouter({
   }));
   // The grown-up's reading workspace — read, correct, account for, undo
   // (teacher reading admin design §2–§5). Its own module because ten routes
-  // over one child's shelf is a surface, not a stray handler, and because the
-  // two step-up verbs on it are easier to review beside each other.
+  // over one child's shelf is a surface, not a stray handler.
   mountTeacherReadingRoutes({
-    router, wrap, capabilityProof,
+    router, wrap,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
-    teacherGate, teacherCapabilitySessions,
+    teacherGate,
     getBookShelf, getLearnerReadings, updateReading,
     addReadingEntry, updateReadingEntry, deleteReadingEntry,
     addReadingForLearner, moveReading, deleteReading, undoReadingRevision,
@@ -1235,7 +1149,7 @@ export function createSchoolRouter({
     const body = req.body || {};
     res.status(201).json(presentPublicResources(await teacherAgendaDispatch.execute({
       learnerId: req.params.learnerId, learnerName: body.learnerName ?? null,
-      dispatchedBy: body.dispatchedBy ?? null, pin: body.pin ?? null,
+      dispatchedBy: body.dispatchedBy ?? null,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey,
     })));
   }));
@@ -1246,11 +1160,9 @@ export function createSchoolRouter({
   /**
    * The finish code, read out to a grown-up when the media will not play.
    *
-   * A POST, for two reasons that are not stylistic. The capability cookie only
-   * becomes a `pin` on a body-carrying request (see the middleware above), so a
-   * GET would authorize by nothing at all; and revealing WRITES — the use case
-   * records the reveal, which is what makes a sheet that passed against an
-   * unsatisfied companion explicable later. `no-store` on top: these letters
+   * A POST, because revealing WRITES — the use case records the reveal, which
+   * is what makes a sheet that passed against an unsatisfied companion
+   * explicable later. `no-store` on top: these letters
    * must not sit in a shared browser cache on a household screen.
    *
    * The gate is asserted INSIDE the use case, before it reads anything, so a
@@ -1265,13 +1177,12 @@ export function createSchoolRouter({
     res.set('Cache-Control', 'no-store').json(await getCompanionFinishCode.execute({
       sessionId: req.params.sessionId,
       revealedBy: body.revealedBy ?? null,
-      pin: body.pin ?? null,
     }));
   }));
   router.post('/teacher/sessions/:sessionId/course-outcome-recovery', wrap(async (req, res) => {
     if (!closeSessionOutcome?.recoverCourseOutcome || !teacherGate) throw new EntityNotFoundError('course outcome recovery', 'not configured');
     const body = req.body || {};
-    teacherGate.assert({ userId: body.recoveredBy ?? null, pin: body.pin ?? null,
+    teacherGate.assert({ userId: body.recoveredBy ?? null,
       action: 'sessions.course-outcome.recover', context: { sessionId: req.params.sessionId } });
     const result = await closeSessionOutcome.recoverCourseOutcome({ sessionId: req.params.sessionId, apply: body.apply === true });
     res.set('Cache-Control', 'no-store').status(body.apply === true ? 201 : 200).json(result);
@@ -1279,7 +1190,7 @@ export function createSchoolRouter({
   router.post('/teacher/sessions/:sessionId/remediation', wrap(async (req, res) => {
     if (!openRemediation || !teacherGate) throw new EntityNotFoundError('teacher remediation', 'not configured');
     const body = req.body || {};
-    teacherGate.assert({ userId: body.openedBy ?? null, pin: body.pin ?? null,
+    teacherGate.assert({ userId: body.openedBy ?? null,
       action: 'sessions.remediation.open', context: { sessionId: req.params.sessionId } });
     res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
   }));
@@ -1330,7 +1241,7 @@ export function createSchoolRouter({
   router.post('/teacher/artifacts/:artifactId/reprint', wrap(async (req, res) => {
     const body = req.body || {};
     const result = await schoolArtifactService?.reprint?.({ artifactId: req.params.artifactId,
-      reprintedBy: body.reprintedBy, pin: body.pin,
+      reprintedBy: body.reprintedBy,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey, apply: body.apply === true });
     if (!result || result.kind === 'store_unconfigured') throw new EntityNotFoundError('issued artifact store', 'not configured');
     if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
@@ -1338,13 +1249,9 @@ export function createSchoolRouter({
     res.status(body.apply === true ? 201 : 200).json(result.receipt);
   }));
   router.get('/teacher/artifacts/:artifactId/postview.pdf', wrap(async (req, res) => {
-    const proof = capabilityProof(req);
-    const result = await schoolArtifactService?.postview?.(req.params.artifactId, proof) ?? { kind: 'unconfigured' };
+    const result = await schoolArtifactService?.postview?.(req.params.artifactId) ?? { kind: 'unconfigured' };
     if (result.kind === 'unconfigured') return res.status(501).json({ error: 'artifact postview is not configured' });
     if (result.kind === 'not_found') throw new EntityNotFoundError('issued artifact', req.params.artifactId);
-    if (result.kind === 'forbidden') {
-      return res.status(403).json({ error: 'A fresh teacher confirmation is required to view this postview.' });
-    }
     if (result.kind === 'wrong_media_type' || result.kind === 'unrenderable') {
       throw new ValidationError('artifact PDF cannot be regenerated');
     }
@@ -1366,7 +1273,6 @@ export function createSchoolRouter({
       itemVerdicts: body.itemVerdicts,
       reason: body.reason,
       adjustedBy: body.adjustedBy,
-      pin: body.pin,
       baseSeq: body.baseSeq,
       apply: body.apply === true,
     }));
@@ -1379,7 +1285,6 @@ export function createSchoolRouter({
       adjustmentId: req.params.adjustmentId,
       reason: body.reason,
       retractedBy: body.retractedBy,
-      pin: body.pin,
       baseSeq: body.baseSeq,
       apply: body.apply === true,
     }));
@@ -1392,7 +1297,6 @@ export function createSchoolRouter({
       invalidationId: body.invalidationId,
       reason: body.reason,
       invalidatedBy: body.invalidatedBy,
-      pin: body.pin,
       baseSeq: body.baseSeq,
       apply: body.apply === true,
     }));
@@ -1416,8 +1320,8 @@ export function createSchoolRouter({
   // grading engine over recorded attempts. Dry-run unless apply:true.
   router.post('/attempts/regrade', wrap(async (req, res) => {
     if (!regradeBankAttempts) throw new EntityNotFoundError('regrade', 'not configured');
-    const { bankId, fromDay, toDay, reason, regradedBy = null, pin = null, apply = false } = req.body || {};
-    res.json(await regradeBankAttempts.execute({ bankId, fromDay, toDay, reason, regradedBy, pin, apply: apply === true }));
+    const { bankId, fromDay, toDay, reason, regradedBy = null, apply = false } = req.body || {};
+    res.json(await regradeBankAttempts.execute({ bankId, fromDay, toDay, reason, regradedBy, apply: apply === true }));
   }));
 
   // Superseded freeze versions (admin advocacy #5): the preserved history,

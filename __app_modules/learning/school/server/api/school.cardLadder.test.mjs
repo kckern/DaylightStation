@@ -54,7 +54,7 @@ describe('card-ladder routes', () => {
   it('fold is live only; an unwired test service is not configured', async () => {
     const { a, live } = app({ cardLadderTest: null });
     await request(a).post('/card-ladder/fold').send({ learnerId: 'k', actorId: 'p' }).expect(200);
-    expect(live.fold).toHaveBeenCalledWith({ learnerId: 'k', actorId: 'p', pin: null });
+    expect(live.fold).toHaveBeenCalledWith({ learnerId: 'k', actorId: 'p' });
     await request(a).post('/card-ladder/test/open').send({ userId: 'u', deckId: 'd' }).expect(503);
   });
   it('open passes capabilities on both mounts', async () => {
@@ -101,13 +101,13 @@ describe('card-ladder routes', () => {
     await request(a).get('/card-ladder/test/words?userId=u&deckId=d&sittingId=test.p.t.1').expect(200);
     expect(test.words).toHaveBeenCalledWith({ userId: 'u', deckId: 'd', sittingId: 'test.p.t.1' });
   });
-  it('grown-up word controls are live only and pass actorId + pin through', async () => {
+  it('grown-up word controls are live only and pass actorId through', async () => {
     const admin = Object.fromEntries(['adminWords', 'adminReset', 'adminMarkMastered', 'adminExclude', 'adminDropDeck', 'adminRegrade']
       .map((name) => [name, vi.fn(async () => ({ ok: name }))]));
     const { a, live } = app();
     Object.assign(live, admin);
-    const who = { learnerId: 'k', deckId: 'd', actorId: 'p', pin: '1234' };
-    const res = await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=p&pin=1234').expect(200);
+    const who = { learnerId: 'k', deckId: 'd', actorId: 'p' };
+    const res = await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=p').expect(200);
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(admin.adminWords).toHaveBeenCalledWith(who);
     await request(a).post('/card-ladder/admin/reset').send({ ...who, wordId: 'w' }).expect(200);
@@ -124,65 +124,15 @@ describe('card-ladder routes', () => {
     const { a: unwired } = app({ cardLadderStudy: null });
     await request(unwired).post('/card-ladder/admin/reset').send({ ...who, wordId: 'w' }).expect(503);
   });
-  it('the admin words GET takes the console cookie capability when no query pin is given', async () => {
-    const adminWords = vi.fn(async () => ({ words: [] }));
-    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
-    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
-    const { a, live } = app({ capabilityProof });
-    live.adminWords = adminWords;
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=p').set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=p&pin=1234').set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: '1234' });
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=p').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: null });
-  });
-  // TeacherGate.assert checks isAdult(userId) BEFORE it ever looks at the
-  // capability/pin (TeacherGate.mjs), so an actorId-less GET was refused with
-  // a 403 no matter how good the cookie was. The read must derive the acting
-  // teacher from the capability session itself — the same precedence
-  // school.teacherReading.mjs's `actor(req)` uses: the session's own userId
-  // outranks anything a client claims, because the cookie is what the console
-  // actually holds.
-  it('the admin words GET derives the acting teacher from the capability session when no actorId is given', async () => {
-    const adminWords = vi.fn(async () => ({ words: [] }));
-    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
-    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
-    const teacherCapabilitySessions = { status: vi.fn((token) => (
-      token === 'cap-1' ? { active: true, userId: 'p' } : { active: false }
-    )) };
-    const { a, live } = app({ capabilityProof, teacherCapabilitySessions });
-    live.adminWords = adminWords;
-    // Cookie only — no actorId, no pin in the query — must still reach the
-    // service, gated as the session's own teacher.
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d')
-      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
-    // The session's identity outranks a query actorId a client supplied —
-    // never trust the caller's own claim of who they are over the cookie.
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=someone-else')
-      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
-    // No cookie, no session: falls back to the query actorId (the CLI case).
-    await request(a).get('/card-ladder/admin/words?learnerId=k&deckId=d&actorId=q').expect(200);
-    expect(adminWords).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'q', pin: null });
-  });
-  it('tuning GET and undo POST are live only, reach the tuning service, and take the acting teacher from the capability session', async () => {
+  it('tuning GET and undo POST are live only, reach the tuning service, and name the acting teacher', async () => {
     const tuning = { adminTuning: vi.fn(async () => ({ history: [] })), adminUndo: vi.fn(async () => ({ undone: true })) };
-    const proof = { capabilityToken: 'cap-1', stepUpToken: null };
-    const capabilityProof = vi.fn((req) => (req.get('cookie') ? proof : null));
-    const teacherCapabilitySessions = { status: vi.fn((token) => (token === 'cap-1' ? { active: true, userId: 'p' } : { active: false })) };
-    const { a } = app({ cardLadderTuning: tuning, capabilityProof, teacherCapabilitySessions });
-    const res = await request(a).get('/card-ladder/admin/tuning?learnerId=k&deckId=d&actorId=someone-else')
-      .set('Cookie', 'daylight_teacher_session=cap-1').expect(200);
+    const { a } = app({ cardLadderTuning: tuning });
+    const res = await request(a).get('/card-ladder/admin/tuning?learnerId=k&deckId=d&actorId=p').expect(200);
     expect(res.headers['cache-control']).toBe('private, no-store');
-    expect(tuning.adminTuning).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p', pin: proof });
-    await request(a).post('/card-ladder/admin/tuning/undo').set('Cookie', 'daylight_teacher_session=cap-1')
-      .send({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'someone-else' }).expect(200);
-    expect(tuning.adminUndo).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'p', pin: proof });
-    // No cookie: the body's actorId and pin (the CLI case).
-    await request(a).post('/card-ladder/admin/tuning/undo').send({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q', pin: '1234' }).expect(200);
-    expect(tuning.adminUndo).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q', pin: '1234' });
+    expect(tuning.adminTuning).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', actorId: 'p' });
+    await request(a).post('/card-ladder/admin/tuning/undo')
+      .send({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q' }).expect(200);
+    expect(tuning.adminUndo).toHaveBeenLastCalledWith({ learnerId: 'k', deckId: 'd', setting: 'round.size', actorId: 'q' });
     await request(a).post('/card-ladder/test/admin/tuning/undo').send({ learnerId: 'k', setting: 'round.size' }).expect(404);
     const { a: unwired } = app();
     await request(unwired).get('/card-ladder/admin/tuning?learnerId=k&deckId=d').expect(503);

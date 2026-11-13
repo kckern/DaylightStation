@@ -17,8 +17,8 @@ export class SetPassOverride {
     this.#logger = logger;
   }
 
-  async execute({ unitId, percent = null, editedBy = null, pin = null } = {}) {
-    this.#teacherGate.assert({ userId: editedBy, pin, action: 'passcriteria.edit', context: { unitId, percent } });
+  async execute({ unitId, percent = null, editedBy = null } = {}) {
+    this.#teacherGate.assert({ userId: editedBy, action: 'passcriteria.edit', context: { unitId, percent } });
     if (typeof unitId !== 'string' || !unitId.trim()) throw new ValidationError('unitId is required');
     if (percent !== null && (!Number.isInteger(percent) || percent < 1 || percent > 100)) {
       throw new ValidationError('percent must be an integer from 1-100, or null to clear');

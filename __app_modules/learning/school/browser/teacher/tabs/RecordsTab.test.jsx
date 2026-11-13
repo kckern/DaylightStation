@@ -2,16 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import RecordsTab from "./RecordsTab.jsx";
 
-vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
-  authStatus: vi.fn(async () => {
-    const userId = localStorage.getItem('school-teacher-claim');
-    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
-  }),
-  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
-  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
-  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
-} }));
-
 vi.mock("../../schoolApi.js", () => ({
   schoolApi: {
     teachers: vi.fn(),
@@ -27,9 +17,7 @@ vi.mock("../../schoolApi.js", () => ({
   },
 }));
 const { schoolApi } = await import("../../schoolApi.js");
-const { teacherWorkspaceApi } = await import("../teacherWorkspaceApi.js");
 const { TeacherProfileProvider } = await import("../TeacherProfileContext.jsx");
-const PinPrompt = (await import("../panels/PinPrompt.jsx")).default;
 
 const KIDS = [{ id: 'user_4', name: 'User_4' }];
 const ok = (data) => ({ ok: true, status: 200, data });
@@ -80,7 +68,7 @@ afterEach(() => {
   cleanup();
 });
 
-const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /></TeacherProfileProvider>);
+const mount = (ui) => render(<TeacherProfileProvider>{ui}</TeacherProfileProvider>);
 
 describe('RecordsTab', () => {
   it('defaults the period selector to the current period and renders the DRAFT card', async () => {
@@ -163,7 +151,7 @@ describe('RecordsTab', () => {
     expect(admin.querySelector('.teacher-close-period')).toBeTruthy();
   });
 
-  it('close-period is two-tap and posts the stamp + pin; supersede offered when already frozen', async () => {
+  it('close-period is two-tap and posts the teacher stamp; supersede offered when already frozen', async () => {
     const { fireEvent, act } = await import('@testing-library/react');
     // frozen({learnerId, periodId}) -> 404 (not closed); frozen({learnerId}) -> list
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
@@ -175,7 +163,7 @@ describe('RecordsTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
     await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
-      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'teacher-a', pin: null, supersede: false }, null));
+      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'teacher-a', supersede: false }));
   });
 
   it('an already-frozen period offers supersede instead', async () => {
@@ -186,7 +174,7 @@ describe('RecordsTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
   });
 
-  it('requires a learner-and-period-scoped confirmation before superseding a freeze', async () => {
+  it('supersedes a freeze after the two-tap confirm, stamped by the teacher', async () => {
     const { fireEvent, act } = await import('@testing-library/react');
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
       ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
@@ -195,14 +183,8 @@ describe('RecordsTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Supersede & re-close/ })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
-    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-    act(() => { fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } }); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
-      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'teacher-a', pin: null, supersede: true }, 'grant'));
-    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
-      pin: '4321', action: 'report-card.close', resource: 'user_4/2026-fall',
-    });
+      { learnerId: 'user_4', periodId: '2026-fall', closedBy: 'teacher-a', supersede: true }));
   });
 
   it('leads with progress and folds the period admin below it', async () => {

@@ -23,8 +23,8 @@ export class RetractTeacherRecord {
     this.#logger = logger;
   }
 
-  async execute({ kind, entryId, retractedBy = null, pin = null } = {}) {
-    this.#teacherGate.assert({ userId: retractedBy, pin, action: 'record.retract', context: { kind, entryId } });
+  async execute({ kind, entryId, retractedBy = null } = {}) {
+    this.#teacherGate.assert({ userId: retractedBy, action: 'record.retract', context: { kind, entryId } });
     if (!STORES.includes(kind)) throw new ValidationError(`kind must be one of ${STORES.join('|')}`);
     if (typeof entryId !== 'string' || !entryId.trim()) throw new ValidationError('entryId is required');
     const store = this.#stores[kind];

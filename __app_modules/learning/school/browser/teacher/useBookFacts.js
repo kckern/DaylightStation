@@ -11,7 +11,7 @@
  * A lookup never blocks a log: a miss or an outage leaves `book` null and the
  * readers read still runs.
  *
- * A RELOAD (same ISBN, new `reloadKey`, e.g. after a save or an unlock) asks
+ * A RELOAD (same ISBN, new `reloadKey`, e.g. after a save or a new teacher) asks
  * for the readers again and nothing else, and keeps showing the last answer
  * until the new one lands: blanking the faces mid-batch would hide the ✓/✗
  * a grown-up is reading. "Same ISBN" means one whose lookup COMPLETED, so a
@@ -38,7 +38,7 @@ export const IDLE_BOOK_FACTS = Object.freeze({ bookStatus: 'idle', book: null, r
  * @param {string|null} isbn13 - a validated ISBN-13, or null for nothing yet
  * @param {{reloadKey?: unknown}} [options] - change it to read the readers again
  * @returns {{bookStatus: 'idle'|'loading'|'ok'|'not-found'|'unavailable', book: object|null,
- *   readersStatus: 'idle'|'loading'|'ok'|'locked'|'error', readers: object|null}}
+ *   readersStatus: 'idle'|'loading'|'ok'|'refused'|'error', readers: object|null}}
  */
 export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
   // The picked teacher names the readers read (see teacherWorkspaceApi `byQuery`).
@@ -80,7 +80,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
       }
       setState((value) => ({
         ...value,
-        readersStatus: readable ? 'ok' : (readers?.status === 403 ? 'locked' : 'error'),
+        readersStatus: readable ? 'ok' : (readers?.status === 403 ? 'refused' : 'error'),
         readers: readable ? readers.data : null,
       }));
       if (!readable) teacherLog.fetch('book-readers-failed', { isbn: isbn13, status: readers?.status ?? 0 });

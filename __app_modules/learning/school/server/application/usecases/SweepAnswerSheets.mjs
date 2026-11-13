@@ -122,10 +122,10 @@ export class SweepAnswerSheets {
    * The on-demand run (`school ops sweep`). Looking is open; writing is a
    * grown-up's decision, same as abandoning a session by hand.
    */
-  async runForGrownUp({ decidedBy = null, pin = null, dryRun = true, leakAfterHours = DEFAULT_LEAK_AFTER_HOURS } = {}) {
+  async runForGrownUp({ decidedBy = null, dryRun = true, leakAfterHours = DEFAULT_LEAK_AFTER_HOURS } = {}) {
     if (!dryRun) {
       if (!this.#teacherGate) throw new Error('SweepAnswerSheets has no teacher gate; only dry runs are allowed');
-      this.#teacherGate.assert({ userId: decidedBy, pin, action: 'answer-sheets.sweep', context: {} });
+      this.#teacherGate.assert({ userId: decidedBy, action: 'answer-sheets.sweep', context: {} });
     }
     return this.execute({ dryRun, leakAfterHours });
   }

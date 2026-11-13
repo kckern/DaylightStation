@@ -22,7 +22,7 @@ function app({ gateThrows = false } = {}) {
 describe('school debrief router', () => {
   it('teacher discussed route calls the service behind the gate', async () => {
     const { a, service, teacherGate } = app();
-    expect((await request(a).post('/debrief/teacher/test-learner/day/2026-10-21/discussed').send({ by: 'parent', pin: '1' })).status).toBe(200);
+    expect((await request(a).post('/debrief/teacher/test-learner/day/2026-10-21/discussed').send({ by: 'parent' })).status).toBe(200);
     expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ action: 'school.debrief.discussed' }));
     expect(service.discussed).toHaveBeenCalled();
   });
@@ -58,7 +58,7 @@ describe('school debrief router', () => {
   });
   it('teacher routes go through the gate', async () => {
     const ok = app();
-    expect((await request(ok.a).post('/debrief/teacher/test-learner/day/2026-10-21/excuse').send({ by: 'parent', pin: '1', reason: 'sick' })).status).toBe(200);
+    expect((await request(ok.a).post('/debrief/teacher/test-learner/day/2026-10-21/excuse').send({ by: 'parent', reason: 'sick' })).status).toBe(200);
     expect(ok.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ action: 'school.debrief.excuse' }));
     const denied = app({ gateThrows: true });
     expect((await request(denied.a).post('/debrief/teacher/test-learner/day/2026-10-21/excuse').send({ by: 'x' })).status).toBe(403);
@@ -91,7 +91,7 @@ describe('school debrief router', () => {
   });
   it('teacher day actions refuse a malformed day with 400 (never a store error)', async () => {
     const { a, service } = app();
-    const r = await request(a).post('/debrief/teacher/test-learner/day/yesterday/excuse').send({ by: 'parent', pin: '1' });
+    const r = await request(a).post('/debrief/teacher/test-learner/day/yesterday/excuse').send({ by: 'parent' });
     expect(r.status).toBe(400);
     expect(service.excuse).not.toHaveBeenCalled();
   });

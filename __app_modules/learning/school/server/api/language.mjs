@@ -6,7 +6,6 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * parses query shapes. Follows school.mjs exactly.
  */
 import express from 'express';
-import { capabilityProof, teacherActorId } from "./teacherCapabilityProof.mjs";
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
 const RUN_HEADER = 'X-School-Run-Id';
@@ -112,7 +111,6 @@ export function createLanguageRouter({
   // Optional: absent, the grown-up reads below answer 503. The learner's
   // routes never consult it — a child's launch grant is their only door.
   teacherGate = null,
-  teacherCapabilitySessions = null,
   schoolErrors = {},
   coreErrors = {},
   logger = console,
@@ -191,8 +189,7 @@ export function createLanguageRouter({
     }
     try {
       teacherGate.assert({
-        userId: teacherActorId(req, teacherCapabilitySessions, req.query.by ?? null),
-        pin: capabilityProof(req),
+        userId: req.query.by ?? null,
         action: 'school.sentence-ladder.read',
         context: { learnerId: req.params.learnerId },
       });

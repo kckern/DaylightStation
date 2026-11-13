@@ -13,6 +13,7 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 
 | What you see | Component | File |
 |---|---|---|
+| The teacher chip at the top right (who is teaching; tap to switch) and **Sign out**, which forgets the pick. Every write carries the picked teacher's id and the server checks it against `teachers:` in school.yml; a tap made with nobody picked opens the picker and replays once a teacher is chosen | `TeacherProfileProvider`, `useTeacherWrite` | `TeacherProfileContext.jsx` (the pick lives in localStorage), `useTeacherWrite.js` |
 | The three-section nav (Home · Manage · Fix — ids `dashboard` / `curriculum` / `operations`; the backlog badge rides on Home). `queue` and `coins` keep their URLs, off the menu | `TeacherConsole` (`GLOBAL_NAV`, `SECTION_LABEL`) | `TeacherConsole.jsx` |
 | "Needs you" at the top of Home — the backlog strip and the "N subjects need a grown-up" list in one box; "Nothing needs you right now" when empty | `TodayTab` | `tabs/TodayTab.jsx` |
 | The "Today" card, its loading/empty/error frame | `TodayTab` → `PanelFrame` | `tabs/TodayTab.jsx`, `panels/PanelFrame.jsx` |
@@ -32,7 +33,7 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | **A child's page** (`/students/:id[/<section>]`) — one page, no tab strip (owner ruling 2026-10-29): the day (week strip, stepper, lessons) always on top, then one fold per program in `LEARNER_FOLDS` order (Reading · Cards · Sentences · Debriefs · Coins · Courses · History · Reports · Fix something). A fold mounts its view only when opened; the old tab URL opens that fold and scrolls to it; opening a fold writes its URL back with `replace`. Inside a fold each view's own heading is hidden. Below, "A student's X tab" means that fold | `LearnerPage` | `LearnerPage.jsx` (views from `WorkspaceViews.jsx`; styles `.teacher-learner-fold`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 | "This week" grid above a student's Day (subjects × the seven days ending today) | `WeekGrid` | `panels/WeekGrid.jsx` (cells built by `learnerWeek.js`; starts after the Day's reads, three days at a time) |
-| "See the marked sheet" in the session inspector (the postview PDF, behind the `artifact.postview` step-up) | `MarkedSheet` | `WorkspaceViews.jsx` |
+| "See the marked sheet" in the session inspector (the postview PDF, fetched for the picked teacher) | `MarkedSheet` | `WorkspaceViews.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
 | The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, and how the server's counted window and undo refusals are read: `panels/readingDetail.js`) |
 | A student's **Cards** tab (id `words`) — one table per card-ladder deck (term, gloss, state chip, stage, due, streak, tricky, excluded, typed answers), Reset / Mark mastered / Exclude / Re-grade, and the deck pool's Drop from pool | `WordsView` → `CardLadderWordsPanel` | `WorkspaceViews.jsx`, `panels/CardLadderWordsPanel.jsx` (enrollments filtered from the learner's `programs` — `cardLadderEnrollments`; writes through `cardLadderAdminApi.js`, a separate client from `teacherWorkspaceApi.js`/`schoolApi.js` because the admin routes are mounted at `/api/v1/school/card-ladder/admin`, not `/api/v1/school/teacher`) |
@@ -92,13 +93,12 @@ curl -s "https://daylightlocal.{env.domain}/api/v1/school/lifecycle/learners/lea
   | jq '.sections'
 ```
 
-The Reading tab adds one read of its own, capability-gated and non-recording:
+The Reading tab adds one read of its own, teacher-gated and non-recording:
 
 ```bash
-# One child's shelf, as a grown-up. Needs the console capability cookie; a
-# child's X-School-Book-Grant does NOT open it.
-curl -s --cookie 'daylight_teacher_session=<token>' \
-  https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading \
+# One child's shelf, as a grown-up. `by` names a listed teacher; a child's
+# X-School-Book-Grant does NOT open it.
+curl -s "https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading?by=<teacherId>" \
   | jq '{obligation, items: [.items[] | {title, progressMode, projection}]}'
 ```
 
@@ -140,8 +140,7 @@ prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
 
 ```bash
 # One reading, every entry, and the full revisions list the editor undoes from.
-curl -s --cookie 'daylight_teacher_session=<token>' \
-  https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading/<readingId> \
+curl -s "https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading/<readingId>?by=<teacherId>" \
   | jq '{status: .reading.status, entries: (.reading.entries|length), baseRevisionCount: .reading.baseRevisionCount, countedWindow}'
 ```
 

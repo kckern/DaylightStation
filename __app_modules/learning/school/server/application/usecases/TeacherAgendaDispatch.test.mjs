@@ -42,7 +42,7 @@ describe('TeacherAgendaDispatch', () => {
 
   it('gate-checks and prints exactly once for an idempotency key', async () => {
     const f = fixture();
-    const args = { learnerId: 'kid', dispatchedBy: 'parent', pin: '1234', idempotencyKey: 'dispatch-1' };
+    const args = { learnerId: 'kid', dispatchedBy: 'parent', idempotencyKey: 'dispatch-1' };
     const first = await f.useCase.execute(args);
     const second = await f.useCase.execute(args);
     expect(first).toMatchObject({ printed: true, idempotent: false, idempotencyKey: 'dispatch-1' });

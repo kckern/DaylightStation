@@ -168,8 +168,8 @@ stale-versioned or a fault whose retry is due — the read returns
 `unknown / pending` for those until they are written.
 
 - `GET /api/v1/school/lifecycle/learners/:id/term[?termId=]` — the grid's data: `days[]` from the term's first day to today, `weeks[]` for the whole term.
-- `POST …/learners/:id/term/rebuild` `{from?, to?, force?, userId, pin}` — teacher-gated backfill.
-- `school ops term <learner> [--grid]` and `school ops term-rebuild <learner|--all> --teacher ID --pin-env NAME [--force] [--apply]`.
+- `POST …/learners/:id/term/rebuild` `{from?, to?, force?, userId}` — teacher-gated backfill.
+- `school ops term <learner> [--grid]` and `school ops term-rebuild <learner|--all> --teacher ID [--force] [--apply]`.
 
 A rebuild costs about a second per day for a learner with a piano course
 (Plex is consulted per replay), so a term is a couple of minutes per learner,

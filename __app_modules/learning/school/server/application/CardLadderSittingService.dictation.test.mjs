@@ -101,7 +101,7 @@ describe('CardLadderSittingService — dictation', () => {
     const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 1 } } } });
     const teacher = { teacherGate: { assert: vi.fn() }, judgementCache: { get: vi.fn(() => null), set: vi.fn() } };
     const { service } = makeD({ store, list: ['gawi'], ...teacher });
-    const out = await service.adminWords({ learnerId: 'test-learner', deckId: DECK, actorId: 'parent', pin: '1234' });
+    const out = await service.adminWords({ learnerId: 'test-learner', deckId: DECK, actorId: 'parent' });
     expect(out.dictation).toMatchObject({ week: WEEK, count: 1, countWarning: true, total: 1, remaining: 1, done: false, needsRecording: [], unknown: [] });
     expect(out.words.find((w) => w.wordId === 'gawi').dictation).toEqual({ step: 'blind', blindPasses: 1, done: false });
     expect(out.words.find((w) => w.wordId === 'pul')).not.toHaveProperty('dictation');
@@ -109,7 +109,7 @@ describe('CardLadderSittingService — dictation', () => {
   it('adminWords says dictation: null with no week tagged', async () => {
     const store = dictationStore();
     const { service } = make({ media: true, store, teacherGate: { assert: vi.fn() }, judgementCache: { get: vi.fn(() => null), set: vi.fn() } });
-    const out = await service.adminWords({ learnerId: 'test-learner', deckId: DECK, actorId: 'parent', pin: '1234' });
+    const out = await service.adminWords({ learnerId: 'test-learner', deckId: DECK, actorId: 'parent' });
     expect(out.dictation).toBeNull();
     expect(out.words.some((w) => 'dictation' in w)).toBe(false);
   });

@@ -75,8 +75,8 @@ session is explicit and reasoned; it does not fabricate a pass.
 
 The teacher workspace exposes systematic regrade under Operations. It requires
 a bank id, bounded day range, and reason, shows the checked/corrected/session
-impact before doing anything, and requires a fresh resource-scoped PIN
-confirmation to append the corrections. The original attempts remain intact
+impact before doing anything, and appends the corrections only for a listed
+teacher. The original attempts remain intact
 and each corrective row names its source attempt, teacher, and reason.
 
 Teacher session inspection shows machine grade, effective grade, the complete

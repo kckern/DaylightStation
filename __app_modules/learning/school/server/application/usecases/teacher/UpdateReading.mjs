@@ -22,15 +22,15 @@ export class UpdateReading {
 
   constructor(deps = {}) { this.#context = new ReadingEditContext(deps); }
 
-  async execute({ learnerId, readingId, patch = {}, reason = null, by = null, pin = null, baseRevisionCount } = {}) {
-    this.#context.assert({ op: OPS.READING_UPDATE, userId: by, pin, learnerId, readingId });
+  async execute({ learnerId, readingId, patch = {}, reason = null, by = null, baseRevisionCount } = {}) {
+    this.#context.assert({ op: OPS.READING_UPDATE, userId: by, learnerId, readingId });
     const flat = normalize(patch);
     const reading = await this.#context.reading(learnerId, readingId);
     assertFreshRevisions(reading, baseRevisionCount);
     validate(flat, reading);
 
     return applyReadingOperation(this.#context, {
-      learnerId, reading, op: OPS.READING_UPDATE, patch: flat, by, pin, reason,
+      learnerId, reading, op: OPS.READING_UPDATE, patch: flat, by, reason,
     });
   }
 }

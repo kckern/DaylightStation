@@ -1,8 +1,6 @@
 // S/api/schoolDebrief.mjs
 import express from 'express';
 
-import { capabilityProof } from "./teacherCapabilityProof.mjs";
-
 const AUDIO_FILE_RE = /^\d{4}-\d{2}-\d{2}-\d+\.(webm|ogg|m4a)$/;
 
 const STUDY_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,20 +30,20 @@ export function createSchoolDebriefRouter({ service, grants, teacherGate, audioS
     try { granted(req); next(); } catch (e) { res.status(e.status ?? 403).json({ error: e.message }); }
   };
   const teacher = (req, action) => {
-    const { by = null, pin = null } = req.body ?? {};
-    teacherGate.assert({ userId: by, pin: pin ?? capabilityProof(req), action, context: { learnerId: req.params.learnerId } });
+    const { by = null } = req.body ?? {};
+    teacherGate.assert({ userId: by, action, context: { learnerId: req.params.learnerId } });
     return by;
   };
 
   // Teacher routes first so '/teacher' is never read as a learner id.
   router.get('/teacher/:learnerId/history', wrap(async (req) => {
-    teacherGate.assert({ userId: req.query.by ?? null, pin: capabilityProof(req), action: 'school.debrief.read', context: { learnerId: req.params.learnerId } });
+    teacherGate.assert({ userId: req.query.by ?? null, action: 'school.debrief.read', context: { learnerId: req.params.learnerId } });
     for (const k of ['from', 'to']) if (req.query[k] != null && !STUDY_DAY_RE.test(String(req.query[k]))) throw new RouteError(`bad ${k}`, 400);
     return { days: await service.history(req.params.learnerId, { from: req.query.from ?? null, to: req.query.to ?? null }) };
   }));
   router.get('/teacher/:learnerId/audio/:file', (req, res) => {
     try {
-      teacherGate.assert({ userId: req.query.by ?? null, pin: capabilityProof(req), action: 'school.debrief.read', context: { learnerId: req.params.learnerId } });
+      teacherGate.assert({ userId: req.query.by ?? null, action: 'school.debrief.read', context: { learnerId: req.params.learnerId } });
     } catch { res.status(403).end(); return; }
     if (!audioStore || !AUDIO_FILE_RE.test(req.params.file) || !/^[a-z0-9][a-z0-9_-]*$/i.test(req.params.learnerId)) { res.status(404).end(); return; }
     const found = audioStore.read(req.params.learnerId, req.params.file);

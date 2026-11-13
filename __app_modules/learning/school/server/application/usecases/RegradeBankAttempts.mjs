@@ -43,8 +43,8 @@ export class RegradeBankAttempts {
     this.#logger = logger;
   }
 
-  async execute({ bankId, fromDay, toDay, reason, regradedBy = null, pin = null, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: regradedBy, pin,
+  async execute({ bankId, fromDay, toDay, reason, regradedBy = null, apply = false } = {}) {
+    this.#teacherGate.assert({ userId: regradedBy,
       action: apply === true ? 'attempts.regrade' : 'attempts.regrade.preview', context: { bankId } });
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new ValidationError('a reason is required — a regrade rewrites what recorded history means');
@@ -118,7 +118,7 @@ export class RegradeBankAttempts {
       // immutable graded roster is available.  A partial guess would be worse
       // than an unchanged grade: it could rewrite a learner's result from a
       // subset of the questions they actually received.
-      sessionCorrections = await this.#reconcileSessions({ changes, bankId, currentRev, reason: reason.trim(), regradedBy, pin });
+      sessionCorrections = await this.#reconcileSessions({ changes, bankId, currentRev, reason: reason.trim(), regradedBy });
     }
 
     const sessionsAffected = [...new Set(changes.map((c) => c.sessionId).filter(Boolean))].sort();
@@ -135,7 +135,7 @@ export class RegradeBankAttempts {
     };
   }
 
-  async #reconcileSessions({ changes, bankId, currentRev, reason, regradedBy, pin }) {
+  async #reconcileSessions({ changes, bankId, currentRev, reason, regradedBy }) {
     if (!this.#sessions || typeof this.#sessionCorrection !== 'function') return [];
     const grouped = new Map();
     for (const change of changes) {
@@ -184,7 +184,7 @@ export class RegradeBankAttempts {
           ...(roster?.length ? { itemVerdicts: roster.map((itemId) => ({ itemId,
             verdict: byItem.get(itemId).correct ? 'correct' : 'incorrect' })) } : {}),
           reason: `Systematic regrade (${bankId}@${currentRev}): ${reason}`,
-          adjustedBy: regradedBy, pin, baseSeq: events.reduce((max, event) => Math.max(max, Number(event.seq) || 0), 0), apply: true });
+          adjustedBy: regradedBy, baseSeq: events.reduce((max, event) => Math.max(max, Number(event.seq) || 0), 0), apply: true });
         results.push({ sessionId, status: adjusted.idempotent ? 'already_corrected' : 'corrected',
           adjustmentId, receiptArtifact: adjusted.receiptArtifact ?? null });
       } catch (error) {

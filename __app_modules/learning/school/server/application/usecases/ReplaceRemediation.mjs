@@ -31,10 +31,10 @@ export class ReplaceRemediation {
   }
 
   async execute({
-    sessionId, currentSessionId, reason, replacedBy = null, pin = null, idempotencyKey,
+    sessionId, currentSessionId, reason, replacedBy = null, idempotencyKey,
   } = {}) {
     this.#teacherGate.assert({
-      userId: replacedBy, pin, action: 'sessions.remediation.replace',
+      userId: replacedBy, action: 'sessions.remediation.replace',
       context: { sessionId, currentSessionId },
     });
     if (typeof reason !== 'string' || !reason.trim()) {

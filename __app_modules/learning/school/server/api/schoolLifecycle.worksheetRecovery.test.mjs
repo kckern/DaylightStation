@@ -30,7 +30,7 @@ const body = (apply) => ({
 });
 
 describe('school lifecycle worksheet-attribution recovery route', () => {
-  it('previews with the teacher capability and applies with its scoped step-up proof', async () => {
+  it('previews by default and applies only when asked, as the recovering teacher', async () => {
     const recoverMisattributedWorksheet = {
       execute: vi.fn(async (args) => ({
         schema: 'school.worksheet-attribution-recovery/v1', applied: args.apply,
@@ -40,7 +40,6 @@ describe('school lifecycle worksheet-attribution recovery route', () => {
 
     await request(server)
       .post('/api/v1/school/lifecycle/recoveries/worksheet-attribution')
-      .set('Cookie', 'daylight_teacher_session=session-1')
       .send(body(false))
       .expect(200)
       .expect({ schema: 'school.worksheet-attribution-recovery/v1', applied: false });
@@ -48,13 +47,11 @@ describe('school lifecycle worksheet-attribution recovery route', () => {
       sourceSessionId: 'ses_math',
       marks: ['B', 'B', 'B'],
       apply: false,
-      pin: { capabilityToken: 'session-1', stepUpToken: null },
+      recoveredBy: 'parent',
     }));
 
     await request(server)
       .post('/api/v1/school/lifecycle/recoveries/worksheet-attribution')
-      .set('Cookie', 'daylight_teacher_session=session-1')
-      .set('X-Teacher-Step-Up', 'grant-1')
       .send(body(true))
       .expect(201)
       .expect({ schema: 'school.worksheet-attribution-recovery/v1', applied: true });
@@ -62,7 +59,6 @@ describe('school lifecycle worksheet-attribution recovery route', () => {
       sourceSessionId: 'ses_math',
       expectedReplacementRows: { start: 4, end: 9 },
       apply: true,
-      pin: { capabilityToken: 'session-1', stepUpToken: 'grant-1' },
     }));
   });
 });

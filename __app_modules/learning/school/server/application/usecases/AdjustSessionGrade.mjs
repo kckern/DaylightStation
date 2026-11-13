@@ -40,9 +40,9 @@ export class AdjustSessionGrade {
 
   async execute({
     sessionId, percent, correctCount, totalCount, missedItemIds, itemVerdicts,
-    reason, adjustedBy = null, pin = null, baseSeq, adjustmentId = null, apply = false,
+    reason, adjustedBy = null, baseSeq, adjustmentId = null, apply = false,
   } = {}) {
-    this.#teacherGate.assert({ userId: adjustedBy, pin,
+    this.#teacherGate.assert({ userId: adjustedBy,
       action: apply === true ? 'sessions.grade-adjust' : 'sessions.grade-adjust.preview', context: { sessionId } });
     if (!text(sessionId)) throw new ValidationError('sessionId is required');
     if (!text(reason)) throw new ValidationError('a reason is required for a grade correction');
@@ -300,8 +300,8 @@ export class RetractSessionGradeAdjustment {
     this.#realtime = realtime;
   }
 
-  async execute({ sessionId, adjustmentId, reason, retractedBy = null, pin = null, baseSeq, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: retractedBy, pin,
+  async execute({ sessionId, adjustmentId, reason, retractedBy = null, baseSeq, apply = false } = {}) {
+    this.#teacherGate.assert({ userId: retractedBy,
       action: apply === true ? 'sessions.grade-adjustment.retract' : 'sessions.grade-adjustment.retract-preview',
       context: { sessionId, adjustmentId } });
     if (!text(sessionId) || !text(adjustmentId)) throw new ValidationError('sessionId and adjustmentId are required');

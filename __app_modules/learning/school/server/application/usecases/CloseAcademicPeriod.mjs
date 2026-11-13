@@ -51,9 +51,9 @@ export class CloseAcademicPeriod {
    *   `REPORT_CARD_ALREADY_CLOSED` on a plain re-close
    */
   async execute({
-    learnerId, periodId, closedBy, supersede = false, pin = null,
+    learnerId, periodId, closedBy, supersede = false,
   } = {}) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: closedBy, pin, action: 'report-card.close', context: { learnerId, periodId, supersede } });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: closedBy, action: 'report-card.close', context: { learnerId, periodId, supersede } });
     else this.#grownUps.assert(closedBy, 'Only a grown-up can close a report card', {
       action: 'report-card.close', learnerId, periodId,
     });

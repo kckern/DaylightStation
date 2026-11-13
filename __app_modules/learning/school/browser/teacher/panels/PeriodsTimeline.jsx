@@ -65,13 +65,13 @@ export default function PeriodsTimeline() {
       if (row.endsAt <= row.startsAt) { setLocalError(`"${row.label || row.periodId}" must end after it starts.`); return; }
     }
     setLocalError(null);
-    run('save', ({ actorId, pin }) => schoolApi.putPeriods({
+    run('save', ({ actorId }) => schoolApi.putPeriods({
     periods: draft.map(({ origStartsAt, origEndsAt, idTouched: _idTouched, cloned: _cloned, ...row }) => ({
       ...row,
       startsAt: row.startsAt === day(origStartsAt) ? origStartsAt : withOriginalTime(row.startsAt, origStartsAt),
       endsAt: row.endsAt === day(origEndsAt) ? origEndsAt : withOriginalTime(row.endsAt, origEndsAt),
     })),
-    editedBy: actorId, pin,
+    editedBy: actorId,
     ...(baseHistoryLength !== null ? { baseHistoryLength } : {}),
   }), { onSuccess: () => { setEditing(false); periods.retry(); } });
   };

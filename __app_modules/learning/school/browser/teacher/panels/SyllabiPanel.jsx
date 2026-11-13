@@ -154,7 +154,7 @@ function SyllabusEditor({
     };
 
     const id = mode === 'create' ? draft.syllabusId : original.syllabusId;
-    run('save', ({ actorId, pin }) => schoolApi.putSyllabus(id, { ...body, editedBy: actorId, pin }), {
+    run('save', ({ actorId }) => schoolApi.putSyllabus(id, { ...body, editedBy: actorId }), {
       onSuccess: onSaved,
     });
   };
@@ -227,8 +227,8 @@ function SyllabusSummary({
   record, titles, armed, onEdit, onArm, onDisarm, onArchived,
 }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'syllabi' });
-  const archive = () => run('archive', ({ actorId, pin }) => schoolApi.archiveSyllabus(record.syllabusId, {
-    archivedBy: actorId, pin,
+  const archive = () => run('archive', ({ actorId }) => schoolApi.archiveSyllabus(record.syllabusId, {
+    archivedBy: actorId,
   }), { onSuccess: onArchived });
 
   const policyBits = [

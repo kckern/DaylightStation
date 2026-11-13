@@ -8,7 +8,7 @@ vi.mock("../../schoolApi.js", () => ({ schoolApi: api }));
 vi.mock("../TeacherProfileContext.jsx", () => ({ useTeacherProfileOptional: () => profile.current }));
 vi.mock("../useTeacherWrite.js", () => ({
   useTeacherWrite: () => ({
-    run: (_k, call, { onSuccess } = {}) => call({ actorId: 'parent', pin: null }).then((r) => { if (r?.ok) onSuccess?.(r.data); return !!r?.ok; }),
+    run: (_k, call, { onSuccess } = {}) => call({ actorId: 'parent' }).then((r) => { if (r?.ok) onSuccess?.(r.data); return !!r?.ok; }),
     busy: null, errors: {},
   }),
 }));
@@ -49,7 +49,7 @@ describe('DebriefsPanel', () => {
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
     fireEvent.change(await screen.findByLabelText(/reason/i), { target: { value: 'sick' } });
     fireEvent.click(screen.getByRole('button', { name: /excuse/i }));
-    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'excuse', { by: 'parent', pin: null, reason: 'sick' }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'excuse', { by: 'parent', reason: 'sick' }));
   });
   it('clears the reason after a successful action, and keeps it after a failed one', async () => {
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
@@ -62,7 +62,7 @@ describe('DebriefsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /excuse/i }));
     await waitFor(() => expect(field).toHaveValue(''));
     fireEvent.click(screen.getByRole('button', { name: /^reject$/i }));
-    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenLastCalledWith('test-learner', '2026-10-21', 'reject', { by: 'parent', pin: null, reason: null }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenLastCalledWith('test-learner', '2026-10-21', 'reject', { by: 'parent', reason: null }));
   });
   const RICH = { ...DAY, substance: undefined, level: 3, levelReason: 'named a cause', hook: 'Ask about the furnace workshop',
     probes: [{ prompt: 'Why hot?', text: 'the fire' }, { prompt: 'Who ran it?', text: null }], discussedAt: null };
@@ -98,7 +98,7 @@ describe('DebriefsPanel', () => {
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
     fireEvent.change(await screen.findByLabelText(/reason/i), { target: { value: 'sick' } });
     fireEvent.click(screen.getByRole('button', { name: /we talked about it/i }));
-    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'discussed', { by: 'parent', pin: null, reason: null }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'discussed', { by: 'parent', reason: null }));
     await waitFor(() => expect(api.teacherDebriefs).toHaveBeenCalledTimes(2));
   });
   it('a discussed day shows Talked about and no button', async () => {

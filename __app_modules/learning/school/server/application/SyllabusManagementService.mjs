@@ -10,8 +10,8 @@ export class SyllabusManagementService {
   get(id) { return this.store.get(id); }
   list() { return this.store.list(); }
 
-  async save({ raw, editedBy, pin }) {
-    this.teacherGate.assert({ userId: editedBy, pin, action: 'syllabus.put', context: { syllabusId: raw?.syllabusId } });
+  async save({ raw, editedBy }) {
+    this.teacherGate.assert({ userId: editedBy, action: 'syllabus.put', context: { syllabusId: raw?.syllabusId } });
     const works = await this.curriculum.listWorks();
     const courseIds = new Set(works.map((work) => work.work).filter(Boolean));
     const profileIds = new Set(Object.keys(works.find((work) => work.work === raw?.courseId)?.profiles ?? {}));
@@ -27,8 +27,8 @@ export class SyllabusManagementService {
     return this.store.put({ ...syllabus, editedBy, updatedAt: this.clock().toISOString() });
   }
 
-  archiveGuarded({ syllabusId, archivedBy, pin }) {
-    this.teacherGate.assert({ userId: archivedBy, pin, action: 'syllabus.archive', context: { syllabusId } });
+  archiveGuarded({ syllabusId, archivedBy }) {
+    this.teacherGate.assert({ userId: archivedBy, action: 'syllabus.archive', context: { syllabusId } });
     return this.store.archive(syllabusId, { archivedBy, at: this.clock().toISOString() });
   }
 }

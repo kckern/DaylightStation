@@ -59,12 +59,9 @@ function AgendaDispatchInner({ learnerId, learnerName, studyDay = null, label = 
     setIdempotencyKey(requestKey);
     run(key, () => teacherWorkspaceApi.agendaDispatchPreview(learnerId, learnerName), { onSuccess: setPreview });
   };
-  const dispatch = () => run(key, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.agendaDispatch(
-    learnerId, { learnerName, dispatchedBy: actorId, pin }, idempotencyKey, stepUpToken,
+  const dispatch = () => run(key, ({ actorId }) => teacherWorkspaceApi.agendaDispatch(
+    learnerId, { learnerName, dispatchedBy: actorId }, idempotencyKey,
   ), {
-    // Already in STEP_UP_ACTIONS with its own teacherResource branch — this
-    // is the pass-through, not a new grant.
-    stepUp: { action: 'agenda.dispatch', resource: learnerId },
     onSuccess: () => { teacherLog.write('agenda-dispatched', { learnerId }); cancel(); },
   });
 

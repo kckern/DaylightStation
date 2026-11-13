@@ -4,8 +4,8 @@
  *
  * The rules themselves belong to the economy (EarnRulesService, injected);
  * this use case only decides WHO may change them from the school surface —
- * a listed grown-up teacher, through the TeacherGate (PIN or capability
- * session) — and stamps the change with that teacher's id. Other surfaces
+ * a listed grown-up teacher, through the TeacherGate — and stamps the
+ * change with that teacher's id. Other surfaces
  * (admin, CLI) gate their own calls to the same service.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
@@ -32,8 +32,8 @@ export class ManageEarnRules {
   }
 
   /** Set or clear one learner's multiplier and per-rule rates. */
-  async setLearnerRates({ learnerId, patch, actorId, pin = null }) {
-    this.#gate.assert({ userId: actorId, pin, action: 'economy.earn-rates', context: { learnerId } });
+  async setLearnerRates({ learnerId, patch, actorId }) {
+    this.#gate.assert({ userId: actorId, action: 'economy.earn-rates', context: { learnerId } });
     if (this.#learnerIds && !(await this.#learnerIds()).includes(learnerId)) {
       throw new ValidationError(`no school learner "${learnerId}"`, { code: 'UNKNOWN_LEARNER', field: 'learnerId', value: learnerId });
     }
@@ -43,8 +43,8 @@ export class ManageEarnRules {
   }
 
   /** Replace the household earn rules (learner overrides are kept). */
-  async setHouseholdRules({ doc, actorId, pin = null }) {
-    this.#gate.assert({ userId: actorId, pin, action: 'economy.earn-rules', context: {} });
+  async setHouseholdRules({ doc, actorId }) {
+    this.#gate.assert({ userId: actorId, action: 'economy.earn-rules', context: {} });
     const out = await this.#earnRules.replace({ doc, actorId });
     this.#logger.info?.('school.earn-rules.set', { actorId, revision: out?.revision ?? null });
     return out;

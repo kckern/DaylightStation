@@ -223,7 +223,7 @@ describe('UpdateReading', () => {
       patch: { isbn: '9780000000002' }, baseRevisionCount: 0,
     });
     expect(teacherGate.assert).toHaveBeenCalledWith({
-      userId: TEACHER, pin: null, action: 'books.reading.update',
+      userId: TEACHER, action: 'books.reading.update',
       context: { learnerId: LEARNER, readingId: 'rdg_a' },
     });
   });
@@ -558,7 +558,7 @@ describe('AddReadingForLearner', () => {
 });
 
 describe('MoveReading', () => {
-  it('moves the reading, tells BOTH children, and is scoped to the reading for step-up', async () => {
+  it('moves the reading, tells BOTH children, and is scoped to the reading at the gate', async () => {
     const result = await new MoveReading(deps()).execute({
       learnerId: LEARNER, readingId: 'rdg_a', toLearnerId: SIBLING, by: TEACHER,
       reason: 'it was the wrong shelf', baseRevisionCount: 0,
@@ -616,7 +616,7 @@ describe('DeleteReading', () => {
     expect(await bookLog.listForLearner(LEARNER)).toHaveLength(1);
   });
 
-  it('is scoped to the reading for step-up', async () => {
+  it('is scoped to the reading at the gate', async () => {
     await new DeleteReading(deps()).execute({
       learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, reason: 'scanned twice', baseRevisionCount: 0,
     });

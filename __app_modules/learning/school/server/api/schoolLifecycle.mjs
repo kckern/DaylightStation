@@ -102,28 +102,6 @@ function reply(res, result) {
   return res.status(status).json(result);
 }
 
-const cookieValue = (req, name) => {
-  const raw = req.get('cookie') ?? '';
-  for (const part of raw.split(';')) {
-    const separator = part.indexOf('=');
-    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
-    try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return null; }
-  }
-  return null;
-};
-
-// Lifecycle GETs do not pass through the body-based capability substitution
-// used by ordinary School writes. Read the same HttpOnly teacher-session
-// cookie here so opening a held-scan queue is genuinely teacher-gated without
-// putting a PIN or bearer token in the URL.
-const capabilityProof = (req) => {
-  const capabilityToken = cookieValue(req, 'daylight_teacher_session');
-  return capabilityToken ? {
-    capabilityToken,
-    stepUpToken: req.get('X-Teacher-Step-Up') ?? null,
-  } : null;
-};
-
 /**
  * @param {object} deps - each use case is optional and gates its own routes
  * @param {object} [deps.resolveScanAction]
@@ -385,9 +363,9 @@ export function createSchoolLifecycleRouter({
   // be rebuilt after a course edit, without a shell.
   if (rebuildLearnerTerm) {
     router.post('/learners/:learnerId/term/rebuild', asyncHandler(async (req, res) => {
-      const { termId = null, from = null, to = null, force = false, userId = null, pin = null } = req.body ?? {};
+      const { termId = null, from = null, to = null, force = false, userId = null } = req.body ?? {};
       const result = await rebuildLearnerTerm.execute({
-        learnerId: req.params.learnerId, termId, from, to, force: force === true, userId, pin,
+        learnerId: req.params.learnerId, termId, from, to, force: force === true, userId,
       });
       res.set('Cache-Control', 'no-store').json(result);
     }));
@@ -474,8 +452,8 @@ export function createSchoolLifecycleRouter({
 
   if (issueComposedWorksheet) {
     router.post('/worksheets/compose', asyncHandler(async (req, res) => {
-      const { sessionIds = [], issuedBy = null, pin = null } = req.body || {};
-      reply(res, await issueComposedWorksheet.execute({ sessionIds, issuedBy, pin }));
+      const { sessionIds = [], issuedBy = null } = req.body || {};
+      reply(res, await issueComposedWorksheet.execute({ sessionIds, issuedBy }));
     }));
   }
 
@@ -516,21 +494,19 @@ export function createSchoolLifecycleRouter({
   if (gradeSubmission) {
     // `gradedBy` is checked in the use case whenever verdicts are present: a
     // person's mark overrides the engine, so it has to be a person who may.
-    // `pin` is forwarded unconditionally — the use case only ever consults it
-    // when a `teacherGate` is wired AND verdicts are on the call.
     //
     // `settle` says this call is the teacher console finishing stuck work by
     // hand rather than a scan or the finisher closing the loop. It carries no
-    // verdicts, so it would meet no gate at all; the use case charges it a
-    // `sessions.settle` step-up instead. The flag is the only thing added to
+    // verdicts, so it would meet no gate at all; the use case gates it on
+    // `sessions.settle` instead. The flag is the only thing added to
     // this route's contract — nothing about how the work is marked changes.
     router.post('/sessions/:sessionId/grade', guarded(async (req, res) => {
       const {
-        entries = {}, verdicts = {}, gradedBy = null, pin = null,
+        entries = {}, verdicts = {}, gradedBy = null,
         settle = false, settledBy = null,
       } = req.body || {};
       reply(res, await gradeSubmission.execute({
-        sessionId: req.params.sessionId, entries, verdicts, gradedBy, pin,
+        sessionId: req.params.sessionId, entries, verdicts, gradedBy,
         settle: settle === true, settledBy,
       }));
     }));
@@ -538,13 +514,11 @@ export function createSchoolLifecycleRouter({
 
   if (closeSessionOutcome) {
     // Closing is open; claiming the grown-up's approval that releases a reward
-    // is not, and the use case checks `signedOffBy` for it. `pin` is forwarded
-    // unconditionally — consulted only when a `teacherGate` is wired AND
-    // `signedOff` is true.
+    // is not, and the use case checks `signedOffBy` for it.
     router.post('/sessions/:sessionId/close', guarded(async (req, res) => {
-      const { signedOff = false, signedOffBy = null, pin = null } = req.body || {};
+      const { signedOff = false, signedOffBy = null } = req.body || {};
       reply(res, await closeSessionOutcome.execute({
-        sessionId: req.params.sessionId, signedOff: signedOff === true, signedOffBy, pin,
+        sessionId: req.params.sessionId, signedOff: signedOff === true, signedOffBy,
       }));
     }));
   }
@@ -561,7 +535,6 @@ export function createSchoolLifecycleRouter({
         currentSessionId = null,
         reason = null,
         replacedBy = null,
-        pin = null,
         idempotencyKey = null,
       } = req.body || {};
       reply(res, await replaceRemediation.execute({
@@ -569,7 +542,6 @@ export function createSchoolLifecycleRouter({
         currentSessionId,
         reason,
         replacedBy,
-        pin,
         idempotencyKey,
       }));
     }));
@@ -589,7 +561,6 @@ export function createSchoolLifecycleRouter({
         marks: body.marks,
         reason: body.reason,
         recoveredBy: body.recoveredBy,
-        pin: body.pin ?? capabilityProof(req),
         idempotencyKey: body.idempotencyKey,
         expectedReplacementRows: body.expectedReplacementRows,
         apply: body.apply === true,
@@ -603,17 +574,17 @@ export function createSchoolLifecycleRouter({
   // later scan performs the same operation and then revokes itself.
   if (replaceLostAnswerSheet) {
     router.post('/answer-sheets/:cardId/lost', guarded(async (req, res) => {
-      const { reportedBy = null, pin = null } = req.body || {};
+      const { reportedBy = null } = req.body || {};
       reply(res, await replaceLostAnswerSheet.execute({
-        cardId: req.params.cardId, reportedBy, pin,
+        cardId: req.params.cardId, reportedBy,
       }));
     }));
   }
   if (createLostAnswerSheetTicket) {
     router.post('/answer-sheets/:cardId/lost-ticket', guarded(async (req, res) => {
-      const { requestedBy = null, pin = null } = req.body || {};
+      const { requestedBy = null } = req.body || {};
       const result = await createLostAnswerSheetTicket.execute({
-        cardId: req.params.cardId, requestedBy, pin,
+        cardId: req.params.cardId, requestedBy,
       });
       if (req.query.format === 'png' && lifecycleAgendaResource?.canRender?.()) {
         const buffer = await lifecycleAgendaResource.render(result.document);
@@ -642,9 +613,9 @@ export function createSchoolLifecycleRouter({
   // than performing it unguarded.
   if (resolveReviewItem) {
     router.post('/sessions/:sessionId/review/:itemId', guarded(async (req, res) => {
-      const { verdict, gradedBy = null, note = null, pin = null } = req.body || {};
+      const { verdict, gradedBy = null, note = null } = req.body || {};
       res.json(await resolveReviewItem.execute({
-        sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note, pin,
+        sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note,
       }));
     }));
   }
@@ -655,30 +626,28 @@ export function createSchoolLifecycleRouter({
     router.get('/answer-sheet-reviews', guarded(async (req, res) => {
       res.json({ items: await reviewHeldCardScan.list({
         reviewerId: req.query.reviewerId ?? null,
-        pin: capabilityProof(req),
       }) });
     }));
     router.get('/answer-sheet-reviews/:heldScanId', guarded(async (req, res) => {
       res.json(await reviewHeldCardScan.inspect({
         heldScanId: req.params.heldScanId,
         reviewerId: req.query.reviewerId ?? null,
-        pin: capabilityProof(req),
       }));
     }));
     router.post('/answer-sheet-reviews/:heldScanId/resolve', guarded(async (req, res) => {
       const {
-        action, targetRecordId = null, reviewerId = null, pin = null, idempotencyKey = null,
+        action, targetRecordId = null, reviewerId = null, idempotencyKey = null,
       } = req.body || {};
       res.json(await reviewHeldCardScan.resolve({
         heldScanId: req.params.heldScanId, action, targetRecordId,
-        reviewerId, pin: pin ?? capabilityProof(req), idempotencyKey,
+        reviewerId, idempotencyKey,
       }));
     }));
     router.post('/answer-sheets/:cardId/quarantines/:quarantineId/clear', guarded(async (req, res) => {
-      const { method, reviewerId = null, pin = null } = req.body || {};
+      const { method, reviewerId = null } = req.body || {};
       res.json(await reviewHeldCardScan.clearQuarantine({
         cardId: req.params.cardId, quarantineId: req.params.quarantineId,
-        method, reviewerId, pin: pin ?? capabilityProof(req),
+        method, reviewerId,
       }));
     }));
   }
@@ -734,9 +703,9 @@ export function createSchoolLifecycleRouter({
       });
     }));
     router.post('/sessions/:sessionId/abandon', guarded(async (req, res) => {
-      const { learnerId, reason, decidedBy = null, pin = null } = req.body || {};
+      const { learnerId, reason, decidedBy = null } = req.body || {};
       res.json(await markSessionAbandoned.execute({
-        sessionId: req.params.sessionId, learnerId, reason, decidedBy, pin,
+        sessionId: req.params.sessionId, learnerId, reason, decidedBy,
       }));
     }));
   }
@@ -745,19 +714,19 @@ export function createSchoolLifecycleRouter({
   // A dry run (the default) only reports; `dryRun: false` is a grown-up's write.
   if (sweepAnswerSheets) {
     router.post('/maintenance/answer-sheets/sweep', guarded(async (req, res) => {
-      const { dryRun = true, leakAfterHours, decidedBy = null, pin = null } = req.body || {};
+      const { dryRun = true, leakAfterHours, decidedBy = null } = req.body || {};
       const hours = Number(leakAfterHours);
       res.json(await sweepAnswerSheets.runForGrownUp({
-        dryRun: dryRun !== false, ...(hours > 0 ? { leakAfterHours: hours } : {}), decidedBy, pin,
+        dryRun: dryRun !== false, ...(hours > 0 ? { leakAfterHours: hours } : {}), decidedBy,
       }));
     }));
   }
 
   if (setAssignments) {
     router.put('/assignments/:learnerId', guarded(async (req, res) => {
-      const { courses = [], units = [], programs = [], assignedBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      const { courses = [], units = [], programs = [], assignedBy = null, baseUpdatedAt } = req.body || {};
       res.json(await setAssignments.execute({
-        learnerId: req.params.learnerId, courses, units, programs, assignedBy, pin, baseUpdatedAt,
+        learnerId: req.params.learnerId, courses, units, programs, assignedBy, baseUpdatedAt,
       }));
     }));
   }
@@ -779,17 +748,16 @@ export function createSchoolLifecycleRouter({
     }));
 
     router.put('/syllabi/:syllabusId', guarded(async (req, res) => {
-      const { editedBy = null, pin = null, ...body } = req.body || {};
+      const { editedBy = null, ...body } = req.body || {};
       res.json(await lifecycleSyllabusService.save({
         raw: { ...body, syllabusId: req.params.syllabusId },
         editedBy,
-        pin,
       }));
     }));
 
     router.post('/syllabi/:syllabusId/archive', guarded(async (req, res) => {
-      const { archivedBy = null, pin = null } = req.body || {};
-      const record = await lifecycleSyllabusService.archive({ syllabusId: req.params.syllabusId, archivedBy, pin });
+      const { archivedBy = null } = req.body || {};
+      const record = await lifecycleSyllabusService.archive({ syllabusId: req.params.syllabusId, archivedBy });
       if (!record) {
         const err = new Error(`no syllabus ${req.params.syllabusId}`);
         err.status = 404;
@@ -801,19 +769,19 @@ export function createSchoolLifecycleRouter({
 
   if (enrollLearner) {
     router.post('/enrollments/:learnerId', guarded(async (req, res) => {
-      const { syllabusId, timingAnchorId = null, rematerialize = false, enrolledBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      const { syllabusId, timingAnchorId = null, rematerialize = false, enrolledBy = null, baseUpdatedAt } = req.body || {};
       res.json(await enrollLearner.execute({
         learnerId: req.params.learnerId, syllabusId, rematerialize: rematerialize === true,
-        timingAnchorId, enrolledBy, pin, baseUpdatedAt,
+        timingAnchorId, enrolledBy, baseUpdatedAt,
       }));
     }));
   }
 
   if (unenrollLearner) {
     router.delete('/enrollments/:learnerId/:courseId', guarded(async (req, res) => {
-      const { removedBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      const { removedBy = null, baseUpdatedAt } = req.body || {};
       res.json(await unenrollLearner.execute({
-        learnerId: req.params.learnerId, courseId: req.params.courseId, removedBy, pin, baseUpdatedAt,
+        learnerId: req.params.learnerId, courseId: req.params.courseId, removedBy, baseUpdatedAt,
       }));
     }));
   }
@@ -821,9 +789,8 @@ export function createSchoolLifecycleRouter({
   // Status stamping at this boundary, by NAME (api-no-domains forbids the
   // classes): the app-level object-shape error handler maps by explicit
   // `err.status` first, and without a stamp a lifecycle refusal or missing
-  // entity surfaced as an anonymous 500 — which no client (the teacher
-  // console's PIN prompt keys on 403; the panels' empty-mapping keys on 404)
-  // can act on. Stamp-and-forward: the shape stays the handler's.
+  // entity surfaced as an anonymous 500 — which no client (the panels'
+  // empty-mapping keys on 404) can act on. Stamp-and-forward: the shape stays the handler's.
   const STATUS_BY_ERROR_NAME = Object.freeze({
     GuestForbiddenError: 403,
     EntityNotFoundError: 404,

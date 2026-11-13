@@ -1,8 +1,8 @@
 /**
  * DebriefsPanel — a learner's after-school debriefs, newest first, with
  * Excuse / Reject / Re-score behind the teacher gate. Every teacher call
- * carries the current teacher's id (`by`): TeacherGate checks the adult id
- * before the capability cookie, so an actor-less call is a 403.
+ * carries the current teacher's id (`by`): TeacherGate checks the adult id,
+ * so an actor-less call is a 403.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -27,7 +27,7 @@ function Loaded({ learnerId, learnerName, actorId }) {
   });
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const act = (day, action) => run(`${day}:${action}`,
-    ({ actorId: by, pin }) => schoolApi.teacherDebriefAction(learnerId, day, action, { by, pin, reason: (action === 'rescore' || action === 'discussed') ? null : (reason.trim() || null) }),
+    ({ actorId: by }) => schoolApi.teacherDebriefAction(learnerId, day, action, { by, reason: (action === 'rescore' || action === 'discussed') ? null : (reason.trim() || null) }),
     // The reason belongs to the action just taken: clear it so it cannot ride along on the next day's.
     { onSuccess: () => { if (action !== 'discussed') setReason(''); record.retry(); } });
   const days = record.data?.days ?? [];

@@ -1,9 +1,8 @@
 /**
  * The one route that serves the finish code, and the reasons it is the only one.
  *
- * It lives under `/teacher`, it is a POST (so the capability cookie rides the
- * `pin` argument the way every other teacher write does, and so the reveal is
- * recorded rather than cached), and it answers `no-store`. A refused gate is a
+ * It lives under `/teacher`, it is a POST (so the reveal is recorded rather
+ * than cached), and it answers `no-store`. A refused gate is a
  * 403 with the gate's own sentence and NOTHING about the code.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -38,36 +37,22 @@ describe('POST /teacher/sessions/:sessionId/companion-finish-code', () => {
     const getCompanionFinishCode = { execute: vi.fn(async () => REVEALED) };
     await request(app({ getCompanionFinishCode }))
       .post('/api/v1/school/teacher/sessions/ses_1/companion-finish-code')
-      .send({ revealedBy: 'kckern', pin: '1234' })
+      .send({ revealedBy: 'kckern' })
       .expect(200).expect('Cache-Control', 'no-store').expect(REVEALED);
     expect(getCompanionFinishCode.execute).toHaveBeenCalledWith({
-      sessionId: 'ses_1', revealedBy: 'kckern', pin: '1234',
-    });
-  });
-
-  it('carries the capability cookie into the gate when no PIN is typed', async () => {
-    const getCompanionFinishCode = { execute: vi.fn(async () => REVEALED) };
-    await request(app({ getCompanionFinishCode }))
-      .post('/api/v1/school/teacher/sessions/ses_1/companion-finish-code')
-      .set('Cookie', 'daylight_teacher_session=session-1')
-      .set('X-Teacher-Step-Up', 'grant-1')
-      .send({ revealedBy: 'kckern' })
-      .expect(200);
-    expect(getCompanionFinishCode.execute).toHaveBeenCalledWith({
       sessionId: 'ses_1', revealedBy: 'kckern',
-      pin: { capabilityToken: 'session-1', stepUpToken: 'grant-1' },
     });
   });
 
   it('refuses without the teacher gate, and says nothing about the code', async () => {
     const getCompanionFinishCode = {
-      execute: vi.fn(async () => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }),
+      execute: vi.fn(async () => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }),
     };
     const response = await request(app({ getCompanionFinishCode }))
       .post('/api/v1/school/teacher/sessions/ses_1/companion-finish-code')
-      .send({ revealedBy: 'kckern', pin: 'wrong' })
+      .send({ revealedBy: 'someone' })
       .expect(403);
-    expect(response.body).toEqual({ error: 'The teacher PIN is missing or wrong.' });
+    expect(response.body).toEqual({ error: 'Only a listed teacher can do this.' });
     expect(JSON.stringify(response.body)).not.toContain('ACE');
   });
 

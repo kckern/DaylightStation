@@ -1224,7 +1224,7 @@ including the standing caveat that it is not yet hardware-confirmed.
 The richer sibling of the quota printing above: authored YAML sources publish
 into answer-free revisioned documents, render on demand as per-student
 worksheet/quiz PDFs (modern workbook aesthetic, teacher answer keys as a
-pin-gated render mode, per-child shuffle variants and retakes), and grade
+`teacher=1` render mode, per-child shuffle variants and retakes), and grade
 through physical Chatsworth OMR bubble cards. The card is the sheet's
 identity: random 7-digit ids, shared across documents via row offsets,
 tracked in an allocation store with a full lifecycle
@@ -2439,15 +2439,12 @@ lists roster ids; `GET /api/v1/school/teachers` resolves them against the
 live roster per request (shape-only validation at boot; a typo or blank
 birthyear costs a picker entry and a warning, never the container) and
 answers `{configured, teachers: [{id, name}]}` — profile fields never leave
-the server. The console's soft claim (localStorage, kept until Lock) is attribution only.
-Authority lives in a server-side capability session represented by an
-HttpOnly, SameSite=Strict cookie: 10-minute idle expiry, 30-minute absolute
-expiry. PINs exist only in the prompt while unlocking or confirming an action;
-they are not stored in React state, browser storage, logs, or ordinary mutation
-bodies. High-consequence writes—agenda dispatch, grade correction/retraction,
-bulk regrade, period supersession, postview artifact rendering, and settling a
-session by hand—also require a two-minute, one-use grant scoped to the exact
-action and resource.
+the server. The console remembers the picked teacher in localStorage until
+**Sign out** on the header chip, and every write carries that id; there is no
+server-side teacher session. The server checks the id on each write (below),
+so high-consequence writes — agenda dispatch, grade correction/retraction,
+bulk regrade, period supersession, postview artifact rendering, settling a
+session by hand — cost exactly what an ordinary one does.
 
 **Panel isolation, five states.** Every panel fetches independently through
 `usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
@@ -2464,13 +2461,12 @@ once a bank bound to the unit exists, plus explicit dismiss via
 `POST /quiz-requests/dismiss`) all run inline on the Today tab. Every write
 goes through **`TeacherGate`** (`3_applications/school/TeacherGate.mjs`) inside
 the owning use case — adult on the live roster, listed in `teachers:` when the
-key exists (role is authority; absent key falls back to any-adult), and the
-distinct console PIN (`school.yml` → `teacher.pin`) when configured. A 403
-invalidates the browser capability and opens the PIN prompt; the blocked action
-is replayed at most once after a successful unlock. The Admin
-`ReviewQueue`/`CurriculumPlanner` sign-off now draws its adults from the
-teachers read (the school roster is learners-only, so the old age filter found
-nobody — sign-off had been dead on live installs) and carries the same PIN.
+key exists (role is authority; absent key falls back to any-adult). A 403
+shows the server's sentence on the panel and is not retried; a tap made with
+nobody picked opens the picker and is replayed once after a teacher is chosen.
+The Admin `ReviewQueue`/`CurriculumPlanner` sign-off draws its adults from the
+teachers read (the school roster is learners-only, so an age filter finds
+nobody) and sends the chosen adult's id through the same gate.
 Along the way a latent transport bug was fixed: the production object-shape
 error handler discarded stamped `err.status`, so every lifecycle refusal or
 missing-entity surfaced as 500 — explicit status now wins, and the lifecycle
@@ -2687,7 +2683,7 @@ that says so.
 
 The stores that record a child's work now refuse to make things worse when
 they're already broken, two mutating GETs stopped minting side effects on a
-plain read, human sign-off lanes carry a PIN, and a chapter-structured
+plain read, human sign-off lanes pass the teacher gate, and a chapter-structured
 course gates correctly for the first time.
 
 - **Corrupt ≠ missing, everywhere it matters.** The attempt shards
@@ -2701,15 +2697,15 @@ course gates correctly for the first time.
   side-effect-free preview (the same dry-run twin `/agenda/preview` already
   used) instead of building a real session; `POST /learners/:id/agenda` is
   the mutating twin for a caller that genuinely needs to print. `GET
-  /print/*id` refuses `card=`/`freshCard=`/`teacherPin=` query params with a
-  400 naming `POST /print/render`, which takes the same fields — including
-  the PIN — in the request body instead of the URL; a plain proof GET (no
-  card params) is unaffected.
-- **PIN on the human sign-off lanes.** `GradeSubmission`'s human-verdict
+  /print/*id` refuses `card=`/`freshCard=` query params with a
+  400 naming `POST /print/render`, which takes the same fields in the
+  request body instead of the URL; a plain proof GET (no card params) is
+  unaffected.
+- **The teacher gate on the human sign-off lanes.** `GradeSubmission`'s human-verdict
   branch and `CloseSessionOutcome`'s signed-off-coin-release branch now also
   assert `TeacherGate` — additive on top of the existing grown-up check, not
-  a replacement, and only when a gate is wired — so a wrong or missing PIN
-  refuses the verdict/sign-off outright. The self-closing finisher lane (a
+  a replacement, and only when a gate is wired — so an id that is not a
+  listed teacher refuses the verdict/sign-off outright. The self-closing finisher lane (a
   review item's last mark auto-grading and auto-closing its session) supplies
   neither `verdicts` nor `signedOff`, so it never reaches the gate and keeps
   settling unattended.
@@ -2753,9 +2749,8 @@ course gates correctly for the first time.
 - **The console is smoke-tested live.** `tests/live/flow/school/teacherConsole.runtime.test.mjs`
   drives `/school/teacher` headless against the real running server — four
   tabs, the Today roster matching the live household roster by name, the
-  Planning matrix, and a wrong-PIN write refusal through the real UI
-  ceremony — gated by a `beforeAll` probe that refuses to run the mutation
-  test at all unless the install's PIN gate proves itself armed first.
+  Planning matrix, and the phone journey (an accessible learner disclosure,
+  panels in one column). It makes no writes.
 
 **Software-only closeout (2026-08-24).** The five choices previously left open
 are closed. Multiple-choice uses tap-then-confirm; flashcards have a no-stakes
@@ -2920,4 +2915,4 @@ The card screen refetches assessment truth after learner/unit-scoped `assessment
 
 Korean choice repairs use `cli/korean-course-repair.cli.mjs --base <content-base> --out <staging>` to preview and `--apply` to activate checked immutable document revisions and compatible unit pins. Existing issued worksheets retain their original revision, allocation, and answer key; new unissued attempts use compatible current forms. The normal course installer remains append-only.
 
-`school ops course-outcome-recover SESSION --teacher ID [--pin-env NAME] [--apply]` previews or applies narrow recovery of an erroneous `course_questions_unresolved` outcome. Recovery requires original and current cumulative completion, valid grading/gates, and eligible session evidence; it reuses normal settlement and reward identity without physically printing during repair.
+`school ops course-outcome-recover SESSION --teacher ID [--apply]` previews or applies narrow recovery of an erroneous `course_questions_unresolved` outcome. Recovery requires original and current cumulative completion, valid grading/gates, and eligible session evidence; it reuses normal settlement and reward identity without physically printing during repair.

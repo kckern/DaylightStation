@@ -218,7 +218,7 @@ export const schoolApi = {
   flashcardAssessment: (deckId, { userId, testPlan = null, learning = null } = {}) => req(`/flashcards/${encodeURIComponent(deckId)}/assessment`, { userId, ...(testPlan ? { testPlan } : {}), ...(learning ? { learning } : {}) }),
   flashcardReview: (sessionId, { userId, cardId, rating, mode, direction }) => req(`/flashcards/${encodeURIComponent(sessionId)}/review`, { userId, cardId, rating, mode, direction }),
   flashcardPreview: (sessionId, { userId, cardId }) => req(`/flashcards/${encodeURIComponent(sessionId)}/preview`, { userId, cardId }),
-  flashcardTeacherReport: ({ learnerId, actorId, pin = null }) => req('/flashcards/teacher-report', { learnerId, actorId, ...(pin ? { pin } : {}) }),
+  flashcardTeacherReport: ({ learnerId, actorId }) => req('/flashcards/teacher-report', { learnerId, actorId }),
   flashcardRepair: (deckId, body) => req(`/flashcards/${encodeURIComponent(deckId)}/repair`, body),
   flashcardMigrateProfile: (deckId, body) => req(`/flashcards/${encodeURIComponent(deckId)}/migrate-profile`, body),
   flashcardHeartbeat: (sessionId, { userId, seconds }) => req(`/flashcards/${encodeURIComponent(sessionId)}/heartbeat`, { userId, seconds }),
@@ -289,20 +289,13 @@ export const schoolApi = {
   // are two events — `submitted → graded → outcome_recorded` is the whole
   // legal path and the transition table offers no shortcut, however the
   // console presents it.
-  //
-  // The step-up grant rides the GRADE only. It is the half that writes a mark
-  // no machine produced, and a grant is one-use: presenting the same token
-  // twice spends it on the first call and fails the second. Closing a graded
-  // session is open by contract (a scan does it unattended), so it needs
-  // nothing beyond the capability cookie.
-  gradeSession: (sessionId, body, grantToken = null) => req(
+  gradeSession: (sessionId, body) => req(
     `/lifecycle/sessions/${encodeURIComponent(sessionId)}/grade`, body, 'POST',
-    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
   ),
   closeSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/close`, body, 'POST'),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
-  // Teacher console writes (wave 2): every body carries the teacher stamp and
-  // the console pin; the server's TeacherGate is the enforcer.
+  // Teacher console writes (wave 2): every body carries the teacher stamp;
+  // the server's TeacherGate is the enforcer.
   resolveReview: (sessionId, itemId, body) => req(
     `/lifecycle/sessions/${encodeURIComponent(sessionId)}/review/${encodeURIComponent(itemId)}`, body,
   ),
@@ -330,10 +323,8 @@ export const schoolApi = {
   enrichment: (learnerId = null) => req(`/enrichment${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
   postEnrichment: (body) => req('/enrichment', body),
   // Wave-4 records.
-  closePeriod: (body, grantToken = null) => req('/report-card/close', body, 'POST',
-    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
-  regradeAttempts: (body, grantToken = null) => req('/attempts/regrade', body, 'POST',
-    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
+  closePeriod: (body) => req('/report-card/close', body, 'POST'),
+  regradeAttempts: (body) => req('/attempts/regrade', body, 'POST'),
   // Wave-5 repair.
   attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),

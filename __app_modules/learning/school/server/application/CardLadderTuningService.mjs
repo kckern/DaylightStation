@@ -305,9 +305,9 @@ export class CardLadderTuningService {
   // ── Grown-up view and undo (spec §7 "listed in the teacher console with
   // undo"). Live only by construction (the store writes tuning), teacher-gated.
 
-  async #adminScope({ learnerId, deckId, actorId, pin }) {
+  async #adminScope({ learnerId, deckId, actorId }) {
     if (!this.#teacherGate) throw new ValidationError('teacher gate is not configured');
-    this.#teacherGate.assert({ userId: actorId, pin, action: 'card-ladder.tuning', context: { learnerId } });
+    this.#teacherGate.assert({ userId: actorId, action: 'card-ladder.tuning', context: { learnerId } });
     if (typeof learnerId !== 'string' || !learnerId) throw new ValidationError('learnerId is required');
     if (typeof deckId !== 'string' || !deckId) throw new ValidationError('deckId is required');
     const assignment = await this.#assignments.get(learnerId);
@@ -325,8 +325,8 @@ export class CardLadderTuningService {
    * history newest first, each applied change flagged `undoable` when it is
    * still the setting's latest change and still in force.
    */
-  async adminTuning({ learnerId, deckId, actorId = null, pin = null } = {}) {
-    const pkg = await this.#adminScope({ learnerId, deckId, actorId, pin });
+  async adminTuning({ learnerId, deckId, actorId = null } = {}) {
+    const pkg = await this.#adminScope({ learnerId, deckId, actorId });
     const tuning = this.#store.readTuning(learnerId, pkg);
     const defaults = tunableValues(this.#settings());
     const current = tunableValues(withTunedValues(this.#settings(), tuning.values, this.#bounds));
@@ -357,8 +357,8 @@ export class CardLadderTuningService {
    * holds the grown-up's choice for the next five study days. Same write
    * path and in-flight guard as a tuning run; never touches `lastTunedDay`.
    */
-  async adminUndo({ learnerId, deckId, setting, actorId = null, pin = null } = {}) {
-    const pkg = await this.#adminScope({ learnerId, deckId, actorId, pin });
+  async adminUndo({ learnerId, deckId, setting, actorId = null } = {}) {
+    const pkg = await this.#adminScope({ learnerId, deckId, actorId });
     if (typeof setting !== 'string' || !Object.hasOwn(TUNABLE, setting)) throw new ValidationError(`'${setting}' is not a tuned setting`);
     const key = `${learnerId}|${pkg}`;
     if (this.#inFlight.has(key)) throw new DomainInvariantError('a tuning run is in progress for this learner; try again in a minute', { code: 'CARD_LADDER_TUNING_BUSY' });

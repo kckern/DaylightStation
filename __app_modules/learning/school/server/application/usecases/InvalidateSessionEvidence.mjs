@@ -51,13 +51,13 @@ export class InvalidateSessionEvidence {
   }
 
   async execute({
-    sessionId, reason, invalidatedBy = null, pin = null, baseSeq,
+    sessionId, reason, invalidatedBy = null, baseSeq,
     invalidationId = null, apply = false,
   } = {}, { authority = null } = {}) {
     const trusted = this.#trustedAuthority !== null && authority === this.#trustedAuthority;
     if (!trusted) {
       this.#teacherGate.assert({
-        userId: invalidatedBy, pin,
+        userId: invalidatedBy,
         action: apply ? 'sessions.evidence-invalidate' : 'sessions.evidence-invalidate.preview',
         context: { sessionId },
       });

@@ -6,8 +6,7 @@
  *
  *  - the routes are injection-gated, so a composition without the use case
  *    answers an honest 404 instead of crashing,
- *  - the capability cookie is what reaches the use case as `pin` (the console
- *    never sends a raw PIN body), and
+ *  - the deciding grown-up reaches the use case as `decidedBy`, and
  *  - the use case's own refusals map to real status codes rather than a 500.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -83,7 +82,7 @@ describe('POST /program-day-bypasses', () => {
     expect(response.status).toBe(201);
     expect(response.body.bypassId).toBe('pdb_1');
     expect(uc.grant).toHaveBeenCalledWith({
-      learnerId: 'kid1', programId: 'piano-course', reason: 'Recital', decidedBy: 'kckern', pin: null,
+      learnerId: 'kid1', programId: 'piano-course', reason: 'Recital', decidedBy: 'kckern',
     });
   });
 
@@ -92,17 +91,6 @@ describe('POST /program-day-bypasses', () => {
     await request(appWith(uc)).post('/api/v1/school/program-day-bypasses')
       .send({ learnerId: 'kid1', reason: 'x', decidedBy: 'kckern' });
     expect(uc.grant.mock.calls[0][0].programId).toBe('piano-course');
-  });
-
-  // The console holds an HttpOnly capability cookie and sends no PIN body;
-  // the router's middleware is what turns that into the use case's `pin`.
-  it('feeds the capability cookie to the use case as the pin', async () => {
-    const uc = fullUseCase();
-    await request(appWith(uc)).post('/api/v1/school/program-day-bypasses')
-      .set('Cookie', 'daylight_teacher_session=cap-token')
-      .send({ learnerId: 'kid1', reason: 'x', decidedBy: 'kckern' });
-
-    expect(uc.grant.mock.calls[0][0].pin).toMatchObject({ capabilityToken: 'cap-token' });
   });
 
   it('maps a use case ValidationError to 400, not 500', async () => {
@@ -140,7 +128,7 @@ describe('POST /program-day-bypasses/:bypassId/retract', () => {
     expect(response.status).toBe(200);
     expect(response.body.operation).toBe('retracted');
     expect(uc.retract).toHaveBeenCalledWith({
-      bypassId: 'pdb_1', reason: 'wrong kid', retractedBy: 'kckern', pin: null,
+      bypassId: 'pdb_1', reason: 'wrong kid', retractedBy: 'kckern',
     });
   });
 

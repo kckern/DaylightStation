@@ -86,9 +86,9 @@ export class CloseSessionOutcome {
    * @param {import('../GrownUpGate.mjs').GrownUpGate} deps.grownUps - who may
    *   approve a reward; required, so the check cannot be omitted by wiring
    * @param {import('../TeacherGate.mjs').TeacherGate|null} [deps.teacherGate] -
-   *   readiness punch 2 (console PIN). ADDITIVE, not a replacement: `grownUps`
-   *   below always runs first and is never skipped. When wired, the console
-   *   PIN is asked ON TOP of the grown-up check, and ONLY when `signedOff` is
+   *   readiness punch 2 (teacher role). ADDITIVE, not a replacement: `grownUps`
+   *   below always runs first and is never skipped. When wired, the teacher
+   *   role is checked ON TOP of the grown-up check, and ONLY when `signedOff` is
    *   `true` — a plain (unsigned) close, including the finisher-style
    *   `execute({sessionId})` call `ResolveReviewItem` makes on itself, is
    *   already behind the gated resolve and must never re-assert.
@@ -190,8 +190,6 @@ export class CloseSessionOutcome {
    * @param {boolean} [args.signedOff] - a grown-up has approved the reward
    * @param {string} [args.signedOffBy] - the roster id of that grown-up;
    *   required (and checked) whenever `signedOff` is true
-   * @param {string|null} [args.pin] - the console PIN, consulted only when a
-   *   `teacherGate` is wired AND `signedOff === true`
    * @returns {Promise<{ status: 'settled'|'already_settled'|'unavailable',
    *                     sessionId: string, outcomeId: string|null,
    *                     result: string|null, percent: number|null,
@@ -248,19 +246,19 @@ export class CloseSessionOutcome {
   }
 
   async execute({
-    sessionId, honorClose = false, signedOff = false, signedOffBy = null, pin = null, rewardOverride = null,
+    sessionId, honorClose = false, signedOff = false, signedOffBy = null, rewardOverride = null,
   } = {}) {
     if (signedOff === true) {
       this.#grownUps.assert(signedOffBy, 'Only a grown-up can sign off a reward', {
         action: 'close.signoff', sessionId,
       });
-      // The console PIN rides ON TOP of the grown-up rule, not instead of it —
+      // The teacher gate rides ON TOP of the grown-up rule, not instead of it —
       // and only for THIS lane (an actual sign-off claim). A plain close
       // (including the finisher's `execute({sessionId})`) skips this whole
       // block, gate or no gate.
       if (this.#teacherGate) {
         this.#teacherGate.assert({
-          userId: signedOffBy, pin, action: 'sessions.close-signoff', context: { sessionId },
+          userId: signedOffBy, action: 'sessions.close-signoff', context: { sessionId },
         });
       }
     }

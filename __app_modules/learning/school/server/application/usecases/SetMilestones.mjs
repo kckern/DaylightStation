@@ -19,9 +19,9 @@ export class SetMilestones {
     this.#logger = logger;
   }
 
-  async execute({ learnerId, milestones, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
+  async execute({ learnerId, milestones, editedBy = null, baseHistoryLength = undefined } = {}) {
     this.#teacherGate.assert({
-      userId: editedBy, pin, action: 'milestones.edit',
+      userId: editedBy, action: 'milestones.edit',
       context: { learnerId, count: Array.isArray(milestones) ? milestones.length : 0 },
     });
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');

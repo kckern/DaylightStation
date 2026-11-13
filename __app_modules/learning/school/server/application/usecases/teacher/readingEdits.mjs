@@ -27,9 +27,7 @@
  * Delivery goes through `RecordTeacherNote` and nothing else. It already
  * reaches both surfaces a child reads — the panel's Feedback list and the
  * agenda's "Notes for you" — it truncates at 240 characters, and it asserts
- * its own `note.send` gate, which runs on the capability cookie. That last
- * part matters for the two step-up verbs: their grant is one-use and is spent
- * by the reading action itself, so the note must not need a second one.
+ * its own `note.send` gate.
  *
  * @module applications/school/usecases/teacher/readingEdits
  */
@@ -53,10 +51,9 @@ export const OPS = Object.freeze({
 export const UNDO_VERB = 'reading.undo';
 
 /**
- * The gate each operation runs on. Two of them are step-ups
- * (`TeacherCapabilitySessions.mjs#STEP_UP_ACTIONS`), and both are scoped to
- * the reading id — which is why every assert below passes `readingId` in its
- * context whether or not the action needs it.
+ * The gate each operation runs on. Every assert below passes `readingId` in
+ * its context whether or not the action needs it, so the refusal log names
+ * the reading.
  */
 export const GATE_ACTIONS = Object.freeze({
   [OPS.READING_UPDATE]: 'books.reading.update',
@@ -141,7 +138,7 @@ export function undoRefusal(reading, revision, { label = 'This book' } = {}) {
   }
 
   // The inverse of opening a reading is destroying it. That is `DeleteReading`,
-  // it is a step-up, and it should be asked for by its own name.
+  // and it should be asked for by its own name.
   if (revision.op === OPS.READING_ADD) {
     return 'Undoing the opening of a reading would destroy it and its whole history. Delete the reading instead, which says what it is.';
   }
@@ -202,10 +199,9 @@ export class ReadingEditContext {
    * The gate FIRST, before anything is read: a refusal must not be able to
    * reveal whether the child has this reading at all.
    */
-  assert({ op, action = null, userId = null, pin = null, learnerId, readingId = null, extra = null }) {
+  assert({ op, action = null, userId = null, learnerId, readingId = null, extra = null }) {
     this.#teacherGate.assert({
       userId: userId ?? null,
-      pin: pin ?? null,
       action: action ?? GATE_ACTIONS[op],
       context: { learnerId, ...(readingId ? { readingId } : {}), ...(extra ?? {}) },
     });
@@ -293,13 +289,13 @@ export class ReadingEditContext {
    * not be recorded as having told anyone — the history would then be the only
    * record of a conversation that never happened.
    */
-  async tell({ learnerId, note, from, pin }) {
+  async tell({ learnerId, note, from }) {
     if (!this.#recordTeacherNote) {
       this.#logger.warn?.('school.teacher-reading.note-undeliverable', { learnerId, reason: 'not configured' });
       return false;
     }
     try {
-      await this.#recordTeacherNote.execute({ learnerId, note, from: from ?? null, pin: pin ?? null });
+      await this.#recordTeacherNote.execute({ learnerId, note, from: from ?? null });
       return true;
     } catch (error) {
       this.#logger.warn?.('school.teacher-reading.note-failed', { learnerId, error: error.message });
@@ -365,7 +361,7 @@ export const leavesWindow = (window, before, after) => Boolean(window)
  * @returns {Promise<{revision: object, result: object}>}
  */
 export async function applyReadingOperation(context, {
-  learnerId, reading, op, verb = op, by = null, pin = null, reason = null,
+  learnerId, reading, op, verb = op, by = null, reason = null,
   patch = null, entry = null, entryId = null, toLearnerId = null,
   window = null, undoes = null, undoneVerb = null,
 }) {
@@ -383,7 +379,7 @@ export async function applyReadingOperation(context, {
     for (const message of plan.tells) {
       // Sequential on purpose: two notes about one move should land in the
       // order the sentence describes, and a shared notes file is one writer.
-      delivered.push(await context.tell({ ...message, from: by, pin }));
+      delivered.push(await context.tell({ ...message, from: by }));
     }
     toldChild = delivered.every(Boolean);
   }

@@ -65,7 +65,7 @@ describe('/api/v1/school/card-ladder (through the School router)', () => {
     expect((await request(server).get('/api/v1/school/card-ladder/stage').expect(200)).body).toEqual({ screen: 'portal' });
     const res = await request(server).post('/api/v1/school/card-ladder/fold').send({ learnerId: 'kid', actorId: 'parent' }).expect(200);
     expect(res.body).toEqual({ learnerId: 'kid', folded: 2, demoted: ['gawi'] });
-    expect(live.fold).toHaveBeenCalledWith({ learnerId: 'kid', actorId: 'parent', pin: null });
+    expect(live.fold).toHaveBeenCalledWith({ learnerId: 'kid', actorId: 'parent' });
   });
 });
 
@@ -109,9 +109,9 @@ describe('/api/v1/school/card-ladder/admin day by day', () => {
     const server = app(live);
     const list = await request(server).get('/api/v1/school/card-ladder/admin/days?learnerId=kid&deckId=d&actorId=parent').expect(200);
     expect(list.headers['cache-control']).toBe('private, no-store');
-    expect(live.adminDays).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null });
+    expect(live.adminDays).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent' });
     await request(server).get('/api/v1/school/card-ladder/admin/day?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28').expect(200);
-    expect(live.adminDay).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null, day: '2026-10-28' });
+    expect(live.adminDay).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', day: '2026-10-28' });
   });
   it('streams a kept take, and 404s one that is not on file', async () => {
     const resource = { opaque: true };

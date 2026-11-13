@@ -28,7 +28,7 @@ export class PrintService {
     // byte-for-byte unchanged — the legacy path the spec exempts.
     paperCertifyBank = null,
     // Optional console write gate (teacher-console spec §1): when present it
-    // subsumes the plain adult check on approve/deny (role + pin).
+    // subsumes the plain adult check on approve/deny (role).
     teacherGate = null,
   }) {
     this.#config = config || {};
@@ -193,8 +193,8 @@ export class PrintService {
   }
 
   /** A grown-up approves a pending request: print it, log it, drop it from pending. */
-  async approve({ requestId, approver, pin = null }) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.approve', context: { requestId } });
+  async approve({ requestId, approver }) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, action: 'print.approve', context: { requestId } });
     else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can approve a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');
@@ -217,8 +217,8 @@ export class PrintService {
    * outcome — a vanished request reads as "lost", not "answered"). Denied
    * rows older than 30 days are pruned on the same write.
    */
-  async deny({ requestId, approver, pin = null }) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.deny', context: { requestId } });
+  async deny({ requestId, approver }) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, action: 'print.deny', context: { requestId } });
     else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can deny a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');

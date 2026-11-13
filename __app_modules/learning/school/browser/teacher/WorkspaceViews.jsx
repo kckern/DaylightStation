@@ -338,18 +338,14 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
   };
   const valid = form.kind && form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
     && (form.kind !== 'replaced' || form.replacementLessonId.trim());
-  // No `stepUp` requirement: `curriculum-exception.apply` / `.retract` are the
-  // audit labels `ManageCurriculumException` stamps on its `teacherGate.assert`,
-  // not grant names the server knows how to mint. Asking for a grant under those
-  // names opened a PIN dialog no PIN could satisfy.
   const save = (apply) => run(`exception-${apply ? 'apply' : 'preview'}`, (auth) => teacherWorkspaceApi.changeCurriculumException({
     ...form, learnerId: form.kind === 'paused' ? null : form.learnerId, courseId: form.courseId || null,
     replacementLessonId: form.kind === 'replaced' ? form.replacementLessonId : null,
-    decidedBy: auth.actorId, pin: auth.pin, apply,
+    decidedBy: auth.actorId, apply,
   }), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); } });
   const retract = (exception) => {
     run(`retract-${exception.exceptionId}`, (auth) => teacherWorkspaceApi.retractCurriculumException(exception.exceptionId,
-      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }),
+      { reason: retractReason.trim(), retractedBy: auth.actorId, apply: true }),
     { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
   return <div id="curriculum-exceptions"><PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
@@ -699,18 +695,15 @@ function BulkRegradePanel() {
   const { run, busy, errors } = useTeacherWrite({ panel: 'bulk-regrade' });
   const key = 'bulk-regrade';
   const valid = form.bankId.trim() && form.reason.trim() && form.fromDay && form.toDay && form.fromDay <= form.toDay;
-  const body = ({ actorId, pin }, apply) => ({
-    ...form, bankId: form.bankId.trim(), reason: form.reason.trim(), regradedBy: actorId, pin, apply,
+  const body = ({ actorId }, apply) => ({
+    ...form, bankId: form.bankId.trim(), reason: form.reason.trim(), regradedBy: actorId, apply,
   });
   const change = (field) => (event) => {
     setForm((value) => ({ ...value, [field]: event.target.value }));
     setPreview(null);
   };
   const previewRegrade = () => run(key, (auth) => schoolApi.regradeAttempts(body(auth, false)), { onSuccess: setPreview });
-  const applyRegrade = () => run(key, (auth) => schoolApi.regradeAttempts(body(auth, true), auth.stepUpToken), {
-    stepUp: { action: 'attempts.regrade', resource: form.bankId.trim() },
-    onSuccess: setPreview,
-  });
+  const applyRegrade = () => run(key, (auth) => schoolApi.regradeAttempts(body(auth, true)), { onSuccess: setPreview });
   return (
     <section className="teacher-panel teacher-bulk-regrade">
       <h3 className="teacher-panel__title">Systematic regrade</h3>
@@ -741,16 +734,15 @@ function GradeCorrection({ sessionId, revision, currentPercent, items = [], onAp
   const key = `grade:${sessionId}`;
   const itemLevel = items.length > 0;
   const valid = reason.trim() && (itemLevel || (Number.isFinite(Number(percent)) && Number(percent) >= 0 && Number(percent) <= 100));
-  const body = ({ actorId, pin }, apply) => ({
+  const body = ({ actorId }, apply) => ({
     ...(itemLevel ? { itemVerdicts: items.map((item) => ({ itemId: item.itemId, verdict: verdicts[item.itemId] ?? 'unchanged' })) }
       : { percent: Number(percent) }),
-    reason: reason.trim(), adjustedBy: actorId, pin,
+    reason: reason.trim(), adjustedBy: actorId,
     baseSeq: preview?.baseSeq ?? revision, adjustmentId: preview?.adjustmentId, apply,
   });
   const previewChange = () => run(key, (auth) => teacherWorkspaceApi.adjustGrade(sessionId, body(auth, false)), { onSuccess: setPreview });
-  const applyChange = () => run(key, (auth) => teacherWorkspaceApi.adjustGrade(sessionId, body(auth, true), auth.stepUpToken), {
+  const applyChange = () => run(key, (auth) => teacherWorkspaceApi.adjustGrade(sessionId, body(auth, true)), {
     onSuccess: () => { setPreview(null); setOpen(false); onApplied?.(); },
-    stepUp: { action: 'sessions.grade-adjust', resource: sessionId },
   });
   if (!open) return <button type="button" className="teacher-btn teacher-btn--primary" onClick={() => setOpen(true)}>Fix a marked answer</button>;
   return (
@@ -775,17 +767,16 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'grade-adjustment-retraction' });
   const key = `retract-grade:${adjustment.adjustmentId}`;
-  const body = ({ actorId, pin }, apply) => ({
-    reason: reason.trim(), retractedBy: actorId, pin,
+  const body = ({ actorId }, apply) => ({
+    reason: reason.trim(), retractedBy: actorId,
     baseSeq: preview?.baseSeq ?? revision, apply,
   });
   const previewRetraction = () => run(key, (auth) => teacherWorkspaceApi.retractGradeAdjustment(
     sessionId, adjustment.adjustmentId, body(auth, false),
   ), { onSuccess: setPreview });
   const applyRetraction = () => run(key, (auth) => teacherWorkspaceApi.retractGradeAdjustment(
-    sessionId, adjustment.adjustmentId, body(auth, true), auth.stepUpToken,
+    sessionId, adjustment.adjustmentId, body(auth, true),
   ), {
-    stepUp: { action: 'sessions.grade-adjustment.retract', resource: `${sessionId}/${adjustment.adjustmentId}` },
     onSuccess: () => { setOpen(false); setPreview(null); onApplied?.(); },
   });
   if (adjustment.retracted) return <span className="teacher-muted">Retracted</span>;
@@ -839,8 +830,8 @@ const saidBy = (response, fallback) => {
  *
  * THREE WRITES, ONE ACT:
  *
- *  1. `graded`, flagged `settle` so it costs a session-scoped step-up. A
- *     hand-settle carries no verdicts and would otherwise meet no gate at all.
+ *  1. `graded`, flagged `settle` and stamped with the teacher who settled it.
+ *     A hand-settle carries no verdicts; the stamp is its whole record.
  *  2. The reason, as a teacher note. It is the only half the CHILD ever reads
  *     — `RecordTeacherNote` puts it on the agenda's "Notes for you" and the
  *     student panel.
@@ -867,44 +858,39 @@ function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSet
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState(false);
   // Whether this SESSION's note is already on record — keyed to the session id,
-  // never to the reason text. `useTeacherWrite` replays a 403'd call once after
-  // re-authorizing, and a teacher stuck at a refusing grade half will reword
-  // and try again; both must send the child one note, not two.
+  // never to the reason text. A teacher stuck at a refusing close will reword
+  // and try again; the child must get one note, not two.
   const deliveredRef = useRef(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-settle' });
   const key = `settle:${sessionId}`;
   const alreadyMarked = typeof currentPercent === 'number';
   const valid = Boolean(reason.trim());
 
-  const settle = () => run(key, async ({ actorId, pin, stepUpToken }) => {
+  const settle = () => run(key, async ({ actorId }) => {
     const graded = await schoolApi.gradeSession(sessionId, {
-      gradedBy: actorId, pin, settle: true, settledBy: actorId,
-    }, stepUpToken);
+      gradedBy: actorId, settle: true, settledBy: actorId,
+    });
     if (!MARKED_OUTCOMES.has(graded.data?.status)) {
       // Nothing was written and nothing was said: a refused grade means no
       // decision was taken about this child, so there is nothing to tell them.
-      // A 403 is the one refusal `useTeacherWrite` can act on (it re-prompts
-      // and replays), so it travels unrewritten; everything else reports the
-      // use case's own sentence about why.
-      if (graded.status === 403) return graded;
+      // The use case's own sentence says why.
       return { ok: false, status: graded.status, data: { error:
         `Nothing was changed — the marking didn’t go through: ${saidBy(graded, 'that work could not be marked')}` } };
     }
     if (deliveredRef.current !== sessionId) {
       const delivered = await schoolApi.postTeacherNote({
-        learnerId, note: reason.trim(), from: actorId, pin,
+        learnerId, note: reason.trim(), from: actorId,
       });
       if (!delivered.ok) return delivered;
       deliveredRef.current = sessionId;
     }
-    const closed = await schoolApi.closeSession(sessionId, { pin });
+    const closed = await schoolApi.closeSession(sessionId, {});
     if (!SETTLED_OUTCOMES.has(closed.data?.status)) {
       return { ok: false, status: closed.status, data: { error:
         `It is marked, but closing it out didn’t go through: ${saidBy(closed, 'the close was refused')}. Settle it again to finish.` } };
     }
     return { ok: true, status: closed.status, data: closed.data };
   }, {
-    stepUp: { action: 'sessions.settle', resource: sessionId },
     onSuccess: () => { setPreview(false); setReason(''); deliveredRef.current = null; onSettled?.(); },
   });
 
@@ -945,14 +931,11 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   const key = `reprint:${artifactId}`;
   const prepare = () => {
     const requestKey = newIdempotencyKey(key); setIdempotencyKey(requestKey);
-    run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
-      { reprintedBy: actorId, pin, apply: false }, requestKey), { onSuccess: setPreview });
+    run(key, ({ actorId }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+      { reprintedBy: actorId, apply: false }, requestKey), { onSuccess: setPreview });
   };
-  // `artifact.reprint` is ReprintIssuedArtifact's audit label, not a step-up
-  // grant name — the capability cookie is the whole authority the reprint route
-  // checks. Requesting a grant here hung the button on an unsatisfiable dialog.
-  const print = () => run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
-    { reprintedBy: actorId, pin, apply: true }, idempotencyKey), {
+  const print = () => run(key, ({ actorId }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+    { reprintedBy: actorId, apply: true }, idempotencyKey), {
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
   const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Result receipt' : 'Worksheet';
@@ -960,9 +943,9 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
 }
 
 /**
- * The child's sheet as it came back, marked. Two steps on purpose: the
- * step-up PIN first, then a link — opening a tab after an async PIN prompt
- * is what popup blockers refuse.
+ * The child's sheet as it came back, marked. Two steps on purpose: fetch the
+ * PDF first, then a link — opening a tab after an async fetch is what popup
+ * blockers refuse.
  */
 // The states a sheet carries marks in (sessionEvents TRANSITIONS: graded and
 // everything after it). An allowlist, not "anything past issued": submitted is
@@ -972,7 +955,7 @@ const MARKED_SHEET_STATES = new Set(['graded', 'outcome_recorded', 'remediation_
 
 // The postview route's own error text names entity ids (EntityNotFoundError
 // and friends); a teacher reads a sentence instead. Statuses not listed keep
-// useTeacherWrite's default handling — 403 in particular, which it retries.
+// useTeacherWrite's default handling.
 const MARKED_SHEET_ERRORS = {
   404: 'This sheet is no longer on file.',
   400: "This sheet can't be drawn with marks.",
@@ -989,8 +972,8 @@ function MarkedSheet({ artifactId }) {
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   useEffect(() => () => { if (url) URL.revokeObjectURL?.(url); }, [url]);
   if (url) return <a href={url} target="_blank" rel="noreferrer">Open the marked sheet (PDF)</a>;
-  const fetchSheet = async ({ stepUpToken }) => {
-    const response = await teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken);
+  const fetchSheet = async ({ actorId }) => {
+    const response = await teacherWorkspaceApi.artifactPostview(artifactId, actorId);
     const copy = !response.ok && MARKED_SHEET_ERRORS[response.status];
     return copy ? { ...response, data: { error: copy } } : response;
   };
@@ -1001,8 +984,7 @@ function MarkedSheet({ artifactId }) {
     teacherLog.nav('postview-open', { artifactId });
   };
   return <>
-    <button type="button" disabled={busy === key} onClick={() => run(key, fetchSheet,
-      { stepUp: { action: 'artifact.postview', resource: artifactId }, onSuccess: opened })}>
+    <button type="button" disabled={busy === key} onClick={() => run(key, fetchSheet, { onSuccess: opened })}>
       See the marked sheet
     </button>
     {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
@@ -1077,8 +1059,8 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
   // the teacher roster's — never the raw id when either knows it.
   const actorName = useActorName();
   const eventActor = (id) => (id ? kids.find((kid) => kid.id === id)?.name ?? actorName(id) : '');
-  const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
-    openedBy: actorId, pin,
+  const offerRetake = () => run(sessionId, ({ actorId }) => schoolApi.offerRetake(sessionId, {
+    openedBy: actorId,
   }), { onSuccess: () => setAttempt((n) => n + 1) });
   const ownerName = kids.find((kid) => kid.id === result.ownerId)?.name ?? result.ownerId;
   const events = useMemo(() => session?.events ?? sessionState?.events ?? sessionState?.history ?? [], [session, sessionState]);
@@ -1151,7 +1133,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               onSettled={() => setAttempt((n) => n + 1)} />
           )}
           {/* Answers still waiting for a mark: the server would refuse the
-              settle as `awaiting_review` after the PIN, so the read model
+              settle as `awaiting_review`, so the read model
               withholds it and this says where the work actually is. */}
           {!canSettleByHand && (capabilities.pendingReview ?? 0) > 0 && (
             <CapabilityNotice>

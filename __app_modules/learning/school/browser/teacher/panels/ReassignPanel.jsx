@@ -107,16 +107,16 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
   // already known, so it is loaded, not left for a second tap.
   useEffect(() => { if (initialDay) load(initialDay); }, [learnerId, initialDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const move = (a) => run(a.assessmentId, ({ actorId, pin }) => schoolApi.reassign({
+  const move = (a) => run(a.assessmentId, ({ actorId }) => schoolApi.reassign({
     fromLearnerId: learnerId, toLearnerId: target, day: loaded.day, assessmentId: a.assessmentId,
-    reassignedBy: actorId, pin,
+    reassignedBy: actorId,
   }), { onSuccess: () => load(loaded.day) });
 
   // `fromLearnerId` is deliberately not sent: the server reads it off the
   // session's own log, so a panel left open across another move cannot assert
   // who the work currently belongs to.
-  const moveSession = (s) => run(`session:${s.sessionId}`, ({ actorId, pin }) => schoolApi.reassignSession({
-    sessionId: s.sessionId, toLearnerId: target, reason, reassignedBy: actorId, pin,
+  const moveSession = (s) => run(`session:${s.sessionId}`, ({ actorId }) => schoolApi.reassignSession({
+    sessionId: s.sessionId, toLearnerId: target, reason, reassignedBy: actorId,
   }), { onSuccess: () => { setReason(''); work.retry(); load(loaded.day); } });
 
   return (

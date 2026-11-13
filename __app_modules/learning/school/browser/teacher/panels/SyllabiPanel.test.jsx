@@ -13,18 +13,12 @@ vi.mock("../../schoolApi.js", () => ({
   },
 }));
 
-// A claimed, server-authorized teacher, so useTeacherWrite calls straight
-// through without exposing or forwarding a PIN.
+// A claimed teacher, so useTeacherWrite calls straight through.
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -200,7 +194,7 @@ describe('SyllabiPanel — archive requires the second tap', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.archiveSyllabus).toHaveBeenCalledWith('atlas-upper', {
-      archivedBy: 'teacher_1', pin: null,
+      archivedBy: 'teacher_1',
     }));
   });
 

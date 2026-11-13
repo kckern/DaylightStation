@@ -1015,8 +1015,8 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 | GET | `/teacher/:learnerId/history?corpus=&by=` | **teacher console** — the same Review history, behind the teacher gate (`school.sentence-ladder.read`) instead of a launch grant |
 | GET | `/teacher/:learnerId/recordings/:corpusId/:seq?by=` | **teacher console** — a take, `Cache-Control: no-store` |
 
-The three `/teacher/*` reads take the console's capability cookie; the acting
-teacher is the cookie session's own user, else `by`. They read only. The
+The three `/teacher/*` reads name the acting teacher with `by`, which must pass
+the teacher gate. They read only. The
 console renders them with the child's own `ReviewPanel` (handed a `source`),
 so a grown-up sees exactly the record the child does, with calendar dates.
 
