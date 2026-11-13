@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { lessonScaleRoot, checkInRoots } from './lessonKey.mjs';
-import { checkInDrill } from './goodFaith.mjs';
+import { checkInDrillFor, checkInStepFor } from './presenceLadder.mjs';
 import { SCALE_ROOTS } from '../../browser/PianoKiosk/modes/Games/gateMaterial.js';
 
 describe('lessonScaleRoot', () => {
@@ -34,7 +34,7 @@ describe('checkInRoots', () => {
   });
 
   it('a flat-key title deals a loadable check-in drill', () => {
-    const spec = checkInDrill(1, { roots: checkInRoots({ title: 'Bb Major Scale' }).roots });
+    const spec = checkInDrillFor(checkInStepFor(1), { roots: checkInRoots({ title: 'Bb Major Scale' }).roots });
     expect(spec.roots[0]).toBe('A#');
     expect(SCALE_ROOTS).toContain(spec.roots[0]);
   });

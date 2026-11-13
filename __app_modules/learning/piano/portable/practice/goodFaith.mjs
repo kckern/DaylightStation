@@ -1,7 +1,8 @@
 /**
  * goodFaith — one silent 0–10 good-faith score per lesson sitting (the
  * session-level judgement, sittingGoodFaith.mjs) and what follows from it:
- * credit, a scale drill before credit, and the presence check-in ladder. Pure; no Node-only APIs
+ * credit and a scale drill before credit (the presence check-in ladder lives in
+ * presenceLadder.mjs). Pure; no Node-only APIs
  * (the kiosk imports it too). The score is never shown to a child.
  */
 import { fallbackCredited } from './sittingGoodFaith.mjs';
@@ -11,21 +12,18 @@ export const GOOD_FAITH_DEFAULTS = Object.freeze({
   maxSittings: 12,
   repsPerSet: 2,
   hands: Object.freeze(['R', 'L', 'RL']),
-  checkInScaleCap: 2,
-  realPlayingNotes: 8,
 });
 
 /**
  * Preschool mode (owner, 2026-11-12), keyed by course in
  * `videos.practice.preschool_courses`: any key press is practice
  * (practiceScore PRESCHOOL_PRACTICE), credit at 3, the presence check-in never
- * escalates past one note, and the drill before credit is one or two gentle
+ * escalates past one note (presenceLadder ladderConfig preschool), and the drill before credit is one or two gentle
  * rounds ("five notes going up", "copy three notes") — never scales.
  */
 export const PRESCHOOL_POLICY = Object.freeze({
   ...GOOD_FAITH_DEFAULTS,
   passScore: 3,
-  checkInScaleCap: 0,
   drillKind: 'gentle',
   preschool: true,
 });
@@ -55,25 +53,12 @@ function rotate(list, by) {
   return [...arr.slice(k), ...arr.slice(0, k)];
 }
 
-function scaleSpec({ roots, sets, reps, hands }) {
+/** A scale exercise spec in the drill vocabulary (also used by presenceLadder). */
+export function scaleSpec({ roots, sets, reps, hands }) {
   return {
     kind: 'exercise', collection: 'scales', roots, mode: 'ionian',
     direction: 'up-then-down', span_octaves: 1, sets, reps, hands,
   };
-}
-
-/** Which check-in to ask for, from idle check-ins with no real playing between. */
-export function checkInStep({ consecutiveIdle = 0 } = {}, policy = GOOD_FAITH_DEFAULTS) {
-  const n = Math.max(0, Math.trunc(Number(consecutiveIdle)) || 0);
-  const cap = policy.checkInScaleCap ?? 2;
-  if (n === 0 || cap <= 0) return { kind: 'note' };
-  return { kind: 'scales', count: Math.min(n, cap) };
-}
-
-/** The scale(s) a check-in step asks for: `count` sets of one rep, hands R then L. */
-export function checkInDrill(count, { roots, rotation = 0 } = {}) {
-  const sets = Math.max(1, Math.trunc(Number(count)) || 1);
-  return scaleSpec({ roots: rotate(roots, rotation), sets, reps: 1, hands: ['R', 'L'].slice(0, Math.max(1, sets)) });
 }
 
 /** Sum practice over a lesson's sittings map/array. */

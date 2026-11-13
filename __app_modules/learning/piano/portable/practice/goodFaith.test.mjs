@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  GOOD_FAITH_DEFAULTS, checkInStep, checkInDrill, bankSittings, goodFaithScore, rawScore,
+  GOOD_FAITH_DEFAULTS, bankSittings, goodFaithScore, rawScore,
   drillForScore, creditDecision, PRESCHOOL_POLICY, policyFor,
 } from './goodFaith.mjs';
 
@@ -23,19 +23,6 @@ describe('goodFaithScore', () => {
   it('rawScore is unfloored and capped', () => {
     expect(rawScore({ practiceNotes: 70, playedSec: 600, targetNpm: 13 })).toBeCloseTo(5.385, 2);
     expect(rawScore({ practiceNotes: 9999, playedSec: 60, targetNpm: 13 })).toBe(10);
-  });
-});
-
-describe('checkInStep / checkInDrill', () => {
-  it('0 → note, 1 → 1 scale, 2 and 5 → 2 scales', () => {
-    expect(checkInStep({ consecutiveIdle: 0 })).toEqual({ kind: 'note' });
-    expect(checkInStep({ consecutiveIdle: 1 })).toEqual({ kind: 'scales', count: 1 });
-    expect(checkInStep({ consecutiveIdle: 2 })).toEqual({ kind: 'scales', count: 2 });
-    expect(checkInStep({ consecutiveIdle: 5 })).toEqual({ kind: 'scales', count: 2 });
-  });
-  it('checkInDrill: count sets of 1 rep, hands R then L', () => {
-    const s = checkInDrill(2, ROOTS);
-    expect(s).toMatchObject({ kind: 'exercise', collection: 'scales', sets: 2, reps: 1, hands: ['R', 'L'], mode: 'ionian' });
   });
 });
 
@@ -103,16 +90,14 @@ describe('creditDecision — the session-level good-faith judgement decides', ()
     expect(creditDecision({ ...base, sittings: { a: { practiceNotes: 3 }, b: { practiceNotes: 3 } } }).outcome).toBe('credited');
   });
   it('defaults are exported', () => {
-    expect(GOOD_FAITH_DEFAULTS).toMatchObject({ passScore: 6, maxSittings: 12, repsPerSet: 2, checkInScaleCap: 2, realPlayingNotes: 8 });
+    expect(GOOD_FAITH_DEFAULTS).toMatchObject({ passScore: 6, maxSittings: 12, repsPerSet: 2 });
   });
 });
 
 describe('preschool policy', () => {
   const P = PRESCHOOL_POLICY;
-  it('passes at 3 and never escalates the check-in past a note', () => {
+  it('passes at 3', () => {
     expect(P.passScore).toBe(3);
-    expect(checkInStep({ consecutiveIdle: 1 }, P)).toEqual({ kind: 'note' });
-    expect(checkInStep({ consecutiveIdle: 5 }, P)).toEqual({ kind: 'note' });
   });
   it('drills are gentle rounds, not scales: 3 → none, 1–2 → one round, 0 → two', () => {
     expect(drillForScore(3, ROOTS, P)).toBeNull();
