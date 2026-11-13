@@ -1216,6 +1216,16 @@ describe('worksheet scans', () => {
     expect(out).toMatchObject({ ok: false, domain: null });
   });
 
+  it('sends an unmatched URL nowhere on a school-route reader either', async () => {
+    const handleWorksheetScan = vi.fn(async () => ({ status: 'recorded' }));
+    const h = harness({ urlRules, schoolLifecycle: { handlesCode: () => true, handleScan: vi.fn(async () => ({})), handleWorksheetScan } });
+    const out = await h.scanDispatch.handleScan({ code: 'https://example.com/a', device: 'school-console', route: 'school' });
+    expect(handleWorksheetScan).not.toHaveBeenCalled();
+    expect(h.schoolLifecycle.handleScan).not.toHaveBeenCalled();
+    expect(h.triggerDispatchService.handleEvent).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ ok: false, domain: null, status: 'unknown' });
+  });
+
   it('refuses to boot without urlRules', () => {
     expect(() => createScanDispatch(depsWithout('urlRules'))).toThrow(/urlRules/);
   });

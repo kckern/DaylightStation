@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  validateDataDir, runBarcodeScanSim, resolveScanSimPaths,
+  validateDataDir, runBarcodeScanSim, resolveScanSimPaths, runScan,
 } from '../../../cli/barcode-scan-sim.cli.mjs';
 
 let tmpRoot;
@@ -143,5 +143,38 @@ describe('runBarcodeScanSim — data-dir gate', () => {
     expect(report.errors ?? []).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/no curriculum content found/)]),
     );
+  });
+});
+
+describe('scan — household url rules (parity with the live dispatcher)', () => {
+  const BEELOO = 'https://qr.beeloo.com/glD5B71Bj';
+
+  function writeBarcodeConfig(dataDir, body) {
+    const dir = path.join(dataDir, 'household/hardware/barcode');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.yml'), body);
+  }
+
+  it('classifies a Beeloo QR as worksheet / url-rule when the household has the rule', async () => {
+    const dataDir = path.join(tmpRoot, 'data');
+    writeCurriculumFixture(dataDir);
+    writeBarcodeConfig(dataDir, [
+      'url_rules:',
+      '  - id: beeloo-page',
+      "    match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$'",
+      '    namespace: worksheet',
+      '    platform: beeloo',
+      '',
+    ].join('\n'));
+    const out = await runScan({ code: BEELOO, dataDir, stateDir: path.join(tmpRoot, 'state') });
+    expect(out).toMatchObject({ namespace: 'worksheet', form: 'url-rule', status: 'unwired', claimed: true });
+  });
+
+  it('reports the same URL unknown when the household has no rule for it', async () => {
+    const dataDir = path.join(tmpRoot, 'data');
+    writeCurriculumFixture(dataDir);
+    fs.mkdirSync(path.join(dataDir, 'household'), { recursive: true });
+    const out = await runScan({ code: BEELOO, dataDir, stateDir: path.join(tmpRoot, 'state') });
+    expect(out).toMatchObject({ namespace: null, form: 'unknown', claimed: false });
   });
 });

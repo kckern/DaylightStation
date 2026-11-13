@@ -19,7 +19,7 @@
  * SUGAR on top of that: convenience commands for driving school's full
  * agenda -> issue -> render -> print lifecycle, because school is the one
  * namespace this file wires a LIVE handler for. `content`/`command`/
- * `nutrition`/`product` are registered too (so classification is real for
+ * `nutrition`/`product`/`worksheet` are registered too (so classification is real for
  * every code shape a scanner could ever see — a `go:`, a `dl:4`, an ISBN, an
  * unrecognised string) but each answers `status: 'unwired'` — see
  * `buildScanDispatcher` below — the SAME honest "not wired in this
@@ -271,8 +271,12 @@ function unwiredHandler(namespace) {
     message: `"${namespace}" was correctly classified (form: ${form}) but has no live handler in this simulator — school is the only wired namespace today.`,
   });
 }
-function createScanDispatcher({ schoolHandler, logger }) {
- return new ScanDispatcher({ handlers: [schoolHandler, { namespace: 'content', handle: unwiredHandler('content') }, { namespace: 'command', handle: unwiredHandler('command') }, { namespace: 'nutrition', handle: unwiredHandler('nutrition') }, { namespace: 'product', handle: unwiredHandler('product') }], logger });
+// `urlRules` come from the household barcode config (see `loadUrlRules` in the
+// school workflows), so a printed worksheet QR classifies as it does live.
+function createScanDispatcher({ schoolHandler, logger, urlRules = [] }) {
+  const unwired = ['content', 'command', 'nutrition', 'product', 'worksheet']
+    .map((namespace) => ({ namespace, handle: unwiredHandler(namespace) }));
+  return new ScanDispatcher({ handlers: [schoolHandler, ...unwired], logger, urlRules });
 }
 const { validateDataDir, resolvePrinterConfig, readPrinterStatus, maybePhysicallyPrint, writeArtifacts, runCard, runScan, runLesson, runFlow, runPrinterStatus, runProof } = createSchoolBarcodeWorkflows({ createDispatcher: createScanDispatcher, valueFlag });
 export { validateDataDir, runCard, runScan, runLesson, runFlow, runPrinterStatus, runProof };

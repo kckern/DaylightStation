@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS, compileUrlRules,
+  isUrlCode,
 } from '#domains/scan/ScanCode.mjs';
 
 describe('parseScanCode — registered prefixes', () => {
@@ -434,5 +435,51 @@ describe('compileUrlRules', () => {
   });
   it('refuses duplicate rule ids', () => {
     expect(() => compileUrlRules([ok, ok])).toThrow(/duplicate/);
+  });
+  it('accepts null as an empty list, and refuses a non-list', () => {
+    expect(compileUrlRules(null)).toEqual([]);
+    expect(() => compileUrlRules({})).toThrow(TypeError);
+  });
+  it('is not fooled by an escaped paren or a character class that spell (?<id>', () => {
+    // Both contain the text `(?<id>` and neither has a capture group named id.
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/\\(?<id>\\w+' }])).toThrow(/\(\?<id>/);
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/[(?<id>]+' }])).toThrow(/\(\?<id>/);
+  });
+  it('refuses an unanchored match', () => {
+    const loose = { ...ok, match: 'qr\\.beeloo\\.com/(?<id>\\w+)' };
+    expect(() => compileUrlRules([loose])).toThrow(/anchored/);
+  });
+  it('refuses a platform that is present but not a non-empty string', () => {
+    expect(() => compileUrlRules([{ ...ok, platform: '' }])).toThrow(/platform/);
+    expect(() => compileUrlRules([{ ...ok, platform: 7 }])).toThrow(/platform/);
+    expect(compileUrlRules([{ ...ok, platform: undefined }])[0].platform).toBeNull();
+    expect(compileUrlRules([{ ...ok, platform: null }])[0].platform).toBeNull();
+  });
+});
+
+describe('parseScanCode — url rule edges', () => {
+  it('first matching rule wins', () => {
+    const rules = compileUrlRules([
+      { id: 'first', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'a' },
+      { id: 'second', match: '^https://x/(?<id>\\w+)$', namespace: 'content', platform: 'b' },
+    ]);
+    expect(parseScanCode('https://x/abc', { urlRules: rules })).toMatchObject({ rule: 'first', platform: 'a' });
+  });
+
+  it('skips rule matching for an over-long URL', () => {
+    const rules = compileUrlRules([
+      { id: 'any', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: null },
+    ]);
+    const long = `https://x/${'a'.repeat(2100)}`;
+    expect(parseScanCode(long, { urlRules: rules })).toEqual({
+      namespace: null, body: long, raw: long, form: 'unknown',
+    });
+  });
+
+  it('isUrlCode tests the scheme only, case-insensitively', () => {
+    expect(isUrlCode('HTTPS://x/a')).toBe(true);
+    expect(isUrlCode('http://x')).toBe(true);
+    expect(isUrlCode('go:https://x')).toBe(false);
+    expect(isUrlCode(42)).toBe(false);
   });
 });

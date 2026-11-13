@@ -93,7 +93,7 @@
  * @module scan/ScanDispatcher
  */
 
-import { parseScanCode } from '#domains/scan/ScanCode.mjs';
+import { parseScanCode, isUrlCode } from '#domains/scan/ScanCode.mjs';
 
 /**
  * The uniform answer shape, whatever the domain.
@@ -230,9 +230,6 @@ function toRouteMap(routeFallback) {
  */
 const NO_LOGGER = Object.freeze({});
 
-/** Mirrors ScanCode's step-0 test; see the route-fallback note in `dispatch`. */
-const URL_SCHEME_RE = /^https?:\/\//i;
-
 /**
  * Exported so composition can hold the same guarantee on ITS OWN logger calls.
  *
@@ -298,6 +295,15 @@ export class ScanDispatcher {
     this.#logger = logger;
   }
 
+  /**
+   * The parse `dispatch` will act on, with this dispatcher's URL rules. For
+   * tools that report the classification beside the outcome (the scan
+   * simulator): reading it here means the two cannot disagree.
+   */
+  parse(code) {
+    return parseScanCode(code, { urlRules: this.#urlRules });
+  }
+
   /** The namespaces this dispatcher can serve. Ordered as registered. */
   get namespaces() {
     return [...this.#handlers.keys()];
@@ -317,7 +323,7 @@ export class ScanDispatcher {
    *   and that is what the guarantee covers.
    */
   async dispatch({ code, device = null, route = null } = {}) {
-    const parsed = parseScanCode(code, { urlRules: this.#urlRules });
+    const parsed = this.parse(code);
 
     // Step 5. Only consulted when the CODE ITSELF says nothing — a code that
     // named its owner is never overridden by the reader it happened to be
@@ -325,7 +331,7 @@ export class ScanDispatcher {
     // rooms. `route` is untrusted enough to type-check: a non-string key would
     // stringify into the lookup. A URL is never the route's business: step 0
     // already decided it, and an unmatched one must stay unknown everywhere.
-    const routed = typeof route === 'string' && !URL_SCHEME_RE.test(parsed.raw)
+    const routed = typeof route === 'string' && !isUrlCode(parsed.raw)
       ? this.#routeFallback[route] : undefined;
     const namespace = parsed.namespace ?? routed ?? null;
 

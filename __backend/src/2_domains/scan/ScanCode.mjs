@@ -104,8 +104,9 @@
  *   (`BarcodePayload.parse`) and therefore one handler; the content/command
  *   split exists only for the new prefixed forms.
  * - Every non-URL string with a non-empty tag that steps 1 and 2 do not claim
- *   lands on content (a URL was already decided at step 0), so a mis-cased `SCH:a7f3k2` resolves to content rather than
- *   unknown — the tag stays in the body, unstripped. That is
+ *   lands on content (a URL was already decided at step 0), so a mis-cased
+ *   `SCH:a7f3k2` resolves to content rather than unknown — the tag stays in the
+ *   body, unstripped. That is
  *   survivable because claim is not success: the content parser owns the grammar
  *   and refuses what it cannot read, exactly as it does today for a typo'd
  *   sticker.
@@ -230,12 +231,36 @@ const DIGITS_ONLY = /^[0-9]+$/;
 const URL_SCHEME_RE = /^https?:\/\//i;
 
 /**
+ * Longest URL step 0 will run rules against. The rules are regexes from config
+ * and the input is whatever got printed on a sticker, so a pathological pair
+ * must not be able to stall the event loop. Real worksheet QRs are well under
+ * 100 characters; anything longer than this is unknown without a match.
+ */
+const MAX_URL_RULE_INPUT = 2048;
+
+/**
+ * Is this scanned string a URL? The one test for it, exported so the
+ * dispatcher's no-route-fallback rule cannot drift from step 0.
+ */
+export function isUrlCode(raw) {
+  return typeof raw === 'string' && URL_SCHEME_RE.test(raw);
+}
+
+/**
  * Validate and compile household `url_rules` (barcode config). Pure: the caller
  * reads the YAML; this refuses anything that would make a scan ambiguous, so a
  * bad rule stops the boot instead of misrouting a sheet hours later.
  *
  * The `(?<id>…)` capture is required because it IS the body: a rule that
  * matched without naming the page would hand its handler nothing to look up.
+ * It is checked on the COMPILED regex, not the source text, since `\(?<id>`
+ * and `[(?<id>]` both spell it without capturing anything.
+ *
+ * Anchor every `match` with `^…$`. An unanchored `qr\.beeloo\.com/(?<id>\w+)`
+ * would claim `https://evil.example/?u=qr.beeloo.com/abc`, so a missing `^` is
+ * refused here (a missing `$` is the author's call, and the rules below are
+ * theirs to read). Rules match CASE-SENSITIVELY as written; only the scheme
+ * test that decides "is this a URL" ignores case.
  * The namespace is checked against the vocabulary only; whether a handler is
  * registered for it is the dispatcher composition's boot check, since this
  * module knows nothing about handlers.
@@ -252,12 +277,27 @@ export function compileUrlRules(raw) {
     if (typeof rule?.id !== 'string' || !rule.id) throw new Error(`${where}: id is required`);
     if (seen.has(rule.id)) throw new Error(`${where}: duplicate rule id "${rule.id}"`);
     seen.add(rule.id);
-    if (typeof rule.match !== 'string' || !rule.match) throw new Error(`${where}: match must be a regex string`);
+    if (typeof rule.match !== 'string' || !rule.match)
+      throw new Error(`${where}: match must be a regex string`);
     let re;
-    try { re = new RegExp(rule.match); } catch (err) { throw new Error(`${where}: match is not a valid regex: ${err.message}`); }
-    if (!/\(\?<id>/.test(rule.match)) throw new Error(`${where}: match must have an (?<id>…) capture`);
-    if (!NAMESPACES.includes(rule.namespace)) throw new Error(`${where}: unknown namespace "${rule.namespace}"`);
-    return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform: rule.platform ?? null });
+    try {
+      re = new RegExp(rule.match);
+    } catch (err) {
+      throw new Error(`${where}: match is not a valid regex: ${err.message}`);
+    }
+    // The trailing empty alternative always matches '', so `groups` lists
+    // every named group the pattern really has.
+    const groups = new RegExp(`${rule.match}|`).exec('')?.groups;
+    if (!groups || !Object.hasOwn(groups, 'id'))
+      throw new Error(`${where}: match must have an (?<id>…) capture`);
+    if (!rule.match.startsWith('^'))
+      throw new Error(`${where}: match must be anchored with ^ (and usually $)`);
+    if (!NAMESPACES.includes(rule.namespace))
+      throw new Error(`${where}: unknown namespace "${rule.namespace}"`);
+    const platform = rule.platform ?? null;
+    if (platform !== null && (typeof platform !== 'string' || !platform))
+      throw new Error(`${where}: platform must be a non-empty string when given`);
+    return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform });
   }));
 }
 
@@ -297,11 +337,16 @@ export function parseScanCode(code, { urlRules = [] } = {}) {
   if (idx > 0) {
     // step 0 — a URL. Never a tag: `https` is a scheme, and letting it fall to
     // step 3 sent every printed web link in the house to `content`.
-    if (URL_SCHEME_RE.test(raw)) {
-      for (const rule of urlRules) {
+    if (isUrlCode(raw)) {
+      // First matching rule wins, in config order. See MAX_URL_RULE_INPUT.
+      const rules = raw.length > MAX_URL_RULE_INPUT ? [] : urlRules;
+      for (const rule of rules) {
         const m = rule.re.exec(raw);
         if (m?.groups?.id) {
-          return { namespace: rule.namespace, body: m.groups.id, raw, form: 'url-rule', rule: rule.id, platform: rule.platform };
+          return {
+            namespace: rule.namespace, body: m.groups.id, raw,
+            form: 'url-rule', rule: rule.id, platform: rule.platform,
+          };
         }
       }
       return { namespace: null, body: raw, raw, form: 'unknown' };

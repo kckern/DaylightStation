@@ -695,6 +695,24 @@ describe('ScanDispatcher — url rules', () => {
     expect(out.ok).toBe(false);
   });
 
+  it('hands a handler platform null when the rule names none', async () => {
+    const rules = compileUrlRules([
+      { id: 'bare', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet' },
+    ]);
+    const worksheet = handler('worksheet', async () => ({ status: 'recorded' }));
+    const d = new ScanDispatcher({ handlers: [worksheet], urlRules: rules });
+    await d.dispatch({ code: 'https://x/abc', device: 'k' });
+    expect(worksheet.handle).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'abc', platform: null, rule: 'bare',
+    }));
+  });
+
+  it('parse() answers with the same rules dispatch uses', () => {
+    const d = new ScanDispatcher({ urlRules });
+    expect(d.parse('https://qr.beeloo.com/glD5B71Bj')).toMatchObject({ namespace: 'worksheet', form: 'url-rule' });
+    expect(new ScanDispatcher().parse('https://qr.beeloo.com/glD5B71Bj').form).toBe('unknown');
+  });
+
   it('refuses a urlRules that is not an array', () => {
     expect(() => new ScanDispatcher({ urlRules: {} })).toThrow(/urlRules/);
   });
