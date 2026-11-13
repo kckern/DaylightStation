@@ -10,6 +10,7 @@ import { SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE
 import {
   BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, DEFAULT_BOOK_LOG_TITLE, BOOK_LOG_SHELF_UNIT_ID,
 } from "../domain/bookLog.mjs";
+import { PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId as printedActivityUnitId } from "../domain/printedActivity.mjs";
 
 const baseEntry = ({
   unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily', elective = false,
@@ -175,6 +176,28 @@ export function appendAssignedProgramEntries(plan, assignment) {
         subject: enrollment.subject ?? 'arts',
         program: 'piano-course',
         programInstance: courseId,
+        schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
+      }));
+    }
+    // PRINTED ACTIVITIES — one entry per corpus (a maze entry and a sudoku
+    // entry are two rows), keyed by `corpusId` so `collectProgramStatuses`
+    // asks `PrintedActivityProgramLauncher.status({programInstance})` and the
+    // agenda ticket hands the same corpus to `launch()`. Without this entry an
+    // enrolment validates and the agenda never prints its ticket.
+    if (enrollment?.programId === PRINTED_ACTIVITY_PROGRAM_ID) {
+      const corpusId = enrollment.corpusId;
+      if (!corpusId) continue;
+      const kind = enrollment.activity?.kind;
+      plan.entries.push(baseEntry({
+        unitId: printedActivityUnitId(corpusId),
+        title: enrollment.title ?? (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Printed activity'),
+        // The validator requires a subject (a maze is arts, a sudoku math);
+        // the fallback only covers a record written before it did.
+        subject: enrollment.subject ?? 'arts',
+        program: PRINTED_ACTIVITY_PROGRAM_ID,
+        programInstance: corpusId,
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,

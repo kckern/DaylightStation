@@ -93,6 +93,10 @@ import { PreviewSchoolSessionStore, PreviewSchoolTokenRegistry } from "../applic
 import { SyllabusManagementService } from "../application/SyllabusManagementService.mjs";
 import { SurfaceProgramLauncher } from "../application/SurfaceProgramLauncher.mjs";
 import { StoryTimeProgramLauncher } from "../application/StoryTimeProgramLauncher.mjs";
+import { PrintedActivityProgramLauncher } from "../application/PrintedActivityProgramLauncher.mjs";
+import { RecordPrintedActivityScan } from "../application/usecases/RecordPrintedActivityScan.mjs";
+import { YamlPrintedActivityStore } from "../adapters/persistence/YamlPrintedActivityStore.mjs";
+import { PRINTED_ACTIVITY_PROGRAM_ID } from "../domain/printedActivity.mjs";
 import { YamlDebriefStore } from "../adapters/persistence/YamlDebriefStore.mjs";
 import { SchoolDebriefProgramLauncher } from "../application/SchoolDebriefProgramLauncher.mjs";
 import { SCHOOL_DEBRIEF_PROGRAM_ID, debriefConfigOf } from "../domain/schoolDebrief.mjs";
@@ -241,9 +245,14 @@ function cryptoRng(crypto) {
  *   Grace windows, token expiry and the UTC day boundary of a payout are all
  *   decided from it, so nothing downstream calls `Date.now()` and a test states
  *   the time rather than waiting for it. Defaults to the wall clock.
- * @param {() => number} [deps.rng] - draws in [0,1) for token minting. Defaults
- *   to the platform CSPRNG; a caller passes a seeded one only to make a run
- *   reproducible.
+ * @param {() => number} [deps.rng] - draws in [0,1) for token minting and the
+ *   printed-activity page pick. Defaults to the platform CSPRNG; a caller
+ *   passes a seeded one only to make a run reproducible.
+ * @param {Map<string, object>} [deps.worksheetPlatforms] - platform id →
+ *   `IWorksheetPlatform` (e.g. `beeloo`), the printed-activity program's page
+ *   source. Empty: the program still registers and its ticket answers
+ *   "Worksheets are unavailable", and a worksheet scan still credits a page
+ *   already issued.
  * @param {object} [deps.logger]
  * @param {object} [deps.tokenRegistry] shared School token registry
  * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
@@ -252,6 +261,8 @@ function cryptoRng(crypto) {
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
  *   handleScan: ((args: {code: string, device?: string}) => Promise<object>)|null,
+ *   handleWorksheetScan: ((args: {platform: string, externalId: string, device?: string|null})
+ *     => Promise<{status: string, ok: boolean, message: string, printed: boolean}>)|null,
  *   reporter: object|null, router: object|null, devicesRouter: object|null,
  *   useCases: object, stores: object, devices: object, renderers: object,
  * }>}
@@ -265,6 +276,8 @@ export async function createSchoolLifecycle({
   // The household's story books, `() => [{contentId, title}] | null` — what a
   // refused story-time book suggests instead. Null: the learner's history.
   storyCorpus = null,
+  // Worksheet platforms for the printed-activity program, `Map<id, IWorksheetPlatform>`.
+  worksheetPlatforms = new Map(),
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -334,7 +347,7 @@ export async function createSchoolLifecycle({
   const inert = (reason) => {
     logger.info?.('school.lifecycle.unwired', { reason });
     return {
-      wired: false, reason, handlesCode: () => false, handleScan: null,
+      wired: false, reason, handlesCode: () => false, handleScan: null, handleWorksheetScan: null,
       reporter: null, router: null, devicesRouter: null, selfServiceRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {}, launchers: new Map(),
       donowSchoolBridge: null, coinsChangedRelay: null, grownUps: null, teacherGate: null, passOverrides: null,
@@ -607,6 +620,9 @@ export async function createSchoolLifecycle({
       dayOf: (iso) => studyDayForInstant(Date.parse(iso), { timezone: configService.getTimezone?.() || null }),
     }),
     teacherActionReceipts: new YamlTeacherActionReceiptStore({ configService }),
+    // Printed-activity issuances: which page went to which child, open until a
+    // grown-up scans its QR. The launcher and the scan use case share it.
+    printedActivities: new YamlPrintedActivityStore({ configService, logger, clock }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
   // "unknown ticket" slip, which is what week-old paper deserves). Swept at
@@ -620,6 +636,10 @@ export async function createSchoolLifecycle({
   // against (`app.mjs`) — one source, so the agenda's "done today" and the
   // program's own idea of "today" can never drift apart.
   const timezone = configService.getTimezone?.() || null;
+  // The lifecycle's one source of randomness (token minting, the printed-
+  // activity page pick). Drawn up here because a launcher needs it at
+  // registration.
+  const draw = rng ?? cryptoRng(globalThis.crypto);
   // `school.yml → calendar`: the house's own days off, in the same shape a
   // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
   // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
@@ -742,6 +762,14 @@ export async function createSchoolLifecycle({
     readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession, storyCorpus,
   }));
 
+  // Printed activities — a page from a worksheet platform, done on paper,
+  // counted by a grown-up's scan of the page's own QR. Registered before the
+  // `programs:` loop so a config entry reusing the id trips the collision check.
+  launchers.set(PRINTED_ACTIVITY_PROGRAM_ID, new PrintedActivityProgramLauncher({
+    assignments: stores.assignments, store: stores.printedActivities, platforms: worksheetPlatforms,
+    printer: laserPrinter, timezone, clock, rng: draw, logger,
+  }));
+
   // The reading shelf. Unconditional like story-time: an enrollment with no
   // obligation is complete on its own, so no service has to exist first.
   // `grants` may be null in a degraded boot; the launcher then refuses to
@@ -818,7 +846,6 @@ export async function createSchoolLifecycle({
   const surfaceValidators = new SchoolSurfaceValidatorCatalog({ surfaces: donowSurfaces });
 
   // --- collaborators ---------------------------------------------------------
-  const draw = rng ?? cryptoRng(globalThis.crypto);
   // Shared by BuildAgenda and ResolveSubjectNext so a curriculum entry opened
   // by either one gets the same shape of session id.
   // LOWERCASE, and 10 chars rather than 8. `slugify` lowercases session ids to
@@ -856,6 +883,13 @@ export async function createSchoolLifecycle({
   // console still teaches and prints, it just cannot be signed off, which is the
   // right way round for a household with an unreadable roster.
   const schoolRoster = new HouseholdSchoolRoster({ userService });
+  // A grown-up's scan of a worksheet's own QR (the house scanner's `worksheet`
+  // handler). The child comes from the open issuance; the slip names them
+  // through the same live roster the grown-up gate reads.
+  const recordPrintedActivityScan = new RecordPrintedActivityScan({
+    store: stores.printedActivities, assignments: stores.assignments, receipts,
+    learnerName: schoolRoster.displayName, timezone, clock, logger,
+  });
   const grownUps = new GrownUpGate({
     roster: schoolRoster.list,
     clock,
@@ -1729,6 +1763,7 @@ export async function createSchoolLifecycle({
     reason: null,
     handlesCode: (code) => isSchoolToken(code),
     handleScan: ({ code, device = null }) => resolveScanAction.execute({ code, device }),
+    handleWorksheetScan: ({ platform, externalId, device = null }) => recordPrintedActivityScan.execute({ platform, externalId, device }),
     reporter: new WorkSessionReporter({
       curriculum, sessions: stores.sessions, assignments: stores.assignments,
       reviewQueue: stores.reviewQueue, clock, logger,

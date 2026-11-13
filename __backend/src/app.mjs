@@ -2589,7 +2589,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentTagsForStoryTime = () => triggerContentTags?.() ?? null;
 
   let schoolLifecycle = {
-    wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
+    wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null, handleWorksheetScan: null,
     reporter: null, router: null, devicesRouter: null, donowSchoolBridge: null,
   };
   // Same adapter class, same guard, own `school.yml` block — see the grading

@@ -136,6 +136,36 @@ describe('fail closed', () => {
     const result = await wire({});
     expect(result.handlesCode('sch:ANYTHING')).toBe(false);
     expect(result.handleScan).toBeNull();
+    expect(result.handleWorksheetScan).toBeNull();
+  });
+});
+
+describe('the printed-activity program', () => {
+  it('registers its launcher with no worksheet platform wired', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    expect(result.launchers.has('printed-activity')).toBe(true);
+    expect(result.stores.printedActivities).toBeTruthy();
+  });
+
+  it('answers a worksheet scan through the lifecycle, and refuses a page School never issued', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    expect(typeof result.handleWorksheetScan).toBe('function');
+    const outcome = await result.handleWorksheetScan({ platform: 'beeloo', externalId: 'page-never-issued' });
+    expect(outcome).toMatchObject({ status: 'not-issued', ok: false });
+  });
+
+  it('a launch with no platform wired says worksheets are unavailable', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    const launcher = result.launchers.get('printed-activity');
+    const learnerId = 'learner_a';
+    await result.stores.assignments.put({
+      learnerId, assignedBy: 'parent', programs: [{
+        programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+        activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+      }],
+    });
+    const answer = await launcher.launch({ userId: learnerId, corpusId: 'beeloo:maze' });
+    expect(answer).toMatchObject({ decision: 'failed', message: expect.stringMatching(/Worksheets are unavailable/) });
   });
 });
 

@@ -94,3 +94,30 @@ describe('appendAssignedProgramEntries — the after-school debrief', () => {
     });
   });
 });
+
+describe('appendAssignedProgramEntries — printed activities', () => {
+  it('turns each printed-activity enrolment into its own program entry, keyed by corpus', () => {
+    const out = appendAssignedProgramEntries(plan(), {
+      programs: [
+        { programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze',
+          activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' } },
+        { programId: 'printed-activity', corpusId: 'beeloo:sudoku', subject: 'math', title: null,
+          activity: { platform: 'beeloo', kind: 'sudoku', level: 1, paper: 'letter' }, elective: true },
+      ],
+    });
+    expect(out.entries).toHaveLength(2);
+    expect(out.entries[0]).toMatchObject({
+      unitId: 'printed-activity:beeloo:maze', title: 'Maze', subject: 'arts',
+      program: 'printed-activity', programInstance: 'beeloo:maze', cadence: 'daily', elective: false,
+    });
+    expect(out.entries[1]).toMatchObject({
+      unitId: 'printed-activity:beeloo:sudoku', title: 'Sudoku', subject: 'math',
+      programInstance: 'beeloo:sudoku', elective: true,
+    });
+  });
+
+  it('skips an enrolment that names no corpus', () => {
+    const out = appendAssignedProgramEntries(plan(), { programs: [{ programId: 'printed-activity', subject: 'arts' }] });
+    expect(out.entries).toEqual([]);
+  });
+});

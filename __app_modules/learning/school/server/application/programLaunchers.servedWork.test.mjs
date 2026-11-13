@@ -27,6 +27,7 @@ import { StoryTimeProgramLauncher } from "./StoryTimeProgramLauncher.mjs";
 import { SchoolDebriefProgramLauncher } from "./SchoolDebriefProgramLauncher.mjs";
 import { BookLogProgramLauncher } from "./BookLogProgramLauncher.mjs";
 import { PianoCourseProgramLauncher } from "./PianoCourseProgramLauncher.mjs";
+import { PrintedActivityProgramLauncher } from "./PrintedActivityProgramLauncher.mjs";
 
 describe('LanguageReelsProgramLauncher — served work', () => {
   const make = (status) => new LanguageReelsProgramLauncher({
@@ -209,6 +210,12 @@ const COVERED = {
     args: { userId: 'test-learner' },
   },
 
+  PrintedActivityProgramLauncher: {
+    done: () => printedActivity([{ issuanceId: 'i1', title: 'North End Labyrinth', completedAt: TODAY }]),
+    open: () => printedActivity([]),
+    args: { userId: 'test-learner', programInstance: 'beeloo:maze' },
+  },
+
   BookLogProgramLauncher: {
     done: () => new BookLogProgramLauncher({
       assignments: { get: async () => ({ programs: [{ programId: 'book-log', subject: 'english', obligation: { metric: 'pages', quantity: 20, per: 'day', scope: null } }] }) },
@@ -252,6 +259,17 @@ const COVERED = {
     args: { userId: 'test-learner', programInstance: 'plex:1' },
   },
 };
+
+function printedActivity(completedRows) {
+  return new PrintedActivityProgramLauncher({
+    assignments: { get: async () => ({ programs: [{
+      programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+      activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+    }] }) },
+    store: { listCompletedForDay: async () => completedRows },
+    timezone: 'UTC', clock, rng: () => 0, logger: silent,
+  });
+}
 
 function pianoLesson(overrides = {}) {
   return {
