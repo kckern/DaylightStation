@@ -125,9 +125,9 @@
 .skyline-invaders__target { fill: none; stroke: var(--si-white-hot); stroke-width: 5; stroke-linecap: square; }
 
 // Fuel, under the cannon.
-.skyline-invaders__fuel-track { fill: var(--si-night); stroke: var(--si-ink-dim); stroke-width: 2; }
+.skyline-invaders__fuel-track { fill: var(--si-night); stroke: var(--si-ink-dim); stroke-width: 1.5; }
 .skyline-invaders__fuel-fill { fill: var(--si-boost); }
-.skyline-invaders__fuel-bar.is-empty .skyline-invaders__fuel-track { stroke: var(--si-danger); stroke-width: 4; }
+.skyline-invaders__fuel-bar.is-empty .skyline-invaders__fuel-track { fill: var(--si-danger); stroke: var(--si-danger); stroke-width: 1.5; }
 
 // Practice targets (controls intro).
 .skyline-invaders__practice-target circle { fill: none; stroke: var(--si-ink-dim); stroke-width: 6; stroke-dasharray: 14 10; }

@@ -303,7 +303,9 @@ function PracticeTargets({ targets }) {
 }
 
 const OUTLINE = Object.freeze([[-SPRITE_PIXEL, 0], [SPRITE_PIXEL, 0], [0, -SPRITE_PIXEL]]);
-const FUEL_BAR = Object.freeze({ width: 96, height: 16, y: FIELD.groundY + 14 });
+// Fuel is a strip of the street under the cannon's lane: high enough to stay clear of
+// the notes and the touch Pause key, which share the strip under the street.
+const FUEL_BAR = Object.freeze({ width: LANE_WIDTH - 10, height: 9, y: FIELD.groundY + 3 });
 function Cannon({ x, tier, twin, rapid, ready, fuel, assets }) {
   const { grid } = cannonArt(assets);
   return (
@@ -321,7 +323,7 @@ function Cannon({ x, tier, twin, rapid, ready, fuel, assets }) {
       ))}
       <PixelSprite grid={grid} className="skyline-invaders__cannon-body" x={-CANNON.width / 2} y={FIELD.groundY - CANNON.height} width={CANNON.width} height={CANNON.height} />
       <rect className="skyline-invaders__muzzle" x={-SPRITE_PIXEL * 1.5} y={FIELD.groundY - CANNON.height} width={SPRITE_PIXEL * 3} height={SPRITE_PIXEL} />
-      {/* Fuel, under the cannon, where the shooter is already looking. */}
+      {/* Fuel, on the street under the cannon, where the defender is already looking. */}
       {fuel && !twin && (
         <g data-fuel-bar data-empty={!(fuel.value > 0)} className={cls('skyline-invaders__fuel-bar', !(fuel.value > 0) && 'is-empty')}>
           <rect className="skyline-invaders__fuel-track" x={-FUEL_BAR.width / 2} y={FUEL_BAR.y} width={FUEL_BAR.width} height={FUEL_BAR.height} />

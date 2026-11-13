@@ -87,7 +87,7 @@ The cannon's lane is lit from the street to the top of the sky, and the threat t
 ### Fire: steps fuel a stream
 
 - A `pressure-mat:step` from **the defender's mat** buys `fuelPerStepS` (1.5 s) of fuel, up to `fuelCapS` (5 s). While there is fuel the cannon fires a volley every `streamIntervalS` (0.25 s) by itself, the first one on the step. Spamming the mat only fills the tank. Steps from any other mat are ignored (and logged, sampled).
-- The fuel gauge is in the HUD and as a bar under the cannon. An empty tank reads "Step!".
+- The fuel gauge is in the HUD and as a strip of the street under the cannon's lane (red when empty). An empty tank reads "Step!" in the HUD.
 - The player is the **defender**: the person assigned to the mat; the "Who's defending?" screen asks when the mat has none. Invaders is played standing on the mat and driven by touch, not riding: no screen says "rider", "shooter" or "bike" (only the boost partner rides), and the game never listens to the bike buttons. (Code, logs and saved records still call the defender `shooterId` / `rider.user_id`.) A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
 - Without a mat: Space or F, gamepad A or RT buy fuel the same way.
 
