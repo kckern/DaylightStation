@@ -13,6 +13,7 @@ import { useReviewStation } from './useReviewStation.js';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
+import { FilmStatusCard } from './FilmStatusCard.jsx';
 import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
@@ -24,6 +25,13 @@ const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const POLL_MS = 3000;
 const LEVEL = { none: 'Not certified', machine: 'Machine-certified', parent: 'Parent-certified' };
+// Why a film lists no parts yet (its status card says what to do about it).
+const EMPTY = {
+  refine: 'No parts to review until the film is refined.',
+  checking: 'The list appears when the check finishes.',
+  running: 'The list appears when the run finishes.',
+  none: 'This film has no filters yet.',
+};
 
 export function ReviewPage() {
   const { ratingKey, rowId } = useParams();
@@ -34,7 +42,7 @@ export function ReviewPage() {
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
-  const waiting = !!data && (running || (data.audit && !data.audit.fresh));
+  const waiting = !!data && (running || (data.audit && !data.audit.fresh) || data.status?.next === 'checking');
 
   // Selecting a row keeps the URL (the filter's permalink) in step; the page state is the source of truth.
   const opened = useRef(null);
@@ -104,13 +112,14 @@ export function ReviewPage() {
       <Stack gap="sm">
         <Group gap="xs" wrap="wrap">
           <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
-          {data.job ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
-          {!data.audit ? <Text size="sm" c="dimmed">No audit yet. Run the film from the library to see its parts.</Text> : null}
+          {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
         </Group>
+        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null}
+          onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
         {notMatched ? (
           <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
         ) : null}
-        <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} />
+        {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
         <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
           helpOpen={station.helpOpen} message={station.message} bleepLevel={station.bleepLevel} />
         <div className="cf-review">
@@ -136,7 +145,8 @@ export function ReviewPage() {
             ) : null}
             {notice ? <Text size="sm" role="status">{notice}</Text> : null}
             <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-              selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} picked={picked} onPick={pick} sentBack={sentBack} />
+              selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} picked={picked} onPick={pick} sentBack={sentBack}
+              emptyText={EMPTY[data.status?.next] || null} />
           </Stack>
         </div>
       </Stack>

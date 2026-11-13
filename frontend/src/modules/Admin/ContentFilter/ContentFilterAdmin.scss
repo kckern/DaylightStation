@@ -58,3 +58,12 @@
 .cf-keybar__help { position: absolute; top: 100%; left: 0; z-index: var(--ds-z-dropdown); margin-top: var(--ds-space-1); padding: var(--ds-space-3); display: flex; flex-direction: column; gap: var(--ds-space-1); background: var(--ds-bg-overlay); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-elevated); max-width: 480px; }
 .cf-keybar__help-row { display: flex; gap: var(--ds-space-2); align-items: baseline; font-size: 12px; }
 .cf-keybar__help-row .cf-keybar__key { flex: 0 0 auto; min-width: 88px; }
+
+// Film status card (FilmStatusCard.jsx): the two answers, one button, a run's phases.
+.cf-status {
+  padding: 10px 12px; border: 1px solid var(--mantine-color-default-border); border-radius: 6px;
+  &__phase::before { display: inline-block; width: 1.2em; content: '·'; }
+  &__phase[data-state="done"]::before { content: '✓'; color: var(--mantine-color-green-6); }
+  &__phase[data-state="running"]::before { content: '▸'; color: var(--mantine-color-blue-6); }
+  &__phase[data-state="failed"]::before { content: '✕'; }
+}
