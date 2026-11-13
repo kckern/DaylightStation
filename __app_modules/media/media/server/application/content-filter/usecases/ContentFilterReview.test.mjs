@@ -394,4 +394,24 @@ describe('ContentFilterReview.get status', () => {
     const { review } = setup();
     expect((await review.get({ ratingKey: '9' })).status.next).toBe('review');
   });
+  it('a failed audit: auditError and auditRunning on the payload, status check-failed', async () => {
+    const s = base();
+    const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, getOverride: async () => s.override, getProfile: async () => ({}) };
+    const make = (auditing) => new ContentFilterReview({ contentFilterRepository: repo, digestOf: async () => 'D', logger: { info() {}, warn() {} },
+      jobs: { record: async () => ({ runs: [], audit: null, auditError: { at: 't', error: 'bad override' } }), isAuditing: () => auditing } });
+    const r = await make(false).get({ ratingKey: '9' });
+    expect(r).toMatchObject({ auditRunning: false, auditError: { at: 't', error: 'bad override' } });
+    expect(r.status.next).toBe('check-failed');
+    const busy = await make(true).get({ ratingKey: '9' });
+    expect(busy.auditRunning).toBe(true);
+    expect(busy.status.next).toBe('checking');
+  });
+  it('carries the filter worker\'s status', async () => {
+    const s = base();
+    const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, getOverride: async () => s.override, getProfile: async () => ({}) };
+    const review = new ContentFilterReview({ contentFilterRepository: repo, digestOf: async () => 'D', logger: { info() {}, warn() {} },
+      jobs: { record: async () => ({ runs: [] }), isAuditing: () => false, workerStatus: () => ({ alive: false, owner: null, seenAt: null }) } });
+    expect((await review.get({ ratingKey: '9' })).worker).toEqual({ alive: false, owner: null, seenAt: null });
+  });
 });
+

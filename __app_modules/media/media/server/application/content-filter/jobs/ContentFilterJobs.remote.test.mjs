@@ -116,4 +116,16 @@ describe('worker presence', () => {
     await expect(jobs.cancel({ ratingKey: '1', runId: run.id })).rejects.toMatchObject({ status: 409 });
     await expect(jobs.cancel({ ratingKey: '1', runId: 'nope' })).rejects.toMatchObject({ status: 404 });
   });
+
+  it('stop after the results are saved is refused; the run settles done (review 2026-11-12)', async () => {
+    let releaseAudit;
+    const slowCli = { run: async (cmd) => { if (cmd === 'audit') await new Promise((r) => { releaseAudit = r; }); return { code: 0, stdout: '{"ok":true,"rows":[]}', stderrTail: '' }; } };
+    const jobs = make({ cli: slowCli }); await jobs.enqueue({ ratingKey: '1', kind: 'make' });
+    const { run } = await jobs.claimRemote({ owner: 'w1' });
+    const done = jobs.complete({ ratingKey: '1', runId: run.id, owner: 'w1', status: 'done', results: {} });
+    for (let i = 0; i < 50 && !releaseAudit; i++) await new Promise((r) => setTimeout(r, 5));
+    await expect(jobs.cancel({ ratingKey: '1', runId: run.id })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/already saved/) });
+    releaseAudit(); await done;
+    expect((await jobs.record('1')).runs[0].status).toBe('done');
+  });
 });

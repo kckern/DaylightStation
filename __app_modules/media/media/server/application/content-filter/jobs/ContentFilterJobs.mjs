@@ -130,8 +130,10 @@ export class ContentFilterJobs {
 
   async #runSteps(rk, run) {
     this.#logger.info?.('content-filter.job.started', { ratingKey: rk, runId: run.id, kind: run.kind });
-    let failed = null;
+    let failed = null; let stopped = false;
     for (const name of this.#plan(run)) {
+      // Stopped from Admin (cancel): end here; the run stays cancelled.
+      if ((await this.#store.load(rk))?.runs?.find((x) => x.id === run.id)?.status !== 'running') { stopped = true; break; }
       await this.#step(rk, run.id, { name, status: 'running', startedAt: this.#now().toISOString() });
       let result;
       try { result = await this.#runStep(rk, run, name); } catch (e) { result = { status: 'failed', error: e.message }; }
@@ -141,9 +143,10 @@ export class ContentFilterJobs {
       this.#logger.info?.('content-filter.job.step', { ratingKey: rk, runId: run.id, step: name, status: result.status });
       if (result.status === 'failed') { failed = { step: name, error: entry.error }; break; }
     }
+    if (stopped) { this.#logger.info?.('content-filter.job.stopped', { ratingKey: rk, runId: run.id }); return run.id; }
     await this.#withRecord(rk, (rec) => {
       const r = rec.runs.find((x) => x.id === run.id);
-      if (r) Object.assign(r, { status: failed ? 'failed' : 'done', endedAt: this.#now().toISOString(), ...(failed ? { step: failed.step } : {}) });
+      if (r && r.status === 'running') Object.assign(r, { status: failed ? 'failed' : 'done', endedAt: this.#now().toISOString(), ...(failed ? { step: failed.step } : {}) });
     });
     if (failed) this.#logger.warn?.('content-filter.job.failed', { ratingKey: rk, runId: run.id, ...failed });
     else this.#logger.info?.('content-filter.job.done', { ratingKey: rk, runId: run.id });
@@ -220,9 +223,16 @@ export class ContentFilterJobs {
     const r = await this.#cli.run('audit', [rk, '--json'], { logPath: run ? this.#logPath(rk, run.id) : null, timeoutMs: STEP_TIMEOUT_MS.audit });
     let report = null;
     try { report = JSON.parse(r.stdout); } catch { /* below */ }
-    if (!report) { this.#lastAuditError = r.stderrTail || `audit exit ${r.code}`; return false; }
+    if (!report) {
+      // Kept on the record so the page can say so and stop asking (review 2026-11-12: it re-audited every 3 s).
+      this.#lastAuditError = r.stderrTail || `audit exit ${r.code}`;
+      await this.#withRecord(rk, (rec) => { rec.auditError = { at: this.#now().toISOString(), error: String(this.#lastAuditError).slice(-TAIL) }; });
+      this.#logger.warn?.('content-filter.audit.failed', { ratingKey: rk, error: String(this.#lastAuditError).slice(-TAIL) });
+      return false;
+    }
     const failures = Object.entries(report.checks || {}).filter(([, c]) => c && c.ok === false).map(([k]) => k);
     await this.#withRecord(rk, (rec) => {
+      delete rec.auditError;
       rec.audit = { ok: report.ok === true, at: this.#now().toISOString(), digest, level: report.certification?.level ?? 'none',
         ...(report.certification?.blocking ? { blocking: report.certification.blocking } : {}), rows: report.rows || [], failures };
     });
@@ -261,6 +271,7 @@ export class ContentFilterJobs {
       const r = rec.runs.find((x) => x.id === runId);
       if (!r) throw Object.assign(new Error('No such run.'), { status: 404 });
       if (!OPEN.has(r.status)) throw new JobConflict('This run has already finished.');
+      if (r.saving) throw new JobConflict('Its results are already saved; it is finishing the check.');
       Object.assign(r, { status: 'cancelled', endedAt: this.#now().toISOString(), cancelledBy: by });
       return structuredClone(r);
     });
@@ -346,7 +357,9 @@ export class ContentFilterJobs {
   /** The worker is done: save its results, run cards and the audit here, settle the run. */
   async complete({ ratingKey, runId, owner, status, step = null, error = null, results = null }) {
     const rk = String(ratingKey);
-    const run = await this.#mine(rk, runId, owner, (r) => structuredClone(r));
+    // From here the worker's results are being saved: Stop is refused (cancel), so nothing is called
+    // "not saved" that was (review 2026-11-12).
+    const run = await this.#mine(rk, runId, owner, (r) => { r.saving = true; return structuredClone(r); });
     let failed = status === 'done' ? null : { step: step || run.step, error: String(error || 'The filter worker reported a failure.').slice(-TAIL) };
     if (!failed) {
       try { await this.#applyResults(rk, results || {}); } catch (e) { failed = { step: 'save', error: e.message }; }
@@ -362,7 +375,7 @@ export class ContentFilterJobs {
     }
     await this.#withRecord(rk, (rec) => {
       const r = rec.runs.find((x) => x.id === run.id);
-      if (!r) return;
+      if (!r || r.status !== 'running') return;
       Object.assign(r, { status: failed ? 'failed' : 'done', endedAt: this.#now().toISOString(), cardsDrafted: true });
       if (failed) {
         r.step = failed.step;

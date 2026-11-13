@@ -20,7 +20,7 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { prepareCopy } from './copySetup.mjs';
-import { ensureVideoProxy } from './videoProxy.mjs';
+import { ensureVideoProxy, proxyFit, pruneProxies } from './videoProxy.mjs';
 import { FrameChunkCache, ProxiedRefineMedia } from '../../server/adapters/content-filter/CachedRefineMedia.mjs';
 import { MagickRefineRenderer } from '../../server/adapters/content-filter/MagickRefineRenderer.mjs';
 import { TimeoutDecisionGateway } from '../../server/adapters/content-filter/TimeoutDecisionGateway.mjs';
@@ -85,7 +85,8 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     const t = Date.now();
     const dir = process.env.CONTENT_FILTER_PROXY_DIR || path.join(os.tmpdir(), 'daylight-cf-proxy');
     proxyBuild = ensureVideoProxy({ src: from, dir, partId: pid, size }).then((p) => {
-      console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.ready', rk, path: p, ms: Date.now() - t }));
+      const removed = pruneProxies({ dir, maxBytes: (Number(process.env.CONTENT_FILTER_PROXY_MAX_GB) || 40) * 1024 ** 3, keep: p });
+      console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.ready', rk, path: p, ms: Date.now() - t, ...(removed.length ? { removed } : {}) }));
       return p;
     }, (e) => {
       console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.failed', rk, error: String(e.message).slice(-300) }));
@@ -93,8 +94,15 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     });
   };
   const { meta, partId, src, workDir, media: original, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining', skipTranscript: visualOnly, onSource });
-  const proxy = proxyBuild ? await proxyBuild : null;
-  const media = new FrameChunkCache({ inner: proxy ? new ProxiedRefineMedia({ inner: original, videoSrc: proxy }) : original });
+  const built = proxyBuild ? await proxyBuild : null;
+  // The copy starts at 0; use it only when it matches the original, shifted by the original's start.
+  let proxy = null;
+  if (built) {
+    const fit = proxyFit({ original: probe, proxy: await original.probe(built).catch(() => ({})) });
+    if (fit.ok) proxy = { path: built, offset: fit.offset };
+    else console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.mismatch', rk, path: built, reason: fit.reason }));
+  }
+  const media = new FrameChunkCache({ inner: proxy ? new ProxiedRefineMedia({ inner: original, videoSrc: proxy.path, offset: proxy.offset }) : original });
   const timebase = makeTimebase({ fps: probe.fps, startTime: probe.startTime });
 
   // 3. Clock sync from tagged words vs transcript

@@ -21,7 +21,7 @@ function outcomeText({ cue, kind, status, detail }) {
   return `${what}: couldn't pin the edges${detail ? ` (${detail})` : ''}`;
 }
 
-export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = null, onChanged = () => {}, onReview = () => {} }) {
+export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = null, auditError = null, worker = null, onChanged = () => {}, onReview = () => {} }) {
   const [pending, setPending] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -52,6 +52,7 @@ export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = nul
 
       {running ? (
         <Stack gap={4} className="cf-status__run">
+          {job.status === 'queued' && worker && !worker.alive ? <Text size="sm" c="orange">Waiting for the filter worker. It isn't running on the server.</Text> : null}
           {runPhases(job).map((p) => (
             <Text key={p.key} size="sm" className="cf-status__phase" data-state={p.state} c={p.state === 'waiting' ? 'dimmed' : p.state === 'failed' ? 'red' : undefined}>
               {p.count ? `${p.label} — ${p.count.done} of ${p.count.total}` : p.label}
@@ -72,6 +73,12 @@ export function FilmStatusCard({ ratingKey, status, job = null, approvedBy = nul
 
       {next === 'refine' ? <Group><Button size="xs" loading={pending} onClick={() => act('refine', `${base}/jobs`, { kind: 'make' })}>Refine</Button></Group> : null}
       {next === 'checking' ? <Group gap="xs"><Loader size="xs" /><Text size="sm">Checking the result…</Text></Group> : null}
+      {next === 'check-failed' ? (
+        <Group gap="xs">
+          <Text size="sm" c="red">{`The check failed: ${auditError?.error || 'no report'}`}</Text>
+          <Button size="compact-xs" variant="light" loading={pending} onClick={() => act('retry-check', `${base}/jobs`, { kind: 'stage', stage: 'audit' })}>Retry</Button>
+        </Group>
+      ) : null}
       {next === 'review' ? <Group><Button size="xs" onClick={() => { logger.info('review.status.action', { ratingKey, action: 'review' }); onReview(); }}>Review</Button></Group> : null}
       {next === 'approve' ? <Group><Button size="xs" loading={pending} onClick={() => act('approve', `${base}/signoff`, {})}>Approve for family</Button></Group> : null}
       {notice ? <Text size="sm" role="status" c="red">{notice}</Text> : null}

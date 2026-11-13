@@ -38,10 +38,22 @@ describe('filmStatus', () => {
     expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: fresh, certificationLevel: 'machine', rowsOpen: 2 }).next).toBe('review');
   });
   it('everything reviewed -> approve', () => {
-    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: fresh, certificationLevel: 'machine', rowsOpen: 0 }).next).toBe('approve');
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: fresh, certificationLevel: 'machine', rowsOpen: 0, signOffReady: true }).next).toBe('approve');
   });
   it('NEXT_ACTIONS lists every value', () => {
-    expect(NEXT_ACTIONS).toEqual(['none', 'refine', 'running', 'checking', 'review', 'approve', 'done']);
+    expect(NEXT_ACTIONS).toEqual(['none', 'refine', 'running', 'checking', 'check-failed', 'review', 'approve', 'done']);
     expect(Object.isFrozen(NEXT_ACTIONS)).toBe(true);
   });
+
+  it('a failed check (no fresh audit, not running) -> check-failed', () => {
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: null, auditFailed: true }).next).toBe('check-failed');
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: { fresh: false }, auditFailed: true }).next).toBe('check-failed');
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: null, auditFailed: true, auditRunning: true }).next).toBe('checking');
+    expect(NEXT_ACTIONS).toContain('check-failed');
+  });
+  it('everything reviewed but sign-off not ready (mutes uncovered, audit failed) -> review, never an Approve that 409s', () => {
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: fresh, certificationLevel: 'none', rowsOpen: 0, signOffReady: false }).next).toBe('review');
+    expect(filmStatus({ rawCueCount: 5, refined: refined(3, 5), audit: fresh, certificationLevel: 'machine', rowsOpen: 0, signOffReady: true }).next).toBe('approve');
+  });
 });
+

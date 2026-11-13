@@ -67,4 +67,17 @@ describe('FilmStatusCard', () => {
     show({ status: t2 });
     expect(screen.queryByText(/Stage again/)).toBeNull();
   });
+
+  it('a failed check says why and offers Retry, which runs the check again', async () => {
+    show({ status: { ...t2, next: 'check-failed' }, auditError: { error: 'bad override' } });
+    expect(screen.getByText('The check failed: bad override')).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    expect(api).toHaveBeenCalledWith('api/v1/content-filter/699056/jobs', { kind: 'stage', stage: 'audit' }, 'POST');
+  });
+
+  it('a queued run with no filter worker alive says so', () => {
+    const job = { id: 'r1', kind: 'make', status: 'queued', steps: [] };
+    show({ status: { ...t2, next: 'running' }, job, worker: { alive: false } });
+    expect(screen.getByText("Waiting for the filter worker. It isn't running on the server.")).toBeTruthy();
+  });
 });

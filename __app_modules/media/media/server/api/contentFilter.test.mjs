@@ -57,4 +57,13 @@ describe('GET /:rk/review starts a missing audit', () => {
     expect(res.body.run).toEqual({ id: 'r1', status: 'cancelled' });
     expect(jobs.cancel).toHaveBeenCalledWith({ ratingKey: '699056', runId: 'r1', by: 'admin' });
   });
+
+  it('does not ask again while a check runs or after one failed (no endless re-audit)', async () => {
+    for (const review of [{ audit: null, auditRunning: true, job: null }, { audit: null, auditError: { at: 'x', error: 'bad' }, job: null }]) {
+      const jobs = jobsStub();
+      const { app } = appWith({ review: { ...review, rows: [] }, jobs });
+      await request(app).get('/cf/5/review');
+      expect(jobs.audit).not.toHaveBeenCalled();
+    }
+  });
 });

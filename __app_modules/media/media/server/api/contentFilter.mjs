@@ -294,7 +294,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         // and nothing queued or running, gets its audit now. jobs.audit debounces per film.
         const open = review.job && (review.job.status === 'queued' || review.job.status === 'running');
         const reason = !review.audit ? 'missing' : (!review.audit.fresh && !review.audit.running ? 'stale' : null);
-        if (jobs?.audit && reason && !open) {
+        // Never while one runs or after one failed: the card offers Retry (review 2026-11-12).
+        if (jobs?.audit && reason && !open && !review.auditRunning && !review.auditError) {
           logger.info?.('content_filter.review.audit_requested', { ratingKey: key(req), reason });
           jobs.audit(key(req))?.catch?.(() => {});
         }

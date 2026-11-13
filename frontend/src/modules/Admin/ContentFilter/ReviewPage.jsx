@@ -30,6 +30,7 @@ const EMPTY = {
   refine: 'No parts to review until the film is refined.',
   checking: 'The list appears when the check finishes.',
   running: 'The list appears when the run finishes.',
+  'check-failed': 'The check failed, so there is no list yet.',
   none: 'This film has no filters yet.',
 };
 
@@ -114,7 +115,7 @@ export function ReviewPage() {
           <Badge variant="light" color={data.certification.level === 'none' ? 'gray' : 'green'}>{LEVEL[data.certification.level] || data.certification.level}</Badge>
           {data.job && data.status?.next !== 'running' ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
         </Group>
-        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null}
+        <FilmStatusCard ratingKey={ratingKey} status={data.status} job={data.job} approvedBy={data.signOff?.parent?.by || null} auditError={data.auditError || null} worker={data.worker || null}
           onChanged={reload} onReview={() => { const first = station.scoped.find((r) => !r.verdict) || data.rows[0]; if (first) station.pick(first); }} />
         {notMatched ? (
           <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>

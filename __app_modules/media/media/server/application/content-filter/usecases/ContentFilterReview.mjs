@@ -339,10 +339,14 @@ export class ContentFilterReview {
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     if (redo) missing.push(`${redo} rows wait for redo`);
     const run = (record?.runs || []).at(-1) || null;
-    const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing,
-      job: run, certificationLevel: refined ? cert.level : 'none', rowsOpen: total - reviewed + redo });   // unreviewed (incl. moved since review) + redo
+    const auditError = record?.auditError || null;
+    const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing, auditFailed: !!auditError,
+      job: run, certificationLevel: refined ? cert.level : 'none', rowsOpen: total - reviewed + redo, signOffReady: !!refined && missing.length === 0 });   // unreviewed (incl. moved since review) + redo
     return {
       status,
+      auditRunning: auditing,
+      worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null,
+      ...(auditError ? { auditError } : {}),
       title: raw?.title ?? null,
       hasRefined: !!refined,
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },

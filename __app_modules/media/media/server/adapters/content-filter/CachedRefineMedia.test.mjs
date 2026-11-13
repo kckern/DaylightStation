@@ -87,6 +87,16 @@ describe('FrameChunkCache', () => {
     expect(inner.calls).toHaveLength(4);
   });
 
+  it('drops the oldest chunks past maxBytes too', async () => {
+    const inner = fakeMedia();
+    const big = { ...inner, frames: async (...a) => (await inner.frames(...a)).map((f) => ({ ...f, png: Buffer.alloc(1000) })) };
+    const cache = new FrameChunkCache({ inner: big, chunkFrames: 48, maxFrames: 10000, maxBytes: 100000 });
+    await cache.frames('s', 10, 1, { width: 720 });
+    await cache.frames('s', 20, 1, { width: 720 });
+    await cache.frames('s', 30, 1, { width: 720 });
+    await cache.frames('s', 10, 1, { width: 720 });
+    expect(inner.calls).toHaveLength(4);
+  });
   it('passes everything else through', async () => {
     const inner = fakeMedia();
     const cache = new FrameChunkCache({ inner });
@@ -115,4 +125,18 @@ describe('ProxiedRefineMedia', () => {
     await media.frames('orig', 10, 1, { width: 720, preroll: 5 });
     expect(inner.calls.map((c) => c.opts.preroll)).toEqual([1.1, 5]);
   });
+  it('a film whose timeline starts at 1.5 s: the copy starts at 0, so times are shifted both ways (review 2026-11-12)', async () => {
+    const inner = fakeMedia();
+    inner.shotCuts = async (src, t0, t1) => { inner.calls.push({ cuts: src, t0, t1 }); return [{ pts: 8.5 }]; };
+    inner.blackIntervals = async (src, t0, t1) => { inner.calls.push({ black: src, t0, t1 }); return [{ start: 8.5, end: 9.0 }]; };
+    const media = new ProxiedRefineMedia({ inner, videoSrc: '/p.mkv', offset: 1.5 });
+    const [f] = await media.frames('orig', 10, 1, { width: 720 });
+    expect(inner.calls[0].fromPts).toBeCloseTo(8.5, 9);
+    expect(f.pts).toBeCloseTo(10, 9);
+    expect(await media.shotCuts('orig', 10, 12)).toEqual([{ pts: 10 }]);
+    expect(inner.calls[1]).toMatchObject({ t0: 8.5, t1: 10.5 });
+    const [b] = await media.blackIntervals('orig', 10, 12);
+    expect(b.start).toBeCloseTo(10, 9); expect(b.end).toBeCloseTo(10.5, 9);
+  });
 });
+
