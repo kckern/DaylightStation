@@ -135,8 +135,8 @@ export default function InvadersHud({ state, level, gesture = null, aimStatus = 
 
       <div className="skyline-invaders__hud-notes">
         <MomentBanner text={note} momentKey="aim" className="skyline-invaders__hud-note skyline-invaders__hud-note--aim" />
-        {/* The controls in use, unless the aim note needs the strip. */}
-        {controls && !note && <span className="skyline-invaders__hud-note skyline-invaders__hud-note--controls" data-testid="invaders-controls">{controls}</span>}
+        {/* The controls in use, unless the aim note or the shell's aim help needs the strip. */}
+        {controls && !note && !aimStatus?.help && <span className="skyline-invaders__hud-note skyline-invaders__hud-note--controls" data-testid="invaders-controls">{controls}</span>}
       </div>
     </header>
   );

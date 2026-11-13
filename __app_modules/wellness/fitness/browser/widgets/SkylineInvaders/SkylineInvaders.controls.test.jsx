@@ -463,6 +463,7 @@ describe('Skyline Invaders controls', () => {
     await hold(poseForLane(5), (INVADERS_TUNABLES.aimHelpStuckS + 0.5) * 1000);
     expect(screen.getByTestId('invaders-aim-help').getAttribute('data-kind')).toBe('stuck');
     expect(screen.getByTestId('invaders-aim-help').textContent).toContain('Cannon not moving?');
+    expect(screen.queryByTestId('invaders-controls')).toBeNull();     // the strip is the aim help's alone
     await hold(poseForLane(1), 800);
     expect(screen.queryByTestId('invaders-aim-help')).toBeNull();
   });
