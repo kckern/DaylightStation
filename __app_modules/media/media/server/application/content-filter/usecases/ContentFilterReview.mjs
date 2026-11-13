@@ -5,6 +5,7 @@
  * (ContentFilterJobs); a mark counts only while its row's span is unchanged.
  */
 import { unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { filmStatus } from '../../../domain/content-filter/filmStatus.mjs';
 import { certify, signOff } from '../../../domain/content-filter/refine/certification.mjs';
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { createTitleQueue } from '../titleQueue.mjs';
@@ -338,7 +339,10 @@ export class ContentFilterReview {
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     if (redo) missing.push(`${redo} rows wait for redo`);
     const run = (record?.runs || []).at(-1) || null;
+    const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing,
+      job: run, certificationLevel: refined ? cert.level : 'none', rowsOpen: total - reviewed + redo });   // unreviewed (incl. moved since review) + redo
     return {
+      status,
       title: raw?.title ?? null,
       hasRefined: !!refined,
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },

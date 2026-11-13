@@ -379,3 +379,19 @@ describe('ContentFilterReview.get for every film with a filter (2026-11-12, T2 e
     await expect(review.nudgeCue({ ratingKey: '9', cueId: 'va1', nudge: { in: 110.1, out: 110.7 } })).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('ContentFilterReview.get status', () => {
+  it('refined, machine-certified, no audit: checking', async () => {
+    const { review } = setup({ audit: null });
+    expect((await review.get({ ratingKey: '9' })).status).toMatchObject({ refined: { present: true, of: 2 }, certified: 'machine', next: 'checking' });
+  });
+  it('rough only: refine, with the rough parts counted', async () => {
+    const state = base(); state.refined = null; state.raw.cues = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const { review } = setup({ state, audit: null });
+    expect((await review.get({ ratingKey: '9' })).status).toMatchObject({ filters: { present: true, parts: 3 }, refined: { present: false }, next: 'refine' });
+  });
+  it('a fresh audit with rows to review: review', async () => {
+    const { review } = setup();
+    expect((await review.get({ ratingKey: '9' })).status.next).toBe('review');
+  });
+});
