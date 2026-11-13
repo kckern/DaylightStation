@@ -7,8 +7,10 @@
  * school and preschool cohorts) plus the synthetic mash sittings is turned into
  * the exact state the kiosk sends (sittingGoodFaithState: practice-like notes,
  * notes per minute, lesson facts, presence check-ins) and asked the one `score`
- * question. The audit has no check-in record, so check-ins are simulated the
- * way the kiosk opens them: one per 90 s without a note, all answered (a child
+ * question. The audit has no check-in record, so check-ins are replayed the
+ * way the kiosk now opens them (presenceLadder.replayLadder, 2026-11-13): the
+ * presence ladder's rung intervals and keepalive deadline, every check-in
+ * answered at once, each carrying its rung and minimal-effort mark (a child
  * who wanders off and comes back to tap is the absentee case).
  *
  * Expected: engaged + low-touch credit; absentee, rhythm-loop and mash drill.
@@ -25,29 +27,21 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sittingGoodFaithState, goodFaithQuestion, goodFaithFromAnswer, fallbackCredited } from '../portable/practice/sittingGoodFaith.mjs';
 import { weighEvents, PRESCHOOL_PRACTICE, PRACTICE_DEFAULTS } from '../portable/practice/practiceScore.mjs';
 import { GOOD_FAITH_DEFAULTS, PRESCHOOL_POLICY } from '../portable/practice/goodFaith.mjs';
+import { replayLadder, ladderConfig } from '../portable/practice/presenceLadder.mjs';
 import { mashSittings } from '../portable/practice/__fixtures__/mash.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BAR = Object.freeze({ falseDrillMax: 0.05, absenteeCaughtMin: 0.9, errorRateMax: 0.02 });
 const CREDIT_LABELS = new Set(['engaged', 'low-touch']);
-const IDLE_SEC = 90;
 
-/** The kiosk's presence check-ins, replayed: one per 90 s without a note, all answered. */
-export function simulateCheckIns(noteTimesSec, playedSec, { scaleCap = 2, idleSec = IDLE_SEC } = {}) {
-  const times = [...noteTimesSec].sort((a, b) => a - b);
-  const out = [];
-  let last = 0;
-  let idle = 0;
-  const walk = (t) => {
-    while (t - last > idleSec) {
-      last += idleSec;
-      out.push({ atMs: Math.round(last * 1000), scales: Math.min(idle, scaleCap), answered: true });
-      idle += 1;
-    }
-  };
-  for (const t of times) { walk(t); last = Math.max(last, t); idle = 0; }
-  walk(playedSec);
-  return out;
+/**
+ * The kiosk's presence check-ins, replayed with the ladder (default household
+ * tunables; preschool stays on the note): `{ atMs, scales, rung, minimal, answered }`.
+ */
+export function replayedCheckIns(events, playedSec, { preschool = false } = {}) {
+  const cfg = ladderConfig({}, { preschool });
+  return replayLadder(events, playedSec, cfg, { preschool })
+    .map(({ atMs, scales, rung, minimal, answered }) => ({ atMs, scales, rung, minimal, answered }));
 }
 
 const auditEvents = (notes) => notes.map(([t, note, velocity]) => ({ t: Math.round(t * 1000), note, velocity }));
@@ -55,7 +49,7 @@ const mashEvents = (notes) => notes.map(([t, note, velocity]) => ({ t, note, vel
 
 function item({ id, label, cohort, events, lessonSec, playedSec }) {
   const preschool = cohort === 'preschool';
-  const checkIns = simulateCheckIns(events.map((e) => e.t / 1000), playedSec, { scaleCap: preschool ? 0 : GOOD_FAITH_DEFAULTS.checkInScaleCap });
+  const checkIns = replayedCheckIns(events, playedSec, { preschool });
   const state = sittingGoodFaithState({ events, startMs: 0, lessonSec, watchedSec: playedSec, checkIns, preschool });
   const practiceNotes = weighEvents(events, preschool ? PRESCHOOL_PRACTICE : {}).filter((e) => e.weight >= PRACTICE_DEFAULTS.legitWeight).length;
   return {

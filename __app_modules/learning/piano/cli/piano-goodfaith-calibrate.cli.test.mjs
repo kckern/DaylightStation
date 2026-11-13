@@ -1,18 +1,28 @@
 import { describe, it, expect, vi } from 'vitest';
-import { simulateCheckIns, calibrationSittings, runCalibration, summarise, main, BAR } from './piano-goodfaith-calibrate.cli.mjs';
+import { replayedCheckIns, calibrationSittings, runCalibration, summarise, main, BAR } from './piano-goodfaith-calibrate.cli.mjs';
 
-describe('simulateCheckIns', () => {
-  it('opens one answered check-in per 90 s without a note; the second in a row asks for a scale', () => {
-    expect(simulateCheckIns([], 300, { scaleCap: 2 })).toEqual([
-      { atMs: 90000, scales: 0, answered: true },
-      { atMs: 180000, scales: 1, answered: true },
-      { atMs: 270000, scales: 2, answered: true },
-    ]);
-    expect(simulateCheckIns([10, 50, 100], 120, { scaleCap: 2 })).toEqual([]);
-    expect(simulateCheckIns([100], 300, { scaleCap: 2 }).map((c) => c.atMs)).toEqual([90000, 190000, 280000]);
+describe('replayed check-ins (the kiosk ladder, presenceLadder.replayLadder)', () => {
+  const absentee = { id: 'a', label: 'absentee', cohort: 'school', notes: [], durationSec: 900, playedSec: 900 };
+  // A child playing a phrase every 2 s, with a 100 s pause every 4 minutes.
+  const engagedNotes = [];
+  for (let t = 0; t < 900; t += 2) if (t % 240 < 140) engagedNotes.push([t, 60 + ((t / 2) % 8), 60 + (t % 7)]);
+  const engaged = { id: 'e', label: 'engaged', cohort: 'school', notes: engagedNotes, durationSec: 900, playedSec: 900 };
+
+  it('a 15-minute silent sitting climbs to the top rung with minimal check-ins', () => {
+    const [it0] = calibrationSittings({ sittings: [absentee], mash: [] });
+    expect(it0.state.presence.peakRung).toBe(4);
+    expect(it0.state.presence.minimalCheckIns).toBeGreaterThanOrEqual(3);
+    expect(it0.state.presence.log[1]).toMatchObject({ rung: 1, minimal: true, answered: true, asked: 'scale' });
+  });
+  it('an engaged sitting stays low', () => {
+    const [it0] = calibrationSittings({ sittings: [engaged], mash: [] });
+    expect(it0.state.presence.checkIns).toBeGreaterThan(0);
+    expect(it0.state.presence.peakRung).toBeLessThanOrEqual(1);
   });
   it('preschool never escalates past a note', () => {
-    expect(simulateCheckIns([], 300, { scaleCap: 0 }).every((c) => c.scales === 0)).toBe(true);
+    const log = replayedCheckIns([], 900, { preschool: true });
+    expect(log.length).toBeGreaterThan(3);
+    expect(log.every((c) => c.rung === 0 && c.scales === 0)).toBe(true);
   });
 });
 
