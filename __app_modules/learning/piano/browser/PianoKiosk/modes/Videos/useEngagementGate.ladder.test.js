@@ -188,3 +188,57 @@ describe('useEngagementGate — presence ladder', () => {
     expect(g.recordCheckIn).toHaveBeenLastCalledWith({ open: true, rung: 0, scales: 0, minimal: true });
   });
 });
+
+describe('useEngagementGate — keepalive deadline (R5)', () => {
+  const L60 = ladderConfig({ intervals_seconds: [60] }, { baseTimeoutSeconds: 60 });
+  /** Notes every `every` s for `sec` s, stopping as soon as the gate opens. */
+  const strayNotes = (g, every, sec) => {
+    for (let t = 0; t < sec * 1000 && !g.hook.result.current.gateOpen; t += 1000) {
+      act(() => { vi.advanceTimersByTime(1000); });
+      if ((t / 1000 + 1) % every === 0) g.hook.rerender({ humanNoteAt: Date.now() });
+    }
+  };
+
+  it('stray notes every 50 s do not dodge the next check-in once one was answered', () => {
+    const g = setup({ ladder: L60 });
+    g.idleOpen();
+    const t0 = Date.now();
+    g.answer(burst('spam', 1));
+    strayNotes(g, 50, 125);
+    expect(g.hook.result.current.gateOpen).toBe(true);
+    expect(Date.now() - t0).toBeLessThanOrEqual(121000);
+    expect(g.hook.result.current.step.rung).toBe(1);
+    const dl = logged('piano.engagement-gate.keepalive-deadline');
+    expect(dl).toHaveLength(1);
+    expect(dl[0]).toMatchObject({ rung: 0 });
+    expect(dl[0].elapsedMs).toBeGreaterThanOrEqual(120000);
+  });
+
+  it('steady playing never trips the deadline', () => {
+    const g = setup({ ladder: L60 });
+    g.idleOpen();
+    g.answer(burst('legit', 30));
+    strayNotes(g, 2, 300);
+    expect(g.hook.result.current.gateOpen).toBe(false);
+    expect(logged('piano.engagement-gate.keepalive-deadline')).toHaveLength(0);
+  });
+
+  it('no deadline before the first answer', () => {
+    const g = setup({ ladder: L60 });
+    strayNotes(g, 50, 300);
+    expect(g.hook.result.current.gateOpen).toBe(false);
+  });
+
+  it('no deadline when keepaliveDeadline is false (preschool)', () => {
+    const g = setup({ ladder: ladderConfig({}, { preschool: true, baseTimeoutSeconds: 60 }) });
+    g.idleOpen();
+    g.answer(burst('spam', 1));
+    strayNotes(g, 50, 300);
+    expect(g.hook.result.current.gateOpen).toBe(false);
+    const off = setup({ ladder: ladderConfig({ intervals_seconds: [60], keepalive_deadline: false }, { baseTimeoutSeconds: 60 }) });
+    off.idleOpen();
+    off.answer(burst('spam', 1));
+    strayNotes(off, 50, 300);
+    expect(off.hook.result.current.gateOpen).toBe(false);
+  });
+});

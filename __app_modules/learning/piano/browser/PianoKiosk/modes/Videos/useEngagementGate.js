@@ -42,6 +42,8 @@ export const LADDER_LEGIT_P = 0.7;
  * the run resets on each lesson video). `burstSince` labels the burst
  * legit / spam / ambiguous; only an ambiguous one is sent to `judgeBurst`
  * (async, never awaited by the video). Preschool ladders never leave the note.
+ * Once a check-in has been answered, the keepalive deadline (R5) also opens one
+ * at keepaliveFactor × the interval since the answer while the evidence is none.
  */
 export function useEngagementGate({
   pause, play, isPaused, isSequential, ladder = DEFAULT_LADDER, onEngagementConfirmed, humanNoteAt = 0,
@@ -159,14 +161,25 @@ export function useEngagementGate({
     if (!isSequential) return undefined;
     const id = setInterval(() => {
       if (gateOpenRef.current || isPausedRef.current?.()) return;
-      reviewBurst();
+      const b = reviewBurst();
       const l = ladderRef.current;
-      const intervalMs = intervalSecondsFor(l.rung, ladderDeps.current.cfg) * 1000;
+      const cfg = ladderDeps.current.cfg;
+      const intervalMs = intervalSecondsFor(l.rung, cfg) * 1000;
       const idleMs = Date.now() - lastActivityRef.current;
-      if (idleMs >= intervalMs) openCheckIn(idleMs, 'idle');
+      if (idleMs >= intervalMs) { openCheckIn(idleMs, 'idle'); return; }
+      // THE KEEPALIVE DEADLINE (R5): one stray note every 80 s would keep the
+      // idle clock from ever running out. Once a check-in has been answered,
+      // a check-in also opens at keepaliveFactor × the interval since the
+      // answer while there has been no real playing since it.
+      if (!cfg.keepaliveDeadline || l.lastAnsweredAt == null) return;
+      const elapsedMs = Date.now() - l.lastAnsweredAt;
+      if (elapsedMs < cfg.keepaliveFactor * intervalMs) return;
+      if (evidenceNow(b).evidence !== 'none') return;
+      logger().info('piano.engagement-gate.keepalive-deadline', { rung: l.rung, elapsedMs, idleMs });
+      openCheckIn(idleMs, 'deadline');
     }, 1000);
     return () => clearInterval(id);
-  }, [isSequential, reviewBurst, openCheckIn]);
+  }, [isSequential, reviewBurst, evidenceNow, openCheckIn]);
 
   const dismissGate = useCallback(() => {
     gateOpenRef.current = false;
