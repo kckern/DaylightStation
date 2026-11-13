@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS,
+  parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS, compileUrlRules,
 } from '#domains/scan/ScanCode.mjs';
 
 describe('parseScanCode — registered prefixes', () => {
@@ -338,7 +338,7 @@ describe('FORMS — invariants', () => {
   it('is frozen and lists every form the parser can return', () => {
     expect(Object.isFrozen(FORMS)).toBe(true);
     expect([...FORMS].sort()).toEqual(
-      ['legacy-positional', 'legacy-prefixed', 'prefixed', 'shape', 'unknown'],
+      ['legacy-positional', 'legacy-prefixed', 'prefixed', 'shape', 'unknown', 'url-rule'],
     );
   });
 
@@ -377,5 +377,62 @@ describe('LEGACY_NUTRITION_TAGS — invariants', () => {
 
   it('is disjoint from the prefix registry', () => {
     for (const tag of LEGACY_NUTRITION_TAGS) expect(PREFIX_REGISTRY[tag]).toBeUndefined();
+  });
+});
+
+describe('parseScanCode — url rules', () => {
+  const rules = compileUrlRules([
+    { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' },
+  ]);
+
+  it('claims a matching URL for the rule namespace, body = the id capture', () => {
+    expect(parseScanCode('https://qr.beeloo.com/glD5B71Bj', { urlRules: rules })).toEqual({
+      namespace: 'worksheet', body: 'glD5B71Bj', raw: 'https://qr.beeloo.com/glD5B71Bj',
+      form: 'url-rule', rule: 'beeloo-page', platform: 'beeloo',
+    });
+  });
+
+  it('answers unknown for a URL no rule matches — never content', () => {
+    expect(parseScanCode('https://example.com/a', { urlRules: rules })).toEqual({
+      namespace: null, body: 'https://example.com/a', raw: 'https://example.com/a', form: 'unknown',
+    });
+  });
+
+  it('answers unknown for any URL when no rules are passed', () => {
+    expect(parseScanCode('https://qr.beeloo.com/glD5B71Bj').namespace).toBeNull();
+  });
+
+  it('leaves every non-URL form exactly as before', () => {
+    expect(parseScanCode('go:office:plex:1', { urlRules: rules }).form).toBe('prefixed');
+    expect(parseScanCode('living-room:plex:1', { urlRules: rules }).form).toBe('legacy-positional');
+    expect(parseScanCode('sch:ABCDEFGHJKLMNPQR', { urlRules: rules }).namespace).toBe('school');
+  });
+
+  it('lists worksheet as a namespace and url-rule as a form', () => {
+    expect(NAMESPACES).toContain('worksheet');
+    expect(FORMS).toContain('url-rule');
+  });
+});
+
+describe('compileUrlRules', () => {
+  const ok = { id: 'r', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'p' };
+  it('accepts an empty or missing list', () => {
+    expect(compileUrlRules(undefined)).toEqual([]);
+    expect(compileUrlRules([])).toEqual([]);
+  });
+  it('refuses a rule without an id capture', () => {
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/\\w+$' }])).toThrow(/id/);
+  });
+  it('refuses an invalid regex', () => {
+    expect(() => compileUrlRules([{ ...ok, match: '(' }])).toThrow(/match/);
+  });
+  it('refuses a non-string match', () => {
+    expect(() => compileUrlRules([{ ...ok, match: undefined }])).toThrow(/match/);
+  });
+  it('refuses an unknown namespace', () => {
+    expect(() => compileUrlRules([{ ...ok, namespace: 'nope' }])).toThrow(/namespace/);
+  });
+  it('refuses duplicate rule ids', () => {
+    expect(() => compileUrlRules([ok, ok])).toThrow(/duplicate/);
   });
 });
