@@ -30,8 +30,11 @@
  *   - An unsafe learner id THROWS on write and answers `[]` on read.
  *
  * Writes are serialized on one chain for the whole store (not per learner):
- * the volume is a few sheets a day, and one chain keeps `append`'s duplicate
- * check and `complete`'s already-check honest. All I/O goes through
+ * the volume is a few sheets a day, and one chain is what makes `append`'s
+ * cross-learner "one open issuance per page" check atomic (it throws
+ * `PageAlreadyOpenError`), along with its duplicate-id check and `complete`'s
+ * already-check. Cross-learner reads are partial when a learner file cannot be
+ * read, and log `school.printed-activity.lookup-partial` naming who is missing. All I/O goes through
  * `#system/utils/FileIO.mjs` (see `adapters-no-direct-fs`); files are written
  * with `saveYamlToPathAtomic`.
  */
@@ -51,6 +54,27 @@ const isIssuance = (entry) => entry && typeof entry === 'object' && !Array.isArr
   && isNonEmptyString(entry.issuanceId);
 const isOpen = (issuance) => issuance.completedAt == null;
 const REQUIRED = ['learnerId', 'issuanceId', 'platform', 'externalId', 'corpusId'];
+const instant = (value) => {
+  const ms = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isNaN(ms) ? -Infinity : ms;
+};
+
+/**
+ * The page is already printed and unscanned for some child. A page id must
+ * resolve to exactly one child, so the store refuses the second issuance
+ * rather than trusting every caller's pre-check.
+ */
+export class PageAlreadyOpenError extends Error {
+  constructor({ platform, externalId, heldBy, issuanceId }) {
+    super(`YamlPrintedActivityStore: ${platform}:${externalId} is already open for ${heldBy} (${issuanceId})`);
+    this.name = 'PageAlreadyOpenError';
+    this.code = 'PAGE_ALREADY_OPEN';
+    this.platform = platform;
+    this.externalId = externalId;
+    this.heldBy = heldBy;
+    this.issuanceId = issuanceId;
+  }
+}
 
 /** Filesystem-safe instant: `2026-08-26T18-04-00-000Z`. */
 const stampFor = (value) => {
@@ -129,33 +153,63 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
     });
   }
 
-  /** Reader view: rows on `ok`, `[]` (logged) on anything else. */
-  #rowsFor(learnerId) {
-    if (!isSafeLearnerId(learnerId)) return [];
+  /**
+   * Reader view: rows on `ok`, `[]` (logged) on anything else. `lost` is true
+   * when the file holds evidence we could not read (corrupt or unreadable), as
+   * opposed to holding none (missing or empty).
+   */
+  #readRows(learnerId) {
+    if (!isSafeLearnerId(learnerId)) return { rows: [], lost: false };
     const loaded = this.#load(learnerId);
-    if (loaded.status === 'missing') return [];
+    if (loaded.status === 'missing') return { rows: [], lost: false };
     if (loaded.status === 'corrupt') {
       this.#logger.error?.('school.printed-activity.store-corrupt', {
         learnerId, file: loaded.file, error: loaded.reason,
       });
-      return [];
+      return { rows: [], lost: true };
     }
     if (loaded.status !== 'ok') {
       this.#logger.warn?.(`school.printed-activity.${loaded.status === 'empty' ? 'empty' : 'read-failed'}`, {
         learnerId, file: loaded.file, error: loaded.reason,
       });
-      return [];
+      return { rows: [], lost: loaded.status === 'unreadable' };
     }
     this.#warnUnrecognised(learnerId, loaded);
-    return loaded.rows;
+    return { rows: loaded.rows, lost: false };
   }
 
+  /** Learner ids with a `<id>.yml` file. Never throws: an unlistable directory answers []. */
   #learnerIds() {
-    return listYamlFiles(this.#dir()).filter(isSafeLearnerId);
+    let names;
+    try {
+      names = listYamlFiles(this.#dir(), { stripExtension: false });
+    } catch (err) {
+      this.#logger.error?.('school.printed-activity.list-failed', { dir: this.#dir(), error: err.message });
+      return [];
+    }
+    return names
+      .filter((name) => name.endsWith('.yml'))
+      .map((name) => name.slice(0, -'.yml'.length))
+      .filter(isSafeLearnerId);
   }
 
+  /**
+   * Every learner's rows. A learner whose file cannot be read contributes
+   * nothing, so the answer is PARTIAL: that child's open pages are invisible,
+   * and a page they hold could look free. Say so, by name, at warn.
+   */
   #allRows() {
-    return this.#learnerIds().flatMap((learnerId) => this.#rowsFor(learnerId));
+    const rows = [];
+    const lost = [];
+    for (const learnerId of this.#learnerIds()) {
+      const read = this.#readRows(learnerId);
+      rows.push(...read.rows);
+      if (read.lost) lost.push(learnerId);
+    }
+    if (lost.length) {
+      this.#logger.warn?.('school.printed-activity.lookup-partial', { learnerIds: lost, dir: this.#dir() });
+    }
+    return rows;
   }
 
   /** Copy the bad bytes aside before anything replaces them. Throws if it cannot. */
@@ -171,8 +225,10 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   }
 
   /**
-   * Load for a write: throws on unreadable, side-files corrupt, and answers the
-   * entries the rewrite must carry plus the recognised rows.
+   * Load for a write: throws on unreadable, and answers the entries the rewrite
+   * must carry plus the recognised rows. A corrupt file answers no entries and
+   * is side-filed by `#write`, i.e. only when something is about to replace it —
+   * a scan that writes nothing must not add a rescue copy every time.
    */
   #loadForWrite(learnerId) {
     const loaded = this.#load(learnerId);
@@ -187,13 +243,13 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
     }
     this.#warnUnrecognised(learnerId, loaded);
     if (loaded.status === 'corrupt') {
-      this.#sideFileCorrupt({ learnerId, ...loaded });
-      return { file: loaded.file, entries: [], rows: [] };
+      return { file: loaded.file, entries: [], rows: [], corrupt: { learnerId, ...loaded } };
     }
-    return { file: loaded.file, entries: loaded.entries, rows: loaded.rows };
+    return { file: loaded.file, entries: loaded.entries, rows: loaded.rows, corrupt: null };
   }
 
-  #write(file, entries) {
+  #write({ file, corrupt }, entries) {
+    if (corrupt) this.#sideFileCorrupt(corrupt);
     saveYamlToPathAtomic(file, { issuances: entries }, DUMP_OPTIONS);
   }
 
@@ -230,18 +286,28 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       completedVia: null,
     };
     return this.#serialized(async () => {
-      const { file, entries, rows } = this.#loadForWrite(learnerId);
-      if (rows.some((row) => row.issuanceId === stored.issuanceId)) {
+      const target = this.#loadForWrite(learnerId);
+      if (target.rows.some((row) => row.issuanceId === stored.issuanceId)) {
         throw new Error(`YamlPrintedActivityStore: issuanceId already on record: ${stored.issuanceId}`);
       }
-      this.#write(file, [...entries, stored]);
+      // Inside the chain, so two children cannot both be handed the same page
+      // between one caller's check and its write.
+      const holder = this.#allRows().find((row) => isOpen(row)
+        && row.platform === stored.platform && row.externalId === stored.externalId);
+      if (holder) {
+        throw new PageAlreadyOpenError({
+          platform: stored.platform, externalId: stored.externalId,
+          heldBy: holder.learnerId, issuanceId: holder.issuanceId,
+        });
+      }
+      this.#write(target, [...target.entries, stored]);
       return stored;
     });
   }
 
   /** @inheritdoc */
   async listForLearner(learnerId) {
-    return this.#rowsFor(learnerId);
+    return this.#readRows(learnerId).rows;
   }
 
   /** @inheritdoc */
@@ -259,11 +325,13 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   /** @inheritdoc */
   async findAny({ platform, externalId } = {}) {
     if (!isNonEmptyString(platform) || !isNonEmptyString(externalId)) return null;
+    // Compared as instants, not strings (offsets differ). An unparseable or
+    // missing `issuedAt` counts as -Infinity; on a tie the later row wins —
+    // later in its file, and later in learner-file listing order.
     let latest = null;
     for (const row of this.#allRows()) {
       if (row.platform !== platform || row.externalId !== externalId) continue;
-      // ISO instants sort as strings; a row without issuedAt never beats one with it.
-      if (latest === null || String(row.issuedAt ?? '') >= String(latest.issuedAt ?? '')) latest = row;
+      if (latest === null || instant(row.issuedAt) >= instant(latest.issuedAt)) latest = row;
     }
     return latest;
   }
@@ -278,7 +346,8 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       throw new Error(`YamlPrintedActivityStore: studyDay must be YYYY-MM-DD, got: ${studyDay}`);
     }
     return this.#serialized(async () => {
-      const { file, entries } = this.#loadForWrite(learnerId);
+      const target = this.#loadForWrite(learnerId);
+      const { entries } = target;
       const index = entries.findIndex((entry) => isIssuance(entry) && entry.issuanceId === issuanceId);
       if (index < 0) return { status: 'missing', issuance: null };
       const current = entries[index];
@@ -292,14 +361,14 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       };
       const next = entries.slice();
       next[index] = done;
-      this.#write(file, next);
+      this.#write(target, next);
       return { status: 'completed', issuance: done };
     });
   }
 
   /** @inheritdoc */
   async listCompletedForDay(learnerId, corpusId, studyDay) {
-    return this.#rowsFor(learnerId).filter((row) => row.corpusId === corpusId
+    return this.#readRows(learnerId).rows.filter((row) => row.corpusId === corpusId
       && row.completedStudyDay != null && row.completedStudyDay === studyDay);
   }
 }

@@ -18,11 +18,19 @@
  * Issuance: `{issuanceId, learnerId, programId, corpusId, platform, externalId,
  * title, kind, level, issuedAt, issuedStudyDay, completedAt, completedStudyDay,
  * completedVia}`. Open means `completedAt == null`.
+ *
+ * CROSS-LEARNER LOOKUPS CAN BE PARTIAL. `listOpenAll`, `findOpen` and `findAny`
+ * never throw; a learner whose record cannot be read contributes nothing, and
+ * the implementation logs `school.printed-activity.lookup-partial` naming them.
+ * `append` is the authority on "one open issuance per page": it re-checks
+ * inside its own write and throws `PageAlreadyOpenError`
+ * (`code: 'PAGE_ALREADY_OPEN'`), so a caller's pre-check is an optimisation.
  */
 export class IPrintedActivityStore {
   /**
    * Record a newly printed page. Throws on a missing key field, an unsafe
-   * learner id, or an issuanceId already on record.
+   * learner id, an issuanceId already on record, or (`PAGE_ALREADY_OPEN`) a
+   * page that is open for any learner.
    * @param {object} issuance
    * @returns {Promise<object>} the stored issuance
    */

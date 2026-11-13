@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlPrintedActivityStore } from './YamlPrintedActivityStore.mjs';
+import { PageAlreadyOpenError, YamlPrintedActivityStore } from './YamlPrintedActivityStore.mjs';
 import { IPrintedActivityStore } from '../../application/ports/IPrintedActivityStore.mjs';
 
 const silentLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
@@ -178,5 +178,87 @@ describe('YamlPrintedActivityStore', () => {
     const after = read('learner_a').issuances;
     expect(after[0]).toBe('North End Labyrinth — pasted by hand');
     expect(after[1].completedAt).toBe(done.at);
+  });
+
+  describe('one open issuance per page, across learners', () => {
+    it('refuses a second learner appending a page that is open', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      const err = await subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' })).catch((e) => e);
+      expect(err).toBeInstanceOf(PageAlreadyOpenError);
+      expect(err.code).toBe('PAGE_ALREADY_OPEN');
+      expect(fs.existsSync(fileFor('learner_b'))).toBe(false);
+    });
+
+    it('allows the page again once the open issuance is completed', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await subject.complete('learner_a', 'pa_k3j9x2qd', done);
+      await expect(subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' }))).resolves.toMatchObject({ learnerId: 'learner_b' });
+    });
+
+    it('lets exactly one of two concurrent appends of the same page through', async () => {
+      const subject = store();
+      const results = await Promise.allSettled([
+        subject.append(issuance()),
+        subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' })),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((r) => r.status === 'rejected').reason).toBeInstanceOf(PageAlreadyOpenError);
+    });
+  });
+
+  it('cross-learner lookups survive a corrupt learner file and warn that they are partial', async () => {
+    const logger = silentLogger();
+    const subject = store({ logger });
+    await subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' }));
+    write('learner_a', 'issuances: [ {::: not yaml\n');
+
+    expect((await subject.findOpen({ platform: 'beeloo', externalId: 'glD5B71Bj' })).learnerId).toBe('learner_b');
+    expect((await subject.listOpenAll()).map((r) => r.learnerId)).toEqual(['learner_b']);
+    expect((await subject.findAny({ platform: 'beeloo', externalId: 'glD5B71Bj' })).learnerId).toBe('learner_b');
+    expect(logger.warn).toHaveBeenCalledWith('school.printed-activity.lookup-partial',
+      expect.objectContaining({ learnerIds: ['learner_a'] }));
+  });
+
+  it('complete() on a corrupt file writes nothing and side-files nothing', async () => {
+    write('learner_a', 'issuances: [ {::: not yaml\n');
+    const subject = store();
+    expect(await subject.complete('learner_a', 'pa_k3j9x2qd', done)).toEqual({ status: 'missing', issuance: null });
+    expect(await subject.complete('learner_a', 'pa_k3j9x2qd', done)).toEqual({ status: 'missing', issuance: null });
+    expect(fs.readdirSync(dir())).toEqual(['learner_a.yml']);
+  });
+
+  it('findAny compares issue instants as times and breaks ties by file position', async () => {
+    write('learner_a', yaml.dump({ issuances: [
+      { ...issuance({ issuanceId: 'offset', issuedAt: '2026-11-14T10:00:00-07:00' }), completedAt: 'x' },
+      { ...issuance({ issuanceId: 'utc', issuedAt: '2026-11-14T16:00:00.000Z' }), completedAt: 'x' },
+      { ...issuance({ issuanceId: 'tie', issuedAt: '2026-11-14T17:00:00.000Z' }), completedAt: 'x' },
+      { ...issuance({ issuanceId: 'garbage', issuedAt: 'not a date' }), completedAt: 'x' },
+    ] }));
+    // 10:00-07:00 is 17:00Z, so it ties 'tie'; the later row in the file wins, and garbage never does.
+    expect((await store().findAny({ platform: 'beeloo', externalId: 'glD5B71Bj' })).issuanceId).toBe('tie');
+  });
+
+  it('ignores .yaml files, which are not learner files', async () => {
+    write('learner_a', '');
+    fs.writeFileSync(path.join(dir(), 'learner_c.yaml'), yaml.dump({ issuances: [{ ...issuance({ learnerId: 'learner_c' }), completedAt: null }] }));
+    expect(await store().listOpenAll()).toEqual([]);
+  });
+
+  it('answers [] and logs when the directory cannot be listed', async () => {
+    fs.mkdirSync(path.dirname(dir()), { recursive: true });
+    fs.writeFileSync(dir(), 'a file where the directory should be');
+    const logger = silentLogger();
+    expect(await store({ logger }).listOpenAll()).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith('school.printed-activity.list-failed', expect.any(Object));
+  });
+
+  it('an unreadable file makes a write throw, and the write chain survives it', async () => {
+    fs.mkdirSync(fileFor('learner_a'), { recursive: true }); // exists, cannot be read as a file
+    const subject = store();
+    await expect(subject.append(issuance())).rejects.toThrow(/cannot be read/);
+    await expect(subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' }))).resolves.toMatchObject({ learnerId: 'learner_b' });
+    expect(read('learner_b').issuances).toHaveLength(1);
   });
 });

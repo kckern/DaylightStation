@@ -22,6 +22,8 @@ const DEFAULT_TARGET = 1;
 const PAPERS = ['letter', 'a4'];
 const DEFAULT_PAPER = 'letter';
 
+const trimmedOrNull = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
 /** The unit id a served page is filed under: one per corpus, stable across days. */
 export const servedUnitId = (corpusId) => `${PRINTED_ACTIVITY_PROGRAM_ID}:${corpusId}`;
 
@@ -61,8 +63,10 @@ export function validatePrintedActivityEnrollment(raw) {
     errors.push('activity must be a mapping');
   }
   const a = activity && typeof activity === 'object' && !Array.isArray(activity) ? activity : {};
-  if (typeof a.platform !== 'string' || !a.platform) errors.push('activity.platform is required (e.g. beeloo)');
-  if (typeof a.kind !== 'string' || !a.kind) errors.push('activity.kind is required (e.g. maze)');
+  const platform = trimmedOrNull(a.platform);
+  const kind = trimmedOrNull(a.kind);
+  if (!platform) errors.push('activity.platform is required (e.g. beeloo)');
+  if (!kind) errors.push('activity.kind is required (e.g. maze)');
   if (!Number.isInteger(a.level) || a.level < 1) errors.push(`activity.level must be a positive integer, got: ${a.level}`);
   const paper = a.paper ?? DEFAULT_PAPER;
   if (!PAPERS.includes(paper)) errors.push(`activity.paper must be ${PAPERS.join('|')}, got: ${a.paper}`);
@@ -72,9 +76,10 @@ export function validatePrintedActivityEnrollment(raw) {
     programId: PRINTED_ACTIVITY_PROGRAM_ID,
     corpusId: raw.corpusId.trim(),
     subject: raw.subject,
-    title: raw.title === undefined || raw.title === null ? null : String(raw.title),
+    // Only a real string is a title: `{}` must not become "[object Object]" on the board.
+    title: trimmedOrNull(raw.title),
     target,
-    activity: { platform: a.platform, kind: a.kind, level: a.level, paper },
+    activity: { platform, kind, level: a.level, paper },
   } };
 }
 
@@ -83,15 +88,20 @@ export function validatePrintedActivityEnrollment(raw) {
  * child has already been given in the corpus. Null when nothing is left, which
  * the caller must surface rather than repeat a page.
  *
- * @param {{pool: {externalId: string}[], exclude: Set<string>, rng: () => number}} args
- *   `rng` returns [0, 1); required, never defaulted (domain purity).
+ * @param {{pool: {externalId: string}[], exclude: Iterable<string>, rng: () => number}} args
+ *   `exclude` is any iterable of external ids; `rng` returns [0, 1) and is
+ *   required, never defaulted (domain purity).
  */
 export function pickActivity({ pool, exclude, rng }) {
   if (typeof rng !== 'function') throw new TypeError('pickActivity: rng is required');
-  const skip = exclude instanceof Set ? exclude : new Set();
+  // Any iterable of ids, but never "nothing": treating a bad exclude as empty
+  // would hand a child a page they have already had.
+  if (exclude == null || typeof exclude[Symbol.iterator] !== 'function' || typeof exclude === 'string') {
+    throw new TypeError('pickActivity: exclude must be an iterable of external ids');
+  }
+  const skip = new Set(exclude);
   const left = (pool ?? []).filter((p) => p && !skip.has(p.externalId));
   if (!left.length) return null;
-  return left[Math.min(left.length - 1, Math.floor(rng() * left.length))];
+  const at = Math.floor(rng() * left.length);
+  return left[Math.min(left.length - 1, Math.max(0, Number.isFinite(at) ? at : 0))];
 }
-
-export default validatePrintedActivityEnrollment;

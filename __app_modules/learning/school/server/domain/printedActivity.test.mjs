@@ -24,6 +24,18 @@ describe('validatePrintedActivityEnrollment', () => {
     const { title, ...rest } = entry();
     expect(validatePrintedActivityEnrollment(rest).enrollment.title).toBeNull();
   });
+  it('trims platform and kind, and refuses whitespace-only ones', () => {
+    const { enrollment } = validatePrintedActivityEnrollment(entry({ activity: { platform: ' beeloo ', kind: ' maze ', level: 3 } }));
+    expect(enrollment.activity).toMatchObject({ platform: 'beeloo', kind: 'maze' });
+    expect(validatePrintedActivityEnrollment(entry({ activity: { platform: '  ', kind: 'maze', level: 3 } })).errors.join(' ')).toMatch(/platform/);
+    expect(validatePrintedActivityEnrollment(entry({ activity: { platform: 'beeloo', kind: '  ', level: 3 } })).errors.join(' ')).toMatch(/kind/);
+  });
+  it.each([[{}], [''], ['   '], [42]])('keeps title only as a non-empty trimmed string (%o -> null)', (title) => {
+    expect(validatePrintedActivityEnrollment(entry({ title })).enrollment.title).toBeNull();
+  });
+  it('trims a title', () => {
+    expect(validatePrintedActivityEnrollment(entry({ title: '  Maze ' })).enrollment.title).toBe('Maze');
+  });
   it('does not copy unknown keys into the enrollment', () => {
     const { enrollment } = validatePrintedActivityEnrollment(entry({
       schedule: { daysOfWeek: [1] }, stray: true,
@@ -59,6 +71,16 @@ describe('pickActivity', () => {
   });
   it('is uniform over what is left', () => {
     expect(pickActivity({ pool, exclude: new Set(), rng: () => 0.99 }).externalId).toBe('c');
+  });
+  it('accepts an array of excluded ids', () => {
+    expect(pickActivity({ pool, exclude: ['a', 'c'], rng: () => 0 }).externalId).toBe('b');
+  });
+  it.each([undefined, null, 42])('refuses a missing or non-iterable exclude (%o)', (exclude) => {
+    expect(() => pickActivity({ pool, exclude, rng: () => 0 })).toThrow(TypeError);
+  });
+  it('clamps an out-of-range rng into the pool', () => {
+    expect(pickActivity({ pool, exclude: new Set(), rng: () => -0.5 }).externalId).toBe('a');
+    expect(pickActivity({ pool, exclude: new Set(), rng: () => 1 }).externalId).toBe('c');
   });
   it('requires an rng', () => {
     expect(() => pickActivity({ pool, exclude: new Set() })).toThrow(/rng/);
