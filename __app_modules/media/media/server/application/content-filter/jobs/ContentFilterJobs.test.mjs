@@ -119,4 +119,24 @@ describe('ContentFilterJobs', () => {
     expect(cleared).toEqual([]);
     expect((await jobs.record('1')).runs[0]).toMatchObject({ status: 'failed', step: 'preflight' });
   });
+
+  it('inline: refine\'s lines become the step\'s progress', async () => {
+    const gate = deferred(); const seen = [];
+    const cli = { run: async (cmd, args, opts = {}) => {
+      if (cmd === 'refine') { opts.onLine?.('Sync: x'); opts.onLine?.('  [1/2] va1 visual refined 1–2'); opts.onLine?.('  [2/2] va2 visual unknown y'); await gate.p; }
+      if (cmd === 'audit') return { code: 0, stdout: JSON.stringify({ ok: true, rows: [], certification: { level: 'none' }, checks: {} }), stderrTail: '' };
+      return { code: 0, stdout: '', stderrTail: '' };
+    } };
+    const store = memStore(); const jobs = make({ cli, store });
+    await jobs.enqueue({ ratingKey: '1', kind: 'stage', stage: 'refine' });
+    for (let i = 0; i < 50 && !seen.length; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      const step = (await jobs.record('1'))?.runs[0]?.steps?.find((x) => x.name === 'refine');
+      if (step?.progress?.done === 2) seen.push(step.progress);
+    }
+    gate.resolve();
+    expect(seen[0]).toMatchObject({ phase: 'measure', done: 2, total: 2 });
+    expect(seen[0].recent.map((o) => o.cue)).toEqual(['va2', 'va1']);
+  });
 });
+

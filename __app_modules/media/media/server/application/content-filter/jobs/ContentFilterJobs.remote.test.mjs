@@ -78,4 +78,25 @@ describe('worker presence', () => {
     t += 31000;
     expect(jobs.workerStatus().alive).toBe(false);
   });
+
+  it('progress keeps refine\'s measured count (cleaned, 8 latest), its start time, and survives a bare heartbeat', async () => {
+    let t = Date.parse('2026-11-12T10:00:00Z');
+    const jobs = new ContentFilterJobs({ ...{}, store: memStore(), cli: cli(), executor: 'worker', auditDebounceMs: 0, schedule: (fn, ms) => setTimeout(fn, ms),
+      film: async () => ({ hasEdl: true }), digestOf: async () => 'd', inputsOf: async () => ({}), logPath: () => null,
+      logger: { info() {}, warn() {}, debug() {} }, now: () => new Date(t) });
+    await jobs.enqueue({ ratingKey: '1', kind: 'make' });
+    const { run } = await jobs.claimRemote({ owner: 'w1' });
+    await jobs.progress({ ratingKey: '1', runId: run.id, owner: 'w1', step: { name: 'refine', status: 'running' } });
+    t += 60e3;
+    const recent = Array.from({ length: 20 }, (_, i) => ({ cue: `va${i}`, kind: 'visual', status: 'unknown', detail: 'x'.repeat(200) }));
+    await jobs.progress({ ratingKey: '1', runId: run.id, owner: 'w1', step: { name: 'refine', status: 'running', progress: { phase: 'measure', done: 3.7, total: 220, firstAt: 'f', at: 'a', recent, junk: 1 } } });
+    await jobs.progress({ ratingKey: '1', runId: run.id, owner: 'w1' });
+    const step = (await jobs.record('1')).runs[0].steps.find((x) => x.name === 'refine');
+    expect(step.startedAt).toBe('2026-11-12T10:00:00.000Z');
+    expect(step.progress).toMatchObject({ phase: 'measure', done: 3, total: 220, firstAt: 'f' });
+    expect(step.progress.junk).toBeUndefined();
+    expect(step.progress.recent).toHaveLength(8);
+    expect(step.progress.recent[0].detail).toHaveLength(80);
+  });
 });
+

@@ -8,6 +8,7 @@ const dir = mkdtempSync(path.join(os.tmpdir(), 'cf-cli-'));
 const fake = path.join(dir, 'fake.mjs');
 writeFileSync(fake, `const [cmd, ...a] = process.argv.slice(2);
 if (cmd === 'sleep') setTimeout(() => {}, 10000);
+else if (cmd === 'lines') { process.stderr.write('a\\nb'); setTimeout(() => { process.stderr.write('c\\n  [1/2] va1 visual refined 1–2\\ntail'); }, 20); }
 else { console.log(JSON.stringify({ cmd, a, data: process.env.DAYLIGHT_DATA_DIR })); console.error('err line'); process.exit(cmd === 'fail' ? 3 : 0); }`);
 
 describe('ChildProcessContentFilterCli', () => {
@@ -28,5 +29,11 @@ describe('ChildProcessContentFilterCli', () => {
     const r = await new ChildProcessContentFilterCli({ cliPath: fake, nice: false }).run('sleep', [], { timeoutMs: 300 });
     expect(r.code).toBe(1);
     expect(r.stderrTail).toContain('timed out');
+  });
+  it('calls onLine once per stderr line, joining lines split across chunks, and flushes the last', async () => {
+    const lines = [];
+    const r = await new ChildProcessContentFilterCli({ cliPath: fake, nice: false }).run('lines', [], { onLine: (l) => lines.push(l) });
+    expect(r.code).toBe(0);
+    expect(lines).toEqual(['a', 'bc', '  [1/2] va1 visual refined 1–2', 'tail']);
   });
 });

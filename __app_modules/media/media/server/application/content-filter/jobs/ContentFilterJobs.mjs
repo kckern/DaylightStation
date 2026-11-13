@@ -7,6 +7,19 @@
  * executor 'worker': this process only queues and reports; the filter worker claims and runs
  * (Task 9, owner ruling 2026-11-07). executor 'inline': runs here.
  */
+import { foldProgress, parseRefineLine } from '../../../domain/content-filter/refine/refineProgress.mjs';
+
+const PROGRESS_MIN_MS = 2000;
+const int = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(100000, Math.floor(Number(v)))) : null);
+const str = (v, n = 80) => (v == null ? null : String(v).slice(0, n));
+/** A worker's refine progress (refineProgress.mjs foldProgress), kept to known fields and bounded sizes. */
+function cleanProgress(p) {
+  return {
+    phase: str(p.phase, 20), done: int(p.done) ?? 0, total: int(p.total), firstAt: str(p.firstAt, 40), at: str(p.at, 40),
+    recent: (Array.isArray(p.recent) ? p.recent : []).slice(0, 8).map((o) => ({ cue: str(o?.cue), kind: str(o?.kind, 20), status: str(o?.status, 20), detail: str(o?.detail) })),
+  };
+}
+
 export class JobConflict extends Error {
   constructor(message = 'This film already has a run queued or running.') { super(message); this.name = 'JobConflict'; this.status = 409; }
 }
@@ -150,7 +163,20 @@ export class ContentFilterJobs {
   }
 
   async #cliStep(rk, run, command, args) {
-    const r = await this.#cli.run(command, args, { logPath: this.#logPath(rk, run.id), timeoutMs: STEP_TIMEOUT_MS[command] ?? 0 });
+    // Inline refine reports its measured count like the worker does (workerCommand.mjs).
+    let prog = null; let sentAt = -Infinity;
+    const onLine = command !== 'refine' ? null : (line) => {
+      const parsed = parseRefineLine(line);
+      if (!parsed) return;
+      const phaseChanged = parsed.phase !== prog?.phase;
+      const t = this.#now().getTime();
+      prog = foldProgress(prog, parsed, new Date(t).toISOString());
+      const edge = parsed.phase === 'measure' && (parsed.done === 1 || parsed.done === parsed.total);
+      if (!phaseChanged && !edge && t - sentAt < PROGRESS_MIN_MS) return;
+      sentAt = t;
+      this.#step(rk, run.id, { name: 'refine', progress: cleanProgress(prog) }).catch(() => {});
+    };
+    const r = await this.#cli.run(command, args, { logPath: this.#logPath(rk, run.id), timeoutMs: STEP_TIMEOUT_MS[command] ?? 0, ...(onLine ? { onLine } : {}) });
     return r.code === 0 ? { status: 'done', stdout: r.stdout } : { status: 'failed', error: r.stderrTail || `exit ${r.code}` };
   }
 
@@ -286,9 +312,12 @@ export class ContentFilterJobs {
     await this.#mine(rk, runId, owner, (r) => {
       if (!step?.name) return;
       r.step = String(step.name);
-      const entry = { name: r.step, status: step.status || 'running', ...(step.error ? { error: String(step.error).slice(-TAIL) } : {}), ...(step.note ? { note: String(step.note) } : {}),
-        ...(step.status === 'running' ? { startedAt: this.#now().toISOString() } : { endedAt: this.#now().toISOString() }) };
       const i = r.steps.findIndex((x) => x.name === r.step);
+      const running = (step.status || 'running') === 'running';
+      const entry = { name: r.step, status: step.status || 'running', ...(step.error ? { error: String(step.error).slice(-TAIL) } : {}), ...(step.note ? { note: String(step.note) } : {}),
+        // A step already running keeps its start: progress reports come every few seconds.
+        ...(running ? (i >= 0 && r.steps[i].status === 'running' ? {} : { startedAt: this.#now().toISOString() }) : { endedAt: this.#now().toISOString() }),
+        ...(step.progress && typeof step.progress === 'object' ? { progress: cleanProgress(step.progress) } : {}) };
       if (i < 0) r.steps.push(entry); else r.steps[i] = { ...r.steps[i], ...entry };
     });
     if (step?.name) this.#logger.info?.('content-filter.job.step', { ratingKey: rk, runId, step: step.name, status: step.status, remote: true });

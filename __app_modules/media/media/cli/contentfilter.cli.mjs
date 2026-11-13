@@ -1076,7 +1076,7 @@ async function main() {
     await runWorker({
       api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
       runStep: (name, ctx) => new ChildProcessContentFilterCli({ cliPath, env: { DAYLIGHT_DATA_DIR: ctx.dataDir, DAYLIGHT_MEDIA_DIR: ctx.mediaDir } })
-        .run(name, ctx.args, { logPath: path.join(ctx.dir, 'run.log'), timeoutMs: STEP_TIMEOUT_MS[name] ?? 0 }),
+        .run(name, ctx.args, { logPath: path.join(ctx.dir, 'run.log'), timeoutMs: STEP_TIMEOUT_MS[name] ?? 0, onLine: ctx.onLine }),
     });
     return;
   }
