@@ -78,7 +78,7 @@ export default async (env = {}) => {
         { find: /^\.\/InvadersPoseBridge\.jsx$/, replacement: path.join(here, 'stubs/poseBridge.jsx') },
         { find: /^.*\/player\/useFitnessModule\.js$/, replacement: path.join(here, 'stubs/fitnessModule.js') },
         { find: /^.*\/identity\/useIdentity\.js$/, replacement: path.join(here, 'stubs/identity.js') },
-        // Silent: the harness never makes a sound (stubs/audio.js).
+        // Muted: the harness never makes a sound (stubs/audio.js).
         { find: /^.*\/skylineGlider\/skylineAudio\.js$/, replacement: path.join(here, 'stubs/audio.js') },
         { find: /^@\/hooks\/useWebSocket\.js$/, replacement: path.join(here, 'stubs/webSocket.js') },
         { find: /^@\/lib\/kioskEnv\.js$/, replacement: path.join(here, 'stubs/kioskEnv.js') },

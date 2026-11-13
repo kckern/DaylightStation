@@ -110,14 +110,15 @@ import { createFrameDriver, createTickLerp, createEffectDispatcher,
   `skyline_glider.effect.executed/skipped/failed` names and fields are unchanged,
   because the log store is queried by them. See [Skyline Glider](../fitness/skyline-glider.md).
 - **Skyline Invaders.** `stepFrame` sub-steps through `advance` (1/60 s,
-  `partial`, with `oncePerFrame: ['fire']` so one mat press is one volley). The
+  `partial`, with `oncePerFrame: ['steps', 'stomps']` so one mat press buys one
+  tank of fuel and one stomp drops one bomb, however many sub-steps a frame takes). The
   round loop is a `createFrameDriver`; a throwing frame logs
   `skyline_invaders.frame.error` and the round continues. Each shot's path is
   swept with `sweepHits` so a thin threat cannot be skipped at a low frame rate;
   the game ranks the hits itself (lowest bottom edge first, oldest on ties).
   Effects go through `createEffectDispatcher` with the
-  `skyline_invaders.effect.*` names; per-shot and per-threat events return a
-  null event name and log nothing. See [Skyline Invaders](../fitness/skyline-invaders.md).
+  `skyline_invaders.effect.*` names; per-volley, per-step and per-threat events
+  return a null event name and log nothing. See [Skyline Invaders](../fitness/skyline-invaders.md).
 - **Cycle Race.** Its 1 s tick catches up with `dueAnchoredSteps` against the
   wall-clock anchor, capped, with the gap logged as `cycle_game.tick_catchup`
   (absent in normal play). Its motion clock is a `createTickLerp`.

@@ -1,6 +1,6 @@
-// Proves the harness is silent: plays a few seconds of a round in a muted
+// Proves the harness makes no sound: plays a few seconds of a round in a muted
 // browser and reports how many audio contexts and <audio> plays the page made.
-//   BASE_URL=http://127.0.0.1:5196 node tests/_scratch/skyline-invaders-harness/check-silent.mjs
+//   BASE_URL=http://127.0.0.1:5196 node tests/_scratch/skyline-invaders-harness/check-muted.mjs
 import { firefox } from 'playwright';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:5196';

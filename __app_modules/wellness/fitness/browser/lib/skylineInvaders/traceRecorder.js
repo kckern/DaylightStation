@@ -41,6 +41,7 @@ export const TRYOUT_TARGET_CODES = Object.freeze({ left: 1, centre: 2, right: 3 
  *   lost              1 = no torso in view
  *   armL armR         ARM_STATE_CODES for the player's left and right arm
  *   target            controls intro only: TRYOUT_TARGET_CODES of the practice target the cannon is on, else 0
+ *   step              1 when the shooter stepped on the mat since the last row (stepping throws the arms)
  */
 export const POSE_TRACE_COLS = Object.freeze([
   'dt',
@@ -48,7 +49,7 @@ export const POSE_TRACE_COLS = Object.freeze([
   ...TRACE_KEYPOINTS_3D.flatMap((i) => [`w${i}x`, `w${i}y`, `w${i}z`]),
   'wiper', 'twist', 'wings', 'wheel', 'sprinkler', 'offset',
   'dragVel', 'pushVel', 'pushStroke', 'hop', 'roll', 'span', 'yaw', 'azimuth', 'lean',
-  'raw', 'lane', 'cannonX', 'lost', 'armL', 'armR', 'target',
+  'raw', 'lane', 'cannonX', 'lost', 'armL', 'armR', 'target', 'step',
 ]);
 /**
  * Column names for a shot row: t (ms since the batch's t0), lane, aim (raw
@@ -63,7 +64,7 @@ const WEAPON_CODES = Object.freeze({ small: 0, double: 1, spread: 2 });
 const int = (value, scale = 1) => (Number.isFinite(value) ? Math.round(value * scale) : null);
 
 /** One pose row. `frame` is the tracker's `{ at, pose, signals }`; `sample` its `sample()`. Pure. */
-export function poseTraceRow(frame, sample, { t0, cannonX = null, pushStroke = false, hop = 0, target = 0 } = {}) {
+export function poseTraceRow(frame, sample, { t0, cannonX = null, pushStroke = false, hop = 0, target = 0, step = false } = {}) {
   const k2 = frame?.pose?.keypoints || [];
   const k3 = frame?.pose?.keypoints3D || [];
   const signals = frame?.signals || {};
@@ -75,7 +76,7 @@ export function poseTraceRow(frame, sample, { t0, cannonX = null, pushStroke = f
     int(signals.drag?.velocity, 1000), int(signals.push?.wristVel, 100), pushStroke ? 1 : 0, hop || 0,
     int(signals.wings?.rollDeg, 10), int(signals.wings?.spanSw, 100), int(signals.twist?.yawDeg, 10), int(signals.sprinkler?.azimuthDeg, 10), int(signals.lean, 100),
     int(sample?.raw, 1000), int(sample?.lane), int(cannonX), sample?.lost ? 1 : 0,
-    ARM_STATE_CODES[signals.armStates?.[0]] ?? null, ARM_STATE_CODES[signals.armStates?.[1]] ?? null, target || 0,
+    ARM_STATE_CODES[signals.armStates?.[0]] ?? null, ARM_STATE_CODES[signals.armStates?.[1]] ?? null, target || 0, step ? 1 : 0,
   );
   return row;
 }
@@ -84,7 +85,7 @@ export function poseTraceRow(frame, sample, { t0, cannonX = null, pushStroke = f
  * @param {object} options
  * @param {(name: string, data: object) => void} options.emit   sends one batch (the logger)
  * @param {() => number} [options.now]   epoch ms
- * @returns the recorder: begin(header), pose(frame, sample, extra), volleyFired(event data, sample),
+ * @returns the recorder: begin(header), step(), pose(frame, sample, extra), volleyFired(event data, sample),
  *   volleySettled(volley, hit), flush(reason, { final }), end(reason)
  */
 export function createTraceRecorder({ emit, now = () => Date.now(), tunables = INVADERS_TUNABLES } = {}) {
@@ -99,6 +100,7 @@ export function createTraceRecorder({ emit, now = () => Date.now(), tunables = I
   let batchStartedAt = null;
   let stroke = false;
   let hop = 0;
+  let stepped = false;
 
   const send = (name, batch, cols, reason) => {
     if (!batch || !batch.rows.length) return;
@@ -134,7 +136,10 @@ export function createTraceRecorder({ emit, now = () => Date.now(), tunables = I
       lastFrameAt = null;
       stroke = false;
       hop = 0;
+      stepped = false;
     },
+    /** The shooter stepped on the mat. Written on the next pose row. */
+    step() { if (header) stepped = true; },
     /**
      * Offer the tracker's latest frame; call it every game frame. A row is
      * kept `traceHz` times a second. Push strokes and hops that happen between
@@ -154,9 +159,10 @@ export function createTraceRecorder({ emit, now = () => Date.now(), tunables = I
       nextRowAt = nextRowAt + everyMs > at ? nextRowAt + everyMs : at + everyMs;
       open(at);
       pose ||= { t0: frame.at, rows: [] };
-      pose.rows.push(poseTraceRow(frame, sample, { ...extra, t0: pose.t0, pushStroke: stroke, hop }));
+      pose.rows.push(poseTraceRow(frame, sample, { ...extra, t0: pose.t0, pushStroke: stroke, hop, step: stepped }));
       stroke = false;
       hop = 0;
+      stepped = false;
     },
     /** A volley left the cannon: the engine's `shot.fired` data and the tracker sample. */
     volleyFired(fired, sample) {

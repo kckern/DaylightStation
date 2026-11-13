@@ -43,7 +43,7 @@ describe('pose trace row', () => {
   it('names a column for every value, with the ten image keypoints and six world keypoints the brief asks for', () => {
     expect(TRACE_KEYPOINTS_2D).toEqual([11, 12, 13, 14, 15, 16, 19, 20, 23, 24]);
     expect(TRACE_KEYPOINTS_3D).toEqual([11, 12, 13, 14, 15, 16]);
-    expect(POSE_TRACE_COLS).toHaveLength(1 + 10 * 3 + 6 * 3 + 6 + 9 + 7);
+    expect(POSE_TRACE_COLS).toHaveLength(1 + 10 * 3 + 6 * 3 + 6 + 9 + 8);
     expect(new Set(POSE_TRACE_COLS).size).toBe(POSE_TRACE_COLS.length);
     expect(poseTraceRow(frameOf(pose(25)), sample(), { t0: 1000 })).toHaveLength(POSE_TRACE_COLS.length);
   });
@@ -82,9 +82,10 @@ describe('pose trace row', () => {
     expect(col(row, 'lost')).toBe(1);
     expect(col(row, 'wiper')).toBeNull();
   });
-  it('carries push strokes, hops and the practice target', () => {
-    const row = poseTraceRow(frameOf(pose(0)), sample(), { t0: 1000, pushStroke: true, hop: -1, target: 3 });
-    expect([col(row, 'pushStroke'), col(row, 'hop'), col(row, 'target')]).toEqual([1, -1, 3]);
+  it('carries push strokes, hops, mat steps and the practice target', () => {
+    const row = poseTraceRow(frameOf(pose(0)), sample(), { t0: 1000, pushStroke: true, hop: -1, target: 3, step: true });
+    expect([col(row, 'pushStroke'), col(row, 'hop'), col(row, 'target'), col(row, 'step')]).toEqual([1, -1, 3, 1]);
+    expect(col(poseTraceRow(frameOf(pose(0)), sample(), { t0: 1000 }), 'step')).toBe(0);
   });
 });
 
@@ -157,6 +158,16 @@ describe('trace recorder: pose batches', () => {
     recorder.end();
     const rows = of('skyline_invaders.pose.trace')[0].rows;
     expect(rows.map((row) => [col(row, 'hop'), col(row, 'pushStroke')])).toEqual([[0, 0], [1, 1]]);
+  });
+  it('marks the row after a mat step, once', () => {
+    const { recorder, tick, of } = setup();
+    recorder.begin(HEADER);
+    recorder.pose(frameOf(pose(), 1000), sample()); tick(40);
+    recorder.step(); tick(60);
+    recorder.pose(frameOf(pose(), 1100), sample()); tick(100);
+    recorder.pose(frameOf(pose(), 1200), sample());
+    recorder.end();
+    expect(of('skyline_invaders.pose.trace')[0].rows.map((row) => col(row, 'step'))).toEqual([0, 1, 0]);
   });
 });
 

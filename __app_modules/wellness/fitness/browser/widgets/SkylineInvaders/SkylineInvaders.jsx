@@ -448,6 +448,7 @@ function SkylineInvadersGame({ onClose }) {
       setGame(next);
       dispatcher.dispatch(next.events, { time: next.time });
       current.tally.stomps += presses.stomps.length;
+      if (presses.steps.some((press) => press.source === 'mat') || presses.stomps.some((press) => press.source === 'mat')) recorder.step();
       recorder.pose(tracker.frame(), aimNow, { cannonX: aimToX(aimNow.x) });
       for (const event of next.events) {
         if (event.type === 'shot.fired') {

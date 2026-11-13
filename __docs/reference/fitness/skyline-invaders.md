@@ -1,65 +1,107 @@
 # Skyline Invaders
 
-A fixed-shooter Fitness game. Threats fall on a skyline; the shooter stands on a step mat, aims the cannon with their arms and fires by stepping. Heart-rate zone sets the shot, and a partner on a bike can pedal up boosts. Opens at `/fitness/module/skyline_invaders`.
+A fixed-shooter Fitness game. Threats fall on a skyline; the shooter stands on a step mat, aims the cannon with a body gesture they picked for themselves, and steps to keep the cannon firing. Kills and firing time move the weapon up a ladder, and a partner on a bike can pedal up boosts. Opens at `/fitness/module/skyline_invaders`.
 
 Code: engine and rules in `__app_modules/wellness/fitness/browser/lib/skylineInvaders/`, the widget in `browser/widgets/SkylineInvaders/`, server in `server/` (adapters, services, `api/fitness.mjs`).
 
 ## Play contract
 
-- A level is one timed round. There are no lives: a threat that reaches the ground costs skyline (base HP) and stars, and the round always runs to its timer.
-- A round passes when the shooter has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Passing a level opens the next one in world order.
+- A level is one timed round. There are no lives: a threat that reaches the ground costs skyline (base HP), stars and the kill streak, and the round always runs to its timer.
+- A round passes when the shooter has at least `pass.kills` kills and at least `pass.base_hp_min` percent of the skyline left at the end. Every World 1 level asks for kills only (`base_hp_min: 0`); the skyline decides the stars. Passing a level opens the next one in world order.
 - Stars: 1 = pass, 2 = skyline at 75% or more, 3 = no damage. A pass pays 10 / 20 / 30 rings.
-- Phases: `loading → lobby ↔ calibrating → countdown → playing ↔ paused → result`. Escape, gamepad B and the on-screen pause button pause the clock. A paused Fitness session or a hidden tab pauses it too.
-- The result screen shows each number alone with what the level asked for under it ("Shot down 25, needed 18"), green when met and red when short. A new round is not offered until the record is saved.
-- The HUD shows skyline, kills against the target (`7 / 18`, then `25 ✓` once the target is reached), time left, score, combo, the shot tier and the boost meter.
+- Phases: `loading → lobby ↔ controls → countdown → playing ↔ paused → result`. Escape, gamepad B and the on-screen pause button pause the clock. A paused Fitness session or a hidden tab pauses it too. Escape or B during the 3-2-1 goes back to the lobby.
+- The result screen shows each number alone with what the level asked for under it ("Shot down 25, needed 12"), green when met and red when short. A new round is not offered until the record is saved.
+- The HUD shows skyline, kills against the target (`7 / 12`, then `25 ✓` once the target is reached), time left, score, the kill streak, the weapon ladder with its power meter and fuel gauge, the controls in use, and the boost meter.
+
+### Leaving
+
+`SkylineInvaders` takes `onClose` from `FitnessModuleContainer` (the game is fullscreen and covers the nav, so this is the only way out short of a reload). Exit is a button in the lobby, the pause menu, the result screen and the loading and error screens. Escape or gamepad B leaves from the lobby and the load screens.
+
+- From the lobby, the load screens and a saved result: the game closes.
+- Mid-round (from the pause menu): the round is finalized as `abandoned`, the save is started with `keepalive`, and the game closes without waiting for it.
+- From a result whose save failed: one more save is attempted on the way out.
+- During the countdown there is no menu: Escape or B returns to the lobby and nothing is saved.
+
+Every exit logs `skyline_invaders.exit` with `phase`, `how` (`button` or `back`) and `round` (`abandoned`, `saved`, `saving`, `error`, or null). The foot pad sends plain letters, and a plain letter presses the focused button, so the foot pad reaches Exit only when Exit has the focus; the arrows (keyboard or gamepad) move the focus, and touch presses any button.
 
 ## Inputs
 
-### Aim: torso-relative
+### Aim: a gesture, picked by the rider
 
-The cannon follows where the hands are **relative to the player's own torso**. The camera frame is never the reference.
+The cannon follows one of eight gestures. Each is a pure function of one BlazePose pose (`lib/skylineInvaders/gestures.js`), measured in the **player's own body frame** (`aim.js` `torsoFrame`): where the player stands, how large they appear and a tilted shoulder line do not move the cannon. None asks for hands above the head. The screen is a mirror: the player's right is screen right.
 
-- Hands in front of the chest = centre, at any height. Hands out to the player's left or right = left or right, at any height. Nothing is overhead; no step of the game asks for raised arms.
-- The measure is the wrists' offset from the shoulder midpoint along the shoulder line, in shoulder widths (`lib/skylineInvaders/aim.js`). Where the player stands, how large they appear and a tilted shoulder line cancel out. With BlazePose 3-D keypoints a modest torso turn cancels too; the 2-D fallback does not undo a turn.
-- The screen is a mirror: the player's right is screen right.
-- Both arms are averaged by keypoint score. A hanging arm (wrist well below its shoulder) is ignored and the other arm aims alone.
-- A pose counts as lost by keypoint score, after `poseLostAfterMs` with no usable arm. While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running.
-- Without a calibration, or with the camera denied or failed, aim is manual: gamepad left stick or the arrow keys. The game never blocks on the camera.
-- `InvadersPoseBridge.jsx` is the only pose-context consumer. Poses reach the game through `tracker.processPoses`, not React state, so the round does not re-render at the pose rate. The detector runs with `maxPoses: 1` and `temporalSmoothing: false`; the tracker applies the one smoothing filter.
+A gesture's output is one of four kinds. `aim` is a position 0..1, or null to hold the last aim. `velocity` is screens per second, integrated by the tracker. `impulse` drives the cannon while a stroke lasts, after which it glides. `hop` moves the cannon one lane.
 
-### Calibration
+| Gesture | Name on screen | Kind | Signal and mapping |
+|---|---|---|---|
+| `wiper` | Wipers | aim | Each forearm's tilt from upright about its elbow, on the torso plane; the two are averaged by keypoint score. `wiperMaxDeg` (50°) is the screen edge. A forearm counts whenever its wrist is above its elbow and it is at least `wiperMinForearmSw` (0.3 shoulder widths) long on that plane (shorter means it points at the camera). |
+| `twist` | Twist | aim | Torso yaw: the angle of the 3-D shoulder line against the camera's image plane. `twistMaxDeg` (35°) is the edge. The arms are not read. Needs `keypoints3D`. |
+| `wings` | Wings | aim | Roll of the wrist-to-wrist line against the shoulder line, in the image. `wingsMaxDeg` (30°) is the edge. The wrists must be at least `wingsMinSpanSw` (1.5) apart. |
+| `wheel` | Steering wheel | aim | The same roll with the hands close together. `wheelMaxDeg` (45°) is the edge. The wrists must be between `wheelMinSpanSw` (0.25) and `wheelMaxSpanSw` (1.5) apart. |
+| `sprinkler` | Sprinkler | aim | Azimuth of the midpoint of the wrists from straight ahead, in the 3-D torso frame: `atan2(lateral, forward)`. `sprinklerMaxDeg` (40°) is the edge. It is an angle, so arm length does not change the range. Needs `keypoints3D`, both wrists, and the hands at least `sprinklerMinReachSw` (0.5) from the chest. |
+| `drag` | Slide | velocity | Mean wrist offset from the shoulder midpoint. Inside `dragDeadZoneSw` (0.3) the speed is 0; it rises to `dragMaxSpeed` (0.8 screens/s) at `dragFullSw` (1.0). Arms down is speed 0: the cannon stays. |
+| `push` | Push | impulse | A wrist moving away from the body midline faster than `pushMinSpeedSw` (2 shoulder widths/s) is a stroke. During it the cannon moves at `pushGain` (0.3) screens per shoulder width of hand travel, capped at `pushMaxSpeed` (2.5 screens/s). After it the cannon glides with friction (`pushFrictionMs`, 220) and stops on a lane centre once slower than `pushSettleSpeed` (0.08). The return stroke is ignored: it moves toward the midline, and for `pushCooldownMs` (250) after a stroke one the other way is not counted. |
+| `hop` | Hop | hop | An arm triggers when its wrist comes within `hopRaiseDropSw` (0.15) of shoulder height, or reaches `hopReachSw` (1.3) out on its own side. The right arm hops right, the left arm hops left. It re-arms only after the wrist has dropped past `hopLowerDropSw` (0.5) and come back inside `hopReachReleaseSw` (0.9). Hops are at least `hopRefractoryMs` (350) apart, and both arms triggering on one frame is not a hop. |
 
-Per shooter, in the lobby, about ten seconds (`InvadersCalibration.jsx`):
+Sign conventions, for anyone reading traces:
 
-1. **Framing.** Stand on the mat facing the screen. Head and shoulders in view for one second is enough; wrists at rest may hang out of frame.
-2. **Reach left**, then **reach right**, both hands at chest height, held still for about a second each.
+- **twist.** `torsoFrame().yawDeg` is `atan2(z, x)` of the right-to-left shoulder vector in `keypoints3D`. Turning toward the player's own right brings the left shoulder toward the camera. MediaPipe's world landmarks put smaller z nearer the camera, so that turn is a negative yaw, and `twistSign: -1` maps it to screen right. This sign has not been checked on the garage camera. If a right turn steers left, set `twistSign` to `1`.
+- **wings / wheel.** Roll is positive when the player's right hand is the lower one (a plane banking right, a wheel turned right).
+- **sprinkler.** Forward is taken as a distance, so the sign of z does not matter.
 
-The two reaches become `{ left, right }` in shoulder widths and map to the screen edges, so a child and an adult both cover the full width. A span under one shoulder width is rejected and the reach steps repeat. Every step can also be finished with a press (touch, any key, gamepad A), and Skip is always on screen and leaves with gamepad aim. Changing the shooter clears the calibration. It is held in memory for the mounted game only.
+`offset` (wrist offset from the shoulder midpoint at a fixed gain, `offsetReachSw` 1.2) is the release-one gesture without its calibration. It is computed on every frame for the trace and is not offered to players.
 
-On menus, both arms held out to the sides for one second is the hands-free press (`useArmsWideHold.js`).
+**Lost and held.** A gesture that cannot read its signal (arms down, a wrist unseen) holds the aim. The player is lost only when the torso (both shoulders) has been out of view for `poseLostAfterMs` (800). While lost the cannon keeps its aim and drifts toward the threat nearest the ground, the HUD says "Step into view", and the timer keeps running. With the camera denied or failed, or before it has seen anyone, aim is manual: gamepad left stick or the arrow keys. The game never blocks on the camera.
 
-### Fire: step on the mat
+`InvadersPoseBridge.jsx` is the only pose-context consumer. Poses reach the game through `tracker.processPoses`, not React state, so the round does not re-render at the pose rate. The detector runs with `maxPoses: 1` and `temporalSmoothing: false`; the tracker applies the one smoothing filter (`aimSmoothingMs`, 120) to `aim` gestures.
 
-- One `pressure-mat:step` from **the shooter's mat** fires one volley. Steps from any other mat are ignored (and logged, sampled). A stomp does not fire: the same press has already produced its step.
-- To fire again the shooter steps off and back on. Measured on the garage hardware this gives about 1 to 1.3 shots a second, which is why `fireIntervalS` is `1.0`.
-- **Aim latch.** A shot uses the aim from `aimLatchMs` before the press, because stepping throws the arms. The tracker keeps a short aim history for this.
+### Picking controls
+
+There is no calibration. A rider with no saved choice is sent from the lobby to the controls intro (`InvadersControls.jsx`) before their first round; a rider with one goes straight to Start and has "Change controls" in the lobby. With the camera off the intro is skipped and the round starts on gamepad aim.
+
+The intro shows the eight gestures one card at a time. Each card has a stick-figure demo of the movement (`GestureDemo.jsx`, an SVG animated by the stylesheet), the gesture's name and one line of instruction. During the card the real cannon follows the rider with that gesture, and three practice targets are drawn: the left edge lane, the middle pair, the right edge lane. A target lights while the cannon is under it and is ticked once the cannon has rested there for `tryoutTargetHoldMs` (400). A target counts only when the cannon arrives on it, so starting a card in the middle does not tick the centre. Nothing falls and nothing is scored.
+
+| Input | Does |
+|---|---|
+| Step on the mat | next card |
+| Stomp on the mat | pick this card |
+| Buttons (touch; arrows move the focus; any plain key or gamepad A presses it) | Use these controls, Next, Back, Not now / Keep mine |
+| Up / down (keyboard or gamepad) | previous / next card |
+| Escape or B | leave without picking |
+
+A card moves on by itself after `tryoutCardS` (20 s), so all eight take under three minutes with nobody pressing anything.
+
+The choice is saved **per rider** with their progress (`POST /progress/:riderId/controls`, the `controls` field of the progress file) and comes back with the world map. If the save fails the choice still holds for the session. On menus other than the intro, both arms held out to the sides for one second is the hands-free press (`useArmsWideHold.js`).
+
+### Lanes
+
+The aim range is cut into `lanes` (8) equal columns (`lib/skylineInvaders/lanes.js`). Threats spawn on lane centres. The cannon stands on a lane centre: the gesture's raw aim picks the lane, and the cannon moves only when the aim is `laneHysteresis` (25% of a lane) past the edge of its own lane, so an aim resting on a boundary cannot make it flicker. A zigzagging drone still swings about its lane centre.
+
+A shot leaves from where the cannon is drawn. There is no aim latch and the cannon does not glide. Because stepping throws the arms, the lane holds for `stepLaneFreezeMs` (150) after a mat step while the raw aim keeps moving; set it to 0 to turn that off.
+
+The cannon's lane is lit from the street to the top of the sky, and the threat the next shot will meet (the lowest one in that column) is marked with corner brackets.
+
+### Fire: steps fuel a stream
+
+- A `pressure-mat:step` from **the shooter's mat** buys `fuelPerStepS` (1.5 s) of fuel, up to `fuelCapS` (5 s). While there is fuel the cannon fires a volley every `streamIntervalS` (0.25 s) by itself, the first one on the step. Spamming the mat only fills the tank. Steps from any other mat are ignored (and logged, sampled).
+- The fuel gauge is in the HUD and as a bar under the cannon. An empty tank reads "Step!".
 - The shooter is the mat's assigned rider; the lobby offers a picker when the mat has none. A mat has two ids: the equipment id (session API) and the hardware id (the app-event bus). `matSelection.js` carries both.
-- Fallbacks for testing and no-mat play: Space or F, gamepad A or RT.
+- Without a mat: Space or F, gamepad A or RT buy fuel the same way.
 
-### Heart-rate zone tiers
+### Power meter and the weapon ladder
 
-The shooter's trusted zone, at most ten seconds old, picks the shot. It is the same trust path as Skyline Glider (`lib/skylineGlider/weaponPower.js`, `trustedZoneId`).
+Kills and firing time fill the power meter: `powerPerKill` (0.08) per kill and `powerPerFiringS` (0.03) per second of firing, so a full meter is about 18 s of steady shooting. Heart-rate zone does not set the weapon.
 
-| Zone | Tier | Shot |
+| Level | Volley | Reached by |
 |---|---|---|
-| cool, active, unknown, stale or no monitor | Small | 1 damage |
-| warm | Big | 2 damage, wider |
-| hot | Spread | three shots fanning out, 1 damage each |
-| fire | Nuke | every shot detonates on the first threat it meets |
+| Single | one shot | the start |
+| Double | two shots side by side (28 units apart) | a full meter |
+| Spread | three shots fanning out | a full meter |
+| Bomb | (the stream stays Spread) | a full meter at Spread: the meter stays full and the HUD says "Stomp!" |
 
-With no trusted reading the HUD says "No trusted heart rate — small shots". In co-op, where a partner steps on the mat, the aimer's zone still powers the shot.
+Every shot does 1 damage. A stream left idle for `weaponIdleDropS` (8 s) drops one level and empties the meter; it drops again after another 8 s.
 
-**Nuke.** The blast is a circle around the impact point (`nuke.radius`, default 160 scene units; `nuke.damage`, default 3), not a screen wipe, so aim still matters. Pods caught in it are destroyed without splitting. A full-HP bomber (4 HP) survives one blast at the default damage.
+**Bomb.** A `pressure-mat:stomp` with a bomb ready blasts a circle (`nuke.radius`, default 160 scene units; `nuke.damage`, default 3) around the lowest threat in the cannon's lane, or with that lane clear around the nearest threat, or in the empty sky above the cannon. It spends the meter. Pods caught in it are destroyed without splitting; a full-HP bomber (4 HP) survives one. The mat reports a stomp instead of a step, never both, so a stomp always buys fuel too; a stomp with no bomb ready is just a step. Without a mat: B on the keyboard, X or Y on the gamepad.
 
 ### Partner boosts
 
@@ -67,7 +109,7 @@ A second rider on a connected bike (anyone but the shooter) fills the boost mete
 
 - Fill rate scales from nothing at `min_rpm` (40) to full at `full_rpm` (90). At full effort the meter fills in `fill_s` (20 s).
 - A full meter starts the next boost in the rotation for `duration_s` (8 s); the meter rests while a boost runs.
-- Rotation: **Rapid fire** (the cannon fires by itself every `rapid_interval_s`, 0.25 s, at the live aim and tier), **Shield** (ground impacts do no damage), **Twin cannon** (a second cannon mirrors the first).
+- Rotation: **Rapid fire** (the stream runs every `rapid_interval_s`, 0.125 s, twice its normal rate, and burns no fuel), **Shield** (ground impacts do no damage and do not end the kill streak), **Twin cannon** (a second cannon mirrors the first).
 - Every value can be overridden per level under `boost:`.
 
 ### Menus
@@ -90,8 +132,9 @@ A level file may spawn `meteor`, `drone`, `pod` and `bomber`.
 
 ## Scoring
 
-- Points per kill, times the combo: +10% per consecutive volley that hits, up to +100%. A volley whose shots all leave the field without a hit resets the combo.
-- Arms above the shoulders, held for `armsUpHoldMs` before the press, multiply a kill's points by 1.5. It is a bonus only.
+- Points per kill, times the kill streak: +10% per kill in a row, up to +100%. A threat reaching the ground ends the streak (a shielded one does not). A missed volley costs nothing: a stream fires through empty sky all the time.
+- Wrists above the shoulders, held for `armsUpHoldMs` before the volley, multiply a kill's points by 1.5. It is a bonus only.
+- `shots_fired` and `hits` in the run record count volleys (one beat of the stream), not single shots. `steps` counts fuel presses and `firing_s` the seconds the stream ran.
 
 ## Level file
 
@@ -99,27 +142,38 @@ Schema `skyline-invaders-level/v1`. Levels are household data; nothing is bundle
 
 ```yaml
 schema: skyline-invaders-level/v1
-id: invaders-1-4              # ^[a-z][a-z0-9-]+$ ; also the progress key
-name: Bomber Run
-duration_s: 240               # 30..900
-pass: { kills: 30, base_hp_min: 30 }   # kills: integer >= 1; base_hp_min: 0..100, default 0
+id: invaders-1-1              # ^[a-z][a-z0-9-]+$ ; also the progress key
+name: First Light
+duration_s: 180               # 30..900
+pass: { kills: 12, base_hp_min: 0 }    # kills: integer >= 1; base_hp_min: 0..100, default 0
 cannons: 1                    # 1 or 2 (2 = one cannon per arm); default 1
 max_bombers: 1                # bombers alive at once; default 2. A bomber rolled past the cap spawns as a meteor
-nuke: { radius: 160, damage: 3 }       # optional; these are the defaults
-boost: { fill_s: 20, duration_s: 8, min_rpm: 40, full_rpm: 90, rapid_interval_s: 0.25, rotation: [rapid, shield, twin] }   # optional; defaults shown
+spawn_lanes: [1, 6]           # optional: threats spawn only in this run of lanes (0..7); default every lane
+fall: { meteor: 50 }          # optional: fall speed by threat type, scene units per second
+fire: { fuel_per_step_s: 1.5, fuel_cap_s: 5, stream_interval_s: 0.25, power_per_kill: 0.08, power_per_firing_s: 0.03, idle_drop_s: 8 }   # optional; defaults shown
+nuke: { radius: 160, damage: 3 }       # optional: the bomb's blast; these are the defaults
+boost: { fill_s: 20, duration_s: 8, min_rpm: 40, full_rpm: 90, rapid_interval_s: 0.125, rotation: [rapid, shield, twin] }   # optional; defaults shown
 waves:
-  - { at: 0, spawn: { meteor: 2, drone: 1 }, rate_s: 4.0 }
-  - { at: 60, spawn: { bomber: 1 }, rate_s: 6 }
-  - { at: 66, spawn: { meteor: 4, drone: 2, pod: 1 }, rate_s: 4.2 }
+  - { at: 0, spawn: { meteor: 1 }, rate_s: 4.5 }
+  - { at: 60, spawn: { meteor: 1 }, rate_s: 4.0 }
 ```
 
-**Waves.** `at` is strictly increasing and before `duration_s`; `rate_s` is at least 0.3. The wave in force spawns one threat every `rate_s` until the next wave's `at`, and each spawn picks a type from `spawn` by weight (`{ meteor: 2, drone: 1 }` is two meteors in three). The column and the pick come from the round's seed, so what falls depends on the seed and the level only, never on the frame rate or on what was shot down.
+**Waves.** `at` is strictly increasing and before `duration_s`; `rate_s` is at least 0.3. The wave in force spawns one threat every `rate_s` until the next wave's `at`, and each spawn picks a type from `spawn` by weight (`{ meteor: 2, drone: 1 }` is two meteors in three). The lane and the pick come from the round's seed, so what falls depends on the seed and the level only, never on the frame rate or on what was shot down.
 
 **Exact counts.** A wave that ends within one `rate_s` of starting spawns exactly once. The fourth seed level uses this to send exactly two bombers on every seed (`{ at: 60, spawn: { bomber: 1 }, rate_s: 6 }` followed by a wave at 66).
 
-**Reachability.** `validateLevel(raw, { reachability: true })` (the default) plays the level with a bot on the real engine: small shots only, no partner, one shot every `fireIntervalS`, perfect aim at the lowest threat. The level may ask for at most `reachabilityHitRate` (0.6) of the bot's kills and no more skyline than the bot ends with. A level that fails is rejected in the browser, logged as `skyline_invaders.level.invalid` with the reason, and left out of the lobby. The server catalog checks structure only.
+**Reachability.** `validateLevel(raw, { reachability: true })` (the default) plays the level with a bot on the real engine (`simulateBot`). The bot plays the way a child on the mat does:
 
-The checker plays seed 1; a real round gets a random seed. `seedLevels.test.js` therefore also plays each seed level on twelve seeds with 15 points of skyline to spare, keeps `pass.kills` at or under 80% of what is reachable, and plays level 1 with a shooter who fires once every two seconds. If `fireIntervalS` changes, that test is the alarm: re-tune the levels there.
+- it steps for fuel every `botStepIntervalS` (1.0 s) while anything is falling, and the stream does the shooting;
+- it re-chooses its lane every `botDecisionS` (1.0 s) and takes `botLaneMoveS` (0.35 s) to cross each lane;
+- for `botLaneErrorRate` (40%) of the threats it lines up one lane to the side and never corrects, so a share of what falls gets through;
+- it has no partner and never drops a bomb.
+
+The level is played on each of `reachabilitySeeds` (1, 2, 3) and held to the worst of them: it may ask for `reachabilityHitRate` (0.6) of the bot's kills, and for no more skyline than the bot kept, less `reachabilityBaseHpMargin` (15). A level that fails is rejected in the browser, logged as `skyline_invaders.level.invalid` with the reason, and left out of the lobby. The server catalog checks structure only.
+
+The first release's bot never missed, which is how level 1 shipped asking for 18 kills and 40% skyline on full-speed meteors in every lane: about 87% of everything intercepted. `levels.test.js` keeps that level as a case the validator must reject.
+
+`seedLevels.test.js` also plays each seed level on twelve seeds, keeps `pass.kills` at or under 80% of what is reachable and at or under half of what spawns, and requires `base_hp_min: 0` across World 1.
 
 **Authoring a level.** Copy a seed file, change it, add the id to `world.yml`, and load the lobby. A rejected level's reason is in the log line. To check before installing, put the file beside the seed fixtures under `tests/_fixtures/fitness/skyline-invaders/levels/` and run the seed test.
 
@@ -127,18 +181,18 @@ The checker plays seed 1; a real round gets a random seed. `seedLevels.test.js` 
 
 The tested source is `tests/_fixtures/fitness/skyline-invaders/`; the installed files are copies.
 
-| Level | Introduces | Duration | Pass |
-|---|---|---|---|
-| `invaders-1-1` First Light | meteors, one every 3.5–4.5 s | 180 s | 18 kills, 40% skyline |
-| `invaders-1-2` Zigzag | drones | 180 s | 20 kills, 40% skyline |
-| `invaders-1-3` Split Decision | pods | 210 s | 26 kills, 30% skyline |
-| `invaders-1-4` Bomber Run | two bombers, at 60 s and 150 s | 240 s | 30 kills, 30% skyline |
+| Level | Introduces | Lanes | Duration | Pass |
+|---|---|---|---|---|
+| `invaders-1-1` First Light | meteors at fall 50, one every 3.5–4.5 s | middle six | 180 s | 12 kills |
+| `invaders-1-2` Zigzag | drones; meteors at fall 60 | middle six | 180 s | 16 kills |
+| `invaders-1-3` Split Decision | pods | all eight | 210 s | 22 kills |
+| `invaders-1-4` Bomber Run | two bombers, at 60 s and 150 s | all eight | 240 s | 28 kills |
 
 ## World order and progression
 
 `world.yml` is `{ levels: [id, …] }`. Levels play in that order; installed levels not named there follow, sorted by id. The first level is always open. Each later level opens when the one before it is completed, or when an admin unlocks it from the lobby (fingerprint prompt). Only a `completed` run counts; `failed` (timer ran out below the pass mark) and `abandoned` (ended early) do not.
 
-Per-rider progress keeps the best completion per level (more stars, then higher score). A missing progress file is rebuilt from the run log, so deleting one loses nothing.
+Per-rider progress keeps the best completion per level (more stars, then higher score), the levels an admin unlocked, and the rider's controls (`controls: { gesture, at }`). A missing progress file is rebuilt from the run log, which restores the completions. The controls and the admin unlocks are not in the run log: a rider whose file was deleted goes through the controls intro again.
 
 ## Data paths
 
@@ -147,16 +201,16 @@ Relative to the household folder (data) and the media root (sounds):
 ```text
 fitness/skyline-invaders/world.yml                      # level order
 fitness/skyline-invaders/levels/*.yml                   # skyline-invaders-level/v1
-fitness/skyline-invaders/progress/<riderId>.yml         # skyline-invaders-progress/v1: { completed, unlocked }
+fitness/skyline-invaders/progress/<riderId>.yml         # skyline-invaders-progress/v1: { completed, unlocked, controls }
 fitness/log/skyline-invaders/<date>/<runId>.yml         # skyline-invaders-run/v1, dated by started_at
 media: fitness/skyline-invaders/sounds/<slot>.mp3
 ```
 
 Level files and `world.yml` are read on every request, so an edit shows on the next lobby load with no restart.
 
-Sound slots: `laser`, `missile`, `hit`, `target`, `explosion`, `crash` (the nuke rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, unchanged.
+Sound slots: `laser`, `missile` (bomb ready), `hit`, `target`, `explosion`, `crash` (the bomb's rumble), `hurt`, `deny`, `boost`, `finish`, `music` (the loop). A missing, empty or undecodable file falls back to the synthesized tone, so the folder ships with empty placeholders. Audio is the Skyline Glider audio engine, unchanged.
 
-A run record carries `run` (`id`, `level_id`, `started_at`, `ended_at`, `status`, `duration_s`, `score`, `kills`, `stars`, `base_hp`, `shots_fired`, `hits`, `best_combo`, `nukes`, `boosts_used`, `reward_rings`, optional `fitness_session_id`, `mat_equipment_id`, `partner_id`), `rider.user_id`, and an embedded `gaming-result/v1` block, where a failed round is a completed session with a `loss` outcome.
+A run record carries `run` (`id`, `level_id`, `started_at`, `ended_at`, `status`, `duration_s`, `score`, `kills`, `stars`, `base_hp`, `shots_fired`, `hits`, `best_combo`, `bombs`, `boosts_used`, `steps`, `firing_s`, `weapon_peak`, `reward_rings`, optional `fitness_session_id`, `mat_equipment_id`, `partner_id`, `gesture`), `rider.user_id`, and an embedded `gaming-result/v1` block, where a failed round is a completed session with a `loss` outcome. Records saved before this release have `nukes` and no `bombs`, `steps`, `firing_s`, `weapon_peak` or `gesture`.
 
 ## API
 
@@ -165,7 +219,8 @@ All under `/api/v1/fitness/skyline-invaders`. Each takes an optional `household`
 | Route | Purpose |
 |---|---|
 | `GET /levels` | `{ levels }`: every structurally valid level in world order. An empty list means none installed. |
-| `GET /world?rider=<id>` | `{ riderId, levels: [{ id, name, status, best? }], next }` with `status` `locked` / `open` / `completed`. Without a rider, the progression a new rider starts from. |
+| `GET /world?rider=<id>` | `{ riderId, levels: [{ id, name, status, best? }], next, controls }` with `status` `locked` / `open` / `completed` and `controls` `{ gesture }` or null. Without a rider, the progression a new rider starts from. |
+| `POST /progress/:riderId/controls` | Body `{ gesture }`, one of the eight gesture ids. Saves the rider's controls; 400 for an unknown gesture or a bad rider id. |
 | `POST /progress/:riderId/unlock` | Body `{ levelId, unlockedBy }`. Admin skip-ahead; the browser collects the fingerprint first. 404 for an unknown level. |
 | `POST /runs` | Body `{ record }`. 201 on first save, 200 on an identical resend, 409 on a conflicting record with the same id, 400 on an invalid one. Records the completion in progress. |
 | `GET /runs/:runId` | `{ record }` or 404. |
@@ -199,53 +254,240 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.levels.loaded` | `levels`, `rejected`, `ids` | |
 | `.levels.error` | `reason` (`none-installed`, `request-failed`), `error` | error level |
 | `.level.invalid` | `levelId`, `errors` | a level the validator rejected, with why |
-| `.world.loaded` / `.world.error` | `riderId`, `next` / `error` | |
+| `.world.loaded` / `.world.error` | `riderId`, `next`, `gesture` / `error` | |
 | `.assets.loaded` / `.assets.error` | `sounds`, `missing: [{ slot, reason }]` | `reason: empty` is a placeholder |
 | `.lobby.shooter_picked`, `.lobby.level_chosen` | `shooterId`, `matEquipmentId`, `previous` / `levelId` | |
-| `.lobby.calibration_opened`, `.lobby.calibration_reset` | `shooterId`, `pose`, `recalibrating` / `reason` | |
-| `.lobby.calibration.started`, `.step`, `.too_narrow`, `.skipped`, `.closed` | `step`, `how` (`held` or a press), `attempt`, `elapsedMs`; `left`, `right` on too_narrow | |
-| `.lobby.calibrated` | `left`, `right`, `span`, `how`, `attempts`, `elapsedMs` | the range in shoulder widths |
+| `.controls.opened` / `.closed` | `tryoutId`, `shooterId`, `current`, `first`, `pose` | the controls intro |
+| `.controls.tryout` | `tryoutId`, `shooterId`, `gesture`, `how`, `ms`, `reached`, `leftMs`, `centreMs`, `rightMs`, `visits`, `laneChanges`, `pose`, `poseFps` | one per card; see below |
+| `.controls.chosen` | `tryoutId`, `shooterId`, `gesture`, `label`, `how` (`stomp`, `button`), `previous`, `saved` | |
+| `.controls.save_error` | `shooterId`, `gesture`, `error` | the choice holds for the session only |
 | `.pose.camera_ready`, `.pose.camera_unavailable` | `enabled` / `error` | |
 | `.pose.state` | `state` (`loading`, `detecting`, `error`, `camera-denied`), `backend`, `modelType`, `error` | on change |
 | `.pose.metrics` | `fps`, `latency`, `backend`, `modelType` | sampled while detecting; compare `fps` with `poseMinFps` |
-| `.pose.acquired`, `.pose.lost` | `aim` | |
-| `.fire.armed`, `.fire.no_mat`, `.fire.other_mat` | `matId`, `cannons` / `hasEventBus` / `from` | other_mat is sampled |
-| `.level.countdown` | `runId`, `levelId`, `shooterId` | |
-| `.level.start` | `seed`, `partnerId`, `aimMode`, `tier`, `tierTrusted`, `matId`, `cannons`, `durationS`, `pose`, `poseFps` | the seed replays the round |
-| `.fire` | `tier`, `aim`, `source` (`mat`, `keyboard`, `gamepad`, `auto`), `armsUp`, `time` | sampled, 30 a minute |
-| `.mat.press_to_shot_ms` | `ms` | sampled; app event to shot, not foot to screen |
-| `.round.nuke`, `.round.boost.activated`, `.round.base.hit` and other `.round.<engine event>` | the event's data | per-shot and per-threat events are not logged |
+| `.pose.acquired`, `.pose.lost` | `aim`, `lane`, `gesture` | the torso came into or went out of view |
+| `.pose.trace`, `.shot.trace` | see "Joint recorder" | batched every 20 s |
+| `.fire.armed`, `.fire.no_mat`, `.fire.other_mat` | `matId` / `hasEventBus` / `from` | other_mat is sampled |
+| `.level.countdown`, `.level.countdown_cancelled` | `runId`, `levelId`, `shooterId` | |
+| `.level.start` | `seed`, `partnerId`, `gesture`, `gestureChosen`, `aimMode`, `lane`, `matId`, `cannons`, `durationS`, `pose`, `poseFps` | the seed replays the round |
+| `.fuel` | `source` (`mat`, `keyboard`, `gamepad`), `fuel`, `lane`, `time` | one per step, sampled, 30 a minute |
+| `.mat.press_to_fuel_ms` | `ms` | sampled; app event to the engine, not foot to screen |
+| `.round.weapon.level`, `.round.bomb.ready`, `.round.bomb`, `.round.boost.activated`, `.round.base.hit` and other `.round.<engine event>` | the event's data | per-volley and per-threat events are not logged |
 | `.round.paused` / `.round.resumed` | `reason` (`player`, `lifecycle`, `hidden`), `time` / `how`, `pausedBy` | |
 | `.round.session_ended`, `.access.revoked` | `phase`, `state` | the round was ended from outside |
+| `.exit` | `phase`, `how` (`button`, `back`), `runId`, `levelId`, `shooterId`, `round`, `time` | the game was closed |
 | `.effect.executed` / `.skipped` / `.failed` | `eventType`, `effectId`, `reason` | sampled |
 | `.render.health` | `frames`, `longFrames`, `fps`, `windowMs`, `pose`, `poseFps`, `poseLatency`, `threats`, `shots` | every 20 s of play |
 | `.frame.error` | `error` | sampled; the round continues |
-| `.level.end` | `status`, `score`, `stars`, `kills`, `baseHp`, `shots`, `hits`, `bestCombo`, `nukes`, `boosts`, `durationS`, `seed`, `aimMode`, `shotsBySource` | |
+| `.level.end` | `status`, `score`, `stars`, `kills`, `baseHp`, `shots`, `hits`, `bestCombo`, `bombs`, `boosts`, `steps`, `firingS`, `weaponPeak`, `durationS`, `seed`, `gesture`, `aimMode`, `tally` | `tally` counts steps by source, stomps, and volleys by `stream` / `rapid` |
 | `.round.saved` / `.round.save_error` | `status`, `retried` / `error` | |
 | `.reward.awarded` / `.reward.skipped` | `rings`, `stars` / `reason` | |
 | `.boost.partner` | partner bike and rider, `when` | |
 | `.access.verdict`, `.access.read_failed`, `.access.override_requested` / `_granted` / `_denied` | `riderId`, `reason`, `adminUserId` | |
 | `.progress.unlock_requested` / `_granted` / `_denied` / `_error` | `riderId`, `levelId`, `adminUserId`, `reason`, `error` | |
 
-Server (`fitness.skyline_invaders.*`): `level.invalid` (`file`, `id`), `run.saved`, `progress.rebuilt` (`riderId`, `completed`), `progress.unlocked`, `progress.record_failed`.
+Server (`fitness.skyline_invaders.*`): `level.invalid` (`file`, `id`), `run.saved`, `progress.rebuilt` (`riderId`, `completed`), `progress.unlocked`, `progress.controls` (`riderId`, `gesture`), `progress.record_failed`.
+
+## Joint recorder
+
+`lib/skylineInvaders/traceRecorder.js` records what the camera saw and what every gesture made of it, so the gestures can be compared from data. Two events, both batched: one batch every `traceBatchMs` (20 s), because the log ingest allows each event name a burst of 30 and then 3 a minute per client. Rows are arrays of integers (null = no value) under one header per batch. A round flushes its last batch when it ends or is left; a pose batch is about 60 KB of JSON.
+
+Both events carry the header `kind` (`round` or `tryout`), `runId` (the round's id, or the controls visit's `tryoutId`), `levelId`, `shooterId`, `gesture` (the one driving the cannon), `gestureKind`, `hz`, `seq` (batch number within the run), `t0` (epoch ms of the first row), `n`, `cols`, `rows` and `reason` (`interval`, `round-end`, `abandoned`, `begin`, `tryout-chosen`, `tryout-closed`, `unmount`). Tryout batches add `card` (0–7), and round batches add `seed`.
+
+### `skyline_invaders.pose.trace`
+
+`traceHz` (10) rows a second. Columns, in order (`POSE_TRACE_COLS`):
+
+| Columns | Meaning |
+|---|---|
+| `dt` | ms since the batch's `t0` |
+| `k<i>x`, `k<i>y`, `k<i>s` for i in 11–16, 19, 20, 23, 24 | image keypoint: px, px, score ×100 (shoulders, elbows, wrists, index fingers, hips) |
+| `w<i>x`, `w<i>y`, `w<i>z` for i in 11–16 | world keypoint (`keypoints3D`): mm |
+| `wiper`, `twist`, `wings`, `wheel`, `sprinkler`, `offset` | that gesture's aim ×1000 for this frame (0 = screen left); null where it would hold |
+| `dragVel` | drag's cannon speed, screens/s ×1000 |
+| `pushVel` | the faster wrist's sideways speed, shoulder widths/s ×100 |
+| `pushStroke` | 1 when a push stroke began since the last row |
+| `hop` | −1 or 1 when a hop triggered since the last row, else 0 |
+| `roll`, `span` | wrist-to-wrist line: roll in degrees ×10, wrist spacing in shoulder widths ×100 |
+| `yaw`, `azimuth` | torso yaw and hand azimuth, degrees ×10 |
+| `lean` | shoulder midpoint against hip midpoint, shoulder widths ×100; no gesture uses it |
+| `raw`, `lane`, `cannonX` | the cannon: raw aim ×1000, lane 0–7, drawn x in scene units |
+| `lost` | 1 = no torso in view |
+| `armL`, `armR` | arm state: 0 ok, 1 down, 2 low score, 3 missing, 4 no body |
+| `target` | controls intro only: 1 left, 2 centre, 3 right while the cannon is on that practice target, else 0 |
+| `step` | 1 when the shooter stepped (or stomped) on the mat since the last row |
+
+Every gesture's signal is computed from every frame, whichever gesture is active. Push strokes, hops and mat steps that fall between two rows are written on the next row.
+
+### `skyline_invaders.shot.trace`
+
+One row per volley, written when the volley settles. Columns (`SHOT_TRACE_COLS`): `t` (ms since the batch's `t0`), `lane`, `aim` (raw aim ×1000), `x` (cannon x), `tx`, `ty` (the nearest threat in x, bombs aside; null with an empty sky), `miss` (`tx − x`, signed: positive means the threat was to the right), `hit` (1, 0, or null when the round ended with the volley in the air), `weapon` (0 single, 1 double, 2 spread).
+
+### `skyline_invaders.controls.tryout`
+
+One per card of the controls intro. `leftMs`, `centreMs`, `rightMs` are how long after the card opened the cannon arrived on each target on the visit that held (null = never reached). `visits` counts arrivals per target: more than one before a target is reached means the aim passed through without settling. `how` says how the card ended (`step`, `button`, `key`, `timeout`, `chosen-stomp`, `chosen-button`, `closed`).
+
+### Analyzing a session
+
+Pull the events for a day, then feed them to the script. `{env.log_store_url}` is in `CLAUDE.local.md`. The script expects the store's flattened rows (`data.rows`, `data.cols` and the rest as `data.*` fields, with arrays as JSON text); it has been run on synthetic batches from the real recorder, not yet on rows from the store.
+
+```bash
+for e in pose.trace shot.trace controls.tryout level.end; do
+  curl -s {env.log_store_url}/select/logsql/query \
+    -d "query=\"skyline_invaders.$e\" AND _time:24h" -d 'limit=5000' > "si-$e.jsonl"
+done
+python3 si_traces.py si-pose.trace.jsonl si-shot.trace.jsonl si-controls.tryout.jsonl
+```
+
+```python
+# si_traces.py: per-gesture stats from Skyline Invaders traces.
+import json, statistics as st, sys
+from collections import defaultdict
+
+def load(path):
+    out = []
+    for line in open(path):
+        if not line.strip(): continue
+        e = json.loads(line)
+        d = {k[5:]: v for k, v in e.items() if k.startswith('data.')}   # the store flattens data.*
+        for k in ('cols', 'rows', 'visits'):                            # arrays and objects arrive as JSON text
+            if isinstance(d.get(k), str): d[k] = json.loads(d[k])
+        out.append(d)
+    return out
+
+def table(batch):
+    c = {name: i for i, name in enumerate(batch['cols'])}
+    return [{name: row[i] for name, i in c.items()} for row in batch['rows']]
+
+def pct(xs, p):
+    xs = sorted(xs); return xs[min(len(xs) - 1, int(p / 100 * len(xs)))] if xs else None
+
+AIMS = ['wiper', 'twist', 'wings', 'wheel', 'sprinkler', 'offset']
+pose, shots, tryouts = (load(p) for p in sys.argv[1:4])
+
+# 1. Round play: every gesture's signal is in every row, so one round compares them all.
+noise, reach, held = defaultdict(list), defaultdict(list), defaultdict(lambda: [0, 0])
+for b in (b for b in pose if b.get('kind') == 'round'):
+    rows = table(b)
+    for g in AIMS:
+        vals = [r[g] for r in rows]
+        for r in rows:
+            held[g][0] += r[g] is None; held[g][1] += 1
+        ok = [v / 1000 for v in vals if v is not None]
+        reach[g] += ok
+        # still-noise: spread of the signal over each second in which the cannon did not change lane
+        for i in range(0, len(rows) - 10, 10):
+            w = rows[i:i + 10]
+            if len({r['lane'] for r in w}) == 1 and all(r[g] is not None for r in w):
+                noise[g].append(st.pstdev(r[g] / 1000 for r in w))
+print('ROUND PLAY, per gesture signal (aim 0..1)')
+for g in AIMS:
+    if not reach[g]: continue
+    edge = sum(v <= 0.0625 or v >= 0.9375 for v in reach[g]) / len(reach[g])
+    print(f'  {g:10s} still-noise p50 {pct(noise[g], 50):.3f} p90 {pct(noise[g], 90):.3f}  '
+          f'range p5 {pct(reach[g], 5):.2f} p95 {pct(reach[g], 95):.2f}  time in edge lanes {edge:.0%}  held {held[g][0] / held[g][1]:.0%}')
+
+# 2. Step throw: how far each gesture's signal moves in the 300 ms after a mat step, against where it
+#    was 200 ms before. A quarter of a lane (0.031) is what the lane hysteresis absorbs.
+throw = defaultdict(list)
+for b in (b for b in pose if b.get('kind') == 'round'):
+    rows = table(b)
+    for i, r in enumerate(rows):
+        if not r['step'] or i < 2 or i + 3 >= len(rows): continue
+        for g in AIMS:
+            before, after = rows[i - 2][g], [rows[j][g] for j in range(i, i + 4)]
+            if before is None or any(v is None for v in after): continue
+            throw[g].append(max(abs(v - before) for v in after) / 1000)
+print('STEP THROW, per gesture signal: aim moved by a mat step')
+for g in AIMS:
+    if throw[g]:
+        print(f'  {g:10s} steps {len(throw[g])}  p50 {pct(throw[g], 50):.3f} p90 {pct(throw[g], 90):.3f}  over a quarter lane {sum(v > 0.031 for v in throw[g]) / len(throw[g]):.0%}')
+
+# 3. Shots: hit rate and miss distribution, by the gesture that was driving.
+by = defaultdict(list)
+for b in shots:
+    by[b['gesture']] += [r for r in table(b) if r['hit'] is not None]
+print('SHOTS, by active gesture')
+for g, rows in by.items():
+    aimed = [r for r in rows if r['miss'] is not None]
+    miss = [r['miss'] for r in aimed if not r['hit']]
+    lanes = [round(m / 110) for m in miss]
+    print(f'  {g:10s} volleys {len(rows)}  hit {sum(r["hit"] for r in rows) / len(rows):.0%}  '
+          f'miss p50 |{pct([abs(m) for m in miss], 50)}| units  one lane off {sum(abs(l) == 1 for l in lanes) / max(1, len(lanes)):.0%}  '
+          f'left/right of target {sum(m > 0 for m in miss)}/{sum(m < 0 for m in miss)}  '
+          f'edge-lane volleys {sum(r["lane"] in (0, 7) for r in rows) / len(rows):.0%}')
+
+# 4. Tryouts: the same left / centre / right task for every gesture.
+print('TRYOUTS, per gesture: time to reach each target (ms), share reached, visits before settling')
+by = defaultdict(list)
+for t in tryouts: by[t['gesture']].append(t)
+for g, ts in by.items():
+    line = f'  {g:10s} cards {len(ts)}'
+    for side in ('left', 'centre', 'right'):
+        got = [t[f'{side}Ms'] for t in ts if t.get(f'{side}Ms') is not None]
+        visits = [(t.get('visits') or {}).get(side, 0) for t in ts]
+        line += f'  {side} {len(got)}/{len(ts)} p50 {pct(got, 50)} visits {st.mean(visits):.1f}'
+    print(line)
+
+# 5. Tryout traces: steadiness on target and overshoot.
+#    steadiness = spread of the raw aim while the cannon is on a target;
+#    overshoot  = how far past the target lane's centre the raw aim went on the way in.
+CENTRE = {1: 0.0625, 2: 0.5, 3: 0.9375}
+steady, over = defaultdict(list), defaultdict(list)
+for b in (b for b in pose if b.get('kind') == 'tryout'):
+    rows = table(b)
+    i = 0
+    while i < len(rows):
+        t = rows[i]['target']
+        if not t: i += 1; continue
+        j = i
+        while j < len(rows) and rows[j]['target'] == t: j += 1
+        raw = [r['raw'] / 1000 for r in rows[i:j] if r['raw'] is not None]
+        if len(raw) >= 5:
+            steady[b['gesture']].append(st.pstdev(raw))
+            past = max((v - CENTRE[t]) * (1 if t == 3 else -1 if t == 1 else 0) for v in raw) if t != 2 else max(abs(v - 0.5) for v in raw)
+            over[b['gesture']].append(max(0, past))
+        i = j
+print('TRYOUT TRACES, per gesture: raw aim while on a target')
+for g in steady:
+    print(f'  {g:10s} visits {len(steady[g])}  steadiness (sd) p50 {pct(steady[g], 50):.3f}  overshoot p50 {pct(over[g], 50):.3f} p90 {pct(over[g], 90):.3f}')
+```
+
+What the numbers mean. **Still-noise** is the spread of a gesture's signal over a second in which the cannon held its lane; a lane is 0.125 wide, so a noise of 0.03 crosses the 25% hysteresis now and then. **Step throw** is how far a signal jumps when the foot comes down; over a quarter lane it can move the cannon, which is what `stepLaneFreezeMs` is there to cover. **Range** and **time in edge lanes** say whether a gesture reaches lanes 0 and 7. **Held** is the share of frames the gesture could not be read. For `drag`, `push` and `hop` there is no aim column: compare them by the shot table, the tryout times and the cannon's `raw` in their own rounds. Overshoot for the edge targets is clipped by the screen edge, so the centre target is the one to read it from.
 
 ## Tunables
 
-`lib/skylineInvaders/tunables.js` is the one place these live; they come from the Phase 0 garage spike.
+`lib/skylineInvaders/tunables.js` is the one place these live. The pose and mat numbers come from the Phase 0 garage spike; the gesture, lane, fuel and power numbers are first guesses from the 2026-11-12 play session, and the traces exist to replace them with measured values. `fire:` in a level file overrides the fuel and power numbers for that level.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `fireIntervalS` | 1.0 | seconds per shot from step-off/step-on firing; drives the reachability bot |
-| `reachabilityHitRate` | 0.6 | share of the bot's kills a level may demand |
-| `aimLatchMs` | 200 | a shot uses the aim from this long before the press |
 | `poseModelType` | `full` | BlazePose model |
 | `poseBackend` | `null` | detector default |
 | `poseMinFps` | 20 | logged against, not enforced |
-| `keypointMinScore` | 0.3 | below this an arm is unusable |
-| `poseLostAfterMs` | 500 | no usable arm for this long = lost |
+| `keypointMinScore` | 0.3 | below this a keypoint is not used |
+| `poseLostAfterMs` | 800 | no torso for this long = lost |
 | `armsUpHoldMs` | 300 | hold before the arms-up bonus counts |
+| `aimSmoothingMs` | 120 | time constant of the aim filter (`aim` gestures) |
+| `defaultGesture` | `wiper` | played with when a rider has not picked one |
+| `wiperMaxDeg`, `wiperMinForearmSw` | 50, 0.3 | wiper: edge angle; shortest usable forearm |
+| `twistMaxDeg`, `twistSign` | 35, −1 | twist: edge angle; sign of yaw that is a right turn |
+| `wingsMaxDeg`, `wingsMinSpanSw` | 30, 1.5 | wings: edge angle; least wrist spacing |
+| `wheelMaxDeg`, `wheelMinSpanSw`, `wheelMaxSpanSw` | 45, 0.25, 1.5 | wheel: edge angle; wrist spacing range |
+| `sprinklerMaxDeg`, `sprinklerMinReachSw` | 40, 0.5 | sprinkler: edge angle; least reach from the chest |
+| `dragDeadZoneSw`, `dragFullSw`, `dragMaxSpeed` | 0.3, 1.0, 0.8 | drag: dead zone, full deflection, full speed (screens/s) |
+| `pushMinSpeedSw`, `pushGain`, `pushMaxSpeed` | 2.0, 0.3, 2.5 | push: stroke threshold, screens per shoulder width, speed cap |
+| `pushFrictionMs`, `pushSettleSpeed`, `pushCooldownMs` | 220, 0.08, 250 | push: glide time constant, stop speed, return-stroke cooldown |
+| `hopRaiseDropSw`, `hopLowerDropSw` | 0.15, 0.5 | hop: raised; lowered enough to re-arm |
+| `hopReachSw`, `hopReachReleaseSw`, `hopRefractoryMs` | 1.3, 0.9, 350 | hop: reached; back in enough to re-arm; least time between hops |
+| `offsetReachSw`, `offsetDownRatio` | 1.2, 1.1 | offset (trace only): edge offset; a wrist this far below its shoulder is hanging (also drag, push, hop) |
+| `lanes`, `laneHysteresis`, `stepLaneFreezeMs` | 8, 0.25, 150 | lanes: count; share of a lane to cross before moving; lane hold after a mat step |
+| `fuelPerStepS`, `fuelCapS`, `streamIntervalS` | 1.5, 5, 0.25 | fuel per step; tank; seconds between volleys |
+| `powerPerKill`, `powerPerFiringS`, `weaponIdleDropS` | 0.08, 0.03, 8 | power meter per kill and per second of firing; idle time that costs a level |
+| `botStepIntervalS`, `botDecisionS`, `botLaneErrorRate`, `botLaneMoveS` | 1.0, 1.0, 0.4, 0.35 | reachability bot |
+| `reachabilitySeeds`, `reachabilityHitRate`, `reachabilityBaseHpMargin` | [1, 2, 3], 0.6, 15 | reachability check |
+| `tryoutCardS`, `tryoutTargetHoldMs` | 20, 400 | controls intro: seconds per card; rest time that ticks a target |
+| `traceHz`, `traceBatchMs` | 10, 20000 | joint recorder |
 
-The spike widget stays registered as the re-measurement tool: `/fitness/module/skyline_invaders_spike` (`widgets/SkylineInvadersSpike/`, events `skyline_invaders.spike.*`). Run it again after a change to the camera, the garage box or the mat firmware, write the numbers into `tunables.js`, and run the seed-level test.
+The spike widget stays registered as the re-measurement tool: `/fitness/module/skyline_invaders_spike` (`widgets/SkylineInvadersSpike/`, events `skyline_invaders.spike.*`). It measures the old offset aim and one-step-one-shot firing; the pose-rate and mat-rate tests still apply.
 
 ## Art
 
@@ -259,11 +501,15 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 
 **Pose is slow (around 13 fps).** A page served without cross-origin isolation runs the pose model single-threaded. The TF.js WASM backend needs `SharedArrayBuffer` for its threads, and the browser grants that only when the document response carries `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. The app and the dev server set both, but anything that serves the page another way (a proxy that rewrites headers, a static host, a test harness) may not. This was the Phase 0 lesson: without isolation the lite and the full model both ran at about 13 fps, so the limit was the single-threaded CPU backend, not the model size. Check `self.crossOriginIsolated` in the kiosk's console (it must be `true`), then `skyline_invaders.pose.metrics` for `fps` and `backend`. The engine is frame-rate independent and plays the same at 13 Hz aim; the cannon is only less smooth.
 
-**Stepping does nothing.** `skyline_invaders.fire.no_mat` means no mat hardware id reached the game; `fire.other_mat` means steps are arriving from a mat that is not the shooter's. Pick the shooter on the right mat in the lobby. The first `fire.armed` line names the mat in use.
+**Stepping does nothing.** `skyline_invaders.fire.no_mat` means no mat hardware id reached the game; `fire.other_mat` means steps are arriving from a mat that is not the shooter's. Pick the shooter on the right mat in the lobby. The first `fire.armed` line names the mat in use, and each step that counts logs `skyline_invaders.fuel`.
 
-**Every shot is small.** The shooter has no trusted zone: no monitor, a stale reading (over ten seconds) or an ineligible one. `level.start` records `tier` and `tierTrusted`.
+**The weapon keeps dropping back to Single.** The stream was idle for `weaponIdleDropS`. `level.end` records `steps`, `firingS` and `weaponPeak`.
 
-**The cannon will not follow the arms.** Without a calibration the game is in gamepad aim (`aimMode: manual` on `level.start`). Calibrate in the lobby. If the HUD says "Step into view", the arms' keypoints are under `keypointMinScore`: an arm crossing behind the body drops out and the other carries the aim.
+**The cannon will not follow.** `level.start` records `gesture`, `gestureChosen` and `aimMode`. `aimMode: manual` means the camera had not seen a torso when the round began. If the HUD says "Step into view", both shoulders are under `keypointMinScore`. If neither, the gesture is holding: its signal could not be read (the `held` share in the trace analysis). `twist` and `sprinkler` hold on every frame when the pose carries no `keypoints3D`.
+
+**Twist steers the wrong way.** Flip `twistSign` in `tunables.js` (see the sign convention under Aim).
+
+**A rider is asked to pick controls again.** Their progress file has no `controls` (it was deleted and rebuilt from the run log), or the save failed (`skyline_invaders.controls.save_error`).
 
 **The boost meter is missing.** No partner: no connected bike with a rider other than the shooter (`skyline_invaders.boost.partner` logs when one is found).
 
@@ -271,4 +517,6 @@ Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skyli
 
 ## Not verified live
 
-The game is covered by unit and widget tests and by backend-free screenshots of the shell. The first live check is on the garage display after a deploy: the lobby lists the four levels, calibration completes at the mat, a step fires, `pose.metrics` shows the frame rate, and a finished round appears under `fitness/log/skyline-invaders/` and in the session history.
+The game is covered by unit and widget tests and by backend-free screenshots of the shell (`tests/_scratch/shoot-skyline-invaders*.mjs`, which stub the audio and mute the browser). Nothing in this release has been played on the garage display. The first live check after a deploy: the lobby lists the four levels, the controls intro follows a rider on each card, a step starts the stream, a stomp drops a ready bomb, Exit returns to the Fitness menu, `pose.trace` and `shot.trace` batches arrive in the log store, and a finished round appears under `fitness/log/skyline-invaders/`.
+
+Open questions that only the garage can answer: the sign of `twist`, whether `keypoints3D` wrist depth is steady enough for `sprinkler`, whether the mat classifies a deliberate stomp reliably enough to be the "pick" and "bomb" input, and whether a 60 KB trace event every 20 s is within what the log store accepts per line.

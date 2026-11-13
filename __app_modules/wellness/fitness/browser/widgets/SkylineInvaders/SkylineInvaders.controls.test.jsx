@@ -395,6 +395,7 @@ describe('Skyline Invaders joint recorder', () => {
     // The round is played on twist, and the wiper signal is recorded all the same.
     expect(first[cols.indexOf('wiper')]).toBe(700);
     expect(first[cols.indexOf('lane')]).toEqual(expect.any(Number));
+    expect(pose[0].rows.filter((row) => row[cols.indexOf('step')] === 1)).toHaveLength(1);     // the one mat step
     expect(pose[0].n).toBeGreaterThan(30);
     expect(pose[pose.length - 1].reason).toBe('round-end');
     expect(shot.reduce((sum, batch) => sum + batch.n, 0)).toBe(postedRecords(routes)[0].run.shots_fired);
