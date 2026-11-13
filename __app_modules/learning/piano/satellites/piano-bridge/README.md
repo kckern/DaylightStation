@@ -1,5 +1,11 @@
 # Piano Bridge (APK)
 
+> **Payload p36 (`p36-a2dp-floor`, 2026-11-13).** The audio guard now holds the A2DP
+> speaker's `STREAM_MUSIC` index at max once A2DP is the settled route ("connected but
+> 0/15" was silent and every surface read green). `POST /audio-guard/volume-check`
+> verifies it on demand; the kiosk calls it on every Media Volume press. See DESIGN.md
+> "The other direction: A2DP volume floor".
+
 > **Payload p31 (`p31-system-consent`).** Bluetooth controls now run inside the
 > maintenance drawer through native APIs. The drawer does not launch Android Settings.
 > Remove package-wide `com.android.settings` access from Fully. The optional protected

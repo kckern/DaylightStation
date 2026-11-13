@@ -4,6 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const midi = vi.hoisted(() => ({ outputConnected: false, sendControlChange: vi.fn() }));
 let activePianoId = 'yellow-room';
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
+const osVol = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock('./bridgeAudioVolume.js', () => ({ checkBridgeMediaVolume: (...a) => osVol.check(...a) }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => ({ pianoId: activePianoId }) }));
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
@@ -13,9 +15,10 @@ import { PianoMixProvider } from './PianoMixContext.jsx';
 import { usePianoMix } from './usePianoMix.js';
 
 function Harness() {
-  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel } = usePianoMix();
+  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, mediaOutput } = usePianoMix();
   return (
     <div>
+      <span data-testid="os">{mediaOutput ? `${mediaOutput.musicIndex}/${mediaOutput.musicMax}` : 'none'}</span>
       <span data-testid="piano">{pianoLevel}</span>
       <span data-testid="media">{mediaLevel}</span>
       <button type="button" onClick={() => setPianoLevel(0.5)}>piano-half</button>
@@ -31,6 +34,8 @@ beforeEach(() => {
   midi.sendControlChange.mockReset();
   midi.outputConnected = false;
   activePianoId = 'yellow-room';
+  osVol.check.mockReset();
+  osVol.check.mockResolvedValue({ available: false, error: 'unreachable' });
 });
 
 describe('PianoMixContext', () => {
@@ -88,5 +93,25 @@ describe('PianoMixContext', () => {
     activePianoId = 'upstairs';
     rerender(<PianoMixProvider><Harness /></PianoMixProvider>);
     expect(screen.getByTestId('piano').textContent).toBe('0.25');
+  });
+
+  it('checks the tablet OS media volume on mount and on every media-level press', async () => {
+    renderMix();
+    expect(osVol.check).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('media-30'));
+    expect(osVol.check).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not check OS media volume for a MIDI level change', () => {
+    renderMix();
+    osVol.check.mockClear();
+    fireEvent.click(screen.getByText('piano-half'));
+    expect(osVol.check).not.toHaveBeenCalled();
+  });
+
+  it('exposes what the bridge reported', async () => {
+    osVol.check.mockResolvedValue({ available: true, routeOk: true, musicIndex: 15, musicMax: 15, raised: true, silent: false });
+    renderMix();
+    expect(await screen.findByText('15/15')).toBeTruthy();
   });
 });
