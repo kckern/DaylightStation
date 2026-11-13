@@ -363,13 +363,18 @@ this host can read it; a 240p Plex transcode when `CONTENT_FILTER_LOW_RES=1`; th
 Plex. It logs `content-filter.source.chosen { kind, reason }`.
 
 Pictures then come from a **low-res copy** (`videoProxy.mjs`): 480p, picture only, a keyframe
-every second, no B-frames, the original's timestamps (measured on Terminator 2: the same 197,294
-frames, the same frame at every time checked). It is built once per part and file size into
-`CONTENT_FILTER_PROXY_DIR` (default `<tmp>/daylight-cf-proxy`, outside the worker's per-run stage),
+every second, no B-frames, every frame kept (measured on Terminator 2: the same 197,294 frames, the
+same frame at every time checked). It is built without `-copyts`, so it starts at 0: `proxyFit`
+compares it with the original (frame rate, length, frame count) and gives the offset (the original's
+start time), and `ProxiedRefineMedia` reads the copy at `t − offset` and adds the offset back; a copy
+that does not fit is refused (`content-filter.proxy.mismatch`) and refine reads the original. One
+build per copy (a lock file; others wait; a 3 h old lock is taken over). It is built once per part
+and file size into `CONTENT_FILTER_PROXY_DIR` (default `<tmp>/daylight-cf-proxy`, outside the
+worker's per-run stage), pruned to `CONTENT_FILTER_PROXY_MAX_GB` (default 40) least recently used first,
 about 13 minutes for a two-hour film, and it starts as soon as the source is known, so it runs
 alongside transcription (`prepareCopy` `onSource`). `ProxiedRefineMedia` sends frames, shot cuts
 and black detection to the copy and keeps sound and the probe on the original; region boxes are
-fractions of the frame, so they need no change. `FrameChunkCache` decodes the next 48 frames on a
+fractions of the frame, so they need no change. `FrameChunkCache` (capped at 1,200 frames and 256 MB) decodes the next 48 frames on a
 miss, so the ~90 frame requests around a cue cost a handful of ffmpeg runs. `cellCrop` runs
 in-process (`@napi-rs/canvas`): as ImageMagick it was ~3,000 process starts per cue, and each start
 blocked the event loop. Cues run 6 at a time (`--concurrency`); above 6 the decision model is the
@@ -952,7 +957,10 @@ running (`content_filter.review.audit_requested`; 2026-11-12, Terminator 2 was r
 but had never been audited, so its list was empty), and reads a film with only VidAngel's rough EDL
 (`hasRefined: false`; its rows come from an audit of the raw EDL). It carries `status` (`filmStatus.mjs`):
 `{ filters: { present, parts }, refined: { present, measured, of }, certified, next }`, `next` one of
-`none | refine | running | checking | review | approve | done`. It returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
+`none | refine | running | checking | check-failed | review | approve | done` (`approve` only when the
+sign-off would be accepted). A failed check is kept on the run record (`auditError`,
+`content-filter.audit.failed`) and the route stops asking until **Retry**; the payload also carries
+`auditRunning` and the filter `worker` status. It returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
 moment as the household gets it (the preview rail's moments: a subject group is one row, a scene
 swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`, `members`
 (the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
@@ -999,7 +1007,7 @@ row without a verdict) or **Approve for family**. While a run works it shows its
 (Checking the machine, Syncing the film's clock, Measuring each part — n of N, Building scenes,
 Drafting cards, Checking the result; `runProgress.js`), a bar, an ETA from the pace since the first
 part (after 3), the five latest parts in words and **Stop** (confirmed: nothing from a stopped run is
-saved). There is no stage dropdown; the sign-off panel lists what is missing and offers Withdraw. An
+saved; refused once a run's results are saved). A queued run with no live worker says so. There is no stage dropdown; the sign-off panel lists what is missing and offers Withdraw. An
 empty list says why (not refined yet, still checking, run in progress).
 
 #### Review station
