@@ -104,6 +104,7 @@ describe('RecordPrintedActivityScan', () => {
     const { uc, receipts } = build({ store });
     const out = await uc.execute(KEY);
     expect(out).toMatchObject({ status: 'already', ok: true, message: 'Already counted', learnerId: 'learner_a' });
+    expect(out.ok).toBe(true);
     expect(store.calls.complete).toHaveLength(0);
     expect(docText(receipts.docs[0])).toContain("Learner A's Maze 12 was counted on 2026-11-12.");
   });
@@ -174,7 +175,7 @@ describe('RecordPrintedActivityScan', () => {
     const { uc, receipts, logger } = build({ store });
     const out = await uc.execute(KEY);
     expect(out).toEqual({
-      status: 'failed', ok: false, message: 'That scan could not be recorded. Ask a grown-up.', printed: true,
+      status: 'failed', ok: false, message: 'That scan could not be recorded. Scan it again, or check the School log.', printed: true,
     });
     expect(logged(logger.error, 'school.printed-activity.scan-failed')[0][1]).toMatchObject({ error: 'boom' });
     expect(receipts.docs).toHaveLength(1);
@@ -193,10 +194,71 @@ describe('RecordPrintedActivityScan', () => {
     for (const bad of [{}, { platform: 'beeloo' }, { platform: '', externalId: 'x' }, { platform: 'beeloo', externalId: 7 }]) {
       const { uc, store, receipts } = build();
       const out = await uc.execute(bad);
-      expect(out).toMatchObject({ status: 'invalid', ok: false, printed: false });
+      expect(out).toEqual({ status: 'invalid', ok: false, message: 'That code is not a worksheet code.', printed: false });
       expect(store.calls).toEqual({ findOpen: 0, findAny: 0, complete: [] });
       expect(receipts.docs).toHaveLength(0);
     }
+  });
+
+  it('logs the invalid scan at warn', async () => {
+    const { uc, logger } = build();
+    await uc.execute({ platform: 'beeloo', externalId: '', device: 'kitchen-scanner' });
+    expect(logged(logger.warn, 'school.printed-activity.scan-invalid')[0][1]).toEqual({
+      platform: 'beeloo', externalId: '', device: 'kitchen-scanner',
+    });
+  });
+
+  it('a logger that throws after the credit is written still answers recorded', async () => {
+    const logger = fakeLogger();
+    for (const level of ['info', 'warn', 'error', 'debug']) logger[level] = vi.fn(() => { throw new Error('logger down'); });
+    const { uc, store } = build({ logger, assignments: { get: async () => ({ programs: [] }) } });
+    const out = await uc.execute(KEY);
+    expect(out).toMatchObject({ status: 'recorded', ok: true, message: "Learner A's maze counted" });
+    expect(store.rows[0].completedAt).toBe('2026-11-14T18:00:00.000Z');
+  });
+
+  it('an unknown complete status answers failed with the generic line', async () => {
+    const store = fakeStore([issuance()]);
+    store.complete = async () => ({ status: 'weird', issuance: null });
+    const { uc, receipts, logger } = build({ store });
+    const out = await uc.execute(KEY);
+    expect(out).toMatchObject({ status: 'failed', ok: false, message: 'Not counted' });
+    expect(docText(receipts.docs[0])).toContain('That scan could not be recorded. Scan it again, or check the School log.');
+    expect(docText(receipts.docs[0])).not.toContain("couldn't find");
+    expect(logged(logger.warn, 'school.printed-activity.scan-refused')).toHaveLength(1);
+  });
+
+  it('a missing issuance names the missing record', async () => {
+    const store = fakeStore([issuance()]);
+    store.complete = async () => ({ status: 'missing', issuance: null });
+    const { uc, receipts } = build({ store });
+    await uc.execute(KEY);
+    expect(docText(receipts.docs[0])).toContain("School couldn't find this sheet's record, so it wasn't counted.");
+  });
+
+  it('complete() throwing answers failed and nothing claims recorded', async () => {
+    const store = fakeStore([issuance()]);
+    store.complete = async () => { throw new Error('disk full'); };
+    const { uc, receipts, logger } = build({ store });
+    const out = await uc.execute(KEY);
+    expect(out.status).toBe('failed');
+    expect(out.ok).toBe(false);
+    expect(logged(logger.info, 'school.printed-activity.scanned')).toHaveLength(0);
+    expect(receipts.docs.map(docText).join()).not.toContain('counted');
+    expect(logged(logger.error, 'school.printed-activity.scan-failed')[0][1]).toMatchObject({ error: 'disk full' });
+  });
+
+  it('no assignment record at all is an orphan; the credit stands', async () => {
+    const { uc, logger } = build({ assignments: { get: async () => null } });
+    const out = await uc.execute(KEY);
+    expect(out.status).toBe('recorded');
+    expect(logged(logger.warn, 'school.printed-activity.scan-orphaned')).toHaveLength(1);
+  });
+
+  it('an issuance without a kind is called a sheet', async () => {
+    const store = fakeStore([issuance({ kind: null })]);
+    const { uc } = build({ store });
+    expect((await uc.execute(KEY)).message).toBe("Learner A's sheet counted");
   });
 
   it('falls back to the learner id when no name is known or the lookup throws', async () => {

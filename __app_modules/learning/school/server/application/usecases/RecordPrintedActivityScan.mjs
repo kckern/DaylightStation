@@ -27,7 +27,7 @@ import { studyDayForInstant } from '../../domain/studyDay.mjs';
 import { noticeDocument } from '../../domain/documents/receipts.mjs';
 import { PRINTED_ACTIVITY_PROGRAM_ID } from '../../domain/printedActivity.mjs';
 
-const FAILED_MESSAGE = 'That scan could not be recorded. Ask a grown-up.';
+const FAILED_MESSAGE = 'That scan could not be recorded. Scan it again, or check the School log.';
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const errText = (err) => (err && err.message) ? err.message : String(err);
 
@@ -65,13 +65,13 @@ export class RecordPrintedActivityScan {
    */
   async execute({ platform, externalId, device = null } = {}) {
     if (!isNonEmptyString(platform) || !isNonEmptyString(externalId)) {
-      this.#logger.warn?.('school.printed-activity.scan-invalid', { platform: platform ?? null, externalId: externalId ?? null, device });
+      this.#log('warn', 'school.printed-activity.scan-invalid', { platform: platform ?? null, externalId: externalId ?? null, device });
       return { status: 'invalid', ok: false, message: 'That code is not a worksheet code.', printed: false };
     }
     try {
       return await this.#record({ platform, externalId, device });
     } catch (err) {
-      this.#logger.error?.('school.printed-activity.scan-failed', { platform, externalId, device, error: errText(err) });
+      this.#log('error', 'school.printed-activity.scan-failed', { platform, externalId, device, error: errText(err) });
       const printed = await this.#slip(`scan-failed-${externalId}`, FAILED_MESSAGE, []);
       return { status: 'failed', ok: false, message: FAILED_MESSAGE, printed };
     }
@@ -87,7 +87,7 @@ export class RecordPrintedActivityScan {
       if (any?.voidedAt) {
         return this.#notCounted(any, 'voided', 'This sheet was cancelled when it was printed. Print a new one.');
       }
-      this.#logger.info?.('school.printed-activity.scan-unmatched', { platform, externalId, device });
+      this.#log('info', 'school.printed-activity.scan-unmatched', { platform, externalId, device });
       const headline = 'Not a School sheet';
       const printed = await this.#slip(`unmatched-${externalId}`, headline,
         ["This page wasn't printed by School, so it doesn't count."]);
@@ -101,21 +101,22 @@ export class RecordPrintedActivityScan {
 
     if (r?.status === 'already') return this.#already(r.issuance ?? open);
     if (r?.status === 'voided') {
-      this.#logger.warn?.('school.printed-activity.scan-refused', {
+      this.#log('warn', 'school.printed-activity.scan-refused', {
         learnerId: open.learnerId, issuanceId: open.issuanceId, platform, externalId, device, status: 'voided',
       });
       return this.#notCounted(open, 'voided', 'This sheet was cancelled when it was printed. Print a new one.');
     }
     if (r?.status !== 'completed') {
-      this.#logger.warn?.('school.printed-activity.scan-refused', {
+      this.#log('warn', 'school.printed-activity.scan-refused', {
         learnerId: open.learnerId, issuanceId: open.issuanceId, platform, externalId, device, status: r?.status ?? null,
       });
-      return this.#notCounted(open, r?.status === 'missing' ? 'missing' : 'failed',
-        "School couldn't find this sheet's record, so it wasn't counted. Ask a grown-up.");
+      return r?.status === 'missing'
+        ? this.#notCounted(open, 'missing', "School couldn't find this sheet's record, so it wasn't counted. Check the School log.")
+        : this.#notCounted(open, 'failed', FAILED_MESSAGE);
     }
 
     const issuance = r.issuance ?? open;
-    this.#logger.info?.('school.printed-activity.scanned', {
+    this.#log('info', 'school.printed-activity.scanned', {
       learnerId: open.learnerId, corpusId: open.corpusId, platform, externalId, studyDay, device,
     });
     await this.#checkOrphan(open);
@@ -156,10 +157,15 @@ export class RecordPrintedActivityScan {
       const assignment = await this.#assignments.get(learnerId);
       const programs = Array.isArray(assignment?.programs) ? assignment.programs : [];
       const enrolled = programs.some((p) => p?.programId === PRINTED_ACTIVITY_PROGRAM_ID && p?.corpusId === corpusId);
-      if (!enrolled) this.#logger.warn?.('school.printed-activity.scan-orphaned', { learnerId, corpusId, issuanceId });
+      if (!enrolled) this.#log('warn', 'school.printed-activity.scan-orphaned', { learnerId, corpusId, issuanceId });
     } catch (err) {
-      this.#logger.warn?.('school.printed-activity.assignment-unreadable', { learnerId, corpusId, issuanceId, error: errText(err) });
+      this.#log('warn', 'school.printed-activity.assignment-unreadable', { learnerId, corpusId, issuanceId, error: errText(err) });
     }
+  }
+
+  /** A logger that throws must never turn a written credit into "could not be recorded". */
+  #log(level, event, data) {
+    try { this.#logger[level]?.(event, data); } catch { /* a broken logger is not the scan's problem */ }
   }
 
   #name(learnerId) {
@@ -167,7 +173,7 @@ export class RecordPrintedActivityScan {
       const name = this.#learnerName?.(learnerId);
       if (isNonEmptyString(name)) return name;
     } catch (err) {
-      this.#logger.warn?.('school.printed-activity.name-failed', { learnerId, error: errText(err) });
+      this.#log('warn', 'school.printed-activity.name-failed', { learnerId, error: errText(err) });
     }
     return learnerId;
   }
@@ -178,7 +184,7 @@ export class RecordPrintedActivityScan {
       const printed = await this.#receipts.print(noticeDocument({ id, headline, lines }));
       return Boolean(printed?.printed);
     } catch (err) {
-      this.#logger.warn?.('school.printed-activity.slip-failed', { id, error: errText(err) });
+      this.#log('warn', 'school.printed-activity.slip-failed', { id, error: errText(err) });
       return false;
     }
   }
