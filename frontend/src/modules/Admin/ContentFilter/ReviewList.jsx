@@ -32,7 +32,7 @@ export function timecode(t) {
 }
 
 export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {},
-  picked = null, onPick = null, sentBack = {}, scope: scopeProp = null, onScope = null }) {
+  picked = null, onPick = null, sentBack = {}, scope: scopeProp = null, onScope = null, emptyText = null }) {
   // The page owns the scope (kind x action x needs x group) so the timeline and stepping share it;
   // used on its own the list keeps its own.
   const [own, setOwn] = useState(DEFAULT_SCOPE);
@@ -53,7 +53,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
         <Select size="xs" aria-label="Group" placeholder="All groups" clearable data={groups.map((g) => ({ value: g, label: groupLabel(g) }))} value={scope.group} onChange={(group) => setScope({ group })} />
         <Checkbox size="xs" label="Needs review" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />
       </Group>
-      {!shown.length ? <Text size="sm" c="dimmed">Nothing here. Change the filters above.</Text> : shown.map((r) => (
+      {!shown.length ? <Text size="sm" c="dimmed">{!rows.length && emptyText ? emptyText : 'Nothing here. Change the filters above.'}</Text> : shown.map((r) => (
         <div key={r.id} data-row-id={r.id} className={`cf-review__row${r.id === selectedId ? ' is-selected' : ''}`}>
           <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
             <Stack gap={2} className="cf-review__row-main">

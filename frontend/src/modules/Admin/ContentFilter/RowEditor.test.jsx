@@ -80,18 +80,16 @@ describe('RowEditor states', () => {
 
 describe('SignOffPanel', () => {
   beforeEach(() => { calls.length = 0; });
-  it('lists what is missing and keeps Approve disabled', () => {
+  it('lists what is missing; approving is the status card\'s (no button here, no stage dropdown)', () => {
     render(<MantineProvider><SignOffPanel ratingKey="77" signOff={{ ready: false, missing: ['3 of 9 parts not reviewed'], parent: null }} onChanged={() => {}} /></MantineProvider>);
     expect(screen.getByText('3 of 9 parts not reviewed')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Approve for family' }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Approve for family' })).toBeNull();
+    expect(screen.queryByText('Stage again')).toBeNull();
   });
-  it('posts the sign-off only when ready, and offers Withdraw once approved', async () => {
-    const { unmount } = render(<MantineProvider><SignOffPanel ratingKey="77" signOff={{ ready: true, missing: [], parent: null }} onChanged={() => {}} /></MantineProvider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Approve for family' }));
-    await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/signoff', body: {}, method: 'POST' });
-    unmount();
+  it('offers Withdraw once approved, and withdraws', async () => {
     render(<MantineProvider><SignOffPanel ratingKey="77" signOff={{ ready: false, missing: [], parent: { by: 'p', at: 'x' } }} onChanged={() => {}} /></MantineProvider>);
-    expect(screen.getByRole('button', { name: 'Withdraw approval' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw approval' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/signoff', body: {}, method: 'DELETE' });
   });
 });

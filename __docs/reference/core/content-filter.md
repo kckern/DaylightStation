@@ -354,6 +354,38 @@ loads the existing refined EDL as `previous` before building.
 faster-whisper on CPU (int8); the choice is automatic and written as `backend` in the words JSON.
 Hosts without `uv` set `CONTENT_FILTER_TRANSCRIBE_PY=python3` so the CLI runs `python3 transcribe.py`. Speech refine also forced-aligns each word (`align_words.py`, torch + torchaudio MMS): on such a host point `CONTENT_FILTER_ALIGN_PY` at a python that has them (a venv with the CPU wheels works); without it every speech cue ends `unknown` with `align_words failed: spawn uv ENOENT`.
 ImageMagick 6 hosts work too (the renderer falls back from `magick` to `convert`).
+
+**Where refine reads the film (2026-11-12).** Streaming the 1080p original through Plex cost
+about 7.7 minutes per cue (Terminator 2: ~36 hours for 220 cues), almost all of it decoding.
+`chooseVideoSource` (`cli/contentfilter/videoSource.mjs`) picks, in order: `--src`; the part's own
+file mapped through `CONTENT_FILTER_PATH_MAP` (`plexPath=hostPath;…`, longest prefix first) when
+this host can read it; a 240p Plex transcode when `CONTENT_FILTER_LOW_RES=1`; the original through
+Plex. It logs `content-filter.source.chosen { kind, reason }`.
+
+Pictures then come from a **low-res copy** (`videoProxy.mjs`): 480p, picture only, a keyframe
+every second, no B-frames, every frame kept (measured on Terminator 2: the same 197,294 frames, the
+same frame at every time checked). It is built without `-copyts`, so it starts at 0: `proxyFit`
+compares it with the original (frame rate, length, frame count) and gives the offset (the original's
+start time), and `ProxiedRefineMedia` reads the copy at `t − offset` and adds the offset back; a copy
+that does not fit is refused (`content-filter.proxy.mismatch`) and refine reads the original. One
+build per copy (a lock file; others wait; a 3 h old lock is taken over). It is built once per part
+and file size into `CONTENT_FILTER_PROXY_DIR` (default `<tmp>/daylight-cf-proxy`, outside the
+worker's per-run stage), pruned to `CONTENT_FILTER_PROXY_MAX_GB` (default 40) least recently used first,
+about 13 minutes for a two-hour film, and it starts as soon as the source is known, so it runs
+alongside transcription (`prepareCopy` `onSource`). `ProxiedRefineMedia` sends frames, shot cuts
+and black detection to the copy and keeps sound and the probe on the original; region boxes are
+fractions of the frame, so they need no change. `FrameChunkCache` (capped at 1,200 frames and 256 MB) decodes the next 48 frames on a
+miss, so the ~90 frame requests around a cue cost a handful of ffmpeg runs. `cellCrop` runs
+in-process (`@napi-rs/canvas`): as ImageMagick it was ~3,000 process starts per cue, and each start
+blocked the event loop. Cues run 6 at a time (`--concurrency`); above 6 the decision model is the
+ceiling. `--no-proxy` or `CONTENT_FILTER_PROXY=0` reads frames from the original. 240p was tried
+and dropped: it lost a millisecond-refined cue that the original pinned.
+
+| Terminator 2, visual cues | time |
+|---|---|
+| 1080p over HTTPS (before) | ~7.7 min per cue |
+| 1080p local file, 3 at once | 6 cues in 706 s |
+| 480p copy + chunk cache + in-process crops, 6 at once | 6 cues in 138 s; 12 in 168 s |
 `refine --kinds visual` needs no transcript (clock sync comes from the override) and selects
 `shown` cues, including `skip` cues under a language category. Every Jev request has a
 timeout (`TimeoutDecisionGateway`, default 90 s, wrapped around the gateway by the CLI): on timeout the call abstains, a warn line
@@ -873,7 +905,10 @@ A Plex film added later under the right title and year is picked up by the next 
 
 `POST /:rk/jobs { kind: make | send-back | stage, cues?, stage? }` queues a run (202; 409 when the
 film already has one queued or running). `GET /jobs` is the queue state (the deploy gate reads it);
-`GET /:rk/jobs` one film's record. A **make** run's steps: `preflight` → `export` (only without an
+`GET /:rk/jobs` one film's record. `POST /:rk/jobs/:runId/cancel { by? }` stops a queued or
+running run: it settles `cancelled` at once (404 unknown, 409 already settled), so the queue and
+the deploy gate drop it; the worker's next report is refused, it kills the step and keeps nothing
+(`content-filter.job.cancelled`, `content-filter.worker.cancelled`). A **make** run's steps: `preflight` → `export` (only without an
 EDL) → `refine --write` → `scenes --write` (only without a `scenes` key) → `cards` → `audit --json`.
 **Send back** runs `preflight`, then clears the cues' hand nudges and runs `refine --cues … --write`
 and an audit. **Stage** runs `preflight` and one step (cards and audit need no preflight), then an
@@ -895,7 +930,10 @@ It talks to the app only over HTTP and never writes the app's data folders: `POS
 profile, refine review, transcripts) or 204; the worker lays them out in a scratch folder, runs
 `preflight`, `export`, `refine`, `scenes` there (send-back drops the cues' hand fixes in its copy
 only after preflight passes), sends `POST /:rk/jobs/:runId/progress` per step and as a heartbeat
-every 20 s, and finishes with `POST /:rk/jobs/:runId/complete { status, results | step + error }`.
+every 20 s, and for refine the measured count: refine's own stderr lines (`Sync:`, `[n/N] cue kind
+status detail`) are folded (`refineProgress.mjs`) into `step.progress { phase, done, total, firstAt,
+recent }`, sent on each phase change, the first and last cue and at most every 2 s (the inline
+executor does the same); a running step keeps its start time, and finishes with `POST /:rk/jobs/:runId/complete { status, results | step + error }`.
 The app saves the results, drafts card text and audits, then settles the run. A run whose heartbeat
 is older than 60 s is marked interrupted; only the claiming worker can report on a run.
 `--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set
@@ -914,7 +952,15 @@ While a run's export, refine or scenes step writes a film, every write to that f
 
 ### Review
 
-`GET /:rk/review` returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
+`GET /:rk/review` starts the film's audit when it has none or a stale one and nothing is queued or
+running (`content_filter.review.audit_requested`; 2026-11-12, Terminator 2 was refined and certified
+but had never been audited, so its list was empty), and reads a film with only VidAngel's rough EDL
+(`hasRefined: false`; its rows come from an audit of the raw EDL). It carries `status` (`filmStatus.mjs`):
+`{ filters: { present, parts }, refined: { present, measured, of }, certified, next }`, `next` one of
+`none | refine | running | checking | check-failed | review | approve | done` (`approve` only when the
+sign-off would be accepted). A failed check is kept on the run record (`auditError`,
+`content-filter.audit.failed`) and the route stops asking until **Retry**; the payload also carries
+`auditRunning` and the filter `worker` status. It returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
 moment as the household gets it (the preview rail's moments: a subject group is one row, a scene
 swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`, `members`
 (the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
@@ -951,6 +997,18 @@ title index every 10 minutes.
   applied) and `dwellMs`/`replays`. `remove` disables the cue/scene; `DELETE` is undo and reverts what the verdict
   applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
   (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
+
+#### Film status card
+
+The film page opens on `FilmStatusCard.jsx`: "Filters: Yes — N parts" (or "None for this film yet"),
+"Refined: Yes — m of n measured to the millisecond" (or "No"), the certification, and one button from
+`next`: **Refine** (a make run: the whole pipeline), "Checking the result…", **Review** (to the first
+row without a verdict) or **Approve for family**. While a run works it shows its phases in words
+(Checking the machine, Syncing the film's clock, Measuring each part — n of N, Building scenes,
+Drafting cards, Checking the result; `runProgress.js`), a bar, an ETA from the pace since the first
+part (after 3), the five latest parts in words and **Stop** (confirmed: nothing from a stopped run is
+saved; refused once a run's results are saved). A queued run with no live worker says so. There is no stage dropdown; the sign-off panel lists what is missing and offers Withdraw. An
+empty list says why (not refined yet, still checking, run in progress).
 
 #### Review station
 

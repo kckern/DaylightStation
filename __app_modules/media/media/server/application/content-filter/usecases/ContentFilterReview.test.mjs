@@ -353,3 +353,65 @@ describe('ContentFilterReview: a mark survives the padding of the re-audit', () 
     expect((await b.review.get({ ratingKey: '9' })).reviewed).toBe(0);
   });
 });
+
+describe('ContentFilterReview.get for every film with a filter (2026-11-12, T2 empty list)', () => {
+  it('reads a film with only a rough EDL: no certification, rows from the audit', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state, audit: null });
+    const r = await review.get({ ratingKey: '9' });
+    expect(r.hasRefined).toBe(false);
+    expect(r.certification.level).toBe('none');
+    expect(r.rows).toEqual([]);
+    expect(r.signOff.parent).toBeNull();
+  });
+  it('a rough film shows the rough rows once an audit of the raw EDL lands', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state });
+    expect((await review.get({ ratingKey: '9' })).rows.map((x) => x.id)).toEqual(['cue:va1', 'cue:va2']);
+  });
+  it('a refined film reports hasRefined: true', async () => {
+    const { review } = setup();
+    expect((await review.get({ ratingKey: '9' })).hasRefined).toBe(true);
+  });
+  it('other actions still need a refined filter (404)', async () => {
+    const state = base(); state.refined = null;
+    const { review } = setup({ state });
+    await expect(review.nudgeCue({ ratingKey: '9', cueId: 'va1', nudge: { in: 110.1, out: 110.7 } })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('ContentFilterReview.get status', () => {
+  it('refined, machine-certified, no audit: checking', async () => {
+    const { review } = setup({ audit: null });
+    expect((await review.get({ ratingKey: '9' })).status).toMatchObject({ refined: { present: true, of: 2 }, certified: 'machine', next: 'checking' });
+  });
+  it('rough only: refine, with the rough parts counted', async () => {
+    const state = base(); state.refined = null; state.raw.cues = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const { review } = setup({ state, audit: null });
+    expect((await review.get({ ratingKey: '9' })).status).toMatchObject({ filters: { present: true, parts: 3 }, refined: { present: false }, next: 'refine' });
+  });
+  it('a fresh audit with rows to review: review', async () => {
+    const { review } = setup();
+    expect((await review.get({ ratingKey: '9' })).status.next).toBe('review');
+  });
+  it('a failed audit: auditError and auditRunning on the payload, status check-failed', async () => {
+    const s = base();
+    const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, getOverride: async () => s.override, getProfile: async () => ({}) };
+    const make = (auditing) => new ContentFilterReview({ contentFilterRepository: repo, digestOf: async () => 'D', logger: { info() {}, warn() {} },
+      jobs: { record: async () => ({ runs: [], audit: null, auditError: { at: 't', error: 'bad override' } }), isAuditing: () => auditing } });
+    const r = await make(false).get({ ratingKey: '9' });
+    expect(r).toMatchObject({ auditRunning: false, auditError: { at: 't', error: 'bad override' } });
+    expect(r.status.next).toBe('check-failed');
+    const busy = await make(true).get({ ratingKey: '9' });
+    expect(busy.auditRunning).toBe(true);
+    expect(busy.status.next).toBe('checking');
+  });
+  it('carries the filter worker\'s status', async () => {
+    const s = base();
+    const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, getOverride: async () => s.override, getProfile: async () => ({}) };
+    const review = new ContentFilterReview({ contentFilterRepository: repo, digestOf: async () => 'D', logger: { info() {}, warn() {} },
+      jobs: { record: async () => ({ runs: [] }), isAuditing: () => false, workerStatus: () => ({ alive: false, owner: null, seenAt: null }) } });
+    expect((await review.get({ ratingKey: '9' })).worker).toEqual({ alive: false, owner: null, seenAt: null });
+  });
+});
+

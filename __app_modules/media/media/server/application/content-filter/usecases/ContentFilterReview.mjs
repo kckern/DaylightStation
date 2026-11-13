@@ -5,6 +5,7 @@
  * (ContentFilterJobs); a mark counts only while its row's span is unchanged.
  */
 import { unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { filmStatus } from '../../../domain/content-filter/filmStatus.mjs';
 import { certify, signOff } from '../../../domain/content-filter/refine/certification.mjs';
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { createTitleQueue } from '../titleQueue.mjs';
@@ -63,11 +64,12 @@ export class ContentFilterReview {
     this.#logger = logger; this.#clock = clock; this.#queue = titleQueue;
   }
 
-  async #film(ratingKey) {
+  /** `allowRough`: a film with only VidAngel's rough EDL reads too (`refined: null`); its rows come from an audit of the raw EDL. */
+  async #film(ratingKey, { allowRough = false } = {}) {
     const raw = await this.#repo.getEdl(ratingKey);
     const ref = raw?.sourceRef;
     const refined = ref?.workId != null && ref?.tagSetId != null ? await this.#repo.getRefinedEdl(ref) : null;
-    if (!refined) throw new ReviewError('This film has no refined filter yet.', 404);
+    if (!refined && !(allowRough && raw)) throw new ReviewError('This film has no refined filter yet.', 404);
     return { raw, ref, refined, override: (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` } };
   }
 
@@ -307,11 +309,11 @@ export class ContentFilterReview {
   }
 
   async get({ ratingKey }) {
-    const { raw, refined, override } = await this.#film(ratingKey);
+    const { raw, refined, override } = await this.#film(ratingKey, { allowRough: true });
     const record = await this.#jobs.record(ratingKey);
     const audit = record?.audit || null;
     const fresh = !!audit && audit.digest === (await this.#digestOf(ratingKey));
-    const cert = certify(refined, { at: refined.certification?.machine?.at ?? null, cueOverrides: override.cueOverrides || {} });
+    const cert = refined ? certify(refined, { at: refined.certification?.machine?.at ?? null, cueOverrides: override.cueOverrides || {} }) : { level: 'none', blocking: null };
     const marks = override.review || {};
     let reviewed = 0; let changed = 0; let redo = 0;
     const rows = (audit?.rows || []).map((r) => {
@@ -325,7 +327,7 @@ export class ContentFilterReview {
     const total = rows.length;
     const auditing = typeof this.#jobs.isAuditing === 'function' && this.#jobs.isAuditing(ratingKey);
     const missing = [];
-    if (cert.level === 'none') {
+    if (refined && cert.level === 'none') {
       // Name the words (up to three) so the parent knows which rows to fix.
       const names = cert.blocking.map((id) => rows.find((r) => (r.members || []).includes(id) || r.id === `cue:${id}`)?.label).filter(Boolean);
       const shown = [...new Set(names)].slice(0, 3);
@@ -337,15 +339,23 @@ export class ContentFilterReview {
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     if (redo) missing.push(`${redo} rows wait for redo`);
     const run = (record?.runs || []).at(-1) || null;
+    const auditError = record?.auditError || null;
+    const status = filmStatus({ rawCueCount: (raw?.cues || []).length, refined, audit: audit ? { fresh } : null, auditRunning: auditing, auditFailed: !!auditError,
+      job: run, certificationLevel: refined ? cert.level : 'none', rowsOpen: total - reviewed + redo, signOffReady: !!refined && missing.length === 0 });   // unreviewed (incl. moved since review) + redo
     return {
+      status,
+      auditRunning: auditing,
+      worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null,
+      ...(auditError ? { auditError } : {}),
       title: raw?.title ?? null,
+      hasRefined: !!refined,
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },
       audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
       wordRulings: override.profilePatch?.languageWords || {},
       bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: (await this.#repo.getProfile('family'))?.bleepLevel ?? null },
       rows, reviewed, total, redo,
       job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
-      signOff: { ready: missing.length === 0, missing, parent: refined.certification?.parent || null },
+      signOff: { ready: !!refined && missing.length === 0, missing, parent: refined?.certification?.parent || null },
     };
   }
 

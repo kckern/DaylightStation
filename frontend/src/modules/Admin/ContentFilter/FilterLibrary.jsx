@@ -48,6 +48,7 @@ export function runText(job, worker = null) {
   if (job.status === 'running') return `Running: ${job.step || 'starting'}`;
   if (job.status === 'failed') return `Failed at ${job.step}${job.error ? `: ${job.error}` : ''}`;
   if (job.status === 'interrupted') return `Interrupted at ${job.step || 'start'}`;
+  if (job.status === 'cancelled') return `Stopped at ${job.step || 'start'}`;
   return null;
 }
 const active = (job) => job?.status === 'queued' || job?.status === 'running';

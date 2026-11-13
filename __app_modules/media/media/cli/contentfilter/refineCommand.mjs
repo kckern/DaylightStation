@@ -17,8 +17,11 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import path from 'path';
+import os from 'os';
 import yaml from 'js-yaml';
 import { prepareCopy } from './copySetup.mjs';
+import { ensureVideoProxy, proxyFit, pruneProxies } from './videoProxy.mjs';
+import { FrameChunkCache, ProxiedRefineMedia } from '../../server/adapters/content-filter/CachedRefineMedia.mjs';
 import { MagickRefineRenderer } from '../../server/adapters/content-filter/MagickRefineRenderer.mjs';
 import { TimeoutDecisionGateway } from '../../server/adapters/content-filter/TimeoutDecisionGateway.mjs';
 import { PythonWordAligner } from '../../server/adapters/content-filter/PythonWordAligner.mjs';
@@ -40,7 +43,8 @@ export const REFINE_USAGE = `Usage: contentfilter refine <ratingKey> [options]
   --cues a,b,c         Only these cue ids
   --limit <n>          Only the first n cues
   --kinds speech,visual  Only cues of these kinds (speech, speech-line, visual, credits)
-  --concurrency <n>    Cues in flight (default 3)
+  --concurrency <n>    Cues in flight (default 6)
+  --no-proxy           Read frames from the original, not the low-res copy (CONTENT_FILTER_PROXY=0 too)
   --no-region          Skip region tracks
   --snap <sec>         Speech edge snap window (default 0.07; wider measured worse)
   --transcript <file>  Use this word transcript (JSON from transcribe.py) instead of making one
@@ -74,7 +78,31 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const visualOnly = Boolean(flags.kinds) && String(flags.kinds).split(',').every((k) => k === 'visual');
 
   // 1-2. Media part, source, probe and transcript (cached per part)
-  const { meta, partId, src, workDir, media, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining', skipTranscript: visualOnly });
+  // The low-res picture copy (videoProxy.mjs) starts building as soon as the source is known, so it
+  // runs alongside the transcription; frames then come from it through a chunk cache.
+  let proxyBuild = null;
+  const onSource = process.env.CONTENT_FILTER_PROXY === '0' || args.includes('--no-proxy') ? null : ({ src: from, partId: pid, size }) => {
+    const t = Date.now();
+    const dir = process.env.CONTENT_FILTER_PROXY_DIR || path.join(os.tmpdir(), 'daylight-cf-proxy');
+    proxyBuild = ensureVideoProxy({ src: from, dir, partId: pid, size }).then((p) => {
+      const removed = pruneProxies({ dir, maxBytes: (Number(process.env.CONTENT_FILTER_PROXY_MAX_GB) || 40) * 1024 ** 3, keep: p });
+      console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.ready', rk, path: p, ms: Date.now() - t, ...(removed.length ? { removed } : {}) }));
+      return p;
+    }, (e) => {
+      console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.failed', rk, error: String(e.message).slice(-300) }));
+      return null;
+    });
+  };
+  const { meta, partId, src, workDir, media: original, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining', skipTranscript: visualOnly, onSource });
+  const built = proxyBuild ? await proxyBuild : null;
+  // The copy starts at 0; use it only when it matches the original, shifted by the original's start.
+  let proxy = null;
+  if (built) {
+    const fit = proxyFit({ original: probe, proxy: await original.probe(built).catch(() => ({})) });
+    if (fit.ok) proxy = { path: built, offset: fit.offset };
+    else console.error(JSON.stringify({ at: new Date().toISOString(), event: 'content-filter.proxy.mismatch', rk, path: built, reason: fit.reason }));
+  }
+  const media = new FrameChunkCache({ inner: proxy ? new ProxiedRefineMedia({ inner: original, videoSrc: proxy.path, offset: proxy.offset }) : original });
   const timebase = makeTimebase({ fps: probe.fps, startTime: probe.startTime });
 
   // 3. Clock sync from tagged words vs transcript
@@ -124,7 +152,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   refiner.planWords(edl.cues || []);
   const results = [];
   let next = 0;
-  const conc = Math.max(1, Number(flags.concurrency) || 3);
+  const conc = Math.max(1, Number(flags.concurrency) || 6);
   const t0 = Date.now();
   async function worker() {
     while (next < cues.length) {

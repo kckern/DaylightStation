@@ -27,7 +27,8 @@ export class ChildProcessContentFilterCli extends IContentFilterCli {
     this.#cliPath = cliPath; this.#nodeBin = nodeBin; this.#nice = nice; this.#env = env;
   }
 
-  run(command, args = [], { logPath = null, timeoutMs = 0 } = {}) {
+  /** onLine(line): each complete stderr line as it is written (refine's per-cue progress), the remainder at exit. */
+  run(command, args = [], { logPath = null, timeoutMs = 0, onLine = null, signal = null } = {}) {
     hookExit();
     const argv = [this.#cliPath, command, ...args];
     const [bin, binArgs] = this.#nice ? ['nice', ['-n', '19', this.#nodeBin, ...argv]] : [this.#nodeBin, argv];
@@ -38,16 +39,22 @@ export class ChildProcessContentFilterCli extends IContentFilterCli {
     return new Promise((resolve) => {
       const child = spawn(bin, binArgs, { env: { ...process.env, ...this.#env }, stdio: ['ignore', 'pipe', 'pipe'] });
       live.add(child);
-      let stdout = ''; let stderr = ''; let timedOut = false;
+      let stdout = ''; let stderr = ''; let timedOut = false; let stopped = false;
+      const stop = () => { stopped = true; try { child.kill('SIGKILL'); } catch { /* gone */ } };
+      if (signal?.aborted) stop(); else signal?.addEventListener('abort', stop, { once: true });
       const log = (chunk) => { if (logPath) appendTextFile(logPath, String(chunk)); };
       child.stdout.on('data', (d) => { stdout += d; log(d); });
-      child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4 * TAIL); log(d); });
+      let pending = '';
+      const lines = (text) => { if (!onLine) return; pending += text; const parts = pending.split('\n'); pending = parts.pop(); for (const l of parts) { try { onLine(l); } catch { /* a listener never breaks the run */ } } };
+      child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4 * TAIL); log(d); lines(String(d)); });
       const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs) : null;
       const done = (code, error) => {
         if (timer) clearTimeout(timer);
+        if (onLine && pending) { try { onLine(pending); } catch { /* ignore */ } pending = ''; }
         live.delete(child);
-        const why = timedOut ? `timed out after ${Math.round(timeoutMs / 1000)} s` : error ? error.message : '';
-        resolve({ code: timedOut || error ? 1 : code ?? 1, stdout, stderrTail: (stderr + (why ? `\n${why}` : '')).trim().slice(-TAIL) });
+        signal?.removeEventListener?.('abort', stop);
+        const why = timedOut ? `timed out after ${Math.round(timeoutMs / 1000)} s` : stopped ? 'stopped' : error ? error.message : '';
+        resolve({ code: timedOut || stopped || error ? 1 : code ?? 1, stdout, stderrTail: (stderr + (why ? `\n${why}` : '')).trim().slice(-TAIL) });
       };
       child.on('error', (e) => done(1, e));
       child.on('close', (code) => done(code));

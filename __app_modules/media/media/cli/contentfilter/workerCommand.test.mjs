@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { runWorker, stageRun } from './workerCommand.mjs';
+import { PROGRESS_MIN_MS, runWorker, stageRun } from './workerCommand.mjs';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
 
 const edl = { title: 'Film', sourceRef: { workId: 5, tagSetId: 6 }, cues: [] };
@@ -80,5 +80,35 @@ describe('runWorker (remote)', () => {
     const api = { claim: async () => { n++; if (n === 1) throw new Error('ECONNREFUSED'); return null; } };
     await runWorker({ api, owner: 'w1', ticks: 2, sleep: async () => {}, runStep: async () => ({ code: 0 }), log: (e) => events.push(e), stageRoot: os.tmpdir() });
     expect(events).toContain('content-filter.worker.error');
+  });
+
+  it('reports refine\'s measured count as progress: first and last cue, and at most every PROGRESS_MIN_MS between', async () => {
+    const api = fakeApi([claimed()]); const bodies = [];
+    const progress = api.progress; api.progress = async (rk, id, body) => { if (body.step?.progress) bodies.push(body.step.progress); return progress(rk, id, body); };
+    let t = 0;
+    await runWorker({ ...opts(api, async (name, ctx) => {
+      if (name !== 'refine') return { code: 0 };
+      ctx.onLine('Sync: local = va x 1 + 0 s');
+      for (let i = 1; i <= 5; i++) { t += 100; ctx.onLine(`  [${i}/5] va${i} visual unknown x`); }
+      return { code: 0 };
+    }), now: () => t });
+    expect(bodies.map((b) => [b.phase, b.done])).toEqual([['sync', 0], ['measure', 1], ['measure', 5]]);
+    expect(bodies.at(-1).recent[0].cue).toBe('va5');
+    expect(PROGRESS_MIN_MS).toBe(2000);
+  });
+
+  it('a stopped run: the refused report aborts the step and nothing is completed', async () => {
+    const api = fakeApi([claimed()]); let signal = null;
+    // Stopped from Admin while refine runs: the next report (refine's progress) is refused.
+    api.progress = async (rk, id, body) => { if (!body.step?.progress) return; throw new Error('This run is no longer yours.'); };
+    await runWorker(opts(api, async (name, ctx) => {
+      if (name !== 'refine') return { code: 0 };
+      signal = ctx.signal;
+      ctx.onLine('Sync: x');
+      await new Promise((r) => setTimeout(r, 20));
+      return { code: signal.aborted ? 1 : 0 };
+    }));
+    expect(signal.aborted).toBe(true);
+    expect(api.calls.find((c) => c[0] === 'complete')).toBeUndefined();
   });
 });

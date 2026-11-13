@@ -87,6 +87,17 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const { status, step = null, error = null, results = null } = req.body || {};
       res.json(await jobs.complete({ ratingKey: String(req.params.ratingKey).replace(/[^0-9]/g, ''), runId: req.params.runId, owner: owner(req), status, step, error, results }));
     }));
+    // POST /:ratingKey/jobs/:runId/cancel { by? } -> { run } (Admin "Stop"; 404 unknown, 409 already settled)
+    router.post('/:ratingKey/jobs/:runId/cancel', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      try {
+        res.json({ run: await jobs.cancel({ ratingKey, runId: String(req.params.runId), by: req.body?.by ? String(req.body.by).slice(0, 80) : null }) });
+      } catch (error) {
+        if (error.status === 404 || error.status === 409) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
+    }));
     router.get('/:ratingKey/jobs', asyncHandler(async (req, res) => {
       const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
       if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
@@ -279,6 +290,15 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const notMatched = verdict?.match === 'unmatched' ? { match: 'unmatched', unmatched: verdict.unmatched } : null;
       try {
         const review = await contentFilterReview.get({ ratingKey: key(req) });
+        // The list is the latest audit's rows: a film with none (never run here) or a stale one,
+        // and nothing queued or running, gets its audit now. jobs.audit debounces per film.
+        const open = review.job && (review.job.status === 'queued' || review.job.status === 'running');
+        const reason = !review.audit ? 'missing' : (!review.audit.fresh && !review.audit.running ? 'stale' : null);
+        // Never while one runs or after one failed: the card offers Retry (review 2026-11-12).
+        if (jobs?.audit && reason && !open && !review.auditRunning && !review.auditError) {
+          logger.info?.('content_filter.review.audit_requested', { ratingKey: key(req), reason });
+          jobs.audit(key(req))?.catch?.(() => {});
+        }
         res.json(notMatched ? { ...review, ...notMatched } : review);
       } catch (e) {
         if (notMatched && e.status === 404) return res.json({ title: verdict.title, year: verdict.year, ...notMatched });
