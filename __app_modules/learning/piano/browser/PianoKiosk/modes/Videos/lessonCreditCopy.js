@@ -28,3 +28,5 @@ export const GENTLE_ECHO = 'Copy these 3 notes';
 export const CHECKIN_NOTE = 'Are you still there? Play this note to keep going:';
 export const CHECKIN_ONE_SCALE = 'Welcome back! One quick scale, then the lesson carries on.';
 export const CHECKIN_TWO_SCALES = "Let's wake those fingers up — two quick scales, then back to the lesson.";
+export const CHECKIN_HANDS_TOGETHER = 'Both hands together this time — one scale up and back down, then the lesson carries on.';
+export const CHECKIN_TWO_HANDS_TOGETHER = 'Two scales with both hands together — then back to the lesson.';

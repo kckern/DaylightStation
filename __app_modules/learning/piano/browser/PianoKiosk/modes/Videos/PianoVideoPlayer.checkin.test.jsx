@@ -20,7 +20,7 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
   const { forwardRef } = await import('react');
   return { default: forwardRef(() => <div data-testid="player-stub" />) };
 });
-const gateState = vi.hoisted(() => ({ step: { kind: 'scales', count: 1, scaleIndex: 2 } }));
+const gateState = vi.hoisted(() => ({ step: { kind: 'scales', rung: 1, count: 1, hands: ['R'], scaleIndex: 2 } }));
 vi.mock('./useEngagementGate.js', () => ({
   useEngagementGate: () => ({ gateOpen: true, step: gateState.step, dismissGate: () => {} }),
 }));

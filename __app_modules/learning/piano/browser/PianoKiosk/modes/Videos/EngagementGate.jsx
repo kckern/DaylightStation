@@ -4,8 +4,18 @@ import { generateCardPitches, evaluateMatch } from '../../../PianoFlashcards/fla
 import { ActionStaff } from '../../../components/ActionStaff.jsx';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import LessonDrill from './LessonDrill.jsx';
-import { checkInDrill } from '../../../../portable/practice/goodFaith.mjs';
-import { CHECKIN_NOTE, CHECKIN_ONE_SCALE, CHECKIN_TWO_SCALES } from './lessonCreditCopy.js';
+import { checkInDrillFor } from '../../../../portable/practice/presenceLadder.mjs';
+import {
+  CHECKIN_NOTE, CHECKIN_ONE_SCALE, CHECKIN_TWO_SCALES, CHECKIN_HANDS_TOGETHER, CHECKIN_TWO_HANDS_TOGETHER,
+} from './lessonCreditCopy.js';
+
+/** The heading for each scale rung of the presence ladder (presenceLadder.mjs PRESENCE_RUNGS). */
+const RUNG_HEADING = {
+  1: CHECKIN_ONE_SCALE,
+  2: CHECKIN_TWO_SCALES,
+  3: CHECKIN_HANDS_TOGETHER,
+  4: CHECKIN_TWO_HANDS_TOGETHER,
+};
 
 let _logger;
 function logger() {
@@ -25,34 +35,41 @@ function logger() {
  * names pitches the loop is playing right now; the prompt never asks for one,
  * so a child can always answer it.
  */
-export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches, step = { kind: 'note' }, roots = undefined, rotation = 0, rootsSource = null }) {
+export default function EngagementGate({ open, onDismiss, humanNotes, avoidPitches, step = { kind: 'note', rung: 0 }, roots = undefined, rotation = 0, rootsSource = null }) {
   if (open && step?.kind === 'scales') {
-    return <ScaleCheckIn count={step.count} scaleIndex={step.scaleIndex ?? 0} onDismiss={onDismiss} roots={roots} rotation={rotation} rootsSource={rootsSource} />;
+    return <ScaleCheckIn step={step} onDismiss={onDismiss} roots={roots} rotation={rotation} rootsSource={rootsSource} />;
   }
   return <NoteCheckIn open={open} onDismiss={onDismiss} humanNotes={humanNotes} avoidPitches={avoidPitches} />;
 }
 
 /**
  * The ladder's scale step: the scale drill in the paused video's place (one
- * rep per scale). No skip and no failure state — a missed scale is simply
- * played again; the check-in closes once every scale has passed.
+ * rep per scale; rung 1 one scale, 2 two scales R then L, 3 one scale hands
+ * together up and back down, 4 two hands-together scales — LessonDrill turns
+ * `RL` into a grand-staff hands-together step). No skip and no failure state —
+ * a missed scale is simply played again; the check-in closes once every scale
+ * has passed.
  */
-function ScaleCheckIn({ count, scaleIndex, onDismiss, roots, rotation, rootsSource }) {
+function ScaleCheckIn({ step, onDismiss, roots, rotation, rootsSource }) {
+  const count = step.count ?? 1;
+  const rung = step.rung ?? null;
+  const scaleIndex = step.scaleIndex ?? 0;
   const drill = useMemo(() => {
-    const spec = checkInDrill(count, { roots, rotation });
+    const spec = checkInDrillFor(step, { roots, rotation });
     return { reps: spec.sets * spec.reps, spec };
-  }, [count, roots, rotation]);
+  }, [step, roots, rotation]);
   useEffect(() => {
-    logger().info('piano.engagement-gate.scale-roots', { roots: drill.spec.roots, source: rootsSource, count, scaleIndex });
-  }, [drill, rootsSource, count, scaleIndex]);
+    logger().info('piano.engagement-gate.scale-roots', { roots: drill.spec.roots, source: rootsSource, count, scaleIndex, rung });
+  }, [drill, rootsSource, count, scaleIndex, rung]);
+  const heading = RUNG_HEADING[rung] ?? (count >= 2 ? CHECKIN_TWO_SCALES : CHECKIN_ONE_SCALE);
   return (
     <div className="piano-engagement-gate piano-engagement-gate--scales" data-testid="engagement-gate" role="dialog" aria-modal="true" aria-label="Play along to continue">
-      <p className="piano-engagement-gate__heading">{count >= 2 ? CHECKIN_TWO_SCALES : CHECKIN_ONE_SCALE}</p>
+      <p className="piano-engagement-gate__heading">{heading}</p>
       <div className="piano-engagement-gate__drill">
         <LessonDrill
           drill={drill}
           variant="checkin"
-          context={{ checkIn: true, scales: count }}
+          context={{ checkIn: true, scales: count, rung }}
           onRepPassed={(n) => logger().info('piano.engagement-gate.scale-passed', { n, of: drill.reps })}
           onComplete={() => onDismiss?.()}
           onLeave={() => {}}
