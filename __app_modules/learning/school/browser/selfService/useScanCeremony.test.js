@@ -546,3 +546,32 @@ describe('useScanCeremony', () => {
     expect(result.current.current).not.toBeNull();
   });
 });
+
+describe('useScanCeremony — the school day is done', () => {
+  const dayDone = (over = {}) => ({
+    schema: 'daylight.state-gates-event/v1', kind: 'GateStateChanged', key: 'k',
+    payload: { gateId: 'school.day-complete', subject: { kind: 'learner', id: 'user_5' }, period: { key: '2026-11-13' }, from: 'unsatisfied', to: 'satisfied', ...over },
+  });
+
+  it('celebrates the day turning complete', () => {
+    const { result } = renderHook(() => useScanCeremony());
+    act(() => { deliver(dayDone()); });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'School done!', detail: 'Every circle is green for today.' });
+  });
+
+  it('celebrates once, however often the gate change is replayed', () => {
+    const { result } = renderHook(() => useScanCeremony());
+    act(() => { deliver(dayDone()); });
+    act(() => { result.current.clear(); });
+    act(() => { deliver(dayDone()); });
+    expect(result.current.current).toBeNull();
+  });
+
+  it('says nothing when the day reopens, or for another gate', () => {
+    const { result } = renderHook(() => useScanCeremony());
+    act(() => { deliver(dayDone({ from: 'satisfied', to: 'unsatisfied' })); });
+    act(() => { deliver(dayDone({ gateId: 'fitness.weekly-rings' })); });
+    expect(result.current.current).toBeNull();
+  });
+});
+

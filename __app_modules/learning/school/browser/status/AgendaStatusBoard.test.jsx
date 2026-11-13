@@ -720,6 +720,24 @@ describe('a scan updates the board immediately', () => {
     await waitFor(() => expect(schoolApi.stateGates.mock.calls.length).toBeGreaterThan(before));
   });
 
+  it('re-reads a learner whose school day just turned complete, without touching the rings', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
+    const gates = wsHandlers.filter((h) => h.topic === 'state-gates').at(-1);
+    const plans = schoolApi.teacherDay.mock.calls.length;
+    const rings = schoolApi.stateGates.mock.calls.length;
+    gates.cb({ kind: 'GateStateChanged', payload: {
+      gateId: 'school.day-complete', subject: { kind: 'learner', id: 'learner1' }, from: 'unsatisfied', to: 'satisfied',
+    } });
+    await waitFor(() => expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(plans));
+    expect(schoolApi.stateGates.mock.calls.length).toBe(rings);
+  });
+
   it('re-reads on a scan, so the disc turns without waiting out the poll', async () => {
     // Before the scan: one pending assignment.
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [

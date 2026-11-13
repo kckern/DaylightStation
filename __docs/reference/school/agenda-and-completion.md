@@ -529,6 +529,12 @@ the change is stored, through `announceRecordChanged`; a failure logs
 reopens a day is seen at once rather than at the hourly reconcile. The
 answer-sheet sweep and the 14-day stale-session sweep do not announce.
 
+**School done!** When a learner's day gate (`school.day-complete`) changes to
+`satisfied` on the `state-gates` topic (`GateStateChanged`), the board
+re-reads that learner (not the rings) and the Portal plays **School done!**
+("Every circle is green for today."). It plays once per learner per day: a
+replayed change for the same learner and period is quiet.
+
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner

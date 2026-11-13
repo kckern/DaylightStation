@@ -70,6 +70,9 @@ const TOPIC = 'omr';
 // piano requirement being satisfied, which happens at the piano rather than at
 // the scanner but must still land on the Portal's panel.
 const SCHOOL_TOPIC = 'school';
+// The State Gates topic: a learner's school day turning complete arrives here.
+const GATES_TOPIC = 'state-gates';
+const DAY_GATE = 'school.day-complete';
 const AUTO_CLEAR_MS = 12000;
 
 let _logger;
@@ -109,8 +112,28 @@ function listRows(rows) {
   return `Rows ${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
 }
 
+/**
+ * The school day turning complete: a State Gates `GateStateChanged` for the
+ * day gate, from anything but satisfied to satisfied. The key names who and
+ * which day, so a replayed change celebrates once.
+ */
+function dayCompleted(payload) {
+  if (payload?.kind !== 'GateStateChanged') return null;
+  const change = payload.payload ?? {};
+  if (change.gateId !== DAY_GATE || change.to !== 'satisfied' || change.from === 'satisfied') return null;
+  const learnerId = change.subject?.id ?? null;
+  if (!learnerId) return null;
+  return { key: `${learnerId}|${change.period?.key ?? JSON.stringify(change.period ?? null)}` };
+}
+
 function buildCeremony(payload) {
   const at = typeof payload?.timestamp === 'number' ? payload.timestamp : Date.now();
+  if (payload?.kind === 'GateStateChanged') {
+    // Every circle green, so the whole room can see the day is finished.
+    return dayCompleted(payload)
+      ? { tone: 'success', title: 'School done!', detail: 'Every circle is green for today.', at }
+      : null;
+  }
   switch (payload?.event) {
     case 'scan-graded':
       // `receiptPrinted()` has already sent the printed case away; anything
@@ -435,6 +458,8 @@ function receiptPrinted(payload) {
 export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   const [current, setCurrent] = useState(null);
   const timerRef = useRef(null);
+  // Learner+day pairs already celebrated, so a replayed gate change is quiet.
+  const celebratedRef = useRef(new Set());
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -449,6 +474,11 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   }, [clearTimer]);
 
   const handle = useCallback((payload) => {
+    const day = dayCompleted(payload);
+    if (day) {
+      if (celebratedRef.current.has(day.key)) return;
+      celebratedRef.current.add(day.key);
+    }
     if (receiptPrinted(payload)) {
       // A SILENT SCREEN IS NOT A SILENT SYSTEM. The banner is suppressed
       // because paper carried the news, but the scan still has to be
@@ -485,6 +515,8 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   // does not recognise, so ordinary School traffic on this bus is ignored the
   // same way ordinary `omr` traffic already is.
   useWebSocketSubscription(SCHOOL_TOPIC, handle, [handle]);
+  // Third topic, same handler: only the day gate turning satisfied speaks.
+  useWebSocketSubscription(GATES_TOPIC, handle, [handle]);
 
   // Unmount cleanup: nothing left running past the component's lifetime.
   useEffect(() => clearTimer, [clearTimer]);

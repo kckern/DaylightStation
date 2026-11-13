@@ -803,6 +803,16 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
+    // A learner's school day turned complete (or reopened): that learner's
+    // card, at once. The rings are not involved.
+    if (event?.kind === 'GateStateChanged' && event?.payload?.gateId === 'school.day-complete') {
+      const dayLearner = event.payload.subject?.id ?? null;
+      if (!dayLearner || !rosterIds.has(dayLearner)) return;
+      schoolLog.selfService('status-board.refresh', { source: 'state-gates', event: 'school.day-complete', learnerId: dayLearner });
+      refresh([dayLearner]);
+      refreshCoins();
+      return;
+    }
     const current = event?.payload?.current;
     const gateId = current?.gateId ?? event?.payload?.gateId ?? null;
     if (gateId !== 'fitness.weekly-rings') return;
