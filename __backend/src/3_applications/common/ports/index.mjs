@@ -30,3 +30,6 @@ export { ITranscriptionService } from './ITranscriptionService.mjs';
 export { IMessagingGateway, isMessagingGateway } from './IMessagingGateway.mjs';
 export { IConversationStateDatastore, isConversationStateDatastore } from './IConversationStateDatastore.mjs';
 export { IConversationDatastore } from './IConversationDatastore.mjs';
+
+// Worksheet ports
+export { IWorksheetPlatform, isWorksheetPlatform } from './IWorksheetPlatform.mjs';
