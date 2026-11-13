@@ -38,6 +38,11 @@
  * So the resolution ladder has exactly ONE rung of fallback, and it is consumed
  * before any handler runs: parse first, reader route second, unknown third.
  *
+ * A URL skips the second rung. `parseScanCode` decides every `http(s)://` code
+ * itself (step 0), and one no URL rule matches is unknown on every reader: a
+ * content-routed reader handing a stray web link to the content parser is
+ * exactly the misread that step 0 exists to stop.
+ *
  * ## Handler contract
  *
  * A handler receives the whole parse result plus `device` and `route`:
@@ -45,6 +50,11 @@
  * `body` because school's token registry looks tokens up by the full
  * `sch:<body>` string; the object is freshly built per dispatch, so a handler
  * that mutates its argument cannot affect anything else.
+ *
+ * A code claimed by a household URL rule (`form: 'url-rule'`) also carries
+ * `rule` (the matching rule's id) and `platform` (the platform it names, or
+ * null). `body` is then the rule's `(?<id>…)` capture, so one handler can serve
+ * several publishers and tell them apart by `platform` alone.
  *
  * A handler returns a PARTIAL Outcome, merged over the defaults. It may not
  * override `domain` — see `dispatch` — and anything that is not a plain object
@@ -220,6 +230,9 @@ function toRouteMap(routeFallback) {
  */
 const NO_LOGGER = Object.freeze({});
 
+/** Mirrors ScanCode's step-0 test; see the route-fallback note in `dispatch`. */
+const URL_SCHEME_RE = /^https?:\/\//i;
+
 /**
  * Exported so composition can hold the same guarantee on ITS OWN logger calls.
  *
@@ -244,13 +257,17 @@ export class ScanDispatcher {
 
   #logger;
 
+  #urlRules;
+
   /**
    * @param {object} deps
    * @param {Array<{namespace: string, handle: (args: object) => Promise<object>}>} deps.handlers
    * @param {Record<string, string>} deps.routeFallback  reader route -> namespace
    * @param {{debug?: Function, info?: Function, warn?: Function, error?: Function}} deps.logger
+   * @param {ReturnType<import('#domains/scan/ScanCode.mjs').compileUrlRules>} deps.urlRules
+   *   compiled household URL rules, passed straight to `parseScanCode`
    */
-  constructor({ handlers = [], routeFallback = {}, logger = NO_LOGGER } = {}) {
+  constructor({ handlers = [], routeFallback = {}, logger = NO_LOGGER, urlRules = [] } = {}) {
     this.#handlers = new Map();
     // Before the for-of, or a composition-root typo surfaces as a bare
     // `handlers is not iterable` and reads like an internal fault. Every other
@@ -272,6 +289,11 @@ export class ScanDispatcher {
         throw new Error(`ScanDispatcher: duplicate handler for namespace "${handler.namespace}"`);
       this.#handlers.set(handler.namespace, handler);
     }
+    // Same reasoning as `handlers`: a config typo should name this class at
+    // boot, not surface as `urlRules is not iterable` on the first URL scan.
+    if (!Array.isArray(urlRules))
+      throw new TypeError('ScanDispatcher: `urlRules` must be an array');
+    this.#urlRules = urlRules;
     this.#routeFallback = toRouteMap(routeFallback);
     this.#logger = logger;
   }
@@ -295,14 +317,16 @@ export class ScanDispatcher {
    *   and that is what the guarantee covers.
    */
   async dispatch({ code, device = null, route = null } = {}) {
-    const parsed = parseScanCode(code);
+    const parsed = parseScanCode(code, { urlRules: this.#urlRules });
 
     // Step 5. Only consulted when the CODE ITSELF says nothing — a code that
     // named its owner is never overridden by the reader it happened to be
     // scanned on, or the same sticker would mean different things in different
     // rooms. `route` is untrusted enough to type-check: a non-string key would
-    // stringify into the lookup.
-    const routed = typeof route === 'string' ? this.#routeFallback[route] : undefined;
+    // stringify into the lookup. A URL is never the route's business: step 0
+    // already decided it, and an unmatched one must stay unknown everywhere.
+    const routed = typeof route === 'string' && !URL_SCHEME_RE.test(parsed.raw)
+      ? this.#routeFallback[route] : undefined;
     const namespace = parsed.namespace ?? routed ?? null;
 
     if (!namespace) {
@@ -334,6 +358,8 @@ export class ScanDispatcher {
     // prevents that; see its docstring.
     let result;
     try {
+      // `parsed` carries `rule`/`platform` only for a url-rule claim, so the
+      // spread adds them exactly when they exist.
       result = await handler.handle({ ...parsed, device, route });
     } catch (err) {
       return this.#failed(namespace, err, { raw: parsed.raw, device, route });
