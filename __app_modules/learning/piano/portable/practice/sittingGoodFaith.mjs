@@ -7,7 +7,8 @@
  * a minimal MIDI log only (no image, no audio, no identifiers): the sitting's
  * human, practice-like notes as compact rows, notes per minute, and a few
  * plain facts — lesson length, minutes watched, the presence check-ins and how
- * they were answered, preschool mode. Mashing is set aside by the
+ * they were answered (rubric v2: each one's ladder rung and minimal-effort
+ * mark), preschool mode. Mashing is set aside by the
  * deterministic filter (practiceScore) before the model sees anything.
  *
  * Pure, no Node or DOM APIs: the kiosk builds the state, the server
@@ -28,7 +29,20 @@ export const GOOD_FAITH_LEVELS = Object.freeze([
 /** What each rung is worth on the 0–10 good-faith scale (pass: 6, preschool 3). */
 export const GOOD_FAITH_LEVEL_VALUES = Object.freeze([0, 2, 4, 7, 9, 10]);
 
-const STATE_NOTE = '`lesson` gives its length, how much was watched and how many notes were played; `presence` lists the "are you still there?" check-ins and how they were answered. `notes` is the MIDI log of what was played (pitch, onset in ms since the lesson started, duration ms, velocity), down-sampled to evenly spaced runs when long; `perMinute` counts notes per minute. Taps that only answered a check-in are not in `notes`.';
+/**
+ * The rubric version. v2 (2026-11-13) shows the judge the presence ladder:
+ * each check-in's `rung` and `minimal` mark, the sitting's `peakRung` and
+ * `minimalCheckIns`. v1 is the 2026-11-12 state without them. Ruling R8: v2
+ * ships only if it calibrates (piano-goodfaith-calibrate); setting this to 1
+ * restores the v1 note and makes the normaliser drop the ladder fields.
+ */
+export const GOOD_FAITH_RUBRIC_VERSION = 2;
+const LADDER_FIELDS = GOOD_FAITH_RUBRIC_VERSION >= 2;
+const TOP_RUNG = 4;
+
+const STATE_NOTE_V1 = '`lesson` gives its length, how much was watched and how many notes were played; `presence` lists the "are you still there?" check-ins and how they were answered. `notes` is the MIDI log of what was played (pitch, onset in ms since the lesson started, duration ms, velocity), down-sampled to evenly spaced runs when long; `perMinute` counts notes per minute. Taps that only answered a check-in are not in `notes`.';
+const LADDER_NOTE = "Each check-in's `rung` says how hard it was (0 one note, 1 one scale, 2 two scales, 3 a hands-together scale, 4 two); it climbs only when the check-in before it was answered with no real playing since. `minimal` marks such a check-in, `peakRung` is the highest reached and `minimalCheckIns` how many there were: several minimal check-ins mean the child came back only to dismiss the check-in.";
+const STATE_NOTE = LADDER_FIELDS ? `${STATE_NOTE_V1} ${LADDER_NOTE}` : STATE_NOTE_V1;
 
 export const GOOD_FAITH_INSTRUCTIONS = `A child watched a piano video lesson at a digital piano. Did the child take part at the keyboard in good faith? Judge good faith, not skill or amount: some lessons ask for little playing. ${STATE_NOTE}`;
 export const PRESCHOOL_GOOD_FAITH_INSTRUCTIONS = `A small child (3–5 years old) watched a piano video lesson at a digital piano. How much did a child really take part at the keyboard? Any deliberate key pressing by a small child counts as taking part, even if it is not musical. ${STATE_NOTE}`;
@@ -106,10 +120,12 @@ export function sittingGoodFaithState({ events = [], startMs = 0, lessonSec = 0,
   let stretches = 0;
   rows.forEach((r, i) => { if (i === 0 || r.onsetMs - rows[i - 1].onsetMs > STATE_LIMITS.stretchGapMs) stretches += 1; });
   const shown = sampleRuns(rows, STATE_LIMITS.maxNotes, STATE_LIMITS.runLength);
-  const log = (Array.isArray(checkIns) ? checkIns : []).slice(0, STATE_LIMITS.maxCheckIns).map((c) => ({
+  const log = (Array.isArray(checkIns) ? checkIns : []).slice(0, STATE_LIMITS.maxCheckIns).map((c) => checkInRow({
     atMin: round1(Math.max(0, Number(c?.atMs) || 0) / 60000),
     asked: Number(c?.scales) > 0 ? 'scale' : 'note',
+    rung: c?.rung,
     answered: !!c?.answered,
+    minimal: c?.minimal,
   }));
   return {
     lesson: {
@@ -122,10 +138,33 @@ export function sittingGoodFaithState({ events = [], startMs = 0, lessonSec = 0,
       distinctPitches: new Set(rows.map((r) => r.pitch)).size,
       playingStretches: stretches,
     },
-    presence: { checkIns: log.length, answered: log.filter((c) => c.answered).length, log },
+    presence: presenceOf(log),
     perMinute,
     notes: shown,
   };
+}
+
+/** One check-in row of the judge's log: rung an int 0..4 (else 0), minimal strictly true. */
+function checkInRow({ atMin, asked, rung, answered, minimal }) {
+  if (!LADDER_FIELDS) return { atMin, asked, answered };
+  const r = Number(rung);
+  return {
+    atMin, asked,
+    rung: Number.isInteger(r) && r >= 0 && r <= TOP_RUNG ? r : 0,
+    answered,
+    minimal: minimal === true,
+  };
+}
+
+/** The presence block; peakRung and minimalCheckIns are derived from the log, never taken as sent. */
+function presenceOf(log) {
+  const out = { checkIns: log.length, answered: log.filter((c) => c.answered).length };
+  if (LADDER_FIELDS) {
+    out.peakRung = log.reduce((m, c) => Math.max(m, c.rung), 0);
+    out.minimalCheckIns = log.filter((c) => c.answered && c.minimal).length;
+  }
+  out.log = log;
+  return out;
 }
 
 const num = (v, lo, hi) => {
@@ -151,10 +190,12 @@ export function normaliseGoodFaithState(raw) {
     notes.push({ pitch: Math.round(pitch), onsetMs: Math.round(onsetMs), durMs: durMs == null ? null : Math.round(durMs), velocity: Math.round(velocity) });
   }
   const p = raw.presence && typeof raw.presence === 'object' ? raw.presence : {};
-  const log = (Array.isArray(p.log) ? p.log : []).slice(0, STATE_LIMITS.maxCheckIns).map((c) => ({
+  const log = (Array.isArray(p.log) ? p.log : []).slice(0, STATE_LIMITS.maxCheckIns).map((c) => checkInRow({
     atMin: round1(num(c?.atMin, 0, 24 * 60) ?? 0),
     asked: c?.asked === 'scale' ? 'scale' : 'note',
+    rung: c?.rung,
     answered: c?.answered === true,
+    minimal: c?.minimal,
   }));
   return {
     lesson: {
@@ -167,7 +208,7 @@ export function normaliseGoodFaithState(raw) {
       distinctPitches: int(l.distinctPitches, 0, 128),
       playingStretches: int(l.playingStretches),
     },
-    presence: { checkIns: log.length, answered: log.filter((c) => c.answered).length, log },
+    presence: presenceOf(log),
     perMinute: (Array.isArray(raw.perMinute) ? raw.perMinute : []).slice(0, STATE_LIMITS.maxMinutes).map((v) => int(v, 0, 10000)),
     notes,
   };

@@ -86,4 +86,11 @@ describe('JudgeLessonSitting', () => {
     await make(gateway(5), { logger: log }).judge(req());
     expect(log.info).toHaveBeenCalledWith('piano.lesson-good-faith.judged', expect.objectContaining({ userId: 'u', score: 10, source: 'model', notes: 20, preschool: false }));
   });
+
+  it('the judgement and its log carry the rubric version, plus the ladder facts', async () => {
+    const log = logger();
+    const r = await make(gateway(5), { logger: log }).judge(req());
+    expect(r.rubricVersion).toBe(2);
+    expect(log.info).toHaveBeenCalledWith('piano.lesson-good-faith.judged', expect.objectContaining({ rubricVersion: 2, peakRung: 0, minimalCheckIns: 0 }));
+  });
 });

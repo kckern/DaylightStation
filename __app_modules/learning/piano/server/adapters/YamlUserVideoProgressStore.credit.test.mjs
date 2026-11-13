@@ -57,6 +57,14 @@ beforeEach(() => {
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
 describe('progress store: session good-faith credit', () => {
+  it('a sitting keeps the rubric version of its judgement next to the score', async () => {
+    const judge = fakeJudge({ s1: 8 });
+    judge.peek = vi.fn(() => ({ score: 8, source: 'model', rubricVersion: 2 }));
+    const { store } = make({ judge });
+    const e = await post(store, { userId: USER, plexId: '100', percent: 95, engaged: true, practice: practice('s1', 40, 600, { goodFaith: STATE }) });
+    expect(e.practice.sittings.s1).toMatchObject({ goodFaith: 8, goodFaithRubric: 2 });
+  });
+
   it('no record → today\'s rule', () => {
     const { store } = make({ records: {} });
     const e = store.record({ userId: USER, plexId: '999', percent: 95, engaged: true, practice: practice('s1', 0, 600) });

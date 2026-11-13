@@ -1,4 +1,4 @@
-import { goodFaithQuestion, goodFaithFromAnswer, normaliseGoodFaithState } from '../../portable/practice/sittingGoodFaith.mjs';
+import { goodFaithQuestion, goodFaithFromAnswer, normaliseGoodFaithState, GOOD_FAITH_RUBRIC_VERSION } from '../../portable/practice/sittingGoodFaith.mjs';
 
 /**
  * JudgeLessonSitting — the session-level good-faith judgement (owner,
@@ -64,7 +64,11 @@ export class JudgeLessonSitting {
 
   async #ask(userId, state, preschool) {
     const started = this.#now();
-    const facts = { userId, notes: state.lesson.notesPlayed, checkIns: state.presence.checkIns, preschool };
+    const facts = {
+      userId, notes: state.lesson.notesPlayed, checkIns: state.presence.checkIns, preschool,
+      rubricVersion: GOOD_FAITH_RUBRIC_VERSION,
+      peakRung: state.presence.peakRung ?? null, minimalCheckIns: state.presence.minimalCheckIns ?? null,
+    };
     const fallback = (reason, extra = {}) => {
       this.#logger.warn?.('piano.lesson-good-faith.fallback', { ...facts, reason, ms: this.#now() - started, ...extra });
       return { score: null, source: 'fallback', reason };
@@ -77,7 +81,7 @@ export class JudgeLessonSitting {
         : await call;
       const score = goodFaithFromAnswer(res?.answers?.goodFaith);
       if (score == null) return fallback('no-score');
-      const result = { score, source: 'model', model: res?.model ?? null };
+      const result = { score, source: 'model', model: res?.model ?? null, rubricVersion: GOOD_FAITH_RUBRIC_VERSION };
       this.#logger.info?.('piano.lesson-good-faith.judged', {
         ...facts, score, source: 'model', model: result.model, ms: this.#now() - started,
         levelProbabilities: res?.answers?.goodFaith?.probabilities ?? null, inputTokens: res?.usage?.inputTokens ?? null,

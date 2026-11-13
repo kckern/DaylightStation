@@ -110,7 +110,9 @@ export class YamlUserVideoProgressStore {
     try {
       const j = this.#judge.peek({ userId, sittingId: String(sittingId).slice(0, 64) });
       const score = Number(j?.score);
-      return j && j.score != null && Number.isFinite(score) ? { score, source: j.source ?? 'model' } : null;
+      if (!j || j.score == null || !Number.isFinite(score)) return null;
+      const rubric = Number(j.rubricVersion);
+      return { score, source: j.source ?? 'model', rubric: Number.isInteger(rubric) && rubric > 0 ? rubric : null };
     } catch { return null; }
   }
 
@@ -125,8 +127,13 @@ export class YamlUserVideoProgressStore {
       for (const f of SITTING_FIELDS) next[f] = Math.max(intOf(old[f]), intOf(practice[f]));
       next.peakRung = Math.min(TOP_RUNG, next.peakRung);
       // The sitting's good-faith judgement, once given, stays with it.
-      if (Number.isFinite(Number(old.goodFaith)) && old.goodFaith != null) next.goodFaith = Number(old.goodFaith);
-      else if (judgement) next.goodFaith = judgement.score;
+      if (Number.isFinite(Number(old.goodFaith)) && old.goodFaith != null) {
+        next.goodFaith = Number(old.goodFaith);
+        if (old.goodFaithRubric != null) next.goodFaithRubric = old.goodFaithRubric;
+      } else if (judgement) {
+        next.goodFaith = judgement.score;
+        if (judgement.rubric != null) next.goodFaithRubric = judgement.rubric;
+      }
       sittings[id] = next;
     }
     const kept = Object.entries(sittings).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, cap);

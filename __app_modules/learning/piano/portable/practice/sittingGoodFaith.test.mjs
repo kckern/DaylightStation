@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   GOOD_FAITH_LEVELS, GOOD_FAITH_LEVEL_VALUES, goodFaithQuestion, goodFaithFromAnswer,
   sittingGoodFaithState, normaliseGoodFaithState, fallbackCredited, MEANINGFUL_NOTES, STATE_LIMITS,
+  GOOD_FAITH_RUBRIC_VERSION,
 } from './sittingGoodFaith.mjs';
 
 // A child playing a C-major phrase every 20 s for 5 minutes.
@@ -51,7 +52,10 @@ describe('sittingGoodFaithState', () => {
     expect(s.notes[0]).toEqual({ pitch: 60, onsetMs: 5000, durMs: 300, velocity: 60 });
     expect(s.notes).toHaveLength(15);
     expect(s.lesson).toMatchObject({ lengthMin: 10, watchedMin: 9.3, preschool: false, notesPlayed: 15, notesShown: 15, notesSetAsideAsNoise: 0 });
-    expect(s.presence).toEqual({ checkIns: 1, answered: 1, log: [{ atMin: 3.3, asked: 'note', answered: true }] });
+    expect(s.presence).toEqual({
+      checkIns: 1, answered: 1, peakRung: 0, minimalCheckIns: 0,
+      log: [{ atMin: 3.3, asked: 'note', rung: 0, answered: true, minimal: false }],
+    });
     expect(s.perMinute).toHaveLength(10);
     expect(Object.keys(s).sort()).toEqual(['lesson', 'notes', 'perMinute', 'presence']);
   });
@@ -78,6 +82,47 @@ describe('sittingGoodFaithState', () => {
     expect(s.notes).toEqual([]);
     expect(s.presence.log.map((c) => c.asked)).toEqual(['note', 'scale']);
     expect(s.lesson.notesPlayed).toBe(0);
+  });
+});
+
+describe('rubric v2: the presence ladder', () => {
+  const ladderLog = [
+    { atMs: 90000, scales: 0, rung: 0, minimal: false, answered: true },
+    { atMs: 180000, scales: 1, rung: 1, minimal: true, answered: true },
+    { atMs: 270000, scales: 2, rung: 2, minimal: true, answered: true },
+  ];
+  it('is rubric version 2', () => {
+    expect(GOOD_FAITH_RUBRIC_VERSION).toBe(2);
+  });
+  it('each check-in carries its rung and minimal mark; peak and count are derived from the log', () => {
+    const s = sittingGoodFaithState({ events: [], startMs: 0, lessonSec: 300, watchedSec: 290, checkIns: ladderLog });
+    expect(s.presence.peakRung).toBe(2);
+    expect(s.presence.minimalCheckIns).toBe(2);
+    expect(s.presence.log[2]).toEqual({ atMin: 4.5, asked: 'scale', rung: 2, answered: true, minimal: true });
+  });
+  it('an unanswered minimal check-in raises the peak but does not count as minimal effort', () => {
+    const s = sittingGoodFaithState({ events: [], startMs: 0, lessonSec: 300, watchedSec: 290, checkIns: [...ladderLog, { atMs: 300000, scales: 1, rung: 3, minimal: true, answered: false }] });
+    expect(s.presence.peakRung).toBe(3);
+    expect(s.presence.minimalCheckIns).toBe(2);
+  });
+  it('the normaliser clamps the rung, accepts only a true minimal, re-derives peak and count, and keeps no other field', () => {
+    const raw = sittingGoodFaithState({ events: [], startMs: 0, lessonSec: 300, watchedSec: 290, checkIns: ladderLog });
+    raw.presence.log.push({ atMin: 5, asked: 'scale', rung: 9, answered: true, minimal: 'yes', userName: 'x' });
+    raw.presence.peakRung = 4;
+    raw.presence.minimalCheckIns = 40;
+    raw.presence.extra = 1;
+    const n = normaliseGoodFaithState(raw);
+    expect(n.presence.log[3]).toEqual({ atMin: 5, asked: 'scale', rung: 0, answered: true, minimal: false });
+    expect(n.presence.peakRung).toBe(2);
+    expect(n.presence.minimalCheckIns).toBe(2);
+    expect(Object.keys(n.presence).sort()).toEqual(['answered', 'checkIns', 'log', 'minimalCheckIns', 'peakRung']);
+    expect(Object.keys(n.presence.log[0]).sort()).toEqual(['answered', 'asked', 'atMin', 'minimal', 'rung']);
+  });
+  it('the instructions explain the rung and minimal-effort fields (exact sentence)', () => {
+    const sentence = "Each check-in's `rung` says how hard it was (0 one note, 1 one scale, 2 two scales, 3 a hands-together scale, 4 two); it climbs only when the check-in before it was answered with no real playing since. `minimal` marks such a check-in, `peakRung` is the highest reached and `minimalCheckIns` how many there were: several minimal check-ins mean the child came back only to dismiss the check-in.";
+    expect(goodFaithQuestion(false).instructions).toContain(sentence);
+    expect(goodFaithQuestion(true).instructions).toContain('minimalCheckIns');
+    expect(GOOD_FAITH_LEVEL_VALUES).toEqual([0, 2, 4, 7, 9, 10]);
   });
 });
 

@@ -90,7 +90,7 @@ describe('useLessonPractice', () => {
       enabled: true, isPlaying: true, enforced: true, thresholdPercent: 90, getPercent: () => percent, getDurationSec: () => 600,
     }));
     play(scaleUp, 5000);
-    act(() => { result.current.recordCheckIn({ open: true, scales: 1 }); });
+    act(() => { result.current.recordCheckIn({ open: true, scales: 2, rung: 2, minimal: true }); });
     act(() => { vi.advanceTimersByTime(4000); });
     act(() => { result.current.recordCheckIn({ open: false }); });
     expect(result.current.report().goodFaith).toBeUndefined();
@@ -101,7 +101,11 @@ describe('useLessonPractice', () => {
     expect(r.goodFaith.notes).toHaveLength(8);
     expect(r.goodFaith.notes[0]).toMatchObject({ pitch: 60, onsetMs: 5000, durMs: 200 });
     expect(r.goodFaith.lesson).toMatchObject({ lengthMin: 10, preschool: false, notesPlayed: 8 });
-    expect(r.goodFaith.presence).toEqual({ checkIns: 1, answered: 1, log: [expect.objectContaining({ asked: 'scale', answered: true })] });
+    expect(r.goodFaith.presence).toEqual({
+      checkIns: 1, answered: 1, peakRung: 2, minimalCheckIns: 1,
+      log: [{ atMin: expect.any(Number), asked: 'scale', rung: 2, answered: true, minimal: true }],
+    });
+    expect(r).toMatchObject({ peakRung: 2, minimalCheckIns: 1 });
     expect(api).not.toHaveBeenCalled();
   });
 
