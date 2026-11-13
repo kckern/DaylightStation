@@ -34,7 +34,7 @@ So a launcher's `status()` returns `servedWork: [{ unitId, title }]` for work
 completed today and `[]` otherwise. Rules:
 
 - **The identity is durable and belongs to the COURSE, not the day** —
-  `story-time:daily`, `sentence-ladder:<corpusId>`, `flashcards:<deckId>`,
+  `story-time:daily`, `sentence-ladder:<corpusId>`, `printed-activity:<corpusId>`, `flashcards:<deckId>`,
   `language-reels:<reelId>`, `rubiks-cube:<courseId>`, `book-log:shelf`,
   `<surfaceProgramId>:daily`. The disc keeps the same identity tomorrow.
   Language reels is the one whose served id deliberately **differs** from its
@@ -60,8 +60,8 @@ completed today and `[]` otherwise. Rules:
   still returns `score: null` because accuracy is recorded, never gating.
 
 `programLaunchers.servedWork.test.mjs` enforces this by walking the launcher
-classes `schoolLifecycle.mjs` registers and calling each one's `status()`, so a
-NINTH launcher fails the suite until it is covered by name.
+classes `schoolLifecycle.mjs` registers and calling each one's `status()`, so an
+uncovered launcher fails the suite until it is covered by name.
 
 ### The exception: a day that was EXCUSED, not performed
 
@@ -595,6 +595,118 @@ AI-written follow-ups, finish. Enrollment:
 `servedWork` like every launcher, and mints a learner-and-day-bound
 `debriefGrant` for its writes. Coins are preview only; kid surfaces show "Coins
 start soon". Full reference: [School debrief](./school-debrief.md).
+
+## Printed activities — a page done on paper
+
+`printed-activity` prints one page from a worksheet platform (today the
+household's self-hosted Beeloo: mazes, sudoku, tracing…), the child does it on
+paper, and a grown-up scans the QR the platform already prints on the page.
+That scan is the evidence; there is no work session and no grade. A learner
+holds one entry per corpus, each on its own subject shelf:
+
+```yaml
+- programId: printed-activity
+  corpusId: beeloo:maze
+  subject: arts
+  title: Maze
+  target: 1
+  activity: { platform: beeloo, kind: maze, level: 3, paper: letter }
+  schedule: { daysOfWeek: [1, 2, 3, 4, 5] }
+- programId: printed-activity
+  corpusId: beeloo:sudoku
+  subject: math
+  title: Sudoku
+  target: 1
+  activity: { platform: beeloo, kind: sudoku, level: 3, paper: letter }
+  schedule: { daysOfWeek: [1, 2, 3, 4, 5] }
+```
+
+`corpusId` is the instance key (SetAssignments dedupes on programId+corpusId),
+`target` is sheets per study day (1–5), `level` is the platform's own
+difficulty step. Raising a child a level is an edit to the entry.
+
+**Printing.** The agenda offers each entry as its subject's ticket
+(`assignedProgramPlan.mjs`, unit `printed-activity:<corpusId>`). Scanning the
+ticket calls `PrintedActivityProgramLauncher.launch`, which:
+
+1. reprints the sheet this child already holds open in that corpus, if any (the
+   lost-sheet path; nothing new is reserved);
+2. otherwise picks a page uniformly from the platform's pages at that kind and
+   level, excluding every page ever issued in the household on that platform
+   (voided reservations excepted). Beeloo answers a random sample of at most
+   250 pages, so when every page in the sample is excluded the launcher asks
+   once more for a fresh sample before answering "No new pages left";
+3. **reserves, then prints.** The issuance is written first; a printer error, or
+   a print the adapter reports as unconfirmed, voids it (`voidedAt`,
+   `voidReason`; the row is kept as evidence and is neither open nor history).
+
+The store enforces two rules inside its write chain: a page is open for at most
+one child (`PAGE_ALREADY_OPEN`), and a child holds at most one open sheet per
+corpus (`CORPUS_ALREADY_OPEN`). So a double scan of the ticket reprints the
+sheet already reserved, and a sibling racing for the same page gets a
+different one.
+
+**Reprint cooldown.** Every confirmed print records `lastPrintedAt` on the
+issuance (`markPrinted`). A reprint inside the cooldown, which is
+`printing.printCooldownMinutes` in `school.yml` (default 10 minutes, the same key
+that debounces a session ticket), is refused with "That sheet just printed.
+Check the printer tray." and logs `reprint-cooldown`. That includes the loser
+of a double scan, whose sheet came out a moment ago. The launcher prints with
+`printPdf` directly, so the household page quota in PrintService never sees
+these jobs; the cooldown is the brake on a repeated ticket. Rows written before
+`lastPrintedAt` existed read `issuedAt` instead.
+
+A page is never re-issued in the household because the QR names
+the page, not the copy: an old sheet in a drawer must not credit whoever holds
+that page next.
+
+**Counting.** The barcode config's `url_rules` claims the platform's QR URL for
+the `worksheet` scan namespace (see
+[Barcode scanning](../barcode-scanning/README.md)). School's handler
+(`RecordPrintedActivityScan`) finds the open issuance for that page, completes
+it on the **study day of the scan** (4am→4am household day; an open sheet never
+expires), and prints a slip. Any scan on the household scanner counts, the
+same trust posture as the agenda's bulk-print ticket: the grown-up holding the
+paper is the authorization.
+
+| Scan of… | Slip | Credit |
+|---|---|---|
+| an open sheet | "<Name>'s maze counted" | yes |
+| a sheet already counted | "Already counted" (`scan-duplicate`) | no (idempotent) |
+| a sheet whose reservation was voided | "Not counted" (`scan-voided`) | no |
+| a platform page School never issued | "Not a School sheet" | no |
+
+If the child's entry was removed before the scan, the credit still stands (the
+sheet was valid when printed) and `school.printed-activity.scan-orphaned` is
+logged.
+
+**Evidence** lives at `household/school/records/printed-activities/<learnerId>.yml`
+(one file per learner, `issuances: [...]`). A corrupt file is side-filed to
+`<learnerId>.yml.corrupt-<stamp>` before it is replaced, never overwritten in
+place; household-wide lookups skip it and log
+`school.printed-activity.lookup-partial`. The learner's own day status does not
+skip it: a corrupt or unreadable log answers "Printed activity unavailable"
+(`log-unreadable`), never a false "0 of 1".
+
+**Wiring.** The platform's base URL is the `beeloo` key in `system/services.yml`;
+without it School logs `school.worksheets.unwired`, the agenda shows the entry
+as "Worksheets unavailable" (its standard unavailable state), and a ticket scan
+answers "Worksheets are unavailable". The platform sits behind
+`IWorksheetPlatform` (`3_applications/common/ports`); the Beeloo adapter
+(`1_adapters/worksheets`) is the only code that knows Beeloo's field names.
+
+**Main log events** (`school.printed-activity.*`, not exhaustive): `issued`, `unconfirmed`,
+`reprint-cooldown`, `pool-exhausted`, `page-race`, `multiple-open`, `print-failed`,
+`void-failed`, `mark-printed-failed`, `platform-failed`, `record-failed`,
+`log-unreadable`, `scanned`, `scan-duplicate`, `scan-voided`, `scan-unmatched`,
+`scan-refused`, `scan-orphaned`, `scan-failed`, `lookup-partial`,
+`store-corrupt`.
+
+**Known limit.** If a double scan's winner then fails to print and voids its
+reservation, the loser (told "That sheet just printed") has no sheet coming.
+Scan the ticket again for a fresh one. With the cooldown set to 0 the loser
+reprints instead, and that copy has no open row, so its scan says "Not
+counted".
 
 ## Operations CLI
 

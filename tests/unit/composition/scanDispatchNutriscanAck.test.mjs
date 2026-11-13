@@ -39,6 +39,7 @@ function makeDispatcher({ barcodeLogger, nutriscanEnabled }) {
     getLogFoodFromUPC: () => ({ execute: async () => ({ ok: true }) }),
     nutribotIdentity: { defaultUserId: () => 'test-user', conversationIdFor: () => null },
     screenNames: [],
+    urlRules: [],
     logger: noop,
     barcodeLogger,
   });

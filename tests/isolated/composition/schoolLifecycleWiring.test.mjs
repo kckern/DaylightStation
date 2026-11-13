@@ -136,6 +136,145 @@ describe('fail closed', () => {
     const result = await wire({});
     expect(result.handlesCode('sch:ANYTHING')).toBe(false);
     expect(result.handleScan).toBeNull();
+    expect(result.handleWorksheetScan).toBeNull();
+  });
+});
+
+describe('the printed-activity program', () => {
+  it('registers its launcher with no worksheet platform wired', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    expect(result.launchers.has('printed-activity')).toBe(true);
+    expect(result.stores.printedActivities).toBeTruthy();
+  });
+
+  it('answers a worksheet scan through the lifecycle, and refuses a page School never issued', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    expect(typeof result.handleWorksheetScan).toBe('function');
+    const outcome = await result.handleWorksheetScan({ platform: 'beeloo', externalId: 'page-never-issued' });
+    expect(outcome).toMatchObject({ status: 'not-issued', ok: false });
+  });
+
+  /**
+   * The whole loop through the composed lifecycle: the registered launcher
+   * prints a page on the LASER printer and records an open issuance; a scan of
+   * that page's QR through `handleWorksheetScan` completes it and prints a slip
+   * on the THERMAL printer. Miswire the printer, the rng, the store or the
+   * receipts and one of these assertions fails.
+   */
+  it('round trip: the ticket prints a page and a scan of its QR counts it', async () => {
+    const pages = [
+      { externalId: 'page-one', title: 'East Gate Labyrinth', kind: 'maze', level: 2, theme: null },
+      { externalId: 'page-two', title: 'North End Labyrinth', kind: 'maze', level: 2, theme: null },
+    ];
+    const fakePlatform = {
+      id: 'beeloo',
+      listActivities: async () => pages,
+      getPrintable: async () => Buffer.from('%PDF-1.4\n/Type /Page\n%%EOF'),
+      getSolution: async () => null,
+    };
+    const result = await wire(
+      { lifecycle: { enabled: true }, virtualDevices: true },
+      {
+        worksheetPlatforms: new Map([['beeloo', fakePlatform]]),
+        // The top of [0,1): the pick takes the LAST page, so an rng that did
+        // not reach the launcher would print page-one.
+        rng: () => 0.999,
+        clock: () => new Date('2026-11-13T18:00:00.000Z'),
+      },
+    );
+    expect(result.wired).toBe(true);
+    const { laserPrinter, thermalPrinter } = result.devices;
+    const learnerId = 'learner_a';
+    await result.stores.assignments.put({
+      learnerId, assignedBy: 'parent', programs: [{
+        programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+        activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+      }],
+    });
+
+    const jobsBefore = laserPrinter.listJobs().length;
+    const receiptsBefore = thermalPrinter.listReceipts().length;
+    const launched = await result.launchers.get('printed-activity').launch({ userId: learnerId, corpusId: 'beeloo:maze' });
+    expect(launched).toMatchObject({ decision: 'dispatched' });
+    expect(laserPrinter.listJobs()).toHaveLength(jobsBefore + 1);
+    expect(thermalPrinter.listReceipts()).toHaveLength(receiptsBefore);
+
+    const issued = await result.stores.printedActivities.listForLearner(learnerId);
+    const open = issued.filter((row) => row.completedAt == null && row.voidedAt == null);
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({ platform: 'beeloo', externalId: 'page-two', corpusId: 'beeloo:maze' });
+
+    const scanned = await result.handleWorksheetScan({ platform: 'beeloo', externalId: 'page-two', device: 'test' });
+    expect(scanned).toMatchObject({ status: 'recorded', ok: true, printed: true, learnerId });
+    const after = await result.stores.printedActivities.listForLearner(learnerId);
+    expect(after.find((row) => row.externalId === 'page-two')).toMatchObject({
+      completedVia: 'test', completedStudyDay: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
+    expect(thermalPrinter.listReceipts()).toHaveLength(receiptsBefore + 1);
+    // The slip is a receipt, never a second laser page.
+    expect(laserPrinter.listJobs()).toHaveLength(jobsBefore + 1);
+
+    const status = await result.launchers.get('printed-activity').status({ userId: learnerId, programInstance: 'beeloo:maze' });
+    expect(status).toMatchObject({ doneToday: true, servedWork: [{ unitId: 'printed-activity:beeloo:maze', title: 'Maze: North End Labyrinth' }] });
+  });
+
+  /**
+   * `printing.printCooldownMinutes` reaches the launcher's reprint cooldown: a
+   * second ticket scan right after the first is refused by default, and
+   * allowed when the household sets the cooldown to 0.
+   */
+  describe('reprint cooldown from school.yml printing.printCooldownMinutes', () => {
+    const scanTwice = async (printing) => {
+      const fakePlatform = {
+        id: 'beeloo',
+        listActivities: async () => [{ externalId: 'page-one', title: 'East Gate Labyrinth', kind: 'maze', level: 2, theme: null }],
+        getPrintable: async () => Buffer.from('%PDF-1.4\n/Type /Page\n%%EOF'),
+        getSolution: async () => null,
+      };
+      const result = await wire(
+        { lifecycle: { enabled: true }, virtualDevices: true, ...(printing ? { printing } : {}) },
+        { worksheetPlatforms: new Map([['beeloo', fakePlatform]]), clock: () => new Date('2026-11-13T18:00:00.000Z') },
+      );
+      await result.stores.assignments.put({
+        learnerId: 'learner_a', assignedBy: 'parent', programs: [{
+          programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+          activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+        }],
+      });
+      const launcher = result.launchers.get('printed-activity');
+      const jobsBefore = result.devices.laserPrinter.listJobs().length;
+      const first = await launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' });
+      const second = await launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' });
+      return { first, second, jobs: result.devices.laserPrinter.listJobs().length - jobsBefore };
+    };
+
+    it('refuses an immediate reprint with the default cooldown', async () => {
+      const { first, second, jobs } = await scanTwice(null);
+      expect(first).toMatchObject({ decision: 'dispatched' });
+      expect(second).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(jobs).toBe(1);
+    });
+
+    it('passes a configured cooldown through: 0 minutes lets the reprint print', async () => {
+      const { first, second, jobs } = await scanTwice({ printCooldownMinutes: 0 });
+      expect(first).toMatchObject({ decision: 'dispatched' });
+      expect(second).toMatchObject({ decision: 'dispatched' });
+      expect(jobs).toBe(2);
+    });
+  });
+
+  it('a launch with no platform wired says worksheets are unavailable', async () => {
+    const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
+    const launcher = result.launchers.get('printed-activity');
+    const learnerId = 'learner_a';
+    await result.stores.assignments.put({
+      learnerId, assignedBy: 'parent', programs: [{
+        programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+        activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+      }],
+    });
+    const answer = await launcher.launch({ userId: learnerId, corpusId: 'beeloo:maze' });
+    expect(answer).toMatchObject({ decision: 'failed', message: expect.stringMatching(/Worksheets are unavailable/) });
   });
 });
 
@@ -230,7 +369,7 @@ describe('branch order in the composition root', () => {
       getObservationService: () => null,
       getLogFoodFromUPC: () => null,
       nutribotIdentity: { defaultUserId: () => null, conversationIdFor: () => null },
-      screenNames: [],
+      screenNames: [], urlRules: [],
       logger: silent, barcodeLogger: silent,
     });
     expect(namespaces).toEqual(

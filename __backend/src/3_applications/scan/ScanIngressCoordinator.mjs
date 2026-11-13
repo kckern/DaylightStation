@@ -85,6 +85,11 @@
  * Publisher ISBN13 scans are owned by the injected book intention service.
  * Bad checksums remain book refusals; they never become nutrition lookups.
  *
+ * Printed third-party worksheets (a Beeloo page's QR) reach `worksheet` only
+ * through a household `url_rules` entry, passed in compiled as `urlRules`. The
+ * handler hands the page id to the school lifecycle's `handleWorksheetScan`;
+ * an unmatched URL is unknown on every reader and never reaches content.
+ *
  * @module composition/modules/scanDispatch
  */
 
@@ -204,6 +209,28 @@ function assertRouteFallback(routeFallback, handlers) {
   }
 }
 
+/**
+ * Every url rule must land on a registered handler. `compileUrlRules` can only
+ * check the vocabulary, and a namespace with no handler would answer every
+ * matching sheet with `no handler registered` hours after boot. Unlike
+ * `assertRouteFallback` this is NOT thrown: the rules are household YAML, and a
+ * throw here would crashloop the whole controller (HA, piano, fitness…) over
+ * one line of barcode config. The rule is logged and dropped instead, so it
+ * claims nothing and every other rule still routes.
+ *
+ * @returns {ReadonlyArray<object>} the rules that have a handler
+ */
+function keepHandledUrlRules(urlRules, handlers, logger) {
+  return Object.freeze(urlRules.filter((rule) => {
+    if (handlers.some((h) => h.namespace === rule.namespace)) return true;
+    emit(logger, 'error', 'scan.url-rules.unhandled', {
+      rule: rule.id, namespace: rule.namespace,
+      message: `url rule "${rule.id}" targets "${rule.namespace}", which has no registered handler; the rule is dropped`,
+    });
+    return false;
+  }));
+}
+
 function isObject(value) {
   return typeof value === 'object' && value !== null;
 }
@@ -286,6 +313,9 @@ const DEP_CONTRACT = Object.freeze({
   getLogFoodFromUPC:      { ok: isFunction, want: 'a function (late-bound getter)' },
   nutribotIdentity:       { ok: (v) => typeof v?.defaultUserId === 'function' && typeof v?.conversationIdFor === 'function', want: 'a semantic NutriBot identity resolver' },
   screenNames:            { ok: Array.isArray, want: 'an array of configured screen names' },
+  // Required, not optional: dropping it from the call site would turn every
+  // printed worksheet QR into an unknown scan with nothing in the logs.
+  urlRules:               { ok: Array.isArray, want: 'an array of compiled url rules (compileUrlRules)' },
   logger:                 { ok: isObject, want: 'a structured logger' },
   barcodeLogger:          { ok: isObject, want: 'a structured logger' },
 });
@@ -413,7 +443,7 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
  * the bag is checked before it is destructured.
  *
  * @param {object} deps
- * @param {{handlesCode: Function, handleScan: Function|null}|null} deps.schoolLifecycle  null when
+ * @param {{handlesCode: Function, handleScan: Function|null, handleWorksheetScan?: Function}|null} deps.schoolLifecycle  null when
  *   the console is not built
  * @param {{execute: Function}|null} deps.schoolCalcResultImporter  the common QR/cable result
  *   importer, or null when SchoolCalc is disabled
@@ -429,6 +459,10 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
  * @param {{defaultUserId:Function,conversationIdFor:Function}} deps.nutribotIdentity
  * @param {string[]} deps.screenNames     configured screen names, for the collision check. Required
  *   even when empty — pass `[]` to say a household has no screens.
+ * @param {Array<object>} deps.urlRules   household `url_rules`, already compiled by
+ *   `compileUrlRules`/`compileUrlRulesLenient`. Required even when empty, for the same reason as
+ *   `screenNames`. A rule whose namespace has no handler is logged (`scan.url-rules.unhandled`)
+ *   and dropped.
  * @param {object} deps.logger            STRUCTURED logger for the dispatcher itself
  * @param {object} deps.barcodeLogger     the channel the lifted branches already logged on; keeping
  *   it is what keeps every existing event name and payload byte-identical
@@ -457,6 +491,7 @@ export function createScanDispatch(deps = {}) {
     getLogFoodFromUPC,
     nutribotIdentity,
     screenNames,
+    urlRules: configuredUrlRules,
     // Defaulted rather than injected by `app.mjs`: this is a closed set in code,
     // not config. It is a PARAMETER only so the collision check can be driven
     // with a colliding name — an unfalsifiable guard is not a guard.
@@ -696,13 +731,31 @@ export function createScanDispatch(deps = {}) {
           return { status: 'refused', ok: false, message: errText(error) };
         }
       } },
+      // `body` is the url rule's id capture (the publisher's page id), so the
+      // lifecycle never parses a URL. Awaited, unlike school's action tokens:
+      // recording a sheet is a lookup, and its answer is what the scanner shows.
+      { namespace: 'worksheet', handle: async ({ body, platform, device }) => {
+        if (typeof schoolLifecycle?.handleWorksheetScan !== 'function') {
+          return { status: 'unwired', ok: false, message: 'worksheet scans are not wired' };
+        }
+        try {
+          return await schoolLifecycle.handleWorksheetScan({ platform, externalId: body, device });
+        } catch (error) {
+          emit(barcodeLogger, 'warn', 'school.worksheet-scan.failed', { device, platform, error: errText(error) });
+          return { status: 'failed', ok: false, message: errText(error) };
+        }
+      } },
     ];
   };
 
   // Boot-time checks. Both compare two halves that only exist together here.
+  // The route fallback is code and throws; a url rule is household YAML, so a
+  // rule with no handler is logged and dropped (see `keepHandledUrlRules`).
+  // Every dispatcher below reads the filtered list, never the configured one.
   const probeHandlers = buildHandlers(null);
   assertRouteFallback(routeFallback, probeHandlers);
-  const probe = new ScanDispatcher({ handlers: probeHandlers, routeFallback, logger });
+  const urlRules = keepHandledUrlRules(configuredUrlRules, probeHandlers, barcodeLogger);
+  const probe = new ScanDispatcher({ handlers: probeHandlers, routeFallback, logger, urlRules });
   const screenCollisions = reportLeadingSegmentCollisions(screenNames, commandNames, barcodeLogger);
 
   /**
@@ -723,7 +776,7 @@ export function createScanDispatch(deps = {}) {
     // `meta.route` as well as what the step-5 lookup reads.
     const route = relay.route || relayCfgFor(relay.device).route || 'content';
     const dispatcher = new ScanDispatcher({
-      handlers: buildHandlers(relay.ts, relay.eventId, timingOf(relay)), routeFallback, logger,
+      handlers: buildHandlers(relay.ts, relay.eventId, timingOf(relay)), routeFallback, logger, urlRules,
     });
     return dispatcher.dispatch({ code: relay.code, device: relay.device, route });
   }

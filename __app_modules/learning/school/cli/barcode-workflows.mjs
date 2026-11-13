@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import yaml from "js-yaml";
-import { parseScanCode } from "#domains/scan/ScanCode.mjs";
+import { compileUrlRules } from "#domains/scan/ScanCode.mjs";
+import { HOUSEHOLD_APP_CONFIGS } from "#shared/contracts/householdConfig.mjs";
 import { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from "../server/domain/index.mjs";
 import { reduceSession } from "../server/domain/sessions/sessionEvents.mjs";
 import { shortId } from "#system/utils/id.mjs";
@@ -97,6 +98,18 @@ function resolvePrinterConfig(dataDir, flags) {
     printPath: printing.path || '/ipp/print',
     policy: { ...DEFAULT_PRINT_POLICY, ...printing },
   };
+}
+
+/**
+ * The household's `url_rules`, read from the same barcode config the backend
+ * loads, so a printed worksheet QR classifies here as it does in production.
+ * Compiled with the same validator, but strictly: a rule the boot would log
+ * and drop fails this command loudly, so its author sees it here. (The CLI
+ * also does not drop a rule whose namespace has no handler; the boot does.)
+ */
+function loadUrlRules(dataDir) {
+  const file = path.join(dataDir, 'household', `${HOUSEHOLD_APP_CONFIGS.barcode}.yml`);
+  return compileUrlRules(loadYamlSafe(file)?.url_rules);
 }
 
 /**
@@ -428,8 +441,9 @@ async function runCard({
  * SAME `ResolveScanAction` use-case graph `schoolLifecycle.mjs` composes,
  * built here against the `--state-dir` scratch stores so a scan in one CLI
  * invocation can resolve a token minted by an earlier one. `content`/
- * `command`/`nutrition`/`product` are registered (so a `go:`/`nut:`/ISBN/
- * garbage code still gets a real, honest classification) but degrade to
+ * `command`/`nutrition`/`product`/`worksheet` are registered (so a `go:`/
+ * `nut:`/ISBN/worksheet-QR/garbage code still gets a real, honest
+ * classification, using the household's own `url_rules`) but degrade to
  * `unwired` — see `unwiredHandler` above.
  */
 function buildScanDispatcher({
@@ -460,7 +474,7 @@ function buildScanDispatcher({
     logger: silentLogger,
   });
 
-  const dispatcher = createDispatcher({ schoolHandler: {
+  const dispatcher = createDispatcher({ urlRules: loadUrlRules(dataDir), schoolHandler: {
         namespace: 'school',
         // `raw`, not `body`: school's token registry looks tokens up by the
         // FULL `sch:<body>` string (see ScanCode's own "Note: school's
@@ -505,8 +519,9 @@ async function runScan({
   // Reported alongside the dispatch outcome so an operator can see the
   // classification itself (namespace/form), not just what the handler did
   // with it — the two are independent: `unwired` still means the code WAS
-  // correctly classified.
-  const parsed = parseScanCode(code);
+  // correctly classified. Read from the dispatcher itself so the reported
+  // form comes from the same parse (and the same url rules) the dispatch used.
+  const parsed = dispatcher.parse(code);
   const outcome = await dispatcher.dispatch({ code, device });
   return {
     ok: true,

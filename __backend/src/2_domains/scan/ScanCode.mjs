@@ -42,6 +42,15 @@
  * still in circulation carry those forms, and the whole shelf gets deleted once
  * they are reprinted. Nothing in steps 1, 4 or 6 depends on it.
  *
+ * 0. `url-rule` — an `http(s)://` URL. A scheme is never a tag, so a URL is
+ *    decided here and never reaches steps 1-4: a household `url_rules` entry
+ *    (barcode config, compiled by `compileUrlRules`) claims it for its
+ *    namespace with the rule's `(?<id>…)` capture as `body`, and anything no
+ *    rule matches is `unknown`. Before this step, `https` read as a tag and
+ *    step 3 sent every printed web link in the house (a Beeloo worksheet QR,
+ *    a product's marketing QR) to `content`, which then refused it as a typo.
+ *    The rules come in as an argument because they live in config and this
+ *    module imports nothing.
  * 1. `prefixed` — a registered tag above.
  * 2. `legacy-prefixed` — bare `dl:` `ct:` `rs:` → nutrition. The fridge sheet
  *    always self-identified, just without naming its owner.
@@ -94,14 +103,17 @@
  *   `office:volume:30`. The two legacy grammars share one parser
  *   (`BarcodePayload.parse`) and therefore one handler; the content/command
  *   split exists only for the new prefixed forms.
- * - Every string with a non-empty tag that steps 1 and 2 do not claim lands on
- *   content, so a mis-cased `SCH:a7f3k2` resolves to content rather than
- *   unknown — the tag stays in the body, unstripped. That is
+ * - Every non-URL string with a non-empty tag that steps 1 and 2 do not claim
+ *   lands on content (a URL was already decided at step 0), so a mis-cased
+ *   `SCH:a7f3k2` resolves to content rather than unknown — the tag stays in the
+ *   body, unstripped. That is
  *   survivable because claim is not success: the content parser owns the grammar
  *   and refuses what it cannot read, exactly as it does today for a typo'd
  *   sticker.
  *
- * `unknown` therefore stays reachable four ways: input with no colon that is not
+ * `unknown` therefore stays reachable five ways: an `http(s)://` URL that no
+ * `url_rules` entry matches (step 0 decides every URL, so it never reaches the
+ * catch-all); input with no colon that is not
  * an ISBN-13 (`gibberish`); a digit-only code that is not an ISBN-13
  * (`041260010682`), which is the DELIBERATE unclaimed case above and the one the
  * dispatcher's route fallback is there to catch; input whose FIRST colon is at
@@ -172,14 +184,17 @@ const ISBN13_PREFIXES = Object.freeze(['978', '979']);
  *   is configured for. It is listed here because this is the vocabulary's
  *   namespace list, not a list of parse results — a handler registry and a
  *   route-fallback config both validate against it.
+ * - `worksheet` has no prefix tag either. It only comes back from a
+ *   `url_rules` match (step 0): a printed third-party worksheet carries its
+ *   publisher's URL, not a code the house printed.
  */
 export const NAMESPACES = Object.freeze([
-  ...new Set([...Object.values(PREFIX_REGISTRY), 'book', 'product']),
+  ...new Set([...Object.values(PREFIX_REGISTRY), 'book', 'product', 'worksheet']),
 ]);
 
 /** Every value `form` can take. See the resolution order in the module docstring. */
 export const FORMS = Object.freeze([
-  'prefixed', 'legacy-prefixed', 'legacy-positional', 'shape', 'unknown',
+  'url-rule', 'prefixed', 'legacy-prefixed', 'legacy-positional', 'shape', 'unknown',
 ]);
 
 /**
@@ -212,12 +227,138 @@ function isIsbn13(digits) {
  */
 const DIGITS_ONLY = /^[0-9]+$/;
 
+/** Step 0's test. Case-insensitive because schemes are, and scanners vary. */
+const URL_SCHEME_RE = /^https?:\/\//i;
+
+/**
+ * Longest URL step 0 will run rules against. The rules are regexes from config
+ * and the input is whatever got printed on a sticker, so a pathological pair
+ * must not be able to stall the event loop. Real worksheet QRs are well under
+ * 100 characters; anything longer than this is unknown without a match.
+ */
+const MAX_URL_RULE_INPUT = 2048;
+
+/**
+ * Is this scanned string a URL? The one test for it, exported so the
+ * dispatcher's no-route-fallback rule cannot drift from step 0.
+ */
+export function isUrlCode(raw) {
+  return typeof raw === 'string' && URL_SCHEME_RE.test(raw);
+}
+
+/**
+ * Validate and compile household `url_rules` (barcode config). Pure: the caller
+ * reads the YAML; this refuses anything that would make a scan ambiguous, so a
+ * bad rule is refused (the CLI) or logged and dropped (the boot, through
+ * `compileUrlRulesLenient`) instead of misrouting a sheet hours later.
+ *
+ * The `(?<id>…)` capture is required because it IS the body: a rule that
+ * matched without naming the page would hand its handler nothing to look up.
+ * It is checked on the COMPILED regex, not the source text, since `\(?<id>`
+ * and `[(?<id>]` both spell it without capturing anything.
+ *
+ * Anchor every `match` with `^…$`. An unanchored `qr\.beeloo\.com/(?<id>\w+)`
+ * would claim `https://evil.example/?u=qr.beeloo.com/abc`, so a missing `^` is
+ * refused here (a missing `$` is the author's call, and the rules below are
+ * theirs to read). Rules match CASE-SENSITIVELY as written; only the scheme
+ * test that decides "is this a URL" ignores case.
+ * A `worksheet` rule must name its `platform`.
+ * The namespace is checked against the vocabulary only; whether a handler is
+ * registered for it is the dispatcher composition's boot check, since this
+ * module knows nothing about handlers.
+ *
+ * @param {unknown} raw  the `url_rules` list as read from config
+ * @returns {ReadonlyArray<{id: string, re: RegExp, namespace: string, platform: string|null}>}
+ */
+export function compileUrlRules(raw) {
+  if (raw === undefined || raw === null) return Object.freeze([]);
+  if (!Array.isArray(raw)) throw new TypeError('url_rules must be a list');
+  const seen = new Set();
+  return Object.freeze(raw.map((rule, i) => compileUrlRule(rule, i, seen)));
+}
+
+/**
+ * The boot's form of `compileUrlRules`: it never throws. Every valid rule is
+ * compiled and every invalid one is reported, so one typo in household YAML
+ * costs that one rule rather than the whole controller (HA, piano, fitness…
+ * all boot in the same process). The CLI keeps the throwing form so a bad rule
+ * fails loudly where an author is looking.
+ *
+ * A rule whose id repeats an earlier one is reported and the earlier one kept.
+ * A non-list compiles to no rules and one error with a null index and id.
+ *
+ * @param {unknown} raw  the `url_rules` list as read from config
+ * @returns {{rules: ReturnType<typeof compileUrlRules>,
+ *   errors: Array<{index: number|null, id: string|null, message: string}>}}
+ */
+export function compileUrlRulesLenient(raw) {
+  if (raw === undefined || raw === null) return { rules: Object.freeze([]), errors: [] };
+  if (!Array.isArray(raw)) {
+    return { rules: Object.freeze([]), errors: [{ index: null, id: null, message: 'url_rules must be a list' }] };
+  }
+  const seen = new Set();
+  const rules = [];
+  const errors = [];
+  raw.forEach((rule, i) => {
+    try {
+      rules.push(compileUrlRule(rule, i, seen));
+    } catch (err) {
+      const id = typeof rule?.id === 'string' && rule.id ? rule.id : null;
+      errors.push({ index: i, id, message: err.message });
+    }
+  });
+  return { rules: Object.freeze(rules), errors };
+}
+
+/** One rule of `compileUrlRules`; throws on the first fault. Records its id in `seen` only when it compiles. */
+function compileUrlRule(rule, i, seen) {
+  const where = `url_rules[${i}]`;
+  if (typeof rule?.id !== 'string' || !rule.id) throw new Error(`${where}: id is required`);
+  if (seen.has(rule.id)) throw new Error(`${where}: duplicate rule id "${rule.id}"`);
+  if (typeof rule.match !== 'string' || !rule.match)
+    throw new Error(`${where}: match must be a regex string`);
+  let re;
+  try {
+    re = new RegExp(rule.match);
+  } catch (err) {
+    throw new Error(`${where}: match is not a valid regex: ${err.message}`);
+  }
+  // The trailing empty alternative always matches '', so `groups` lists
+  // every named group the pattern really has.
+  const groups = new RegExp(`${rule.match}|`).exec('')?.groups;
+  if (!groups || !Object.hasOwn(groups, 'id'))
+    throw new Error(`${where}: match must have an (?<id>…) capture`);
+  if (!rule.match.startsWith('^'))
+    throw new Error(`${where}: match must be anchored with ^ (and usually $)`);
+  if (!NAMESPACES.includes(rule.namespace))
+    throw new Error(`${where}: unknown namespace "${rule.namespace}"`);
+  const platform = rule.platform ?? null;
+  if (platform !== null && (typeof platform !== 'string' || !platform))
+    throw new Error(`${where}: platform must be a non-empty string when given`);
+  // A worksheet scan is looked up on its platform; without one the rule would
+  // compile and then answer `invalid` on every scan of the sheet.
+  if (rule.namespace === 'worksheet' && platform === null)
+    throw new Error(`${where}: a worksheet rule needs a platform`);
+  // The `^` binds only to the first branch of a top-level alternation, so
+  // `^https://a/…$|https://b/…` would leave the second branch free to match
+  // mid-string. Wrapping the body puts every branch behind the anchor.
+  re = new RegExp(`^(?:${rule.match.slice(1)})`);
+  seen.add(rule.id);
+  return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform });
+}
+
 /**
  * Resolve a scanned string to its owning domain.
  *
  * @param {unknown} code Raw scanned payload.
+ * @param {object} [options]
+ * @param {ReturnType<typeof compileUrlRules>} [options.urlRules]  compiled
+ *   household URL rules for step 0. Absent means no URL is claimed.
  * @returns {{namespace: string|null, body: string, raw: string,
- *   form: 'prefixed'|'legacy-prefixed'|'legacy-positional'|'shape'|'unknown'}}
+ *   form: 'url-rule'|'prefixed'|'legacy-prefixed'|'legacy-positional'|'shape'|'unknown',
+ *   rule?: string, platform?: string|null}}
+ *   `rule` and `platform` are present only on a `url-rule` result: the id of
+ *   the rule that matched and the platform it names.
  *   `raw` is the TRIMMED input, not the verbatim argument — scanners append
  *   CR/LF, and every consumer wants the trimmed form (school looks its tokens up
  *   by that exact string). Non-string or blank input yields empty `body` and
@@ -228,7 +369,7 @@ const DIGITS_ONLY = /^[0-9]+$/;
  *   here. See the module docstring for the resolution order and the `body`
  *   convention.
  */
-export function parseScanCode(code) {
+export function parseScanCode(code, { urlRules = [] } = {}) {
   const raw = typeof code === 'string' ? code.trim() : '';
   if (!raw) return { namespace: null, body: '', raw: '', form: 'unknown' };
 
@@ -240,6 +381,23 @@ export function parseScanCode(code) {
   // leading-colon test is what holds it.
   const idx = raw.indexOf(':');
   if (idx > 0) {
+    // step 0 — a URL. Never a tag: `https` is a scheme, and letting it fall to
+    // step 3 sent every printed web link in the house to `content`.
+    if (isUrlCode(raw)) {
+      // First matching rule wins, in config order. See MAX_URL_RULE_INPUT.
+      const rules = raw.length > MAX_URL_RULE_INPUT ? [] : urlRules;
+      for (const rule of rules) {
+        const m = rule.re.exec(raw);
+        if (m?.groups?.id) {
+          return {
+            namespace: rule.namespace, body: m.groups.id, raw,
+            form: 'url-rule', rule: rule.id, platform: rule.platform,
+          };
+        }
+      }
+      return { namespace: null, body: raw, raw, form: 'unknown' };
+    }
+
     const tag = raw.slice(0, idx);
 
     // step 1 — registered prefix.

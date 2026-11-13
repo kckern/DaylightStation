@@ -239,6 +239,7 @@ function makeIncidentHarness() {
       conversationIdFor: () => 'telegram:b1_c2',
     },
     screenNames: [],
+    urlRules: [],
     logger: noop,
     barcodeLogger: noop,
   });

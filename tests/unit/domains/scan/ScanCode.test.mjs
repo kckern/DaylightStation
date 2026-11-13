@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS,
+  parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS, compileUrlRules,
+  compileUrlRulesLenient,
+  isUrlCode,
 } from '#domains/scan/ScanCode.mjs';
 
 describe('parseScanCode — registered prefixes', () => {
@@ -338,7 +340,7 @@ describe('FORMS — invariants', () => {
   it('is frozen and lists every form the parser can return', () => {
     expect(Object.isFrozen(FORMS)).toBe(true);
     expect([...FORMS].sort()).toEqual(
-      ['legacy-positional', 'legacy-prefixed', 'prefixed', 'shape', 'unknown'],
+      ['legacy-positional', 'legacy-prefixed', 'prefixed', 'shape', 'unknown', 'url-rule'],
     );
   });
 
@@ -377,5 +379,178 @@ describe('LEGACY_NUTRITION_TAGS — invariants', () => {
 
   it('is disjoint from the prefix registry', () => {
     for (const tag of LEGACY_NUTRITION_TAGS) expect(PREFIX_REGISTRY[tag]).toBeUndefined();
+  });
+});
+
+describe('parseScanCode — url rules', () => {
+  const rules = compileUrlRules([
+    { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' },
+  ]);
+
+  it('claims a matching URL for the rule namespace, body = the id capture', () => {
+    expect(parseScanCode('https://qr.beeloo.com/glD5B71Bj', { urlRules: rules })).toEqual({
+      namespace: 'worksheet', body: 'glD5B71Bj', raw: 'https://qr.beeloo.com/glD5B71Bj',
+      form: 'url-rule', rule: 'beeloo-page', platform: 'beeloo',
+    });
+  });
+
+  it('answers unknown for a URL no rule matches — never content', () => {
+    expect(parseScanCode('https://example.com/a', { urlRules: rules })).toEqual({
+      namespace: null, body: 'https://example.com/a', raw: 'https://example.com/a', form: 'unknown',
+    });
+  });
+
+  it('answers unknown for any URL when no rules are passed', () => {
+    expect(parseScanCode('https://qr.beeloo.com/glD5B71Bj').namespace).toBeNull();
+  });
+
+  it('leaves every non-URL form exactly as before', () => {
+    expect(parseScanCode('go:office:plex:1', { urlRules: rules }).form).toBe('prefixed');
+    expect(parseScanCode('living-room:plex:1', { urlRules: rules }).form).toBe('legacy-positional');
+    expect(parseScanCode('sch:ABCDEFGHJKLMNPQR', { urlRules: rules }).namespace).toBe('school');
+  });
+
+  it('lists worksheet as a namespace and url-rule as a form', () => {
+    expect(NAMESPACES).toContain('worksheet');
+    expect(FORMS).toContain('url-rule');
+  });
+});
+
+describe('compileUrlRules', () => {
+  const ok = { id: 'r', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'p' };
+  it('accepts an empty or missing list', () => {
+    expect(compileUrlRules(undefined)).toEqual([]);
+    expect(compileUrlRules([])).toEqual([]);
+  });
+  it('refuses a rule without an id capture', () => {
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/\\w+$' }])).toThrow(/id/);
+  });
+  it('refuses an invalid regex', () => {
+    expect(() => compileUrlRules([{ ...ok, match: '(' }])).toThrow(/match/);
+  });
+  it('refuses a non-string match', () => {
+    expect(() => compileUrlRules([{ ...ok, match: undefined }])).toThrow(/match/);
+  });
+  it('refuses an unknown namespace', () => {
+    expect(() => compileUrlRules([{ ...ok, namespace: 'nope' }])).toThrow(/namespace/);
+  });
+  it('refuses duplicate rule ids', () => {
+    expect(() => compileUrlRules([ok, ok])).toThrow(/duplicate/);
+  });
+  it('accepts null as an empty list, and refuses a non-list', () => {
+    expect(compileUrlRules(null)).toEqual([]);
+    expect(() => compileUrlRules({})).toThrow(TypeError);
+  });
+  it('is not fooled by an escaped paren or a character class that spell (?<id>', () => {
+    // Both contain the text `(?<id>` and neither has a capture group named id.
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/\\(?<id>\\w+' }])).toThrow(/\(\?<id>/);
+    expect(() => compileUrlRules([{ ...ok, match: '^https://x/[(?<id>]+' }])).toThrow(/\(\?<id>/);
+  });
+  it('refuses an unanchored match', () => {
+    const loose = { ...ok, match: 'qr\\.beeloo\\.com/(?<id>\\w+)' };
+    expect(() => compileUrlRules([loose])).toThrow(/anchored/);
+  });
+  it('anchors every branch of a top-level alternation, not just the first', () => {
+    const rules = compileUrlRules([{
+      ...ok, match: '^https://x/home$|https://y/(?<id>\\w+)$', namespace: 'worksheet',
+    }]);
+    expect(parseScanCode('https://y/abc', { urlRules: rules }).body).toBe('abc');
+    // The second branch carried no ^ of its own; it must not match mid-string.
+    expect(parseScanCode('https://evil.example/?u=https://y/abc', { urlRules: rules }).namespace).toBeNull();
+  });
+  it('refuses a platform that is present but not a non-empty string', () => {
+    expect(() => compileUrlRules([{ ...ok, platform: '' }])).toThrow(/platform/);
+    expect(() => compileUrlRules([{ ...ok, platform: 7 }])).toThrow(/platform/);
+    const school = { ...ok, namespace: 'school' };
+    expect(compileUrlRules([{ ...school, platform: undefined }])[0].platform).toBeNull();
+    expect(compileUrlRules([{ ...school, platform: null }])[0].platform).toBeNull();
+  });
+  it('refuses a worksheet rule without a platform', () => {
+    // It would compile, then answer `invalid` on every scan of the sheet.
+    expect(() => compileUrlRules([{ ...ok, platform: undefined }])).toThrow(/platform/);
+    expect(() => compileUrlRules([{ ...ok, platform: null }])).toThrow(/platform/);
+  });
+});
+
+describe('compileUrlRulesLenient', () => {
+  const good = { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' };
+  const good2 = { id: 'other', match: '^https://y\\.example/(?<id>\\w+)$', namespace: 'worksheet', platform: 'other' };
+
+  it('an invalid rule does not claim its id: a later valid rule with the same id is kept', () => {
+    const { rules, errors } = compileUrlRulesLenient([{ ...good, match: '(' }, good]);
+    expect(rules.map((r) => r.id)).toEqual(['beeloo-page']);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ index: 0, id: 'beeloo-page' });
+  });
+
+  it('compiles every valid rule and reports each invalid one', () => {
+    const { rules, errors } = compileUrlRulesLenient([
+      good,
+      { id: 'typo', match: '(', namespace: 'worksheet', platform: 'p' },
+      good2,
+      { id: 'no-platform', match: '^https://z/(?<id>\\w+)$', namespace: 'worksheet' },
+    ]);
+    expect(rules.map((r) => r.id)).toEqual(['beeloo-page', 'other']);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ index: 1, id: 'typo' });
+    expect(errors[0].message).toMatch(/match/);
+    expect(errors[1]).toMatchObject({ index: 3, id: 'no-platform' });
+    expect(errors[1].message).toMatch(/platform/);
+    // The good rules still route.
+    expect(parseScanCode('https://qr.beeloo.com/abc', { urlRules: rules })).toMatchObject({ namespace: 'worksheet', body: 'abc', platform: 'beeloo' });
+    expect(parseScanCode('https://y.example/def', { urlRules: rules })).toMatchObject({ namespace: 'worksheet', body: 'def', platform: 'other' });
+  });
+
+  it('answers no rules and one error for a non-list', () => {
+    const { rules, errors } = compileUrlRulesLenient({ id: 'x' });
+    expect(rules).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ index: null, id: null });
+    expect(errors[0].message).toMatch(/list/);
+  });
+
+  it('answers no rules and no errors for a missing list', () => {
+    expect(compileUrlRulesLenient(undefined)).toEqual({ rules: [], errors: [] });
+    expect(compileUrlRulesLenient(null)).toEqual({ rules: [], errors: [] });
+  });
+
+  it('keeps the first of two rules sharing an id and reports the second', () => {
+    const { rules, errors } = compileUrlRulesLenient([good, { ...good2, id: 'beeloo-page' }]);
+    expect(rules.map((r) => r.platform)).toEqual(['beeloo']);
+    expect(errors).toMatchObject([{ index: 1, id: 'beeloo-page' }]);
+    expect(errors[0].message).toMatch(/duplicate/);
+  });
+
+  it('reports a rule that is not an object without an id', () => {
+    const { rules, errors } = compileUrlRulesLenient([null, good]);
+    expect(rules).toHaveLength(1);
+    expect(errors).toMatchObject([{ index: 0, id: null }]);
+  });
+});
+
+describe('parseScanCode — url rule edges', () => {
+  it('first matching rule wins', () => {
+    const rules = compileUrlRules([
+      { id: 'first', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'a' },
+      { id: 'second', match: '^https://x/(?<id>\\w+)$', namespace: 'content', platform: 'b' },
+    ]);
+    expect(parseScanCode('https://x/abc', { urlRules: rules })).toMatchObject({ rule: 'first', platform: 'a' });
+  });
+
+  it('skips rule matching for an over-long URL', () => {
+    const rules = compileUrlRules([
+      { id: 'any', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'p' },
+    ]);
+    const long = `https://x/${'a'.repeat(2100)}`;
+    expect(parseScanCode(long, { urlRules: rules })).toEqual({
+      namespace: null, body: long, raw: long, form: 'unknown',
+    });
+  });
+
+  it('isUrlCode tests the scheme only, case-insensitively', () => {
+    expect(isUrlCode('HTTPS://x/a')).toBe(true);
+    expect(isUrlCode('http://x')).toBe(true);
+    expect(isUrlCode('go:https://x')).toBe(false);
+    expect(isUrlCode(42)).toBe(false);
   });
 });

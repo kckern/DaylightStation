@@ -122,3 +122,49 @@ describe('story-time noRepeatDays through the enrollment validator', () => {
     expect(bad.errors[0]).toMatch(/noRepeatDays/);
   });
 });
+
+describe('printed-activity through the enrollment validator', () => {
+  const entry = {
+    programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze',
+    activity: { platform: 'beeloo', kind: 'maze', level: 2 },
+  };
+
+  it('is registered with no services wired, and keeps a schedule', async () => {
+    const bare = createSchoolProgramEnrollmentValidators({});
+    const result = await bare.get('printed-activity')({ ...entry, schedule: { daysOfWeek: [1, 3, 5] } });
+    expect(result).toMatchObject({ errors: [], enrollment: {
+      programId: 'printed-activity', corpusId: 'beeloo:maze', target: 1,
+      activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+      schedule: { daysOfWeek: [1, 3, 5] },
+    } });
+  });
+
+  it('refuses an entry with no activity', async () => {
+    const result = await validators().get('printed-activity')({ ...entry, activity: undefined });
+    expect(result.errors).toContain('activity.platform is required (e.g. beeloo)');
+  });
+
+  it('lets SetAssignments write a maze and a sudoku entry for one learner', async () => {
+    const assignments = { put: vi.fn(async (record) => record) };
+    const useCase = new SetAssignments({
+      assignments,
+      grownUps: { assert: vi.fn() },
+      programValidators: validators(),
+      clock: () => new Date('2026-11-13T12:00:00.000Z'),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    await useCase.execute({
+      learnerId: 'learner_a', assignedBy: 'parent',
+      programs: [
+        entry,
+        { ...entry, corpusId: 'beeloo:sudoku', subject: 'math', title: 'Sudoku', activity: { platform: 'beeloo', kind: 'sudoku', level: 1 } },
+      ],
+    });
+    expect(assignments.put).toHaveBeenCalledWith(expect.objectContaining({
+      programs: [
+        expect.objectContaining({ programId: 'printed-activity', corpusId: 'beeloo:maze' }),
+        expect.objectContaining({ programId: 'printed-activity', corpusId: 'beeloo:sudoku' }),
+      ],
+    }));
+  });
+});

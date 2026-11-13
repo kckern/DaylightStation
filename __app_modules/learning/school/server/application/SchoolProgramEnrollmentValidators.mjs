@@ -2,6 +2,7 @@ import { validateFlashcardEnrollment } from "../domain/flashcards/index.mjs";
 import { validateStoryTimeEnrollment, STORY_TIME_PROGRAM_ID } from "../domain/storyTime.mjs";
 import { validateBookLogEnrollment, BOOK_LOG_PROGRAM_ID } from "../domain/bookLog.mjs";
 import { SCHOOL_DEBRIEF_PROGRAM_ID, validateSchoolDebriefEnrollment } from "../domain/schoolDebrief.mjs";
+import { PRINTED_ACTIVITY_PROGRAM_ID, validatePrintedActivityEnrollment } from "../domain/printedActivity.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
 
 const withSchedule = (validator) => async (raw) => {
@@ -47,6 +48,10 @@ export function createSchoolProgramEnrollmentValidators({
     [BOOK_LOG_PROGRAM_ID, validateBookLogEnrollment],
     // Unconditional too: the debrief needs no service to be enrolled on.
     [SCHOOL_DEBRIEF_PROGRAM_ID, validateSchoolDebriefEnrollment],
+    // Unconditional like story-time: the launcher always registers, and with
+    // no worksheet platform wired it answers "Worksheets are unavailable"
+    // rather than the enrollment being refused.
+    [PRINTED_ACTIVITY_PROGRAM_ID, validatePrintedActivityEnrollment],
     ...(rubiksCubeService && rubiksCubeCourseId
       ? [['rubiks-cube', (raw) => validateRubiksCubeEnrollment(raw, rubiksCubeCourseId)]]
       : []),

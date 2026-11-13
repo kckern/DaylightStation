@@ -44,6 +44,35 @@ import { debriefConfigOf } from "../domain/schoolDebrief.mjs";
 import { createSchoolDebriefRouter } from "../api/schoolDebrief.mjs";
 import { FilesystemDebriefAudio } from "../adapters/debrief/FilesystemDebriefAudio.mjs";
 
+/**
+ * The worksheet platforms the printed-activity program prints from, keyed by
+ * platform id. Beeloo's address is `services.yml` → `beeloo`; with none (or an
+ * adapter that will not load) the map is empty and the reason is logged as
+ * `school.worksheets.unwired`, so a missing page source is visible at boot
+ * rather than first noticed when a child's ticket prints nothing.
+ *
+ * `loadAdapter` is the test seam for the dynamic import; production passes
+ * nothing and gets the real Beeloo adapter class.
+ */
+const loadBeelooAdapter = async () => (await import('#adapters/worksheets/BeelooWorksheetPlatformAdapter.mjs')).BeelooWorksheetPlatformAdapter;
+
+export async function buildWorksheetPlatforms({ configService, rootLogger, logger, loadAdapter = loadBeelooAdapter }) {
+  const baseUrl = configService.resolveServiceUrl?.('beeloo') ?? null;
+  if (!baseUrl) {
+    logger.warn('school.worksheets.unwired', { platform: 'beeloo', reason: 'no services.yml beeloo url' });
+    return new Map();
+  }
+  try {
+    const Adapter = await loadAdapter();
+    const adapter = new Adapter({ baseUrl, logger: rootLogger.child({ module: 'worksheets-beeloo' }) });
+    logger.info('school.worksheets.wired', { platform: 'beeloo' });
+    return new Map([[adapter.id, adapter]]);
+  } catch (err) {
+    logger.warn('school.worksheets.unwired', { platform: 'beeloo', reason: err?.message ?? String(err) });
+    return new Map();
+  }
+}
+
 export async function createSchoolLifecycleRuntime(dependencies) {
   const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, notificationService, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
   const { SetAcademicPeriods: SetAcademicPeriods } = await import("../application/usecases/SetAcademicPeriods.mjs");
@@ -53,7 +82,11 @@ export async function createSchoolLifecycleRuntime(dependencies) {
   const { RecordEnrichment: RecordEnrichment } = await import("../application/usecases/RecordEnrichment.mjs");
 try {
     const { createSchoolLifecycle } = await import("./schoolLifecycle.mjs");
+    const worksheetPlatforms = await buildWorksheetPlatforms({ configService, rootLogger, logger: schoolLifecycleLogger });
     dependencies.schoolLifecycle = await createSchoolLifecycle({
+      // The printed-activity program's page sources. Empty when unconfigured:
+      // the program still registers and answers "Worksheets are unavailable".
+      worksheetPlatforms,
       // Deliberately a THUNK: the trigger API that owns the parsed sources is
       // composed further down this file, so there is no value to read yet. It
       // resolves per projection, which also means a reloaded trigger config is

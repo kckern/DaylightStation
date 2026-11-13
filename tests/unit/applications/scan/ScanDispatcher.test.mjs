@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ScanDispatcher } from '#apps/scan/ScanDispatcher.mjs';
+import { compileUrlRules } from '#domains/scan/ScanCode.mjs';
 
 const handler = (namespace, impl) => ({ namespace, handle: vi.fn(impl) });
 
@@ -668,5 +669,52 @@ describe('ScanDispatcher — logging and pass-through', () => {
       d.dispatch({ code: 'go:a' }), d.dispatch({ code: '!!!' }), d.dispatch({ code: 'go:b' }),
     ]);
     expect(outs.map((o) => o.status)).toEqual(['ok', 'unknown', 'ok']);
+  });
+});
+
+describe('ScanDispatcher — url rules', () => {
+  const urlRules = compileUrlRules([
+    { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' },
+  ]);
+
+  it('routes a matching URL to the rule namespace with platform and rule', async () => {
+    const worksheet = handler('worksheet', async () => ({ status: 'recorded' }));
+    const d = new ScanDispatcher({ handlers: [worksheet], urlRules });
+    const out = await d.dispatch({ code: 'https://qr.beeloo.com/glD5B71Bj', device: 'school-console' });
+    expect(worksheet.handle).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'glD5B71Bj', platform: 'beeloo', rule: 'beeloo-page', device: 'school-console',
+    }));
+    expect(out.domain).toBe('worksheet');
+  });
+
+  it('does NOT fall back to the reader route for an unmatched URL', async () => {
+    const content = handler('content', async () => ({ status: 'dispatched' }));
+    const d = new ScanDispatcher({ handlers: [content], routeFallback: { content: 'content' }, urlRules });
+    const out = await d.dispatch({ code: 'https://example.com/a', device: 'k', route: 'content' });
+    expect(content.handle).not.toHaveBeenCalled();
+    expect(out.ok).toBe(false);
+  });
+
+  it('hands a handler platform null when the rule names none', async () => {
+    const rules = compileUrlRules([
+      // A worksheet rule must name its platform; any other namespace may not.
+      { id: 'bare', match: '^https://x/(?<id>\\w+)$', namespace: 'school' },
+    ]);
+    const school = handler('school', async () => ({ status: 'recorded' }));
+    const d = new ScanDispatcher({ handlers: [school], urlRules: rules });
+    await d.dispatch({ code: 'https://x/abc', device: 'k' });
+    expect(school.handle).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'abc', platform: null, rule: 'bare',
+    }));
+  });
+
+  it('parse() answers with the same rules dispatch uses', () => {
+    const d = new ScanDispatcher({ urlRules });
+    expect(d.parse('https://qr.beeloo.com/glD5B71Bj')).toMatchObject({ namespace: 'worksheet', form: 'url-rule' });
+    expect(new ScanDispatcher().parse('https://qr.beeloo.com/glD5B71Bj').form).toBe('unknown');
+  });
+
+  it('refuses a urlRules that is not an array', () => {
+    expect(() => new ScanDispatcher({ urlRules: {} })).toThrow(/urlRules/);
   });
 });
