@@ -1293,8 +1293,15 @@ export async function createSchoolLifecycle({
   });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
+  // A card tap prints every `printOnCardTap` sheet owed today instead of the
+  // agenda (a child who cannot read). Absent launcher: agenda taps only.
+  const printedActivityLauncher = launchers.get(PRINTED_ACTIVITY_PROGRAM_ID) ?? null;
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
+    cardTapSheets: printedActivityLauncher ? {
+      picks: ({ learnerId }) => printedActivityLauncher.cardTapPicks({ userId: learnerId }),
+      launch: ({ learnerId, corpusId }) => printedActivityLauncher.launch({ userId: learnerId, corpusId }),
+    } : null,
     // The SAME capture port the result-receipt path uses — one canvas renderer,
     // one artifact store, two `kind`s. The agenda leg was simply never wired,
     // so every printed agenda was rendered and thrown away while result

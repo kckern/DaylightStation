@@ -358,7 +358,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       // Issued 15:00, last printed 17:55; NOW is 18:00, inside the default 10 minutes.
       const store = fakeStore([issuance({ externalId: 'm-2', lastPrintedAt: '2026-11-13T17:55:00.000Z' })]);
       const { launcher, printer, platform, log } = setup({ store });
-      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.', code: 'just-printed' });
       expect(printer.printPdf).not.toHaveBeenCalled();
       expect(platform.getPrintable).not.toHaveBeenCalled();
       expect(store.markPrinted).not.toHaveBeenCalled();
@@ -458,7 +458,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       const held = issuance({ issuanceId: 'pa_win', externalId: 'm-2', title: 'Forest Path', issuedAt: NOW.toISOString() });
       store.append.mockRejectedValueOnce(Object.assign(new Error('corpus open'), { code: 'CORPUS_ALREADY_OPEN', held }));
       const { launcher, printer, log } = setup({ store });
-      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.', code: 'just-printed' });
       expect(printer.printPdf).not.toHaveBeenCalled();
       expect(log.info).toHaveBeenCalledWith('school.printed-activity.reprint-cooldown', expect.objectContaining({ externalId: 'm-2' }));
     });
@@ -494,7 +494,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       const results = await Promise.all([go(launcher), go(launcher)]);
       expect(results).toEqual([
         { decision: 'dispatched', message: expect.stringMatching(/is printing\.$/) },
-        { decision: 'failed', message: 'That sheet just printed. Check the printer tray.' },
+        { decision: 'failed', message: 'That sheet just printed. Check the printer tray.', code: 'just-printed' },
       ]);
       expect(store.rows).toHaveLength(1);
       const printed = printer.printPdf.mock.calls.map(([b]) => String(b));
@@ -675,5 +675,51 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     const angry = () => { throw new Error('logger down'); };
     const { launcher } = setup({ store, log: { debug: angry, info: angry, warn: angry, error: angry } });
     await expect(go(launcher)).resolves.toEqual({ decision: 'failed', message: 'Something went wrong printing that page. Ask a grown-up.' });
+  });
+});
+
+describe('PrintedActivityProgramLauncher.cardTapPicks', () => {
+  const COLORING = {
+    programId: 'printed-activity', corpusId: 'beeloo:coloring', subject: 'arts', title: 'Coloring page', target: 1,
+    activity: { platform: 'beeloo', kind: 'coloring', level: 3, paper: 'letter' }, printOnCardTap: true,
+  };
+
+  it('picks the marked sheet owed today, and no unmarked one', async () => {
+    const { launcher } = make({ programs: [MAZE, COLORING] });
+    expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([{ corpusId: 'beeloo:coloring', label: 'Coloring page' }]);
+  });
+
+  it('picks every marked sheet owed today, in plan order', async () => {
+    const { launcher } = make({ programs: [{ ...MAZE, printOnCardTap: true }, SUDOKU, COLORING] });
+    expect((await launcher.cardTapPicks({ userId: 'learner_a' })).map((p) => p.corpusId)).toEqual(['beeloo:maze', 'beeloo:coloring']);
+  });
+
+  it('is empty when no sheet is marked', async () => {
+    const { launcher } = make({ programs: [MAZE, SUDOKU] });
+    expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([]);
+  });
+
+  it('is empty once the marked sheet is done today', async () => {
+    const store = fakeStore([issuance({
+      corpusId: 'beeloo:coloring', kind: 'coloring', completedAt: '2026-11-13T17:00:00.000Z', completedStudyDay: TODAY, completedVia: 'scan',
+    })]);
+    const { launcher } = make({ programs: [COLORING], store });
+    expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([]);
+  });
+
+  it('is empty on a day the sheet is not scheduled', async () => {
+    // 2026-11-13 is a Friday (ISO 5).
+    const { launcher } = make({ programs: [{ ...COLORING, schedule: { daysOfWeek: [1, 2, 3, 4] } }] });
+    expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([]);
+  });
+
+  it('is empty, and logs, when the assignment cannot be read', async () => {
+    const log = logger();
+    const launcher = new PrintedActivityProgramLauncher({
+      assignments: { get: vi.fn(async () => { throw new Error('disk'); }) },
+      store: fakeStore(), platforms: WIRED(), printer: null, timezone: null, clock: () => NOW, rng: () => 0, logger: log,
+    });
+    expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([]);
+    expect(log.error).toHaveBeenCalledWith('school.printed-activity.card-tap-pick-failed', expect.objectContaining({ learnerId: 'learner_a' }));
   });
 });

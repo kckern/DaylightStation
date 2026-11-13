@@ -646,6 +646,26 @@ holds one entry per corpus, each on its own subject shelf:
 `target` is sheets per study day (1–5), `level` is the platform's own
 difficulty step. Raising a child a level is an edit to the entry.
 
+**Printing on a card tap.** An entry with `printOnCardTap: true` prints when
+the learner taps their card, with no code and no ticket. The tap prints every
+marked entry that meets today by its own schedule and is not yet done, in plan
+order, *instead of* the agenda; once they are all done the tap prints the
+agenda again. It is for a child who cannot read an agenda and does one sheet a
+day. The answers reuse the card statuses: `activity_printed` when any sheet
+came out, `agenda_suppressed` when every sheet printed moments ago (the reprint
+cooldown below), `print_failed` otherwise. Each sheet logs
+`school.card.sheet-tap` (`learnerId`, `corpusId`, `decision`, `code`).
+
+```yaml
+- programId: printed-activity
+  corpusId: beeloo:coloring
+  subject: arts
+  title: Coloring page
+  target: 1
+  printOnCardTap: true
+  activity: { platform: beeloo, kind: coloring, level: 3, paper: letter }
+```
+
 **Printing.** The agenda offers each entry as its subject's ticket
 (`assignedProgramPlan.mjs`, unit `printed-activity:<corpusId>`). Scanning the
 ticket calls `PrintedActivityProgramLauncher.launch`, which:

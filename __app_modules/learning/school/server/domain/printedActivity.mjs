@@ -86,6 +86,12 @@ export function validatePrintedActivityEnrollment(raw) {
 
   // An optional disc icon (a name in the School icon registry); no default
   // here, so a sheet falls back to its shelf's icon on the board.
+  // `printOnCardTap: true` makes the learner's card print this sheet instead
+  // of the agenda while it is owed today (for a child who cannot read one).
+  if (raw.printOnCardTap != null && typeof raw.printOnCardTap !== 'boolean') {
+    errors.push(`printOnCardTap must be true or false, got: ${raw.printOnCardTap}`);
+  }
+
   const iconCheck = validateEntryIcon(raw.icon);
   errors.push(...iconCheck.errors);
 
@@ -101,6 +107,7 @@ export function validatePrintedActivityEnrollment(raw) {
     target,
     activity: { platform, kind, level: a.level, paper },
     ...(iconCheck.icon ? { icon: iconCheck.icon } : {}),
+    ...(raw.printOnCardTap === true ? { printOnCardTap: true } : {}),
   } };
 }
 

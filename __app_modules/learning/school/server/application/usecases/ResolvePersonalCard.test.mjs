@@ -121,3 +121,54 @@ describe('suppressed taps do not leak live tokens', () => {
     expect(revoked).toEqual([['sch:TESTTOKEN', { at: '2026-08-25T15:12:30.000Z' }]]);
   });
 });
+
+describe('ResolvePersonalCard — a card that prints a sheet', () => {
+  const COLORING = { corpusId: 'beeloo:coloring', label: 'Coloring page' };
+  const sheets = (outcome, picks = [COLORING]) => ({
+    picks: async () => picks,
+    launch: async ({ corpusId }) => (typeof outcome === 'function' ? outcome(corpusId) : outcome),
+  });
+
+  it('prints the owed sheet instead of the agenda', async () => {
+    const { deps, printed } = makeDeps({ printDelayMs: 0 });
+    const card = new ResolvePersonalCard({ ...deps, cardTapSheets: sheets({ decision: 'dispatched', message: 'Coloring page is printing.' }) });
+    const result = await card.execute({ learnerId: 'kid' });
+    expect(result).toMatchObject({ status: 'activity_printed', printed: true, message: 'Coloring page is printing.' });
+    expect(printed).toEqual([]);
+  });
+
+  it('prints the agenda when no sheet is owed', async () => {
+    const { deps, printed } = makeDeps({ printDelayMs: 0 });
+    const card = new ResolvePersonalCard({ ...deps, cardTapSheets: sheets(null, []) });
+    const result = await card.execute({ learnerId: 'kid' });
+    expect(result.status).toBe('agenda_printed');
+    expect(printed).toEqual(['agenda-kid']);
+  });
+
+  it('prints every owed sheet, one after another', async () => {
+    const { deps, printed } = makeDeps({ printDelayMs: 0 });
+    const launched = [];
+    const card = new ResolvePersonalCard({ ...deps, cardTapSheets: sheets((corpusId) => { launched.push(corpusId); return { decision: 'dispatched', message: 'x' }; },
+      [{ corpusId: 'beeloo:maze', label: 'Maze' }, COLORING]) });
+    const result = await card.execute({ learnerId: 'kid' });
+    expect(result).toMatchObject({ status: 'activity_printed', printed: true, message: 'Printing 2 sheets.' });
+    expect(launched).toEqual(['beeloo:maze', 'beeloo:coloring']);
+    expect(printed).toEqual([]);
+  });
+
+  it('acknowledges a repeat tap on a sheet that just printed', async () => {
+    const { deps, printed } = makeDeps({ printDelayMs: 0 });
+    const card = new ResolvePersonalCard({ ...deps, cardTapSheets: sheets({ decision: 'failed', code: 'just-printed', message: 'That sheet just printed. Check the printer tray.' }) });
+    const result = await card.execute({ learnerId: 'kid' });
+    expect(result).toMatchObject({ status: 'agenda_suppressed', printed: false, message: 'That sheet just printed. Check the printer tray.' });
+    expect(printed).toEqual([]);
+  });
+
+  it('asks for another scan when the sheet could not print', async () => {
+    const { deps, printed } = makeDeps({ printDelayMs: 0 });
+    const card = new ResolvePersonalCard({ ...deps, cardTapSheets: sheets({ decision: 'failed', message: 'The printer did not answer. Try the ticket again.' }) });
+    const result = await card.execute({ learnerId: 'kid' });
+    expect(result).toMatchObject({ status: 'print_failed', printed: false });
+    expect(printed).toEqual([]);
+  });
+});

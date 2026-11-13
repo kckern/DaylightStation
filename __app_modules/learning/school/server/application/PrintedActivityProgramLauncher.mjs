@@ -31,6 +31,7 @@
  * this file never imports the adapter that defines them.
  */
 import { studyDayForInstant } from '../domain/studyDay.mjs';
+import { scheduleVerdict } from '../domain/schoolCalendar.mjs';
 import {
   PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity, printedActivityLabel,
 } from '../domain/printedActivity.mjs';
@@ -158,6 +159,40 @@ export class PrintedActivityProgramLauncher {
   /** "Maze" — the household's title for the entry, else its kind. */
   #label(entry) {
     return printedActivityLabel(entry);
+  }
+
+  /**
+   * The sheets a card tap prints instead of the agenda, in plan order.
+   *
+   * A sheet marked `printOnCardTap: true` that meets today by its own schedule
+   * and is not yet done is owed to the tap: the tap prints every such sheet,
+   * so the child needs no code and no ticket. Most learners have none marked
+   * and get the agenda; a child who cannot read has their one daily page
+   * marked. Empty once all are done. Never throws: a failure here must leave
+   * the agenda.
+   *
+   * @returns {Promise<Array<{corpusId: string, label: string}>>}
+   */
+  async cardTapPicks({ userId }) {
+    const picks = [];
+    try {
+      const assignment = await this.#assignments.get(userId);
+      const programs = Array.isArray(assignment?.programs) ? assignment.programs : [];
+      const day = this.studyDay();
+      for (const raw of programs) {
+        if (raw?.programId !== PRINTED_ACTIVITY_PROGRAM_ID || raw?.printOnCardTap !== true) continue;
+        const { errors, enrollment } = validatePrintedActivityEnrollment(raw);
+        if (errors.length) continue;
+        if (!scheduleVerdict(day, raw.schedule ?? null).schoolDay) continue;
+        const status = await this.status({ userId, programInstance: enrollment.corpusId, day });
+        if (status.error || status.doneToday) continue;
+        picks.push({ corpusId: enrollment.corpusId, label: this.#label(enrollment) });
+      }
+    } catch (err) {
+      this.#log('error', 'school.printed-activity.card-tap-pick-failed', { learnerId: userId, error: errText(err) });
+      return [];
+    }
+    return picks;
   }
 
   async status({ userId, programInstance = null, day = null }) {
@@ -407,7 +442,7 @@ export class PrintedActivityProgramLauncher {
    * moment ago, is told so rather than printing it twice.
    */
   async launch({ userId, corpusId }) {
-    const failed = (message) => ({ decision: 'failed', message });
+    const failed = (message, code = null) => ({ decision: 'failed', message, ...(code ? { code } : {}) });
     try {
       let enrollment;
       try {
@@ -467,7 +502,7 @@ export class PrintedActivityProgramLauncher {
             userId, corpusId, issuanceId: reprint.issuanceId ?? null, externalId: page.externalId,
             lastPrintedAt, cooldownMs: this.#reprintCooldownMs,
           });
-          return failed(MSG.justPrinted);
+          return failed(MSG.justPrinted, 'just-printed');
         }
         bytes = await this.#printable(platform, page.externalId, paper);
       }

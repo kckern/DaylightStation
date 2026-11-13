@@ -109,7 +109,7 @@ function agendaFingerprint(agenda) {
 }
 
 export class ResolvePersonalCard {
-  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock; #tokens; #captureAgenda;
+  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock; #tokens; #captureAgenda; #cardTapSheets;
 
   /**
    * One in-flight resolution per learner.
@@ -150,6 +150,7 @@ export class ResolvePersonalCard {
   constructor({
     buildAgenda, receipts, roster = null, cooldown = null, cooldownMinutes = null,
     clock = () => new Date(), logger = console, tokens = null, captureAgenda = null,
+    cardTapSheets = null,
   } = {}) {
     if (!buildAgenda || !receipts) throw new Error('ResolvePersonalCard requires buildAgenda and receipts');
     this.#buildAgenda = buildAgenda;
@@ -161,12 +162,13 @@ export class ResolvePersonalCard {
     this.#clock = clock;
     this.#logger = logger;
     this.#tokens = tokens;
+    this.#cardTapSheets = cardTapSheets;
   }
 
   /**
    * @param {object} args
    * @param {string} args.learnerId - resolved from the card's registry record
-   * @returns {Promise<{ status: 'agenda_printed'|'agenda_suppressed'|'print_failed'|'unknown_learner',
+   * @returns {Promise<{ status: 'agenda_printed'|'activity_printed'|'agenda_suppressed'|'print_failed'|'unknown_learner',
    *                     learnerId: string|null, offers: object[], printed: boolean,
    *                     message: string, sinceMinutes?: number, cooldownMinutes?: number }>}
    */
@@ -201,6 +203,9 @@ export class ResolvePersonalCard {
       }));
       return { status: 'unknown_learner', learnerId: null, offers: [], printed: printed.printed, message: 'We do not know that card.' };
     }
+
+    const sheets = await this.#printCardTapSheets(learnerId);
+    if (sheets) return sheets;
 
     const learnerName = this.#roster?.displayName?.(learnerId) ?? null;
     const agenda = await this.#buildAgenda.execute({ learnerId, learnerName });
@@ -241,6 +246,44 @@ export class ResolvePersonalCard {
       printed: true,
       message: 'Printing your list.',
     };
+  }
+
+  /**
+   * A card tap that prints the learner's sheets instead of the agenda.
+   *
+   * Every printed-activity entry marked `printOnCardTap` that is owed today
+   * prints on the tap, one after another (the launcher reprints a sheet already
+   * held open). For a child who cannot read, the agenda is paper they cannot
+   * use; what they came for is the sheet. Null when none is owed, which is an
+   * ordinary agenda tap.
+   *
+   * The answer reuses the card statuses callers already handle: any sheet out
+   * is `activity_printed`; every sheet printed moments ago is
+   * `agenda_suppressed` (the panel acknowledges the tap); otherwise
+   * `print_failed` (scan again).
+   */
+  async #printCardTapSheets(learnerId) {
+    if (!this.#cardTapSheets) return null;
+    const picks = await this.#cardTapSheets.picks({ learnerId });
+    if (!Array.isArray(picks) || picks.length === 0) return null;
+    const outcomes = [];
+    for (const pick of picks) {
+      const outcome = await this.#cardTapSheets.launch({ learnerId, corpusId: pick.corpusId });
+      outcomes.push(outcome);
+      this.#logger.info?.('school.card.sheet-tap', {
+        learnerId, corpusId: pick.corpusId, decision: outcome?.decision ?? null, code: outcome?.code ?? null,
+      });
+    }
+    const printed = outcomes.filter((o) => o?.decision === 'dispatched');
+    if (printed.length) {
+      const message = printed.length === 1 && printed[0].message ? printed[0].message : `Printing ${printed.length} sheets.`;
+      return { status: 'activity_printed', learnerId, offers: [], printed: true, message };
+    }
+    if (outcomes.every((o) => o?.code === 'just-printed')) {
+      return { status: 'agenda_suppressed', learnerId, offers: [], printed: false, message: outcomes[0]?.message ?? null };
+    }
+    const failed = outcomes.find((o) => o?.code !== 'just-printed');
+    return { status: 'print_failed', learnerId, offers: [], printed: false, message: failed?.message ?? 'The printer did not answer. Try scanning again.' };
   }
 
   /**
