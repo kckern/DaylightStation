@@ -297,6 +297,10 @@ export function compileUrlRules(raw) {
     const platform = rule.platform ?? null;
     if (platform !== null && (typeof platform !== 'string' || !platform))
       throw new Error(`${where}: platform must be a non-empty string when given`);
+    // The `^` binds only to the first branch of a top-level alternation, so
+    // `^https://a/…$|https://b/…` would leave the second branch free to match
+    // mid-string. Wrapping the body puts every branch behind the anchor.
+    re = new RegExp(`^(?:${rule.match.slice(1)})`);
     return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform });
   }));
 }

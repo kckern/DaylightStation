@@ -449,6 +449,14 @@ describe('compileUrlRules', () => {
     const loose = { ...ok, match: 'qr\\.beeloo\\.com/(?<id>\\w+)' };
     expect(() => compileUrlRules([loose])).toThrow(/anchored/);
   });
+  it('anchors every branch of a top-level alternation, not just the first', () => {
+    const rules = compileUrlRules([{
+      ...ok, match: '^https://x/home$|https://y/(?<id>\\w+)$', namespace: 'worksheet',
+    }]);
+    expect(parseScanCode('https://y/abc', { urlRules: rules }).body).toBe('abc');
+    // The second branch carried no ^ of its own; it must not match mid-string.
+    expect(parseScanCode('https://evil.example/?u=https://y/abc', { urlRules: rules }).namespace).toBeNull();
+  });
   it('refuses a platform that is present but not a non-empty string', () => {
     expect(() => compileUrlRules([{ ...ok, platform: '' }])).toThrow(/platform/);
     expect(() => compileUrlRules([{ ...ok, platform: 7 }])).toThrow(/platform/);
