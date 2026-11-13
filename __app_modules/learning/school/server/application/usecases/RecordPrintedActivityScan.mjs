@@ -37,7 +37,7 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const errText = (err) => (err && err.message) ? err.message : String(err);
 
 export class RecordPrintedActivityScan {
-  #store; #assignments; #receipts; #learnerName; #timezone; #clock; #logger;
+  #store; #assignments; #receipts; #learnerName; #timezone; #clock; #logger; #realtime;
 
   /**
    * @param {object} deps
@@ -48,8 +48,10 @@ export class RecordPrintedActivityScan {
    * @param {string|null} [deps.timezone] - household zone for the study-day boundary
    * @param {() => Date} deps.clock
    * @param {object} deps.logger
+   * @param {{printedActivityScanned?: Function}|null} [deps.realtime] - tells the
+   *   School panel a sheet counted (board refresh, ceremony, day completion)
    */
-  constructor({ store, assignments = null, receipts, learnerName = null, timezone = null, clock, logger } = {}) {
+  constructor({ store, assignments = null, receipts, learnerName = null, timezone = null, clock, logger, realtime = null } = {}) {
     if (!store) throw new Error('RecordPrintedActivityScan requires a store');
     if (!receipts || typeof receipts.print !== 'function') throw new Error('RecordPrintedActivityScan requires receipts');
     if (typeof clock !== 'function') throw new Error('RecordPrintedActivityScan requires a clock');
@@ -61,6 +63,7 @@ export class RecordPrintedActivityScan {
     this.#timezone = timezone;
     this.#clock = clock;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   /**
@@ -129,6 +132,18 @@ export class RecordPrintedActivityScan {
       learnerId: open.learnerId, corpusId: open.corpusId, platform, externalId, studyDay, device,
     });
     await this.#checkOrphan(open);
+
+    // The panel learns of the sheet the moment it counts: its board re-reads,
+    // the ceremony plays, and a day this finishes is noticed as finished.
+    // Best-effort, like the slip: the completion is already stored.
+    try {
+      this.#realtime?.printedActivityScanned?.({
+        learnerId: open.learnerId, corpusId: open.corpusId, kind: issuance.kind ?? open.kind ?? null,
+        title: issuance.title ?? open.title ?? null, studyDay, at: now.toISOString(),
+      });
+    } catch (err) {
+      this.#log('warn', 'school.printed-activity.broadcast-failed', { learnerId: open.learnerId, error: err?.message ?? String(err) });
+    }
 
     const headline = `${this.#name(open.learnerId)}'s ${kindLabel(issuance.kind ?? open.kind)} counted`;
     const printed = await this.#slip(`scanned-${open.issuanceId}`, headline, [issuance.title ?? open.title]);

@@ -893,7 +893,7 @@ export async function createSchoolLifecycle({
   // through the same live roster the grown-up gate reads.
   const recordPrintedActivityScan = new RecordPrintedActivityScan({
     store: stores.printedActivities, assignments: stores.assignments, receipts,
-    learnerName: schoolRoster.displayName, timezone, clock, logger,
+    learnerName: schoolRoster.displayName, timezone, clock, logger, realtime: schoolRealtime,
   });
   const grownUps = new GrownUpGate({
     roster: schoolRoster.list,

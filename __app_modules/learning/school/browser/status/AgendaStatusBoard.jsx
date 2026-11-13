@@ -782,7 +782,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     }
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
-    if (event === 'story-read' && eventStudyDay && eventStudyDay !== studyDay) return;
+    if ((event === 'story-read' || event === 'printed-activity-complete') && eventStudyDay && eventStudyDay !== studyDay) return;
 
     schoolLog.selfService('status-board.refresh', {
       source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,

@@ -721,6 +721,15 @@ If the child's entry was removed before the scan, the credit still stands (the
 sheet was valid when printed) and `school.printed-activity.scan-orphaned` is
 logged.
 
+A counted sheet is also announced on the `school` WebSocket topic as
+`printed-activity-complete` (`learnerId`, `corpusId`, `kind`, `title`,
+`studyDay`, `at`). The status board re-reads that learner at once, the Portal
+plays the **Sheet done!** ceremony (the child who cannot read the slip still
+sees it counted), and the completion bridge re-checks the day, so a sheet that
+finishes it turns the day green and opens what the day unlocks. A repeat scan
+announces nothing. A failed announcement logs
+`school.printed-activity.broadcast-failed`; the credit stands.
+
 **Evidence** lives at `household/school/records/printed-activities/<learnerId>.yml`
 (one file per learner, `issuances: [...]`). A corrupt file is side-filed to
 `<learnerId>.yml.corrupt-<stamp>` before it is replaced, never overwritten in

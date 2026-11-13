@@ -493,6 +493,17 @@ describe('useScanCeremony', () => {
     expect(result.current.current.detail).toContain('Frog and Toad');
   });
 
+  // A grown-up scanned a printed sheet's QR: a child who cannot read the
+  // scanner's slip still sees, here, that it counted.
+  it('shows a counted printed sheet, naming it, even with a slip printed', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'school', event: 'printed-activity-complete', learnerId: 'user_5', title: 'Unicorn Coloring', printed: true });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Sheet done!' });
+    expect(result.current.current.detail).toContain('Unicorn Coloring');
+  });
+
   it('shows a story read with no title at all rather than nothing', () => {
     const { result } = mount();
     act(() => {

@@ -46,10 +46,12 @@ describe('EventBusSchoolRealtimeAdapter', () => {
     gateway.languageDayCompleted({ learnerId: 'kid1' });
     gateway.sessionOutcomeRecorded({ learnerId: 'kid1', result: 'passed' });
     gateway.storyReadRecorded({ learnerId: 'kid1' });
+    gateway.printedActivityScanned({ learnerId: 'kid1', corpusId: 'beeloo:maze' });
     expect(calls).toEqual([
       { method: 'publish', topic: 'school.language.day-complete', payload: { learnerId: 'kid1' } },
       { method: 'publish', topic: 'school.session.outcome-recorded', payload: { learnerId: 'kid1', result: 'passed' } },
       { method: 'broadcast', topic: 'school', payload: { event: 'story-read', learnerId: 'kid1' } },
+      { method: 'broadcast', topic: 'school', payload: { event: 'printed-activity-complete', learnerId: 'kid1', corpusId: 'beeloo:maze' } },
     ]);
   });
 
@@ -93,4 +95,12 @@ it("forwards the economy's coins-changed to the Portal's school topic, learner b
   expect(bus.sent).toEqual([{ topic: 'school', payload: { event: 'coins-changed', learnerId: 'kid1' } }]);
   unsubscribe();
   expect(bus.handlers.has('economy.coins-changed')).toBe(false);
+});
+
+it('a counted printed sheet is a completion input, so a day it finishes is noticed', async () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  const change = vi.fn(); gateway.onCompletionInputChanged(change);
+  await bus.handlers.get('school')({ event: 'printed-activity-complete', learnerId: 'kid', corpusId: 'beeloo:maze' });
+  expect(change).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid', event: 'printed-activity-complete' }));
 });

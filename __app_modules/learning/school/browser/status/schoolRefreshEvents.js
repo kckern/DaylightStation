@@ -18,6 +18,7 @@ export const SCHOOL_REFRESH_EVENTS = new Set([
   'session-issued',
   'session-grade-changed',
   'story-read',
+  'printed-activity-complete',
   'book-log-changed',
   'piano-lesson-complete',
   'program-day-bypass-changed',

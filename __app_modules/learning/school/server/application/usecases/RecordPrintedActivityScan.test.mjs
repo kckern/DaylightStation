@@ -51,10 +51,10 @@ const enrolled = { get: async () => ({ programs: [{ programId: 'printed-activity
 function build({
   store = fakeStore([issuance()]), receipts = fakeReceipts(), assignments = enrolled,
   learnerName = (id) => (id === 'learner_a' ? 'Learner A' : null),
-  now = '2026-11-14T18:00:00Z', timezone = 'America/Los_Angeles', logger = fakeLogger(),
+  now = '2026-11-14T18:00:00Z', timezone = 'America/Los_Angeles', logger = fakeLogger(), realtime = null,
 } = {}) {
   const uc = new RecordPrintedActivityScan({
-    store, receipts, assignments, learnerName, timezone, clock: () => new Date(now), logger,
+    store, receipts, assignments, learnerName, timezone, clock: () => new Date(now), logger, realtime,
   });
   return { uc, store, receipts, logger };
 }
@@ -69,6 +69,24 @@ describe('RecordPrintedActivityScan', () => {
       expect(() => new RecordPrintedActivityScan({ ...base, [k]: undefined })).toThrow();
     }
     expect(() => new RecordPrintedActivityScan(base)).not.toThrow();
+  });
+
+  it('tells the panel the sheet counted, once, on the scan that counts it', async () => {
+    const realtime = { printedActivityScanned: vi.fn() };
+    const { uc } = build({ realtime });
+    await uc.execute({ ...KEY, device: 'kitchen-scanner' });
+    expect(realtime.printedActivityScanned).toHaveBeenCalledTimes(1);
+    expect(realtime.printedActivityScanned.mock.calls[0][0]).toMatchObject({ learnerId: 'learner_a', studyDay: '2026-11-14' });
+    await uc.execute({ ...KEY, device: 'kitchen-scanner' });   // a repeat scan is not news
+    expect(realtime.printedActivityScanned).toHaveBeenCalledTimes(1);
+  });
+
+  it('still records the sheet when the announcement throws', async () => {
+    const realtime = { printedActivityScanned: vi.fn(() => { throw new Error('bus down'); }) };
+    const { uc, logger } = build({ realtime });
+    const out = await uc.execute({ ...KEY, device: 'kitchen-scanner' });
+    expect(out).toMatchObject({ status: 'recorded', ok: true });
+    expect(logged(logger.warn, 'school.printed-activity.broadcast-failed')).toHaveLength(1);
   });
 
   it('records an open issuance on the study day of the scan, with the device', async () => {

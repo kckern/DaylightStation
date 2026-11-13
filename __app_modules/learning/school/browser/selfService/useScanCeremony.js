@@ -357,6 +357,19 @@ function buildCeremony(payload) {
           : "That's another book today.",
         at,
       };
+    case 'printed-activity-complete':
+      // A grown-up scanned the QR on a printed sheet (a maze, a coloring page)
+      // and it counted. The scanner's slip prints in the same moment, but a
+      // child who cannot read the slip sees it here: the same success banner
+      // and rising pair as a graded sheet. Named by the sheet, never a count.
+      return {
+        tone: 'success',
+        title: 'Sheet done!',
+        detail: payload.title
+          ? `${payload.title} — that counts for today.`
+          : 'That counts for today.',
+        at,
+      };
     case 'piano-lesson-complete':
       // Not a scan at all: the child finished their assigned Hoffman lesson
       // at the piano and the day's music requirement is satisfied. It shares
