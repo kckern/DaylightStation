@@ -2,7 +2,7 @@
  * YAML persistence for the printed-activity issuance log.
  *
  *   <dataDir>/household/school/records/printed-activities/{learnerId}.yml
- *   { issuances: [ {issuanceId, learnerId, ..., completedAt, completedStudyDay, completedVia} ] }
+ *   { issuances: [ {issuanceId, learnerId, ..., completedAt, completedStudyDay, completedVia, voidedAt, voidReason} ] }
  *
  * `records/`, not `runtime/`: a completed sheet is evidence a report card is
  * reconstructed from, never pruned by a cooldown or a session close.
@@ -33,7 +33,8 @@
  * the volume is a few sheets a day, and one chain is what makes `append`'s
  * cross-learner "one open issuance per page" check atomic (it throws
  * `PageAlreadyOpenError`), along with its duplicate-id check and `complete`'s
- * already-check. Cross-learner reads are partial when a learner file cannot be
+ * already-check, plus its "one open issuance per learner and corpus" check
+ * (`CorpusAlreadyOpenError`) and `void`'s status check. Cross-learner reads are partial when a learner file cannot be
  * read, and log `school.printed-activity.lookup-partial` naming who is missing. All I/O goes through
  * `#system/utils/FileIO.mjs` (see `adapters-no-direct-fs`); files are written
  * with `saveYamlToPathAtomic`.
@@ -52,7 +53,8 @@ const DUMP_OPTIONS = { indent: 2, lineWidth: -1, noRefs: true };
 const orNull = (value) => (typeof value === 'string' && value ? value : null);
 const isIssuance = (entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
   && isNonEmptyString(entry.issuanceId);
-const isOpen = (issuance) => issuance.completedAt == null;
+/** Open = printed (reserved) and neither scanned nor voided. */
+const isOpen = (issuance) => issuance.completedAt == null && issuance.voidedAt == null;
 const REQUIRED = ['learnerId', 'issuanceId', 'platform', 'externalId', 'corpusId'];
 const instant = (value) => {
   const ms = typeof value === 'string' ? Date.parse(value) : NaN;
@@ -73,6 +75,22 @@ export class PageAlreadyOpenError extends Error {
     this.externalId = externalId;
     this.heldBy = heldBy;
     this.issuanceId = issuanceId;
+  }
+}
+
+/**
+ * This learner already holds an open sheet in this corpus. One open sheet per
+ * corpus is what makes a double scan of the ticket a reprint instead of a
+ * second page; `held` is the issuance they hold.
+ */
+export class CorpusAlreadyOpenError extends Error {
+  constructor({ learnerId, corpusId, held }) {
+    super(`YamlPrintedActivityStore: ${learnerId} already holds an open ${corpusId} sheet (${held?.issuanceId})`);
+    this.name = 'CorpusAlreadyOpenError';
+    this.code = 'CORPUS_ALREADY_OPEN';
+    this.learnerId = learnerId;
+    this.corpusId = corpusId;
+    this.held = held;
   }
 }
 
@@ -284,12 +302,21 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       completedAt: null,
       completedStudyDay: null,
       completedVia: null,
+      voidedAt: null,
+      voidReason: null,
     };
     return this.#serialized(async () => {
       const target = this.#loadForWrite(learnerId);
       if (target.rows.some((row) => row.issuanceId === stored.issuanceId)) {
-        throw new Error(`YamlPrintedActivityStore: issuanceId already on record: ${stored.issuanceId}`);
+        throw Object.assign(
+          new Error(`YamlPrintedActivityStore: issuanceId already on record: ${stored.issuanceId}`),
+          { code: 'DUPLICATE_ISSUANCE_ID' },
+        );
       }
+      // One open sheet per learner and corpus, checked here so two scans of
+      // the same ticket cannot both reserve a page.
+      const held = target.rows.find((row) => isOpen(row) && row.corpusId === stored.corpusId);
+      if (held) throw new CorpusAlreadyOpenError({ learnerId, corpusId: stored.corpusId, held });
       // Inside the chain, so two children cannot both be handed the same page
       // between one caller's check and its write.
       const holder = this.#allRows().find((row) => isOpen(row)
@@ -351,6 +378,8 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       const index = entries.findIndex((entry) => isIssuance(entry) && entry.issuanceId === issuanceId);
       if (index < 0) return { status: 'missing', issuance: null };
       const current = entries[index];
+      // A voided reservation never reached paper; it can never be credited.
+      if (current.voidedAt != null) return { status: 'voided', issuance: current };
       // A second scan: answer what is on disk and write nothing at all.
       if (!isOpen(current)) return { status: 'already', issuance: current };
       const done = {
@@ -367,8 +396,30 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   }
 
   /** @inheritdoc */
+  async void(learnerId, issuanceId, { at, reason } = {}) {
+    if (!isSafeLearnerId(learnerId)) throw new Error(`YamlPrintedActivityStore: unsafe learnerId: ${learnerId}`);
+    if (!isNonEmptyString(at)) throw new Error('YamlPrintedActivityStore: void requires `at`');
+    return this.#serialized(async () => {
+      const target = this.#loadForWrite(learnerId);
+      const { entries } = target;
+      const index = entries.findIndex((entry) => isIssuance(entry) && entry.issuanceId === issuanceId);
+      if (index < 0) return { status: 'missing', issuance: null };
+      const current = entries[index];
+      if (current.voidedAt != null) return { status: 'already', issuance: current };
+      // A scanned sheet is evidence of work done; nothing un-does it.
+      if (current.completedAt != null) return { status: 'completed', issuance: current };
+      const voided = { ...current, voidedAt: at, voidReason: orNull(reason) };
+      const next = entries.slice();
+      next[index] = voided;
+      this.#write(target, next);
+      return { status: 'voided', issuance: voided };
+    });
+  }
+
+  /** @inheritdoc */
   async listCompletedForDay(learnerId, corpusId, studyDay) {
     return this.#readRows(learnerId).rows.filter((row) => row.corpusId === corpusId
+      && row.voidedAt == null
       && row.completedStudyDay != null && row.completedStudyDay === studyDay);
   }
 }

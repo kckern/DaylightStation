@@ -15,9 +15,20 @@
  *   - scanning twice must not count twice — `complete` answers `already` and
  *     writes nothing on a repeat.
  *
+ *   - a learner holds at most ONE open issuance per corpus — `append` refuses a
+ *     second (`CorpusAlreadyOpenError`, `code: 'CORPUS_ALREADY_OPEN'`, carrying
+ *     the `held` issuance), so a double scan of the ticket becomes a reprint;
+ *   - an issuance is a RESERVATION made before printing: if the print fails or
+ *     is unconfirmed (a dry-run printer), the caller `void`s it. A voided row
+ *     stays on record as evidence but is not open, never counts as completed,
+ *     and is not "history" for the never-repeat rule (the child never got the
+ *     page). `listForLearner` still returns voided rows; callers that build an
+ *     exclude set skip rows with `voidedAt` set.
+ *
  * Issuance: `{issuanceId, learnerId, programId, corpusId, platform, externalId,
  * title, kind, level, issuedAt, issuedStudyDay, completedAt, completedStudyDay,
- * completedVia}`. Open means `completedAt == null`.
+ * completedVia, voidedAt, voidReason}`. Open means `completedAt == null` and
+ * `voidedAt == null` (older rows without `voidedAt` read as not voided).
  *
  * CROSS-LEARNER LOOKUPS CAN BE PARTIAL. `listOpenAll`, `findOpen` and `findAny`
  * never throw; a learner whose record cannot be read contributes nothing, and
@@ -29,14 +40,15 @@
 export class IPrintedActivityStore {
   /**
    * Record a newly printed page. Throws on a missing key field, an unsafe
-   * learner id, an issuanceId already on record, or (`PAGE_ALREADY_OPEN`) a
-   * page that is open for any learner.
+   * learner id, an issuanceId already on record (`code: 'DUPLICATE_ISSUANCE_ID'`), or (`PAGE_ALREADY_OPEN`) a
+   * page that is open for any learner, or (`CORPUS_ALREADY_OPEN`, with `held`)
+   * a learner who already holds an open issuance in that corpus.
    * @param {object} issuance
    * @returns {Promise<object>} the stored issuance
    */
   async append() { throw new Error('IPrintedActivityStore.append must be implemented'); }
 
-  /** @returns {Promise<object[]>} every issuance for the learner, oldest first; [] on any read problem */
+  /** @returns {Promise<object[]>} every issuance for the learner (voided included), oldest first; [] on any read problem */
   async listForLearner() { throw new Error('IPrintedActivityStore.listForLearner must be implemented'); }
 
   /** @returns {Promise<object[]>} every open issuance across all learners */
@@ -50,23 +62,35 @@ export class IPrintedActivityStore {
 
   /**
    * @param {{platform: string, externalId: string}} key
-   * @returns {Promise<object|null>} the most recently issued issuance for that page, any status
+   * @returns {Promise<object|null>} the most recently issued issuance for that page, any status (voided included)
    */
   async findAny() { throw new Error('IPrintedActivityStore.findAny must be implemented'); }
 
   /**
    * Mark an issuance done. IDEMPOTENT: a second scan of the same page answers
-   * `already` with the issuance as first completed, and writes nothing.
+   * `already` with the issuance as first completed, and writes nothing. A
+   * voided issuance answers `voided` and is never completed.
    * @param {string} learnerId
    * @param {string} issuanceId
    * @param {{at: string, studyDay: string, device: string|null}} completion
-   * @returns {Promise<{status: 'completed'|'already'|'missing', issuance: object|null}>}
+   * @returns {Promise<{status: 'completed'|'already'|'missing'|'voided', issuance: object|null}>}
    */
   async complete() { throw new Error('IPrintedActivityStore.complete must be implemented'); }
 
   /**
+   * Release a reservation that never reached paper (print failed or was
+   * unconfirmed). Marks `voidedAt`/`voidReason` and keeps the row. Refuses a
+   * completed issuance (`completed`, no write); a repeat answers `already`.
+   * @param {string} learnerId
+   * @param {string} issuanceId
+   * @param {{at: string, reason: string}} details
+   * @returns {Promise<{status: 'voided'|'already'|'missing'|'completed', issuance: object|null}>}
+   */
+  async void() { throw new Error('IPrintedActivityStore.void must be implemented'); }
+
+  /**
    * @returns {Promise<object[]>} the learner's issuances in `corpusId` whose
-   *   `completedStudyDay === studyDay`
+   *   `completedStudyDay === studyDay` (never a voided one)
    */
   async listCompletedForDay() { throw new Error('IPrintedActivityStore.listCompletedForDay must be implemented'); }
 }

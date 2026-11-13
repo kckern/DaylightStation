@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { PageAlreadyOpenError, YamlPrintedActivityStore } from './YamlPrintedActivityStore.mjs';
+import { CorpusAlreadyOpenError, PageAlreadyOpenError, YamlPrintedActivityStore } from './YamlPrintedActivityStore.mjs';
 import { IPrintedActivityStore } from '../../application/ports/IPrintedActivityStore.mjs';
 
 const silentLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
@@ -45,7 +45,7 @@ describe('YamlPrintedActivityStore', () => {
     await subject.append(issuance());
     const rows = await subject.listForLearner('learner_a');
     expect(rows).toEqual([{
-      ...issuance(), completedAt: null, completedStudyDay: null, completedVia: null,
+      ...issuance(), completedAt: null, completedStudyDay: null, completedVia: null, voidedAt: null, voidReason: null,
     }]);
     expect(read('learner_a').issuances).toHaveLength(1);
   });
@@ -95,13 +95,14 @@ describe('YamlPrintedActivityStore', () => {
 
   it('lists completions for one corpus on one study day', async () => {
     const subject = store();
+    // One open sheet per corpus: each maze is completed before the next is issued.
     await subject.append(issuance({ issuanceId: 'm1' }));
-    await subject.append(issuance({ issuanceId: 'm2', externalId: 'p2' }));
-    await subject.append(issuance({ issuanceId: 's1', corpusId: 'beeloo:sudoku', externalId: 'p3' }));
-    await subject.append(issuance({ issuanceId: 'm3', externalId: 'p4' }));
     await subject.complete('learner_a', 'm1', done);
+    await subject.append(issuance({ issuanceId: 'm2', externalId: 'p2' }));
     await subject.complete('learner_a', 'm2', { ...done, studyDay: '2026-11-13' });
+    await subject.append(issuance({ issuanceId: 's1', corpusId: 'beeloo:sudoku', externalId: 'p3' }));
     await subject.complete('learner_a', 's1', done);
+    await subject.append(issuance({ issuanceId: 'm3', externalId: 'p4' }));
 
     const rows = await subject.listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14');
     expect(rows.map((r) => r.issuanceId)).toEqual(['m1']);
@@ -110,9 +111,9 @@ describe('YamlPrintedActivityStore', () => {
   it('lists open issuances from every learner, and only open ones', async () => {
     const subject = store();
     await subject.append(issuance({ issuanceId: 'a1' }));
+    await subject.complete('learner_a', 'a1', done);
     await subject.append(issuance({ issuanceId: 'a2', externalId: 'p2' }));
     await subject.append(issuance({ issuanceId: 'b1', learnerId: 'learner_b', externalId: 'p3' }));
-    await subject.complete('learner_a', 'a1', done);
 
     const open = await subject.listOpenAll();
     expect(open.map((r) => r.issuanceId).sort()).toEqual(['a2', 'b1']);
@@ -162,7 +163,9 @@ describe('YamlPrintedActivityStore', () => {
     const subject = store();
     await expect(subject.append(issuance({ externalId: '' }))).rejects.toThrow(/externalId/);
     await subject.append(issuance());
-    await expect(subject.append(issuance({ externalId: 'other' }))).rejects.toThrow(/already on record/);
+    await expect(subject.append(issuance({ externalId: 'other' }))).rejects.toMatchObject({
+      message: expect.stringMatching(/already on record/), code: 'DUPLICATE_ISSUANCE_ID',
+    });
     expect(read('learner_a').issuances).toHaveLength(1);
   });
 
@@ -205,6 +208,90 @@ describe('YamlPrintedActivityStore', () => {
       ]);
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       expect(results.find((r) => r.status === 'rejected').reason).toBeInstanceOf(PageAlreadyOpenError);
+    });
+  });
+
+  describe('one open issuance per learner and corpus', () => {
+    it('refuses a second open sheet in the same corpus and carries the held one', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      const err = await subject.append(issuance({ issuanceId: 'pa_2', externalId: 'other' })).catch((e) => e);
+      expect(err).toBeInstanceOf(CorpusAlreadyOpenError);
+      expect(err.code).toBe('CORPUS_ALREADY_OPEN');
+      expect(err.held).toMatchObject({ issuanceId: 'pa_k3j9x2qd', externalId: 'glD5B71Bj' });
+      expect(read('learner_a').issuances).toHaveLength(1);
+    });
+
+    it('allows an open sheet in another corpus, and in the same corpus once the first is done or voided', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await expect(subject.append(issuance({ issuanceId: 's1', corpusId: 'beeloo:sudoku', externalId: 's' }))).resolves.toBeTruthy();
+      await subject.complete('learner_a', 'pa_k3j9x2qd', done);
+      await expect(subject.append(issuance({ issuanceId: 'm2', externalId: 'm2' }))).resolves.toBeTruthy();
+      await subject.void('learner_a', 'm2', { at: done.at, reason: 'print-failed' });
+      await expect(subject.append(issuance({ issuanceId: 'm3', externalId: 'm3' }))).resolves.toBeTruthy();
+    });
+
+    it('lets exactly one of two concurrent appends for the same learner and corpus through', async () => {
+      const subject = store();
+      const results = await Promise.allSettled([
+        subject.append(issuance()),
+        subject.append(issuance({ issuanceId: 'pa_2', externalId: 'other' })),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((r) => r.status === 'rejected').reason.code).toBe('CORPUS_ALREADY_OPEN');
+      expect(read('learner_a').issuances).toHaveLength(1);
+    });
+  });
+
+  describe('void', () => {
+    const why = { at: '2026-11-14T16:03:00.000Z', reason: 'print-failed' };
+
+    it('keeps the row, marks it voided, and frees the page', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      const r = await subject.void('learner_a', 'pa_k3j9x2qd', why);
+      expect(r.status).toBe('voided');
+      expect(read('learner_a').issuances[0]).toMatchObject({ voidedAt: why.at, voidReason: 'print-failed', completedAt: null });
+      expect(await subject.listForLearner('learner_a')).toHaveLength(1);
+      expect(await subject.listOpenAll()).toEqual([]);
+      expect(await subject.findOpen({ platform: 'beeloo', externalId: 'glD5B71Bj' })).toBeNull();
+      await expect(subject.append(issuance({ issuanceId: 'pa_b', learnerId: 'learner_b' }))).resolves.toBeTruthy();
+    });
+
+    it('answers already on a repeat and missing for an unknown id, writing nothing', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await subject.void('learner_a', 'pa_k3j9x2qd', why);
+      const before = bytes('learner_a');
+      expect((await subject.void('learner_a', 'pa_k3j9x2qd', why)).status).toBe('already');
+      expect((await subject.void('learner_a', 'nope', why)).status).toBe('missing');
+      expect(bytes('learner_a')).toBe(before);
+    });
+
+    it('refuses to void a completed sheet', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await subject.complete('learner_a', 'pa_k3j9x2qd', done);
+      const before = bytes('learner_a');
+      expect((await subject.void('learner_a', 'pa_k3j9x2qd', why)).status).toBe('completed');
+      expect(bytes('learner_a')).toBe(before);
+    });
+
+    it('a voided sheet is never completed and never counts', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await subject.void('learner_a', 'pa_k3j9x2qd', why);
+      const before = bytes('learner_a');
+      expect((await subject.complete('learner_a', 'pa_k3j9x2qd', done)).status).toBe('voided');
+      expect(bytes('learner_a')).toBe(before);
+      expect(await subject.listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14')).toEqual([]);
+    });
+
+    it('requires an instant and a safe learner id', async () => {
+      const subject = store();
+      await expect(subject.void('learner_a', 'x', { reason: 'r' })).rejects.toThrow(/at/);
+      await expect(subject.void('../x', 'x', why)).rejects.toThrow(/unsafe/);
     });
   });
 
