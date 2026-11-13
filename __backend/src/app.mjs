@@ -118,7 +118,7 @@ import { declaredEntryActions } from "../../__app_modules/learning/school/server
 import { reportUnreachableSchoolPrograms } from "../../__app_modules/learning/school/server/composition-school-reachability.mjs";
 import { createLearnerActions } from "../../__capabilities/device-dispatch/server/application/learnerActions.mjs";
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
-import { compileUrlRules } from '#domains/scan/ScanCode.mjs';
+import { compileUrlRulesLenient } from '#domains/scan/ScanCode.mjs';
 
 
 
@@ -3048,9 +3048,16 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
   const { TelegramNutribotIdentity } = await import("../../__app_modules/wellness/nutribot/server/adapters/TelegramNutribotIdentity.mjs");
   // `url_rules:` in household/hardware/barcode/config.yml — which printed web
-  // links the house claims (e.g. Beeloo worksheet QRs → School). Compiled once;
-  // a bad rule stops the boot.
-  const scanUrlRules = compileUrlRules(configService.getHouseholdAppConfig(householdId, 'barcode')?.url_rules);
+  // links the house claims (e.g. Beeloo worksheet QRs → School). Compiled once,
+  // leniently: a bad rule is logged and skipped, never fatal, since a throw here
+  // would crashloop every other app this process runs over one YAML typo. (The
+  // CLI simulator keeps the throwing form.)
+  const { rules: scanUrlRules, errors: scanUrlRuleErrors } = compileUrlRulesLenient(
+    configService.getHouseholdAppConfig(householdId, 'barcode')?.url_rules,
+  );
+  for (const ruleError of scanUrlRuleErrors) {
+    emit(barcodeLogger ?? rootLogger, 'error', 'scan.url-rules.invalid', ruleError);
+  }
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
     book: bookScans,

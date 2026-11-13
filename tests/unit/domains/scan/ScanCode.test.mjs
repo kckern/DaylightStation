@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS, compileUrlRules,
+  compileUrlRulesLenient,
   isUrlCode,
 } from '#domains/scan/ScanCode.mjs';
 
@@ -460,8 +461,63 @@ describe('compileUrlRules', () => {
   it('refuses a platform that is present but not a non-empty string', () => {
     expect(() => compileUrlRules([{ ...ok, platform: '' }])).toThrow(/platform/);
     expect(() => compileUrlRules([{ ...ok, platform: 7 }])).toThrow(/platform/);
-    expect(compileUrlRules([{ ...ok, platform: undefined }])[0].platform).toBeNull();
-    expect(compileUrlRules([{ ...ok, platform: null }])[0].platform).toBeNull();
+    const school = { ...ok, namespace: 'school' };
+    expect(compileUrlRules([{ ...school, platform: undefined }])[0].platform).toBeNull();
+    expect(compileUrlRules([{ ...school, platform: null }])[0].platform).toBeNull();
+  });
+  it('refuses a worksheet rule without a platform', () => {
+    // It would compile, then answer `invalid` on every scan of the sheet.
+    expect(() => compileUrlRules([{ ...ok, platform: undefined }])).toThrow(/platform/);
+    expect(() => compileUrlRules([{ ...ok, platform: null }])).toThrow(/platform/);
+  });
+});
+
+describe('compileUrlRulesLenient', () => {
+  const good = { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' };
+  const good2 = { id: 'other', match: '^https://y\\.example/(?<id>\\w+)$', namespace: 'worksheet', platform: 'other' };
+
+  it('compiles every valid rule and reports each invalid one', () => {
+    const { rules, errors } = compileUrlRulesLenient([
+      good,
+      { id: 'typo', match: '(', namespace: 'worksheet', platform: 'p' },
+      good2,
+      { id: 'no-platform', match: '^https://z/(?<id>\\w+)$', namespace: 'worksheet' },
+    ]);
+    expect(rules.map((r) => r.id)).toEqual(['beeloo-page', 'other']);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ index: 1, id: 'typo' });
+    expect(errors[0].message).toMatch(/match/);
+    expect(errors[1]).toMatchObject({ index: 3, id: 'no-platform' });
+    expect(errors[1].message).toMatch(/platform/);
+    // The good rules still route.
+    expect(parseScanCode('https://qr.beeloo.com/abc', { urlRules: rules })).toMatchObject({ namespace: 'worksheet', body: 'abc', platform: 'beeloo' });
+    expect(parseScanCode('https://y.example/def', { urlRules: rules })).toMatchObject({ namespace: 'worksheet', body: 'def', platform: 'other' });
+  });
+
+  it('answers no rules and one error for a non-list', () => {
+    const { rules, errors } = compileUrlRulesLenient({ id: 'x' });
+    expect(rules).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ index: null, id: null });
+    expect(errors[0].message).toMatch(/list/);
+  });
+
+  it('answers no rules and no errors for a missing list', () => {
+    expect(compileUrlRulesLenient(undefined)).toEqual({ rules: [], errors: [] });
+    expect(compileUrlRulesLenient(null)).toEqual({ rules: [], errors: [] });
+  });
+
+  it('keeps the first of two rules sharing an id and reports the second', () => {
+    const { rules, errors } = compileUrlRulesLenient([good, { ...good2, id: 'beeloo-page' }]);
+    expect(rules.map((r) => r.platform)).toEqual(['beeloo']);
+    expect(errors).toMatchObject([{ index: 1, id: 'beeloo-page' }]);
+    expect(errors[0].message).toMatch(/duplicate/);
+  });
+
+  it('reports a rule that is not an object without an id', () => {
+    const { rules, errors } = compileUrlRulesLenient([null, good]);
+    expect(rules).toHaveLength(1);
+    expect(errors).toMatchObject([{ index: 0, id: null }]);
   });
 });
 
@@ -476,7 +532,7 @@ describe('parseScanCode — url rule edges', () => {
 
   it('skips rule matching for an over-long URL', () => {
     const rules = compileUrlRules([
-      { id: 'any', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: null },
+      { id: 'any', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet', platform: 'p' },
     ]);
     const long = `https://x/${'a'.repeat(2100)}`;
     expect(parseScanCode(long, { urlRules: rules })).toEqual({

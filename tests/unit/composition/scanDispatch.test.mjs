@@ -1230,10 +1230,23 @@ describe('worksheet scans', () => {
     expect(() => createScanDispatch(depsWithout('urlRules'))).toThrow(/urlRules/);
   });
 
-  it('refuses to boot when a url rule targets a namespace with no handler', () => {
+  it('drops, and logs, a url rule whose namespace has no handler; the boot continues', async () => {
     // compileUrlRules checks only the vocabulary; this is the handler check,
-    // so the rule is built by hand to get past the vocabulary.
+    // so the rule is built by hand to get past the vocabulary. A household
+    // YAML mistake must not crashloop the controller, so the rule is dropped.
     const rule = { id: 'x', re: /^https:\/\/x\/(?<id>\w+)$/, namespace: 'not-handled', platform: null };
-    expect(() => harness({ urlRules: [rule] })).toThrow(/url rule "x"/);
+    const handleWorksheetScan = vi.fn(async () => ({ status: 'recorded' }));
+    const h = harness({
+      urlRules: [rule, ...urlRules],
+      schoolLifecycle: { handlesCode: () => false, handleScan: null, handleWorksheetScan },
+    });
+    expect(eventNames(h.barcodeLogger, 'error')).toEqual(['scan.url-rules.unhandled']);
+    expect(h.barcodeLogger.error.mock.calls[0][1]).toMatchObject({ rule: 'x', namespace: 'not-handled' });
+    // The dropped rule claims nothing; the good one still routes.
+    const dropped = await h.scanDispatch.handleScan({ code: 'https://x/abc', device: 'd' });
+    expect(dropped).toMatchObject({ ok: false, domain: null });
+    const out = await h.scanDispatch.handleScan({ code: 'https://qr.beeloo.com/glD5B71Bj', device: 'd' });
+    expect(handleWorksheetScan).toHaveBeenCalledWith({ platform: 'beeloo', externalId: 'glD5B71Bj', device: 'd' });
+    expect(out).toMatchObject({ domain: 'worksheet', status: 'recorded' });
   });
 });

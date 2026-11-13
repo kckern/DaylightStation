@@ -170,6 +170,20 @@ describe('scan — household url rules (parity with the live dispatcher)', () =>
     expect(out).toMatchObject({ namespace: 'worksheet', form: 'url-rule', status: 'unwired', claimed: true });
   });
 
+  it('refuses a bad rule loudly, unlike the boot, which logs and skips it', async () => {
+    const dataDir = path.join(tmpRoot, 'data');
+    writeCurriculumFixture(dataDir);
+    writeBarcodeConfig(dataDir, [
+      'url_rules:',
+      '  - id: beeloo-page',
+      "    match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$'",
+      '    namespace: worksheet',
+      '',
+    ].join('\n'));
+    await expect(runScan({ code: BEELOO, dataDir, stateDir: path.join(tmpRoot, 'state') }))
+      .rejects.toThrow(/platform/);
+  });
+
   it('reports the same URL unknown when the household has no rule for it', async () => {
     const dataDir = path.join(tmpRoot, 'data');
     writeCurriculumFixture(dataDir);

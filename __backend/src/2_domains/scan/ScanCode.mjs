@@ -261,6 +261,7 @@ export function isUrlCode(raw) {
  * refused here (a missing `$` is the author's call, and the rules below are
  * theirs to read). Rules match CASE-SENSITIVELY as written; only the scheme
  * test that decides "is this a URL" ignores case.
+ * A `worksheet` rule must name its `platform`.
  * The namespace is checked against the vocabulary only; whether a handler is
  * registered for it is the dispatcher composition's boot check, since this
  * module knows nothing about handlers.
@@ -272,37 +273,77 @@ export function compileUrlRules(raw) {
   if (raw === undefined || raw === null) return Object.freeze([]);
   if (!Array.isArray(raw)) throw new TypeError('url_rules must be a list');
   const seen = new Set();
-  return Object.freeze(raw.map((rule, i) => {
-    const where = `url_rules[${i}]`;
-    if (typeof rule?.id !== 'string' || !rule.id) throw new Error(`${where}: id is required`);
-    if (seen.has(rule.id)) throw new Error(`${where}: duplicate rule id "${rule.id}"`);
-    seen.add(rule.id);
-    if (typeof rule.match !== 'string' || !rule.match)
-      throw new Error(`${where}: match must be a regex string`);
-    let re;
+  return Object.freeze(raw.map((rule, i) => compileUrlRule(rule, i, seen)));
+}
+
+/**
+ * The boot's form of `compileUrlRules`: it never throws. Every valid rule is
+ * compiled and every invalid one is reported, so one typo in household YAML
+ * costs that one rule rather than the whole controller (HA, piano, fitness…
+ * all boot in the same process). The CLI keeps the throwing form so a bad rule
+ * fails loudly where an author is looking.
+ *
+ * A rule whose id repeats an earlier one is reported and the earlier one kept.
+ * A non-list compiles to no rules and one error with a null index and id.
+ *
+ * @param {unknown} raw  the `url_rules` list as read from config
+ * @returns {{rules: ReturnType<typeof compileUrlRules>,
+ *   errors: Array<{index: number|null, id: string|null, message: string}>}}
+ */
+export function compileUrlRulesLenient(raw) {
+  if (raw === undefined || raw === null) return { rules: Object.freeze([]), errors: [] };
+  if (!Array.isArray(raw)) {
+    return { rules: Object.freeze([]), errors: [{ index: null, id: null, message: 'url_rules must be a list' }] };
+  }
+  const seen = new Set();
+  const rules = [];
+  const errors = [];
+  raw.forEach((rule, i) => {
     try {
-      re = new RegExp(rule.match);
+      rules.push(compileUrlRule(rule, i, seen));
     } catch (err) {
-      throw new Error(`${where}: match is not a valid regex: ${err.message}`);
+      const id = typeof rule?.id === 'string' && rule.id ? rule.id : null;
+      errors.push({ index: i, id, message: err.message });
     }
-    // The trailing empty alternative always matches '', so `groups` lists
-    // every named group the pattern really has.
-    const groups = new RegExp(`${rule.match}|`).exec('')?.groups;
-    if (!groups || !Object.hasOwn(groups, 'id'))
-      throw new Error(`${where}: match must have an (?<id>…) capture`);
-    if (!rule.match.startsWith('^'))
-      throw new Error(`${where}: match must be anchored with ^ (and usually $)`);
-    if (!NAMESPACES.includes(rule.namespace))
-      throw new Error(`${where}: unknown namespace "${rule.namespace}"`);
-    const platform = rule.platform ?? null;
-    if (platform !== null && (typeof platform !== 'string' || !platform))
-      throw new Error(`${where}: platform must be a non-empty string when given`);
-    // The `^` binds only to the first branch of a top-level alternation, so
-    // `^https://a/…$|https://b/…` would leave the second branch free to match
-    // mid-string. Wrapping the body puts every branch behind the anchor.
-    re = new RegExp(`^(?:${rule.match.slice(1)})`);
-    return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform });
-  }));
+  });
+  return { rules: Object.freeze(rules), errors };
+}
+
+/** One rule of `compileUrlRules`; throws on the first fault. Records its id in `seen` only when it compiles. */
+function compileUrlRule(rule, i, seen) {
+  const where = `url_rules[${i}]`;
+  if (typeof rule?.id !== 'string' || !rule.id) throw new Error(`${where}: id is required`);
+  if (seen.has(rule.id)) throw new Error(`${where}: duplicate rule id "${rule.id}"`);
+  if (typeof rule.match !== 'string' || !rule.match)
+    throw new Error(`${where}: match must be a regex string`);
+  let re;
+  try {
+    re = new RegExp(rule.match);
+  } catch (err) {
+    throw new Error(`${where}: match is not a valid regex: ${err.message}`);
+  }
+  // The trailing empty alternative always matches '', so `groups` lists
+  // every named group the pattern really has.
+  const groups = new RegExp(`${rule.match}|`).exec('')?.groups;
+  if (!groups || !Object.hasOwn(groups, 'id'))
+    throw new Error(`${where}: match must have an (?<id>…) capture`);
+  if (!rule.match.startsWith('^'))
+    throw new Error(`${where}: match must be anchored with ^ (and usually $)`);
+  if (!NAMESPACES.includes(rule.namespace))
+    throw new Error(`${where}: unknown namespace "${rule.namespace}"`);
+  const platform = rule.platform ?? null;
+  if (platform !== null && (typeof platform !== 'string' || !platform))
+    throw new Error(`${where}: platform must be a non-empty string when given`);
+  // A worksheet scan is looked up on its platform; without one the rule would
+  // compile and then answer `invalid` on every scan of the sheet.
+  if (rule.namespace === 'worksheet' && platform === null)
+    throw new Error(`${where}: a worksheet rule needs a platform`);
+  // The `^` binds only to the first branch of a top-level alternation, so
+  // `^https://a/…$|https://b/…` would leave the second branch free to match
+  // mid-string. Wrapping the body puts every branch behind the anchor.
+  re = new RegExp(`^(?:${rule.match.slice(1)})`);
+  seen.add(rule.id);
+  return Object.freeze({ id: rule.id, re, namespace: rule.namespace, platform });
 }
 
 /**

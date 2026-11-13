@@ -697,12 +697,13 @@ describe('ScanDispatcher — url rules', () => {
 
   it('hands a handler platform null when the rule names none', async () => {
     const rules = compileUrlRules([
-      { id: 'bare', match: '^https://x/(?<id>\\w+)$', namespace: 'worksheet' },
+      // A worksheet rule must name its platform; any other namespace may not.
+      { id: 'bare', match: '^https://x/(?<id>\\w+)$', namespace: 'school' },
     ]);
-    const worksheet = handler('worksheet', async () => ({ status: 'recorded' }));
-    const d = new ScanDispatcher({ handlers: [worksheet], urlRules: rules });
+    const school = handler('school', async () => ({ status: 'recorded' }));
+    const d = new ScanDispatcher({ handlers: [school], urlRules: rules });
     await d.dispatch({ code: 'https://x/abc', device: 'k' });
-    expect(worksheet.handle).toHaveBeenCalledWith(expect.objectContaining({
+    expect(school.handle).toHaveBeenCalledWith(expect.objectContaining({
       body: 'abc', platform: null, rule: 'bare',
     }));
   });
