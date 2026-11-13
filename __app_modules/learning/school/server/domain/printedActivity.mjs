@@ -28,6 +28,18 @@ const trimmedOrNull = (value) => (typeof value === 'string' && value.trim() ? va
 export const servedUnitId = (corpusId) => `${PRINTED_ACTIVITY_PROGRAM_ID}:${corpusId}`;
 
 /**
+ * The household-facing name of an entry: its own `title`, else its capitalised
+ * kind ("Maze"), else a generic label. One helper so the agenda row, the
+ * ticket's "is printing" message and the served row all say the same thing.
+ */
+export function printedActivityLabel(entry) {
+  const title = trimmedOrNull(entry?.title);
+  if (title) return title;
+  const kind = trimmedOrNull(entry?.activity?.kind);
+  return kind ? kind[0].toUpperCase() + kind.slice(1) : 'Printed activity';
+}
+
+/**
  * Validate one learner's printed-activity entry. `schedule` is validated by the
  * generic `withSchedule` wrapper and is not this validator's business; unknown
  * keys are not copied into the enrollment.
@@ -72,6 +84,8 @@ export function validatePrintedActivityEnrollment(raw) {
   if (!PAPERS.includes(paper)) errors.push(`activity.paper must be ${PAPERS.join('|')}, got: ${a.paper}`);
 
   if (errors.length) return { errors };
+  // `cadence` is not copied: printed-activity is daily only (`target` sheets
+  // per study day), so the plan entry is always `cadence: daily`.
   return { errors: [], enrollment: {
     programId: PRINTED_ACTIVITY_PROGRAM_ID,
     corpusId: raw.corpusId.trim(),

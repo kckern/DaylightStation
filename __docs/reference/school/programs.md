@@ -34,7 +34,7 @@ So a launcher's `status()` returns `servedWork: [{ unitId, title }]` for work
 completed today and `[]` otherwise. Rules:
 
 - **The identity is durable and belongs to the COURSE, not the day** —
-  `story-time:daily`, `sentence-ladder:<corpusId>`, `flashcards:<deckId>`,
+  `story-time:daily`, `sentence-ladder:<corpusId>`, `printed-activity:<corpusId>`, `flashcards:<deckId>`,
   `language-reels:<reelId>`, `rubiks-cube:<courseId>`, `book-log:shelf`,
   `<surfaceProgramId>:daily`. The disc keeps the same identity tomorrow.
   Language reels is the one whose served id deliberately **differs** from its
@@ -60,8 +60,8 @@ completed today and `[]` otherwise. Rules:
   still returns `score: null` because accuracy is recorded, never gating.
 
 `programLaunchers.servedWork.test.mjs` enforces this by walking the launcher
-classes `schoolLifecycle.mjs` registers and calling each one's `status()`, so a
-NINTH launcher fails the suite until it is covered by name.
+classes `schoolLifecycle.mjs` registers and calling each one's `status()`, so an
+uncovered launcher fails the suite until it is covered by name.
 
 ### The exception: a day that was EXCUSED, not performed
 

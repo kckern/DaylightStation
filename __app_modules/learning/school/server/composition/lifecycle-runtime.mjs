@@ -50,20 +50,25 @@ import { FilesystemDebriefAudio } from "../adapters/debrief/FilesystemDebriefAud
  * adapter that will not load) the map is empty and the reason is logged as
  * `school.worksheets.unwired`, so a missing page source is visible at boot
  * rather than first noticed when a child's ticket prints nothing.
+ *
+ * `loadAdapter` is the test seam for the dynamic import; production passes
+ * nothing and gets the real Beeloo adapter class.
  */
-async function buildWorksheetPlatforms({ configService, rootLogger, logger }) {
+const loadBeelooAdapter = async () => (await import('#adapters/worksheets/BeelooWorksheetPlatformAdapter.mjs')).BeelooWorksheetPlatformAdapter;
+
+export async function buildWorksheetPlatforms({ configService, rootLogger, logger, loadAdapter = loadBeelooAdapter }) {
   const baseUrl = configService.resolveServiceUrl?.('beeloo') ?? null;
   if (!baseUrl) {
-    logger?.warn?.('school.worksheets.unwired', { platform: 'beeloo', reason: 'no services.yml beeloo url' });
+    logger.warn('school.worksheets.unwired', { platform: 'beeloo', reason: 'no services.yml beeloo url' });
     return new Map();
   }
   try {
-    const { BeelooWorksheetPlatformAdapter } = await import('#adapters/worksheets/BeelooWorksheetPlatformAdapter.mjs');
-    const adapter = new BeelooWorksheetPlatformAdapter({ baseUrl, logger: rootLogger.child({ module: 'worksheets-beeloo' }) });
-    logger?.info?.('school.worksheets.wired', { platform: 'beeloo' });
+    const Adapter = await loadAdapter();
+    const adapter = new Adapter({ baseUrl, logger: rootLogger.child({ module: 'worksheets-beeloo' }) });
+    logger.info('school.worksheets.wired', { platform: 'beeloo' });
     return new Map([[adapter.id, adapter]]);
   } catch (err) {
-    logger?.warn?.('school.worksheets.unwired', { platform: 'beeloo', reason: err?.message ?? String(err) });
+    logger.warn('school.worksheets.unwired', { platform: 'beeloo', reason: err?.message ?? String(err) });
     return new Map();
   }
 }

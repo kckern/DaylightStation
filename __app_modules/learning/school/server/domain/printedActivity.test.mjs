@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PRINTED_ACTIVITY_PROGRAM_ID, validatePrintedActivityEnrollment, pickActivity, servedUnitId,
+  PRINTED_ACTIVITY_PROGRAM_ID, validatePrintedActivityEnrollment, pickActivity, servedUnitId, printedActivityLabel,
 } from './printedActivity.mjs';
 
 const entry = (over = {}) => ({
@@ -89,4 +89,12 @@ describe('pickActivity', () => {
 
 it('servedUnitId is stable per corpus', () => {
   expect(servedUnitId('beeloo:maze')).toBe('printed-activity:beeloo:maze');
+});
+
+describe('printedActivityLabel', () => {
+  it('prefers the title, then the capitalised kind, then a generic name', () => {
+    expect(printedActivityLabel({ title: ' Maze ', activity: { kind: 'sudoku' } })).toBe('Maze');
+    expect(printedActivityLabel({ title: null, activity: { kind: 'sudoku' } })).toBe('Sudoku');
+    expect(printedActivityLabel({})).toBe('Printed activity');
+  });
 });

@@ -31,7 +31,7 @@
  */
 import { studyDayForInstant } from '../domain/studyDay.mjs';
 import {
-  PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity,
+  PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity, printedActivityLabel,
 } from '../domain/printedActivity.mjs';
 
 // The store's typed refusals, recognised by `code` so this file never imports the adapter.
@@ -50,7 +50,6 @@ const MSG = Object.freeze({
   unexpected: 'Something went wrong printing that page. Ask a grown-up.',
 });
 
-const capitalise = (s) => (typeof s === 'string' && s ? s[0].toUpperCase() + s.slice(1) : s);
 const errText = (err) => err?.message ?? String(err);
 
 /** Raised inside `launch()` to answer a platform fault with one wording. */
@@ -140,7 +139,7 @@ export class PrintedActivityProgramLauncher {
 
   /** "Maze" — the household's title for the entry, else its kind. */
   #label(entry) {
-    return entry.title ?? capitalise(entry.activity.kind);
+    return printedActivityLabel(entry);
   }
 
   async status({ userId, programInstance = null, day = null }) {
