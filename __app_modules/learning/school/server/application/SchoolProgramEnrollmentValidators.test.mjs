@@ -38,6 +38,28 @@ describe('School program enrollment schedules', () => {
   });
 });
 
+describe('School program enrollment icons', () => {
+  it('keeps a trimmed icon on any program and refuses a non-string', async () => {
+    const piano = await validators().get('piano-course')({ programId: 'piano-course', courseId: 'plex:123', icon: ' piano ' });
+    const story = await validators().get('story-time')({ programId: 'story-time', icon: 'book-starting' });
+    const printed = await validators().get('printed-activity')({
+      programId: 'printed-activity', corpusId: 'beeloo:coloring', subject: 'arts', icon: 'crayon',
+      activity: { platform: 'beeloo', kind: 'coloring', level: 1 },
+    });
+    const bad = await validators().get('piano-course')({ programId: 'piano-course', courseId: 'plex:123', icon: 7 });
+    expect(piano).toMatchObject({ errors: [], enrollment: { icon: 'piano' } });
+    expect(story).toMatchObject({ errors: [], enrollment: { icon: 'book-starting' } });
+    expect(printed).toMatchObject({ errors: [], enrollment: { icon: 'crayon' } });
+    expect(bad.errors.join(' ')).toMatch(/icon/);
+    expect(bad.enrollment).toBeUndefined();
+  });
+
+  it('leaves icon out when the enrollment names none', async () => {
+    const piano = await validators().get('piano-course')({ programId: 'piano-course', courseId: 'plex:123' });
+    expect(piano.enrollment).not.toHaveProperty('icon');
+  });
+});
+
 describe('Piano course daily video cap', () => {
   it('preserves a positive whole cap through normalization with the schedule', async () => {
     const result = await validators().get('piano-course')({

@@ -121,3 +121,28 @@ describe('appendAssignedProgramEntries — printed activities', () => {
     expect(out.entries).toEqual([]);
   });
 });
+
+describe('appendAssignedProgramEntries — disc icons', () => {
+  it('carries an enrollment icon onto its entry and defaults piano-course to the music note', () => {
+    const out = appendAssignedProgramEntries(plan(), {
+      programs: [
+        { programId: 'piano-course', courseId: 'plex:1' },
+        { programId: 'piano-course', courseId: 'plex:2', icon: 'piano' },
+        { programId: 'printed-activity', corpusId: 'beeloo:coloring', subject: 'arts', icon: 'crayon',
+          activity: { platform: 'beeloo', kind: 'coloring', level: 1 } },
+        { programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts',
+          activity: { platform: 'beeloo', kind: 'maze', level: 1 } },
+        { programId: 'story-time', icon: 'book-starting' },
+        { programId: 'school-debrief' },
+      ],
+    });
+    expect(out.entries.map((e) => [e.unitId, e.icon])).toEqual([
+      ['piano-course:plex:1', 'music'],
+      ['piano-course:plex:2', 'piano'],
+      ['printed-activity:beeloo:coloring', 'crayon'],
+      ['printed-activity:beeloo:maze', null],
+      ['story-time:daily', 'book-starting'],
+      ['school-debrief:daily', 'keyboard'],
+    ]);
+  });
+});

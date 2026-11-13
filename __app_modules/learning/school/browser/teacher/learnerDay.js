@@ -210,7 +210,7 @@ export function joinLearnerDay({
   const carriedPool = claimPool(Array.isArray(carriedOver) ? carriedOver : []);
   const rows = [];
 
-  (Array.isArray(sections) ? sections : []).forEach((section, position) => {
+  const sectionRows = (section, position) => {
     const subject = section?.subject ?? null;
     const key = subjectKey(subject);
     // Sections sharing a subject would otherwise collide on the row key.
@@ -304,6 +304,43 @@ export function joinLearnerDay({
       status: unassigned ? 'unassigned' : 'planned', planned, offer, served, session: null, obligation,
       detail: unassigned ? unassignedDetail : (section?.timingNotice ?? null),
     });
+  };
+
+  // A section's OTHER owed programs (`pendingPrograms`, agenda.mjs): a shelf
+  // can owe piano and a coloring page on one day, and `next` names only one.
+  // Each gets its own row beside its section, claiming only sessions on its
+  // own unit. Excused and deferred sections owe nothing more, as on the board.
+  const pendingRows = (section, position) => {
+    if (section?.suppressed || section?.obligation?.state === 'excused') return;
+    const subject = section?.subject ?? null;
+    const obligation = obligationFor(section);
+    (Array.isArray(section?.pendingPrograms) ? section.pendingPrograms : []).forEach((pending, index) => {
+      if (!pending?.unitId) return;
+      const offer = pending;
+      const planned = pending.title ?? null;
+      const key = `${subjectKey(subject)}:${position}:pending:${index}`;
+      const matched = [];
+      pool.forEach((claim) => {
+        if (!claim.claimed && claim.session?.unitId === pending.unitId) { claim.claimed = true; matched.push(claim.session); }
+      });
+      if (matched.length) {
+        matched.forEach((session, sessionIndex) => {
+          const status = statusForSession(session, null);
+          rows.push({
+            key: session.sessionId ?? `${key}:${sessionIndex}`,
+            subject, status, planned: sessionIndex === 0 ? planned : null, offer, served: null, session, obligation,
+            detail: paperNote(session, status), matchedOn: sessionIndex === 0 ? 'unit' : null,
+          });
+        });
+        return;
+      }
+      rows.push({ key, subject, status: 'planned', planned, offer, served: null, session: null, obligation, detail: null });
+    });
+  };
+
+  (Array.isArray(sections) ? sections : []).forEach((section, position) => {
+    sectionRows(section, position);
+    pendingRows(section, position);
   });
 
   // Anything recorded that the plan never offered. Silently dropping these

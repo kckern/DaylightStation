@@ -620,6 +620,44 @@ export function planDailyAgenda({
       obligation = { state: 'excused', reason: 'placeholder' };
     }
 
+    // THE REST OF TODAY'S OWED PROGRAMS. A section offers ONE `next`, but a
+    // shelf can owe two programs on one day (piano and a printed coloring
+    // page, both `arts`). Without this the board drew one disc and the second
+    // program stayed invisible until the first was done (2026-11-13). Read off
+    // the obligation's own `actionable` set (non-elective, not held, not done
+    // today, not unavailable/terminal/unknowable/weekly-satisfied), limited to
+    // programs that meet TODAY by their own schedule. Curriculum is left out on
+    // purpose: a normal subject is served after one pass, so a second
+    // curriculum unit on the shelf is not owed today. An excused or served
+    // section owes nothing more.
+    const pendingPrograms = (obligation.state === 'excused' || obligation.state === 'served')
+      ? []
+      : actionable
+        .filter((e) => e.program && e.unitId !== next?.unitId
+          && scheduleVerdict(today, e.schedule ?? null).schoolDay)
+        .map((e) => ({
+          unitId: e.unitId,
+          program: e.program,
+          programInstance: e.programInstance ?? null,
+          title: e.title ?? null,
+          subject: e.subject ?? subject,
+          obligationProgress: programStatusFor(programStatuses, e)?.obligationProgress ?? null,
+          ...(e.icon ? { icon: e.icon } : {}),
+        }));
+
+    // WHICH PROGRAM SPEAKS FOR THE SECTION'S PROGRESS. A shelf with several
+    // programs used to take the first status that had a label, so with piano
+    // done and a maze next the maze card printed piano's "Done today — Lesson
+    // 43 …" (2026-11-13). A program `next` speaks only for itself (no label of
+    // its own means no label, never a neighbour's). Otherwise the program done
+    // today leads, then the rest in shelf order.
+    const labelStatuses = next?.program
+      ? [programStatusFor(programStatuses, next)].filter(Boolean)
+      : [
+        ...statuses.filter((s) => !s.error && s.doneToday === true),
+        ...statuses.filter((s) => !(!s.error && s.doneToday === true)),
+      ];
+
     // WHERE A SERVED SUBJECT STILL OPENS. A program that is a place rather
     // than a task (the reading shelf, a flashcard deck) declares `reopenable`:
     // today's requirement is met, but extra rounds are always allowed. Chosen
@@ -654,8 +692,9 @@ export function planDailyAgenda({
       catchUp: !!(next && isBacklog(next)),
       lockedRemedy,
       timingNotice,
-      progressLabel: progressLabelFor(list, statuses),
-      progressRows: progressRowsFor(statuses),
+      progressLabel: progressLabelFor(list, labelStatuses),
+      progressRows: progressRowsFor(labelStatuses),
+      pendingPrograms,
       gradePercent: gradeFor(list, latestBySessionUnit, statuses),
       // WHAT WAS ACTUALLY DONE, not merely that something was. `servedToday`
       // is a boolean, and a boolean is all the paper could ever say: "SCRIPTURE
@@ -676,13 +715,16 @@ export function planDailyAgenda({
             unitId: entry.unitId,
             assignmentUnitId: entry.unitId,
             title: entry.title ?? null,
+            ...(entry.icon ? { icon: entry.icon } : {}),
           })),
         ...programs.flatMap((entry) => {
           const status = programStatusFor(programStatuses, entry);
           if (status?.error || !Array.isArray(status?.servedWork)) return [];
           return status.servedWork
             .filter((work) => work && typeof work === 'object')
-            .map((work) => ({ ...work, assignmentUnitId: entry.unitId }));
+            // The served row draws the OWNING assignment's disc, so it
+            // carries that assignment's icon too.
+            .map((work) => ({ ...work, assignmentUnitId: entry.unitId, ...(entry.icon ? { icon: entry.icon } : {}) }));
         }),
       ],
       programUnavailable,
@@ -755,6 +797,7 @@ export function planDailyAgenda({
         reasons: focus.next.timingReasons ?? ['urgent_focus'],
       };
       candidate.next = null;
+      candidate.pendingPrograms = [];
       // Rule 1 outranks rule 2: a section that already served its non-elective
       // obligation stays `served` even when its extra-block offer is
       // displaced for printing purposes.

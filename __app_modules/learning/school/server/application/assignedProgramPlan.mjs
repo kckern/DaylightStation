@@ -13,9 +13,11 @@ import {
 import {
   PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId as printedActivityUnitId, printedActivityLabel,
 } from "../domain/printedActivity.mjs";
+import { programEntryIcon } from "../domain/entryIcon.mjs";
 
 const baseEntry = ({
   unitId, title, subject, program, programInstance, schedule = null, cadence = 'daily', elective = false,
+  icon = null,
 }) => ({
   unitId,
   title,
@@ -38,6 +40,10 @@ const baseEntry = ({
   elective: elective === true,
   program,
   programInstance,
+  // The assignment's own disc picture on the status board: the enrollment's
+  // `icon:`, else the program's default (`DEFAULT_PROGRAM_ICONS`), else null
+  // (the board draws the shelf icon).
+  icon: programEntryIcon(program, icon),
   cadence,
   status: 'available',
   sessionId: null,
@@ -66,7 +72,7 @@ const baseEntry = ({
  *   cadence?: string}} [args]
  */
 export function bookLogShelfEntry({
-  title = null, subject = null, schedule = null, cadence = 'daily', elective = false,
+  title = null, subject = null, schedule = null, cadence = 'daily', elective = false, icon = null,
 } = {}) {
   return baseEntry({
     unitId: BOOK_LOG_SHELF_UNIT_ID,
@@ -77,6 +83,7 @@ export function bookLogShelfEntry({
     schedule,
     cadence,
     elective,
+    icon,
   });
 }
 
@@ -114,6 +121,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     if (enrollment?.programId === STORY_TIME_PROGRAM_ID) {
@@ -128,6 +136,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     if (enrollment?.programId === SCHOOL_DEBRIEF_PROGRAM_ID) {
@@ -143,6 +152,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     if (enrollment?.programId === BOOK_LOG_PROGRAM_ID) {
@@ -167,6 +177,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         // the other. Recorded, not fixed — plan 2026-09-09 school board.
         cadence: enrollment.obligation?.per === 'once' ? 'once' : 'daily',
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     if (enrollment?.programId === 'piano-course') {
@@ -181,6 +192,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     // PRINTED ACTIVITIES — one entry per corpus (a maze entry and a sudoku
@@ -205,6 +217,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         // Daily only: the validator does not keep a `cadence` for this program.
         cadence: 'daily',
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
     // THE SENTENCE LADDER. Missing from this list until 2026-09-09, which is
@@ -227,6 +240,7 @@ export function appendAssignedProgramEntries(plan, assignment) {
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),
         elective: enrollment.elective === true,
+        icon: enrollment.icon,
       }));
     }
   }

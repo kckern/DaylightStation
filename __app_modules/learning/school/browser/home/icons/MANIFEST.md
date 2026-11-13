@@ -1,6 +1,6 @@
 # School Subject Icons — household set via SVG Repo
 
-> **Solar split.** 13 transport/utility icons (`back forward next pause play prev record restart rewind stop volume volume-mute writing`)
+> **Solar split.** 13 transport/utility icons (`back forward keyboard next pause play prev record restart rewind stop volume volume-mute`; `keyboard` was named `writing` until 2026-11-13, when the Writing shelf took a tracked pencil)
 > are pixel-identical to Solar (Bold) icons and are no longer tracked: they are generated at frontend `prebuild`
 > (`npm run prepare:assets`) from `@iconify-json/solar` per [`icons.manifest.json`](icons.manifest.json) into `svg/generated/`
 > (gitignored). `iconRegistry.test.js` fails if generation did not run. The rest stay tracked in `svg/` (no exact Solar equivalent);
@@ -18,14 +18,14 @@ needed.
 | Subject id | Shelf | File | SVG Repo source |
 |------------|-------|------|-----------------|
 | english | English & Literature | `svg/english.svg` | books |
-| writing | Writing & Typing | `svg/writing.svg` | keyboard |
+| writing | Writing & Typing | `svg/writing.svg` | writing (pencil on a line, filled 24×24; tracked since 2026-11-13). The keyboard it replaced is the generated `keyboard` icon, the debrief's default disc icon |
 | language | Language & Culture | `svg/language.svg` | language-alphabet-translation |
 | math | Math & Money | `svg/math.svg` | math-finance |
 | science | Science & Nature | `svg/science.svg` | science (atom, stroke-based) |
 | skills | Life & Skills | `svg/skills.svg` | plant-leaf |
 | civilization | Civilization | `svg/civilization.svg` | globe-stand |
 | scripture | Scripture & Gospel | `svg/scripture.svg` | sunlight |
-| arts | Arts & Culture | `svg/arts.svg` | art-palette |
+| arts | Arts & Culture | `svg/arts.svg` | palette (filled, 16×16; replaced 2026-11-13 — the file had drifted to a music note) |
 | geography | Geography | `svg/geography.svg` | placeholder line-art (globe) — swap later |
 | states | Geography | `svg/states.svg` | placeholder line-art (map grid) — swap later |
 | capitals | Geography | `svg/capitals.svg` | placeholder line-art (star) — swap later |
@@ -66,6 +66,7 @@ subject — transport (`play`, `pause`, `next`, `prev`, `rewind`, `restart`),
 |------|------|---------|
 | `back` | `svg/back.svg` | the launch card's "Go back" |
 | `piano` | `svg/piano.svg` | the launch card's "Learn at the piano" |
+| `music` | `svg/music.svg` | a status-board disc for a music assignment on the Arts shelf (the piano course's default disc icon). The music-note glyph `arts.svg` used to hold, kept when the shelf mark became a palette |
 | `book-starting` | `svg/book-starting.svg` | the reading shelf's "I'm just starting it" door (SVG Repo 521767, next) |
 | `book-partway` | `svg/book-partway.svg` | the reading shelf's "I'm partway through" door (SVG Repo 521655, fast-forward) |
 | `physical-education` | `svg/physical-education.svg` | the status board's workout disc (SVG Repo 390333, fitness-watch-pulse-smartwatch). Named for a SUBJECT that has no shelf: physical education is credited from fitness sessions, never assigned, so the id exists here and nowhere in `subjects.js` |

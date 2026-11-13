@@ -12,6 +12,12 @@ function nameFor(subject) {
   return label === subject ? labelize(subject) : label;
 }
 
+/** An assignment icon name as the plan hands it over, or null. Whether the
+ * registry knows it is the board's question (`AgendaStatusBoard#iconFor`). */
+function iconName(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 export function dayStatus({ total, done }) {
   if (!total) return null;
   if (done >= total) return 'Done for the day';
@@ -31,7 +37,8 @@ export function dayStatus({ total, done }) {
  *   - every session the learner has today (started, printed, graded — anything
  *     that produced a session), and
  *   - every subject's still-offered next action that has not already appeared
- *     as a session, and
+ *     as a session, and every OTHER program the subject still owes today
+ *     (`pendingPrograms`: two programs due on one shelf draw two discs), and
  *   - every assigned program whose launcher reports completed `servedWork`.
  *
  * Evidence has to be in the union because a lesson taken through the "one
@@ -165,9 +172,12 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
         servedByAssignment.set(assignmentUnitId, {
           assignmentUnitId,
           subject: section.subject ?? null,
+          icon: null,
           completedUnitIds: new Set(),
         });
       }
+      const served = servedByAssignment.get(assignmentUnitId);
+      if (!served.icon && iconName(work.icon)) served.icon = work.icon;
       servedByAssignment.get(assignmentUnitId).completedUnitIds.add(work.unitId);
       if (!assignmentByServedUnit.has(work.unitId)) {
         assignmentByServedUnit.set(work.unitId, assignmentUnitId);
@@ -236,8 +246,32 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     });
   }
 
-  // Then the plan, for work with no session yet.
+  // Then the plan, for work with no session yet: each section's `next`, and
+  // then every other program the section still owes today
+  // (`pendingPrograms`). A shelf can owe two programs on one day — piano and a
+  // printed coloring page, both arts — and drawing `next` alone hid the second
+  // until the first was done (2026-11-13). Sessions and served work above
+  // still win for any unit they already drew.
   const fromEntries = new Map((entries ?? []).map((e) => [e.unitId, e]));
+  const planDisc = (item, section) => {
+    if (!item?.unitId || byUnit.has(item.unitId)) return;
+    const entry = fromEntries.get(item.unitId);
+    const program = entry?.program ?? item.program;
+    const progress = item.obligationProgress;
+    const completed = program === 'book-log' ? progress?.actual : progress?.completed;
+    const target = program === 'book-log' ? progress?.target : progress?.total;
+    const inProgress = Number.isFinite(completed) && Number.isFinite(target)
+      && target > 0 && completed > 0;
+    const subject = entry?.subject ?? item.subject ?? section.subject;
+    const icon = iconName(item.icon) ?? iconName(entry?.icon);
+    byUnit.set(item.unitId, {
+      unitId: item.unitId,
+      subject,
+      label: nameFor(subject),
+      state: inProgress ? 'in-progress' : 'pending',
+      ...(icon ? { icon } : {}),
+    });
+  };
   for (const section of planned) {
     // A non-school day deliberately keeps `next` available for voluntary
     // work, but that does not put the lesson on the child's required Today
@@ -245,20 +279,8 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     // is omitted. The same rule covers other excused obligations such as
     // optional backlog and work that is not due yet.
     if (section.obligation?.state === 'excused') continue;
-    const next = section.next;
-    if (!next?.unitId || byUnit.has(next.unitId)) continue;
-    const entry = fromEntries.get(next.unitId);
-    const progress = next.obligationProgress;
-    const completed = entry?.program === 'book-log' ? progress?.actual : progress?.completed;
-    const target = entry?.program === 'book-log' ? progress?.target : progress?.total;
-    const inProgress = Number.isFinite(completed) && Number.isFinite(target)
-      && target > 0 && completed > 0;
-    byUnit.set(next.unitId, {
-      unitId: next.unitId,
-      subject: entry?.subject ?? section.subject,
-      label: nameFor(entry?.subject ?? section.subject),
-      state: inProgress ? 'in-progress' : 'pending',
-    });
+    planDisc(section.next, section);
+    for (const pending of section.pendingPrograms ?? []) planDisc(pending, section);
   }
 
   // The SERVER decides whether a subject is done today (GetLearnerDayCompletion
@@ -273,6 +295,13 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
   }
 
   const segments = [...byUnit.values()].map((segment) => {
+    // The disc's PICTURE can name the assignment (a piano, a crayon) while
+    // its spoken label stays the shelf. Whatever drew the disc may not have
+    // known the icon (a session row carries none), so the plan entry and the
+    // served row backfill it.
+    const icon = segment.icon ?? iconName(fromEntries.get(segment.unitId)?.icon)
+      ?? servedByAssignment.get(segment.unitId)?.icon ?? null;
+    if (icon && !segment.icon) segment = { ...segment, icon };
     const programId = fromEntries.get(segment.unitId)?.program;
     if (programId === 'book-log' || programId === 'story-time') {
       return { ...segment, programId, label: programId === 'book-log' ? 'Reading' : 'Story time' };
