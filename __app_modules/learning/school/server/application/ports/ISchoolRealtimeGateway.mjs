@@ -37,6 +37,7 @@ export class ISchoolRealtimeGateway {
   printedActivityScanned(_announcement) { /* optional */ }
   workCompleted(_announcement) { /* optional */ }
   mediaLessonCompleted(_announcement) { /* optional */ }
+  recordChanged(_change) { /* optional */ }
   readingRoomChanged(_location, _announcement) { throw new Error('readingRoomChanged must be implemented'); }
   printAgendaReady(_announcement) { throw new Error('printAgendaReady must be implemented'); }
   printScanResolved(_announcement) { throw new Error('printScanResolved must be implemented'); }

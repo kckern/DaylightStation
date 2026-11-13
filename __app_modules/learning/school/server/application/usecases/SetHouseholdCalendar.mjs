@@ -22,17 +22,18 @@ import {
   lockedDayChanges, keepListChanges, keepListBlocked, buildCalendarBlock, addDayKeys,
 } from "../../domain/calendarEdit.mjs";
 import { studyDayForInstant } from "../../domain/studyDay.mjs";
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const ACTIVITY_TIERS = ['enrichment', 'major-holiday'];
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
 export class SetHouseholdCalendar {
-  #store; #activities; #assignments; #teacherGate; #liveCalendar; #curriculum; #reloadConfig;
+  #store; #activities; #assignments; #teacherGate; #liveCalendar; #curriculum; #reloadConfig; #realtime;
   #timezone; #clock; #logger; #onUpdated;
 
   constructor({
     store, activities, assignments = null, teacherGate, liveCalendar, curriculum = null,
-    reloadConfig = null, timezone = null, clock = () => new Date(), logger = console, onUpdated = null,
+    reloadConfig = null, timezone = null, clock = () => new Date(), logger = console, onUpdated = null, realtime = null,
   } = {}) {
     if (!store || !activities || !teacherGate || !liveCalendar) {
       throw new Error('SetHouseholdCalendar requires store, activities, teacherGate and liveCalendar');
@@ -40,6 +41,7 @@ export class SetHouseholdCalendar {
     this.#store = store; this.#activities = activities; this.#assignments = assignments;
     this.#teacherGate = teacherGate; this.#liveCalendar = liveCalendar; this.#curriculum = curriculum;
     this.#reloadConfig = reloadConfig; this.#onUpdated = onUpdated; this.#timezone = timezone; this.#clock = clock; this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   #refuse(ErrorType, code, message, details = {}) {
@@ -134,6 +136,7 @@ export class SetHouseholdCalendar {
     this.#logger.info?.('school.calendar.updated', {
       editedBy, breaks: except.length, activities: units.map((u) => u.unitId), assigned, unassigned, keepListsChanged: changedTiers,
     });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [], kind: 'calendar' });
     if (this.#curriculum?.listUnits) {
       this.#curriculum.listUnits().then((all) => {
         checkDayOffCalendar({ schedule, units: all }).missingAssignments

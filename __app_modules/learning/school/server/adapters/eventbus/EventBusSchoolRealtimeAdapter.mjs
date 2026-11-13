@@ -82,7 +82,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
         ? { ...wire, learnerId: learnerId.trim() }
         : null;
     };
-    const schoolChange = (wire) => ['story-read', 'printed-activity-complete', 'media-lesson-complete', 'program-day-bypass-changed'].includes(wire?.event)
+    const schoolChange = (wire) => ['story-read', 'printed-activity-complete', 'media-lesson-complete', 'book-log-changed', 'record-changed', 'program-day-bypass-changed'].includes(wire?.event)
       ? learner(wire) : null;
     const unsubscribers = [
       this.#on('school.session.outcome-recorded', handler, learner),
@@ -130,7 +130,24 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
     this.#publish('school.session.outcome-recorded', { learnerId, sessionId, ...(studyDay ? { studyDay } : {}) });
     return this.#broadcast('school', { event: 'session-grade-changed', learnerId, sessionId });
   }
-  assignmentsChanged(fact) { return this.#publish('school.assignments.changed', fact); }
+  assignmentsChanged(fact) {
+    const published = this.#publish('school.assignments.changed', fact);
+    if (fact?.learnerId) this.recordChanged({ learnerIds: [fact.learnerId], kind: 'assignments' });
+    return published;
+  }
+  /**
+   * A change to a learner's day with no moment for the child in it (a teacher
+   * correction, a plan edit, an excused day): the tablet re-reads that
+   * learner and the day is re-checked. One broadcast per learner named; none
+   * named means the whole household (a calendar or pass-mark edit).
+   */
+  recordChanged({ learnerIds = [], kind, studyDay = null } = {}) {
+    const ids = [...new Set((learnerIds ?? []).filter((id) => typeof id === 'string' && id.trim()))];
+    const day = studyDay ? { studyDay } : {};
+    if (!ids.length) return this.#broadcast('school', { event: 'record-changed', learnerId: null, kind, ...day });
+    for (const learnerId of ids) this.#broadcast('school', { event: 'record-changed', learnerId, kind, ...day });
+    return undefined;
+  }
   completionStateObserved(fact) { return this.#publish('school.completion.state-observed', fact); }
   schoolCeremony(announcement) { return this.#broadcast('school', { event: 'piano-lesson-complete', ...announcement }); }
   programDayBypassChanged(announcement) { return this.#broadcast('school', { event: 'program-day-bypass-changed', ...announcement }); }

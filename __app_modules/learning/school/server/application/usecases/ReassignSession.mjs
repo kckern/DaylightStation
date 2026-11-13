@@ -25,11 +25,12 @@
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from "../../domain/sessions/sessionEvents.mjs";
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 export class ReassignSession {
-  #sessions; #teacherGate; #clock; #notes; #auditLog; #logger;
+  #sessions; #teacherGate; #clock; #notes; #auditLog; #logger; #realtime;
 
-  constructor({ sessions, teacherGate, notes = null, auditLog = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ sessions, teacherGate, notes = null, auditLog = null, clock = () => new Date(), logger = console, realtime = null } = {}) {
     if (!sessions) throw new Error('ReassignSession requires sessions');
     if (!teacherGate) throw new Error('ReassignSession requires teacherGate');
     this.#sessions = sessions;
@@ -38,6 +39,7 @@ export class ReassignSession {
     this.#auditLog = auditLog;
     this.#clock = clock;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   /**
@@ -94,6 +96,7 @@ export class ReassignSession {
     // No silent verbs about children (student-advocacy A5): both kids hear
     // what happened to the record in their own feed.
     await this.#tellKids({ fromLearnerId, toLearnerId, day, reassignedBy });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [fromLearnerId, toLearnerId], kind: 'reassign', studyDay: day });
     return result;
   }
 

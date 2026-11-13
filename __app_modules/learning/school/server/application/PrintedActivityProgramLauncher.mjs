@@ -35,6 +35,7 @@ import { scheduleVerdict } from '../domain/schoolCalendar.mjs';
 import {
   PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity, printedActivityLabel,
 } from '../domain/printedActivity.mjs';
+import { announceRecordChanged } from "./usecases/announceRecordChanged.mjs";
 
 // The store's typed refusals, recognised by `code` so this file never imports the adapter.
 const PAGE_ALREADY_OPEN = 'PAGE_ALREADY_OPEN';
@@ -68,7 +69,7 @@ class PlatformFault extends Error {
 }
 
 export class PrintedActivityProgramLauncher {
-  #assignments; #store; #platforms; #printer; #timezone; #clock; #rng; #logger; #reprintCooldownMs;
+  #assignments; #store; #platforms; #printer; #timezone; #clock; #rng; #logger; #reprintCooldownMs; #realtime;
 
   /**
    * @param {object} deps
@@ -85,7 +86,7 @@ export class PrintedActivityProgramLauncher {
    */
   constructor({
     assignments, store, platforms = new Map(), printer = null, timezone = null, clock, rng, logger,
-    reprintCooldownMs = DEFAULT_REPRINT_COOLDOWN_MS,
+    reprintCooldownMs = DEFAULT_REPRINT_COOLDOWN_MS, realtime = null,
   } = {}) {
     if (!assignments) throw new Error('PrintedActivityProgramLauncher requires an assignments store');
     if (!store) throw new Error('PrintedActivityProgramLauncher requires a printed-activity store');
@@ -104,6 +105,7 @@ export class PrintedActivityProgramLauncher {
     this.#clock = clock;
     this.#rng = rng;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   get id() { return PRINTED_ACTIVITY_PROGRAM_ID; }
@@ -538,6 +540,8 @@ export class PrintedActivityProgramLauncher {
       this.#log('info', 'school.printed-activity.issued', {
         learnerId: userId, corpusId, platform: platformId, externalId: page.externalId, reprint: Boolean(reprint), confirmed,
       });
+      // The board shows the sheet as given out (its amber disc) at once.
+      announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [userId], kind: 'printed-activity-issued' });
       return { decision: 'dispatched', message: `${title} is printing.` };
     } catch (err) {
       if (err instanceof PlatformFault) {

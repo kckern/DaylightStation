@@ -5,16 +5,18 @@
  * excuses pacing with it.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class RecordEnrichment {
-  #log; #teacherGate; #clock; #idGen; #logger;
+  #log; #teacherGate; #clock; #idGen; #logger; #realtime;
 
-  constructor({ log, teacherGate, clock = () => new Date(), idGen = () => `enr_${Math.random().toString(36).slice(2, 10)}`, logger = console } = {}) {
+  constructor({ log, teacherGate, clock = () => new Date(), idGen = () => `enr_${Math.random().toString(36).slice(2, 10)}`, logger = console, realtime = null } = {}) {
     if (!log) throw new Error('RecordEnrichment requires log');
     if (!teacherGate) throw new Error('RecordEnrichment requires teacherGate');
     this.#log = log;
+    this.#realtime = realtime;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#idGen = idGen;
@@ -55,6 +57,7 @@ export class RecordEnrichment {
     this.#logger.info?.('school.enrichment.recorded', {
       entryId: entry.id, recordedBy, learnerIds: entry.learnerIds, from, to: end, kind,
     });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: entry.learnerIds, kind: 'enrichment' });
     return { entry };
   }
 }

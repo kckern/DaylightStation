@@ -78,7 +78,7 @@ const WIRED = () => new Map([['beeloo', { id: 'beeloo' }]]);
 
 function make({
   programs = [MAZE, SUDOKU], assignment, store = fakeStore(), platforms, printer, rng = () => 0,
-  clock = () => NOW, timezone = null, log = logger(), reprintCooldownMs,
+  clock = () => NOW, timezone = null, log = logger(), reprintCooldownMs, realtime,
 } = {}) {
   const launcher = new PrintedActivityProgramLauncher({
     assignments: { get: vi.fn(async () => (assignment !== undefined ? assignment : { programs })) },
@@ -90,6 +90,7 @@ function make({
     rng,
     logger: log,
     ...(reprintCooldownMs === undefined ? {} : { reprintCooldownMs }),
+    ...(realtime === undefined ? {} : { realtime }),
   });
   return { launcher, store, log };
 }
@@ -721,5 +722,24 @@ describe('PrintedActivityProgramLauncher.cardTapPicks', () => {
     });
     expect(await launcher.cardTapPicks({ userId: 'learner_a' })).toEqual([]);
     expect(log.error).toHaveBeenCalledWith('school.printed-activity.card-tap-pick-failed', expect.objectContaining({ learnerId: 'learner_a' }));
+  });
+});
+
+describe('PrintedActivityProgramLauncher — the tablet hears a printed sheet', () => {
+  it('a dispatched sheet re-reads the learner on the board; a failed one says nothing', async () => {
+    const platform = () => new Map([['beeloo', {
+      id: 'beeloo',
+      listActivities: vi.fn(async () => [{ externalId: 'm-1', title: 'North End Labyrinth', kind: 'maze', level: 3 }]),
+      getPrintable: vi.fn(async (id) => Buffer.from(`pdf:${id}`)),
+    }]]);
+    const realtime = { recordChanged: vi.fn() };
+    const ok = make({ platforms: platform(), printer: { printPdf: vi.fn(async () => ({ ok: true })) }, realtime });
+    expect((await ok.launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' })).decision).toBe('dispatched');
+    expect(realtime.recordChanged).toHaveBeenCalledWith(expect.objectContaining({ learnerIds: ['learner_a'], kind: 'printed-activity-issued' }));
+
+    const quiet = { recordChanged: vi.fn() };
+    const failed = make({ platforms: platform(), printer: null, realtime: quiet });
+    expect((await failed.launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' })).decision).toBe('failed');
+    expect(quiet.recordChanged).not.toHaveBeenCalled();
   });
 });

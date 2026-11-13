@@ -253,3 +253,15 @@ describe('GetHouseholdCalendar', () => {
     expect(out.programs).toEqual(['story-time']);
   });
 });
+
+describe('SetHouseholdCalendar — the tablet hears a calendar edit', () => {
+  it('announces a household-wide change once the calendar is written', async () => {
+    const realtime = { recordChanged: vi.fn() };
+    const withRealtime = new SetHouseholdCalendar({
+      store, activities, assignments, teacherGate: gate, liveCalendar: live, curriculum,
+      reloadConfig: vi.fn(), timezone: 'America/Los_Angeles', clock: () => NOW, logger: silent, realtime,
+    });
+    await withRealtime.execute({ except: [PAST, THANKS], editedBy: 'grownup', baseRevision: rev() });
+    expect(realtime.recordChanged).toHaveBeenCalledWith(expect.objectContaining({ learnerIds: [], kind: 'calendar' }));
+  });
+});

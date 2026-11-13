@@ -43,6 +43,7 @@
 import { studyDayForInstant } from "../domain/studyDay.mjs";
 import { composeSchoolPush } from "../domain/notifications/schoolPush.mjs";
 import { personDisplayName } from '#domains/notification/push/pushText.mjs';
+import { announceRecordChanged } from "./usecases/announceRecordChanged.mjs";
 
 const BOUNDARY_HOUR = 4;
 
@@ -222,8 +223,12 @@ export class PianoLessonCeremonyBridge {
     // "no requirement was discharged by this event".
     if (status?.error === true || status?.doneToday !== true) return;
     // Locked out rather than finished — the agenda stops asking, but there is
-    // nothing to announce (see the class doc).
-    if (status?.excused === true) return;
+    // nothing to celebrate (see the class doc). The board still re-reads, so
+    // the circle stops asking at once rather than on its poll.
+    if (status?.excused === true) {
+      announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [learnerId], kind: 'piano-excused' });
+      return;
+    }
 
     // Durable School progress is written before the one-per-day ceremony
     // dedupe. A child may complete two assigned lessons; only one chimes, but

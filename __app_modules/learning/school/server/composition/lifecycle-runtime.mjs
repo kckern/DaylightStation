@@ -578,7 +578,7 @@ try {
   const { YamlReassignmentLog } = await import("../adapters/persistence/YamlReassignmentLog.mjs");
   const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
   const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
-  const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
+  const recordAttestation = new RecordAttestation({ realtime: dependencies.schoolLifecycle.realtime ?? null, log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
   const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   // The grown-up's reading verbs (teacher reading admin design §3). Wired
   // only where the shelf itself is: without a book log there is nothing to
@@ -633,7 +633,7 @@ try {
   // Task 12 (debt M5): reassignments write their own audit trail — a
   // best-effort append that never blocks or unwinds the move itself.
   const schoolReassignmentLog = new YamlReassignmentLog({ configService, logger: rootLogger.child({ module: 'school-reassignments' }) });
-  const reassignEvidence = new ReassignEvidence({
+  const reassignEvidence = new ReassignEvidence({ realtime: dependencies.schoolLifecycle.realtime ?? null,
     datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
     auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
   });
@@ -645,13 +645,13 @@ try {
   const { ReassignSession } = await import("../application/usecases/ReassignSession.mjs");
   const schoolSessionsRepo = dependencies.schoolLifecycle.stores?.sessions ?? null;
   const reassignSession = schoolSessionsRepo
-    ? new ReassignSession({
+    ? new ReassignSession({ realtime: dependencies.schoolLifecycle.realtime ?? null,
       sessions: schoolSessionsRepo, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
       auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
     })
     : null;
   const { RetractTeacherRecord } = await import("../application/usecases/RetractTeacherRecord.mjs");
-  const retractTeacherRecord = new RetractTeacherRecord({
+  const retractTeacherRecord = new RetractTeacherRecord({ realtime: dependencies.schoolLifecycle.realtime ?? null,
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
     teacherGate: schoolTeacherGate,
     notes: schoolTeacherNotes,
@@ -702,7 +702,7 @@ try {
     programIds: () => [...(dependencies.schoolLifecycle.launchers?.keys?.() ?? [])],
     timezone: configService.getTimezone?.() || null,
   }) : null;
-  const setHouseholdCalendar = schoolCalendarStore && liveSchoolCalendar ? new SetHouseholdCalendar({
+  const setHouseholdCalendar = schoolCalendarStore && liveSchoolCalendar ? new SetHouseholdCalendar({ realtime: dependencies.schoolLifecycle.realtime ?? null,
     store: schoolCalendarStore, activities: holidayActivities,
     assignments: dependencies.schoolLifecycle.stores?.assignments ?? null,
     teacherGate: schoolTeacherGate, liveCalendar: liveSchoolCalendar, curriculum: schoolCurriculum,
@@ -715,7 +715,7 @@ try {
     logger: rootLogger.child({ module: 'school-calendar' }),
   }) : null;
   const setPassOverride = dependencies.schoolLifecycle.passOverrides
-    ? new SetPassOverride({ store: dependencies.schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) })
+    ? new SetPassOverride({ realtime: dependencies.schoolLifecycle.realtime ?? null, store: dependencies.schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) })
     : null;
   const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   const milestoneStatuses = new GetMilestoneStatuses({
@@ -723,7 +723,7 @@ try {
     attestations: schoolAttestations,
     timezone: configService.getTimezone?.() || null,
   });
-  const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
+  const recordEnrichment = new RecordEnrichment({ realtime: dependencies.schoolLifecycle.realtime ?? null, log: schoolEnrichmentLog, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   // Wave-4 records: the progress-report read model + the two renderers.
   let getProgressReport = null;
   if (getReportCard) {

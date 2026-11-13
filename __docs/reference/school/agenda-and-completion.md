@@ -514,6 +514,21 @@ first, passing settle that prints its result announces; the scanner opts out
 `scan-graded` banner, and a recovery or resettle is not announced. A failed
 announcement logs `school.session.broadcast-failed`; the grade stands.
 
+**Quiet changes: `record-changed`.** A change to a learner's day with no moment
+for the child in it sends `record-changed` (`learnerId`, `kind`, `studyDay`
+when it has one): the board re-reads that learner and the day is re-checked,
+with no banner. `learnerId: null` is household-wide and re-reads the whole
+roster once. Sources (`kind`): `attestation`, `enrichment`, `retract`,
+`reassign` (both learners), `invalidate`, `pass-override` and `calendar`
+(household-wide), `curriculum-exception` (on apply; household-wide when it
+names no learner), `abandon`, `assignments` (enroll, unenroll, set
+assignments), `piano-excused` and `printed-activity-issued`. Each is sent after
+the change is stored, through `announceRecordChanged`; a failure logs
+`school.record.broadcast-failed` and the change stands. `record-changed` and
+`book-log-changed` are completion inputs, so a correction that finishes or
+reopens a day is seen at once rather than at the hourly reconcile. The
+answer-sheet sweep and the 14-day stale-session sweep do not announce.
+
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner

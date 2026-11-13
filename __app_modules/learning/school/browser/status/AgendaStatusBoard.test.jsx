@@ -754,7 +754,7 @@ describe('a scan updates the board immediately', () => {
     expect(schoolApi.teacherDay.mock.calls.length).toBe(calls);
   });
 
-  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed', 'session-grade-changed', 'assessment-changed', 'media-lesson-complete'])(
+  it.each(['story-read', 'piano-lesson-complete', 'program-day-bypass-changed', 'session-grade-changed', 'assessment-changed', 'media-lesson-complete', 'record-changed'])(
     're-reads immediately on a relevant %s event for a displayed learner',
     async (event) => {
       schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
@@ -835,6 +835,29 @@ describe('a scan updates the board immediately', () => {
     school.cb({ event: 'assessment-changed', learnerId: 'learner1', studyDay: '2026-08-25' });
 
     expect(schoolApi.teacherDay.mock.calls.length).toBe(before);
+  });
+});
+
+
+describe('AgendaStatusBoard — household-wide record changes', () => {
+  beforeEach(() => { vi.clearAllMocks(); wsHandlers.length = 0; });
+
+  it('a change naming no learner re-reads the whole roster once; one for another learner re-reads nothing', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }, { id: 'learner2', name: 'Learner Two' }]} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done')).toHaveLength(2));
+    const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+
+    const beforeOther = schoolApi.agendaPreview.mock.calls.length;
+    school.cb({ event: 'record-changed', learnerId: 'learner9', kind: 'attestation' });
+    expect(schoolApi.agendaPreview.mock.calls.length).toBe(beforeOther);
+
+    school.cb({ event: 'record-changed', learnerId: null, kind: 'calendar' });
+    await waitFor(() => expect(schoolApi.agendaPreview.mock.calls.length).toBe(beforeOther + 2));
   });
 });
 

@@ -1,5 +1,6 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const LEARNER_KINDS = new Set(['excused', 'deferred', 'replaced']);
 const PAUSE_REASONS = new Set(['defective', 'garbled', 'missing', 'broken', 'inappropriate']);
@@ -8,10 +9,10 @@ const text = (value) => typeof value === 'string' && value.trim() ? value.trim()
 const idFor = (value) => `exc_${sha256Text(JSON.stringify(value)).slice(0, 16)}`;
 
 export class ManageCurriculumException {
-  #store; #curriculum; #teacherGate; #clock;
-  constructor({ store, curriculum, teacherGate, clock = () => new Date() } = {}) {
+  #store; #curriculum; #teacherGate; #clock; #realtime;
+  constructor({ store, curriculum, teacherGate, clock = () => new Date(), realtime = null } = {}) {
     if (!store || !curriculum || !teacherGate) throw new Error('ManageCurriculumException requires store, curriculum and teacherGate');
-    this.#store = store; this.#curriculum = curriculum; this.#teacherGate = teacherGate; this.#clock = clock;
+    this.#store = store; this.#curriculum = curriculum; this.#teacherGate = teacherGate; this.#clock = clock; this.#realtime = realtime;
   }
   async list() { return { schema: 'school.curriculum-exceptions/v1', active: await this.#store.active(), history: await this.#store.list() }; }
   async execute({ kind, learnerId = null, targetType, targetId, courseId = null, replacementLessonId = null,
@@ -34,7 +35,10 @@ export class ManageCurriculumException {
     const seed = { kind, learnerId, targetType, targetId, courseId, replacementLessonId, reason, decidedBy, resolvedLessonIds };
     const record = { schema: 'school.curriculum-exception/v1', operation: 'applied', exceptionId: idFor(seed),
       ...seed, decidedAt: this.#clock().toISOString() };
-    if (apply) await this.#store.append(record);
+    if (apply) {
+      await this.#store.append(record);
+      announceRecordChanged(this.#realtime, null, { learnerIds: learnerId ? [learnerId] : [], kind: 'curriculum-exception' });
+    }
     return { schema: 'school.curriculum-exception-preview/v1', applied: apply, exception: record,
       effects: { advancesGate: kind === 'excused' || kind === 'replaced', grantsMastery: false,
         remainsOutstanding: kind === 'deferred', blocksNewWork: kind === 'paused' } };
@@ -46,7 +50,10 @@ export class ManageCurriculumException {
     if (!target) throw new EntityNotFoundError('active curriculum exception', exceptionId);
     const record = { schema: 'school.curriculum-exception/v1', operation: 'retracted', exceptionId,
       reason: reason.trim(), retractedBy, retractedAt: this.#clock().toISOString() };
-    if (apply) await this.#store.append(record);
+    if (apply) {
+      await this.#store.append(record);
+      announceRecordChanged(this.#realtime, null, { learnerIds: target.learnerId ? [target.learnerId] : [], kind: 'curriculum-exception' });
+    }
     return { schema: 'school.curriculum-exception-retraction/v1', applied: apply, retraction: record, previous: target };
   }
 }

@@ -24,6 +24,7 @@ export const SCHOOL_REFRESH_EVENTS = new Set([
   'book-log-changed',
   'piano-lesson-complete',
   'program-day-bypass-changed',
+  'record-changed',
   COINS_CHANGED,
 ]);
 

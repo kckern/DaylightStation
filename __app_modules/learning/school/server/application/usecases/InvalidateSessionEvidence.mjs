@@ -4,6 +4,7 @@ import {
   createAttempt, isAttemptInvalidation,
 } from "../../domain/attempt.mjs";
 import { createEvent, reduceSession } from "../../domain/sessions/sessionEvents.mjs";
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
@@ -33,11 +34,11 @@ function tombstoneFor(attempt, { invalidationId, invalidatedBy, reason, invalida
 
 /** Append-only removal of a misattributed machine scan from effective learning evidence. */
 export class InvalidateSessionEvidence {
-  #sessions; #datastore; #teacherGate; #clock; #logger; #trustedAuthority;
+  #sessions; #datastore; #teacherGate; #clock; #logger; #trustedAuthority; #realtime;
 
   constructor({
     sessions, datastore, teacherGate, trustedAuthority = null,
-    clock = () => new Date(), logger = console,
+    clock = () => new Date(), logger = console, realtime = null,
   } = {}) {
     if (!sessions || !datastore || !teacherGate) {
       throw new Error('InvalidateSessionEvidence requires sessions, datastore, and teacherGate');
@@ -48,6 +49,7 @@ export class InvalidateSessionEvidence {
     this.#trustedAuthority = trustedAuthority;
     this.#clock = clock;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   async execute({
@@ -127,6 +129,7 @@ export class InvalidateSessionEvidence {
         sessionId, learnerId: state.learnerId, invalidationId: id,
         invalidatedBy: invalidatedBy.trim(), attemptCount: attemptIds.length,
       });
+      announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [state.learnerId], kind: 'invalidate', studyDay: state.studyDay ?? null });
     }
     return {
       schema: 'school.evidence-invalidation-receipt/v1', applied: apply, idempotent: false,

@@ -4,17 +4,19 @@
  * stays untouched; the override is data with an audit trail.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 export class SetPassOverride {
-  #store; #teacherGate; #clock; #logger;
+  #store; #teacherGate; #clock; #logger; #realtime;
 
-  constructor({ store, teacherGate, clock = () => new Date(), logger = console } = {}) {
+  constructor({ store, teacherGate, clock = () => new Date(), logger = console, realtime = null } = {}) {
     if (!store) throw new Error('SetPassOverride requires store');
     if (!teacherGate) throw new Error('SetPassOverride requires teacherGate');
     this.#store = store;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   async execute({ unitId, percent = null, editedBy = null } = {}) {
@@ -27,6 +29,7 @@ export class SetPassOverride {
     this.#logger.info?.('school.pass-override.set', {
       unitId, percent, editedBy, cleared: percent === null,
     });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [], kind: 'pass-override' });
     return { unitId, percent };
   }
 }

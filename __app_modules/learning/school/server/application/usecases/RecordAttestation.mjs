@@ -5,14 +5,16 @@
  * milestones honor it as a pass, the report card never reads it.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 export class RecordAttestation {
-  #log; #teacherGate; #clock; #idGen; #notes;
+  #log; #teacherGate; #clock; #idGen; #notes; #realtime;
 
-  constructor({ log, teacherGate, notes = null, clock = () => new Date(), idGen = () => `att_${Math.random().toString(36).slice(2, 10)}` } = {}) {
+  constructor({ log, teacherGate, notes = null, clock = () => new Date(), idGen = () => `att_${Math.random().toString(36).slice(2, 10)}`, realtime = null } = {}) {
     if (!log) throw new Error('RecordAttestation requires log');
     if (!teacherGate) throw new Error('RecordAttestation requires teacherGate');
     this.#log = log;
+    this.#realtime = realtime;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#notes = notes;
@@ -40,6 +42,7 @@ export class RecordAttestation {
         learnerId, note: `A grown-up verified you completed this unit: ${unitId}. It counts.`,
       });
     } catch { /* best-effort */ }
+    announceRecordChanged(this.#realtime, null, { learnerIds: [learnerId], kind: 'attestation' });
     return { entry };
   }
 }

@@ -17,6 +17,7 @@
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { statesAccepting } from "../../domain/sessions/sessionEvents.mjs";
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 /**
  * The one legality check for "may this session still be abandoned" —
@@ -29,7 +30,7 @@ function isAbandonable(state) {
 }
 
 export class MarkSessionAbandoned {
-  #sessions; #teacherGate; #learnerDirectory; #answerSheets; #clock; #logger;
+  #sessions; #teacherGate; #learnerDirectory; #answerSheets; #clock; #logger; #realtime;
 
   /**
    * `answerSheets` (`SweepAnswerSheets`-shaped, optional) frees the session's
@@ -37,7 +38,7 @@ export class MarkSessionAbandoned {
    * child's next sheet lands on those rows instead of past them.
    */
   constructor({
-    sessions, teacherGate, learnerDirectory = null, answerSheets = null, clock = () => new Date(), logger = console,
+    sessions, teacherGate, learnerDirectory = null, answerSheets = null, clock = () => new Date(), logger = console, realtime = null,
   } = {}) {
     if (!sessions) throw new Error('MarkSessionAbandoned requires sessions');
     if (!teacherGate) throw new Error('MarkSessionAbandoned requires teacherGate');
@@ -47,6 +48,7 @@ export class MarkSessionAbandoned {
     this.#answerSheets = answerSheets;
     this.#clock = clock;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   async execute({ sessionId, learnerId, reason, decidedBy = null } = {}) {
@@ -77,6 +79,7 @@ export class MarkSessionAbandoned {
     });
     this.#logger.info?.('school.session.abandoned', { sessionId, learnerId, decidedBy, reason: reason.trim() });
     await this.#answerSheets?.vacateSession({ sessionId, unitId: row.unitId ?? null, reason: 'abandoned' });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [learnerId], kind: 'abandon' });
     return { sessionId, state: 'abandoned' };
   }
 

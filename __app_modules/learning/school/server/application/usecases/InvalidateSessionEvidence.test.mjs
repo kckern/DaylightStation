@@ -90,3 +90,16 @@ describe('InvalidateSessionEvidence', () => {
     }, { authority })).resolves.toMatchObject({ applied: false, attemptIds: ['att_1', 'att_2'] });
   });
 });
+
+describe('InvalidateSessionEvidence — the tablet hears an applied invalidation', () => {
+  it('announces the learner on apply, and nothing on a preview', async () => {
+    const f = fixture();
+    const realtime = { recordChanged: vi.fn() };
+    const useCase = new InvalidateSessionEvidence({ ...f, realtime, clock: () => new Date('2026-08-31T18:00:00.000Z') });
+    const request = { sessionId: SESSION, reason: 'scripture bubbles landed on math', invalidatedBy: 'parent' };
+    await useCase.execute(request);
+    expect(realtime.recordChanged).not.toHaveBeenCalled();
+    const result = await useCase.execute({ ...request, apply: true });
+    expect(realtime.recordChanged).toHaveBeenCalledWith(expect.objectContaining({ learnerIds: [result.learnerId], kind: 'invalidate' }));
+  });
+});

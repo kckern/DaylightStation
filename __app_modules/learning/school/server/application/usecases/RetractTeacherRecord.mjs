@@ -6,14 +6,15 @@
  * survives; only its effect ends.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const STORES = ['enrichment', 'attestation', 'note'];
 
 export class RetractTeacherRecord {
-  #stores; #teacherGate; #clock; #notes; #logger;
+  #stores; #teacherGate; #clock; #notes; #logger; #realtime;
 
   /** @param {{stores: {enrichment, attestation, note}, teacherGate, clock?}} deps */
-  constructor({ stores, teacherGate, notes = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ stores, teacherGate, notes = null, clock = () => new Date(), logger = console, realtime = null } = {}) {
     if (!stores) throw new Error('RetractTeacherRecord requires stores');
     if (!teacherGate) throw new Error('RetractTeacherRecord requires teacherGate');
     this.#stores = stores;
@@ -21,6 +22,7 @@ export class RetractTeacherRecord {
     this.#clock = clock;
     this.#notes = notes;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   async execute({ kind, entryId, retractedBy = null } = {}) {
@@ -55,6 +57,7 @@ export class RetractTeacherRecord {
     this.#logger.info?.('school.record.retracted', {
       kind, entryId, retractedBy, learnerId: target?.learnerId ?? null,
     });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: target?.learnerId ? [target.learnerId] : (target?.learnerIds ?? []), kind: 'retract' });
     return { retracted: entryId, kind };
   }
 }

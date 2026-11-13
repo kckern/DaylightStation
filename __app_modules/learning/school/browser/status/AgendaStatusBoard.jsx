@@ -775,6 +775,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     const event = payload?.event;
     if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
     const learnerId = payload?.learnerId ?? null;
+    // A household-wide change (the calendar, a pass mark) names nobody and
+    // can move every card: re-read the whole roster, once.
+    if (event === 'record-changed' && learnerId == null) {
+      schoolLog.selfService('status-board.refresh', { source: 'school', event, learnerId: null, kind: payload?.kind ?? null });
+      refresh(null);
+      return;
+    }
     if (!learnerId || !rosterIds.has(learnerId)) return;
     if (event === COINS_CHANGED) {
       coinsBurst.poke();

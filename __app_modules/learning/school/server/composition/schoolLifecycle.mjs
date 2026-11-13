@@ -769,7 +769,7 @@ export async function createSchoolLifecycle({
   // debounces a re-scanned session ticket in IssueDocument: the launcher prints
   // with `printPdf` directly, so this is the only brake on a repeated ticket.
   const printedActivityCooldownMinutes = cfg.printing?.printCooldownMinutes;
-  launchers.set(PRINTED_ACTIVITY_PROGRAM_ID, new PrintedActivityProgramLauncher({
+  launchers.set(PRINTED_ACTIVITY_PROGRAM_ID, new PrintedActivityProgramLauncher({ realtime: schoolRealtime,
     assignments: stores.assignments, store: stores.printedActivities, platforms: worksheetPlatforms,
     printer: laserPrinter, timezone, clock, rng: draw, logger,
     ...(printedActivityCooldownMinutes == null ? {} : { reprintCooldownMs: printedActivityCooldownMinutes * 60_000 }),
@@ -912,7 +912,7 @@ export async function createSchoolLifecycle({
   const { YamlCurriculumExceptionStore } = await import("../adapters/persistence/YamlCurriculumExceptionStore.mjs");
   const { ManageCurriculumException } = await import("../application/usecases/ManageCurriculumException.mjs");
   const curriculumExceptionStore = new YamlCurriculumExceptionStore({ configService });
-  const manageCurriculumException = new ManageCurriculumException({ store: curriculumExceptionStore, curriculum, teacherGate, clock });
+  const manageCurriculumException = new ManageCurriculumException({ realtime: schoolRealtime, store: curriculumExceptionStore, curriculum, teacherGate, clock });
   // The Teacher Console's write side of the day-bypass ledger the piano
   // launcher already reads (constructed above). `eventBus` is optional here
   // for the same reason it is everywhere else in this file: no bus means no
@@ -1440,11 +1440,11 @@ export async function createSchoolLifecycle({
   const sweepAnswerSheets = new SweepAnswerSheets({
     allocationStore, sessions: stores.sessions, issuedArtifacts, teacherGate, clock, logger,
   });
-  const markSessionAbandoned = new MarkSessionAbandoned({
+  const markSessionAbandoned = new MarkSessionAbandoned({ realtime: schoolRealtime,
     sessions: stores.sessions, teacherGate, learnerDirectory, answerSheets: sweepAnswerSheets, clock, logger,
   });
   const worksheetRecoveryAuthority = Object.freeze({ kind: 'worksheet-attribution-recovery' });
-  const invalidateSessionEvidence = attemptDatastore ? new InvalidateSessionEvidence({
+  const invalidateSessionEvidence = attemptDatastore ? new InvalidateSessionEvidence({ realtime: schoolRealtime,
     sessions: stores.sessions,
     datastore: attemptDatastore,
     teacherGate,

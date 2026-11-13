@@ -128,3 +128,35 @@ it('a finished video is broadcast and re-checks the day', async () => {
   await bus.handlers.get('school')({ event: 'media-lesson-complete', learnerId: 'kid' });
   expect(change).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid', event: 'media-lesson-complete' }));
 });
+
+describe('record-changed', () => {
+  it('sends one broadcast per learner, and one household-wide one when no learner is named', () => {
+    const bus = busDouble();
+    const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+    gateway.recordChanged({ learnerIds: ['a', 'b', 'a'], kind: 'reassign' });
+    gateway.recordChanged({ learnerIds: [], kind: 'calendar' });
+    expect(bus.sent.filter((x) => x.payload.event === 'record-changed').map((x) => x.payload)).toEqual([
+      { event: 'record-changed', learnerId: 'a', kind: 'reassign' },
+      { event: 'record-changed', learnerId: 'b', kind: 'reassign' },
+      { event: 'record-changed', learnerId: null, kind: 'calendar' },
+    ]);
+  });
+
+  it('an assignment change also reaches the tablet', () => {
+    const bus = busDouble();
+    const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+    gateway.assignmentsChanged({ learnerId: 'kid' });
+    expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'record-changed', learnerId: 'kid', kind: 'assignments' } });
+  });
+
+  it('record-changed and book-log-changed re-check that learner\'s day; a household-wide change does not', async () => {
+    const bus = busDouble();
+    const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+    const change = vi.fn(); gateway.onCompletionInputChanged(change);
+    const school = bus.handlers.get('school');
+    await school({ event: 'record-changed', learnerId: 'kid', kind: 'attestation' });
+    await school({ event: 'book-log-changed', learnerId: 'kid' });
+    await school({ event: 'record-changed', learnerId: null, kind: 'calendar' });
+    expect(change.mock.calls.map(([fact]) => fact.event)).toEqual(['record-changed', 'book-log-changed']);
+  });
+});

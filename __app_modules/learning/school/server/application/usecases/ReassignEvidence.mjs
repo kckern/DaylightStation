@@ -12,13 +12,14 @@
  * never block or unwind it (same posture as `#tellKids` below).
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { announceRecordChanged } from "./announceRecordChanged.mjs";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class ReassignEvidence {
-  #datastore; #teacherGate; #clock; #notes; #auditLog; #logger;
+  #datastore; #teacherGate; #clock; #notes; #auditLog; #logger; #realtime;
 
-  constructor({ datastore, teacherGate, notes = null, auditLog = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ datastore, teacherGate, notes = null, auditLog = null, clock = () => new Date(), logger = console, realtime = null } = {}) {
     if (!datastore) throw new Error('ReassignEvidence requires datastore');
     if (!teacherGate) throw new Error('ReassignEvidence requires teacherGate');
     this.#datastore = datastore;
@@ -27,6 +28,7 @@ export class ReassignEvidence {
     this.#notes = notes;
     this.#auditLog = auditLog;
     this.#logger = logger;
+    this.#realtime = realtime;
   }
 
   async execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null } = {}) {
@@ -50,6 +52,7 @@ export class ReassignEvidence {
     // No silent verbs about children (student-advocacy A5): both kids hear
     // what happened to the record in their own feed.
     await this.#tellKids({ fromLearnerId, toLearnerId, day, reassignedBy });
+    announceRecordChanged(this.#realtime, this.#logger, { learnerIds: [fromLearnerId, toLearnerId], kind: 'reassign', studyDay: day });
     return { moved, fromLearnerId, toLearnerId, day, assessmentId };
   }
 
