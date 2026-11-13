@@ -39,6 +39,7 @@ producer, UTC timestamps, and the same event ringing two to six times.
 | `__app_modules/learning/school/server/domain/notifications/schoolPush.mjs` | `composeSchoolPush(event)`: every school outcome's copy, or `null` for no push |
 | `__backend/src/2_domains/shutdown/shutdownPush.mjs` | `composeKioskShutdownPush` |
 | `__backend/src/2_domains/notification/push/harvesterHealthPush.mjs` | `composeHarvesterHealthPush`: a data source failing, stale or recovered (`__docs/reference/harvesters/health-and-reconnect.md`) |
+| `__app_modules/learning/piano/server/domain/lessons/presenceLadderPush.mjs` | `composePresenceLadderPush`: piano presence ladder — a lesson sitting reached the top check-in rung (🎹, School needs you, high; tag `piano-presence-{userId}-{day}`; off unless `videos.practice.presence_ladder.notify_top_rung`; `__docs/reference/piano/lesson-engagement.md`) |
 | Producers that call `pushData` directly | NFC unknown tag (`TriggerDispatchService`), TV power failure (`WakeAndLoadService`), story time (`NotifyReadingSessionFailure`), DoNow approval (`HaApprovalNotifier`) |
 
 ## School pushes
