@@ -164,6 +164,8 @@ function SkylineInvadersGame({ onClose }) {
   const [rosterIndex, setRosterIndex] = useState(0);
   // Likewise the method cursor: shown once a key or the gamepad is driving the setup.
   const [methodCursor, setMethodCursor] = useState(false);
+  const methodCursorRef = useRef(methodCursor);
+  methodCursorRef.current = methodCursor;
   const gamepadConnected = useGamepadConnected();
   const [game, setGame] = useState(null);
   const [effects, setEffects] = useState(EMPTY_EFFECTS);
@@ -547,11 +549,12 @@ function SkylineInvadersGame({ onClose }) {
       const aimNow = tracker.sample();
       // The cannon not following: out of view for a while, or in view with the
       // cannon stuck in one lane. Said on screen, with the way back to the setup.
-      if (now.method !== MANUAL_METHOD && poseStatusRef.current.state === 'detecting') {
+      {
+        const watching = now.method !== MANUAL_METHOD && poseStatusRef.current.state === 'detecting';
         const t = previous.time;
         if (aimNow.lost) { help.lostAt ??= t; help.lane = null; } else help.lostAt = null;
         if (aimNow.lane !== help.lane) { help.lane = aimNow.lane; help.laneAt = t; }
-        const kind = help.lostAt !== null && t - help.lostAt >= INVADERS_TUNABLES.aimHelpLostS ? 'lost'
+        const kind = !watching ? null : help.lostAt !== null && t - help.lostAt >= INVADERS_TUNABLES.aimHelpLostS ? 'lost'
           : !aimNow.lost && aimNow.mode === 'pose' && t - help.laneAt >= INVADERS_TUNABLES.aimHelpStuckS ? 'stuck' : null;
         if (kind !== help.shown) {
           help.shown = kind;
@@ -776,6 +779,8 @@ function SkylineInvadersGame({ onClose }) {
   // visit, by the Controls key on the wave list, and by Controls on the pause
   // screen (or the aim-help key in a round, which pauses first). The mat does
   // nothing here except as the sweep's fire step.
+  // A sweep's pose trace (kind `tryout`) runs only outside a round; over a paused round the round's trace stays open.
+  const endSweepTrace = (reason) => { if (setupRef.current.from !== 'paused') recorder.end(reason); };
   const openSetup = useCallback((from, source) => {
     const now = live.current;
     setupIdRef.current = newRunId();
@@ -789,7 +794,7 @@ function SkylineInvadersGame({ onClose }) {
   const closeSetup = useCallback((how) => {
     const now = setupRef.current;
     if (!now.open) return;
-    recorder.end('tryout-closed');
+    endSweepTrace('tryout-closed');
     log.info('skyline_invaders.setup.closed', { setupId: setupIdRef.current, from: now.from, stage: now.stage, how, method: now.method, shooterId: live.current.shooterId });
     now.actions.close();
   }, [log, recorder]);
@@ -797,7 +802,8 @@ function SkylineInvadersGame({ onClose }) {
     const now = setupRef.current;
     if (!SETUP_METHODS.includes(picked)) return;
     log.info('skyline_invaders.setup.method_chosen', { setupId: setupIdRef.current, shooterId: live.current.shooterId, method: picked, how, previous: live.current.method });
-    if (picked !== MANUAL_METHOD) recorder.begin({ kind: 'tryout', runId: setupIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: picked, card: GESTURES.indexOf(picked) });
+    // Over a paused round the recorder keeps the round's own trace: a sweep there is not recorded.
+    if (picked !== MANUAL_METHOD && now.from !== 'paused') recorder.begin({ kind: 'tryout', runId: setupIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: picked, card: GESTURES.indexOf(picked) });
     now.actions.choose(picked);
   }, [log, recorder]);
   // The method passed its test (or the gamepad was chosen): it is theirs, and verified for this visit.
@@ -806,7 +812,7 @@ function SkylineInvadersGame({ onClose }) {
     const { from } = setupRef.current;
     const riderId = now.shooterId;
     const previous = now.method;
-    recorder.end('tryout-chosen');
+    endSweepTrace('tryout-chosen');
     setupRef.current.actions.close();
     if (!riderId) return;
     setPickedControls((current) => ({ ...current, [riderId]: passed }));
@@ -934,11 +940,15 @@ function SkylineInvadersGame({ onClose }) {
         break;
       case 'method-prev': setupRef.current.actions.move(-1); setMethodCursor(true); break;
       case 'method-next': setupRef.current.actions.move(1); setMethodCursor(true); break;
-      case 'method-choose': chooseMethod(setupRef.current.method, source); break;
+      case 'method-choose':
+        // Under touch no cursor is drawn: a key's first accept shows it, never chooses an unseen tile.
+        if (!methodCursorRef.current) { setMethodCursor(true); break; }
+        chooseMethod(setupRef.current.method, source);
+        break;
       case 'setup-close': closeSetup(source); break;
       case 'sweep-retry': setupRef.current.actions.retry(); break;
       case 'sweep-other':
-        recorder.end('tryout-closed');
+        endSweepTrace('tryout-closed');
         log.info('skyline_invaders.setup.other', { setupId: setupIdRef.current, shooterId: now.shooterId, method: setupRef.current.method, step: setupRef.current.test ? setupStepId(setupRef.current.test) : null, status: setupRef.current.status });
         setupRef.current.actions.other();
         break;

@@ -173,11 +173,13 @@ export function pressForMenuKey(screen, action) {
   if (screen === 'locked') return { accept: at(1), back: at(3), down: at(6) }[action] ?? null;
   if (screen === 'sound') return { left: at(1), right: at(2), back: at(3), accept: at(3) }[action] ?? null;
   if (screen === 'paused') return { accept: at(1), back: at(1), right: at(2), up: at(4), down: at(6) }[action] ?? null;
-  if (screen === 'sweep') return { accept: at(1), back: at(3), down: at(6) }[action] ?? null;
+  // The setup screens: down is not Exit (on the method grid it reads as "the row below"); touch Exit stays.
+  if (screen === 'sweep') return { accept: at(1), back: at(3) }[action] ?? null;
   if (screen === 'error') return { accept: at(1), back: at(6), down: at(6) }[action] ?? null;
   if (screen === 'loading') return { back: at(6), down: at(6) }[action] ?? null;
   if (screen === 'roster') return { left: at(1), right: at(2), back: at(3), accept: at(4) }[action] ?? null;
-  if (screen === 'method' || screen === 'ready') return { left: at(1), right: at(2), back: at(3), accept: at(4), down: at(6) }[action] ?? null;
+  if (screen === 'method') return { left: at(1), right: at(2), back: at(3), accept: at(4) }[action] ?? null;
+  if (screen === 'ready') return { left: at(1), right: at(2), back: at(3), accept: at(4), down: at(6) }[action] ?? null;
   // Waves and result: up is Controls, down is Exit.
   return { left: at(1), right: at(2), back: at(3), accept: at(4), up: at(5), down: at(6) }[action] ?? null;
 }

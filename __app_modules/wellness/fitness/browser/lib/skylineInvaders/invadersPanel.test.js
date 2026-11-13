@@ -88,7 +88,8 @@ describe('controls and exit: keys of their own, past the four panel positions', 
     expect(invadersControls(view)[2].hint).toBe('Back to the waves');
     expect(invadersControls({ ...view, setupFrom: 'paused' })[2].hint).toBe('Back to the round');
     expect(stompAction(view)).toBeNull();
-    expect(['left', 'right', 'back', 'accept', 'down'].map((action) => pressForMenuKey('method', action)[0])).toEqual([1, 2, 3, 4, 6]);
+    expect(['left', 'right', 'back', 'accept'].map((action) => pressForMenuKey('method', action)[0])).toEqual([1, 2, 3, 4]);
+    expect(pressForMenuKey('method', 'down')).toBeNull();     // a grid: down reads as the row below, never as leaving
   });
 
   it('sweep: Choose another while it runs; Try again once a step was not detected; nothing once it passed', () => {
@@ -104,7 +105,7 @@ describe('controls and exit: keys of their own, past the four panel positions', 
     expect(stompAction(running)).toBeNull();
     expect(pressForMenuKey('sweep', 'accept')).toEqual([1, 'single']);
     expect(pressForMenuKey('sweep', 'back')).toEqual([3, 'single']);
-    expect(pressForMenuKey('sweep', 'down')).toEqual([6, 'single']);
+    expect(pressForMenuKey('sweep', 'down')).toBeNull();
   });
 
   it('paused: Controls changes the method mid-round', () => {
@@ -134,7 +135,7 @@ describe('controls and exit: keys of their own, past the four panel positions', 
   });
 
   it('exit on the keys and the gamepad: down everywhere, and back on the first screen', () => {
-    for (const screen of ['who', 'waves', 'locked', 'paused', 'result', 'error', 'loading', 'ready', 'method', 'sweep']) expect(pressForMenuKey(screen, 'down')).toEqual([6, 'single']);
+    for (const screen of ['who', 'waves', 'locked', 'paused', 'result', 'error', 'loading', 'ready']) expect(pressForMenuKey(screen, 'down')).toEqual([6, 'single']);
     expect(pressForMenuKey('who', 'back')).toEqual([6, 'single']);
     expect(pressForMenuKey('error', 'back')).toEqual([6, 'single']);
     // Elsewhere back keeps its own meaning.

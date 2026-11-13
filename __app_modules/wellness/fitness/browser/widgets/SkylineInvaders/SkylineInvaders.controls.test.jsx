@@ -537,6 +537,25 @@ describe('Skyline Invaders joint recorder', () => {
     expect(shot[0]).toMatchObject({ kind: 'round', runId, gesture: 'drag' });
   });
 
+  it('a setup opened from a paused round keeps the round\'s own trace going', async () => {
+    await mount();
+    await status('detecting');
+    await start();
+    await hold(wiperPose(10), 500);
+    await keyDown('Escape');
+    await pad(4);
+    await tapMethod('drag');
+    await pad(3);                                   // Choose another
+    await pad(3);                                   // Back to the pause screen
+    await pad(1);                                   // Resume
+    await hold(wiperPose(10), 1000);
+    await f.seconds(30);
+    await flush();
+    const round = traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'round');
+    expect(round.at(-1).reason).toBe('round-end');
+    expect(traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'tryout' && batch.runId !== logged('skyline_invaders.setup.opened')[0].setupId)).toHaveLength(0);
+  });
+
   it('flushes the traces when the round is left early', async () => {
     const onClose = vi.fn();
     await mount({ onClose });

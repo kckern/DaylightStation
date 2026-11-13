@@ -341,20 +341,7 @@
   .skyline-invaders__meter-hold span { transition: none; }
 }
 
-// ── Pick your controls ──────────────────────────────────────────────────────
-// One card per gesture in the menu window, set at the top of the screen so the
-// practice targets, the skyline and the cannon stay in view under it.
-.skyline-invaders[data-screen="controls"] .skyline-invaders__menu { align-content: start; padding-top: .8vw; }
-.skyline-invaders[data-screen="controls"] .skyline-invaders__window { width: min(100%, max(76rem, 88vw)); }
-// The card is kept short and its keys low-profile, so the targets under it stay in view.
-.skyline-invaders[data-screen="controls"] .skyline-menus { padding-top: 1vw; padding-bottom: 1vw; }
-.skyline-invaders[data-screen="controls"] .skyline-invaders__keys { margin-top: .8vw; }
-.skyline-invaders[data-screen="controls"] .skyline-invaders__key { min-height: 4.4rem; padding: .4rem .5rem; flex-direction: row; flex-wrap: wrap; column-gap: .8rem; }
-.skyline-invaders[data-screen="controls"] .skyline-invaders__key small { flex-basis: 100%; }
-.skyline-invaders__controls-body { display: flex; align-items: center; gap: 2vw; margin-top: .8vw; }
-.skyline-invaders__controls-text { flex: 1; min-width: 0; display: grid; gap: .6vw; h1 { margin: 0; } p { margin: 0; } }
-.skyline-invaders__controls-how { font-size: var(--sg-text-m); font-weight: 900; line-height: 1.35; }
-.skyline-invaders__controls-task { color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
+// ── The setup's shared parts: the step clock (the sweep) and the gesture demo ──
 .skyline-invaders__controls-timer { height: calc(2 * var(--sg-px)); background: var(--sg-ink); span { display: block; height: 100%; background: var(--sg-gold); transition: width 1s linear; } }
 // The gesture demo: a stick figure, drawn in the window's own inks.
 .skyline-invaders__demo {

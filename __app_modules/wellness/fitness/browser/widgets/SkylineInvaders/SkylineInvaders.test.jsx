@@ -315,6 +315,14 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     await key('ArrowLeft');
     await key('Escape');
     expect(menuScreen()).toBe('waves');
+    await pad(5);                                  // opened by touch: no cursor drawn
+    expect(document.querySelector('.skyline-invaders__method[aria-pressed="true"]')).toBeNull();
+    await key('Enter');                            // a foot-pad press only shows the cursor, never chooses
+    expect(menuScreen()).toBe('method');
+    expect(document.querySelector('.skyline-invaders__method[aria-pressed="true"]').dataset.method).toBe('wiper');
+    await key('ArrowDown');                        // not Exit on the grid
+    expect(menuScreen()).toBe('method');
+    await key('Escape');
     await key('ArrowUp');
     expect(menuScreen()).toBe('method');
     await key('Enter');                            // the cursor's method: Wipers

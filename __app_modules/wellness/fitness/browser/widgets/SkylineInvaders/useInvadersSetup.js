@@ -107,8 +107,10 @@ export default function useInvadersSetup({ tracker, onPassed, onEvent, onTick, t
       }
       testRef.current = next;
       const leftS = setupSecondsLeft(next, at, opts);
-      setState((view) => (view.test === prior && view.lane === sample.lane && view.lost === lost && view.leftS === leftS && next === prior
-        ? view : { ...view, test: next, lane: sample.lane, lost, leftS }));
+      // Re-render only when something drawn changed: the whole shell sits under this state.
+      const same = (view) => view.lane === sample.lane && view.lost === lost && view.leftS === leftS && view.test
+        && view.test.step === next.step && view.test.status === next.status && (view.test.onSince === null) === (next.onSince === null);
+      setState((view) => (same(view) ? view : { ...view, test: next, lane: sample.lane, lost, leftS }));
     }, POLL_MS);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

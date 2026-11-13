@@ -68,7 +68,8 @@ export function advanceSetupTest(test, { lane, lost = false, at }, over) {
       if (at - onSince >= holdMs) return nextStep(next, at, onSince - test.stepStartedAt);
     }
   }
-  if (at - test.stepStartedAt >= timeoutMs) return { ...next, status: 'timeout', onSince: null };
+  // A cannon resting on its edge when the clock runs out gets to finish its hold.
+  if (at - test.stepStartedAt >= timeoutMs && next.onSince === null) return { ...next, status: 'timeout', onSince: null };
   return next;
 }
 
@@ -82,9 +83,11 @@ export function fireSetupTest(test, at) {
 export function retrySetupTest(test, at) {
   if (!test || test.status !== 'timeout') return test;
   // Where the cannon was left counts: one that stopped short of the edge is already away from it.
+  // A cannon already on the edge it is asked for starts its hold now.
   const edge = SETUP_STEPS[test.step].lane;
-  const away = edge !== null && !test.lost && test.lane !== null && test.lane !== edge;
-  return { ...test, status: 'running', stepStartedAt: at, onSince: null, away, attempt: test.attempt + 1 };
+  const seen = edge !== null && !test.lost && test.lane !== null;
+  const onEdge = seen && test.lane === edge;
+  return { ...test, status: 'running', stepStartedAt: at, onSince: onEdge ? at : null, away: seen, attempt: test.attempt + 1 };
 }
 
 /** The current step's id (`left` | `right` | `fire`). */

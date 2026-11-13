@@ -64,6 +64,22 @@ describe('the test sweep', () => {
     expect(setupStepId(t)).toBe('fire');
   });
 
+  it('a cannon resting on its edge when the clock runs out finishes its hold; after Try again one already there counts', () => {
+    let t = createSetupTest('wiper', 0);
+    t = run(t, 3, 0, 14500);
+    t = run(t, 0, 14700, 200);          // arrives at 14.7 s
+    expect(t.status).toBe('running');
+    t = run(t, 0, 15000, 200);
+    expect(setupStepId(t)).toBe('right');
+    // Timed out short of the right edge, then the cannon gets there: Try again counts it from now.
+    t = run(t, 5, 15300, 15100);
+    expect(t.status).toBe('timeout');
+    t = { ...t, lane: 7 };
+    t = retrySetupTest(t, 40000);
+    t = run(t, 7, 40100, 400);
+    expect(setupStepId(t)).toBe('fire');
+  });
+
   it('draws the edge targets: the step in hand lit, a done one reached', () => {
     let t = createSetupTest('wings', 0);
     expect(setupTargets(t)).toEqual([
