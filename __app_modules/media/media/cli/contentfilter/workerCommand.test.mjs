@@ -111,4 +111,24 @@ describe('runWorker (remote)', () => {
     expect(signal.aborted).toBe(true);
     expect(api.calls.find((c) => c[0] === 'complete')).toBeUndefined();
   });
+
+  it('a failed run keeps its transcript for the next run of the film (2026-11-12: a retry re-transcribed for an hour)', async () => {
+    const cacheDir = mkdtempSync(path.join(os.tmpdir(), 'cf-tx-'));
+    const wordsOf = (ctx) => path.join(ctx.mediaDir, 'content-filter', 'refine', '77');
+    let seen = null;
+    const api1 = fakeApi([claimed()]);
+    await runWorker({ ...opts(api1, async (name, ctx) => {
+      if (name === 'refine') { mkdirSync(wordsOf(ctx), { recursive: true }); writeFileSync(path.join(wordsOf(ctx), 'words-9.json'), '{"words":[1]}'); }
+      return name === 'scenes' ? { code: 1, stderrTail: 'boom' } : { code: 0 };
+    }), transcriptCacheDir: cacheDir });
+    expect(api1.result.status).toBe('failed');
+    const second = claimed(); second.inputs = { ...second.inputs, transcripts: {} }; // the app has none: the failed run never reported one
+    const api2 = fakeApi([second]);
+    await runWorker({ ...opts(api2, async (name, ctx) => {
+      if (name === 'refine') seen = existsSync(path.join(wordsOf(ctx), 'words-9.json')) ? readFileSync(path.join(wordsOf(ctx), 'words-9.json'), 'utf8') : null;
+      return { code: 0 };
+    }), transcriptCacheDir: cacheDir });
+    expect(seen).toBe('{"words":[1]}');
+  });
 });
+

@@ -1075,6 +1075,8 @@ async function main() {
     const cliPath = new URL(import.meta.url).pathname;
     await runWorker({
       api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
+      // Beside the 480p copies: transcripts survive a failed run (runWorker keeps and restores them).
+      transcriptCacheDir: path.join(process.env.CONTENT_FILTER_PROXY_DIR || path.join(os.tmpdir(), 'daylight-cf-proxy'), 'transcripts'),
       runStep: (name, ctx) => new ChildProcessContentFilterCli({ cliPath, env: { DAYLIGHT_DATA_DIR: ctx.dataDir, DAYLIGHT_MEDIA_DIR: ctx.mediaDir } })
         .run(name, ctx.args, { logPath: path.join(ctx.dir, 'run.log'), timeoutMs: STEP_TIMEOUT_MS[name] ?? 0, onLine: ctx.onLine }),
     });

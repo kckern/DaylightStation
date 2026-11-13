@@ -7,7 +7,7 @@
  * set PLEX_HOST/PLEX_TOKEN and the Jev key in the environment.
  * ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
@@ -102,7 +102,7 @@ function clearStagedNudges(overridePath, ids) {
  *   log?: (event: string, data?: object) => void, ticks?: number }} p
  */
 export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = null, pollMs = WORKER_POLL_MS,
-  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), schedule = (fn, ms) => setTimeout(fn, ms), log = () => {}, ticks = Infinity, now = Date.now }) {
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), schedule = (fn, ms) => setTimeout(fn, ms), log = () => {}, ticks = Infinity, now = Date.now, transcriptCacheDir = null }) {
   log('content-filter.worker.started', { owner });
   for (let i = 0; i < ticks; i++) {
     let claimed = null;
@@ -119,6 +119,11 @@ export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = 
     let failure = null; let exported = false;
     try {
       const stage = stageRun(claimed, { root: stageRoot, realDataDir });
+      // Transcripts outlive the run: a failed run's is kept here and given to the next run of the
+      // film (2026-11-12: a retry after a scenes failure spent another hour transcribing).
+      const wordsDir = path.join(stage.mediaDir, 'content-filter', 'refine', rk);
+      const keepWords = () => moveWords(wordsDir, transcriptCacheDir, rk, 'keep');
+      moveWords(wordsDir, transcriptCacheDir, rk, 'restore');
       for (const name of claimed.steps) {
         await api.progress(rk, run.id, { owner, step: { name, status: 'running' } });
         if (name === 'refine' && run.kind === 'send-back') clearStagedNudges(stage.overridePath, run.cues);
@@ -143,6 +148,7 @@ export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = 
         await api.progress(rk, run.id, { owner, step: { name, status: 'done' } });
       }
       beating = false;
+      keepWords();
       if (stopped) {
         log('content-filter.worker.cancelled', { owner, ratingKey: rk, runId: run.id });
         rmSync(stage.dir, { recursive: true, force: true });
@@ -176,3 +182,23 @@ export function httpWorkerApi(appUrl, { fetchImpl = fetch } = {}) {
     complete: (rk, runId, body) => post(`${base}/${rk}/jobs/${encodeURIComponent(runId)}/complete`, body),
   };
 }
+
+/** Copy words-<part>.json between a run's stage and the worker's cache (`<rk>-words-<part>.json`); never overwrites. */
+function moveWords(wordsDir, cacheDir, rk, way) {
+  if (!cacheDir) return;
+  try {
+    mkdirSync(cacheDir, { recursive: true });
+    if (way === 'keep') {
+      if (!existsSync(wordsDir)) return;
+      for (const n of readdirSync(wordsDir)) if (/^words-\d+\.json$/.test(n)) copyFileSync(path.join(wordsDir, n), path.join(cacheDir, `${rk}-${n}`));
+      return;
+    }
+    for (const n of readdirSync(cacheDir)) {
+      const m = new RegExp(`^${rk}-(words-\\d+\\.json)$`).exec(n);
+      if (!m || existsSync(path.join(wordsDir, m[1]))) continue;
+      mkdirSync(wordsDir, { recursive: true });
+      copyFileSync(path.join(cacheDir, n), path.join(wordsDir, m[1]));
+    }
+  } catch { /* a cache is an optimisation: never fail a run for it */ }
+}
+
