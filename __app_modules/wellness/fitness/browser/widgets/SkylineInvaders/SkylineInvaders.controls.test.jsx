@@ -40,6 +40,8 @@ let f;
 // The touch keys by position: 1-4 are the screen's decision, 5 is Controls, 6 is Exit.
 const keyAt = (n) => document.querySelector(`.skyline-invaders__key[data-position="${n}"]`);
 const pad = (n) => act(async () => { expect(keyAt(n), `touch key ${n} should be on screen`).not.toBeNull(); fireEvent.click(keyAt(n)); });
+// Exit, pressed by someone who has looked at the screen first (a fresh Exit ignores a tap).
+const padExit = async () => { await act(async () => { vi.advanceTimersByTime(600); }); await pad(6); };
 const padLabels = () => [...document.querySelectorAll('.skyline-invaders__key')].map((k) => k.querySelector('strong').textContent);
 // People are tiles. With nobody on the mat, the defender is picked from everyone (Someone else).
 const tapPerson = async (name) => {
@@ -565,7 +567,7 @@ describe('Skyline Invaders joint recorder', () => {
     await step();
     await hold(wiperPose(0), 1000);
     await keyDown('Escape');
-    await pad(6);
+    await padExit();
     expect(traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'round')).toEqual([expect.objectContaining({ reason: 'abandoned', kind: 'round' })]);
     expect(traces('skyline_invaders.shot.trace')).toEqual([expect.objectContaining({ reason: 'abandoned' })]);
   });
@@ -597,7 +599,7 @@ describe('Skyline Invaders exit', () => {
     const onClose = vi.fn();
     await mount({ onClose });
     expect(keyAt(6).querySelector('strong').textContent).toBe('Exit');
-    await pad(6);
+    await padExit();
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'lobby', how: 'touch', round: null });
     await keyDown('ArrowDown');                    // down is Exit on every menu screen
@@ -615,13 +617,25 @@ describe('Skyline Invaders exit', () => {
     await keyDown('Escape');
     expect(phase()).toBe('paused');
     expect(padLabels()).toEqual(['Resume', 'Sound', 'End round', 'Controls', 'Exit']);
-    await pad(6);
+    await padExit();
     expect(onClose).toHaveBeenCalledTimes(1);
     await flush();
     const [record] = postedRecords(routes);
     expect(record.run).toMatchObject({ status: 'abandoned', steps: 1 });
     expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'paused', how: 'touch', round: 'abandoned', runId: record.run.id });
     expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ status: 'abandoned' });
+  });
+
+  it('an Exit key that just appeared under the finger ignores the tap; a moment later it leaves', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await pad(4);                                   // Start opens Choose your controls
+    expect(document.querySelector('[data-screen="method"]')).not.toBeNull();
+    await pad(6);                                   // the same tap, landing on the new screen's Exit
+    expect(onClose).not.toHaveBeenCalled();
+    expect(logged('skyline_invaders.control.ignored')[0]).toMatchObject({ position: 6, screen: 'method', reason: 'fresh-exit' });
+    await padExit();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('a round has its own Exit key beside Pause: one tap saves the round as abandoned and leaves', async () => {
@@ -664,7 +678,7 @@ describe('Skyline Invaders exit', () => {
     routes.runs.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
     await start();
     await keyDown('Escape');
-    await pad(6);
+    await padExit();
     expect(onClose).toHaveBeenCalledTimes(1);
     await flush();
     expect(logged('skyline_invaders.round.save_error')).toHaveLength(1);

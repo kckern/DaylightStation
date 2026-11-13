@@ -3,6 +3,13 @@
 // states the rules of the look.
 @use 'sass:string';
 
+// A length in viewport-width percent, read through --sg-vw. Unset, that is 1vw.
+// A game whose screen must fit a window shorter than 16:9 sets
+// `--sg-vw: min(1vw, calc(16vh / 9))` on its root: on 16:9 or narrower it is still 1vw;
+// on a shorter window everything sized this way shrinks with the height instead
+// of growing past the bottom edge.
+@function sgvw($n) { @return calc(#{$n} * var(--sg-vw, 1vw)); }
+
 @mixin sg-tokens {
   --sg-ink: #17132b;          // every outline, rim and plate face
   --sg-night: #252d6b;        // window fill
@@ -20,17 +27,17 @@
   --sg-b4: #b995ff; --sg-b4-shade: #6741c2;
   // One UI pixel: the scene's art pixel is 0.3% of its width, so this is too.
   --sg-px: 5px;
-  --sg-px: max(2px, round(down, 0.3vw, 1px));
+  --sg-px: max(2px, round(down, #{sgvw(0.3)}, 1px));
   // Outline weight for text set straight on the scene.
   --sg-line: 3px;
-  --sg-line: max(2px, round(down, 0.18vw, 1px));
+  --sg-line: max(2px, round(down, #{sgvw(0.18)}, 1px));
   --sg-line-s: 2px;           // the same, for the smallest text
   // Type scale. The kiosk is 1810 px wide: 24 / 32 / 43 / 83 / 163 px there.
-  --sg-text-s: max(13px, 1.35vw);
-  --sg-text-m: max(15px, 1.75vw);
-  --sg-text-l: max(18px, 2.4vw);
-  --sg-text-xl: max(30px, 4.6vw);
-  --sg-text-xxl: max(56px, 9vw);
+  --sg-text-s: max(13px, #{sgvw(1.35)});
+  --sg-text-m: max(15px, #{sgvw(1.75)});
+  --sg-text-l: max(18px, #{sgvw(2.4)});
+  --sg-text-xl: max(30px, #{sgvw(4.6)});
+  --sg-text-xxl: max(56px, #{sgvw(9)});
   --sg-font: "SG Quotes", "Karmatic Arcade", "Roboto Condensed", "Arial Narrow", sans-serif;
   font-synthesis: none;   // a pixel face has one weight and no italic: never fake them
   word-spacing: .3em;      // Karmatic Arcade's space is a sliver: words ran together

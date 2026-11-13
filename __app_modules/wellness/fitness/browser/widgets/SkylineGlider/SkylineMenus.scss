@@ -27,8 +27,8 @@
 .skyline-menu-screen {
   @include sg-tokens;
   overflow: hidden; color: var(--sg-paper); font-family: var(--sg-font); font-variant-numeric: tabular-nums;
-  position: relative; box-sizing: border-box; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; align-content: center; gap: 4vw;
-  padding: 4vw 5vw 9vw;
+  position: relative; box-sizing: border-box; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; align-content: center; gap: sgvw(4);
+  padding: sgvw(4) sgvw(5) sgvw(9);
   // A banded dusk-to-day sky over a cloud bank, both in whole pixels.
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 5 64 11' shape-rendering='crispEdges'%3E%3Cpath fill='%23fff5d6' d='M29 5h5v1h-5zM5 6h5v1h-5zM27 6h9v1h-9zM3 7h9v1h-9zM26 7h11v1h-11zM42 7h5v1h-5zM2 8h11v1h-11zM17 8h5v1h-5zM25 8h13v1h-13zM41 8h7v1h-7zM54 8h5v1h-5zM1 9h13v1h-13zM16 9h7v1h-7zM24 9h15v1h-15zM40 9h9v1h-9zM53 9h7v1h-7zM1 10h13v1h-13zM15 10h35v1h-35zM52 10h9v1h-9zM1 11h13v1h-13zM15 11h35v1h-35zM52 11h9v1h-9zM1 12h13v1h-13zM15 12h35v1h-35zM52 12h9v1h-9zM0 13h64v1h-64zM0 14h64v1h-64zM0 15h64v1h-64z'/%3E%3Cpath fill='%23bfdcf7' d='M33 10h5v1h-5zM9 11h5v1h-5zM32 11h7v1h-7zM8 12h7v1h-7zM31 12h9v1h-9zM47 12h3v1h-3zM7 13h9v1h-9zM22 13h3v1h-3zM30 13h11v1h-11zM45 13h7v1h-7zM59 13h3v1h-3zM7 14h9v1h-9zM21 14h5v1h-5zM30 14h11v1h-11zM45 14h7v1h-7zM58 14h5v1h-5zM7 15h9v1h-9zM21 15h5v1h-5zM30 15h11v1h-11zM45 15h7v1h-7zM58 15h5v1h-5z'/%3E%3C/svg%3E") left bottom / calc(128 * var(--sg-px)) auto repeat-x,
@@ -36,20 +36,20 @@
 }
 .skyline-menus {
   --sg-icon-px: var(--sg-line);
-  box-sizing: border-box; width: 100%; padding: 2.2vw 2.8vw 2.6vw; text-align: left; background: var(--sg-night);
+  box-sizing: border-box; width: 100%; padding: sgvw(2.2) sgvw(2.8) sgvw(2.6); text-align: left; background: var(--sg-night);
   @include sg-frame;
   h1 { margin: 0; font-size: var(--sg-text-xl); font-weight: 900; font-style: italic; line-height: .95; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
   p { margin: .55em 0 0; max-width: 32em; font-size: var(--sg-text-m); font-weight: 500; line-height: 1.2; }
   .skyline-menus__kicker { margin: 0 0 .15em; color: var(--sg-gold); font-weight: 700; }
 
   // The flight list: one row each, a cursor on the chosen one.
-  &__options { display: grid; gap: var(--sg-px); margin: 1.3vw 0 0; }
+  &__options { display: grid; gap: var(--sg-px); margin: sgvw(1.3) 0 0; }
   &__options button {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1vw; width: 100%;
-    padding: .55vw 1.2vw .55vw .8vw; border: 0; border-radius: 0; text-align: left; font: inherit; line-height: 1;
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: sgvw(1); width: 100%;
+    padding: sgvw(.55) sgvw(1.2) sgvw(.55) sgvw(.8); border: 0; border-radius: 0; text-align: left; font: inherit; line-height: 1;
     color: var(--sg-paper); background: var(--sg-night-lift);
     strong { font-size: var(--sg-text-l); font-weight: 900; }
-    small { display: flex; align-items: center; gap: .5vw; font-size: var(--sg-text-s); font-weight: 700; }
+    small { display: flex; align-items: center; gap: sgvw(.5); font-size: var(--sg-text-s); font-weight: 700; }
     // Locked: a solid ink plate with the lock in full-strength lavender — never
     // faded or see-through, which reads as broken from the bike (2026-11-11).
     &[data-status="locked"] { color: var(--sg-locked); background: var(--sg-ink); }
@@ -62,7 +62,7 @@
   // Above and below the window: how many flights the buttons can still reach.
   // Always laid out (hidden when empty) so the window never changes height.
   &__more {
-    display: flex; align-items: center; gap: .6vw; margin: .5vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
+    display: flex; align-items: center; gap: sgvw(.6); margin: sgvw(.5) 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
     &[data-empty] { visibility: hidden; }
     &[data-dir="up"] .skyline-menus__more-icon { transform: rotate(-90deg); }
     &[data-dir="down"] .skyline-menus__more-icon { transform: rotate(90deg); }
@@ -71,21 +71,21 @@
   &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: sg-menu-step-right .5s steps(1) infinite; }
 
   &__person {
-    display: flex; align-items: center; gap: 2vw; margin-top: 1.6vw;
-    img { width: 11vw; height: 11vw; object-fit: cover; @include sg-frame; }
+    display: flex; align-items: center; gap: sgvw(2); margin-top: sgvw(1.6);
+    img { width: sgvw(11); height: sgvw(11); object-fit: cover; @include sg-frame; }
     strong { font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
   }
   // The sound sheet: a readout, the house touch volume strip in the game's
   // colours (solid plates, never see-through), and a mute key.
   &__readout {
-    display: flex; align-items: center; gap: 1vw; margin: 1vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
+    display: flex; align-items: center; gap: sgvw(1); margin: sgvw(1) 0 0; color: var(--sg-gold); font-size: var(--sg-text-l); font-weight: 900; line-height: 1;
     &[data-muted] { color: var(--sg-red); }
   }
   &__volume {
-    margin: 1.4vw 0 0; width: min(100%, 52vw);
+    margin: sgvw(1.4) 0 0; width: min(100%, sgvw(52));
     .touch-volume { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: var(--sg-px); width: 100%; }
     .touch-volume-button {
-      height: max(48px, 5vw); padding: 0; border: 0; border-radius: 0; cursor: pointer; color: transparent;
+      height: max(48px, sgvw(5)); padding: 0; border: 0; border-radius: 0; cursor: pointer; color: transparent;
       background: var(--sg-night-lift); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-ink);
       &.on { background: var(--sg-gold); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-b2-shade); }
       &:first-child { background: var(--sg-ink); box-shadow: inset 0 0 0 var(--sg-line) var(--sg-red); }
@@ -94,43 +94,43 @@
     }
   }
   &__mute {
-    margin: 1.4vw 0 0; min-width: 14vw; min-height: 48px; padding: .7vw 2vw; border: 0; border-radius: 0; font: inherit;
+    margin: sgvw(1.4) 0 0; min-width: sgvw(14); min-height: 48px; padding: sgvw(.7) sgvw(2); border: 0; border-radius: 0; font: inherit;
     font-size: var(--sg-text-m); font-weight: 900; color: var(--sg-ink); background: var(--sg-paper); cursor: pointer;
     box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 var(--sg-mute), sg-ring(var(--sg-ink));
     &[aria-pressed="true"] { color: var(--sg-paper); background: var(--sg-red); box-shadow: inset 0 calc(-1 * var(--sg-px)) 0 0 #8f1430, sg-ring(var(--sg-ink)); }
   }
   &__count { display: block; margin: .08em 0 0; color: var(--sg-gold); font-size: var(--sg-text-xxl); font-weight: 900; font-style: italic; line-height: 1; text-shadow: var(--sg-px) var(--sg-px) 0 var(--sg-ink); }
-  p.skyline-menus__cause { margin-top: 1.1vw; padding: .8vw 1.2vw; color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }
+  p.skyline-menus__cause { margin-top: sgvw(1.1); padding: sgvw(.8) sgvw(1.2); color: var(--sg-ink); background: var(--sg-gold); font-weight: 700; }
 
   // The tally: bells and targets add up to the score, under a sum line.
   &__summary {
-    display: grid; margin: 1.2vw 0 0; max-width: 34vw;
-    div { display: flex; align-items: baseline; gap: .8vw; padding: .3vw 0; }
-    dt { flex: 1; display: flex; align-items: center; gap: .6vw; font-size: var(--sg-text-m); font-weight: 700;
+    display: grid; margin: sgvw(1.2) 0 0; max-width: sgvw(34);
+    div { display: flex; align-items: baseline; gap: sgvw(.8); padding: sgvw(.3) 0; }
+    dt { flex: 1; display: flex; align-items: center; gap: sgvw(.6); font-size: var(--sg-text-m); font-weight: 700;
       &::after { content: ''; flex: 1; align-self: flex-end; height: var(--sg-line); margin-bottom: .35em; background: repeating-linear-gradient(90deg, var(--sg-mute) 0 var(--sg-line), transparent 0 calc(3 * var(--sg-line))); } }
     dd { margin: 0; color: var(--sg-paper); font-size: var(--sg-text-l); font-weight: 900; }
     [data-stat="bells"] .sg-icon { color: var(--sg-gold); }
     [data-stat="targets"] .sg-icon { color: var(--sg-b1); }
-    [data-stat="score"] { margin-top: .4vw; padding-top: .6vw; border-top: var(--sg-line) solid var(--sg-paper); dt { font-weight: 900; } dd { color: var(--sg-gold); font-size: var(--sg-text-xl); line-height: .9; } }
+    [data-stat="score"] { margin-top: sgvw(.4); padding-top: sgvw(.6); border-top: var(--sg-line) solid var(--sg-paper); dt { font-weight: 900; } dd { color: var(--sg-gold); font-size: var(--sg-text-xl); line-height: .9; } }
   }
 }
 
 // The bike buttons: four keys in the four button colours, laid out as they sit
 // on the handlebar. This is the one loud thing on a menu screen.
 .skyline-controls {
-  box-sizing: border-box; z-index: 8; width: 33vw; padding: 1.1vw 1.4vw 1.6vw; color: var(--sg-paper); background: var(--sg-ink);
+  box-sizing: border-box; z-index: 8; width: sgvw(33); padding: sgvw(1.1) sgvw(1.4) sgvw(1.6); color: var(--sg-paper); background: var(--sg-ink);
   @include sg-frame;
-  &__heading { margin: 0 0 1.1vw; font-size: var(--sg-text-s); font-weight: 700; }
+  &__heading { margin: 0 0 sgvw(1.1); font-size: var(--sg-text-s); font-weight: 700; }
   &__pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(3 * var(--sg-px)); }
   &__position {
-    position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.9vw; height: 1.9vw;
+    position: absolute; top: 0; left: 0; display: grid; place-items: center; width: sgvw(1.9); height: sgvw(1.9);
     color: var(--key); background: var(--sg-ink); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
   }
-  &__icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; min-height: 3.6vw; font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
+  &__icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; min-height: sgvw(3.6); font-size: var(--sg-text-xl); font-weight: 900; line-height: 1; }
   button {
     --key: var(--sg-b1); --key-shade: var(--sg-b1-shade);
-    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45vw;
-    min-height: 13.2vw; padding: 1.5vw .7vw calc(.9vw + 2 * var(--sg-px)); border: 0; border-radius: 0; font: inherit; text-align: center;
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: sgvw(.45);
+    min-height: sgvw(13.2); padding: sgvw(1.5) sgvw(.7) calc(sgvw(.9) + 2 * var(--sg-px)); border: 0; border-radius: 0; font: inherit; text-align: center;
     color: var(--sg-ink); background: var(--key);
     box-shadow: inset 0 calc(-2 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink));
     &[data-position="2"] { --key: var(--sg-b2); --key-shade: var(--sg-b2-shade); }
@@ -142,13 +142,13 @@
     strong { font-size: var(--sg-text-m); font-weight: 900; line-height: 1; }
     small { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.05; }
   }
-  img { width: 5.4vw; height: 5.4vw; object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
+  img { width: sgvw(5.4); height: sgvw(5.4); object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
 }
 
 @keyframes sg-menu-step-right { 50% { transform: translateX(3px); } }
 @media (prefers-reduced-motion: reduce) { .skyline-menus__cursor { animation: none !important; } }
 // A narrow window (a phone held upright, a split desktop): stack the two halves.
 @media (max-width: 760px) {
-  .skyline-menu-screen { grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6vw; padding: 5vw 5vw 14vw; }
-  .skyline-controls { width: auto; button { min-height: 26vw; } }
+  .skyline-menu-screen { grid-template-columns: minmax(0, 1fr); align-content: start; gap: sgvw(6); padding: sgvw(5) sgvw(5) sgvw(14); }
+  .skyline-controls { width: auto; button { min-height: sgvw(26); } }
 }

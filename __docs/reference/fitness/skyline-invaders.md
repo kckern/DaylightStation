@@ -159,6 +159,10 @@ Start is the Start key or a stomp on the defender's mat (`pressure-mat:stomp`; a
 
 **Type.** The whole game, Glider's shared menu windows included, is set in **Press Start 2P** (SIL OFL, `frontend/public/fonts/arcade/`, licence beside it; declared in `SkylineMenus.scss`), the 8-bit face. Nothing is smaller than 22 px on the garage display; titles are a size down from Glider's, since every glyph is a full em wide.
 
+**Fitting the window.** The menus are sized in shares of the screen width: the skyline kit's `sgvw(n)` (`SkylineGlider/_skyline-kit.scss`) is `n × var(--sg-vw, 1vw)`, and Invaders sets `--sg-vw: min(1vw, 16vh / 9)` on its root. The garage display is 16:9, so there it is plain `vw`. A wider, shorter window, such as a laptop browser at 1920 × 934, sizes everything to the 16:9 screen that fits its height. Before this, the wave list's frame and its Controls and Exit keys ran off the top and bottom of such a window. Glider leaves `--sg-vw` unset and is unchanged. Write any new menu length as `sgvw(n)`, not `vw`. Check a change with the shell render script at `1381x777` (the garage) and at a short window, `VIEWPORTS=1381x777,1920x934,1440x760`.
+
+**A fresh Exit ignores a tap.** For 450 ms (`FRESH_EXIT_MS`) after the touch keys change screen, a tap on the Exit key does nothing and logs `skyline_invaders.control.ignored` (`position`, `screen`, `sinceMs`, `reason: fresh-exit`). On 2026-11-13 one tap on Start was followed 6 ms later by Exit on the controls screen that Start opened, and the game closed. A child's double-tap on the garage screen does the same. Escape, gamepad and the round's own Exit key are not delayed.
+
 ### Sound
 
 Invaders plays at its **own** volume (`useGameVolume('skyline-invaders')`, the track `fitness-game-skyline-invaders/global/game` in the fitness volume store), never the video level and never full gain. The stored value is the output gain itself (curve applied once); an unset track plays at level 60 (0.158). Every voice -- cue files, the music loop, synth tones -- ends on the one output gain of the shared Skyline audio engine, 0 when muted. See `nav/gameVolumeModel.js`.
@@ -318,6 +322,7 @@ Browser events use the `skyline-invaders` component; filter the log store with `
 | `.assets.loaded` / `.assets.error` | `sounds`, `missing: [{ slot, reason }]` | `reason: empty` is a placeholder |
 | `.lobby.shooter_picked`, `.lobby.level_chosen` | `shooterId`, `matEquipmentId`, `previous` / `levelId` | |
 | `.control.action` | `action`, `screen`, `source` (touch, key, gamepad, step, stomp), `shooterId` | one line per menu press |
+| `.control.ignored` | `position`, `screen`, `sinceMs`, `reason` (`fresh-exit`) | a touch Exit tapped within 450 ms of its screen appearing |
 | `.lobby.ready_opened`, `.lobby.ready.started`, `.lobby.ready.in_view`, `.lobby.ready.camera_timeout` | `shooterId`, `pose`, `gesture` / `elapsedMs` / `waitedMs` | the Ready screen |
 | `.setup.opened` / `.setup.closed` | `setupId`, `from` (`start`, `lobby`, `paused`), `source`, `shooterId`, `current`, `verified`, `pose`, `runId` / `how`, `stage`, `method` | the setup; closed = Back without a pass |
 | `.setup.method_chosen` | `setupId`, `shooterId`, `method`, `how`, `previous` | a tile (or the cursor) was chosen: its test starts |

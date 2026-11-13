@@ -61,6 +61,11 @@
   // The 8-bit face everywhere in the game, Glider's shared menu windows included.
   --sg-font: "Press Start 2P", monospace;
   font-family: var(--sg-font);
+  // Every sgvw() length is a share of the width of a 16:9 screen that fits this
+  // window: the garage is 16:9, so there it is 1vw; on a wider, shorter window
+  // (a laptop browser) the menus scale with the height instead of running off
+  // the bottom. See sgvw() in the skyline kit.
+  --sg-vw: min(1vw, calc(16vh / 9));
   // The same stops as the sky and ground in the scene, so the bars beside a
   // 5:3 scene on a 16:9 screen continue the picture instead of framing it.
   background: linear-gradient(to bottom, var(--si-night) 0%, var(--si-dusk) 55.8%, var(--si-haze) 90%, var(--si-ground) 90%);
@@ -298,21 +303,21 @@
 // The "more" button: the screen's bottom-right corner, on the street under
 // the panel, clear of every window frame (2026-11-12: it sat on the window's
 // corner) and of the round HUD that stays up behind the pause screen (top).
-.skyline-invaders__menu .skyline-invaders__more { top: auto; bottom: calc(2 * var(--sg-px)); right: 5vw; }
+.skyline-invaders__menu .skyline-invaders__more { top: auto; bottom: calc(2 * var(--sg-px)); right: sgvw(5); }
 
 // Best stars: gold when won, a solid dark star when not. Never faded.
 .skyline-invaders__star-row { display: inline-flex; align-items: center; gap: calc(var(--sg-px) / 2); }
 .skyline-invaders__star { display: inline-grid; color: var(--sg-ink); &[data-won="true"] { color: var(--sg-gold); } }
 .skyline-menus__options button[aria-pressed="true"] .skyline-invaders__star[data-won="true"] { color: var(--sg-paper); }
 .skyline-menus__options button .sg-icon__ink { fill: none; }
-.skyline-invaders__star-row--result { --sg-icon-px: calc(1.6 * var(--sg-px)); margin-top: 1vw; gap: var(--sg-px); }
+.skyline-invaders__star-row--result { --sg-icon-px: calc(1.6 * var(--sg-px)); margin-top: sgvw(1); gap: var(--sg-px); }
 
 // Under the wave list: what this wave brings in, its target and its time.
 .skyline-invaders__wave-detail {
-  display: flex; align-items: center; gap: 1vw; margin: 1.2vw 0 0; max-width: none;
+  display: flex; align-items: center; gap: sgvw(1); margin: sgvw(1.2) 0 0; max-width: none;
   font-size: var(--sg-text-m); font-weight: 700;
 }
-.skyline-invaders__wave-threat { flex: none; width: auto; height: 2.6vw; }
+.skyline-invaders__wave-threat { flex: none; width: auto; height: sgvw(2.6); }
 
 // The result: the Glider tally, with what the wave asked for under each number.
 .skyline-invaders__summary {
@@ -324,17 +329,17 @@
   [data-met="false"] dd { color: var(--sg-red); }
 }
 .skyline-invaders__save {
-  display: inline-block; margin: 1vw 0 0; padding: .4vw 1vw; font-size: var(--sg-text-m); font-weight: 900;
+  display: inline-block; margin: sgvw(1) 0 0; padding: sgvw(.4) sgvw(1); font-size: var(--sg-text-m); font-weight: 900;
   color: var(--sg-paper); background: var(--sg-ink);
   &[data-tone="good"] { color: var(--sg-ink); background: var(--sg-gold); }
   &[data-tone="bad"] { color: var(--sg-paper); background: var(--sg-red); }
 }
 
 // Ready: the figure, and a bar that fills while the camera can see the defender.
-.skyline-invaders__ready-body { display: flex; align-items: center; gap: 2.4vw; }
+.skyline-invaders__ready-body { display: flex; align-items: center; gap: sgvw(2.4); }
 .skyline-invaders__legend { color: var(--sg-gold); font-weight: 900; }
-.skyline-invaders__figure { flex: none; width: 11vw; height: auto; fill: var(--sg-paper); }
-.skyline-invaders__meter { display: grid; gap: var(--sg-px); margin-top: 1.2vw; }
+.skyline-invaders__figure { flex: none; width: sgvw(11); height: auto; fill: var(--sg-paper); }
+.skyline-invaders__meter { display: grid; gap: var(--sg-px); margin-top: sgvw(1.2); }
 .skyline-invaders__meter-hold { height: calc(2 * var(--sg-px)); background: var(--sg-ink); span { display: block; height: 100%; background: var(--si-pass); transition: width 100ms linear; } }
 
 @media (prefers-reduced-motion: reduce) {
@@ -345,7 +350,7 @@
 .skyline-invaders__controls-timer { height: calc(2 * var(--sg-px)); background: var(--sg-ink); span { display: block; height: 100%; background: var(--sg-gold); transition: width 1s linear; } }
 // The gesture demo: a stick figure, drawn in the window's own inks.
 .skyline-invaders__demo {
-  flex: none; height: 11vw; min-height: 9rem; width: auto; padding: .4vw; background: var(--sg-ink);
+  flex: none; height: sgvw(11); min-height: 9rem; width: auto; padding: sgvw(.4); background: var(--sg-ink);
   fill: none; stroke-linecap: square; stroke-linejoin: miter;
 }
 .skyline-invaders__demo-body { stroke: var(--sg-paper); stroke-width: 9; fill: none; }
@@ -406,14 +411,14 @@
 .skyline-invaders .skyline-invaders__menu { grid-template-columns: minmax(0, 1fr); justify-items: center; }
 // 64rem is the garage width's window (1381 px: 74vw). The type is set in vw, so on a wider
 // screen the window grows with it; a fixed 64rem there left the key labels wider than their keys.
-.skyline-invaders__menu .skyline-invaders__window { width: min(100%, max(64rem, 74vw)); }
+.skyline-invaders__menu .skyline-invaders__window { width: min(100%, max(64rem, sgvw(74))); }
 .skyline-invaders__keys {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: calc(3 * var(--sg-px));
-  margin-top: 1.6vw;
+  margin-top: sgvw(1.6);
 }
 .skyline-invaders__key {
   --key: var(--sg-b1); --key-shade: var(--sg-b1-shade);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35vw;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: sgvw(.35);
   min-height: 5.5rem; padding: .7rem .6rem; border: 0; border-radius: 0; font: inherit; text-align: center; cursor: pointer;
   color: var(--sg-ink); background: var(--key);
   box-shadow: inset 0 calc(-2 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink));
@@ -437,12 +442,12 @@
 // The wave list and the result are the tallest screens: with the extra key row
 // under them they give up most of the menu's top and bottom margin, so the
 // window and every key stay on the garage screen (1381 x 777).
-.skyline-invaders[data-screen="waves"] .skyline-invaders__menu, .skyline-invaders[data-screen="result"] .skyline-invaders__menu { padding-top: .5vw; padding-bottom: .5vw; }
-.skyline-invaders[data-screen="waves"] .skyline-invaders__keys, .skyline-invaders[data-screen="result"] .skyline-invaders__keys { margin-top: .8vw; }
+.skyline-invaders[data-screen="waves"] .skyline-invaders__menu, .skyline-invaders[data-screen="result"] .skyline-invaders__menu { padding-top: sgvw(.5); padding-bottom: sgvw(.5); }
+.skyline-invaders[data-screen="waves"] .skyline-invaders__keys, .skyline-invaders[data-screen="result"] .skyline-invaders__keys { margin-top: sgvw(.8); }
 .skyline-invaders[data-screen="waves"] .skyline-invaders__keys--extra, .skyline-invaders[data-screen="result"] .skyline-invaders__keys--extra { margin-top: calc(2 * var(--sg-px)); }
 .skyline-invaders__people {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: calc(3 * var(--sg-px));
-  margin-top: 1.4vw; max-height: 52vh; overflow-y: auto;
+  margin-top: sgvw(1.4); max-height: 52vh; overflow-y: auto;
 }
 .skyline-invaders__person {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem;
@@ -467,24 +472,24 @@
 .skyline-invaders .skyline-menu-screen, .skyline-invaders .skyline-menus {
   --sg-font: "Press Start 2P", monospace; font-synthesis: none; word-spacing: 0;
   // Nothing under 22 px across the garage (the shell render script's floor).
-  --sg-text-s: max(22px, 1.35vw);
+  --sg-text-s: max(22px, #{sgvw(1.35)});
   // Press Start 2P sets every glyph a full em wide and tall: titles a size down from Glider's.
-  --sg-text-xl: max(30px, 3.2vw);
+  --sg-text-xl: max(30px, #{sgvw(3.2)});
 }
-.skyline-invaders .skyline-invaders__menu { padding-top: 2.4vw; padding-bottom: 3vw; }
+.skyline-invaders .skyline-invaders__menu { padding-top: sgvw(2.4); padding-bottom: sgvw(3); }
 .skyline-invaders { font-synthesis: none; }
 
 // ── Setup: choose your controls, then the test sweep (2026-11-13) ───────────
 // The method list is tiles to tap (a demo of each movement and its name); the
 // sweep is set at the top of the screen so the edge targets, the skyline and
 // the cannon stay in view under it. Solid inks only.
-.skyline-invaders[data-screen="method"] .skyline-invaders__menu { padding-top: .6vw; padding-bottom: .6vw; }
-.skyline-invaders[data-screen="method"] .skyline-invaders__window { width: min(100%, max(76rem, 90vw)); }
-.skyline-invaders[data-screen="method"] .skyline-menus { padding-top: .8vw; padding-bottom: .8vw; }
-.skyline-invaders[data-screen="method"] .skyline-invaders__keys { margin-top: .6vw; }
+.skyline-invaders[data-screen="method"] .skyline-invaders__menu { padding-top: sgvw(.6); padding-bottom: sgvw(.6); }
+.skyline-invaders[data-screen="method"] .skyline-invaders__window { width: min(100%, max(76rem, sgvw(90))); }
+.skyline-invaders[data-screen="method"] .skyline-menus { padding-top: sgvw(.8); padding-bottom: sgvw(.8); }
+.skyline-invaders[data-screen="method"] .skyline-invaders__keys { margin-top: sgvw(.6); }
 .skyline-invaders[data-screen="method"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
 .skyline-invaders__methods {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--sg-px)); margin-top: .8vw;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--sg-px)); margin-top: sgvw(.8);
 }
 .skyline-invaders__method {
   display: flex; align-items: center; gap: 1rem; min-height: 72px; padding: .3rem .8rem; border: 0; border-radius: 0;
@@ -504,16 +509,16 @@
 }
 .skyline-invaders__method-pad { width: 56px; height: auto; fill: var(--sg-paper); }
 .skyline-invaders__method-pad-key { fill: var(--sg-ink); }
-.skyline-invaders__setup-note { margin: .6vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
+.skyline-invaders__setup-note { margin: sgvw(.6) 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
 
-.skyline-invaders[data-screen="sweep"] .skyline-invaders__menu { align-content: start; padding-top: .8vw; }
-.skyline-invaders[data-screen="sweep"] .skyline-invaders__window { width: min(100%, max(76rem, 88vw)); }
-.skyline-invaders[data-screen="sweep"] .skyline-menus { padding-top: 1vw; padding-bottom: 1vw; }
-.skyline-invaders[data-screen="sweep"] .skyline-invaders__keys { margin-top: .6vw; }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__menu { align-content: start; padding-top: sgvw(.8); }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__window { width: min(100%, max(76rem, sgvw(88))); }
+.skyline-invaders[data-screen="sweep"] .skyline-menus { padding-top: sgvw(1); padding-bottom: sgvw(1); }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__keys { margin-top: sgvw(.6); }
 .skyline-invaders[data-screen="sweep"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
-.skyline-invaders__sweep-body { display: flex; align-items: center; gap: 2vw; margin-top: .6vw; }
-.skyline-invaders__sweep-body .skyline-invaders__demo { height: 9vw; min-height: 8rem; }
-.skyline-invaders__sweep-text { flex: 1; min-width: 0; display: grid; gap: .6vw; h1 { margin: 0; } p { margin: 0; } }
+.skyline-invaders__sweep-body { display: flex; align-items: center; gap: sgvw(2); margin-top: sgvw(.6); }
+.skyline-invaders__sweep-body .skyline-invaders__demo { height: sgvw(9); min-height: 8rem; }
+.skyline-invaders__sweep-text { flex: 1; min-width: 0; display: grid; gap: sgvw(.6); h1 { margin: 0; } p { margin: 0; } }
 .skyline-invaders__sweep-body[data-status="passed"] h1 { color: var(--si-pass); }
 .skyline-invaders__sweep-body[data-status="timeout"] h1 { color: var(--sg-red); }
 .skyline-invaders__sweep-line { color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1.35; }
@@ -551,4 +556,4 @@
   strong { font-size: 2rem; font-weight: 800; line-height: 1; white-space: nowrap; }
 }
 // The result is the tallest screen: at 1381 x 777 its window gives up most of its own padding so Exit stays on screen.
-.skyline-invaders[data-screen="result"] .skyline-menus { padding-top: .6vw; padding-bottom: .6vw; }
+.skyline-invaders[data-screen="result"] .skyline-menus { padding-top: sgvw(.6); padding-bottom: sgvw(.6); }

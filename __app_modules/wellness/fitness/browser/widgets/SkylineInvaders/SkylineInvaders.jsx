@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { DaylightImagePath, DaylightMediaPath } from '@/lib/api.mjs';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
@@ -75,6 +75,9 @@ const READY_CAMERA_WAIT_MS = 20_000;
 const COUNTDOWN_FROM = 3;
 const HEALTH_EVERY_MS = 20_000;   // the log ingest allows three of one event a minute
 const STICK_DEAD_ZONE = 0.2;
+// A touch Exit that appeared under the finger this recently is not pressed: the
+// tap (or second tap) that changed the screen must not leave the game from the next one.
+const FRESH_EXIT_MS = 450;
 const REWARD_COLOR = '#7bd88f';
 const POSE_CONFIG = Object.freeze({
   temporalSmoothing: false, maxPoses: 1, modelType: INVADERS_TUNABLES.poseModelType,
@@ -984,6 +987,20 @@ function SkylineInvadersGame({ onClose }) {
     if (action) actRef.current(action, source);
   }, [cancelPrompt]);
 
+  // When the touch keys last changed screen. On 2026-11-13 one tap on Start was
+  // followed 6 ms later by Exit on the controls screen that Start opened, and the
+  // game closed; a child's double-tap on the garage screen does the same.
+  const screenShownAt = useRef(0);
+  useLayoutEffect(() => { screenShownAt.current = performance.now(); }, [screen]);
+  const pressTouchKey = useCallback((position) => {
+    const sinceMs = Math.round(performance.now() - screenShownAt.current);
+    if (position === 6 && sinceMs < FRESH_EXIT_MS) {
+      log.info('skyline_invaders.control.ignored', { position, screen: viewRef.current.screen, sinceMs, reason: 'fresh-exit' });
+      return;
+    }
+    press(position, 'single', 'touch');
+  }, [press, log]);
+
   // Keyboard, foot pad and gamepad on a menu screen (the digits are the kiosk OS's).
   const menuActive = !!screen;
   useMenuInput(menuActive || !!prompt, (action, source) => {
@@ -1128,7 +1145,7 @@ function SkylineInvadersGame({ onClose }) {
                 }}
               />
             )}
-            <InvadersTouchKeys keys={touchKeys} onPress={(position) => press(position, 'single', 'touch')} />
+            <InvadersTouchKeys keys={touchKeys} onPress={pressTouchKey} />
           </div>
         </section>
       )}

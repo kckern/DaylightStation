@@ -1,7 +1,7 @@
 // Screenshots the real Skyline Invaders shell (lobby, the setup and its test
 // sweep, round, pause, result, fallbacks) from the backend-free harness, at the garage TV's
-// size and at the size its kiosk actually lays out (devicePixelRatio ~1.05).
-//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=waves,controls] [VIEWPORTS=1381x777,1920x1080] [BROWSER=chromium] [DPR=1.39] node tests/_scratch/shoot-skyline-invaders-shell.mjs
+// size its kiosk actually lays out (1381x777) and in a short laptop-browser window (1920x934).
+//   BASE_URL=http://127.0.0.1:5196 OUT_DIR=/path [ONLY=waves,controls] [VIEWPORTS=1381x777,1920x934] [BROWSER=chromium] [DPR=1.39] node tests/_scratch/shoot-skyline-invaders-shell.mjs
 // Starts nothing: run the harness server first (vite --config tests/_scratch/skyline-invaders-harness/vite.harness.config.mjs).
 // The page clock is installed, so a 30 s round takes a moment and every shot is repeatable.
 // Exits 1 on a page error, a console error, a failed request, or a control or
@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.OUT_DIR || path.join(here, 'out/skyline-invaders-shell');
 fs.mkdirSync(OUT, { recursive: true });
 const only = (process.env.ONLY || '').split(',').filter(Boolean);
-const viewports = (process.env.VIEWPORTS || '1381x777,1920x1080').split(',').map((v) => v.split('x').map(Number));
+const viewports = (process.env.VIEWPORTS || '1381x777,1920x934').split(',').map((v) => v.split('x').map(Number));
 const engine = process.env.BROWSER === 'chromium' ? chromium : firefox;   // the garage kiosk is Firefox
 const MIN_TEXT_PX = 22;
 
