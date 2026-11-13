@@ -14,6 +14,7 @@ import { promisify } from 'util';
 import { createTempDir, deleteDir, readBinaryFromPath, writeBinary } from '#system/utils/FileIO.mjs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const run = promisify(execFile);
 const MAX_SIDE = 1568;
@@ -121,20 +122,25 @@ export class MagickRefineRenderer {
    * @returns {Promise<Buffer>}
    */
   async cellCrop(png, { grid = 3, cell, pad = 0.15 } = {}) {
-    return this.#withDir(async (dir) => {
-      const src = path.join(dir, 'in.png');
-      const out = path.join(dir, 'out.png');
-      writeBinary(src, png);
-      const { stdout } = await run(this.magick, [src, '-format', '%w %h', 'info:']);
-      const [w, h] = stdout.trim().split(/\s+/).map(Number);
-      const r = Math.floor(cell / grid); const c = cell % grid;
-      const cw = w / grid; const ch = h / grid;
-      const x0 = Math.max(0, Math.round((c - pad) * cw)); const y0 = Math.max(0, Math.round((r - pad) * ch));
-      const x1 = Math.min(w, Math.round((c + 1 + pad) * cw)); const y1 = Math.min(h, Math.round((r + 1 + pad) * ch));
-      await run(this.magick, [src, '-crop', `${x1 - x0}x${y1 - y0}+${x0}+${y0}`, '+repage', ...this.#fit(), out]);
-      await this.#pad(out);
-      return readBinaryFromPath(out);
-    });
+    // In-process (@napi-rs/canvas): refine crops every cell of every region frame, and as
+    // ImageMagick calls that was ~3,000 process starts per cue, each blocking the event loop.
+    // Same geometry and the same fit as fitArgs: shrink inside MAX_SIDE, pad white to MIN_SIDE.
+    const img = await loadImage(png);
+    const w = img.width; const h = img.height;
+    const r = Math.floor(cell / grid); const c = cell % grid;
+    const cw = w / grid; const ch = h / grid;
+    const x0 = Math.max(0, Math.round((c - pad) * cw)); const y0 = Math.max(0, Math.round((r - pad) * ch));
+    const x1 = Math.min(w, Math.round((c + 1 + pad) * cw)); const y1 = Math.min(h, Math.round((r + 1 + pad) * ch));
+    const sw = x1 - x0; const sh = y1 - y0;
+    const scale = Math.min(1, MAX_SIDE / sw, MAX_SIDE / sh);
+    const ow = Math.max(1, Math.round(sw * scale)); const oh = Math.max(1, Math.round(sh * scale));
+    const W = Math.max(ow, MIN_SIDE); const H = Math.max(oh, MIN_SIDE);
+    const canvas = createCanvas(W, H);
+    const g = canvas.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, W, H);
+    g.drawImage(img, x0, y0, sw, sh, Math.floor((W - ow) / 2), Math.floor((H - oh) / 2), ow, oh);
+    return canvas.toBuffer('image/png');
   }
 
   /**
