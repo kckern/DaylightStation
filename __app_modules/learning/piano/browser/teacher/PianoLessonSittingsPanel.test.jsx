@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 const api = vi.hoisted(() => ({ lessonSittings: vi.fn() }));
 vi.mock('../learning.mjs', () => ({ pianoLearningApi: api }));
 
-import PianoLessonSittingsPanel from './PianoLessonSittingsPanel.jsx';
+import PianoLessonSittingsPanel, { lessonSittingRow } from './PianoLessonSittingsPanel.jsx';
 
 const row = (extra) => ({
   sittingId: 's1', plexId: 'plex:1', title: 'Lesson A', updatedAt: '2026-11-12T15:00:00Z', percent: 95,
@@ -45,5 +45,20 @@ describe('PianoLessonSittingsPanel', () => {
     api.lessonSittings.mockResolvedValue({ ok: true, status: 200, data: { sittings: [] } });
     render(<PianoLessonSittingsPanel learnerId="kid" />);
     expect(await screen.findByText('No piano lessons in the last two weeks.')).toBeTruthy();
+  });
+
+  it('the Ladder column: peak rung and minimal check-ins, warned past one scale', async () => {
+    expect(lessonSittingRow(row({ peakRung: 3, minimalCheckIns: 2 })).ladder).toEqual({ text: 'peak hands together · 2 minimal', warn: true });
+    expect(lessonSittingRow(row({ peakRung: 1, minimalCheckIns: 0 })).ladder).toEqual({ text: 'peak 1 scale', warn: false });
+    expect(lessonSittingRow(row({ peakRung: 4, minimalCheckIns: 5 })).ladder.text).toBe('peak 2 × hands together · 5 minimal');
+    expect(lessonSittingRow(row({ checkIns: 0, peakRung: 0 })).ladder).toEqual({ text: '—', warn: false });
+    expect(lessonSittingRow(row({ peakRung: undefined, minimalCheckIns: undefined })).ladder).toEqual({ text: 'peak note', warn: false });
+    api.lessonSittings.mockResolvedValue({ ok: true, status: 200, data: { sittings: [row({ sittingId: 'w', peakRung: 3, minimalCheckIns: 2 }), row({ sittingId: 'n', peakRung: 1 })] } });
+    render(<PianoLessonSittingsPanel learnerId="kid" />);
+    const warned = await screen.findByText('peak hands together · 2 minimal');
+    expect(screen.getByText('Ladder')).toBeTruthy();
+    expect(warned.className).toContain('piano-sittings__ladder--warn');
+    expect(warned.getAttribute('title')).toBe('Climbed past one scale');
+    expect(screen.getByText('peak 1 scale').className).not.toContain('piano-sittings__ladder--warn');
   });
 });

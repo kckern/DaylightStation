@@ -85,4 +85,24 @@ describe('progress store: the presence ladder per sitting', () => {
     expect(e.practice).toBeUndefined();
     expect(topRungLogs(logger)).toHaveLength(0);
   });
+
+  it('calls the presence notifier once per sitting at the top rung, without awaiting it', () => {
+    const presenceNotifier = vi.fn(() => new Promise(() => {}));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const store = new YamlUserVideoProgressStore({ configService: configService(), logger, lessonExpectations: expectations, presenceNotifier });
+    store.record({ userId: USER, plexId: '100', percent: 20, engaged: true, title: 'Lesson A', practice: practice('s1', { peakRung: 4, minimalCheckIns: 3 }) });
+    store.record({ userId: USER, plexId: '100', percent: 30, engaged: true, title: 'Lesson A', practice: practice('s1', { peakRung: 4, minimalCheckIns: 4 }) });
+    expect(presenceNotifier).toHaveBeenCalledTimes(1);
+    expect(presenceNotifier).toHaveBeenCalledWith(expect.objectContaining({ userId: USER, title: 'Lesson A', minimalCheckIns: 3, at: expect.any(String) }));
+  });
+
+  it('a notifier that throws or rejects never breaks the record path', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const store = new YamlUserVideoProgressStore({ configService: configService(), logger, lessonExpectations: expectations, presenceNotifier: () => Promise.reject(new Error('x')) });
+    expect(() => store.record({ userId: USER, plexId: '100', percent: 20, engaged: true, practice: practice('s1', { peakRung: 4 }) })).not.toThrow();
+    const thrower = new YamlUserVideoProgressStore({ configService: configService(), logger, lessonExpectations: expectations, presenceNotifier: () => { throw new Error('y'); } });
+    expect(() => thrower.record({ userId: USER, plexId: '100', percent: 20, engaged: true, practice: practice('s2', { peakRung: 4 }) })).not.toThrow();
+    await Promise.resolve();
+    expect(logger.warn).toHaveBeenCalledWith('piano.presence-ladder.notify-failed', expect.objectContaining({ error: 'y' }));
+  });
 });

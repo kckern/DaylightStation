@@ -61,7 +61,7 @@ import { createWatchCompletionRules } from "#shared/contracts/media/watchComplet
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, sequenceStore = null, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, lessonGoodFaithGateway = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
+  const { registry, sequenceStore = null, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, lessonGoodFaithGateway = null, presenceLadderNotifier = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
 
   const { contentCatalog, contentIdResolver, aliasResolver, contentQueryService, siblingsService } = createContentQueryContext({ prefixAliases, registry, logger, configService, mediaProgressMemory });
 
@@ -82,7 +82,9 @@ export function createApiRouters(config) {
   // The session-level good-faith judge: one scoped gateway call per finished
   // sitting, asked from the play/log path (videos.practice.good_faith_model).
   const sittingJudge = createLessonSittingJudge({ decisionGateway: lessonGoodFaithGateway, configService, logger });
-  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger, lessonExpectations, sittingLog: lessonSittingLog, sittingJudge });
+  // presenceLadderNotifier: the optional owner push when a sitting reaches the
+  // top presence rung (videos.practice.presence_ladder.notify_top_rung; off).
+  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger, lessonExpectations, sittingLog: lessonSittingLog, sittingJudge, presenceNotifier: presenceLadderNotifier });
 
   const { localMediaAdapter, getLocalMediaResource, getLocalMediaThumbnail, getContentMediaResource } = createMediaResourceOperations({ registry, mediaBasePath, cacheBasePath, dataPath, logger, config });
 

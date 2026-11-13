@@ -32,20 +32,25 @@ export class YamlUserVideoProgressStore {
   #expectations;
   #sittingLog;
   #judge;
+  #presenceNotifier;
 
   /**
    * `lessonExpectations` is the lesson index (which lessons sit in an
    * engagement-gated course, and their show/season for preschool mode); its
    * targets and AI ratings are NOT read for credit (owner, 2026-11-12).
    * `sittingJudge` ({ judge, peek }) is the session-level good-faith judge.
+   * `presenceNotifier` (optional) is called once when a sitting first reaches
+   * the top presence rung; never awaited.
    */
-  constructor({ configService, logger = console, app = 'piano', filename = 'video-progress', lessonExpectations = null, sittingLog = null, sittingJudge = null }) {
+  constructor({ configService, logger = console, app = 'piano', filename = 'video-progress', lessonExpectations = null, sittingLog = null, sittingJudge = null, presenceNotifier = null }) {
     this.#configService = configService;
     this.#logger = logger;
     this.#records = new YamlUserAppRecordStore({ configService, app, filename });
     this.#expectations = lessonExpectations;
     this.#sittingLog = sittingLog;
     this.#judge = sittingJudge;
+    // Optional owner push at the top of the presence ladder (fire-and-forget).
+    this.#presenceNotifier = typeof presenceNotifier === 'function' ? presenceNotifier : null;
   }
 
   #videosConfig() {
@@ -147,13 +152,18 @@ export class YamlUserVideoProgressStore {
    * ladder (two hands-together scales) is logged once — the early warning the
    * teacher console and the owner push read.
    */
-  #noteTopRung({ userId, key, plexId, existing, practiceState, sittingId }) {
+  #noteTopRung({ userId, key, plexId, existing, practiceState, sittingId, title }) {
     const before = intOf(existing?.practice?.sittings?.[sittingId]?.peakRung);
     const sit = practiceState.sittings[sittingId];
     if (!sit || before >= TOP_RUNG || sit.peakRung < TOP_RUNG) return;
     const e = this.#expectationFor(plexId);
     const preschool = e ? this.#isPreschool(e) : false;
     this.#logger.info?.('piano.presence-ladder.top-rung', { userId, key, sittingId, minimalCheckIns: sit.minimalCheckIns, preschool });
+    if (!this.#presenceNotifier) return;
+    const fail = (err) => this.#logger.warn?.('piano.presence-ladder.notify-failed', { userId, key, error: err?.message });
+    try {
+      Promise.resolve(this.#presenceNotifier({ userId, title, minimalCheckIns: sit.minimalCheckIns, at: new Date().toISOString() })).catch(fail);
+    } catch (err) { fail(err); }
   }
 
   /** Judge credit for an entry at this post. */
@@ -283,7 +293,10 @@ export class YamlUserVideoProgressStore {
       userId, key, percent: normalizedPercent, engaged: nowEngaged, completed: !!completedAt,
       ...(credit ? { outcome: credit.outcome, score: credit.score ?? null } : {}),
     });
-    if (report?.sittingId) this.#noteTopRung({ userId, key, plexId, existing, practiceState, sittingId: String(report.sittingId).slice(0, 64) });
+    if (report?.sittingId) {
+      const lessonTitle = typeof title === 'string' && title.trim() ? title.slice(0, 200) : (existing.title ?? null);
+      this.#noteTopRung({ userId, key, plexId, existing, practiceState, sittingId: String(report.sittingId).slice(0, 64), title: lessonTitle });
+    }
     if (report?.sittingId && this.#sittingLog) {
       try {
         const sit = practiceState.sittings[String(report.sittingId).slice(0, 64)] || {};

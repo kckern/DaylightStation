@@ -209,6 +209,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/piano/server/adapters/YamlLessonSittingLog.mjs': 'adapters',
   '__app_modules/learning/piano/server/adapters/InMemoryLegitJudgementCache.mjs': 'adapters',
   '__app_modules/learning/piano/server/composition/lesson-expectations.mjs': 'composition',
+  '__app_modules/learning/piano/server/composition/presence-ladder-notifier.mjs': 'composition',
   '__app_modules/learning/piano/server/composition/lesson-good-faith.mjs': 'composition',
   '__capabilities/content-catalog/server/adapters/ContentPrefixConfigSource.mjs': 'adapters',
   '__capabilities/content-catalog/server/adapters/PrewarmHttpStatusClient.mjs': 'adapters',

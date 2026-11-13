@@ -31,7 +31,21 @@ function scoreText(row) {
   return `${row.score}/10${fallback ? ' · no judge' : ''}`;
 }
 
-/** The teacher's view of each piano lesson sitting: the silent good-faith score, check-ins, warm-up and outcome. */
+/** The presence ladder's rungs (presenceLadder.mjs PRESENCE_RUNGS), as a teacher reads them. */
+const RUNG_LABEL = Object.freeze(['note', '1 scale', '2 scales', 'hands together', '2 × hands together']);
+/** A sitting whose ladder climbed past one scale is the early warning (R7). */
+const LADDER_WARN_RUNG = 2;
+
+/** The sitting's presence ladder: its peak rung and how many check-ins were answered with no playing since. */
+function ladderOf(row) {
+  if (!(Number(row.checkIns) > 0)) return { text: '—', warn: false };
+  const r = Math.trunc(Number(row.peakRung));
+  const peak = Number.isFinite(r) ? Math.max(0, Math.min(RUNG_LABEL.length - 1, r)) : 0;
+  const minimal = Math.max(0, Math.trunc(Number(row.minimalCheckIns)) || 0);
+  return { text: `peak ${RUNG_LABEL[peak]}${minimal ? ` · ${minimal} minimal` : ''}`, warn: peak >= LADDER_WARN_RUNG };
+}
+
+/** The teacher's view of each piano lesson sitting: the silent good-faith score, check-ins, the presence ladder, warm-up and outcome. */
 export function lessonSittingRow(row) {
   const checkIns = `${row.checkIns ?? 0}${row.scaleCheckIns ? ` (${row.scaleCheckIns} scales)` : ''}`;
   const drill = row.drillReps ? `${row.drillReps} ${row.preschool ? 'games' : 'scales'}, passed ${row.drillsPassed ?? 0}` : '—';
@@ -41,6 +55,7 @@ export function lessonSittingRow(row) {
     watched: `${row.percent ?? 0}%`,
     score: scoreText(row),
     checkIns,
+    ladder: ladderOf(row),
     rate: rate(row),
     drill,
     outcome: OUTCOME[row.outcome] ?? row.outcome ?? '',
@@ -60,13 +75,16 @@ export default function PianoLessonSittingsPanel({ learnerId }) {
       {record.state === 'ok' && (
         <table className="piano-sittings">
           <thead>
-            <tr><th>When</th><th>Lesson</th><th>Watched</th><th>Score</th><th>Check-ins</th><th>Playing</th><th>Warm-up</th><th>Outcome</th></tr>
+            <tr><th>When</th><th>Lesson</th><th>Watched</th><th>Score</th><th>Check-ins</th><th>Ladder</th><th>Playing</th><th>Warm-up</th><th>Outcome</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.when}</td><td>{r.lesson}</td><td>{r.watched}</td><td>{r.score}</td>
-                <td>{r.checkIns}</td><td>{r.rate}</td><td>{r.drill}</td><td>{r.outcome}</td>
+                <td>{r.checkIns}</td>
+                <td className={r.ladder.warn ? 'piano-sittings__ladder piano-sittings__ladder--warn' : 'piano-sittings__ladder'}
+                  title={r.ladder.warn ? 'Climbed past one scale' : undefined}>{r.ladder.text}</td>
+                <td>{r.rate}</td><td>{r.drill}</td><td>{r.outcome}</td>
               </tr>
             ))}
           </tbody>

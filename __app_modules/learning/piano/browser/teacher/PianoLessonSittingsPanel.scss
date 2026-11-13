@@ -7,4 +7,6 @@
   th { text-align: left; font-weight: 700; padding: 6px 8px; border-bottom: 2px solid #d8d0bf; white-space: nowrap; }
   td { padding: 6px 8px; border-bottom: 1px solid #ebe5d8; vertical-align: top; }
   td:nth-child(2) { max-width: 22ch; }
+  // The ladder climbed past one scale: the early warning (amber, no glyph).
+  .piano-sittings__ladder--warn { background: #f6dfa4; font-weight: 700; }
 }

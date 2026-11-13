@@ -54,6 +54,8 @@ import { createFitnessReceiptRuntime } from "../../__app_modules/wellness/fitnes
 import { createFitnessApiRuntime } from "../../__app_modules/wellness/fitness/server/api-runtime.mjs";
 import {createPianoModule} from "../../__app_modules/learning/piano/server/composition.mjs";
 import { registerPianoLessonExpectationHarvester } from "../../__app_modules/learning/piano/server/composition/lesson-expectations.mjs";
+import { createPresenceLadderNotifier } from "../../__app_modules/learning/piano/server/composition/presence-ladder-notifier.mjs";
+import { personDisplayName } from "#domains/notification/push/pushText.mjs";
 /**
  * DDD App Factory
  *
@@ -1158,6 +1160,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     savedQueryService,
     eventBus,
     lessonGoodFaithGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-good-faith' }),
+    // Owner push at the top of a lesson's presence ladder: the head of
+    // household's HA notify service, as harvester health. Off unless
+    // videos.practice.presence_ladder.notify_top_rung is true (read per push).
+    presenceLadderNotifier: createPresenceLadderNotifier({
+      isEnabled: () => configService.getHouseholdAppConfig?.(null, 'piano')?.videos?.practice?.presence_ladder?.notify_top_rung === true,
+      getHaGateway: () => (householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null),
+      getNotifyService: () => {
+        const recipient = configService.getHeadOfHousehold?.();
+        return recipient ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service ?? null : null;
+      },
+      getDisplayName: (userId) => personDisplayName(userService.getProfile(userId), userId),
+      timezone: configService.getTimezone?.() || null,
+      logger: rootLogger.child({ module: 'piano-presence-ladder' }),
+    }),
     economyService: economyApi.economyService,
     reportPlaybackSession,
     playLedger,
