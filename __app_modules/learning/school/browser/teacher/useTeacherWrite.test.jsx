@@ -18,8 +18,6 @@ beforeEach(() => {
   profile.teachers = [TEACHER];
   profile.pickerOpen = false;
   profile.openPicker = vi.fn();
-  profile.requestAuthorization = vi.fn(async () => ({ ok: true, grantToken: null }));
-  profile.invalidateAuthorization = vi.fn();
 });
 
 describe('useTeacherWrite — a run waiting on the teacher picker (awaitClaim)', () => {
@@ -69,5 +67,31 @@ describe('useTeacherWrite — a run waiting on the teacher picker (awaitClaim)',
     act(() => { settled = result.current.run('k', vi.fn()); });
     await expect(settled).resolves.toBe(false);
     expect(profile.openPicker).toHaveBeenCalled();
+  });
+});
+
+describe('useTeacherWrite — a claimed teacher', () => {
+  it('sends the picked teacher as actorId and nothing else', async () => {
+    profile.currentTeacher = TEACHER;
+    const { result } = renderHook(() => useTeacherWrite({ panel: 'test' }));
+    const call = vi.fn(async () => ({ ok: true, status: 200, data: { saved: true } }));
+    const onSuccess = vi.fn();
+    let settled;
+    await act(async () => { settled = await result.current.run('k', call, { onSuccess }); });
+    expect(settled).toBe(true);
+    expect(call).toHaveBeenCalledWith({ actorId: 'teacher' });
+    expect(onSuccess).toHaveBeenCalledWith({ saved: true });
+  });
+
+  it('a 403 says the server\'s reason once and is not retried', async () => {
+    profile.currentTeacher = TEACHER;
+    const { result } = renderHook(() => useTeacherWrite({ panel: 'test' }));
+    const call = vi.fn(async () => ({ ok: false, status: 403, data: { error: 'Only a listed teacher can do that.' } }));
+    let settled;
+    await act(async () => { settled = await result.current.run('k', call); });
+    expect(settled).toBe(false);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(result.current.errors.k).toBe('Only a listed teacher can do that.');
+    expect(teacherLog.writeRefused).toHaveBeenCalledWith('refused', expect.objectContaining({ panel: 'test', key: 'k', status: 403 }));
   });
 });

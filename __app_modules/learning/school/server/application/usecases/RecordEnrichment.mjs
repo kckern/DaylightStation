@@ -22,10 +22,10 @@ export class RecordEnrichment {
   }
 
   async execute({
-    recordedBy = null, pin = null, learnerIds = [], from, to = null,
+    recordedBy = null, learnerIds = [], from, to = null,
     title, subjectIds = [], note = null, kind = 'enrichment',
   } = {}) {
-    this.#teacherGate.assert({ userId: recordedBy, pin, action: 'enrichment.record', context: { title, kind } });
+    this.#teacherGate.assert({ userId: recordedBy, action: 'enrichment.record', context: { title, kind } });
     // Two entry kinds share the calendar-exception machinery (advocacy B5):
     // 'enrichment' excuses pacing AND prints as credit; 'absence' (sick week,
     // non-educational travel) excuses pacing and NEVER appears as credit —

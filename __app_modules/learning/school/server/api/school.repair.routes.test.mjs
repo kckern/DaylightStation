@@ -22,11 +22,11 @@ function appWith(over = {}) {
     teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'learner4', note: 'Hi', from: 'kckern', at: 't' }]) },
     recordTeacherNote: { execute: vi.fn(async (args) => ({ entry: { id: 'note_2', ...args } })) },
     reassignEvidence: { execute: vi.fn(async (args) => {
-      if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
+      if (args.reassignedBy !== 'kckern') throw new GuestForbiddenError('Only a listed teacher can do this.');
       return { moved: 3, ...args };
     }) },
     reassignSession: { execute: vi.fn(async (args) => {
-      if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
+      if (args.reassignedBy !== 'kckern') throw new GuestForbiddenError('Only a listed teacher can do this.');
       return { sessionId: args.sessionId, fromLearnerId: 'learner4', toLearnerId: args.toLearnerId, day: '2026-08-06' };
     }) },
     attemptsStore: { readAttemptDay: vi.fn(() => [
@@ -48,7 +48,7 @@ describe('wave-5 repair routes', () => {
     const app = appWith();
     expect((await request(app).get('/api/v1/school/attestations?learnerId=learner4')).body.entries.length).toBe(1);
     const res = await request(app).post('/api/v1/school/attestations')
-      .send({ learnerId: 'learner4', unitId: 'u1', reason: 'r', attestedBy: 'kckern', pin: '7410' });
+      .send({ learnerId: 'learner4', unitId: 'u1', reason: 'r', attestedBy: 'kckern' });
     expect(res.status).toBe(201);
     expect(res.body.entry.learnerId).toBe('learner4');
   });
@@ -57,7 +57,7 @@ describe('wave-5 repair routes', () => {
     const app = appWith();
     expect((await request(app).get('/api/v1/school/teacher-notes?learnerId=learner4')).body.entries.length).toBe(1);
     const res = await request(app).post('/api/v1/school/teacher-notes')
-      .send({ learnerId: 'learner4', note: 'Hello', from: 'kckern', pin: '7410' });
+      .send({ learnerId: 'learner4', note: 'Hello', from: 'kckern' });
     expect(res.status).toBe(201);
   });
 
@@ -70,25 +70,25 @@ describe('wave-5 repair routes', () => {
     ]));
   });
 
-  it('POST /reassign forwards the pin and maps a refusal to 403', async () => {
+  it('POST /reassign forwards the teacher and maps a refusal to 403', async () => {
     const app = appWith();
     const okRes = await request(app).post('/api/v1/school/reassign')
-      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern' });
     expect(okRes.status).toBe(200);
     expect(okRes.body.moved).toBe(3);
     const badRes = await request(app).post('/api/v1/school/reassign')
-      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '0' });
+      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'learner4' });
     expect(badRes.status).toBe(403);
   });
 
   it('POST /reassign-session passes the reason through and never takes fromLearnerId from the caller', async () => {
     const execute = vi.fn(async (args) => {
-      if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
+      if (args.reassignedBy !== 'kckern') throw new GuestForbiddenError('Only a listed teacher can do this.');
       return { sessionId: args.sessionId, fromLearnerId: 'learner4', toLearnerId: args.toLearnerId, day: '2026-08-06' };
     });
     const app = appWith({ reassignSession: { execute } });
     const okRes = await request(app).post('/api/v1/school/reassign-session')
-      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'wrong child sat down', reassignedBy: 'kckern', pin: '7410', fromLearnerId: 'someone-else' });
+      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'wrong child sat down', reassignedBy: 'kckern', fromLearnerId: 'someone-else' });
     expect(okRes.status).toBe(200);
     expect(okRes.body).toMatchObject({ sessionId: 'ses_1', fromLearnerId: 'learner4', toLearnerId: 'learner3' });
     // The body's `fromLearnerId` is ignored: the use case reads it off the
@@ -96,7 +96,7 @@ describe('wave-5 repair routes', () => {
     expect(execute.mock.calls[0][0]).not.toHaveProperty('fromLearnerId');
     expect(execute.mock.calls[0][0]).toMatchObject({ reason: 'wrong child sat down', reassignedBy: 'kckern' });
     const badRes = await request(app).post('/api/v1/school/reassign-session')
-      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'r', reassignedBy: 'kckern', pin: '0' });
+      .send({ sessionId: 'ses_1', toLearnerId: 'learner3', reason: 'r', reassignedBy: 'learner4' });
     expect(badRes.status).toBe(403);
   });
 

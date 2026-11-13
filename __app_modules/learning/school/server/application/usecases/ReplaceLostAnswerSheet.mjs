@@ -26,11 +26,11 @@ export class ReplaceLostAnswerSheet {
     this.#logger = logger;
   }
 
-  async execute({ cardId, reportedBy, pin = null, authorized = false } = {}) {
+  async execute({ cardId, reportedBy, authorized = false } = {}) {
     if (!/^\d{7}$/.test(cardId ?? '')) throw new Error('cardId must be 7 digits');
     if (!authorized) {
       this.#teacherGate.assert({
-        userId: reportedBy, pin, action: 'answer-sheet.replace-lost', context: { cardId },
+        userId: reportedBy, action: 'answer-sheet.replace-lost', context: { cardId },
       });
     }
 

@@ -901,13 +901,12 @@ export async function createSchoolLifecycle({
     logger,
   });
 
-  // The console write predicate (teacher-console spec §1): role + pin over
-  // the same live-roster adult rule, via the one shared factory so the
+  // The console write predicate (teacher-console spec §1): role over the
+  // same live-roster adult rule, via the one shared factory so the
   // config accessors cannot drift between composition sites.
   const teacherConfig = new SchoolTeacherConfigSource({ configService });
   const teacherGate = makeTeacherGate({
     loadTeachers: teacherConfig.teachers,
-    loadTeacherPin: teacherConfig.pin,
     userService, clock, logger,
   });
   const { YamlCurriculumExceptionStore } = await import("../adapters/persistence/YamlCurriculumExceptionStore.mjs");

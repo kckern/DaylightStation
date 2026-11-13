@@ -46,8 +46,8 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
     panel: 'feedback-notes',
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'feedback-retract' });
-  const retract = (item) => run(item.itemId, ({ actorId, pin }) => schoolApi.retract({
-    kind: 'note', entryId: item.itemId, retractedBy: actorId, pin,
+  const retract = (item) => run(item.itemId, ({ actorId }) => schoolApi.retract({
+    kind: 'note', entryId: item.itemId, retractedBy: actorId,
   }), { onSuccess: feedback.retry });
   return (
     <PanelFrame
@@ -108,8 +108,8 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
 export function NoteComposer({ learnerId, learnerName, onSent }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'note-composer' });
   const [draft, setDraft] = useState('');
-  const send = () => run('send', ({ actorId, pin }) => schoolApi.postTeacherNote({
-    learnerId, note: draft, from: actorId, pin,
+  const send = () => run('send', ({ actorId }) => schoolApi.postTeacherNote({
+    learnerId, note: draft, from: actorId,
   }), { onSuccess: () => { setDraft(''); onSent?.(); } });
   return (
     <section className="teacher-panel">

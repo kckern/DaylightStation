@@ -132,7 +132,7 @@ export class GetTeacherSession {
           && unit?.companion?.participation === 'required'),
         offerRetake: state.outcome?.result === 'needs_remediation' && !state.remediation,
         // A handed-in sheet with a question still waiting on a person: settling
-        // now is refused as `awaiting_review` AFTER the step-up PIN, so it is not
+        // now is refused as `awaiting_review` AFTER the teacher gate, so it is not
         // offered. GradeSubmission only says that from `submitted`; a marked
         // session settles as a `duplicate`, which the console accepts. For units
         // with no printed sheet GradeSubmission blocks on roster items, not these

@@ -4,8 +4,8 @@
  * learner rated, its two faces, and the rating they gave (Again / Hard /
  * Good / Easy).
  *
- * Reads `POST /flashcards/teacher-report` (teacher-gated; the school router
- * fills the console's capability in from its cookie), whose `sessions` come
+ * Reads `POST /flashcards/teacher-report` (teacher-gated on the picked
+ * teacher's `actorId`), whose `sessions` come
  * from the append-only review events. Shown for every deck the learner is
  * enrolled in, and for any other deck they have reviewed.
  */

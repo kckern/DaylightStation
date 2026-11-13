@@ -73,20 +73,20 @@ describe('ReviewHeldCardScan', () => {
 
   it('teacher-gates list/inspect and presents both deterministic identicons and titles', async () => {
     const heldScanId = await seed(h);
-    const [item] = await h.useCase.list({ reviewerId: 'parent', pin: '1234' });
+    const [item] = await h.useCase.list({ reviewerId: 'parent' });
     expect(h.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'parent', action: 'answer-sheet-review.list' }));
     expect(item.evidence.candidateWorksheets).toEqual(expect.arrayContaining([
       expect.objectContaining({ title: 'Math worksheet', identicon: expect.objectContaining({ size: 5 }) }),
       expect.objectContaining({ title: 'Scripture worksheet', identicon: expect.objectContaining({ size: 5 }) }),
     ]));
-    expect((await h.useCase.inspect({ heldScanId, reviewerId: 'parent', pin: '1234' })).heldScanId).toBe(heldScanId);
+    expect((await h.useCase.inspect({ heldScanId, reviewerId: 'parent' })).heldScanId).toBe(heldScanId);
   });
 
   it('reassigns ordinally without compacting blanks or multiple marks and records full provenance', async () => {
     const heldScanId = await seed(h);
     const result = await h.useCase.resolve({
       heldScanId, action: 'reassign', targetRecordId: h.target.recordId,
-      reviewerId: 'parent', pin: '1234', idempotencyKey: 'reassign-1',
+      reviewerId: 'parent', idempotencyKey: 'reassign-1',
     });
     expect(h.resolveCardScan.execute).toHaveBeenCalledWith(expect.objectContaining({
       testId: '9427608', answers: { 10: 'A', 12: ['B', 'C'] },
@@ -113,7 +113,7 @@ describe('ReviewHeldCardScan', () => {
     const heldScanId = await seed(h);
     const args = {
       heldScanId, action: 'confirm', targetRecordId: h.source.recordId,
-      reviewerId: 'parent', pin: '1234', idempotencyKey: 'confirm-1',
+      reviewerId: 'parent', idempotencyKey: 'confirm-1',
     };
     const first = await h.useCase.resolve(args);
     const duplicate = await h.useCase.resolve(args);
@@ -129,7 +129,7 @@ describe('ReviewHeldCardScan', () => {
   it('redo creates no grade, quarantines the source window, and repeated idempotency keys are no-ops', async () => {
     const heldScanId = await seed(h);
     const args = {
-      heldScanId, action: 'redo', reviewerId: 'parent', pin: '1234', idempotencyKey: 'redo-1',
+      heldScanId, action: 'redo', reviewerId: 'parent', idempotencyKey: 'redo-1',
     };
     const first = await h.useCase.resolve(args);
     const second = await h.useCase.resolve(args);
@@ -145,10 +145,10 @@ describe('ReviewHeldCardScan', () => {
     const [confirm, redo] = await Promise.allSettled([
       h.useCase.resolve({
         heldScanId, action: 'confirm', targetRecordId: h.source.recordId,
-        reviewerId: 'parent', pin: '1234', idempotencyKey: 'race-confirm',
+        reviewerId: 'parent', idempotencyKey: 'race-confirm',
       }),
       h.useCase.resolve({
-        heldScanId, action: 'redo', reviewerId: 'parent', pin: '1234', idempotencyKey: 'race-redo',
+        heldScanId, action: 'redo', reviewerId: 'parent', idempotencyKey: 'race-redo',
       }),
     ]);
     expect(confirm.status).toBe('fulfilled');
@@ -163,7 +163,7 @@ describe('ReviewHeldCardScan', () => {
     h.target.rowItems[1].itemType = 'companion_code';
     await expect(h.useCase.resolve({
       heldScanId, action: 'reassign', targetRecordId: h.target.recordId,
-      reviewerId: 'parent', pin: '1234', idempotencyKey: 'gate-1',
+      reviewerId: 'parent', idempotencyKey: 'gate-1',
     })).rejects.toThrow(/companion-gated/);
     expect(h.resolveCardScan.execute).not.toHaveBeenCalled();
   });
@@ -185,7 +185,7 @@ describe('ReviewHeldCardScan', () => {
 
     await expect(h.useCase.resolve({
       heldScanId: ambiguous.record.heldScanId, action: 'reassign', targetRecordId: h.target.recordId,
-      reviewerId: 'parent', pin: '1234', idempotencyKey: 'ambiguous-source-1',
+      reviewerId: 'parent', idempotencyKey: 'ambiguous-source-1',
     })).rejects.toThrow(/not unambiguous/);
     expect(h.resolveCardScan.execute).not.toHaveBeenCalled();
     expect(h.allocationStore.quarantineRows).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe('ReviewHeldCardScan', () => {
   it('teacher-gates quarantine clearance and passes through only the explicit clearance method', async () => {
     await expect(h.useCase.clearQuarantine({
       cardId: '8684155', quarantineId: 'held:1-3', method: 'verified-erased',
-      reviewerId: 'parent', pin: '1234',
+      reviewerId: 'parent',
     })).resolves.toMatchObject({ method: 'verified-erased', reviewerId: 'parent' });
     expect(h.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'parent', action: 'answer-sheet-review.clear-quarantine',

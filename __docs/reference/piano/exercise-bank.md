@@ -502,8 +502,8 @@ partner can select exit instead of accidentally retrying.
 
 Learner enrollments and pending video checkpoints live under
 `users/<id>/apps/piano/learning.yml`. Teacher assignments live under the
-household piano app with an append-only assignment history and use the existing
-teacher PIN gate. Progress itself is not duplicated there: it is projected from
+household piano app with an append-only assignment history and use the School
+teacher gate (a grown-up listed in `teachers:`). Progress itself is not duplicated there: it is projected from
 the attempt ledger, so a qualifying performance in Exercises or a game counts
 against the same requirement.
 

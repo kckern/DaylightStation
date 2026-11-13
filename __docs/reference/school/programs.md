@@ -720,19 +720,17 @@ The examples below are the program-facing subset.
 node cli/school.mjs ops status learner3
 node cli/school.mjs ops monitor learner3 learner4 --watch
 
-# Prints a redacted request; does not write
-SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
-  --syllabus come-follow-me-ot-2026-lower --teacher kckern \
-  --pin-env SCHOOL_PIN
+# Prints the request; does not write
+node cli/school.mjs ops enroll learner3 \
+  --syllabus come-follow-me-ot-2026-lower --teacher kckern
 
 # Explicit mutation
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
-  --syllabus come-follow-me-ot-2026-lower --teacher kckern \
-  --pin-env SCHOOL_PIN --apply
+node cli/school.mjs ops rematerialize learner3 \
+  --syllabus come-follow-me-ot-2026-lower --teacher kckern --apply
 ```
 
 Mutations are dry-run by default, fetch current assignment revision for the
-stale-write guard, never print the PIN, and require `--apply`. Available writes
+stale-write guard, and require `--apply`. Available writes
 are `assign`, `enroll`, `rematerialize`, and `abandon`. Existing `school sim`
 commands remain the deterministic simulation surface; `ops status/monitor`
 cover live diagnosis. There is deliberately no generic “force complete” or

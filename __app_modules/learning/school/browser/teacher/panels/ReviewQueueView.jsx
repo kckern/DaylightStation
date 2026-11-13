@@ -52,8 +52,8 @@ export default function ReviewQueueView({ items, kids, onResolved, titleFor = ()
 
   const resolve = (item, verdict) => {
     const key = `${item.sessionId}:${item.itemId}`;
-    run(key, ({ actorId, pin }) => schoolApi.resolveReview(item.sessionId, item.itemId, {
-      verdict, note: (notes[key] ?? '').trim() || null, gradedBy: actorId, pin,
+    run(key, ({ actorId }) => schoolApi.resolveReview(item.sessionId, item.itemId, {
+      verdict, note: (notes[key] ?? '').trim() || null, gradedBy: actorId,
     }), {
       onSuccess: (data) => {
         // Disarm on the way out, so a refreshed list never reopens a reason

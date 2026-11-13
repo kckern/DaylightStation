@@ -61,10 +61,10 @@ export default function PrintPendingView({ kids, onChanged }) {
   const userIds = useMemo(() => [...new Set(jobs.map((job) => job.userId).filter(Boolean))], [jobs]);
   const quotaByUser = useQuotaByUser(userIds);
 
-  const decide = (job, decision) => run(job.id, ({ actorId, pin }) => (
+  const decide = (job, decision) => run(job.id, ({ actorId }) => (
     decision === 'approve'
-      ? schoolApi.printApprove(job.id, { approver: actorId, pin })
-      : schoolApi.printDeny(job.id, { approver: actorId, pin })
+      ? schoolApi.printApprove(job.id, { approver: actorId })
+      : schoolApi.printDeny(job.id, { approver: actorId })
   ), { onSuccess: () => { pending.retry(); onChanged?.(); } });
 
   return (

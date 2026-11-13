@@ -78,9 +78,9 @@ export class ManageProgramDayBypass {
     };
   }
 
-  async grant({ learnerId, programId = 'piano-course', reason, decidedBy, pin = null } = {}) {
+  async grant({ learnerId, programId = 'piano-course', reason, decidedBy } = {}) {
     this.#teacherGate.assert({
-      userId: decidedBy, pin, action: 'program-day-bypass.grant', context: { learnerId, programId },
+      userId: decidedBy, action: 'program-day-bypass.grant', context: { learnerId, programId },
     });
     if (!text(learnerId)) throw new ValidationError('learnerId is required');
     if (!text(reason)) throw new ValidationError('a reason is required — an override without one is unauditable');
@@ -117,9 +117,9 @@ export class ManageProgramDayBypass {
     return record;
   }
 
-  async retract({ bypassId, reason, retractedBy, pin = null } = {}) {
+  async retract({ bypassId, reason, retractedBy } = {}) {
     this.#teacherGate.assert({
-      userId: retractedBy, pin, action: 'program-day-bypass.retract', context: { bypassId },
+      userId: retractedBy, action: 'program-day-bypass.retract', context: { bypassId },
     });
     if (!text(bypassId) || !text(reason)) throw new ValidationError('bypassId and reason are required');
 

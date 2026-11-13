@@ -1,7 +1,7 @@
 /**
  * MoveReading — the book landed on the wrong child's shelf.
  *
- * A **step-up** verb (`books.reading.reassign`, scoped to the reading id): it
+ * A gated verb (`books.reading.reassign`, scoped to the reading id): it
  * changes whose reading year this book belongs to, which is the same class of
  * consequence as `sessions.reassign`. Reason required, and BOTH children are
  * told — one lost a book off their shelf, the other gained one, and neither
@@ -19,9 +19,9 @@ export class MoveReading {
 
   constructor(deps = {}) { this.#context = new ReadingEditContext(deps); }
 
-  async execute({ learnerId, readingId, toLearnerId, reason = null, by = null, pin = null, baseRevisionCount } = {}) {
+  async execute({ learnerId, readingId, toLearnerId, reason = null, by = null, baseRevisionCount } = {}) {
     this.#context.assert({
-      op: OPS.READING_MOVE, userId: by, pin, learnerId, readingId, extra: { toLearnerId },
+      op: OPS.READING_MOVE, userId: by, learnerId, readingId, extra: { toLearnerId },
     });
     if (isBlank(toLearnerId)) throw new ValidationError('toLearnerId is required');
     if (toLearnerId === learnerId) {
@@ -30,7 +30,7 @@ export class MoveReading {
     const reading = await this.#context.reading(learnerId, readingId);
     assertFreshRevisions(reading, baseRevisionCount);
     return applyReadingOperation(this.#context, {
-      learnerId, reading, op: OPS.READING_MOVE, toLearnerId, by, pin, reason,
+      learnerId, reading, op: OPS.READING_MOVE, toLearnerId, by, reason,
     });
   }
 }

@@ -88,12 +88,12 @@ describe('IssueComposedWorksheet', () => {
       teacherGate, clock: () => new Date('2026-08-21T09:00:00.000Z'), logger: { info() {} },
     });
 
-    const result = await useCase.execute({ sessionIds: ['s-one', 's-two'], issuedBy: 'kckern', pin: '2468' });
+    const result = await useCase.execute({ sessionIds: ['s-one', 's-two'], issuedBy: 'kckern' });
 
     expect(result.parts).toHaveLength(1);
     expect(printer.jobs).toHaveLength(1);
     expect(teacherGate.assert).toHaveBeenCalledWith({
-      userId: 'kckern', pin: '2468', action: 'worksheet.compose', context: { sessionIds: ['s-one', 's-two'] },
+      userId: 'kckern', action: 'worksheet.compose', context: { sessionIds: ['s-one', 's-two'] },
     });
     expect(instances.size).toBe(2);
     expect(issuedArtifacts.put).toHaveBeenCalledWith(expect.objectContaining({

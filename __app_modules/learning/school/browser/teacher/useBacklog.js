@@ -3,7 +3,7 @@
  * phone tab bar and the dashboard strip alike. They used to count three
  * different things (audit 2026-10-21 §0.4) and none refreshed when the
  * teacher acted. Answer-sheet pairing is not counted: its list read is
- * itself capability-gated, so a locked console cannot know it.
+ * itself teacher-gated, so a console with nobody picked cannot know it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { schoolApi } from "../schoolApi.js";

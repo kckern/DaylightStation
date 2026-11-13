@@ -8,23 +8,12 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../teacherWorkspaceApi.js", () => ({
   teacherWorkspaceApi: { session: vi.fn(), agendaDispatchPreview: vi.fn(), agendaDispatch: vi.fn() },
 }));
-// A claimed, server-authorized teacher, so useTeacherWrite calls straight
-// through. `requestAuthorizationMock` is hoisted so every render (and every
-// test) shares the same spy instance — the identity tests below need to
-// inspect what it was called with, not just its return value.
-const { requestAuthorizationMock } = vi.hoisted(() => ({
-  requestAuthorizationMock: vi.fn(async () => ({ ok: true, grantToken: 'grant-1' })),
-}));
+// A claimed teacher, so useTeacherWrite calls straight through.
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: requestAuthorizationMock,
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -191,7 +180,6 @@ describe('LearnerDayView — agenda dispatch', () => {
     vi.setSystemTime(new Date('2026-08-25T12:00:00Z'));
     teacherWorkspaceApi.agendaDispatchPreview.mockReset();
     teacherWorkspaceApi.agendaDispatch.mockReset();
-    requestAuthorizationMock.mockClear();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -257,18 +245,17 @@ describe('LearnerDayView — agenda dispatch', () => {
     expect(idempotencyKey).not.toContain('uuid-1');
   });
 
-  it('carries the agenda.dispatch step-up grant through to the real dispatch', async () => {
-    requestAuthorizationMock.mockResolvedValueOnce({ ok: true, grantToken: null }); // the preview call
-    requestAuthorizationMock.mockResolvedValueOnce({ ok: true, grantToken: 'grant-xyz' }); // the real dispatch
+  it('stamps the real dispatch with the picked teacher', async () => {
     teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValue(readyPreview);
     teacherWorkspaceApi.agendaDispatch.mockResolvedValue(ok({ printed: true }));
     mount();
     fireEvent.click(await screen.findByRole('button', { name: /Print the day.s agenda/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^Print it now$/i }));
     await waitFor(() => expect(teacherWorkspaceApi.agendaDispatch).toHaveBeenCalled());
-    const [, , , grantToken] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
-    expect(grantToken).toBe('grant-xyz');
-    expect(requestAuthorizationMock).toHaveBeenCalledWith({ action: 'agenda.dispatch', resource: 'user_4' });
+    const [learnerId, body, , ...rest] = teacherWorkspaceApi.agendaDispatch.mock.calls[0];
+    expect(learnerId).toBe('user_4');
+    expect(body).toMatchObject({ dispatchedBy: 'teacher_1' });
+    expect(rest).toEqual([]);
   });
 
   it('does not carry a prepared preview across a learner switch', async () => {

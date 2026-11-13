@@ -10,18 +10,12 @@ vi.mock("../../schoolApi.js", () => ({
   },
 }));
 
-// A claimed, server-authorized teacher, so useTeacherWrite calls straight
-// through without exposing or forwarding a PIN.
+// A claimed teacher, so useTeacherWrite calls straight through.
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -92,7 +86,6 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
       syllabusId: 'atlas-upper',
       rematerialize: false,
       enrolledBy: 'teacher_1',
-      pin: null,
       baseUpdatedAt: '2026-08-01T00:00:00Z',
     });
     await waitFor(() => expect(onChanged).toHaveBeenCalled());

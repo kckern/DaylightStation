@@ -46,12 +46,12 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
   const active = (log.data?.active ?? []).find((row) => row.learnerId === learnerId) ?? null;
   const refreshBoth = () => { log.retry(); gate.retry(); };
 
-  const grant = () => run('grant', ({ actorId, pin }) => schoolApi.grantProgramDayBypass({
-    learnerId, programId: 'piano-course', reason, decidedBy: actorId, pin,
+  const grant = () => run('grant', ({ actorId }) => schoolApi.grantProgramDayBypass({
+    learnerId, programId: 'piano-course', reason, decidedBy: actorId,
   }), { onSuccess: () => { setReason(''); refreshBoth(); } });
 
-  const retract = () => run('retract', ({ actorId, pin }) => schoolApi.retractProgramDayBypass(
-    active.bypassId, { reason: retractReason, retractedBy: actorId, pin },
+  const retract = () => run('retract', ({ actorId }) => schoolApi.retractProgramDayBypass(
+    active.bypassId, { reason: retractReason, retractedBy: actorId },
   ), { onSuccess: () => { setRetractReason(''); refreshBoth(); } });
 
   return (

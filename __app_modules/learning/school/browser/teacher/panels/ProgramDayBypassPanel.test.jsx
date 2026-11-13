@@ -12,18 +12,12 @@ vi.mock("../../schoolApi.js", () => ({
   },
 }));
 
-// A claimed, server-authorized teacher, so useTeacherWrite calls straight
-// through without exposing or forwarding a PIN.
+// A claimed teacher, so useTeacherWrite calls straight through.
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 'teacher-a', name: 'Teacher A' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }, { id: 'teacher-b', name: 'Teacher B' }] }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -84,7 +78,7 @@ describe('ProgramDayBypassPanel — granting', () => {
 
     await waitFor(() => expect(schoolApi.grantProgramDayBypass).toHaveBeenCalledWith({
       learnerId: 'kid1', programId: 'piano-course', reason: 'Recital tonight',
-      decidedBy: 'teacher-a', pin: null,
+      decidedBy: 'teacher-a',
     }));
   });
 
@@ -122,7 +116,7 @@ describe('ProgramDayBypassPanel — an active excusal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retract' }));
 
     await waitFor(() => expect(schoolApi.retractProgramDayBypass).toHaveBeenCalledWith('pdb_1', {
-      reason: 'Wrong kid', retractedBy: 'teacher-a', pin: null,
+      reason: 'Wrong kid', retractedBy: 'teacher-a',
     }));
   });
 

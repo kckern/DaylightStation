@@ -4,6 +4,6 @@ import { SchoolTeacherConfigSource } from './adapters/SchoolTeacherConfigSource.
 /** Shared Teacher authorization and its live School configuration projection. */
 export function createTeacherAuthorization({configService,userService,householdId,logger}) {
   const config = new SchoolTeacherConfigSource({configService});
-  const gate = makeTeacherGate({loadTeachers:config.teachers,loadTeacherPin:config.pin,userService,householdId,logger});
-  return {config,gate};
+  const gate = makeTeacherGate({loadTeachers:config.teachers,userService,householdId,logger});
+  return {gate};
 }

@@ -18,7 +18,7 @@ export function createSchoolApiServices(legacy = {}) {
     flashcardAssets = null, materialProgressStore = null, learningCatalog = null,
     learnerDirectory = null, surfaceRegistry = null, getScreenConfig = null,
     renderPrintDocument = null, printDocumentsRepo = null,
-    printAllocationStore = null, getPrintTeacherPin = null,
+    printAllocationStore = null,
     attemptsStore = null, attestationLog = null, teacherNotesStore = null,
     enrichmentLog = null, academicPeriods = null, passOverrideStore = null,
     reviewQueue = null, academicPeriodStore = null, milestoneStore = null,
@@ -53,7 +53,7 @@ export function createSchoolApiServices(legacy = {}) {
       surfaceRegistry, getScreenConfig,
     }),
     schoolPrintAccess: schoolPrintAccess ?? new SchoolPrintAccessService({
-      renderPrintDocument, printDocumentsRepo, printAllocationStore, getPrintTeacherPin,
+      renderPrintDocument, printDocumentsRepo, printAllocationStore,
     }),
     schoolRecordsQuery: schoolRecordsQuery ?? new SchoolRecordsQueryService({
       attemptsStore, attestationLog, teacherNotesStore, enrichmentLog,
@@ -71,7 +71,6 @@ export function createSchoolApiServices(legacy = {}) {
     schoolArtifactService: schoolArtifactService ?? new SchoolArtifactService({
       issuedArtifactStore, renderWorksheetThumbnail, renderIssuedArtifact, renderArtifactPostview,
       getTeacherSession: options.getTeacherSession ?? null,
-      teacherCapabilitySessions: options.teacherCapabilitySessions ?? null,
       reprintIssuedArtifact, reprintResultReceiptArtifact,
     }),
     schoolApiSessions: schoolApiSessions ?? new SchoolApiSessionService({

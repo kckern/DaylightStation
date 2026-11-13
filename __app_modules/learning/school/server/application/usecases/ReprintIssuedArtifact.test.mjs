@@ -24,7 +24,7 @@ describe('ReprintIssuedArtifact', () => {
         allocation: { cardId: '1234567', rowRange: { start: 21, end: 26 } } } })) },
       sessions, printer, teacherGate: { assert: vi.fn() }, logger: { info() {} },
     });
-    const args = { artifactId: 'art_1', reprintedBy: 'parent', pin: '1234', idempotencyKey: 'reprint-1', apply: true };
+    const args = { artifactId: 'art_1', reprintedBy: 'parent', idempotencyKey: 'reprint-1', apply: true };
 
     const first = await useCase.execute(args);
     expect(first).toMatchObject({ applied: true, cardId: '1234567', rowRange: { start: 21, end: 26 }, sha256 });
@@ -82,7 +82,7 @@ describe('ReprintIssuedArtifact against the real work-session datastore', () => 
     const printer = { printPdf: vi.fn(async () => ({ printed: true, confirmed: true })) };
 
     await expect(build(sessions, sessionId, printer).execute({
-      artifactId: ART, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'reprint-1', apply: true,
+      artifactId: ART, reprintedBy: 'parent', idempotencyKey: 'reprint-1', apply: true,
     })).rejects.toMatchObject({ name: 'DomainInvariantError', code: 'SESSION_NOT_REPRINTABLE' });
 
     expect(printer.printPdf).not.toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe('ReprintIssuedArtifact against the real work-session datastore', () => 
     const printer = { printPdf: vi.fn(async () => ({ printed: true, confirmed: true })) };
 
     await expect(build(sessions, sessionId, printer).execute({
-      artifactId: ART, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'reprint-2', apply: true,
+      artifactId: ART, reprintedBy: 'parent', idempotencyKey: 'reprint-2', apply: true,
     })).rejects.toMatchObject({ name: 'DomainInvariantError', code: 'SESSION_NOT_REPRINTABLE' });
     expect(printer.printPdf).not.toHaveBeenCalled();
   });
@@ -110,7 +110,7 @@ describe('ReprintIssuedArtifact against the real work-session datastore', () => 
     const sessions = await seed(realSessions(), sessionId);
     const printer = { printPdf: vi.fn(async () => ({ printed: true, confirmed: true })) };
     const useCase = build(sessions, sessionId, printer);
-    const args = { artifactId: ART, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'reprint-3', apply: true };
+    const args = { artifactId: ART, reprintedBy: 'parent', idempotencyKey: 'reprint-3', apply: true };
 
     const first = await useCase.execute(args);
     expect(first).toMatchObject({ applied: true, cardId: '1234567', sha256: SHA });
@@ -129,8 +129,8 @@ describe('ReprintIssuedArtifact against the real work-session datastore', () => 
     const printer = { printPdf: vi.fn(async () => ({ printed: true, confirmed: true })) };
     const useCase = build(sessions, sessionId, printer);
 
-    await useCase.execute({ artifactId: ART, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'k1', apply: true });
-    await useCase.execute({ artifactId: ART, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'k2', apply: true });
+    await useCase.execute({ artifactId: ART, reprintedBy: 'parent', idempotencyKey: 'k1', apply: true });
+    await useCase.execute({ artifactId: ART, reprintedBy: 'parent', idempotencyKey: 'k2', apply: true });
 
     expect(printer.printPdf).toHaveBeenCalledTimes(2);
     const after = await sessions.readEvents(sessionId);

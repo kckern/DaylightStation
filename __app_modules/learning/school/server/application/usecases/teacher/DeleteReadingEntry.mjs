@@ -12,12 +12,12 @@ export class DeleteReadingEntry {
 
   constructor(deps = {}) { this.#context = new ReadingEditContext(deps); }
 
-  async execute({ learnerId, readingId, entryId, reason = null, by = null, pin = null, baseRevisionCount } = {}) {
-    this.#context.assert({ op: OPS.ENTRY_DELETE, userId: by, pin, learnerId, readingId });
+  async execute({ learnerId, readingId, entryId, reason = null, by = null, baseRevisionCount } = {}) {
+    this.#context.assert({ op: OPS.ENTRY_DELETE, userId: by, learnerId, readingId });
     const reading = await this.#context.reading(learnerId, readingId);
     assertFreshRevisions(reading, baseRevisionCount);
     return applyReadingOperation(this.#context, {
-      learnerId, reading, op: OPS.ENTRY_DELETE, entryId, by, pin, reason,
+      learnerId, reading, op: OPS.ENTRY_DELETE, entryId, by, reason,
     });
   }
 }

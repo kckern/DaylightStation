@@ -12,11 +12,11 @@
  * to the next book. A batch still running when its book goes away stops
  * before its next child.
  *
- * The whole batch runs inside ONE `useTeacherWrite` run, so a teacher who has
- * not claimed or unlocked is asked once and the batch replays once. A 403
- * mid-batch hands back to that machinery; children already saved are skipped
- * on the replay. Any other failure is that child's alone: their face shows ✗
- * and a Retry that resends only them.
+ * The whole batch runs inside ONE `useTeacherWrite` run, so a grown-up who has
+ * not picked who they are is asked once and the batch replays once. A 403
+ * mid-batch ends the batch with the refusal; children already saved stay
+ * saved. Any other failure is that child's alone: their face shows ✗ and a
+ * Retry that resends only them.
  *
  * Retrying, per child (`progressRef`):
  * - one idempotency key per child per choice (what happened, the page, and
@@ -197,15 +197,11 @@ function BookCard({ isbn, facts }) {
 
 /** Steps 2 and 3 for one book. Remounted per book (see the module note). */
 function BookStep({ isbn, onAnother, onSaving }) {
-  const {
-    currentTeacher, openPicker, openPinPrompt, invalidateAuthorization, authorization,
-  } = useTeacherProfile();
+  const { currentTeacher, openPicker } = useTeacherProfile();
   const { run, errors } = useTeacherWrite({ panel: PANEL });
   const [reloadKey, setReloadKey] = useState(0);
-  // An unlock or a claim (the PIN prompt, the picker) reads the readers again.
-  const facts = useBookFacts(isbn, {
-    reloadKey: `${reloadKey}:${authorization?.active ? 1 : 0}:${currentTeacher?.id ?? ''}`,
-  });
+  // A claim (the picker) reads the readers again.
+  const facts = useBookFacts(isbn, { reloadKey: `${reloadKey}:${currentTeacher?.id ?? ''}` });
   const [selected, setSelected] = useState(() => new Set());
   const [happenedChoice, setHappened] = useState(HAPPENED.FINISHED);
   const [page, setPage] = useState('');
@@ -247,15 +243,6 @@ function BookStep({ isbn, onAnother, onSaving }) {
     if (next.has(learnerId)) next.delete(learnerId); else next.add(learnerId);
     return next;
   });
-
-  // The server just said the console is locked, so whatever the console
-  // believes about its unlock is stale: drop it and ask. The authorization
-  // flip in the reload key reads the readers again once it is answered.
-  const unlock = () => {
-    if (!currentTeacher) { openPicker(); return; }
-    invalidateAuthorization?.();
-    openPinPrompt();
-  };
 
   const choice = { happened, page: pageNumber, mode };
 
@@ -310,7 +297,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
       const outcome = await performPlan(teacherWorkspaceApi, { learnerId, progress, actorId });
       if (progress.entryDone && progress.landedEntry === null) progress.landedEntry = entryOf(plan);
       if (disposedRef.current) return STOPPED;
-      if (outcome.status === 403) return outcome; // re-ask once and replay; saved children are skipped
+      if (outcome.status === 403) return outcome; // the teacher was refused: the rest are not sent
       if (outcome.ok) {
         progress.done = true;
       } else {
@@ -351,9 +338,8 @@ function BookStep({ isbn, onAnother, onSaving }) {
         awaitClaim: true,
         onSuccess: () => { if (!disposedRef.current) setReloadKey((n) => n + 1); },
       });
-      // A run that ended without finishing (a second 403, a refused PIN, a
-      // picker closed with nobody chosen) says so on every child it never
-      // reached.
+      // A run that ended without finishing (a 403, a picker closed with
+      // nobody chosen) says so on every child it never reached.
       if (!sent && !disposedRef.current) {
         const unsent = learnerIds.filter((id) => !touched.has(id) && !progressRef.current[id]?.done);
         if (unsent.length) {
@@ -387,12 +373,14 @@ function BookStep({ isbn, onAnother, onSaving }) {
       )}
 
       {facts.readersStatus === 'loading' && <p className="teacher-logbook__note">Checking who has this book…</p>}
-      {facts.readersStatus === 'locked' && (
+      {facts.readersStatus === 'refused' && (currentTeacher ? (
+        <p className="teacher-logbook__note">{currentTeacher.name} can’t log books here.</p>
+      ) : (
         <div className="teacher-logbook__actions">
-          <p className="teacher-logbook__note">Teacher tools are locked. Unlock them to log this book.</p>
-          <button type="button" onClick={unlock}>Unlock</button>
+          <p className="teacher-logbook__note">Choose who is logging to see this book’s readers.</p>
+          <button type="button" onClick={openPicker}>Choose teacher</button>
         </div>
-      )}
+      ))}
       {facts.readersStatus === 'error' && (
         <div className="teacher-logbook__actions">
           <p className="teacher-logbook__note">Couldn’t check who has this book.</p>
@@ -508,7 +496,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
 const FOCUSABLE = 'button, select, input, [tabindex]:not([tabindex="-1"])';
 
 export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
-  const { pinPromptOpen, pickerOpen } = useTeacherProfile();
+  const { pickerOpen } = useTeacherProfile();
   const [isbn, setIsbn] = useState(null);
   const [generation, setGeneration] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -517,7 +505,7 @@ export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
   const headingRef = useRef(null);
   const returnRef = useRef(null);
   const stepRef = useRef(null);
-  const overlayRef = useRef({ pinPromptOpen: false, pickerOpen: false });
+  const pickerWasOpenRef = useRef(false);
 
   const reset = () => {
     setIsbn(null);
@@ -525,7 +513,7 @@ export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
   };
   useEffect(() => { if (!open) reset(); }, [open]);
 
-  // A real dialog (PinPrompt's and EnrollmentDrawer's pattern): focus lands
+  // A real dialog (EnrollmentDrawer's pattern): focus lands
   // inside on open, Tab wraps, Escape closes, and focus goes back on close.
   useEffect(() => {
     if (!open) return undefined;
@@ -551,14 +539,13 @@ export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
     if (step && previous && previous !== step) headingRef.current?.focus();
   }, [step]);
 
-  // The PIN prompt and the teacher picker sit above the sheet and take focus;
-  // when one closes, focus comes back into the sheet if it landed outside.
+  // The teacher picker sits above the sheet and takes focus; when it closes,
+  // focus comes back into the sheet if it landed outside.
   useEffect(() => {
-    const before = overlayRef.current;
-    overlayRef.current = { pinPromptOpen: Boolean(pinPromptOpen), pickerOpen: Boolean(pickerOpen) };
-    const closed = (before.pinPromptOpen && !pinPromptOpen) || (before.pickerOpen && !pickerOpen);
+    const closed = pickerWasOpenRef.current && !pickerOpen;
+    pickerWasOpenRef.current = Boolean(pickerOpen);
     if (open && closed && !sheetRef.current?.contains(document.activeElement)) headingRef.current?.focus();
-  }, [open, pinPromptOpen, pickerOpen]);
+  }, [open, pickerOpen]);
 
   if (!open) return null;
 

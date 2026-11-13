@@ -59,8 +59,8 @@ export class SetAssignments {
    * @throws {import('#domains/school/errors.mjs').GuestForbiddenError} not a grown-up
    * @throws {ValidationError} the record is not a shape the store can hold
    */
-  async execute({ learnerId, courses = [], units = [], programs = [], assignedBy = null, pin = null, baseUpdatedAt = undefined } = {}) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put', context: { learnerId } });
+  async execute({ learnerId, courses = [], units = [], programs = [], assignedBy = null, baseUpdatedAt = undefined } = {}) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, action: 'assignments.put', context: { learnerId } });
     else this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
       action: 'assignments.put', learnerId,
     });

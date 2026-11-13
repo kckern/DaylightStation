@@ -6,7 +6,7 @@
  * offered (it must be exactly the complement of the stuck-session panel's
  * Abandon, or a teacher meets two surfaces that both decline to help), and
  * WHAT one tap of "Settle it" actually does — note, then mark, then close, in
- * that order, with the step-up grant on the mark.
+ * that order, each stamped with the teacher who settled it.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -34,12 +34,7 @@ vi.mock("./TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: 'grant-1' })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -126,12 +121,12 @@ describe('SessionInspector — settle this by hand', () => {
 
     await waitFor(() => expect(schoolApi.closeSession).toHaveBeenCalled());
     expect(schoolApi.postTeacherNote).toHaveBeenCalledWith({
-      learnerId: 'user_2', note: 'Marked on paper at the table.', from: 'teacher_1', pin: null,
+      learnerId: 'user_2', note: 'Marked on paper at the table.', from: 'teacher_1',
     });
     expect(schoolApi.gradeSession).toHaveBeenCalledWith('ses_1', {
-      gradedBy: 'teacher_1', pin: null, settle: true, settledBy: 'teacher_1',
-    }, 'grant-1');
-    expect(schoolApi.closeSession).toHaveBeenCalledWith('ses_1', { pin: null });
+      gradedBy: 'teacher_1', settle: true, settledBy: 'teacher_1',
+    });
+    expect(schoolApi.closeSession).toHaveBeenCalledWith('ses_1', {});
     // The inspector re-reads the session, so the state it shows is the one on
     // the server rather than the one the form assumed it produced.
     await waitFor(() => expect(teacherWorkspaceApi.session.mock.calls.length).toBeGreaterThan(reads));

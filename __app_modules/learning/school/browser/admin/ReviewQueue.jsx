@@ -91,9 +91,6 @@ export default function ReviewQueue() {
     return () => { alive = false; };
   }, []);
   const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster, teachersRead);
-  // The console PIN (teacher-console spec §1): sent with every sign-off; the
-  // server only enforces it when one is configured. In-memory only.
-  const [pin, setPin] = useState('');
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -194,7 +191,7 @@ export default function ReviewQueue() {
     });
     try {
       const resolved = await schoolAdminApi.resolveReview(item.sessionId, item.itemId, {
-        verdict, gradedBy: grader.id, note, pin: pin || null,
+        verdict, gradedBy: grader.id, note,
       });
       logger.info('signoff-ok', {
         sessionId: item.sessionId, itemId: item.itemId,
@@ -218,7 +215,7 @@ export default function ReviewQueue() {
     } finally {
       setBusyKey(null);
     }
-  }, [verdicts, notes, pin, grader, graderId, logger, refresh]);
+  }, [verdicts, notes, grader, graderId, logger, refresh]);
 
   const ordered = useMemo(() => newestFirst(items), [items]);
 
@@ -242,8 +239,6 @@ export default function ReviewQueue() {
         onChange={setGraderId}
         action="sign off"
         teachersConfigured={teachersRead ? teachersRead.configured : null}
-        pin={pin}
-        onPinChange={setPin}
       />
 
       {rosterError && (

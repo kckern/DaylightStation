@@ -337,8 +337,8 @@ into. The consequence is deliberate: **a vacation added mid-year needs an
 explicit re-materialize**, the same as every other frozen field.
 
 ```bash
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize <learner> \
-  --syllabus <id> --teacher <teacher> --pin-env SCHOOL_PIN --apply
+node cli/school.mjs ops rematerialize <learner> \
+  --syllabus <id> --teacher <teacher> --apply
 ```
 
 Re-materialize is refused while any session on that course is open, and it

@@ -83,8 +83,8 @@ export default function StaleSessions({ kids = [] }) {
   const [reason, setReason] = useState('');
 
   const abandon = (row) => {
-    run(row.sessionId, ({ actorId, pin }) => schoolApi.abandonSession(row.sessionId, {
-      learnerId: row.learnerId, decidedBy: actorId, pin, reason: reason.trim(),
+    run(row.sessionId, ({ actorId }) => schoolApi.abandonSession(row.sessionId, {
+      learnerId: row.learnerId, decidedBy: actorId, reason: reason.trim(),
     }), { onSuccess: () => { setAsking(null); setReason(''); stale.retry(); } });
   };
 

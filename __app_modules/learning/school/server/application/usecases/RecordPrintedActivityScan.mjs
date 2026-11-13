@@ -3,9 +3,9 @@
  * a worksheet (a Beeloo maze or sudoku), and the child it was printed for gets
  * credit.
  *
- * THE SCAN IS THE AUTHORIZATION. Any scan on the household scanner counts, no
- * PIN — the same posture as the agenda print ticket: a parent scanning the
- * code is the sign-off.
+ * THE SCAN IS THE AUTHORIZATION. Any scan on the household scanner counts —
+ * the same posture as the agenda print ticket: a parent scanning the code is
+ * the sign-off.
  *
  * THE CHILD COMES FROM THE ISSUANCE. The page id alone names nobody; the open
  * issuance recorded when School printed the page carries learnerId, programId

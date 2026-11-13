@@ -52,9 +52,8 @@ Legacy learners with no assignment history fall back to the current assignment.
 
 Closing a period freezes the exact report-card snapshot. Re-closing is refused
 unless the teacher explicitly supersedes it; supersession archives the prior
-frozen record before writing the replacement. An ordinary first close uses the
-active teacher capability. Supersession additionally requires a fresh one-use
-grant scoped to that learner and period.
+frozen record before writing the replacement. A first close and a supersession
+both pass the teacher gate on `closedBy` — a grown-up listed in `teachers:`.
 
 ## Program reports
 

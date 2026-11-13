@@ -486,17 +486,17 @@ move to a sibling, a deleted reading. Each requires a reason, delivered through
 you". Correcting an ISBN says nothing — a feed of "a grown-up fixed the page
 count" teaches a child to ignore the feed the sentence that matters arrives in.
 
-**Two verbs cost a step-up PIN:** `books.reading.reassign` and
-`books.reading.delete`. Both halves are wired — the action name *and* its
-resource scoping — because a name in the Set with no resource requires nothing
-at all, and looks exactly like a step-up that works.
+**Every verb passes the same teacher gate** — a grown-up listed in
+`teachers:`, named by `by` (or `actorId`) on the request. Each names its own
+action for the log (`books.reading.reassign`, `books.reading.delete`, …), and
+an undo is asserted under the action of the verb it undoes.
 
 **Undo is a verb, not a stack pointer.** It applies the inverse and appends a
 new revision, so history grows and never rewinds; undoing an undo needs no
 second mechanism. Three things refuse rather than lie: a move the receiving
 child has since logged against, an already-undone revision, and adding a book —
-whose inverse is destroying the record, and which would let a capability-only
-undo do a step-up verb's work.
+whose inverse is destroying the record, which is `DeleteReading` and should be
+asked for by its own name.
 
 **The console decides nothing the server already decides.** `GET /:readingId`
 serves the counted window an obligation is measured over — as
@@ -537,8 +537,11 @@ ISBN-only card when the lookup misses: a lookup never blocks a log), then every
 enrolled learner's face, nobody preselected.
 
 `GET /school/teacher/books/:isbn/readers` (`GetBookReaders`, teacher-gated,
-read-only) is the server's view of each learner against that ISBN, read after
-the lookup so the book's length is in the cache:
+read-only, `?by=` the picked teacher) is the server's view of each learner
+against that ISBN, read after the lookup so the book's length is in the cache.
+With nobody picked the server refuses it, and the sheet says "Choose who is
+logging to see this book’s readers." with a **Choose teacher** button; a picked
+teacher who is refused reads "*Name* can’t log books here.":
 
 - `today`: opened, finished or logged on the study day. The face says "Logged
   today"; choosing it is warned, never blocked.

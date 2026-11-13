@@ -190,7 +190,7 @@ describe('POST /api/v1/school/report-card/close', () => {
     expect(res.status).toBe(201);
     expect(res.body).toEqual(frozen);
     expect(closeAcademicPeriod.execute).toHaveBeenCalledWith({
-      learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: false, pin: null,
+      learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: false,
     });
   });
 
@@ -202,7 +202,7 @@ describe('POST /api/v1/school/report-card/close', () => {
         learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: true,
       });
     expect(closeAcademicPeriod.execute).toHaveBeenCalledWith({
-      learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: true, pin: null,
+      learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: true,
     });
   });
 

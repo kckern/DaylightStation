@@ -380,12 +380,12 @@ A line's silver is `round(count × silver × multiplier)` for the whole line.
 | GET `/api/v1/earnings/preview/:learnerId?week=` | one learner: `{totals, pending, lines[], work, evidence, multiplier, rulesRevision}` |
 | GET `/api/v1/earnings/rules` | `{ruleset, kinds}` |
 | GET `/api/v1/earnings/gems?week=` | the [Gem Board](#gem-board): `{mode, week, windows, today, contestClosed, rulesRevision, learners[], groups[], categories[], cells, totals}` |
-| PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, pin, patch}` → the new ruleset (TeacherGate) |
-| PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, pin, doc}` → the new ruleset (TeacherGate) |
+| PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, patch}` → the new ruleset (TeacherGate) |
+| PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, doc}` → the new ruleset (TeacherGate) |
 
 `week` is any study day in the wanted week (default: today's). The read routes
-are reusable by any surface; writes live with each surface's own gate (the
-teacher capability cookie is scoped to `/api/v1/school`). The teacher console
+are reusable by any surface; writes live with each surface's own gate (the two
+PUTs above pass the School teacher gate on `actorId`). The teacher console
 edits rules in the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`).
 
 ### Gem Board

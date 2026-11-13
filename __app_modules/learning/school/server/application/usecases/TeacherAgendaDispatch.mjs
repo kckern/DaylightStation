@@ -25,8 +25,8 @@ export class TeacherAgendaDispatch {
       errors: result.plan?.errors ?? [], documentId: result.document?.id ?? null };
   }
 
-  async execute({ learnerId, learnerName = null, dispatchedBy = null, pin = null, idempotencyKey } = {}) {
-    this.#teacherGate.assert({ userId: dispatchedBy, pin, action: 'agenda.dispatch', context: { learnerId } });
+  async execute({ learnerId, learnerName = null, dispatchedBy = null, idempotencyKey } = {}) {
+    this.#teacherGate.assert({ userId: dispatchedBy, action: 'agenda.dispatch', context: { learnerId } });
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
     if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) throw new ValidationError('Idempotency-Key is required');
     const key = idempotencyKey.trim();

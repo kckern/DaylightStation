@@ -5,7 +5,7 @@
  * gated by a launch grant (`X-School-Book-Grant`). A grown-up has no launch and
  * never will: they are looking at a child's record, not reading a book. So this
  * route is gated the way every other learner-scoped teacher surface is — the
- * console capability, asserted through `TeacherGate` — and takes its learner
+ * picked teacher, asserted through `TeacherGate` — and takes its learner
  * from the URL rather than from a grant.
  *
  * One use case serves both (`GetBookShelf`). A second projection of the same
@@ -35,11 +35,6 @@ const SHELF = Object.freeze({
   obligation: { label: '4 of 7 days', met: false, actual: 4, target: 7, metric: 'checkins', incompatibleBooks: [] },
 });
 
-const activeCapability = () => ({
-  status: vi.fn(() => ({ active: true, userId: 'test-user' })),
-  authorize: vi.fn(() => true),
-});
-
 function app(overrides = {}) {
   const server = express();
   server.use(express.json());
@@ -54,37 +49,25 @@ function app(overrides = {}) {
 const wired = (overrides = {}) => ({
   getBookShelf: { execute: vi.fn(async () => SHELF) },
   teacherGate: { assert: vi.fn() },
-  teacherCapabilitySessions: activeCapability(),
   ...overrides,
 });
-
-const withCookie = (test) => test.set('Cookie', 'daylight_teacher_session=session-1');
 
 describe('GET /teacher/learners/:learnerId/reading', () => {
   it('serves the same shelf view the child panel reads, for the learner in the URL', async () => {
     const deps = wired();
-    await withCookie(request(app(deps)).get(PATH))
+    await request(app(deps)).get(PATH)
       .expect(200).expect('Cache-Control', 'no-store').expect(SHELF);
     expect(deps.getBookShelf.execute).toHaveBeenCalledWith({ learnerId: LEARNER });
   });
 
-  it('asserts the console capability for the learner being read', async () => {
+  it('asserts the gate as the picked teacher (`?by=`) for the learner being read', async () => {
     const deps = wired();
-    await withCookie(request(app(deps)).get(PATH)).expect(200);
+    await request(app(deps)).get(`${PATH}?by=test-user`).expect(200);
     expect(deps.teacherGate.assert).toHaveBeenCalledWith({
       userId: 'test-user',
-      pin: { capabilityToken: 'session-1', stepUpToken: null },
       action: 'books.shelf.read',
       context: { learnerId: LEARNER },
     });
-  });
-
-  it('names the picked teacher from `?by=` when there is no console cookie (no PIN configured)', async () => {
-    const deps = wired();
-    await request(app(deps)).get(`${PATH}?by=test-user`).expect(200);
-    expect(deps.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'test-user', action: 'books.shelf.read', context: { learnerId: LEARNER },
-    }));
   });
 
   it('refuses, and reads nothing at all, when the gate says no', async () => {
@@ -98,7 +81,7 @@ describe('GET /teacher/learners/:learnerId/reading', () => {
     expect(deps.getBookShelf.execute).not.toHaveBeenCalled();
   });
 
-  it('does not accept a child book grant in place of the capability', async () => {
+  it('does not accept a child book grant in place of a teacher', async () => {
     const deps = wired({
       teacherGate: { assert: vi.fn(() => { throw new GuestForbiddenError('Only a grown-up can do this.'); }) },
     });
@@ -108,9 +91,9 @@ describe('GET /teacher/learners/:learnerId/reading', () => {
     expect(deps.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ context: { learnerId: LEARNER } }));
   });
 
-  it('needs no book grant when the capability is present', async () => {
+  it('needs no book grant when a teacher is named', async () => {
     const deps = wired();
-    await withCookie(request(app(deps)).get(PATH)).expect(200);
+    await request(app(deps)).get(`${PATH}?by=test-user`).expect(200);
     expect(deps.getBookShelf.execute).toHaveBeenCalledTimes(1);
   });
 
@@ -119,22 +102,19 @@ describe('GET /teacher/learners/:learnerId/reading', () => {
   it('offers no edit-the-whole-shelf verb at this address', async () => {
     const deps = wired();
     const server = app(deps);
-    await withCookie(request(server).patch(PATH).send({ status: 'finished' })).expect(404);
-    await withCookie(request(server).delete(PATH)).expect(404);
+    await request(server).patch(PATH).send({ status: 'finished' }).expect(404);
+    await request(server).delete(PATH).expect(404);
     expect(deps.getBookShelf.execute).not.toHaveBeenCalled();
   });
 
   it('answers 404 where the shelf is not wired, so an older install reads as unavailable', async () => {
-    await withCookie(request(app(wired({ getBookShelf: null }))).get(PATH)).expect(404);
+    await request(app(wired({ getBookShelf: null }))).get(PATH).expect(404);
   });
 });
 
 /**
- * The write half (design §5). Every route is capability-gated, every write
- * carries `baseRevisionCount`, and the two destructive verbs additionally
- * carry the one-use step-up grant in `X-Teacher-Step-Up` — which reaches the
- * use case as part of the same `pin` proof the cookie makes, so the gate
- * inside the use case is the one that decides.
+ * The write half (design §5). Every route is teacher-gated inside its use
+ * case, and every write carries `baseRevisionCount`.
  */
 const EDIT_DEPS = () => ({
   getBookShelf: { execute: vi.fn(async () => SHELF) },
@@ -148,7 +128,6 @@ const EDIT_DEPS = () => ({
   deleteReading: { execute: vi.fn(async () => ({ revision: { id: 'rev_1' }, removed: { id: 'rdg_1' } })) },
   undoReadingRevision: { execute: vi.fn(async () => ({ revision: { id: 'rev_2' }, result: {} })) },
   teacherGate: { assert: vi.fn() },
-  teacherCapabilitySessions: activeCapability(),
 });
 
 const READING = `${PATH}/rdg_1`;
@@ -156,7 +135,7 @@ const READING = `${PATH}/rdg_1`;
 describe('the teacher reading edit routes', () => {
   it('reads one reading with its whole history', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).get(READING)).expect(200).expect('Cache-Control', 'no-store');
+    await request(app(deps)).get(`${READING}?by=test-user`).expect(200).expect('Cache-Control', 'no-store');
     expect(deps.getLearnerReadings.execute).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: LEARNER, readingId: 'rdg_1', by: 'test-user',
     }));
@@ -164,8 +143,8 @@ describe('the teacher reading edit routes', () => {
 
   it('patches identity and state, passing the base revision count through', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).patch(READING)
-      .send({ isbn: '9780000000002', status: 'finished', finishedOn: '2026-09-04', baseRevisionCount: 3 }))
+    await request(app(deps)).patch(READING)
+      .send({ isbn: '9780000000002', status: 'finished', finishedOn: '2026-09-04', baseRevisionCount: 3 })
       .expect(200);
     expect(deps.updateReading.execute).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: LEARNER, readingId: 'rdg_1', baseRevisionCount: 3,
@@ -175,8 +154,8 @@ describe('the teacher reading edit routes', () => {
 
   it('adds a day they read', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).post(`${READING}/entries`)
-      .send({ on: '2026-09-05', page: 120, baseRevisionCount: 1 })).expect(201);
+    await request(app(deps)).post(`${READING}/entries`)
+      .send({ on: '2026-09-05', page: 120, baseRevisionCount: 1 }).expect(201);
     expect(deps.addReadingEntry.execute).toHaveBeenCalledWith(expect.objectContaining({
       readingId: 'rdg_1', on: '2026-09-05', page: 120, baseRevisionCount: 1,
     }));
@@ -187,9 +166,9 @@ describe('the teacher reading edit routes', () => {
     deps.addReadingEntry.execute.mockResolvedValue({
       revision: null, result: { id: 'ent_1' }, revisionCount: 2, replayed: true,
     });
-    const response = await withCookie(request(app(deps)).post(`${READING}/entries`)
+    const response = await request(app(deps)).post(`${READING}/entries`)
       .set('Idempotency-Key', 'log-1:entry')
-      .send({ on: '2026-09-05', baseRevisionCount: 1 })).expect(201);
+      .send({ on: '2026-09-05', baseRevisionCount: 1 }).expect(201);
     expect(response.body).toMatchObject({ result: { id: 'ent_1' }, revisionCount: 2, replayed: true });
     expect(deps.addReadingEntry.execute).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'log-1:entry' }));
   });
@@ -197,13 +176,13 @@ describe('the teacher reading edit routes', () => {
   it('fixes one entry, and deletes one entry with its reason', async () => {
     const deps = EDIT_DEPS();
     const server = app(deps);
-    await withCookie(request(server).patch(`${READING}/entries/ent_1`)
-      .send({ page: 48, baseRevisionCount: 1 })).expect(200);
+    await request(server).patch(`${READING}/entries/ent_1`)
+      .send({ page: 48, baseRevisionCount: 1 }).expect(200);
     expect(deps.updateReadingEntry.execute).toHaveBeenCalledWith(expect.objectContaining({
       entryId: 'ent_1', patch: { page: 48 }, baseRevisionCount: 1,
     }));
-    await withCookie(request(server).delete(`${READING}/entries/ent_1`)
-      .send({ reason: 'logged on the wrong book', baseRevisionCount: 2 })).expect(200);
+    await request(server).delete(`${READING}/entries/ent_1`)
+      .send({ reason: 'logged on the wrong book', baseRevisionCount: 2 }).expect(200);
     expect(deps.deleteReadingEntry.execute).toHaveBeenCalledWith(expect.objectContaining({
       entryId: 'ent_1', reason: 'logged on the wrong book', baseRevisionCount: 2,
     }));
@@ -211,8 +190,8 @@ describe('the teacher reading edit routes', () => {
 
   it('adds a book on the child\'s behalf', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).post(PATH)
-      .send({ isbn: '9780000000009', progressMode: 'page', pageCount: 96 })).expect(201);
+    await request(app(deps)).post(PATH)
+      .send({ isbn: '9780000000009', progressMode: 'page', pageCount: 96 }).expect(201);
     expect(deps.addReadingForLearner.execute).toHaveBeenCalledWith(expect.objectContaining({
       learnerId: LEARNER, isbn: '9780000000009', pageCount: 96, where: 'starting',
     }));
@@ -220,14 +199,14 @@ describe('the teacher reading edit routes', () => {
 
   it('carries the door the grown-up chose — where the child is with it', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).post(PATH)
-      .send({ isbn: '9780000000009', where: 'partway', page: 84 })).expect(201);
+    await request(app(deps)).post(PATH)
+      .send({ isbn: '9780000000009', where: 'partway', page: 84 }).expect(201);
     expect(deps.addReadingForLearner.execute).toHaveBeenCalledWith(expect.objectContaining({
       where: 'partway', page: 84, finishedOn: null,
     }));
 
-    await withCookie(request(app(deps)).post(PATH)
-      .send({ isbn: '9780000000009', where: 'finished', finishedOn: '2026-08-20' })).expect(201);
+    await request(app(deps)).post(PATH)
+      .send({ isbn: '9780000000009', where: 'finished', finishedOn: '2026-08-20' }).expect(201);
     expect(deps.addReadingForLearner.execute).toHaveBeenLastCalledWith(expect.objectContaining({
       where: 'finished', finishedOn: '2026-08-20', page: null,
     }));
@@ -235,50 +214,47 @@ describe('the teacher reading edit routes', () => {
 
   it('undoes a named revision', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).post(`${READING}/undo`)
-      .send({ revisionId: 'rev_1', reason: 'wrong call', baseRevisionCount: 4 })).expect(200);
+    await request(app(deps)).post(`${READING}/undo`)
+      .send({ revisionId: 'rev_1', reason: 'wrong call', baseRevisionCount: 4 }).expect(200);
     expect(deps.undoReadingRevision.execute).toHaveBeenCalledWith(expect.objectContaining({
       readingId: 'rdg_1', revisionId: 'rev_1', baseRevisionCount: 4,
     }));
   });
 
-  // The two step-up verbs. The header rides into the use case as part of the
-  // `pin` proof, so the gate that refuses a missing grant is the one inside.
-  it('moves a reading to another child, carrying the step-up grant', async () => {
+  it('moves a reading to another child, as the teacher who asked', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).post(`${READING}/reassign`)
-      .set('X-Teacher-Step-Up', 'grant-1')
-      .send({ toLearnerId: 'learner_b', reason: 'wrong shelf', baseRevisionCount: 0 })).expect(200);
-    const call = deps.moveReading.execute.mock.calls[0][0];
-    expect(call).toMatchObject({ learnerId: LEARNER, readingId: 'rdg_1', toLearnerId: 'learner_b' });
-    expect(call.pin).toEqual({ capabilityToken: 'session-1', stepUpToken: 'grant-1' });
+    await request(app(deps)).post(`${READING}/reassign`)
+      .send({ toLearnerId: 'learner_b', reason: 'wrong shelf', baseRevisionCount: 0, by: 'test-user' }).expect(200);
+    expect(deps.moveReading.execute).toHaveBeenCalledWith({
+      learnerId: LEARNER, readingId: 'rdg_1', toLearnerId: 'learner_b',
+      reason: 'wrong shelf', baseRevisionCount: 0, by: 'test-user',
+    });
   });
 
-  it('deletes a reading, carrying the step-up grant', async () => {
+  it('deletes a reading, as the teacher who asked', async () => {
     const deps = EDIT_DEPS();
-    await withCookie(request(app(deps)).delete(READING)
-      .set('X-Teacher-Step-Up', 'grant-1')
-      .send({ reason: 'scanned twice', baseRevisionCount: 0 })).expect(200);
-    const call = deps.deleteReading.execute.mock.calls[0][0];
-    expect(call).toMatchObject({ readingId: 'rdg_1', reason: 'scanned twice' });
-    expect(call.pin).toEqual({ capabilityToken: 'session-1', stepUpToken: 'grant-1' });
+    await request(app(deps)).delete(READING)
+      .send({ reason: 'scanned twice', baseRevisionCount: 0, by: 'test-user' }).expect(200);
+    expect(deps.deleteReading.execute).toHaveBeenCalledWith({
+      learnerId: LEARNER, readingId: 'rdg_1', reason: 'scanned twice', baseRevisionCount: 0, by: 'test-user',
+    });
   });
 
   // The gate lives inside every use case, so a refusal is the use case's
   // refusal and the router only maps it.
   it('answers 403 when a verb is refused, and 404 where it is not wired', async () => {
-    const refused = { execute: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
-    await withCookie(request(app({ ...EDIT_DEPS(), deleteReading: refused }))
-      .delete(READING).send({ reason: 'x', baseRevisionCount: 0 })).expect(403);
-    await withCookie(request(app({ ...EDIT_DEPS(), moveReading: null }))
-      .post(`${READING}/reassign`).send({ toLearnerId: 'learner_b', reason: 'x', baseRevisionCount: 0 })).expect(404);
+    const refused = { execute: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) };
+    await request(app({ ...EDIT_DEPS(), deleteReading: refused }))
+      .delete(READING).send({ reason: 'x', baseRevisionCount: 0 }).expect(403);
+    await request(app({ ...EDIT_DEPS(), moveReading: null }))
+      .post(`${READING}/reassign`).send({ toLearnerId: 'learner_b', reason: 'x', baseRevisionCount: 0 }).expect(404);
   });
 });
 
 /**
  * The quick-log sheet's read (2026-10-20): one book, every enrolled learner.
  * The gate lives in the use case, so the route's job is the address, the
- * acting teacher off the capability, and `no-store`.
+ * acting teacher, and `no-store`.
  */
 describe('GET /teacher/books/:isbn/readers', () => {
   const READERS_PATH = '/api/v1/school/teacher/books/9780000000002/readers';
@@ -289,16 +265,15 @@ describe('GET /teacher/books/:isbn/readers', () => {
   const readersDeps = (overrides = {}) => ({
     getBookReaders: { execute: vi.fn(async () => READERS) },
     teacherGate: { assert: vi.fn() },
-    teacherCapabilitySessions: activeCapability(),
-    ...overrides,
+      ...overrides,
   });
 
-  it('serves the readers view, no-store, for the teacher on the capability', async () => {
+  it('serves the readers view, no-store, for the named teacher', async () => {
     const deps = readersDeps();
-    await withCookie(request(app(deps)).get(READERS_PATH))
+    await request(app(deps)).get(`${READERS_PATH}?by=test-user`)
       .expect(200).expect('Cache-Control', 'no-store').expect(READERS);
     expect(deps.getBookReaders.execute).toHaveBeenCalledWith({
-      isbn: '9780000000002', by: 'test-user', pin: { capabilityToken: 'session-1', stepUpToken: null },
+      isbn: '9780000000002', by: 'test-user',
     });
   });
 
@@ -311,12 +286,12 @@ describe('GET /teacher/books/:isbn/readers', () => {
   });
 
   it('answers 404 where it is not wired', async () => {
-    await withCookie(request(app(readersDeps({ getBookReaders: null }))).get(READERS_PATH)).expect(404);
+    await request(app(readersDeps({ getBookReaders: null }))).get(READERS_PATH).expect(404);
   });
 
   it('is read-only: no write lives at this address', async () => {
     const deps = readersDeps();
-    await withCookie(request(app(deps)).post(READERS_PATH).send({})).expect(404);
+    await request(app(deps)).post(READERS_PATH).send({}).expect(404);
     expect(deps.getBookReaders.execute).not.toHaveBeenCalled();
   });
 });

@@ -33,7 +33,7 @@
  * original pixels instead, they are the `.png` sitting next to the manifest.
  *
  * This reads the household data tree directly, the same way `school omr` does.
- * No server and no teacher PIN: it is a debugging aid, and one that stops
+ * No server: it is a debugging aid, and one that stops
  * working when the backend is down is useless exactly when it is needed.
  *
  * @module cli/school/agenda

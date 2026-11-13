@@ -15,8 +15,6 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
     currentTeacher: { id: 'teacher_1', name: 'teacher_1' },
     openPicker: vi.fn(),
     pickerOpen: false,
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
   }),
 }));
 
@@ -107,7 +105,7 @@ describe('CoinsPanel', () => {
     fireEvent.change(input, { target: { value: '3' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save rate for Korean (each day done)' }));
     await waitFor(() => expect(schoolApi.putEarnRates).toHaveBeenCalledWith('learner-a', {
-      actorId: 'teacher_1', pin: null, patch: { rules: { 'korean-daily': { reward: { silver: 3, gems: 0 } } } },
+      actorId: 'teacher_1', patch: { rules: { 'korean-daily': { reward: { silver: 3, gems: 0 } } } },
     }));
     await waitFor(() => expect(schoolApi.earningsPreview).toHaveBeenCalledTimes(2));
   });

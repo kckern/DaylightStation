@@ -166,7 +166,6 @@ export default function CurriculumPlanner() {
     return () => { alive = false; };
   }, []);
   const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster, teachersRead);
-  const [pin, setPin] = useState('');
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -273,7 +272,6 @@ export default function CurriculumPlanner() {
       units: toStored(units, 'unitId'),
       programs,
       assignedBy: grader.id,
-      pin: pin || null,
       // What this screen LOADED (null = no record existed): arms the server's
       // concurrent-edit refusal instead of last-write-wins (advocacy #19).
       baseUpdatedAt: records.find((r) => r.learnerId === learnerId)?.updatedAt ?? null,
@@ -293,7 +291,7 @@ export default function CurriculumPlanner() {
     } finally {
       setSaving(false);
     }
-  }, [learnerId, grader, graderId, courses, units, programs, records, pin, logger, loadAssignments]);
+  }, [learnerId, grader, graderId, courses, units, programs, records, logger, loadAssignments]);
 
   const learnerOptions = useMemo(() => {
     const ids = new Set(roster.map((u) => u.id));
@@ -327,8 +325,6 @@ export default function CurriculumPlanner() {
         action="change a plan"
         label="Signed in as"
         teachersConfigured={teachersRead ? teachersRead.configured : null}
-        pin={pin}
-        onPinChange={setPin}
       />
 
       {rosterError && <Alert color="red" title="Could not load the household roster">{rosterError}</Alert>}

@@ -13,12 +13,8 @@ vi.mock("../teacherWorkspaceApi.js", () => ({
 vi.mock("../../schoolApi.js", () => ({ schoolApi: { books: { resolve: vi.fn() } } }));
 const profile = vi.hoisted(() => ({
   currentTeacher: { id: 'test-user', name: 'test-user' },
-  authorization: { active: true },
   openPicker: () => {},
-  openPinPrompt: () => {},
   pickerOpen: false,
-  requestAuthorization: async () => ({ ok: true, grantToken: null }),
-  invalidateAuthorization: () => {},
 }));
 vi.mock("../TeacherProfileContext.jsx", () => ({ useTeacherProfile: () => profile, useTeacherProfileOptional: () => profile }));
 
@@ -62,13 +58,8 @@ beforeEach(() => {
   scanner.args = null;
   scanner.cameraState = 'live';
   profile.currentTeacher = { id: 'test-user', name: 'test-user' };
-  profile.authorization = { active: true };
-  profile.openPinPrompt = vi.fn(async () => ({ ok: true }));
   profile.openPicker = vi.fn();
-  profile.requestAuthorization = vi.fn(async () => ({ ok: true, grantToken: null }));
-  profile.invalidateAuthorization = vi.fn();
   profile.pickerOpen = false;
-  profile.pinPromptOpen = false;
   profile.teachers = [{ id: 'test-user', name: 'test-user' }];
   schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { isbn13: ISBN, title: 'A Borrowed Title', authors: ['Someone'], pageCount: 32, coverUrl: null } }));
   teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(READERS));
@@ -231,30 +222,28 @@ describe('LogBookSheet — the book and the readers', () => {
     expect(screen.getByRole('button', { name: 'Partway' })).toBeTruthy();
   });
 
-  it('a locked console says so and unlocks; the unlock itself reads the readers again, once', async () => {
-    profile.authorization = { active: false };
-    teacherWorkspaceApi.bookReaders.mockResolvedValueOnce({ ok: false, status: 403, data: { error: 'The teacher PIN is missing or wrong.' } });
+  it('a refused read with nobody chosen asks who is here; the pick reads the readers again, once', async () => {
+    profile.currentTeacher = null;
+    teacherWorkspaceApi.bookReaders.mockResolvedValueOnce({ ok: false, status: 403, data: {} });
     const { rerender } = render(sheet());
     await scan();
-    expect(await screen.findByText(/locked/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
-    expect(profile.openPinPrompt).toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose teacher' }));
+    expect(profile.openPicker).toHaveBeenCalled();
     await act(async () => {});
     expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledTimes(1);
-    profile.authorization = { active: true };
+    profile.currentTeacher = { id: 'test-user', name: 'test-user' };
     rerender(sheet());
     expect(await screen.findByRole('button', { name: /^Learner C/ })).toBeTruthy();
     expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledTimes(2);
+    expect(teacherWorkspaceApi.bookReaders).toHaveBeenLastCalledWith(ISBN, 'test-user');
   });
 
-  it('a locked console with no teacher chosen asks who is here first', async () => {
-    profile.currentTeacher = null;
+  it('a refused read for a chosen teacher says that teacher cannot log here', async () => {
     teacherWorkspaceApi.bookReaders.mockResolvedValue({ ok: false, status: 403, data: {} });
     render(sheet());
     await scan();
-    fireEvent.click(await screen.findByRole('button', { name: 'Unlock' }));
-    expect(profile.openPicker).toHaveBeenCalled();
-    expect(profile.openPinPrompt).not.toHaveBeenCalled();
+    expect(await screen.findByText('test-user can’t log books here.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Choose teacher' })).toBeNull();
   });
 });
 
@@ -373,15 +362,15 @@ describe('LogBookSheet — save', () => {
   });
 
   it('the last book’s write error does not follow the grown-up to the next book', async () => {
-    profile.requestAuthorization = vi.fn(async () => ({ ok: false, message: 'That PIN is not right.' }));
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(fail('Only a listed teacher can do that.', 403));
     await ready('Learner C');
     save();
-    expect(await screen.findByText('That PIN is not right.')).toBeTruthy();
+    expect(await screen.findByText('Only a listed teacher can do that.')).toBeTruthy();
     expect(summary()).toBe('Learner C – not sent');
     fireEvent.click(screen.getByRole('button', { name: 'Log another book' }));
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
-    expect(screen.queryByText('That PIN is not right.')).toBeNull();
+    expect(screen.queryByText('Only a listed teacher can do that.')).toBeNull();
   });
 });
 
@@ -576,31 +565,15 @@ describe('LogBookSheet — partial failure and retry', () => {
     expect(screen.queryByRole('button', { name: 'Retry Learner B' })).toBeNull();
   });
 
-  it('a 403 mid-batch asks once and replays, skipping the children already saved', async () => {
-    let refusedOnce = false;
-    teacherWorkspaceApi.addReadingForLearner.mockImplementation(async (learnerId) => {
-      if (learnerId === 'learner_c' && !refusedOnce) { refusedOnce = true; return fail('The teacher PIN is missing or wrong.', 403); }
-      return ok({ created: true }, 201);
-    });
-    await ready('Learner A', 'Learner C');
-    save();
-    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'), { timeout: 3000 });
-    const calls = teacherWorkspaceApi.addReadingForLearner.mock.calls;
-    expect(calls.filter(([id]) => id === 'learner_a')).toHaveLength(1);
-    const forC = calls.filter(([id]) => id === 'learner_c');
-    expect(forC).toHaveLength(2);
-    expect(forC[1][2]).toBe(forC[0][2]);
-    expect(profile.invalidateAuthorization).toHaveBeenCalledTimes(1);
-    expect(profile.requestAuthorization).toHaveBeenCalledTimes(2);
-  });
-
-  it('a second 403 stops the batch, and a child it never reached reads "not sent"', async () => {
+  it('a 403 stops the batch, keeps the children already saved, and a child it never reached reads "not sent"', async () => {
     teacherWorkspaceApi.addReadingForLearner.mockImplementation(async (learnerId) => (learnerId === 'learner_c'
-      ? fail('The teacher PIN is missing or wrong.', 403)
+      ? fail('Only a listed teacher can do that.', 403)
       : ok({ created: true }, 201)));
     await ready('Learner A', 'Learner C');
     save();
     await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C – not sent'), { timeout: 3000 });
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls.filter(([id]) => id === 'learner_a')).toHaveLength(1);
+    expect(screen.getByText('Only a listed teacher can do that.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retry Learner C' })).toBeTruthy();
   });
 });
@@ -617,14 +590,14 @@ describe('LogBookSheet — focus follows the steps', () => {
     expect(document.activeElement).toBe(heading());
   });
 
-  it('takes focus back from the page when the PIN prompt closes', async () => {
+  it('takes focus back from the page when the teacher picker closes', async () => {
     const { rerender } = render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
-    profile.pinPromptOpen = true;
+    profile.pickerOpen = true;
     rerender(sheet());
     document.activeElement?.blur?.();
-    profile.pinPromptOpen = false;
+    profile.pickerOpen = false;
     rerender(sheet());
     expect(document.activeElement).toBe(heading());
   });
@@ -654,7 +627,8 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     rerender(sheet());
     await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'), { timeout: 3000 });
     expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
+    // The summary lands a render before the save's busy flag clears.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false));
   });
 
   it('with no teacher set up at all, the save ends at once: "not sent", and the sheet can close', async () => {

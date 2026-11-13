@@ -33,8 +33,8 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
   // the attested one, so it takes a second, deliberate tap (ReviewQueueView's
   // `voiding` arm).
   const [retracting, setRetracting] = useState(null);
-  const retract = (a) => run(`retract:${a.id}`, ({ actorId, pin }) => schoolApi.retract({
-    kind: 'attestation', entryId: a.id, retractedBy: actorId, pin,
+  const retract = (a) => run(`retract:${a.id}`, ({ actorId }) => schoolApi.retract({
+    kind: 'attestation', entryId: a.id, retractedBy: actorId,
   }), { onSuccess: () => { setRetracting((armed) => (armed === a.id ? null : armed)); log.retry(); } });
   const [open, setOpen] = useState(Boolean(initialUnitId));
   const [unitId, setUnitId] = useState(initialUnitId ?? '');
@@ -42,8 +42,8 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
 
   const units = catalog.data?.units ?? [];
   const titles = curriculumTitles(units);
-  const save = () => run('save', ({ actorId, pin }) => schoolApi.postAttestation({
-    learnerId, unitId, reason, attestedBy: actorId, pin,
+  const save = () => run('save', ({ actorId }) => schoolApi.postAttestation({
+    learnerId, unitId, reason, attestedBy: actorId,
   }), { onSuccess: () => { setOpen(false); setReason(''); log.retry(); } });
 
   return (

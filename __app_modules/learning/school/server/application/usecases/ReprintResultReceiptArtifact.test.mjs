@@ -25,7 +25,7 @@ describe('ReprintResultReceiptArtifact', () => {
       sessions, teacherGate: { assert: vi.fn() }, receiptArtifactPrinter: printer,
       clock: () => new Date('2026-08-24T11:00:00.000Z'),
     });
-    await expect(useCase.execute({ artifactId, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'r1', apply: true }))
+    await expect(useCase.execute({ artifactId, reprintedBy: 'parent', idempotencyKey: 'r1', apply: true }))
       .resolves.toMatchObject({ applied: true, artifactId });
     expect(printer.print).toHaveBeenCalledWith(expect.objectContaining({ bytes: Buffer.from('png') }));
     expect(sessions.appendEvent).toHaveBeenCalledWith(sessionId, expect.objectContaining({ type: 'result_receipt_reprinted', artifactId }));
@@ -44,7 +44,7 @@ describe('ReprintResultReceiptArtifact', () => {
     });
 
     await expect(useCase.execute({
-      artifactId, reprintedBy: 'parent', pin: '1234', idempotencyKey: 'r2', apply: true,
+      artifactId, reprintedBy: 'parent', idempotencyKey: 'r2', apply: true,
     })).resolves.toMatchObject({ applied: true, confirmed: false });
     expect(sessions.appendEvent).toHaveBeenCalledWith(sessionId, expect.objectContaining({
       type: 'result_receipt_reprinted', confirmed: false,

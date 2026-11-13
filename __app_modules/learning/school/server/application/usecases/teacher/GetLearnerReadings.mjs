@@ -30,8 +30,8 @@ export class GetLearnerReadings {
 
   constructor(deps = {}) { this.#context = new ReadingEditContext(deps); }
 
-  async execute({ learnerId, readingId = null, by = null, pin = null } = {}) {
-    this.#context.assert({ action: 'books.shelf.read', userId: by, pin, learnerId, readingId });
+  async execute({ learnerId, readingId = null, by = null } = {}) {
+    this.#context.assert({ action: 'books.shelf.read', userId: by, learnerId, readingId });
     if (isBlank(learnerId)) throw new ValidationError('learnerId is required');
 
     // Served, not derived downstream. Whether a re-date drops a day out of the

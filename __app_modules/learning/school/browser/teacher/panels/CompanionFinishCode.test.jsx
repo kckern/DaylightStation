@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import CompanionFinishCode from "./CompanionFinishCode.jsx";
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
-
-const profile = vi.hoisted(() => ({
-  requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: 'grant-1' })),
-}));
 
 vi.mock("../teacherWorkspaceApi.js", () => ({
   teacherWorkspaceApi: { revealCompanionFinishCode: vi.fn() },
@@ -15,12 +11,7 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: profile.requestAuthorization,
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -37,7 +28,6 @@ const mount = () => render(<CompanionFinishCode sessionId="ses_1" />);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  profile.requestAuthorization.mockResolvedValue({ ok: true, grantToken: 'grant-1' });
   teacherWorkspaceApi.revealCompanionFinishCode.mockResolvedValue(ok(REVEALED));
 });
 
@@ -54,16 +44,8 @@ describe('CompanionFinishCode', () => {
     expect(await screen.findByText('ACE')).toBeInTheDocument();
     expect(screen.getByText(/nobody has listened/i)).toBeInTheDocument();
     expect(teacherWorkspaceApi.revealCompanionFinishCode).toHaveBeenCalledWith(
-      'ses_1', { revealedBy: 'teacher_1', pin: null }, 'grant-1',
+      'ses_1', { revealedBy: 'teacher_1' },
     );
-  });
-
-  it('asks for a fresh confirmation scoped to this session', async () => {
-    mount();
-    fireEvent.click(screen.getByRole('button', { name: /show the code/i }));
-    await waitFor(() => expect(profile.requestAuthorization).toHaveBeenCalledWith({
-      action: 'companion.finish-code.reveal', resource: 'ses_1',
-    }));
   });
 
   it('says the read-along was actually finished when it was', async () => {
@@ -97,13 +79,12 @@ describe('CompanionFinishCode', () => {
   });
 
   it('reports a refusal without inventing a code', async () => {
-    profile.requestAuthorization.mockResolvedValue({ ok: false, refused: true, status: 403,
-      message: 'The teacher PIN is missing or wrong.' });
+    teacherWorkspaceApi.revealCompanionFinishCode.mockResolvedValue({ ok: false, status: 403,
+      data: { error: 'Only a listed teacher can do that.' } });
     mount();
     fireEvent.click(screen.getByRole('button', { name: /show the code/i }));
-    expect(await screen.findByText(/teacher PIN is missing or wrong/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Only a listed teacher can do that/)).toBeInTheDocument();
     expect(screen.queryByText('ACE')).not.toBeInTheDocument();
-    expect(teacherWorkspaceApi.revealCompanionFinishCode).not.toHaveBeenCalled();
   });
 
   it('puts the letters away again so they do not sit on a household screen', async () => {

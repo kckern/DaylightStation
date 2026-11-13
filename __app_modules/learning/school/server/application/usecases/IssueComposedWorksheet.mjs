@@ -87,14 +87,14 @@ export class IssueComposedWorksheet {
     this.#clock = clock; this.#logger = logger; this.#policy = answerSheetPolicy(policy);
   }
 
-  async execute({ sessionIds, issuedBy = null, pin = null } = {}) {
+  async execute({ sessionIds, issuedBy = null } = {}) {
     const ids = [...new Set(Array.isArray(sessionIds) ? sessionIds : [])];
     if (!ids.length) throw new Error('IssueComposedWorksheet requires one or more sessionIds');
     // A combined paper handout is a teacher decision: it changes what is
     // physically issued and can cause a printer dispatch.  Keep the server
     // as the authority even when a console supplies a claimed teacher stamp.
     this.#teacherGate?.assert({
-      userId: issuedBy, pin, action: 'worksheet.compose', context: { sessionIds: ids },
+      userId: issuedBy, action: 'worksheet.compose', context: { sessionIds: ids },
     });
     const nowIso = this.#clock().toISOString();
     const works = await this.#curriculum.listWorks?.() ?? [];

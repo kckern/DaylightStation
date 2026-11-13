@@ -156,9 +156,9 @@ export class SchoolService {
    * REQUIRES a reason, delivered to the child through the notes channel, so
    * the ✓ never just silently reverts on them.
    */
-  async dismissQuizRequest({ unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, pin = null, reason } = {}) {
+  async dismissQuizRequest({ unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, reason } = {}) {
     if (!this.#teacherGate) throw new GuestForbiddenError('Dismissing requests is not configured on this install');
-    this.#teacherGate.assert({ userId: dismissedBy, pin, action: 'quizrequests.dismiss' });
+    this.#teacherGate.assert({ userId: dismissedBy, action: 'quizrequests.dismiss' });
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new ValidationError('a reason is required — the child is told why');
     }

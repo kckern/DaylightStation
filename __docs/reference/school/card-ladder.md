@@ -1042,7 +1042,7 @@ mode **requires `sittingId`** — it reads that sitting's shadow; there is no
 
 Per learner, per word package, from the teacher console. **Live only** (the
 test service refuses them), and every call passes `TeacherGate.assert({userId:
-actorId, pin, action: 'card-ladder.admin', context: {learnerId}})` first — a
+actorId, action: 'card-ladder.admin', context: {learnerId}})` first — a
 refusal changes nothing. Each mutation logs `school.card-ladder.admin`
 `{actorId, learnerId, package, wordId, action}` and a `transition` (source
 `admin`) for any word whose state or stage it moved. Pure parts live in
@@ -1103,32 +1103,30 @@ Items never leak an answer: dictation carries only the term audio; tiles the
 syllables and a cue; type / say-from-cue only the cue; read-aloud the text with
 no audio until the take; look / copy / say-after the full word card.
 - `GET /card-ladder/stage` → `{screen}` (the configured stage screen id, see below)
-- `POST /card-ladder/fold {learnerId, actorId, pin}` — teacher-gated: runs the paper-quiz fold for every
+- `POST /card-ladder/fold {learnerId, actorId}` — teacher-gated: runs the paper-quiz fold for every
   card-ladder package the learner is enrolled in, on demand
-- Grown-up word controls, **live mount only**, teacher-gated (`pin` may be the
-  console's cookie capability — the GET, which has no body, reads the
-  `daylight_teacher_session` cookie itself when no `pin` query is given):
-  `GET /card-ladder/admin/words?learnerId=&deckId=&actorId=&pin=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
-  `POST /card-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
+- Grown-up word controls, **live mount only**, teacher-gated on `actorId` (the
+  GET, which has no body, takes it on the query):
+  `GET /card-ladder/admin/words?learnerId=&deckId=&actorId=` → `{learnerId, package, decksSeen, droppableDecks, words}`;
+  `POST /card-ladder/admin/reset {learnerId, deckId, wordId, actorId}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
-- Day by day, **live mount only**, teacher-gated like `admin/words` (cookie's teacher, else `actorId`), reads only:
-  `GET /card-ladder/admin/days?learnerId=&deckId=` → `{learnerId, package, days: [{day, doneAt, activeMs, sittings, answered, graded, correct, missedWords}], more}`
+- Day by day, **live mount only**, teacher-gated like `admin/words` (`actorId` on the query), reads only:
+  `GET /card-ladder/admin/days?learnerId=&deckId=&actorId=` → `{learnerId, package, days: [{day, doneAt, activeMs, sittings, answered, graded, correct, missedWords}], more}`
   (the last 60 opened days, newest first, `more: true` when older ones exist; `daySummary`);
-  `GET /card-ladder/admin/day?learnerId=&deckId=&day=` → that summary plus `answers` — every item in answer order
+  `GET /card-ladder/admin/day?learnerId=&deckId=&day=&actorId=` → that summary plus `answers` — every item in answer order
   (`dayAnswers`: `kind` recheck / intro / sort / quiz / match / offer / drill / practice, the drill or intro `step`
   — inferred from the response for a practice item that names none — `task`, the verbatim `response`, `correct` —
   null where the step is not graded, and a grown-up's re-grade where there is one, with the engine's own verdict
   kept as `engineCorrect` — `answer`, and for a typed answer `score` / `judge` / `reason` / `regraded`, each with
   the word's `term` and `gloss`) and `recordings` — every take kept that day (`[{wordId, take, ext, term, gloss}]`);
   404 for a day never opened. Menu taps (`{menu: true}`) and the summary card are not answers and are left out;
-  `GET /card-ladder/admin/recording?learnerId=&deckId=&day=&wordId=&take=` → one take's audio (`private, no-store`).
+  `GET /card-ladder/admin/recording?learnerId=&deckId=&day=&wordId=&take=&actorId=` → one take's audio (`private, no-store`).
   The console's Cards tab shows these under each deck (`CardLadderDaysPanel`).
-- Tuning, **live mount only**, teacher-gated in `CardLadderTuningService`. The
-  acting teacher is the capability session's own user when the cookie holds
-  one, else the `actorId` given:
-  `GET /card-ladder/admin/tuning?learnerId=&deckId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
-  `POST /card-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId, pin}` → `{learnerId, package, day, setting, from, to, reason}`
+- Tuning, **live mount only**, teacher-gated in `CardLadderTuningService` on
+  the `actorId` given:
+  `GET /card-ladder/admin/tuning?learnerId=&deckId=&actorId=` → `{learnerId, package, state, lastTunedDay, settings, last, history}`;
+  `POST /card-ladder/admin/tuning/undo {learnerId, deckId, setting, actorId}` → `{learnerId, package, day, setting, from, to, reason}`
 
 Item ids make every response idempotent. A sitting belongs to its study day:
 after the day boundary it 404s and the client reopens. **Server idle close:** a

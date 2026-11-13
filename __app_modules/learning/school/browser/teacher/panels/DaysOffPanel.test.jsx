@@ -10,8 +10,6 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
     currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
     teachers: [{ id: 'teacher-a', name: 'Teacher A' }],
     openPicker: vi.fn(), pickerOpen: false,
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
   }),
 }));
 

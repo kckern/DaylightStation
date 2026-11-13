@@ -42,14 +42,13 @@ export class UnenrollLearner {
    * @param {string} args.learnerId
    * @param {string} args.courseId
    * @param {string} [args.removedBy] - a roster id that must pass TeacherGate
-   * @param {string|null} [args.pin]
    * @param {string|null} [args.baseUpdatedAt] - the assignment updatedAt the caller loaded;
    *   a mismatch is refused rather than silently clobbered
    * @returns {Promise<object>} the stored assignment record
    * @throws {ValidationError} if not enrolled, on stale save, or on open sessions
    */
-  async execute({ learnerId, courseId, removedBy = null, pin = null, baseUpdatedAt = undefined } = {}) {
-    this.#teacherGate.assert({ userId: removedBy, pin, action: 'enrollment.delete', context: { learnerId, courseId } });
+  async execute({ learnerId, courseId, removedBy = null, baseUpdatedAt = undefined } = {}) {
+    this.#teacherGate.assert({ userId: removedBy, action: 'enrollment.delete', context: { learnerId, courseId } });
 
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
     if (typeof courseId !== 'string' || !courseId.trim()) throw new ValidationError('courseId is required');

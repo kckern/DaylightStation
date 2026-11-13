@@ -7,20 +7,14 @@ export class SchoolPrintAccessService {
     printDocumentsRepo = null,
     printAllocationStore = null,
     renderPrintDocument = null,
-    getPrintTeacherPin = null,
   } = {}) {
     this.printDocumentsRepo = printDocumentsRepo;
     this.printAllocationStore = printAllocationStore;
     this.renderPrintDocument = renderPrintDocument;
-    this.getPrintTeacherPin = getPrintTeacherPin;
   }
 
   isRenderable() { return Boolean(this.renderPrintDocument); }
   canResolveCards() { return Boolean(this.printAllocationStore?.findByCard); }
-
-  async teacherPin() {
-    return this.getPrintTeacherPin ? this.getPrintTeacherPin() : undefined;
-  }
 
   async resolveCardPath(cardId) {
     if (!this.printAllocationStore?.findByCard) return { kind: 'unconfigured' };
@@ -116,14 +110,7 @@ export class SchoolPrintAccessService {
     if (learnerName) context.learnerName = learnerName;
     const date = params.date;
     if (date) context.date = date;
-    if (params.teacher) {
-      const configuredPin = await this.teacherPin();
-      if (configuredPin !== undefined) {
-        if (configuredPin == null) return { kind: 'teacher_disabled' };
-        if (params.pin !== String(configuredPin)) return { kind: 'teacher_pin_required' };
-      }
-      context.teacher = true;
-    }
+    if (params.teacher) context.teacher = true;
 
     const revParam = params.rev;
     if (revParam !== null && !/^[0-9a-f]{9}$/.test(revParam)) throw new ValidationError('rev must be 9 lowercase hex characters');

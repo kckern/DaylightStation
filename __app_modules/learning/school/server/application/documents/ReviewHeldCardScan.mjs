@@ -32,13 +32,13 @@ export class ReviewHeldCardScan {
     this.#recorder = recorder;
   }
 
-  async list({ reviewerId, pin } = {}) {
-    this.#assert(reviewerId, pin, 'answer-sheet-review.list');
+  async list({ reviewerId } = {}) {
+    this.#assert(reviewerId, 'answer-sheet-review.list');
     return Promise.all((await this.#held.listHeld()).map((record) => this.#present(record)));
   }
 
-  async inspect({ heldScanId, reviewerId, pin } = {}) {
-    this.#assert(reviewerId, pin, 'answer-sheet-review.inspect', { heldScanId });
+  async inspect({ heldScanId, reviewerId } = {}) {
+    this.#assert(reviewerId, 'answer-sheet-review.inspect', { heldScanId });
     return this.#present(await this.#held.get(heldScanId));
   }
 
@@ -52,9 +52,9 @@ export class ReviewHeldCardScan {
   }
 
   async #resolve({
-    heldScanId, action, targetRecordId = null, reviewerId, pin, idempotencyKey,
+    heldScanId, action, targetRecordId = null, reviewerId, idempotencyKey,
   } = {}) {
-    this.#assert(reviewerId, pin, 'answer-sheet-review.resolve', { heldScanId, action });
+    this.#assert(reviewerId, 'answer-sheet-review.resolve', { heldScanId, action });
     if (!ACTIONS.has(action)) throw new ValidationError('action must be confirm|reassign|redo');
     if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
       throw new ValidationError('idempotencyKey is required');
@@ -156,13 +156,13 @@ export class ReviewHeldCardScan {
     return appended;
   }
 
-  async clearQuarantine({ cardId, quarantineId, method, reviewerId, pin } = {}) {
-    this.#assert(reviewerId, pin, 'answer-sheet-review.clear-quarantine', { cardId, quarantineId, method });
+  async clearQuarantine({ cardId, quarantineId, method, reviewerId } = {}) {
+    this.#assert(reviewerId, 'answer-sheet-review.clear-quarantine', { cardId, quarantineId, method });
     return this.#allocations.clearQuarantine({ cardId, quarantineId, reviewerId, method });
   }
 
-  #assert(userId, pin, action, context = {}) {
-    this.#teacherGate.assert({ userId, pin, action, context });
+  #assert(userId, action, context = {}) {
+    this.#teacherGate.assert({ userId, action, context });
   }
 
   async #present(record) {

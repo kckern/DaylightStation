@@ -41,13 +41,6 @@ vi.mock("../schoolApi.js", () => {
   } };
 });
 vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
-  authStatus: vi.fn(async () => {
-    const userId = localStorage.getItem('school-teacher-claim');
-    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
-  }),
-  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
-  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
-  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant-1' } })),
   timeline: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
   session: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   curriculumExceptions: vi.fn(async () => ({ ok: true, status: 200, data: { active: [] } })),
@@ -320,17 +313,13 @@ describe('TeacherConsole workspace', () => {
 
     teacherWorkspaceApi.adjustGrade.mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
-    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(teacherWorkspaceApi.adjustGrade).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'sessions.grade-adjust', resource: 'ses_1' });
-    expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, pin: null }), 'grant-1');
+    expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, adjustedBy: 'teacher' }));
   });
 
-  // The step-up first, then a link: opening a tab after an async PIN prompt
-  // is what popup blockers refuse.
-  it('shows the child\'s marked sheet after a step-up, as a link', async () => {
+  // The fetch first, then a link: opening a tab after an async fetch is what
+  // popup blockers refuse.
+  it('shows the child\'s marked sheet after a fetch, as a link', async () => {
     localStorage.setItem('school-teacher-claim', 'teacher');
     const created = URL.createObjectURL;
     URL.createObjectURL = vi.fn(() => 'blob:x');
@@ -351,13 +340,9 @@ describe('TeacherConsole workspace', () => {
       const button = await screen.findByRole('button', { name: 'See the marked sheet' });
       expect(screen.getAllByRole('button', { name: 'See the marked sheet' })).toHaveLength(1);
       fireEvent.click(button);
-      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       const link = await screen.findByRole('link', { name: 'Open the marked sheet (PDF)' });
       expect(link).toHaveAttribute('href', 'blob:x');
-      expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'artifact.postview', resource: 'a1' });
-      expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalledWith('a1', 'grant-1');
+      expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalledWith('a1', 'teacher');
     } finally {
       URL.createObjectURL = created;
     }
@@ -408,9 +393,6 @@ describe('TeacherConsole workspace', () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
     render(<TeacherConsole />);
     fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
-    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText(copy)).toBeTruthy();
     expect(screen.queryByText(/EntityNotFoundError/)).toBeNull();
   });
@@ -422,9 +404,6 @@ describe('TeacherConsole workspace', () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
     render(<TeacherConsole />);
     fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
-    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('That didn’t save — try again.')).toBeTruthy();
   });
 
@@ -441,9 +420,6 @@ describe('TeacherConsole workspace', () => {
       window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
       const { unmount } = render(<TeacherConsole />);
       fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
-      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await waitFor(() => expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalled());
       unmount();
       await act(async () => { resolve({ ok: true, status: 200, data: new Blob(['%PDF']) }); });
@@ -469,8 +445,8 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByRole('heading', { name: 'Atoms' })).toBeTruthy();
   });
 
-  // Settling with answers still unmarked is refused as `awaiting_review`
-  // after the PIN; the inspector sends the teacher to mark them instead.
+  // Settling with answers still unmarked is refused as `awaiting_review`;
+  // the inspector sends the teacher to mark them instead.
   it('points at the queue instead of offering a hand-settle while answers wait for a mark', async () => {
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v5', sessionId: 's1', state: { state: 'submitted', learnerId: 'user_4' },
@@ -504,7 +480,7 @@ describe('TeacherConsole workspace', () => {
     expect(screen.queryByText('assessment')).toBeNull();
   });
 
-  it('previews and protects retraction of an existing grade correction', async () => {
+  it('previews retraction of an existing grade correction before the apply', async () => {
     localStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v1', sessionId: 'ses_3', revision: 7, artifactIds: [],
@@ -525,14 +501,9 @@ describe('TeacherConsole workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview retraction' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply retraction' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Apply retraction' }));
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(teacherWorkspaceApi.retractGradeAdjustment).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
-      pin: '4321', action: 'sessions.grade-adjustment.retract', resource: 'ses_3/adj_3',
-    });
     expect(teacherWorkspaceApi.retractGradeAdjustment).toHaveBeenLastCalledWith(
-      'ses_3', 'adj_3', expect.objectContaining({ apply: true, pin: null }), 'grant-1',
+      'ses_3', 'adj_3', expect.objectContaining({ apply: true, retractedBy: 'teacher' }),
     );
   });
 
@@ -691,7 +662,7 @@ describe('TeacherConsole workspace', () => {
     expect(within(regrade).getByLabelText('Through').value).toBe(localDay());
   });
 
-  it('previews a bounded systematic regrade before a protected apply', async () => {
+  it('previews a bounded systematic regrade before the apply', async () => {
     localStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts
       .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, checked: 12, changed: [{ attemptId: 'att_1' }], sessionsAffected: ['ses_1'] } })
@@ -706,15 +677,12 @@ describe('TeacherConsole workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview regrade' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply 1 corrections' })).toBeTruthy());
     expect(schoolApi.regradeAttempts).toHaveBeenCalledWith(expect.objectContaining({
-      bankId: 'math/fractions', reason: 'Corrected answer key', apply: false, pin: null,
+      bankId: 'math/fractions', reason: 'Corrected answer key', apply: false, regradedBy: 'teacher',
     }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply 1 corrections' }));
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(schoolApi.regradeAttempts).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'attempts.regrade', resource: 'math/fractions' });
-    expect(schoolApi.regradeAttempts).toHaveBeenLastCalledWith(expect.objectContaining({ apply: true, pin: null }), 'grant-1');
+    expect(schoolApi.regradeAttempts).toHaveBeenLastCalledWith(expect.objectContaining({ apply: true }));
   });
 
   it('offers an arbitrary-day agenda as a non-recording planning preview', async () => {

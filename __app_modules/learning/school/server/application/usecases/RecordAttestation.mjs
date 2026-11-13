@@ -19,8 +19,8 @@ export class RecordAttestation {
     this.#idGen = idGen;
   }
 
-  async execute({ learnerId, unitId, reason, attestedBy = null, pin = null } = {}) {
-    this.#teacherGate.assert({ userId: attestedBy, pin, action: 'attestation.record', context: { learnerId, unitId } });
+  async execute({ learnerId, unitId, reason, attestedBy = null } = {}) {
+    this.#teacherGate.assert({ userId: attestedBy, action: 'attestation.record', context: { learnerId, unitId } });
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
     if (typeof unitId !== 'string' || !unitId.trim()) throw new ValidationError('unitId is required');
     if (typeof reason !== 'string' || !reason.trim()) throw new ValidationError('a reason is required — an override without one is unauditable');

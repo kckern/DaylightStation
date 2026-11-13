@@ -17,7 +17,7 @@ vi.mock("../useTeacherWrite.js", () => ({
     busy: write.busy,
     errors: write.errors,
     run: async (_key, call, { onSuccess } = {}) => {
-      const response = await call({ actorId: 'parent', pin: null, stepUpToken: null });
+      const response = await call({ actorId: 'parent' });
       if (response.ok) onSuccess?.(response.data);
       return response.ok;
     },

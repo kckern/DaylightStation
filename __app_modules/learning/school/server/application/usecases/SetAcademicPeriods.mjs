@@ -23,9 +23,9 @@ export class SetAcademicPeriods {
     this.#logger = logger;
   }
 
-  async execute({ periods, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
+  async execute({ periods, editedBy = null, baseHistoryLength = undefined } = {}) {
     this.#teacherGate.assert({
-      userId: editedBy, pin, action: 'periods.edit',
+      userId: editedBy, action: 'periods.edit',
       context: { count: Array.isArray(periods) ? periods.length : 0 },
     });
     // Concurrent-edit guard (advocacy B14), optional like assignments'.

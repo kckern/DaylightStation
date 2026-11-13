@@ -7,7 +7,7 @@ Config sources of truth (no IPs reproduced here — check the live file):
 |---|---|
 | Kitchen laser printer, Portal kiosk, barcode/NFC scanner, kitchen-relay board | `data/household/hardware/devices.yml` |
 | Thermal printer(s) — named locations, timeouts, codepage | `data/system/config/adapters.yml` → `thermal_printers` |
-| Which thermal printer School uses, teacher PINs, lifecycle switch | `data/household/school/school.yml` (**boot-cached** — restart after any edit) |
+| Which thermal printer School uses, `teachers:`, lifecycle switch | `data/household/school/school.yml` (**boot-cached** — restart after any edit) |
 | OMR reader | `config/omr-readers.yml` — **does not exist in the live data tree**; see §3 |
 
 ## 1. Kitchen laser printer (Brother HL-L2460DW)

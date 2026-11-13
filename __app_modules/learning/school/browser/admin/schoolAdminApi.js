@@ -83,9 +83,9 @@ export const schoolAdminApi = {
    * was marked that way. It is stored with the verdict, and sending none leaves
    * any earlier note alone.
    */
-  resolveReview: (sessionId, itemId, { verdict, gradedBy, note = null, pin = null }) => call(
+  resolveReview: (sessionId, itemId, { verdict, gradedBy, note = null }) => call(
     `${LIFECYCLE}/sessions/${enc(sessionId)}/review/${enc(itemId)}`,
-    { method: 'POST', body: { verdict, gradedBy, note, pin } },
+    { method: 'POST', body: { verdict, gradedBy, note } },
   ),
 
   /** Index rows: `{ sessionId, learnerId, unitId, state, terminal, outcome, day, updatedAt }`. */
@@ -115,12 +115,12 @@ export const schoolAdminApi = {
    * the household roster and answers 403 for a child, an unknown id, or none at
    * all. Sending it is what makes the write land, not a formality.
    */
-  putAssignment: (learnerId, { courses, units, programs = [], assignedBy, pin = null, baseUpdatedAt }) => call(
+  putAssignment: (learnerId, { courses, units, programs = [], assignedBy, baseUpdatedAt }) => call(
     `${LIFECYCLE}/assignments/${enc(learnerId)}`,
     // `baseUpdatedAt` arms the server's STALE_SAVE guard (admin advocacy
     // #19): without it this surface silently clobbered a co-teacher's edit
     // made on the teacher console between load and save.
-    { method: 'PUT', body: { courses, units, programs, assignedBy, pin, ...(baseUpdatedAt !== undefined ? { baseUpdatedAt } : {}) } },
+    { method: 'PUT', body: { courses, units, programs, assignedBy, ...(baseUpdatedAt !== undefined ? { baseUpdatedAt } : {}) } },
   ),
 };
 

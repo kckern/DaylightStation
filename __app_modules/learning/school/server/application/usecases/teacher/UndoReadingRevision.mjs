@@ -20,7 +20,7 @@
  *   decides that from the operation and not from who asked for it.
  *
  * The gate is INHERITED from the verb being undone: undoing a move needs the
- * same `books.reading.reassign` step-up the move needed.
+ * same `books.reading.reassign` gate the move needed.
  *
  * **Three things it refuses by name**, and those refusals live in
  * `readingEdits.mjs#undoRefusal` because `GetLearnerReadings` SERVES them on
@@ -30,7 +30,7 @@
  * - a move the receiving child has logged against — the reading is theirs now,
  *   and rewinding it would delete their evidence;
  * - the opening of a reading, whose inverse is destroying the reading and the
- *   history with it. That is `DeleteReading`, it is a step-up, and it should
+ *   history with it. That is `DeleteReading`, and it should
  *   be asked for by its own name.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
@@ -44,11 +44,11 @@ export class UndoReadingRevision {
 
   constructor(deps = {}) { this.#context = new ReadingEditContext(deps); }
 
-  async execute({ learnerId, readingId, revisionId, reason = null, by = null, pin = null, baseRevisionCount } = {}) {
-    // The capability first, before anything is read: a refusal must not be
+  async execute({ learnerId, readingId, revisionId, reason = null, by = null, baseRevisionCount } = {}) {
+    // The gate first, before anything is read: a refusal must not be
     // able to reveal whether this child has this reading. The INHERITED
     // action is asserted below, once the revision says which verb it was.
-    this.#context.assert({ action: 'books.reading.undo', userId: by, pin, learnerId, readingId });
+    this.#context.assert({ action: 'books.reading.undo', userId: by, learnerId, readingId });
 
     const reading = await this.#context.reading(learnerId, readingId);
     assertFreshRevisions(reading, baseRevisionCount);
@@ -68,12 +68,12 @@ export class UndoReadingRevision {
 
     const inverse = await this.#inverse(reading, revision, learnerId);
     this.#context.assert({
-      op: revision.op, userId: by, pin, learnerId, readingId,
+      op: revision.op, userId: by, learnerId, readingId,
       ...(inverse.toLearnerId ? { extra: { toLearnerId: inverse.toLearnerId } } : {}),
     });
 
     return applyReadingOperation(this.#context, {
-      learnerId, reading, by, pin, reason,
+      learnerId, reading, by, reason,
       verb: UNDO_VERB, undoes: revisionId, undoneVerb: revision.verb,
       ...inverse,
     });

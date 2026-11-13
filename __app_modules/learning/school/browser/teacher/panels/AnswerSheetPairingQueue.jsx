@@ -37,11 +37,10 @@ export default function AnswerSheetPairingQueue({ kids = [] }) {
   });
   const resolve = (held, action, targetRecordId = null) => {
     const key = `${held.heldScanId}:${action}:${targetRecordId ?? 'none'}`;
-    run(key, ({ actorId, pin }) => schoolApi.resolveAnswerSheetReview(held.heldScanId, {
+    run(key, ({ actorId }) => schoolApi.resolveAnswerSheetReview(held.heldScanId, {
       action,
       targetRecordId,
       reviewerId: actorId,
-      pin,
       idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${key}`,
     }), { onSuccess: () => setItems((current) => current.filter((item) => item.heldScanId !== held.heldScanId)) });
   };

@@ -69,9 +69,9 @@ export async function createPianoModule({configService, userService, rootLogger,
   } : null;
   // Piano program assignments are edited from the existing Teacher console, so
   // they use that console's one authorization predicate rather than inventing a
-  // second grown-up/PIN interpretation in the piano bounded context.
+  // second grown-up interpretation in the piano bounded context.
   const { createTeacherAuthorization } = await import("../../school/server/teacher-runtime.mjs");
-  const { config: schoolTeacherConfig, gate: schoolTeacherGate } = createTeacherAuthorization({
+  const { gate: schoolTeacherGate } = createTeacherAuthorization({
     configService, userService, householdId,
     logger: rootLogger.child({ module: 'school-teacher-gate' }),
   });
@@ -213,5 +213,5 @@ export async function createPianoModule({configService, userService, rootLogger,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate};
+  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate};
 }

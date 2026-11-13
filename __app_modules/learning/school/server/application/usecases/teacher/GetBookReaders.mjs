@@ -43,10 +43,10 @@ export class GetBookReaders {
     this.#roster = roster;
   }
 
-  async execute({ isbn, by = null, pin = null } = {}) {
+  async execute({ isbn, by = null } = {}) {
     // The gate FIRST: a refusal must not reveal who has which book.
     this.#context.assert({
-      action: 'books.readers.read', userId: by, pin, learnerId: null, extra: { isbn: isbn ?? null },
+      action: 'books.readers.read', userId: by, learnerId: null, extra: { isbn: isbn ?? null },
     });
     if (typeof isbn !== 'string' || !ISBN13.test(isbn)) {
       throw new ValidationError(`isbn must be a 13-digit ISBN: ${isbn}`);

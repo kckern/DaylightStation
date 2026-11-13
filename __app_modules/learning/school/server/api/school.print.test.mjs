@@ -36,7 +36,7 @@ function renderFake(result = {}) {
   };
 }
 
-// Card-minting params (card/freshCard/retake+identity, teacher pin) moved off
+// Card-minting params (card/freshCard/retake+identity) moved off
 // the GET splat onto this POST (punch 5b) — every case below that exercises
 // one of those params goes through here instead of a `card=`/`freshCard=`
 // query string.
@@ -157,39 +157,21 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(both.body.error).toMatch(/mutually exclusive/);
   });
 
-  it('teacher keys deny without the configured pin — the quiz-taker cannot print their own key', async () => {
+  it('teacher keys render on request, and a plain render stays a student sheet', async () => {
     const render = renderFake();
     const app = express();
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
       renderPrintDocument: render,
-      getPrintTeacherPin: () => '4321',
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
-    for (const q of ['', '&pin=0000']) {
-      const res = await request(app).get(`/api/v1/school/print/creature-quiz-1?variety=hand&teacher=1${q}`);
-      expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/pin/);
-    }
-    const ok = await request(app).get('/api/v1/school/print/creature-quiz-1?variety=hand&teacher=1&pin=4321');
-    expect(ok.status).toBe(200);
+    const key = await request(app).get('/api/v1/school/print/creature-quiz-1?variety=hand&teacher=1');
+    expect(key.status).toBe(200);
+    expect(key.headers['content-disposition']).toMatch(/creature-quiz-1-key\.pdf/);
     expect(render.calls[0].context).toEqual({ teacher: true });
-    // Non-teacher renders never ask for a pin.
     const student = await request(app).get('/api/v1/school/print/creature-quiz-1?variety=hand');
     expect(student.status).toBe(200);
-  });
-
-  it('teacher keys deny with an instructive error when no pin is configured', async () => {
-    const app = express();
-    app.use('/api/v1/school', createSchoolRouter({
-      schoolService: { listBankSourceSummaries: () => [] },
-      renderPrintDocument: renderFake(),
-      getPrintTeacherPin: () => null,
-      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
-    }));
-    const res = await request(app).get('/api/v1/school/print/creature-quiz-1?variety=hand&teacher=1');
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/print\.teacherPin/);
+    expect(student.headers['content-disposition']).toMatch(/creature-quiz-1\.pdf/);
   });
 
   it('quiz-archetype omr renders demand a learnerId (or explicit card) — siblings must not share a sheet', async () => {

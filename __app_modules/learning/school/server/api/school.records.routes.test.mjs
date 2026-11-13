@@ -111,7 +111,7 @@ describe('stale-save baselines travel through the routes (M6 gate 3)', () => {
     }));
     const meta = await request(app).get('/api/v1/school/periods-meta');
     expect(meta.body).toEqual({ historyLength: 7 });
-    await request(app).put('/api/v1/school/periods').send({ periods: [], editedBy: 'k', pin: 'p', baseHistoryLength: 7 });
+    await request(app).put('/api/v1/school/periods').send({ periods: [], editedBy: 'k', baseHistoryLength: 7 });
     expect(setAcademicPeriods.execute).toHaveBeenCalledWith(
       expect.objectContaining({ baseHistoryLength: 7 }));
   });
@@ -155,7 +155,7 @@ describe('stale-save baselines travel through the routes (M6 gate 3)', () => {
     };
     const put = await request(app).put('/api/v1/school/calendar').send(body);
     expect(put.status).toBe(200);
-    expect(setHouseholdCalendar.execute).toHaveBeenCalledWith(expect.objectContaining({ ...body, pin: null }));
+    expect(setHouseholdCalendar.execute).toHaveBeenCalledWith(body);
   });
 
   it('PUT /calendar: a stale or past-day refusal is 409 with its code', async () => {

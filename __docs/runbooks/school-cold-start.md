@@ -42,19 +42,18 @@ birthyear cannot approve anything).
 1. `students:` — the learner ids enrolled. Not age-derived; explicit.
 2. `teachers:` — roster ids with teacher authority (`[kckern, user_9]`
    shape). ABSENT key ⇒ any household adult passes the gate; empty list ⇒
-   nobody does. Served by `GET /api/v1/school/teachers`.
-3. `teacher.pin` — the teacher-console PIN (distinct from `print.teacherPin`).
-   Absent ⇒ the console works without a PIN prompt.
-4. `print.teacherPin` — gates print-document approval flows.
-5. `progress.academicPeriods` — the CONFIG fallback for periods. After the
+   nobody does. Served by `GET /api/v1/school/teachers`. This list is the
+   whole of teacher authority: there is no console PIN, and a teacher answer
+   key (`teacher=1` on a print render) needs no secret.
+3. `progress.academicPeriods` — the CONFIG fallback for periods. After the
    first teacher edit, `household/apps/school/periods.yml` wins and this key
    is ignored.
-6. `materials.sources` — Plex roots with `category:` (course / reference /
+4. `materials.sources` — Plex roots with `category:` (course / reference /
    listening) and `subject:`. Wrong/missing subject routes content to the
    Library silently — check the shelf after adding.
-7. `schoolcalc.continuation.learner_slots` — stable digit slots for printed
+5. `schoolcalc.continuation.learner_slots` — stable digit slots for printed
    continuation codes. Changing a slot invalidates already-printed codes.
-8. `printables:` — quota-printed worksheets (`{id, label, type: bank|pdf, …}`).
+6. `printables:` — quota-printed worksheets (`{id, label, type: bank|pdf, …}`).
    **A `type: bank` printable is served only if the paper surface profile
    declares every capability its items need.** The profile
    (`content/school/catalog/surfaces/<profile>.yml` → `capabilities:`,
@@ -69,9 +68,9 @@ birthyear cannot approve anything).
    "bankId":"...","reasons":["missing capability response.text@1", ...]}}`.
    Grep for `print.printable-excluded` after standing up any new printable
    whose bank has short-answer or matching items.
-9. `lifecycle:` — the physical console (cards, OMR, thermal printer). See
+7. `lifecycle:` — the physical console (cards, OMR, thermal printer). See
    [`school-physical-console-deploy.md`](school-physical-console-deploy.md).
-10. `quiz_pass_percent` (materials config) — the media quiz-gate bar, exposed
+8. `quiz_pass_percent` (materials config) — the media quiz-gate bar, exposed
     to runners as `quiz.passingPercent`.
 
 ## 3. Content tree

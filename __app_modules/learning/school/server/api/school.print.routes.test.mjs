@@ -117,13 +117,6 @@ describe('card-minting print renders are POSTs, not GETs (punch 5b)', () => {
     expect(res.body.error).toBe('card-minting renders require POST /print/render');
   });
 
-  it('GET with teacherPin= 400s the same way', async () => {
-    const res = await request(appWith({ printService }))
-      .get('/api/v1/school/print/math/fractions/quiz-1?teacherPin=4321');
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('card-minting renders require POST /print/render');
-  });
-
   it('POST /print/render with a JSON body renders the PDF (card-minting behavior lives here now)', async () => {
     const res = await request(appWith({ printService }))
       .post('/api/v1/school/print/render')
@@ -165,8 +158,8 @@ describe('GET /api/v1/school/teachers', () => {
   });
 });
 
-describe('print approve/deny forward the body pin', () => {
-  it('approve and deny hand {requestId, approver, pin} to the service', async () => {
+describe('print approve/deny forward the approver', () => {
+  it('approve and deny hand {requestId, approver} to the service', async () => {
     const approve = vi.fn(async (args) => ({ decision: 'printed', ...args }));
     const deny = vi.fn(async (args) => ({ decision: 'denied', ...args }));
     const app = express();
@@ -176,10 +169,10 @@ describe('print approve/deny forward the body pin', () => {
       printService: { approve, deny, listPending: () => [], listPrintables: async () => [], getQuota: () => null },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
-    await request(app).post('/api/v1/school/print/pr_1/approve').send({ approver: 'kckern', pin: '7410' });
-    expect(approve).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern', pin: '7410' });
-    await request(app).post('/api/v1/school/print/pr_1/deny').send({ approver: 'kckern', pin: '7410' });
-    expect(deny).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern', pin: '7410' });
+    await request(app).post('/api/v1/school/print/pr_1/approve').send({ approver: 'kckern' });
+    expect(approve).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern' });
+    await request(app).post('/api/v1/school/print/pr_1/deny').send({ approver: 'kckern' });
+    expect(deny).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern' });
   });
 });
 

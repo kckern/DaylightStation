@@ -38,9 +38,9 @@ function harness({ printFails = false, renderDuplex } = {}) {
 describe('ReplaceLostAnswerSheet', () => {
   it('reprints only live work, then supersedes the old allocation', async () => {
     const h = harness();
-    const result = await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    const result = await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern' });
     expect(h.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'kckern', pin: '4321', action: 'answer-sheet.replace-lost',
+      userId: 'kckern', action: 'answer-sheet.replace-lost',
     }));
     expect(h.printDocuments.getPublished).toHaveBeenCalledTimes(1);
     expect(h.printer.printPdf).toHaveBeenCalledTimes(1);
@@ -56,7 +56,7 @@ describe('ReplaceLostAnswerSheet', () => {
   // stack eats the versos.
   it('prints the replacement with the duplex the render reported', async () => {
     const h = harness({ renderDuplex: false });
-    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern' });
     expect(h.printer.printPdf).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ duplex: false }),
@@ -65,19 +65,19 @@ describe('ReplaceLostAnswerSheet', () => {
 
   it('leaves duplex to the adapter default when the render reports none (v1 legacy)', async () => {
     const h = harness();
-    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern' });
     expect(h.printer.printPdf.mock.calls[0][1].duplex).toBeUndefined();
   });
 
   it('does not retire the old allocation when printing fails', async () => {
     const h = harness({ printFails: true });
-    const result = await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    const result = await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern' });
     expect(result.status).toBe('print_failed');
     expect(h.allocationStore.markRecordLost).not.toHaveBeenCalled();
     expect(h.allocationStore.release).toHaveBeenCalled();
   });
 
-  it('accepts a previously authorized one-use QR without checking the PIN again', async () => {
+  it('accepts a previously authorized one-use QR without asking the gate again', async () => {
     const h = harness();
     await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', authorized: true });
     expect(h.teacherGate.assert).not.toHaveBeenCalled();

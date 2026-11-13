@@ -49,8 +49,8 @@ export class MarkSessionAbandoned {
     this.#logger = logger;
   }
 
-  async execute({ sessionId, learnerId, reason, decidedBy = null, pin = null } = {}) {
-    this.#teacherGate.assert({ userId: decidedBy, pin, action: 'sessions.abandon', context: { sessionId } });
+  async execute({ sessionId, learnerId, reason, decidedBy = null } = {}) {
+    this.#teacherGate.assert({ userId: decidedBy, action: 'sessions.abandon', context: { sessionId } });
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new ValidationError('a reason is required — abandoning a child\'s session is a decision, not housekeeping');
     }
@@ -141,7 +141,7 @@ export class MarkSessionAbandoned {
    * NO TEACHER GATE, deliberately, and this is the one place in this class
    * that skips it. The gate exists so a PERSON cannot close a child's work
    * without authority; a threshold the household configured IS that authority,
-   * and a cron job has no PIN to offer. The authorship requirement is honoured
+   * and a cron job is no person on the roster. The authorship requirement is honoured
    * rather than dropped — every event this writes names `system:stale-sweep`
    * and carries a reason saying how old the work was.
    *

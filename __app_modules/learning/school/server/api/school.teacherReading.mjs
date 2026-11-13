@@ -18,11 +18,6 @@
  * shape of the request, and `no-store` — a child's record must not sit in a
  * shared browser cache on a household screen.
  *
- * The acting teacher is read off the capability session rather than the body:
- * the cookie is what the console actually holds, and a body that named someone
- * else would be attribution the gate never checked. A literal PIN body still
- * works everywhere, which is what keeps the CLI usable.
- *
  * @module api/v1/routers/school.teacherReading
  */
 
@@ -41,12 +36,11 @@ const pick = (body, fields) => Object.fromEntries(
  * @param {object} args
  * @param {import('express').Router} args.router - the school router
  * @param {Function} args.wrap - the router's error-mapping wrapper
- * @param {Function} args.capabilityProof - reads the cookie + step-up header
  * @param {object} args.useCases - one per verb; a null one answers 404
  */
 export function mountTeacherReadingRoutes({
-  router, wrap, capabilityProof, notConfigured,
-  teacherGate = null, teacherCapabilitySessions = null,
+  router, wrap, notConfigured,
+  teacherGate = null,
   getBookShelf = null, getLearnerReadings = null, updateReading = null,
   addReadingEntry = null, updateReadingEntry = null, deleteReadingEntry = null,
   addReadingForLearner = null, moveReading = null, deleteReading = null,
@@ -54,22 +48,13 @@ export function mountTeacherReadingRoutes({
 }) {
   const BASE = '/teacher/learners/:learnerId/reading';
 
-  /**
-   * Who is asking, and with what proof.
-   *
-   * The router-level middleware has already put the capability proof on
-   * `req.body.pin` for any body-carrying request; a DELETE that sends no body
-   * would miss it, so the proof is read again here rather than assumed.
-   */
+  /** Who is asking. */
   const actor = (req) => {
-    const proof = capabilityProof(req);
-    const session = proof ? teacherCapabilitySessions?.status(proof.capabilityToken) : null;
     const body = req.body ?? {};
     return {
       // A GET has no body: its picked teacher rides the query (`?by=`), the
       // same way the debrief and card-ladder reads name theirs.
-      by: (session?.active ? session.userId : null) ?? body.by ?? body.actorId ?? req.query?.by ?? null,
-      pin: body.pin ?? proof ?? null,
+      by: body.by ?? body.actorId ?? req.query?.by ?? null,
     };
   };
 
@@ -100,9 +85,9 @@ export function mountTeacherReadingRoutes({
   router.get(BASE, wrap(async (req, res) => {
     need(getBookShelf, 'teacher reading shelf');
     need(teacherGate, 'teacher authorization');
-    const { by, pin } = actor(req);
+    const { by } = actor(req);
     teacherGate.assert({
-      userId: by, pin: pin ?? capabilityProof(req),
+      userId: by,
       action: 'books.shelf.read', context: { learnerId: req.params.learnerId },
     });
     res.set('Cache-Control', 'no-store').json(await getBookShelf.execute({ learnerId: req.params.learnerId }));
@@ -185,13 +170,7 @@ export function mountTeacherReadingRoutes({
     send(res, 201, result);
   }));
 
-  /**
-   * Move it to the child who actually read it — **step-up**
-   * `books.reading.reassign`, scoped to the reading id. The grant arrives in
-   * `X-Teacher-Step-Up` and rides into the use case as part of the `pin`
-   * proof, so the gate that refuses a missing one is the gate every other
-   * caller passes through too.
-   */
+  /** Move it to the child who actually read it — `books.reading.reassign`. */
   router.post(`${BASE}/:readingId/reassign`, wrap(async (req, res) => {
     const result = await need(moveReading, 'teacher reading reassignment').execute({
       ...base(req), readingId: req.params.readingId, toLearnerId: req.body?.toLearnerId,
@@ -199,7 +178,7 @@ export function mountTeacherReadingRoutes({
     send(res, 200, result);
   }));
 
-  /** Destroy the reading — **step-up** `books.reading.delete`, reason required. */
+  /** Destroy the reading — `books.reading.delete`, reason required. */
   router.delete(`${BASE}/:readingId`, wrap(async (req, res) => {
     const result = await need(deleteReading, 'teacher reading deletion').execute({
       ...base(req), readingId: req.params.readingId,
@@ -214,9 +193,9 @@ export function mountTeacherReadingRoutes({
    * the answer spans every child's shelf at once.
    */
   router.get('/teacher/books/:isbn/readers', wrap(async (req, res) => {
-    const { by, pin } = actor(req);
+    const { by } = actor(req);
     const result = await need(getBookReaders, 'teacher book readers').execute({
-      isbn: req.params.isbn, by, pin,
+      isbn: req.params.isbn, by,
     });
     send(res, 200, result);
   }));

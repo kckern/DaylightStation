@@ -117,7 +117,7 @@ export default function CoinsPanel({ learnerId, learnerName }) {
   const from = data?.windows?.school?.from ?? null;
   const name = learnerName ?? learnerId;
 
-  const save = (key, patch) => run(key, ({ actorId, pin }) => schoolApi.putEarnRates(learnerId, { actorId, pin, patch }), { onSuccess: preview.retry });
+  const save = (key, patch) => run(key, ({ actorId }) => schoolApi.putEarnRates(learnerId, { actorId, patch }), { onSuccess: preview.retry });
   const saveRate = (line, silver) => save(`rate:${line.ruleId}`, ratePatch(line, silver));
   const resetRate = (line) => save(`rate:${line.ruleId}`, { rules: { [line.ruleId]: null } });
 

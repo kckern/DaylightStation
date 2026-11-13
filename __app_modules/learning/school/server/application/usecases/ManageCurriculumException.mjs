@@ -15,8 +15,8 @@ export class ManageCurriculumException {
   }
   async list() { return { schema: 'school.curriculum-exceptions/v1', active: await this.#store.active(), history: await this.#store.list() }; }
   async execute({ kind, learnerId = null, targetType, targetId, courseId = null, replacementLessonId = null,
-    reason, decidedBy, pin, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: decidedBy, pin, action: apply ? 'curriculum-exception.apply' : 'curriculum-exception.preview', context: { kind, targetId } });
+    reason, decidedBy, apply = false } = {}) {
+    this.#teacherGate.assert({ userId: decidedBy, action: apply ? 'curriculum-exception.apply' : 'curriculum-exception.preview', context: { kind, targetId } });
     if (![...LEARNER_KINDS, 'paused'].includes(kind)) throw new ValidationError('kind must be excused, deferred, replaced, or paused');
     if (!TARGETS.has(targetType) || !text(targetId)) throw new ValidationError('targetType and targetId are required');
     if (!text(reason)) throw new ValidationError('a reason is required');
@@ -39,8 +39,8 @@ export class ManageCurriculumException {
       effects: { advancesGate: kind === 'excused' || kind === 'replaced', grantsMastery: false,
         remainsOutstanding: kind === 'deferred', blocksNewWork: kind === 'paused' } };
   }
-  async retract({ exceptionId, reason, retractedBy, pin, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: retractedBy, pin, action: apply ? 'curriculum-exception.retract' : 'curriculum-exception.retract-preview', context: { exceptionId } });
+  async retract({ exceptionId, reason, retractedBy, apply = false } = {}) {
+    this.#teacherGate.assert({ userId: retractedBy, action: apply ? 'curriculum-exception.retract' : 'curriculum-exception.retract-preview', context: { exceptionId } });
     if (!text(exceptionId) || !text(reason)) throw new ValidationError('exceptionId and reason are required');
     const target = (await this.#store.active()).find((record) => record.exceptionId === exceptionId);
     if (!target) throw new EntityNotFoundError('active curriculum exception', exceptionId);

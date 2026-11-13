@@ -16,16 +16,16 @@ function build({ refuse = false } = {}) {
 describe('ManageEarnRules', () => {
   it('a teacher sets one learner\'s rates: gate first, then a stamped revision', async () => {
     const { teacherGate, earnRules, useCase } = build();
-    const out = await useCase.setLearnerRates({ learnerId: 'learner-a', patch: { multiplier: 2 }, actorId: 'parent', pin: '1234' });
-    expect(teacherGate.assert).toHaveBeenCalledWith({ userId: 'parent', pin: '1234', action: 'economy.earn-rates', context: { learnerId: 'learner-a' } });
+    const out = await useCase.setLearnerRates({ learnerId: 'learner-a', patch: { multiplier: 2 }, actorId: 'parent' });
+    expect(teacherGate.assert).toHaveBeenCalledWith({ userId: 'parent', action: 'economy.earn-rates', context: { learnerId: 'learner-a' } });
     expect(earnRules.setUserOverride).toHaveBeenCalledWith({ learnerId: 'learner-a', patch: { multiplier: 2 }, actorId: 'parent' });
     expect(out.revision).toBe(5);
   });
 
   it('a teacher replaces the household rules through the same gate', async () => {
     const { teacherGate, earnRules, useCase } = build();
-    await useCase.setHouseholdRules({ doc: { rules: [] }, actorId: 'parent', pin: null });
-    expect(teacherGate.assert).toHaveBeenCalledWith({ userId: 'parent', pin: null, action: 'economy.earn-rules', context: {} });
+    await useCase.setHouseholdRules({ doc: { rules: [] }, actorId: 'parent' });
+    expect(teacherGate.assert).toHaveBeenCalledWith({ userId: 'parent', action: 'economy.earn-rules', context: {} });
     expect(earnRules.replace).toHaveBeenCalledWith({ doc: { rules: [] }, actorId: 'parent' });
   });
 
@@ -39,7 +39,7 @@ describe('ManageEarnRules', () => {
 
   it('a refused gate writes nothing', async () => {
     const { earnRules, useCase } = build({ refuse: true });
-    await expect(useCase.setLearnerRates({ learnerId: 'learner-a', patch: {}, actorId: 'kid', pin: null })).rejects.toThrow(/grown-up/);
+    await expect(useCase.setLearnerRates({ learnerId: 'learner-a', patch: {}, actorId: 'kid' })).rejects.toThrow(/grown-up/);
     await expect(useCase.setHouseholdRules({ doc: { rules: [] }, actorId: 'kid' })).rejects.toThrow(/grown-up/);
     expect(earnRules.setUserOverride).not.toHaveBeenCalled();
     expect(earnRules.replace).not.toHaveBeenCalled();

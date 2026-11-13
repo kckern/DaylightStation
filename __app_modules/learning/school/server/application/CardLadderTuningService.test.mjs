@@ -328,7 +328,7 @@ describe('CardLadderTuningService — races and bounds (fix round 1)', () => {
 
 describe('CardLadderTuningService — grown-up view and undo', () => {
   const gate = () => ({ assert: vi.fn(({ userId }) => { if (userId !== 'grown-up') throw Object.assign(new Error('not a teacher'), { status: 403 }); }) });
-  const ADMIN = { learnerId: 'test-learner', deckId: DECK, actorId: 'grown-up', pin: null };
+  const ADMIN = { learnerId: 'test-learner', deckId: DECK, actorId: 'grown-up' };
   const applied = (setting, from, to, over = {}) => ({ setting, from, to, reason: 'r', ...over });
   const tuned = () => ({
     ...emptyTuning(),

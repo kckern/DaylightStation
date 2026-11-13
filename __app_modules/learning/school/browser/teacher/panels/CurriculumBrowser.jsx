@@ -30,12 +30,12 @@ function PassOverride({ unit, override, onSaved }) {
       return;
     }
     setLocalError(null);
-    run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
-      percent, editedBy: actorId, pin,
+    run(key, ({ actorId }) => schoolApi.putPassOverride(unit.unitId, {
+      percent, editedBy: actorId,
     }), { onSuccess: () => { setValue(''); onSaved(); } });
   };
-  const clear = () => run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
-    percent: null, editedBy: actorId, pin,
+  const clear = () => run(key, ({ actorId }) => schoolApi.putPassOverride(unit.unitId, {
+    percent: null, editedBy: actorId,
   }), { onSuccess: onSaved });
 
   return (
@@ -69,12 +69,12 @@ function CourseBulkPassBar({ courseId, units, onSaved }) {
   const key = `bulk:${courseId}`;
   const percent = Number.parseInt(value, 10);
   const valid = Number.isInteger(percent) && percent >= 1 && percent <= 100;
-  const apply = () => run(key, async ({ actorId, pin }) => {
+  const apply = () => run(key, async ({ actorId }) => {
     let last = { ok: true, status: 200, data: {} };
     for (const unit of units) {
       // Sequential on purpose: override writes share one store file.
        
-      last = await schoolApi.putPassOverride(unit.unitId, { percent, editedBy: actorId, pin });
+      last = await schoolApi.putPassOverride(unit.unitId, { percent, editedBy: actorId });
       if (!last.ok) return last;
     }
     return last;

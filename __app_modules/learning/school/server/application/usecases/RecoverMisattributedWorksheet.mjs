@@ -78,11 +78,11 @@ export class RecoverMisattributedWorksheet {
   async execute({
     sourceSessionId, creditedSessionId, remediationSessionId,
     sourceCardId, currentCardId, sourceRows, targetRows, marks,
-    reason, recoveredBy = null, pin = null, idempotencyKey,
+    reason, recoveredBy = null, idempotencyKey,
     expectedReplacementRows = null, apply = false,
   } = {}) {
     this.#teacherGate.assert({
-      userId: recoveredBy, pin,
+      userId: recoveredBy,
       action: apply ? 'sessions.attribution-recover' : 'sessions.attribution-recover.preview',
       context: { sourceSessionId, creditedSessionId, remediationSessionId },
     });
@@ -124,7 +124,7 @@ export class RecoverMisattributedWorksheet {
       sourceSessionId, creditedSessionId, remediationSessionId,
       sourceCardId, currentCardId, fromRows, toRows, normalizedMarks,
       replacementRows, key, invalidationId, attributionId,
-      reason: reason.trim(), recoveredBy: recoveredBy.trim(), pin,
+      reason: reason.trim(), recoveredBy: recoveredBy.trim(),
     });
 
     if (!apply) return this.#receipt({ applied: false, snapshot });
@@ -134,7 +134,6 @@ export class RecoverMisattributedWorksheet {
       invalidationId,
       reason: reason.trim(),
       invalidatedBy: recoveredBy.trim(),
-      pin,
       baseSeq: snapshot.sourceSeq,
       apply: true,
     }, { authority: this.#invalidationAuthority });
@@ -142,10 +141,10 @@ export class RecoverMisattributedWorksheet {
     const nowIso = this.#clock().toISOString();
     await this.#confirmDeliveries(snapshot, { recoveredBy: recoveredBy.trim(), at: nowIso });
     await this.#creditIntendedWorksheet(snapshot, {
-      attributionId, reason: reason.trim(), recoveredBy: recoveredBy.trim(), pin, nowIso,
+      attributionId, reason: reason.trim(), recoveredBy: recoveredBy.trim(), nowIso,
     });
     await this.#removeObsoleteRemediation(snapshot, {
-      reason: reason.trim(), recoveredBy: recoveredBy.trim(), pin,
+      reason: reason.trim(), recoveredBy: recoveredBy.trim(),
     });
     await this.#allocationStore.retireCard({
       cardId: sourceCardId,
@@ -172,7 +171,7 @@ export class RecoverMisattributedWorksheet {
       sourceSessionId, creditedSessionId, remediationSessionId,
       sourceCardId, currentCardId, fromRows, toRows, normalizedMarks,
       replacementRows, key, invalidationId, attributionId,
-      reason: reason.trim(), recoveredBy: recoveredBy.trim(), pin,
+      reason: reason.trim(), recoveredBy: recoveredBy.trim(),
     });
     if (!finalSnapshot.replacementRecord) {
       throw new DomainInvariantError('replacement worksheet did not reserve an answer-sheet row window', {
@@ -208,7 +207,7 @@ export class RecoverMisattributedWorksheet {
   async #inspect({
     sourceSessionId, creditedSessionId, remediationSessionId,
     sourceCardId, currentCardId, fromRows, toRows, normalizedMarks,
-    replacementRows, key, invalidationId, attributionId, reason, recoveredBy, pin,
+    replacementRows, key, invalidationId, attributionId, reason, recoveredBy,
   }) {
     const [sourceEvents, creditedEvents, remediationEvents, sourceRecords, currentRecords] = await Promise.all([
       this.#sessions.readEvents(sourceSessionId),
@@ -287,7 +286,7 @@ export class RecoverMisattributedWorksheet {
 
     const invalidation = await this.#invalidateSessionEvidence.execute({
       sessionId: sourceSessionId, invalidationId, reason, invalidatedBy: recoveredBy,
-      pin, baseSeq: lastSeq(sourceEvents), apply: false,
+      baseSeq: lastSeq(sourceEvents), apply: false,
     }, { authority: this.#invalidationAuthority });
     if (invalidation.attemptIds.length !== fullQuestionCount) {
       throw new ValidationError(`source scan has ${invalidation.attemptIds.length} attempt rows; expected ${fullQuestionCount}`);
@@ -342,7 +341,7 @@ export class RecoverMisattributedWorksheet {
     }
   }
 
-  async #creditIntendedWorksheet(snapshot, { attributionId, reason, recoveredBy, pin, nowIso }) {
+  async #creditIntendedWorksheet(snapshot, { attributionId, reason, recoveredBy, nowIso }) {
     let events = await this.#sessions.readEvents(snapshot.creditedSessionId);
     let state = reduceSession(events);
     if (!state.evidenceAttributions.some((row) => row.attributionId === attributionId)) {
@@ -387,7 +386,6 @@ export class RecoverMisattributedWorksheet {
         sessionId: snapshot.creditedSessionId,
         verdicts,
         gradedBy: recoveredBy,
-        pin,
       });
       if (graded.status !== 'graded' && graded.status !== 'duplicate') {
         throw new DomainInvariantError(`could not credit intended worksheet: ${graded.message}`, {
@@ -422,7 +420,7 @@ export class RecoverMisattributedWorksheet {
     }
   }
 
-  async #removeObsoleteRemediation(snapshot, { reason, recoveredBy, pin }) {
+  async #removeObsoleteRemediation(snapshot, { reason, recoveredBy }) {
     const state = reduceSession(await this.#sessions.readEvents(snapshot.remediationSessionId));
     if (state.state !== 'abandoned') {
       await this.#markSessionAbandoned.execute({
@@ -430,7 +428,6 @@ export class RecoverMisattributedWorksheet {
         learnerId: snapshot.learnerId,
         reason: `source scan invalidated; full replacement required: ${reason}`,
         decidedBy: recoveredBy,
-        pin,
       });
     }
     await this.#allocationStore.release({

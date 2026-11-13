@@ -112,7 +112,7 @@ export default function DaysOffPanel({ kids = [] }) {
     setLocalError(null);
     const body = payloadFromDraft(nextDraft);
     logger.info('days-off.save', { breaks: body.except.length, activities: body.activities.length, keepLists: Boolean(nextDraft.keepListsTouched) });
-    run('save', ({ actorId, pin }) => schoolApi.putCalendar({ ...body, editedBy: actorId, pin }), {
+    run('save', ({ actorId }) => schoolApi.putCalendar({ ...body, editedBy: actorId }), {
       onSuccess: (result) => {
         setMode(null); setDraft(null); calendar.retry();
         const missed = (result?.unassigned ?? []).map((id) => kids.find((k) => k.id === id)?.name ?? id);

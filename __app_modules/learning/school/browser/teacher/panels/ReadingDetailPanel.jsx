@@ -238,7 +238,7 @@ export default function ReadingDetailPanel({
    * stale-save refusal and STOPS on it, and reloads on success so the next
    * edit is judged against a count the server just confirmed.
    */
-  const write = useCallback((key, action, call, { after = 'reload', stepUp = null } = {}) => {
+  const write = useCallback((key, action, call, { after = 'reload' } = {}) => {
     teacherLog.write('attempted', { panel: PANEL, learnerId, readingId, action });
     return run(key, async (auth) => {
       const response = await call(auth);
@@ -248,7 +248,6 @@ export default function ReadingDetailPanel({
       }
       return response;
     }, {
-      stepUp,
       onSuccess: () => {
         onChanged?.();
         // A moved or deleted reading is no longer on this shelf; reloading it
@@ -369,30 +368,23 @@ export default function ReadingDetailPanel({
   const siblings = kids.filter((kid) => kid.id !== learnerId);
   const targetName = siblings.find((kid) => kid.id === target)?.name ?? null;
 
-  const move = () => write('move', OPS.READING_MOVE, ({ actorId, stepUpToken }) => (
-    teacherWorkspaceApi.moveReading(learnerId, readingId, body({ toLearnerId: target, by: actorId }, moveReason), stepUpToken)
-  ), { after: 'close', stepUp: { action: 'books.reading.reassign', resource: readingId } });
+  const move = () => write('move', OPS.READING_MOVE, ({ actorId }) => (
+    teacherWorkspaceApi.moveReading(learnerId, readingId, body({ toLearnerId: target, by: actorId }, moveReason))
+  ), { after: 'close' });
 
-  const destroy = () => write('delete', OPS.READING_DELETE, ({ actorId, stepUpToken }) => (
-    teacherWorkspaceApi.deleteReading(learnerId, readingId, body({ by: actorId }, deleteReason), stepUpToken)
-  ), { after: 'close', stepUp: { action: 'books.reading.delete', resource: readingId } });
+  const destroy = () => write('delete', OPS.READING_DELETE, ({ actorId }) => (
+    teacherWorkspaceApi.deleteReading(learnerId, readingId, body({ by: actorId }, deleteReason))
+  ), { after: 'close' });
 
   // ---- history -------------------------------------------------------------
   const revisions = [...(record?.revisions ?? [])].filter(Boolean).reverse();
 
-  const undo = (revision) => write(`undo:${revision.id}`, 'reading.undo', ({ actorId, stepUpToken }) => (
+  const undo = (revision) => write(`undo:${revision.id}`, 'reading.undo', ({ actorId }) => (
     teacherWorkspaceApi.undoReadingRevision(
       learnerId, readingId,
       body({ revisionId: revision.id, by: actorId }, undoing?.reason),
-      stepUpToken,
     )
-  ), {
-    // An undo inherits the gate of the verb it inverts: undoing a move needs
-    // the same step-up the move needed.
-    stepUp: revision.op === OPS.READING_MOVE
-      ? { action: 'books.reading.reassign', resource: readingId }
-      : null,
-  });
+  ));
 
   const undoAsk = (revision) => {
     switch (revision.op) {

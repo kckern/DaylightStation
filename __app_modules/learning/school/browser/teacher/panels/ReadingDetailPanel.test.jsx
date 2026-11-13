@@ -29,20 +29,12 @@ vi.mock("../../schoolApi.js", () => ({
   schoolApi: { books: { resolve: vi.fn() } },
 }));
 
-// The real context mints a grant ONLY for a step-up action; an ordinary write
-// authorizes on the capability cookie and gets no token. A mock that always
-// handed one back would make "the undo of a plain correction asks for no
-// step-up" unfalsifiable.
-const grantFor = async ({ action = null } = {}) => ({ ok: true, grantToken: action ? 'grant_1' : null });
-const requestAuthorization = vi.fn(grantFor);
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'test-user', name: 'test-user' },
     openPicker: vi.fn(),
     pickerOpen: false,
-    requestAuthorization: (...args) => requestAuthorization(...args),
-    invalidateAuthorization: vi.fn(),
   }),
 }));
 
@@ -108,7 +100,6 @@ const band = (name) => screen.getByRole('heading', { name, level: 3 }).closest('
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requestAuthorization.mockImplementation(grantFor);
   Object.values(teacherWorkspaceApi).forEach((fn) => fn.mockResolvedValue?.(ok({})));
   teacherWorkspaceApi.updateReading.mockResolvedValue(ok({ revision: { id: 'rev_2' } }));
   teacherWorkspaceApi.addReadingEntry.mockResolvedValue({ ok: true, status: 201, data: { revision: { id: 'rev_2' } } });
@@ -354,7 +345,7 @@ describe('the five verbs that make a child’s record smaller', () => {
 });
 
 describe('the two structural verbs arm before they act', () => {
-  it('a move names the consequence, then moves — with the step-up grant', async () => {
+  it('a move names the consequence, then moves — as the picked teacher', async () => {
     const onClose = vi.fn();
     const onChanged = vi.fn();
     seed();
@@ -367,15 +358,14 @@ describe('the two structural verbs arm before they act', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/learner_b/);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm the move' }));
     await waitFor(() => expect(teacherWorkspaceApi.moveReading).toHaveBeenCalled());
-    expect(requestAuthorization).toHaveBeenCalledWith({ action: 'books.reading.reassign', resource: 'rd_1' });
     expect(teacherWorkspaceApi.moveReading).toHaveBeenCalledWith('learner_a', 'rd_1', expect.objectContaining({
-      toLearnerId: 'learner_b', reason: 'learner_b read it', baseRevisionCount: 1,
-    }), 'grant_1');
+      toLearnerId: 'learner_b', by: 'test-user', reason: 'learner_b read it', baseRevisionCount: 1,
+    }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it('a delete names the consequence, then deletes — with its own step-up grant', async () => {
+  it('a delete names the consequence, then deletes', async () => {
     const onClose = vi.fn();
     seed();
     mount({ onClose });
@@ -385,7 +375,9 @@ describe('the two structural verbs arm before they act', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/cannot be undone/i);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm the deletion' }));
     await waitFor(() => expect(teacherWorkspaceApi.deleteReading).toHaveBeenCalled());
-    expect(requestAuthorization).toHaveBeenCalledWith({ action: 'books.reading.delete', resource: 'rd_1' });
+    expect(teacherWorkspaceApi.deleteReading).toHaveBeenCalledWith('learner_a', 'rd_1', expect.objectContaining({
+      by: 'test-user', reason: 'it was never read',
+    }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
@@ -457,7 +449,7 @@ describe('history — every revision, and the undos that are honest', () => {
     await waitFor(() => expect(teacherWorkspaceApi.undoReadingRevision).toHaveBeenCalled());
     expect(teacherWorkspaceApi.undoReadingRevision).toHaveBeenCalledWith('learner_a', 'rd_1', expect.objectContaining({
       revisionId: 'rev_1', baseRevisionCount: 1,
-    }), null);
+    }));
   });
 
   it('an undo that would delete a day asks for its reason too', async () => {

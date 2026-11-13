@@ -18,12 +18,7 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
     teachers: TEACHERS,
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -74,7 +69,7 @@ describe('AttestationPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Retract' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm retract' }));
     await waitFor(() => expect(schoolApi.retract).toHaveBeenCalledWith({
-      kind: 'attestation', entryId: 'att_1', retractedBy: 'teacher-a', pin: null,
+      kind: 'attestation', entryId: 'att_1', retractedBy: 'teacher-a',
     }));
   });
 });

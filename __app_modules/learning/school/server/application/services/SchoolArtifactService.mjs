@@ -4,12 +4,11 @@ export class SchoolArtifactService {
     issuedArtifactStore = null, renderWorksheetThumbnail = null,
     renderIssuedArtifact = null,
     renderArtifactPostview = null, getTeacherSession = null,
-    teacherCapabilitySessions = null, reprintIssuedArtifact = null,
-    reprintResultReceiptArtifact = null,
+    reprintIssuedArtifact = null, reprintResultReceiptArtifact = null,
   } = {}) {
     Object.assign(this, {
       issuedArtifactStore, renderWorksheetThumbnail, renderIssuedArtifact, renderArtifactPostview,
-      getTeacherSession, teacherCapabilitySessions, reprintIssuedArtifact,
+      getTeacherSession, reprintIssuedArtifact,
       reprintResultReceiptArtifact,
     });
   }
@@ -49,14 +48,10 @@ export class SchoolArtifactService {
     return { kind: 'completed', receipt: await useCase.execute({ artifactId, ...command }) };
   }
 
-  async postview(artifactId, proof) {
+  async postview(artifactId) {
     if (!this.issuedArtifactStore || !this.getTeacherSession || !this.renderArtifactPostview) return { kind: 'unconfigured' };
     const artifact = await this.get(artifactId);
     if (!artifact) return { kind: 'not_found' };
-    const sessionStatus = this.teacherCapabilitySessions?.status(proof?.capabilityToken);
-    if (!sessionStatus?.active || !this.teacherCapabilitySessions.authorize({
-      ...proof, userId: sessionStatus.userId, action: 'artifact.postview', context: { artifactId },
-    })) return { kind: 'forbidden' };
     const pdf = await this.pdf(artifactId);
     if (!['rendered', 'legacy'].includes(pdf.kind)) return pdf;
     const session = await this.getTeacherSession.execute({ sessionId: artifact.manifest.sessionId });

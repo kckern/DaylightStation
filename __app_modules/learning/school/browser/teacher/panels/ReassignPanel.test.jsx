@@ -23,12 +23,7 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
-    pin: null,
     openPicker: vi.fn(),
-    openPinPrompt: vi.fn(),
-    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
-    invalidateAuthorization: vi.fn(),
-    pinPromptOpen: false,
     pickerOpen: false,
   }),
 }));
@@ -147,7 +142,6 @@ describe('ReassignPanel — work with no machine attempts', () => {
       toLearnerId: 'user_2',
       reason: 'User_2 sat at the wrong station',
       reassignedBy: 'teacher-a',
-      pin: null,
     }));
     // The attempt-event repair is a different verb over different evidence and
     // must not be called by this one.

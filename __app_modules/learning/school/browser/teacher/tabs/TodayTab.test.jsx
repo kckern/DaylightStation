@@ -3,16 +3,8 @@ import { render, screen, waitFor, act, fireEvent, within } from '@testing-librar
 import TodayTab from "./TodayTab.jsx";
 import { QueueView } from "../WorkspaceViews.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "../TeacherProfileContext.jsx";
-import PinPrompt from "../panels/PinPrompt.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
-  authStatus: vi.fn(async () => {
-    const userId = localStorage.getItem('school-teacher-claim');
-    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
-  }),
-  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
-  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
-  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
   session: vi.fn(),
 } }));
 
@@ -41,14 +33,14 @@ const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }
 const ok = (data) => ({ ok: true, status: 200, data });
 const fail = (status) => ({ ok: false, status, data: null });
 
-// The shell owns the PinPrompt and the picker; the harness mirrors that
+// The shell owns the picker; the harness mirrors that
 // composition so tab-level mutation flows exercise the real affordances.
 function ShellProbe() {
   const { pickerOpen, currentTeacher } = useTeacherProfile();
   return <><span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>{pickerOpen ? <div>Who&apos;s teaching?</div> : null}</>;
 }
 const mount = (ui) => render(
-  <TeacherProfileProvider>{ui}<PinPrompt /><ShellProbe /></TeacherProfileProvider>,
+  <TeacherProfileProvider>{ui}<ShellProbe /></TeacherProfileProvider>,
 );
 
 beforeEach(() => {
@@ -537,7 +529,7 @@ describe('wave-2 mutations', () => {
 
   const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
-  it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
+  it('resolving posts the claimed teacher stamp and refreshes server-side', async () => {
     await claim();
     const onChanged = vi.fn();
     mount(<QueueView kids={KIDS} onChanged={onChanged} />);
@@ -545,25 +537,26 @@ describe('wave-2 mutations', () => {
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3',
-      { verdict: 'correct', note: null, gradedBy: 'teacher_1', pin: null }));
+      { verdict: 'correct', note: null, gradedBy: 'teacher_1' }));
     await waitFor(() => expect(schoolApi.lifecycleReview.mock.calls.length).toBeGreaterThan(1));
     // …and the shell's badge count re-reads at once, not on the next poll.
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it('a 403 opens the PIN prompt and marks only that item', async () => {
+  it('a 403 says the server\'s reason once, without retrying', async () => {
     await claim();
     // The REAL lifecycle 403 body (app-level object-shape handler): the error
     // field is an OBJECT — the UI must normalize it, never render it raw.
     schoolApi.resolveReview.mockResolvedValue({ ok: false, status: 403, data: {
-      ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' }, traceId: 'unknown',
+      ok: false, error: { type: 'GuestForbiddenError', message: 'Only a listed teacher can do that.' }, traceId: 'unknown',
     } });
     mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Incorrect' })); });
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Teacher PIN' })).toBeTruthy());
-    expect(screen.getByText('Unlock teacher tools')).toBeTruthy();
+    expect(await screen.findByText('Only a listed teacher can do that.')).toBeTruthy();
+    expect(screen.queryByText(/GuestForbiddenError/)).toBeNull();
+    expect(schoolApi.resolveReview).toHaveBeenCalledTimes(1);
   });
 
   it('with no claimed teacher, a write opens the picker instead of posting', async () => {
@@ -595,7 +588,7 @@ describe('wave-2 mutations', () => {
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
     await waitFor(() => expect(schoolApi.printApprove).toHaveBeenCalledWith('pr_1',
-      { approver: 'teacher_1', pin: null }));
+      { approver: 'teacher_1' }));
     await waitFor(() => expect(schoolApi.printPending.mock.calls.length).toBeGreaterThan(1));
     expect(onChanged).toHaveBeenCalled();
   });
@@ -618,7 +611,7 @@ describe('wave-2 mutations', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'teacher_1', pin: null, reason: 'We will do this one together' }));
+      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'teacher_1', reason: 'We will do this one together' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
@@ -647,24 +640,5 @@ describe('advocacy wave 6A', () => {
     await waitFor(() => expect(screen.getByText(/Marking guide: Full credit/)).toBeTruthy());
     expect(screen.getByText(/written answer needs a human mark/)).toBeTruthy();
     expect(screen.getByText(/waiting 3h/)).toBeTruthy();
-  });
-
-  it('an expired capability REPLAYS once after unlock without retaining the PIN', async () => {
-    localStorage.setItem('school-teacher-claim', 'teacher_1');
-    schoolApi.resolveReview
-      .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
-      .mockResolvedValue(ok({ verdict: 'correct' }));
-    mount(<QueueView kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Teacher PIN' })).toBeTruthy());
-    act(() => {
-      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '7410' } });
-    });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
-    await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('teacher_1', '7410');
-    expect(schoolApi.resolveReview).toHaveBeenLastCalledWith('ses_1', 'q3',
-      expect.objectContaining({ pin: null }));
   });
 });

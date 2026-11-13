@@ -18,8 +18,8 @@ export class RecordTeacherNote {
     this.#logger = logger;
   }
 
-  async execute({ learnerId, note, from = null, pin = null } = {}) {
-    this.#teacherGate.assert({ userId: from, pin, action: 'note.send', context: { learnerId } });
+  async execute({ learnerId, note, from = null } = {}) {
+    this.#teacherGate.assert({ userId: from, action: 'note.send', context: { learnerId } });
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
     if (typeof note !== 'string' || !note.trim()) throw new ValidationError('note is required');
     const entry = {

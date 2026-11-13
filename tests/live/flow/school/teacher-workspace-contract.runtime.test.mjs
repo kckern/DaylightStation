@@ -114,7 +114,6 @@ async function installTeacherReadModel(page) {
     }
     const data = pathname.endsWith('/roster') ? [learnerB]
       : pathname.endsWith('/teachers') ? { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] }
-        : pathname.endsWith('/teacher/auth/status') ? { active: false }
         : pathname.endsWith('/teacher/day') ? { schema: 'school.teacher-day/v2', studyDay: new URL(route.request().url()).searchParams.get('studyDay') ?? '2026-08-24', learners: day }
           : pathname.endsWith('/lifecycle/review') ? { items: [] }
               : pathname.endsWith('/print/pending') || pathname.endsWith('/quiz-requests') ? []

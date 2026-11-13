@@ -9,11 +9,6 @@ export class SchoolTeacherConfigSource {
 
   teachers = () => this.#schoolConfig().teachers;
 
-  pin = () => {
-    const value = this.#schoolConfig().teacher?.pin;
-    return value != null ? String(value) : null;
-  };
-
   #schoolConfig() {
     return this.configService.getHouseholdAppConfig(null, 'school') || {};
   }

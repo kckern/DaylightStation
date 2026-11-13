@@ -62,10 +62,10 @@ export class GradeSubmission {
    *   hand down a verdict; required, because a gate that can be left out is a
    *   gate that will be
    * @param {import('../TeacherGate.mjs').TeacherGate|null} [deps.teacherGate] -
-   *   readiness punch 2 (console PIN). ADDITIVE, not a replacement: `grownUps`
+   *   readiness punch 2 (teacher role). ADDITIVE, not a replacement: `grownUps`
    *   below always runs first and is never skipped, so a pre-console install
    *   (or a test with no gate wired) keeps its exact legacy behavior. When
-   *   wired, the console PIN is asked ON TOP of the grown-up check, and ONLY
+   *   wired, the teacher role is checked ON TOP of the grown-up check, and ONLY
    *   for a call that actually carries a person's verdicts — the self-closing
    *   finisher (`execute({sessionId})`, no verdicts) is already behind the
    *   gated resolve that triggered it and must never re-assert.
@@ -115,12 +115,10 @@ export class GradeSubmission {
    *   un-voids it — the question returns to the denominator.
    * @param {string} [args.gradedBy] - the roster id of the grown-up who marked
    *   the review items; required (and checked) whenever `verdicts` is non-empty
-   * @param {string|null} [args.pin] - the console PIN, consulted only when a
-   *   `teacherGate` is wired AND a human verdict is present
    * @param {boolean} [args.settle] - the teacher console's hand-settle lane: a
    *   grown-up is finishing a session automatic grading never finished. It
-   *   costs a step-up (see below); it changes nothing about how the work is
-   *   marked
+   *   runs through the teacher gate (see below); it changes nothing about how
+   *   the work is marked
    * @param {string|null} [args.settledBy] - the roster id of that grown-up;
    *   checked whenever `settle` is true
    * @returns {Promise<{ status: 'graded'|'awaiting_review'|'duplicate'|'unavailable',
@@ -132,7 +130,7 @@ export class GradeSubmission {
    *   which ones those were.
    */
   async execute({
-    sessionId, entries = {}, verdicts = {}, gradedBy = null, pin = null,
+    sessionId, entries = {}, verdicts = {}, gradedBy = null,
     settle = false, settledBy = null,
   } = {}) {
     // THE HAND-SETTLE LANE (teacher console, task 1.3). A session that came
@@ -142,17 +140,16 @@ export class GradeSubmission {
     // from there. A grown-up finishes it from the session inspector.
     //
     // Such a call carries NO verdicts, so the block below never fires for it
-    // and it would otherwise cost nothing. `sessions.settle` is a step-up
-    // action, so the gate asks for a fresh, session-scoped confirmation on
-    // top of the capability — the same price correcting one machine verdict
-    // already pays, for a mark no machine produced at all.
+    // and it would otherwise cost nothing. The teacher gate asks for a listed
+    // teacher — the same price correcting one machine verdict already pays,
+    // for a mark no machine produced at all.
     //
     // This is the console's price, not a new lock on the route: an unflagged
     // call still finishes a session exactly as it always has, because the
     // scan bridge and the self-closing finisher both come through here.
     if (settle === true && this.#teacherGate) {
       this.#teacherGate.assert({
-        userId: settledBy, pin, action: 'sessions.settle', context: { sessionId },
+        userId: settledBy, action: 'sessions.settle', context: { sessionId },
       });
     }
 
@@ -168,12 +165,12 @@ export class GradeSubmission {
       this.#grownUps.assert(gradedBy, 'Only a grown-up can mark a child\'s work', {
         action: 'grade.verdicts', sessionId,
       });
-      // The console PIN rides ON TOP of the grown-up rule, not instead of it —
+      // The teacher gate rides ON TOP of the grown-up rule, not instead of it —
       // and only for THIS lane (a person's verdicts on the call). The
       // finisher (no verdicts) skips this whole block, gate or no gate.
       if (this.#teacherGate) {
         this.#teacherGate.assert({
-          userId: gradedBy, pin, action: 'sessions.grade', context: { sessionId },
+          userId: gradedBy, action: 'sessions.grade', context: { sessionId },
         });
       }
       // ...and `void` is REFUSED here, after identity, before any write.

@@ -49,13 +49,13 @@ export class SetHouseholdCalendar {
 
   /**
    * @param {{except: object[], dayOffTiers: object|null, activities?: object[],
-   *   assignTo?: string[], editedBy: string, pin?: string|null, baseRevision: string}} args
+   *   assignTo?: string[], editedBy: string, baseRevision: string}} args
    */
   async execute({
-    except, dayOffTiers = null, activities = [], assignTo = [], editedBy = null, pin = null, baseRevision,
+    except, dayOffTiers = null, activities = [], assignTo = [], editedBy = null, baseRevision,
   } = {}) {
     this.#teacherGate.assert({
-      userId: editedBy, pin, action: 'calendar.edit',
+      userId: editedBy, action: 'calendar.edit',
       context: { count: Array.isArray(except) ? except.length : 0 },
     });
     if (typeof baseRevision !== 'string' || !baseRevision) {
