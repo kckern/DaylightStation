@@ -168,3 +168,30 @@ describe('planDailyAgenda — a shelf of several programs labels the right one',
     expect(section.progressLabel).toBeNull();
   });
 });
+
+describe('planDailyAgenda — a program off today on a shared shelf', () => {
+  // A learner on 2026-11-13 (a Friday): piano and the maze done, a Tue/Thu coloring
+  // sheet on the same arts shelf. It was offered as next and held the day open.
+  const maze = program('printed-activity', 'beeloo:maze', { schedule: { daysOfWeek: [1, 3, 5] } });
+  const tueThu = program('printed-activity', 'beeloo:colorbynumber', { schedule: { daysOfWeek: [2, 4] } });
+
+  it('is not offered, and does not hold the shelf open', () => {
+    const section = arts([piano, maze, tueThu], {
+      'piano-course::learner-a-piano': status({ doneToday: true }),
+      'printed-activity::beeloo:maze': status({ doneToday: true }),
+      'printed-activity::beeloo:colorbynumber': status(),
+    });
+    expect(section.next).toBeNull();
+    expect(section.obligation.state).toBe('served');
+  });
+
+  it('is offered on its own day', () => {
+    const THURSDAY = '2026-11-12T18:00:00.000Z';
+    const section = arts([piano, tueThu], {
+      'piano-course::learner-a-piano': status({ doneToday: true }),
+      'printed-activity::beeloo:colorbynumber': status(),
+    }, THURSDAY);
+    expect(section.next.unitId).toBe(tueThu.unitId);
+    expect(section.obligation.state).not.toBe('served');
+  });
+});

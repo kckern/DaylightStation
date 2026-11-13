@@ -445,7 +445,13 @@ export function planDailyAgenda({
     const weekendPick = weekendTrack.length && !subjectPassedToday
       ? weekendScripturePick(weekendTrack, today, latestPassAt)
       : null;
-    const offerable = offerEligible.filter((e) => !isTeacherHeld(e) && !weekendTrack.includes(e));
+    // A program whose own schedule skips today is neither offered nor owed,
+    // even on a shelf another program keeps open today: a Tue/Thu coloring
+    // sheet beside a Mon–Fri piano course was offered, and owed, every weekday
+    // (2026-11-13). Curriculum keeps its section-level verdict below. Weekends
+    // are left alone: there, weekday work is still offered as optional.
+    const offToday = (e) => !isWeekend && Boolean(e.program) && !scheduleVerdict(today, e.schedule ?? null).schoolDay;
+    const offerable = offerEligible.filter((e) => !isTeacherHeld(e) && !weekendTrack.includes(e) && !offToday(e));
     // A placeholder is offered only when nothing real is.
     const candidate = weekendPick ?? [
       ...offerable.filter((e) => e.status === 'in_progress'),
@@ -500,7 +506,7 @@ export function planDailyAgenda({
         ? programStatusFor(programStatuses, entry)?.doneToday !== true
         : !nonElectivePassedToday
     ));
-    const actionableAll = obligationEligible.filter((e) => !e.elective && !isTeacherHeld(e)
+    const actionableAll = obligationEligible.filter((e) => !e.elective && !isTeacherHeld(e) && !offToday(e)
       && (e.status === 'in_progress' || e.status === 'available'));
     // A placeholder (a holiday activity still to be written) is offered by
     // name, never owed: a child cannot do work that does not exist yet.
@@ -510,7 +516,7 @@ export function planDailyAgenda({
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
     ));
-    const requiredPrograms = nonElectiveList.filter((e) => e.program
+    const requiredPrograms = nonElectiveList.filter((e) => e.program && !offToday(e)
       && !terminalProgramKeys.has(programStatusKey(e)) && !unknowableProgramKeys.has(programStatusKey(e))
       && !weeklySatisfiedKeys.has(programStatusKey(e)));
     const hasRequiredCurriculum = nonElectiveList.some((e) => !e.program);
