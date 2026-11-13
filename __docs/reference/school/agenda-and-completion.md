@@ -535,6 +535,12 @@ re-reads that learner (not the rings) and the Portal plays **School done!**
 ("Every circle is green for today."). It plays once per learner per day: a
 replayed change for the same learner and period is quiet.
 
+**Gems look on news.** The Portal's gem ceremony (`useGemCeremony`, resting
+view) still polls every minute, and also looks when the board fires the
+`school:gems-look` window event: once per coalesced `coins-changed` burst (a
+payout mints line by line, and each look is a fresh read), and when a day
+turns complete.
+
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner

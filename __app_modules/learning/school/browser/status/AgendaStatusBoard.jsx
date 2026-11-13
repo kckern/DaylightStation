@@ -82,7 +82,7 @@ import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
 import CoinCeremony from "./CoinCeremony.jsx";
 import { useCoinCeremony } from "./useCoinCeremony.js";
-import { SCHOOL_REFRESH_EVENTS, DAY_SCOPED_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
+import { SCHOOL_REFRESH_EVENTS, DAY_SCOPED_EVENTS, COINS_CHANGED, GEMS_LOOK_EVENT, coalescer } from "./schoolRefreshEvents.js";
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -769,7 +769,17 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // change mid-burst is not read stale.
   const refreshCoinsRef = useRef(refreshCoins);
   refreshCoinsRef.current = refreshCoins;
-  const coinsBurst = useMemo(() => coalescer(() => { if (aliveRef.current) refreshCoinsRef.current(); }), []);
+  // Coins minted or a day finished can mean a gem: the Portal's gem ceremony
+  // (SchoolApp) looks now instead of waiting out its minute poll. Each look is
+  // a fresh read, so a payout burst asks once, with the coalesced coin read.
+  const lookForGems = useCallback(() => {
+    try { window.dispatchEvent(new Event(GEMS_LOOK_EVENT)); } catch { /* no window, no ceremony */ }
+  }, []);
+  const coinsBurst = useMemo(() => coalescer(() => {
+    if (!aliveRef.current) return;
+    refreshCoinsRef.current();
+    lookForGems();
+  }), [lookForGems]);
   useEffect(() => () => coinsBurst.cancel(), [coinsBurst]);
   const onSchool = useCallback((payload) => {
     const event = payload?.event;
@@ -799,7 +809,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     });
     refresh([learnerId]);
     refreshCoins();
-  }, [studyDay, rosterIds, refresh, refreshCoins, coinsBurst]);
+  }, [studyDay, rosterIds, refresh, refreshCoins, coinsBurst, lookForGems]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -811,6 +821,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       schoolLog.selfService('status-board.refresh', { source: 'state-gates', event: 'school.day-complete', learnerId: dayLearner });
       refresh([dayLearner]);
       refreshCoins();
+      lookForGems();
       return;
     }
     const current = event?.payload?.current;
@@ -826,7 +837,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     refreshRings();
     refreshCoins();
     refresh(learnerId ? [learnerId] : null);
-  }, [rosterIds, refreshRings, refreshCoins, refresh]);
+  }, [rosterIds, refreshRings, refreshCoins, refresh, lookForGems]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   const visible = useMemo(() => rows ?? [], [rows]);

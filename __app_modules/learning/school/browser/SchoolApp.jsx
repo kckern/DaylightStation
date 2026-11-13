@@ -206,6 +206,9 @@ function schoolUrlBase() {
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from "./schoolPathModel.js";
 import { setSchoolDeviceId } from "./schoolDevice.js";
+import { GEMS_LOOK_EVENT } from "./status/schoolRefreshEvents.js";
+// The board asks for a gem look when coins change or a day completes.
+const GEMS_LOOK_EVENTS = [GEMS_LOOK_EVENT];
 
 /**
  * Turning the diagnostics up, from outside the code.
@@ -740,7 +743,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // of the week taken in the garage, a book logged): celebrated over the board
   // pane — never the keypad — while the panel rests, from a minute poll and
   // each time a child comes back to the keypad.
-  const gemCeremony = useGemCeremony({ surface: `school-${screenId}`, enabled: bankDoorView, pollMs: 60_000 });
+  const gemCeremony = useGemCeremony({ surface: `school-${screenId}`, enabled: bankDoorView, pollMs: 60_000, events: GEMS_LOOK_EVENTS });
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:

@@ -738,6 +738,30 @@ describe('a scan updates the board immediately', () => {
     expect(schoolApi.stateGates.mock.calls.length).toBe(rings);
   });
 
+  it('asks the gem ceremony to look when coins change or a school day completes', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [], entries: [] } });
+    const looks = vi.fn();
+    window.addEventListener('school:gems-look', looks);
+    try {
+      render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+      await waitFor(() => expect(wsHandlers.some((h) => h.topic === 'state-gates')).toBe(true));
+      // A payout burst is many coins-changed: one look, after the burst settles.
+      const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+      school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+      school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+      school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+      expect(looks).toHaveBeenCalledTimes(0);
+      await waitFor(() => expect(looks).toHaveBeenCalledTimes(1));
+      wsHandlers.filter((h) => h.topic === 'state-gates').at(-1).cb({ kind: 'GateStateChanged', payload: {
+        gateId: 'school.day-complete', subject: { kind: 'learner', id: 'learner1' }, from: 'unsatisfied', to: 'satisfied',
+      } });
+      expect(looks).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener('school:gems-look', looks);
+    }
+  });
+
   it('re-reads on a scan, so the disc turns without waiting out the poll', async () => {
     // Before the scan: one pending assignment.
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [

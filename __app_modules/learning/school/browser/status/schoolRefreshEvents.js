@@ -9,6 +9,8 @@
  * (`coalescer`) rather than re-reading per entry.
  */
 export const COINS_CHANGED = 'coins-changed';
+/** The window event that asks the Portal's gem ceremony to look now. */
+export const GEMS_LOOK_EVENT = 'school:gems-look';
 /** Quiet time after the last event of a burst before the re-read. */
 export const COINS_COALESCE_MS = 750;
 /** The longest a burst may hold a re-read back, however long it runs. */
