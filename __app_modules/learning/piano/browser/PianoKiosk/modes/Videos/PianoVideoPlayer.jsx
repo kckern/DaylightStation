@@ -31,6 +31,7 @@ import { useEngagementGate } from './useEngagementGate.js';
 import { checkInRoots } from '../../../../portable/practice/lessonKey.mjs';
 import { useHumanNotes, humanActiveNotes } from '../../useHumanNotes.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
+import { isPersistentUser } from '../../pianoUser.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
@@ -181,7 +182,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   }, [currentUser, practice, expectation]);
   // The presence ladder's rules for this lesson (presenceLadder.mjs): preschool
   // courses stay on one note; every interval is capped at the idle timeout.
-  const preschoolCourse = !!expectation?.preschool;
+  // A guest stays on the note too: a scale check-in runs as a challenge, which
+  // needs a saved profile, so a guest could never finish one.
+  const preschoolCourse = !!expectation?.preschool || !isPersistentUser(currentUser);
   const ladder = useMemo(
     () => ladderConfig(presenceLadder, { baseTimeoutSeconds: engagementTimeoutSeconds, preschool: preschoolCourse }),
     [presenceLadder, engagementTimeoutSeconds, preschoolCourse],

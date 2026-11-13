@@ -152,6 +152,11 @@ export function useLessonPractice({
       checkInsAnswered: s.checkInLog.filter((c) => c.answered).length,
       scaleCheckIns: s.scaleCheckIns,
       legitChecks: s.legitChecks,
+      // The presence ladder (presenceLadder.mjs): the highest rung a check-in
+      // reached this sitting, and how many were answered with no real playing
+      // since the answer before (the teacher console and the good-faith judge).
+      peakRung: s.checkInLog.reduce((m, c) => Math.max(m, c.rung), 0),
+      minimalCheckIns: s.checkInLog.filter((c) => c.answered && c.minimal).length,
       penalties: t.penalties,
     };
     if (pastThreshold()) out.goodFaith = goodFaithState();
@@ -185,14 +190,22 @@ export function useLessonPractice({
 
   const setDrillsPassed = useCallback((n) => { stateRef.current.drillsPassed = Math.max(0, Math.floor(Number(n) || 0)); }, []);
 
-  /** A check-in opened ({ open: true, scales }) or was answered ({ open: false }). */
-  const recordCheckIn = useCallback(({ open = true, scales = 0 } = {}) => {
+  /**
+   * A check-in opened ({ open: true, scales, rung, minimal }) or was answered
+   * ({ open: false }). `rung` is the presence-ladder rung it asked at;
+   * `minimal` marks one opened with no real playing since the last answer.
+   */
+  const recordCheckIn = useCallback(({ open = true, scales = 0, rung = 0, minimal = false } = {}) => {
     const s = stateRef.current;
     if (open) {
       s.checkInOpen = true;
       s.checkIns += 1;
       if (scales > 0) s.scaleCheckIns += 1;
-      s.checkInLog.push({ atMs: Date.now() - s.startMs, scales, answered: false });
+      const r = Math.trunc(Number(rung));
+      s.checkInLog.push({
+        atMs: Date.now() - s.startMs, scales, rung: Number.isFinite(r) && r >= 0 ? Math.min(r, 4) : 0,
+        minimal: minimal === true, answered: false,
+      });
     } else {
       s.checkInOpen = false;
       s.graceUntil = Date.now() + CHECK_IN_GRACE_MS;

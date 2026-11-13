@@ -391,6 +391,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
       isSequential={isSequential}
       speedEnabled={policy.allowSpeed}
       engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
+      presenceLadder={config.videos?.practice?.presence_ladder ?? null}
       completionThresholdPercent={config.videos?.completion_threshold_percent ?? 90}
       engagementGateEnabled={policy.engagementGate}
       onAutoAdvance={checkpointPending || policy.autoAdvance ? handleAutoAdvance : null}

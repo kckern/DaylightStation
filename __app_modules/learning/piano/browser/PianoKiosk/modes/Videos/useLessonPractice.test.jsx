@@ -105,6 +105,27 @@ describe('useLessonPractice', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it('the report carries the sitting\'s presence ladder: peak rung and answered minimal check-ins', () => {
+    const { result } = renderHook(() => useLessonPractice({ enabled: true, isPlaying: true, enforced: true }));
+    expect(result.current.report()).toMatchObject({ peakRung: 0, minimalCheckIns: 0 });
+    act(() => { result.current.recordCheckIn({ open: true, scales: 0, rung: 0, minimal: false }); });
+    act(() => { result.current.recordCheckIn({ open: false }); });
+    act(() => { result.current.recordCheckIn({ open: true, scales: 2, rung: 2, minimal: true }); });
+    act(() => { result.current.recordCheckIn({ open: false }); });
+    expect(result.current.report()).toMatchObject({ peakRung: 2, minimalCheckIns: 1 });
+    // An unanswered minimal check-in raises the peak but is not counted as minimal effort.
+    act(() => { result.current.recordCheckIn({ open: true, scales: 1, rung: 3, minimal: true }); });
+    expect(result.current.report()).toMatchObject({ peakRung: 3, minimalCheckIns: 1 });
+    expect(result.current.report()).not.toHaveProperty('presence');
+  });
+
+  it('a malformed rung never reaches the report as NaN', () => {
+    const { result } = renderHook(() => useLessonPractice({ enabled: true, isPlaying: true, enforced: true }));
+    act(() => { result.current.recordCheckIn({ open: true, scales: 1, rung: 'x', minimal: 'yes' }); });
+    act(() => { result.current.recordCheckIn({ open: false }); });
+    expect(result.current.report()).toMatchObject({ peakRung: 0, minimalCheckIns: 0 });
+  });
+
   it('an unenforced lesson never sends a state', () => {
     const { result } = renderHook(() => useLessonPractice({ enabled: true, isPlaying: true, enforced: false, thresholdPercent: 90, getPercent: () => 99 }));
     play(scaleUp, 0);
