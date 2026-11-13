@@ -5,7 +5,8 @@ import { FlightList } from '../SkylineGlider/SkylineMenus.jsx';
 import { PixelIcon, iconForSymbol } from '../SkylineGlider/SkylinePixelIcons.jsx';
 import PixelSprite from '../../../../../../__capabilities/gaming/browser/platform/ui/PixelSprite.jsx';
 import { INVADER_SPRITES } from '../../lib/skylineInvaders/sprites.js';
-import { GESTURES, GESTURE_INFO } from '../../lib/skylineInvaders/gestures.js';
+import { GESTURE_INFO } from '../../lib/skylineInvaders/gestures.js';
+import { MANUAL_METHOD, SETUP_METHODS, SETUP_STEPS, setupStepId, setupStepsView } from '../../lib/skylineInvaders/setupTest.js';
 import { DRAWN_HINTS } from '../../lib/skylineInvaders/invadersPanel.js';
 import GestureDemo from './GestureDemo.jsx';
 
@@ -147,29 +148,8 @@ export default function InvadersMenus(props) {
       </Window>
     );
   }
-  if (screen === 'controls') {
-    // Pick your controls: one gesture per card. The demo shows the movement,
-    // the line says it, and the real cannon follows the defender on the three
-    // practice targets in the sky behind the window.
-    const card = props.card || {};
-    const info = GESTURE_INFO[card.gesture] || GESTURE_INFO[GESTURES[0]];
-    return (
-      <Window screen="controls">
-        <p className="skyline-menus__kicker" data-testid="invaders-controls-step">{`${props.shooterName ? `${props.shooterName}: pick` : 'Pick'} your controls · ${(card.index ?? 0) + 1} of ${GESTURES.length}`}</p>
-        <div className="skyline-invaders__controls-body" data-gesture={card.gesture} data-card={card.index}>
-          <GestureDemo gesture={card.gesture} />
-          <div className="skyline-invaders__controls-text">
-            <h1 data-testid="invaders-controls-name">{info.label}</h1>
-            <p className="skyline-invaders__controls-how" data-testid="invaders-controls-how">{info.how}</p>
-            <p className="skyline-invaders__controls-task" role="status" data-testid="invaders-controls-task">{card.note || (card.reached === 3 ? 'All three lit!' : `Light the targets: ${card.reached || 0} of 3`)}</p>
-            <div className="skyline-invaders__controls-timer" role="timer" aria-label={`${card.leftS ?? 0} seconds left on this card`}>
-              <span style={{ width: `${card.leftPct ?? 100}%` }} />
-            </div>
-          </div>
-        </div>
-      </Window>
-    );
-  }
+  if (screen === 'method') return <MethodScreen {...props} />;
+  if (screen === 'sweep') return <SweepScreen {...props} />;
   if (screen === 'locked') {
     return (
       <Window screen="locked">
@@ -210,6 +190,109 @@ export default function InvadersMenus(props) {
   return (
     <Window screen="loading">
       <h1>Skyline Invaders</h1>
+    </Window>
+  );
+}
+
+// ── The setup ────────────────────────────────────────────────────────────────
+const methodLabel = (method) => (method === MANUAL_METHOD ? 'Gamepad' : GESTURE_INFO[method]?.label || '');
+const CAMERA_NOTES = Object.freeze({
+  off: 'The camera is off. Aim with the gamepad.',
+  starting: 'The camera is starting…',
+});
+
+/** A gamepad in pixels, for the method that needs no camera. */
+function GamepadGlyph() {
+  return (
+    <svg className="skyline-invaders__method-pad" viewBox="0 0 24 14" aria-hidden="true" shapeRendering="crispEdges">
+      <rect x="2" y="2" width="20" height="10" />
+      <rect className="skyline-invaders__method-pad-key" x="5" y="6" width="6" height="2" />
+      <rect className="skyline-invaders__method-pad-key" x="7" y="4" width="2" height="6" />
+      <rect className="skyline-invaders__method-pad-key" x="15" y="4" width="2" height="2" />
+      <rect className="skyline-invaders__method-pad-key" x="18" y="7" width="2" height="2" />
+    </svg>
+  );
+}
+
+/**
+ * Choose how you aim: every aim gesture and the gamepad, as tiles to tap. The
+ * defender's own method is marked. Choosing a gesture goes to its test sweep;
+ * the gamepad needs none. The mat does nothing here.
+ */
+function MethodScreen({ setup = {}, shooterName = '', onMethod }) {
+  // `setup.cursor` is null under touch: a gold tile would read as already chosen.
+  const cameraOff = setup.camera === 'off';
+  return (
+    <Window screen="method">
+      <p className="skyline-menus__kicker">{shooterName ? `${shooterName}: how do you aim?` : 'How do you aim?'}</p>
+      <h1>Choose your controls</h1>
+      <div className="skyline-invaders__methods" role="group" aria-label="Controls">
+        {SETUP_METHODS.map((method, index) => {
+          const gesture = method !== MANUAL_METHOD;
+          return (
+            <button
+              key={method} type="button" className="skyline-invaders__method" data-testid={`invaders-method-${method}`} data-method={method}
+              aria-pressed={index === setup.cursor} data-current={method === setup.current || undefined}
+              disabled={gesture && cameraOff} onClick={() => onMethod?.(method)}
+            >
+              <span className="skyline-invaders__method-art" aria-hidden="true">{gesture ? <GestureDemo gesture={method} /> : <GamepadGlyph />}</span>
+              <strong>{methodLabel(method)}</strong>
+              {method === setup.current && <small className="skyline-invaders__method-yours">Yours</small>}
+            </button>
+          );
+        })}
+      </div>
+      {CAMERA_NOTES[setup.camera] && <p className="skyline-invaders__setup-note" role="status" data-testid="invaders-setup-note">{CAMERA_NOTES[setup.camera]}</p>}
+    </Window>
+  );
+}
+
+/**
+ * The test sweep: go left, go right, stomp. Each step is ticked only when it is
+ * detected; the real cannon follows the defender on the two edge targets
+ * behind this window. A step not detected in time says so, and the keys offer
+ * Try again or Choose another.
+ */
+function SweepScreen({ setup = {}, shooterName = '' }) {
+  const test = setup.test;
+  const method = test?.gesture || setup.method;
+  const info = GESTURE_INFO[method] || {};
+  const status = test?.status || 'running';
+  const current = SETUP_STEPS.find((step) => step.id === setupStepId(test)) || SETUP_STEPS[0];
+  const fireLabel = setup.mat ? 'Stomp to fire' : 'Press fire';
+  const label = (step) => (step.id === 'fire' ? fireLabel : step.label);
+  let headline = label(current);
+  let line = current.id === 'fire' ? (setup.mat ? 'Stomp the mat.' : 'Press A or Space.') : current.how;
+  if (status === 'passed') { headline = 'It works!'; line = setup.from === 'start' ? 'Here comes the wave.' : 'These are your controls now.'; }
+  else if (status === 'timeout') { headline = 'Not detected'; line = `${label(current)} did not register. Try again, or choose another.`; }
+  else if (setup.camera !== 'on') line = CAMERA_NOTES[setup.camera];
+  else if (setup.lost && current.id !== 'fire') line = 'Stand where the camera can see you.';
+  return (
+    <Window screen="sweep">
+      <p className="skyline-menus__kicker">{`${shooterName ? `${shooterName} · ` : ''}Test: ${info.label || ''}`}</p>
+      <div className="skyline-invaders__sweep-body" data-status={status} data-step={current.id}>
+        <GestureDemo gesture={method} />
+        <div className="skyline-invaders__sweep-text">
+          <h1 data-testid="invaders-sweep-headline">{headline}</h1>
+          <p className="skyline-invaders__sweep-line" role="status" data-testid="invaders-sweep-line">{line}</p>
+          <p className="skyline-invaders__sweep-how" data-testid="invaders-sweep-how">{info.how}</p>
+          <ol className="skyline-invaders__sweep-steps" data-testid="invaders-sweep-steps">
+            {setupStepsView(test).map((step, index) => (
+              <li key={step.id} data-state={step.state} data-testid={`invaders-sweep-step-${step.id}`}>
+                <span className="skyline-invaders__sweep-mark" aria-hidden="true">
+                  {step.state === 'done' ? <PixelIcon name="check" /> : step.state === 'failed' ? <PixelIcon name="cross" /> : index + 1}
+                </span>
+                <span>{label(SETUP_STEPS[index])}</span>
+              </li>
+            ))}
+          </ol>
+          {status === 'running' && (
+            <div className="skyline-invaders__controls-timer" role="timer" aria-label={`${setup.leftS ?? 0} seconds left`}>
+              <span style={{ width: `${Math.max(0, Math.min(100, (100 * (setup.leftS ?? 0)) / (setup.timeoutS || 15)))}%` }} />
+            </div>
+          )}
+        </div>
+      </div>
     </Window>
   );
 }

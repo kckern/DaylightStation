@@ -25,8 +25,10 @@ export function formatClock(seconds) {
 // A badge, not instructions: what the aim is doing when it is not following the defender.
 function aimNote(aimStatus, poseStatus) {
   const camera = poseStatus?.state;
-  if (camera === 'camera-denied' || camera === 'error') return 'Gamepad aim';
+  if (camera === 'camera-denied' || camera === 'error' || aimStatus?.manual) return 'Gamepad aim';
   if (camera && camera !== 'detecting') return 'Camera starting';
+  // The shell's aim help (with its Controls key) takes the strip when the cannon is not following.
+  if (aimStatus?.help) return null;
   if (aimStatus?.lost) return 'Step into view';
   return null;
 }
@@ -85,7 +87,7 @@ function Boost({ state, level }) {
  * @param {object} props.state        engine state
  * @param {object} props.level        the validated level being played
  * @param {string} [props.gesture]    the aim gesture in use (gestures.js)
- * @param {{lost: boolean, mode: 'pose'|'manual'}} [props.aimStatus]
+ * @param {{lost: boolean, mode: 'pose'|'manual', manual?: boolean, help?: string|null}} [props.aimStatus]  `manual`: the defender chose the gamepad; `help`: the shell's aim help is up
  * @param {{state: string}} [props.poseStatus]            pose bridge status
  * @param {{riderId: string}|null} [props.partner]        the rider powering the boost, if any
  */

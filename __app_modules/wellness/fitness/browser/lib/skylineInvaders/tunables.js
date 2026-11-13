@@ -78,9 +78,14 @@ export const INVADERS_TUNABLES = Object.freeze({
   reachabilityHitRate: 0.6,    // share of the bot's kills a level may demand
   reachabilityBaseHpMargin: 15,   // a level may ask for at most the bot's skyline minus this
 
-  // ── Controls intro (InvadersControls.jsx) ─────────────────────────────────
-  tryoutCardS: 20,             // seconds a card stays up before the next one takes over
-  tryoutTargetHoldMs: 400,     // the cannon must rest on a practice target this long to light it
+  // ── Setup: choose a method, then the test sweep (setupTest.js, useInvadersSetup.js) ──
+  setupHoldMs: 400,            // the cannon must rest on an edge this long for the step to count
+  setupStepTimeoutS: 15,       // a step not detected in this long stops the test: try again or choose another
+  setupPassedMs: 1500,         // "It works!" stays up this long before the game goes on
+
+  // ── Aim help during a round (SkylineInvaders.jsx) ─────────────────────────
+  aimHelpLostS: 3,             // the defender out of view this long: say so and offer Controls
+  aimHelpStuckS: 12,           // in view but the cannon has not changed lane this long: offer Controls
 
   // ── Trace recorder (traceRecorder.js) ─────────────────────────────────────
   traceHz: 10,                 // pose rows per second

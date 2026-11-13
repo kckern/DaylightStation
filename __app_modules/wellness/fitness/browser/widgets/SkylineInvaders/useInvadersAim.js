@@ -46,6 +46,7 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
   let everSeen = false;
   let lost = true;
   let freezeUntil = 0;
+  let manual = false;         // the gamepad / keys method: the pose is watched but never aims
   let seen = null;            // the last pose as the lobby reads it: { at, body, wide }
   let frame = null;           // the last pose and every gesture's reading of it, for the trace recorder
   const emit = (event) => listeners.forEach((listener) => listener(event));
@@ -81,6 +82,7 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
       if (!signals.body) { checkLost(at); return; }
       lastBodyAt = at;
       everSeen = true;
+      if (manual) { if (lost) { lost = false; emit('acquired'); } return; }
       const signal = signals[active];
       const kind = GESTURE_INFO[active].kind;
       armLanes = [null, null];
@@ -128,6 +130,16 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
       armLanes = [null, null];
     },
     gesture: () => active,
+    /** The gamepad / keys method: while on, the pose never moves the cannon and `mode` is 'manual'. */
+    setManual(on) {
+      if (manual === !!on) return;
+      manual = !!on;
+      memory = null;
+      glide = 0;
+      resetSmoothing();
+      armLanes = [null, null];
+    },
+    manual: () => manual,
     /**
      * The player as the lobby reads them: `body` = head and both shoulders in
      * view (wrists may hang out of frame), `wide` = both arms held out to the
@@ -151,7 +163,7 @@ export function createAimTracker({ tunables = INVADERS_TUNABLES, now = () => Dat
       return {
         x: laneAim(lane), raw, lane,
         perArm: armLanes.map((value) => (value === null ? null : laneAim(value))),
-        armsUp: held, lost: everSeen ? lost : true, mode: everSeen ? 'pose' : 'manual', gesture: active,
+        armsUp: held && !manual, lost: everSeen ? lost : true, mode: everSeen && !manual ? 'pose' : 'manual', gesture: active,
       };
     },
     /** The last pose and every gesture's reading of it: `{ at, pose, signals }`, or null. For the trace recorder. */

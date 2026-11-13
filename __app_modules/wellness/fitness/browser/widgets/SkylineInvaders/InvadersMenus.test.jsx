@@ -29,39 +29,77 @@ describe('InvadersTouchKeys', () => {
     expect(none.container.querySelector('[data-testid="invaders-keys"]')).toBeNull();
   });
 
-  it('draws the mat hints under a key, and keeps every other hint as its title', () => {
-    const keys = invadersControls({ screen: 'controls', mat: true, cardName: 'Wipers' });
+  it('draws the mat hint under a key, and keeps every other hint as its title', () => {
+    const keys = invadersControls({ screen: 'waves', count: 2, wave: { name: 'First Light', status: 'open' }, mat: true });
     render(<InvadersTouchKeys keys={keys} onPress={() => {}} />);
-    expect(screen.getByRole('button', { name: /^Next/ }).querySelector('small').textContent).toBe('Or step on the mat');
-    expect(screen.getByRole('button', { name: /^Use these/ }).querySelector('small').textContent).toBe('Or stomp the mat');
-    expect(screen.getByRole('button', { name: 'Back' }).querySelector('small')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Back' }).getAttribute('title')).toBe('The one before');
+    expect(screen.getByRole('button', { name: /^Start/ }).querySelector('small').textContent).toBe('Or stomp the mat');
+    expect(screen.getByRole('button', { name: 'Previous' }).querySelector('small')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Previous' }).getAttribute('title')).toBe('Pick a wave');
   });
 });
 
-describe('InvadersMenus: the controls card', () => {
-  const card = (over = {}) => ({ gesture: 'wings', index: 2, reached: 1, leftS: 12, leftPct: 60, note: null, ...over });
-
-  it.each(GESTURES)('shows the demo, the name and the one line of how for %s', (gesture) => {
-    const { container } = render(<InvadersMenus screen="controls" shooterName="Kid" card={card({ gesture, index: GESTURES.indexOf(gesture) })} />);
-    expect(container.querySelector(`[data-demo="${gesture}"]`)).not.toBeNull();
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe(GESTURE_INFO[gesture].label);
-    expect(screen.getByTestId('invaders-controls-how').textContent).toBe(GESTURE_INFO[gesture].how);
-    expect(screen.getByTestId('invaders-controls-step').textContent).toBe(`Kid: pick your controls · ${GESTURES.indexOf(gesture) + 1} of 8`);
+describe('InvadersMenus: choose your controls', () => {
+  it('offers every gesture and the gamepad as tiles, the defender\'s own marked, the cursor pressed', () => {
+    const onMethod = vi.fn();
+    const { container } = render(<InvadersMenus screen="method" shooterName="Kid" setup={{ cursor: 3, current: 'wings', camera: 'on' }} onMethod={onMethod} />);
+    const tiles = [...container.querySelectorAll('.skyline-invaders__method')];
+    expect(tiles.map((tile) => tile.dataset.method)).toEqual([...GESTURES, 'gamepad']);
+    expect(tiles.map((tile) => tile.querySelector('strong').textContent)).toEqual([...GESTURES.map((g) => GESTURE_INFO[g].label), 'Gamepad']);
+    expect(container.querySelector('[data-current]').dataset.method).toBe('wings');
+    expect(container.querySelector('[data-current] .skyline-invaders__method-yours').textContent).toBe('Yours');
+    expect(container.querySelector('[aria-pressed="true"]').dataset.method).toBe('wheel');
+    for (const gesture of GESTURES) expect(container.querySelector(`[data-method="${gesture}"] [data-demo="${gesture}"]`)).not.toBeNull();
+    fireEvent.click(screen.getByTestId('invaders-method-sprinkler'));
+    expect(onMethod).toHaveBeenCalledWith('sprinkler');
+    expect(screen.queryByTestId('invaders-setup-note')).toBeNull();
   });
 
-  it('counts the targets lit, says when all three are, and shows the card clock', () => {
-    const first = render(<InvadersMenus screen="controls" shooterName="" card={card()} />);
-    expect(screen.getByTestId('invaders-controls-task').textContent).toBe('Light the targets: 1 of 3');
+  it('with the camera off only the gamepad can be chosen, and the screen says why', () => {
+    render(<InvadersMenus screen="method" setup={{ cursor: 0, camera: 'off' }} />);
+    expect(screen.getByTestId('invaders-method-wiper').disabled).toBe(true);
+    expect(screen.getByTestId('invaders-method-gamepad').disabled).toBe(false);
+    expect(screen.getByTestId('invaders-setup-note').textContent).toBe('The camera is off. Aim with the gamepad.');
+  });
+});
+
+describe('InvadersMenus: the test sweep', () => {
+  const test = (over = {}) => ({ gesture: 'wheel', step: 0, status: 'running', results: { left: null, right: null, fire: null }, ...over });
+  const sweep = (setup) => render(<InvadersMenus screen="sweep" shooterName="Kid" setup={{ camera: 'on', mat: true, leftS: 9, timeoutS: 15, ...setup }} />);
+  const states = () => ['left', 'right', 'fire'].map((id) => screen.getByTestId(`invaders-sweep-step-${id}`).getAttribute('data-state'));
+
+  it('names the method, shows how it goes, and asks for the step in hand', () => {
+    const { container } = sweep({ test: test() });
+    expect(container.querySelector('[data-demo="wheel"]')).not.toBeNull();
+    expect(screen.getByText('Kid · Test: Steering wheel')).toBeTruthy();
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Go left');
+    expect(screen.getByTestId('invaders-sweep-how').textContent).toBe(GESTURE_INFO.wheel.how);
+    expect(states()).toEqual(['now', 'todo', 'todo']);
     expect(screen.getByRole('timer').firstChild.style.width).toBe('60%');
-    expect(screen.getByTestId('invaders-controls-step').textContent).toBe('Pick your controls · 3 of 8');
-    first.unmount();
-    render(<InvadersMenus screen="controls" card={card({ reached: 3 })} />);
-    expect(screen.getByTestId('invaders-controls-task').textContent).toBe('All three lit!');
   });
 
-  it('says why the cannon is not following instead of the target count', () => {
-    render(<InvadersMenus screen="controls" card={card({ note: 'Stand where the camera can see you.' })} />);
-    expect(screen.getByTestId('invaders-controls-task').textContent).toBe('Stand where the camera can see you.');
+  it('asks for a stomp on the fire step, or fire on the keys with no mat', () => {
+    const fire = test({ step: 2, results: { left: 900, right: 800, fire: null } });
+    const first = sweep({ test: fire });
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Stomp to fire');
+    expect(states()).toEqual(['done', 'done', 'now']);
+    first.unmount();
+    sweep({ test: fire, mat: false });
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Press fire');
+    expect(screen.getByTestId('invaders-sweep-line').textContent).toBe('Press A or Space.');
+  });
+
+  it('says when a step was not detected, when the defender is out of view, and when it works', () => {
+    const failed = sweep({ test: test({ step: 1, status: 'timeout', results: { left: 900, right: null, fire: null } }) });
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Not detected');
+    expect(screen.getByTestId('invaders-sweep-line').textContent).toBe('Go right did not register. Try again, or choose another.');
+    expect(states()).toEqual(['done', 'failed', 'todo']);
+    expect(screen.queryByRole('timer')).toBeNull();
+    failed.unmount();
+    const lost = sweep({ test: test(), lost: true });
+    expect(screen.getByTestId('invaders-sweep-line').textContent).toBe('Stand where the camera can see you.');
+    lost.unmount();
+    sweep({ test: test({ step: 2, status: 'passed', results: { left: 1, right: 1, fire: 1 } }), from: 'start' });
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('It works!');
+    expect(states()).toEqual(['done', 'done', 'done']);
   });
 });

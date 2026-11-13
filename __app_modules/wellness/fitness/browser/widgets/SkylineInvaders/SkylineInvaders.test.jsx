@@ -33,7 +33,7 @@ vi.mock('../../nav/usePersistentVolume.js', () => ({ usePersistentVolume: () => 
 import SkylineInvaders from './SkylineInvaders.jsx';
 import { manifest } from './index.jsx';
 import { xToAim } from '../../lib/skylineInvaders/threats.js';
-import { flush, installFrames, makeCtx, poseForAim, postedRecords, routeFetch, standingPose, testLevel, wiperPose } from './invadersTestKit.js';
+import { flush, installFrames, makeCtx, poseForAim, poseForLane, postedRecords, routeFetch, standingPose, testLevel, wiperPose } from './invadersTestKit.js';
 
 let routes;
 let f;
@@ -55,6 +55,17 @@ const step = (id = 'mat-a1', type = 'pressure-mat:step') => act(async () => { h.
 const feed = (p) => act(async () => { h.bridge.tracker.processPoses(p ? [p] : []); });
 const status = (state, over = {}) => act(async () => { h.bridge.onStatus({ state, fps: 13, latency: 70, backend: 'wasm', modelType: 'full', error: null, ...over }); });
 const kills = () => screen.getByTestId('invaders-kills').textContent;
+const hold = async (p, ms) => { for (let t = 0; t < ms; t += 100) { await feed(p); await f.frames(1); } };
+const tapMethod = (method) => act(async () => { fireEvent.click(screen.getByTestId(`invaders-method-${method}`)); });
+// The test sweep with the wiper gesture: go left, go right, step on the mat. "It works!" then hands back.
+async function passSweep() {
+  expect(menuScreen()).toBe('sweep');
+  await hold(poseForLane(3), 300);
+  await hold(poseForLane(0), 800);
+  await hold(poseForLane(7), 800);
+  await step();
+  await f.seconds(1.6);
+}
 const entitlement = (decision = 'denied', riderId = 'kid') => ({
   items: [{
     capabilityId: 'fitness.skyline-invaders', gateId: 'school.day-complete', decision, basisState: decision === 'granted' ? 'satisfied' : 'unsatisfied',
@@ -231,7 +242,7 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
   it('one decision per screen: the wave list is the waves and its keys, no prose', async () => {
     await mount({ levels: [testLevel(), testLevel({ id: 'invaders-test-2', name: 'Second Wave', waves: [{ at: 0, rate_s: 2, spawn: { drone: 1 } }] })] });
     expect(menuScreen()).toBe('waves');
-    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Start']);
+    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
     expect(key4(4).textContent).toContain('Or stomp the mat');
     expect(document.querySelector('.skyline-controls')).toBeNull();
     const waves = screen.getByTestId('skyline-invaders-waves');
@@ -251,66 +262,75 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
   });
 
-  it('Ready: stand on the mat in view, and the countdown starts by itself in pose mode; no reach is measured', async () => {
-    await mount({ controls: { gesture: 'twist' } });
+  it('Ready: once the method passed its test, Start is Stand on the mat, and the countdown starts by itself in pose mode', async () => {
+    await mount({ controls: { gesture: 'wiper' } });
     await status('detecting');
+    await pad(5);                                   // Controls: test the method without starting
+    await tapMethod('wiper');
+    await passSweep();
+    expect(menuScreen()).toBe('waves');
     await pad(4);
     expect(menuScreen()).toBe('ready');
     expect(padLabels()).toEqual(['Back']);
     expect(screen.getByRole('heading').textContent).toBe('Stand on the mat.');
-    expect(screen.queryByLabelText('Steps')).toBeNull();
-    const hold = async (p, ms) => { for (let t = 0; t < ms; t += 100) { await feed(p); await f.frames(1); } };
     await hold(standingPose(), 1300);   // standing, hands out of frame
     expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
     await f.seconds(3.1);
-    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'pose', gesture: 'twist', gestureChosen: true });
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'pose', gesture: 'wiper', gestureChosen: true });
     await f.seconds(30.5);
     await flush();
-    expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ gesture: 'twist' });
-    expect(postedRecords(routes)[0].run.gesture).toBe('twist');
+    expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ gesture: 'wiper' });
+    expect(postedRecords(routes)[0].run.gesture).toBe('wiper');
   });
 
-  it('a defender with a camera and no saved controls picks them first: key 4 is Pick controls, and closing the intro keeps the default', async () => {
+  it('Start goes through the setup until the method passed its test; Back from it keeps everything as it was', async () => {
     await mount();
     await status('detecting');
-    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Pick controls']);
+    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
     await pad(4);
-    expect(menuScreen()).toBe('controls');
-    expect(logged('skyline_invaders.controls.opened')[0]).toMatchObject({ shooterId: 'kid', current: null, first: true });
-    await pad(2);
-    expect(h.bridge.tracker.gesture()).toBe('twist');
+    expect(menuScreen()).toBe('method');
+    expect(logged('skyline_invaders.setup.opened')[0]).toMatchObject({ shooterId: 'kid', from: 'start', current: null });
+    // Every way to aim is a tile, the gamepad last; the keys keep only Back.
+    expect([...document.querySelectorAll('.skyline-invaders__method strong')].map((n) => n.textContent))
+      .toEqual(['Wipers', 'Twist', 'Wings', 'Steering wheel', 'Sprinkler', 'Slide', 'Push', 'Hop', 'Gamepad']);
+    expect(padLabels()).toEqual(['Back']);
+    // The mat never chooses here: the defender is standing on it.
+    await step('mat-a1', 'pressure-mat:stomp');
+    await step();
+    expect(menuScreen()).toBe('method');
     await pad(3);
     expect(menuScreen()).toBe('waves');
     expect(h.bridge.tracker.gesture()).toBe('wiper');
     expect(routes.controls).not.toHaveBeenCalled();
-    expect(logged('skyline_invaders.controls.closed')).toHaveLength(1);
+    expect(logged('skyline_invaders.setup.closed')[0]).toMatchObject({ how: 'touch', stage: 'method' });
   });
 
-  it('the controls intro is driven by the keys too: arrows turn the card, accept picks, back leaves', async () => {
+  it('the setup is driven by the keys too: arrows move, accept chooses, back leaves; up on the wave list is Controls', async () => {
     await mount();
     await status('detecting');
     await key('Enter');
-    expect(menuScreen()).toBe('controls');
+    expect(menuScreen()).toBe('method');
     await key('ArrowRight');
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
+    expect(document.querySelector('.skyline-invaders__method[aria-pressed="true"]').dataset.method).toBe('twist');
     await key('ArrowLeft');
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wipers');
     await key('Escape');
     expect(menuScreen()).toBe('waves');
-    await key('Enter');
-    await key('ArrowRight');
-    await key('Enter');
-    await flush();
-    expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'twist' });
-    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
-    await key('ArrowUp');                         // up is Controls on the wave list
-    expect(menuScreen()).toBe('controls');
+    await key('ArrowUp');
+    expect(menuScreen()).toBe('method');
+    await key('Enter');                            // the cursor's method: Wipers
+    expect(menuScreen()).toBe('sweep');
+    expect(h.bridge.tracker.gesture()).toBe('wiper');
+    await key('Escape');                           // Choose another
+    expect(menuScreen()).toBe('method');
   });
 
   it('Ready offers Skip only with a gamepad connected', async () => {
     gamepads([{ axes: [0, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false })) }]);
     await mount({ controls: { gesture: 'wiper' } });
     await status('detecting');
+    await pad(5);
+    await tapMethod('wiper');
+    await passSweep();
     await pad(4);
     expect(padLabels()).toEqual(['Back', 'Skip']);
     await pad(4);
@@ -318,12 +338,19 @@ describe('SkylineInvaders — lobby, controls, Ready, pose and lifecycle', () =>
     gamepads([]);
   });
 
-  it('Ready gives up on a camera that never starts and plays with gamepad aim', async () => {
+  it('a camera that never starts: the setup says so, and the Gamepad is a choice of its own that needs no test', async () => {
     await mount();
     await pad(4);
-    expect(menuScreen()).toBe('ready');
-    await f.seconds(20.1);
+    expect(menuScreen()).toBe('method');
+    expect(screen.getByTestId('invaders-setup-note').textContent).toBe('The camera is starting…');
+    await tapMethod('gamepad');
     expect(screen.getByTestId('skyline-invaders-play').getAttribute('data-phase')).toBe('countdown');
+    await f.seconds(3.1);
+    expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ aimMode: 'manual' });
+    expect(screen.getByTestId('skyline-invaders-hud').textContent).toContain('Gamepad aim');
+    // The gamepad is for this visit: nothing is saved as the defender's controls.
+    expect(routes.controls).not.toHaveBeenCalled();
+    expect(logged('skyline_invaders.setup.method_changed')[0]).toMatchObject({ method: 'gamepad', saved: false });
   });
 
   it('plays with gamepad aim when the camera is denied, and the HUD wears a Gamepad aim badge', async () => {

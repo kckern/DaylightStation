@@ -12,7 +12,7 @@ import { useGameVolume } from '../../nav/useGameVolume.js';
 import { MoreButton } from '../SkylineGlider/SkylineFlightHud.jsx';
 import { driftAim, manualAim } from '../../lib/skylineInvaders/aimAssist.js';
 import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js';
-import { GESTURE_INFO, isGesture } from '../../lib/skylineInvaders/gestures.js';
+import { GESTURES, GESTURE_INFO, isGesture } from '../../lib/skylineInvaders/gestures.js';
 import { laneAim, laneX } from '../../lib/skylineInvaders/lanes.js';
 import { EMPTY_EFFECTS, INVADERS_LOG_NAMES, buildInvadersEffectTable, invadersSoundUrls } from '../../lib/skylineInvaders/invadersEffects.js';
 import { validateLevel } from '../../lib/skylineInvaders/levels.js';
@@ -20,6 +20,7 @@ import { listInvadersMats, selectInvadersMat } from '../../lib/skylineInvaders/m
 import { gateLearnerIds, listInvadersPeople, listSessionRiderIds } from '../../lib/skylineInvaders/people.js';
 import { buildSkylineInvadersRun } from '../../lib/skylineInvaders/runResult.js';
 import { aimToX } from '../../lib/skylineInvaders/threats.js';
+import { MANUAL_METHOD, setupStepId, setupTargets } from '../../lib/skylineInvaders/setupTest.js';
 import { TRYOUT_TARGET_CODES, createTraceRecorder } from '../../lib/skylineInvaders/traceRecorder.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 import { invadersAction, invadersControls, pressForMenuKey, stompAction } from '../../lib/skylineInvaders/invadersPanel.js';
@@ -37,21 +38,24 @@ import InvadersScene from './InvadersScene.jsx';
 import useInvadersAim from './useInvadersAim.js';
 import useInvadersBoost from './useInvadersBoost.js';
 import useInvadersFire from './useInvadersFire.js';
-import useInvadersTryout from './useInvadersTryout.js';
+import useInvadersSetup, { SETUP_METHODS } from './useInvadersSetup.js';
 import useMenuInput from './useMenuInput.js';
 import './SkylineInvaders.scss';
 
 // The Skyline Invaders shell: loads the levels, runs the menu screens, drives
 // the engine from a frame loop, and saves the round.
 //
-// Phases: loading -> lobby <-> controls, lobby -> ready -> countdown ->
-// playing <-> paused -> result (-> lobby or another countdown); `error` from
-// loading. Every phase has a way out of the game (`onClose`, from
-// FitnessModuleContainer).
+// Phases: loading -> lobby -> ready -> countdown -> playing <-> paused ->
+// result (-> lobby or another countdown); `error` from loading. Every phase
+// has a way out of the game (`onClose`, from FitnessModuleContainer),
+// including a touch Exit key during the round itself.
 // Every menu screen is one decision on Skyline Glider's window, as touch keys
 // (lib/skylineInvaders/invadersPanel.js): who (riders) / roster (others),
-// waves, controls (pick your aim gesture), locked (school day), ready (stand
-// in view), paused, result, sound.
+// waves, locked (school day), ready (stand in view), paused, result, sound,
+// and the setup: method (how you aim) and sweep (test it: go left, go right,
+// stomp). The setup, like the Sound sheet, covers the lobby or a paused round
+// without changing the phase. Start goes through it until the defender's
+// method has passed its test in this visit.
 //
 // What a frame reads (aim, cadence, queued presses) comes from refs and
 // hooks that never re-render the game: the pose runs at its own rate, as low
@@ -60,10 +64,10 @@ import './SkylineInvaders.scss';
 const API = '/api/v1/fitness/skyline-invaders';
 const MODULE_ID = 'skyline_invaders';
 const CAPABILITY_ID = 'fitness.skyline-invaders';
-const ROLE_MAP = Object.freeze({ loading: 'ready', lobby: 'ready', controls: 'ready', ready: 'ready', error: 'ready' });
+const ROLE_MAP = Object.freeze({ loading: 'ready', lobby: 'ready', ready: 'ready', error: 'ready' });
 const ROUND_PHASES = Object.freeze(['countdown', 'playing', 'paused']);
 // Where the Sound sheet can be opened: every screen a player can stop on. Not
-// mid-countdown (three seconds) and not over Ready or the controls intro, which read the pose.
+// mid-countdown (three seconds) and not over Ready or the setup, which read the pose.
 const SOUND_PHASES = Object.freeze(['lobby', 'paused', 'result']);
 const SOUND_SCREENS = Object.freeze(['who', 'roster', 'waves', 'locked', 'paused', 'result']);
 // Ready waits this long for a camera that is still starting, then plays with gamepad aim.
@@ -78,6 +82,8 @@ const POSE_CONFIG = Object.freeze({
 });
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
+/** A method by name: an aim gesture's label, or Gamepad. */
+const methodLabel = (method) => (method === MANUAL_METHOD ? 'Gamepad' : GESTURE_INFO[method]?.label || '');
 // The shell may use real randomness; the engine may not. The seed is saved
 // with the round's logs so a round can be replayed.
 const newSeed = () => {
@@ -90,8 +96,9 @@ const EMPTY_PRESSES = Object.freeze({ steps: Object.freeze([]), stomps: Object.f
 
 // Stick first, then the D-pad, then held arrow keys: -1 (left) .. 1 (right).
 const readPads = () => { try { return Array.from(navigator.getGamepads?.() || []).filter(Boolean); } catch { return []; } };
-// Gamepad Start (standard button 9) pauses a round.
+// Gamepad Start (standard button 9) pauses a round; Select (button 8) leaves the game.
 const startPressed = () => readPads().some((pad) => !!pad.buttons?.[9]?.pressed);
+const selectPressed = () => readPads().some((pad) => !!pad.buttons?.[8]?.pressed);
 
 /** Whether a gamepad is plugged in: the Ready screen offers Skip only then. */
 function useGamepadConnected() {
@@ -131,6 +138,17 @@ function SkylineInvadersGame({ onClose }) {
   const { registerLifecycle } = useFitnessModule(MODULE_ID);
   const log = useMemo(() => getLogger().child({ app: 'fitness', component: 'skyline-invaders' }), []);
   const tracker = useInvadersAim();
+  // The setup (choose a method, then the test sweep). Its callbacks are defined
+  // further down and reached through this ref, so none goes stale.
+  const setupHandlers = useRef({});
+  const setup = useInvadersSetup({
+    tracker,
+    onPassed: (passed) => setupHandlers.current.passed?.(passed),
+    onEvent: (name, data) => setupHandlers.current.event?.(name, data),
+    onTick: (tick) => setupHandlers.current.tick?.(tick),
+  });
+  const setupRef = useRef(setup);
+  setupRef.current = setup;
 
   const [phase, setPhase] = useState('loading');
   const [levels, setLevels] = useState([]);
@@ -144,12 +162,20 @@ function SkylineInvadersGame({ onClose }) {
   // The roster's cursor shows only once a key or gamepad moves it: under touch a gold tile reads as already chosen.
   const [rosterCursor, setRosterCursor] = useState(false);
   const [rosterIndex, setRosterIndex] = useState(0);
+  // Likewise the method cursor: shown once a key or the gamepad is driving the setup.
+  const [methodCursor, setMethodCursor] = useState(false);
   const gamepadConnected = useGamepadConnected();
   const [game, setGame] = useState(null);
   const [effects, setEffects] = useState(EMPTY_EFFECTS);
   const [poseStatus, setPoseStatus] = useState({ state: 'loading' });
-  // Controls picked this session, by defender: shown at once, and kept if the save fails.
+  // Methods picked this visit, by defender: shown at once, and kept if the save fails.
+  // 'gamepad' (aim on the stick or the arrows) is a choice for this visit only.
   const [pickedControls, setPickedControls] = useState({});
+  // The method each defender has passed the test sweep with in this visit. Start
+  // goes through the setup until it matches their method.
+  const [verified, setVerified] = useState({});
+  // In a round: the cannon is not following (`lost`, `stuck`), with the way back to the setup.
+  const [aimHelp, setAimHelp] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [accessOverride, setAccessOverride] = useState(null);
@@ -168,7 +194,7 @@ function SkylineInvadersGame({ onClose }) {
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   // The joint recorder: pose and shot traces, batched, for comparing the gestures from data.
   const recorder = useMemo(() => createTraceRecorder({ emit: (name, data) => log.info(name, data) }), [log]);
-  const tryoutIdRef = useRef(null);
+  const setupIdRef = useRef(null);
   const goPhase = useCallback((next) => { phaseRef.current = next; setPhase(next); }, []);
 
   // ── Sound ─────────────────────────────────────────────────────────────────
@@ -214,9 +240,12 @@ function SkylineInvadersGame({ onClose }) {
   const riderWorld = world?.riderId === shooterId ? world : null;
   const level = round?.level || levels.find((item) => item.id === resolveLevelId(levels, riderWorld, chosenLevelId)) || null;
 
-  // The aim gesture is the defender's own: picked in the controls intro and saved with their progress.
+  // How the defender aims is their own: an aim gesture chosen and tested in the
+  // setup and saved with their progress, or the gamepad for this visit.
   const stored = shooterId ? pickedControls[shooterId] || riderWorld?.controls?.gesture : null;
-  const gesture = isGesture(stored) ? stored : null;
+  const method = isGesture(stored) || stored === MANUAL_METHOD ? stored : null;
+  const gesture = isGesture(method) ? method : null;
+  const cameraOff = poseStatus.state === 'camera-denied' || poseStatus.state === 'error';
 
   const drainFire = useInvadersFire({
     enabled: phase === 'playing', matId: mat?.matId || null,
@@ -226,7 +255,7 @@ function SkylineInvadersGame({ onClose }) {
   // Callbacks read the current render through this, so none of them goes stale
   // and none of them restarts the frame loop.
   const live = useRef({});
-  live.current = { session, shooterId, mat, level, levels, riderWorld, access, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf, prompt, gesture, onClose };
+  live.current = { session, shooterId, mat, level, levels, riderWorld, access, accessGranted, boost, drainFire, saveState, registerAdmin, clearUnlock, nameOf, prompt, gesture, method, verified, onClose };
 
   // ── Mount, levels, world, sounds ──────────────────────────────────────────
   useEffect(() => {
@@ -302,11 +331,13 @@ function SkylineInvadersGame({ onClose }) {
   }, [log]);
   useEffect(() => { void refreshWorld(shooterId); }, [refreshWorld, shooterId]);
 
-  // The tracker plays the defender's gesture, or the default when they have
-  // not picked one. The controls intro switches it card by card while it is open.
+  // The tracker plays the defender's method: their gesture (the default when
+  // they have none yet), or the gamepad. The setup switches it while it is open.
   useEffect(() => {
-    if (phase !== 'controls') tracker.setGesture(gesture || INVADERS_TUNABLES.defaultGesture);
-  }, [tracker, gesture, phase]);
+    if (setup.open) return;
+    tracker.setManual(method === MANUAL_METHOD);
+    tracker.setGesture(gesture || INVADERS_TUNABLES.defaultGesture);
+  }, [tracker, gesture, method, setup.open]);
 
   // A different defender has their own controls and their own place on the level map.
   const priorShooterRef = useRef(shooterId);
@@ -326,6 +357,8 @@ function SkylineInvadersGame({ onClose }) {
     setCountdown(null);
     setEffects(EMPTY_EFFECTS);
     setSaveState({ status: 'idle', record: null });
+    // A setup left open over a round that ended (session end, access revoked) does not outlive it.
+    if (setupRef.current.open) setupRef.current.actions.close();
     goPhase('lobby');
   }, [goPhase]);
 
@@ -336,6 +369,7 @@ function SkylineInvadersGame({ onClose }) {
     // An unsaved round is never played over.
     if (['saving', 'error'].includes(now.saveState.status)) return;
     if (!now.accessGranted) { toLobby(); return; }
+    if (setupRef.current.open) setupRef.current.actions.close();
     const seed = newSeed();
     const state = createGameState(next, { seed });
     roundRef.current = {
@@ -398,6 +432,7 @@ function SkylineInvadersGame({ onClose }) {
     });
     const correlation = { runId: record.run.id, levelId: record.run.level_id, shooterId: record.rider.user_id };
     setSaveState({ status: 'saving', record });
+    if (setupRef.current.open) setupRef.current.actions.close();
     goPhase('result');
     if (!retryRecord) {
       log.info('skyline_invaders.level.end', {
@@ -462,7 +497,11 @@ function SkylineInvadersGame({ onClose }) {
     const lvl = current.level;
     const correlation = { runId: current.runId, levelId: lvl.id };
     // `start`: held at the round's first frame, so the press that began it never pauses it.
-    const held = { left: false, right: false, start: startPressed() };
+    const held = { left: false, right: false, start: startPressed(), select: selectPressed() };
+    // Aim help: how long the defender has been out of view, and how long the
+    // cannon has stood in one lane while they are in view (game seconds).
+    const help = { lane: null, laneAt: 0, lostAt: null, shown: null };
+    setAimHelp(null);
     let health = { startedAt: performance.now(), frames: 0, longFrames: 0 };
     // One line per cue would flood the log store: every effect line is rate-limited.
     const effectLog = {
@@ -497,12 +536,29 @@ function SkylineInvadersGame({ onClose }) {
       const start = startPressed();
       if (start && !held.start) { held.start = true; pause('player'); return; }
       held.start = start;
+      const select = selectPressed();
+      if (select && !held.select) { held.select = true; exitRef.current?.('gamepad'); return; }
+      held.select = select;
       // Either way the cannon stands on a lane: `x` is its centre.
       const sample = tracker.sample();
       const axis = readAimAxis(held);
       if (sample.mode === 'manual' || (sample.lost && axis !== 0)) tracker.setAim(manualAim(sample.raw, axis, elapsedS));
       else if (sample.lost) tracker.setAim(driftAim(sample.raw, previous.threats, elapsedS));
       const aimNow = tracker.sample();
+      // The cannon not following: out of view for a while, or in view with the
+      // cannon stuck in one lane. Said on screen, with the way back to the setup.
+      if (now.method !== MANUAL_METHOD && poseStatusRef.current.state === 'detecting') {
+        const t = previous.time;
+        if (aimNow.lost) { help.lostAt ??= t; help.lane = null; } else help.lostAt = null;
+        if (aimNow.lane !== help.lane) { help.lane = aimNow.lane; help.laneAt = t; }
+        const kind = help.lostAt !== null && t - help.lostAt >= INVADERS_TUNABLES.aimHelpLostS ? 'lost'
+          : !aimNow.lost && aimNow.mode === 'pose' && t - help.laneAt >= INVADERS_TUNABLES.aimHelpStuckS ? 'stuck' : null;
+        if (kind !== help.shown) {
+          help.shown = kind;
+          setAimHelp(kind);
+          if (kind) log.info('skyline_invaders.round.aim_help', { ...correlation, kind, gesture: aimNow.gesture, lane: aimNow.lane, time: t });
+        }
+      }
       // A zero-length frame runs no engine sub-step, so its presses wait for the next one.
       const presses = elapsedS > 0 ? now.drainFire() : EMPTY_PRESSES;
       const twoCannons = lvl.cannons === 2 && aimNow.perArm.every((value) => value != null);
@@ -584,12 +640,15 @@ function SkylineInvadersGame({ onClose }) {
     live.current.onClose?.();
   }, [finalize, log, recorder]);
 
+  const exitRef = useRef(exit);
+  exitRef.current = exit;
+
   // ── Lifecycle: workout pause, session end, hidden page ────────────────────
   useEffect(() => {
     registerLifecycle({
       onPause: () => pause('lifecycle'),
       // Also runs on mount and whenever the video is not paused: only undo a lifecycle pause.
-      onResume: () => { if (phaseRef.current === 'paused' && pausedByRef.current === 'lifecycle' && !soundOpenRef.current) resume('lifecycle'); },
+      onResume: () => { if (phaseRef.current === 'paused' && pausedByRef.current === 'lifecycle' && !soundOpenRef.current && !setupRef.current.open) resume('lifecycle'); },
       // Runs whenever there is no session: only a round in hand is ended.
       onSessionEnd: () => {
         if (!ROUND_PHASES.includes(phaseRef.current)) return;
@@ -712,59 +771,93 @@ function SkylineInvadersGame({ onClose }) {
     setChosenLevelId(levelId);
     log.info('skyline_invaders.lobby.level_chosen', { levelId, shooterId: live.current.shooterId });
   }, [log]);
-  // Start: the Ready screen (stand on the mat where the camera can see you),
-  // unless there is no camera to aim with, in which case straight to the
-  // countdown with gamepad aim. Nothing is calibrated: every gesture has a fixed gain.
-  const startRound = useCallback((target) => {
+  // ── The setup: choose a method, then test it ─────────────────────────────
+  // Opened by Start until the defender's method has passed its test in this
+  // visit, by the Controls key on the wave list, and by Controls on the pause
+  // screen (or the aim-help key in a round, which pauses first). The mat does
+  // nothing here except as the sweep's fire step.
+  const openSetup = useCallback((from, source) => {
+    const now = live.current;
+    setupIdRef.current = newRunId();
+    log.info('skyline_invaders.setup.opened', {
+      setupId: setupIdRef.current, from, source, shooterId: now.shooterId, current: now.method,
+      verified: now.verified[now.shooterId] || null, pose: poseStatusRef.current.state, runId: roundRef.current?.runId || null,
+    });
+    setMethodCursor(source === 'key' || source === 'gamepad');
+    setupRef.current.actions.open(from, now.method);
+  }, [log]);
+  const closeSetup = useCallback((how) => {
+    const now = setupRef.current;
+    if (!now.open) return;
+    recorder.end('tryout-closed');
+    log.info('skyline_invaders.setup.closed', { setupId: setupIdRef.current, from: now.from, stage: now.stage, how, method: now.method, shooterId: live.current.shooterId });
+    now.actions.close();
+  }, [log, recorder]);
+  const chooseMethod = useCallback((picked, how) => {
+    const now = setupRef.current;
+    if (!SETUP_METHODS.includes(picked)) return;
+    log.info('skyline_invaders.setup.method_chosen', { setupId: setupIdRef.current, shooterId: live.current.shooterId, method: picked, how, previous: live.current.method });
+    if (picked !== MANUAL_METHOD) recorder.begin({ kind: 'tryout', runId: setupIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: picked, card: GESTURES.indexOf(picked) });
+    now.actions.choose(picked);
+  }, [log, recorder]);
+  // The method passed its test (or the gamepad was chosen): it is theirs, and verified for this visit.
+  setupHandlers.current.passed = (passed) => {
+    const now = live.current;
+    const { from } = setupRef.current;
+    const riderId = now.shooterId;
+    const previous = now.method;
+    recorder.end('tryout-chosen');
+    setupRef.current.actions.close();
+    if (!riderId) return;
+    setPickedControls((current) => ({ ...current, [riderId]: passed }));
+    setVerified((current) => ({ ...current, [riderId]: passed }));
+    tracker.setManual(passed === MANUAL_METHOD);
+    if (isGesture(passed)) tracker.setGesture(passed);
+    log.info('skyline_invaders.setup.passed', { setupId: setupIdRef.current, shooterId: riderId, method: passed, from, runId: roundRef.current?.runId || null });
+    if (roundRef.current && from === 'paused') roundRef.current.gesture = isGesture(passed) ? passed : roundRef.current.gesture;
+    if (passed !== previous) void saveMethod(riderId, passed, previous);
+    // From Start the round begins: the defender has just been seen doing it.
+    if (from === 'start' && phaseRef.current === 'lobby') begin();
+  };
+  setupHandlers.current.event = (name, data) => {
+    const payload = { setupId: setupIdRef.current, shooterId: live.current.shooterId, ...data };
+    if (name === 'step' && data.result === 'timeout') log.warn('skyline_invaders.setup.step', payload);
+    else log.info(`skyline_invaders.setup.${name}`, payload);
+  };
+  setupHandlers.current.tick = ({ sample, test }) => {
+    recorder.pose(tracker.frame(), sample, { cannonX: laneX(sample.lane), target: TRYOUT_TARGET_CODES[test.status === 'running' ? setupStepId(test) : null] || 0 });
+  };
+  const saveMethod = async (riderId, picked, previous) => {
+    let saved = false;
+    let error = null;
+    // The gamepad is a choice for this visit: the saved method stays a gesture.
+    if (isGesture(picked)) {
+      try {
+        const response = await postJson(`${API}/progress/${encodeURIComponent(riderId)}/controls`, { gesture: picked });
+        if (!response.ok) throw new Error(`controls save failed (${response.status})`);
+        saved = true;
+      } catch (saveError) {
+        error = saveError.message;
+      }
+    }
+    log[error ? 'warn' : 'info']('skyline_invaders.setup.method_changed', { setupId: setupIdRef.current, shooterId: riderId, method: picked, label: GESTURE_INFO[picked]?.label || 'Gamepad', previous, saved, error });
+    if (saved) await refreshWorld(riderId);
+  };
+
+  // Start: through the setup until the defender's method has passed its test
+  // in this visit; then the Ready screen (stand on the mat where the camera can
+  // see you). With no camera to aim with, straight to the countdown with
+  // gamepad aim, and the same for a defender who chose the gamepad.
+  const startRound = useCallback((target, source) => {
     const pose = poseStatusRef.current.state;
     if (pose === 'camera-denied' || pose === 'error') { begin(target); return; }
     if (target) setChosenLevelId(target.id);
-    log.info('skyline_invaders.lobby.ready_opened', { shooterId: live.current.shooterId, pose, gesture: tracker.gesture() });
+    const now = live.current;
+    if (!now.method || now.verified[now.shooterId] !== now.method) { openSetup('start', source); return; }
+    if (now.method === MANUAL_METHOD) { begin(target); return; }
+    log.info('skyline_invaders.lobby.ready_opened', { shooterId: now.shooterId, pose, gesture: tracker.gesture() });
     goPhase('ready');
-  }, [begin, goPhase, log, tracker]);
-
-  // ── Pick your controls ────────────────────────────────────────────────────
-  const openControls = useCallback((source) => {
-    // One id for the whole visit, so its cards, their traces and the choice can be joined.
-    tryoutIdRef.current = newRunId();
-    log.info('skyline_invaders.controls.opened', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, pose: poseStatusRef.current.state, current: live.current.gesture, first: !live.current.gesture, source });
-    goPhase('controls');
-  }, [goPhase, log]);
-  const closeControls = useCallback(() => {
-    recorder.end('tryout-closed');
-    log.info('skyline_invaders.controls.closed', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, current: live.current.gesture });
-    goPhase('lobby');
-  }, [goPhase, log, recorder]);
-  // Each card records its own pose trace: the same three targets for every gesture.
-  const onTryoutCard = useCallback((cardGesture, card) => {
-    recorder.begin({ kind: 'tryout', runId: tryoutIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: cardGesture, card });
-  }, [recorder]);
-  const onTryoutTick = useCallback(({ lane, tryout }) => {
-    recorder.pose(tracker.frame(), tracker.sample(), { cannonX: laneX(lane), target: TRYOUT_TARGET_CODES[tryout.on] || 0 });
-  }, [recorder, tracker]);
-  const onTryout = useCallback((summary) => {
-    log.sampled('skyline_invaders.controls.tryout', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, pose: poseStatusRef.current.state, poseFps: poseStatusRef.current.fps ?? null, ...summary }, { maxPerMinute: 30, aggregate: true });
-  }, [log]);
-  const chooseControls = useCallback(async (picked, how) => {
-    const riderId = live.current.shooterId;
-    const previous = live.current.gesture;
-    if (!riderId || !isGesture(picked)) return;
-    setPickedControls((current) => ({ ...current, [riderId]: picked }));
-    recorder.end('tryout-chosen');
-    goPhase('lobby');
-    let saved = false;
-    try {
-      const response = await postJson(`${API}/progress/${encodeURIComponent(riderId)}/controls`, { gesture: picked });
-      if (!response.ok) throw new Error(`controls save failed (${response.status})`);
-      saved = true;
-    } catch (saveError) {
-      // The choice still holds for this session; the intro comes back next time.
-      log.warn('skyline_invaders.controls.save_error', { shooterId: riderId, gesture: picked, error: saveError.message });
-    }
-    log.info('skyline_invaders.controls.chosen', { tryoutId: tryoutIdRef.current, shooterId: riderId, gesture: picked, label: GESTURE_INFO[picked]?.label, how, previous, saved });
-    if (saved) await refreshWorld(riderId);
-  }, [goPhase, log, refreshWorld, recorder]);
-  const tryout = useInvadersTryout({ active: phase === 'controls', tracker, current: gesture, onTryout, onCard: onTryoutCard, onTick: onTryoutTick });
+  }, [begin, goPhase, log, tracker, openSetup]);
   const onPoseStatus = useCallback((next) => setPoseStatus(next), []);
 
   // ── The screen ────────────────────────────────────────────────────────────
@@ -773,8 +866,9 @@ function SkylineInvadersGame({ onClose }) {
   const locked = !!shooterId && !choosingShooter && !accessGranted && access.status !== 'loading';
   let screen = null;
   if (soundOpen) screen = 'sound';
+  else if (setup.open && (phase === 'lobby' || phase === 'paused')) screen = setup.stage === 'sweep' ? 'sweep' : 'method';
   else if (phase === 'loading' || phase === 'error' || phase === 'paused' || phase === 'result') screen = phase;
-  else if (phase === 'ready' || phase === 'controls') screen = phase;
+  else if (phase === 'ready') screen = phase;
   else if (phase === 'lobby') screen = !shooterId || choosingShooter ? (rosterOpen ? 'roster' : 'who') : locked ? 'locked' : 'waves';
   const rows = useMemo(() => waveRows(levels, riderWorld), [levels, riderWorld]);
   const cursorRow = rows.find((row) => row.id === chosenLevelId) || rows.find((row) => row.id === level?.id) || rows[0] || null;
@@ -798,10 +892,10 @@ function SkylineInvadersGame({ onClose }) {
     next: nextLevel,
     sound: { level: gameVolume.level, muted: gameVolume.muted },
     canExit: !!onClose,
-    // With a camera up and no controls picked, the intro comes before the first round.
-    needsControls: !gesture && poseStatus.state === 'detecting',
-    controlsName: gesture ? GESTURE_INFO[gesture].label : '',
-    cardName: GESTURE_INFO[tryout.gesture]?.label || '',
+    cameraOff,
+    controlsName: methodLabel(method),
+    setupFrom: setup.from,
+    sweep: setup.status,
   };
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -828,16 +922,26 @@ function SkylineInvadersGame({ onClose }) {
         if (phaseRef.current === 'result') toLobby();
         setChoosingShooter(true); setRosterOpen(false);
         break;
-      case 'start': startRound(now.levels.find((item) => item.id === viewRef.current.wave?.id)); break;
+      case 'start': startRound(now.levels.find((item) => item.id === viewRef.current.wave?.id), source); break;
       case 'unlock-wave': { const target = now.levels.find((item) => item.id === viewRef.current.wave?.id); if (target) void requestLevelUnlock(target); break; }
       case 'admin-unlock': void requestAdminOverride(); break;
       case 'back-to-waves': goPhase('lobby'); break;
       case 'skip-ready': begin(); break;
-      case 'open-controls': openControls(source); break;
-      case 'controls-prev': tryoutRef.current.go(-1, source); break;
-      case 'controls-next': tryoutRef.current.go(1, source); break;
-      case 'controls-use': void chooseControls(tryoutRef.current.choose(source), source); break;
-      case 'controls-close': tryoutRef.current.close(); closeControls(); break;
+      case 'open-controls':
+        // From a round: pause it first; the setup covers the pause screen.
+        if (phaseRef.current === 'playing') pause('player');
+        openSetup(phaseRef.current === 'paused' ? 'paused' : 'lobby', source);
+        break;
+      case 'method-prev': setupRef.current.actions.move(-1); setMethodCursor(true); break;
+      case 'method-next': setupRef.current.actions.move(1); setMethodCursor(true); break;
+      case 'method-choose': chooseMethod(setupRef.current.method, source); break;
+      case 'setup-close': closeSetup(source); break;
+      case 'sweep-retry': setupRef.current.actions.retry(); break;
+      case 'sweep-other':
+        recorder.end('tryout-closed');
+        log.info('skyline_invaders.setup.other', { setupId: setupIdRef.current, shooterId: now.shooterId, method: setupRef.current.method, step: setupRef.current.test ? setupStepId(setupRef.current.test) : null, status: setupRef.current.status });
+        setupRef.current.actions.other();
+        break;
       case 'exit': exit(source); break;
       case 'resume': resume(source); break;
       case 'open-sound': openSound(source); break;
@@ -856,8 +960,6 @@ function SkylineInvadersGame({ onClose }) {
   };
   const actRef = useRef(act);
   actRef.current = act;
-  const tryoutRef = useRef(tryout);
-  tryoutRef.current = tryout;
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const peopleRef = useRef(people);
@@ -876,14 +978,16 @@ function SkylineInvadersGame({ onClose }) {
   const menuActive = !!screen;
   useMenuInput(menuActive || !!prompt, (action, source) => {
     if (live.current.prompt) { if (action === 'back') cancelPrompt(); return; }
+    // The sweep's fire step without a mat: accept (Space, Enter, gamepad A, the foot pad).
+    if (viewRef.current.screen === 'sweep' && action === 'accept' && setupRef.current.actions.fire(source)) return;
     const hit = pressForMenuKey(viewRef.current.screen, action);
     if (hit) press(hit[0], hit[1], source);
   });
 
-  // A stomp on the defender's mat: Start on the wave list, pick the card in the
-  // controls intro, go on after a saved round.
+  // A stomp on the defender's mat: Start on the wave list, go on after a saved
+  // round. Never on the setup screens, where the defender is standing on it.
   const subscribeToAppEvent = ctx?.subscribeToAppEvent;
-  const stompArmed = screen === 'waves' || screen === 'controls' || (screen === 'result' && saveState.status === 'saved');
+  const stompArmed = screen === 'waves' || (screen === 'result' && saveState.status === 'saved');
   useEffect(() => {
     if (!stompArmed || !subscribeToAppEvent) return undefined;
     return subscribeToAppEvent('pressure-mat:stomp', (event) => {
@@ -895,17 +999,19 @@ function SkylineInvadersGame({ onClose }) {
     });
   }, [stompArmed, subscribeToAppEvent]);
 
-  // A step on the defender's mat turns the card in the controls intro.
-  const stepArmed = screen === 'controls';
+  // The sweep's fire step: a step or a stomp on the defender's mat. Nothing else.
+  const sweepArmed = screen === 'sweep';
   useEffect(() => {
-    if (!stepArmed || !subscribeToAppEvent) return undefined;
-    return subscribeToAppEvent('pressure-mat:step', (event) => {
+    if (!sweepArmed || !subscribeToAppEvent) return undefined;
+    const onPress = (kind) => (event) => {
       const matId = live.current.mat?.matId;
       if (matId && String(event?.payload?.id ?? event?.source) !== String(matId)) return;
-      if (live.current.prompt) return;
-      actRef.current('controls-next', 'step');
-    });
-  }, [stepArmed, subscribeToAppEvent]);
+      setupRef.current.actions.fire(`mat-${kind}`);
+    };
+    const offStep = subscribeToAppEvent('pressure-mat:step', onPress('step'));
+    const offStomp = subscribeToAppEvent('pressure-mat:stomp', onPress('stomp'));
+    return () => { offStep?.(); offStomp?.(); };
+  }, [sweepArmed, subscribeToAppEvent]);
 
   // Ready: the camera went away, or never came up: play with gamepad aim.
   useEffect(() => {
@@ -934,14 +1040,17 @@ function SkylineInvadersGame({ onClose }) {
 
   // Touch keys: the screen's real actions. People are tiles on Who and the
   // roster, and the Sound sheet has its own strip and Mute, so those screens
-  // keep only Back as a key (and Who its Exit).
+  // keep only Back as a key (and Who its Exit). The methods are tiles too.
   const touchKeys = controls.filter((control) => control.icon !== '—'
-    && (screen !== 'who' || !!prompt || control.position === 6) && (!['roster', 'sound'].includes(screen) || control.position === 3));
-  // The controls card: why the cannon is not following, when it is not.
+    && (screen !== 'who' || !!prompt || control.position === 6)
+    && (!['roster', 'sound', 'method'].includes(screen) || control.position === 3 || control.position === 6));
+  // The setup as the menus draw it.
   const camera = poseStatus.state;
-  const card = {
-    gesture: tryout.gesture, index: tryout.index, reached: tryout.reached, leftS: tryout.leftS, leftPct: tryout.leftPct,
-    note: camera === 'camera-denied' || camera === 'error' ? 'The camera is off.' : camera !== 'detecting' ? 'The camera is starting…' : tryout.lost ? 'Stand where the camera can see you.' : null,
+  const sweeping = screen === 'sweep';
+  const setupView = {
+    stage: setup.stage, cursor: methodCursor ? setup.cursor : null, method: setup.method, current: method, verified: verified[shooterId] || null,
+    test: setup.test, status: setup.status, lost: setup.lost, leftS: setup.leftS, timeoutS: INVADERS_TUNABLES.setupStepTimeoutS, lane: setup.lane, mat: !!mat, from: setup.from,
+    camera: camera === 'camera-denied' || camera === 'error' ? 'off' : camera !== 'detecting' ? 'starting' : 'on',
   };
   const everyone = people.map((person) => ({ ...person, avatarSrc: avatarOf(person.id) }));
 
@@ -961,20 +1070,30 @@ function SkylineInvadersGame({ onClose }) {
       {sceneState && level && (
         <InvadersScene
           state={sceneState} level={level}
-          aim={phase === 'controls' ? laneAim(tryout.lane) : game ? aimRef.current : 0.5}
-          live={inRound || phase === 'controls'} targets={phase === 'controls' ? tryout.targets : null}
+          aim={sweeping ? laneAim(setup.lane ?? 4) : game ? aimRef.current : 0.5}
+          live={inRound || sweeping} targets={sweeping ? setupTargets(setup.test) : null}
           twin={sceneState.boost?.active?.kind === 'twin'} effects={effects}
         />
       )}
       {inRound && game && (
         <InvadersHud
-          state={game} level={level} gesture={round?.gesture || null} aimStatus={{ lost: sample.lost, mode: sample.mode }}
+          state={game} level={level} gesture={round?.gesture || null} aimStatus={{ lost: sample.lost, mode: sample.mode, manual: method === MANUAL_METHOD, help: phase === 'playing' ? aimHelp : null }}
           poseStatus={poseStatus} partner={partner}
         />
       )}
       {inRound && <MomentBanner text={effects.banner?.text || null} momentKey={effects.banner?.key} className="skyline-invaders__banner" />}
-      {phase === 'playing' && !prompt && (
-        <button type="button" className="skyline-invaders__pause" data-testid="skyline-invaders-pause" onClick={() => pause('player')}>Pause</button>
+      {/* The round's own keys, on the street where nothing falls: Pause, and Exit (the round is saved as abandoned). */}
+      {(phase === 'playing' || phase === 'countdown') && !prompt && (
+        <div className="skyline-invaders__round-keys" role="group" aria-label="Round">
+          {phase === 'playing' && <button type="button" className="skyline-invaders__pause" data-testid="skyline-invaders-pause" onClick={() => pause('player')}>Pause</button>}
+          {onClose && <button type="button" className="skyline-invaders__round-key skyline-invaders__exit" data-testid="skyline-invaders-exit" onClick={() => exit('touch')}>Exit</button>}
+        </div>
+      )}
+      {phase === 'playing' && aimHelp && !prompt && (
+        <div className="skyline-invaders__aim-help" role="alert" data-testid="invaders-aim-help" data-kind={aimHelp}>
+          <strong>{aimHelp === 'lost' ? 'Can’t see you' : 'Cannon not moving?'}</strong>
+          <button type="button" className="skyline-invaders__round-key" data-testid="invaders-aim-help-controls" onClick={() => actRef.current('open-controls', 'touch')}>Controls</button>
+        </div>
       )}
       {phase === 'countdown' && <CountdownOverlay value={countdown} className="skyline-invaders__countdown" />}
 
@@ -991,7 +1110,8 @@ function SkylineInvadersGame({ onClose }) {
                 onSelect={(id) => chooseLevel(id)} shooterName={view.shooterName}
                 everyone={everyone} onPick={(id) => actRef.current(`pick:${id}`, 'touch')} onSomeoneElse={() => actRef.current('open-roster', 'touch')}
                 state={access.state} blockedNames={access.blockedBy.map(nameOf)}
-                reason={pausedByRef.current} waveName={roundRef.current?.level?.name || ''} error={error} card={card}
+                reason={pausedByRef.current} waveName={roundRef.current?.level?.name || ''} error={error} setup={setupView}
+                onMethod={(picked) => chooseMethod(picked, 'touch')}
                 sound={{
                   level: gameVolume.level, muted: gameVolume.muted,
                   onLevel: (next) => setSoundLevel(next, 'touch'), onToggleMute: () => toggleSound('touch'),

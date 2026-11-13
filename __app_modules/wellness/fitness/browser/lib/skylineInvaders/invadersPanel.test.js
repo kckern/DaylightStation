@@ -14,7 +14,7 @@ describe('invadersControls: one decision per screen, as four touch keys', () => 
 
   it('waves: previous, next, change defender, Start — Locked asks for an unlock', () => {
     const view = { screen: 'waves', count: 3, wave: { id: 'w1', name: 'First Light', status: 'open' }, shooterName: 'Kid' };
-    expect(labels(view)).toEqual(['Previous', 'Next', 'Change defender', 'Start']);
+    expect(labels(view)).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
     expect(invadersAction(view, 4)).toBe('start');
     expect(invadersAction({ ...view, wave: { ...view.wave, status: 'locked' } }, 4)).toBe('unlock-wave');
     expect(invadersControls({ ...view, count: 1 })[0].disabled).toBe(true);
@@ -65,35 +65,54 @@ describe('the menu keys and the mat', () => {
 describe('controls and exit: keys of their own, past the four panel positions', () => {
   const waves = { screen: 'waves', count: 3, wave: { id: 'w1', name: 'First Light', status: 'open' }, shooterName: 'Kid', mat: true };
 
-  it('waves: a defender with no controls picks them where Start would be, and a stomp opens the intro', () => {
-    const view = { ...waves, needsControls: true };
-    expect(labels(view)).toEqual(['Previous', 'Next', 'Change defender', 'Pick controls']);
-    expect(invadersControls(view)[3].hint).toBe('Or stomp the mat');
-    expect(invadersAction(view, 4)).toBe('open-controls');
-    expect(stompAction(view)).toBe('open-controls');
-    // A locked wave still asks for its unlock first.
-    expect(invadersAction({ ...view, wave: { ...view.wave, status: 'locked' } }, 4)).toBe('unlock-wave');
-  });
-
-  it('waves: a defender with saved controls gets a Controls key naming them', () => {
+  it('waves: Start is always Start (it opens the setup when the method is not tested yet); Controls is always offered with a camera', () => {
+    expect(labels(waves)).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
+    expect(invadersControls(waves)[3].hint).toBe('Or stomp the mat');
+    expect(invadersAction(waves, 4)).toBe('start');
+    expect(stompAction(waves)).toBe('start');
     const view = { ...waves, controlsName: 'Twist' };
-    expect(labels(view)).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
-    expect(invadersControls(view)[4]).toMatchObject({ position: 5, hint: 'Twist' });
+    expect(invadersControls(view)[4]).toMatchObject({ position: 5, label: 'Controls', hint: 'Twist' });
+    expect(invadersControls(waves)[4]).toMatchObject({ position: 5, label: 'Controls', hint: 'How you aim' });
     expect(invadersAction(view, 5)).toBe('open-controls');
-    expect(invadersAction(waves, 5)).toBeNull();
     expect(pressForMenuKey('waves', 'up')).toEqual([5, 'single']);
+    // No camera: nothing to choose, gamepad aim.
+    expect(invadersAction({ ...waves, cameraOff: true }, 5)).toBeNull();
+    // A locked wave still asks for its unlock first.
+    expect(invadersAction({ ...waves, wave: { ...waves.wave, status: 'locked' } }, 4)).toBe('unlock-wave');
   });
 
-  it('controls: back, next (a mat step), not now, use these (a stomp)', () => {
-    const view = { screen: 'controls', mat: true, cardName: 'Wipers' };
-    expect(labels(view)).toEqual(['Back', 'Next', 'Not now', 'Use these']);
-    expect(invadersControls(view).map((control) => control.hint)).toEqual(['The one before', 'Or step on the mat', 'Back to the waves', 'Or stomp the mat']);
-    expect([1, 2, 3, 4].map((position) => invadersAction(view, position))).toEqual(['controls-prev', 'controls-next', 'controls-close', 'controls-use']);
-    expect(stompAction(view)).toBe('controls-use');
-    expect(labels({ ...view, controlsName: 'Twist' })[2]).toBe('Keep mine');
-    expect(invadersControls({ ...view, mat: false })[1].hint).toBe('The next one');
-    expect(['left', 'right', 'back', 'accept'].map((action) => pressForMenuKey('controls', action)[0])).toEqual([1, 2, 3, 4]);
-    expect(pressForMenuKey('controls', 'down')).toBeNull();      // no Exit over the tryout: Not now is the way back
+  it('method: tiles for touch; the keys browse and choose; Back returns where it came from; the mat does nothing', () => {
+    const view = { screen: 'method', setupFrom: 'start', canExit: true, mat: true };
+    expect(labels(view)).toEqual(['Previous', 'Next', 'Back', 'Choose', 'Exit']);
+    expect([1, 2, 3, 4, 6].map((position) => invadersAction(view, position))).toEqual(['method-prev', 'method-next', 'setup-close', 'method-choose', 'exit']);
+    expect(invadersControls(view)[2].hint).toBe('Back to the waves');
+    expect(invadersControls({ ...view, setupFrom: 'paused' })[2].hint).toBe('Back to the round');
+    expect(stompAction(view)).toBeNull();
+    expect(['left', 'right', 'back', 'accept', 'down'].map((action) => pressForMenuKey('method', action)[0])).toEqual([1, 2, 3, 4, 6]);
+  });
+
+  it('sweep: Choose another while it runs; Try again once a step was not detected; nothing once it passed', () => {
+    const running = { screen: 'sweep', sweep: 'running', canExit: true };
+    expect(invadersControls(running).filter((c) => !c.disabled).map((c) => c.label)).toEqual(['Choose another', 'Exit']);
+    expect(invadersAction(running, 3)).toBe('sweep-other');
+    expect(invadersAction(running, 1)).toBeNull();
+    const failed = { ...running, sweep: 'timeout' };
+    expect(invadersControls(failed).filter((c) => !c.disabled).map((c) => c.label)).toEqual(['Try again', 'Choose another', 'Exit']);
+    expect(invadersAction(failed, 1)).toBe('sweep-retry');
+    const passed = { ...running, sweep: 'passed' };
+    expect(invadersControls(passed).filter((c) => !c.disabled).map((c) => c.label)).toEqual(['Exit']);
+    expect(stompAction(running)).toBeNull();
+    expect(pressForMenuKey('sweep', 'accept')).toEqual([1, 'single']);
+    expect(pressForMenuKey('sweep', 'back')).toEqual([3, 'single']);
+    expect(pressForMenuKey('sweep', 'down')).toEqual([6, 'single']);
+  });
+
+  it('paused: Controls changes the method mid-round', () => {
+    const view = { screen: 'paused', canExit: true };
+    expect(labels(view)).toEqual(['Resume', 'Sound', 'End round', 'Controls', 'Exit']);
+    expect(invadersAction(view, 4)).toBe('open-controls');
+    expect(invadersAction({ ...view, cameraOff: true }, 4)).toBeNull();
+    expect(pressForMenuKey('paused', 'up')).toEqual([4, 'single']);
   });
 
   it('exit: a key on every screen a player can stop on, only when the host can close the game', () => {
@@ -107,13 +126,15 @@ describe('controls and exit: keys of their own, past the four panel positions', 
       expect(invadersAction(view, 6)).toBeNull();
       expect(invadersControls(view).some((control) => control.position === 6)).toBe(false);
     }
-    for (const screen of ['roster', 'ready', 'sound', 'controls']) expect(invadersAction({ screen, canExit: true }, 6)).toBeNull();
+    for (const screen of ['roster', 'sound']) expect(invadersAction({ screen, canExit: true }, 6)).toBeNull();
+    // Ready and the setup screens are ways into a round: they can be left too.
+    for (const screen of ['ready', 'method', 'sweep']) expect(invadersAction({ screen, canExit: true }, 6)).toBe('exit');
     expect(invadersControls({ screen: 'paused', canExit: true })[4].hint).toBe('Ends the round and leaves');
     expect(invadersControls({ screen: 'result', saveStatus: 'saving', canExit: true })[4].hint).toBe('Leave without waiting');
   });
 
   it('exit on the keys and the gamepad: down everywhere, and back on the first screen', () => {
-    for (const screen of ['who', 'waves', 'locked', 'paused', 'result', 'error', 'loading']) expect(pressForMenuKey(screen, 'down')).toEqual([6, 'single']);
+    for (const screen of ['who', 'waves', 'locked', 'paused', 'result', 'error', 'loading', 'ready', 'method', 'sweep']) expect(pressForMenuKey(screen, 'down')).toEqual([6, 'single']);
     expect(pressForMenuKey('who', 'back')).toEqual([6, 'single']);
     expect(pressForMenuKey('error', 'back')).toEqual([6, 'single']);
     // Elsewhere back keeps its own meaning.

@@ -101,6 +101,21 @@ describe('Skyline Invaders — game volume', () => {
     expect(logged('skyline_invaders.audio.volume').at(-1)).toMatchObject({ level: 60, muted: false, isDefault: true });
   });
 
+  it('the level set in one visit is the level of the next: the store outlives the game (2026-11-13 garage check)', async () => {
+    await mount();
+    await press('Sound and settings');
+    const keys = sheet().querySelectorAll('.touch-volume-button');
+    await act(async () => { fireEvent.click(keys[2], { detail: 0 }); });
+    expect(readout()).toBe('Volume 20');
+    cleanup();
+    // Leave the game and come back on the same kiosk (the same browser storage).
+    h.audio.setVolume.mockClear();
+    render(<VolumeProvider storage={storage}><SkylineInvaders /></VolumeProvider>);
+    await flush();
+    expect(logged('skyline_invaders.audio.volume').at(-1)).toMatchObject({ level: 20, isDefault: false });
+    expect(lastOutput()).toBeCloseTo(0.0251, 3);
+  });
+
   it('a stored level is the output gain (curve applied once)', async () => {
     await mount({ [GAME_KEY]: JSON.stringify({ level: 0.1, muted: false }) });
     expect(lastOutput()).toBeCloseTo(0.1, 5);

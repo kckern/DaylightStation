@@ -19,6 +19,25 @@ const make = (gesture = 'wiper', tunables = INVADERS_TUNABLES) => {
 };
 
 describe('createAimTracker', () => {
+  describe('manual aim (the gamepad / keys method)', () => {
+    it('reports manual mode while set, and a live pose no longer moves the cannon', () => {
+      const { tracker, hold } = make();
+      hold(poseForLane(1));
+      expect(tracker.sample()).toMatchObject({ lane: 1, mode: 'pose' });
+      tracker.setManual(true);
+      expect(tracker.sample().mode).toBe('manual');
+      hold(poseForLane(6));
+      expect(tracker.sample().lane).toBe(1);
+      tracker.setAim(laneAim(4));
+      expect(tracker.sample().lane).toBe(4);
+      // The camera still says whether the defender is in view.
+      expect(tracker.presence().body).toBe(true);
+      tracker.setManual(false);
+      hold(poseForLane(6));
+      expect(tracker.sample()).toMatchObject({ lane: 6, mode: 'pose' });
+    });
+  });
+
   describe('presence (what the lobby reads)', () => {
     it('is empty before any pose', () => {
       expect(make().tracker.presence()).toEqual({ body: false, wide: null });

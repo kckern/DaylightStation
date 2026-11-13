@@ -486,3 +486,80 @@
 }
 .skyline-invaders .skyline-invaders__menu { padding-top: 2.4vw; padding-bottom: 3vw; }
 .skyline-invaders { font-synthesis: none; }
+
+// ── Setup: choose your controls, then the test sweep (2026-11-13) ───────────
+// The method list is tiles to tap (a demo of each movement and its name); the
+// sweep is set at the top of the screen so the edge targets, the skyline and
+// the cannon stay in view under it. Solid inks only.
+.skyline-invaders[data-screen="method"] .skyline-invaders__menu { padding-top: .6vw; padding-bottom: .6vw; }
+.skyline-invaders[data-screen="method"] .skyline-invaders__window { width: min(100%, max(76rem, 90vw)); }
+.skyline-invaders[data-screen="method"] .skyline-menus { padding-top: .8vw; padding-bottom: .8vw; }
+.skyline-invaders[data-screen="method"] .skyline-invaders__keys { margin-top: .6vw; }
+.skyline-invaders[data-screen="method"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
+.skyline-invaders__methods {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--sg-px)); margin-top: .8vw;
+}
+.skyline-invaders__method {
+  display: flex; align-items: center; gap: 1rem; min-height: 72px; padding: .3rem .8rem; border: 0; border-radius: 0;
+  font: inherit; text-align: left; cursor: pointer; color: var(--sg-paper); background: var(--sg-night-lift); box-shadow: sg-ring(var(--sg-ink));
+  strong { flex: 1; min-width: 0; font-size: var(--sg-text-s); font-weight: 900; line-height: 1.15; }
+  &[data-current] { box-shadow: sg-ring(var(--sg-gold)); }
+  .skyline-invaders__method-yours { flex: none; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
+  &[aria-pressed="true"] .skyline-invaders__method-yours { color: var(--sg-ink); }
+  &[aria-pressed="true"] { color: var(--sg-ink); background: var(--sg-gold); }
+  &:active:not(:disabled) { transform: translateY(var(--sg-px)); }
+  &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: calc(2 * var(--sg-px)); }
+  &:disabled { color: var(--sg-mute); background: var(--sg-night); cursor: default; }
+}
+.skyline-invaders__method-art {
+  flex: none; display: grid; place-items: center; width: 56px; height: 64px;
+  .skyline-invaders__demo { height: 64px; min-height: 0; padding: 2px; }
+}
+.skyline-invaders__method-pad { width: 56px; height: auto; fill: var(--sg-paper); }
+.skyline-invaders__method-pad-key { fill: var(--sg-ink); }
+.skyline-invaders__setup-note { margin: .6vw 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; }
+
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__menu { align-content: start; padding-top: .8vw; }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__window { width: min(100%, max(76rem, 88vw)); }
+.skyline-invaders[data-screen="sweep"] .skyline-menus { padding-top: 1vw; padding-bottom: 1vw; }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__keys { margin-top: .6vw; }
+.skyline-invaders[data-screen="sweep"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
+.skyline-invaders__sweep-body { display: flex; align-items: center; gap: 2vw; margin-top: .6vw; }
+.skyline-invaders__sweep-body .skyline-invaders__demo { height: 9vw; min-height: 8rem; }
+.skyline-invaders__sweep-text { flex: 1; min-width: 0; display: grid; gap: .6vw; h1 { margin: 0; } p { margin: 0; } }
+.skyline-invaders__sweep-body[data-status="passed"] h1 { color: var(--si-pass); }
+.skyline-invaders__sweep-body[data-status="timeout"] h1 { color: var(--sg-red); }
+.skyline-invaders__sweep-line { color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1.35; }
+.skyline-invaders__sweep-how { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.35; }
+.skyline-invaders__sweep-steps {
+  display: flex; flex-wrap: wrap; gap: calc(2 * var(--sg-px)); margin: 0; padding: 0; list-style: none;
+  li {
+    display: flex; align-items: center; gap: .8rem; padding: .4rem .9rem; font-size: var(--sg-text-s); font-weight: 900;
+    color: var(--sg-mute); background: var(--sg-night); box-shadow: sg-ring(var(--sg-ink));
+  }
+  li[data-state="now"] { color: var(--sg-ink); background: var(--sg-gold); }
+  li[data-state="done"] { color: var(--sg-ink); background: var(--si-pass); }
+  li[data-state="failed"] { color: var(--sg-ink); background: var(--sg-red); }
+}
+.skyline-invaders__sweep-mark { --sg-icon-px: calc(.6 * var(--sg-px)); display: grid; place-items: center; min-width: 1.4em; }
+
+// ── The round's own keys and the aim help ───────────────────────────────────
+// Pause and Exit side by side on the street strip, bottom right, where nothing
+// falls; the controls-in-use note moves left of both.
+.skyline-invaders__round-keys {
+  position: absolute; z-index: 9; right: 2.5rem; bottom: .6rem; display: flex; gap: 1rem;
+  .skyline-invaders__pause { position: static; }
+}
+.skyline-invaders__round-key {
+  min-width: 7rem; min-height: 56px; padding: 0 1.2rem;
+  border: 0; border-radius: 0; cursor: pointer; font: inherit; font-size: 1.6rem; font-weight: 900;
+  color: var(--si-night); background: var(--si-ink); box-shadow: inset 0 0 0 0.2rem var(--si-night);
+}
+.skyline-invaders .skyline-invaders__hud-note--controls { right: 26rem; }
+// The cannon is not following: said on the street strip, bottom left, with the way back to the setup.
+.skyline-invaders__aim-help {
+  position: absolute; z-index: 9; left: 2.5rem; bottom: .6rem; display: flex; align-items: center; gap: 1.2rem;
+  padding: 0 0 0 1.4rem;
+  color: var(--si-night); background: var(--si-window); box-shadow: inset 0 0 0 0.2rem var(--si-night);
+  strong { font-size: 2rem; font-weight: 800; line-height: 1; white-space: nowrap; }
+}

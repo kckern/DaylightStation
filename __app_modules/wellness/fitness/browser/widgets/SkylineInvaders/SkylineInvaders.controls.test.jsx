@@ -33,7 +33,7 @@ import SkylineInvaders from './SkylineInvaders.jsx';
 import { laneX } from '../../lib/skylineInvaders/lanes.js';
 import { xToAim } from '../../lib/skylineInvaders/threats.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
-import { flush, installFrames, makeCtx, poseForAim, poseForLane, postedRecords, routeFetch, standingPose, testLevel, wiperPose } from './invadersTestKit.js';
+import { flush, handsPose, installFrames, makeCtx, poseForAim, poseForLane, postedRecords, routeFetch, standingPose, testLevel, wiperPose } from './invadersTestKit.js';
 
 let routes;
 let f;
@@ -78,11 +78,33 @@ async function mount({ onClose, ...options } = {}) {
   render(<SkylineInvaders onClose={onClose} />);
   await flush();
 }
-// Start: key 4 on the wave list. With a camera the Ready screen comes first
-// and passes once the defender has stood in view for a second.
-async function start() {
+const menuScreen = () => document.querySelector('.skyline-invaders').getAttribute('data-screen');
+const tapMethod = (method) => act(async () => { fireEvent.click(screen.getByTestId(`invaders-method-${method}`)); });
+// Poses that take each method's cannon to the left edge, the right edge, and the middle.
+const SWEEP_POSES = {
+  wiper: { mid: poseForLane(3), left: poseForLane(0), right: poseForLane(7) },
+  drag: { mid: handsPose(0, { drop: 0.6 }), left: handsPose(-1, { drop: 0.3 }), right: handsPose(1, { drop: 0.3 }) },
+};
+// The test sweep: go left, go right, step on the mat. "It works!" stays up a moment, then hands back.
+async function passSweep(method = 'wiper') {
+  expect(menuScreen()).toBe('sweep');
+  const poses = SWEEP_POSES[method];
+  await hold(poses.mid, 300);
+  await hold(poses.left, 2000);
+  await hold(poses.right, 2500);
+  expect(screen.getByTestId('invaders-sweep-step-fire').getAttribute('data-state')).toBe('now');
+  await step();
+  expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('It works!');
+  await f.seconds(1.6);
+}
+// Start: key 4 on the wave list. Until the defender's method has passed its
+// test in this visit, Start opens the setup: choose the method, pass the
+// sweep, and the round counts down. After that, with a camera, the Ready
+// screen comes first and passes once the defender has stood in view for a second.
+async function start(method = 'wiper') {
   await pad(4);
-  if (phase() === 'ready') await hold(wiperPose(0), 1200);
+  if (menuScreen() === 'method') { await tapMethod(method); await passSweep(method); }
+  else if (phase() === 'ready') await hold(wiperPose(0), 1200);
   await f.seconds(3.1);
   expect(phase()).toBe('playing');
 }
@@ -102,27 +124,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('Skyline Invaders controls', () => {
-  it('first time: pick controls in the intro, start, point, step, and the kill counts', async () => {
+  it('first time: Start opens the setup; choose a method, the sweep ticks left, right and fire only when each is detected, and the round starts', async () => {
     await mount({ controls: null });
     await status('detecting');
-    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Pick controls', 'Exit'].slice(0, 4));
     await pad(4);
-    expect(phase()).toBe('controls');
-    expect(padLabels()).toEqual(['Back', 'Next', 'Not now', 'Use these']);
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wipers');
-    // The tryout: the real cannon follows the wiper gesture and lights the left target.
-    await hold(wiperPose(0), 300);
-    await hold(poseForLane(0), 1500);
+    expect(menuScreen()).toBe('method');
+    await tapMethod('wiper');
+    expect(menuScreen()).toBe('sweep');
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Go left');
+    // Standing still is not going left.
+    await hold(poseForLane(3), 2000);
+    expect(screen.getByTestId('invaders-sweep-step-left').getAttribute('data-state')).toBe('now');
+    // A step on the mat before the fire step does nothing.
+    await step();
+    expect(screen.getByTestId('invaders-sweep-step-left').getAttribute('data-state')).toBe('now');
+    await hold(poseForLane(0), 1000);
     expect(cannonLane()).toBe(0);
+    expect(screen.getByTestId('invaders-sweep-step-left').getAttribute('data-state')).toBe('done');
     expect(document.querySelector('[data-practice-target="left"]').getAttribute('data-reached')).toBe('true');
-    await stomp();                                   // stomp = pick this one
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Go right');
+    await hold(poseForLane(7), 1000);
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Stomp to fire');
+    // Another mat does not count.
+    await step('mat-b2');
+    expect(screen.getByTestId('invaders-sweep-step-fire').getAttribute('data-state')).toBe('now');
+    await stomp();
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('It works!');
+    await f.seconds(1.6);
     await flush();
-    expect(phase()).toBe('lobby');
+    expect(phase()).toBe('countdown');
     expect(routes.controls).toHaveBeenCalledTimes(1);
     expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'wiper' });
-    expect(logged('skyline_invaders.controls.chosen')[0]).toMatchObject({ shooterId: 'kid', gesture: 'wiper', how: 'stomp', previous: null, saved: true });
-    expect(logged('skyline_invaders.controls.tryout')[0]).toMatchObject({ shooterId: 'kid', gesture: 'wiper', how: 'chosen-stomp', reached: 1, leftMs: expect.any(Number), rightMs: null });
-    await start();
+    expect(logged('skyline_invaders.setup.method_chosen')[0]).toMatchObject({ shooterId: 'kid', method: 'wiper', how: 'touch', previous: null });
+    expect(logged('skyline_invaders.setup.step').map((entry) => [entry.step, entry.result])).toEqual([['left', 'passed'], ['right', 'passed'], ['fire', 'passed']]);
+    expect(logged('skyline_invaders.setup.step')[2]).toMatchObject({ source: 'mat-stomp' });
+    expect(logged('skyline_invaders.setup.passed')[0]).toMatchObject({ shooterId: 'kid', method: 'wiper', from: 'start' });
+    expect(logged('skyline_invaders.setup.method_changed')[0]).toMatchObject({ shooterId: 'kid', method: 'wiper', previous: null, saved: true });
+    await f.seconds(3.1);
+    expect(phase()).toBe('playing');
     await pointAtFirstMeteor();
     await step();
     await f.seconds(1.2);
@@ -130,61 +169,88 @@ describe('Skyline Invaders controls', () => {
     expect(logged('skyline_invaders.level.start')[0]).toMatchObject({ gesture: 'wiper', gestureChosen: true, aimMode: 'pose' });
   });
 
-  it('the intro walks the cards with mat steps and saves the one that is stomped on', async () => {
+  it('a method that does not work is caught before the round: the step times out, Try again, or choose another and test that', async () => {
+    // 2026-11-13 on the garage: Slide was picked by a stomp, the defender steered like a wheel, and the cannon sat at the edge all round.
     await mount({ controls: null });
     await status('detecting');
     await pad(4);
-    await step();
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
-    await step();
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wings');
-    expect(h.bridge.tracker.gesture()).toBe('wings');
-    await step('mat-b2');                            // someone else's mat
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Wings');
+    await tapMethod('drag');
+    expect(h.bridge.tracker.gesture()).toBe('drag');
+    await hold(handsPose(0), (INVADERS_TUNABLES.setupStepTimeoutS + 0.5) * 1000);   // hands on a wheel in front, under Slide: the cannon does not go
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Not detected');
+    expect(screen.getByTestId('invaders-sweep-step-left').getAttribute('data-state')).toBe('failed');
+    expect(padLabels()).toEqual(['Try again', 'Choose another']);
+    expect(logged('skyline_invaders.setup.step').at(-1)).toMatchObject({ method: 'drag', step: 'left', result: 'timeout' });
+    expect(phase()).toBe('lobby');                  // nothing started
     await pad(1);
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
-    await stomp();
+    expect(screen.getByTestId('invaders-sweep-headline').textContent).toBe('Go left');
+    expect(logged('skyline_invaders.setup.retry')[0]).toMatchObject({ method: 'drag', step: 'left', attempt: 2 });
+    await pad(3);                                   // Choose another
+    expect(menuScreen()).toBe('method');
+    await tapMethod('wiper');
+    await passSweep('wiper');
     await flush();
-    expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'twist' });
-    expect(padLabels()).toEqual(['Previous', 'Next', 'Change defender', 'Start', 'Controls']);
-    expect(keyAt(5).getAttribute('title')).toBe('Twist');
-    expect(h.bridge.tracker.gesture()).toBe('twist');
-    expect(logged('skyline_invaders.controls.tryout').map((entry) => [entry.gesture, entry.how])).toEqual([['wiper', 'step'], ['twist', 'step'], ['wings', 'touch'], ['twist', 'chosen-stomp']]);
+    expect(phase()).toBe('countdown');
+    expect(JSON.parse(routes.controls.mock.calls[0][1].body)).toEqual({ gesture: 'wiper' });
   });
 
-  it('a card moves on by itself, and a choice that cannot be saved still holds for the session', async () => {
-    await mount({ controls: null });
-    routes.controls.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+  it('a method passed once in a visit is not tested again: the next Start is the Ready screen', async () => {
+    await mount();
     await status('detecting');
-    await pad(4);
-    await f.seconds(INVADERS_TUNABLES.tryoutCardS + 0.3);
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Twist');
-    expect(logged('skyline_invaders.controls.tryout')[0]).toMatchObject({ gesture: 'wiper', how: 'timeout', reached: 0 });
-    await pad(4);
+    await start();
+    await keyDown('Escape');
+    await pad(3);                                   // End round
     await flush();
-    expect(logged('skyline_invaders.controls.save_error')).toHaveLength(1);
-    expect(logged('skyline_invaders.controls.chosen')[0]).toMatchObject({ gesture: 'twist', how: 'touch', saved: false });
-    expect(keyAt(4).querySelector('strong').textContent).toBe('Start');
+    await pad(3);                                   // Waves
+    expect(menuScreen()).toBe('waves');
+    await pad(4);
+    expect(menuScreen()).toBe('ready');
   });
 
-  it('a rider with saved controls goes straight to Start, and can change them without losing them by backing out', async () => {
+  it('a defender with saved controls is tested on them: the list opens on their own, marked', async () => {
     await mount({ controls: { gesture: 'sprinkler' } });
     await status('detecting');
-    expect(keyAt(4).querySelector('strong').textContent).toBe('Start');
     expect(keyAt(5).getAttribute('title')).toBe('Sprinkler');
     expect(h.bridge.tracker.gesture()).toBe('sprinkler');
-    await pad(5);
-    expect(screen.getByTestId('invaders-controls-name').textContent).toBe('Sprinkler');   // opens on their own
-    await step();
-    expect(h.bridge.tracker.gesture()).toBe('drag');
-    expect(keyAt(3).querySelector('strong').textContent).toBe('Keep mine');
+    await pad(4);
+    // Under touch no tile is lit as if chosen; their own is marked Yours.
+    expect(document.querySelector('.skyline-invaders__method[aria-pressed="true"]')).toBeNull();
+    expect(screen.getByTestId('invaders-method-sprinkler').hasAttribute('data-current')).toBe(true);
+    expect(screen.getByTestId('invaders-method-sprinkler').textContent).toBe('SprinklerYours');
     await pad(3);
-    expect(phase()).toBe('lobby');
     expect(h.bridge.tracker.gesture()).toBe('sprinkler');
     expect(routes.controls).not.toHaveBeenCalled();
+  });
+
+  it('the method can be changed mid-round from the pause screen: the round waits, the new method is tested, and the record carries it', async () => {
+    await mount();
+    await status('detecting');
     await start();
-    await hold(standingPose(), 300);
-    expect(screen.getByTestId('invaders-controls').textContent).toBe('Sprinkler');
+    await keyDown('Escape');
+    expect(padLabels()).toEqual(['Resume', 'Sound', 'End round', 'Controls']);
+    await pad(4);
+    expect(menuScreen()).toBe('method');
+    expect(phase()).toBe('paused');
+    expect(padLabels()).toEqual(['Back']);
+    expect(screen.getByTestId('invaders-method-wiper')).toBeTruthy();
+    await pad(3);                                   // Back: the pause screen
+    expect(menuScreen()).toBe('paused');
+    await pad(4);
+    await tapMethod('drag');
+    await passSweep('drag');
+    expect(menuScreen()).toBe('paused');
+    expect(h.bridge.tracker.gesture()).toBe('drag');
+    // A workout resume never restarts the round under the setup.
+    await pad(4);
+    await act(async () => { h.lifecycle.onPause(); h.lifecycle.onResume(); });
+    expect(phase()).toBe('paused');
+    await pad(3);
+    await pad(1);                                   // Resume
+    expect(phase()).toBe('playing');
+    await keyDown('Escape');
+    await pad(3);                                   // End round
+    await flush();
+    expect(postedRecords(routes)[0].run.gesture).toBe('drag');
   });
 
   it('lanes: the cannon stands on a lane centre and a shot leaves from where it is drawn', async () => {
@@ -355,6 +421,52 @@ describe('Skyline Invaders controls', () => {
     expect(Math.abs(cannonX() - meteor.x)).toBeLessThan(Math.abs(before.x - meteor.x) - 50);
   });
 
+  it('a workout that ends while the setup is open over a paused round saves the round and closes the setup', async () => {
+    await mount();
+    await status('detecting');
+    await start();
+    await keyDown('Escape');
+    await pad(4);
+    await tapMethod('drag');
+    expect(menuScreen()).toBe('sweep');
+    await act(async () => { h.lifecycle.onSessionEnd(); });
+    await flush();
+    expect(phase()).toBe('result');
+    expect(postedRecords(routes)[0].run.status).toBe('abandoned');
+    await pad(3);                                   // Waves
+    expect(menuScreen()).toBe('waves');
+    expect(h.bridge.tracker.gesture()).toBe('wiper');
+  });
+
+  it('aim help: out of view for a while, the round says so and offers Controls, which pauses and opens the setup', async () => {
+    await mount();
+    await status('detecting');
+    await start();
+    await hold(poseForLane(3), 500);
+    expect(screen.queryByTestId('invaders-aim-help')).toBeNull();
+    await f.seconds(INVADERS_TUNABLES.poseLostAfterMs / 1000 + INVADERS_TUNABLES.aimHelpLostS + 0.3);
+    const help = screen.getByTestId('invaders-aim-help');
+    expect(help.getAttribute('data-kind')).toBe('lost');
+    expect(help.textContent).toContain('Can’t see you');
+    expect(hud()).not.toContain('Step into view');     // one message on the strip, not two
+    expect(logged('skyline_invaders.round.aim_help')[0]).toMatchObject({ kind: 'lost', gesture: 'wiper' });
+    await act(async () => { fireEvent.click(screen.getByTestId('invaders-aim-help-controls')); });
+    expect(phase()).toBe('paused');
+    expect(menuScreen()).toBe('method');
+    expect(logged('skyline_invaders.setup.opened')[1]).toMatchObject({ from: 'paused' });
+  });
+
+  it('aim help: in view but the cannon stuck in one lane, the round asks whether it is moving; moving clears it', async () => {
+    await mount();
+    await status('detecting');
+    await start();
+    await hold(poseForLane(5), (INVADERS_TUNABLES.aimHelpStuckS + 0.5) * 1000);
+    expect(screen.getByTestId('invaders-aim-help').getAttribute('data-kind')).toBe('stuck');
+    expect(screen.getByTestId('invaders-aim-help').textContent).toContain('Cannon not moving?');
+    await hold(poseForLane(1), 800);
+    expect(screen.queryByTestId('invaders-aim-help')).toBeNull();
+  });
+
   it('keyboard round: no camera and no mat, Space fuels the stream, the arrows move the cannon lane by lane, and the round is saved with its stars', async () => {
     h.ctx = makeCtx({ matRider: null });
     h.ctx.equipment = h.ctx.equipment.filter((item) => item.id !== 'step-mat');
@@ -395,25 +507,25 @@ describe('Skyline Invaders joint recorder', () => {
   const traces = (name) => h.log.info.mock.calls.filter(([event]) => event === name).map(([, data]) => data);
 
   it('logs pose and shot traces for a round, with every gesture\'s signal, and flushes them when the round ends', async () => {
-    await mount({ controls: { gesture: 'twist' } });
+    await mount({ controls: { gesture: 'drag' } });
     await status('detecting');
-    await start();
+    await start('drag');
     await hold(wiperPose(20), 1000);
     await step();
     await hold(wiperPose(20), 3000);
-    expect(traces('skyline_invaders.pose.trace')).toHaveLength(0);     // batched, not per frame
+    expect(traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'round')).toHaveLength(0);     // batched, not per frame
     await f.seconds(27);
     await flush();
-    const pose = traces('skyline_invaders.pose.trace');
+    const pose = traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'round');
     const shot = traces('skyline_invaders.shot.trace');
     expect(pose.length).toBeGreaterThanOrEqual(1);
     expect(pose.length).toBeLessThanOrEqual(3);
     const { runId } = logged('skyline_invaders.level.start')[0];
-    expect(pose[0]).toMatchObject({ kind: 'round', runId, levelId: 'invaders-test', shooterId: 'kid', gesture: 'twist', gestureKind: 'aim', hz: 10, seq: 0 });
+    expect(pose[0]).toMatchObject({ kind: 'round', runId, levelId: 'invaders-test', shooterId: 'kid', gesture: 'drag', gestureKind: 'velocity', hz: 10, seq: 0 });
     const cols = pose[0].cols;
     const first = pose[0].rows[0];
     expect(first).toHaveLength(cols.length);
-    // The round is played on twist, and the wiper signal is recorded all the same.
+    // The round is played on Slide, and the wiper signal is recorded all the same.
     expect(pose[0].rows.some((row) => row[cols.indexOf('wiper')] === 700)).toBe(true);
     expect(first[cols.indexOf('lane')]).toEqual(expect.any(Number));
     expect(pose[0].rows.filter((row) => row[cols.indexOf('step')] === 1)).toHaveLength(1);     // the one mat step
@@ -422,7 +534,7 @@ describe('Skyline Invaders joint recorder', () => {
     expect(shot.reduce((sum, batch) => sum + batch.n, 0)).toBe(postedRecords(routes)[0].run.shots_fired);
     const hitCol = shot[0].cols.indexOf('hit');
     expect(shot.flatMap((batch) => batch.rows).every((row) => [0, 1, null].includes(row[hitCol]))).toBe(true);
-    expect(shot[0]).toMatchObject({ kind: 'round', runId, gesture: 'twist' });
+    expect(shot[0]).toMatchObject({ kind: 'round', runId, gesture: 'drag' });
   });
 
   it('flushes the traces when the round is left early', async () => {
@@ -434,29 +546,28 @@ describe('Skyline Invaders joint recorder', () => {
     await hold(wiperPose(0), 1000);
     await keyDown('Escape');
     await pad(6);
-    expect(traces('skyline_invaders.pose.trace')).toEqual([expect.objectContaining({ reason: 'abandoned', kind: 'round' })]);
+    expect(traces('skyline_invaders.pose.trace').filter((batch) => batch.kind === 'round')).toEqual([expect.objectContaining({ reason: 'abandoned', kind: 'round' })]);
     expect(traces('skyline_invaders.shot.trace')).toEqual([expect.objectContaining({ reason: 'abandoned' })]);
   });
 
-  it('records each tryout card under its own gesture, with the practice target the cannon is on', async () => {
+  it('records each test sweep under its method, with the edge target the cannon is on, joined to the setup by its id', async () => {
     await mount({ controls: null });
     await status('detecting');
-    await pad(4);
-    await hold(wiperPose(0), 300);
-    await hold(poseForLane(0), 1200);
-    await step();                                   // next card: twist
-    await hold(wiperPose(0), 500);
-    await stomp();
+    await pad(5);
+    await tapMethod('drag');
+    await hold(handsPose(0), 500);
+    await pad(3);                                   // Choose another
+    await tapMethod('wiper');
+    await passSweep('wiper');
     await flush();
     const pose = traces('skyline_invaders.pose.trace');
-    expect(pose.map((batch) => [batch.kind, batch.gesture, batch.card, batch.reason])).toEqual([['tryout', 'wiper', 0, 'begin'], ['tryout', 'twist', 1, 'tryout-chosen']]);
-    const { tryoutId } = logged('skyline_invaders.controls.opened')[0];
-    expect(pose[0].runId).toBe(tryoutId);
-    expect(logged('skyline_invaders.controls.tryout')[0].tryoutId).toBe(tryoutId);
-    expect(logged('skyline_invaders.controls.chosen')[0].tryoutId).toBe(tryoutId);
-    const target = pose[0].cols.indexOf('target');
-    expect(pose[0].rows.some((row) => row[target] === 1)).toBe(true);      // on the left target
-    expect(pose[0].rows[pose[0].rows.length - 1][pose[0].cols.indexOf('lane')]).toBe(0);
+    expect(pose.map((batch) => [batch.kind, batch.gesture, batch.card, batch.reason])).toEqual([['tryout', 'drag', 5, 'tryout-closed'], ['tryout', 'wiper', 0, 'tryout-chosen']]);
+    const { setupId } = logged('skyline_invaders.setup.opened')[0];
+    expect(pose[0].runId).toBe(setupId);
+    expect(logged('skyline_invaders.setup.passed')[0].setupId).toBe(setupId);
+    const target = pose[1].cols.indexOf('target');
+    expect(pose[1].rows.some((row) => row[target] === 1)).toBe(true);      // going for the left edge
+    expect(pose[1].rows.some((row) => row[target] === 3)).toBe(true);      // then the right
     expect(traces('skyline_invaders.shot.trace')).toHaveLength(0);
   });
 });
@@ -483,7 +594,7 @@ describe('Skyline Invaders exit', () => {
     await f.seconds(2);
     await keyDown('Escape');
     expect(phase()).toBe('paused');
-    expect(padLabels()).toEqual(['Resume', 'Sound', 'End round', 'Exit']);
+    expect(padLabels()).toEqual(['Resume', 'Sound', 'End round', 'Controls', 'Exit']);
     await pad(6);
     expect(onClose).toHaveBeenCalledTimes(1);
     await flush();
@@ -491,6 +602,40 @@ describe('Skyline Invaders exit', () => {
     expect(record.run).toMatchObject({ status: 'abandoned', steps: 1 });
     expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'paused', how: 'touch', round: 'abandoned', runId: record.run.id });
     expect(logged('skyline_invaders.level.end')[0]).toMatchObject({ status: 'abandoned' });
+  });
+
+  it('a round has its own Exit key beside Pause: one tap saves the round as abandoned and leaves', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await start();
+    await step();
+    await f.seconds(2);
+    const exitKey = screen.getByTestId('skyline-invaders-exit');
+    expect(exitKey.textContent).toBe('Exit');
+    expect(screen.getByTestId('skyline-invaders-pause')).toBeTruthy();
+    await act(async () => { fireEvent.click(exitKey); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(postedRecords(routes)[0].run).toMatchObject({ status: 'abandoned', steps: 1 });
+    expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'playing', how: 'touch', round: 'abandoned' });
+  });
+
+  it('gamepad Select leaves a round at once; the countdown has the Exit key too', async () => {
+    const onClose = vi.fn();
+    const buttons = Array.from({ length: 16 }, () => ({ pressed: false }));
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [{ axes: [0, 0], buttons }], configurable: true, writable: true });
+    await mount({ onClose });
+    await pad(4);
+    await tapMethod('wiper');
+    await passSweep();
+    expect(phase()).toBe('countdown');
+    expect(screen.getByTestId('skyline-invaders-exit')).toBeTruthy();
+    await f.seconds(3.1);
+    buttons[8] = { pressed: true };
+    await f.frames(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(logged('skyline_invaders.exit')[0]).toMatchObject({ phase: 'playing', how: 'gamepad', round: 'abandoned' });
+    Object.defineProperty(navigator, 'getGamepads', { value: () => [], configurable: true, writable: true });
   });
 
   it('leaving does not wait for a save that fails', async () => {
@@ -525,7 +670,8 @@ describe('Skyline Invaders exit', () => {
     const onClose = vi.fn();
     await mount({ onClose });
     await pad(4);
-    await hold(wiperPose(0), 1200);
+    await tapMethod('wiper');
+    await passSweep();
     await f.seconds(1);
     expect(phase()).toBe('countdown');
     await keyDown('Escape');
