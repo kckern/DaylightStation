@@ -561,7 +561,7 @@ export class RunSelfServiceAction {
         });
         if (errors.length) this.#logger.warn?.('school.selfservice.launch.event-invalid', { sessionId, errors });
         else await this.#sessions.appendEvent(sessionId, event);
-        if (this.#close) await this.#close.execute({ sessionId, honorClose: true });
+        if (this.#close) await this.#close.execute({ sessionId, honorClose: true, announce: false }); // the slip already says "off you go"
       } catch (error) {
         // The child is already on their way to the garage; a bookkeeping
         // failure must not tell them they are not.

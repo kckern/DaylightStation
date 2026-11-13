@@ -123,7 +123,38 @@ function dayCompleted(payload) {
   if (change.gateId !== DAY_GATE || change.to !== 'satisfied' || change.from === 'satisfied') return null;
   const learnerId = change.subject?.id ?? null;
   if (!learnerId) return null;
-  return { key: `${learnerId}|${change.period?.key ?? JSON.stringify(change.period ?? null)}` };
+  // The day gate's period is `{ kind, id: 'school-day:<YYYY-MM-DD>', … }`.
+  const periodId = typeof change.period?.id === 'string' ? change.period.id : null;
+  return {
+    learnerId,
+    studyDay: periodId?.startsWith('school-day:') ? periodId.slice('school-day:'.length) : null,
+    // No period id, no memory: better to celebrate twice than never again.
+    key: periodId ? `${learnerId}|${periodId}` : null,
+  };
+}
+
+/**
+ * Work done away from this panel, and the day gate: the banners that must be
+ * this panel's child's and today's. A sheet scanned HERE is news whatever day
+ * it belongs to, so the scanner's own events are not filtered.
+ */
+const REMOTE_EVENTS = new Set([
+  'work-complete', 'media-lesson-complete', 'story-read', 'printed-activity-complete', 'piano-lesson-complete',
+]);
+
+/** The household study day on this screen: the local date, turning at 4 am (the server's default boundary). */
+export function localStudyDay(nowMs = Date.now()) {
+  const d = new Date(nowMs - 4 * 3_600_000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Who and which day a banner is about, when it is one that must be both ours and today's. */
+function bannerScope(payload) {
+  const day = dayCompleted(payload);
+  if (day) return { learnerId: day.learnerId, studyDay: day.studyDay };
+  if (REMOTE_EVENTS.has(payload?.event)) return { learnerId: payload.learnerId ?? null, studyDay: payload.studyDay ?? null };
+  return null;
 }
 
 function buildCeremony(payload) {
@@ -464,11 +495,16 @@ function receiptPrinted(payload) {
  *   whatever is currently showing and restarts the clock.
  * @returns {{ current: {tone,title,detail,at,code?}|null, clear: () => void }}
  */
-export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
+export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS, rosterIds = null, today = localStudyDay } = {}) {
   const [current, setCurrent] = useState(null);
   const timerRef = useRef(null);
   // Learner+day pairs already celebrated, so a replayed gate change is quiet.
   const celebratedRef = useRef(new Set());
+  // Read through refs so a new roster or clock never re-subscribes the topics.
+  const rosterRef = useRef(rosterIds);
+  rosterRef.current = rosterIds;
+  const todayRef = useRef(today);
+  todayRef.current = today;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -483,8 +519,16 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   }, [clearTimer]);
 
   const handle = useCallback((payload) => {
+    // Not this panel's child, or not today: the board ignores it, so does the banner.
+    const scope = bannerScope(payload);
+    if (scope) {
+      const roster = rosterRef.current;
+      if (roster && scope.learnerId && !roster.has(scope.learnerId)) return;
+      const shownDay = todayRef.current?.();
+      if (scope.studyDay && shownDay && scope.studyDay !== shownDay) return;
+    }
     const day = dayCompleted(payload);
-    if (day) {
+    if (day?.key) {
       if (celebratedRef.current.has(day.key)) return;
       celebratedRef.current.add(day.key);
     }

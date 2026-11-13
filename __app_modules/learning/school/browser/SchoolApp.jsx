@@ -835,7 +835,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // always be acknowledged on screen. Subscribed here — not inside the lock
   // branch below — because a scan can land while the panel is either locked
   // or open (KC: "a scan must always be acknowledged on screen").
-  const ceremony = useScanCeremony();
+  // The children this panel's board shows: a banner about anyone else (or
+  // about another day) stays off this screen. No roster yet, no filter.
+  const ceremonyRoster = useMemo(
+    () => (Array.isArray(roster) && roster.length ? new Set(roster.map((kid) => kid?.id).filter(Boolean)) : null),
+    [roster],
+  );
+  const ceremony = useScanCeremony({ rosterIds: ceremonyRoster });
 
   // Local date: toISOString flips to tomorrow at 5pm PDT.
 

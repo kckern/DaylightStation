@@ -27,7 +27,7 @@ const PROGRAM_ID = 'lang-app';
 // Used only by the launch-unit tests below.
 const LAUNCH_SURFACE = 'garage-fitness';
 
-let clock, rng, sessions, tokens, thermal, laser, playback, resolve, agenda, close, portal, donow;
+let clock, rng, sessions, tokens, thermal, laser, playback, resolve, agenda, close, portal, donow, workAnnounced;
 // Exposed so a test that asserts an `issued` event into a session WITHOUT
 // going through IssueDocument can also seed the artifact those bytes would
 // have been retained under — otherwise its reprint has nothing to replay.
@@ -92,9 +92,11 @@ const build = ({
   });
   const dispatchMedia = new DispatchMedia({ curriculum, sessions, playback, targets: TARGETS, clock: clock.now, logger: silentLogger });
   const openRemediation = new OpenRemediation({ curriculum, sessions, clock: clock.now, newSessionId: sequentialIds('ses_r'), logger: silentLogger });
+  workAnnounced = [];
   close = new CloseSessionOutcome({
     curriculum, sessions, tokens, assignments, economy: new FakeEconomy(), economyEnabled: true,
     grownUps: fakeGrownUps(clock), clock: clock.now, rng, logger: silentLogger,
+    realtime: { sessionOutcomeRecorded() {}, workCompleted: (a) => { workAnnounced.push(a); } },
   });
   const card = new ResolvePersonalCard({
     buildAgenda: agenda, receipts,
@@ -343,6 +345,8 @@ describe('a launch unit (Task 12, spec §6/§6.2)', () => {
     // dangling at launch_dispatched waiting on something else to finish it.
     expect(sessions.types(sid)).toEqual(expect.arrayContaining(['launch_dispatched', 'outcome_recorded']));
     expect(sessions.derive(sid).terminal).toBe(true);
+    // The slip says "off you go"; the close must not also play "Lesson done!".
+    expect(workAnnounced).toEqual([]);
   });
 
   it('a busy surface pends, printing "we asked a grown-up" and never touching the session', async () => {

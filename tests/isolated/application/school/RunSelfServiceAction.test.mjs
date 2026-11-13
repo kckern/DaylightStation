@@ -509,7 +509,8 @@ describe('launch', () => {
 
     expect(sessions.types('ses_new_1')).toEqual(['created', 'launch_dispatched']);
     expect(spies.closeSessionOutcome.execute.calls).toEqual([
-      { sessionId: 'ses_new_1', honorClose: true },
+      // The Portal already says "off you go": the close does not also say "Lesson done!".
+      { sessionId: 'ses_new_1', honorClose: true, announce: false },
     ]);
     // DoNow's own wording, verbatim.
     expect(result).toMatchObject({ outcome: 'done', sentence: 'Starting the garage bike now.' });

@@ -482,7 +482,7 @@ describe('useScanCeremony', () => {
   // ceremony it follows: a child working away from this panel must still see
   // that it counted on the board that tracks their day.
   it('shows a story read, naming the book', () => {
-    const { result } = mount();
+    const { result } = mount({ today: () => '2026-08-26' });
     act(() => {
       deliver({
         topic: 'school', event: 'story-read', learnerId: 'user_5',
@@ -550,7 +550,7 @@ describe('useScanCeremony', () => {
 describe('useScanCeremony — the school day is done', () => {
   const dayDone = (over = {}) => ({
     schema: 'daylight.state-gates-event/v1', kind: 'GateStateChanged', key: 'k',
-    payload: { gateId: 'school.day-complete', subject: { kind: 'learner', id: 'user_5' }, period: { key: '2026-11-13' }, from: 'unsatisfied', to: 'satisfied', ...over },
+    payload: { gateId: 'school.day-complete', subject: { kind: 'learner', id: 'user_5' }, period: { kind: 'day', id: 'school-day:2026-11-13' }, from: 'unsatisfied', to: 'satisfied', ...over },
   });
 
   it('celebrates the day turning complete', () => {
@@ -586,6 +586,41 @@ describe('useScanCeremony — a card tap that printed', () => {
     const { result } = renderHook(() => useScanCeremony());
     act(() => { deliver({ event: 'card-printed', learnerId: 'user_5', what: 'sheets' }); });
     expect(result.current.current).toMatchObject({ title: 'Printing!', detail: 'Your page is coming out of the printer.' });
+  });
+});
+
+describe('useScanCeremony — only this panel\'s children, only today', () => {
+  const opts = { rosterIds: new Set(['user_5']), today: () => '2026-11-13' };
+  const gate = (over = {}) => ({ kind: 'GateStateChanged', payload: {
+    gateId: 'school.day-complete', subject: { kind: 'learner', id: 'user_5' },
+    period: { kind: 'day', id: 'school-day:2026-11-13' }, from: 'unsatisfied', to: 'satisfied', ...over,
+  } });
+
+  it('plays for a child on this panel, today', () => {
+    const { result } = renderHook(() => useScanCeremony(opts));
+    act(() => { deliver({ event: 'work-complete', learnerId: 'user_5', title: 'T', studyDay: '2026-11-13' }); });
+    expect(result.current.current).toMatchObject({ title: 'Lesson done!' });
+  });
+
+  it('stays quiet for a child who is not on this panel', () => {
+    const { result } = renderHook(() => useScanCeremony(opts));
+    act(() => { deliver({ event: 'work-complete', learnerId: 'someone_else', title: 'T', studyDay: '2026-11-13' }); });
+    act(() => { deliver(gate({ subject: { kind: 'learner', id: 'someone_else' } })); });
+    expect(result.current.current).toBeNull();
+  });
+
+  it('stays quiet for work that belongs to another study day', () => {
+    const { result } = renderHook(() => useScanCeremony(opts));
+    act(() => { deliver({ event: 'work-complete', learnerId: 'user_5', title: 'T', studyDay: '2026-11-12' }); });
+    act(() => { deliver({ event: 'media-lesson-complete', learnerId: 'user_5', title: 'T', studyDay: '2026-11-12' }); });
+    act(() => { deliver(gate({ period: { kind: 'day', id: 'school-day:2026-11-12' } })); });
+    expect(result.current.current).toBeNull();
+  });
+
+  it('a day gate with no period id is celebrated but never remembered', () => {
+    const { result } = renderHook(() => useScanCeremony({ rosterIds: new Set(['user_5']) }));
+    act(() => { deliver(gate({ period: null })); });
+    expect(result.current.current).toMatchObject({ title: 'School done!' });
   });
 });
 

@@ -532,7 +532,7 @@ export class ResolveScanAction {
       });
       if (!errors.length) await this.#sessions.appendEvent(sessionId, event);
       else this.#logger.warn?.('school.scan.launch-event-invalid', { sessionId, errors });
-      if (this.#close) await this.#close.execute({ sessionId, honorClose: true });
+      if (this.#close) await this.#close.execute({ sessionId, honorClose: true, announce: false }); // the slip already says "off you go"
       return this.#slip({
         status: 'dispatched', tokenClass, sessionId,
         id: `launch-${sessionId}`,
