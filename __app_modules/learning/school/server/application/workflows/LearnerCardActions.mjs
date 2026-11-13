@@ -55,6 +55,18 @@ export function makePrintAgendaHandler({ resolvePersonalCard, realtime, presence
         .catch(() => {});
     }
 
+    // A tap that printed: the panel says so, so a child at the desk knows the
+    // paper is coming (the agenda, or the page a non-reader came for).
+    if (result?.status === 'agenda_printed' || result?.status === 'activity_printed') {
+      try {
+        realtime?.cardPrinted?.({
+          learnerId, what: result.status === 'activity_printed' ? 'sheets' : 'agenda', timestamp: clock().getTime(),
+        });
+      } catch (err) {
+        try { logger?.warn?.('nfc.tap.ack_failed', { location, learnerId, error: err?.message }); } catch { /* ignore */ }
+      }
+    }
+
     if (result?.status === 'agenda_suppressed') {
       try {
         realtime?.printAgendaReady?.({

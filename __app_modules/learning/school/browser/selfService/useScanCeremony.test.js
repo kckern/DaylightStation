@@ -575,3 +575,17 @@ describe('useScanCeremony — the school day is done', () => {
   });
 });
 
+describe('useScanCeremony — a card tap that printed', () => {
+  it('says the list is coming out', () => {
+    const { result } = renderHook(() => useScanCeremony());
+    act(() => { deliver({ event: 'card-printed', learnerId: 'user_5', what: 'agenda' }); });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Printing!', detail: 'Your list is coming out of the printer.' });
+  });
+
+  it('says the page is coming out when it printed sheets', () => {
+    const { result } = renderHook(() => useScanCeremony());
+    act(() => { deliver({ event: 'card-printed', learnerId: 'user_5', what: 'sheets' }); });
+    expect(result.current.current).toMatchObject({ title: 'Printing!', detail: 'Your page is coming out of the printer.' });
+  });
+});
+

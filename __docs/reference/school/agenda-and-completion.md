@@ -541,6 +541,13 @@ view) still polls every minute, and also looks when the board fires the
 payout mints line by line, and each look is a fresh read), and when a day
 turns complete.
 
+**A card tap that prints says so.** When a card tap prints the agenda
+(`agenda_printed`) or a learner's marked sheets (`activity_printed`), the
+`omr` topic carries `card-printed` (`learnerId`, `what`: `agenda`|`sheets`,
+`timestamp`) and the Portal shows **Printing!** ("Your list is coming out of
+the printer." or "Your page is coming out of the printer."). A repeat tap
+inside the cooldown keeps its own `agenda-suppressed` ("Already printed").
+
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner

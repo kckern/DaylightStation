@@ -345,6 +345,15 @@ function buildCeremony(payload) {
         detail: "The scanner didn't catch that. Feed the sheet again.",
         at,
       };
+    case 'card-printed':
+      // A card tap that printed. Good news, and the next move is to go and
+      // get the paper; a child who cannot read gets the page, not a list.
+      return {
+        tone: 'success',
+        title: 'Printing!',
+        detail: payload.what === 'sheets' ? 'Your page is coming out of the printer.' : 'Your list is coming out of the printer.',
+        at,
+      };
     case 'agenda-suppressed':
       // Not an error — the tap worked and the printer is fine, there is
       // simply nothing new to say yet. `warn` is the closest existing tone

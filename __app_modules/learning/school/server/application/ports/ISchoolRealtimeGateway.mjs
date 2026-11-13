@@ -40,6 +40,7 @@ export class ISchoolRealtimeGateway {
   recordChanged(_change) { /* optional */ }
   readingRoomChanged(_location, _announcement) { throw new Error('readingRoomChanged must be implemented'); }
   printAgendaReady(_announcement) { throw new Error('printAgendaReady must be implemented'); }
+  cardPrinted(_announcement) { /* optional */ }
   printScanResolved(_announcement) { throw new Error('printScanResolved must be implemented'); }
 }
 

@@ -160,3 +160,9 @@ describe('record-changed', () => {
     expect(change.mock.calls.map(([fact]) => fact.event)).toEqual(['record-changed', 'book-log-changed']);
   });
 });
+
+it('a card tap that printed is announced on the scanner topic', () => {
+  const bus = busDouble();
+  new EventBusSchoolRealtimeAdapter({ eventBus: bus }).cardPrinted({ learnerId: 'kid', what: 'agenda', timestamp: 1 });
+  expect(bus.sent).toContainEqual({ topic: 'omr', payload: { event: 'card-printed', learnerId: 'kid', what: 'agenda', timestamp: 1 } });
+});

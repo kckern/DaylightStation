@@ -45,3 +45,31 @@ describe('makePrintAgendaHandler — presence hook', () => {
     expect(out).toEqual({ status: 'print_failed', retryable: true });
   });
 });
+
+describe('makePrintAgendaHandler — the tablet acknowledges a tap that printed', () => {
+  const run = async (result) => {
+    const realtime = { printAgendaReady: vi.fn(), cardPrinted: vi.fn() };
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => result }, realtime, clock: () => new Date(1_000), logger: { info() {}, warn() {} },
+    });
+    await handler({ learnerId: 'kid', location: 'study' });
+    return realtime;
+  };
+
+  it('an agenda that printed is acknowledged as the list', async () => {
+    const rt = await run({ status: 'agenda_printed', printed: true });
+    expect(rt.cardPrinted).toHaveBeenCalledWith({ learnerId: 'kid', what: 'agenda', timestamp: 1000 });
+  });
+
+  it('marked sheets that printed are acknowledged as the page', async () => {
+    const rt = await run({ status: 'activity_printed', printed: true });
+    expect(rt.cardPrinted).toHaveBeenCalledWith({ learnerId: 'kid', what: 'sheets', timestamp: 1000 });
+  });
+
+  it('a failed print, a suppressed tap and an unknown card are not acknowledged as printing', async () => {
+    for (const status of ['print_failed', 'agenda_suppressed', 'unknown_learner']) {
+      const rt = await run({ status, printed: false });
+      expect(rt.cardPrinted).not.toHaveBeenCalled();
+    }
+  });
+});

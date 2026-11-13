@@ -165,6 +165,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   mediaLessonCompleted(announcement) { return this.#broadcast('school', { event: 'media-lesson-complete', ...announcement }); }
   readingRoomChanged(location, { kind, ...announcement }) { return this.#broadcast(`reading:${location}`, { event: kind, ...announcement }); }
   printAgendaReady(announcement) { return this.#broadcast('omr', { event: 'agenda-suppressed', ...announcement }); }
+  cardPrinted(announcement) { return this.#broadcast('omr', { event: 'card-printed', ...announcement }); }
   printScanResolved({ kind, ...announcement }) { return this.#broadcast(DEFAULT_PRINT_TOPIC, { event: kind, ...announcement }); }
 }
 
