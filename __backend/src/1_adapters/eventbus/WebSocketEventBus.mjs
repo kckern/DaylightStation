@@ -605,6 +605,10 @@ export class WebSocketEventBus {
 
     this.#logger.info?.('eventbus.broadcast', {
       topic,
+      // Which push this was, so the log store can tell a story-read from a
+      // coins-changed on the same topic.
+      event: payload?.event ?? payload?.kind ?? null,
+      learnerId: payload?.learnerId ?? null,
       sentCount,
       clientCount: this.#clients.size
     });
