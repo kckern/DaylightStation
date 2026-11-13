@@ -38,14 +38,14 @@ const SETTLED = [
   { type: 'rewarded', at: AT, txnId: 'txn_1', amount: 5 },
 ];
 
-async function build({ events = SETTLED, gate = passingGate(), notes = null, auditLog = null } = {}) {
+async function build({ events = SETTLED, gate = passingGate(), notes = null, auditLog = null, realtime = null } = {}) {
   const sessions = new FakeSessionRepository();
   for (const event of events) {
     // eslint-disable-next-line no-await-in-loop
     await sessions.appendEvent('ses_1', event);
   }
   const useCase = new ReassignSession({
-    sessions, teacherGate: gate, notes, auditLog, clock: () => NOW, logger: silent,
+    sessions, teacherGate: gate, notes, auditLog, clock: () => NOW, logger: silent, realtime,
   });
   return { sessions, useCase };
 }
@@ -140,5 +140,16 @@ describe('ReassignSession', () => {
     const second = await build({ auditLog: throwing });
     await expect(move(second.useCase)).resolves.toMatchObject({ toLearnerId: 'learner3' });
     expect(second.sessions.derive('ses_1').learnerId).toBe('learner3');
+  });
+});
+
+describe('ReassignSession — the tablet hears it', () => {
+  it('announces both learners after the move', async () => {
+    const realtime = { recordChanged: vi.fn() };
+    const { useCase } = await build({ realtime });
+    const result = await move(useCase);
+    expect(realtime.recordChanged).toHaveBeenCalledWith(expect.objectContaining({
+      learnerIds: [result.fromLearnerId, 'learner3'], kind: 'reassign',
+    }));
   });
 });

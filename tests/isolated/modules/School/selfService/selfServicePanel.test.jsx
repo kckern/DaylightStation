@@ -45,6 +45,7 @@ vi.mock("../../../../../__app_modules/learning/school/browser/schoolLog.js", () 
     feedback: vi.fn(), feedbackError: vi.fn(), standing: vi.fn(), standingError: vi.fn(),
     teacherToday: vi.fn(), teacherTodayError: vi.fn(),
     selfService: (...a) => selfServiceLog(...a),
+    selfServiceDebug: vi.fn(),
     selfServiceError: (...a) => selfServiceErrorLog(...a),
   },
   default: {},

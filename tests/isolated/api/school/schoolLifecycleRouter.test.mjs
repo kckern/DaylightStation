@@ -45,19 +45,19 @@ const assignments = {
 const named = (name, message) => Object.assign(new Error(message), { name });
 
 const resolveReviewItem = {
-  execute: async ({ sessionId, itemId, verdict, gradedBy, note = null, pin = null }) => {
+  execute: async ({ sessionId, itemId, verdict, gradedBy, note = null }) => {
     if (gradedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can sign off schoolwork');
     if (verdict !== 'correct' && verdict !== 'incorrect') throw named('ValidationError', `verdict must be correct|incorrect, got: ${verdict}`);
     if (itemId === 'ghost') throw named('EntityNotFoundError', `review-item not found: ${sessionId}/${itemId}`);
-    return { sessionId, itemId, verdict, gradedBy, note, pin, gradedAt: '2026-07-27T09:00:00.000Z' };
+    return { sessionId, itemId, verdict, gradedBy, note, gradedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
 const setAssignments = {
-  execute: async ({ learnerId, courses, units, programs, assignedBy, pin = null, baseUpdatedAt = null }) => {
+  execute: async ({ learnerId, courses, units, programs, assignedBy, baseUpdatedAt = null }) => {
     if (assignedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can change what a child is assigned');
     if (!Array.isArray(courses) || !Array.isArray(units)) throw named('ValidationError', 'courses and units must be arrays');
-    return { learnerId, courses, units, programs, assignedBy, pin, baseUpdatedAt, updatedAt: '2026-07-27T09:00:00.000Z' };
+    return { learnerId, courses, units, programs, assignedBy, baseUpdatedAt, updatedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
@@ -349,7 +349,6 @@ describe('submission, grading and close-out', () => {
       currentSessionId: 'ses_retry',
       reason: 'corrected worksheet wording',
       replacedBy: 'parent',
-      pin: '7410',
       idempotencyKey: 'repair-place-value-v2',
     });
     expect(response.status).toBe(200);
@@ -448,20 +447,6 @@ describe('fail closed', () => {
   });
 });
 
-describe('pin forwarding (teacher-console wave 2)', () => {
-  it('the review resolve forwards the body pin to the use case', async () => {
-    const r = await post('/sessions/ses_1/review/q3', { verdict: 'correct', gradedBy: 'dad', pin: '7410' });
-    expect(r.status).toBe(200);
-    expect((await r.json()).pin).toBe('7410');
-  });
-
-  it('the assignments write forwards the body pin to the use case', async () => {
-    const r = await put('/assignments/kid1', { courses: [], units: [], assignedBy: 'dad', pin: '7410' });
-    expect(r.status).toBe(200);
-    expect((await r.json()).pin).toBe('7410');
-  });
-});
-
 describe('production error-handler statuses (object shape)', () => {
   // The PRODUCTION app mounts errorHandlerMiddleware() with its DEFAULT
   // object shape — not the string shape the suites above use. These pin that
@@ -512,7 +497,7 @@ describe('stale-save baseline (M6 gate 3)', () => {
   it('PUT /assignments forwards baseUpdatedAt to the use case', async () => {
     const r = await put('/assignments/kid1', { courses: [], units: [], assignedBy: 'dad', baseUpdatedAt: 'T9' });
     expect(r.status).toBe(200);
-    // The stub echoes its args; pin/baseUpdatedAt ride through when present.
+    // The stub echoes its args; baseUpdatedAt rides through when present.
     const body = await r.json();
     expect(body.assignedBy).toBe('dad');
     expect(body.baseUpdatedAt).toBe('T9');

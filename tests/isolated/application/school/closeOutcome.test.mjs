@@ -1012,21 +1012,21 @@ describe('TeacherGate on the coin sign-off lane (readiness punch 2)', () => {
   ] });
 
   it('a refusing gate stops a sign-off and pays no reward', async () => {
-    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) };
     build({ teacherGate });
     await rewardable();
-    await expect(close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'wrong' }))
+    await expect(close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' }))
       .rejects.toMatchObject({ name: 'GuestForbiddenError' });
     expect(teacherGate.assert).toHaveBeenCalledWith({
-      userId: 'parent', pin: 'wrong', action: 'sessions.close-signoff', context: { sessionId: SID },
+      userId: 'parent', action: 'sessions.close-signoff', context: { sessionId: SID },
     });
     expect(economy.calls).toEqual([]);
     expect(sessions.types(SID)).not.toContain('rewarded');
   });
 
-  it('with no gate wired, a pin is ignored and the legacy grown-up rule alone governs', async () => {
+  it('with no gate wired, the legacy grown-up rule alone governs', async () => {
     await rewardable();
-    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'wrong' });
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' });
     expect(result.reward).toMatchObject({ amount: 15 });
   });
 
@@ -1034,7 +1034,7 @@ describe('TeacherGate on the coin sign-off lane (readiness punch 2)', () => {
     const teacherGate = { assert: vi.fn() };
     build({ teacherGate });
     await rewardable();
-    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'right' });
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' });
     expect(result.reward).toMatchObject({ amount: 15 });
     expect(teacherGate.assert).toHaveBeenCalledTimes(1);
   });

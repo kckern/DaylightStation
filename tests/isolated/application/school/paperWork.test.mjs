@@ -607,25 +607,24 @@ describe('TeacherGate on the grading lane (readiness punch 2)', () => {
 
   it('a refusing gate stops a human verdict and leaves the review queue untouched', async () => {
     await submitBlank();
-    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) };
     const gated = withGate(teacherGate);
     await expect(gated.execute({
-      sessionId: SID, verdicts: { 'u3-q1': 'correct' }, gradedBy: 'parent', pin: 'wrong',
+      sessionId: SID, verdicts: { 'u3-q1': 'correct' }, gradedBy: 'parent',
     })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
     expect(teacherGate.assert).toHaveBeenCalledWith({
-      userId: 'parent', pin: 'wrong', action: 'sessions.grade', context: { sessionId: SID },
+      userId: 'parent', action: 'sessions.grade', context: { sessionId: SID },
     });
     expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
     expect(sessions.types(SID)).not.toContain('graded');
   });
 
-  it('with no gate wired, a pin is ignored and the legacy grown-up rule alone governs', async () => {
+  it('with no gate wired, the legacy grown-up rule alone governs', async () => {
     await submitBlank();
     const result = await grade.execute({
       sessionId: SID,
       verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])),
       gradedBy: 'parent',
-      pin: 'wrong',
     });
     expect(result).toMatchObject({ status: 'graded', percent: 100 });
   });
@@ -638,7 +637,6 @@ describe('TeacherGate on the grading lane (readiness punch 2)', () => {
       sessionId: SID,
       verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])),
       gradedBy: 'parent',
-      pin: 'right',
     });
     expect(result).toMatchObject({ status: 'graded', percent: 100 });
     expect(teacherGate.assert).toHaveBeenCalledTimes(1);

@@ -251,7 +251,7 @@ describe('the printed-activity program', () => {
     it('refuses an immediate reprint with the default cooldown', async () => {
       const { first, second, jobs } = await scanTwice(null);
       expect(first).toMatchObject({ decision: 'dispatched' });
-      expect(second).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(second).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.', code: 'just-printed' });
       expect(jobs).toBe(1);
     });
 

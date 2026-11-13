@@ -393,8 +393,8 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
     // closeSessionOutcome.execute(...)` immediately below it, nor could it
     // skip section B's own bridge call on the next loop iteration.
     expect(closeSessionOutcome.execute).toHaveBeenCalledTimes(2);
-    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(1, { sessionId: 'sec-a' });
-    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(2, { sessionId: 'sec-b' });
+    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(1, { sessionId: 'sec-a', announce: false });
+    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(2, { sessionId: 'sec-b', announce: false });
   });
 
   it('final review Fix 3: on a weighted worksheet, the hook percent equals the gradebook gradedPercent for the same scan', async () => {

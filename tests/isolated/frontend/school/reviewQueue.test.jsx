@@ -187,7 +187,7 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad', note: null, pin: null },
+      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad', note: null },
     ));
   });
 
@@ -200,7 +200,7 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad', note: null, pin: null },
+      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad', note: null },
     ));
   });
 
@@ -218,7 +218,6 @@ describe('ReviewQueue — signing off', () => {
       'ses_a', 'q3', {
         verdict: 'incorrect', gradedBy: 'dad',
         note: 'Right method — you forgot to simplify at the end.',
-        pin: null,
       },
     ));
   });

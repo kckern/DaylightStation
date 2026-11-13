@@ -135,7 +135,6 @@ describe('CurriculumPlanner — writing a plan', () => {
       units: [{ unitId: 'art.01', elective: true }],
       programs: [],
       assignedBy: 'dad',
-      pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
     }));
   });
@@ -158,7 +157,6 @@ describe('CurriculumPlanner — writing a plan', () => {
       units: [],
       programs: [],
       assignedBy: 'dad',
-      pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
     }));
   });
@@ -175,7 +173,6 @@ describe('CurriculumPlanner — writing a plan', () => {
       units: [{ unitId: 'art.01', elective: true }],
       programs: [],
       assignedBy: 'dad',
-      pin: null,
       baseUpdatedAt: '2026-07-27T10:00:00.000Z', // arms the stale-save guard (wave 8 #19)
     }));
   });

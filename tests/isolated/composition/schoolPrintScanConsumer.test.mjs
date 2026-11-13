@@ -195,7 +195,7 @@ describe('resolution outcomes', () => {
     bus.broadcast('omr', sheetPayload());
     await flush();
     expect(recordCardScanOutcome.execute).toHaveBeenCalledWith({ testId: '0123456', card, cardIdInferred: null });
-    expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 'ses-one' });
+    expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 'ses-one', announce: false });
   });
 
   it("a dead card with answers warns — the child's work must not vanish below warn", async () => {

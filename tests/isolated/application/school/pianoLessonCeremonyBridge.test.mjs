@@ -419,11 +419,15 @@ describe('PianoLessonCeremonyBridge', () => {
     expect(c.bus.sent).toHaveLength(0);
   });
 
-  it('does not celebrate an EXCUSED day — nothing was accomplished', async () => {
-    const c = build({ status: { doneToday: true, excused: true, progressLabel: 'waiting for learner3' } });
+  it('does not celebrate an EXCUSED day — nothing was accomplished — but the board hears it', async () => {
+    const c = build({ status: {
+      doneToday: true, excused: true, progressLabel: 'waiting for learner3',
+      completedLessonsToday: [completion()], completedLessons: [completion()],
+    } });
     await c.bus.emit('piano.lesson.completed', { userId: 'learner4', plexId: 'plex:9001' });
     expect(c.fired).toHaveLength(0);
-    expect(c.bus.sent).toHaveLength(0);
+    // No ceremony; only the quiet re-read, so the circle stops asking.
+    expect(c.bus.sent.map((x) => x.payload)).toEqual([{ event: 'record-changed', learnerId: 'learner4', kind: 'piano-excused' }]);
   });
 
   it('stays silent when the course could not be read', async () => {
