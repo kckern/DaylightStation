@@ -596,6 +596,98 @@ AI-written follow-ups, finish. Enrollment:
 `debriefGrant` for its writes. Coins are preview only; kid surfaces show "Coins
 start soon". Full reference: [School debrief](./school-debrief.md).
 
+## Printed activities — a page done on paper
+
+`printed-activity` prints one page from a worksheet platform (today the
+household's self-hosted Beeloo: mazes, sudoku, tracing…), the child does it on
+paper, and a grown-up scans the QR the platform already prints on the page.
+That scan is the evidence; there is no work session and no grade. A learner
+holds one entry per corpus, each on its own subject shelf:
+
+```yaml
+- programId: printed-activity
+  corpusId: beeloo:maze
+  subject: arts
+  title: Maze
+  target: 1
+  activity: { platform: beeloo, kind: maze, level: 3, paper: letter }
+  schedule: { daysOfWeek: [1, 2, 3, 4, 5] }
+- programId: printed-activity
+  corpusId: beeloo:sudoku
+  subject: math
+  title: Sudoku
+  target: 1
+  activity: { platform: beeloo, kind: sudoku, level: 3, paper: letter }
+  schedule: { daysOfWeek: [1, 2, 3, 4, 5] }
+```
+
+`corpusId` is the instance key (SetAssignments dedupes on programId+corpusId),
+`target` is sheets per study day (1–5), `level` is the platform's own
+difficulty step. Raising a child a level is an edit to the entry.
+
+**Printing.** The agenda offers each entry as its subject's ticket
+(`assignedProgramPlan.mjs`, unit `printed-activity:<corpusId>`). Scanning the
+ticket calls `PrintedActivityProgramLauncher.launch`, which:
+
+1. reprints the sheet this child already holds open in that corpus, if any (the
+   lost-sheet path; nothing new is reserved);
+2. otherwise picks a page uniformly from the platform's pages at that kind and
+   level, excluding every page ever issued in the household on that platform
+   (voided reservations excepted);
+3. **reserves, then prints.** The issuance is written first; a printer error, or
+   a print the adapter reports as unconfirmed, voids it (`voidedAt`,
+   `voidReason`; the row is kept as evidence and is neither open nor history).
+
+The store enforces two rules inside its write chain: a page is open for at most
+one child (`PAGE_ALREADY_OPEN`), and a child holds at most one open sheet per
+corpus (`CORPUS_ALREADY_OPEN`). So a double scan of the ticket reprints the
+sheet already reserved, and a sibling racing for the same page gets a
+different one. A page is never re-issued in the household because the QR names
+the page, not the copy: an old sheet in a drawer must not credit whoever holds
+that page next.
+
+**Counting.** The barcode config's `url_rules` claims the platform's QR URL for
+the `worksheet` scan namespace (see
+[Barcode scanning](../barcode-scanning/README.md)). School's handler
+(`RecordPrintedActivityScan`) finds the open issuance for that page, completes
+it on the **study day of the scan** (4am→4am household day; an open sheet never
+expires), and prints a slip. Any scan on the household scanner counts, the
+same trust posture as the agenda's bulk-print ticket: the grown-up holding the
+paper is the authorization.
+
+| Scan of… | Slip | Credit |
+|---|---|---|
+| an open sheet | "<Name>'s maze counted" | yes |
+| a sheet already counted | "Already counted" | no (idempotent) |
+| a sheet whose reservation was voided | "Not counted" | no |
+| a platform page School never issued | "Not a School sheet" | no |
+
+If the child's entry was removed before the scan, the credit still stands (the
+sheet was valid when printed) and `school.printed-activity.scan-orphaned` is
+logged.
+
+**Evidence** lives at `household/school/records/printed-activities/<learnerId>.yml`
+(one file per learner, `issuances: [...]`). A corrupt file is side-filed to
+`<learnerId>.yml.corrupt-<stamp>` before it is replaced, never overwritten in
+place; household-wide lookups skip it and log
+`school.printed-activity.lookup-partial`.
+
+**Wiring.** The platform's base URL is the `beeloo` key in `system/services.yml`;
+without it School logs `school.worksheets.unwired` and the launcher answers
+"Worksheets are unavailable". The platform sits behind
+`IWorksheetPlatform` (`3_applications/common/ports`); the Beeloo adapter
+(`1_adapters/worksheets`) is the only code that knows Beeloo's field names.
+
+**Main log events** (`school.printed-activity.*`, not exhaustive): `issued`, `unconfirmed`,
+`pool-exhausted`, `page-race`, `multiple-open`, `print-failed`, `void-failed`,
+`platform-failed`, `record-failed`, `scanned`, `scan-unmatched`,
+`scan-refused`, `scan-orphaned`, `scan-failed`, `lookup-partial`,
+`store-corrupt`.
+
+**Known limit.** If a double scan's winner then fails to print and voids its
+reservation, the sheet the loser already reprinted has no open row; its scan
+says "Not counted". Scan the ticket again for a fresh sheet.
+
 ## Operations CLI
 
 The complete operational contract is in [School operations](./operations.md).

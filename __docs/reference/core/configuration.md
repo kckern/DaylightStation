@@ -440,6 +440,15 @@ Result: http://localhost:32400
 - `resolveServiceUrl(serviceName, protocol = 'http')` builds the service URL using `system/services.yml` and $DAYLIGHT_ENV.
 - `getServiceCredentials(serviceName, householdId)` combines the resolved URL with household auth for that service.
 
+Some keys are read directly by a module at boot and have no household
+indirection. `beeloo` is one: the self-hosted worksheet site that School's
+printed-activity program prints pages from (`lifecycle-runtime.mjs`
+`buildWorksheetPlatforms`). Its value is a full base URL, e.g.
+`docker: http://<container>:<port>`. With no entry for the running environment,
+School logs `school.worksheets.unwired` and the program answers "Worksheets are
+unavailable" instead of failing to boot. See
+[School programs → Printed activities](../school/programs.md#printed-activities--a-page-done-on-paper).
+
 ### Resolution Matrix Example
 
 | Household | Service | docker | {env.prod_host} | {env.dev_host} |
