@@ -521,6 +521,13 @@ describe('useScanCeremony', () => {
     expect(result.current.current).toMatchObject({ title: 'Lesson done!', detail: 'That counts for today.' });
   });
 
+  it('shows a video finished in the living room, and that the questions come next', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'school', event: 'media-lesson-complete', learnerId: 'user_5', title: 'How plants drink' }); });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Video done!' });
+    expect(result.current.current.detail).toBe('How plants drink — scan your ticket for the questions.');
+  });
+
   it('shows a story read with no title at all rather than nothing', () => {
     const { result } = mount();
     act(() => {

@@ -118,3 +118,13 @@ it('a lesson finished away from the tablet is broadcast for its banner', () => {
   gateway.workCompleted({ learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'Two-digit subtraction' });
   expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'work-complete', learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'Two-digit subtraction' } });
 });
+
+it('a finished video is broadcast and re-checks the day', async () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  const change = vi.fn(); gateway.onCompletionInputChanged(change);
+  gateway.mediaLessonCompleted({ learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'T' });
+  expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'media-lesson-complete', learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'T' } });
+  await bus.handlers.get('school')({ event: 'media-lesson-complete', learnerId: 'kid' });
+  expect(change).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid', event: 'media-lesson-complete' }));
+});

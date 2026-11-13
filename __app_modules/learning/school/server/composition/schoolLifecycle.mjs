@@ -1225,7 +1225,7 @@ export async function createSchoolLifecycle({
     : null;
   const recordMediaCompletion = new RecordMediaCompletion({
     curriculum, sessions: stores.sessions, clock,
-    graceSec: lifecycleCfg.media?.graceSec ?? 600, logger,
+    graceSec: lifecycleCfg.media?.graceSec ?? 600, logger, realtime: schoolRealtime,
   });
   // `worksheetInstances` reaches BOTH paper use cases read-only, for one
   // reason: a unit with a `bank` and no `document` prints a SAMPLED subset of

@@ -79,7 +79,7 @@ const CHECKPOINT_GRACE_SEC = 180;
 export class RecordMediaCompletion {
   static CHECKPOINT_GRACE_SEC = CHECKPOINT_GRACE_SEC;
 
-  #curriculum; #sessions; #clock; #graceSec; #logger;
+  #curriculum; #sessions; #clock; #graceSec; #logger; #realtime;
 
   /**
    * @param {object} deps
@@ -88,14 +88,36 @@ export class RecordMediaCompletion {
    * @param {() => Date} [deps.clock]
    * @param {number} [deps.graceSec] - slack past the media's own duration
    * @param {object} [deps.logger]
+   * @param {{mediaLessonCompleted?: Function}|null} [deps.realtime] - tells the
+   *   School panel the video finished (board refresh, banner, day re-check)
    */
-  constructor({ curriculum, sessions, clock = () => new Date(), graceSec = DEFAULT_GRACE_SEC, logger = console } = {}) {
+  constructor({ curriculum, sessions, clock = () => new Date(), graceSec = DEFAULT_GRACE_SEC, logger = console, realtime = null } = {}) {
     if (!curriculum || !sessions) throw new Error('RecordMediaCompletion requires curriculum and sessions');
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#clock = clock;
     this.#graceSec = graceSec;
     this.#logger = logger;
+    this.#realtime = realtime;
+  }
+
+  /**
+   * Tell the School panel the video finished, so its board moves and the
+   * child hears the questions come next. Best-effort: the completion is
+   * already stored, and a missing title only shortens the banner.
+   */
+  async #announce({ state, sessionId }) {
+    if (!this.#realtime?.mediaLessonCompleted) return;
+    let title = null;
+    try { title = (await this.#curriculum.getUnit(state.unitId))?.title ?? null; } catch { /* the banner goes without it */ }
+    try {
+      this.#realtime.mediaLessonCompleted({
+        learnerId: state.learnerId ?? null, sessionId, unitId: state.unitId ?? null, title,
+        ...(state.studyDay ? { studyDay: state.studyDay } : {}),
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.media.broadcast-failed', { sessionId, learnerId: state.learnerId ?? null, error: err?.message ?? String(err) });
+    }
   }
 
   /**
@@ -183,6 +205,7 @@ export class RecordMediaCompletion {
 
     const next = reduceSession(await this.#sessions.readEvents(id));
     this.#logger.info?.('school.media.completed', { sessionId: id, unitId: next.unitId, verified });
+    await this.#announce({ state: next, sessionId: id });
     return {
       status: 'completed',
       sessionId: id,

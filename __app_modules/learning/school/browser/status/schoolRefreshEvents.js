@@ -20,6 +20,7 @@ export const SCHOOL_REFRESH_EVENTS = new Set([
   'assessment-changed',
   'story-read',
   'printed-activity-complete',
+  'media-lesson-complete',
   'book-log-changed',
   'piano-lesson-complete',
   'program-day-bypass-changed',
@@ -33,6 +34,7 @@ export const SCHOOL_REFRESH_EVENTS = new Set([
 export const DAY_SCOPED_EVENTS = new Set([
   'story-read',
   'printed-activity-complete',
+  'media-lesson-complete',
   'assessment-changed',
 ]);
 

@@ -367,6 +367,17 @@ function buildCeremony(payload) {
         detail: payload.title ? `${payload.title} — that counts for today.` : 'That counts for today.',
         at,
       };
+    case 'media-lesson-complete':
+      // A lesson's video finished on the living-room TV. The lesson is not
+      // over: its questions come next, and their settle says "Lesson done!".
+      return {
+        tone: 'success',
+        title: 'Video done!',
+        detail: payload.title
+          ? `${payload.title} — scan your ticket for the questions.`
+          : 'Scan your ticket for the questions.',
+        at,
+      };
     case 'printed-activity-complete':
       // A grown-up scanned the QR on a printed sheet (a maze, a coloring page)
       // and it counted. The scanner's slip prints in the same moment, but a

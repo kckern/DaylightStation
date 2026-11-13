@@ -40,7 +40,17 @@ nothing.
 ordinary work session — the one a scan or an issued worksheet already opened — and
 the lesson is a stretch of its event log (`media_dispatched` → `checkpoint_cleared`
 annotations → `media_completed`). That is why attribution needs no client help: the
-session's own `created` event names the learner. The design sketched a dedicated
+session's own `created` event names the learner.
+
+**The School tablet hears it.** `media_completed` is announced on the `school`
+topic as `media-lesson-complete` (`learnerId`, `sessionId`, `unitId`, `title`,
+`studyDay`): the status board re-reads that learner, the Portal plays **Video
+done!** with "scan your ticket for the questions", and the day is re-checked.
+It is announced once, after the event is stored; a failure logs
+`school.media.broadcast-failed` and the completion stands. The questions'
+settle later announces `work-complete` ("Lesson done!").
+
+The design sketched a dedicated
 `OpenMediaLessonSession`; what shipped reads the existing session instead
 (`ReadLessonSnapshot`).
 
