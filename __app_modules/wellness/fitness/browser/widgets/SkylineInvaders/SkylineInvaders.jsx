@@ -14,8 +14,11 @@ import { GESTURE_INFO, isGesture } from '../../lib/skylineInvaders/gestures.js';
 import { EMPTY_EFFECTS, INVADERS_LOG_NAMES, buildInvadersEffectTable, invadersSoundUrls } from '../../lib/skylineInvaders/invadersEffects.js';
 import { validateLevel } from '../../lib/skylineInvaders/levels.js';
 import { listInvadersMats, selectInvadersMat } from '../../lib/skylineInvaders/matSelection.js';
+import { laneX } from '../../lib/skylineInvaders/lanes.js';
 import { listInvadersPeople } from '../../lib/skylineInvaders/people.js';
 import { buildSkylineInvadersRun } from '../../lib/skylineInvaders/runResult.js';
+import { aimToX } from '../../lib/skylineInvaders/threats.js';
+import { TRYOUT_TARGET_CODES, createTraceRecorder } from '../../lib/skylineInvaders/traceRecorder.js';
 import { INVADERS_TUNABLES } from '../../lib/skylineInvaders/tunables.js';
 import useSkylineAccess from '../SkylineGlider/useSkylineAccess.js';
 import { CountdownOverlay, MomentBanner } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
@@ -131,6 +134,9 @@ function SkylineInvadersGame({ onClose }) {
   const unlockGenerationRef = useRef(0);
   const audioRef = useRef(null);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
+  // The joint recorder: pose and shot traces, batched, for comparing the gestures from data.
+  const recorder = useMemo(() => createTraceRecorder({ emit: (name, data) => log.info(name, data) }), [log]);
+  const tryoutIdRef = useRef(null);
   const goPhase = useCallback((next) => { phaseRef.current = next; setPhase(next); }, []);
 
   // ── Who and what ──────────────────────────────────────────────────────────
@@ -176,11 +182,12 @@ function SkylineInvadersGame({ onClose }) {
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
       audio.stop();
+      recorder.end('unmount');
       log.info('skyline_invaders.unmounted', { phase: phaseRef.current, runId: roundRef.current?.runId || null });
     };
     // Mount and unmount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log]);
+  }, [log, recorder]);
 
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
   useEffect(() => {
@@ -298,6 +305,7 @@ function SkylineInvadersGame({ onClose }) {
       const started = roundRef.current;
       if (!started || phaseRef.current !== 'countdown') return;
       goPhase('playing');
+      recorder.begin({ kind: 'round', runId: started.runId, levelId: next.id, shooterId: started.shooterId, gesture: started.gesture, seed });
       log.info('skyline_invaders.level.start', {
         runId: started.runId, levelId: next.id, seed, shooterId: started.shooterId,
         partnerId: live.current.boost.readPartner()?.riderId || null,
@@ -306,7 +314,7 @@ function SkylineInvadersGame({ onClose }) {
         pose: poseStatusRef.current.state, poseFps: poseStatusRef.current.fps ?? null,
       });
     }, 1000);
-  }, [goPhase, log, toLobby, tracker]);
+  }, [goPhase, log, toLobby, tracker, recorder]);
 
   const poseStatusRef = useRef(poseStatus);
   poseStatusRef.current = poseStatus;
@@ -318,6 +326,7 @@ function SkylineInvadersGame({ onClose }) {
     clearInterval(countdownTimerRef.current);
     setCountdown(null);
     live.current.drainFire.clear();
+    if (!retryRecord) recorder.end(ended ? 'round-end' : 'abandoned');
     const now = live.current;
     const state = gameRef.current;
     const record = retryRecord || buildSkylineInvadersRun({
@@ -368,7 +377,7 @@ function SkylineInvadersGame({ onClose }) {
       log.error('skyline_invaders.round.save_error', { ...correlation, status: record.run.status, error: saveError.message });
       return false;
     }
-  }, [goPhase, log, refreshWorld, toLobby, tracker]);
+  }, [goPhase, log, refreshWorld, toLobby, tracker, recorder]);
 
   const pause = useCallback((reason) => {
     if (phaseRef.current !== 'playing') return;
@@ -439,10 +448,13 @@ function SkylineInvadersGame({ onClose }) {
       setGame(next);
       dispatcher.dispatch(next.events, { time: next.time });
       current.tally.stomps += presses.stomps.length;
+      recorder.pose(tracker.frame(), aimNow, { cannonX: aimToX(aimNow.x) });
       for (const event of next.events) {
         if (event.type === 'shot.fired') {
           if (current.tally[event.data.source] !== undefined) current.tally[event.data.source] += 1;
-        } else if (event.type === 'fuel.added') {
+          recorder.volleyFired(event.data, aimNow);
+        } else if (event.type === 'volley.settled') recorder.volleySettled(event.data.volley, event.data.hit);
+        else if (event.type === 'fuel.added') {
           if (current.tally[event.data.source] !== undefined) current.tally[event.data.source] += 1;
           log.sampled('skyline_invaders.fuel', { ...correlation, source: event.data.source, fuel: event.data.fuel, lane: aimNow.lane, time: next.time }, { maxPerMinute: 30, aggregate: true });
           if (event.data.pressAt) log.sampled('skyline_invaders.mat.press_to_fuel_ms', { ...correlation, ms: Date.now() - event.data.pressAt }, { maxPerMinute: 12, aggregate: true });
@@ -474,7 +486,7 @@ function SkylineInvadersGame({ onClose }) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [phase, finalize, log, pause, tracker]);
+  }, [phase, finalize, log, pause, tracker, recorder]);
 
   // The 3-2-1 has no menu: Escape or B is the way back out of it.
   useMenuInput(phase === 'countdown', (action) => {
@@ -601,21 +613,32 @@ function SkylineInvadersGame({ onClose }) {
 
   // ── Controls intro ────────────────────────────────────────────────────────
   const openControls = useCallback(() => {
-    log.info('skyline_invaders.controls.opened', { shooterId: live.current.shooterId, pose: poseStatusRef.current.state, current: live.current.gesture, first: !live.current.gesture });
+    // One id for the whole visit, so its cards, their traces and the choice can be joined.
+    tryoutIdRef.current = newRunId();
+    log.info('skyline_invaders.controls.opened', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, pose: poseStatusRef.current.state, current: live.current.gesture, first: !live.current.gesture });
     goPhase('controls');
   }, [goPhase, log]);
   const closeControls = useCallback(() => {
-    log.info('skyline_invaders.controls.closed', { shooterId: live.current.shooterId, current: live.current.gesture });
+    recorder.end('tryout-closed');
+    log.info('skyline_invaders.controls.closed', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, current: live.current.gesture });
     goPhase('lobby');
-  }, [goPhase, log]);
+  }, [goPhase, log, recorder]);
+  // Each card records its own pose trace: the same three targets for every gesture.
+  const onTryoutCard = useCallback((cardGesture, card) => {
+    recorder.begin({ kind: 'tryout', runId: tryoutIdRef.current, levelId: null, shooterId: live.current.shooterId, gesture: cardGesture, card });
+  }, [recorder]);
+  const onTryoutTick = useCallback(({ lane, tryout }) => {
+    recorder.pose(tracker.frame(), tracker.sample(), { cannonX: laneX(lane), target: TRYOUT_TARGET_CODES[tryout.on] || 0 });
+  }, [recorder, tracker]);
   const onTryout = useCallback((summary) => {
-    log.sampled('skyline_invaders.controls.tryout', { shooterId: live.current.shooterId, pose: poseStatusRef.current.state, poseFps: poseStatusRef.current.fps ?? null, ...summary }, { maxPerMinute: 30, aggregate: true });
+    log.sampled('skyline_invaders.controls.tryout', { tryoutId: tryoutIdRef.current, shooterId: live.current.shooterId, pose: poseStatusRef.current.state, poseFps: poseStatusRef.current.fps ?? null, ...summary }, { maxPerMinute: 30, aggregate: true });
   }, [log]);
   const chooseControls = useCallback(async (picked, how) => {
     const riderId = live.current.shooterId;
     const previous = live.current.gesture;
     if (!riderId) return;
     setPickedControls((current) => ({ ...current, [riderId]: picked }));
+    recorder.end('tryout-chosen');
     goPhase('lobby');
     let saved = false;
     try {
@@ -626,9 +649,9 @@ function SkylineInvadersGame({ onClose }) {
       // The choice still holds for this session; the intro comes back next time.
       log.warn('skyline_invaders.controls.save_error', { shooterId: riderId, gesture: picked, error: saveError.message });
     }
-    log.info('skyline_invaders.controls.chosen', { shooterId: riderId, gesture: picked, label: GESTURE_INFO[picked]?.label, how, previous, saved });
+    log.info('skyline_invaders.controls.chosen', { tryoutId: tryoutIdRef.current, shooterId: riderId, gesture: picked, label: GESTURE_INFO[picked]?.label, how, previous, saved });
     if (saved) await refreshWorld(riderId);
-  }, [goPhase, log, refreshWorld]);
+  }, [goPhase, log, refreshWorld, recorder]);
   const onPoseStatus = useCallback((next) => setPoseStatus(next), []);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -710,7 +733,7 @@ function SkylineInvadersGame({ onClose }) {
         <InvadersControls
           tracker={tracker} current={gesture} shooter={shooterId ? { id: shooterId, name: nameOf(shooterId) } : null} poseStatus={poseStatus}
           matId={mat?.matId || null} subscribeToAppEvent={ctx?.subscribeToAppEvent}
-          onChoose={chooseControls} onClose={closeControls} onTryout={onTryout} active={!prompt}
+          onChoose={chooseControls} onClose={closeControls} onTryout={onTryout} onCard={onTryoutCard} onTick={onTryoutTick} active={!prompt}
         />
       )}
       {phase === 'paused' && (

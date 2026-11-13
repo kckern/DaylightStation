@@ -370,6 +370,75 @@ describe('Skyline Invaders controls', () => {
   });
 });
 
+describe('Skyline Invaders joint recorder', () => {
+  const traces = (name) => h.log.info.mock.calls.filter(([event]) => event === name).map(([, data]) => data);
+
+  it('logs pose and shot traces for a round, with every gesture\'s signal, and flushes them when the round ends', async () => {
+    await mount({ controls: { gesture: 'twist' } });
+    await status('detecting');
+    await start();
+    await hold(wiperPose(20), 1000);
+    await step();
+    await hold(wiperPose(20), 3000);
+    expect(traces('skyline_invaders.pose.trace')).toHaveLength(0);     // batched, not per frame
+    await f.seconds(27);
+    await flush();
+    const pose = traces('skyline_invaders.pose.trace');
+    const shot = traces('skyline_invaders.shot.trace');
+    expect(pose.length).toBeGreaterThanOrEqual(1);
+    expect(pose.length).toBeLessThanOrEqual(3);
+    const { runId } = logged('skyline_invaders.level.start')[0];
+    expect(pose[0]).toMatchObject({ kind: 'round', runId, levelId: 'invaders-test', shooterId: 'kid', gesture: 'twist', gestureKind: 'aim', hz: 10, seq: 0 });
+    const cols = pose[0].cols;
+    const first = pose[0].rows[0];
+    expect(first).toHaveLength(cols.length);
+    // The round is played on twist, and the wiper signal is recorded all the same.
+    expect(first[cols.indexOf('wiper')]).toBe(700);
+    expect(first[cols.indexOf('lane')]).toEqual(expect.any(Number));
+    expect(pose[0].n).toBeGreaterThan(30);
+    expect(pose[pose.length - 1].reason).toBe('round-end');
+    expect(shot.reduce((sum, batch) => sum + batch.n, 0)).toBe(postedRecords(routes)[0].run.shots_fired);
+    const hitCol = shot[0].cols.indexOf('hit');
+    expect(shot.flatMap((batch) => batch.rows).every((row) => [0, 1, null].includes(row[hitCol]))).toBe(true);
+    expect(shot[0]).toMatchObject({ kind: 'round', runId, gesture: 'twist' });
+  });
+
+  it('flushes the traces when the round is left early', async () => {
+    const onClose = vi.fn();
+    await mount({ onClose });
+    await start();
+    await hold(wiperPose(0), 500);
+    await step();
+    await hold(wiperPose(0), 1000);
+    await keyDown('Escape');
+    await press(/^Exit/);
+    expect(traces('skyline_invaders.pose.trace')).toEqual([expect.objectContaining({ reason: 'abandoned', kind: 'round' })]);
+    expect(traces('skyline_invaders.shot.trace')).toEqual([expect.objectContaining({ reason: 'abandoned' })]);
+  });
+
+  it('records each tryout card under its own gesture, with the practice target the cannon is on', async () => {
+    await mount({ controls: null });
+    await status('detecting');
+    await press(/Pick your controls/);
+    await hold(wiperPose(0), 300);
+    await hold(poseForLane(0), 1200);
+    await step();                                   // next card: twist
+    await hold(wiperPose(0), 500);
+    await stomp();
+    await flush();
+    const pose = traces('skyline_invaders.pose.trace');
+    expect(pose.map((batch) => [batch.kind, batch.gesture, batch.card, batch.reason])).toEqual([['tryout', 'wiper', 0, 'begin'], ['tryout', 'twist', 1, 'tryout-chosen']]);
+    const { tryoutId } = logged('skyline_invaders.controls.opened')[0];
+    expect(pose[0].runId).toBe(tryoutId);
+    expect(logged('skyline_invaders.controls.tryout')[0].tryoutId).toBe(tryoutId);
+    expect(logged('skyline_invaders.controls.chosen')[0].tryoutId).toBe(tryoutId);
+    const target = pose[0].cols.indexOf('target');
+    expect(pose[0].rows.some((row) => row[target] === 1)).toBe(true);      // on the left target
+    expect(pose[0].rows[pose[0].rows.length - 1][pose[0].cols.indexOf('lane')]).toBe(0);
+    expect(traces('skyline_invaders.shot.trace')).toHaveLength(0);
+  });
+});
+
 describe('Skyline Invaders exit', () => {
   it('leaves from the lobby by the Exit button, and by Escape', async () => {
     const onClose = vi.fn();
