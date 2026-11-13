@@ -20,34 +20,61 @@ const issuance = (over) => ({
   completedAt: null, completedStudyDay: null, completedVia: null, ...over,
 });
 
-/** In-memory store; `append` enforces one open issuance per page like the real one. */
-function fakeStore(rows = []) {
-  const all = [...rows];
+const isOpen = (r) => r.completedAt == null && r.voidedAt == null;
+
+/**
+ * In-memory store with the real store's refusals, by `code`: duplicate id,
+ * one open sheet per learner+corpus (`held`), one open issuance per page
+ * (`heldBy`). `calls` records append/void order against the printer.
+ */
+function fakeStore(rows = [], calls = []) {
+  const all = rows.map((r) => ({ voidedAt: null, voidReason: null, ...r }));
   return {
     rows: all,
+    calls,
     append: vi.fn(async (i) => {
-      const holder = all.find((r) => r.completedAt == null && r.platform === i.platform && r.externalId === i.externalId);
-      if (holder) throw Object.assign(new Error('already open'), { code: 'PAGE_ALREADY_OPEN', heldBy: holder.learnerId });
-      all.push({ ...i });
+      calls.push(`append:${i.externalId}`);
+      if (all.some((r) => r.learnerId === i.learnerId && r.issuanceId === i.issuanceId)) {
+        throw Object.assign(new Error('dup'), { code: 'DUPLICATE_ISSUANCE_ID' });
+      }
+      const held = all.find((r) => isOpen(r) && r.learnerId === i.learnerId && r.corpusId === i.corpusId);
+      if (held) throw Object.assign(new Error('corpus open'), { code: 'CORPUS_ALREADY_OPEN', held });
+      const holder = all.find((r) => isOpen(r) && r.platform === i.platform && r.externalId === i.externalId);
+      if (holder) {
+        throw Object.assign(new Error('already open'), {
+          code: 'PAGE_ALREADY_OPEN', heldBy: holder.learnerId, issuanceId: holder.issuanceId, externalId: i.externalId,
+        });
+      }
+      all.push({ ...i, voidedAt: null, voidReason: null });
       return i;
     }),
+    void: vi.fn(async (learnerId, issuanceId, { at, reason }) => {
+      calls.push(`void:${reason}`);
+      const row = all.find((r) => r.learnerId === learnerId && r.issuanceId === issuanceId);
+      if (!row) return { status: 'missing', issuance: null };
+      Object.assign(row, { voidedAt: at, voidReason: reason });
+      return { status: 'voided', issuance: row };
+    }),
     listForLearner: vi.fn(async (learnerId) => all.filter((r) => r.learnerId === learnerId)),
-    listOpenAll: vi.fn(async () => all.filter((r) => r.completedAt == null)),
+    listOpenAll: vi.fn(async () => all.filter(isOpen)),
     listCompletedForDay: vi.fn(async (learnerId, corpusId, day) => all.filter((r) => r.learnerId === learnerId
-      && r.corpusId === corpusId && r.completedStudyDay === day)),
+      && r.corpusId === corpusId && r.voidedAt == null && r.completedStudyDay === day)),
   };
 }
 
 const logger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
-function make({ programs = [MAZE, SUDOKU], assignment, store = fakeStore(), platforms, printer, rng = () => 0 } = {}) {
-  const log = logger();
+function make({
+  programs = [MAZE, SUDOKU], assignment, store = fakeStore(), platforms, printer, rng = () => 0,
+  clock = () => NOW, timezone = null, log = logger(),
+} = {}) {
   const launcher = new PrintedActivityProgramLauncher({
     assignments: { get: vi.fn(async () => (assignment !== undefined ? assignment : { programs })) },
     store,
     platforms: platforms ?? new Map(),
     printer: printer === undefined ? null : printer,
-    clock: () => NOW,
+    timezone,
+    clock,
     rng,
     logger: log,
   });
@@ -156,6 +183,15 @@ describe('PrintedActivityProgramLauncher.status', () => {
   });
 });
 
+describe('PrintedActivityProgramLauncher — study day', () => {
+  it('reads the household timezone for the default day', async () => {
+    const { launcher, store } = make({ clock: () => new Date('2026-11-14T11:30:00Z'), timezone: 'America/Los_Angeles' });
+    expect(launcher.studyDay()).toBe('2026-11-13');
+    await launcher.status({ userId: 'learner_a', programInstance: 'beeloo:maze' });
+    expect(store.listCompletedForDay).toHaveBeenCalledWith('learner_a', 'beeloo:maze', '2026-11-13');
+  });
+});
+
 describe('PrintedActivityProgramLauncher.launch', () => {
   const POOL = [
     { externalId: 'm-1', title: 'North End Labyrinth', kind: 'maze', level: 3, theme: 'city' },
@@ -168,21 +204,28 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     getPrintable: vi.fn(async (id) => Buffer.from(`pdf:${id}`)),
     ...over,
   });
-  const fakePrinter = (result = { ok: true }) => ({ printPdf: vi.fn(async () => result) });
-  const setup = ({ platform = fakePlatform(), printer = fakePrinter(), ...rest } = {}) => {
-    const built = make({ platforms: new Map([['beeloo', platform]]), printer, ...rest });
-    return { ...built, platform, printer };
+  const fakePrinter = (calls, result = { ok: true }) => ({
+    printPdf: vi.fn(async (bytes) => { calls?.push(`print:${String(bytes).slice(4)}`); return result; }),
+  });
+  const setup = ({ calls = [], store, platform = fakePlatform(), printer, ...rest } = {}) => {
+    const s = store ?? fakeStore([], calls);
+    const p = printer === undefined ? fakePrinter(s.calls) : printer;
+    const built = make({ platforms: new Map([['beeloo', platform]]), printer: p, store: s, ...rest });
+    return { ...built, platform, printer: p, calls: s.calls };
   };
   const go = (launcher, corpusId = 'beeloo:maze') => launcher.launch({ userId: 'learner_a', corpusId });
+  const raceErr = (heldBy, externalId = 'm-1') => Object.assign(new Error('already open'), {
+    code: 'PAGE_ALREADY_OPEN', heldBy, issuanceId: 'pa_held', externalId,
+  });
 
-  it('prints a new pick and records the issuance', async () => {
-    const { launcher, store, platform, printer, log } = setup();
+  it('reserves a new pick, then prints it', async () => {
+    const { launcher, store, platform, printer, log, calls } = setup();
     const r = await go(launcher);
     expect(r).toEqual({ decision: 'dispatched', message: 'North End Labyrinth is printing.' });
+    expect(calls).toEqual(['append:m-1', 'print:m-1']);
     expect(platform.listActivities).toHaveBeenCalledWith({ kind: 'maze', level: 3, paper: 'letter' });
     expect(platform.getPrintable).toHaveBeenCalledWith('m-1', { paper: 'letter' });
     expect(printer.printPdf).toHaveBeenCalledWith(Buffer.from('pdf:m-1'), { jobName: 'learner_a maze m-1', user: 'learner_a', copies: 1 });
-    expect(store.append).toHaveBeenCalledTimes(1);
     const rec = store.append.mock.calls[0][0];
     expect(rec).toEqual({
       issuanceId: 'pa_aaaaaaaa', learnerId: 'learner_a', programId: 'printed-activity', corpusId: 'beeloo:maze',
@@ -190,9 +233,18 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       issuedAt: NOW.toISOString(), issuedStudyDay: TODAY, completedAt: null, completedStudyDay: null, completedVia: null,
     });
     expect(rec.issuanceId).toMatch(/^pa_[a-z0-9]{8}$/);
+    expect(store.void).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith('school.printed-activity.issued', expect.objectContaining({
       learnerId: 'learner_a', corpusId: 'beeloo:maze', platform: 'beeloo', externalId: 'm-1', reprint: false,
     }));
+  });
+
+  it('reads the clock once: issuedAt and issuedStudyDay name the same instant', async () => {
+    const clock = vi.fn(() => new Date('2026-11-14T11:30:00Z'));
+    const { launcher, store } = setup({ clock, timezone: 'America/Los_Angeles' });
+    await go(launcher);
+    expect(clock).toHaveBeenCalledTimes(1);
+    expect(store.append.mock.calls[0][0]).toMatchObject({ issuedAt: '2026-11-14T11:30:00.000Z', issuedStudyDay: '2026-11-13' });
   });
 
   it('skips pages from its own history and pages open for anyone in the household', async () => {
@@ -201,19 +253,28 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       issuance({ issuanceId: 'pa_sib', learnerId: 'learner_b', externalId: 'm-2' }),
     ]);
     const { launcher } = setup({ store });
-    const r = await go(launcher);
-    expect(r.decision).toBe('dispatched');
+    expect((await go(launcher)).decision).toBe('dispatched');
     expect(store.append.mock.calls[0][0].externalId).toBe('m-3');
   });
 
-  it('a sibling\'s page on another platform does not exclude', async () => {
-    const store = fakeStore([issuance({ issuanceId: 'pa_sib', learnerId: 'learner_b', platform: 'other', externalId: 'm-1' })]);
+  it('a voided page is not history: the child never got it', async () => {
+    const store = fakeStore([issuance({ externalId: 'm-1', voidedAt: '2026-11-01T17:00:00.000Z', voidReason: 'print-failed' })]);
     const { launcher } = setup({ store });
     await go(launcher);
     expect(store.append.mock.calls[0][0].externalId).toBe('m-1');
   });
 
-  it('reprints the open page for a lost sheet and appends nothing', async () => {
+  it('own history on another platform, and a sibling page on another platform, do not exclude', async () => {
+    const store = fakeStore([
+      issuance({ platform: 'other', externalId: 'm-1', completedAt: 'x', completedStudyDay: '2026-11-01' }),
+      issuance({ issuanceId: 'pa_sib', learnerId: 'learner_b', platform: 'other', externalId: 'm-1' }),
+    ]);
+    const { launcher } = setup({ store });
+    await go(launcher);
+    expect(store.append.mock.calls[0][0].externalId).toBe('m-1');
+  });
+
+  it('reprints the open page for a lost sheet: no append, no void', async () => {
     const store = fakeStore([issuance({ externalId: 'm-2', title: 'Forest Path' })]);
     const { launcher, platform, printer, log } = setup({ store });
     const r = await go(launcher);
@@ -222,7 +283,30 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(platform.getPrintable).toHaveBeenCalledWith('m-2', { paper: 'letter' });
     expect(printer.printPdf).toHaveBeenCalledTimes(1);
     expect(store.append).not.toHaveBeenCalled();
+    expect(store.void).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith('school.printed-activity.issued', expect.objectContaining({ reprint: true, externalId: 'm-2' }));
+  });
+
+  it('reprints the newest of several open pages and warns', async () => {
+    const store = fakeStore([
+      issuance({ issuanceId: 'pa_new', externalId: 'm-3', title: 'Harbour Loop', issuedAt: '2026-11-13T16:00:00.000Z' }),
+      issuance({ issuanceId: 'pa_old', externalId: 'm-2', title: 'Forest Path', issuedAt: '2026-11-12T16:00:00.000Z' }),
+    ]);
+    const { launcher, platform, log } = setup({ store });
+    expect((await go(launcher)).message).toBe('Harbour Loop is printing.');
+    expect(platform.getPrintable).toHaveBeenCalledWith('m-3', { paper: 'letter' });
+    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.multiple-open', {
+      userId: 'learner_a', corpusId: 'beeloo:maze', issuanceIds: ['pa_new', 'pa_old'],
+    });
+  });
+
+  it('an unconfirmed reprint is still a reprint: nothing voided', async () => {
+    const calls = [];
+    const store = fakeStore([issuance({ externalId: 'm-2', title: 'Forest Path' })], calls);
+    const { launcher, log } = setup({ store, printer: fakePrinter(calls, { confirmed: false }) });
+    expect((await go(launcher)).decision).toBe('dispatched');
+    expect(store.void).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('school.printed-activity.unconfirmed', expect.objectContaining({ reprint: true }));
   });
 
   it('an open page in the other corpus is not reprinted here', async () => {
@@ -232,69 +316,152 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(store.append).toHaveBeenCalledTimes(1);
   });
 
-  it('records nothing when the printer throws', async () => {
-    const printer = { printPdf: vi.fn(async () => { throw new Error('offline'); }) };
-    const { launcher, store, log } = setup({ printer });
-    const r = await go(launcher);
-    expect(r).toEqual({ decision: 'failed', message: 'The printer did not answer. Try the ticket again.' });
-    expect(store.append).not.toHaveBeenCalled();
-    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.print-failed', expect.any(Object));
+  describe('double scan', () => {
+    it('CORPUS_ALREADY_OPEN reprints the held page and appends nothing more', async () => {
+      const store = fakeStore();
+      const held = issuance({ issuanceId: 'pa_win', externalId: 'm-2', title: 'Forest Path' });
+      store.append.mockRejectedValueOnce(Object.assign(new Error('corpus open'), { code: 'CORPUS_ALREADY_OPEN', held }));
+      const { launcher, platform, printer } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'Forest Path is printing.' });
+      expect(store.append).toHaveBeenCalledTimes(1);
+      expect(platform.getPrintable).toHaveBeenLastCalledWith('m-2', { paper: 'letter' });
+      expect(printer.printPdf).toHaveBeenCalledTimes(1);
+      expect(store.void).not.toHaveBeenCalled();
+    });
+
+    it('PAGE_ALREADY_OPEN held by this learner reprints our own page', async () => {
+      const store = fakeStore();
+      store.append.mockRejectedValueOnce(raceErr('learner_a'));
+      const { launcher, printer } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'North End Labyrinth is printing.' });
+      expect(store.append).toHaveBeenCalledTimes(1);
+      expect(printer.printPdf).toHaveBeenCalledWith(Buffer.from('pdf:m-1'), expect.any(Object));
+      expect(store.void).not.toHaveBeenCalled();
+    });
+
+    it('two concurrent launches end with one reservation and two prints of the same page', async () => {
+      let k = 0;
+      const { launcher, store, printer } = setup({ rng: () => ((k++ * 0.37) % 1) });
+      const results = await Promise.all([go(launcher), go(launcher)]);
+      expect(results.map((r) => r.decision)).toEqual(['dispatched', 'dispatched']);
+      expect(store.rows).toHaveLength(1);
+      const printed = printer.printPdf.mock.calls.map(([b]) => String(b));
+      expect(printed).toEqual([`pdf:${store.rows[0].externalId}`, `pdf:${store.rows[0].externalId}`]);
+    });
   });
 
-  it('does not record a page a dry-run printer never printed', async () => {
-    const { launcher, store, log } = setup({ printer: fakePrinter({ confirmed: false }) });
-    const r = await go(launcher);
-    expect(r.decision).toBe('dispatched');
-    expect(store.append).not.toHaveBeenCalled();
-    expect(log.info).toHaveBeenCalledWith('school.printed-activity.unconfirmed', expect.objectContaining({ externalId: 'm-1', recorded: false }));
+  describe('sibling race', () => {
+    it('picks again once, excluding the lost page, and prints nothing for the lost one', async () => {
+      const calls = [];
+      const store = fakeStore([], calls);
+      store.append.mockRejectedValueOnce(raceErr('learner_b'));
+      const { launcher, log } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'Forest Path is printing.' });
+      expect(store.append.mock.calls.map(([i]) => i.externalId)).toEqual(['m-1', 'm-2']);
+      expect(calls.filter((c) => c.startsWith('print:'))).toEqual(['print:m-2']);
+      expect(log.warn).toHaveBeenCalledWith('school.printed-activity.page-race', expect.objectContaining({ heldBy: 'learner_b' }));
+    });
+
+    it('a second race answers the race message and prints nothing', async () => {
+      const store = fakeStore();
+      store.append.mockRejectedValueOnce(raceErr('learner_b')).mockRejectedValueOnce(raceErr('learner_b', 'm-2'));
+      const { launcher, printer } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That page was just given to someone else. Scan the ticket again.' });
+      expect(printer.printPdf).not.toHaveBeenCalled();
+    });
+  });
+
+  it('retries a duplicate issuance id once with a fresh id', async () => {
+    let n = 0;
+    const store = fakeStore();
+    store.append.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: 'DUPLICATE_ISSUANCE_ID' }));
+    const { launcher } = setup({ store, rng: () => { n += 1; return n > 8 ? 0.99 : 0; } });
+    expect((await go(launcher)).decision).toBe('dispatched');
+    const ids = store.append.mock.calls.map(([i]) => i.issuanceId);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('a printer throw voids the reservation and answers failed', async () => {
+    const calls = [];
+    const store = fakeStore([], calls);
+    const printer = { printPdf: vi.fn(async () => { throw new Error('offline'); }) };
+    const { launcher, log } = setup({ store, printer });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'The printer did not answer. Try the ticket again.' });
+    expect(calls).toEqual(['append:m-1', 'void:print-failed']);
+    expect(store.void).toHaveBeenCalledWith('learner_a', 'pa_aaaaaaaa', { at: NOW.toISOString(), reason: 'print-failed' });
+    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.print-failed', expect.any(Object));
+    expect(await store.listOpenAll()).toEqual([]);
+  });
+
+  it('a failed void is logged and the answer is still failed', async () => {
+    const store = fakeStore();
+    store.void.mockRejectedValueOnce(new Error('disk'));
+    const printer = { printPdf: vi.fn(async () => { throw new Error('offline'); }) };
+    const { launcher, log } = setup({ store, printer });
+    expect((await go(launcher)).decision).toBe('failed');
+    expect(log.error).toHaveBeenCalledWith('school.printed-activity.void-failed', expect.objectContaining({ reason: 'print-failed' }));
+  });
+
+  it('a dry-run printer voids the new reservation but still answers dispatched', async () => {
+    const calls = [];
+    const store = fakeStore([], calls);
+    const { launcher, log } = setup({ store, printer: fakePrinter(calls, { confirmed: false }) });
+    expect((await go(launcher)).decision).toBe('dispatched');
+    expect(calls).toEqual(['append:m-1', 'print:m-1', 'void:print-unconfirmed']);
+    expect(log.info).toHaveBeenCalledWith('school.printed-activity.unconfirmed', expect.objectContaining({ externalId: 'm-1', reprint: false }));
   });
 
   it('says the level is used up when every page is excluded', async () => {
     const store = fakeStore(POOL.map((p, i) => issuance({ issuanceId: `pa_${i}`, externalId: p.externalId, completedAt: 'x', completedStudyDay: '2026-11-01' })));
     const { launcher, printer, log } = setup({ store });
-    const r = await go(launcher);
-    expect(r).toEqual({ decision: 'failed', message: 'No new maze pages left at this level. Ask a grown-up.' });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'No new maze pages left at this level. Ask a grown-up.' });
     expect(printer.printPdf).not.toHaveBeenCalled();
+    expect(store.append).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith('school.printed-activity.pool-exhausted', expect.any(Object));
   });
 
   it('fails when the platform is not configured', async () => {
     const { launcher, log } = make({ printer: fakePrinter() });
-    const r = await go(launcher);
-    expect(r).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
     expect(log.warn).toHaveBeenCalledWith('school.printed-activity.platform-missing', expect.any(Object));
   });
 
-  it('fails when the platform throws listing or fetching', async () => {
+  it('fails when the platform throws listing or fetching, before anything is reserved or printed', async () => {
     for (const over of [
       { listActivities: vi.fn(async () => { throw new Error('beeloo down'); }) },
       { getPrintable: vi.fn(async () => { throw new Error('beeloo down'); }) },
     ]) {
       const { launcher, store, printer, log } = setup({ platform: fakePlatform(over) });
-      const r = await go(launcher);
-      expect(r).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
       expect(printer.printPdf).not.toHaveBeenCalled();
       expect(store.append).not.toHaveBeenCalled();
       expect(log.warn).toHaveBeenCalledWith('school.printed-activity.platform-failed', expect.any(Object));
     }
   });
 
-  it('answers a page race when a sibling takes the page between pick and append', async () => {
-    const store = fakeStore();
-    store.append.mockRejectedValueOnce(Object.assign(new Error('already open'), { code: 'PAGE_ALREADY_OPEN', heldBy: 'learner_b' }));
-    const { launcher, log } = setup({ store });
-    const r = await go(launcher);
-    expect(r).toEqual({ decision: 'failed', message: 'That page was just given to someone else. Scan the ticket again.' });
-    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.page-race', expect.any(Object));
-  });
-
-  it('fails with an error log when the append fails for another reason', async () => {
+  it('fails with an error log when the append fails for another reason, printing nothing', async () => {
     const store = fakeStore();
     store.append.mockRejectedValueOnce(new Error('disk full'));
-    const { launcher, log } = setup({ store });
-    const r = await go(launcher);
-    expect(r.decision).toBe('failed');
+    const { launcher, log, printer } = setup({ store });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That page could not be saved. Ask a grown-up.' });
+    expect(printer.printPdf).not.toHaveBeenCalled();
     expect(log.error).toHaveBeenCalledWith('school.printed-activity.record-failed', expect.any(Object));
+  });
+
+  it('titles the job by the entry label when the page has no title', async () => {
+    const platform = fakePlatform({ listActivities: vi.fn(async () => [{ externalId: 'm-9', title: null, kind: 'maze', level: 3 }]) });
+    const { launcher } = setup({ platform });
+    expect((await go(launcher)).message).toBe('Maze is printing.');
+  });
+
+  it('a household lookup that throws answers failed, never throws', async () => {
+    const store = fakeStore();
+    store.listOpenAll.mockRejectedValue(new Error('boom'));
+    const { launcher, printer, log } = setup({ store });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Something went wrong printing that page. Ask a grown-up.' });
+    expect(printer.printPdf).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalledWith('school.printed-activity.launch-failed', expect.any(Object));
   });
 
   it('refuses a corpus the learner is not assigned', async () => {
@@ -308,16 +475,24 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(await go(launcher)).toEqual({ decision: 'failed', message: 'This activity is not assigned.' });
   });
 
+  it('an unreadable assignment asks for a grown-up, not "not assigned"', async () => {
+    const { launcher, log, printer } = setup({ assignment: null });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Something went wrong printing that page. Ask a grown-up.' });
+    expect(log.error).toHaveBeenCalledWith('school.printed-activity.enrollment-unreadable', expect.any(Object));
+    expect(printer.printPdf).not.toHaveBeenCalled();
+  });
+
   it('fails honestly with no printer', async () => {
     const { launcher, platform } = setup({ printer: null });
     expect(await go(launcher)).toEqual({ decision: 'failed', message: 'The printer is not set up. Ask a grown-up.' });
     expect(platform.listActivities).not.toHaveBeenCalled();
   });
 
-  it('never throws, even when the store does', async () => {
+  it('never throws, even when the store and the logger both throw', async () => {
     const store = fakeStore();
     store.listForLearner.mockRejectedValue(new Error('boom'));
-    const { launcher } = setup({ store });
-    await expect(go(launcher)).resolves.toMatchObject({ decision: 'failed' });
+    const angry = () => { throw new Error('logger down'); };
+    const { launcher } = setup({ store, log: { debug: angry, info: angry, warn: angry, error: angry } });
+    await expect(go(launcher)).resolves.toEqual({ decision: 'failed', message: 'Something went wrong printing that page. Ask a grown-up.' });
   });
 });

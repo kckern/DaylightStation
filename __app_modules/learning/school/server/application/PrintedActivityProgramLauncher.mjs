@@ -8,21 +8,31 @@
  * ONE ENTRY PER CORPUS. A learner may hold a maze entry and a sudoku entry at
  * once; `programInstance` / `corpusId` picks which. Each is counted alone.
  *
+ * RESERVE, PRINT, VOID. `launch()` appends the issuance (a reservation)
+ * before printing, and voids it if the printer throws or reports a dry run,
+ * so a page is never printed for a child the log does not name, and a race
+ * with a sibling is settled before any paper moves. A double scan of the
+ * ticket reprints the page already held. Details on `launch()`.
+ *
  * Like story time there is no course: `doneToday` is completed sheets on the
  * study day against the entry's `target`, and the program is never terminal.
  * An unreadable enrollment or log is `error: true`, never a false zero; not
  * enrolled is `error: false, enrolled: false`.
  *
  * Application layer: the clock and the rng are injected (no ambient time or
- * randomness), and the store's `PageAlreadyOpenError` is recognised by its
- * `code`, so this file never imports the adapter that defines it.
+ * randomness), and the store's typed refusals (`PAGE_ALREADY_OPEN`,
+ * `CORPUS_ALREADY_OPEN`, `DUPLICATE_ISSUANCE_ID`) are recognised by `code`, so
+ * this file never imports the adapter that defines them.
  */
 import { studyDayForInstant } from '../domain/studyDay.mjs';
 import {
   PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity,
 } from '../domain/printedActivity.mjs';
 
+// The store's typed refusals, recognised by `code` so this file never imports the adapter.
 const PAGE_ALREADY_OPEN = 'PAGE_ALREADY_OPEN';
+const CORPUS_ALREADY_OPEN = 'CORPUS_ALREADY_OPEN';
+const DUPLICATE_ISSUANCE_ID = 'DUPLICATE_ISSUANCE_ID';
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 const MSG = Object.freeze({
@@ -31,7 +41,7 @@ const MSG = Object.freeze({
   noPrinter: 'The printer is not set up. Ask a grown-up.',
   printFailed: 'The printer did not answer. Try the ticket again.',
   race: 'That page was just given to someone else. Scan the ticket again.',
-  record: 'The page printed but could not be recorded. Ask a grown-up.',
+  record: 'That page could not be saved. Ask a grown-up.',
   unexpected: 'Something went wrong printing that page. Ask a grown-up.',
 });
 
@@ -134,16 +144,16 @@ export class PrintedActivityProgramLauncher {
     try {
       enrollment = await this.#enrollmentFor(userId, programInstance);
     } catch (err) {
-      this.#logger.error?.('school.printed-activity.enrollment-unreadable', { userId, corpusId: programInstance, error: errText(err) });
+      this.#log('error', 'school.printed-activity.enrollment-unreadable', { userId, corpusId: programInstance, error: errText(err) });
       return this.#unavailable();
     }
     if (enrollment.unreadable) {
-      this.#logger.error?.('school.printed-activity.enrollment-unreadable', { userId, corpusId: programInstance, reason: 'no readable assignment' });
+      this.#log('error', 'school.printed-activity.enrollment-unreadable', { userId, corpusId: programInstance, reason: 'no readable assignment' });
       return this.#unavailable();
     }
     if (!enrollment.enrolled) return this.#notEnrolled();
     if (enrollment.invalid) {
-      this.#logger.error?.('school.printed-activity.entry-invalid', { userId, corpusId: programInstance, errors: enrollment.invalid });
+      this.#log('error', 'school.printed-activity.entry-invalid', { userId, corpusId: programInstance, errors: enrollment.invalid });
       return this.#unavailable(true);
     }
     const { entry } = enrollment;
@@ -151,7 +161,7 @@ export class PrintedActivityProgramLauncher {
     try {
       rows = await this.#store.listCompletedForDay(userId, entry.corpusId, studyDay);
     } catch (err) {
-      this.#logger.error?.('school.printed-activity.log-unreadable', { userId, corpusId: entry.corpusId, day: studyDay, error: errText(err) });
+      this.#log('error', 'school.printed-activity.log-unreadable', { userId, corpusId: entry.corpusId, day: studyDay, error: errText(err) });
       return this.#unavailable(true);
     }
     const done = Array.isArray(rows) ? rows : [];
@@ -186,15 +196,142 @@ export class PrintedActivityProgramLauncher {
     return `pa_${id}`;
   }
 
+  /** Logging must never turn a `{decision}` answer into a throw. */
+  #log(level, event, data) {
+    try { this.#logger[level]?.(event, data); } catch { /* a broken logger is not the child's problem */ }
+  }
+
+  /** Fetch a page's PDF, answering platform faults as `PlatformFault`. */
+  async #printable(platform, externalId, paper) {
+    try {
+      return await platform.getPrintable(externalId, { paper });
+    } catch (err) { throw new PlatformFault(err); }
+  }
+
   /**
-   * Print one page for this learner and record it. `{decision, message}` —
-   * DoNow's contract; `ResolveScanAction` relays a failed `message` verbatim.
-   * Never throws.
+   * Release a reservation that never reached paper. A failure is logged and
+   * swallowed: the caller's answer to the child does not change.
+   */
+  async #void(userId, issuance, at, reason) {
+    try {
+      const r = await this.#store.void(userId, issuance.issuanceId, { at, reason });
+      this.#log('info', 'school.printed-activity.voided', {
+        learnerId: userId, corpusId: issuance.corpusId, issuanceId: issuance.issuanceId, reason, status: r?.status ?? null,
+      });
+    } catch (err) {
+      this.#log('error', 'school.printed-activity.void-failed', {
+        learnerId: userId, corpusId: issuance.corpusId, issuanceId: issuance.issuanceId, reason, error: errText(err),
+      });
+    }
+  }
+
+  /**
+   * Reserve a new page: pick, fetch, `append`. Never prints. Answers
+   * `{reserved, bytes, issuance}` for a new reservation, `{reprint}` when the
+   * store says this learner already holds a page (a double scan), or
+   * `{failed}` with the child's message.
    *
-   * A learner who already holds an open page in this corpus gets THAT page
-   * again (the lost-sheet path) and nothing is appended: the store would
-   * refuse their own open page, and a second page would leave the first
-   * forever open.
+   * A race with a sibling for the picked page is retried ONCE, excluding that
+   * page; a second race is answered as a race. A duplicate issuanceId is
+   * retried once with a fresh id. Nothing has been printed at any of these
+   * points, so a lost race never puts paper in the wrong child's hand.
+   */
+  async #reserve({ userId, entry, platform, mine, now, studyDay }) {
+    const { platform: platformId, kind, level, paper } = entry.activity;
+    let pool;
+    try {
+      pool = await platform.listActivities({ kind, level, paper });
+    } catch (err) { throw new PlatformFault(err); }
+    const householdOpen = (await this.#store.listOpenAll() ?? [])
+      .filter((r) => r?.platform === platformId)
+      .map((r) => r.externalId);
+    // History is pages this child actually got: a voided reservation never
+    // reached paper, so it does not count against the never-repeat rule.
+    const history = mine.filter((r) => r.voidedAt == null && r.platform === platformId).map((r) => r.externalId);
+    const exclude = new Set([...history, ...householdOpen]);
+
+    let raceRetried = false;
+    let idRetried = false;
+    let page = null;
+    let bytes = null;
+    for (;;) {
+      if (!page) {
+        page = pickActivity({ pool, exclude, rng: this.#rng });
+        if (!page) {
+          this.#log('warn', 'school.printed-activity.pool-exhausted', {
+            userId, corpusId: entry.corpusId, platform: platformId, kind, level, poolSize: Array.isArray(pool) ? pool.length : 0,
+          });
+          return { failed: `No new ${kind} pages left at this level. Ask a grown-up.` };
+        }
+        bytes = await this.#printable(platform, page.externalId, paper);
+      }
+      const issuance = {
+        issuanceId: this.#issuanceId(),
+        learnerId: userId,
+        programId: PRINTED_ACTIVITY_PROGRAM_ID,
+        corpusId: entry.corpusId,
+        platform: platformId,
+        externalId: page.externalId,
+        title: page.title ?? null,
+        kind,
+        level,
+        issuedAt: now.toISOString(),
+        issuedStudyDay: studyDay,
+        completedAt: null,
+        completedStudyDay: null,
+        completedVia: null,
+      };
+      try {
+        await this.#store.append(issuance);
+        return { reserved: issuance, bytes };
+      } catch (err) {
+        if (err?.code === CORPUS_ALREADY_OPEN && err.held) {
+          // A second scan of the ticket landed between our read and our write.
+          return { reprint: err.held };
+        }
+        if (err?.code === PAGE_ALREADY_OPEN && err.heldBy === userId) {
+          return { reprint: { ...issuance, issuanceId: err.issuanceId ?? null } };
+        }
+        if (err?.code === PAGE_ALREADY_OPEN) {
+          this.#log('warn', 'school.printed-activity.page-race', {
+            userId, corpusId: entry.corpusId, platform: platformId, externalId: page.externalId,
+            heldBy: err.heldBy ?? null, retried: raceRetried,
+          });
+          if (raceRetried) return { failed: MSG.race };
+          raceRetried = true;
+          exclude.add(page.externalId);
+          page = null;
+          continue;
+        }
+        if (err?.code === DUPLICATE_ISSUANCE_ID && !idRetried) {
+          idRetried = true;
+          continue;
+        }
+        this.#log('error', 'school.printed-activity.record-failed', {
+          userId, corpusId: entry.corpusId, platform: platformId, externalId: page.externalId, error: errText(err),
+        });
+        return { failed: MSG.record };
+      }
+    }
+  }
+
+  /**
+   * Print one page for this learner. `{decision, message}` — DoNow's contract;
+   * `ResolveScanAction` relays a failed `message` verbatim. Never throws.
+   *
+   * RESERVE, THEN PRINT, THEN VOID ON FAILURE. A new page is `append`ed (the
+   * reservation) before a byte reaches the printer; a printer throw voids it
+   * (`print-failed`) and a dry-run printer's `confirmed === false` voids it
+   * (`print-unconfirmed`) — IssueDocument's rollback of an unconfirmed
+   * allocation, for the same reason: a durable claim must not point at paper
+   * that does not exist.
+   *
+   * REPRINT. A learner who already holds an open page in this corpus gets THAT
+   * page again (the lost-sheet path); nothing is appended or voided. A double
+   * scan resolves the same way even when both scans race past the read: the
+   * store refuses the second reservation (`CORPUS_ALREADY_OPEN`, or
+   * `PAGE_ALREADY_OPEN` held by this learner) and the loser reprints the
+   * winner's page.
    */
   async launch({ userId, corpusId }) {
     const failed = (message) => ({ decision: 'failed', message });
@@ -203,118 +340,82 @@ export class PrintedActivityProgramLauncher {
       try {
         enrollment = await this.#enrollmentFor(userId, corpusId);
       } catch (err) {
-        this.#logger.error?.('school.printed-activity.enrollment-unreadable', { userId, corpusId, error: errText(err) });
-        return failed(MSG.notAssigned);
+        enrollment = { unreadable: true, error: errText(err) };
+      }
+      if (enrollment.unreadable) {
+        this.#log('error', 'school.printed-activity.enrollment-unreadable', { userId, corpusId, error: enrollment.error ?? 'no readable assignment' });
+        return failed(MSG.unexpected);
       }
       if (enrollment.invalid) {
-        this.#logger.error?.('school.printed-activity.entry-invalid', { userId, corpusId, errors: enrollment.invalid });
+        this.#log('error', 'school.printed-activity.entry-invalid', { userId, corpusId, errors: enrollment.invalid });
       }
       if (!enrollment.entry) return failed(MSG.notAssigned);
       const { entry } = enrollment;
-      const { platform: platformId, kind, level, paper } = entry.activity;
+      const { platform: platformId, kind, paper } = entry.activity;
 
       const platform = this.#platforms.get(platformId);
       if (!platform) {
-        this.#logger.warn?.('school.printed-activity.platform-missing', { userId, corpusId, platform: platformId });
+        this.#log('warn', 'school.printed-activity.platform-missing', { userId, corpusId, platform: platformId });
         return failed(MSG.platform);
       }
       if (!this.#printer || typeof this.#printer.printPdf !== 'function') {
-        this.#logger.warn?.('school.printed-activity.printer-missing', { userId, corpusId });
+        this.#log('warn', 'school.printed-activity.printer-missing', { userId, corpusId });
         return failed(MSG.noPrinter);
       }
 
+      // One clock read: issuedAt and issuedStudyDay must name the same instant.
+      const now = this.#clock();
+      const studyDay = studyDayForInstant(now.getTime(), { timezone: this.#timezone });
+
       const mine = (await this.#store.listForLearner(userId) ?? []).filter((r) => r?.corpusId === entry.corpusId);
-      const open = mine.filter((r) => r.completedAt == null).at(-1) ?? null;
-
-      let page;
-      if (open) {
-        page = { externalId: open.externalId, title: open.title };
-      } else {
-        let pool;
-        try {
-          pool = await platform.listActivities({ kind, level, paper });
-        } catch (err) { throw new PlatformFault(err); }
-        const householdOpen = (await this.#store.listOpenAll() ?? [])
-          .filter((r) => r?.platform === platformId)
-          .map((r) => r.externalId);
-        const exclude = new Set([...mine.map((r) => r.externalId), ...householdOpen]);
-        page = pickActivity({ pool, exclude, rng: this.#rng });
-        if (!page) {
-          this.#logger.warn?.('school.printed-activity.pool-exhausted', {
-            userId, corpusId, platform: platformId, kind, level, poolSize: Array.isArray(pool) ? pool.length : 0,
-          });
-          return failed(`No new ${kind} pages left at this level. Ask a grown-up.`);
-        }
+      const opens = mine.filter((r) => r.completedAt == null && r.voidedAt == null);
+      if (opens.length > 1) {
+        this.#log('warn', 'school.printed-activity.multiple-open', { userId, corpusId, issuanceIds: opens.map((r) => r.issuanceId) });
       }
-      const { externalId } = page;
-      const title = page.title || this.#label(entry);
+      let reprint = opens.reduce((a, b) => (a == null || String(b.issuedAt ?? '') >= String(a.issuedAt ?? '') ? b : a), null);
 
-      let bytes;
-      try {
-        bytes = await platform.getPrintable(externalId, { paper });
-      } catch (err) { throw new PlatformFault(err); }
+      let reserved = null;
+      let bytes = null;
+      if (!reprint) {
+        const r = await this.#reserve({ userId, entry, platform, mine, now, studyDay });
+        if (r.failed) return failed(r.failed);
+        if (r.reprint) reprint = r.reprint;
+        else ({ reserved, bytes } = r);
+      }
+      const page = reprint ?? reserved;
+      if (reprint) bytes = await this.#printable(platform, page.externalId, paper);
+      const title = page.title || this.#label(entry);
 
       let result;
       try {
-        result = await this.#printer.printPdf(bytes, { jobName: `${userId} ${kind} ${externalId}`, user: userId, copies: 1 });
+        result = await this.#printer.printPdf(bytes, { jobName: `${userId} ${kind} ${page.externalId}`, user: userId, copies: 1 });
       } catch (err) {
-        this.#logger.warn?.('school.printed-activity.print-failed', { userId, corpusId, platform: platformId, externalId, error: errText(err) });
+        this.#log('warn', 'school.printed-activity.print-failed', {
+          userId, corpusId, platform: platformId, externalId: page.externalId, reprint: Boolean(reprint), error: errText(err),
+        });
+        if (reserved) await this.#void(userId, reserved, now.toISOString(), 'print-failed');
         return failed(MSG.printFailed);
       }
       // `confirmed === false` is IssueDocument's dry-run signal: nothing came
-      // out of the tray. IssueDocument rolls a reservation back on it rather
-      // than leave a durable claim pointing at paper that does not exist, and
-      // an issuance is exactly such a claim (it holds the page against every
-      // sibling and is "evidence" in a never-pruned log) — so an unconfirmed
-      // NEW pick is not recorded. See IssueDocument#printConfirmed.
+      // out of the tray. See IssueDocument#printConfirmed.
       const confirmed = result?.confirmed !== false;
-
-      if (!open && confirmed) {
-        try {
-          await this.#store.append({
-            issuanceId: this.#issuanceId(),
-            learnerId: userId,
-            programId: PRINTED_ACTIVITY_PROGRAM_ID,
-            corpusId: entry.corpusId,
-            platform: platformId,
-            externalId,
-            title: page.title ?? null,
-            kind,
-            level,
-            issuedAt: this.#clock().toISOString(),
-            issuedStudyDay: this.studyDay(),
-            completedAt: null,
-            completedStudyDay: null,
-            completedVia: null,
-          });
-        } catch (err) {
-          if (err?.code === PAGE_ALREADY_OPEN) {
-            // A sibling was handed this page between our pick and our write.
-            // The sheet already printed is harmless: its scan credits whoever
-            // holds it open.
-            this.#logger.warn?.('school.printed-activity.page-race', { userId, corpusId, platform: platformId, externalId, heldBy: err.heldBy ?? null });
-            return failed(MSG.race);
-          }
-          this.#logger.error?.('school.printed-activity.record-failed', { userId, corpusId, platform: platformId, externalId, error: errText(err) });
-          return failed(MSG.record);
-        }
-      }
       if (!confirmed) {
-        this.#logger.info?.('school.printed-activity.unconfirmed', {
-          learnerId: userId, corpusId, platform: platformId, externalId, reprint: Boolean(open), recorded: false,
+        this.#log('info', 'school.printed-activity.unconfirmed', {
+          learnerId: userId, corpusId, platform: platformId, externalId: page.externalId, reprint: Boolean(reprint),
         });
+        if (reserved) await this.#void(userId, reserved, now.toISOString(), 'print-unconfirmed');
       }
 
-      this.#logger.info?.('school.printed-activity.issued', {
-        learnerId: userId, corpusId, platform: platformId, externalId, reprint: Boolean(open), confirmed,
+      this.#log('info', 'school.printed-activity.issued', {
+        learnerId: userId, corpusId, platform: platformId, externalId: page.externalId, reprint: Boolean(reprint), confirmed,
       });
       return { decision: 'dispatched', message: `${title} is printing.` };
     } catch (err) {
       if (err instanceof PlatformFault) {
-        this.#logger.warn?.('school.printed-activity.platform-failed', { userId, corpusId, error: err.message });
+        this.#log('warn', 'school.printed-activity.platform-failed', { userId, corpusId, error: err.message });
         return failed(MSG.platform);
       }
-      this.#logger.error?.('school.printed-activity.launch-failed', { userId, corpusId, error: errText(err) });
+      this.#log('error', 'school.printed-activity.launch-failed', { userId, corpusId, error: errText(err) });
       return failed(MSG.unexpected);
     }
   }
