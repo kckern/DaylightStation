@@ -40,6 +40,12 @@ export const TOP_RUNG = PRESENCE_RUNGS.length - 1;
 /** Answer notes plus this grace never count as evidence (the kiosk's CHECK_IN_GRACE_MS). */
 export const ANSWER_GRACE_MS = 3000;
 
+const REPLAY_KEEP = 400;
+// Re-check a passed deadline at a note at most this often (the kiosk polls each
+// second; past the deadline the evidence turns to none only if the burst turns
+// to spam, so a coarser re-check changes nothing measurable and keeps replay fast).
+const RECHECK_MS = 5000;
+
 const posNum = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : d);
 const bool = (v, d) => (typeof v === 'boolean' ? v : d);
 function posList(v, d) {
@@ -154,23 +160,26 @@ export function rungCostNotes(rung) {
  * answer); once a check-in has been answered, the keepalive deadline (R5)
  * opens one at answer + keepaliveFactor × interval while the evidence is none.
  * @param {Array<{t:number,note:number,velocity:number}>} events  ms
- * @returns {Array<{atMs, rung, scales, answered:true, minimal}>}
+ * Every sitting starts at rung 0 (owner, 2026-11-13: the run resets on each lesson video).
+ * @returns {Array<{atMs, rung, scales, answered:true, minimal, evidence}>}
  */
-export function replayLadder(events, playedSec, cfg = ladderConfig(), { preschool = false, initialRung = 0 } = {}) {
+export function replayLadder(events, playedSec, cfg = ladderConfig(), { preschool = false } = {}) {
   const evs = (Array.isArray(events) ? events : [])
     .filter((e) => e && Number.isFinite(e.t) && Number.isFinite(e.note))
     .slice().sort((a, b) => a.t - b.t);
   const endMs = Math.max(0, Number(playedSec) || 0) * 1000;
   const burstOpts = preschool ? PRESCHOOL_PRACTICE : {};
   const out = [];
-  let rung = clampRung(initialRung, cfg);
-  let lastAnsweredAt = rung > 0 ? 0 : null;
+  let rung = 0;
+  let lastAnsweredAt = null;
   let lastActivity = 0;
+  let lastCheckAt = -Infinity;
   let i = 0;
 
   const evidenceAt = (tMs) => {
     const from = lastAnsweredAt + ANSWER_GRACE_MS;
-    const win = evs.filter((e) => e.t >= from && e.t <= tMs);
+    // The kiosk's practice meter keeps the most recent ~400 events for since().
+    const win = evs.filter((e) => e.t >= from && e.t <= tMs).slice(-REPLAY_KEEP);
     const b = classifyBurst(win, burstOpts);
     return classifyInterval({ legitNotes: b.legitNotes, verdict: b.verdict, intervalMs: tMs - from }, cfg);
   };
@@ -180,7 +189,7 @@ export function replayLadder(events, playedSec, cfg = ladderConfig(), { preschoo
     const to = evidence === 'first' ? 0 : nextRung(rung, evidence, cfg);
     rung = to;
     const step = checkInStepFor(rung, {}, cfg);
-    out.push({ atMs: tMs, rung, scales: step.kind === 'scales' ? step.count : 0, answered: true, minimal: evidence === 'none' });
+    out.push({ atMs: tMs, rung, scales: step.kind === 'scales' ? step.count : 0, answered: true, minimal: evidence === 'none', evidence });
     lastAnsweredAt = tMs;
     lastActivity = tMs;
   };
@@ -192,14 +201,13 @@ export function replayLadder(events, playedSec, cfg = ladderConfig(), { preschoo
     const deadlineAt = deadlineOn ? lastAnsweredAt + cfg.keepaliveFactor * intervalMs : Infinity;
     const next = i < evs.length ? evs[i].t : Infinity;
 
-    // The deadline has passed: the kiosk re-checks every second, and the
-    // evidence only changes at a note — so check at the deadline and at each
-    // note after it.
+    // The deadline has passed: check at the deadline, then at a later note
+    // (evidence only changes at a note) at most once per RECHECK_MS.
     if (deadlineAt <= idleAt) {
       const checkAt = Math.max(deadlineAt, lastActivity);
-      if (checkAt <= endMs && checkAt < next && checkAt < idleAt && evidenceAt(checkAt) === 'none') {
-        fire(checkAt);
-        continue;
+      if (checkAt <= endMs && checkAt < next && checkAt < idleAt && checkAt - lastCheckAt >= RECHECK_MS) {
+        lastCheckAt = checkAt;
+        if (evidenceAt(checkAt) === 'none') { fire(checkAt); continue; }
       }
     }
     if (next < idleAt) {
