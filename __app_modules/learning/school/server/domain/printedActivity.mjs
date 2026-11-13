@@ -84,8 +84,9 @@ export function validatePrintedActivityEnrollment(raw) {
 }
 
 /**
- * Uniform pick over `pool` minus the external ids in `exclude` — the pages this
- * child has already been given in the corpus. Null when nothing is left, which
+ * Uniform pick over `pool` minus the external ids in `exclude` — every page on
+ * the platform already given to anyone in the household (voided reservations
+ * aside). Null when nothing is left, which
  * the caller must surface rather than repeat a page.
  *
  * @param {{pool: {externalId: string}[], exclude: Iterable<string>, rng: () => number}} args

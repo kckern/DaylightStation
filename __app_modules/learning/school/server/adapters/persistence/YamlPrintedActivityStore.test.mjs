@@ -119,6 +119,23 @@ describe('YamlPrintedActivityStore', () => {
     expect(open.map((r) => r.issuanceId).sort()).toEqual(['a2', 'b1']);
   });
 
+  it('lists every issued page id on a platform across learners, open or completed, never voided', async () => {
+    const subject = store();
+    await subject.append(issuance({ issuanceId: 'a1', externalId: 'done' }));
+    await subject.complete('learner_a', 'a1', done);
+    await subject.append(issuance({ issuanceId: 'b1', learnerId: 'learner_b', externalId: 'open' }));
+    await subject.append(issuance({ issuanceId: 'b2', learnerId: 'learner_b', corpusId: 'beeloo:sudoku', externalId: 'gone' }));
+    await subject.void('learner_b', 'b2', { at: '2026-11-14T16:03:00.000Z', reason: 'print-failed' });
+    await subject.append(issuance({ issuanceId: 'a2', corpusId: 'other:x', platform: 'other', externalId: 'elsewhere' }));
+    await subject.append(issuance({ issuanceId: 'b3', learnerId: 'learner_b', corpusId: 'beeloo:x', externalId: 'done' }));
+    // ^ the same page again (the first copy is completed, so not open): two rows, one id
+
+    expect((await subject.listIssuedExternalIds('beeloo')).sort()).toEqual(['done', 'open']);
+    expect(await subject.listIssuedExternalIds('other')).toEqual(['elsewhere']);
+    expect(await subject.listIssuedExternalIds('nobody')).toEqual([]);
+    expect(await subject.listIssuedExternalIds('')).toEqual([]);
+  });
+
   it('findAny returns the most recent issuance of a page, completed or not', async () => {
     const subject = store();
     await subject.append(issuance());
@@ -304,6 +321,7 @@ describe('YamlPrintedActivityStore', () => {
     expect((await subject.findOpen({ platform: 'beeloo', externalId: 'glD5B71Bj' })).learnerId).toBe('learner_b');
     expect((await subject.listOpenAll()).map((r) => r.learnerId)).toEqual(['learner_b']);
     expect((await subject.findAny({ platform: 'beeloo', externalId: 'glD5B71Bj' })).learnerId).toBe('learner_b');
+    expect(await subject.listIssuedExternalIds('beeloo')).toEqual(['glD5B71Bj']);
     expect(logger.warn).toHaveBeenCalledWith('school.printed-activity.lookup-partial',
       expect.objectContaining({ learnerIds: ['learner_a'] }));
   });

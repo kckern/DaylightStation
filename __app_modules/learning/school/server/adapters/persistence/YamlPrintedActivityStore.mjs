@@ -11,7 +11,7 @@
  * "has this child had this page before" (the whole history) and "who holds this
  * page" (every learner), and neither has a day in it. A child prints a sheet or
  * two a day, so a file stays small for years. The cross-learner lookups
- * (`findOpen`, `findAny`, `listOpenAll`) read every learner file; that is a
+ * (`findOpen`, `findAny`, `listOpenAll`, `listIssuedExternalIds`) read every learner file; that is a
  * handful of small files in a household.
  *
  * The read/write posture is `YamlReadingLogStore`'s, for the same reasons (its
@@ -340,6 +340,16 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   /** @inheritdoc */
   async listOpenAll() {
     return this.#allRows().filter(isOpen);
+  }
+
+  /** @inheritdoc */
+  async listIssuedExternalIds(platform) {
+    if (!isNonEmptyString(platform)) return [];
+    const ids = new Set();
+    for (const row of this.#allRows()) {
+      if (row.platform === platform && row.voidedAt == null && isNonEmptyString(row.externalId)) ids.add(row.externalId);
+    }
+    return [...ids];
   }
 
   /** @inheritdoc */

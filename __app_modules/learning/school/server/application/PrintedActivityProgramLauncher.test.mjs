@@ -57,6 +57,8 @@ function fakeStore(rows = [], calls = []) {
     }),
     listForLearner: vi.fn(async (learnerId) => all.filter((r) => r.learnerId === learnerId)),
     listOpenAll: vi.fn(async () => all.filter(isOpen)),
+    listIssuedExternalIds: vi.fn(async (platform) => [...new Set(all
+      .filter((r) => r.platform === platform && r.voidedAt == null).map((r) => r.externalId))]),
     listCompletedForDay: vi.fn(async (learnerId, corpusId, day) => all.filter((r) => r.learnerId === learnerId
       && r.corpusId === corpusId && r.voidedAt == null && r.completedStudyDay === day)),
   };
@@ -255,6 +257,26 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     const { launcher } = setup({ store });
     expect((await go(launcher)).decision).toBe('dispatched');
     expect(store.append.mock.calls[0][0].externalId).toBe('m-3');
+  });
+
+  it('never picks a page a sibling completed, so an old copy cannot credit this child', async () => {
+    const store = fakeStore([
+      issuance({ issuanceId: 'pa_s1', learnerId: 'learner_b', externalId: 'm-1', completedAt: '2026-11-01T17:00:00.000Z', completedStudyDay: '2026-11-01' }),
+      issuance({ issuanceId: 'pa_s2', learnerId: 'learner_b', corpusId: 'beeloo:sudoku', externalId: 'm-2', completedAt: '2026-11-02T17:00:00.000Z', completedStudyDay: '2026-11-02' }),
+    ]);
+    const { launcher } = setup({ store });
+    expect((await go(launcher)).decision).toBe('dispatched');
+    expect(store.append.mock.calls[0][0].externalId).toBe('m-3');
+    expect(store.listIssuedExternalIds).toHaveBeenCalledWith('beeloo');
+  });
+
+  it('a page a sibling had voided is eligible again: it never reached paper', async () => {
+    const store = fakeStore([issuance({
+      issuanceId: 'pa_s1', learnerId: 'learner_b', externalId: 'm-1', voidedAt: '2026-11-01T17:00:00.000Z', voidReason: 'print-failed',
+    })]);
+    const { launcher } = setup({ store });
+    await go(launcher);
+    expect(store.append.mock.calls[0][0].externalId).toBe('m-1');
   });
 
   it('a voided page is not history: the child never got it', async () => {
@@ -460,7 +482,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
 
   it('a household lookup that throws answers failed, never throws', async () => {
     const store = fakeStore();
-    store.listOpenAll.mockRejectedValue(new Error('boom'));
+    store.listIssuedExternalIds.mockRejectedValue(new Error('boom'));
     const { launcher, printer, log } = setup({ store });
     expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Something went wrong printing that page. Ask a grown-up.' });
     expect(printer.printPdf).not.toHaveBeenCalled();

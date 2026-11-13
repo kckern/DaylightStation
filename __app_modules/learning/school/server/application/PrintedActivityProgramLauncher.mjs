@@ -14,6 +14,11 @@
  * with a sibling is settled before any paper moves. A double scan of the
  * ticket reprints the page already held. Details on `launch()`.
  *
+ * A PAGE IS NEVER ISSUED TWICE IN THE HOUSEHOLD. Once a page has reached
+ * paper for any child (open or completed), no child is given it again on that
+ * platform: the QR on every copy is the same, so a re-issue would let an old
+ * copy credit its new holder. Voided reservations stay eligible.
+ *
  * Like story time there is no course: `doneToday` is completed sheets on the
  * study day against the entry's `target`, and the program is never terminal.
  * An unreadable enrollment or log is `error: true`, never a false zero; not
@@ -236,19 +241,18 @@ export class PrintedActivityProgramLauncher {
    * retried once with a fresh id. Nothing has been printed at any of these
    * points, so a lost race never puts paper in the wrong child's hand.
    */
-  async #reserve({ userId, entry, platform, mine, now, studyDay }) {
+  async #reserve({ userId, entry, platform, now, studyDay }) {
     const { platform: platformId, kind, level, paper } = entry.activity;
     let pool;
     try {
       pool = await platform.listActivities({ kind, level, paper });
     } catch (err) { throw new PlatformFault(err); }
-    const householdOpen = (await this.#store.listOpenAll() ?? [])
-      .filter((r) => r?.platform === platformId)
-      .map((r) => r.externalId);
-    // History is pages this child actually got: a voided reservation never
-    // reached paper, so it does not count against the never-repeat rule.
-    const history = mine.filter((r) => r.voidedAt == null && r.platform === platformId).map((r) => r.externalId);
-    const exclude = new Set([...history, ...householdOpen]);
+    // Never-repeat is household-wide per platform: every page that reached
+    // paper for ANY child (open or completed) is excluded. Every copy of a page
+    // carries the same QR, so re-issuing a sibling's completed page would let
+    // that old copy's scan credit this child. A voided reservation never
+    // reached paper, so the store leaves it out and it stays eligible.
+    const exclude = new Set(await this.#store.listIssuedExternalIds(platformId) ?? []);
 
     let raceRetried = false;
     let idRetried = false;
@@ -377,7 +381,7 @@ export class PrintedActivityProgramLauncher {
       let reserved = null;
       let bytes = null;
       if (!reprint) {
-        const r = await this.#reserve({ userId, entry, platform, mine, now, studyDay });
+        const r = await this.#reserve({ userId, entry, platform, now, studyDay });
         if (r.failed) return failed(r.failed);
         if (r.reprint) reprint = r.reprint;
         else ({ reserved, bytes } = r);

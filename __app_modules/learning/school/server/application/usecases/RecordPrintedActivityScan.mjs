@@ -18,6 +18,11 @@
  * the page was printed, the scan still credits and logs
  * `school.printed-activity.scan-orphaned`.
  *
+ * A COMPLETED PAGE IS NEVER RE-ISSUED, to anyone in the household (the
+ * launcher excludes every non-voided issuance on the platform). Every copy of
+ * a page carries the same QR, so re-issuing it would let an old copy credit
+ * whoever holds it now.
+ *
  * NEVER THROWS. The answer becomes the scanner's Outcome (`status`, `ok`,
  * `message`), and every path but invalid input tries to print a slip saying
  * what happened. A printer that is missing or refuses costs the slip, never

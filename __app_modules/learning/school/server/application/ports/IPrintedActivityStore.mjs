@@ -8,8 +8,11 @@
  * The rules this store exists to serve (enforced by the caller, answered here):
  *   - a page id resolves to exactly one child, so a page is never OPEN (printed,
  *     not yet scanned) for two children at once — `findOpen` is that lookup;
- *   - a child never gets the same page twice in a corpus — `listForLearner`
- *     supplies the exclude set;
+ *   - a page is never issued twice in the household, to the same child or a
+ *     sibling, once it has reached paper — `listIssuedExternalIds` supplies the
+ *     exclude set. Every copy of a page carries the same QR, so a re-issue
+ *     would let an old copy's scan credit whoever holds the page now. A voided
+ *     reservation never reached paper and stays eligible;
  *   - a scan completes the open issuance, credited on the study day of the scan
  *     — `complete` takes that day;
  *   - scanning twice must not count twice — `complete` answers `already` and
@@ -30,7 +33,7 @@
  * completedVia, voidedAt, voidReason}`. Open means `completedAt == null` and
  * `voidedAt == null` (older rows without `voidedAt` read as not voided).
  *
- * CROSS-LEARNER LOOKUPS CAN BE PARTIAL. `listOpenAll`, `findOpen` and `findAny`
+ * CROSS-LEARNER LOOKUPS CAN BE PARTIAL. `listOpenAll`, `listIssuedExternalIds`, `findOpen` and `findAny`
  * never throw; a learner whose record cannot be read contributes nothing, and
  * the implementation logs `school.printed-activity.lookup-partial` naming them.
  * `append` is the authority on "one open issuance per page": it re-checks
@@ -53,6 +56,15 @@ export class IPrintedActivityStore {
 
   /** @returns {Promise<object[]>} every open issuance across all learners */
   async listOpenAll() { throw new Error('IPrintedActivityStore.listOpenAll must be implemented'); }
+
+  /**
+   * The household's never-repeat set for one platform.
+   * @param {string} platform
+   * @returns {Promise<string[]>} distinct externalIds of every NON-voided
+   *   issuance (open or completed) on that platform, across all learners;
+   *   [] for a blank platform
+   */
+  async listIssuedExternalIds() { throw new Error('IPrintedActivityStore.listIssuedExternalIds must be implemented'); }
 
   /**
    * @param {{platform: string, externalId: string}} key
