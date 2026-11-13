@@ -111,3 +111,10 @@ it('an assessment change carries the study day of the session it settled', () =>
   gateway.sessionOutcomeRecorded({ learnerId: 'kid', unitId: 'u', sessionId: 's', result: 'passed', studyDay: '2026-11-13' });
   expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'assessment-changed', learnerId: 'kid', unitId: 'u', sessionId: 's', studyDay: '2026-11-13' } });
 });
+
+it('a lesson finished away from the tablet is broadcast for its banner', () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  gateway.workCompleted({ learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'Two-digit subtraction' });
+  expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'work-complete', learnerId: 'kid', sessionId: 's', unitId: 'u', title: 'Two-digit subtraction' } });
+});

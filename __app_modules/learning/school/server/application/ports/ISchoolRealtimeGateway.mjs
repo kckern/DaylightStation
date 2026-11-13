@@ -35,6 +35,7 @@ export class ISchoolRealtimeGateway {
   relayCoinsChanged() { return () => {}; }
   storyReadRecorded(_announcement) { throw new Error('storyReadRecorded must be implemented'); }
   printedActivityScanned(_announcement) { /* optional */ }
+  workCompleted(_announcement) { /* optional */ }
   readingRoomChanged(_location, _announcement) { throw new Error('readingRoomChanged must be implemented'); }
   printAgendaReady(_announcement) { throw new Error('printAgendaReady must be implemented'); }
   printScanResolved(_announcement) { throw new Error('printScanResolved must be implemented'); }

@@ -782,7 +782,8 @@ export function createSchoolPrintScanConsumer({
                     // The bridge returns the authoritative session id (a
                     // composed card itself has no single session owner).
                     // eslint-disable-next-line no-await-in-loop
-                    const settled = await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                    // `announce: false`: this scan plays its own banner on the tablet.
+                    const settled = await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId, announce: false });
                     settledResult = settled?.result ?? settledResult;
                     printed = settled?.printed === true;
                     printReason = printed ? null : (settled?.printReason ?? 'unknown');

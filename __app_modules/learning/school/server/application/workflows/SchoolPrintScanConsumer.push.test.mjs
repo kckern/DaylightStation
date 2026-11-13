@@ -405,3 +405,15 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(reads.studentName).toEqual([]);
   });
 });
+
+describe('SchoolPrintScanConsumer — the scan speaks for itself', () => {
+  // The scan plays its own `scan-graded` banner, so the settle it triggers
+  // must not play a second "Lesson done!" on the same tablet.
+  it('closes the graded session without asking the tablet to announce it again', async () => {
+    const calls = [];
+    const { feed } = harness({ closeSessionOutcome: { async execute(args) { calls.push(args); return SETTLED; } } });
+    await feed();
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((args) => args.announce === false)).toBe(true);
+  });
+});

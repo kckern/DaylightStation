@@ -144,6 +144,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   relayCoinsChanged() { return this.onCoinsChanged((fact) => this.coinsChanged(fact)); }
   storyReadRecorded(announcement) { return this.#broadcast('school', { event: 'story-read', ...announcement }); }
   printedActivityScanned(announcement) { return this.#broadcast('school', { event: 'printed-activity-complete', ...announcement }); }
+  workCompleted(announcement) { return this.#broadcast('school', { event: 'work-complete', ...announcement }); }
   readingRoomChanged(location, { kind, ...announcement }) { return this.#broadcast(`reading:${location}`, { event: kind, ...announcement }); }
   printAgendaReady(announcement) { return this.#broadcast('omr', { event: 'agenda-suppressed', ...announcement }); }
   printScanResolved({ kind, ...announcement }) { return this.#broadcast(DEFAULT_PRINT_TOPIC, { event: kind, ...announcement }); }

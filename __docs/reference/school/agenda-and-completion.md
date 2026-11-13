@@ -506,6 +506,14 @@ of work on one study day; the board ignores one whose `studyDay` is not the day
 it shows. A backdated `book-log-changed` still re-reads, because it changes
 today's reading circle.
 
+**Banners for work done elsewhere.** A session settled away from the tablet
+also sends `work-complete` (`learnerId`, `sessionId`, `unitId`, `title`,
+`studyDay`), and the Portal plays **Lesson done!** naming the lesson. Only a
+first, passing settle that prints its result announces; the scanner opts out
+(`CloseSessionOutcome.execute({ announce: false })`) because it plays its own
+`scan-graded` banner, and a recovery or resettle is not announced. A failed
+announcement logs `school.session.broadcast-failed`; the grade stands.
+
 The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
 does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner

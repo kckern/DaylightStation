@@ -504,6 +504,23 @@ describe('useScanCeremony', () => {
     expect(result.current.current.detail).toContain('Unicorn Coloring');
   });
 
+  // A lesson finished away from the tablet (fitness, a TV launch, the review
+  // queue) is announced here, so the child sees it counted.
+  it('shows a lesson finished elsewhere, naming it', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'school', event: 'work-complete', learnerId: 'user_5', title: 'Two-digit subtraction' });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Lesson done!' });
+    expect(result.current.current.detail).toBe('Two-digit subtraction — that counts for today.');
+  });
+
+  it('shows a lesson finished elsewhere with no title rather than nothing', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'school', event: 'work-complete', learnerId: 'user_5', title: null }); });
+    expect(result.current.current).toMatchObject({ title: 'Lesson done!', detail: 'That counts for today.' });
+  });
+
   it('shows a story read with no title at all rather than nothing', () => {
     const { result } = mount();
     act(() => {

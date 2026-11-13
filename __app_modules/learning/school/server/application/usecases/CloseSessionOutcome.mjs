@@ -246,7 +246,7 @@ export class CloseSessionOutcome {
   }
 
   async execute({
-    sessionId, honorClose = false, signedOff = false, signedOffBy = null, rewardOverride = null,
+    sessionId, honorClose = false, signedOff = false, signedOffBy = null, rewardOverride = null, announce = true,
   } = {}) {
     if (signedOff === true) {
       this.#grownUps.assert(signedOffBy, 'Only a grown-up can sign off a reward', {
@@ -281,7 +281,7 @@ export class CloseSessionOutcome {
       // that decides has genuinely changed its answer.
       const revised = await this.#reviseAfterGateRead({ state, unit, assignments });
       if (revised) {
-        return this.#recordOutcomeAndSettle({
+        return this.#recordOutcomeAndSettle({ announce,
           sessionId, state, unit, nowIso, signedOff, rewardOverride,
           result: revised.result, reason: revised.reason, passingPercent: revised.passingPercent, assignments,
         });
@@ -303,14 +303,14 @@ export class CloseSessionOutcome {
       if (state.state !== 'launch_dispatched' && state.state !== 'program_dispatched') {
         return this.#unavailable(sessionId, 'That work has not been marked yet.');
       }
-      return this.#recordOutcomeAndSettle({
+      return this.#recordOutcomeAndSettle({ announce,
         sessionId, state, unit, nowIso, signedOff, rewardOverride, result: 'passed',
         reason: state.state === 'program_dispatched' ? 'program_complete' : 'launch_dispatched', assignments,
       });
     }
 
     if (state.state === 'external_activity_assessed') {
-      return this.#recordOutcomeAndSettle({
+      return this.#recordOutcomeAndSettle({ announce,
         sessionId, state, unit, nowIso, signedOff, rewardOverride,
         result: state.externalActivity?.result ?? 'needs_remediation',
         reason: 'external_activity_assessed', assignments,
@@ -346,7 +346,7 @@ export class CloseSessionOutcome {
       const progress = await this.#practiceAssessments?.get({ learnerId: state.learnerId, unitId: state.unitId });
       if (progress && progress.stage !== 'completed') { evaluated.result = 'needs_remediation'; evaluated.reason = 'course_questions_unresolved'; }
     }
-    return this.#recordOutcomeAndSettle({
+    return this.#recordOutcomeAndSettle({ announce,
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason, passingPercent, assignments,
     });
   }
@@ -422,7 +422,7 @@ export class CloseSessionOutcome {
    * one path a graded close and an honor-close both funnel through, so the
    * reward guard, unlock line and result receipt stay uniform between them.
    */
-  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true, assignments = this.#assignments }) {
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true, assignments = this.#assignments, announce = false }) {
     const outcomeId = outcomeIdFor(sessionId);
     // The week's price BEFORE this grade lands, so the receipt can show the
     // difference — but only when a receipt will be built, and only inside this
@@ -439,14 +439,14 @@ export class CloseSessionOutcome {
         : null;
       return await this.#appendOutcomeAndSettle({
         sessionId, state, unit, nowIso, signedOff, rewardOverride, result, reason, passingPercent,
-        expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore,
+        expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore, announce,
       });
     } finally {
       pricing?.release();
     }
   }
 
-  async #appendOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride, result, reason, passingPercent, expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore }) {
+  async #appendOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride, result, reason, passingPercent, expectedSeq, printReceipt, assignments, outcomeId, pricing, weekBefore, announce = false }) {
     // The bar rides on the event only when a bar decided it and `graded`
     // stamped none — a launch or honor close has no bar to write down.
     const stampBar = state.gradedPassingPercent == null && typeof passingPercent === 'number';
@@ -469,10 +469,10 @@ export class CloseSessionOutcome {
     // `state` predates the event just appended; carry its stamp forward so the
     // receipt prints the bar that decided it rather than resolving one again.
     const settledState = stampBar ? { ...state, gradedPassingPercent: passingPercent } : state;
-    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, assignments, weekBefore, pricing });
+    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, assignments, weekBefore, pricing, announce });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, assignments = this.#assignments, weekBefore = null, pricing = null }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, assignments = this.#assignments, weekBefore = null, pricing = null, announce = false }) {
     // Unconditional on pass/fail and on resettling: a fail settle changes no
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
@@ -486,6 +486,20 @@ export class CloseSessionOutcome {
       ...(state.studyDay && !resettling ? { studyDay: state.studyDay } : {}),
     });
     const passed = outcome.result === 'passed';
+    // The tablet hears of a lesson finished somewhere else (fitness, a TV
+    // launch, the review queue) and plays its banner. Only a first, passing,
+    // printing settle the caller did not opt out of: the scanner has its own
+    // banner, and a recovery or resettle is not news to a child.
+    if (passed && !resettling && printReceipt !== false && announce) {
+      try {
+        this.#realtime?.workCompleted?.({
+          learnerId: state.learnerId, sessionId, unitId: state.unitId, title: unit?.title ?? null,
+          ...(state.studyDay ? { studyDay: state.studyDay } : {}),
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.session.broadcast-failed', { learnerId: state.learnerId, sessionId, error: err?.message ?? String(err) });
+      }
+    }
     const reward = passed
       ? await this.#applyReward({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso })
       : null;
