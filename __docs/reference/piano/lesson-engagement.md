@@ -220,7 +220,7 @@ just to press the notes to move on, I want to make that increasingly difficult")
 Rules: `portable/practice/presenceLadder.mjs` (shared by the kiosk's
 `useEngagementGate` and the calibration replay).
 
-| Rung | Asks for | Copy | Wait before it (default) | Keys to clear |
+| Rung | Asks for | Copy | Wait while at this rung, before the next check-in (default) | Keys to clear |
 |---|---|---|---|---|
 | 0 | one note | "Are you still there? Play this note to keep going:" | 90 s | 1 |
 | 1 | one scale, right hand | "Welcome back! One quick scale, then the lesson carries on." | 90 s | 15 |
@@ -230,9 +230,11 @@ Rules: `portable/practice/presenceLadder.mjs` (shared by the kiosk's
 
 The ladder stays at 4. A scale is one octave up and back down (15 keys a hand).
 Rungs 3–4 render on the grand staff (`LessonDrill`, hand `RL`). The wait is the
-silence before the check-in at the *current* rung (`intervals_seconds`, indexed
-by rung; past the end uses the last; each capped at
-`videos.engagement_timeout_seconds`).
+silence the kiosk allows while the ladder sits at a rung, i.e. after that rung's
+check-in and before the next one (`intervals_seconds`, indexed by rung; past the
+end uses the last; each capped at `videos.engagement_timeout_seconds`). From a
+fresh start with nobody playing: rung 0 at 90 s, 1 at 3:00, 2 at 4:30, 3 at
+5:45, 4 at 6:45, then every 60 s.
 
 **The evidence for an interval** (R1) runs from the last answer + 3 s (the
 answer's own notes never count) to the moment the next check-in opens. A legit
@@ -296,8 +298,9 @@ regression ceiling.
 
 **Owner push** (R9, off): `notify_top_rung: true` pushes the head of household
 (HA notify service, as harvester health) once per sitting when it reaches rung 4
-— "🎹 {child} — {lesson}" / "Came back only to dismiss N check-ins in a row —
-the lesson now asks for two hands-together scales. Since 3:05 PM.", channel
+— "🎹 {child} — {lesson}" / "Came back only to dismiss N check-ins this lesson —
+it now asks for two hands-together scales. The lesson started at 3:05 PM." (the
+sitting's first post; a preschool sitting never pushes), channel
 `School needs you`, importance high, tag `piano-presence-{userId}-{day}`.
 
 ## The check-in burst judge (off)
@@ -342,14 +345,14 @@ warm-up / Not counted yet / Not checked).
 | `legit_model` | false | the check-in burst judge (failed calibration; off) |
 | `presence_ladder.practice_npm` | 4 | legit notes a minute over an interval that count as practice (resets to the note) |
 | `presence_ladder.partial_notes` | 8 | legit notes that count as partial playing (steps down one); below it the ladder climbs |
-| `presence_ladder.intervals_seconds` | `[90, 90, 75, 60]` | silence before the check-in at each rung; past the end uses the last; each capped at `engagement_timeout_seconds` |
+| `presence_ladder.intervals_seconds` | `[90, 90, 75, 60]` | silence allowed while at each rung, before the next check-in; past the end uses the last; each capped at `engagement_timeout_seconds` |
 | `presence_ladder.keepalive_deadline` | true | stray notes cannot hold off the next check-in once one was answered |
 | `presence_ladder.keepalive_factor` | 2 | the deadline, in intervals since the last answer |
 | `presence_ladder.notify_top_rung` | false | push the head of household when a sitting reaches rung 4 |
+| `level_targets` | — | unused since 2026-11-12 (ratings no longer decide credit) |
 
 Anything malformed in `presence_ladder` (a string, a negative, an empty list)
 falls back to its default.
-| `level_targets` | — | unused since 2026-11-12 (ratings no longer decide credit) |
 
 ## Log events (LogsQL)
 

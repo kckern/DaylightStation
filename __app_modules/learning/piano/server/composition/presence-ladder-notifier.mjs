@@ -16,10 +16,10 @@ function householdDay(iso, timezone) {
  * route as harvester health. Off unless `isEnabled()` (read per call:
  * `videos.practice.presence_ladder.notify_top_rung === true`). Never throws.
  *
- * @returns {(call: { userId, title, minimalCheckIns, at }) => Promise<void>}
+ * @returns {(call: { userId, title, minimalCheckIns, at, startedAt }) => Promise<void>}
  */
 export function createPresenceLadderNotifier({ isEnabled, getHaGateway, getNotifyService, getDisplayName, timezone = null, logger = console }) {
-  return async ({ userId, title = null, minimalCheckIns = 0, at = new Date().toISOString() } = {}) => {
+  return async ({ userId, title = null, minimalCheckIns = 0, at = new Date().toISOString(), startedAt = null } = {}) => {
     try {
       if (!isEnabled?.()) {
         logger.info?.('piano.presence-ladder.notify-skipped', { userId, reason: 'disabled' });
@@ -32,7 +32,7 @@ export function createPresenceLadderNotifier({ isEnabled, getHaGateway, getNotif
         return;
       }
       const push = composePresenceLadderPush({
-        child: getDisplayName?.(userId) ?? null, lesson: title, minimalCheckIns, at, timezone, userId, day: householdDay(at, timezone),
+        child: getDisplayName?.(userId) ?? null, lesson: title, minimalCheckIns, startedAt, timezone, userId, day: householdDay(at, timezone),
       });
       await gateway.callService('notify', service, push);
       logger.info?.('piano.presence-ladder.notify-sent', { userId, minimalCheckIns, tag: push.data.tag });

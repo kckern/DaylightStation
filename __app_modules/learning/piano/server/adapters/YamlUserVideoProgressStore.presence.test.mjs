@@ -96,6 +96,29 @@ describe('progress store: the presence ladder per sitting', () => {
     expect(presenceNotifier).toHaveBeenCalledWith(expect.objectContaining({ userId: USER, title: 'Lesson A', minimalCheckIns: 3, at: expect.any(String) }));
   });
 
+  it('the notifier is told when the sitting started (its first post), not when the push is sent', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-11-13T23:05:00Z'));
+      const presenceNotifier = vi.fn(async () => {});
+      const store = new YamlUserVideoProgressStore({ configService: configService(), logger: { info: vi.fn(), warn: vi.fn() }, lessonExpectations: expectations, presenceNotifier });
+      store.record({ userId: USER, plexId: '100', percent: 10, engaged: true, practice: practice('s1', { peakRung: 1 }) });
+      vi.setSystemTime(new Date('2026-11-13T23:12:00Z'));
+      store.record({ userId: USER, plexId: '100', percent: 40, engaged: true, practice: practice('s1', { peakRung: 4, minimalCheckIns: 4 }) });
+      expect(presenceNotifier).toHaveBeenCalledWith(expect.objectContaining({ startedAt: '2026-11-13T23:05:00.000Z' }));
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a preschool sitting reporting the top rung (a stale client) logs it but never pushes', () => {
+    piano.videos.practice.preschool_courses = ['plex:70'];
+    const presenceNotifier = vi.fn(async () => {});
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const store = new YamlUserVideoProgressStore({ configService: configService(), logger, lessonExpectations: expectations, presenceNotifier });
+    store.record({ userId: USER, plexId: '100', percent: 10, engaged: true, practice: practice('s1', { peakRung: 4 }) });
+    expect(topRungLogs(logger)[0]).toMatchObject({ preschool: true });
+    expect(presenceNotifier).not.toHaveBeenCalled();
+  });
+
   it('a notifier that throws or rejects never breaks the record path', async () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
     const store = new YamlUserVideoProgressStore({ configService: configService(), logger, lessonExpectations: expectations, presenceNotifier: () => Promise.reject(new Error('x')) });

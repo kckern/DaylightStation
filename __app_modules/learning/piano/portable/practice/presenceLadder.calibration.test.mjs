@@ -49,7 +49,7 @@ export function ladderReport(npm) {
 }
 
 describe('presence ladder calibration', () => {
-  it('prints every candidate and meets the bars at the default', () => {
+  it('prints every candidate; absentee and mash bars met; engaged held at the measured 30.5 % ceiling (plan bar 5 % not met)', () => {
     for (const npm of [2, 3, 4, 5, 6]) {
       // eslint-disable-next-line no-console -- calibration record, read by a person
       console.log('[calibration] presence-ladder', JSON.stringify(ladderReport(npm)));

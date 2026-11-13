@@ -128,7 +128,9 @@ export class YamlUserVideoProgressStore {
     if (practice && practice.sittingId) {
       const id = String(practice.sittingId).slice(0, 64);
       const old = sittings[id] || {};
-      const next = { at: new Date().toISOString() };
+      const now = new Date().toISOString();
+      // startedAt: the sitting's first post (the owner push says when the lesson began).
+      const next = { at: now, startedAt: typeof old.startedAt === 'string' ? old.startedAt : now };
       for (const f of SITTING_FIELDS) next[f] = Math.max(intOf(old[f]), intOf(practice[f]));
       next.peakRung = Math.min(TOP_RUNG, next.peakRung);
       // The sitting's good-faith judgement, once given, stays with it.
@@ -159,10 +161,14 @@ export class YamlUserVideoProgressStore {
     const e = this.#expectationFor(plexId);
     const preschool = e ? this.#isPreschool(e) : false;
     this.#logger.info?.('piano.presence-ladder.top-rung', { userId, key, sittingId, minimalCheckIns: sit.minimalCheckIns, preschool });
-    if (!this.#presenceNotifier) return;
+    // The push describes the scale ladder; a preschool course never leaves the
+    // note, so a preschool top rung can only come from a stale client.
+    if (!this.#presenceNotifier || preschool) return;
     const fail = (err) => this.#logger.warn?.('piano.presence-ladder.notify-failed', { userId, key, error: err?.message });
     try {
-      Promise.resolve(this.#presenceNotifier({ userId, title, minimalCheckIns: sit.minimalCheckIns, at: new Date().toISOString() })).catch(fail);
+      Promise.resolve(this.#presenceNotifier({
+        userId, title, minimalCheckIns: sit.minimalCheckIns, at: new Date().toISOString(), startedAt: sit.startedAt ?? null,
+      })).catch(fail);
     } catch (err) { fail(err); }
   }
 

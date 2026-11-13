@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createPresenceLadderNotifier } from './presence-ladder-notifier.mjs';
 
 const logger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() });
-const call = { userId: 'learner_1', title: 'Right Hand C Position', minimalCheckIns: 4, at: '2026-11-13T23:05:00Z' };
+const call = { userId: 'learner_1', title: 'Right Hand C Position', minimalCheckIns: 4, at: '2026-11-13T23:12:00Z', startedAt: '2026-11-13T23:05:00Z' };
 
 function make({ enabled = true, svc = 'mobile_app_phone', gateway = { callService: vi.fn(async () => ({})) } } = {}) {
   const log = logger();
@@ -39,6 +39,7 @@ describe('createPresenceLadderNotifier', () => {
     expect(svc).toBe('mobile_app_phone');
     expect(payload.title).toBe('🎹 Kid One — Right Hand C Position');
     expect(payload.data.tag).toBe('piano-presence-learner_1-2026-11-13');
+    expect(payload.message).toMatch(/The lesson started at 3:05 PM\.$/);
     expect(log.info).toHaveBeenCalledWith('piano.presence-ladder.notify-sent', expect.objectContaining({ userId: 'learner_1' }));
   });
   it('never throws when the gateway fails', async () => {
