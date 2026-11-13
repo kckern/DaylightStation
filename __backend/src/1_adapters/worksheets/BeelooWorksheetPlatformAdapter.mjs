@@ -8,6 +8,13 @@
  *   printable: GET <base>/media/<paper>/printable/<id>.pdf
  *   solution:  GET <base>/media/<paper>/solution/<id>.pdf
  *
+ * THE LIST IS A SAMPLE. `/api/pages` answers a RANDOM sample of the matching
+ * pages, capped at 250: two consecutive calls differ, and a `pageMax` above
+ * 250 is still capped. So `listActivities` is a sample of the level, not the
+ * whole pool, and the launcher's `pool-exhausted` can fire before the level is
+ * really used up once household history nears 250 pages of one kind and
+ * level. The launcher asks once more for a fresh sample before giving up.
+ *
  * Layer: ADAPTER (1_adapters/worksheets).
  * @module adapters/worksheets/BeelooWorksheetPlatformAdapter
  */
@@ -15,7 +22,7 @@ import { IWorksheetPlatform } from '#apps/common/ports/IWorksheetPlatform.mjs';
 
 const ID_RE = /^[A-Za-z0-9_-]{4,32}$/;
 const PAPERS = new Set(['letter', 'a4']);
-const PAGE_MAX = 250; // Beeloo caps pageMax here
+const PAGE_MAX = 250; // Beeloo caps pageMax here; the answer is a random sample (see header)
 const DEFAULT_TIMEOUT_MS = 8000;
 
 export class BeelooWorksheetPlatformAdapter extends IWorksheetPlatform {
@@ -23,7 +30,7 @@ export class BeelooWorksheetPlatformAdapter extends IWorksheetPlatform {
 
   /**
    * @param {Object} deps
-   * @param {string} deps.baseUrl - e.g. http://beeloo-app:8111
+   * @param {string} deps.baseUrl - e.g. http://<container>:<port> (the `beeloo` key in services.yml)
    * @param {Function} [deps.fetchImpl] - fetch-compatible function
    * @param {Object} deps.logger
    * @param {number} [deps.timeoutMs]

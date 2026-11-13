@@ -633,7 +633,9 @@ ticket calls `PrintedActivityProgramLauncher.launch`, which:
    lost-sheet path; nothing new is reserved);
 2. otherwise picks a page uniformly from the platform's pages at that kind and
    level, excluding every page ever issued in the household on that platform
-   (voided reservations excepted);
+   (voided reservations excepted). Beeloo answers a random sample of at most
+   250 pages, so when every page in the sample is excluded the launcher asks
+   once more for a fresh sample before answering "No new pages left";
 3. **reserves, then prints.** The issuance is written first; a printer error, or
    a print the adapter reports as unconfirmed, voids it (`voidedAt`,
    `voidReason`; the row is kept as evidence and is neither open nor history).
@@ -642,7 +644,17 @@ The store enforces two rules inside its write chain: a page is open for at most
 one child (`PAGE_ALREADY_OPEN`), and a child holds at most one open sheet per
 corpus (`CORPUS_ALREADY_OPEN`). So a double scan of the ticket reprints the
 sheet already reserved, and a sibling racing for the same page gets a
-different one. A page is never re-issued in the household because the QR names
+different one.
+
+**Reprint cooldown.** Every confirmed print records `lastPrintedAt` on the
+issuance (`markPrinted`). A reprint inside the cooldown, which is
+`printing.printCooldownMinutes` in `school.yml` (default 10 minutes, the same key
+that debounces a session ticket), is refused with "That sheet just printed.
+Check the printer tray." and logs `reprint-cooldown`. That includes the loser
+of a double scan, whose sheet came out a moment ago. The launcher prints with
+`printPdf` directly, so the household page quota in PrintService never sees
+these jobs; the cooldown is the brake on a repeated ticket. Rows written before
+`lastPrintedAt` existed read `issuedAt` instead. A page is never re-issued in the household because the QR names
 the page, not the copy: an old sheet in a drawer must not credit whoever holds
 that page next.
 
@@ -658,8 +670,8 @@ paper is the authorization.
 | Scan of… | Slip | Credit |
 |---|---|---|
 | an open sheet | "<Name>'s maze counted" | yes |
-| a sheet already counted | "Already counted" | no (idempotent) |
-| a sheet whose reservation was voided | "Not counted" | no |
+| a sheet already counted | "Already counted" (`scan-duplicate`) | no (idempotent) |
+| a sheet whose reservation was voided | "Not counted" (`scan-voided`) | no |
 | a platform page School never issued | "Not a School sheet" | no |
 
 If the child's entry was removed before the scan, the credit still stands (the
@@ -670,23 +682,29 @@ logged.
 (one file per learner, `issuances: [...]`). A corrupt file is side-filed to
 `<learnerId>.yml.corrupt-<stamp>` before it is replaced, never overwritten in
 place; household-wide lookups skip it and log
-`school.printed-activity.lookup-partial`.
+`school.printed-activity.lookup-partial`. The learner's own day status does not
+skip it: a corrupt or unreadable log answers "Printed activity unavailable"
+(`log-unreadable`), never a false "0 of 1".
 
 **Wiring.** The platform's base URL is the `beeloo` key in `system/services.yml`;
-without it School logs `school.worksheets.unwired` and the launcher answers
-"Worksheets are unavailable". The platform sits behind
+without it School logs `school.worksheets.unwired`, the agenda shows the entry
+as "Worksheets unavailable" (its standard unavailable state), and a ticket scan
+answers "Worksheets are unavailable". The platform sits behind
 `IWorksheetPlatform` (`3_applications/common/ports`); the Beeloo adapter
 (`1_adapters/worksheets`) is the only code that knows Beeloo's field names.
 
 **Main log events** (`school.printed-activity.*`, not exhaustive): `issued`, `unconfirmed`,
-`pool-exhausted`, `page-race`, `multiple-open`, `print-failed`, `void-failed`,
-`platform-failed`, `record-failed`, `scanned`, `scan-unmatched`,
+`reprint-cooldown`, `pool-exhausted`, `page-race`, `multiple-open`, `print-failed`,
+`void-failed`, `mark-printed-failed`, `platform-failed`, `record-failed`,
+`log-unreadable`, `scanned`, `scan-duplicate`, `scan-voided`, `scan-unmatched`,
 `scan-refused`, `scan-orphaned`, `scan-failed`, `lookup-partial`,
 `store-corrupt`.
 
 **Known limit.** If a double scan's winner then fails to print and voids its
-reservation, the sheet the loser already reprinted has no open row; its scan
-says "Not counted". Scan the ticket again for a fresh sheet.
+reservation, the loser (told "That sheet just printed") has no sheet coming.
+Scan the ticket again for a fresh one. With the cooldown set to 0 the loser
+reprints instead, and that copy has no open row, so its scan says "Not
+counted".
 
 ## Operations CLI
 

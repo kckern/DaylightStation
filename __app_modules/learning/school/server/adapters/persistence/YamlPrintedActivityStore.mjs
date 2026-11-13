@@ -2,7 +2,7 @@
  * YAML persistence for the printed-activity issuance log.
  *
  *   <dataDir>/household/school/records/printed-activities/{learnerId}.yml
- *   { issuances: [ {issuanceId, learnerId, ..., completedAt, completedStudyDay, completedVia, voidedAt, voidReason} ] }
+ *   { issuances: [ {issuanceId, learnerId, ..., completedAt, completedStudyDay, completedVia, voidedAt, voidReason, lastPrintedAt} ] }
  *
  * `records/`, not `runtime/`: a completed sheet is evidence a report card is
  * reconstructed from, never pruned by a cooldown or a session close.
@@ -17,9 +17,12 @@
  * The read/write posture is `YamlReadingLogStore`'s, for the same reasons (its
  * header has the full argument):
  *
- *   - NEVER THROWS ON READ. Missing, empty, corrupt and unreadable all answer
- *     "nothing on record", logged. The worst a bad file can do to a reader is
- *     show a sheet as still owed.
+ *   - NEVER THROWS ON READ, with one exception. Missing, empty, corrupt and
+ *     unreadable all answer "nothing on record", logged. The exception is
+ *     `listCompletedForDay`, which throws `LogUnreadableError`
+ *     (`code: 'LOG_UNREADABLE'`) on a corrupt or unreadable file: its answer
+ *     is a day's count, and a false zero there is a wrong status, not a
+ *     cautious one.
  *   - WRITES ARE READ-MODIFY-WRITE, so `#load` keeps `missing` / `empty` / `ok` /
  *     `corrupt` / `unreadable` apart. On a write, corrupt -> copy the original
  *     bytes to `<learnerId>.yml.corrupt-<stamp>` FIRST, log at error, then start
@@ -91,6 +94,21 @@ export class CorpusAlreadyOpenError extends Error {
     this.learnerId = learnerId;
     this.corpusId = corpusId;
     this.held = held;
+  }
+}
+
+/**
+ * The learner's log holds evidence that could not be read (corrupt or
+ * unreadable). Thrown by `listCompletedForDay` only, so a day's status answers
+ * "unavailable" instead of a false "0 of 1".
+ */
+export class LogUnreadableError extends Error {
+  constructor({ learnerId, file }) {
+    super(`YamlPrintedActivityStore: ${file} holds a log that cannot be read`);
+    this.name = 'LogUnreadableError';
+    this.code = 'LOG_UNREADABLE';
+    this.learnerId = learnerId;
+    this.file = file;
   }
 }
 
@@ -304,6 +322,7 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       completedVia: null,
       voidedAt: null,
       voidReason: null,
+      lastPrintedAt: null,
     };
     return this.#serialized(async () => {
       const target = this.#loadForWrite(learnerId);
@@ -427,8 +446,32 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   }
 
   /** @inheritdoc */
+  async markPrinted(learnerId, issuanceId, { at } = {}) {
+    if (!isSafeLearnerId(learnerId)) throw new Error(`YamlPrintedActivityStore: unsafe learnerId: ${learnerId}`);
+    if (!isNonEmptyString(at)) throw new Error('YamlPrintedActivityStore: markPrinted requires `at`');
+    return this.#serialized(async () => {
+      const target = this.#loadForWrite(learnerId);
+      const { entries } = target;
+      const index = entries.findIndex((entry) => isIssuance(entry) && entry.issuanceId === issuanceId);
+      if (index < 0) return { status: 'missing', issuance: null };
+      const current = entries[index];
+      // Only an open sheet is reprinted; a closed row's evidence is left as is.
+      if (current.voidedAt != null) return { status: 'voided', issuance: current };
+      if (current.completedAt != null) return { status: 'completed', issuance: current };
+      const marked = { ...current, lastPrintedAt: at };
+      const next = entries.slice();
+      next[index] = marked;
+      this.#write(target, next);
+      return { status: 'marked', issuance: marked };
+    });
+  }
+
+  /** @inheritdoc */
   async listCompletedForDay(learnerId, corpusId, studyDay) {
-    return this.#readRows(learnerId).rows.filter((row) => row.corpusId === corpusId
+    const read = this.#readRows(learnerId);
+    // Lost evidence is not "nothing done": the caller answers unavailable.
+    if (read.lost) throw new LogUnreadableError({ learnerId, file: this.#fileFor(learnerId) });
+    return read.rows.filter((row) => row.corpusId === corpusId
       && row.voidedAt == null
       && row.completedStudyDay != null && row.completedStudyDay === studyDay);
   }

@@ -218,6 +218,51 @@ describe('the printed-activity program', () => {
     expect(status).toMatchObject({ doneToday: true, servedWork: [{ unitId: 'printed-activity:beeloo:maze', title: 'Maze: North End Labyrinth' }] });
   });
 
+  /**
+   * `printing.printCooldownMinutes` reaches the launcher's reprint cooldown: a
+   * second ticket scan right after the first is refused by default, and
+   * allowed when the household sets the cooldown to 0.
+   */
+  describe('reprint cooldown from school.yml printing.printCooldownMinutes', () => {
+    const scanTwice = async (printing) => {
+      const fakePlatform = {
+        id: 'beeloo',
+        listActivities: async () => [{ externalId: 'page-one', title: 'East Gate Labyrinth', kind: 'maze', level: 2, theme: null }],
+        getPrintable: async () => Buffer.from('%PDF-1.4\n/Type /Page\n%%EOF'),
+        getSolution: async () => null,
+      };
+      const result = await wire(
+        { lifecycle: { enabled: true }, virtualDevices: true, ...(printing ? { printing } : {}) },
+        { worksheetPlatforms: new Map([['beeloo', fakePlatform]]), clock: () => new Date('2026-11-13T18:00:00.000Z') },
+      );
+      await result.stores.assignments.put({
+        learnerId: 'learner_a', assignedBy: 'parent', programs: [{
+          programId: 'printed-activity', corpusId: 'beeloo:maze', subject: 'arts', title: 'Maze', target: 1,
+          activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
+        }],
+      });
+      const launcher = result.launchers.get('printed-activity');
+      const jobsBefore = result.devices.laserPrinter.listJobs().length;
+      const first = await launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' });
+      const second = await launcher.launch({ userId: 'learner_a', corpusId: 'beeloo:maze' });
+      return { first, second, jobs: result.devices.laserPrinter.listJobs().length - jobsBefore };
+    };
+
+    it('refuses an immediate reprint with the default cooldown', async () => {
+      const { first, second, jobs } = await scanTwice(null);
+      expect(first).toMatchObject({ decision: 'dispatched' });
+      expect(second).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(jobs).toBe(1);
+    });
+
+    it('passes a configured cooldown through: 0 minutes lets the reprint print', async () => {
+      const { first, second, jobs } = await scanTwice({ printCooldownMinutes: 0 });
+      expect(first).toMatchObject({ decision: 'dispatched' });
+      expect(second).toMatchObject({ decision: 'dispatched' });
+      expect(jobs).toBe(2);
+    });
+  });
+
   it('a launch with no platform wired says worksheets are unavailable', async () => {
     const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     const launcher = result.launchers.get('printed-activity');

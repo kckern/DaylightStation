@@ -88,8 +88,12 @@ export class RecordPrintedActivityScan {
 
     if (!open) {
       const any = await this.#store.findAny(key);
-      if (any?.completedAt) return this.#already(any);
+      if (any?.completedAt) return this.#already(any, { platform, externalId, device });
       if (any?.voidedAt) {
+        this.#log('info', 'school.printed-activity.scan-voided', {
+          learnerId: any.learnerId ?? null, issuanceId: any.issuanceId ?? null, corpusId: any.corpusId ?? null,
+          platform, externalId, device, voidReason: any.voidReason ?? null,
+        });
         return this.#notCounted(any, 'voided', 'This sheet was cancelled when it was printed. Print a new one.');
       }
       this.#log('info', 'school.printed-activity.scan-unmatched', { platform, externalId, device });
@@ -104,7 +108,7 @@ export class RecordPrintedActivityScan {
     const studyDay = studyDayForInstant(now.getTime(), { timezone: this.#timezone });
     const r = await this.#store.complete(open.learnerId, open.issuanceId, { at: now.toISOString(), studyDay, device });
 
-    if (r?.status === 'already') return this.#already(r.issuance ?? open);
+    if (r?.status === 'already') return this.#already(r.issuance ?? open, { platform, externalId, device });
     if (r?.status === 'voided') {
       this.#log('warn', 'school.printed-activity.scan-refused', {
         learnerId: open.learnerId, issuanceId: open.issuanceId, platform, externalId, device, status: 'voided',
@@ -134,7 +138,12 @@ export class RecordPrintedActivityScan {
     };
   }
 
-  async #already(issuance) {
+  /** A repeat scan: answered and logged, never counted twice. */
+  async #already(issuance, { platform, externalId, device }) {
+    this.#log('info', 'school.printed-activity.scan-duplicate', {
+      learnerId: issuance.learnerId ?? null, issuanceId: issuance.issuanceId ?? null, corpusId: issuance.corpusId ?? null,
+      platform, externalId, device, completedStudyDay: issuance.completedStudyDay ?? null,
+    });
     const headline = 'Already counted';
     const title = issuance.title ?? 'sheet';
     const printed = await this.#slip(`already-${issuance.issuanceId ?? 'sheet'}`, headline,

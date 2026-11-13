@@ -55,6 +55,13 @@ function fakeStore(rows = [], calls = []) {
       Object.assign(row, { voidedAt: at, voidReason: reason });
       return { status: 'voided', issuance: row };
     }),
+    markPrinted: vi.fn(async (learnerId, issuanceId, { at }) => {
+      const row = all.find((r) => r.learnerId === learnerId && r.issuanceId === issuanceId);
+      calls.push(`mark:${row?.externalId ?? issuanceId}`);
+      if (!row) return { status: 'missing', issuance: null };
+      Object.assign(row, { lastPrintedAt: at });
+      return { status: 'marked', issuance: row };
+    }),
     listForLearner: vi.fn(async (learnerId) => all.filter((r) => r.learnerId === learnerId)),
     listOpenAll: vi.fn(async () => all.filter(isOpen)),
     listIssuedExternalIds: vi.fn(async (platform) => [...new Set(all
@@ -66,19 +73,23 @@ function fakeStore(rows = [], calls = []) {
 
 const logger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
+/** A platform that is wired; `status()` only asks whether one is. */
+const WIRED = () => new Map([['beeloo', { id: 'beeloo' }]]);
+
 function make({
   programs = [MAZE, SUDOKU], assignment, store = fakeStore(), platforms, printer, rng = () => 0,
-  clock = () => NOW, timezone = null, log = logger(),
+  clock = () => NOW, timezone = null, log = logger(), reprintCooldownMs,
 } = {}) {
   const launcher = new PrintedActivityProgramLauncher({
     assignments: { get: vi.fn(async () => (assignment !== undefined ? assignment : { programs })) },
     store,
-    platforms: platforms ?? new Map(),
+    platforms: platforms ?? WIRED(),
     printer: printer === undefined ? null : printer,
     timezone,
     clock,
     rng,
     logger: log,
+    ...(reprintCooldownMs === undefined ? {} : { reprintCooldownMs }),
   });
   return { launcher, store, log };
 }
@@ -91,6 +102,14 @@ describe('PrintedActivityProgramLauncher — identity', () => {
     expect(launcher.surface).toBeNull();
     expect(launcher.entryAction).toBeNull();
     expect(launcher.replayable).toBe(true);
+  });
+
+  it('refuses a reprint cooldown that is not a number >= 0', () => {
+    const base = { assignments: {}, store: {}, clock: () => NOW, rng: () => 0, logger: logger() };
+    for (const reprintCooldownMs of [-1, 'ten', NaN, Infinity]) {
+      expect(() => new PrintedActivityProgramLauncher({ ...base, reprintCooldownMs })).toThrow(/reprintCooldownMs/);
+    }
+    expect(() => new PrintedActivityProgramLauncher({ ...base, reprintCooldownMs: 0 })).not.toThrow();
   });
 
   it('requires its injected dependencies', () => {
@@ -183,6 +202,27 @@ describe('PrintedActivityProgramLauncher.status', () => {
     const s = await launcher.status({ userId: 'learner_a', programInstance: 'beeloo:maze' });
     expect(s).toMatchObject({ error: true, enrolled: true, doneToday: false });
   });
+
+  it('is unavailable, not "0 of 1", when the log is corrupt (LOG_UNREADABLE)', async () => {
+    const store = fakeStore();
+    store.listCompletedForDay.mockRejectedValue(Object.assign(new Error('corrupt'), { code: 'LOG_UNREADABLE' }));
+    const { launcher, log } = make({ store });
+    const s = await launcher.status({ userId: 'learner_a', programInstance: 'beeloo:maze' });
+    expect(s).toMatchObject({ error: true, enrolled: true, doneToday: false, progressLabel: 'Printed activity unavailable' });
+    expect(log.error).toHaveBeenCalledWith('school.printed-activity.log-unreadable', expect.objectContaining({ code: 'LOG_UNREADABLE' }));
+  });
+
+  it('is unavailable when its platform is not wired, rather than offering a ticket that can only fail', async () => {
+    const { launcher, store, log } = make({ platforms: new Map() });
+    const s = await launcher.status({ userId: 'learner_a', programInstance: 'beeloo:maze' });
+    expect(s).toEqual({
+      error: true, enrolled: true, doneToday: false, progressLabel: 'Worksheets unavailable', score: null,
+      terminal: false, obligationProgress: null, servedWork: [],
+    });
+    expect(store.listCompletedForDay).not.toHaveBeenCalled();
+    expect(log.debug).toHaveBeenCalledWith('school.printed-activity.platform-missing', expect.objectContaining({ platform: 'beeloo' }));
+    expect(log.warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('PrintedActivityProgramLauncher — study day', () => {
@@ -224,7 +264,8 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     const { launcher, store, platform, printer, log, calls } = setup();
     const r = await go(launcher);
     expect(r).toEqual({ decision: 'dispatched', message: 'North End Labyrinth is printing.' });
-    expect(calls).toEqual(['append:m-1', 'print:m-1']);
+    expect(calls).toEqual(['append:m-1', 'print:m-1', 'mark:m-1']);
+    expect(store.markPrinted).toHaveBeenCalledWith('learner_a', 'pa_aaaaaaaa', { at: NOW.toISOString() });
     expect(platform.listActivities).toHaveBeenCalledWith({ kind: 'maze', level: 3, paper: 'letter' });
     expect(platform.getPrintable).toHaveBeenCalledWith('m-1', { paper: 'letter' });
     expect(printer.printPdf).toHaveBeenCalledWith(Buffer.from('pdf:m-1'), { jobName: 'learner_a maze m-1', user: 'learner_a', copies: 1 });
@@ -249,7 +290,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(store.append.mock.calls[0][0]).toMatchObject({ issuedAt: '2026-11-14T11:30:00.000Z', issuedStudyDay: '2026-11-13' });
   });
 
-  it('skips pages from its own history and pages open for anyone in the household', async () => {
+  it('skips every page issued in the household: completed or open, any learner', async () => {
     const store = fakeStore([
       issuance({ externalId: 'm-1', completedAt: '2026-11-01T17:00:00.000Z', completedStudyDay: '2026-11-01' }),
       issuance({ issuanceId: 'pa_sib', learnerId: 'learner_b', externalId: 'm-2' }),
@@ -286,7 +327,7 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(store.append.mock.calls[0][0].externalId).toBe('m-1');
   });
 
-  it('own history on another platform, and a sibling page on another platform, do not exclude', async () => {
+  it('pages issued on another platform, to any learner, do not exclude', async () => {
     const store = fakeStore([
       issuance({ platform: 'other', externalId: 'm-1', completedAt: 'x', completedStudyDay: '2026-11-01' }),
       issuance({ issuanceId: 'pa_sib', learnerId: 'learner_b', platform: 'other', externalId: 'm-1' }),
@@ -306,7 +347,71 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(printer.printPdf).toHaveBeenCalledTimes(1);
     expect(store.append).not.toHaveBeenCalled();
     expect(store.void).not.toHaveBeenCalled();
+    expect(store.markPrinted).toHaveBeenCalledWith('learner_a', 'pa_00000000', { at: NOW.toISOString() });
     expect(log.info).toHaveBeenCalledWith('school.printed-activity.issued', expect.objectContaining({ reprint: true, externalId: 'm-2' }));
+  });
+
+  describe('reprint cooldown', () => {
+    const at = (iso) => () => new Date(iso);
+
+    it('refuses a reprint inside the cooldown, printing nothing', async () => {
+      // Issued 15:00, last printed 17:55; NOW is 18:00, inside the default 10 minutes.
+      const store = fakeStore([issuance({ externalId: 'm-2', lastPrintedAt: '2026-11-13T17:55:00.000Z' })]);
+      const { launcher, printer, platform, log } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(printer.printPdf).not.toHaveBeenCalled();
+      expect(platform.getPrintable).not.toHaveBeenCalled();
+      expect(store.markPrinted).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith('school.printed-activity.reprint-cooldown', expect.objectContaining({
+        userId: 'learner_a', corpusId: 'beeloo:maze', externalId: 'm-2', lastPrintedAt: '2026-11-13T17:55:00.000Z',
+      }));
+    });
+
+    it('reprints again once the cooldown has passed, and records the new print', async () => {
+      const store = fakeStore([issuance({ externalId: 'm-2', lastPrintedAt: '2026-11-13T17:55:00.000Z' })]);
+      const { launcher, printer } = setup({ store, clock: at('2026-11-13T18:05:00.000Z') });
+      expect((await go(launcher)).decision).toBe('dispatched');
+      expect(printer.printPdf).toHaveBeenCalledTimes(1);
+      expect(store.rows[0].lastPrintedAt).toBe('2026-11-13T18:05:00.000Z');
+    });
+
+    it('a second scan right after a reprint is refused: the reprint reset the clock', async () => {
+      const store = fakeStore([issuance({ externalId: 'm-2' })]);
+      const { launcher, printer } = setup({ store });
+      expect((await go(launcher)).decision).toBe('dispatched');
+      expect((await go(launcher)).message).toBe('That sheet just printed. Check the printer tray.');
+      expect(printer.printPdf).toHaveBeenCalledTimes(1);
+    });
+
+    it('an old row without lastPrintedAt falls back to issuedAt', async () => {
+      const store = fakeStore([issuance({ externalId: 'm-2', issuedAt: '2026-11-13T17:58:00.000Z' })]);
+      const { launcher, printer } = setup({ store });
+      expect((await go(launcher)).message).toBe('That sheet just printed. Check the printer tray.');
+      expect(printer.printPdf).not.toHaveBeenCalled();
+    });
+
+    it('honours the configured cooldown', async () => {
+      const store = fakeStore([issuance({ externalId: 'm-2', lastPrintedAt: '2026-11-13T17:58:00.000Z' })]);
+      const { launcher, printer } = setup({ store, reprintCooldownMs: 60_000 });
+      expect((await go(launcher)).decision).toBe('dispatched');
+      expect(printer.printPdf).toHaveBeenCalledTimes(1);
+    });
+
+    it('a print that fails or is unconfirmed does not reset the clock', async () => {
+      const calls = [];
+      const store = fakeStore([issuance({ externalId: 'm-2' })], calls);
+      const { launcher } = setup({ store, printer: fakePrinter(calls, { confirmed: false }) });
+      await go(launcher);
+      expect(store.markPrinted).not.toHaveBeenCalled();
+    });
+
+    it('a failed markPrinted is logged and the answer is still dispatched', async () => {
+      const store = fakeStore();
+      store.markPrinted.mockRejectedValueOnce(new Error('disk'));
+      const { launcher, log } = setup({ store });
+      expect((await go(launcher)).decision).toBe('dispatched');
+      expect(log.warn).toHaveBeenCalledWith('school.printed-activity.mark-printed-failed', expect.objectContaining({ error: 'disk' }));
+    });
   });
 
   it('reprints the newest of several open pages and warns', async () => {
@@ -339,6 +444,16 @@ describe('PrintedActivityProgramLauncher.launch', () => {
   });
 
   describe('double scan', () => {
+    it('CORPUS_ALREADY_OPEN inside the cooldown is the sheet that just came out: no second print', async () => {
+      const store = fakeStore();
+      const held = issuance({ issuanceId: 'pa_win', externalId: 'm-2', title: 'Forest Path', issuedAt: NOW.toISOString() });
+      store.append.mockRejectedValueOnce(Object.assign(new Error('corpus open'), { code: 'CORPUS_ALREADY_OPEN', held }));
+      const { launcher, printer, log } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'failed', message: 'That sheet just printed. Check the printer tray.' });
+      expect(printer.printPdf).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith('school.printed-activity.reprint-cooldown', expect.objectContaining({ externalId: 'm-2' }));
+    });
+
     it('CORPUS_ALREADY_OPEN reprints the held page and appends nothing more', async () => {
       const store = fakeStore();
       const held = issuance({ issuanceId: 'pa_win', externalId: 'm-2', title: 'Forest Path' });
@@ -364,9 +479,22 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       expect(calls.filter((c) => c.startsWith('print:'))).toEqual(['print:m-2']);
     });
 
-    it('two concurrent launches end with one reservation and two prints of the same page', async () => {
+    it('two concurrent launches end with one reservation and one print; the second is told it just printed', async () => {
       let k = 0;
       const { launcher, store, printer } = setup({ rng: () => ((k++ * 0.37) % 1) });
+      const results = await Promise.all([go(launcher), go(launcher)]);
+      expect(results).toEqual([
+        { decision: 'dispatched', message: expect.stringMatching(/is printing\.$/) },
+        { decision: 'failed', message: 'That sheet just printed. Check the printer tray.' },
+      ]);
+      expect(store.rows).toHaveLength(1);
+      const printed = printer.printPdf.mock.calls.map(([b]) => String(b));
+      expect(printed).toEqual([`pdf:${store.rows[0].externalId}`]);
+    });
+
+    it('with no cooldown, two concurrent launches print the same page twice', async () => {
+      let k = 0;
+      const { launcher, store, printer } = setup({ rng: () => ((k++ * 0.37) % 1), reprintCooldownMs: 0 });
       const results = await Promise.all([go(launcher), go(launcher)]);
       expect(results.map((r) => r.decision)).toEqual(['dispatched', 'dispatched']);
       expect(store.rows).toHaveLength(1);
@@ -437,17 +565,35 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(log.info).toHaveBeenCalledWith('school.printed-activity.unconfirmed', expect.objectContaining({ externalId: 'm-1', reprint: false }));
   });
 
-  it('says the level is used up when every page is excluded', async () => {
+  it('says the level is used up when every page is excluded, after one fresh sample', async () => {
     const store = fakeStore(POOL.map((p, i) => issuance({ issuanceId: `pa_${i}`, externalId: p.externalId, completedAt: 'x', completedStudyDay: '2026-11-01' })));
-    const { launcher, printer, log } = setup({ store });
+    const { launcher, printer, log, platform } = setup({ store });
     expect(await go(launcher)).toEqual({ decision: 'failed', message: 'No new maze pages left at this level. Ask a grown-up.' });
+    expect(platform.listActivities).toHaveBeenCalledTimes(2);
     expect(printer.printPdf).not.toHaveBeenCalled();
     expect(store.append).not.toHaveBeenCalled();
-    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.pool-exhausted', expect.any(Object));
+    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.pool-exhausted', expect.objectContaining({ resampled: true }));
+  });
+
+  it('an exhausted sample is retried once: the platform samples, so a fresh list can hold new pages', async () => {
+    const store = fakeStore(POOL.map((p, i) => issuance({ issuanceId: `pa_${i}`, externalId: p.externalId, completedAt: 'x', completedStudyDay: '2026-11-01' })));
+    const fresh = [...POOL, { externalId: 'm-4', title: 'Mountain Pass', kind: 'maze', level: 3, theme: null }];
+    const platform = fakePlatform({ listActivities: vi.fn().mockResolvedValueOnce(POOL).mockResolvedValueOnce(fresh) });
+    const { launcher, log } = setup({ store, platform });
+    expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'Mountain Pass is printing.' });
+    expect(platform.listActivities).toHaveBeenCalledTimes(2);
+    expect(log.warn).not.toHaveBeenCalledWith('school.printed-activity.pool-exhausted', expect.anything());
+  });
+
+  it('a throw on the fresh sample is a platform fault', async () => {
+    const store = fakeStore(POOL.map((p, i) => issuance({ issuanceId: `pa_${i}`, externalId: p.externalId, completedAt: 'x', completedStudyDay: '2026-11-01' })));
+    const platform = fakePlatform({ listActivities: vi.fn().mockResolvedValueOnce(POOL).mockRejectedValueOnce(new Error('beeloo down')) });
+    const { launcher } = setup({ store, platform });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
   });
 
   it('fails when the platform is not configured', async () => {
-    const { launcher, log } = make({ printer: fakePrinter() });
+    const { launcher, log } = make({ printer: fakePrinter(), platforms: new Map() });
     expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
     expect(log.warn).toHaveBeenCalledWith('school.printed-activity.platform-missing', expect.any(Object));
   });

@@ -12,7 +12,8 @@
  * before printing, and voids it if the printer throws or reports a dry run,
  * so a page is never printed for a child the log does not name, and a race
  * with a sibling is settled before any paper moves. A double scan of the
- * ticket reprints the page already held. Details on `launch()`.
+ * ticket reprints the page already held, once a reprint cooldown has passed.
+ * Details on `launch()`.
  *
  * A PAGE IS NEVER ISSUED TWICE IN THE HOUSEHOLD. Once a page has reached
  * paper for any child (open or completed), no child is given it again on that
@@ -39,6 +40,13 @@ const PAGE_ALREADY_OPEN = 'PAGE_ALREADY_OPEN';
 const CORPUS_ALREADY_OPEN = 'CORPUS_ALREADY_OPEN';
 const DUPLICATE_ISSUANCE_ID = 'DUPLICATE_ISSUANCE_ID';
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+/**
+ * How long a sheet that just came out blocks a reprint of it. Mirrors
+ * `school.yml printing.printCooldownMinutes` (default 10), which composition
+ * passes through: the launcher prints with `printer.printPdf` directly, so the
+ * household page quota in PrintService never sees a repeated ticket scan.
+ */
+const DEFAULT_REPRINT_COOLDOWN_MS = 10 * 60_000;
 
 const MSG = Object.freeze({
   notAssigned: 'This activity is not assigned.',
@@ -46,6 +54,7 @@ const MSG = Object.freeze({
   noPrinter: 'The printer is not set up. Ask a grown-up.',
   printFailed: 'The printer did not answer. Try the ticket again.',
   race: 'That page was just given to someone else. Scan the ticket again.',
+  justPrinted: 'That sheet just printed. Check the printer tray.',
   record: 'That page could not be saved. Ask a grown-up.',
   unexpected: 'Something went wrong printing that page. Ask a grown-up.',
 });
@@ -58,7 +67,7 @@ class PlatformFault extends Error {
 }
 
 export class PrintedActivityProgramLauncher {
-  #assignments; #store; #platforms; #printer; #timezone; #clock; #rng; #logger;
+  #assignments; #store; #platforms; #printer; #timezone; #clock; #rng; #logger; #reprintCooldownMs;
 
   /**
    * @param {object} deps
@@ -70,13 +79,22 @@ export class PrintedActivityProgramLauncher {
    * @param {() => Date} deps.clock
    * @param {() => number} deps.rng returns [0, 1)
    * @param {object} deps.logger
+   * @param {number} [deps.reprintCooldownMs] a reprint of the sheet this learner
+   *   holds is refused this long after it last came out (default 10 minutes)
    */
-  constructor({ assignments, store, platforms = new Map(), printer = null, timezone = null, clock, rng, logger } = {}) {
+  constructor({
+    assignments, store, platforms = new Map(), printer = null, timezone = null, clock, rng, logger,
+    reprintCooldownMs = DEFAULT_REPRINT_COOLDOWN_MS,
+  } = {}) {
     if (!assignments) throw new Error('PrintedActivityProgramLauncher requires an assignments store');
     if (!store) throw new Error('PrintedActivityProgramLauncher requires a printed-activity store');
     if (typeof clock !== 'function') throw new Error('PrintedActivityProgramLauncher requires a clock');
     if (typeof rng !== 'function') throw new Error('PrintedActivityProgramLauncher requires an rng');
     if (!logger) throw new Error('PrintedActivityProgramLauncher requires a logger');
+    if (typeof reprintCooldownMs !== 'number' || !Number.isFinite(reprintCooldownMs) || reprintCooldownMs < 0) {
+      throw new Error('PrintedActivityProgramLauncher: reprintCooldownMs must be a number >= 0');
+    }
+    this.#reprintCooldownMs = reprintCooldownMs;
     this.#assignments = assignments;
     this.#store = store;
     this.#platforms = platforms ?? new Map();
@@ -123,9 +141,9 @@ export class PrintedActivityProgramLauncher {
     return { enrolled: true, entry: enrollment };
   }
 
-  #unavailable(enrolled = null) {
+  #unavailable(enrolled = null, progressLabel = 'Printed activity unavailable') {
     return {
-      error: true, enrolled, doneToday: false, progressLabel: 'Printed activity unavailable',
+      error: true, enrolled, doneToday: false, progressLabel,
       score: null, terminal: false, obligationProgress: null, servedWork: [],
     };
   }
@@ -161,11 +179,23 @@ export class PrintedActivityProgramLauncher {
       return this.#unavailable(true);
     }
     const { entry } = enrollment;
+    // A ticket for a platform that is not wired can only fail when scanned, so
+    // the agenda shows its standard unavailable state instead. Debug, not
+    // warn: the board asks for status often, and `launch()` and the boot's
+    // `school.worksheets.unwired` already say it at warn.
+    if (!this.#platforms.get(entry.activity.platform)) {
+      this.#log('debug', 'school.printed-activity.platform-missing', { userId, corpusId: entry.corpusId, platform: entry.activity.platform });
+      return this.#unavailable(true, 'Worksheets unavailable');
+    }
     let rows;
     try {
+      // Throws (`code: 'LOG_UNREADABLE'`) on a corrupt or unreadable log, so a
+      // lost record is answered unavailable rather than as a false "0 of 1".
       rows = await this.#store.listCompletedForDay(userId, entry.corpusId, studyDay);
     } catch (err) {
-      this.#log('error', 'school.printed-activity.log-unreadable', { userId, corpusId: entry.corpusId, day: studyDay, error: errText(err) });
+      this.#log('error', 'school.printed-activity.log-unreadable', {
+        userId, corpusId: entry.corpusId, day: studyDay, code: err?.code ?? null, error: errText(err),
+      });
       return this.#unavailable(true);
     }
     const done = Array.isArray(rows) ? rows : [];
@@ -230,6 +260,21 @@ export class PrintedActivityProgramLauncher {
   }
 
   /**
+   * Record that paper came out, for the reprint cooldown. A failure is logged
+   * and swallowed: the sheet is printing either way, and the worst case is one
+   * extra reprint allowed (the cooldown falls back to `issuedAt`).
+   */
+  async #markPrinted(userId, issuance, at) {
+    try {
+      await this.#store.markPrinted(userId, issuance.issuanceId, { at });
+    } catch (err) {
+      this.#log('warn', 'school.printed-activity.mark-printed-failed', {
+        learnerId: userId, corpusId: issuance.corpusId, issuanceId: issuance.issuanceId, error: errText(err),
+      });
+    }
+  }
+
+  /**
    * Reserve a new page: pick, fetch, `append`. Never prints. Answers
    * `{reserved, bytes, issuance}` for a new reservation, `{reprint}` when the
    * store says this learner already holds a page (a double scan), or
@@ -255,14 +300,26 @@ export class PrintedActivityProgramLauncher {
 
     let raceRetried = false;
     let idRetried = false;
+    let resampled = false;
     let page = null;
     let bytes = null;
     for (;;) {
       if (!page) {
         page = pickActivity({ pool, exclude, rng: this.#rng });
+        if (!page && !resampled) {
+          // The platform's list can be a SAMPLE of the level (Beeloo's is a
+          // random 250), so an exhausted list need not be an exhausted level.
+          // Ask once more for a fresh sample before telling a grown-up.
+          resampled = true;
+          try {
+            pool = await platform.listActivities({ kind, level, paper });
+          } catch (err) { throw new PlatformFault(err); }
+          continue;
+        }
         if (!page) {
           this.#log('warn', 'school.printed-activity.pool-exhausted', {
-            userId, corpusId: entry.corpusId, platform: platformId, kind, level, poolSize: Array.isArray(pool) ? pool.length : 0,
+            userId, corpusId: entry.corpusId, platform: platformId, kind, level,
+            poolSize: Array.isArray(pool) ? pool.length : 0, resampled,
           });
           return { failed: `No new ${kind} pages left at this level. Ask a grown-up.` };
         }
@@ -335,6 +392,12 @@ export class PrintedActivityProgramLauncher {
    * scan resolves the same way even when both scans race past the read: the
    * store refuses the second reservation (`CORPUS_ALREADY_OPEN`, checked before
    * the page) and the loser reprints the winner's page.
+   *
+   * REPRINT COOLDOWN. A reprint is refused ("That sheet just printed") while
+   * the held sheet's `lastPrintedAt` (else `issuedAt`) is younger than
+   * `reprintCooldownMs`; every confirmed print records `lastPrintedAt` via
+   * `store.markPrinted`. So the loser of a double scan, whose page came out a
+   * moment ago, is told so rather than printing it twice.
    */
   async launch({ userId, corpusId }) {
     const failed = (message) => ({ decision: 'failed', message });
@@ -386,7 +449,21 @@ export class PrintedActivityProgramLauncher {
         else ({ reserved, bytes } = r);
       }
       const page = reprint ?? reserved;
-      if (reprint) bytes = await this.#printable(platform, page.externalId, paper);
+      if (reprint) {
+        // A reprint of a sheet that just came out is a repeated ticket scan,
+        // not a lost sheet; this is the only quota on it (see
+        // DEFAULT_REPRINT_COOLDOWN_MS). It covers the double-scan path too.
+        const lastPrintedAt = reprint.lastPrintedAt ?? reprint.issuedAt ?? null;
+        const last = typeof lastPrintedAt === 'string' ? Date.parse(lastPrintedAt) : NaN;
+        if (Number.isFinite(last) && now.getTime() - last < this.#reprintCooldownMs) {
+          this.#log('info', 'school.printed-activity.reprint-cooldown', {
+            userId, corpusId, issuanceId: reprint.issuanceId ?? null, externalId: page.externalId,
+            lastPrintedAt, cooldownMs: this.#reprintCooldownMs,
+          });
+          return failed(MSG.justPrinted);
+        }
+        bytes = await this.#printable(platform, page.externalId, paper);
+      }
       const title = page.title || this.#label(entry);
 
       let result;
@@ -403,10 +480,17 @@ export class PrintedActivityProgramLauncher {
       // out of the tray. See IssueDocument#printConfirmed.
       const confirmed = result?.confirmed !== false;
       if (!confirmed) {
+        // Only a dry-run or virtual printer answers this; a real printer either
+        // prints or throws. The answer stays `dispatched` because nothing
+        // failed from where the child stands: the job was accepted, and on a
+        // dry run there is no paper to wait for. The reservation is voided so
+        // the log never names a page that does not exist.
         this.#log('info', 'school.printed-activity.unconfirmed', {
           learnerId: userId, corpusId, platform: platformId, externalId: page.externalId, reprint: Boolean(reprint),
         });
         if (reserved) await this.#void(userId, reserved, now.toISOString(), 'print-unconfirmed');
+      } else {
+        await this.#markPrinted(userId, page, now.toISOString());
       }
 
       this.#log('info', 'school.printed-activity.issued', {

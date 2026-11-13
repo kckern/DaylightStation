@@ -3,7 +3,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { CorpusAlreadyOpenError, PageAlreadyOpenError, YamlPrintedActivityStore } from './YamlPrintedActivityStore.mjs';
+import {
+  CorpusAlreadyOpenError, LogUnreadableError, PageAlreadyOpenError, YamlPrintedActivityStore,
+} from './YamlPrintedActivityStore.mjs';
 import { IPrintedActivityStore } from '../../application/ports/IPrintedActivityStore.mjs';
 
 const silentLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
@@ -46,6 +48,7 @@ describe('YamlPrintedActivityStore', () => {
     const rows = await subject.listForLearner('learner_a');
     expect(rows).toEqual([{
       ...issuance(), completedAt: null, completedStudyDay: null, completedVia: null, voidedAt: null, voidReason: null,
+      lastPrintedAt: null,
     }]);
     expect(read('learner_a').issuances).toHaveLength(1);
   });
@@ -309,6 +312,74 @@ describe('YamlPrintedActivityStore', () => {
       const subject = store();
       await expect(subject.void('learner_a', 'x', { reason: 'r' })).rejects.toThrow(/at/);
       await expect(subject.void('../x', 'x', why)).rejects.toThrow(/unsafe/);
+    });
+  });
+
+  describe('listCompletedForDay on a bad file', () => {
+    it('throws LOG_UNREADABLE for a corrupt file, so a status is never a false zero', async () => {
+      write('learner_a', 'issuances: [ {::: not yaml\n');
+      const logger = silentLogger();
+      const subject = store({ logger });
+      const err = await subject.listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14').catch((e) => e);
+      expect(err).toBeInstanceOf(LogUnreadableError);
+      expect(err.code).toBe('LOG_UNREADABLE');
+      expect(err.learnerId).toBe('learner_a');
+      expect(logger.error).toHaveBeenCalledWith('school.printed-activity.store-corrupt', expect.any(Object));
+    });
+
+    it('throws LOG_UNREADABLE for a file that exists but cannot be read', async () => {
+      fs.mkdirSync(fileFor('learner_a'), { recursive: true });
+      await expect(store().listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14'))
+        .rejects.toMatchObject({ code: 'LOG_UNREADABLE' });
+    });
+
+    it('answers [] for a missing or empty file: no evidence is not lost evidence', async () => {
+      expect(await store().listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14')).toEqual([]);
+      write('learner_a', '');
+      expect(await store().listCompletedForDay('learner_a', 'beeloo:maze', '2026-11-14')).toEqual([]);
+    });
+  });
+
+  describe('markPrinted', () => {
+    const at = '2026-11-14T16:05:00.000Z';
+
+    it('records lastPrintedAt on an open issuance, and again on each reprint', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      expect(await subject.markPrinted('learner_a', 'pa_k3j9x2qd', { at })).toMatchObject({
+        status: 'marked', issuance: { lastPrintedAt: at },
+      });
+      const later = '2026-11-14T16:30:00.000Z';
+      await subject.markPrinted('learner_a', 'pa_k3j9x2qd', { at: later });
+      expect(read('learner_a').issuances[0].lastPrintedAt).toBe(later);
+    });
+
+    it('writes nothing for a voided, completed or unknown issuance', async () => {
+      const subject = store();
+      await subject.append(issuance());
+      await subject.append(issuance({ issuanceId: 'pa_done', corpusId: 'beeloo:sudoku', externalId: 'other' }));
+      await subject.void('learner_a', 'pa_k3j9x2qd', { at, reason: 'print-failed' });
+      await subject.complete('learner_a', 'pa_done', done);
+      const before = bytes('learner_a');
+      expect((await subject.markPrinted('learner_a', 'pa_k3j9x2qd', { at })).status).toBe('voided');
+      expect((await subject.markPrinted('learner_a', 'pa_done', { at })).status).toBe('completed');
+      expect(await subject.markPrinted('learner_a', 'nope', { at })).toEqual({ status: 'missing', issuance: null });
+      expect(bytes('learner_a')).toBe(before);
+    });
+
+    it('requires an instant and a safe learner id', async () => {
+      const subject = store();
+      await expect(subject.markPrinted('learner_a', 'x', {})).rejects.toThrow(/at/);
+      await expect(subject.markPrinted('../x', 'x', { at })).rejects.toThrow(/unsafe/);
+    });
+
+    it('is serialized with the other writes', async () => {
+      const subject = store();
+      await Promise.all([
+        subject.append(issuance()),
+        subject.markPrinted('learner_a', 'pa_k3j9x2qd', { at }),
+      ]);
+      expect(read('learner_a').issuances[0].lastPrintedAt).toBe(at);
     });
   });
 

@@ -267,6 +267,7 @@ function printedActivity(completedRows) {
       activity: { platform: 'beeloo', kind: 'maze', level: 2, paper: 'letter' },
     }] }) },
     store: { listCompletedForDay: async () => completedRows },
+    platforms: new Map([['beeloo', { id: 'beeloo' }]]),
     timezone: 'UTC', clock, rng: () => 0, logger: silent,
   });
 }

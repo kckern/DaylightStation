@@ -765,9 +765,14 @@ export async function createSchoolLifecycle({
   // Printed activities — a page from a worksheet platform, done on paper,
   // counted by a grown-up's scan of the page's own QR. Registered before the
   // `programs:` loop so a config entry reusing the id trips the collision check.
+  // The reprint cooldown reads the same `printing.printCooldownMinutes` that
+  // debounces a re-scanned session ticket in IssueDocument: the launcher prints
+  // with `printPdf` directly, so this is the only brake on a repeated ticket.
+  const printedActivityCooldownMinutes = cfg.printing?.printCooldownMinutes;
   launchers.set(PRINTED_ACTIVITY_PROGRAM_ID, new PrintedActivityProgramLauncher({
     assignments: stores.assignments, store: stores.printedActivities, platforms: worksheetPlatforms,
     printer: laserPrinter, timezone, clock, rng: draw, logger,
+    ...(printedActivityCooldownMinutes == null ? {} : { reprintCooldownMs: printedActivityCooldownMinutes * 60_000 }),
   }));
 
   // The reading shelf. Unconditional like story-time: an enrollment with no

@@ -30,7 +30,9 @@
  *
  * Issuance: `{issuanceId, learnerId, programId, corpusId, platform, externalId,
  * title, kind, level, issuedAt, issuedStudyDay, completedAt, completedStudyDay,
- * completedVia, voidedAt, voidReason}`. Open means `completedAt == null` and
+ * completedVia, voidedAt, voidReason, lastPrintedAt}`. `lastPrintedAt` is the
+ * last time paper came out for it (`markPrinted`); older rows without it read
+ * `issuedAt` instead. Open means `completedAt == null` and
  * `voidedAt == null` (older rows without `voidedAt` read as not voided).
  *
  * CROSS-LEARNER LOOKUPS CAN BE PARTIAL. `listOpenAll`, `listIssuedExternalIds`, `findOpen` and `findAny`
@@ -101,6 +103,21 @@ export class IPrintedActivityStore {
   async void() { throw new Error('IPrintedActivityStore.void must be implemented'); }
 
   /**
+   * Record that paper came out for an open issuance: the reservation's first
+   * print and every reprint. Sets `lastPrintedAt`, which is what the reprint
+   * cooldown reads. Serialized with the other writes. A voided or completed
+   * issuance answers its status and writes nothing.
+   * @param {string} learnerId
+   * @param {string} issuanceId
+   * @param {{at: string}} details
+   * @returns {Promise<{status: 'marked'|'missing'|'voided'|'completed', issuance: object|null}>}
+   */
+  async markPrinted() { throw new Error('IPrintedActivityStore.markPrinted must be implemented'); }
+
+  /**
+   * The ONE read that throws on a bad record: a corrupt or unreadable learner
+   * log throws an error with `code: 'LOG_UNREADABLE'`, so the day's status is
+   * "unavailable" rather than a false zero. A missing or empty log is `[]`.
    * @returns {Promise<object[]>} the learner's issuances in `corpusId` whose
    *   `completedStudyDay === studyDay` (never a voided one)
    */

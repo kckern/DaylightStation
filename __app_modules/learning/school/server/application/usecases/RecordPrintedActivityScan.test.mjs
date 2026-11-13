@@ -101,21 +101,26 @@ describe('RecordPrintedActivityScan', () => {
 
   it('a second scan of the same sheet says already counted and completes nothing', async () => {
     const store = fakeStore([issuance({ completedAt: '2026-11-12T20:00:00.000Z', completedStudyDay: '2026-11-12' })]);
-    const { uc, receipts } = build({ store });
-    const out = await uc.execute(KEY);
+    const { uc, receipts, logger } = build({ store });
+    const out = await uc.execute({ ...KEY, device: 'kitchen-scanner' });
     expect(out).toMatchObject({ status: 'already', ok: true, message: 'Already counted', learnerId: 'learner_a' });
     expect(out.ok).toBe(true);
     expect(store.calls.complete).toHaveLength(0);
     expect(docText(receipts.docs[0])).toContain("Learner A's Maze 12 was counted on 2026-11-12.");
+    expect(logged(logger.info, 'school.printed-activity.scan-duplicate')[0][1]).toEqual({
+      learnerId: 'learner_a', issuanceId: 'iss-1', corpusId: 'mazes', platform: 'beeloo', externalId: 'page-123',
+      device: 'kitchen-scanner', completedStudyDay: '2026-11-12',
+    });
   });
 
   it('a concurrent scan that lost the race says already counted', async () => {
     const store = fakeStore([issuance()]);
     const done = issuance({ completedAt: '2026-11-14T17:59:59.000Z', completedStudyDay: '2026-11-14' });
     store.complete = vi.fn(async () => ({ status: 'already', issuance: done }));
-    const { uc, receipts } = build({ store });
+    const { uc, receipts, logger } = build({ store });
     const out = await uc.execute(KEY);
     expect(out).toMatchObject({ status: 'already', ok: true, message: 'Already counted' });
+    expect(logged(logger.info, 'school.printed-activity.scan-duplicate')).toHaveLength(1);
     expect(store.complete).toHaveBeenCalledTimes(1);
     expect(docText(receipts.docs[0])).toContain('was counted on 2026-11-14.');
   });
@@ -134,10 +139,14 @@ describe('RecordPrintedActivityScan', () => {
 
   it('a voided page is not counted', async () => {
     const store = fakeStore([issuance({ voidedAt: '2026-11-10T18:00:05.000Z', voidReason: 'print_failed' })]);
-    const { uc, receipts } = build({ store });
-    const out = await uc.execute(KEY);
+    const { uc, receipts, logger } = build({ store });
+    const out = await uc.execute({ ...KEY, device: 'kitchen-scanner' });
     expect(out).toMatchObject({ status: 'voided', ok: false, message: 'Not counted' });
     expect(store.calls.complete).toHaveLength(0);
+    expect(logged(logger.info, 'school.printed-activity.scan-voided')[0][1]).toEqual({
+      learnerId: 'learner_a', issuanceId: 'iss-1', corpusId: 'mazes', platform: 'beeloo', externalId: 'page-123',
+      device: 'kitchen-scanner', voidReason: 'print_failed',
+    });
     expect(docText(receipts.docs[0])).toContain('This sheet was cancelled when it was printed. Print a new one.');
   });
 
