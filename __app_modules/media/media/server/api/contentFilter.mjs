@@ -87,6 +87,17 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const { status, step = null, error = null, results = null } = req.body || {};
       res.json(await jobs.complete({ ratingKey: String(req.params.ratingKey).replace(/[^0-9]/g, ''), runId: req.params.runId, owner: owner(req), status, step, error, results }));
     }));
+    // POST /:ratingKey/jobs/:runId/cancel { by? } -> { run } (Admin "Stop"; 404 unknown, 409 already settled)
+    router.post('/:ratingKey/jobs/:runId/cancel', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      try {
+        res.json({ run: await jobs.cancel({ ratingKey, runId: String(req.params.runId), by: req.body?.by ? String(req.body.by).slice(0, 80) : null }) });
+      } catch (error) {
+        if (error.status === 404 || error.status === 409) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
+    }));
     router.get('/:ratingKey/jobs', asyncHandler(async (req, res) => {
       const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
       if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });

@@ -96,5 +96,19 @@ describe('runWorker (remote)', () => {
     expect(bodies.at(-1).recent[0].cue).toBe('va5');
     expect(PROGRESS_MIN_MS).toBe(2000);
   });
-});
 
+  it('a stopped run: the refused report aborts the step and nothing is completed', async () => {
+    const api = fakeApi([claimed()]); let signal = null;
+    // Stopped from Admin while refine runs: the next report (refine's progress) is refused.
+    api.progress = async (rk, id, body) => { if (!body.step?.progress) return; throw new Error('This run is no longer yours.'); };
+    await runWorker(opts(api, async (name, ctx) => {
+      if (name !== 'refine') return { code: 0 };
+      signal = ctx.signal;
+      ctx.onLine('Sync: x');
+      await new Promise((r) => setTimeout(r, 20));
+      return { code: signal.aborted ? 1 : 0 };
+    }));
+    expect(signal.aborted).toBe(true);
+    expect(api.calls.find((c) => c[0] === 'complete')).toBeUndefined();
+  });
+});

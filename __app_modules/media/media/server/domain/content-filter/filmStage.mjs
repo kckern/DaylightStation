@@ -1,6 +1,6 @@
 /**
  * Where a film is on the way from a rough VidAngel EDL to a parent-certified filter (Admin
- * library). A failed or interrupted run is a flag on the film, not a stage.
+ * library). A failed, interrupted or cancelled (stopped) run is a flag on the film, not a stage.
  */
 export const STAGES = ['rough', 'running', 'refined', 'scenes', 'audited', 'machine', 'parent'];
 export const STAGE_LABELS = {

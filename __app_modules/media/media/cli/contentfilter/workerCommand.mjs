@@ -111,7 +111,10 @@ export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = 
     const { ratingKey: rk, run } = claimed;
     log('content-filter.worker.claimed', { owner, ratingKey: rk, runId: run.id, kind: run.kind, steps: claimed.steps });
     let beating = true;
-    const beat = () => { if (!beating) return; api.progress(rk, run.id, { owner }).catch(() => {}).finally(() => { if (beating) schedule(beat, WORKER_HEARTBEAT_MS); }); };
+    // Stopped from Admin: the app refuses this worker's next report; the step in flight is killed.
+    let stopped = false; let abort = null;
+    const refused = (e) => { if (/no longer yours/i.test(String(e?.message))) { stopped = true; abort?.abort(); } };
+    const beat = () => { if (!beating) return; api.progress(rk, run.id, { owner }).catch(refused).finally(() => { if (beating) schedule(beat, WORKER_HEARTBEAT_MS); }); };
     schedule(beat, WORKER_HEARTBEAT_MS);
     let failure = null; let exported = false;
     try {
@@ -129,14 +132,22 @@ export async function runWorker({ api, owner, runStep, stageRoot, realDataDir = 
           const edge = parsed.phase === 'measure' && (parsed.done === 1 || parsed.done === parsed.total);
           if (!phaseChanged && !edge && now() - sentAt < PROGRESS_MIN_MS) return;
           sentAt = now();
-          api.progress(rk, run.id, { owner, step: { name, status: 'running', progress: prog } }).catch(() => {});
+          api.progress(rk, run.id, { owner, step: { name, status: 'running', progress: prog } }).catch(refused);
         };
-        const r = await runStep(name, { ...stage, claimed, onLine, args: stepArgs(name, claimed).map((a) => a.replace('__STAGE_MEDIA__', stage.mediaDir)) });
+        abort = new AbortController();
+        if (stopped) break;
+        const r = await runStep(name, { ...stage, claimed, onLine, signal: abort.signal, args: stepArgs(name, claimed).map((a) => a.replace('__STAGE_MEDIA__', stage.mediaDir)) });
+        if (stopped) break;
         if (r.code !== 0) { failure = { step: name, error: String(r.stderrTail || `exit ${r.code}`).slice(-TAIL) }; break; }
         if (name === 'export') exported = true;
         await api.progress(rk, run.id, { owner, step: { name, status: 'done' } });
       }
       beating = false;
+      if (stopped) {
+        log('content-filter.worker.cancelled', { owner, ratingKey: rk, runId: run.id });
+        rmSync(stage.dir, { recursive: true, force: true });
+        continue;
+      }
       if (failure) await api.complete(rk, run.id, { owner, status: 'failed', ...failure });
       else await api.complete(rk, run.id, { owner, status: 'done', results: stage.collect({ exported }) });
       log(failure ? 'content-filter.worker.failed' : 'content-filter.worker.done', { owner, ratingKey: rk, runId: run.id, ...(failure || {}) });

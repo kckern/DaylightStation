@@ -36,4 +36,13 @@ describe('ChildProcessContentFilterCli', () => {
     expect(r.code).toBe(0);
     expect(lines).toEqual(['a', 'bc', '  [1/2] va1 visual refined 1–2', 'tail']);
   });
+
+  it('an aborted signal kills the child', async () => {
+    const ac = new AbortController(); const t0 = Date.now();
+    setTimeout(() => ac.abort(), 100);
+    const r = await new ChildProcessContentFilterCli({ cliPath: fake, nice: false }).run('sleep', [], { signal: ac.signal });
+    expect(r.code).toBe(1);
+    expect(r.stderrTail).toContain('stopped');
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
 });

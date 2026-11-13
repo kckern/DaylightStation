@@ -98,5 +98,22 @@ describe('worker presence', () => {
     expect(step.progress.recent).toHaveLength(8);
     expect(step.progress.recent[0].detail).toHaveLength(80);
   });
-});
 
+  it('stop: a queued run is cancelled at once and leaves the queue', async () => {
+    const jobs = make(); const run = await jobs.enqueue({ ratingKey: '1', kind: 'make' });
+    const out = await jobs.cancel({ ratingKey: '1', runId: run.id, by: 'admin' });
+    expect(out).toMatchObject({ status: 'cancelled', cancelledBy: 'admin' });
+    expect((await jobs.state()).queued).toEqual([]);
+    expect(await jobs.claimRemote({ owner: 'w1' })).toBeNull();
+  });
+  it('stop: a running run is cancelled; the worker\'s next report is refused; a second stop is 409', async () => {
+    const jobs = make(); await jobs.enqueue({ ratingKey: '1', kind: 'make' });
+    const { run } = await jobs.claimRemote({ owner: 'w1' });
+    await jobs.cancel({ ratingKey: '1', runId: run.id, by: 'admin' });
+    expect((await jobs.state()).running).toEqual([]);
+    expect(await jobs.busyWriting('1')).toBe(false);
+    await expect(jobs.progress({ ratingKey: '1', runId: run.id, owner: 'w1' })).rejects.toBeInstanceOf(JobConflict);
+    await expect(jobs.cancel({ ratingKey: '1', runId: run.id })).rejects.toMatchObject({ status: 409 });
+    await expect(jobs.cancel({ ratingKey: '1', runId: 'nope' })).rejects.toMatchObject({ status: 404 });
+  });
+});

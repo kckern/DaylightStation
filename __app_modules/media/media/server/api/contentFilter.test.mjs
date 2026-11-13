@@ -48,4 +48,13 @@ describe('GET /:rk/review starts a missing audit', () => {
     await request(app).get('/cf/5/review');
     expect(jobs.audit).not.toHaveBeenCalled();
   });
+
+  it('POST /:rk/jobs/:runId/cancel stops a run', async () => {
+    const jobs = { ...jobsStub(), cancel: vi.fn(async ({ runId }) => ({ id: runId, status: 'cancelled' })) };
+    const { app } = appWith({ review: {}, jobs });
+    const res = await request(app).post('/cf/699056/jobs/r1/cancel').send({ by: 'admin' });
+    expect(res.status).toBe(200);
+    expect(res.body.run).toEqual({ id: 'r1', status: 'cancelled' });
+    expect(jobs.cancel).toHaveBeenCalledWith({ ratingKey: '699056', runId: 'r1', by: 'admin' });
+  });
 });

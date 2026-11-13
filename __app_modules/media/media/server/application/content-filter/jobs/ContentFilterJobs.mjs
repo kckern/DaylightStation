@@ -250,6 +250,26 @@ export class ContentFilterJobs {
     return promise;
   }
 
+  /**
+   * Stop a queued or running run (Admin "Stop"). It settles as `cancelled` at once, so the queue and
+   * the deploy gate drop it; a worker running it is refused at its next report and kills its step.
+   * What the run measured before it stopped stays in its stage folder only: nothing is applied.
+   */
+  async cancel({ ratingKey, runId, by = null }) {
+    const rk = String(ratingKey);
+    const run = await this.#withRecord(rk, (rec) => {
+      const r = rec.runs.find((x) => x.id === runId);
+      if (!r) throw Object.assign(new Error('No such run.'), { status: 404 });
+      if (!OPEN.has(r.status)) throw new JobConflict('This run has already finished.');
+      Object.assign(r, { status: 'cancelled', endedAt: this.#now().toISOString(), cancelledBy: by });
+      return structuredClone(r);
+    });
+    this.#queue = this.#queue.filter((x) => x !== rk);
+    this.#logger.info?.('content-filter.job.cancelled', { ratingKey: rk, runId, step: run.step, by });
+    for (const fn of this.#settled) { try { fn({ ratingKey: rk, runId, status: 'cancelled' }); } catch { /* listener */ } }
+    return run;
+  }
+
   /** On boot: runs that were in flight or waiting are interrupted; nothing restarts on its own. */
   async recover() {
     for (const rec of await this.#store.list()) {
