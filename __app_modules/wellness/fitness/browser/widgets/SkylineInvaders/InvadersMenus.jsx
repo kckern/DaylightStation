@@ -44,18 +44,24 @@ export function StarRow({ count = 0, className = '' }) {
  */
 export function InvadersTouchKeys({ keys = [], onPress }) {
   if (!keys.length) return null;
+  // The screen's decision is the row of four; Controls and Exit (positions 5
+  // and 6) are a second, smaller row under it, so six keys never share a row.
+  const main = keys.filter((key) => key.position <= 4);
+  const extra = keys.filter((key) => key.position > 4);
+  const button = (key) => (
+    <button
+      key={key.position} type="button" className="skyline-invaders__key" data-position={key.position}
+      disabled={key.disabled} title={key.hint || undefined} onClick={() => onPress?.(key.position)}
+    >
+      {iconForSymbol(key.icon) && <span className="skyline-invaders__key-icon" aria-hidden="true"><PixelIcon name={iconForSymbol(key.icon)} /></span>}
+      <strong>{key.label}</strong>
+      {DRAWN_HINTS.includes(key.hint) && <small>{key.hint}</small>}
+    </button>
+  );
   return (
-    <div className="skyline-invaders__keys" role="group" aria-label="Actions" data-testid="invaders-keys">
-      {keys.map((key) => (
-        <button
-          key={key.position} type="button" className="skyline-invaders__key" data-position={key.position}
-          disabled={key.disabled} title={key.hint || undefined} onClick={() => onPress?.(key.position)}
-        >
-          {iconForSymbol(key.icon) && <span className="skyline-invaders__key-icon" aria-hidden="true"><PixelIcon name={iconForSymbol(key.icon)} /></span>}
-          <strong>{key.label}</strong>
-          {DRAWN_HINTS.includes(key.hint) && <small>{key.hint}</small>}
-        </button>
-      ))}
+    <div className="skyline-invaders__keyboard" role="group" aria-label="Actions" data-testid="invaders-keys">
+      {main.length > 0 && <div className="skyline-invaders__keys">{main.map(button)}</div>}
+      {extra.length > 0 && <div className="skyline-invaders__keys skyline-invaders__keys--extra">{extra.map(button)}</div>}
     </div>
   );
 }

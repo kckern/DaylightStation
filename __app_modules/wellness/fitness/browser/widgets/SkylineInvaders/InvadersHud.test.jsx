@@ -67,6 +67,8 @@ describe('InvadersHud', () => {
     expect(screen.getByTestId('invaders-weapon').getAttribute('data-tier')).toBe('spread');
     expect(ladder()).toEqual([['Single', 'is-done'], ['Double', 'is-done'], ['Spread', 'is-current'], ['Bomb', '']]);
     expect(screen.getByLabelText('Weapon: Spread')).toBeTruthy();
+    // Only the weapon in hand is spelled out; the other steps are pips.
+    expect([...screen.getByTestId('invaders-weapon').querySelectorAll('li')].map((li) => li.textContent)).toEqual(['', '', 'Spread', '']);
   });
 
   it('shows the power meter filling, and tells the shooter to stomp when a bomb is ready', () => {

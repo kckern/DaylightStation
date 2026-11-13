@@ -345,7 +345,7 @@
 // One card per gesture in the menu window, set at the top of the screen so the
 // practice targets, the skyline and the cannon stay in view under it.
 .skyline-invaders[data-screen="controls"] .skyline-invaders__menu { align-content: start; padding-top: .8vw; }
-.skyline-invaders[data-screen="controls"] .skyline-invaders__window { width: min(100%, 76rem); }
+.skyline-invaders[data-screen="controls"] .skyline-invaders__window { width: min(100%, max(76rem, 88vw)); }
 // The card is kept short and its keys low-profile, so the targets under it stay in view.
 .skyline-invaders[data-screen="controls"] .skyline-menus { padding-top: 1vw; padding-bottom: 1vw; }
 .skyline-invaders[data-screen="controls"] .skyline-invaders__keys { margin-top: .8vw; }
@@ -417,7 +417,9 @@
 // Invaders is played standing on the mat and driven by touch: no bike-button
 // panel. One centred window holds the screen's people tiles and action keys.
 .skyline-invaders .skyline-invaders__menu { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-.skyline-invaders__menu .skyline-invaders__window { width: min(100%, 64rem); }
+// 64rem is the garage width's window (1381 px: 74vw). The type is set in vw, so on a wider
+// screen the window grows with it; a fixed 64rem there left the key labels wider than their keys.
+.skyline-invaders__menu .skyline-invaders__window { width: min(100%, max(64rem, 74vw)); }
 .skyline-invaders__keys {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: calc(3 * var(--sg-px));
   margin-top: 1.6vw;
@@ -440,6 +442,17 @@
   small { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.05; }
 }
 .skyline-invaders__key-icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; }
+// Controls and Exit: their own smaller row under the screen's four keys, at the right.
+.skyline-invaders__keys--extra {
+  display: flex; justify-content: flex-end; margin-top: calc(2 * var(--sg-px));
+  .skyline-invaders__key { flex-direction: row; gap: .8rem; min-height: 50px; padding: .3rem 1.2rem; }
+}
+// The wave list and the result are the tallest screens: with the extra key row
+// under them they give up most of the menu's top and bottom margin, so the
+// window and every key stay on the garage screen (1381 x 777).
+.skyline-invaders[data-screen="waves"] .skyline-invaders__menu, .skyline-invaders[data-screen="result"] .skyline-invaders__menu { padding-top: .5vw; padding-bottom: .5vw; }
+.skyline-invaders[data-screen="waves"] .skyline-invaders__keys, .skyline-invaders[data-screen="result"] .skyline-invaders__keys { margin-top: .8vw; }
+.skyline-invaders[data-screen="waves"] .skyline-invaders__keys--extra, .skyline-invaders[data-screen="result"] .skyline-invaders__keys--extra { margin-top: calc(2 * var(--sg-px)); }
 .skyline-invaders__people {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: calc(3 * var(--sg-px));
   margin-top: 1.4vw; max-height: 52vh; overflow-y: auto;

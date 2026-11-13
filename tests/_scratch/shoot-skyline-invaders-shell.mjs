@@ -129,7 +129,9 @@ const audit = (page) => page.evaluate(() => {
   const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   const overlaps = more ? [...root.querySelectorAll('.skyline-menus, .skyline-invaders__pause, .skyline-invaders__hud-left, .skyline-invaders__hud-centre, .skyline-invaders__hud-right, .skyline-invaders__hud-notes > *')].filter((frame) => hit(box(more), box(frame))).map((frame) => frame.className) : [];
   const moreBox = more ? box(more) : null;
-  return { overlaps, moreBox, texts, buttons, width: window.innerWidth, height: window.innerHeight, scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight] };
+  const frame = root.querySelector('.skyline-invaders__window');
+  const windowBox = frame && visible(frame) ? box(frame) : null;
+  return { windowBox, overlaps, moreBox, texts, buttons, width: window.innerWidth, height: window.innerHeight, scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight] };
 });
 
 // Muted twice over: the Invaders harness stubs the game's audio engine, and the browser itself has no volume.
@@ -162,6 +164,8 @@ for (const [width, height] of viewports) {
       if (seen.overlaps.length) problems.push(`more button overlaps: ${seen.overlaps.join(', ')} at ${JSON.stringify(seen.moreBox)}`);
       if (seen.moreBox && (seen.moreBox.right - seen.moreBox.left < 48 || seen.moreBox.bottom - seen.moreBox.top < 48)) problems.push(`more button under 48px: ${JSON.stringify(seen.moreBox)}`);
       if (off.length) problems.push(`off screen: ${JSON.stringify(off)}`);
+      // The menu window and its keys, whole: nothing clipped at the top or the bottom.
+      if (seen.windowBox && (seen.windowBox.top < 4 || seen.windowBox.bottom > seen.height - 4)) problems.push(`window does not fit: ${JSON.stringify(seen.windowBox)} in ${seen.height}`);
       if (small.length) problems.push(`text under ${MIN_TEXT_PX}px: ${JSON.stringify(small)}`);
       if (seen.scroll[0] > seen.width || seen.scroll[1] > seen.height) problems.push(`page scrolls: ${seen.scroll.join('x')} in ${seen.width}x${seen.height}`);
     }
