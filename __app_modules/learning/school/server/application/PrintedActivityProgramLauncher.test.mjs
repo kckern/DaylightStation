@@ -405,6 +405,15 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       expect(store.markPrinted).not.toHaveBeenCalled();
     });
 
+    it('a printer that throws on a reprint does not reset the clock either', async () => {
+      const calls = [];
+      const store = fakeStore([issuance({ externalId: 'm-2' })], calls);
+      const printer = { printPdf: vi.fn().mockRejectedValue(new Error('jam')) };
+      const { launcher } = setup({ store, printer });
+      expect((await go(launcher)).decision).toBe('failed');
+      expect(store.markPrinted).not.toHaveBeenCalled();
+    });
+
     it('a failed markPrinted is logged and the answer is still dispatched', async () => {
       const store = fakeStore();
       store.markPrinted.mockRejectedValueOnce(new Error('disk'));
@@ -585,11 +594,12 @@ describe('PrintedActivityProgramLauncher.launch', () => {
     expect(log.warn).not.toHaveBeenCalledWith('school.printed-activity.pool-exhausted', expect.anything());
   });
 
-  it('a throw on the fresh sample is a platform fault', async () => {
+  it('a throw on the fresh sample still says the level is used up: the first list loaded', async () => {
     const store = fakeStore(POOL.map((p, i) => issuance({ issuanceId: `pa_${i}`, externalId: p.externalId, completedAt: 'x', completedStudyDay: '2026-11-01' })));
     const platform = fakePlatform({ listActivities: vi.fn().mockResolvedValueOnce(POOL).mockRejectedValueOnce(new Error('beeloo down')) });
-    const { launcher } = setup({ store, platform });
-    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'Worksheets are unavailable right now. Ask a grown-up.' });
+    const { launcher, log } = setup({ store, platform });
+    expect(await go(launcher)).toEqual({ decision: 'failed', message: 'No new maze pages left at this level. Ask a grown-up.' });
+    expect(log.warn).toHaveBeenCalledWith('school.printed-activity.resample-failed', expect.objectContaining({ error: 'beeloo down' }));
   });
 
   it('fails when the platform is not configured', async () => {

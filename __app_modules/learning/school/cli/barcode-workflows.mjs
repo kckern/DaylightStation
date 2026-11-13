@@ -102,10 +102,10 @@ function resolvePrinterConfig(dataDir, flags) {
 
 /**
  * The household's `url_rules`, read from the same barcode config the backend
- * loads, so a printed worksheet QR classifies here exactly as it does in
- * production. Compiled with the same validator: a rule that would stop the
- * boot fails this command too, rather than reporting a classification the
- * station could never produce.
+ * loads, so a printed worksheet QR classifies here as it does in production.
+ * Compiled with the same validator, but strictly: a rule the boot would log
+ * and drop fails this command loudly, so its author sees it here. (The CLI
+ * also does not drop a rule whose namespace has no handler; the boot does.)
  */
 function loadUrlRules(dataDir) {
   const file = path.join(dataDir, 'household', `${HOUSEHOLD_APP_CONFIGS.barcode}.yml`);

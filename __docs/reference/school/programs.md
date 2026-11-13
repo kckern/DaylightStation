@@ -654,7 +654,9 @@ Check the printer tray." and logs `reprint-cooldown`. That includes the loser
 of a double scan, whose sheet came out a moment ago. The launcher prints with
 `printPdf` directly, so the household page quota in PrintService never sees
 these jobs; the cooldown is the brake on a repeated ticket. Rows written before
-`lastPrintedAt` existed read `issuedAt` instead. A page is never re-issued in the household because the QR names
+`lastPrintedAt` existed read `issuedAt` instead.
+
+A page is never re-issued in the household because the QR names
 the page, not the copy: an old sheet in a drawer must not credit whoever holds
 that page next.
 

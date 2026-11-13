@@ -476,6 +476,13 @@ describe('compileUrlRulesLenient', () => {
   const good = { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' };
   const good2 = { id: 'other', match: '^https://y\\.example/(?<id>\\w+)$', namespace: 'worksheet', platform: 'other' };
 
+  it('an invalid rule does not claim its id: a later valid rule with the same id is kept', () => {
+    const { rules, errors } = compileUrlRulesLenient([{ ...good, match: '(' }, good]);
+    expect(rules.map((r) => r.id)).toEqual(['beeloo-page']);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ index: 0, id: 'beeloo-page' });
+  });
+
   it('compiles every valid rule and reports each invalid one', () => {
     const { rules, errors } = compileUrlRulesLenient([
       good,

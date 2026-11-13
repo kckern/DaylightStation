@@ -5,7 +5,7 @@ import { IWorksheetPlatform } from '#apps/common/ports/IWorksheetPlatform.mjs';
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 const json = (body) => ({ ok: true, status: 200, json: async () => body });
 const pdf = () => ({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.4').buffer });
-const make = (fetchImpl, logger = silent) => new BeelooWorksheetPlatformAdapter({ baseUrl: 'http://beeloo-app:8111', fetchImpl, logger });
+const make = (fetchImpl, logger = silent) => new BeelooWorksheetPlatformAdapter({ baseUrl: 'http://beeloo.test:8111', fetchImpl, logger });
 
 describe('BeelooWorksheetPlatformAdapter', () => {
   it('is an IWorksheetPlatform with id beeloo', () => {
@@ -19,7 +19,7 @@ describe('BeelooWorksheetPlatformAdapter', () => {
       { beeloo_id: 'glD5B71Bj', theme: 'boston', title: 'North End Labyrinth', contentType: 'maze', skillLevel: 3 },
     ] }));
     const rows = await make(fetchImpl).listActivities({ kind: 'maze', level: 3 });
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo-app:8111/api/pages?contentType=maze&skillLevel=3&pageMax=250');
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo.test:8111/api/pages?contentType=maze&skillLevel=3&pageMax=250');
     expect(rows).toEqual([{ externalId: 'glD5B71Bj', title: 'North End Labyrinth', kind: 'maze', level: 3, theme: 'boston' }]);
   });
 
@@ -52,7 +52,7 @@ describe('BeelooWorksheetPlatformAdapter', () => {
   it('fetches the printable PDF for the paper size', async () => {
     const fetchImpl = vi.fn(async () => pdf());
     const bytes = await make(fetchImpl).getPrintable('glD5B71Bj', { paper: 'letter' });
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo-app:8111/media/letter/printable/glD5B71Bj.pdf');
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo.test:8111/media/letter/printable/glD5B71Bj.pdf');
     expect(Buffer.isBuffer(bytes)).toBe(true);
     expect(bytes.subarray(0, 4).toString()).toBe('%PDF');
   });
@@ -60,7 +60,7 @@ describe('BeelooWorksheetPlatformAdapter', () => {
   it('fetches the solution from the solution folder', async () => {
     const fetchImpl = vi.fn(async () => pdf());
     await make(fetchImpl).getSolution('glD5B71Bj', { paper: 'a4' });
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo-app:8111/media/a4/solution/glD5B71Bj.pdf');
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://beeloo.test:8111/media/a4/solution/glD5B71Bj.pdf');
   });
 
   it('refuses an id that is not a Beeloo id (path safety)', async () => {
@@ -93,7 +93,7 @@ describe('BeelooWorksheetPlatformAdapter', () => {
     const boom = async () => { throw new Error('ECONNREFUSED'); };
     await expect(make(boom, logger).getPrintable('glD5B71Bj')).rejects.toThrow(/ECONNREFUSED/);
     expect(logger.warn).toHaveBeenCalledWith('worksheets.beeloo.request-failed', expect.objectContaining({
-      url: 'http://beeloo-app:8111/media/letter/printable/glD5B71Bj.pdf', error: 'ECONNREFUSED',
+      url: 'http://beeloo.test:8111/media/letter/printable/glD5B71Bj.pdf', error: 'ECONNREFUSED',
     }));
   });
 });

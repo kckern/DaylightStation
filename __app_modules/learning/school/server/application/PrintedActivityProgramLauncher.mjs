@@ -313,7 +313,14 @@ export class PrintedActivityProgramLauncher {
           resampled = true;
           try {
             pool = await platform.listActivities({ kind, level, paper });
-          } catch (err) { throw new PlatformFault(err); }
+          } catch (err) {
+            // The first list loaded fine, so the honest answer is still "no
+            // new pages", not "worksheets are unavailable".
+            this.#log('warn', 'school.printed-activity.resample-failed', {
+              userId, corpusId: entry.corpusId, platform: platformId, error: errText(err),
+            });
+            pool = [];
+          }
           continue;
         }
         if (!page) {

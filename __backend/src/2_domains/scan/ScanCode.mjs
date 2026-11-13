@@ -249,7 +249,8 @@ export function isUrlCode(raw) {
 /**
  * Validate and compile household `url_rules` (barcode config). Pure: the caller
  * reads the YAML; this refuses anything that would make a scan ambiguous, so a
- * bad rule stops the boot instead of misrouting a sheet hours later.
+ * bad rule is refused (the CLI) or logged and dropped (the boot, through
+ * `compileUrlRulesLenient`) instead of misrouting a sheet hours later.
  *
  * The `(?<id>…)` capture is required because it IS the body: a rule that
  * matched without naming the page would hand its handler nothing to look up.
