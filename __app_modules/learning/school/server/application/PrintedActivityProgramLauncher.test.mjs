@@ -329,14 +329,17 @@ describe('PrintedActivityProgramLauncher.launch', () => {
       expect(store.void).not.toHaveBeenCalled();
     });
 
-    it('PAGE_ALREADY_OPEN held by this learner reprints our own page', async () => {
-      const store = fakeStore();
+    it('PAGE_ALREADY_OPEN held by this learner (another corpus) picks again, never borrows that sheet', async () => {
+      // The store checks the corpus before the page, so a page this learner
+      // holds can only be held under ANOTHER corpus. Reprinting it here would
+      // let this ticket's scan credit the other corpus.
+      const calls = [];
+      const store = fakeStore([], calls);
       store.append.mockRejectedValueOnce(raceErr('learner_a'));
-      const { launcher, printer } = setup({ store });
-      expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'North End Labyrinth is printing.' });
-      expect(store.append).toHaveBeenCalledTimes(1);
-      expect(printer.printPdf).toHaveBeenCalledWith(Buffer.from('pdf:m-1'), expect.any(Object));
-      expect(store.void).not.toHaveBeenCalled();
+      const { launcher } = setup({ store });
+      expect(await go(launcher)).toEqual({ decision: 'dispatched', message: 'Forest Path is printing.' });
+      expect(store.append.mock.calls.map(([i]) => i.externalId)).toEqual(['m-1', 'm-2']);
+      expect(calls.filter((c) => c.startsWith('print:'))).toEqual(['print:m-2']);
     });
 
     it('two concurrent launches end with one reservation and two prints of the same page', async () => {

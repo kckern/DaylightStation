@@ -289,9 +289,10 @@ export class PrintedActivityProgramLauncher {
           // A second scan of the ticket landed between our read and our write.
           return { reprint: err.held };
         }
-        if (err?.code === PAGE_ALREADY_OPEN && err.heldBy === userId) {
-          return { reprint: { ...issuance, issuanceId: err.issuanceId ?? null } };
-        }
+        // A page held open by THIS learner is not ours to reprint: the store
+        // checks the corpus first, so a same-learner hold here is under another
+        // corpus, and borrowing that sheet would let this ticket credit it.
+        // Treat it like any other holder and pick again.
         if (err?.code === PAGE_ALREADY_OPEN) {
           this.#log('warn', 'school.printed-activity.page-race', {
             userId, corpusId: entry.corpusId, platform: platformId, externalId: page.externalId,
@@ -329,9 +330,8 @@ export class PrintedActivityProgramLauncher {
    * REPRINT. A learner who already holds an open page in this corpus gets THAT
    * page again (the lost-sheet path); nothing is appended or voided. A double
    * scan resolves the same way even when both scans race past the read: the
-   * store refuses the second reservation (`CORPUS_ALREADY_OPEN`, or
-   * `PAGE_ALREADY_OPEN` held by this learner) and the loser reprints the
-   * winner's page.
+   * store refuses the second reservation (`CORPUS_ALREADY_OPEN`, checked before
+   * the page) and the loser reprints the winner's page.
    */
   async launch({ userId, corpusId }) {
     const failed = (message) => ({ decision: 'failed', message });
