@@ -36,7 +36,7 @@ createBarcodeRelay()                       [3_applications/hardware/barcodeRelay
             ▼
         scanDispatch.handleScan(relay)     [5_composition/modules/scanDispatch.mjs]
             ▼
-        parseScanCode(code) → { namespace, body, raw, form }   [2_domains/scan/ScanCode.mjs]
+        parseScanCode(code, { urlRules }) → { namespace, body, raw, form }   [2_domains/scan/ScanCode.mjs]
             ▼
         ScanDispatcher.dispatch()          [3_applications/scan/ScanDispatcher.mjs]
             │  namespace, or the reader's route, or `unknown`
@@ -49,6 +49,7 @@ createBarcodeRelay()                       [3_applications/hardware/barcodeRelay
             ├─ nutrition ─→ routeNutribotScan → ApplyScanToComposition, then an ACK
             │                  edit on the live scale prompt
             ├─ product ───→ LogFoodFromUPC (nutribot Telegram reply)
+            ├─ worksheet ─→ schoolLifecycle.handleWorksheetScan({ platform, externalId: body })
             └─ (no handler / nothing claimed) → an Outcome saying so
 ```
 
@@ -85,6 +86,7 @@ First match wins.
 
 | Step | Form | Claims | Where |
 |---|---|---|---|
+| 0 | `url-rule` | an `http(s)://` URL matching a household `url_rules` entry → that rule's namespace, `body` = its `(?<id>…)` capture; any other URL → `unknown` | `ScanCode` |
 | 1 | `prefixed` | a registered tag above | `ScanCode` |
 | 2 | `legacy-prefixed` | bare `dl:` `ct:` `rs:` → nutrition | `ScanCode` |
 | 3 | `legacy-positional` | anything else with a non-empty segment before its first colon → content | `ScanCode` |
@@ -96,6 +98,11 @@ First match wins.
 un-prefixed forms, so they stay recognised; the whole shelf is deleted once those are reprinted.
 Nothing in steps 1, 4 or 6 depends on it. Prefer the prefixed grammar for anything printed from
 now on.
+
+**Step 0 decides every URL.** A scheme is never a tag: before step 0, `https` fell to step 3 and
+every printed web link in the house went to content, which refused it as a typo. An unmatched URL
+is `unknown` on every reader; the dispatcher does not apply the step-5 route to a URL. A
+`url-rule` result also carries `rule` (the rule id) and `platform`, which the handler receives.
 
 **Step 5 is the only thing the reader's route still decides,** and it is consumed before any
 handler runs. `ScanCode` deliberately knows nothing about readers — it imports nothing and cannot
@@ -209,8 +216,8 @@ Persistence records what was scanned, before any routing. It is unaffected by th
 | File | Keys | Purpose |
 |------|------|---------|
 | `data/household/config/devices.yml` | `type: barcode-scanner`, `target_screen`, `policy_group`, `content_control.topic`, `device_control.displays.*.on_script` | Registers the scanner **by device id** (must match the relay's `device`) → pipeline acts on it. `on_script` wakes the TV via Home Assistant on approved content. Screen-path slugs and `content_control.topic` values are also the screen-name list the collision check runs against. The `loadFallback` screen→device map takes each declared `screen_path` first; a content device without one claims its fuzzy-matched screen (`office-tv` → `office`, see `ScreenAddressResolver`) if no device declared it. |
-| `data/household/config/barcode.yml` | `default_action`, `actions`, `persistence.dir` | Content actions + history root. |
-| `data/household/config/barcode-relay.yml` | `relays.<device>.route` (`content`\|`nutribot`), `relays.<device>.scale_id`, `relays.<device>.nutribot.*`, `nutribot.*` | Per-reader step-5 route, the scale a fridge-sheet scan applies to, and the nutribot user/conversation used for UPC lookups. |
+| `data/household/hardware/barcode/config.yml` | `default_action`, `actions`, `persistence.dir`, `url_rules` | Content actions + history root. `url_rules` is a list of `{ id, match, namespace, platform }`: `match` is a regex with an `(?<id>…)` capture, `namespace` must be a scan namespace with a registered handler (e.g. `worksheet`). Compiled at boot by `compileUrlRules`; a bad rule stops the boot. |
+| `data/household/hardware/barcode/relay.yml` | `relays.<device>.route` (`content`\|`nutribot`), `relays.<device>.scale_id`, `relays.<device>.nutribot.*`, `nutribot.*` | Per-reader step-5 route, the scale a fridge-sheet scan applies to, and the nutribot user/conversation used for UPC lookups. |
 
 The relay coerces anything other than `content` or `nutribot` to its default route, so step 5 is
 total over the routes that can actually arrive.

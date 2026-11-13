@@ -230,7 +230,7 @@ describe('branch order in the composition root', () => {
       getObservationService: () => null,
       getLogFoodFromUPC: () => null,
       nutribotIdentity: { defaultUserId: () => null, conversationIdFor: () => null },
-      screenNames: [],
+      screenNames: [], urlRules: [],
       logger: silent, barcodeLogger: silent,
     });
     expect(namespaces).toEqual(

@@ -118,6 +118,7 @@ import { declaredEntryActions } from "../../__app_modules/learning/school/server
 import { reportUnreachableSchoolPrograms } from "../../__app_modules/learning/school/server/composition-school-reachability.mjs";
 import { createLearnerActions } from "../../__capabilities/device-dispatch/server/application/learnerActions.mjs";
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
+import { compileUrlRules } from '#domains/scan/ScanCode.mjs';
 
 
 
@@ -3046,6 +3047,10 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // Wired here (rather than in the earlier "Barcode ingress" block) because it
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
   const { TelegramNutribotIdentity } = await import("../../__app_modules/wellness/nutribot/server/adapters/TelegramNutribotIdentity.mjs");
+  // `url_rules:` in household/hardware/barcode/config.yml — which printed web
+  // links the house claims (e.g. Beeloo worksheet QRs → School). Compiled once;
+  // a bad rule stops the boot.
+  const scanUrlRules = compileUrlRules(configService.getHouseholdAppConfig(householdId, 'barcode')?.url_rules);
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
     book: bookScans,
@@ -3060,6 +3065,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     getLogFoodFromUPC: () => nutribotServices.nutribotContainer.getLogFoodFromUPC(),
     nutribotIdentity: new TelegramNutribotIdentity({ configService, userIdentityService }),
     screenNames: barcodeScreenNames,
+    urlRules: scanUrlRules,
     logger: rootLogger.child({ module: 'scan-dispatch' }),
     barcodeLogger,
   });

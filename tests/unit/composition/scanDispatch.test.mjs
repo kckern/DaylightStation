@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
+import { compileUrlRules } from '#domains/scan/ScanCode.mjs';
 import { swallowNotice } from "../../../__app_modules/wellness/nutribot/server/application/lib/routeNutribotScan.mjs";
 import { ApplyScanToComposition } from "../../../__app_modules/wellness/health/server/application/nutrition/usecases/ApplyScanToComposition.mjs";
 
@@ -69,6 +70,7 @@ function makeDeps(over = {}) {
       conversationIdFor: () => 'telegram:b777_c4242',
     },
     screenNames: ['living-room', 'portal', 'office'],
+    urlRules: [],
     logger: dispatcherLogger,
     barcodeLogger,
     ...over,
@@ -116,7 +118,7 @@ describe('createScanDispatch — construction', () => {
     // fallback assertion above cannot see them. Dropping either registration is
     // otherwise a silent `no handler registered for "school"` at the kiosk.
     expect(harness().scanDispatch.namespaces)
-      .toEqual(['content', 'command', 'school', 'nutrition', 'product', 'book']);
+      .toEqual(['content', 'command', 'school', 'nutrition', 'product', 'book', 'worksheet']);
   });
 
   it('throws when a route falls back to a namespace with no handler', () => {
@@ -212,7 +214,7 @@ describe('createScanDispatch — the composition seam', () => {
   const REQUIRED = [
     'schoolLifecycle', 'schoolCalcResultImporter', 'triggerDispatchService', 'relayInstances', 'relayConfig',
     'applyScanToComposition', 'getObservationService', 'getLogFoodFromUPC',
-    'nutribotIdentity', 'screenNames', 'logger', 'barcodeLogger',
+    'nutribotIdentity', 'screenNames', 'urlRules', 'logger', 'barcodeLogger',
   ];
 
   const depsWithout = (...keys) => {
@@ -1172,5 +1174,56 @@ describe('product repeat suppression', () => {
 
   it('refuses a `now` that is not a clock', () => {
     expect(() => harness({ now: 123 })).toThrow(/now/);
+  });
+});
+
+describe('worksheet scans', () => {
+  const urlRules = compileUrlRules([
+    { id: 'beeloo-page', match: '^https?://qr\\.beeloo\\.com/(?<id>[A-Za-z0-9_-]+)$', namespace: 'worksheet', platform: 'beeloo' },
+  ]);
+  const depsWithout = (...keys) => {
+    const { deps } = makeDeps();
+    for (const key of keys) delete deps[key];
+    return deps;
+  };
+
+  it('hands a Beeloo QR to the school lifecycle worksheet scan', async () => {
+    const handleWorksheetScan = vi.fn(async () => ({ status: 'recorded' }));
+    const h = harness({ urlRules, schoolLifecycle: { handlesCode: () => false, handleScan: null, handleWorksheetScan } });
+    const out = await h.scanDispatch.handleScan({ code: 'https://qr.beeloo.com/glD5B71Bj', device: 'school-console', route: 'school' });
+    expect(handleWorksheetScan).toHaveBeenCalledWith({ platform: 'beeloo', externalId: 'glD5B71Bj', device: 'school-console' });
+    expect(out).toMatchObject({ domain: 'worksheet', status: 'recorded' });
+  });
+
+  it('answers unwired when the lifecycle has no worksheet scan', async () => {
+    const h = harness({ urlRules, schoolLifecycle: null });
+    const out = await h.scanDispatch.handleScan({ code: 'https://qr.beeloo.com/glD5B71Bj', device: 'd' });
+    expect(out).toMatchObject({ ok: false, domain: 'worksheet', status: 'unwired' });
+  });
+
+  it('answers failed, and logs, when the worksheet scan throws', async () => {
+    const handleWorksheetScan = vi.fn(async () => { throw new Error('no such page'); });
+    const h = harness({ urlRules, schoolLifecycle: { handlesCode: () => false, handleScan: null, handleWorksheetScan } });
+    const out = await h.scanDispatch.handleScan({ code: 'https://qr.beeloo.com/glD5B71Bj', device: 'd' });
+    expect(out).toMatchObject({ ok: false, domain: 'worksheet', status: 'failed', message: 'no such page' });
+    expect(eventNames(h.barcodeLogger, 'warn')).toContain('school.worksheet-scan.failed');
+  });
+
+  it('sends an unmatched URL nowhere, even on a content reader', async () => {
+    const h = harness({ urlRules });
+    const out = await h.scanDispatch.handleScan(relayScan({ code: 'https://example.com/a' }));
+    expect(h.triggerDispatchService.handleEvent).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ ok: false, domain: null });
+  });
+
+  it('refuses to boot without urlRules', () => {
+    expect(() => createScanDispatch(depsWithout('urlRules'))).toThrow(/urlRules/);
+  });
+
+  it('refuses to boot when a url rule targets a namespace with no handler', () => {
+    // compileUrlRules checks only the vocabulary; this is the handler check,
+    // so the rule is built by hand to get past the vocabulary.
+    const rule = { id: 'x', re: /^https:\/\/x\/(?<id>\w+)$/, namespace: 'not-handled', platform: null };
+    expect(() => harness({ urlRules: [rule] })).toThrow(/url rule "x"/);
   });
 });
