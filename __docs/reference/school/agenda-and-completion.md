@@ -257,6 +257,36 @@ unit served) is not a disc. When `dayCompletion` is null or `indeterminate` the
 card falls back to its own count. Before 2026-11-03 the board recounted alone and
 read "6 of 7" for a learner every other surface showed done.
 
+**The discs: one per assignment.** `summarize` (`agendaStatusModel.js`) draws
+one disc per assignment from PLAN ∪ EVIDENCE: every session today, every
+program's `servedWork` (grouped by `assignmentUnitId`), each section's `next`,
+and each entry in the section's `pendingPrograms`. A unit already drawn by a
+session or served work is never drawn again from the plan, and an excused
+section draws nothing from the plan. Every one of these counts toward "N of M".
+
+`pendingPrograms` (`planDailyAgenda`, `agenda.mjs`) lists the section's OTHER
+programs still owed today: non-elective, not done today, not held, not
+unavailable/terminal/weekly-satisfied, and meeting today by their own
+`schedule` (a Tue/Thu program is not listed on a Friday). `next` is never
+repeated in it, and an excused or served section lists none. It exists because
+a shelf can owe two programs on one day: before 2026-11-13 a learner with piano
+and a printed coloring page both due on `arts` saw one arts disc until piano
+was done. Curriculum is left out on purpose: a normal subject is served after
+one pass, so a second curriculum unit on the shelf is not owed today. The
+printed agenda is unchanged: it still prints one scannable action per subject.
+
+**Disc icons.** A disc's spoken name is always its subject shelf. Its picture
+is the assignment's own `icon` when it has one the School icon registry knows,
+else the shelf icon (`arts` is a palette), else the apple. `icon` comes from the
+program enrollment (`icon:` on `assignment.programs[]`, validated as a
+non-empty string by `withSchedule` in `SchoolProgramEnrollmentValidators.mjs`)
+or from a program default in `domain/entryIcon.mjs` (`piano-course` → `music`),
+and reaches every disc source: `next`, `pendingPrograms` rows, `servedWork` rows
+(from the owning entry) and the plan `entries` (for session discs). A name the
+registry does not know falls back to the shelf icon and logs
+`school.surface.assignment-icon-missing` once per name. Curriculum entries carry no
+icon yet. The printed agenda still draws the subject icon.
+
 **Coins.** A fixed-width column so the figures line up down every card. Silver
 is the big figure: the learner's earnings so far this week from the roster
 earnings preview (`GET /api/v1/earnings/preview`; see

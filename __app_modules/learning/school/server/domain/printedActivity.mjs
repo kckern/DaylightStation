@@ -9,6 +9,7 @@
  * a test can pin the pick.
  */
 import { SUBJECT_IDS } from './curriculum/unitValidation.mjs';
+import { validateEntryIcon } from "./entryIcon.mjs";
 
 export const PRINTED_ACTIVITY_PROGRAM_ID = 'printed-activity';
 
@@ -83,6 +84,11 @@ export function validatePrintedActivityEnrollment(raw) {
   const paper = a.paper ?? DEFAULT_PAPER;
   if (!PAPERS.includes(paper)) errors.push(`activity.paper must be ${PAPERS.join('|')}, got: ${a.paper}`);
 
+  // An optional disc icon (a name in the School icon registry); no default
+  // here, so a sheet falls back to its shelf's icon on the board.
+  const iconCheck = validateEntryIcon(raw.icon);
+  errors.push(...iconCheck.errors);
+
   if (errors.length) return { errors };
   // `cadence` is not copied: printed-activity is daily only (`target` sheets
   // per study day), so the plan entry is always `cadence: daily`.
@@ -94,6 +100,7 @@ export function validatePrintedActivityEnrollment(raw) {
     title: trimmedOrNull(raw.title),
     target,
     activity: { platform, kind, level: a.level, paper },
+    ...(iconCheck.icon ? { icon: iconCheck.icon } : {}),
   } };
 }
 

@@ -87,3 +87,25 @@ describe('BuildAgenda curriculum progress', () => {
     expect(lessonCards.find((block) => block.icon === 'arts').progress).toBe(PIANO_ROWS);
   });
 });
+
+describe('BuildAgenda pendingPrograms', () => {
+  it('carries a section\'s pendingPrograms through to the JSON sections and keeps one printed card per subject', async () => {
+    const { useCase, planProjection } = fixture();
+    const pending = [{
+      unitId: 'printed-activity:beeloo:coloring', program: 'printed-activity', programInstance: 'beeloo:coloring',
+      title: 'Coloring', subject: 'arts', obligationProgress: { completed: 0, total: 1 },
+    }];
+    const projected = await planProjection.project();
+    planProjection.project.mockResolvedValueOnce({
+      ...projected,
+      sections: projected.sections.map((section) => (section.subject === 'arts'
+        ? { ...section, pendingPrograms: pending } : section)),
+    });
+    const result = await useCase.execute({ learnerId: 'user_4', learnerName: 'User_4' });
+
+    expect(result.sections.find((section) => section.subject === 'arts').pendingPrograms).toEqual(pending);
+    const artsCards = result.document.blocks.filter((block) => block.type === 'scan_action'
+      && block.presentation === 'lesson' && block.icon === 'arts');
+    expect(artsCards).toHaveLength(1);
+  });
+});

@@ -139,17 +139,32 @@ export function createSubjectIconResolver({
       cache.set(ref, null);
       return null;
     }
-    const file = path.resolve(root, `${subject}.svg`);
-    if (file !== root && !file.startsWith(root + path.sep)) {
+    // TWO DIRECTORIES since the Solar split (icons/MANIFEST.md): hand-kept
+    // icons stay in `svg/`, while the Solar ones (`writing`, the transport
+    // set) are generated at prebuild into `svg/generated/`. The browser
+    // registry globs both; reading only `svg/` left the printed agenda's
+    // Writing block blank (`subject-icon:writing` not-found, 2026-11).
+    // `svg/` is read first; no name is meant to live in both.
+    const candidates = [root, path.join(root, 'generated')].map((dir) => path.resolve(dir, `${subject}.svg`));
+    if (candidates.some((file) => file === root || !file.startsWith(root + path.sep))) {
       logger.warn?.('school.subject_icon.unresolved', { ref, reason: 'outside-root' });
       cache.set(ref, null);
       return null;
     }
     let raw;
-    try {
-      raw = readTextFromPath(file);
-    } catch (err) {
-      logger.warn?.('school.subject_icon.unresolved', { ref, reason: err.code === 'ENOENT' ? 'not-found' : err.code || 'unreadable' });
+    let failure = null;
+    for (const file of candidates) {
+      try {
+        raw = readTextFromPath(file);
+        break;
+      } catch (err) {
+        // A missing file in the first directory is expected; any other read
+        // error is the one worth naming.
+        if (err.code !== 'ENOENT' || !failure) failure = err.code === 'ENOENT' ? 'not-found' : err.code || 'unreadable';
+      }
+    }
+    if (raw === undefined) {
+      logger.warn?.('school.subject_icon.unresolved', { ref, reason: failure ?? 'not-found' });
       cache.set(ref, null);
       return null;
     }

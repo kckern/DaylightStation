@@ -7,6 +7,9 @@
     "forward": {
       "solar": "rewind-forward-bold"
     },
+    "keyboard": {
+      "solar": "keyboard-bold"
+    },
     "next": {
       "solar": "skip-next-bold"
     },
@@ -31,14 +34,11 @@
     "stop": {
       "solar": "stop-bold"
     },
-    "volume-mute": {
-      "solar": "muted-bold"
-    },
     "volume": {
       "solar": "volume-loud-bold"
     },
-    "writing": {
-      "solar": "keyboard-bold"
+    "volume-mute": {
+      "solar": "muted-bold"
     }
   }
 }

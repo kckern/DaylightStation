@@ -4,6 +4,7 @@ import { validateBookLogEnrollment, BOOK_LOG_PROGRAM_ID } from "../domain/bookLo
 import { SCHOOL_DEBRIEF_PROGRAM_ID, validateSchoolDebriefEnrollment } from "../domain/schoolDebrief.mjs";
 import { PRINTED_ACTIVITY_PROGRAM_ID, validatePrintedActivityEnrollment } from "../domain/printedActivity.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
+import { validateEntryIcon } from "../domain/entryIcon.mjs";
 
 const withSchedule = (validator) => async (raw) => {
   const result = await validator(raw);
@@ -17,12 +18,18 @@ const withSchedule = (validator) => async (raw) => {
   if (raw?.elective !== undefined && typeof raw.elective !== 'boolean') {
     return { errors: ['elective must be true or false'] };
   }
+  // `icon` names the assignment's own disc picture on the status board (a
+  // School icon-registry name; the board falls back to the shelf icon for a
+  // name it does not know). Kept here so every program honours it.
+  const iconCheck = validateEntryIcon(raw?.icon);
+  if (iconCheck.errors.length) return { errors: iconCheck.errors };
   return {
     errors: [],
     enrollment: {
       ...result.enrollment,
       ...(schedule ? { schedule } : {}),
       ...(raw?.elective === true ? { elective: true } : {}),
+      ...(iconCheck.icon ? { icon: iconCheck.icon } : {}),
     },
   };
 };

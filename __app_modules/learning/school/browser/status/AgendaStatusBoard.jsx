@@ -97,7 +97,20 @@ const FALLBACK_ICON = 'apple';
 // render on a board that repaints every five minutes forever, and a wall
 // fixture must not turn one missing file into an endless log.
 const warnedSubjects = new Set();
-function iconFor(subject) {
+const warnedAssignmentIcons = new Set();
+// A disc can name its ASSIGNMENT's icon (`segment.icon`, from the plan entry's
+// `icon:` or a program default such as piano's `music`), so two arts discs can
+// show a music note and a crayon instead of two palettes. The server cannot
+// see this registry, so a name it does not know falls back to the shelf icon
+// here, warned once per name.
+function iconFor(subject, assignmentIcon = null) {
+  if (assignmentIcon) {
+    if (hasIcon(assignmentIcon)) return assignmentIcon;
+    if (!warnedAssignmentIcons.has(assignmentIcon)) {
+      warnedAssignmentIcons.add(assignmentIcon);
+      schoolLog.surface('assignment-icon-missing', { icon: assignmentIcon, subject: subject ?? null });
+    }
+  }
   if (hasIcon(subject)) return subject;
   if (!warnedSubjects.has(subject)) {
     warnedSubjects.add(subject);
@@ -149,7 +162,7 @@ function pitchFactors(rows) {
  * browser). On the Portal every disc is the inert `<li>` it always was.
  */
 function Disc({ segment, onOpen }) {
-  const icon = <Icon name={iconFor(segment.subject)} label={labelForSegment(segment)} />;
+  const icon = <Icon name={iconFor(segment.subject, segment.icon)} label={labelForSegment(segment)} />;
   if (!onOpen) return icon;
   return (
     <button

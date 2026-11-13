@@ -45,6 +45,13 @@ describe('validatePrintedActivityEnrollment', () => {
     expect(enrollment).not.toHaveProperty('schedule');
     expect(enrollment.activity).toEqual({ platform: 'beeloo', kind: 'maze', level: 3, paper: 'a4' });
   });
+  it('keeps an optional icon, trimmed, and leaves it out when absent', () => {
+    expect(validatePrintedActivityEnrollment(entry({ icon: ' crayon ' })).enrollment.icon).toBe('crayon');
+    expect(validatePrintedActivityEnrollment(entry())).not.toHaveProperty('enrollment.icon');
+  });
+  it.each([[42], [''], [{}]])('refuses a non-string or blank icon (%o)', (icon) => {
+    expect(validatePrintedActivityEnrollment(entry({ icon })).errors.join(' ')).toMatch(/icon/);
+  });
   it.each([null, 'maze', [entry()]])('refuses a non-mapping %o', (raw) => {
     expect(validatePrintedActivityEnrollment(raw).errors.join(' ')).toMatch(/mapping/);
   });

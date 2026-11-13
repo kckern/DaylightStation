@@ -25,6 +25,22 @@ describe('createSubjectIconResolver', () => {
     expect(science?.heightPt).toBeGreaterThan(0);
   });
 
+  it('finds an icon that lives only in svg/generated/ (the Solar split) and prefers svg/ when both exist', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'school-icons-'));
+    fs.mkdirSync(path.join(root, 'generated'));
+    const glyph = (id) => `<svg width="1em" height="1em" viewBox="0 0 24 24"><path id="${id}" fill="currentColor" d="M0 0h1v1z"/></svg>`;
+    fs.writeFileSync(path.join(root, 'generated', 'writing.svg'), glyph('generated-writing'));
+    fs.writeFileSync(path.join(root, 'math.svg'), glyph('tracked-math'));
+    fs.writeFileSync(path.join(root, 'generated', 'math.svg'), glyph('generated-math'));
+    const warnings = [];
+    const resolve = createSubjectIconResolver({ rootDir: root, logger: { warn: (event, data) => warnings.push([event, data]) } });
+
+    expect(resolve('subject-icon:writing')?.sourceSvg).toContain('generated-writing');
+    expect(resolve('subject-icon:math')?.sourceSvg).toContain('tracked-math');
+    expect(resolve('subject-icon:nothing-here')).toBeNull();
+    expect(warnings).toEqual([['school.subject_icon.unresolved', { ref: 'subject-icon:nothing-here', reason: 'not-found' }]]);
+  });
+
   it('does not treat an arbitrary or malformed asset ref as a subject icon', () => {
     const resolve = createSubjectIconResolver({ logger: { warn() {} } });
     expect(resolve('school/math/fraction-strips')).toBeNull();

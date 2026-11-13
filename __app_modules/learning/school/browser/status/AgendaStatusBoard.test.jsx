@@ -17,7 +17,7 @@ vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
 }));
 import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
-import { hasIcon } from "../home/icons/iconRegistry.js";
+import ICONS, { hasIcon } from "../home/icons/iconRegistry.js";
 
 // jsdom has no layout: what the stylesheet promises about sizing is pinned by
 // reading the compiled rule (the Keypad tests' pattern).
@@ -208,6 +208,97 @@ describe('AgendaStatusBoard model', () => {
     const sessions = [{ unitId: 'read.01', subject: 'reading', outcome: { result: 'passed' } }];
     const summary = summarize(sections, sessions, [{ unitId: 'math.01', subject: 'math' }]);
     expect(summary.segments.map((s) => s.unitId)).toEqual(['math.01']);
+  });
+
+  it('draws a disc for each pending program beside next on the same shelf (2026-11-13)', () => {
+    // learner_a: piano and a coloring page both due on arts, neither started.
+    // The board used to draw only `next`, so arts read as one disc.
+    const sections = [{
+      subject: 'arts', obligation: { state: 'obligated' },
+      next: { unitId: 'piano-course:learner-a', program: 'piano-course', icon: 'piano' },
+      pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', program: 'printed-activity', subject: 'arts' }],
+    }];
+    const summary = summarize(sections, [], [
+      { unitId: 'piano-course:learner-a', subject: 'arts', program: 'piano-course' },
+      { unitId: 'printed-activity:beeloo:coloring', subject: 'arts', program: 'printed-activity' },
+    ]);
+    expect(summary.segments.map((s) => [s.unitId, s.state, s.label])).toEqual([
+      ['piano-course:learner-a', 'pending', 'Arts & Culture'],
+      ['printed-activity:beeloo:coloring', 'pending', 'Arts & Culture'],
+    ]);
+    expect(summary).toMatchObject({ total: 2, done: 0 });
+  });
+
+  it('a served piano plus a next maze is unchanged: two discs, no duplicate', () => {
+    const sections = [{
+      subject: 'arts', obligation: { state: 'obligated' },
+      servedWork: [{ unitId: 'plex:lesson-43', assignmentUnitId: 'piano-course:learner-b' }],
+      next: { unitId: 'printed-activity:beeloo:maze', program: 'printed-activity' },
+      pendingPrograms: [],
+    }];
+    const summary = summarize(sections, []);
+    expect(summary.segments.map((s) => [s.unitId, s.state])).toEqual([
+      ['piano-course:learner-b', 'passed'],
+      ['printed-activity:beeloo:maze', 'pending'],
+    ]);
+    expect(summary).toMatchObject({ total: 2, done: 1 });
+  });
+
+  it('a pending program that already has a session is drawn once, from the session', () => {
+    const sections = [{
+      subject: 'arts', obligation: { state: 'obligated' },
+      next: { unitId: 'piano-course:learner-a' },
+      pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', subject: 'arts' }],
+    }];
+    const sessions = [{ unitId: 'printed-activity:beeloo:coloring', subject: 'arts', state: 'issued' }];
+    const summary = summarize(sections, sessions);
+    expect(summary.segments.map((s) => [s.unitId, s.state])).toEqual([
+      ['printed-activity:beeloo:coloring', 'in-progress'],
+      ['piano-course:learner-a', 'pending'],
+    ]);
+    expect(summary.total).toBe(2);
+  });
+
+  it('an excused section draws no pending discs', () => {
+    const sections = [{
+      subject: 'arts', obligation: { state: 'excused', reason: 'not_a_school_day' },
+      next: { unitId: 'piano-course:learner-a' },
+      pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', subject: 'arts' }],
+    }];
+    expect(summarize(sections, []).total).toBe(0);
+  });
+
+  it('a pending entry with partial obligation progress reads in-progress', () => {
+    const sections = [{
+      subject: 'arts', next: { unitId: 'piano-course:learner-a' },
+      pendingPrograms: [{ unitId: 'flashcards:deck', subject: 'arts', obligationProgress: { completed: 1, total: 2 } }],
+    }];
+    expect(summarize(sections, []).segments[1].state).toBe('in-progress');
+  });
+
+  it('carries the assignment icon onto next, pending and served discs; the label stays the subject', () => {
+    const sections = [{
+      subject: 'arts', obligation: { state: 'obligated' },
+      servedWork: [{ unitId: 'plex:lesson-43', assignmentUnitId: 'piano-course:learner-b', icon: 'piano' }],
+      next: { unitId: 'printed-activity:beeloo:maze', icon: 'maze' },
+      pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', subject: 'arts', icon: 'crayon' }],
+    }, {
+      subject: 'math', next: { unitId: 'math.01' },
+    }];
+    const summary = summarize(sections, []);
+    expect(summary.segments.map((s) => [s.unitId, s.icon ?? null, s.label])).toEqual([
+      ['piano-course:learner-b', 'piano', 'Arts & Culture'],
+      ['printed-activity:beeloo:maze', 'maze', 'Arts & Culture'],
+      ['printed-activity:beeloo:coloring', 'crayon', 'Arts & Culture'],
+      ['math.01', null, 'Math & Money'],
+    ]);
+  });
+
+  it('a session disc takes its icon from the plan entry it belongs to', () => {
+    const summary = summarize([{ subject: 'arts' }],
+      [{ unitId: 'printed-activity:beeloo:maze', subject: 'arts', state: 'issued' }],
+      [{ unitId: 'printed-activity:beeloo:maze', subject: 'arts', icon: 'maze' }]);
+    expect(summary.segments[0].icon).toBe('maze');
   });
 
   it('draws a disc for SERVED work that never opened a session — the piano case', () => {
@@ -526,6 +617,29 @@ describe('AgendaStatusBoard render', () => {
     expect(screen.getByLabelText('Arts & Culture: done, 7 extra items completed')).toBeTruthy();
     expect(board.querySelector('.school-status-board__extra').getAttribute('aria-hidden')).toBe('true');
     expect(board.querySelector('.school-status-board__row').dataset.complete).toBe('true');
+  });
+
+  it('draws the assignment icon when registered and the shelf icon otherwise, naming the shelf either way', async () => {
+    const surface = vi.spyOn(schoolLog, 'surface');
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{
+        subject: 'arts', obligation: { state: 'obligated' },
+        next: { unitId: 'piano-course:learner-a', icon: 'music' },
+        pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', subject: 'arts', icon: 'no-such-icon' }],
+      }],
+      entries: [],
+    } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-24" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
+
+    const discs = [...screen.getByTestId('agenda-status-board').querySelectorAll('.school-status-board__pill .school-icon')];
+    // Through the DOM serializer, so `<path/>` and `<path></path>` compare equal.
+    const asRendered = (svg) => { const el = document.createElement('div'); el.innerHTML = svg; return el.innerHTML; };
+    expect(discs.map((el) => el.innerHTML)).toEqual([asRendered(ICONS.music), asRendered(ICONS.arts)]);
+    expect(screen.getAllByLabelText('Arts & Culture: not done')).toHaveLength(2);
+    expect(surface).toHaveBeenCalledWith('assignment-icon-missing', { icon: 'no-such-icon', subject: 'arts' });
+    surface.mockRestore();
   });
 
   it('every segment draws a subject icon and states its subject and state by name', async () => {

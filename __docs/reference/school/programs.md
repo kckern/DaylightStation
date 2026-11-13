@@ -13,8 +13,21 @@ program was required.
 Program status may expose `obligationProgress: { completed, total }` for a
 single daily obligation. This is structured UI state, separate from the human
 `progressLabel`, longitudinal course `progress`, and optional `score`. The agenda
-copies it only onto that program's selected `next` item; clients must not parse
-the label or reuse course progress to guess whether today's obligation has begun.
+copies it onto that program's selected `next` item and onto its row in the
+section's `pendingPrograms` (the other programs a shelf still owes today; see
+`agenda-and-completion.md`); clients must not parse the label or reuse course
+progress to guess whether today's obligation has begun.
+
+A section's `progressLabel` and `progressRows` speak for ONE program. When
+`next` is a program they are that program's own (null when it has none, never a
+neighbour's); otherwise the program done today leads. Before 2026-11-13 a shelf
+with piano done and a maze next printed piano's "Done today — Lesson 43" on the
+maze card, because the first program status with a label won.
+
+Any program enrollment may carry an optional `icon:` naming a School icon
+(`browser/home/icons/`) for its disc on the status board. It must be a
+non-empty string; an unknown name falls back to the shelf icon on the board.
+`piano-course` defaults to `music` when the enrollment names none.
 
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
@@ -99,7 +112,8 @@ away from, so `doneToday` reads the evidence instead.
 
 It reaches that evidence through Piano's own `GetPlayableUnits` use case,
 injected (Decision D1). Enrollment lives in `assignment.programs[]` as
-`{ programId: 'piano-course', courseId: 'plex:<ratingKey>' }`.
+`{ programId: 'piano-course', courseId: 'plex:<ratingKey>' }`, with an optional
+`icon:` (default `music`, the status-board disc picture).
 
 `status()` settles a day in this order, and the order is the contract:
 
@@ -619,6 +633,13 @@ holds one entry per corpus, each on its own subject shelf:
   target: 1
   activity: { platform: beeloo, kind: sudoku, level: 3, paper: letter }
   schedule: { daysOfWeek: [1, 2, 3, 4, 5] }
+- programId: printed-activity
+  corpusId: beeloo:coloring
+  subject: arts
+  title: Coloring
+  # icon: <name>       # optional: the disc's picture, a file in browser/home/icons/svg/;
+                       # no default, so the shelf icon (arts: palette) otherwise
+  activity: { platform: beeloo, kind: coloring, level: 1, paper: letter }
 ```
 
 `corpusId` is the instance key (SetAssignments dedupes on programId+corpusId),

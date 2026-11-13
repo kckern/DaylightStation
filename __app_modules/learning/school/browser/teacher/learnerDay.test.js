@@ -120,6 +120,48 @@ describe('joinLearnerDay', () => {
     expect(counts.extra).toBeUndefined();
   });
 
+  it('lists a section\'s other owed programs as their own planned rows (pendingPrograms)', () => {
+    // learner_a, 2026-11-13: piano and a coloring page both due on arts.
+    const arts = {
+      subject: 'arts', obligation: { state: 'obligated', reason: null },
+      next: { title: 'Piano lesson', unitId: 'piano-course:plex:1' },
+      pendingPrograms: [{ unitId: 'printed-activity:beeloo:coloring', title: 'Coloring', subject: 'arts' }],
+    };
+    const { rows, counts } = joinLearnerDay({ sections: [arts, section('math')] });
+    expect(rows.map((row) => [row.subject, row.status, row.planned])).toEqual([
+      ['arts', 'planned', 'Piano lesson'],
+      ['arts', 'planned', 'Coloring'],
+      ['math', 'planned', 'math lesson'],
+    ]);
+    expect(rows[1].offer).toEqual(arts.pendingPrograms[0]);
+    expect(rows[1].obligation).toEqual(rows[0].obligation);
+    expect(counts).toMatchObject({ planned: 3, total: 3 });
+  });
+
+  it('claims a session on a pending program for that program, not as unplanned work', () => {
+    const arts = {
+      subject: 'arts', next: { title: 'Piano lesson', unitId: 'piano-course:plex:1' },
+      pendingPrograms: [{ unitId: 'flashcards:deck', title: 'Deck', subject: 'arts' }],
+    };
+    const { rows } = joinLearnerDay({
+      sections: [arts],
+      sessions: [{ subject: 'arts', sessionId: 'ses_deck', unitId: 'flashcards:deck', state: 'issued' }],
+    });
+    expect(rows.map((row) => [row.planned, row.status, row.session?.sessionId ?? null, row.unplanned ?? false])).toEqual([
+      ['Piano lesson', 'planned', null, false],
+      ['Deck', 'in-progress', 'ses_deck', false],
+    ]);
+  });
+
+  it('adds no pending rows for a suppressed or excused section', () => {
+    const pendingPrograms = [{ unitId: 'printed-activity:beeloo:coloring', title: 'Coloring', subject: 'arts' }];
+    const { rows } = joinLearnerDay({ sections: [
+      { subject: 'arts', next: null, suppressed: { bySubject: 'math' }, pendingPrograms },
+      { subject: 'music', next: { title: 'x', unitId: 'x' }, obligation: { state: 'excused', reason: 'not_a_school_day' }, pendingPrograms },
+    ] });
+    expect(rows.filter((row) => row.planned === 'Coloring')).toEqual([]);
+  });
+
   it('survives empty input', () => {
     expect(joinLearnerDay({})).toMatchObject({ rows: [], counts: { total: 0 } });
   });
