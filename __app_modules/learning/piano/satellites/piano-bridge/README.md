@@ -1,5 +1,8 @@
 # Piano Bridge (APK)
 
+> **Payload p37 (`p37-fkb-volume-lock`, 2026-11-13)** also holds FKB `disableVolumeButtons`
+> off: its revert-to-remembered-volume put the piano at 0/15 and fought the floor.
+>
 > **Payload p36 (`p36-a2dp-floor`, 2026-11-13).** The audio guard now holds the A2DP
 > speaker's `STREAM_MUSIC` index at max once A2DP is the settled route ("connected but
 > 0/15" was silent and every surface read green). `POST /audio-guard/volume-check`
