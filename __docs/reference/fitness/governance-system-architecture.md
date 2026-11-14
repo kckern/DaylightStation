@@ -400,10 +400,11 @@ one answers a different question; none is redundant with another (see
 Things to know when reading the table:
 
 - **Layer 1 governs; display does not wait for it.** Governance, challenges and
-  TreasureBox read the *committed* zone. Zone LEDs, badges and the chart read
-  `displayZoneId` (the raw HR-derived zone), so a rider at 122 BPM held in
-  Active by the exit margin (floor 125) shows the lower zone's colour while
-  still counting as Active (`governance-history.md`, Era 12).
+  TreasureBox read the *committed* zone. Everything a rider *sees* about their
+  zone reads the **display record** instead (next section), so a rider at 122
+  BPM held in Active by the exit margin (floor 125) shows the lower zone's
+  colour and bar while still counting as Active (`governance-history.md`,
+  Era 12).
 - **The exit margin is per zone floor, for every downgrade.** It is measured
   from the floor of the zone the rider is *committed to*: Hot → Warm, Warm →
   Active and Active → Cool all need HR 5 BPM under the floor being left. A drop
@@ -420,6 +421,42 @@ Things to know when reading the table:
 
 Challenge holds (3a–3c) are documented in full in `governance-engine.md`,
 "Optional zone holds".
+
+### The display record: what a rider sees
+
+One record per rider, `displayZoneRecord` (`lib/displayZone.js`), drives the
+card colour, zone badge and heading, the card's progress bar, the sidebar
+footer and fullscreen avatar rings and gauges, the Fire treatment, the sidebar
+sort/grouping, and the zone colour and progress on governance overlay chips.
+It is built from **the BPM the surface prints** (rounded, as printed) on the
+rider's **validated ladder** (`ZoneProfileStore.getDisplayLadder`, the same
+thresholds the committed zone uses), so colour, bar and number can never
+disagree. Before it, colour came from the committed zone and the bar from
+`UserManager`'s raw snapshot on the unvalidated `user.zoneConfig`: inside the
+exit margin or an upward confirmation a card showed one zone's colour over
+another band's bar (2026-11-13).
+
+| Field | Meaning |
+|-------|---------|
+| `zoneId`, `zoneName`, `zoneColor` | zone of the printed BPM |
+| `progress`, `showBar` | position in that zone's band (Cool: the 5+ BPM run-up to Active) |
+| `max` | Fire: full, pulsing bar |
+| `live` | `false` when there is no reading: the committed zone is held, with no bar (Fire keeps its full bar) |
+
+Where it is built: `FitnessContext` (`userVitalsMap[*].display`, rebuilt in
+`getUserVitals` when the merged BPM differs; `resolveDisplayZone({ profileId,
+name, heartRate })` for any surface printing its own BPM),
+`participantDisplayMap` (`display`, for overlay chips), and `FitnessUsers`
+(`getCardDisplay`, from the card's own BPM). `Participant.displayZoneId` carries
+it to `sortByZoneRank`. `userCurrentZones` now carries display zones (display
+surfaces only).
+
+What does **not** read it: the GovernanceEngine, challenge evaluation,
+TreasureBox, the roster `zoneMap`, Fire ceremonies and `userVitalsMap[*].zoneId`
+— all earned state. Whether a rider is *listed* as missing on the overlay is the
+engine's decision; only that chip's colour and progress follow the BPM. So a
+card can turn Warm while governance still counts the rider Hot (inside the
+margin): the warning, if any, comes from the overlay, never from the card.
 
 ### Layer 1: ZoneProfileStore (Zone Jitter Prevention)
 
@@ -518,13 +555,11 @@ For each HR update:
   reading on the same strap arrives, which is well inside governance grace.
   A strap now worn by another rider gets nothing from the old wearer's evidence.
 - **What the sidebar card shows while untrusted.** Trust gates *earned* state
-  only. The player sidebar's zone badge (and its grouping/sort) uses
-  `shownZoneId` (`lib/committedZone.js`): the committed zone when there is one,
-  otherwise — while a live reading is present — the zone that reading is in on
-  the same ladder (`ZoneProfileStore` `displayZoneId`, carried by the roster as
-  `rawZoneId`; the household base ladder as a last resort). A card never reads
-  "No Zone" beside a heart rate (2026-11-10). Governance, TreasureBox and the
-  roster's `zoneMap` still read `committedZoneId`.
+  only. Every card shows its display record (see "The display record"), which
+  reads the printed BPM whether or not the rider is trusted; with no ladder at
+  all it falls back to the store's `displayZoneId` or the roster's `rawZoneId`.
+  A card never reads "No Zone" beside a heart rate (2026-11-10). Governance,
+  TreasureBox and the roster's `zoneMap` still read `committedZoneId`.
 - **Reload restore without evidence (v1 snapshot).** `restoreTrust` re-admits
   the rider with no evidence and no smoothing state, so their first reading
   commits instantly with no upward confirmation. That first entry is marked

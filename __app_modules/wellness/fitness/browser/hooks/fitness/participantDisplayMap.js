@@ -1,4 +1,5 @@
 import { DaylightMediaPath } from "../../../../../../frontend/src/lib/api.mjs";
+import { displayZoneRecord } from "../../lib/displayZone.js";
 
 /**
  * Builds a display-ready map of participants from roster + ZoneProfileStore.
@@ -34,19 +35,32 @@ export function buildParticipantDisplayMap(profiles, roster) {
       || (resolvedProfileId ? `/static/img/users/${resolvedProfileId}` : '/static/img/users/user');
     const avatarSrc = DaylightMediaPath(rawAvatar);
 
+    const heartRate = profile?.heartRate ?? rosterEntry?.heartRate ?? null;
+    const committedZoneId = profile ? (profile.zoneTrusted === false ? null : profile.currentZoneId ?? null) : rosterEntry?.zoneId || null;
+    const committedZoneColor = profile ? (profile.zoneTrusted === false ? null : profile.currentZoneColor ?? null) : rosterEntry?.zoneColor || null;
+    // What the rider SEES for this heartRate (lib/displayZone.js). zoneId /
+    // zoneColor stay the earned zone, for governance and credit.
+    const display = displayZoneRecord({
+      heartRate,
+      ladder: profile?.zoneConfig,
+      committedZoneId,
+      committedZoneColor,
+    });
+
     return {
       id: profile?.id || resolvedProfileId || id,
       displayName: profile?.displayName || profile?.name || rosterEntry?.displayLabel || rosterEntry?.name || id,
       avatarSrc,
-      heartRate: profile?.heartRate ?? rosterEntry?.heartRate ?? null,
-      zoneId: profile ? (profile.zoneTrusted === false ? null : profile.currentZoneId ?? null) : rosterEntry?.zoneId || null,
+      heartRate,
+      zoneId: committedZoneId,
       zoneTrusted: profile?.zoneTrusted ?? false,
       zoneName: profile?.currentZoneName || null,
-      zoneColor: profile ? (profile.zoneTrusted === false ? null : profile.currentZoneColor ?? null) : rosterEntry?.zoneColor || null,
+      zoneColor: committedZoneColor,
+      display,
       zoneIndex: Number.isFinite(profile?.zoneSnapshot?.zoneIndex)
         ? profile.zoneSnapshot.zoneIndex
         : null,
-      progress: profile?.progress ?? null,
+      progress: display.progress,
       targetHeartRate: profile?.targetHeartRate ?? null,
       zoneSequence: profile?.zoneSequence || [],
       groupLabel: profile?.groupLabel || rosterEntry?.groupLabel || null,

@@ -27,9 +27,10 @@
  * @property {boolean} isActive - Whether participant is currently broadcasting
  * @property {string|null} zoneId - Current zone ID ('cool', 'warm', 'hot', 'fire')
  * @property {string|null} zoneColor - CSS color for current zone
- * @property {string|null} rawZoneId - Raw telemetry zone ID; earned-zone presentation and sorting use zoneId
+ * @property {string|null} rawZoneId - Raw telemetry zone ID (diagnostics, fallback)
  * @property {string|null} rawZoneColor - CSS color for the live zone
- * @property {number|null} zoneProgress - Progress within current zone (0-1); null means unresolved, NOT zero
+ * @property {string|null} displayZoneId - Zone the rider's card shows (lib/displayZone.js); sorting uses it
+ * @property {number|null} zoneProgress - Progress within the displayed zone (0-1); null means unresolved, NOT zero
  * @property {boolean} isGuest - Whether this is a guest assignment
  * @property {number|null} timestamp - Last device reading timestamp
  * @property {number|null} lastSeen - Last seen timestamp for activity tracking
@@ -98,6 +99,7 @@ export const createEmptyParticipant = () => ({
   zoneId: null,
   zoneColor: null,
   rawZoneId: null,
+  displayZoneId: null,
   rawZoneColor: null,
   zoneProgress: null,
   isGuest: false,

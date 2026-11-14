@@ -134,10 +134,11 @@ export function trendTransform([lo, hi]) {
   return `matrix(1 0 0 ${+a.toFixed(4)} 0 ${+b.toFixed(4)})`;
 }
 
-// Fire has no next zone, so the progress bar would be an empty track. On
-// committed Fire it renders full and pulses instead.
-export function zoneBarState({ committedZoneId, showBar, progress }) {
-  if (committedZoneId === 'fire') return { show: true, max: true, percent: 100 };
+// Fire has no next zone, so the progress bar would be an empty track. When the
+// card shows Fire (its display record, lib/displayZone.js) it renders full and
+// pulses instead.
+export function zoneBarState({ zoneId, showBar, progress }) {
+  if (zoneId === 'fire') return { show: true, max: true, percent: 100 };
   if (!showBar && progress == null) return { show: false, max: false, percent: 0 };
   const p = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
   return { show: true, max: false, percent: Math.round(p * 100) };

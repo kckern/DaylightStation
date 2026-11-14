@@ -1,6 +1,7 @@
 import { dispatchRiderSelection } from '../lib/riderSelection.js';
 import { createSelectorInputRouter } from '../lib/selectorInputRouter.js';
 import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
+import { displayZoneRecord } from '../lib/displayZone.js';
 import { publishLiveMemos } from '../lib/liveSessionStore.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useLayoutEffect, useReducer } from 'react';
@@ -2177,15 +2178,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const displayLabel = getDisplayLabel(user.name, { userId: user.id });
       // The earned zone comes from ZoneProfileStore (trusted + hysteresis), the
       // same source as governance and the roster. User.currentData is raw HR.
+      const zoneState = session?.zoneProfileStore?.getZoneState?.(user.id) || null;
+      const earned = earnedZoneFields(zoneState);
+      // What the rider SEES (colour, bar, ring, Fire): one record from the
+      // BPM shown here, on the store's validated ladder — lib/displayZone.js.
+      // `progress`/`showBar` below are that record's, never the earned zone's.
+      const display = displayZoneRecord({
+        heartRate: data.heartRate,
+        ladder: session?.zoneProfileStore?.getDisplayLadder?.(user.id),
+        fallbackLadder: user.zoneConfig,
+        committedZoneId: earned.zoneId,
+        committedZoneColor: earned.zoneColor,
+        committedZoneName: earned.zoneName,
+      });
       map.set(key, {
         name: user.name,
         heartRate: data.heartRate,
-        ...earnedZoneFields(session?.zoneProfileStore?.getZoneState?.(user.id)),
+        ...earned,
+        display,
         targetHeartRate: data.targetHeartRate,
         rangeMin: data.rangeMin,
         rangeMax: data.rangeMax,
-        progress: data.progressToNextZone,
-        showBar: data.showProgress,
+        progress: display.progress,
+        showBar: display.showBar,
         nextZoneId: data.nextZoneId,
         
         source,
@@ -2469,6 +2484,23 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return zoneProfileLookup.get(identifier) || null;
   }, [zoneProfileLookup]);
 
+  // The zone a rider SEES for the BPM a surface prints: card colour, ring,
+  // progress bar, Fire treatment — one record (lib/displayZone.js) on the
+  // rider's validated ladder. Every display surface calls this with the number
+  // it shows, so nothing on screen can disagree with that number. Governance
+  // and credit never read it; they read the committed zone.
+  const resolveDisplayZone = React.useCallback(({ profileId = null, name = null, heartRate = null } = {}) => {
+    const profile = (profileId && zoneProfileLookup.get(profileId))
+      || (name && zoneProfileLookup.get(name)) || null;
+    return displayZoneRecord({
+      heartRate,
+      ladder: profile?.zoneConfig,
+      fallbackLadder: profile ? null : zoneConfig,
+      committedZoneId: committedZoneId(profile),
+      committedZoneColor: profile?.zoneTrusted === false ? null : (profile?.currentZoneColor || null),
+    });
+  }, [zoneProfileLookup, zoneConfig]);
+
   // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
   // ZoneProfileStore's hysteresis (2-sample upward confirm / 5s cooldown / 3s
   // stability / 5bpm exit margin) is what keeps this from chattering at the
@@ -2605,17 +2637,24 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       || getDisplayLabel(participant?.name || nameOrId, { userId: participant?.id || participant?.profileId });
 
     if (!existing) {
+      const display = displayZoneRecord({
+        heartRate: mergedHeartRate,
+        ladder: zoneProfile?.zoneConfig,
+        committedZoneId: mergedZoneId,
+        committedZoneColor: mergedZoneColor,
+      });
       return {
         name: participant?.name || name,
         heartRate: mergedHeartRate,
         zoneId: mergedZoneId,
         zoneName: participant?.zoneLabel || null,
         zoneColor: mergedZoneColor,
+        display,
         targetHeartRate: null,
         rangeMin: null,
         rangeMax: null,
-        progress: null,
-        showBar: false,
+        progress: display.progress,
+        showBar: display.showBar,
         nextZoneId: null,
         source: mergedSource,
         profileId: mergedProfileId,
@@ -2625,12 +2664,25 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       };
     }
 
+    // The merged heart rate can be the roster's, not the one userVitalsMap built
+    // its display record from — rebuild it then, so the record matches this BPM.
+    const shown = mergedHeartRate === existing.heartRate && existing.display
+      ? existing.display
+      : displayZoneRecord({
+          heartRate: mergedHeartRate,
+          ladder: zoneProfile?.zoneConfig,
+          committedZoneId: mergedZoneId ?? existing.zoneId ?? null,
+          committedZoneColor: mergedZoneColor ?? existing.zoneColor ?? null,
+        });
     return {
       ...existing,
       name: existing.name || participant?.name || name,
       heartRate: mergedHeartRate,
       zoneId: mergedZoneId ?? existing.zoneId ?? null,
       zoneColor: mergedZoneColor ?? existing.zoneColor ?? null,
+      display: shown,
+      progress: shown.progress,
+      showBar: shown.showBar,
       profileId: mergedProfileId,
       deviceId: mergedDeviceId,
       source: mergedSource ?? existing.source ?? null,
@@ -2686,7 +2738,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     userVitalsMap.forEach((entry) => {
       if (!entry?.name) return;
       progressMap.set(entry.name, {
-        currentZoneId: entry.zoneId ?? null,
+        // The zone this progress is measured in (display record), not the earned one.
+        currentZoneId: entry.display?.zoneId ?? entry.zoneId ?? null,
         nextZoneId: entry.nextZoneId ?? null,
         progress: entry.progress ?? null,
         rangeMin: entry.rangeMin ?? null,
@@ -2707,12 +2760,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const userCurrentZones = React.useMemo(() => {
     const map = {};
+    // Display-only (sidebar footer, fullscreen vitals): the zone the rider SEES,
+    // from the same display record as the card — lib/displayZone.js. Earned
+    // state for credit lives on userVitalsMap's zoneId/zoneTrusted.
     userVitalsMap.forEach((vitals) => {
       if (!vitals.name) return;
-      if (vitals.zoneId) {
-        map[vitals.name] = { id: vitals.zoneId, color: vitals.zoneColor, trusted: true };
+      const display = vitals.display;
+      if (display?.zoneId) {
+        map[vitals.name] = { id: display.zoneId, color: display.zoneColor, trusted: vitals.zoneTrusted === true };
       } else if (vitals.zoneTrusted === false) {
-        // Consumers must not derive a zone from raw HR for this rider.
+        // No reading and no earned zone: show none, and never derive one.
         map[vitals.name] = { id: null, color: null, trusted: false };
       }
     });
@@ -3235,6 +3292,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setFeedbackRecordingActive,
     governance: governanceState.status,
     zones: zoneConfig || [],
+    resolveDisplayZone,
     userCurrentZones,
     heartRate: heartRateDevices[0] || null,
     getUserByName: (nameOrId) => {

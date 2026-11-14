@@ -525,3 +525,39 @@ describe('resolveGovernanceDisplay — warning cooldown (quiet)', () => {
     expect(result.quiet).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Chip zone follows the BPM shown (display record); who is listed stays the
+// engine's committed decision.
+// ---------------------------------------------------------------------------
+
+describe('resolveGovernanceDisplay — chip zone is the display record', () => {
+  it('a missing rider whose committed zone lags shows the zone of the BPM on the chip', () => {
+    const govState = makeGovState({
+      status: 'warning',
+      requirements: [{ satisfied: false, zone: 'cardio', missingUsers: ['rider-b'], metUsers: [] }]
+    });
+    const displayMap = makeDisplayMap({
+      // Committed cardio (held by the exit margin); the printed BPM is fat-burn.
+      'rider-b': { displayName: 'Rider B', heartRate: 118, zoneId: 'cardio', zoneTrusted: true,
+        display: { zoneId: 'fat-burn', zoneColor: 'yellow', live: true } }
+    });
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+    // Still listed: the engine said missing. Its colour is the BPM's zone.
+    expect(result.rows.map((r) => r.key)).toEqual(['rider-b']);
+    expect(result.rows[0].currentZone).toMatchObject({ id: 'fat-burn' });
+  });
+
+  it('an untrusted rider with a live reading shows that reading\'s zone, not none', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      requirements: [{ satisfied: false, zone: 'cardio', missingUsers: ['rider-b'], metUsers: [] }]
+    });
+    const displayMap = makeDisplayMap({
+      'rider-b': { displayName: 'Rider B', heartRate: 118, zoneId: null, zoneTrusted: false,
+        display: { zoneId: 'fat-burn', live: true } }
+    });
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+    expect(result.rows[0].currentZone).toMatchObject({ id: 'fat-burn' });
+  });
+});

@@ -52,12 +52,31 @@ describe('fromRosterEntry zone fields', () => {
   });
 });
 
+describe('fromRosterEntry displayZoneId', () => {
+  it('carries the display record zone, and the sort ranks by it over the committed zone', async () => {
+    const { sortByZoneRank } = await import('./ParticipantFactory.js');
+    const index = (id, zoneId, progress) => [id, { name: id, profileId: id, progress, display: { zoneId } }];
+    const zpi = buildZoneProgressIndex(new Map([index('a', 'warm', 0.9), index('b', 'hot', 0.1)]));
+    // b's committed zone is still warm (the exit margin), a's is hot (pending
+    // a downgrade): the cards show b in Hot and a in Warm, so b sorts first.
+    const a = fromRosterEntry({ ...ROSTER_ENTRY, id: 'a', profileId: 'a', name: 'a', zoneId: 'hot' }, { zoneProgressIndex: zpi });
+    const b = fromRosterEntry({ ...ROSTER_ENTRY, id: 'b', profileId: 'b', name: 'b', zoneId: 'warm' }, { zoneProgressIndex: zpi });
+    expect(a.displayZoneId).toBe('warm');
+    expect(b.displayZoneId).toBe('hot');
+    expect(sortByZoneRank([a, b]).map((p) => p.id)).toEqual(['b', 'a']);
+  });
+
+  it('is null without a display record', () => {
+    expect(fromRosterEntry(ROSTER_ENTRY).displayZoneId).toBeNull();
+  });
+});
+
 describe('fromRosterEntry rawZoneId fallback chain', () => {
-  // Middle rung: userVitals.zoneId, which FitnessContext:1867 sources from
-  // user.currentData.zone — derived from LIVE HR by UserManager
-  // (deriveZoneProgressSnapshot, UserManager.js:133), NOT hysteresis-smoothed.
-  const indexWith = (over) => buildZoneProgressIndex(
-    new Map([['user_1', { name: 'test-parent', profileId: 'user_1', progress: 0.4, ...over }]])
+  // Middle rung: the vitals entry's display record (display.zoneId), which
+  // FitnessContext's userVitalsMap builds from LIVE HR (lib/displayZone.js),
+  // NOT hysteresis-smoothed. Its zoneId is the earned zone and is not a rung.
+  const indexWith = ({ zoneId, ...over }) => buildZoneProgressIndex(
+    new Map([['user_1', { name: 'test-parent', profileId: 'user_1', progress: 0.4, display: { zoneId }, ...over }]])
   );
 
   it('engages the vitals zone when rawZoneId is null', () => {

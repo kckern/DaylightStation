@@ -103,14 +103,17 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     // sorting use committed zoneId. Three rungs, each validated against the canonical zone list so an
     // unrecognized value falls THROUGH rather than being written:
     //   1. roster rawZoneId  — TreasureBox baseline (live HR)
-    //   2. vitals zoneId     — user.currentData.zone, derived from live HR by
-    //      UserManager (deriveZoneProgressSnapshot); survives the cases rung 1
-    //      misses, notably guests, whose entityId-keyed TreasureBox lookup fails
-    //      while userVitalsMap resolves them by profileId.
+    //   2. vitals display zone — the display record userVitalsMap builds from
+    //      live HR (lib/displayZone.js); survives the cases rung 1 misses,
+    //      notably guests, whose entityId-keyed TreasureBox lookup fails while
+    //      userVitalsMap resolves them by profileId.
     //   3. committed zoneId  — hysteresis-smoothed last resort.
     rawZoneId: canonicalZoneId(rosterEntry.rawZoneId)
-      ?? canonicalZoneId(progressEntry?.zoneId)
+      ?? canonicalZoneId(progressEntry?.display?.zoneId)
       ?? canonicalZoneId(zoneId),
+    // The zone the rider's card SHOWS (lib/displayZone.js, via userVitalsMap):
+    // what the sidebar sorts and files under zone headers by.
+    displayZoneId: canonicalZoneId(progressEntry?.display?.zoneId),
     rawZoneColor: rosterEntry.rawZoneColor || zoneColor,
     // null (not 0) on a miss, so a later task's diagnostic can tell a miss from a real 0.
     zoneProgress: Number.isFinite(progressEntry?.progress) ? progressEntry.progress : null,
@@ -229,14 +232,15 @@ export const canonicalZoneId = (value) => {
 };
 
 /**
- * Rank by the zone the card SHOWS (shownZoneId): the earned committed zone, or
- * — while the store has not yet trusted a rider with a live reading — the raw
- * zone of that reading. The sidebar's zone headers are "first card of each
- * zone in this order", so sorting by anything else than the badge's own zone
- * would file a card under another zone's header.
+ * Rank by the zone the card SHOWS: its display record (displayZoneId, built
+ * from the BPM on the card). Without one, the earned committed zone, or — while
+ * the store has not yet trusted a rider with a live reading — the raw zone of
+ * that reading. The sidebar's zone headers are "first card of each zone in this
+ * order", so sorting by anything else than the badge's own zone would file a
+ * card under another zone's header.
  */
 const rankOf = (participant, zoneRankMap) => {
-  const zoneId = shownZoneId({
+  const zoneId = participant?.displayZoneId || shownZoneId({
     committed: committedZoneId(participant),
     heartRate: participant?.heartRate,
     liveZoneId: participant?.rawZoneId
@@ -246,7 +250,7 @@ const rankOf = (participant, zoneRankMap) => {
 };
 
 /**
- * THE sort for heart-rate participants. Order: committed zone rank desc →
+ * THE sort for heart-rate participants. Order: shown (display) zone rank desc →
  * progress-within-zone desc → active before inactive → id asc (determinism).
  *
  * Progress is only meaningful as a tiebreaker WITHIN a zone, since each user

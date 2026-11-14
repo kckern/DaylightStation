@@ -8,9 +8,10 @@ export const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
 export const resolveUserZone = (userName, device, context) => {
   const { userCurrentZones, zones = [], usersConfigRaw } = context || {};
   const entry = userName ? userCurrentZones?.[userName] : null;
-  // A known rider without zone trust has no earned zone; never derive one
-  // from raw HR (that fallback is only for anonymous straps).
-  if (entry && typeof entry === 'object' && entry.trusted === false) return { id: null, color: null };
+  // userCurrentZones carries the display record (lib/displayZone.js). A known
+  // rider with no display zone and no trust shows none; never derive one from
+  // raw HR (that fallback is only for anonymous straps).
+  if (entry && typeof entry === 'object' && entry.trusted === false && !entry.id) return { id: null, color: null };
   let zoneId = null;
   let color = null;
 

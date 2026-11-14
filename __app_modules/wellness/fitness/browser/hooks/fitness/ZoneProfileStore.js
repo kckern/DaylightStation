@@ -280,6 +280,17 @@ export class ZoneProfileStore {
     return resolved ? this.#cloneProfile(resolved) : null;
   }
 
+  /**
+   * The rider's validated (committed) ladder — the thresholds this store
+   * derives zones from — for building the display record
+   * (lib/displayZone.js). Read-only; never mutate the returned array.
+   * @returns {Array|null}
+   */
+  getDisplayLadder(identifier) {
+    const profile = this.#resolveProfile(identifier);
+    return Array.isArray(profile?.zoneConfig) && profile.zoneConfig.length ? profile.zoneConfig : null;
+  }
+
   getProfileMap() {
     return new Map(
       Array.from(this._profiles.entries()).map(([id, profile]) => [id, this.#cloneProfile(profile)])

@@ -9,7 +9,6 @@ import StepMatVitalsTile from "../../components/StepMatVitalsTile.jsx";
 import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../shared/EquipmentGlyph.jsx";
 import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from "../../hooks/fitness/ParticipantRoster.js";
 import { resolveUserZone } from "./resolveUserZone.js";
-import { lookupZoneProgress } from "../../domain/zoneProgressIndex.js";
 import "./FullscreenVitalsOverlay.scss";
 import { fullscreenVitalsLayout } from "./fullscreenVitalsLayout.js";
 import { isStepMatInUse } from "../../hooks/fitness/PressureMatActivityTracker.js";
@@ -70,7 +69,7 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
-    zoneProgressIndex,
+    resolveDisplayZone,
     pressureMatActivities = {}
   } = fitnessCtx || {};
 
@@ -131,23 +130,25 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
       })
       .map((device) => {
         const user = getUserByDevice?.(device.deviceId) || null;
-        const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
+        const hrValid = Number.isFinite(device?.heartRate) && device.heartRate > 0;
+        const shownHeartRate = hrValid ? Math.round(device.heartRate) : null;
+        // Ring colour and gauge: ONE display record from the BPM this avatar
+        // prints (FitnessContext.resolveDisplayZone), so they cannot disagree
+        // with it or with the rider's card. resolveUserZone only covers a strap
+        // the record cannot place (no reading, no held zone).
+        const display = typeof resolveDisplayZone === 'function'
+          ? resolveDisplayZone({ profileId: user?.id, name: user?.name, heartRate: shownHeartRate })
+          : null;
+        const zoneInfo = display?.zoneId
+          ? { id: display.zoneId, color: display.zoneColor }
+          : resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
+        const progressValue = display?.zoneId && display.showBar && Number.isFinite(display.progress)
+          ? Math.max(0, Math.min(1, display.progress))
+          : null;
         const profileSlug = getProfileSlug(user);
         const avatarSrc = DaylightMediaPath(`/static/img/users/${profileSlug}`);
-        // ID first: a name-only lookup misses whenever the display name has
-        // become a group label (2+ riders present).
-        const progressEntry = lookupZoneProgress(zoneProgressIndex, {
-          profileId: user?.id,
-          name: user?.name,
-          displayLabel: user?.displayLabel,
-          deviceId: device.deviceId
-        });
-        const progressValue = typeof progressEntry?.progress === 'number'
-          ? Math.max(0, Math.min(1, progressEntry.progress))
-          : null;
         const effectiveZoneColor = zoneInfo.color || 'rgba(128, 128, 128, 0.6)';
         const userHrInactive = user?.currentData?.hrInactive ?? false;
-        const hrValid = Number.isFinite(device?.heartRate) && device.heartRate > 0;
         const isInactive = userHrInactive || device.inactiveSince || device.connectionState !== 'connected' || !hrValid;
 
         return {
@@ -156,7 +157,7 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
           avatarSrc,
           zoneId: zoneInfo.id,
           zoneColor: effectiveZoneColor,
-          heartRate: hrValid ? Math.round(device.heartRate) : null,
+          heartRate: shownHeartRate,
           isInactive,
           progressValue,
           boostBadge: boostContributions && Number.isFinite(boostContributions[user?.id])
@@ -165,7 +166,7 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
           statusBadge: user?.id ? (governanceStatuses[String(user.id).trim().toLowerCase()] || null) : null
         };
       });
-  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions, governanceStatuses]);
+  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, resolveDisplayZone, boostContributions, governanceStatuses]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};

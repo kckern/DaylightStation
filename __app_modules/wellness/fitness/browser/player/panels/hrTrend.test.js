@@ -75,11 +75,11 @@ describe('trendTransform', () => {
 
 describe('zoneBarState', () => {
   it('committed Fire renders a full, pulsing (max) bar instead of an empty track', () => {
-    expect(zoneBarState({ committedZoneId: 'fire', showBar: false, progress: 0 })).toEqual({ show: true, max: true, percent: 100 });
+    expect(zoneBarState({ zoneId: 'fire', showBar: false, progress: 0 })).toEqual({ show: true, max: true, percent: 100 });
   });
   it('other zones show their progress; nothing to show stays hidden', () => {
-    expect(zoneBarState({ committedZoneId: 'warm', showBar: true, progress: 0.426 })).toEqual({ show: true, max: false, percent: 43 });
-    expect(zoneBarState({ committedZoneId: 'warm', showBar: false, progress: null })).toEqual({ show: false, max: false, percent: 0 });
+    expect(zoneBarState({ zoneId: 'warm', showBar: true, progress: 0.426 })).toEqual({ show: true, max: false, percent: 43 });
+    expect(zoneBarState({ zoneId: 'warm', showBar: false, progress: null })).toEqual({ show: false, max: false, percent: 0 });
   });
 });
 

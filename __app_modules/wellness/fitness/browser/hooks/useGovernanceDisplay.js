@@ -78,7 +78,13 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
   const hrInactiveSet = new Set((govState.hrInactiveUsers || []).map(normalize));
   const nameOf = (display, userId) => (preferGroupLabels && display?.groupLabel)
     ? display.groupLabel : (display?.displayName || userId);
-  const currentZoneOf = (display) => display?.zoneTrusted === false ? null : (zoneMap[display?.zoneId] || null);
+  // A chip's zone colour and progress follow the BPM it prints — the display
+  // record (lib/displayZone.js) — so it matches the rider's card. WHO is listed
+  // as missing or met stays the engine's decision on the committed zone.
+  const currentZoneOf = (display) => {
+    if (display?.display) return zoneMap[display.display.zoneId] || null;
+    return display?.zoneTrusted === false ? null : (zoneMap[display?.zoneId] || null);
+  };
 
   const makeObligation = (requirement, source, index) => {
     const targetId = requirement.type === 'cadence_floor' ? requirement.orZone : requirement.zone;

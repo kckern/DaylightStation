@@ -15,10 +15,9 @@ import HeartIcon from "../../shared/HeartIcon.jsx";
 import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
 import { pickZoneSequence, trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
 import RiderHrTrend from "./RiderHrTrend.jsx";
-import { committedZoneId, shownZoneId } from "../../lib/committedZone.js";
-import { deriveZoneProgressSnapshot } from "../../hooks/fitness/types.js";
+import { committedZoneId } from "../../lib/committedZone.js";
+import { displayZoneRecord } from "../../lib/displayZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
-import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../shared/EquipmentGlyph.jsx";
 
@@ -139,7 +138,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     zones,
     deviceAssignments = [],
     getDeviceAssignment,
-    zoneProgressIndex,
     getUserVitals,
     participantsByDevice: participantsByDeviceMap,
     participantRoster,
@@ -333,19 +331,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster, participantsByDevice, guestAssignmentEntries, registeredUsers, getConfiguredProfileId, heartRateOwners]);
 
-  // Card display only — the sort moved to FitnessContext, which is also where
-  // `zoneProgressIndex` is built (from userVitalsMap), so cards and sort order
-  // resolve progress through ONE index with one precedence order.
-  //
-  // This used to build a local index from `userZoneProgress`, which is a LOSSY
-  // projection: name-keyed, with values carrying no profileId/deviceId/name/
-  // displayLabel. That local index could only ever resolve by given name, so
-  // the id/displayLabel fallbacks below were dead. The context index carries
-  // the ID aliases, so they now actually resolve.
-  const lookupZoneProgress = React.useCallback(
-    (keys) => lookupZoneProgressFromIndex(zoneProgressIndex, keys),
-    [zoneProgressIndex]
-  );
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
@@ -484,12 +469,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     onRequestGuestAssignment?.({ deviceId, defaultName });
   }, [onRequestGuestAssignment, getDisplayName]);
 
-  // The zone the card shows and the list groups by. Committed (earned) zone
-  // first; while the store has not yet trusted a rider with a live reading, the
-  // zone that reading sits in on the same ladder (ZoneProfileStore's raw
-  // displayZoneId, the roster's rawZoneId, or the household ladder read off
-  // the heart rate) — never "No Zone" beside a live BPM.
-  const getShownZoneId = (device, heartRate) => {
+  // The zone the card shows and the list groups by, with its bar: ONE display
+  // record (lib/displayZone.js) built from the BPM this card prints, on the
+  // rider's validated ladder (the zone profile's), so colour, badge, bar and
+  // Fire treatment always agree with the number. The committed (earned) zone
+  // is only what a reading gap holds; governance keeps reading it directly.
+  // An unidentified strap reads on the household ladder.
+  const getCardDisplay = (device, heartRate) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);
     const participant = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey);
@@ -500,13 +486,25 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const profile = resolveZoneProfile(participant?.profileId)
       || resolveZoneProfile(participant?.id) || resolveZoneProfile(name);
     const committed = committedZoneId(profile, participant, participant ? null : resolveZoneProfile(user?.id));
-    if (committed) return committed;
-    const liveZoneId = profile?.displayZoneId
-      || participant?.rawZoneId
-      || (Number.isFinite(heartRate) && heartRate > 0
-        ? deriveZoneProgressSnapshot({ zoneConfig: zones, heartRate })?.currentZoneId
-        : null);
-    return shownZoneId({ committed, heartRate, liveZoneId });
+    const record = displayZoneRecord({
+      heartRate,
+      ladder: profile?.zoneConfig,
+      fallbackLadder: zones,
+      committedZoneId: committed,
+      committedZoneColor: profile?.zoneTrusted === false ? null : (profile?.currentZoneColor || null),
+    });
+    // No ladder to read the BPM on and nothing held: still never "No Zone"
+    // beside a live BPM (owner, 2026-11-10) — the store's or roster's live
+    // zone, without a bar (there is no band to measure it on).
+    if (!record.zoneId && Number.isFinite(heartRate) && heartRate > 0) {
+      const liveZoneId = profile?.displayZoneId || participant?.rawZoneId || null;
+      if (liveZoneId) {
+        const zoneId = String(liveZoneId).toLowerCase();
+        return { ...record, zoneId, zoneName: zoneId, zoneColor: profile?.displayZoneColor || null,
+          max: zoneId === 'fire', showBar: zoneId === 'fire', progress: zoneId === 'fire' ? 1 : null };
+      }
+    }
+    return record;
   };
 
   const pickTextColor = (bg) => {
@@ -619,7 +617,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       });
     combined.push(...otherDevices);
     setSortedDevices(combined);
-    // resolveCanonicalUserName/lookupZoneProgress dropped from deps with the HR
+    // resolveCanonicalUserName dropped from deps with the HR
     // comparator that used them. equipmentMap was already unused here.
   }, [equipmentMap, equipment, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices, pressureMatActivities, stepMatClockTick]);
 
@@ -834,36 +832,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
-              // One index lookup, ID first. The four separate calls this
-              // replaces walked name → canonicalUserName → displayLabel → id
-              // against a name-only index, so only the first two could ever hit.
-              const progressInfo = isHeartRate
-                ? (lookupZoneProgress([
-                      participantEntry?.profileId,
-                      participantEntry?.id,
-                      participantEntry?.name,
-                      canonicalUserName,
-                      displayLabel,
-                      participantEntry?.displayLabel,
-                      deviceIdStr
-                    ])
-                    // KEPT: getUserVitals() resolves through its own name
-                    // normalization + participantLookupByName, a path the index
-                    // does not replicate. When participantEntry is null but
-                    // canonicalUserName still resolves vitals, this is the only
-                    // rung carrying a real progress/showBar.
-                    || (userVitalsEntry
-                      ? {
-                          progress: userVitalsEntry.progress ?? null,
-                          showBar: userVitalsEntry.showBar ?? false,
-                          zoneColor: userVitalsEntry.zoneColor ?? null
-                        }
-                      : null))
-                : null;
-              const normalizedProgress = (typeof progressInfo?.progress === 'number')
-                ? Math.max(0, Math.min(1, progressInfo.progress))
-                : null;
-              const shouldShowProgressBar = Boolean(progressInfo && (progressInfo.showBar || normalizedProgress !== null));
               const liveHeartRate = Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
@@ -901,10 +869,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   hasGuestAssignment: !!guestAssignment
                 }, { maxPerMinute: 2, aggregate: true });
               }
-              const zoneIdForGrouping = isHeartRate ? getShownZoneId(device, liveHeartRate) : null;
+              const cardDisplay = isHeartRate ? getCardDisplay(device, liveHeartRate) : null;
+              const zoneIdForGrouping = cardDisplay?.zoneId || null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
-                ? paletteZoneColor(zoneIdForGrouping, userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                ? paletteZoneColor(zoneIdForGrouping, cardDisplay?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
                 : null;
               const readableZone = zoneIdForGrouping
                 ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)
@@ -912,15 +881,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const showZoneBadge = isHeartRate && (
                 (zoneIdForGrouping && !seenZones.has(zoneIdForGrouping)) || (!zoneIdForGrouping && !noZoneShown)
               );
-              const deviceValue = getDeviceValue(device, { canonicalUserName, vitals: userVitalsEntry });
+              // The printed BPM is the one the display record was built from.
+              const deviceValue = Number.isFinite(liveHeartRate) && liveHeartRate > 0
+                ? `${Math.round(liveHeartRate)}`
+                : getDeviceValue(device, { canonicalUserName, vitals: userVitalsEntry });
               if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
-              // Fire has no next zone: committed Fire shows a full, pulsing bar.
+              // Bar from the same display record as the colour; Fire shows a full, pulsing bar.
               const zoneBar = zoneBarState({
-                committedZoneId: zoneIdForGrouping,
-                showBar: shouldShowProgressBar,
-                progress: shouldShowProgressBar ? (normalizedProgress ?? 0) : null,
+                zoneId: zoneIdForGrouping,
+                showBar: Boolean(cardDisplay?.showBar),
+                progress: cardDisplay?.showBar ? (cardDisplay.progress ?? 0) : null,
               });
               // Same identity order as the race chart (buildBeatsSeries): the
               // entity's stint first, then the timeline user.
@@ -938,7 +910,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               // progress entries don't carry it (2026-11-08: every line drew grey).
               const trendProfile = resolveZoneProfile(participantEntry?.profileId)
                 || resolveZoneProfile(participantEntry?.id) || resolveZoneProfile(profileId);
-              const trendSequence = pickZoneSequence(trendProfile?.zoneSequence, progressInfo?.zoneSequence, userVitalsEntry?.zoneSequence);
+              const trendSequence = pickZoneSequence(trendProfile?.zoneSequence, userVitalsEntry?.zoneSequence);
 
               const removalCountdown = device.removalCountdown;
               const isCountdownActive = Number.isFinite(removalCountdown);

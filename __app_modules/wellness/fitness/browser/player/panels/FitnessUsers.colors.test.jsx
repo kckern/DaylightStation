@@ -49,13 +49,22 @@ describe('FitnessUsers strap identity and earned zone', () => {
     expect(container.querySelector('.fitness-device').classList.contains(zoneId ? `zone-${zoneId}` : 'zone-fire')).toBe(true);
   });
 
-  it('uses the trusted committed profile even when raw HR has crossed another zone', async () => {
+  it('shows the zone of the BPM it prints, on the rider\'s validated ladder, over a lagging committed zone', async () => {
+    // Committed Active (anti-flap) while the card prints 141: on the rider's
+    // own ladder (Hot from 140) the card, badge and bar all say Hot.
+    const ladder = [
+      { id: 'cool', name: 'Cool', min: 0, color: 'blue' },
+      { id: 'active', name: 'Active', min: 100, color: 'green' },
+      { id: 'warm', name: 'Warm', min: 120, color: 'yellow' },
+      { id: 'hot', name: 'Hot', min: 140, color: 'orange' },
+      { id: 'fire', name: 'Fire', min: 160, color: 'red' },
+    ];
     testState.context = { ...context({ name: 'Rider A', zoneId: 'warm', rawZoneId: 'fire' }),
-      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: 'active', zoneSnapshot: { currentZoneId: 'fire' } }] };
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: 'active', zoneConfig: ladder }] };
     const { container } = render(<FitnessUsersList />);
-    await waitFor(() => expect(container.querySelector('.fitness-device.zone-active')).toBeTruthy());
-    expect(hex(container.querySelector('.zone-badge-probe').style.backgroundColor)).toBe('#51cf66');
+    await waitFor(() => expect(container.querySelector('.fitness-device.zone-hot')).toBeTruthy());
     expect(container.querySelector('.device-value').textContent).toBe('141');
+    expect(container.querySelector('.zone-progress-fill').style.width).toBe('5%');
   });
 
   // An explicitly null committed profile is never revived as EARNED state (the

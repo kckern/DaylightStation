@@ -7,6 +7,14 @@ globalThis.window = { location: { origin: 'http://localhost:3111', protocol: 'ht
 import { buildParticipantDisplayMap } from "../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/participantDisplayMap.js";
 
 describe('buildParticipantDisplayMap', () => {
+  // The validated ladder a ZoneProfileStore profile carries (zoneConfig).
+  const LADDER = [
+    { id: 'cool', name: 'Cool', min: 0, color: 'blue' },
+    { id: 'active', name: 'Active', min: 100, color: 'green' },
+    { id: 'warm', name: 'Warm', min: 120, color: 'yellow' },
+    { id: 'hot', name: 'Hot', min: 140, color: 'orange' },
+    { id: 'fire', name: 'Fire', min: 160, color: 'red' },
+  ];
   const mockProfiles = [
     {
       id: 'user-1',
@@ -17,6 +25,7 @@ describe('buildParticipantDisplayMap', () => {
       currentZoneName: 'Warm',
       currentZoneColor: '#eab308',
       progress: 0.65,
+      zoneConfig: LADDER,
       targetHeartRate: 145,
       zoneSequence: [{ id: 'cool' }, { id: 'active' }, { id: 'warm' }],
       groupLabel: 'Adults',
@@ -40,7 +49,22 @@ describe('buildParticipantDisplayMap', () => {
     expect(entry.zoneId).toBe('warm');
     expect(entry.zoneName).toBe('Warm');
     expect(entry.zoneColor).toBe('#eab308');
-    expect(entry.progress).toBe(0.65);
+    // Progress is the display record's: 130 bpm on the 120→140 Warm band.
+    expect(entry.progress).toBe(0.5);
+    expect(entry.display).toMatchObject({ zoneId: 'warm', live: true, showBar: true });
+  });
+
+  test('display follows the BPM shown, not the committed zone held by the exit margin', () => {
+    // Committed Hot (floor 140) held at 137 bpm: the chip and card show Warm,
+    // measured on the Warm band — never a Hot colour over a Warm-band bar.
+    const map = buildParticipantDisplayMap([
+      { ...mockProfiles[0], heartRate: 137, currentZoneId: 'hot', currentZoneColor: 'orange' }
+    ], mockRoster);
+    const entry = map.get('user one');
+    expect(entry.zoneId).toBe('hot');
+    expect(entry.display.zoneId).toBe('warm');
+    expect(entry.display.zoneColor).toBe('yellow');
+    expect(entry.progress).toBeCloseTo(0.85, 5);
   });
 
   test('surfaces zoneIndex from profile.zoneSnapshot for sort keys', () => {
@@ -49,10 +73,11 @@ describe('buildParticipantDisplayMap', () => {
         id: 'warm-user',
         name: 'Warm User',
         displayName: 'Warm User',
-        heartRate: 140,
+        heartRate: 136,
         currentZoneId: 'warm',
         currentZoneColor: '#eab308',
         progress: 0.8,
+        zoneConfig: LADDER,
         zoneSnapshot: { zoneIndex: 2 }
       }
     ];

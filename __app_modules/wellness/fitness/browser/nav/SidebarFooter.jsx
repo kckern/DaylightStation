@@ -7,12 +7,9 @@ import "./SidebarFooter.scss";
 import getLogger from '@/lib/logging/Logger.js';
 import useLongPress from "../lib/useLongPress.js";
 import hardReload from "../lib/hardReload.js";
-import { lookupZoneProgress } from "../domain/zoneProgressIndex.js";
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
-// Stable identity so a missing index doesn't churn the memos that read it.
-const EMPTY_ZONE_PROGRESS_INDEX = new Map();
 // Canonical zone ids (cool..fire) for a heart rate device. Module-level so it
 // is a stable reference for the callback below.
 const CANONICAL_ZONES = ['cool', 'active', 'warm', 'hot', 'fire'];
@@ -28,7 +25,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     usersConfigRaw,
     userCurrentZones,
     zones,
-    zoneProgressIndex,
+    resolveDisplayZone,
     getUserByDevice,
     fitnessPlayQueue
   } = useFitnessContext();
@@ -168,11 +165,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster, participantsByDevice, usersConfigRaw, getConfiguredProfileId]);
 
-  // `zoneProgressIndex` from context is already a Map aliased by profileId,
-  // deviceId(s), name and displayLabel — no local normalization needed. Resolve
-  // through lookupZoneProgress() with a stable ID first wherever one is on hand.
-  const zoneProgressMap = zoneProgressIndex || EMPTY_ZONE_PROGRESS_INDEX;
-
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
     const map = {};
@@ -199,11 +191,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     return null;
   }, [zones, usersConfigRaw]);
 
-  const getZoneClass = (device) => {
-    if (device.type !== 'heart_rate') return 'no-zone';
-    const zoneId = getDeviceZoneId(device);
-    return zoneId ? `zone-${zoneId}` : 'no-zone';
-  };
 
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
   const resolveDeviceKey = React.useCallback((device) => {
@@ -237,7 +224,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
-    if (entry?.trusted === false) return null;
+    // A display entry with no zone for an untrusted rider: show none, never derive one.
+    if (entry?.trusted === false && !entry.id) return null;
     let zoneId = null;
     let color = null;
     if (entry) {
@@ -265,7 +253,8 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
-    if (entry?.trusted === false) return null;
+    // A display entry with no zone for an untrusted rider: show none, never derive one.
+    if (entry?.trusted === false && !entry.id) return null;
     if (entry) {
       if (typeof entry === 'object' && entry.color) {
         return entry.color;
@@ -359,19 +348,23 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
             });
           }
           const heartRate = device.type === 'heart_rate' && device.heartRate ? device.heartRate : null;
-          const zoneId = getDeviceZoneId(device);
-          const zoneColor = getDeviceZoneColor(device) || null;
-          const progressEntry = lookupZoneProgress(zoneProgressMap, {
-            profileId: device.profileId,
-            id: device.id,
-            name: ownerName,
-            displayLabel: device.displayLabel,
-            deviceId: deviceKey
-          });
-          const progressValue = typeof progressEntry?.progress === 'number'
-            ? Math.max(0, Math.min(1, progressEntry.progress))
+          // Ring colour, zone class and gauge: ONE display record from the BPM
+          // this avatar prints (FitnessContext.resolveDisplayZone) — the same
+          // record the rider's card shows. The older lookups only cover a strap
+          // the record cannot place (no reading, no held zone).
+          const display = device.type === 'heart_rate' && typeof resolveDisplayZone === 'function'
+            ? resolveDisplayZone({
+                profileId: device.profileId || device.id,
+                name: ownerName,
+                heartRate: Number.isFinite(heartRate) ? Math.round(heartRate) : null
+              })
             : null;
-          const cardZoneClass = getZoneClass(device);
+          const zoneId = display?.zoneId || getDeviceZoneId(device);
+          const zoneColor = (display?.zoneId ? display.zoneColor : getDeviceZoneColor(device)) || null;
+          const progressValue = display?.zoneId && display.showBar && Number.isFinite(display.progress)
+            ? Math.max(0, Math.min(1, display.progress))
+            : null;
+          const cardZoneClass = device.type === 'heart_rate' && zoneId ? `zone-${zoneId}` : 'no-zone';
           const isActive = computeDeviceActive(device);
           const cardClasses = ['device-card', cardZoneClass, isActive ? 'active' : 'inactive']
             .filter(Boolean)
