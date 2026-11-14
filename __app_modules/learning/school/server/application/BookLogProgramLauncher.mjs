@@ -127,6 +127,8 @@ export class BookLogProgramLauncher {
    */
   /** The shelf is a dated log; any day's window can be re-measured. */
   get replayable() { return true; }
+  /** Saturday catch-up: Saturday reading is logged on the shelf like any day's, and a finish is a milestone any day. */
+  get saturdayCatchUp() { return true; }
 
   async status({ userId, day = null } = {}) {
     const learnerId = userId;

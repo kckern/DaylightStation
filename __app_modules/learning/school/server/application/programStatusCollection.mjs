@@ -38,14 +38,16 @@ async function withWeeklyFold({ launcher, learnerId, programInstance, studyDay, 
 
 /**
  * SATURDAY CATCH-UP (2026-11-14). On a live Saturday build, each daily
- * program's Monday–Friday is replayed so the agenda can offer a missed weekday
+ * program that opts in (`saturdayCatchUp`, IProgramLauncher) has its
+ * Monday–Friday replayed so the agenda can offer a missed weekday
  * again (`missedWeekdays`, domain/saturdayCatchUp.mjs). A day the launcher
  * reports done, or a grown-up's bypass on file for it, counts as done. Any
  * replay failure drops the fold: with the week unknown nothing is offered,
  * and today's own status is kept.
  */
 async function withWeekdayFold({ launcher, learnerId, programId, programInstance, studyDay, status, dayBypasses, logger }) {
-  if (launcher.replayable !== true || !studyDay || isoWeekday(studyDay) !== 6) return status;
+  if (launcher.replayable !== true || launcher.saturdayCatchUp !== true) return status;
+  if (!studyDay || isoWeekday(studyDay) !== 6) return status;
   const { from } = weekWindowFor(studyDay);
   const days = [0, 1, 2, 3, 4].map((offset) => addDays(from, offset));
   try {

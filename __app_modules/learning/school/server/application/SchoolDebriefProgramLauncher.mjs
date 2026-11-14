@@ -29,6 +29,8 @@ export class SchoolDebriefProgramLauncher {
   get entryAction() { return null; }
   get surface() { return 'portal'; }
   get replayable() { return true; }
+  /** No Saturday catch-up: launching writes SATURDAY's debrief (it cannot backfill a weekday), and no week owes or pays one. */
+  get saturdayCatchUp() { return false; }
   /** One fact row per owed day in [week.from, week.to] (spec §5). Null when not enrolled. Throws when a day cannot be read. */
   async weekFacts({ learnerId, week, quizPassRatio, substantiveScore, richLevel = 3, teachableLevel = 4 }) {
     const enrollment = await this.#enrollment(learnerId);

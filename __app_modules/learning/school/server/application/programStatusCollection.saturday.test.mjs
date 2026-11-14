@@ -6,10 +6,10 @@ const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const SATURDAY = '2026-11-14';
 const WEEKDAYS = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
 
-function launcher({ doneOn = [], replayable = true, failOn = null }) {
+function launcher({ doneOn = [], replayable = true, saturdayCatchUp = true, failOn = null }) {
   const seen = [];
   return {
-    seen, id: 'p', entryAction: null, surface: null, replayable,
+    seen, id: 'p', entryAction: null, surface: null, replayable, saturdayCatchUp,
     async status({ day = null }) {
       seen.push(day);
       if (day && day === failOn) throw new Error('boom');
@@ -47,6 +47,12 @@ describe('collectProgramStatuses — Saturday weekday fold', () => {
   it('a non-replayable launcher gets no fold', async () => {
     const l = launcher({ replayable: false });
     const [row] = await run(l);
+    expect(row.status.weekdays).toBeUndefined();
+  });
+  it('a replayable launcher that has not opted in is not replayed (its Saturday work would credit nothing)', async () => {
+    const l = launcher({ saturdayCatchUp: false });
+    const [row] = await run(l);
+    expect(l.seen).toEqual([null]);
     expect(row.status.weekdays).toBeUndefined();
   });
   it('a weekly program keeps its own fold only', async () => {

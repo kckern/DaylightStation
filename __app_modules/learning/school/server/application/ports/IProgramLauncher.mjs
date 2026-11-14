@@ -100,6 +100,23 @@ export class IProgramLauncher {
   }
 
   /**
+   * OPTIONAL. Whether a missed school weekday of this program may be offered
+   * again on Saturday as an optional catch-up (`withWeekdayFold` in
+   * `programStatusCollection.mjs`, `domain/saturdayCatchUp.mjs`). True only
+   * when work done on a Saturday is real, credited work: it lands in evidence
+   * something counts on any day (a card-ladder day file toward `card-goal`, a
+   * story read toward `story-read`). False (the default) for a program whose
+   * Saturday completion would credit nothing: the after-school debrief writes
+   * Saturday's debrief, which no week owes or pays, so offering it would set a
+   * child to work for nothing. Requires `replayable`, since the fold replays
+   * Monday to Friday; a launcher without it is never asked about those days.
+   * @returns {boolean}
+   */
+  get saturdayCatchUp() {
+    return false;
+  }
+
+  /**
    * Today's status for one learner. Must not throw: agenda compilation calls
    * every launcher, and one failing program must not blank the agenda for the
    * rest.

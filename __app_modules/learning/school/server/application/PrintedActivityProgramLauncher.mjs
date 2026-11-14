@@ -121,6 +121,8 @@ export class PrintedActivityProgramLauncher {
 
   /** The issuance log keeps `completedStudyDay`, so any day can be re-read. */
   get replayable() { return true; }
+  /** Saturday catch-up: a sheet scanned on Saturday is completed on that study day, on the issuance log. */
+  get saturdayCatchUp() { return true; }
 
   studyDay() {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone });

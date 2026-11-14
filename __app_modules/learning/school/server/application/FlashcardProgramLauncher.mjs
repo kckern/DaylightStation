@@ -18,6 +18,13 @@ export class FlashcardProgramLauncher {
    * what a non-replayable launcher got before.
    */
   get replayable() { return true; }
+  /**
+   * Saturday catch-up: a card-ladder day done on Saturday is a day file with
+   * `doneAt`, which `SchoolAchievementProvider` counts toward `card-goal` on
+   * any day of the week. An FSRS deck answers UNKNOWABLE_STATUS for past days,
+   * so the weekday fold drops itself and nothing is offered for it.
+   */
+  get saturdayCatchUp() { return true; }
   async #enrollment(userId, deckId) {
     const assignment = await this.#assignments.get(userId);
     return (assignment?.programs ?? []).find((row) => row?.programId === 'flashcards' && (row.deckId ?? row.corpusId) === deckId) ?? null;
