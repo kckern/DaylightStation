@@ -464,7 +464,7 @@ export function planDailyAgenda({
     const servedToday = (subjectPassedToday || programDone) && !candidate && !programUnavailable;
 
     const candidateStatus = candidate?.program ? programStatusFor(programStatuses, candidate) : null;
-    const next = !servedToday && candidate
+    let next = !servedToday && candidate
       ? (candidate.program
         ? { ...candidate, obligationProgress: candidateStatus?.obligationProgress ?? null }
         : candidate)
@@ -637,20 +637,54 @@ export function planDailyAgenda({
     // purpose: a normal subject is served after one pass, so a second
     // curriculum unit on the shelf is not owed today. An excused or served
     // section owes nothing more.
-    const pendingPrograms = (obligation.state === 'excused' || obligation.state === 'served')
-      ? []
-      : actionable
-        .filter((e) => e.program && e.unitId !== next?.unitId
-          && scheduleVerdict(today, e.schedule ?? null).schoolDay)
-        .map((e) => ({
-          unitId: e.unitId,
-          program: e.program,
-          programInstance: e.programInstance ?? null,
-          title: e.title ?? null,
-          subject: e.subject ?? subject,
-          obligationProgress: programStatusFor(programStatuses, e)?.obligationProgress ?? null,
-          ...(e.icon ? { icon: e.icon } : {}),
-        }));
+    // SATURDAY CATCH-UP (2026-11-14): a required daily program missed on a
+    // school weekday this week is offered again, optionally, so a weekly gem
+    // can still be reached before Sunday closes the week. Excused sections
+    // only: the offer is never owed. The candidates are the section's own
+    // offerable programs (not done today, not held, not unavailable, terminal,
+    // unknowable or weekly-satisfied), in the section's priority order, that
+    // missed a weekday (`saturdayCatchUp.mjs`). The first becomes `next` even
+    // when the ordinary pick was a lesson or another program; the rest are
+    // listed in `pendingPrograms` so a shelf with two missed programs shows
+    // both. Only programs whose launcher opts in carry `weekdays` at all
+    // (`collectProgramStatuses`), so no other program can qualify.
+    const catchUps = isoWeekday(today) === 6 && obligation.state === 'excused'
+      ? offerable
+        .filter((e) => e.program && !e.elective && !e.placeholder && (e.cadence ?? 'daily') === 'daily'
+          && (e.status === 'in_progress' || e.status === 'available'))
+        .sort(byEntryPriority)
+        .map((entry) => ({
+          entry,
+          missedDays: missedWeekdays({
+            entry, doneOn: programStatusFor(programStatuses, entry)?.weekdays?.doneOn,
+            today, householdSchedule, dayOffPolicy,
+          }),
+        }))
+        .filter(({ missedDays }) => missedDays.length > 0)
+      : [];
+    if (catchUps.length) {
+      const { entry } = catchUps[0];
+      next = { ...entry, obligationProgress: programStatusFor(programStatuses, entry)?.obligationProgress ?? null };
+    }
+    const backfill = catchUps.length ? { missedDays: catchUps[0].missedDays } : null;
+
+    const programRow = (e) => ({
+      unitId: e.unitId,
+      program: e.program,
+      programInstance: e.programInstance ?? null,
+      title: e.title ?? null,
+      subject: e.subject ?? subject,
+      obligationProgress: programStatusFor(programStatuses, e)?.obligationProgress ?? null,
+      ...(e.icon ? { icon: e.icon } : {}),
+    });
+    const pendingPrograms = catchUps.length
+      ? catchUps.slice(1).map(({ entry }) => programRow(entry))
+      : (obligation.state === 'excused' || obligation.state === 'served')
+        ? []
+        : actionable
+          .filter((e) => e.program && e.unitId !== next?.unitId
+            && scheduleVerdict(today, e.schedule ?? null).schoolDay)
+          .map(programRow);
 
     // WHICH PROGRAM SPEAKS FOR THE SECTION'S PROGRESS. A shelf with several
     // programs used to take the first status that had a label, so with piano
@@ -681,18 +715,6 @@ export function planDailyAgenda({
       : [];
     const reopenEntry = reopenable.find((entry) => programStatusFor(programStatuses, entry)?.doneToday === true)
       ?? reopenable[0] ?? null;
-
-    // SATURDAY CATCH-UP (2026-11-14): a daily program missed on a school
-    // weekday this week is offered again, optionally, so a weekly gem can
-    // still be reached before Sunday closes the week. Excused sections only:
-    // the offer is never owed. See `saturdayCatchUp.mjs`.
-    const backfillDays = isoWeekday(today) === 6 && next?.program && obligation.state === 'excused'
-      ? missedWeekdays({
-        entry: next, doneOn: programStatusFor(programStatuses, next)?.weekdays?.doneOn,
-        today, householdSchedule, dayOffPolicy,
-      })
-      : [];
-    const backfill = backfillDays.length ? { missedDays: backfillDays } : null;
 
     return {
       subject,
@@ -788,14 +810,16 @@ export function planDailyAgenda({
   // settled, a program offer that backfills a missed weekday stays.
   if (sections.some((section) => section._weekendAsks)) {
     // Scripture first: a Saturday catch-up offer joins only once every weekend
-    // item is settled (served, or excused by a hold), never beside an owed one.
+    // item is settled (served, or excused by a hold), never beside an owed one
+    // and never beside a faulted one (a fault is not a settlement).
     const weekendSettled = sections
       .filter((section) => section._weekendAsks)
-      .every((section) => section.obligation.state !== 'obligated');
+      .every((section) => section.obligation.state === 'served' || section.obligation.state === 'excused');
     sections.forEach((section) => {
       if (section._weekendAsks || section.obligation.state !== 'excused') return;
       if (section.backfill && weekendSettled) return;
       section.next = null;
+      section.pendingPrograms = [];
       section.catchUp = false;
       section.backfill = null;
       section.lockedRemedy = null;

@@ -221,10 +221,15 @@ describe('Saturday catch-up: a missed weekday program comes back', () => {
   ];
   const scriptureDone = [pass('w1-d4', `${SATURDAY}T15:00:00.000Z`)];
   const MISSED_MONDAY = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
-  const build = ({ entries, day = SATURDAY, sessions = [], doneOn = MISSED_MONDAY, householdSchedule = null }) =>
+  const build = ({ entries, day = SATURDAY, sessions = [], doneOn = MISSED_MONDAY, householdSchedule = null, programStatuses = null }) =>
     Object.fromEntries(planDailyAgenda({
-      plan: { entries }, sessions, programStatuses: cardStatus(doneOn), now: `${day}T18:00:00.000Z`, householdSchedule,
+      plan: { entries }, sessions, programStatuses: programStatuses ?? cardStatus(doneOn), now: `${day}T18:00:00.000Z`, householdSchedule,
     }).sections.map((s) => [s.subject, s]));
+  const ALL_WEEK = ['2026-11-09', ...MISSED_MONDAY];
+  const story = { unitId: 'story-time:daily', title: 'Story time', subject: 'language', program: 'story-time', programInstance: null,
+    elective: false, status: 'available', timingState: 'available', schedule: weekdays, cadence: 'daily', timingPriority: 2 };
+  const statusRow = (programId, programInstance, doneOn, extra = {}) => ({ programId, programInstance,
+    status: { doneToday: false, weekdays: { weekFrom: '2026-11-09', doneOn }, ...extra } });
 
   it('after the weekend item, offers the program with its missed days, labelled catch-up, never owed', () => {
     const s = build({ entries: [...scripture(), cards, civics], sessions: scriptureDone });
@@ -267,6 +272,71 @@ describe('Saturday catch-up: a missed weekday program comes back', () => {
   it('an away Monday is not a missed day', () => {
     const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09', label: 'Trip', tier: 'away' }] };
     const s = build({ entries: [...scripture(), cards], sessions: scriptureDone, householdSchedule });
+    expect(s.language.next).toBeNull();
+    expect(s.language.backfill).toBeNull();
+  });
+
+  it('a missed program wins over an in-progress lesson in the same subject', () => {
+    const grammar = { unitId: 'gram-3', title: 'Grammar 3', subject: 'language', courseId: 'gram', module: 'm1', sequence: 3,
+      program: null, elective: false, status: 'in_progress', timing: null, timingState: 'available', schedule: weekdays };
+    const s = build({ entries: [...scripture(), grammar, cards], sessions: scriptureDone });
+    expect(s.language.next.unitId).toBe('flashcards:x');
+    expect(s.language.catchUp).toBe(true);
+    expect(s.language.backfill).toEqual({ missedDays: ['2026-11-09'] });
+    expect(s.language.obligation.state).toBe('excused');
+  });
+  it('two programs, only the second missed: the second is offered', () => {
+    const first = { ...cards, timingPriority: 1 };
+    const s = build({
+      entries: [...scripture(), first, story], sessions: scriptureDone,
+      programStatuses: [statusRow('flashcards', 'x', ALL_WEEK), statusRow('story-time', null, MISSED_MONDAY)],
+    });
+    expect(s.language.next.unitId).toBe('story-time:daily');
+    expect(s.language.backfill).toEqual({ missedDays: ['2026-11-09'] });
+    expect(s.language.pendingPrograms).toEqual([]);
+  });
+  it('both missed: the first by priority is next, the other is pending', () => {
+    const first = { ...cards, timingPriority: 1, title: 'Cards' };
+    const s = build({
+      entries: [...scripture(), story, first], sessions: scriptureDone,
+      programStatuses: [
+        statusRow('flashcards', 'x', MISSED_MONDAY),
+        statusRow('story-time', null, ['2026-11-09', '2026-11-10'], { obligationProgress: { completed: 0, total: 1 } }),
+      ],
+    });
+    expect(s.language.next.unitId).toBe('flashcards:x');
+    expect(s.language.backfill).toEqual({ missedDays: ['2026-11-09'] });
+    expect(s.language.pendingPrograms).toEqual([{
+      unitId: 'story-time:daily', program: 'story-time', programInstance: null, title: 'Story time',
+      subject: 'language', obligationProgress: { completed: 0, total: 1 },
+    }]);
+  });
+  it('before the weekend item is done, a second missed program is not pending either', () => {
+    const s = build({
+      entries: [...scripture(), story, cards],
+      programStatuses: [statusRow('flashcards', 'x', MISSED_MONDAY), statusRow('story-time', null, MISSED_MONDAY)],
+    });
+    expect(s.language.next).toBeNull();
+    expect(s.language.pendingPrograms).toEqual([]);
+  });
+  it('an elective program is never backfilled', () => {
+    const s = build({ entries: [...scripture(), { ...cards, elective: true }], sessions: scriptureDone });
+    expect(s.language.backfill).toBeNull();
+    expect(s.language.next).toBeNull();
+  });
+  it('a once-only program is never backfilled', () => {
+    const s = build({ entries: [...scripture(), { ...cards, cadence: 'once' }], sessions: scriptureDone });
+    expect(s.language.backfill).toBeNull();
+    expect(s.language.next).toBeNull();
+  });
+  it('a faulted weekend item is not settled: no catch-up beside it', () => {
+    const scriptureProgram = { unitId: 'scrip:daily', title: 'Verses', subject: 'scripture', program: 'verses', programInstance: null,
+      elective: false, status: 'available', timingState: 'available', schedule: { daysOfWeek: [1, 2, 3, 4, 5, 6, 7] } };
+    const s = build({
+      entries: [...scripture(), scriptureProgram, cards], sessions: scriptureDone,
+      programStatuses: [...cardStatus(MISSED_MONDAY), { programId: 'verses', programInstance: null, status: { error: true } }],
+    });
+    expect(s.scripture.obligation.state).toBe('faulted');
     expect(s.language.next).toBeNull();
     expect(s.language.backfill).toBeNull();
   });
