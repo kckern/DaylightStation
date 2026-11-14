@@ -19,10 +19,10 @@
 // signature doesn't already imply (in-key notes are clean; out-of-key get a
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
-import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke } from 'vexflow';
+import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter } from 'vexflow';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
-import { COLUMN_CAPACITY, columnRolls } from "../model/noteFlow.js";
+import { columnRolls } from "../model/noteFlow.js";
 import { spellPitchClass } from "../model/spelling.js";
 
 // A column with no duration of its own — every column of a single-chord display, and
@@ -63,19 +63,22 @@ const KEY_SIGNATURE_AIR = 4;
 //
 //     node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs
 //
-// It renders ~38k cases (every MIDI 21–108 alone, triads, clusters, dense and wide
+// It renders ~152k cases (every MIDI 21–108 alone, triads, clusters, dense and wide
 // two-hand voicings, single columns and full flows, × 13 key signatures × 6 box
-// aspects), reports the ink extremes, and exits non-zero if anything lands outside
-// the frame. Re-run it after touching these constants, the stave geometry, the
-// ottava thresholds, the note duration, or the VexFlow version. Current extremes:
-// ink y ∈ [30.5, 249.2], ink x ≥ −6 (the brace overhangs the stave's left edge).
+// aspects × 4 duration patterns), reports the ink extremes, and exits non-zero if
+// anything lands outside the frame or two neighbouring columns collide. Re-run it after
+// touching these constants, the stave geometry, the column layout, the ottava
+// thresholds, the durations, or the VexFlow version. Current extremes (2026-11-14):
+// ink y ∈ [20.5, 254.2], ink x ≥ −6 (the brace overhangs the stave's left edge). The
+// top is an 8va label over a high flow of alternating eighths and halves — inside the
+// frame, with half a unit to spare.
 //
 // The vertical bounds are aspect- and key-independent, because ottava shifting caps
 // the displayed range at A6 on top and E2 at the bottom — so only those notes' ledger
 // lines and the 8va/8vb markers reach the extremes. Horizontal is different and is
-// handled by MIN_COLUMN_W below, not here.
-const FRAME_TOP = 20;        // worst ink top 31 → 11 units of air
-const FRAME_BOTTOM = 258;    // worst ink bottom 249.7 → 8 units of air
+// handled by the column layout below (layoutColumns), not here.
+const FRAME_TOP = 20;        // worst ink top 20.5 → 0.5 units of air
+const FRAME_BOTTOM = 258;    // worst ink bottom 254.2 → 3.8 units of air
 const FRAME_LEFT = -14;      // worst ink left −6 (brace) → 8 units of air
 const FRAME_RIGHT_PAD = 16;  // air to the right of the stave's right edge
 const FRAME_H = FRAME_BOTTOM - FRAME_TOP;
@@ -85,15 +88,45 @@ const FRAME_PAD_X = PAD + FRAME_RIGHT_PAD - FRAME_LEFT;
 // Cap the frame's aspect (w/h) so an extremely wide pane doesn't stretch the staff
 // edge-to-edge; past the cap the frame is narrower than the pane and `meet` centers
 // it. 3:1 rather than the 1.7:1 that suited a single parked chord — the flow needs
-// real width to lay COLUMN_CAPACITY columns out without cramping them, and the
+// real width to lay a line of columns out without cramping them, and the
 // Studio row pane (~2.8:1) should fill rather than sit in the left two-thirds.
 const MAX_STAVE_ASPECT = 3;
 // A one-chord display has nothing to spread, so it keeps the older, more compact cap.
 const SINGLE_CHORD_MAX_ASPECT = 1.7;
-// Width one column of the flow needs before it starts colliding with its neighbour.
-// Sized from the ink sweep against ordinary playing (chords up to five or six notes);
-// see tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs.
-const MIN_COLUMN_W = 70;
+// ─── Column widths ──────────────────────────────────────────────────────────────
+// The flow is NOT laid on a uniform grid. Each column takes a width from its duration,
+// floored at what its ink needs, so a run of quick notes packs closer and more of a
+// fast phrase stays on screen before the oldest scrolls off — while a held note keeps
+// some room around it, the way engraved music spaces long notes wider than short ones.
+//
+// Widths are in units of W_Q, the width a quarter takes. W_Q is a function of the BOX
+// only: the room a C-major line has after its clef, over QUARTERS_PER_LINE — the width
+// the old fixed grid gave each of its eight slots. Neither the chord nor the key can
+// change how wide a quarter is; a key signature only takes room from the line, so seven
+// sharps leave space for a column or so fewer.
+const QUARTERS_PER_LINE = 8;
+// A narrow pane (a sidebar staff) divided by eight would give a quarter ~17 units —
+// noteheads shoulder to shoulder. This floor keeps a quarter readable there; the pane
+// shows fewer columns instead, as it always has.
+const MIN_QUARTER_W = 54;
+// Engraving spaces durations roughly by their square root, not their length: a half is
+// not twice a quarter on the page. 2/3 : 1 : 4/3 is close to that curve (√½ ≈ 0.71,
+// √2 ≈ 1.41) and keeps the eighth wide enough for a flagged stem and the next note's
+// accidental: at the Studio pane (W_Q ≈ 71) an eighth is ~47 units, so twelve eighths
+// fit where eight quarters do — "a little density" for the fast notes, not a
+// squeeze. Unknown durations fall back to a quarter's width.
+const DURATION_WIDTH = { 8: 2 / 3, q: 1, h: 4 / 3 };
+// Minimum air between one column's rightmost ink and the next column's leftmost (an
+// accidental, a roll stroke, a displaced head), in logical units. The content floor:
+// when two columns' ink needs more than their durations give them, the duration loses.
+// 6, not the 2 the ink sweep demands, because VexFlow's metrics run a little short of
+// the drawn outlines: at 4 the sweep measured 1.6 units between neighbours where the
+// floor bit (eighth beside half at the narrow 1.36 pane). 6 keeps >= 2 everywhere.
+const COLUMN_GAP = 6;
+// Where ink must stop short of the stave's right barline.
+const END_AIR = 6;
+// Logical units of air after the key signature before the first column's tick position.
+const NOTE_INSET = 10;
 
 // The content floor reserves room for the WIDEST key signature (7 accidentals), not
 // the current one. The displayed key is detected from what is being played and moves
@@ -114,7 +147,7 @@ const MAX_KEY_ACCIDENTALS = 7;
  * doesn't stretch the staff edge-to-edge — past the cap the frame is narrower than
  * the pane and `meet` centers it with air on both sides. The cap is a parameter
  * because a one-chord display (a flashcard) wants a compact staff, while the flow
- * wants room for COLUMN_CAPACITY columns.
+ * wants room for a line of columns.
  */
 export function computeChordStaffLayout(aspect, maxAspect = MAX_STAVE_ASPECT) {
   const minStaveW = 44 + MAX_KEY_ACCIDENTALS * 10 + MIN_NOTE_AREA;
@@ -185,13 +218,14 @@ function keyAlterFor(letter, keySig) {
  * keyboard, where the second F♯ would read as a different note than the first. Each
  * column here is self-contained: if the key doesn't imply the alteration, it shows.
  */
-function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION) {
+function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION, stemDir = null) {
   if (!midis.length) return null;
   // auto_stem: high chords stem DOWN and low chords stem UP (stems point toward the
   // staff), so the stem doesn't add to a tall chord's overhang and the noteheads
   // stay within the frame's headroom instead of clipping.
   const keys = midis.map((m) => midiToVexKey(m, keySig, spelling));
-  const note = new StaveNote({ keys, duration, clef, auto_stem: true });
+  // `stemDir` forces a direction — only the width measurement asks for one.
+  const note = new StaveNote(stemDir ? { keys, duration, clef, stem_direction: stemDir } : { keys, duration, clef, auto_stem: true });
   keys.forEach((key, i) => {
     const [written] = key.split('/');
     const letter = written[0];
@@ -211,15 +245,15 @@ function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION) {
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
-function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = []) {
+function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = [], stemDir = null) {
   const { bassNotes, trebleNotes } = splitByHand(midis);
   const trebleOtt = getOttavaInfo(trebleNotes, true);
   const bassOtt = getOttavaInfo(bassNotes, false);
   const dispTreble = trebleOtt.octaves ? trebleNotes.map((n) => n - trebleOtt.octaves * 12) : trebleNotes;
   const dispBass = bassOtt.octaves ? bassNotes.map((n) => n + bassOtt.octaves * 12) : bassNotes;
 
-  const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration);
-  const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration);
+  const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration, stemDir);
+  const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration, stemDir);
   // Best-effort 8va/8vb markers (don't fail the render if the Annotation enum shape
   // ever shifts between VexFlow versions).
   try {
@@ -248,14 +282,227 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals
   return { tNote, bNote };
 }
 
+// ─── Measuring a column ─────────────────────────────────────────────────────────
+
+// Staves the measuring formatter hangs notes on (Annotation format reads the stave).
+// Position and key do not matter: only widths are read.
+let measureStaves = null;
+const staffFor = (clef) => {
+  measureStaves ||= {
+    treble: new Stave(0, 0, 500).addClef('treble'),
+    bass: new Stave(0, 0, 500).addClef('bass'),
+  };
+  return measureStaves[clef];
+};
+
+// A column's ink depends only on what it holds, so its measurement is cached by that.
+// Bounded so a long session does not grow it without limit.
+const MEASURE_CACHE_MAX = 4096;
+const measureCache = new Map();
+
 /**
- * How many columns a flow staff of this stave width draws: the slot area (stave minus
- * the reserved clef + widest key signature) over MIN_COLUMN_W, between 1 and
- * COLUMN_CAPACITY. Exported so the replay harness shows the same window the staff does.
+ * How far one column's ink reaches either side of its tick position, in logical units:
+ * `left` is accidentals + roll stroke + any left-displaced head; `right` is the
+ * notehead(s), any right-displaced head, a stem-up flag and right modifiers. From
+ * VexFlow's own tick-context metrics after formatting, the same numbers it would draw
+ * with.
+ *
+ * Measured over BOTH stem directions and over every duration given, taking the widest
+ * reach each way. Stem direction is not the column's own: a beam group decides it, and
+ * which group a column falls in changes as later notes arrive (the newest eighth joins
+ * its neighbour's beam, or grows to a quarter and leaves it). A chord with a second
+ * puts its displaced head — and shoves its accidentals — on the side the stem dictates,
+ * so a width read from the drawn direction would let a beam decision move the columns
+ * to its right. The widest reach is the price of never moving them. `autoLeft` is the
+ * left reach in the column's own (auto_stem) direction, for the single-chord display.
  */
-export function columnSlots(staveW) {
-  const slotAreaW = staveW - (44 + MAX_KEY_ACCIDENTALS * 10) - 14;
-  return Math.max(1, Math.min(COLUMN_CAPACITY, Math.floor(slotAreaW / MIN_COLUMN_W)));
+function measureColumn(col, ks, durations) {
+  const rolls = columnRolls(col);
+  const spellingKey = col.spelling ? [...col.spelling.entries()].map(([pc, sp]) => `${pc}${sp.letter}${sp.alter}`).join(',') : '';
+  const key = `${ks}|${col.midis.join('.')}|${spellingKey}|${rolls.treble ?? ''}/${rolls.bass ?? ''}|${[...durations].sort().join('')}`;
+  const hit = measureCache.get(key);
+  if (hit) return hit;
+  let left = 0;
+  let right = 0;
+  let autoLeft = 0;
+  for (const duration of durations) {
+    for (const stemDir of [null, 1, -1]) {
+      const { tNote, bNote } = columnNotes(col.midis, ks, col.spelling, duration, col.arrivals, stemDir);
+      const notes = [[tNote, 'treble'], [bNote, 'bass']].filter(([n]) => n);
+      notes.forEach(([n, clef]) => n.setStave(staffFor(clef)));
+      const voices = notes.map(([n]) => new Voice({ num_beats: 1, beat_value: 4 }).setStrict(false).addTickables([n]));
+      const formatter = new Formatter();
+      voices.forEach((v) => formatter.joinVoices([v]));
+      formatter.format(voices, 0);
+      const m = notes[0][0].getTickContext().getMetrics();
+      // An 8va/8vb label draws from the note's start rightwards, its whole width (measured
+      // in Chrome: "15mb" spans head x → head x + 34), while the formatter books it as
+      // centred — half of it to the left. Take the drawn reach.
+      const label = Math.max(0, ...notes.flatMap(([n]) => n.getModifiers()
+        .filter((mod) => mod instanceof Annotation)
+        .map((mod) => TextFormatter.create(mod.textFont).getWidthForTextInPx(mod.text))));
+      // Two heads on ONE line — a letter spelled both ways in one chord, D with D♯ —
+      // draw side by side, but VexFlow's metrics don't count the second head as
+      // displaced (it isn't a second), so they report one head's width. The ink sweep
+      // caught the hidden head colliding with the next column. Book a second head's
+      // width on each side, since which side it takes follows the stem.
+      const unison = notes.some(([n]) => n.getKeyProps()
+        .some((k, i, all) => all.some((o, j) => j !== i && o.line === k.line)));
+      const extra = unison ? m.glyphPx : 0;
+      const l = m.totalLeftPx + extra;
+      const r = Math.max(m.notePx + m.totalRightPx + extra, label);
+      // autoLeft is the plain metric, as the single-chord display has always used it.
+      if (stemDir === null) autoLeft = Math.max(autoLeft, m.totalLeftPx);
+      left = Math.max(left, l);
+      right = Math.max(right, r);
+    }
+  }
+  const out = { left, right, autoLeft };
+  if (measureCache.size >= MEASURE_CACHE_MAX) measureCache.clear();
+  measureCache.set(key, out);
+  return out;
+}
+
+// Width of the stave's head with NO key signature (the clef alone), in either clef:
+// what the box-only quarter width is measured after (see W_Q above).
+let clefHead = null;
+function clefHeadW() {
+  if (clefHead === null) {
+    clefHead = 0;
+    for (const clef of ['treble', 'bass']) {
+      const st = new Stave(0, 0, 500).addClef(clef);
+      clefHead = Math.max(clefHead, st.getNoteStartX() - st.getX());
+    }
+  }
+  return clefHead;
+}
+
+// The stave's own padding between its note start and a tick context at x = 0.
+let notePadding = null;
+function notePaddingOf(stave) {
+  if (notePadding === null) {
+    const n = new StaveNote({ keys: ['c/4'], duration: 'q', clef: 'treble' });
+    const v = new Voice({ num_beats: 1, beat_value: 4 }).setStrict(false).addTickables([n]);
+    new Formatter().joinVoices([v]).format([v], 0);
+    n.setStave(stave);
+    n.getTickContext().setX(0);
+    notePadding = n.getAbsoluteX() - stave.getNoteStartX();
+  }
+  return notePadding;
+}
+
+/** W_Q: the width a quarter takes on a stave this wide — a function of the box only. */
+export function quarterWidth(staveW) {
+  const area = staveW - END_AIR - clefHeadW() - notePaddingOf(staffFor('treble')) - NOTE_INSET;
+  return Math.max(MIN_QUARTER_W, area / QUARTERS_PER_LINE);
+}
+
+/** Normalize the caller's columns (bare MIDI lists or column objects), dropping empties. */
+function normalizeColumns(columns, notes) {
+  // A column is either a bare list of MIDI notes or { midis, spelling } — the latter
+  // carrying how that chord should be WRITTEN (see model/spelling.js spellChord), so
+  // its letters alternate and match the name shown beside the staff.
+  return (columns ?? (notes && notes.size ? [[...notes.keys()]] : []))
+    .map((col) => (Array.isArray(col) ? { midis: col, spelling: null } : col))
+    .filter((col) => col?.midis?.length)
+    .map((col) => {
+      // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
+      const duration = col.duration ?? NOTE_DURATION;
+      return {
+        midis: [...col.midis].sort((a, b) => a - b),
+        spelling: col.spelling ?? null,
+        duration,
+        // The duration the column's WIDTH is taken from. A closed column's is the one
+        // it closed with (model/noteFlow.js closeDuration); a later hold promotion
+        // redraws the glyph as a half but must not widen the column and shove every
+        // column to its right. The newest column has none yet: its width tracks its
+        // provisional glyph — nothing is to its right to move.
+        widthDuration: col.widthDuration ?? duration,
+        // { midi, at } per note in arrival order — what each staff's roll is read from.
+        arrivals: Array.isArray(col.arrivals) ? col.arrivals : [],
+      };
+    });
+}
+
+/**
+ * Where each column of a flow goes, and which of them are on screen.
+ *
+ * Positions are tick-context x (relative to the stave's note start), left to right:
+ *
+ *     x[first] = NOTE_INSET + lead
+ *     x[i + 1] = x[i] + max(width(duration of i), right(i) + COLUMN_GAP + left(i + 1))
+ *
+ * — each column's head sits its DURATION's width after the last one's, unless the two
+ * columns' ink would come closer than COLUMN_GAP, in which case the ink wins. A column's
+ * x therefore depends only on the columns to its left (and its own left reach). Closed
+ * columns' widths are fixed when they close, so nothing already drawn moves while the
+ * newest column grows from an eighth to a quarter to a half: it has nothing to its right.
+ *
+ * On screen are the NEWEST columns whose widths fit the note area (the newest counting
+ * its own duration width, so a held note claims its room): at least one, at most
+ * `maxCount`. When the newest outgrows the room, the oldest drops off the left and the
+ * line shifts — the same scroll a new column causes.
+ *
+ * `lead` is how late the first column starts so its left ink (accidentals, a roll
+ * stroke) clears the key signature by KEY_SIGNATURE_AIR. It depends only on the
+ * leftmost column on screen, which changes only when the line scrolls.
+ *
+ * @returns {{ start: number, xs: number[], quarterW: number }} `start`: index of the
+ *   first column on screen; `xs`: tick x of columns start..end.
+ */
+function layoutColumns(cols, ks, stave, staveW, maxCount, { reachBothWays = true } = {}) {
+  const n = cols.length;
+  const quarterW = quarterWidth(staveW);
+  if (!n) return { start: 0, xs: [], quarterW };
+  const pad = notePaddingOf(stave);
+  // Tick x past which no ink may reach: the barline, less END_AIR.
+  const limit = stave.getX() + staveW - END_AIR - stave.getNoteStartX() - pad;
+  const m = cols.map((c) => measureColumn(c, ks, [...new Set([c.widthDuration, c.duration])]));
+  const leftOf = (i) => (reachBothWays ? m[i].left : m[i].autoLeft);
+  const durW = (d) => (DURATION_WIDTH[d] ?? 1) * quarterW;
+  const step = (i) => Math.max(durW(cols[i].widthDuration), m[i].right + COLUMN_GAP + m[i + 1].left);
+  // The head of the stave puts the note start KEY_SIGNATURE_AIR - pad left of x = 0.
+  const leadOf = (j) => Math.max(0, KEY_SIGNATURE_AIR + leftOf(j) - pad - NOTE_INSET);
+  let start = n - 1;
+  let span = Math.max(durW(cols[n - 1].widthDuration), m[n - 1].right + COLUMN_GAP);
+  while (start > 0 && n - start < maxCount) {
+    const wider = span + step(start - 1);
+    if (NOTE_INSET + leadOf(start - 1) + wider > limit) break;
+    span = wider;
+    start -= 1;
+  }
+  // A lone column too wide for the pane (a forearm cluster in a narrow box) would be
+  // pushed off the right edge by the both-ways reserve. With nothing beside it no beam
+  // can flip its stem, so its own direction's reach is the honest lead there.
+  let lead = leadOf(start);
+  if (start === n - 1 && NOTE_INSET + lead + m[start].right > limit) {
+    lead = Math.max(0, KEY_SIGNATURE_AIR + m[start].autoLeft - pad - NOTE_INSET);
+  }
+  const xs = [];
+  let x = NOTE_INSET + lead;
+  for (let i = start; i < n; i += 1) {
+    xs.push(x);
+    if (i < n - 1) x += step(i);
+  }
+  return { start, xs, quarterW };
+}
+
+/**
+ * The window a flow staff would draw: how many of the NEWEST columns are on screen, and
+ * where. renderChordStaff's own layout, without drawing — exported so the replay
+ * harness lists exactly the columns the pane shows.
+ *
+ * @param {Array} columns - as renderChordStaff takes them
+ * @param {{ aspect?: number, keySignature?: string, capacity?: number }} [opts]
+ * @returns {{ count: number, xs: number[], quarterW: number }}
+ */
+export function chordStaffWindow(columns, { aspect, keySignature = 'C', capacity = Infinity } = {}) {
+  const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
+  const cols = normalizeColumns(columns);
+  const { staveW } = computeChordStaffLayout(aspect, MAX_STAVE_ASPECT);
+  const stave = new Stave(PAD, TOP_ROOM, staveW).addClef('treble').addKeySignature(ks);
+  const { start, xs, quarterW } = layoutColumns(cols, ks, stave, staveW, capacity);
+  return { count: cols.length - start, xs, quarterW };
 }
 
 /**
@@ -277,20 +524,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   if (!host) return;
   host.innerHTML = '';
 
-  // A column is either a bare list of MIDI notes or { midis, spelling } — the latter
-  // carrying how that chord should be WRITTEN (see model/spelling.js spellChord), so
-  // its letters alternate and match the name shown beside the staff.
-  const allColumns = (columns ?? (notes && notes.size ? [[...notes.keys()]] : []))
-    .map((col) => (Array.isArray(col) ? { midis: col, spelling: null } : col))
-    .filter((col) => col?.midis?.length)
-    .map((col) => ({
-      midis: [...col.midis].sort((a, b) => a - b),
-      spelling: col.spelling ?? null,
-      // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
-      duration: col.duration ?? NOTE_DURATION,
-      // { midi, at } per note in arrival order — what each staff's roll is read from.
-      arrivals: Array.isArray(col.arrivals) ? col.arrivals : [],
-    }));
+  const allColumns = normalizeColumns(columns, notes);
 
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
 
@@ -324,45 +558,27 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
 
   // Content flows from the LEFT (clef → key signature → notes), and each new column
   // lands to the right of the last, the way typed characters march across a screen.
-  //
-  // Both staves are laid out by ONE formatter over ALL the slots — the full capacity,
-  // even when only two columns are sounding. That is what makes the
-  // flow behave like a typewriter instead of a rubber band: slot 1 sits at the same x
-  // whether it is alone or the first of eight. Formatting to the live column count
-  // would re-space every existing note each time a new one arrived.
-  //
-  // Empty slots (and the staff that a column doesn't touch — a right-hand-only chord
-  // leaves the bass silent) are GhostNotes: they occupy their slot in the voice so the
-  // two staves stay column-aligned, but draw nothing. No rests, because a rest is a
-  // rhythmic claim and this display makes none.
-  const noteAreaW = Math.max(20, staveW - (treble.getNoteStartX() - treble.getX()) - 14);
-  const NOTE_INSET = 10; // logical units of air after the key signature
+  // Where each column goes, and how many fit, is layoutColumns' job (see it for the
+  // rule): heads are spaced by duration, floored at what the ink needs, and a column's
+  // x depends only on the columns to its left — the typewriter, not a rubber band.
+  // A single-chord consumer (the flashcard face) gets exactly one column, with its lead
+  // read from its own stem direction since no beam can ever flip it.
+  const maxCount = capacity ?? (isFlow ? Infinity : 1);
+  const { start, xs } = layoutColumns(allColumns, ks, treble, staveW, maxCount, { reachBothWays: isFlow });
+  const flow = allColumns.slice(start);
+  const count = flow.length;
 
-  // How many columns this staff can hold. NOT a constant: the frame is fixed, so a
-  // column that doesn't fit isn't squeezed, it's clipped — and eight chords genuinely
-  // do not fit a narrow sidebar staff. A narrow pane therefore shows FEWER, readable
-  // columns rather than eight cramped ones running off the right edge. The flow model
-  // still keeps COLUMN_CAPACITY; this only decides how many of them are drawn.
-  // (A single-chord consumer — the flashcard face — gets exactly one.)
-  // Measured from the RESERVED head width (clef + the widest key signature), not the
-  // actual one. The displayed key moves under your hands, and a real measurement would
-  // make G major fit one more column than F♯ — so the flow would gain and lose a column
-  // as the key drifted. Same reasoning as the stave-width floor above.
-  const slots = capacity ?? (isFlow ? columnSlots(staveW) : 1);
-  const flow = allColumns.slice(-slots);
-
-  // A slot's duration belongs to the COLUMN, not to a staff: treble, bass, and the
+  // A column's duration belongs to the COLUMN, not to a staff: treble, bass, and the
   // ghost standing in for whichever staff the column doesn't touch all take the same
   // one. Per-staff durations would give the two voices different tick totals and the
   // staves would drift out of vertical alignment column by column.
-  const durations = Array.from({ length: slots }, (_, i) =>
-    (i < flow.length ? flow[i].duration : NOTE_DURATION));
-
-  const slotNotes = Array.from({ length: slots }, (_, i) =>
-    i < flow.length
-      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i], flow[i].arrivals)
-      : { tNote: null, bNote: null }
-  );
+  //
+  // The staff a column doesn't touch (a right-hand-only chord leaves the bass silent)
+  // gets a GhostNote: it holds the column's place in that voice so the two staves stay
+  // column-aligned, but draws nothing. No rests, because a rest is a rhythmic claim and
+  // this display makes none.
+  const durations = flow.map((c) => c.duration);
+  const slotNotes = flow.map((c) => columnNotes(c.midis, ks, c.spelling, c.duration, c.arrivals));
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
   const bassTickables = slotNotes.map((s, i) => s.bNote ?? new GhostNote({ duration: durations[i] }));
 
@@ -422,8 +638,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     const runs = [];
     let group = [];
     const flush = () => { runs.push(...plan(group)); group = []; };
-    for (let i = 0; i <= slots; i += 1) {
-      const note = i < slots && durations[i] === '8' ? staffNotes[i] : null;
+    for (let i = 0; i <= count; i += 1) {
+      const note = i < count && durations[i] === '8' ? staffNotes[i] : null;
       if (!note) { flush(); continue; }
       group.push(note);
     }
@@ -442,58 +658,37 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   } catch { beamGroups = []; }
 
   const makeVoice = (tickables) =>
-    new Voice({ num_beats: slots, beat_value: 4 }).setStrict(false).addTickables(tickables);
+    new Voice({ num_beats: Math.max(1, count), beat_value: 4 }).setStrict(false).addTickables(tickables);
   const tVoice = makeVoice(trebleTickables);
   const bVoice = makeVoice(bassTickables);
 
   // joinVoices puts both staves on shared tick contexts, so a column's treble and
-  // bass noteheads share one x — the vertical alignment a grand staff needs.
-  new Formatter().joinVoices([tVoice]).joinVoices([bVoice]).format([tVoice, bVoice], noteAreaW);
+  // bass noteheads share one x — the vertical alignment a grand staff needs. The
+  // formatter is run for what it does to each column INSIDE itself (accidental
+  // columns, displaced heads, strokes); where the columns go is decided by layoutColumns.
+  if (count) {
+    new Formatter().joinVoices([tVoice]).joinVoices([bVoice]).format([tVoice, bVoice], 0);
+  }
 
-  // SNAP TO THE SLOT GRID. The formatter spaces by ticks, so once durations vary,
-  // rewriting one column's duration would move every column to its right — and a
-  // column's duration IS rewritten, retroactively, the moment the next one is struck.
-  // Notes would visibly jump sideways while you play, which is exactly what the fixed
-  // frame and the full-capacity layout exist to prevent.
+  // PIN EACH COLUMN TO ITS LAID-OUT x. The formatter spaces by ticks, so a duration
+  // rewritten retroactively — which happens the moment the next column is struck —
+  // would move every column to its right. layoutColumns' positions don't depend on
+  // anything to the right, so we place the columns ourselves.
   //
-  // So the formatter decides widths and we decide positions: each slot's TICK CONTEXT
-  // is pinned to a uniform grid. It has to be the tick context, not the note's x_shift.
-  // In VexFlow 4.2.5 a notehead draws at getNoteHeadBeginX() = getAbsoluteX() + x_shift
-  // (stavenote.js), but every modifier is laid out from getModifierStartXY(), which is
-  // getAbsoluteX() — tickContext.getX() + the stave's note start — WITHOUT the shift
-  // (Accidental.draw, Stroke.draw, Annotation.draw all start there). Shifting the notes
-  // walked the noteheads to the grid and left their accidentals, roll strokes and 8va
-  // labels where the formatter had put them: the replay of real takes drew sharps to
-  // the RIGHT of their notes and strokes a slot away from their chords. Moving the
-  // tick context moves the note and everything hung on it together. joinVoices put
-  // both staves on the same tick contexts, so one setX aligns treble and bass.
-  //
-  // The grid's first slot also has to clear the key signature. The formatter used to
-  // do that by placing the first tick context past its left modifiers; pinning it to
-  // NOTE_INSET leaves only NOTE_INSET + the stave's 12-unit note padding before the
-  // notehead, and a rolled cluster's accidental columns plus its stroke reach 40-65
-  // units left of the head (measured in Chrome over 4000 random 2-6 note chords:
-  // ~95% within 40, the worst 66). So the whole grid starts late by whatever slot 0's
-  // left modifiers overrun, and the slots narrow to keep the right edge where it was.
-  // That lead depends only on the leftmost column on screen, which is fixed once it
-  // closes: it changes when the line scrolls (every column moves a slot then anyway),
-  // never under a column that is already drawn mid-line.
-  // Measured against the stave, so the notes need their staves now: Voice.draw sets
-  // them, but only later, and without one getAbsoluteX() leaves out the stave's note
-  // start and padding.
+  // It has to be the TICK CONTEXT that moves, not the note's x_shift. In VexFlow 4.2.5
+  // a notehead draws at getNoteHeadBeginX() = getAbsoluteX() + x_shift (stavenote.js),
+  // but every modifier is laid out from getModifierStartXY(), which is getAbsoluteX() —
+  // tickContext.getX() + the stave's note start — WITHOUT the shift (Accidental.draw,
+  // Stroke.draw, Annotation.draw all start there). Shifting the notes walked the
+  // noteheads into place and left their accidentals, roll strokes and 8va labels where
+  // the formatter had put them: the replay of real takes drew sharps to the RIGHT of
+  // their notes and strokes a column away from their chords. Moving the tick context
+  // moves the note and everything hung on it together. joinVoices put both staves on
+  // the same tick contexts, so one setX aligns treble and bass.
   trebleTickables.forEach((t) => t.setStave(treble));
   bassTickables.forEach((t) => t.setStave(bass));
-  const firstTc = trebleTickables[0]?.getTickContext?.();
-  let lead = 0;
-  if (firstTc && slotNotes[0] && (slotNotes[0].tNote || slotNotes[0].bNote)) {
-    firstTc.setX(NOTE_INSET);
-    const headX = (slotNotes[0].tNote ?? slotNotes[0].bNote).getAbsoluteX();
-    const inkLeft = headX - firstTc.getMetrics().totalLeftPx;
-    lead = Math.max(0, treble.getNoteStartX() + KEY_SIGNATURE_AIR - inkLeft);
-  }
-  const slotW = (noteAreaW - lead) / slots;
   [trebleTickables, bassTickables].forEach((list) => list.forEach((t, i) => {
-    t.getTickContext?.()?.setX(NOTE_INSET + lead + i * slotW);
+    t.getTickContext?.()?.setX(xs[i]);
   }));
 
   // The beams themselves, now that the notes sit where they will be drawn, and before
@@ -502,9 +697,21 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   let beams = [];
   try { beams = beamGroups.map((group) => new Beam(group, false)); } catch { beams = []; }
 
-  tVoice.draw(ctx, treble);
-  bVoice.draw(ctx, bass);
+  if (count) {
+    tVoice.draw(ctx, treble);
+    bVoice.draw(ctx, bass);
+  }
   try { beams.forEach((b) => b.setContext(ctx).draw()); } catch { /* decorative */ }
+
+  // Say which staff and which column each drawn note belongs to, on its SVG group. The
+  // geometry can't: a treble chord below middle C reaches into the bass staff's height.
+  // The ink sweep reads these to check neighbouring columns on one staff for collisions.
+  slotNotes.forEach(({ tNote, bNote }, i) => {
+    for (const [note, staff] of [[tNote, 'treble'], [bNote, 'bass']]) {
+      const el = note && host.querySelector(`[id="vf-${note.getAttribute('id')}"]`);
+      if (el) { el.setAttribute('data-staff', staff); el.setAttribute('data-column', String(i)); }
+    }
+  });
 
   // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its
   // container and center it (xMidYMid meet), preserving aspect ratio. Replaces the

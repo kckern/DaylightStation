@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Stroke } from 'vexflow';
-import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from "./chordStaff.js";
+import { midiToVexKey, renderChordStaff, computeChordStaffLayout, chordStaffWindow } from "./chordStaff.js";
 
 describe('computeChordStaffLayout', () => {
   const FRAME_H = 238;    // FRAME_BOTTOM(258) - FRAME_TOP(20)
@@ -61,12 +61,12 @@ describe('computeChordStaffLayout', () => {
     expect(new Set(heights)).toEqual(new Set([FRAME_H]));
   });
 
-  it('reserves the measured worst-case ink extents (31 → 249.7, left −6)', () => {
-    // Bounds come from a 44,694-render Chrome sweep (see chordStaff.js). Guard them
+  it('reserves the measured worst-case ink extents (20.5 → 254.2, left −6)', () => {
+    // Bounds come from a 151,944-render Chrome sweep (see chordStaff.js). Guard them
     // here so a future tweak to the frame cannot silently start clipping notes.
     const { viewX, viewY, viewH } = computeChordStaffLayout(2);
-    expect(viewY).toBeLessThanOrEqual(31);        // worst ink top
-    expect(viewY + viewH).toBeGreaterThanOrEqual(249.7); // worst ink bottom
+    expect(viewY).toBeLessThanOrEqual(20.5);      // worst ink top
+    expect(viewY + viewH).toBeGreaterThanOrEqual(254.2); // worst ink bottom
     expect(viewX).toBeLessThanOrEqual(-6);        // worst ink left (the brace)
   });
 });
@@ -178,18 +178,25 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     expect(narrow).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not change the column count when the key signature changes', () => {
-    // The displayed key drifts as you play. If the slot count were measured from the
-    // real key-signature width, the flow would gain and lose a column on a modulation.
+  it('gives a quarter the same width in every key signature', () => {
+    // The displayed key drifts as you play. The quarter's width comes from the box alone,
+    // so a modulation can take room from the line (seven sharps are wider than none) but
+    // never re-spaces it: eight quarters fill a C-major line, and the head-to-head step
+    // is identical in every key.
     const drawn = (key) => {
       const host = document.createElement('div');
       document.body.appendChild(host);
-      const columns = Array.from({ length: 8 }, (_, i) => [60 + i]);
+      const columns = Array.from({ length: 16 }, () => ({ midis: [67], duration: 'q' }));
       renderChordStaff(host, { columns, keySignature: key, aspect: 560 / 210 });
-      return host.querySelectorAll('.vf-stavenote').length;
+      // The first path of a notehead group is the head (an accidental follows it).
+      const xs = [...host.querySelectorAll('g.vf-notehead')]
+        .map((g) => Number(/^M\s*([-\d.]+)/.exec(g.querySelector(':scope > path').getAttribute('d'))[1]));
+      return { count: xs.length, step: Math.round((xs[1] - xs[0]) * 100) / 100 };
     };
-    const counts = ['C', 'G', 'F#', 'Db', 'Gb'].map(drawn);
-    expect(new Set(counts).size).toBe(1);
+    const byKey = ['C', 'G', 'F#', 'Db', 'Gb'].map(drawn);
+    expect(byKey[0].count).toBe(8);
+    expect(new Set(byKey.map((k) => k.step)).size).toBe(1);
+    for (const k of byKey) expect(k.count).toBeGreaterThanOrEqual(6);
   });
 
   it('THE CONTRACT: the viewBox is identical for every chord (staff never moves)', () => {
@@ -275,20 +282,19 @@ describe('renderChordStaff — relative rhythm', () => {
     expect(host.querySelectorAll('.vf-stavenote').length).toBe(3);
   });
 
-  it('keeps every slot at the SAME x whatever the durations are', () => {
-    // The typewriter guarantee, and the reason for the post-format snap. A column's
-    // duration is rewritten retroactively the moment the next one is struck; if the
-    // formatter's tick spacing were left to place the notes, that rewrite would drag
-    // every column to its right and the staff would twitch under the player's hands.
-    const midis = [[60], [64], [67], [72]];
-    const asQuarters = midis.map((m) => ({ midis: m, duration: 'q' }));
-    const mixed = [
+  it("moves nothing to the LEFT of a column whose duration changes", () => {
+    // The typewriter guarantee. A column's x depends only on the columns before it, so
+    // rewriting one column's duration (it happens the moment the next is struck) can
+    // only move what is to its right — and here, the columns before it stay put.
+    const at = (d) => headXs(render([
       { midis: [60], duration: '8' },
-      { midis: [64], duration: '8' },
-      { midis: [67], duration: 'h' },
-      { midis: [72], duration: 'q' },
-    ];
-    expect(headXs(render(mixed))).toEqual(headXs(render(asQuarters)));
+      { midis: [64], duration: 'q' },
+      { midis: [67], duration: d },
+      { midis: [72], duration: '8' },
+    ]));
+    const [e, q, h] = ['8', 'q', 'h'].map(at);
+    expect(q.slice(0, 3)).toEqual(e.slice(0, 3));
+    expect(h.slice(0, 3)).toEqual(e.slice(0, 3));
   });
 
   it('places slot 1 at the same x whether it is alone or the first of four', () => {
@@ -484,6 +490,108 @@ describe('renderChordStaff — relative rhythm', () => {
   });
 });
 
+describe('renderChordStaff — duration-weighted layout', () => {
+  const STUDIO = 2.8;
+  const render = (columns, aspect = STUDIO, keySignature = 'C') => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns, keySignature, aspect });
+    return host;
+  };
+  const pts = (p) => {
+    const nums = (p.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const out = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) out.push([nums[i], nums[i + 1]]);
+    return out;
+  };
+  // Leftmost x of each drawn column's first notehead, in draw order (treble voice first).
+  const headXs = (host) => [...host.querySelectorAll('g.vf-stavenote')]
+    .map((g) => Math.round(pts(g.querySelector('.vf-notehead > path'))[0][0] * 100) / 100);
+  // Ink x-range of one stavenote group: every notehead and accidental outline in it.
+  const inkX = (g) => {
+    const xs = [...g.querySelectorAll('.vf-notehead > path')].flatMap((p) => pts(p).map(([x]) => x));
+    return [Math.min(...xs), Math.max(...xs)];
+  };
+  const run = (n, duration, base = 60) =>
+    Array.from({ length: n }, (_, i) => ({ midis: [base + [0, 2, 4, 5, 7, 9, 11, 12][i % 8]], duration }));
+
+  it('keeps every earlier column where it was while the newest grows 8 → q → h', () => {
+    // The newest column's duration is provisional and grows on the clock. Its width
+    // grows with it — but nothing is to its right, so nothing on screen may move.
+    const before = run(4, '8');
+    const at = (d) => headXs(render([...before, { midis: [72], duration: d, widthDuration: d }]));
+    const [e, q, h] = ['8', 'q', 'h'].map(at);
+    expect(q.slice(0, 5)).toEqual(e.slice(0, 5));
+    expect(h.slice(0, 5)).toEqual(e.slice(0, 5));
+  });
+
+  it('a hold promotion redraws the glyph but keeps the width the column closed with', () => {
+    // Closed as an eighth, promoted to a half while held: the column to its right stays put.
+    const closedAsEighth = [{ midis: [60], duration: '8' }, { midis: [64], duration: '8' }];
+    const promoted = [{ midis: [60], duration: 'h', widthDuration: '8' }, { midis: [64], duration: '8' }];
+    expect(headXs(render(promoted))).toEqual(headXs(render(closedAsEighth)));
+  });
+
+  it('spaces a quarter wider than an eighth, and a half wider than a quarter', () => {
+    const gap = (d) => {
+      const xs = headXs(render([{ midis: [60], duration: d }, { midis: [64], duration: 'q' }]));
+      return xs[1] - xs[0];
+    };
+    expect(gap('q')).toBeGreaterThan(gap('8'));
+    expect(gap('h')).toBeGreaterThan(gap('q'));
+  });
+
+  it('shows more columns of an all-eighth run than of an all-quarter line at the Studio aspect', () => {
+    const drawn = (d) => render(run(16, d)).querySelectorAll('g.vf-stavenote').length;
+    const eighths = drawn('8');
+    const quarters = drawn('q');
+    expect(eighths).toBeGreaterThan(quarters);
+    expect(eighths).toBeGreaterThanOrEqual(11);
+    expect(quarters).toBeGreaterThanOrEqual(8);
+    // The NEWEST are the ones kept: the last column drawn is the last column given.
+    const host = render(run(16, '8'));
+    expect(chordStaffWindow(run(16, '8'), { aspect: STUDIO }).count).toBe(eighths);
+    expect(host.querySelectorAll('g.vf-stavenote').length).toBe(eighths);
+  });
+
+  it('never lets a wide accidental-heavy chord collide with the eighth before it', () => {
+    // An eighth's width is less than a quarter's; a chord full of accidentals (and a roll
+    // stroke) next to it needs more than that. The ink floor must win.
+    const chord = [61, 63, 66, 68, 70];
+    const host = render([
+      { midis: [60], duration: '8' },
+      { midis: chord, duration: '8', arrivals: chord.map((midi, k) => ({ midi, at: k * 40 })) },
+      { midis: [62], duration: '8' },
+      { midis: [61, 63, 66], duration: '8' },
+    ], STUDIO, 'C');
+    const groups = [...host.querySelectorAll('g.vf-stavenote')];
+    expect(groups).toHaveLength(4);
+    const ranges = groups.map(inkX);
+    for (let i = 1; i < ranges.length; i += 1) {
+      expect(ranges[i][0]).toBeGreaterThan(ranges[i - 1][1]);
+    }
+  });
+
+  it('scrolls: when the newest grows past the room, the OLDEST drops off', () => {
+    const line = run(16, '8');
+    const n = chordStaffWindow(line, { aspect: STUDIO }).count;
+    const grown = [...line.slice(0, -1), { ...line[15], duration: 'h', widthDuration: 'h' }];
+    const m = chordStaffWindow(grown, { aspect: STUDIO }).count;
+    expect(m).toBeLessThanOrEqual(n);
+    expect(m).toBeGreaterThanOrEqual(1);
+  });
+
+  it('always shows at least one column, however wide', () => {
+    const cluster = Array.from({ length: 12 }, (_, i) => 60 + i);
+    expect(chordStaffWindow([{ midis: cluster, duration: 'h' }], { aspect: 0.6 }).count).toBe(1);
+  });
+
+  it('leaves the single-chord form alone (one column, auto-stem lead)', () => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { notes: new Map([[60, {}], [62, {}], [64, {}]]), keySignature: 'F#', aspect: 1.7 });
+    expect(host.querySelectorAll('g.vf-stavenote').length).toBe(1);
+  });
+});
+
 describe('renderChordStaff — beams stay inside the fixed frame', () => {
   // jsdom has no getBBox, so ink can't be measured the way the sweep does
   // (tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs). Path coordinates can
@@ -641,7 +749,11 @@ describe('renderChordStaff — modifiers move with their notes', () => {
     const first = host.querySelector('g.vf-stavenote');
     const inkLeft = Math.min(...[...first.querySelectorAll('g.vf-notehead path')].map(firstX));
     expect(inkLeft).toBeGreaterThanOrEqual(keyEdge);
-    // ...and by KEY_SIGNATURE_AIR (4), not more: the grid starts only as late as it must.
-    expect(inkLeft).toBeLessThanOrEqual(keyEdge + 6);
+    // ...and not much more: the line starts only as late as it must. In a flow the lead
+    // reserves the column's left reach in EITHER stem direction (a beam can flip it),
+    // so a chord with seconds may sit up to one displaced notehead (~12) later — two
+    // here, since this cluster in F♯ spells one letter both ways (E and E♯ share a
+    // line), and that hidden second head is booked on both sides too.
+    expect(inkLeft).toBeLessThanOrEqual(keyEdge + 6 + 24);
   });
 });

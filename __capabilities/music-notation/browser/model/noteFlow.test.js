@@ -245,10 +245,11 @@ describe('noteFlow — baseline', () => {
   });
 
   it('remembers further back than the staff can show', () => {
-    // Nine columns at 400ms: the first has scrolled off, its gap still counts.
-    const flow = run(Array.from({ length: 9 }, (_, i) => [[60 + i], i * 400]));
+    // One column more than the model keeps, at 400ms: the first has scrolled off, its
+    // gap still counts.
+    const flow = run(Array.from({ length: COLUMN_CAPACITY + 1 }, (_, i) => [[60 + i], i * 400]));
     expect(flow.columns.length).toBe(COLUMN_CAPACITY);
-    expect(flow.recentIois.length).toBe(8);
+    expect(flow.recentIois.length).toBe(COLUMN_CAPACITY);
   });
 });
 
@@ -369,6 +370,19 @@ describe('noteFlow — holds (pushReleases)', () => {
     // IOIs 250,250,250 -> baseline clamps to 300 -> threshold 450 < 900: wide margin.
     expect(flow.columns[0].heldAtClose).toBe(true);
     expect(flowDurations(flow, 900)[0]).toBe('h');
+  });
+
+  it('remembers the duration a column CLOSED with, through a hold promotion', () => {
+    // The renderer takes a closed column's width from closeDuration, so a later
+    // promotion to a half must leave it alone (the glyph changes; nothing moves).
+    let flow = runHeld([[[48], 0, setOf(48)], [[72], 250, setOf(48, 72)], [[74], 500, setOf(48, 74)]]);
+    expect(flow.columns[0].closeDuration).toBe(flow.columns[0].duration);
+    const closedAs = flow.columns[0].closeDuration;
+    expect(flow.columns[flow.columns.length - 1].closeDuration).toBe(null);
+    flow = pushReleases(flow, 2000, setOf(74));
+    expect(flow.columns[0].duration).toBe('h');
+    expect(flow.columns[0].closeDuration).toBe(closedAs);
+    expect(closedAs).not.toBe('h');
   });
 
   it('a column released before the next onset keeps its IOI duration', () => {

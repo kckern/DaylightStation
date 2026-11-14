@@ -54,6 +54,10 @@ export function buildRenderColumns(flow, durations, keySig) {
     spelling: identifyChord(midiCols[i], keySig).spelling,
     // Arrivals, not a roll verdict: the renderer reads each hand's roll from them.
     duration: durations[i] ?? 'q',
+    // What the column's WIDTH is taken from: the duration it closed with, so a later
+    // hold promotion to a half changes the glyph but moves nothing. The newest column
+    // (not closed yet) is as wide as its provisional glyph.
+    widthDuration: c.closeDuration ?? durations[i] ?? 'q',
     arrivals: c.arrivals ?? [],
   }));
 }

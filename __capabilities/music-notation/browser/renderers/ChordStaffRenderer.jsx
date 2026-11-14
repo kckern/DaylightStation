@@ -34,10 +34,12 @@ export function ChordStaffRenderer({ columns, notes, keySignature = 'C', classNa
       .map((col) => {
         const midis = Array.isArray(col) ? col : col?.midis ?? [];
         const duration = Array.isArray(col) ? '' : col?.duration ?? '';
+        // The width duration lays the line out (see chordStaff layoutColumns).
+        const width = Array.isArray(col) ? '' : col?.widthDuration ?? '';
         const arrivals = Array.isArray(col) ? null : col?.arrivals;
         const rolls = arrivals?.length ? columnRolls({ midis, arrivals }) : null;
         const roll = rolls && (rolls.treble || rolls.bass) ? `~${rolls.treble ?? ''}/${rolls.bass ?? ''}` : '';
-        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}${roll}`;
+        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}/${width}${roll}`;
       })
       .join('|')
     : notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';

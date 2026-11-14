@@ -111,8 +111,14 @@ export const ROLL_MARK_MS = 100;
 /** Ten fingers: more notes than this in one column is two gestures, not one chord. */
 export const MAX_COLUMN_NOTES = 10;
 
-/** Columns kept on the staff before the oldest scrolls off the left. */
-export const COLUMN_CAPACITY = 8;
+/**
+ * Columns the model keeps. NOT how many are drawn: the renderer lays columns out by
+ * duration (renderers/chordStaff.js layoutColumns) and draws the newest that fit, so a
+ * run of eighths shows ~12 at the Studio pane where quarters show 8. The model must hold
+ * at least as many as the densest line can show, or a dense staff would start empty on
+ * the left; 16 covers it with room to spare.
+ */
+export const COLUMN_CAPACITY = 16;
 
 /**
  * Silence after which the NEXT strike starts a fresh line at the left edge instead of
@@ -145,9 +151,10 @@ export const FAST_RATIO = 1.2;
 export const SLOW_RATIO = 2.0;
 
 /**
- * How many recent inter-onset intervals feed the baseline. Deliberately longer than
- * COLUMN_CAPACITY: a capacity-8 staff yields at most 7 visible gaps, so a baseline
- * drawn only from what is on screen would be entirely rewritten by a single run.
+ * How many recent inter-onset intervals feed the baseline. Deliberately longer than a
+ * screenful: the densest line (all eighths at the Studio pane) shows about 12 columns,
+ * 11 gaps, so a baseline drawn only from what is on screen would be entirely rewritten
+ * by a single run.
  */
 export const IOI_MEMORY = 16;
 
@@ -180,7 +187,13 @@ export const DEFAULT_BASELINE_MS = 500;
 
 /** @typedef {'8'|'q'|'h'} Duration */
 /** @typedef {{ midi: number, at: number }} Arrival */
-/** @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number> }} FlowColumn */
+/**
+ * `closeDuration` is the duration the column CLOSED with, and never changes after:
+ * `duration` can still be promoted to a half when a held column is released, but the
+ * renderer takes a column's WIDTH from `closeDuration`, so a promotion redraws the glyph
+ * without shoving the columns to its right. Null while the column is the newest.
+ * @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number> }} FlowColumn
+ */
 
 /** A new, empty flow. */
 export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [] });
@@ -308,13 +321,14 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     columns[columns.length - 1] = {
       ...open,
       duration: judged.duration,
+      closeDuration: judged.duration,
       heldAtClose: !!held && open.midis.every((m) => held.has(m)),
     };
     recentIois = judged.recentIois;
   }
   columns.push({
     midis: sorted, arrivals: arrived, startedAt: now, lastOnsetAt: now,
-    duration: null, heldAtClose: false, releasedAt: null, releases: {},
+    duration: null, closeDuration: null, heldAtClose: false, releasedAt: null, releases: {},
   });
 
   // Overflow scrolls: the oldest column falls off the left, like a line of text
@@ -435,12 +449,12 @@ function splitColumn(flow, i, t, capacity) {
   let recentIois = isNewest ? flow.recentIois : flow.recentIois.slice(0, -1);
   const first = judgeGap(b.startedAt - a.startedAt, recentIois);
   recentIois = first.recentIois;
-  const before = { ...c, ...a, duration: first.duration, heldAtClose: heldA(b.startedAt), releasedAt: null };
-  let after = { ...c, ...b, duration: null, heldAtClose: false, releasedAt: null };
+  const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, heldAtClose: heldA(b.startedAt), releasedAt: null };
+  let after = { ...c, ...b, duration: null, closeDuration: null, heldAtClose: false, releasedAt: null };
   if (!isNewest) {
     const second = judgeGap(next.startedAt - b.startedAt, recentIois);
     recentIois = second.recentIois;
-    after = { ...after, duration: second.duration, heldAtClose: heldB(next.startedAt) };
+    after = { ...after, duration: second.duration, closeDuration: second.duration, heldAtClose: heldB(next.startedAt) };
   }
   const columns = [...flow.columns.slice(0, i), before, after, ...flow.columns.slice(i + 1)];
   const overflow = columns.length - capacity;
