@@ -14,28 +14,34 @@
 //
 // Two judgement calls live here.
 //
-//   1. SIMULTANEITY — which onsets belong to one column. MIDI onsets are never
-//      exactly equal, and two hands "together" spread further than a strict reading
-//      allows.
+//   1. GESTURE CLUSTERING — which onsets belong to one column (see GAP_MS).
 //   2. DURATION — which of the three glyphs a column earns, decided retroactively
 //      once the next column opens.
 
 /**
- * Onsets within this window of the open column's start may join that column and
- * stack vertically; anything later opens a new column to its right.
+ * A column is one GESTURE: a roll or struck chord, not a moment. Four numbers decide
+ * what joins it, all measured on real playing (spec: ops:docs/_wip/audits/
+ * 2026-11-13-current-chord-staff-gestures.md).
  *
- * 90ms, twice the 45ms this started at. 45 splintered ordinary two-hand chords into
- * two and three columns, which is the thing the rhythm work set out to fix. 90 sits
- * above a realistic two-hand spread (including the piano → Jamcorder → backend → WS
- * transport jitter that the timestamps carry, since they are stamped on receipt and
- * not at the keybed) and below the ~120-150ms per note of a fast run, which must
- * stay as separate columns to read as eighths.
- *
- * UNVERIFIED against real hardware: these bounds are reasoned from the transport
- * described above, not measured off the kiosk. A capture of real two-hand onsets
- * would settle it — see ops:docs/_wip/plans/2026-08-12-chord-staff-relative-rhythm-design.md.
+ * GAP_MS is the longest silence between consecutive onsets of one gesture, measured
+ * from the LAST onset. The old rule measured a 90ms WINDOW from the column's start and
+ * caused 989 wrong splits of rolled chords; the held-key rule was not the culprit.
  */
-export const SIMULTANEITY_MS = 90;
+export const GAP_MS = 90;
+
+/**
+ * Longest a gesture may run from its first onset. Without it a legato run in which
+ * every key is still down daisy-chains into one stack. The owner's gestures have p95
+ * 200ms and everyone's p95 244ms; 250ms keeps 99.2% of the owner's and 95.6% of all
+ * gestures whole.
+ */
+export const SPAN_MAX_MS = 250;
+
+/** A column spanning at least this long is a ROLL and gets an arrow; shorter reads as struck. */
+export const ROLL_MARK_MS = 100;
+
+/** Ten fingers: more notes than this in one column is two gestures, not one chord. */
+export const MAX_COLUMN_NOTES = 10;
 
 /** Columns kept on the staff before the oldest scrolls off the left. */
 export const COLUMN_CAPACITY = 8;
@@ -94,7 +100,7 @@ export const BASELINE_MAX_MS = 800;
 export const DEFAULT_BASELINE_MS = 500;
 
 /** @typedef {'8'|'q'|'h'} Duration */
-/** @typedef {{ midis: number[], startedAt: number, duration: Duration|null }} FlowColumn */
+/** @typedef {{ midis: number[], startedAt: number, lastOnsetAt: number, firstMidi: number, lastMidi: number, duration: Duration|null, heldAtClose: boolean, releasedAt: number|null }} FlowColumn */
 
 /** A new, empty flow. */
 export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [] });
@@ -136,18 +142,15 @@ const dedupeSorted = (midis) => [...new Set(midis)].sort((a, b) => a - b);
 /**
  * Fold a batch of new note-ons into the flow.
  *
- * A batch joins the open (rightmost) column when BOTH hold:
+ * A batch joins the open (rightmost) column iff ALL hold: it arrives within GAP_MS of
+ * the column's LAST onset; within SPAN_MAX_MS of its first; every note already in the
+ * column is still held (when a `held` surface is given — key-down state is what
+ * separates a chord from a detached run without guessing from pitch); none of its
+ * notes is already in the column (a re-strike is a new event); and the union stays
+ * within MAX_COLUMN_NOTES.
  *
- *   - it arrives within SIMULTANEITY_MS of the moment that column OPENED — measured
- *     from the column's start, not from the last note added, so a slow roll can't
- *     daisy-chain itself into one stack a note at a time; and
- *   - every note already in that column is STILL HELD DOWN. This is what separates a
- *     chord from a run without guessing from pitch. An earlier design tried to tell
- *     the hands apart by register (wide window across C4, tight window within a
- *     hand); it failed both ways — an ordinary close-voiced two-hand chord has its
- *     nearest notes well under an octave apart and never got the wide window, while a
- *     wide arpeggio crossing middle C did, and collapsed into a block chord.
- *     Key-down state is the real signal, and the MIDI layer already tracks it.
+ * `firstMidi` / `lastMidi` are the lowest note of the batch that opened the column and
+ * of the latest batch that joined it; their order gives a roll its direction.
  *
  * Closing a column fixes its duration: the gap to this new column is its IOI, judged
  * against the baseline as it stood BEFORE that gap joined the history — "how you have
@@ -171,25 +174,42 @@ export function pushOnsets(flow, midis, now, opts = {}) {
   const columns = flow.columns.slice();
   const open = columns[columns.length - 1];
 
-  const inWindow = open && now - open.startedAt <= SIMULTANEITY_MS;
-  const stillHeld = !held || (open && open.midis.every((m) => held.has(m)));
+  const sorted = dedupeSorted(midis);
+  const lowest = sorted[0];
 
-  if (inWindow && stillHeld) {
-    // Same gesture: stack into the open column (dedupe — a retrigger inside the
-    // window shouldn't draw the same notehead twice).
-    const merged = new Set(open.midis);
-    midis.forEach((m) => merged.add(m));
-    columns[columns.length - 1] = { ...open, midis: [...merged].sort((a, b) => a - b) };
+  const joins = open
+    && now - open.lastOnsetAt <= GAP_MS
+    && now - open.startedAt <= SPAN_MAX_MS
+    && (!held || open.midis.every((m) => held.has(m)))
+    && !sorted.some((m) => open.midis.includes(m))
+    && open.midis.length + sorted.length <= MAX_COLUMN_NOTES;
+
+  if (joins) {
+    columns[columns.length - 1] = {
+      ...open,
+      midis: dedupeSorted([...open.midis, ...sorted]),
+      lastOnsetAt: now,
+      lastMidi: lowest,
+    };
     return { ...flow, columns, lastOnsetAt: now };
   }
 
   let recentIois = flow.recentIois;
   if (open) {
     const ioi = now - open.startedAt;
-    columns[columns.length - 1] = { ...open, duration: classifyIoi(ioi, baselineOf(recentIois)) };
+    // First gap of a phrase has no history. Judging it against a bare 500ms default
+    // made a uniform 250ms passage open with a half-or-eighth quirk; clamping the
+    // gap itself (but never above the default) makes it read like its successors.
+    const baseline = recentIois.length
+      ? baselineOf(recentIois)
+      : Math.min(DEFAULT_BASELINE_MS, clamp(ioi, BASELINE_MIN_MS, BASELINE_MAX_MS));
+    columns[columns.length - 1] = { ...open, duration: classifyIoi(ioi, baseline) };
     recentIois = [...recentIois, ioi].slice(-IOI_MEMORY);
   }
-  columns.push({ midis: dedupeSorted(midis), startedAt: now, duration: null });
+  columns.push({
+    midis: sorted, startedAt: now, lastOnsetAt: now, firstMidi: lowest, lastMidi: lowest,
+    duration: null, heldAtClose: false, releasedAt: null,
+  });
 
   // Overflow scrolls: the oldest column falls off the left, like a line of text
   // running past the edge. `recentIois` deliberately does NOT scroll with it — the
@@ -253,4 +273,14 @@ export function flowDurations(flow, now) {
     c.duration ?? (now - c.startedAt > SLOW_RATIO * baseline ? 'h' : 'q'));
 }
 
-export default { emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };
+/**
+ * Roll direction per column, parallel to `flowColumns`: 'up'/'down' for a gesture of
+ * 2+ notes spanning at least ROLL_MARK_MS, else null (struck, or a single note).
+ * @returns {Array<'up'|'down'|null>}
+ */
+export const flowRolls = (flow) => flow.columns.map((c) =>
+  c.midis.length >= 2 && c.lastOnsetAt - c.startedAt >= ROLL_MARK_MS
+    ? (c.lastMidi > c.firstMidi ? 'up' : 'down')
+    : null);
+
+export default { emptyFlow, flowRolls, pushOnsets, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };

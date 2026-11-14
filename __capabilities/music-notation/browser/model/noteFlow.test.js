@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi,
-  SIMULTANEITY_MS, COLUMN_CAPACITY, IDLE_CLEAR_MS, HELD_CLEAR_MS,
+  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowRolls, flowDurations, baselineOf, classifyIoi,
+  GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, HELD_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO,
 } from "./noteFlow.js";
 
@@ -36,23 +36,51 @@ describe('noteFlow — simultaneity grouping', () => {
     expect(play([[[67], 0], [[60], 100], [[64], 200]])).toEqual([[67], [60], [64]]);
   });
 
-  it('measures the window from the column START, so a slow roll cannot daisy-chain', () => {
-    // Each note is 60ms after the previous (inside the window pairwise) but the 3rd
-    // is 120ms after the column opened — a roll, and it must not collapse to a block.
-    expect(play([[[60], 0], [[64], 60], [[67], 120]])).toEqual([[60, 64], [67]]);
+  it('a slow roll whose notes are still held is ONE column', () => {
+    expect(play([[[60], 0], [[64], 60], [[67], 120]], { held: allHeld })).toEqual([[60, 64, 67]]);
   });
 
-  it('treats exactly SIMULTANEITY_MS as simultaneous, one ms later as a new column', () => {
-    expect(play([[[60], 0], [[64], SIMULTANEITY_MS]])).toEqual([[60, 64]]);
-    expect(play([[[60], 0], [[64], SIMULTANEITY_MS + 1]])).toEqual([[60], [64]]);
+  it('GAP_MS is measured from the last onset', () => {
+    expect(play([[[60], 0], [[64], GAP_MS]])).toEqual([[60, 64]]);
+    expect(play([[[60], 0], [[64], GAP_MS + 1]])).toEqual([[60], [64]]);
+  });
+
+  it('keeps a 4-note roll at 45ms steps as one chord', () => {
+    expect(play([[[60], 0], [[64], 45], [[67], 90], [[72], 135]], { held: allHeld }))
+      .toEqual([[60, 64, 67, 72]]);
+  });
+
+  it('keeps a late finger at +80ms in the chord', () => {
+    expect(play([[[60, 64, 67], 0], [[72], 80]], { held: allHeld })).toEqual([[60, 64, 67, 72]]);
+  });
+
+  it('splits a held legato run at SPAN_MAX_MS', () => {
+    const ev = [0, 60, 120, 180, 240, 300].map((at, i) => [[60 + i], at]);
+    expect(play(ev, { held: allHeld })).toEqual([[60, 61, 62, 63, 64], [65]]);
+    expect(SPAN_MAX_MS).toBe(250);
+  });
+
+  it('caps a column at MAX_COLUMN_NOTES', () => {
+    const ev = Array.from({ length: 20 }, (_, i) => [[40 + i], i * 10]);
+    const cols = play(ev, { held: allHeld });
+    expect(cols.length).toBeGreaterThan(1);
+    cols.forEach((c) => expect(c.length).toBeLessThanOrEqual(MAX_COLUMN_NOTES));
+  });
+
+  it('a hymn of rolled chords draws one column per chord', () => {
+    const ev = [0, 1, 2, 3].flatMap((k) =>
+      [60, 64, 67, 72].map((m, i) => [[m], k * 1000 + i * 40]));
+    const flow = run(ev, { held: allHeld });
+    expect(flow.columns).toHaveLength(4);
+    closed(flow).forEach((d) => expect(['q', 'h']).toContain(d));
   });
 
   it('sorts within a column (low → high) so noteheads stack in pitch order', () => {
     expect(play([[[67, 60, 64], 0]])).toEqual([[60, 64, 67]]);
   });
 
-  it('dedupes a retrigger inside the window instead of drawing it twice', () => {
-    expect(play([[[60], 0], [[60], 20]])).toEqual([[60]]);
+  it('re-strike of a note already in the open column starts a new column', () => {
+    expect(play([[[60], 0], [[60], 20]])).toEqual([[60], [60]]);
   });
 
   it('lets the SAME note appear again in a later column (repeated notes are real)', () => {
@@ -92,6 +120,17 @@ describe('noteFlow — the key-down overlap test', () => {
     const partial = { has: (n) => n === 60, size: 1 };
     expect(play([[[60], 0], [[64], 20], [[67], 60]], { held: partial }))
       .toEqual([[60, 64], [67]]);
+  });
+});
+
+describe('noteFlow — roll metadata', () => {
+  const rolls = (ev) => flowRolls(run(ev, { held: allHeld }));
+  it('flowRolls marks spans >= ROLL_MARK_MS, direction from first to last batch', () => {
+    expect(ROLL_MARK_MS).toBe(100);
+    expect(rolls([[[60], 0], [[64], 40], [[67], 80], [[72], 120]])).toEqual(['up']);
+    expect(rolls([[[72], 0], [[67], 40], [[64], 80], [[60], 120]])).toEqual(['down']);
+    expect(rolls([[[60, 64, 67], 0]])).toEqual([null]);
+    expect(rolls([[[60], 0]])).toEqual([null]);
   });
 });
 
@@ -209,6 +248,11 @@ describe('noteFlow — duration classification', () => {
 
   it('draws ordinary playing as quarters', () => {
     const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 500]));
+    expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
+  });
+
+  it('a uniform 250ms passage is uniform from the first gap', () => {
+    const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 250]), { held: noneHeld });
     expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
   });
 
