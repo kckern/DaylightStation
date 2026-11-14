@@ -51,6 +51,18 @@ describe('splitByHand', () => {
       trebleNotes: [60, 64, 67],
     });
   });
+  it('a left-hand C4 under a high right-hand chord is bass, not a 3-octave treble chord', () => {
+    expect(splitByHand([48, 60, 88, 91, 95])).toEqual({
+      bassNotes: [48, 60],
+      trebleNotes: [88, 91, 95],
+    });
+  });
+  it('a right-hand note below C4 over a deep left hand goes to treble', () => {
+    expect(splitByHand([30, 58, 62, 66])).toEqual({
+      bassNotes: [30],
+      trebleNotes: [58, 62, 66],
+    });
+  });
   it('wide LH stays bass', () => {
     expect(splitByHand([36, 55])).toEqual({ bassNotes: [36, 55], trebleNotes: [] });
   });

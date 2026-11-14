@@ -232,7 +232,11 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, roll = n
   if (roll) {
     try {
       const type = roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS;
-      for (const n of [tNote, bNote]) if (n) n.addStroke(0, new Stroke(type));
+      // A staff holding ONE note has nothing to arpeggiate: the stroke would be a stray
+      // squiggle beside a lone note, so only a staff with two or more heads gets it.
+      for (const [n, count] of [[tNote, dispTreble.length], [bNote, dispBass.length]]) {
+        if (n && count >= 2) n.addStroke(0, new Stroke(type));
+      }
     } catch { /* stroke is decorative */ }
   }
 

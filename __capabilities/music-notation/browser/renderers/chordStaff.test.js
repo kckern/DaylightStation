@@ -438,4 +438,19 @@ describe('renderChordStaff — roll stroke', () => {
   it('draws no stroke without a roll', () => {
     expect(draw(null)).toBe(draw(undefined));
   });
+
+  it('draws no stroke on a staff that holds one note', () => {
+    const paths = (midis, roll) => {
+      const host = document.createElement('div');
+      renderChordStaff(host, { columns: [{ midis, roll }], keySignature: 'C', aspect: 2.8 });
+      return host.querySelector('svg').querySelectorAll('path').length;
+    };
+    // A lone note rolled: nothing to arpeggiate.
+    expect(paths([67], 'up')).toBe(paths([67], null));
+    // Lone bass note under a rolled RH chord: only the treble chord is stroked, so the
+    // roll adds exactly what it adds to the chord alone.
+    const chordGain = paths([72, 76, 79], 'up') - paths([72, 76, 79], null);
+    expect(chordGain).toBeGreaterThan(0);
+    expect(paths([48, 72, 76, 79], 'up') - paths([48, 72, 76, 79], null)).toBe(chordGain);
+  });
 });

@@ -60,8 +60,20 @@ export const splitByHand = (notes) => {
       : { bassNotes: notes, trebleNotes: [] };
   }
 
-  return {
-    bassNotes: notes.filter((n) => n < HAND_PIVOT),
-    trebleNotes: notes.filter((n) => n >= HAND_PIVOT),
-  };
+  // Two hands, divided at middle C — but each hand still has only one hand's reach.
+  // A stray note just across the pivot from its own hand (a left-hand C4 under a
+  // right-hand chord up at 88+) is NOT the right hand: left in treble it would make
+  // the ottava shift that whole staff, dragging the C4 down to C3 under a tall chord
+  // whose stem then climbs out of the fixed frame. Hand it back to its neighbour.
+  const bassNotes = notes.filter((n) => n < HAND_PIVOT);
+  const trebleNotes = notes.filter((n) => n >= HAND_PIVOT);
+  while (trebleNotes.length > 1 && trebleNotes[trebleNotes.length - 1] - trebleNotes[0] > HAND_SPAN
+    && bassNotes.length) {
+    bassNotes.push(trebleNotes.shift());
+  }
+  while (bassNotes.length > 1 && bassNotes[bassNotes.length - 1] - bassNotes[0] > HAND_SPAN
+    && trebleNotes.length) {
+    trebleNotes.unshift(bassNotes.pop());
+  }
+  return { bassNotes, trebleNotes };
 };
