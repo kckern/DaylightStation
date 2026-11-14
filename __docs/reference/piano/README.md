@@ -215,12 +215,22 @@ A few components appear across many modes because they are the kiosk's visual vo
 - **The chrome** — a persistent header carrying a breadcrumb trail and a Sound chip. Tap
   the chip to open **Sound** — a full-canvas sheet with a family rail (Mine, Pianos,
   Keys & Organs, Guitars & Bass, Strings, Voices, Winds & Brass, Synths, World, Drums &
-  Fun), a one-tap voice grid, and a tone column of Reverb / Chorus / Piano level ladders
-  with a "Hear it" audition; hold it for 550ms to open adult-only **Piano maintenance** —
-  a status card, Bluetooth pairing and Repair connection up front, everyday tiles, and a
-  danger strip for Restart / Reboot with a visible armed state. Voice tiles carry colour
+  Fun), a one-tap voice grid that sizes its tiles to the family (2 × 2 up to 4 × 6, so a
+  short family fills the column), and a "now" column: the current voice's picture and
+  name, a "Hear it" audition, and Reverb / Chorus / Piano level as level ladders (a bar
+  per step, lit up to the chosen one; `StepGrid variant="meter"`). A chosen family,
+  voice or step turns ivory; green is kept for Hear it. Hold the chip for 550ms to open
+  adult-only **Piano maintenance**, laid out by what a grown-up is doing: a health card
+  (verdict, Keys / Sound / Bridge, Repair connection at its foot) with Record feedback
+  under it; **Check the sound** (Play test note, Stop stuck notes); **Tools**, each of
+  which opens its own view in place of the page (Bluetooth pairing, Diagnostics, Click
+  timing — one entry each in the `TOOLS` registry in `OperatorDrawer.jsx`, where Patch
+  finder slots in); and a power strip along the bottom for Turn off display, Restart
+  piano app and Reboot tablet, red at rest and amber while armed (two taps each). Voice tiles carry colour
   illustrations from `media/img/music/instruments/`, with the family icon as the fallback
-  when a voice has none. Neither sheet scrolls at 1280×800. There is deliberately no
+  when a voice has none. Neither sheet scrolls at 1280×800; the backend-free screenshot
+  harness (`tests/_scratch/piano-settings-harness/run.sh`) renders both sheets at that size
+  and fails on a scrolling body, a cut label or a blank icon. There is deliberately no
   Settings gear. Connection health, the reconnect banner, and Maintenance share one connection model,
   so only Maintenance exposes diagnostics, Bluetooth pairing, repair, or recovery actions.
 - **Full screen** — hides the header so whatever is on screen gets the room. Two states.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Icon from '../../ui/icons/Icon.jsx';
 import getLogger from '../../../../../../frontend/src/lib/logging/Logger.js';
 import './Transport.scss';
@@ -13,7 +13,11 @@ import './Transport.scss';
  * @param {string} [label] - ASCII text label; icon and label may combine
  * @param {string} [ariaLabel] - required when icon-only
  * @param {'default'|'primary'|'quiet'|'danger'} [emphasis]
- * @param {'inline'|'tile'|'rail'} [layout] - inline (default) sits in a strip; tile stacks icon over a wrapping label for grids; rail is a full-width icon-left row for a side rail.
+ * @param {'inline'|'tile'|'rail'|'row'} [layout] - inline (default) sits in a strip; tile stacks icon over a wrapping label for grids; rail is a full-width icon-left row for a side rail; row is an icon-left card with the label over a `hint` line and an optional `trailing` icon (a settings entry that opens a view).
+ * @param {string} [hint] - one short line under the label. Kept out of the accessible
+ *   name (aria-hidden) and wired as the description instead, so the button is still
+ *   found and announced by its label alone.
+ * @param {string} [trailing] - icon name drawn at the far edge (e.g. `chevron-right` for "opens a view").
  * @param {boolean} [on] - lit/latched state (aria-pressed + .is-on)
  * @param {boolean} [disabled]
  * @param {() => void} [onPress]
@@ -24,8 +28,9 @@ import './Transport.scss';
  */
 export default function TransportButton({
   icon, art, label, ariaLabel, emphasis = 'default', layout = 'inline', on = false,
-  disabled = false, onPress, className = '', labelFirst = false, ...rest
+  disabled = false, onPress, className = '', labelFirst = false, hint, trailing, ...rest
 }) {
+  const hintId = useId();
   const classes = [
     'piano-tbtn',
     emphasis !== 'default' ? `piano-tbtn--${emphasis}` : '',
@@ -46,17 +51,21 @@ export default function TransportButton({
     if (artFailed && art) getLogger().child({ component: 'transport-button' }).sampled('piano.tile.art-failed', { art }, { maxPerMinute: 5, aggregate: true });
   }, [artFailed, art]);
   const labelEl = label != null && <span key="label" className="piano-tbtn__label">{label}</span>;
+  const hintEl = hint && <span key="hint" id={hintId} className="piano-tbtn__hint" aria-hidden>{hint}</span>;
+  const trailingEl = trailing && <span key="trail" className="piano-tbtn__trail"><Icon name={trailing} /></span>;
   return (
     <button
       type="button"
       className={classes}
       aria-label={ariaLabel}
       aria-pressed={on || undefined}
+      aria-describedby={hint ? hintId : undefined}
       disabled={disabled}
       onClick={onPress}
       {...rest}
     >
       {labelFirst ? <>{labelEl}{iconEl}</> : <>{iconEl}{labelEl}</>}
+      {hintEl}{trailingEl}
     </button>
   );
 }

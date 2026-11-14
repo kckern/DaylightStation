@@ -13,6 +13,14 @@ describe('TransportButton', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
+  it('row layout keeps the hint out of the name and wires it as the description', () => {
+    render(<TransportButton layout="row" icon="settings" label="Diagnostics" hint="See what the keys are sending" trailing="chevron-right" onPress={() => {}} />);
+    const btn = screen.getByRole('button', { name: 'Diagnostics' });
+    expect(btn).toHaveClass('piano-tbtn--row');
+    expect(btn).toHaveAccessibleDescription('See what the keys are sending');
+    expect(btn.querySelector('.piano-tbtn__trail')).not.toBeNull();
+  });
+
   it('renders a text label and emphasis/state classes', () => {
     render(<TransportButton label="Key +2" emphasis="primary" on onPress={() => {}} />);
     const btn = screen.getByRole('button', { name: 'Key +2' });
