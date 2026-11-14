@@ -23,9 +23,17 @@
  *   - held-chord whole % (informational): the same whole test on 3+ note clusters
  *     whose keys all stay down 150ms past the last onset, i.e. without legato runs.
  *   - why each split cluster split (gap from last onset, span cap, released key,
- *     re-strike, note cap) — the first thing to read if the gate fails.
+ *     re-strike, note cap, legato release split) — the first thing to read if the
+ *     gate fails.
+ *   - legato merged: of the LEGATO PAIRS in the raw stream (successive onsets >= 30ms
+ *     apart, the first key let go within 150ms after the second lands), the share the
+ *     staff drew in ONE column — a legato line drawn as a chord (lower is better).
+ *   - chord whole %: the whole test on clusters with no legato pair in them — the
+ *     chords the release split must leave whole. The gate reads this, not whole %: the
+ *     loose cluster rule also collects every overlapping legato step, so whole % pays
+ *     for each legato line the staff correctly draws as separate notes.
  *
- * Exit 1 when whole-chord % < 90 or RH-on-bass > 0 (overall, both corpora).
+ * Exit 1 when chord whole % < 90 or RH-on-bass > 0 (overall, both corpora).
  *
  * Corpora:
  *   studio  ${DAYLIGHT_DATA_PATH}/users/<user>/apps/piano/studio/*.yml
@@ -45,6 +53,9 @@
  *     [--moments <moments.json>]       with --render: re-render the SAME moments a previous
  *                                      run chose (replayed through the current code, matched
  *                                      by event index) — for before/after comparisons
+ *     [--sweep-gap]                    replay the corpus under every GAP_MS x LEGATO_RELEASE_MS
+ *                                      pair (passed as pushOnsets/pushReleases opts, the module
+ *                                      untouched) and print whole-chord % vs legato merged %
  *
  * --render picks, per user: up to 2 moments with a rolled column on screen, 1 fast
  * run (>= 4 eighth columns), 1 two-hand column, 1 densest screen; plus the 10 worst
@@ -62,7 +73,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
-  GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS,
+  GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS, LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS,
 } from '../../../__capabilities/music-notation/browser/model/noteFlow.js';
 import { splitByHand } from '../../../__capabilities/music-notation/browser/model/handSplit.js';
 import { detectKey } from '../../../__capabilities/music-notation/browser/model/keySignature.js';
@@ -75,6 +86,8 @@ const { parseMidi } = require('midi-file');
 
 const TICK_MS = 80;            // CurrentChordStaff PROVISIONAL_TICK_MS
 const CLUSTER_GAP_MS = 150;    // ground truth: successive onsets of one held cluster
+const STRUCK_MS = 30;          // ground truth: onsets closer than this were struck together
+const LEGATO_OVERLAP_MS = 150; // ground truth: a key let go this soon after the next lands is legato
 const DUP_MS = 10;             // doubled-feed duplicates
 const MIN_ONSETS = 20;
 const KEY_BUFFER_MAX_AGE = 10_000; // useDetectedKey
@@ -85,7 +98,7 @@ const VIEW = { width: 1120, height: 400 };
 // ─── args ────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const a = { users: null, limit: 60, since: null, media: null, data: null, render: null, moments: null };
+  const a = { users: null, limit: 60, since: null, media: null, data: null, render: null, moments: null, sweepGap: false };
   for (let i = 0; i < argv.length; i += 1) {
     const k = argv[i]; const v = argv[i + 1];
     if (k === '--users') { a.users = v.split(',').map((s) => s.trim()).filter(Boolean); i += 1; }
@@ -95,6 +108,7 @@ function parseArgs(argv) {
     else if (k === '--data') { a.data = v; i += 1; }
     else if (k === '--render') { a.render = v; i += 1; }
     else if (k === '--moments') { a.moments = v; i += 1; }
+    else if (k === '--sweep-gap') { a.sweepGap = true; }
     else if (k === '--help' || k === '-h') { a.help = true; }
     else throw new Error(`unknown flag ${k}`);
   }
@@ -181,6 +195,20 @@ function listCaptures(mediaDir, users, limit, since) {
 // ─── ground truth ────────────────────────────────────────────────────────────
 
 /**
+ * A LEGATO PAIR: two successive onsets where the first key was still down when the
+ * second landed, landed at least STRUCK_MS before it (not one strike), and let go
+ * within LEGATO_OVERLAP_MS after it. Struck chords are excluded on purpose: a chord
+ * struck in 10ms and released 50ms later meets the release test too, and on this
+ * corpus such short struck chords outnumber every legato step.
+ */
+function isLegatoPair(events, ia, ib, offsAfter) {
+  const a = events[ia]; const b = events[ib];
+  if (a.note === b.note || b.t - a.t < STRUCK_MS || b.t - a.t > CLUSTER_GAP_MS) return false;
+  const off = offsAfter(a.note, a.t);
+  return !!off && off.t >= b.t && off.t < b.t + LEGATO_OVERLAP_MS;
+}
+
+/**
  * Chord clusters straight from the raw stream: an onset joins the open cluster when
  * it lands within CLUSTER_GAP_MS of the previous onset and every cluster note is still
  * down. Deliberately looser than the model (no span cap, no note cap, 150 not 90), so
@@ -202,22 +230,36 @@ function clustersOf(events) {
   // That excludes legato runs (each key lets go as the next lands), which the loose
   // cluster rule above also collects; it is the population the spec's span numbers
   // (p95 244ms, 95.6% within 250ms) were measured on.
-  const offsAfter = (note, t) => releases.find((r) => r.note === note && r.t >= t);
-  return out.filter((c) => c.notes.length >= 2).map((c) => ({
+  const offsByNote = new Map();
+  for (const r of releases) (offsByNote.get(r.note) || offsByNote.set(r.note, []).get(r.note)).push(r);
+  const offsAfter = (note, t) => (offsByNote.get(note) || []).find((r) => r.t >= t);
+  // Every legato pair in the take, clustered or not: "legato merged" asks how many of
+  // them the staff drew in one column.
+  const onIdx = events.map((e, i) => (e.type === 'on' ? i : -1)).filter((i) => i >= 0);
+  const legatoPairs = [];
+  for (let k = 1; k < onIdx.length; k += 1) {
+    if (isLegatoPair(events, onIdx[k - 1], onIdx[k], offsAfter)) legatoPairs.push([onIdx[k - 1], onIdx[k]]);
+  }
+  const clusters = out.filter((c) => c.notes.length >= 2).map((c) => ({
     ...c,
+    // LEGATO LINE: some note let go within LEGATO_OVERLAP_MS of the next onset, and that
+    // next onset was not struck with it (>= STRUCK_MS later). Model-independent, so the
+    // sweep can judge every LEGATO_RELEASE_MS against the same truth.
+    legatoLine: c.notes.some((n, k) => k < c.notes.length - 1 && isLegatoPair(events, c.idx[k], c.idx[k + 1], offsAfter)),
     heldChord: c.notes.length >= 3 && c.notes.every((n, k) => {
       const off = offsAfter(n, events[c.idx[k]].t);
       return !off || off.t >= c.lastT + CLUSTER_GAP_MS;
     }),
   }));
+  return { clusters, legatoPairs };
 }
 
 // ─── replay ──────────────────────────────────────────────────────────────────
 
 /** Why a batch did NOT join the open column — the same tests pushOnsets makes, in order. */
-function splitCause(open, sorted, at, held) {
+function splitCause(open, sorted, at, held, gapMs) {
   if (!open) return 'no-open';
-  if (at - open.lastOnsetAt > GAP_MS) return 'gap';
+  if (at - open.lastOnsetAt > gapMs) return 'gap';
   if (at - open.startedAt > SPAN_MAX_MS) return 'span';
   if (!open.midis.every((m) => held.has(m))) return 'released';
   if (sorted.some((m) => open.midis.includes(m))) return 'restrike';
@@ -231,7 +273,8 @@ function splitCause(open, sorted, at, held) {
  *
  * @returns {{ onsetColumn: Map<number, number>, onsetCause: Map<number, string>, columns: Map<number, object> }}
  */
-function replay(events, onFrame) {
+function replay(events, onFrame, rules = {}) {
+  const { gapMs = GAP_MS, legatoReleaseMs = LEGATO_RELEASE_MS, ...extra } = rules;
   let flow = emptyFlow();
   let active = new Map();
   let prev = new Map();
@@ -241,15 +284,37 @@ function replay(events, onFrame) {
   const onsetCause = new Map();   // event index -> why it opened a new column
   const columns = new Map();      // serial -> last seen column
   const onsetsOf = new Map();     // serial -> [{note, t}]
+  const eventOf = new Map();      // 'note@at' -> event index of that note-on
+  const legatoSteps = [];         // ms between the halves of every legato split
   // useDetectedKey, outside React: new keys (by presence) feed the rolling buffer.
   let key = 'C'; let lastKeys = new Set(); let keyBuf = [];
   const cache = new Map();
 
-  const tagNew = () => {
-    const last = flow.columns[flow.columns.length - 1];
-    if (last && last._id === undefined) {
+  // Every column gets a serial. A column with none is new from an onset; one that
+  // repeats its left neighbour's serial is the second half of a legato split, which
+  // pushReleases makes by copying the column it split.
+  const tag = () => {
+    let changed = false;
+    const cols = flow.columns.map((c, k) => {
+      const prevCol = flow.columns[k - 1];
+      if (c._id !== undefined && !(prevCol && prevCol._id === c._id)) return c;
+      changed = true;
       serial += 1;
-      flow = { ...flow, columns: [...flow.columns.slice(0, -1), { ...last, _id: serial }] };
+      if (c._id !== undefined) {
+        // Split: the first onset of this half now opens a column, by release.
+        const first = eventOf.get(`${c.arrivals[0].midi}@${c.arrivals[0].at}`);
+        if (first !== undefined) onsetCause.set(first, 'legato');
+        legatoSteps.push(c.startedAt - prevCol.lastOnsetAt);
+      }
+      return { ...c, _id: serial };
+    });
+    if (changed) flow = { ...flow, columns: cols };
+    for (const c of flow.columns) {
+      for (const a of c.arrivals) {
+        const idx = eventOf.get(`${a.midi}@${a.at}`);
+        if (idx !== undefined) onsetColumn.set(idx, c._id);
+      }
+      onsetsOf.set(c._id, c.arrivals.map((a) => ({ note: a.midi, t: a.at })));
     }
   };
 
@@ -275,43 +340,52 @@ function replay(events, onFrame) {
     if (onsets.length) {
       const open = flow.columns[flow.columns.length - 1];
       const sorted = [...new Set(onsets)].sort((a, b) => a - b);
-      const cause = flow.columns.length && at - flow.lastOnsetAt > 3000 ? 'idle' : splitCause(open, sorted, at, active);
-      flow = pushOnsets(flow, onsets, at, { held: active });
-      tagNew();
-      const id = flow.columns[flow.columns.length - 1]._id;
-      if (e.type === 'on') {
-        onsetColumn.set(i, id);
-        if (cause !== 'joined') onsetCause.set(i, cause);
-      }
-      if (!onsetsOf.has(id)) onsetsOf.set(id, []);
-      onsets.forEach((n) => onsetsOf.get(id).push({ note: n, t: active.get(n)?.timestamp ?? at }));
+      const cause = flow.columns.length && at - flow.lastOnsetAt > 3000 ? 'idle' : splitCause(open, sorted, at, active, gapMs);
+      if (e.type === 'on') eventOf.set(`${e.note}@${at}`, i);
+      flow = pushOnsets(flow, onsets, at, { held: active, gapMs });
+      tag();
+      if (e.type === 'on' && cause !== 'joined') onsetCause.set(i, cause);
     }
-    flow = pushReleases(flow, e.t, active);
+    flow = pushReleases(flow, e.t, active, { legatoReleaseMs, ...extra });
+    tag();
     for (const c of flow.columns) columns.set(c._id, c);
     if (onFrame) onFrame({ t: e.t, flow, key, cache, onsetsOf, eventIndex: i });
   });
-  return { onsetColumn, onsetCause, columns };
+  return { onsetColumn, onsetCause, columns, legatoSteps };
 }
 
 // ─── metrics ─────────────────────────────────────────────────────────────────
 
 const blank = () => ({
   takes: 0, onsets: 0, clusters: 0, whole: 0, causes: {}, gaps: {}, heldCauses: {},
-  heldChords: 0, heldWhole: 0,
+  heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
   cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
 });
 
-function measure(events) {
+function measure(events, rules) {
   const m = blank();
   const ons = events.filter((e) => e.type === 'on');
   m.takes = 1; m.onsets = ons.length;
-  const { onsetColumn, onsetCause, columns } = replay(events);
+  const { onsetColumn, onsetCause, columns, legatoSteps } = replay(events, null, rules);
+  for (const g of legatoSteps) {
+    const b = g < 30 ? '<30' : g <= 60 ? '30-60' : g <= 90 ? '61-90' : '>90';
+    m.legatoSteps[b] = (m.legatoSteps[b] || 0) + 1;
+  }
 
-  for (const c of clustersOf(events)) {
+  const { clusters, legatoPairs } = clustersOf(events);
+  m.legatoPairs += legatoPairs.length;
+  m.legatoMerged += legatoPairs.filter(([a, b]) => onsetColumn.get(a) === onsetColumn.get(b)).length;
+  for (const c of clusters) {
     m.clusters += 1;
     if (c.heldChord) m.heldChords += 1;
+    if (!c.legatoLine) m.chords += 1;
     const ids = new Set(c.idx.map((i) => onsetColumn.get(i)));
-    if (ids.size === 1) { m.whole += 1; if (c.heldChord) m.heldWhole += 1; continue; }
+    if (ids.size === 1) {
+      m.whole += 1;
+      if (c.heldChord) m.heldWhole += 1;
+      if (!c.legatoLine) m.chordWhole += 1;
+      continue;
+    }
     // First onset inside the cluster that opened a new column: that is the split.
     const k = c.idx.findIndex((i, j) => j > 0 && onsetCause.has(i));
     const cause = k < 0 ? 'unknown' : onsetCause.get(c.idx[k]);
@@ -350,7 +424,7 @@ function measure(events) {
 
 function add(into, m) {
   for (const k of Object.keys(m)) {
-    if (k === 'causes' || k === 'gaps' || k === 'heldCauses') for (const [c, n] of Object.entries(m[k])) into[k][c] = (into[k][c] || 0) + n;
+    if (k === 'causes' || k === 'gaps' || k === 'heldCauses' || k === 'legatoSteps') for (const [c, n] of Object.entries(m[k])) into[k][c] = (into[k][c] || 0) + n;
     else into[k] += m[k];
   }
 }
@@ -360,7 +434,9 @@ function row(label, m) {
   const causes = Object.entries(m.causes).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} ${n}`).join(', ');
   return {
     '': label, takes: m.takes, onsets: m.onsets, clusters: m.clusters,
-    'whole %': pct(m.whole, m.clusters), 'held-chord whole %': `${pct(m.heldWhole, m.heldChords)} of ${m.heldChords}`, cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
+    'whole %': pct(m.whole, m.clusters), 'held-chord whole %': `${pct(m.heldWhole, m.heldChords)} of ${m.heldChords}`,
+    'chord whole %': pct(m.chordWhole, m.chords), 'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
+    cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
     frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed, 'split causes': causes,
   };
 }
@@ -611,6 +687,36 @@ ${cards.join('\n')}</body></html>`);
   }
 }
 
+// ─── sweep ───────────────────────────────────────────────────────────────────
+
+const SWEEP_GAPS = [90, 110, 130, 150];
+const SWEEP_LEGATO = [80, 120, 160];
+
+/**
+ * --sweep-gap: the whole corpus under each (GAP_MS, LEGATO_RELEASE_MS) pair, plus each
+ * gap with the release split OFF (legato -1: no release is ever within -1ms of an
+ * arrival) to show what the split buys. The pair to ship is the one with chord whole
+ * >= 90% and the lowest legato merged %.
+ */
+function sweep(takes) {
+  const rows = [];
+  for (const gapMs of SWEEP_GAPS) {
+    for (const legatoReleaseMs of [-1, ...SWEEP_LEGATO]) {
+      const o = blank();
+      for (const t of takes) add(o, measure(t.events, { gapMs, legatoReleaseMs }));
+      rows.push({
+        GAP_MS: gapMs, LEGATO_RELEASE_MS: legatoReleaseMs < 0 ? 'off' : legatoReleaseMs,
+        'whole %': pct(o.whole, o.clusters), 'held-chord whole %': pct(o.heldWhole, o.heldChords),
+        'chord whole %': pct(o.chordWhole, o.chords), 'legato merged %': pct(o.legatoMerged, o.legatoPairs),
+        'eighth %': pct(o.eighths, o.cols), frags: o.frags, rolled: o.rolled, 'RH-on-bass': o.rhOnBass,
+        gate: o.chords && (100 * o.chordWhole) / o.chords >= 90 && o.rhOnBass === 0 ? 'PASS' : '',
+      });
+    }
+  }
+  console.log(`chord-staff-replay --sweep-gap: ${takes.length} takes, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}`);
+  console.table(rows);
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -645,8 +751,13 @@ async function main() {
     takes.push({ ...s, events: take.events });
   }
 
+  if (args.sweepGap) {
+    sweep(takes);
+    return;
+  }
+
   console.log(`chord-staff-replay: ${takes.length} takes (${skipped} under ${MIN_ONSETS} onsets / before --since, ${failed} unreadable)`);
-  console.log(`rules: GAP_MS ${GAP_MS}, SPAN_MAX_MS ${SPAN_MAX_MS}, ROLL_MARK_MS ${ROLL_MARK_MS}, MAX_COLUMN_NOTES ${MAX_COLUMN_NOTES}\n`);
+  console.log(`rules: GAP_MS ${GAP_MS}, LEGATO_RELEASE_MS ${LEGATO_RELEASE_MS}, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}, SPAN_MAX_MS ${SPAN_MAX_MS}, ROLL_MARK_MS ${ROLL_MARK_MS}, MAX_COLUMN_NOTES ${MAX_COLUMN_NOTES}\n`);
   console.table([
     row('overall', overall),
     ...Object.entries(bySource).map(([k, m]) => row(k, m)),
@@ -654,11 +765,17 @@ async function main() {
   ]);
   console.log(`clusters split by the gap rule, by the splitting silence (ms): ${JSON.stringify(overall.gaps)}`);
   console.log(`held chords split, by cause: ${JSON.stringify(overall.heldCauses)}`);
+  console.log(`legato splits, by the step between the halves (ms): ${JSON.stringify(overall.legatoSteps)}`);
   console.log('baseline before the gesture rule (spec, 17 studio takes): whole 68.3%, eighths 49.9%, RH-on-bass 234');
 
+  // Gated on chord whole %: whole % also counts every overlapping legato step as a
+  // "cluster", so it rewards drawing a legato line as a chord — the error the release
+  // split exists to fix. Both are printed.
   const wholePct = overall.clusters ? (100 * overall.whole) / overall.clusters : 0;
-  const pass = wholePct >= 90 && overall.rhOnBass === 0;
-  console.log(`\ngate: whole-chord ${wholePct.toFixed(1)}% (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
+  const chordPct = overall.chords ? (100 * overall.chordWhole) / overall.chords : 0;
+  const pass = chordPct >= 90 && overall.rhOnBass === 0;
+  console.log(`\nwhole % over all clusters (legato steps included): ${wholePct.toFixed(1)}; legato merged ${pct(overall.legatoMerged, overall.legatoPairs)}% of ${overall.legatoPairs} legato pairs`);
+  console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
 
   if (args.render) {
     const n = await renderMoments(args.render, takes, args.moments);

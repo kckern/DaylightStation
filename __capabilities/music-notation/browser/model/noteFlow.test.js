@@ -29,11 +29,13 @@ describe('noteFlow — simultaneity grouping', () => {
   });
 
   it('spreads a rolled chord across columns (each note past the window)', () => {
-    expect(play([[[60], 0], [[64], 100], [[67], 200]])).toEqual([[60], [64], [67]]);
+    const step = GAP_MS + 10;
+    expect(play([[[60], 0], [[64], step], [[67], 2 * step]])).toEqual([[60], [64], [67]]);
   });
 
   it('spreads an arpeggio in the order played, not sorted by pitch', () => {
-    expect(play([[[67], 0], [[60], 100], [[64], 200]])).toEqual([[67], [60], [64]]);
+    const step = GAP_MS + 10;
+    expect(play([[[67], 0], [[60], step], [[64], 2 * step]])).toEqual([[67], [60], [64]]);
   });
 
   it('a slow roll whose notes are still held is ONE column', () => {
@@ -107,8 +109,10 @@ describe('noteFlow — the key-down overlap test', () => {
 
   it('does not collapse a wide arpeggio that crosses middle C', () => {
     // The regression the earlier register-based design introduced: C2→E3→G4→C6 at
-    // 100ms/note drew as [C2], [E3+G4+C6]. It must stay four columns.
-    const cols = play([[[36], 0], [[52], 100], [[67], 200], [[96], 300]], { held: allHeld });
+    // 100ms/note drew as [C2], [E3+G4+C6]. Played slower than GAP_MS it must stay four
+    // columns (at 100ms, now inside GAP_MS, held keys make it a roll instead).
+    const s = GAP_MS + 10;
+    const cols = play([[[36], 0], [[52], s], [[67], 2 * s], [[96], 3 * s]], { held: allHeld });
     expect(cols).toEqual([[36], [52], [67], [96]]);
   });
 
@@ -279,7 +283,7 @@ describe('noteFlow — duration classification', () => {
   });
 
   it('reads a burst against its context: same notes, eighths only after slow playing', () => {
-    const fast = [[[72], 2000], [[74], 2120]];
+    const fast = [[[72], 2000], [[74], 2000 + GAP_MS + 20]];
     const fromSlow = run([[[60], 0], [[62], 600], [[64], 1200], ...fast]);
     expect(closed(fromSlow).slice(-1)).toEqual(['8']);
   });
@@ -395,5 +399,118 @@ describe('noteFlow — holds (pushReleases)', () => {
   it('returns the same flow when nothing was released', () => {
     const flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
     expect(pushReleases(flow, 500, setOf(60, 64))).toBe(flow);
+  });
+});
+
+describe('noteFlow — legato is not a roll (release-based split)', () => {
+  // Replay a raw key stream the way the staff sees it: every event pushes its onset
+  // (with the key-down surface as it stands) and then runs pushReleases.
+  const stream = (events, opts = {}) => {
+    const held = new Set();
+    let flow = emptyFlow();
+    for (const [type, midi, at] of [...events].sort((a, b) => a[2] - b[2])) {
+      if (type === 'on') { held.add(midi); flow = pushOnsets(flow, [midi], at, { held, ...opts }); }
+      else held.delete(midi);
+      flow = pushReleases(flow, at, held, opts);
+    }
+    return flow;
+  };
+
+  it('an 80ms legato C-D-E-F, each let go 30ms after the next lands, is four columns', () => {
+    const notes = [60, 62, 64, 65];
+    const events = notes.flatMap((m, i) => [
+      ['on', m, i * 80],
+      ['off', m, i < notes.length - 1 ? (i + 1) * 80 + 30 : 1000],
+    ]);
+    const flow = stream(events);
+    expect(flowColumns(flow)).toEqual([[60], [62], [64], [65]]);
+    // Each split column keeps arrivals parallel to midis, and opens at its own arrival.
+    flow.columns.forEach((c, i) => {
+      expect(c.arrivals.map((a) => a.midi)).toEqual(c.midis);
+      expect(c.startedAt).toBe(i * 80);
+    });
+    // The split inserted the gaps pushOnsets would have recorded, and judged them alike.
+    expect(flow.recentIois).toEqual([80, 80, 80]);
+    expect(closed(flow)).toEqual(['8', '8', '8']);
+  });
+
+  it('a four-note roll at 120ms steps, held a second, stays one column', () => {
+    const notes = [48, 55, 60, 64];
+    const events = notes.flatMap((m, i) => [['on', m, i * 120], ['off', m, 360 + 1000]]);
+    // 360ms from first to last is past SPAN_MAX_MS, a separate rule; lifted here so
+    // this pins only that holding every key keeps the release rule from splitting it.
+    const flow = stream(events, { spanMs: 400 });
+    expect(flowColumns(flow)).toEqual([notes]);
+  });
+
+  it('a two-hand chord whose right hand lands 140ms after the left, all held, stays one column', () => {
+    const lh = [43, 50, 55]; const rh = [67, 71, 74];
+    const events = [
+      ...lh.map((m) => ['on', m, 0]), ...rh.map((m) => ['on', m, 140]),
+      ...[...lh, ...rh].map((m) => ['off', m, 1200]),
+    ];
+    const flow = stream(events);
+    expect(flowColumns(flow)).toEqual([[...lh, ...rh]]);
+  });
+
+  it('a struck chord let go at once is not legato, however short', () => {
+    // Keys 10ms apart, all up 60ms later: inside LEGATO_RELEASE_MS, but one strike.
+    const events = [[60, 0], [64, 10], [67, 20]].flatMap(([m, at]) => [['on', m, at], ['off', m, 80]]);
+    expect(flowColumns(stream(events))).toEqual([[60, 64, 67]]);
+  });
+
+  it('one finger lifting early does not split a chord the others still hold', () => {
+    // C and E struck, G rolled in 60ms later; C lets go 40ms after G, E stays down.
+    const flow = stream([['on', 60, 0], ['on', 64, 10], ['on', 67, 70], ['off', 60, 110], ['off', 64, 900], ['off', 67, 900]]);
+    expect(flowColumns(flow)).toEqual([[60, 64, 67]]);
+  });
+
+  it('the release threshold and step floor can be overridden (the sweep does)', () => {
+    const notes = [60, 62];
+    const events = [['on', 60, 0], ['on', 62, 80], ['off', 60, 200], ['off', 62, 900]];
+    expect(flowColumns(stream(events))).toEqual([[60], [62]]);               // 120 <= 160
+    expect(flowColumns(stream(events, { legatoReleaseMs: 100 }))).toEqual([notes]);
+    expect(flowColumns(stream(events, { legatoMinStepMs: 90 }))).toEqual([notes]);
+  });
+
+  it('splits the second-newest column when the release is seen in the same render as the next onset', () => {
+    // One React batch at 115: C lets go and E lands. E cannot join (C is up), so it
+    // closes [C D] first; only then does pushReleases see C's release, 35ms after D.
+    let flow = pushOnsets(emptyFlow(), [60], 0, { held: new Set([60]) });
+    flow = pushOnsets(flow, [62], 80, { held: new Set([60, 62]) });
+    flow = pushOnsets(flow, [64], 115, { held: new Set([62, 64]) });
+    expect(flowColumns(flow)).toEqual([[60, 62], [64]]);
+    flow = pushReleases(flow, 115, new Set([62, 64]));
+    expect(flowColumns(flow)).toEqual([[60], [62], [64]]);
+    expect(flow.columns.map((c) => c.startedAt)).toEqual([0, 80, 115]);
+    // The [C D] gap of 115 is replaced by the two gaps the split exposes.
+    expect(flow.recentIois).toEqual([80, 35]);
+  });
+
+  it('a note released long after the next landed is a held chord, not legato', () => {
+    const flow = stream([['on', 60, 0], ['on', 64, 60], ['off', 60, 400], ['off', 64, 500]]);
+    expect(flowColumns(flow)).toEqual([[60, 64]]);
+  });
+
+  it('respects capacity when a split adds a column', () => {
+    let flow = emptyFlow();
+    for (let i = 0; i < 3; i += 1) flow = pushOnsets(flow, [40 + i], i * 400, { held: new Set([40 + i]), capacity: 3 });
+    flow = pushOnsets(flow, [60], 1200, { held: new Set([60]), capacity: 3 });
+    flow = pushOnsets(flow, [62], 1280, { held: new Set([60, 62]), capacity: 3 });
+    flow = pushReleases(flow, 1300, new Set([62]), { capacity: 3 });
+    expect(flowColumns(flow)).toEqual([[41], [42], [60], [62]].slice(-3));
+  });
+
+  it('returns the same flow when no young column lost a key', () => {
+    const flow = stream([['on', 60, 0], ['on', 64, 40]]);
+    expect(pushReleases(flow, 100, new Set([60, 64]))).toBe(flow);
+  });
+
+  it('never mutates its input', () => {
+    let flow = pushOnsets(emptyFlow(), [60], 0, { held: new Set([60]) });
+    flow = pushOnsets(flow, [62], 80, { held: new Set([60, 62]) });
+    const snapshot = JSON.stringify(flow);
+    pushReleases(flow, 110, new Set([62]));
+    expect(JSON.stringify(flow)).toBe(snapshot);
   });
 });

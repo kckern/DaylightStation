@@ -108,30 +108,44 @@ Full rules, worked examples, rejected alternatives and limitations:
 `model/noteFlow.js` turns the live MIDI surface into **columns** that march left to
 right like typed characters, instead of piling every note onto one stack.
 
-**This is not rhythm.** No meter, no time signature, no quantisation, no rests — every
-column is engraved with the same neutral quarter notehead. The horizontal axis carries
-order only, so a rolled chord reads as a roll and an arpeggio reads as an arpeggio.
+**This is not meter.** No time signature, no barline, no quantisation, no rests. The
+horizontal axis carries order, so a rolled chord reads as a roll and an arpeggio reads as
+an arpeggio.
+
+A column is one **gesture** — a struck or rolled chord. Durations (eighth / quarter /
+half) are coarse ratios against a moving baseline, never a measured tempo.
 
 | Constant | Default | What it decides |
 |---|---|---|
-| `SIMULTANEITY_MS` | 45 | Onsets within this window of the **column's start** stack into it; later ones open a new column. Above the jitter of a two-hand strike (~30ms), below a musical roll (60ms+). Measured from the column start, not the previous note, so a slow roll can't daisy-chain into one stack. |
+| `GAP_MS` | 150 | Longest silence between successive onsets of one gesture, measured from the column's **last** onset. An onset also joins only while every key already in the column is still down. |
+| `SPAN_MAX_MS` | 250 | Longest a gesture may run from its first onset. |
+| `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. |
+| `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
+| `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
+| `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
 | `COLUMN_CAPACITY` | 8 | Columns held before the oldest scrolls off the left. |
-| `IDLE_CLEAR_MS` | 1600 | Silence after which the line resets so the next phrase starts at the left. |
+| `IDLE_CLEAR_MS` | 3000 | Silence after which the next strike starts a fresh line at the left (nothing is wiped before that strike). |
+| `STALE_CLEAR_MS` | 30000 | Silence after which an untouched staff is emptied outright. |
+
+`GAP_MS`, `LEGATO_RELEASE_MS` and `LEGATO_MIN_STEP_MS` were chosen by replaying real
+playing: `node tests/_infrastructure/harnesses/chord-staff-replay.mjs --sweep-gap`
+prints chords kept whole against legato steps merged for each pair; the plain run
+gates on chords kept whole >= 90% and no right-hand chord on the bass staff.
 
 Mechanics worth knowing:
 
-- **Onsets drive it, not held keys.** A note stays on the staff after release until it
-  scrolls off or the line resets. This replaced the old note-decay/peak-chord scheme,
-  which existed to stop a chord crumbling as fingers lifted unevenly — a problem the
-  flow doesn't have, since a column is fixed the moment it is struck.
+- **Onsets drive it; releases only refine it.** A note stays on the staff after release
+  until it scrolls off or the line resets. Releases do two things: freeze a held
+  column's duration, and split a young column that turns out to be a legato line. A
+  column more than one back never changes shape.
 - **Grouping uses the timestamp the note arrived with**, not `Date.now()` at effect
   time. Be precise about what that stamp is: `useMidiSubscription` takes `Date.now()`
   when the browser handles the WebSocket message, so it carries the piano → Jamcorder →
   backend → WS latency and is **not** a device-side capture time. It is still the better
   of the two available clocks — per-message granularity, where effect time can collapse
   notes milliseconds apart into one identical `Date.now()` through React batching.
-  `SIMULTANEITY_MS` is therefore tuned against transport-inclusive jitter, which is a
-  reason to re-check it on the real instrument.
+  `GAP_MS` and the legato thresholds are therefore tuned against transport-inclusive
+  jitter, which is a reason to re-check them on the real instrument.
 - **The formatter always lays out every slot**, padding with invisible `GhostNote`s.
   That is what makes it typewriter-like rather than rubber-band: slot 1 sits at the same
   x whether it's alone or the first of eight. Ghosts also fill the staff a column doesn't
