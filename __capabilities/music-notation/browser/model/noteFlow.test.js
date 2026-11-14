@@ -3,6 +3,7 @@ import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, columnRolls, baselineOf, classifyIoi,
   FAST_RATIO, GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO, LIFT_TOGETHER_MS,
+  BREATH_RATIO, SMOOTH_RATIO,
 } from "./noteFlow.js";
 
 // Helper: play a sequence of [midis, atMs] and return the resulting flow.
@@ -622,5 +623,82 @@ describe('noteFlow — the idle tick allocates nothing', () => {
     const later = flowDurations(flow, 500 + SLOW_RATIO * 500 + 1, first);
     expect(later).not.toBe(first);
     expect(later).toEqual(['8', 'h']);
+  });
+});
+
+describe('noteFlow — light pulse (unitStart, breath, smoothing)', () => {
+  // Eighths at 300ms: the baseline sits on its 300ms floor, so the eighth → quarter cut
+  // is 360ms, the smoothing band runs to 414ms, and a breath is >= 600ms.
+  const at300 = (n, from = 0) => Array.from({ length: n }, (_, i) => [[60 + (i % 12)], from + i * 300]);
+
+  it('counts eighth-units from the line start, fixed when each column opens', () => {
+    const flow = run(at300(6));
+    expect(flow.columns.map((c) => c.unitStart)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(flow.columns.every((c) => c.breathBefore === false)).toBe(true);
+  });
+
+  it('counts quarters and halves by their close duration (8 = 1, q = 2, h = 4)', () => {
+    // 300 (8), 300 (8), 500 (q), 700 (h: past 2.0 × 300 — and a breath), 300 ...
+    const flow = run([[[60], 0], [[62], 300], [[64], 600], [[65], 1100], [[67], 1800], [[69], 2100]]);
+    expect(flow.columns.map((c) => c.closeDuration)).toEqual(['8', '8', 'q', 'h', '8', null]);
+    expect(flow.columns.map((c) => c.unitStart)).toEqual([0, 1, 2, 4, 0, 1]);
+    expect(flow.columns.map((c) => c.breathBefore)).toEqual([false, false, false, false, true, false]);
+  });
+
+  it('keeps every column\'s count when the oldest scrolls off', () => {
+    const before = run(at300(COLUMN_CAPACITY));
+    const after = pushOnsets(before, [80], COLUMN_CAPACITY * 300);
+    expect(after.columns).toHaveLength(COLUMN_CAPACITY);
+    // Column k of `before` is column k - 1 of `after`, with the same unitStart.
+    for (let k = 1; k < COLUMN_CAPACITY; k += 1) {
+      expect(after.columns[k - 1].unitStart).toBe(before.columns[k].unitStart);
+    }
+    expect(after.columns[COLUMN_CAPACITY - 1].unitStart).toBe(COLUMN_CAPACITY);
+  });
+
+  it('marks a breath only once the note after the gap arrives, and restarts the count', () => {
+    const flow = run(at300(3));
+    // Silence: 1s passes. Nothing about the gap is known, so nothing is marked.
+    expect(flow.columns.some((c) => c.breathBefore)).toBe(false);
+    const next = pushOnsets(flow, [72], 600 + BREATH_RATIO * 300 + 1);
+    expect(next.columns[3].breathBefore).toBe(true);
+    expect(next.columns[3].unitStart).toBe(0);
+    expect(next.columns[2].closeDuration).toBe('h');
+  });
+
+  it('a fresh line (after IDLE_CLEAR_MS) starts counting at 0 with no breath', () => {
+    const flow = pushOnsets(run(at300(3)), [72], 600 + IDLE_CLEAR_MS + 1);
+    expect(flow.columns).toHaveLength(1);
+    expect(flow.columns[0]).toMatchObject({ unitStart: 0, breathBefore: false });
+  });
+
+  it('smooths a slightly late note in a run of eighths, at close only', () => {
+    // 8 8 then a 400ms gap: past the 360 cut, inside 1.15 × 360 = 414 → still an eighth.
+    const late = run([...at300(3), [[70], 600 + 400]]);
+    expect(late.columns[2]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(late.columns[3].unitStart).toBe(3);
+    // 420ms is past the band: a real quarter.
+    const later = run([...at300(3), [[70], 600 + 420]]);
+    expect(later.columns[2]).toMatchObject({ closeDuration: 'q', smoothed: false });
+    // No eighth before it (the first gap of the line): no smoothing.
+    const first = run([[[60], 0], [[62], 300], [[64], 300 + 1.1 * 360]]);
+    expect(first.columns[0].smoothed).toBe(false);
+    expect(SMOOTH_RATIO * FAST_RATIO * 300).toBeCloseTo(414);
+  });
+
+  it("the newest after an eighth stays a provisional eighth inside the smoothing band", () => {
+    const flow = run(at300(3));
+    expect(flowDurations(flow, 600 + 400)[2]).toBe('8');
+    expect(flowDurations(flow, 600 + 420)[2]).toBe('q');
+  });
+
+  it('never re-decides a closed column: a later quarter or release does not smooth it', () => {
+    let flow = run([...at300(3), [[70], 600 + 420]]);
+    const closed = flow.columns[2];
+    flow = pushOnsets(flow, [72], 1020 + 300);
+    flow = pushReleases(flow, 1400, new Set());
+    expect(flow.columns[2].closeDuration).toBe(closed.closeDuration);
+    expect(flow.columns[2].smoothed).toBe(false);
+    expect(flow.columns[3].unitStart).toBe(closed.unitStart + 2);
   });
 });

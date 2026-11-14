@@ -151,6 +151,30 @@ export const FAST_RATIO = 1.2;
 export const SLOW_RATIO = 2.0;
 
 /**
+ * A gap of at least BREATH_RATIO × baseline before a column is a BREATH: the staff
+ * draws a thin bar line before that column and restarts its beat count there. 2.0 is
+ * the half threshold — the same gap that makes the column before it a half — so a bar
+ * line marks exactly where a phrase came to rest. Decided only when the column after
+ * the gap arrives (the gap isn't known before), never speculatively.
+ */
+export const BREATH_RATIO = 2.0;
+
+/**
+ * Smoothing. Inside a run of eighths, a column whose gap lands just past the eighth →
+ * quarter cut-off — under SMOOTH_RATIO × FAST_RATIO × baseline, i.e. within 15% above
+ * it — closes as an EIGHTH when the column before it closed as an eighth (and no breath
+ * separates them). One slightly late note in a run otherwise drew a lone quarter that
+ * broke the beam. The column after it is the newest, which always starts as an eighth,
+ * so the note sits between eighths as drawn at that moment. Decided at close and stored;
+ * the newest column's provisional glyph uses the same raised cut-off so it doesn't show
+ * a quarter only to close as an eighth.
+ */
+export const SMOOTH_RATIO = 1.15;
+
+/** Eighth-units a duration counts for in the beat grouping: 8 = 1, q = 2, h = 4. */
+export const DURATION_UNITS = { 8: 1, q: 2, h: 4 };
+
+/**
  * How many recent inter-onset intervals feed the baseline. Deliberately longer than a
  * screenful: the densest line (all eighths at the Studio pane) shows about 12 columns,
  * 11 gaps, so a baseline drawn only from what is on screen would be entirely rewritten
@@ -192,7 +216,14 @@ export const DEFAULT_BASELINE_MS = 500;
  * `duration` can still be promoted to a half when a held column is released, but the
  * renderer takes a column's WIDTH from `closeDuration`, so a promotion redraws the glyph
  * without shoving the columns to its right. Null while the column is the newest.
- * @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number> }} FlowColumn
+ *
+ * `unitStart` is where the column starts in eighth-units, counted from the start of the
+ * line or the last breath (DURATION_UNITS of each column's closeDuration). Set when the
+ * column OPENS — it depends only on columns already closed — so the beat grouping it
+ * drives never shifts once drawn, and it travels with the column when the oldest
+ * scrolls off. `breathBefore`: the gap before this column was a breath (BREATH_RATIO).
+ * `smoothed`: closed as an eighth by the smoothing rule (SMOOTH_RATIO).
+ * @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number>, unitStart?: number, breathBefore?: boolean, smoothed?: boolean }} FlowColumn
  */
 
 /** A new, empty flow. */
@@ -246,8 +277,16 @@ function judgeGap(ioi, recentIois) {
   const baseline = recentIois.length
     ? baselineOf(recentIois)
     : Math.min(DEFAULT_BASELINE_MS, clamp(ioi, BASELINE_MIN_MS, BASELINE_MAX_MS));
-  return { duration: classifyIoi(ioi, baseline), recentIois: [...recentIois, ioi].slice(-IOI_MEMORY) };
+  return {
+    duration: classifyIoi(ioi, baseline),
+    recentIois: [...recentIois, ioi].slice(-IOI_MEMORY),
+    breath: ioi >= BREATH_RATIO * baseline,
+    baseline,
+  };
 }
+
+/** Where the column after `col` starts in eighth-units (0 after a breath). */
+const nextUnitStart = (col, breath) => (breath ? 0 : (col.unitStart ?? 0) + (DURATION_UNITS[col.closeDuration] ?? 2));
 
 /**
  * Fold a batch of new note-ons into the flow.
@@ -313,22 +352,35 @@ export function pushOnsets(flow, midis, now, opts = {}) {
   }
 
   let recentIois = flow.recentIois;
+  let unitStart = 0;
+  let breathBefore = false;
   if (open) {
-    const judged = judgeGap(now - open.startedAt, recentIois);
+    const ioi = now - open.startedAt;
+    const judged = judgeGap(ioi, recentIois);
+    const before = columns[columns.length - 2];
+    const smoothed = judged.duration === 'q'
+      && before?.closeDuration === '8' && !open.breathBefore
+      && ioi < SMOOTH_RATIO * FAST_RATIO * judged.baseline;
+    const duration = smoothed ? '8' : judged.duration;
     // heldAtClose: every key still down as the next column opens means the gap to it
     // says nothing about how long the column lasts — pushReleases/flowDurations judge
     // the hold instead.
-    columns[columns.length - 1] = {
+    const closed = {
       ...open,
-      duration: judged.duration,
-      closeDuration: judged.duration,
+      duration,
+      closeDuration: duration,
+      smoothed,
       heldAtClose: !!held && open.midis.every((m) => held.has(m)),
     };
+    columns[columns.length - 1] = closed;
     recentIois = judged.recentIois;
+    breathBefore = judged.breath;
+    unitStart = nextUnitStart(closed, breathBefore);
   }
   columns.push({
     midis: sorted, arrivals: arrived, startedAt: now, lastOnsetAt: now,
     duration: null, closeDuration: null, heldAtClose: false, releasedAt: null, releases: {},
+    unitStart, breathBefore, smoothed: false,
   });
 
   // Overflow scrolls: the oldest column falls off the left, like a line of text
@@ -449,14 +501,21 @@ function splitColumn(flow, i, t, capacity) {
   let recentIois = isNewest ? flow.recentIois : flow.recentIois.slice(0, -1);
   const first = judgeGap(b.startedAt - a.startedAt, recentIois);
   recentIois = first.recentIois;
-  const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, heldAtClose: heldA(b.startedAt), releasedAt: null };
-  let after = { ...c, ...b, duration: null, closeDuration: null, heldAtClose: false, releasedAt: null };
+  // The split's own gap is a legato step — never a breath — and its pieces are counted
+  // on from where the merged column started; only the newest after it is re-counted.
+  const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, smoothed: false, heldAtClose: heldA(b.startedAt), releasedAt: null };
+  let after = {
+    ...c, ...b, duration: null, closeDuration: null, smoothed: false, heldAtClose: false, releasedAt: null,
+    breathBefore: false, unitStart: nextUnitStart(before, false),
+  };
+  let rest = flow.columns.slice(i + 1);
   if (!isNewest) {
     const second = judgeGap(next.startedAt - b.startedAt, recentIois);
     recentIois = second.recentIois;
     after = { ...after, duration: second.duration, closeDuration: second.duration, heldAtClose: heldB(next.startedAt) };
+    rest = [{ ...next, breathBefore: second.breath, unitStart: nextUnitStart(after, second.breath) }, ...rest.slice(1)];
   }
-  const columns = [...flow.columns.slice(0, i), before, after, ...flow.columns.slice(i + 1)];
+  const columns = [...flow.columns.slice(0, i), before, after, ...rest];
   const overflow = columns.length - capacity;
   return { ...flow, columns: overflow > 0 ? columns.slice(overflow) : columns, recentIois };
 }
@@ -568,14 +627,22 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
 export function flowDurations(flow, now, prev) {
   const baseline = baselineOf(flow.recentIois);
   const longHold = (c) => now - c.startedAt > SLOW_RATIO * baseline;
+  const n = flow.columns.length;
+  // The newest column after an eighth (no breath between) grows to a quarter only past
+  // the smoothing cut-off — the one its close will use — so it never shows a quarter
+  // and then closes as an eighth.
+  const smoothNewest = n > 1 && flow.columns[n - 2].closeDuration === '8' && !flow.columns[n - 1].breathBefore;
   const at = (c) => {
-    if (c.duration === null) return classifyIoi(now - c.startedAt, baseline);
+    if (c.duration === null) {
+      const ioi = now - c.startedAt;
+      const d = classifyIoi(ioi, baseline);
+      return d === 'q' && smoothNewest && ioi < SMOOTH_RATIO * FAST_RATIO * baseline ? '8' : d;
+    }
     if (c.heldAtClose && c.releasedAt === null && longHold(c)) return 'h';
     return c.duration;
   };
   // With `prev`, an unchanged answer is `prev` itself and nothing is allocated — the
   // host's 80ms tick asks this of every column on screen, every tick.
-  const n = flow.columns.length;
   if (prev && prev.length === n) {
     let i = 0;
     while (i < n && prev[i] === at(flow.columns[i])) i += 1;

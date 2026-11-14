@@ -128,6 +128,22 @@ const END_AIR = 6;
 // Logical units of air after the key signature before the first column's tick position.
 const NOTE_INSET = 10;
 
+// ─── Light pulse ────────────────────────────────────────────────────────────────
+// No meter, no time signature — but a run of eighths beams in BEATS, the way printed
+// music groups them: never across a boundary of BEAT_GROUP_UNITS eighth-units (two
+// beats, 4/4-style fours), counted from the start of the line or the last breath with
+// each column's CLOSE duration (model/noteFlow.js unitStart), so once a group is drawn
+// it never regroups. A breath (a long gap, model BREATH_RATIO) draws a thin bar line
+// across both staves before the column after it and restarts the count.
+const BEAT_GROUP_UNITS = 4;
+const UNITS = { 8: 1, q: 2, h: 4 };
+// Room a breath bar line adds to the step into the column after it, and where the line
+// sits: BAR_AIR to the left of that column's leftmost ink (accidentals, a roll stroke).
+// The step already keeps COLUMN_GAP between the two columns' ink, so the line has at
+// least COLUMN_GAP + BAR_SPACE − BAR_AIR on its left and BAR_AIR on its right.
+const BAR_SPACE = 12;
+const BAR_AIR = 6;
+
 // The content floor reserves room for the WIDEST key signature (7 accidentals), not
 // the current one. The displayed key is detected from what is being played and moves
 // under your hands (see useDetectedKey), so sizing the floor to the live accidental
@@ -461,7 +477,19 @@ function normalizeColumns(columns, notes) {
         widthDuration: col.widthDuration ?? duration,
         // { midi, at } per note in arrival order — what each staff's roll is read from.
         arrivals: Array.isArray(col.arrivals) ? col.arrivals : [],
+        breathBefore: !!col.breathBefore,
+        unitStart: Number.isFinite(col.unitStart) ? col.unitStart : null,
       };
+    })
+    // Callers without the model's unitStart (a static list, the ink sweep) get the same
+    // count derived from the columns given, starting at the first.
+    .map((col, i, all) => {
+      if (col.unitStart !== null) return col;
+      let u = 0;
+      for (let k = 1; k <= i; k += 1) {
+        u = all[k].breathBefore ? 0 : u + (UNITS[all[k - 1].widthDuration] ?? 2);
+      }
+      return { ...col, unitStart: u };
     });
 }
 
@@ -494,14 +522,16 @@ function normalizeColumns(columns, notes) {
 function layoutColumns(cols, ks, stave, staveW, maxCount, { reachBothWays = true } = {}) {
   const n = cols.length;
   const quarterW = quarterWidth(staveW);
-  if (!n) return { start: 0, xs: [], quarterW };
+  if (!n) return { start: 0, xs: [], quarterW, bars: [] };
   const pad = notePaddingOf(stave);
   // Tick x past which no ink may reach: the barline, less END_AIR.
   const limit = stave.getX() + staveW - END_AIR - stave.getNoteStartX() - pad;
   const m = cols.map((c) => measureColumn(c, ks, [...new Set([c.widthDuration, c.duration])]));
   const leftOf = (i) => (reachBothWays ? m[i].left : m[i].autoLeft);
   const durW = (d) => (DURATION_WIDTH[d] ?? 1) * quarterW;
-  const step = (i) => Math.max(durW(cols[i].widthDuration), m[i].right + COLUMN_GAP + m[i + 1].left);
+  // A breath bar line before column i + 1 adds its own room on top (see BAR_SPACE).
+  const step = (i) => Math.max(durW(cols[i].widthDuration), m[i].right + COLUMN_GAP + m[i + 1].left)
+    + (cols[i + 1].breathBefore ? BAR_SPACE : 0);
   // The head of the stave puts the note start KEY_SIGNATURE_AIR - pad left of x = 0.
   const leadOf = (j) => Math.max(0, KEY_SIGNATURE_AIR + leftOf(j) - pad - NOTE_INSET);
   let start = n - 1;
@@ -525,7 +555,13 @@ function layoutColumns(cols, ks, stave, staveW, maxCount, { reachBothWays = true
     xs.push(x);
     if (i < n - 1) x += step(i);
   }
-  return { start, xs, quarterW };
+  // Breath bar lines, in tick x, before every breath column on screen but the first (a
+  // line right after the key signature says nothing).
+  const bars = [];
+  for (let i = start + 1; i < n; i += 1) {
+    if (cols[i].breathBefore) bars.push(xs[i - start] - m[i].left - BAR_AIR);
+  }
+  return { start, xs, quarterW, bars };
 }
 
 /**
@@ -605,7 +641,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // A single-chord consumer (the flashcard face) gets exactly one column, with its lead
   // read from its own stem direction since no beam can ever flip it.
   const maxCount = capacity ?? (isFlow ? Infinity : 1);
-  const { start, xs } = layoutColumns(allColumns, ks, treble, staveW, maxCount, { reachBothWays: isFlow });
+  const { start, xs, bars } = layoutColumns(allColumns, ks, treble, staveW, maxCount, { reachBothWays: isFlow });
   const flow = allColumns.slice(start);
   const count = flow.length;
 
@@ -701,9 +737,20 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // it (replay 19-guest-two-hand). Ottava columns are rare and already marked, so
   // losing their beam costs little; the label then clears its own flag.
   const labelled = (note) => note.getModifiers().some((mod) => mod instanceof Annotation);
+  // The vote, unless it would push one of the two voters out of its own group (a stem
+  // off the frame or into the other staff) while the other side keeps both: then the
+  // other side. Still decided by the first two alone, so appending never re-votes. With
+  // beat-sized groups this matters — a group opening on D5 then an F4 chord averages on
+  // the middle line, voted DOWN, and the F4 chord (which can't stem down without
+  // reaching the bass staff) fell out, leaving the D5 a lone flag.
+  const voteDir = (run) => {
+    const dir = groupDir(run);
+    const blocks = (d) => run.slice(0, 2).some((n) => throwsOut(n, d) || intrudes(n, d));
+    return blocks(dir) && !blocks(-dir) ? -dir : dir;
+  };
   const plan = (run) => {
     if (run.length < 2) return [];
-    const dir = groupDir(run);
+    const dir = voteDir(run);
     const bad = run.findIndex((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
     if (bad < 0) return [{ run, dir }];
     return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
@@ -721,6 +768,9 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // drawn duration is still an eighth. A promoted column shows its half; its neighbours
   // keep the stems they were drawn with (a lone one keeps its flag, pointing that way).
   const voteDurations = flow.map((c, i) => (isFlow && i === count - 1 ? '8' : c.widthDuration));
+  // Columns i and j (= i + 1) may share a beam only inside one beat group, no breath between.
+  const beatOf = (i) => Math.floor(flow[i].unitStart / BEAT_GROUP_UNITS);
+  const sameBeat = (i, j) => !flow[j].breathBefore && beatOf(i) === beatOf(j);
   const beamRuns = (staffNotes) => {
     const index = new Map(staffNotes.map((n, i) => [n, i]));
     const groups = [];
@@ -729,6 +779,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     for (let i = 0; i <= count; i += 1) {
       const note = i < count && voteDurations[i] === '8' ? staffNotes[i] : null;
       if (!note) { flush(); continue; }
+      // A beam never crosses a beat-group boundary or a breath.
+      if (run.length && !sameBeat(i - 1, i)) flush();
       run.push(note);
     }
     flush();
@@ -754,8 +806,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     // grouped (one of them throws out, intrudes or carries an ottava label).
     staffNotes.forEach((x, i) => {
       const y = staffNotes[i + 1];
-      if (!x || !y || directed.has(x) || voteDurations[i] !== '8') return;
-      const dir = groupDir([x, y]);
+      if (!x || !y || directed.has(x) || voteDurations[i] !== '8' || !sameBeat(i, i + 1)) return;
+      const dir = voteDir([x, y]);
       const blocked = [x, y].some((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
       if (blocked) return;
       if (x.getStemDirection() !== dir) x.setStemDirection(dir);
@@ -831,6 +883,19 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // cost the staff, the same bargain the ottava markers make.
   let beams = [];
   try { beams = beamGroups.map(({ group, staff }) => ({ beam: new Beam(group, false), staff })); } catch { beams = []; }
+
+  // Breath bar lines: one thin line across both staves, like a system bar line.
+  if (bars.length) {
+    const pad = notePaddingOf(treble);
+    const yTop = treble.getYForLine(0);
+    const yBottom = bass.getYForLine(4);
+    for (const tickX of bars) {
+      const x = treble.getNoteStartX() + pad + tickX;
+      ctx.openGroup('breath-bar');
+      ctx.fillRect(x - 0.5, yTop, 1, yBottom - yTop);
+      ctx.closeGroup();
+    }
+  }
 
   if (count) {
     tVoice.draw(ctx, treble);

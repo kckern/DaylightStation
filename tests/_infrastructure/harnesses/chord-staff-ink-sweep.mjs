@@ -19,7 +19,8 @@
  * than MIN_COLUMN_AIR (their ink x-ranges intersect, or nearly): the column layout
  * spaces by duration and floors each step at the ink's needs (chordStaff.js
  * layoutColumns), and this is what checks that floor — or if a beam crosses into the
- * OTHER staff's lines (lone stems that do are reported, not gated). Requires playwright (repo root) and bundles chordStaff.js
+ * OTHER staff's lines (lone stems that do are reported, not gated), or a breath bar line
+ * comes within MIN_COLUMN_AIR of a column's ink. Requires playwright (repo root) and bundles chordStaff.js
  * against frontend/node_modules — the frontend has its OWN vexflow (4.x); the root
  * node_modules has a different, much older one.
  */
@@ -109,6 +110,10 @@ async function main() {
       let beamsChecked = 0;
       let loneStemCrossings = 0;
       let loneStemWorst = null;
+      // Breath bar lines closer than MIN_COLUMN_AIR to the ink of a column beside them.
+      const barHits = [];
+      let barHitCount = 0;
+      let barsChecked = 0;
       const over = { top: 0, bottom: 0, left: 0, right: 0 };
       const perAspect = {};
       let renders = 0;
@@ -153,7 +158,9 @@ async function main() {
               .map((c) => (Array.isArray(c) ? { midis: c, arrivals: [] } : c))
               .map((c) => ({ ...c, midis: c.midis.filter((m) => m >= 21 && m <= 108) }))
               .filter((c) => c.midis.length)
-              .map((c, i) => ({ midis: c.midis, arrivals: c.arrivals, duration: durationAt(i) }));
+              // Every fifth column of a long flow comes after a breath, so bar lines are
+              // drawn — and checked against the ink either side — across the sweep.
+              .map((c, i, all) => ({ midis: c.midis, arrivals: c.arrivals, duration: durationAt(i), breathBefore: all.length >= 8 && i % 5 === 4 }));
             const dur = columns.map((c) => c.duration).join('');
             window.renderChordStaff(host, {
               columns, keySignature: ks, aspect,
@@ -204,6 +211,15 @@ async function main() {
               loneStemCrossings += 1;
               if (!loneStemWorst || into > loneStemWorst.into) loneStemWorst = { midis, ks, aspect: +aspect.toFixed(2), dur, staff: g.dataset.staff, into: +into.toFixed(1) };
             }
+            const allBoxes = [...staffBoxes.treble, ...staffBoxes.bass];
+            for (const g of host.querySelectorAll('g.vf-breath-bar')) {
+              const b = g.getBBox();
+              barsChecked += 1;
+              const hit = allBoxes.some(([x0, x1]) => b.x < x1 + MIN_COLUMN_AIR && x0 - MIN_COLUMN_AIR < b.x + b.width);
+              if (!hit) continue;
+              barHitCount += 1;
+              if (barHits.length < 10) barHits.push({ midis, ks, aspect: +aspect.toFixed(2), dur, bar: +b.x.toFixed(1) });
+            }
             for (const [staff, boxes] of Object.entries(staffBoxes)) {
               boxes.sort((p, q) => p[0] - q[0]);
               for (let k = 1; k < boxes.length; k += 1) {
@@ -236,6 +252,7 @@ async function main() {
         clips,
         overlaps, overlapCount, stressOverlaps, pairsChecked, tightest: +tightest.toFixed(1),
         crossings, crossingCount, beamsChecked, loneStemCrossings, loneStemWorst,
+        barHits, barHitCount, barsChecked,
       };
     }, { KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y });
 
@@ -255,6 +272,7 @@ async function main() {
     console.log(`                      ${result.stressOverlaps} forearm-cluster pairs closer than ${MIN_COLUMN_AIR} — reported, not gated`);
     console.log(`beams:                ${result.beamsChecked} checked, ${result.crossingCount} cross into the other staff's lines (need 0)`);
     console.log(`lone stems:           ${result.loneStemCrossings} reach into the other staff (reported, not gated; worst ${JSON.stringify(result.loneStemWorst)})`);
+    console.log(`breath bars:          ${result.barsChecked} checked, ${result.barHitCount} closer than ${MIN_COLUMN_AIR} units to a column's ink (need 0)`);
     let failed = false;
     if (result.clips.length) {
       console.error('\nINK OUTSIDE THE FRAME — the staff is clipping:');
@@ -269,6 +287,11 @@ async function main() {
     if (result.crossingCount) {
       console.error('\nA BEAM CROSSES INTO THE OTHER STAFF:');
       for (const c of result.crossings) console.error('  ' + JSON.stringify(c));
+      failed = true;
+    }
+    if (result.barHitCount) {
+      console.error('\nA BREATH BAR LINE TOUCHES A COLUMN:');
+      for (const c of result.barHits) console.error('  ' + JSON.stringify(c));
       failed = true;
     }
     if (failed) { process.exitCode = 1; return; }

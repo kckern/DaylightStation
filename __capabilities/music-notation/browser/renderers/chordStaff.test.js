@@ -549,14 +549,9 @@ describe('renderChordStaff — relative rhythm', () => {
   it('leaves a ledger note out of a group that would throw its stem off the staff', () => {
     // Middle C (below the treble staff, stem up on its own) inside a high group that
     // stems down: flipping it would hang its stem — and the beam — below the staff, so
-    // it keeps its own flag and splits the group around it.
-    expect(beams(render([
-      { midis: [76], duration: '8' },
-      { midis: [79], duration: '8' },
-      { midis: [60], duration: '8' },
-      { midis: [77], duration: '8' },
-      { midis: [81], duration: '8' },
-    ]))).toBe(2);
+    // it keeps its own flag and splits the group around it. (All five placed in one
+    // beat group — unitStart 0 — so only the ledger note can split them.)
+    expect(beams(render([76, 79, 60, 77, 81].map((m) => ({ midis: [m], duration: '8', unitStart: 0 }))))).toBe(2);
   });
 
   it('does not beam a lone eighth', () => {
@@ -738,6 +733,81 @@ describe('renderChordStaff — one letter, one staff position', () => {
         expect(a.x0 < h.x1 && h.x0 < a.x1 && a.y0 < h.y1 && h.y0 < a.y1).toBe(false);
       }
     }
+  });
+});
+
+describe('renderChordStaff — light pulse: beat groups and breath bar lines', () => {
+  const render = (columns, keySignature = 'C') => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns, keySignature, aspect: 2.8 });
+    return host;
+  };
+  const pts = (p) => {
+    const nums = (p.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const out = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) out.push([nums[i], nums[i + 1]]);
+    return out;
+  };
+  const headXs = (host) => [...host.querySelectorAll('g.vf-notehead')].map((g) => pts(g.querySelector(':scope > path'))[0][0]);
+  // How many noteheads lie under each beam (by x), left to right.
+  const beamSizes = (host) => {
+    const xs = headXs(host);
+    return [...host.querySelectorAll('.vf-beam path')].map((p) => {
+      const q = pts(p).map(([x]) => x);
+      const [x0, x1] = [Math.min(...q), Math.max(...q)];
+      return xs.filter((x) => x >= x0 - 14 && x <= x1 + 1).length;
+    }).sort((a, b) => a - b);
+  };
+  const melody = [60, 62, 64, 65, 67, 65, 64, 62, 60, 62, 64, 65, 67];
+  const eighths = (ms, units) => ms.map((m, i) => ({ midis: [m], duration: '8', ...(units ? { unitStart: units[i] } : {}) }));
+
+  it('beams a long run of eighths in fours, never across a two-beat boundary', () => {
+    expect(beamSizes(render(eighths(melody.slice(0, 12))))).toEqual([4, 4, 4]);
+  });
+
+  it('keeps the grouping when the oldest scrolls off (the count is the column\'s own)', () => {
+    // The model's unitStart travels with each column: with the first scrolled off, the
+    // rest still group [1-3] [4-7] [8-11] [12], not in fours from the new left edge.
+    const units = melody.map((_, i) => i);
+    expect(beamSizes(render(eighths(melody.slice(1), units.slice(1))))).toEqual([3, 4, 4]);
+  });
+
+  it('draws a breath bar line only before a breath column, and restarts the count there', () => {
+    const cols = [
+      ...eighths([60, 62, 64]),
+      { midis: [65], duration: 'h', widthDuration: 'h' },
+      ...eighths([67, 65, 64, 62]).map((c, i) => ({ ...c, breathBefore: i === 0 })),
+    ];
+    const host = render(cols);
+    expect(host.querySelectorAll('g.vf-breath-bar')).toHaveLength(1);
+    // Count restarts at the bar: the four eighths after it beam as one group of four.
+    expect(beamSizes(host)).toEqual([3, 4]);
+    expect(render(cols.map((c) => ({ ...c, breathBefore: false }))).querySelectorAll('g.vf-breath-bar')).toHaveLength(0);
+  });
+
+  it('turns a beat group the other way when its vote would push out one of its two voters', () => {
+    // F5 then F4 averages above the middle line → down, but F4 can't stem down without
+    // reaching the bass staff, so it fell out and left F5 a lone flag. Up keeps all four.
+    expect(beamSizes(render(eighths([77, 65, 72, 71])))).toEqual([4]);
+  });
+
+  it('draws no bar line before the first column on screen', () => {
+    const host = render(eighths([60, 62]).map((c, i) => ({ ...c, breathBefore: i === 0 })));
+    expect(host.querySelectorAll('g.vf-breath-bar')).toHaveLength(0);
+  });
+
+  it("keeps the bar line clear of the next column's accidentals and roll stroke", () => {
+    const chord = [61, 63, 66, 68, 70];
+    const host = render([
+      { midis: [60], duration: 'h', widthDuration: 'h' },
+      { midis: chord, duration: '8', breathBefore: true, arrivals: chord.map((midi, k) => ({ midi, at: k * 40 })) },
+    ]);
+    const bar = pts(host.querySelector('g.vf-breath-bar path, g.vf-breath-bar rect') ?? host.querySelector('g.vf-breath-bar *'));
+    const barX = bar.length ? Math.max(...bar.map(([x]) => x)) : Number(host.querySelector('g.vf-breath-bar rect').getAttribute('x'));
+    const [first, second] = [...host.querySelectorAll('g.vf-stavenote')];
+    const inkXs = (g) => [...g.querySelectorAll('path')].flatMap((p) => pts(p).map(([x]) => x));
+    expect(barX).toBeGreaterThan(Math.max(...inkXs(first)) + 2);
+    expect(barX).toBeLessThan(Math.min(...inkXs(second)) - 2);
   });
 });
 

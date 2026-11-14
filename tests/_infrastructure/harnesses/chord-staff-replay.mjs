@@ -427,6 +427,7 @@ const blank = () => ({
   takes: 0, onsets: 0, clusters: 0, whole: 0, causes: {}, gaps: {}, heldCauses: {},
   heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, lifted: 0, liftedWhole: 0, legatoExcluded: 0, seqPairs: 0, seqMerged: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
   cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
+  phrases: 0, bars: 0, smoothed: 0, beams: 0, beams4: 0,
 });
 
 function measure(events, rules) {
@@ -491,6 +492,26 @@ function measure(events, rules) {
     // staff on two or more ledger lines.
     if (trebleNotes.some((n) => n < 55) || bassNotes.some((n) => n > 64)) m.crossed += 1;
   });
+
+  // The light pulse, from the columns' close durations (what the staff votes and groups
+  // on): breath bar lines, smoothed eighths, and beat-sized beam groups — runs of eighths
+  // that share a beat group (unitStart / 4) with no breath or new line between. This
+  // counts the groups the pulse ALLOWS; the drawn beams can be fewer (a staff the column
+  // doesn't touch, an off-staff note or an 8va label splits them further).
+  let run = 0;
+  const flush = () => { if (run >= 2) { m.beams += 1; if (run === 4) m.beams4 += 1; } run = 0; };
+  cols.forEach((c, i) => {
+    const lineStart = (c.unitStart ?? 0) === 0 && !c.breathBefore;
+    if (i === 0 || lineStart || c.breathBefore) m.phrases += 1;
+    if (c.breathBefore) m.bars += 1;
+    if (c.smoothed) m.smoothed += 1;
+    const prevCol = cols[i - 1];
+    const joins = prevCol && run > 0 && !lineStart && !c.breathBefore
+      && Math.floor(prevCol.unitStart / 4) === Math.floor(c.unitStart / 4);
+    if (!joins) flush();
+    if (c.closeDuration === '8') run += 1; else flush();
+  });
+  flush();
   return m;
 }
 
@@ -510,7 +531,10 @@ function row(label, m) {
     'chord whole %': pct(m.chordWhole, m.chords), 'lifted-together whole %': `${pct(m.liftedWhole, m.lifted)} of ${m.lifted}`,
     'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
     cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
-    frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed, 'split causes': causes,
+    frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed,
+    phrases: m.phrases, 'bars/take': (m.bars / (m.takes || 1)).toFixed(1), smoothed: m.smoothed,
+    'beams/phrase': (m.beams / (m.phrases || 1)).toFixed(2), 'beams of 4 %': pct(m.beams4, m.beams),
+    'split causes': causes,
   };
 }
 
@@ -548,6 +572,8 @@ function snapshot(frame) {
         spelling: c.spelling ? [...c.spelling.entries()] : null,
         duration: c.duration,
         widthDuration: c.widthDuration,
+        unitStart: c.unitStart,
+        breathBefore: c.breathBefore,
         arrivals: c.arrivals,
         roll: rollCaption(columnRolls(c)),
         startedAt: col.startedAt,
@@ -628,6 +654,7 @@ window.renderChordStaff = renderChordStaff;
         window.renderChordStaff(host, {
           columns: snap.columns.map((c) => ({
             midis: c.midis, duration: c.duration, widthDuration: c.widthDuration, arrivals: c.arrivals,
+            unitStart: c.unitStart, breathBefore: c.breathBefore,
             spelling: c.spelling ? new Map(c.spelling) : null,
           })),
           keySignature: snap.key,
@@ -873,6 +900,7 @@ async function main() {
   console.log(`\nwhole % over all clusters (legato steps included): ${wholePct.toFixed(1)}; legato merged ${pct(overall.legatoMerged, overall.legatoPairs)}% of ${overall.legatoPairs} legato pairs`);
   console.log(`legato pairs lifted in sequence (second key outlasts the first by > ${LIFTED_TOGETHER_MS}ms): merged ${pct(overall.seqMerged, overall.seqPairs)}% of ${overall.seqPairs}`);
   console.log(`chord whole excludes ${overall.legatoExcluded} of ${overall.clusters} clusters as legato lines`);
+  console.log(`pulse: ${overall.bars} breath bar lines (${(overall.bars / (overall.takes || 1)).toFixed(1)} per take), ${overall.smoothed} smoothed eighths (${pct(overall.smoothed, overall.cols)}% of columns), ${overall.beams} beat-sized beam groups in ${overall.phrases} phrases (${(overall.beams / (overall.phrases || 1)).toFixed(2)} per phrase), ${pct(overall.beams4, overall.beams)}% full groups of four`);
   console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), lifted-together whole ${liftedPct.toFixed(1)}% of ${overall.lifted} (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
 
   if (args.render) {

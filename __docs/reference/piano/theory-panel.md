@@ -129,6 +129,8 @@ an eighth and grows to a quarter, then a half, while you hold it.
 | `LIFT_TOGETHER_MS` | 10 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is settled on the first `pushReleases` after this window: the next key event or the 80ms tick, whichever comes first. Chosen by the replay sweep (5/10/15/25 at GAP 150 / release 160) with the same rule as the others, since the key-up gaps show only a 0-5ms peak and no valley. The rule picked 5, but its lifted-together whole (90.6%) cleared the gate by only 0.6 points, so 10 was taken instead (92.0%, for +0.2 points of legato merged). |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
 | `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
+| `BREATH_RATIO` | 2.0 | A gap of at least this × baseline before a column is a breath: a thin bar line before it, and the beat count restarts. Same as the half threshold, so a bar marks where a phrase rested. Replay: ~20 per take, about one per 10 columns. |
+| `SMOOTH_RATIO` | 1.15 | A column after an eighth whose gap lands within 15% above the eighth → quarter cut-off closes as an eighth (decided at close; the newest's provisional glyph uses the same cut-off). Replay: 3.2% of columns. |
 | `COLUMN_CAPACITY` | 16 | Columns the model keeps. Not how many are drawn — the renderer draws the newest that fit (see the layout rule below); 16 covers the densest line (~12 eighths at the Studio pane). |
 | `IDLE_CLEAR_MS` | 3000 | Silence after which the next strike starts a fresh line at the left (nothing is wiped before that strike). |
 | `STALE_CLEAR_MS` | 30000 | Silence after which an untouched staff is emptied outright. |
@@ -248,6 +250,18 @@ Mechanics worth knowing:
   Krumhansl–Kessler score by 10% and the buffer must hold 8 notes before a known key
   yields (an unknown one adopts at 5). One chromatic improvisation re-detected its key
   90 times in 4.5 minutes at 5% / 5 notes.
+- **A light pulse, claiming no meter.** Each column carries `unitStart` — where it
+  starts in eighth-units (8 = 1, q = 2, h = 4, by close duration), counted from the line
+  start or the last breath — set when it OPENS, so it never shifts and travels with the
+  column when the oldest scrolls off. A beam never crosses a boundary of 4 units (two
+  beats: eighths group in fours, 4/4-style), and a group whose vote (its first two) would
+  push one of those two out (off the frame or into the other staff) takes the other
+  direction. A breath (`breathBefore`, `BREATH_RATIO`) draws one thin bar line across
+  both staves before the column after it — only once that column exists — and restarts
+  the count; none is drawn before the first column on screen. The bar adds `BAR_SPACE`
+  (12) to the step into that column and sits `BAR_AIR` (6) left of its leftmost ink, so
+  it clears accidentals and strokes (ink sweep: 0 of ~30k bars within 2 units of ink).
+  Replay: 1.57 beat groups per phrase, 65% of them full fours.
 - **Ghost notes fill the staff a column doesn't touch**, keeping the two hands
   column-aligned without printing a rest (a rest would be a rhythmic claim).
 - **Ordinary playing never clips, and neighbouring columns never collide** — verified

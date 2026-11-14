@@ -58,6 +58,11 @@ export function buildRenderColumns(flow, durations, keySig) {
     // hold promotion to a half changes the glyph but moves nothing. The newest column
     // (not closed yet) is as wide as its provisional glyph.
     widthDuration: c.closeDuration ?? durations[i] ?? 'q',
+    // The light pulse (see chordStaff beat groups and breath bar lines): where the column
+    // starts in eighth-units since the line start or last breath, and whether a breath
+    // came before it. Both are fixed when the column opens.
+    unitStart: c.unitStart ?? 0,
+    breathBefore: !!c.breathBefore,
     arrivals: c.arrivals ?? [],
   }));
 }
