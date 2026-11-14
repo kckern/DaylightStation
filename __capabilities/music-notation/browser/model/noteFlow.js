@@ -151,11 +151,19 @@ export const FAST_RATIO = 1.2;
 export const SLOW_RATIO = 2.0;
 
 /**
- * A gap of at least BREATH_RATIO × baseline before a column is a BREATH: the staff
- * draws a thin bar line before that column and restarts its beat count there. 2.0 is
- * the half threshold — the same gap that makes the column before it a half — so a bar
- * line marks exactly where a phrase came to rest. Decided only when the column after
- * the gap arrives (the gap isn't known before), never speculatively.
+ * A gap longer than BREATH_RATIO × PACE before a column is a BREATH: the staff draws a
+ * thin bar line before that column and restarts its beat count there. Decided only
+ * when the column after the gap arrives (the gap isn't known before), never
+ * speculatively.
+ *
+ * PACE is how you are actually playing — the median of the recent gaps, floored at
+ * BASELINE_MIN_MS but NOT capped at BASELINE_MAX_MS like the duration baseline. The
+ * cap exists to keep halves reachable; against it, a slow chorale (a chord every two
+ * seconds) made every gap a "breath" and drew a bar line between every chord. Against
+ * the real pace a breath is what it should be: a pause relative to the playing around
+ * it. At an ordinary pace (under 800ms) the two are the same, and 2.0 with the same
+ * strict `>` is exactly the half threshold. The first gap of a line has no pace yet:
+ * it is never a breath.
  */
 export const BREATH_RATIO = 2.0;
 
@@ -280,9 +288,35 @@ function judgeGap(ioi, recentIois) {
   return {
     duration: classifyIoi(ioi, baseline),
     recentIois: [...recentIois, ioi].slice(-IOI_MEMORY),
-    breath: ioi >= BREATH_RATIO * baseline,
+    breath: isBreath(ioi, recentIois),
     baseline,
   };
+}
+
+/**
+ * Whether `col` (closing now) may be smoothed into an eighth given the column before
+ * it: that one closed AND is drawn as a plain eighth — not itself smoothed (so a run of
+ * slightly-late notes can't chain into eighths: smoothing is for a LONE late note), and
+ * not a held column drawn as a half (a hold promotion, released or still held past the
+ * half threshold) — with no breath between them.
+ */
+function smoothsAfter(before, col, now, baseline) {
+  if (!before || col.breathBefore) return false;
+  if (before.closeDuration !== '8' || before.duration !== '8' || before.smoothed) return false;
+  const heldIntoHalf = before.heldAtClose && before.releasedAt === null && now - before.startedAt > SLOW_RATIO * baseline;
+  return !heldIntoHalf;
+}
+
+/**
+ * A breath: the gap is longer than BREATH_RATIO × the pace, and the gap before it was
+ * not. Slowing into long notes draws ONE bar line where the pause began, not one
+ * between every long note while the pace (a median over IOI_MEMORY gaps) catches up —
+ * replay 25-kckern-dense drew four bars over six half-note chords.
+ */
+function isBreath(ioi, recentIois) {
+  if (!recentIois.length) return false;
+  const limit = BREATH_RATIO * Math.max(BASELINE_MIN_MS, median(recentIois));
+  return ioi > limit && !(recentIois[recentIois.length - 1] > limit);
 }
 
 /** Where the column after `col` starts in eighth-units (0 after a breath). */
@@ -358,8 +392,7 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     const ioi = now - open.startedAt;
     const judged = judgeGap(ioi, recentIois);
     const before = columns[columns.length - 2];
-    const smoothed = judged.duration === 'q'
-      && before?.closeDuration === '8' && !open.breathBefore
+    const smoothed = judged.duration === 'q' && smoothsAfter(before, open, now, judged.baseline)
       && ioi < SMOOTH_RATIO * FAST_RATIO * judged.baseline;
     const duration = smoothed ? '8' : judged.duration;
     // heldAtClose: every key still down as the next column opens means the gap to it
@@ -503,6 +536,9 @@ function splitColumn(flow, i, t, capacity) {
   recentIois = first.recentIois;
   // The split's own gap is a legato step — never a breath — and its pieces are counted
   // on from where the merged column started; only the newest after it is re-counted.
+  // That newest's breathBefore is recomputed from the post-split gap (shorter than the
+  // merged one), so its bar line can appear or vanish — within the same redraw that
+  // already moves it to make room for the split.
   const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, smoothed: false, heldAtClose: heldA(b.startedAt), releasedAt: null };
   let after = {
     ...c, ...b, duration: null, closeDuration: null, smoothed: false, heldAtClose: false, releasedAt: null,
@@ -631,7 +667,7 @@ export function flowDurations(flow, now, prev) {
   // The newest column after an eighth (no breath between) grows to a quarter only past
   // the smoothing cut-off — the one its close will use — so it never shows a quarter
   // and then closes as an eighth.
-  const smoothNewest = n > 1 && flow.columns[n - 2].closeDuration === '8' && !flow.columns[n - 1].breathBefore;
+  const smoothNewest = n > 1 && smoothsAfter(flow.columns[n - 2], flow.columns[n - 1], now, baseline);
   const at = (c) => {
     if (c.duration === null) {
       const ioi = now - c.startedAt;

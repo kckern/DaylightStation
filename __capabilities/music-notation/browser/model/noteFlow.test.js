@@ -686,6 +686,46 @@ describe('noteFlow — light pulse (unitStart, breath, smoothing)', () => {
     expect(SMOOTH_RATIO * FAST_RATIO * 300).toBeCloseTo(414);
   });
 
+  it('smooths a LONE late note: a second one in a row stays a quarter', () => {
+    const flow = run([...at300(3), [[70], 600 + 400], [[72], 1000 + 400]]);
+    expect(flow.columns[2]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(flow.columns[3]).toMatchObject({ closeDuration: 'q', smoothed: false });
+  });
+
+  it('does not smooth after a column held into a half', () => {
+    // A is held down while B and C arrive: by C (700ms) A has been held past 2 × 300,
+    // so it draws as a half, and B (a 400ms gap) is not "between eighths".
+    const held = (...ns) => new Set(ns);
+    const play3 = (aHeld) => [[[60], 0, held(60)], [[64], 300, aHeld ? held(60, 64) : held(64)], [[67], 700, aHeld ? held(60, 67) : held(67)]]
+      .reduce((f, [m, at, h]) => pushOnsets(f, m, at, { held: h }), emptyFlow());
+    expect(play3(false).columns[1]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(play3(true).columns[1]).toMatchObject({ closeDuration: 'q', smoothed: false });
+  });
+
+  it('judges a breath against the real pace: a slow chorale draws no bar lines', () => {
+    // A chord every 2s: the duration baseline is capped at 800ms, but the pace is 2s, so
+    // no gap is a pause relative to it.
+    const chorale = run(Array.from({ length: 6 }, (_, i) => [[60 + i, 64 + i], i * 2000]));
+    expect(chorale.columns.some((c) => c.breathBefore)).toBe(false);
+    // The same 2s gap inside 400ms playing is a breath.
+    const phrase = run([...Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]), [[72], 1200 + 2000]]);
+    expect(phrase.columns[4].breathBefore).toBe(true);
+  });
+
+  it('slowing into long notes draws one bar where the pause began, not one per note', () => {
+    const flow = run([
+      ...Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]),
+      ...Array.from({ length: 4 }, (_, i) => [[72 + i], 1200 + (i + 1) * 1500]),
+    ]);
+    expect(flow.columns.map((c) => c.breathBefore)).toEqual([false, false, false, false, true, false, false, false]);
+  });
+
+  it('a breath is strictly past the half threshold, like the half itself', () => {
+    const exact = run([...at300(3), [[72], 600 + BREATH_RATIO * 300]]);
+    expect(exact.columns[2].closeDuration).toBe('q');
+    expect(exact.columns[3].breathBefore).toBe(false);
+  });
+
   it("the newest after an eighth stays a provisional eighth inside the smoothing band", () => {
     const flow = run(at300(3));
     expect(flowDurations(flow, 600 + 400)[2]).toBe('8');

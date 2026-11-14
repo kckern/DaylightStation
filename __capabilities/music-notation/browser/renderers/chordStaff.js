@@ -22,7 +22,7 @@
 import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter } from 'vexflow';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
-import { columnRolls } from "../model/noteFlow.js";
+import { columnRolls, DURATION_UNITS as UNITS } from "../model/noteFlow.js";
 import { spellPitchClass } from "../model/spelling.js";
 
 // A column with no duration of its own — every column of a single-chord display, and
@@ -136,7 +136,6 @@ const NOTE_INSET = 10;
 // it never regroups. A breath (a long gap, model BREATH_RATIO) draws a thin bar line
 // across both staves before the column after it and restarts the count.
 const BEAT_GROUP_UNITS = 4;
-const UNITS = { 8: 1, q: 2, h: 4 };
 // Room a breath bar line adds to the step into the column after it, and where the line
 // sits: BAR_AIR to the left of that column's leftmost ink (accidentals, a roll stroke).
 // The step already keeps COLUMN_GAP between the two columns' ink, so the line has at
