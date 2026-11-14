@@ -63,6 +63,24 @@ describe('splitByHand', () => {
       trebleNotes: [58, 62, 66],
     });
   });
+  it('a bass pair reaching just over middle C keeps both notes, treble stays inside one reach', () => {
+    // k=2 is the only split with both hands within 14 semitones; the C-pivot split left a 7-note treble.
+    expect(splitByHand([52, 64, 92, 95, 99])).toEqual({ bassNotes: [52, 64], trebleNotes: [92, 95, 99] });
+  });
+  it('three-hand cluster [30,60,62,90]: no playable split, least-bad is a lone bass note', () => {
+    // Every split overflows. [30]|[60,62,90] has zero wrong-side notes (the others put 60/62 on bass)
+    // and the smallest overflow (16): the deep note is plainly left hand, the rest is one stretched right.
+    expect(splitByHand([30, 60, 62, 90])).toEqual({ bassNotes: [30], trebleNotes: [60, 62, 90] });
+  });
+  it('[48,60,64,67,72,76]: bass 48 + treble 60..76 is out of reach (16), so the playable 48,60 | 64..76 wins', () => {
+    // Two hands each spanning 12 beat one 16-wide hand despite one note (60) on the wrong side of the pivot.
+    expect(splitByHand([48, 60, 64, 67, 72, 76])).toEqual({ bassNotes: [48, 60], trebleNotes: [64, 67, 72, 76] });
+  });
+  it('[60,88,91,95]: wholly at/above C4, so it stays one treble column even at 35 wide', () => {
+    // [60]|[88..95] would be playable, but C4 is not evidence of a left hand: the replay gate treats any
+    // all-at/above-C4 column reaching the bass as a right-hand-on-bass fault (1933 of them without this).
+    expect(splitByHand([60, 88, 91, 95])).toEqual({ bassNotes: [], trebleNotes: [60, 88, 91, 95] });
+  });
   it('wide LH stays bass', () => {
     expect(splitByHand([36, 55])).toEqual({ bassNotes: [36, 55], trebleNotes: [] });
   });
