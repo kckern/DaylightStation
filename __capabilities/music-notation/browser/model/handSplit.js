@@ -35,8 +35,9 @@ export const HAND_PIVOT = 60;
  * Infer which hand plays which notes, splitting a sorted-ascending note set into
  * bass (left hand) and treble (right hand) staves. Register first, not interval
  * pattern: a column that fits under one hand (span <= HAND_SPAN) is ONE hand and
- * goes whole to treble if its mean is at/above middle C, else to bass; a wider
- * column is two hands and divides at the best split point (see below).
+ * goes whole to treble if its mean is at/above middle C, else to bass. A wider
+ * column that straddles middle C is two hands and divides at the best split point
+ * (see below); one wholly on one side of middle C stays whole on that side.
  *
  * Why: the old "octave/fifth in the lowest two = left hand" rule read right-hand
  * octaves and fifths (C5-C6, E5+B5) as bass. In the recorded sessions that put

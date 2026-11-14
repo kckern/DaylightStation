@@ -65,8 +65,7 @@ describe('noteFlow — simultaneity grouping', () => {
   it('caps a column at MAX_COLUMN_NOTES', () => {
     const ev = Array.from({ length: 20 }, (_, i) => [[40 + i], i * 10]);
     const cols = play(ev, { held: allHeld });
-    expect(cols.length).toBeGreaterThan(1);
-    cols.forEach((c) => expect(c.length).toBeLessThanOrEqual(MAX_COLUMN_NOTES));
+    expect(cols.map((c) => c.length)).toEqual([MAX_COLUMN_NOTES, MAX_COLUMN_NOTES]);
   });
 
   it('a hymn of rolled chords draws one column per chord', () => {
@@ -376,11 +375,27 @@ describe('noteFlow — holds (pushReleases)', () => {
     expect(flowDurations(flow, 5000)[0]).toBe('q');
   });
 
-  it('a re-strike of the same pitch releases the earlier column', () => {
+  it('release by none-held: the column releases once none of its keys is down', () => {
+    let flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
+    expect(pushReleases(flow, 450, setOf(60, 64))).toBe(flow); // 60 still down: no release
+    flow = pushReleases(flow, 500, setOf(64));
+    expect(flow.columns[0].releasedAt).toBe(500);
+  });
+
+  it('release by re-strike: a later column re-striking the pitch releases it while the key reads down', () => {
     let flow = runHeld([[[60], 0, setOf(60)], [[60], 400, setOf(60)]]);
     expect(flow.columns[0].heldAtClose).toBe(true);
+    // 60 is in `held` (the new strike), yet the OLD column is released: only the re-strike says so.
     flow = pushReleases(flow, 400, setOf(60));
     expect(flow.columns[0].releasedAt).toBe(400);
+  });
+
+  it("a release after the hold outlasts the threshold stores 'h'", () => {
+    let flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
+    flow = pushReleases(flow, 2000, setOf(64)); // held 2000ms >> 1.5 x baseline
+    expect(flow.columns[0].releasedAt).toBe(2000);
+    expect(flow.columns[0].duration).toBe('h');
+    expect(flowDurations(flow, 9000)[0]).toBe('h');
   });
 
   it('a column struck with both hands stays a half while the LH holds', () => {

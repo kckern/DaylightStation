@@ -79,8 +79,23 @@ describe('detectKey stability on chromatic playing', () => {
     expect(entered).not.toContain('Db');
   });
 
-  it('re-detects less often than the 5% margin did (8 changes -> 6)', () => {
-    expect(replay('Db').length).toBeLessThanOrEqual(6);
+  it('holds each detected key for at least eight notes before the next change', () => {
+    // Stability stated as a dwell time. This take legitimately revisits a key (E <-> F#
+    // sit a fifth-circle step apart and the passage genuinely moves between them), so
+    // "never re-enter" would be false; what the hysteresis + 8-note floor guarantee is
+    // that no change follows another within eight notes. Measured dwells here: 29, 27,
+    // 29, 17, 10 notes. The 5% / 5-note version flapped D-flat <-> F# within a few notes.
+    const IMPROV_CHANGES = [];
+    let key = 'Db'; const buf = [];
+    IMPROV.forEach((pc, i) => {
+      buf.push(pc); if (buf.length > 30) buf.shift();
+      const next = detectKey(buf, key);
+      if (next !== key) { IMPROV_CHANGES.push(i); key = next; }
+    });
+    expect(IMPROV_CHANGES.length).toBeGreaterThan(1);
+    for (let i = 1; i < IMPROV_CHANGES.length; i += 1) {
+      expect(IMPROV_CHANGES[i] - IMPROV_CHANGES[i - 1]).toBeGreaterThanOrEqual(8);
+    }
   });
 
   it('does not let a rival win on fewer than eight notes', () => {

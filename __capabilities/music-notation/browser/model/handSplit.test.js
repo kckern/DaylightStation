@@ -68,7 +68,8 @@ describe('splitByHand', () => {
     expect(splitByHand([52, 64, 92, 95, 99])).toEqual({ bassNotes: [52, 64], trebleNotes: [92, 95, 99] });
   });
   it('three-hand cluster [30,60,62,90]: no playable split, least-bad is a lone bass note', () => {
-    // Every split overflows. [30]|[60,62,90] has zero wrong-side notes (the others put 60/62 on bass)
+    // Every split overflows. Wrong-side count decides: k=1 [30]|[60,62,90] has 0 wrong-side notes, k=2 and
+    // k=3 each have 1-2 (60/62 on bass), so k=1 wins on `wrong` before overflow is consulted.
     // and the smallest overflow (16): the deep note is plainly left hand, the rest is one stretched right.
     expect(splitByHand([30, 60, 62, 90])).toEqual({ bassNotes: [30], trebleNotes: [60, 62, 90] });
   });
@@ -80,6 +81,19 @@ describe('splitByHand', () => {
     // [60]|[88..95] would be playable, but C4 is not evidence of a left hand: the replay gate treats any
     // all-at/above-C4 column reaching the bass as a right-hand-on-bass fault (1933 of them without this).
     expect(splitByHand([60, 88, 91, 95])).toEqual({ bassNotes: [], trebleNotes: [60, 88, 91, 95] });
+  });
+  it('a >14-wide column wholly below C4 stays whole on bass (no second-hand evidence)', () => {
+    expect(splitByHand([36, 48, 55])).toEqual({ bassNotes: [36, 48, 55], trebleNotes: [] });
+  });
+  it('HAND_SPAN boundary: [60,74] is one hand (treble); [60,75] is wide but still wholly >= C4, so treble', () => {
+    expect(splitByHand([60, 74])).toEqual({ bassNotes: [], trebleNotes: [60, 74] });
+    expect(splitByHand([60, 75])).toEqual({ bassNotes: [], trebleNotes: [60, 75] });
+  });
+  it('[50,64] (span 14, mean 57) is one hand on bass', () => {
+    expect(splitByHand([50, 64])).toEqual({ bassNotes: [50, 64], trebleNotes: [] });
+  });
+  it('[59,74] (span 15, straddles C4) is treated as wide and divides', () => {
+    expect(splitByHand([59, 74])).toEqual({ bassNotes: [59], trebleNotes: [74] });
   });
   it('wide LH stays bass', () => {
     expect(splitByHand([36, 55])).toEqual({ bassNotes: [36, 55], trebleNotes: [] });

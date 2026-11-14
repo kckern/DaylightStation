@@ -30,8 +30,9 @@ describe('useDetectedKey', () => {
     expect(result.current).toBe('C');
   });
 
-  it('stays at C with fewer than five buffered notes', () => {
-    const result = playSequence([7, 11, 2]); // 3 new notes < 5
+  it('stays at C with fewer than eight buffered notes', () => {
+    // Three notes: under both the adopt floor (5) and the switch floor (8).
+    const result = playSequence([7, 11, 2]);
     expect(result.current).toBe('C');
   });
 

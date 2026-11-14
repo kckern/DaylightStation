@@ -83,7 +83,9 @@ const MIN_NOTES_TO_ADOPT = 5;
  * This weights tonic/dominant/leading-tone emphasis rather than mere scale
  * membership, so keys that share most of C major's tones (e.g. G, F) can still
  * win. A relative hysteresis margin keeps the current key unless a rival's
- * score beats the current key's score by HYSTERESIS, preventing flicker.
+ * score beats the current key's score by HYSTERESIS, preventing flicker. A known
+ * current key is only displaced once the buffer holds MIN_NOTES_TO_SWITCH (8) notes;
+ * an unknown one adopts the winner from MIN_NOTES_TO_ADOPT (5).
  *
  * If `currentKey` is not a known major key (e.g. a minor/enharmonic/stale
  * value), the margin is skipped and the detected key is adopted outright.

@@ -22,7 +22,7 @@
 import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke } from 'vexflow';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
-import { COLUMN_CAPACITY, staffRoll } from "../model/noteFlow.js";
+import { COLUMN_CAPACITY, columnRolls } from "../model/noteFlow.js";
 import { spellPitchClass } from "../model/spelling.js";
 
 // A column with no duration of its own — every column of a single-chord display, and
@@ -235,8 +235,10 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals
   // 'up' is the plain wavy line (piano notation: bottom → top); 'down' is VexFlow's
   // ROLL_UP, which — guitar naming — draws the arrowhead pointing DOWN.
   try {
-    for (const [n, staffMidis] of [[tNote, trebleNotes], [bNote, bassNotes]]) {
-      const roll = staffRoll(arrivals, staffMidis);
+    // columnRolls splits the column by hand exactly as above, so the strokes drawn
+    // and the strokes the log/harness report come from one pairing.
+    const rolls = columnRolls({ midis, arrivals });
+    for (const [n, roll] of [[tNote, rolls.treble], [bNote, rolls.bass]]) {
       if (n && roll) {
         n.addStroke(0, new Stroke(roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS));
       }
@@ -244,6 +246,16 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals
   } catch { /* stroke is decorative */ }
 
   return { tNote, bNote };
+}
+
+/**
+ * How many columns a flow staff of this stave width draws: the slot area (stave minus
+ * the reserved clef + widest key signature) over MIN_COLUMN_W, between 1 and
+ * COLUMN_CAPACITY. Exported so the replay harness shows the same window the staff does.
+ */
+export function columnSlots(staveW) {
+  const slotAreaW = staveW - (44 + MAX_KEY_ACCIDENTALS * 10) - 14;
+  return Math.max(1, Math.min(COLUMN_CAPACITY, Math.floor(slotAreaW / MIN_COLUMN_W)));
 }
 
 /**
@@ -336,10 +348,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // actual one. The displayed key moves under your hands, and a real measurement would
   // make G major fit one more column than F♯ — so the flow would gain and lose a column
   // as the key drifted. Same reasoning as the stave-width floor above.
-  const slotAreaW = staveW - (44 + MAX_KEY_ACCIDENTALS * 10) - 14;
-  const slots = capacity ?? (isFlow
-    ? Math.max(1, Math.min(COLUMN_CAPACITY, Math.floor(slotAreaW / MIN_COLUMN_W)))
-    : 1);
+  const slots = capacity ?? (isFlow ? columnSlots(staveW) : 1);
   const flow = allColumns.slice(-slots);
 
   // A slot's duration belongs to the COLUMN, not to a staff: treble, bass, and the

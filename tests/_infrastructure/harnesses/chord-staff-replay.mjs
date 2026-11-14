@@ -6,8 +6,7 @@
  * question those cannot: on what people actually played, does a chord stay one chord?
  * It replays two corpora through the exact CurrentChordStaff pipeline — one MIDI event
  * per render, diffNoteSurface → pushOnsets / pushReleases, an 80ms clearIfIdle +
- * pushReleases tick —
- * and reports:
+ * pushReleases tick — and reports:
  *
  *   - chord clusters kept whole: ground-truth clusters (>= 2 notes, each onset within
  *     150ms of the previous, no cluster note released) whose onsets all landed in ONE
@@ -39,8 +38,12 @@
  *     loose cluster rule also collects every overlapping legato step, so whole % pays
  *     for each legato line the staff correctly draws as separate notes.
  *
+ * Note: one event per render is the strictest case. The kiosk can batch several events
+ * into one render (React), which diffNoteSurface then folds into one onset batch; this
+ * harness never does, so it measures the model's rules, not React's batching.
+ *
  * Exit 1 when chord whole % < 90, lifted-together whole % < 90, or RH-on-bass > 0
- * (overall, both corpora).
+ * (overall, both corpora). Exit 2 for a crash, bad arguments or an empty corpus.
  *
  * Corpora:
  *   studio  ${DAYLIGHT_DATA_PATH}/users/<user>/apps/piano/studio/*.yml
@@ -110,7 +113,11 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const k = argv[i]; const v = argv[i + 1];
     if (k === '--users') { a.users = v.split(',').map((s) => s.trim()).filter(Boolean); i += 1; }
-    else if (k === '--limit') { a.limit = Number(v); i += 1; }
+    else if (k === '--limit') {
+      a.limit = Number(v);
+      if (!Number.isInteger(a.limit) || a.limit < 1) throw new Error(`--limit needs a positive integer, got ${v}`);
+      i += 1;
+    }
     else if (k === '--since') { a.since = v; i += 1; }
     else if (k === '--media') { a.media = v; i += 1; }
     else if (k === '--data') { a.data = v; i += 1; }
@@ -120,6 +127,7 @@ function parseArgs(argv) {
     else if (k === '--help' || k === '-h') { a.help = true; }
     else throw new Error(`unknown flag ${k}`);
   }
+  if (a.moments && !a.render) throw new Error('--moments needs --render <outDir>');
   return a;
 }
 
@@ -141,7 +149,8 @@ function normalise(raw) {
 function loadStudio(file) {
   const doc = yaml.load(fs.readFileSync(file, 'utf8')) || {};
   const raw = (doc.events || [])
-    .filter((e) => e && Number.isFinite(e.t) && Number.isFinite(e.note))
+    .filter((e) => e && Number.isFinite(e.t) && Number.isFinite(e.note)
+      && (e.type === 'note_on' || e.type === 'note_off'))
     .map((e) => ({ t: e.t, note: e.note, type: e.type === 'note_on' && (e.velocity ?? 1) > 0 ? 'on' : 'off' }));
   return { created: doc.created ? String(doc.created).slice(0, 10) : null, events: normalise(raw) };
 }
@@ -482,6 +491,12 @@ function row(label, m) {
 const NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const nn = (m) => `${NAMES[m % 12]}${Math.floor(m / 12) - 1}`;
 
+/** 'Tup/Bdown' style caption for a column's per-staff rolls; null when neither rolls. */
+function rollCaption({ treble, bass }) {
+  const parts = [treble && `T${treble}`, bass && `B${bass}`].filter(Boolean);
+  return parts.length ? parts.join('/') : null;
+}
+
 /** What one frame shows, if it were drawn now: the last `slots` columns. */
 function snapshot(frame, slots) {
   const durations = flowDurations(frame.flow, frame.t);
@@ -500,10 +515,7 @@ function snapshot(frame, slots) {
         spelling: c.spelling ? [...c.spelling.entries()] : null,
         duration: c.duration,
         arrivals: c.arrivals,
-        roll: (() => {
-          const { treble: t, bass: b } = columnRolls(c);
-          return t || b ? `${t ? `T${t}` : ''}${b ? `${t ? '/' : ''}B${b}` : ''}` : null;
-        })(),
+        roll: rollCaption(columnRolls(c)),
         startedAt: col.startedAt,
         raw: hits.map((h) => `${nn(h.note)}+${Math.round(h.t - col.startedAt)}`),
         hands: splitByHand([...c.midis].sort((a, b) => a - b)),
@@ -560,9 +572,10 @@ async function openRenderer() {
   const os = await import('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'staff-replay-'));
   fs.writeFileSync(path.join(dir, 'entry.js'), `
-import { renderChordStaff, computeChordStaffLayout } from '${REPO}/__capabilities/music-notation/browser/renderers/chordStaff.js';
+import { renderChordStaff, computeChordStaffLayout, columnSlots } from '${REPO}/__capabilities/music-notation/browser/renderers/chordStaff.js';
 window.renderChordStaff = renderChordStaff;
 window.computeChordStaffLayout = computeChordStaffLayout;
+window.columnSlots = columnSlots;
 `);
   await build({
     entryPoints: [path.join(dir, 'entry.js')], bundle: true, format: 'iife',
@@ -576,10 +589,9 @@ window.computeChordStaffLayout = computeChordStaffLayout;
   const page = await browser.newPage({ viewport: VIEW });
   await page.goto(`file://${path.join(dir, 'page.html')}`);
   await page.waitForFunction(() => !!window.renderChordStaff);
-  // How many columns the Studio pane draws — renderChordStaff's own slot rule.
+  // How many columns the Studio pane draws — renderChordStaff's own slot rule (columnSlots).
   const slots = await page.evaluate((aspect) => {
-    const { staveW } = window.computeChordStaffLayout(aspect);
-    return Math.max(1, Math.min(8, Math.floor((staveW - (44 + 7 * 10) - 14) / 70)));
+    return window.columnSlots(window.computeChordStaffLayout(aspect).staveW);
   }, ASPECT);
   return {
     slots,
@@ -802,6 +814,8 @@ async function main() {
     takes.push({ ...s, events: take.events });
   }
 
+  if (!takes.length) throw new Error('no takes found: check --data/--media/--users/--since');
+
   if (args.sweepGap) {
     sweep(takes);
     return;
@@ -841,4 +855,4 @@ async function main() {
   if (!pass) process.exitCode = 1;
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+main().catch((err) => { console.error(err); process.exitCode = 2; });

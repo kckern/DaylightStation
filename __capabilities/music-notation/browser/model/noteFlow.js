@@ -382,7 +382,7 @@ function recordReleases(flow, now, held, minStepMs) {
  *     staccato roll lifted at once must stay one column.
  * The last test cannot be passed at the instant the earlier key lets go, so a split
  * is decided at the first pushReleases call after `liftMs` has passed — the next key
- * event — while the column is still one of the two young ones. Null when the column
+ * event or the 80ms tick, whichever comes first — while the column is still one of the two young ones. Null when the column
  * is a chord (or not decided yet).
  */
 function legatoSplitAt(column, now, legatoMs, minStepMs, liftMs) {
@@ -445,8 +445,9 @@ function splitColumn(flow, i, t, capacity) {
  * has let go, the last of them within LEGATO_RELEASE_MS of that later key landing,
  * while that later key stayed down more than LIFT_TOGETHER_MS longer, was a legato
  * line, not a chord: split at that later arrival. The second-newest counts because
- * the split is only decided at the first call after the lift window — usually the
- * next key event, which may be the onset that closed the column. Columns further
+ * the split is only decided at the first call after the lift window — the next key
+ * event or the 80ms tick, whichever comes first; a key event may be the onset that
+ * closed the column, which may be the onset that closed the column. Columns further
  * back never change shape, so what has been drawn stays drawn.
  *
  * HOLDS: a closed column that was fully held when it closed is released once none of
@@ -558,7 +559,6 @@ export function staffRoll(arrivals, staffMidis) {
   if (Math.max(...times) - Math.min(...times) < ROLL_MARK_MS) return null;
   const first = own[0].midi;
   const last = own[own.length - 1].midi;
-  if (first === last) return null;
   return last > first ? 'up' : 'down';
 }
 

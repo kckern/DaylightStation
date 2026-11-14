@@ -36,8 +36,8 @@ function logger() {
  * Notes read left to right, like typing: each new strike lands to the right of the
  * last, while notes struck together (within a hand's roll, see noteFlow GAP_MS /
  * SPAN_MAX_MS) stack into one column. A rolled chord is one column carrying its
- * arrivals; the staff reads each hand's roll from them. After a pause the next strike starts a fresh line, and an abandoned line
- * is wiped after STALE_CLEAR_MS.
+ * arrivals; the staff reads each hand's roll from them. After a pause the next
+ * strike starts a fresh line, and an abandoned line is wiped after STALE_CLEAR_MS.
  *
  * RHYTHM, such as it is: each column draws as an eighth, a quarter, or a half,
  * decided in model/noteFlow.js by how its gap to the next strike compares with the

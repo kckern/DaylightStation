@@ -119,7 +119,7 @@ half) are coarse ratios against a moving baseline, never a measured tempo.
 |---|---|---|
 | `GAP_MS` | 150 | Longest silence between successive onsets of one gesture, measured from the column's **last** onset. An onset also joins only while every key already in the column is still down. |
 | `SPAN_MAX_MS` | 250 | Longest a gesture may run from its first onset. |
-| `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. |
+| `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. A re-strike of a pitch already in the column also opens a new one. |
 | `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, and that key stays down longer, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
 | `LIFT_TOGETHER_MS` | 10 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is settled on the first `pushReleases` after this window: the next key event or the 80ms tick, whichever comes first. Chosen by the replay sweep (5/10/15/25 at GAP 150 / release 160) with the same rule as the others, since the key-up gaps show only a 0-5ms peak and no valley. The rule picked 5, but its lifted-together whole (90.6%) cleared the gate by only 0.6 points, so 10 was taken instead (92.0%, for +0.2 points of legato merged). |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
@@ -150,6 +150,38 @@ Mechanics worth knowing:
   notes milliseconds apart into one identical `Date.now()` through React batching.
   `GAP_MS` and the legato thresholds are therefore tuned against transport-inclusive
   jitter, which is a reason to re-check them on the real instrument.
+- **Hands are inferred from register first** (`model/handSplit.js`, `splitByHand`). A
+  column that fits under one hand (span <= `HAND_SPAN`, 14 semitones) is ONE hand: whole
+  to treble when its mean is at/above middle C (`HAND_PIVOT`, 60), else whole to bass.
+  A wider column that straddles middle C is two hands, divided at the best split point
+  over every possible one (both hands within reach, then fewest notes on the wrong side
+  of C4, then least overflow, then widest gap). A wider column wholly on one side of C4
+  stays whole in that clef (the **one-side rule**): splitting it to satisfy reach drew
+  right-hand notes on the bass staff, the original complaint (the replay gate counts
+  that as a fault and requires zero). Known limit: a left-hand Alberti figure in the
+  C4 octave reads as treble — telling it apart needs voice tracking across columns.
+- **A roll is per staff.** The column carries its arrivals (`{ midi, at }`); each staff
+  draws its own stroke from `staffRoll`: needs >= 2 heads on that staff, its own
+  arrivals spanning `ROLL_MARK_MS`, direction from its first arrival against its last.
+  One-note staves get no stroke. The renderer, the live log and the replay harness all
+  go through `columnRolls`, so the strokes counted are the strokes drawn.
+- **Duration is a column property, and the staff snaps to the slot grid.** The VexFlow
+  formatter spaces by ticks, so each slot's tick context is placed at its grid position
+  (and the grid starts late enough to clear the key signature): an eighth, a quarter
+  and a half sit on the same slot centres, and strokes land beside their own chord.
+- **The tick is part of the model.** The staff re-reads the clock every 80ms:
+  `clearIfIdle` (fresh line after `IDLE_CLEAR_MS`, emptied after `STALE_CLEAR_MS`) and
+  `pushReleases` (so a pending legato split settles on the tick, not only on the next
+  key event). A hold-aware half is frozen at its release.
+- **Every column is spelled in the CURRENT key** (`buildRenderColumns`), so letters
+  always agree with the key signature beside them. An earlier design froze each closed
+  column's spelling; after a key change that drew a double flat under six sharps, which
+  is worse than a respell, so the cache was dropped. A key change respells history —
+  made rare by hysteresis.
+- **The key holds still** (`detectKey`): a rival must beat the current key's own
+  Krumhansl–Kessler score by 10% and the buffer must hold 8 notes before a known key
+  yields (an unknown one adopts at 5). One chromatic improvisation re-detected its key
+  90 times in 4.5 minutes at 5% / 5 notes.
 - **The formatter always lays out every slot**, padding with invisible `GhostNote`s.
   That is what makes it typewriter-like rather than rubber-band: slot 1 sits at the same
   x whether it's alone or the first of eight. Ghosts also fill the staff a column doesn't
@@ -171,6 +203,30 @@ Mechanics worth knowing:
   itself a `'b'` (`spelling.includes('b')` marked every B natural as B flat).
 - **Ottava is decided per column**, so one low bass note gets its own 8vb without
   dragging the rest of the phrase down an octave.
+
+## Harnesses (run these after touching the flow, split or renderer)
+
+Both are committed under `tests/_infrastructure/harnesses/` and need the real corpora
+(`DAYLIGHT_DATA_PATH`, optionally `DAYLIGHT_MEDIA_PATH`; read-only).
+
+- **Ink sweep** — `node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`.
+  Renders ~38k cases and exits non-zero if any ink leaves the fixed frame.
+- **Replay** — `node tests/_infrastructure/harnesses/chord-staff-replay.mjs`. Replays the
+  Studio takes and the always-on MIDI capture history through the exact
+  `CurrentChordStaff` pipeline, one event per render (strictest case — the kiosk may
+  batch), and prints chords kept whole, eighths, fragments, RH-on-bass, legato merged,
+  rolled columns and why each split cluster split. **Two gates** (exit 1 on failure):
+  chord whole % >= 90 and lifted-together whole % >= 90, plus RH-on-bass == 0. Exit 2
+  means a crash, bad arguments or an empty corpus.
+  - `--render <outDir>` screenshots chosen moments (VexFlow in Playwright at the Studio
+    pane's size) with an index page and `moments.json`; `--moments <moments.json>`
+    (needs `--render`) re-renders the SAME moments through the current code for
+    before/after comparison.
+  - `--sweep-gap` replays the corpus under each `GAP_MS` x `LEGATO_RELEASE_MS` pair and
+    each `LIFT_TOGETHER_MS` / `LEGATO_MIN_STEP_MS` value, printing whole-chord % against
+    legato merged % — how the constants were picked.
+  - Also `--users a,b`, `--limit N` (captures per user), `--since YYYY-MM-DD`,
+    `--media`, `--data`.
 
 ## Guardrail
 
