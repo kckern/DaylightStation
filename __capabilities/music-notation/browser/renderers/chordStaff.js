@@ -19,7 +19,7 @@
 // signature doesn't already imply (in-key notes are clean; out-of-key get a
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
-import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam } from 'vexflow';
+import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke } from 'vexflow';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
 import { COLUMN_CAPACITY } from "../model/noteFlow.js";
@@ -208,7 +208,7 @@ function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION) {
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
-function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION) {
+function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, roll = null) {
   const { bassNotes, trebleNotes } = splitByHand(midis);
   const trebleOtt = getOttavaInfo(trebleNotes, true);
   const bassOtt = getOttavaInfo(bassNotes, false);
@@ -223,6 +223,18 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION) {
     if (trebleOtt.marker && tNote) tNote.addModifier(new Annotation(trebleOtt.marker).setVerticalJustification(Annotation.VerticalJustify.TOP));
     if (bassOtt.marker && bNote) bNote.addModifier(new Annotation(bassOtt.marker).setVerticalJustification(Annotation.VerticalJustify.BOTTOM));
   } catch { /* marker is decorative */ }
+
+  // A rolled chord arrives as ONE column (model/noteFlow.js), so the roll is drawn as
+  // the arpeggio stroke engraving uses for it. 'up' is the plain wavy line (piano
+  // notation: bottom → top); 'down' is VexFlow's ROLL_UP, which — guitar naming —
+  // draws the arrowhead pointing DOWN. One stroke per staff note, each spanning only
+  // its own staff.
+  if (roll) {
+    try {
+      const type = roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS;
+      for (const n of [tNote, bNote]) if (n) n.addStroke(0, new Stroke(type));
+    } catch { /* stroke is decorative */ }
+  }
 
   return { tNote, bNote };
 }
@@ -257,6 +269,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
       spelling: col.spelling ?? null,
       // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
       duration: col.duration ?? NOTE_DURATION,
+      roll: col.roll === 'up' || col.roll === 'down' ? col.roll : null,
     }));
 
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
@@ -330,7 +343,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
 
   const slotNotes = Array.from({ length: slots }, (_, i) =>
     i < flow.length
-      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i])
+      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i], flow[i].roll)
       : { tNote: null, bNote: null }
   );
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));

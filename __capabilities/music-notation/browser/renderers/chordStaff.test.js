@@ -422,3 +422,20 @@ describe('renderChordStaff — beams stay inside the fixed frame', () => {
     expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], 'h', 3.5))).toEqual([]);
   });
 });
+
+describe('renderChordStaff — roll stroke', () => {
+  const draw = (roll) => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns: [{ midis: [60, 64, 67, 72], roll }], keySignature: 'C', aspect: 2.8 });
+    return host.querySelector('svg').querySelectorAll('path').length;
+  };
+
+  it('draws a stroke for a rolled column', () => {
+    expect(draw('up')).toBeGreaterThan(draw(null));
+    expect(draw('down')).toBeGreaterThan(draw(null));
+  });
+
+  it('draws no stroke without a roll', () => {
+    expect(draw(null)).toBe(draw(undefined));
+  });
+});

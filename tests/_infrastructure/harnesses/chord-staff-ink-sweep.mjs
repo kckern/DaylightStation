@@ -96,6 +96,9 @@ async function main() {
         (midis) => [midis],
         (midis) => [midis, midis.map((m) => m + 1), midis],
         (midis) => Array.from({ length: 8 }, (_, i) => midis.map((m) => m + i)),
+        // All rolled, alternating direction: the stroke sits left of every chord, so
+        // the first slot is the one that can overrun FRAME_LEFT.
+        (midis) => Array.from({ length: 8 }, (_, i) => ({ midis: midis.map((m) => m + i), roll: i % 2 ? 'down' : 'up' })),
       ];
 
       // The three RELATIVE durations a column can take (model/noteFlow.js), swept
@@ -115,9 +118,10 @@ async function main() {
           for (const midis of cases) {
           for (const durationAt of DURATION_PATTERNS) {
             const columns = FLOWS[renders % FLOWS.length](midis)
-              .map((c) => c.filter((m) => m >= 21 && m <= 108))
-              .filter((c) => c.length)
-              .map((c, i) => ({ midis: c, duration: durationAt(i) }));
+              .map((c) => (Array.isArray(c) ? { midis: c, roll: null } : c))
+              .map((c) => ({ ...c, midis: c.midis.filter((m) => m >= 21 && m <= 108) }))
+              .filter((c) => c.midis.length)
+              .map((c, i) => ({ midis: c.midis, roll: c.roll, duration: durationAt(i) }));
             const dur = columns.map((c) => c.duration).join('');
             window.renderChordStaff(host, {
               columns, keySignature: ks, aspect,
