@@ -6,6 +6,7 @@
 import { entryActionIsReachable } from "../domain/reachability.mjs";
 import { weekWindowFor } from "../domain/measures/weeklyWindow.mjs";
 import { addDays } from "../domain/termVerdict.mjs";
+import { isoWeekday } from "../domain/schoolCalendar.mjs";
 
 /**
  * A weekly program's status for the day being judged, with the rest of its
@@ -33,6 +34,33 @@ async function withWeeklyFold({ launcher, learnerId, programInstance, studyDay, 
     }
   }
   return { ...status, weekly: { weekFrom: from, servedOn, satisfiedBefore: servedOn != null && servedOn < studyDay } };
+}
+
+/**
+ * SATURDAY CATCH-UP (2026-11-14). On a live Saturday build, each daily
+ * program's Monday–Friday is replayed so the agenda can offer a missed weekday
+ * again (`missedWeekdays`, domain/saturdayCatchUp.mjs). A day the launcher
+ * reports done, or a grown-up's bypass on file for it, counts as done. Any
+ * replay failure drops the fold: with the week unknown nothing is offered,
+ * and today's own status is kept.
+ */
+async function withWeekdayFold({ launcher, learnerId, programId, programInstance, studyDay, status, dayBypasses, logger }) {
+  if (launcher.replayable !== true || !studyDay || isoWeekday(studyDay) !== 6) return status;
+  const { from } = weekWindowFor(studyDay);
+  const days = [0, 1, 2, 3, 4].map((offset) => addDays(from, offset));
+  try {
+    const answers = await Promise.all(days.map(async (day) => {
+      const replayed = await launcher.status({ userId: learnerId, programInstance, day });
+      return withDayBypass({ dayBypasses, learnerId, programId, studyDay: day, status: replayed, logger });
+    }));
+    const doneOn = days.filter((_, i) => answers[i]?.doneToday === true);
+    return { ...status, weekdays: { weekFrom: from, doneOn } };
+  } catch (err) {
+    logger.warn?.('school.program-status.weekday-fold-failed', {
+      learnerId, program: programId, programInstance, error: err?.message ?? String(err),
+    });
+    return status;
+  }
 }
 
 /** A live status re-read for a day that has not happened: nothing done in it. */
@@ -106,9 +134,11 @@ export async function collectProgramStatuses({
   // NOT CALLED (their live answer would be a lie about that day) and read
   // `UNKNOWABLE_STATUS`.
   day = null,
-  // The study day being judged — `day` when replaying, today otherwise. Only
-  // a WEEKLY entry needs it (to know which Monday its week began); a caller
-  // with no weekly entries may omit it and nothing changes.
+  // The study day being judged — `day` when replaying, today otherwise. A
+  // WEEKLY entry needs it (to know which Monday its week began), and on a live
+  // build that falls on a Saturday every other replayable program has its
+  // Monday–Friday replayed into `status.weekdays` (see `withWeekdayFold`). A
+  // caller that omits it gets neither fold and nothing else changes.
   studyDay = day,
   // Every `learner_action` the household's trigger sources declare.
   //
@@ -226,6 +256,11 @@ export async function collectProgramStatuses({
         });
         if (weekly && status?.error !== true) {
           status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
+        }
+        if (!weekly && day == null && status?.error !== true) {
+          status = await withWeekdayFold({
+            launcher, learnerId, programId, programInstance, studyDay, status, dayBypasses, logger,
+          });
         }
       }
       status = await withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger });
