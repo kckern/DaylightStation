@@ -194,6 +194,8 @@ export class StoryTimeProgramLauncher {
 
   /** The reading log is sharded by day; any day can be re-read. */
   get replayable() { return true; }
+  /** Saturday catch-up: a Saturday read is in the log and counts toward `story-read`. */
+  get saturdayCatchUp() { return true; }
 
   async status({ userId, day: replayDay = null }) {
     const day = replayDay ?? this.studyDay();

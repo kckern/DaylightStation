@@ -124,6 +124,13 @@ export class SurfaceProgramLauncher {
    */
   /** Dispatches are a dated ledger; any day's shards can be re-read. */
   get replayable() { return true; }
+  /**
+   * No Saturday catch-up. This launcher's evidence is the dispatch itself
+   * (honour system), so a Saturday "catch-up" would credit the act of sending
+   * a child somewhere, and nothing school-side counts a Saturday dispatch.
+   * Whatever a garage workout earns, fitness credits on its own, any day.
+   */
+  get saturdayCatchUp() { return false; }
 
   async status({ userId, day = null }) {
     const nowMs = this.#nowMs(day);

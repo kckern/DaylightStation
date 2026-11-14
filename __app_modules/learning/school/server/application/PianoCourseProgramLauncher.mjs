@@ -203,6 +203,14 @@ export class PianoCourseProgramLauncher {
    */
   /** Lesson completions carry `userCompletedAt`, so any past day can be read. */
   get replayable() { return true; }
+  /**
+   * No Saturday catch-up. A lesson finished on Saturday advances the course,
+   * but nothing credits it: the economy's `piano-practice` days count passed
+   * challenge attempts (PianoAchievementProvider), not course lessons, and a
+   * Saturday is no school day for the term grid. It also cannot undo the
+   * missed weekday, so the offer would be work labelled catch-up for no credit.
+   */
+  get saturdayCatchUp() { return false; }
 
   /**
    * `followSequence: false` judges `programInstance` alone, ignoring any

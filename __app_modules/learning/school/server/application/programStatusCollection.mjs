@@ -6,6 +6,7 @@
 import { entryActionIsReachable } from "../domain/reachability.mjs";
 import { weekWindowFor } from "../domain/measures/weeklyWindow.mjs";
 import { addDays } from "../domain/termVerdict.mjs";
+import { isoWeekday } from "../domain/schoolCalendar.mjs";
 
 /**
  * A weekly program's status for the day being judged, with the rest of its
@@ -33,6 +34,54 @@ async function withWeeklyFold({ launcher, learnerId, programInstance, studyDay, 
     }
   }
   return { ...status, weekly: { weekFrom: from, servedOn, satisfiedBefore: servedOn != null && servedOn < studyDay } };
+}
+
+/**
+ * SATURDAY CATCH-UP (2026-11-14). On a live Saturday build, each daily
+ * program that opts in (`saturdayCatchUp`, IProgramLauncher) has its
+ * Monday–Friday replayed so the agenda can offer a missed weekday
+ * again (`missedWeekdays`, domain/saturdayCatchUp.mjs). A day the launcher
+ * reports done, or a grown-up's bypass on file for it, counts as done.
+ * FAILS CLOSED: a replay that throws, errors, is unknowable, or answers a
+ * `doneToday` that is not a boolean drops the fold for the whole week (warned
+ * as `weekday-fold-failed` with a reason). With the week unknown nothing is
+ * offered, and today's own status is kept. Skipped when today is already done.
+ */
+async function withWeekdayFold({ launcher, learnerId, programId, programInstance, studyDay, status, dayBypasses, logger }) {
+  if (launcher.replayable !== true || launcher.saturdayCatchUp !== true) return status;
+  if (!studyDay || isoWeekday(studyDay) !== 6) return status;
+  // Done today: nothing would be offered, so the week is not worth reading.
+  if (status?.doneToday === true) return status;
+  const { from } = weekWindowFor(studyDay);
+  const days = [0, 1, 2, 3, 4].map((offset) => addDays(from, offset));
+  const failed = (reason, extra = {}) => {
+    logger.warn?.('school.program-status.weekday-fold-failed', {
+      learnerId, program: programId, programInstance, reason, ...extra,
+    });
+    return status;
+  };
+  let answers;
+  try {
+    answers = await Promise.all(days.map(async (day) => {
+      const replayed = await launcher.status({ userId: learnerId, programInstance, day });
+      return withDayBypass({ dayBypasses, learnerId, programId, studyDay: day, status: replayed, logger });
+    }));
+  } catch (err) {
+    return failed('replay_threw', { error: err?.message ?? String(err) });
+  }
+  // A day the program cannot answer for is not a day it missed. An error, an
+  // unknowable day (an FSRS deck keeps no history) or a doneToday that is not
+  // a boolean makes the whole week unknown: no fold, no offer.
+  const bad = answers.findIndex((answer) => !answer || answer.error === true
+    || answer.unknowable === true || typeof answer.doneToday !== 'boolean');
+  if (bad !== -1) {
+    const answer = answers[bad];
+    const reason = !answer ? 'no_answer' : answer.error === true ? 'replay_error'
+      : answer.unknowable === true ? 'replay_unknowable' : 'replay_not_boolean';
+    return failed(reason, { day: days[bad] });
+  }
+  const doneOn = days.filter((_, i) => answers[i].doneToday === true);
+  return { ...status, weekdays: { weekFrom: from, doneOn } };
 }
 
 /** A live status re-read for a day that has not happened: nothing done in it. */
@@ -106,9 +155,12 @@ export async function collectProgramStatuses({
   // NOT CALLED (their live answer would be a lie about that day) and read
   // `UNKNOWABLE_STATUS`.
   day = null,
-  // The study day being judged — `day` when replaying, today otherwise. Only
-  // a WEEKLY entry needs it (to know which Monday its week began); a caller
-  // with no weekly entries may omit it and nothing changes.
+  // The study day being judged — `day` when replaying, today otherwise. A
+  // WEEKLY entry needs it (to know which Monday its week began), and on a live
+  // build that falls on a Saturday each required daily program whose launcher
+  // opts into `saturdayCatchUp` has its Monday–Friday replayed into
+  // `status.weekdays` (see `withWeekdayFold`). A
+  // caller that omits it gets neither fold and nothing else changes.
   studyDay = day,
   // Every `learner_action` the household's trigger sources declare.
   //
@@ -141,13 +193,17 @@ export async function collectProgramStatuses({
   (plan?.entries ?? []).filter((entry) => entry?.program).forEach((entry) => {
     const key = JSON.stringify([entry.program, entry.programInstance ?? null]);
     if (!programs.has(key)) programs.set(key, {
-      key, programId: entry.program, programInstance: entry.programInstance ?? null, weekly: false,
+      key, programId: entry.program, programInstance: entry.programInstance ?? null, weekly: false, daily: false,
     });
     if (entry.cadence === 'weekly') programs.get(key).weekly = true;
+    // Only a required DAILY program can be backfilled on a Saturday: a weekly
+    // one has its own fold, a once-only one is not owed per day, and an
+    // elective is never owed at all.
+    if ((entry.cadence ?? 'daily') === 'daily' && entry.elective !== true) programs.get(key).daily = true;
   });
 
   const statuses = [];
-  await Promise.all([...programs.values()].map(async ({ programId, programInstance, weekly }) => {
+  await Promise.all([...programs.values()].map(async ({ programId, programInstance, weekly, daily }) => {
     let status;
     try {
       const launcher = launchers.get(programId);
@@ -226,6 +282,11 @@ export async function collectProgramStatuses({
         });
         if (weekly && status?.error !== true) {
           status = await withWeeklyFold({ launcher, learnerId, programInstance, studyDay, status });
+        }
+        if (!weekly && daily && day == null && status?.error !== true) {
+          status = await withWeekdayFold({
+            launcher, learnerId, programId, programInstance, studyDay, status, dayBypasses, logger,
+          });
         }
       }
       status = await withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger });

@@ -58,6 +58,9 @@ export function dayStatus({ total, done }) {
  *                 non-worksheet program obligation partly complete
  *   pending     — on the plan, not begun
  *
+ * A fifth, OUTSIDE the counts: `optional` — a Saturday catch-up offer
+ * (`section.backfill`, agenda.mjs). See `catchUpSegments`.
+ *
  * `restDay` is `null`, or `{optionalCount}` on a day off. See `restDayOf`.
  */
 
@@ -131,6 +134,44 @@ function restDayOf(planned) {
   // prints the backlog and elective lessons too, so a holiday whose only
   // offer is scripture still earns the hint.
   return { optionalCount: planned.filter((section) => section.next?.unitId).length };
+}
+
+/**
+ * SATURDAY CATCH-UP (2026-11-14). A section excused for the weekend can carry
+ * an optional offer that backfills a missed weekday (`catchUp` with a
+ * `backfill.missedDays`, agenda.mjs). The plan loop in `summarize` skips
+ * excused sections so an offer never becomes owed work, which also hid this
+ * one: with the weekend scripture served the board read done and showed no
+ * way to the catch-up. It is drawn here as an `optional` disc, pushed after
+ * the counts like reading and fitness, so it never moves the total, the done
+ * count or the check mark. `next` and every other missed program the section
+ * lists (`pendingPrograms`) each get one; a unit already drawn by evidence
+ * keeps that disc. An ordinary excused offer (backlog, not due yet) carries no
+ * `backfill` and still draws nothing.
+ */
+function catchUpSegments(planned, drawn) {
+  const out = [];
+  for (const section of planned) {
+    const missedDays = section.backfill?.missedDays;
+    if (section.obligation?.state !== 'excused' || !section.catchUp || !Array.isArray(missedDays) || !missedDays.length) continue;
+    for (const item of [section.next, ...(section.pendingPrograms ?? [])]) {
+      if (!item?.unitId || drawn.has(item.unitId)) continue;
+      drawn.add(item.unitId);
+      const subject = item.subject ?? section.subject ?? null;
+      const icon = iconName(item.icon);
+      out.push({
+        unitId: item.unitId,
+        subject,
+        label: item.program === 'story-time' ? 'Story time' : item.program === 'book-log' ? 'Reading' : nameFor(subject),
+        state: 'optional',
+        supplemental: true,
+        catchUp: { missedDays: [...missedDays] },
+        ...(item.program ? { programId: item.program } : {}),
+        ...(icon ? { icon } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 const DAY_OFF_SUFFIX = Object.freeze({
@@ -334,7 +375,13 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
       unitId: `fitness:activity:${fitnessActivity.studyDay}`,
     });
   }
-  return { total, done, segments, restDay: restDayOf(planned), dayOff: dayOff ?? null };
+  const catchUps = catchUpSegments(planned, new Set(segments.map((segment) => segment.unitId)));
+  segments.push(...catchUps);
+  return {
+    total, done, segments, restDay: restDayOf(planned), dayOff: dayOff ?? null,
+    // Present only when there is an optional catch-up disc to hint at.
+    ...(catchUps.length ? { catchUpCount: catchUps.length } : {}),
+  };
 }
 
 /**

@@ -3142,6 +3142,14 @@
       background: var(--school-board-retry, #e2a33c);
       color: var(--school-board-retry-ink, #2a1a05);
     }
+    // A Saturday catch-up offer: optional, outside the day's count. An
+    // outline rather than a fill, so it never reads as owed (grey) work.
+    &[data-state='optional'] {
+      background: transparent;
+      box-shadow: inset 0 0 0 0.18rem var(--school-board-pending);
+      border: 0.12rem dashed var(--school-board-ink);
+      opacity: 0.8;
+    }
 
     // In flight: a disc-shaped hole with a shimmer crossing it. The panel used
     // to render NOTHING until the slowest learner's plan returned — up to a

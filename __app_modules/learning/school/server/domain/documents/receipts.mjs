@@ -21,6 +21,26 @@
 
 import { SCHOOL_ACCESS_CODE_DIGITS } from "../sessions/accessCode.mjs";
 import { BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, bookLogContext } from "../bookLog.mjs";
+import { isoWeekday } from "../schoolCalendar.mjs";
+
+const SHORT_WEEKDAY = Object.freeze(['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The rail over a catch-up card. A Saturday catch-up (`section.backfill`,
+ * agenda.mjs) names the weekdays it backfills, `Catch-up · Mon, Wed`, so a
+ * child can tell which day the offer stands in for. Weekdays are read from
+ * the ISO date alone (`isoWeekday`, UTC), never the clock or a timezone. At
+ * most five short names, which fits the full-width rail.
+ */
+function catchUpRail(section) {
+  if (!section?.catchUp) return null;
+  const days = (section.backfill?.missedDays ?? [])
+    .filter((day) => typeof day === 'string' && ISO_DAY.test(day))
+    .map((day) => SHORT_WEEKDAY[isoWeekday(day)])
+    .filter(Boolean);
+  return days.length ? `Catch-up · ${days.join(', ')}` : 'Catch-up';
+}
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -810,7 +830,8 @@ export function agendaDocument({
         eyebrow: null,
         // Catch-up work is offered exactly like today's; only this says which
         // is which. See `agenda.mjs`'s `catchUp`.
-        rail: section.catchUp ? 'Catch-up' : null,
+        // A Saturday catch-up also names the weekdays it stands in for.
+        rail: catchUpRail(section),
         // The unit is pulled OUT of the breadcrumb and set directly above the
         // lesson title, where it reads as that lesson's parent rather than as
         // the tail of a course path. The breadcrumb keeps subject > course and
