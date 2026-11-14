@@ -467,6 +467,54 @@ describe('renderChordStaff — relative rhythm', () => {
     expect(Math.min(...beamYs(host))).toBeGreaterThanOrEqual(TREBLE_BOTTOM_LINE);
   });
 
+  // Stem side of one lone (unbeamed) note group: 'up' when its stem ends above its head.
+  const stemSide = (g) => {
+    const stem = pathPoints(g.querySelector('.vf-stem path'));
+    const head = pathPoints(g.querySelector('.vf-notehead > path')).map(([, y]) => y);
+    const headMid = (Math.min(...head) + Math.max(...head)) / 2;
+    const stemMid = stem.reduce((a, [, y]) => a + y, 0) / stem.length;
+    return stemMid < headMid ? 'up' : 'down';
+  };
+
+  it('a hold promotion shows its half but leaves its neighbours stems and beam as drawn', () => {
+    // Bass C3 D3 F3 (+ the newest) beam stems-up. C3 is held into a half: before, it left
+    // the run and D3–F3 re-voted their direction from their own first two — and flipped.
+    const tail = [{ midis: [50], duration: '8' }, { midis: [53], duration: '8' }, { midis: [52], duration: '8' }];
+    const plain = render([{ midis: [48], duration: '8' }, ...tail]);
+    const promoted = render([{ midis: [48], duration: 'h', widthDuration: '8' }, ...tail]);
+    expect(beamSide(plain)).toBe('above');
+    const heads = (host) => [...host.querySelectorAll('g.vf-notehead')].map((g) => pathPoints(g.querySelector(':scope > path'))[0]);
+    // In the promoted render, the beam must stay above D3, F3 and E3 (the last three heads).
+    const pts = [...promoted.querySelectorAll('.vf-beam path')].flatMap((p) => pathPoints(p));
+    expect(pts.length).toBeGreaterThan(0);
+    const beamTop = Math.max(...pts.map(([, y]) => y));
+    for (const [, y] of heads(promoted).slice(1)) expect(beamTop).toBeLessThan(y);
+  });
+
+  it('the newest growing out of a pair leaves the other eighth pointing as it was drawn', () => {
+    // C5 alone stems down. C5 + C4 beam as a pair with C5 stemmed UP (the pair's vote).
+    // When C4 grows to a quarter it leaves the beam; C5 used to snap back DOWN.
+    const c5 = { midis: [72], duration: '8' };
+    const lone = render([c5]);
+    expect(stemSide(lone.querySelector('g.vf-stavenote'))).toBe('down');
+    const pair = render([c5, { midis: [60], duration: '8' }]);
+    expect(beams(pair)).toBe(1);
+    expect(beamSide(pair)).toBe('above');
+    const grown = render([c5, { midis: [60], duration: 'q' }]);
+    expect(beams(grown)).toBe(0);
+    expect(stemSide(grown.querySelector('g.vf-stavenote'))).toBe('up');
+    // ...and still after C4 closes as a quarter and another note arrives.
+    const later = render([c5, { midis: [60], duration: 'q', widthDuration: 'q' }, { midis: [76], duration: '8' }]);
+    expect(stemSide(later.querySelector('g.vf-stavenote'))).toBe('up');
+  });
+
+  it('tags every drawn note and beam with its staff (the sweep reads these)', () => {
+    const host = render([{ midis: [48, 72], duration: '8' }, { midis: [50, 74], duration: '8' }]);
+    expect(host.querySelectorAll('g.vf-stavenote[data-staff=treble]').length).toBe(2);
+    expect(host.querySelectorAll('g.vf-stavenote[data-staff=bass]').length).toBe(2);
+    expect(host.querySelectorAll('g.vf-beam[data-staff]').length).toBe(2);
+  });
+
   it('lays accidentals out for the stem direction the beam gives the chord', () => {
     // G5 A5 decide DOWN; the G4-A♭4-C5 chord on its own stems up, with the A♭'s head
     // displaced to the right. Flipped after formatting, the A♭ moved to the LEFT of the

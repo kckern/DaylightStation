@@ -191,7 +191,10 @@ Mechanics worth knowing:
   columns to its left. A closed column's width comes from the duration it CLOSED with
   (`closeDuration` on the flow column, passed as `widthDuration`): a later hold
   promotion to a half changes the glyph, not the width. Only the newest column's width
-  tracks its provisional duration (8 → q → h), and nothing is to its right.
+  tracks its provisional duration (8 → q → h), and nothing is to its right. One thing
+  CAN move the line between strikes: a key change. A wider key signature takes room, so
+  the oldest column may drop off the left and the line shifts (the scroll); a key change
+  respells the columns anyway.
 - **The window is the newest columns that fit**, at least one. When the newest grows
   past the room, or a new column arrives, the oldest drops off the left and the line
   shifts — the scroll. `chordStaffWindow` exposes the same layout without drawing, and
@@ -201,10 +204,19 @@ Mechanics worth knowing:
 - **Consecutive eighths on a staff beam as one group with ONE stem direction** — down
   when the noteheads of the group's FIRST TWO columns sit on or above the middle line on
   average, up below — so a melody crossing the middle line reads as one line instead of
-  breaking at every stem flip, and appending notes (or the newest growing out of the
-  run) never flips stems already drawn. Groups and directions are planned BEFORE the
-  formatter runs, so accidentals and strokes are laid out around the displaced heads of
-  the final direction; the Beam objects are built after positioning.
+  breaking at every stem flip, and appending notes never flips stems already drawn.
+  Groups and directions are VOTED on the durations the columns closed with
+  (`widthDuration`, the newest counting as the eighth it starts as), while beams are
+  DRAWN only through columns still drawn as eighths. So a held column promoted to a
+  half shows its half without its neighbours re-voting their stems, and when the newest
+  grows to a quarter and leaves a pair, the other eighth keeps the direction it was
+  drawn with (with a flag). Groups and directions are planned BEFORE the formatter runs,
+  so accidentals and strokes are laid out around the displaced heads of the final
+  direction; the Beam objects are built after positioning.
+- **An off-staff note never drags a beam off the frame.** A note outside the staff whose
+  stem the group would turn away from the staff (a high ledger note stemmed up, a low one
+  stemmed down) keeps its own flag and splits the group, which keeps every beam inside
+  the fixed frame (ink sweep: 0 clipped).
 - **No beam crosses into the other staff.** A stem runs 3.5 spaces past its farthest
   head and the staves are 2.6 spaces apart, so a treble note stemmed down below G4
   (line 1.9) or a bass note stemmed up above F3 (line 4.1) would carry the beam into the
@@ -220,9 +232,9 @@ Mechanics worth knowing:
   neighbouring pitch classes with one letter (A and A♯ in F♯ major), which puts two
   heads on one line and an accidental through the other head. The staff alone rewrites
   the altered one to its other spelling (A♯ → B♭) when that letter is free in the column
-  (`separateLetters`); the chord-name plaque keeps the speller's names. A note outside the staff whose stem the group would turn away from the staff
-  (a high ledger note stemmed up, a low one stemmed down) keeps its own flag and splits
-  the group, which keeps every beam inside the fixed frame (ink sweep: 0 clipped).
+  (`separateLetters`); the chord-name plaque keeps the speller's names. When that free
+  letter is the only one, the respelling can put a ♯ in a flat key (or a ♭ in a sharp
+  key): one line per note wins over the key's accidental habit.
 - **The tick is part of the model.** The staff re-reads the clock every 80ms:
   `clearIfIdle` (fresh line after `IDLE_CLEAR_MS`, emptied after `STALE_CLEAR_MS`) and
   `pushReleases` (so a pending legato split settles on the tick, not only on the next

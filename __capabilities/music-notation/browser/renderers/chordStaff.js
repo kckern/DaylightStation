@@ -708,40 +708,81 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     if (bad < 0) return [{ run, dir }];
     return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
   };
+  // WHICH columns group, and which way their stems point, is voted on the durations the
+  // columns CLOSED with (widthDuration, the one the layout freezes) — not on what they
+  // draw now. Two things change a drawn duration after the vote has been seen:
+  //   - a held closed column promotes to a half (the hold-aware half is a feature),
+  //   - the newest column grows from its provisional eighth to a quarter or half.
+  // Voting on drawn durations, either one dropped a column out of the run and made the
+  // columns after it re-vote their direction from a different first two — C3 D3 F3 beamed
+  // stems-up, C3 held into a half, and D3–F3 re-beamed stems-down. So the GROUP and its
+  // DIRECTION come from the close durations, with the newest counted as the eighth every
+  // column starts as; the BEAMS are then drawn only through consecutive columns whose
+  // drawn duration is still an eighth. A promoted column shows its half; its neighbours
+  // keep the stems they were drawn with (a lone one keeps its flag, pointing that way).
+  const voteDurations = flow.map((c, i) => (isFlow && i === count - 1 ? '8' : c.widthDuration));
   const beamRuns = (staffNotes) => {
-    const runs = [];
-    let group = [];
-    const flush = () => { runs.push(...plan(group)); group = []; };
+    const index = new Map(staffNotes.map((n, i) => [n, i]));
+    const groups = [];
+    let run = [];
+    const flush = () => { groups.push(...plan(run)); run = []; };
     for (let i = 0; i <= count; i += 1) {
-      const note = i < count && durations[i] === '8' ? staffNotes[i] : null;
+      const note = i < count && voteDurations[i] === '8' ? staffNotes[i] : null;
       if (!note) { flush(); continue; }
-      group.push(note);
+      run.push(note);
     }
     flush();
-    return runs.map(({ run, dir }) => {
-      run.forEach((n) => { if (n.getStemDirection() !== dir) n.setStemDirection(dir); });
-      return run;
+    const directed = new Set();
+    const beamsOut = [];
+    for (const { run: grp, dir } of groups) {
+      grp.forEach((n) => { if (n.getStemDirection() !== dir) n.setStemDirection(dir); directed.add(n); });
+      let piece = [];
+      const cut = () => { if (piece.length >= 2) beamsOut.push(piece); piece = []; };
+      grp.forEach((n, k) => {
+        const i = index.get(n);
+        if (k > 0 && index.get(grp[k - 1]) !== i - 1) cut();
+        if (durations[i] === '8') piece.push(n); else cut();
+      });
+      cut();
+    }
+    // A lone voting eighth with a note right after it on this staff WAS a pair: while
+    // that next column was the newest it voted as an eighth, and the two were drawn as
+    // one group pointing groupDir([this, next]). When the newest then grows to a quarter
+    // and leaves, the leftover keeps that direction (with its flag) instead of snapping
+    // back to its own auto stem — C5 alone stems down, C5 + C4 beams with C5 up, C4
+    // grows to a quarter and C5 flipped back down. Unless the pair could never have
+    // grouped (one of them throws out, intrudes or carries an ottava label).
+    staffNotes.forEach((x, i) => {
+      const y = staffNotes[i + 1];
+      if (!x || !y || directed.has(x) || voteDurations[i] !== '8') return;
+      const dir = groupDir([x, y]);
+      const blocked = [x, y].some((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
+      if (blocked) return;
+      if (x.getStemDirection() !== dir) x.setStemDirection(dir);
+      directed.add(x);
     });
+    return { beams: beamsOut, directed };
   };
   let beamGroups = [];
+  const directedNotes = new Set();
   try {
-    beamGroups = [
-      ...beamRuns(slotNotes.map((s) => s.tNote)).map((group) => ({ group, staff: 'treble' })),
-      ...beamRuns(slotNotes.map((s) => s.bNote)).map((group) => ({ group, staff: 'bass' })),
-    ];
+    for (const [staff, notes] of [['treble', slotNotes.map((s) => s.tNote)], ['bass', slotNotes.map((s) => s.bNote)]]) {
+      const { beams: staffBeams, directed } = beamRuns(notes);
+      staffBeams.forEach((group) => beamGroups.push({ group, staff }));
+      directed.forEach((n) => directedNotes.add(n));
+    }
   } catch { beamGroups = []; }
 
-  // A note NOT in a beam group stems on its own, and auto_stem picks the side away
+  // A note no group gave a direction stems on its own, and auto_stem picks the side away
   // from its farthest head — for a wide treble chord (E♭4 under A5 B♭5) that is DOWN,
   // from the top head past the bottom one and on into the bass staff, where it crossed
   // the bass beam (replay 16-guest-rolled). Such a stem is turned toward its own
   // staff's outer side instead, when that side stays inside the frame (throwsOut's
   // test, mirrored); a bass note likewise stems down rather than up into the treble.
   try {
-    const beamed = new Set(beamGroups.flatMap(({ group }) => group));
     for (const { tNote, bNote } of slotNotes) {
       for (const note of [tNote, bNote]) {
-        if (!note || beamed.has(note)) continue;
+        if (!note || directedNotes.has(note)) continue;
         const dir = note.getStemDirection();
         const away = -dir;
         const lines = note.getKeyProps().map((k) => k.line);
@@ -800,15 +841,19 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // Say which staff and which column each drawn note belongs to, on its SVG group. The
   // geometry can't: a treble chord below middle C reaches into the bass staff's height.
   // The ink sweep reads these to check neighbouring columns on one staff for collisions.
+  // One pass over the drawn groups, indexed by id: an attribute-selector query per note
+  // re-scanned the whole SVG each time and cost ~80% of an engrave in jsdom.
+  const groupsById = new Map();
+  for (const g of host.querySelectorAll('g.vf-stavenote, g.vf-beam')) groupsById.set(g.id, g);
   slotNotes.forEach(({ tNote, bNote }, i) => {
     for (const [note, staff] of [[tNote, 'treble'], [bNote, 'bass']]) {
-      const el = note && host.querySelector(`[id="vf-${note.getAttribute('id')}"]`);
+      const el = note && groupsById.get(`vf-${note.getAttribute('id')}`);
       if (el) { el.setAttribute('data-staff', staff); el.setAttribute('data-column', String(i)); }
     }
   });
   // Beams too, so the sweep can check a beam never enters the other staff's lines.
   beams.forEach(({ beam, staff }) => {
-    host.querySelector(`[id="vf-${beam.getAttribute('id')}"]`)?.setAttribute('data-staff', staff);
+    groupsById.get(`vf-${beam.getAttribute('id')}`)?.setAttribute('data-staff', staff);
   });
 
   // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its
