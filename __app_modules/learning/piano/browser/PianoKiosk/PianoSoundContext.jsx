@@ -4,6 +4,7 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import { planEffectSysex } from './effectSysex.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { getDeviceProfile } from './devices/suzukiMdg400.js';
+import { addressFor, normalizePatches } from './devices/voicePatches.js';
 
 /**
  * PianoSound — the single owner of "what voice is the piano playing". The
@@ -22,6 +23,12 @@ export function PianoSoundProvider({ children }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sound' }), []);
 
   const device = useMemo(() => getDeviceProfile(config.device), [config.device]);
+  // Per-piano address corrections (Patch finder). A voice keeps its catalog
+  // identity everywhere (presets, chip, logs); only the address SENT changes.
+  const voicePatches = useMemo(() => normalizePatches(config.voicePatches), [config.voicePatches]);
+  const sendAddress = useCallback((address) => (
+    address ? sendVoice(address.pc, address.msb, 0, address.lsb) : false
+  ), [sendVoice]);
 
   // Effect transport policy, from piano config (`effects:` block). Defaults match
   // the documented rig: GM2 is preferred over GS because it needs 2 messages
@@ -45,10 +52,23 @@ export function PianoSoundProvider({ children }) {
   const selectVoice = useCallback((voice) => {
     if (!voice) return;
     sendLocalControl(true);     // make sure the onboard sound is audible
-    sendVoice(voice.pc, voice.bank || 0);
+    const address = addressFor(voice, voicePatches);
+    sendAddress(address);
     setDeviceVoice(voice);
-    logger.info('piano.device.voice', { pianoId, no: voice.no, name: voice.name, pc: voice.pc, bank: voice.bank || 0 });
-  }, [sendLocalControl, sendVoice, pianoId, logger]);
+    logger.info('piano.device.voice', {
+      pianoId, no: voice.no, name: voice.name, pc: voice.pc, bank: voice.bank || 0,
+      sent: { msb: address?.msb, lsb: address?.lsb, pc: address?.pc }, patched: !!address?.patched,
+    });
+  }, [sendLocalControl, sendAddress, voicePatches, pianoId, logger]);
+
+  // Patch finder audition: send a raw address WITHOUT changing the selected
+  // voice. Leaving the finder calls resync() to restore the real voice.
+  const auditionAddress = useCallback((address) => {
+    sendLocalControl(true);
+    const sent = sendAddress(address);
+    logger.info('piano.patch-finder.audition', { pianoId, msb: address?.msb, lsb: address?.lsb, pc: address?.pc, sent });
+    return sent;
+  }, [sendLocalControl, sendAddress, pianoId, logger]);
 
   /**
    * Push one effect to the hardware, preferring SysEx.
@@ -116,7 +136,7 @@ export function PianoSoundProvider({ children }) {
   const resync = useCallback(() => {
     if (device && deviceVoice) {
       sendLocalControl(true);
-      sendVoice(deviceVoice.pc, deviceVoice.bank || 0);
+      sendAddress(addressFor(deviceVoice, voicePatches));
     }
     if (device && effects) {
       ['reverb', 'chorus'].forEach((name) => {
@@ -128,7 +148,7 @@ export function PianoSoundProvider({ children }) {
       });
     }
     logger.info('piano.sound.resync', { pianoId, deviceVoice: deviceVoice?.no ?? null });
-  }, [device, deviceVoice, effects, sendLocalControl, sendVoice, applyEffectToHardware, pianoId, logger]);
+  }, [device, deviceVoice, effects, sendLocalControl, sendAddress, voicePatches, applyEffectToHardware, pianoId, logger]);
 
   // Auto-recover on a MIDI OUT link rising edge (false→true): a BLE flap makes
   // the hardware forget our voice/effects, and any instrument/tone change made
@@ -146,8 +166,8 @@ export function PianoSoundProvider({ children }) {
   const activeName = device ? (deviceVoice?.name || 'Keyboard') : 'Onboard';
 
   const value = useMemo(() => ({
-    activeName, resync, device, deviceVoice, selectVoice, effects, setEffect,
-  }), [activeName, resync, device, deviceVoice, selectVoice, effects, setEffect]);
+    activeName, resync, device, deviceVoice, selectVoice, effects, setEffect, voicePatches, auditionAddress,
+  }), [activeName, resync, device, deviceVoice, selectVoice, effects, setEffect, voicePatches, auditionAddress]);
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;
 }

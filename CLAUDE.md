@@ -229,6 +229,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Real-time game kit (step runner, frame driver, effect dispatcher, tick lerp, run roles, simulated piano clock, gem-ceremony ordering) | `__docs/reference/gaming/realtime-kit.md` |
 | Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
+| Piano voice patches + Patch finder (catalog address vs what the keyboard plays, `voicePatches` config, audition by ear, bridge `/midi/tap` listen) | `__docs/reference/piano/voice-patches.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
 | Piano lesson credit (session good-faith judgement via the decision gateway, calibration, lenient fallback, presence ladder, drill before credit, preschool mode) | `__docs/reference/piano/lesson-engagement.md` |

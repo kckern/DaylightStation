@@ -10,10 +10,11 @@ const midi = vi.hoisted(() => ({
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 
 const DEVICE_ID = 'suzuki-mdg-400';
+const cfg = vi.hoisted(() => ({ voicePatches: undefined }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'default',
-    config: { device: DEVICE_ID },
+    config: { device: 'suzuki-mdg-400', voicePatches: cfg.voicePatches },
   }),
 }));
 
@@ -25,7 +26,7 @@ const device = getDeviceProfile(DEVICE_ID);
 const secondVoice = device.voiceGroups[0].voices[1];
 
 function Harness() {
-  const { device: dev, deviceVoice, selectVoice, effects, setEffect, resync, activeName } = usePianoSound();
+  const { device: dev, deviceVoice, selectVoice, effects, setEffect, resync, activeName, auditionAddress } = usePianoSound();
   return (
     <div>
       <span data-testid="active">{activeName}</span>
@@ -33,6 +34,7 @@ function Harness() {
       <button onClick={() => selectVoice(secondVoice)}>select-second</button>
       <button onClick={() => setEffect('reverb', { level: 100 })}>bump-reverb</button>
       <button onClick={resync}>resync</button>
+      <button onClick={() => auditionAddress({ msb: 0, lsb: 7, pc: 2 })}>audition</button>
       {dev && <span data-testid="has-device">yes</span>}
       {effects && <span data-testid="reverb-level">{effects.reverb.level}</span>}
     </div>
@@ -42,7 +44,7 @@ function Harness() {
 const renderSound = () => render(<PianoSoundProvider><Harness /></PianoSoundProvider>);
 
 describe('PianoSoundContext', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); cfg.voicePatches = undefined; });
 
   it('defaults to the device profile and its first voice', () => {
     renderSound();
@@ -55,9 +57,27 @@ describe('PianoSoundContext', () => {
     renderSound();
     fireEvent.click(screen.getByText('select-second'));
     expect(midi.sendLocalControl).toHaveBeenCalledWith(true);
-    expect(midi.sendVoice).toHaveBeenCalledWith(secondVoice.pc, secondVoice.bank || 0);
+    expect(midi.sendVoice).toHaveBeenCalledWith(secondVoice.pc, secondVoice.bank || 0, 0, 0);
     expect(screen.getByTestId('voice').textContent).toBe(secondVoice.name);
     expect(screen.getByTestId('active').textContent).toBe(secondVoice.name);
+  });
+
+  it('a saved voice patch changes the address sent, not the voice identity', () => {
+    cfg.voicePatches = { [`${secondVoice.pc}:0`]: { msb: 0, lsb: 3, pc: 9 } };
+    renderSound();
+    fireEvent.click(screen.getByText('select-second'));
+    expect(midi.sendVoice).toHaveBeenCalledWith(9, 0, 0, 3);
+    expect(screen.getByTestId('voice').textContent).toBe(secondVoice.name);
+    vi.clearAllMocks();
+    fireEvent.click(screen.getByText('resync'));
+    expect(midi.sendVoice).toHaveBeenCalledWith(9, 0, 0, 3);
+  });
+
+  it('auditionAddress sends a raw address without changing the selected voice', () => {
+    renderSound();
+    fireEvent.click(screen.getByText('audition'));
+    expect(midi.sendVoice).toHaveBeenCalledWith(2, 0, 0, 7);
+    expect(screen.getByTestId('voice').textContent).toBe(device.voiceGroups[0].voices[0].name);
   });
 
   it('setEffect patches state and sends the CC', () => {
@@ -73,7 +93,7 @@ describe('PianoSoundContext', () => {
     vi.clearAllMocks();
     fireEvent.click(screen.getByText('resync'));
     expect(midi.sendLocalControl).toHaveBeenCalledWith(true);
-    expect(midi.sendVoice).toHaveBeenCalledWith(secondVoice.pc, secondVoice.bank || 0);
+    expect(midi.sendVoice).toHaveBeenCalledWith(secondVoice.pc, secondVoice.bank || 0, 0, 0);
     expect(midi.sendControlChange).toHaveBeenCalledWith(device.effects.reverb.levelCC, 64);
     // The MDG-400's algorithm is fixed in hardware (typeAddressable: false), so a
     // resync asserts the send level and nothing else — a type write it discards

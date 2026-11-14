@@ -1,4 +1,10 @@
-// Suzuki MDG-400 Micro Grand — device profile (from the owner's manual).
+// Suzuki MDG-400 Micro Grand — device profile.
+//
+// SOURCE CAVEAT: transcribed from the older Suzuki Micro Grand owner's manual
+// (64-voice polyphony era), not an MDG-400 manual (none found online). Addresses
+// may not match what the MDG-400 plays; per-piano corrections live in config
+// `voicePatches` (devices/voicePatches.js, the Patch finder). Page refs below
+// are to that older manual.
 //
 // 128 GM voices (display No. = MIDI Program + 1) + 10 Asian-folk voices reached
 // via Bank Select + Program Change. Effects + the MIDI-IN map come straight from

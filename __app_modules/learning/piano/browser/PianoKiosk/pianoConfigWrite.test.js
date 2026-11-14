@@ -39,6 +39,15 @@ describe('setPianoConfigValue', () => {
     expect(r.parsed).toEqual({ label: 'Piano', timing: { clickLeadMs: 300 } });
   });
 
+  it('writes a voice patch under a quoted pc:bank key and removes it again', () => {
+    const set = setPianoConfigValue(MULTI, 'yellow-room', ['voicePatches', '0:0'], { msb: 0, lsb: 3, pc: 0, name: 'Acoustic Grand' });
+    expect(set.parsed.pianos['yellow-room'].voicePatches['0:0']).toEqual({ msb: 0, lsb: 3, pc: 0, name: 'Acoustic Grand' });
+    expect(set.raw).toContain('# the upright');
+    const cleared = setPianoConfigValue(set.raw, 'yellow-room', ['voicePatches', '0:0'], undefined);
+    expect(cleared.parsed.pianos['yellow-room'].voicePatches['0:0']).toBeUndefined();
+    expect(setPianoConfigValue(MULTI, 'garage', ['voicePatches', '9:9'], undefined).parsed.pianos.garage).toEqual({ label: 'Garage' });
+  });
+
   it('refuses invalid YAML', () => {
     expect(() => setPianoConfigValue('a: [1,', 'default', ['timing', 'clickLeadMs'], 1)).toThrow(/not valid YAML/);
   });

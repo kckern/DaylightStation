@@ -10,6 +10,7 @@ import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import BluetoothPanel from './BluetoothPanel.jsx';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import ClickCalibration from './ClickCalibration.jsx';
+import PatchFinder from './PatchFinder.jsx';
 import TransportSheet from './transport/TransportSheet.jsx';
 import SettingsTile from './SettingsTile.jsx';
 import FeedbackOverlay from '../../../../../frontend/src/modules/Feedback/FeedbackOverlay.jsx';
@@ -38,6 +39,7 @@ export default function OperatorDrawer({ open, onClose }) {
   const [bluetoothOpen, setBluetoothOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
+  const [patchFinderOpen, setPatchFinderOpen] = useState(false);
   const [action, setAction] = useState({ state: 'idle', message: null, name: null });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -94,6 +96,7 @@ export default function OperatorDrawer({ open, onClose }) {
     setBluetoothOpen(false);
     setDiagnostics(false);
     setCalibrating(false);
+    setPatchFinderOpen(false);
     setFeedbackOpen(false);
     setAction({ state: 'idle', message: null, name: null });
   }, [open, disarmScreen, disarmReload, disarmReboot]);
@@ -105,7 +108,7 @@ export default function OperatorDrawer({ open, onClose }) {
   const repairing = repair.state === 'working';
 
   return <TransportSheet open={open} title="Piano maintenance" onClose={onClose} size="canvas" className="piano-maintenance-sheet">
-    {open && bluetoothOpen ? <BluetoothPanel onBack={() => setBluetoothOpen(false)} /> : <div className="piano-settings__maint">
+    {open && patchFinderOpen ? <PatchFinder onBack={() => setPatchFinderOpen(false)} /> : open && bluetoothOpen ? <BluetoothPanel onBack={() => setBluetoothOpen(false)} /> : <div className="piano-settings__maint">
       <div className="piano-settings__status" role="group" aria-label="Connection">
         <strong>{health.copy ? `Piano ${health.copy}` : 'Piano'}</strong>
         <StatusRow label="Keys" tone={inputUp ? 'on' : 'off'} text={inputUp ? (health.input.name || 'connected') : 'not connected'} />
@@ -128,6 +131,7 @@ export default function OperatorDrawer({ open, onClose }) {
           <SettingsTile icon="system-shutdown" label={screenArmed ? 'Tap again to confirm' : 'Turn off display'} emphasis="danger" on={screenArmed} onPress={screenOff} message={messageFor('screen-off')} tone={toneFor('screen-off')} />
           <SettingsTile icon="settings" label="Diagnostics" onPress={() => setDiagnostics(true)} />
           <SettingsTile icon="metronome" label="Click timing" onPress={() => { logger.info('piano.maintenance.click-timing', {}); setCalibrating(true); }} />
+          <SettingsTile icon="piano" label="Patch finder" onPress={() => { logger.info('piano.maintenance.patch-finder', {}); setPatchFinderOpen(true); }} />
           <SettingsTile icon="record" label="Record feedback" onPress={() => setFeedbackOpen(true)} />
         </div>
         <div className="piano-settings__danger" role="group" aria-label="Recovery">
