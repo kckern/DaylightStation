@@ -471,20 +471,42 @@ describe('noteFlow — legato is not a roll (release-based split)', () => {
     expect(flowColumns(stream(events))).toEqual([[60], [62]]);               // 120 <= 160
     expect(flowColumns(stream(events, { legatoReleaseMs: 100 }))).toEqual([notes]);
     expect(flowColumns(stream(events, { legatoMinStepMs: 90 }))).toEqual([notes]);
+    expect(flowColumns(stream(events, { liftTogetherMs: 800 }))).toEqual([notes]);
   });
 
-  it('splits the second-newest column when the release is seen in the same render as the next onset', () => {
+  it('splits the second-newest column once the lift window has shown D still down', () => {
     // One React batch at 115: C lets go and E lands. E cannot join (C is up), so it
-    // closes [C D] first; only then does pushReleases see C's release, 35ms after D.
+    // closes [C D]. Whether C and D were lifted together is not known yet at 115; the
+    // next key event (D still down at 150) settles it, and [C D] is second-newest then.
     let flow = pushOnsets(emptyFlow(), [60], 0, { held: new Set([60]) });
     flow = pushOnsets(flow, [62], 80, { held: new Set([60, 62]) });
     flow = pushOnsets(flow, [64], 115, { held: new Set([62, 64]) });
-    expect(flowColumns(flow)).toEqual([[60, 62], [64]]);
     flow = pushReleases(flow, 115, new Set([62, 64]));
+    expect(flowColumns(flow)).toEqual([[60, 62], [64]]);
+    flow = pushReleases(flow, 150, new Set([62, 64]));
     expect(flowColumns(flow)).toEqual([[60], [62], [64]]);
     expect(flow.columns.map((c) => c.startedAt)).toEqual([0, 80, 115]);
     // The [C D] gap of 115 is replaced by the two gaps the split exposes.
     expect(flow.recentIois).toEqual([80, 35]);
+  });
+
+  it('a staccato roll lifted all at once stays one column', () => {
+    const events = [[60, 0], [64, 40], [67, 80]].flatMap(([m, at]) => [['on', m, at], ['off', m, 200]]);
+    expect(flowColumns(stream(events))).toEqual([[60, 64, 67]]);
+  });
+
+  it('a two-hand staccato chord, right hand 40ms late, all lifted at once, stays one column', () => {
+    const events = [
+      ['on', 48, 0], ['on', 52, 0], ['on', 72, 40], ['on', 76, 40],
+      ...[48, 52, 72, 76].map((m) => ['off', m, 150]),
+    ];
+    expect(flowColumns(stream(events))).toEqual([[48, 52, 72, 76]]);
+  });
+
+  it('a struck chord records no releases (no re-render on key-up)', () => {
+    let flow = pushOnsets(emptyFlow(), [60], 0, { held: new Set([60]) });
+    flow = pushOnsets(flow, [64], 10, { held: new Set([60, 64]) });
+    expect(pushReleases(flow, 300, new Set([64]))).toBe(flow);
   });
 
   it('a note released long after the next landed is a held chord, not legato', () => {
@@ -498,6 +520,7 @@ describe('noteFlow — legato is not a roll (release-based split)', () => {
     flow = pushOnsets(flow, [60], 1200, { held: new Set([60]), capacity: 3 });
     flow = pushOnsets(flow, [62], 1280, { held: new Set([60, 62]), capacity: 3 });
     flow = pushReleases(flow, 1300, new Set([62]), { capacity: 3 });
+    flow = pushReleases(flow, 1340, new Set([62]), { capacity: 3 }); // 62 outlasts the lift window
     expect(flowColumns(flow)).toEqual([[41], [42], [60], [62]].slice(-3));
   });
 

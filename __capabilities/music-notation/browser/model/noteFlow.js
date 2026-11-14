@@ -36,13 +36,15 @@ import { splitByHand } from "./handSplit.js";
  * caused 989 wrong splits of rolled chords; the held-key rule was not the culprit.
  *
  * 150, measured with the replay harness (--sweep-gap, 340 real takes) together with
- * the legato split below. At 90, 84% of the chords still drawn in pieces were split
- * by this rule, at 91-150ms between notes; held chords stayed whole only 88.0% of the
- * time. Widening alone would have merged legato lines: 62.6% of legato steps landed in
- * one column at 90, 82.1% at 150. With the release split doing that job, 150 keeps
- * 95.5% of chords whole (95.2% of held chords) and merges 11.3% of legato steps. 110
- * merges slightly fewer (9.9%) but keeps only 91.8% / 90.9% whole, and splits a
- * two-hand chord whose right hand lands 140ms after the left.
+ * the legato split below. At 90 this rule split 4,261 of the 5,054 clusters drawn in
+ * pieces, all at 91-150ms between notes, and held chords stayed whole only 88.0% of
+ * the time. Widening alone would have merged legato: 52.1% of legato steps that lift
+ * in sequence landed in one column at 90, 77.4% at 150. With the release split doing
+ * that job, 150 keeps 96.2% of chords whole, 96.5% of chords lifted together and
+ * 95.2% of held chords, and merges 14.8% of in-sequence legato. The rule used: both
+ * gates (chords, lifted-together) >= 90, held chords >= 95% — the failure that
+ * started this — then the fewest legato steps merged. 110 merges about as few (13.3%)
+ * but keeps held chords only 90.9% whole.
  */
 export const GAP_MS = 150;
 
@@ -60,11 +62,13 @@ export const SPAN_MAX_MS = 250;
  * one swallows the other. Release can: a rolled chord stays down, a legato line lets
  * each key go just after the next lands. So when every key that landed before some
  * later note of the column has let go, the last within LEGATO_RELEASE_MS of that
- * note landing, the line moved on: pushReleases splits the column there.
+ * note landing, and that note stayed down past LIFT_TOGETHER_MS longer, the line
+ * moved on: pushReleases splits the column there.
  *
- * 160, the widest swept (80/120/160): legato steps merged fall 45.0% -> 24.4% -> 11.3%
- * at GAP_MS 150 while chords kept whole only move 96.6% -> 96.6% -> 95.5%, because a
- * chord whose keys are still down can never split.
+ * 160: at GAP_MS 150, in-sequence legato merged falls 40.7% -> 24.3% -> 14.8% over
+ * 80/120/160 while chords kept whole hold at 96.7% -> 96.7% -> 96.2%. Past 160 it buys
+ * little and starts to cut held chords: 200 merges 13.7% but held chords drop to
+ * 94.5%, 240 to 93.3%.
  */
 export const LEGATO_RELEASE_MS = 160;
 
@@ -77,6 +81,15 @@ export const LEGATO_RELEASE_MS = 160;
  * 58.0% of legato steps instead of 44.8% — a fast scale steps about 40ms.
  */
 export const LEGATO_MIN_STEP_MS = 30;
+
+/**
+ * Keys let go within this long of each other were lifted TOGETHER: a chord, not a line.
+ * Measured on the corpus over successive onsets 30-150ms apart whose first key let go
+ * shortly after the second landed: the gap between the two releases peaks at 0-5ms
+ * (808), falls to its floor at 20-25ms (319), and rises again from 30ms as legato
+ * (each key held about one step longer than the last).
+ */
+export const LIFT_TOGETHER_MS = 25;
 
 /**
  * A STAFF whose arrivals span at least this long is a ROLL and gets an arpeggio
@@ -321,15 +334,26 @@ export function clearIfIdle(flow, now, opts = {}) {
 const youngFrom = (flow) => Math.max(0, flow.columns.length - 2);
 
 /**
+ * Whether a column has anywhere a legato split could fall: some arrival at least
+ * `minStepMs` after the one before it. A struck chord (every key within the floor of
+ * the last) never splits, so its releases are not worth recording — recording them
+ * would hand React a new flow, and a re-render, on every key-up for nothing.
+ */
+const canSplit = (column, minStepMs) => (column.arrivals ?? []).some(
+  (a, k, arr) => k > 0 && a.at - arr[k - 1].at >= minStepMs,
+);
+
+/**
  * Note when each key of a young column lets go. The staff never sees note-offs, only
  * the key-down surface, so a key that is in a young column, no longer down, and not
  * yet recorded was released now. Older columns are left alone: their arrivals are all
  * more than one column back, so no release can split them any more.
  */
-function recordReleases(flow, now, held) {
+function recordReleases(flow, now, held, minStepMs) {
   let columns = null;
   for (let i = youngFrom(flow); i < flow.columns.length; i += 1) {
     const c = flow.columns[i];
+    if (!canSplit(c, minStepMs)) continue;
     const releases = c.releases ?? {};
     const gone = c.midis.filter((m) => !held.has(m) && releases[m] === undefined);
     if (!gone.length) continue;
@@ -341,12 +365,18 @@ function recordReleases(flow, now, held) {
 
 /**
  * Where a young column was really a legato line: the earliest arrival time T at which
- * the line MOVED ON — every key that landed before T has let go, the last of them
- * within `legatoMs` of T, and T landed at least `minStepMs` after the arrival before
- * it (closer is one strike, and a short struck chord lets go just as fast). Null when
- * the column is a chord.
+ * the line MOVED ON —
+ *   - T landed at least `minStepMs` after the arrival before it (closer is one strike);
+ *   - every key that landed before T has let go, the last within `legatoMs` of T;
+ *   - and the key that landed at T was still down more than `liftMs` after that last
+ *     release. Legato lifts in sequence; a chord, rolled or not, lifts together, and a
+ *     staccato roll lifted at once must stay one column.
+ * The last test cannot be passed at the instant the earlier key lets go, so a split
+ * is decided at the first pushReleases call after `liftMs` has passed — the next key
+ * event — while the column is still one of the two young ones. Null when the column
+ * is a chord (or not decided yet).
  */
-function legatoSplitAt(column, legatoMs, minStepMs) {
+function legatoSplitAt(column, now, legatoMs, minStepMs, liftMs) {
   const arrivals = column.arrivals ?? [];
   const releases = column.releases ?? {};
   for (let k = 1; k < arrivals.length; k += 1) {
@@ -354,7 +384,11 @@ function legatoSplitAt(column, legatoMs, minStepMs) {
     if (t - arrivals[k - 1].at < minStepMs) continue;
     const before = arrivals.slice(0, k);
     if (!before.every((a) => releases[a.midi] !== undefined)) continue;
-    if (Math.max(...before.map((a) => releases[a.midi])) - t <= legatoMs) return t;
+    const lastLift = Math.max(...before.map((a) => releases[a.midi]));
+    if (lastLift - t > legatoMs) continue;
+    const own = releases[arrivals[k].midi];
+    const stillDown = own === undefined ? now - lastLift > liftMs : own - lastLift > liftMs;
+    if (stillDown) return t;
   }
   return null;
 }
@@ -400,10 +434,10 @@ function splitColumn(flow, i, t, capacity) {
  * LEGATO SPLIT: a young column — the newest or second-newest — in which every key
  * that landed before some later key (>= LEGATO_MIN_STEP_MS after the one before it)
  * has let go, the last of them within LEGATO_RELEASE_MS of that later key landing,
- * was a legato line, not a chord: split at that later arrival. The second-newest
- * counts because one render can carry both the onset that closed a column and the
- * release that splits it. Since a column's arrivals span at most SPAN_MAX_MS, a split
- * can only come within SPAN_MAX_MS + LEGATO_RELEASE_MS of its start; columns further
+ * while that later key stayed down more than LIFT_TOGETHER_MS longer, was a legato
+ * line, not a chord: split at that later arrival. The second-newest counts because
+ * the split is only decided at the first call after the lift window — usually the
+ * next key event, which may be the onset that closed the column. Columns further
  * back never change shape, so what has been drawn stays drawn.
  *
  * HOLDS: a closed column that was fully held when it closed is released once none of
@@ -415,20 +449,24 @@ function splitColumn(flow, i, t, capacity) {
  * @param {{columns: FlowColumn[], recentIois: number[]}} flow
  * @param {number} now
  * @param {{has: (n: number) => boolean}} held
- * @param {{capacity?: number, legatoReleaseMs?: number, legatoMinStepMs?: number}} [opts]
+ * @param {{capacity?: number, legatoReleaseMs?: number, legatoMinStepMs?: number, liftTogetherMs?: number}} [opts]
  *   capacity must match the one given to pushOnsets; the others override
- *   LEGATO_RELEASE_MS and LEGATO_MIN_STEP_MS (the replay harness sweeps them).
+ *   LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS and LIFT_TOGETHER_MS (the replay harness
+ *   sweeps them).
  * @returns the SAME flow when nothing changed
  */
 export function pushReleases(flow, now, held, opts = {}) {
-  const { capacity = COLUMN_CAPACITY, legatoReleaseMs = LEGATO_RELEASE_MS, legatoMinStepMs = LEGATO_MIN_STEP_MS } = opts;
-  flow = recordReleases(flow, now, held);
+  const {
+    capacity = COLUMN_CAPACITY, legatoReleaseMs = LEGATO_RELEASE_MS,
+    legatoMinStepMs = LEGATO_MIN_STEP_MS, liftTogetherMs = LIFT_TOGETHER_MS,
+  } = opts;
+  flow = recordReleases(flow, now, held, legatoMinStepMs);
   // Each split moves at least one note into a new column, so this ends; the guard is
   // only a backstop.
   for (let guard = 0; guard < MAX_COLUMN_NOTES * 2; guard += 1) {
     let split = false;
     for (let i = youngFrom(flow); i < flow.columns.length; i += 1) {
-      const t = legatoSplitAt(flow.columns[i], legatoReleaseMs, legatoMinStepMs);
+      const t = legatoSplitAt(flow.columns[i], now, legatoReleaseMs, legatoMinStepMs, liftTogetherMs);
       if (t === null) continue;
       flow = splitColumn(flow, i, t, capacity);
       split = true;
@@ -444,10 +482,14 @@ export function pushReleases(flow, now, held, opts = {}) {
     const restruck = flow.columns.slice(i + 1).some((later) => later.midis.some((m) => c.midis.includes(m)));
     if (!restruck && c.midis.some((m) => held.has(m))) return c;
     changed = true;
+    // A young column's recorded key-ups are the real release time; `now` can be a
+    // later key event (a legato split is settled one event after the lift).
+    const recorded = c.midis.map((m) => c.releases?.[m]);
+    const releasedAt = !restruck && recorded.every((r) => r !== undefined) ? Math.max(...recorded) : now;
     return {
       ...c,
-      releasedAt: now,
-      duration: now - c.startedAt > SLOW_RATIO * baseline ? 'h' : c.duration,
+      releasedAt,
+      duration: releasedAt - c.startedAt > SLOW_RATIO * baseline ? 'h' : c.duration,
     };
   });
   return changed ? { ...flow, columns } : flow;

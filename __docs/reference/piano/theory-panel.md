@@ -120,7 +120,8 @@ half) are coarse ratios against a moving baseline, never a measured tempo.
 | `GAP_MS` | 150 | Longest silence between successive onsets of one gesture, measured from the column's **last** onset. An onset also joins only while every key already in the column is still down. |
 | `SPAN_MAX_MS` | 250 | Longest a gesture may run from its first onset. |
 | `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. |
-| `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
+| `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, and that key stays down longer, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
+| `LIFT_TOGETHER_MS` | 25 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is therefore settled at the first key event after this window. |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
 | `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
 | `COLUMN_CAPACITY` | 8 | Columns held before the oldest scrolls off the left. |
@@ -130,7 +131,9 @@ half) are coarse ratios against a moving baseline, never a measured tempo.
 `GAP_MS`, `LEGATO_RELEASE_MS` and `LEGATO_MIN_STEP_MS` were chosen by replaying real
 playing: `node tests/_infrastructure/harnesses/chord-staff-replay.mjs --sweep-gap`
 prints chords kept whole against legato steps merged for each pair; the plain run
-gates on chords kept whole >= 90% and no right-hand chord on the bass staff.
+gates on chords kept whole >= 90%, chords lifted together kept whole >= 90% (an
+independent population: every key let go within 30ms) and no right-hand chord on the
+bass staff.
 
 Mechanics worth knowing:
 

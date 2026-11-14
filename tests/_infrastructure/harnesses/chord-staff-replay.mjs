@@ -28,12 +28,18 @@
  *   - legato merged: of the LEGATO PAIRS in the raw stream (successive onsets >= 30ms
  *     apart, the first key let go within 150ms after the second lands), the share the
  *     staff drew in ONE column — a legato line drawn as a chord (lower is better).
+ *     "in-sequence merged" restricts it to pairs whose second key outlasted the first by
+ *     more than 30ms — legato that lifts in sequence, which the model is meant to split.
+ *   - lifted-together whole %: the whole test on clusters whose keys all let go within
+ *     30ms of each other — a chord by how it ENDS, independent of the legato-pair test.
+ *     Gated too, so a split that also drops clusters out of chord whole cannot pass.
  *   - chord whole %: the whole test on clusters with no legato pair in them — the
  *     chords the release split must leave whole. The gate reads this, not whole %: the
  *     loose cluster rule also collects every overlapping legato step, so whole % pays
  *     for each legato line the staff correctly draws as separate notes.
  *
- * Exit 1 when chord whole % < 90 or RH-on-bass > 0 (overall, both corpora).
+ * Exit 1 when chord whole % < 90, lifted-together whole % < 90, or RH-on-bass > 0
+ * (overall, both corpora).
  *
  * Corpora:
  *   studio  ${DAYLIGHT_DATA_PATH}/users/<user>/apps/piano/studio/*.yml
@@ -88,6 +94,7 @@ const TICK_MS = 80;            // CurrentChordStaff PROVISIONAL_TICK_MS
 const CLUSTER_GAP_MS = 150;    // ground truth: successive onsets of one held cluster
 const STRUCK_MS = 30;          // ground truth: onsets closer than this were struck together
 const LEGATO_OVERLAP_MS = 150; // ground truth: a key let go this soon after the next lands is legato
+const LIFTED_TOGETHER_MS = 30; // ground truth: a cluster whose keys all let go this close together is a chord
 const DUP_MS = 10;             // doubled-feed duplicates
 const MIN_ONSETS = 20;
 const KEY_BUFFER_MAX_AGE = 10_000; // useDetectedKey
@@ -238,7 +245,14 @@ function clustersOf(events) {
   const onIdx = events.map((e, i) => (e.type === 'on' ? i : -1)).filter((i) => i >= 0);
   const legatoPairs = [];
   for (let k = 1; k < onIdx.length; k += 1) {
-    if (isLegatoPair(events, onIdx[k - 1], onIdx[k], offsAfter)) legatoPairs.push([onIdx[k - 1], onIdx[k]]);
+    const [ia, ib] = [onIdx[k - 1], onIdx[k]];
+    if (!isLegatoPair(events, ia, ib, offsAfter)) continue;
+    // In SEQUENCE: the second key outlasted the first by more than LIFTED_TOGETHER_MS.
+    // The rest lifted together (or the second first) — what the model's lift guard
+    // deliberately leaves merged.
+    const bOff = offsAfter(events[ib].note, events[ib].t);
+    const sequential = !bOff || bOff.t - offsAfter(events[ia].note, events[ia].t).t > LIFTED_TOGETHER_MS;
+    legatoPairs.push([ia, ib, sequential]);
   }
   const clusters = out.filter((c) => c.notes.length >= 2).map((c) => ({
     ...c,
@@ -246,6 +260,15 @@ function clustersOf(events) {
     // next onset was not struck with it (>= STRUCK_MS later). Model-independent, so the
     // sweep can judge every LEGATO_RELEASE_MS against the same truth.
     legatoLine: c.notes.some((n, k) => k < c.notes.length - 1 && isLegatoPair(events, c.idx[k], c.idx[k + 1], offsAfter)),
+    // LIFTED TOGETHER: every key of the cluster let go within LIFTED_TOGETHER_MS of the
+    // others. Independent of the legato-pair test (and of the model's release rule): a
+    // chord, rolled or struck, held long or staccato, lifts as one; a line lifts in
+    // sequence. The second gate reads this population.
+    liftedTogether: (() => {
+      const offs = c.notes.map((n, k) => offsAfter(n, events[c.idx[k]].t)?.t);
+      if (offs.some((t) => t === undefined)) return false;
+      return Math.max(...offs) - Math.min(...offs) <= LIFTED_TOGETHER_MS;
+    })(),
     heldChord: c.notes.length >= 3 && c.notes.every((n, k) => {
       const off = offsAfter(n, events[c.idx[k]].t);
       return !off || off.t >= c.lastT + CLUSTER_GAP_MS;
@@ -257,10 +280,10 @@ function clustersOf(events) {
 // ─── replay ──────────────────────────────────────────────────────────────────
 
 /** Why a batch did NOT join the open column — the same tests pushOnsets makes, in order. */
-function splitCause(open, sorted, at, held, gapMs) {
+function splitCause(open, sorted, at, held, gapMs, spanMs) {
   if (!open) return 'no-open';
   if (at - open.lastOnsetAt > gapMs) return 'gap';
-  if (at - open.startedAt > SPAN_MAX_MS) return 'span';
+  if (at - open.startedAt > spanMs) return 'span';
   if (!open.midis.every((m) => held.has(m))) return 'released';
   if (sorted.some((m) => open.midis.includes(m))) return 'restrike';
   if (open.midis.length + sorted.length > MAX_COLUMN_NOTES) return 'cap';
@@ -274,7 +297,7 @@ function splitCause(open, sorted, at, held, gapMs) {
  * @returns {{ onsetColumn: Map<number, number>, onsetCause: Map<number, string>, columns: Map<number, object> }}
  */
 function replay(events, onFrame, rules = {}) {
-  const { gapMs = GAP_MS, legatoReleaseMs = LEGATO_RELEASE_MS, ...extra } = rules;
+  const { gapMs = GAP_MS, spanMs = SPAN_MAX_MS, legatoReleaseMs = LEGATO_RELEASE_MS, ...extra } = rules;
   let flow = emptyFlow();
   let active = new Map();
   let prev = new Map();
@@ -339,9 +362,9 @@ function replay(events, onFrame, rules = {}) {
     if (onsets.length) {
       const open = flow.columns[flow.columns.length - 1];
       const sorted = [...new Set(onsets)].sort((a, b) => a - b);
-      const cause = flow.columns.length && at - flow.lastOnsetAt > 3000 ? 'idle' : splitCause(open, sorted, at, active, gapMs);
+      const cause = flow.columns.length && at - flow.lastOnsetAt > 3000 ? 'idle' : splitCause(open, sorted, at, active, gapMs, spanMs);
       if (e.type === 'on') eventOf.set(`${e.note}@${at}`, i);
-      flow = pushOnsets(flow, onsets, at, { held: active, gapMs });
+      flow = pushOnsets(flow, onsets, at, { held: active, gapMs, spanMs });
       tag();
       if (e.type === 'on' && cause !== 'joined') onsetCause.set(i, cause);
     }
@@ -357,7 +380,7 @@ function replay(events, onFrame, rules = {}) {
 
 const blank = () => ({
   takes: 0, onsets: 0, clusters: 0, whole: 0, causes: {}, gaps: {}, heldCauses: {},
-  heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
+  heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, lifted: 0, liftedWhole: 0, legatoExcluded: 0, seqPairs: 0, seqMerged: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
   cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
 });
 
@@ -374,15 +397,20 @@ function measure(events, rules) {
   const { clusters, legatoPairs } = clustersOf(events);
   m.legatoPairs += legatoPairs.length;
   m.legatoMerged += legatoPairs.filter(([a, b]) => onsetColumn.get(a) === onsetColumn.get(b)).length;
+  const seq = legatoPairs.filter(([, , sequential]) => sequential);
+  m.seqPairs += seq.length;
+  m.seqMerged += seq.filter(([a, b]) => onsetColumn.get(a) === onsetColumn.get(b)).length;
   for (const c of clusters) {
     m.clusters += 1;
     if (c.heldChord) m.heldChords += 1;
-    if (!c.legatoLine) m.chords += 1;
+    if (!c.legatoLine) m.chords += 1; else m.legatoExcluded += 1;
+    if (c.liftedTogether) m.lifted += 1;
     const ids = new Set(c.idx.map((i) => onsetColumn.get(i)));
     if (ids.size === 1) {
       m.whole += 1;
       if (c.heldChord) m.heldWhole += 1;
       if (!c.legatoLine) m.chordWhole += 1;
+      if (c.liftedTogether) m.liftedWhole += 1;
       continue;
     }
     // First onset inside the cluster that opened a new column: that is the split.
@@ -434,7 +462,8 @@ function row(label, m) {
   return {
     '': label, takes: m.takes, onsets: m.onsets, clusters: m.clusters,
     'whole %': pct(m.whole, m.clusters), 'held-chord whole %': `${pct(m.heldWhole, m.heldChords)} of ${m.heldChords}`,
-    'chord whole %': pct(m.chordWhole, m.chords), 'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
+    'chord whole %': pct(m.chordWhole, m.chords), 'lifted-together whole %': `${pct(m.liftedWhole, m.lifted)} of ${m.lifted}`,
+    'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
     cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
     frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed, 'split causes': causes,
   };
@@ -688,7 +717,7 @@ ${cards.join('\n')}</body></html>`);
 // ─── sweep ───────────────────────────────────────────────────────────────────
 
 const SWEEP_GAPS = [90, 110, 130, 150];
-const SWEEP_LEGATO = [80, 120, 160];
+const SWEEP_LEGATO = [80, 120, 160, 200, 240];
 
 /**
  * --sweep-gap: the whole corpus under each (GAP_MS, LEGATO_RELEASE_MS) pair, plus each
@@ -705,9 +734,11 @@ function sweep(takes) {
       rows.push({
         GAP_MS: gapMs, LEGATO_RELEASE_MS: legatoReleaseMs < 0 ? 'off' : legatoReleaseMs,
         'whole %': pct(o.whole, o.clusters), 'held-chord whole %': pct(o.heldWhole, o.heldChords),
-        'chord whole %': pct(o.chordWhole, o.chords), 'legato merged %': pct(o.legatoMerged, o.legatoPairs),
+        'chord whole %': pct(o.chordWhole, o.chords), 'lifted whole %': pct(o.liftedWhole, o.lifted),
+        'legato merged %': pct(o.legatoMerged, o.legatoPairs), 'in-sequence merged %': pct(o.seqMerged, o.seqPairs),
         'eighth %': pct(o.eighths, o.cols), frags: o.frags, rolled: o.rolled, 'RH-on-bass': o.rhOnBass,
-        gate: o.chords && (100 * o.chordWhole) / o.chords >= 90 && o.rhOnBass === 0 ? 'PASS' : '',
+        gate: o.chords && (100 * o.chordWhole) / o.chords >= 90 && o.lifted && (100 * o.liftedWhole) / o.lifted >= 90
+          && o.rhOnBass === 0 ? 'PASS' : '',
       });
     }
   }
@@ -771,9 +802,15 @@ async function main() {
   // split exists to fix. Both are printed.
   const wholePct = overall.clusters ? (100 * overall.whole) / overall.clusters : 0;
   const chordPct = overall.chords ? (100 * overall.chordWhole) / overall.chords : 0;
-  const pass = chordPct >= 90 && overall.rhOnBass === 0;
+  // A second, independent population: clusters whose keys were all lifted together.
+  // It shares nothing with the legato-pair definition, so it cannot be gamed by a
+  // split that also removes its clusters from the chord-whole denominator.
+  const liftedPct = overall.lifted ? (100 * overall.liftedWhole) / overall.lifted : 0;
+  const pass = chordPct >= 90 && liftedPct >= 90 && overall.rhOnBass === 0;
   console.log(`\nwhole % over all clusters (legato steps included): ${wholePct.toFixed(1)}; legato merged ${pct(overall.legatoMerged, overall.legatoPairs)}% of ${overall.legatoPairs} legato pairs`);
-  console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
+  console.log(`legato pairs lifted in sequence (second key outlasts the first by > ${LIFTED_TOGETHER_MS}ms): merged ${pct(overall.seqMerged, overall.seqPairs)}% of ${overall.seqPairs}`);
+  console.log(`chord whole excludes ${overall.legatoExcluded} of ${overall.clusters} clusters as legato lines`);
+  console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), lifted-together whole ${liftedPct.toFixed(1)}% of ${overall.lifted} (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
 
   if (args.render) {
     const n = await renderMoments(args.render, takes, args.moments);
