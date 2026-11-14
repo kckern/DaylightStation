@@ -170,26 +170,47 @@ nothing owed, every optional lesson printed with its code. So does an `away`
 weekend, which asks for nothing.
 
 **Saturday catch-up** (2026-11-14). The one exception: on Saturday, once the
-weekend item is settled (served, or excused by a hold), a daily program the
-learner missed on a school weekday this week is offered again — optional,
-never owed, with the "Catch-up" rail on the printed card. A weekday is missed
-when the program's own schedule met it, the household calendar did not take it
-off (a keeping tier counts it only if its keep-list keeps the program), and the
+weekend item is settled (served, or excused by a hold; a faulted one is not
+settled), a required daily program the learner missed on a school weekday this
+week is offered again: optional, never owed. A weekday is missed when the
+program's own schedule met it, the household calendar did not take it off (a
+keeping tier counts it only if its keep-list keeps the program), and the
 program did not report it done (a grown-up's day bypass counts as done). The
 section carries `backfill: {missedDays}` and `catchUp: true`.
 
-- **Programs only.** A past weekday's verdict is settled, so a late curriculum
-  lesson changes nothing; a weekly gem such as "Flashcards on 4 days" counts the
-  Saturday day, because its week runs Monday to Sunday.
+- **Programs only, and only those whose Saturday work counts.** A launcher opts
+  in with `saturdayCatchUp` (`IProgramLauncher`, default false). In: flashcards
+  (a card-ladder day counts toward the `card-goal` gem any day), story time
+  (`story-read`), the book log and printed activities (Saturday work lands in
+  their own dated logs). Out: the after-school debrief (launching it writes
+  Saturday's debrief, which no week owes or pays), the piano course (a lesson is
+  not a passed challenge, so `piano-practice` does not count it), and surface
+  launchers (their evidence is the dispatch, not the work). A past weekday's
+  curriculum verdict is settled, so a late lesson changes nothing.
+- **Daily, non-elective only.** Weekly programs have their own fold; once-only
+  and elective entries are never backfilled.
+- **The missed program is chosen across the shelf.** Among the section's
+  offerable programs (not done today, not held, not unavailable), in priority
+  order, the first that missed a weekday becomes `next`, even over an
+  in-progress lesson in the same subject. Any other missed program is listed in
+  `pendingPrograms`.
 - **Sunday stays scripture-only.**
 - A learner without weekend scripture already sees Saturday's optional offers;
   those that backfill a missed day gain the same label.
-- The evidence is a replay: on a live Saturday build `collectProgramStatuses`
-  asks each replayable daily program about Monday–Friday and attaches
-  `status.weekdays = {weekFrom, doneOn}` (`domain/saturdayCatchUp.mjs` turns it
-  into missed days). A replayed past Saturday or a future preview does not fold.
-  A replay failure logs `school.program-status.weekday-fold-failed` and offers
-  nothing.
+- **The evidence is a replay, and it fails closed.** On a live Saturday build
+  `collectProgramStatuses` asks each opted-in daily program about Monday–Friday
+  and attaches `status.weekdays = {weekFrom, doneOn}` (`domain/saturdayCatchUp.mjs`
+  turns it into missed days). A program already done today is not replayed. A
+  replayed past Saturday or a future preview does not fold. If any replayed day
+  throws, errors, is unknowable (an FSRS deck keeps no history) or answers a
+  `doneToday` that is not a boolean, the fold is dropped, nothing is offered,
+  and `school.program-status.weekday-fold-failed` is logged with a reason.
+  Judged against today's plan, so a date-bound swap on a past weekday or an
+  enrollment that began mid-week without an `except` span can read as missed.
+- **Where the child sees it.** The printed card's rail names the days
+  (`Catch-up · Mon, Wed`). The status board draws each offer as an outlined
+  optional disc outside the day's count, so the check mark and "done" stay as
+  they are, and adds "Catch-up: scan your card" under a finished day.
 
 **Settled is not performed.** A program can report a day done with nobody
 having played — a piano co-progress lock, a grown-up's day bypass, a teacher
