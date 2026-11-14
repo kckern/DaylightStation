@@ -194,6 +194,8 @@ export function resolvePianoConfig(raw, pianoId, context = {}) {
   return {
     label: p.label || (pianoId === 'default' ? (shared.label || 'Piano') : pianoId),
     device: p.device ?? shared.device ?? null,   // hardware profile id, e.g. 'suzuki-mdg-400'
+    // Patch finder corrections: { "pc:bank": { msb, lsb, pc, name } } — per-piano entries win per voice.
+    voicePatches: { ...(shared.voicePatches || {}), ...(p === shared ? {} : (p.voicePatches || {})) },
     effects: { ...PIANO_CONFIG_DEFAULTS.effects, ...(shared.effects || {}), ...(p.effects || {}) },
     // Whole videos block (per-piano overrides shared), so collection tabs,
     // sequential_labels, thresholds, etc. all reach the frontend — not just

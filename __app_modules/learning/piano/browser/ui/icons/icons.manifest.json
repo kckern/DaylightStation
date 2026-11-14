@@ -4,17 +4,29 @@
     "back": {
       "solar": "alt-arrow-left-bold"
     },
+    "chevron-right": {
+      "solar": "alt-arrow-right-bold"
+    },
     "close": {
       "solar": "close-circle-bold"
     },
     "connection": {
       "solar": "bluetooth-square-bold"
     },
+    "diagnostics": {
+      "solar": "pulse-bold"
+    },
+    "display-off": {
+      "solar": "moon-sleep-bold"
+    },
     "family-synths": {
       "solar": "soundwave-bold"
     },
     "family-world": {
       "solar": "global-bold"
+    },
+    "feedback": {
+      "solar": "chat-round-dots-bold"
     },
     "game": {
       "solar": "gamepad-bold"
@@ -30,6 +42,9 @@
     },
     "next": {
       "solar": "skip-next-bold"
+    },
+    "notes-off": {
+      "solar": "volume-cross-bold"
     },
     "pause": {
       "solar": "pause-bold"
@@ -52,8 +67,15 @@
     "record": {
       "solar": "record-bold"
     },
+    "repair": {
+      "solar": "plug-circle-bold"
+    },
+    "patch-finder": { "solar": "tuning-2-bold" },
     "repeat": {
       "solar": "repeat-bold"
+    },
+    "restart": {
+      "solar": "restart-bold"
     },
     "settings": {
       "solar": "settings-bold"

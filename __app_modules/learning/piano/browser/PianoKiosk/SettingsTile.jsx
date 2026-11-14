@@ -14,11 +14,14 @@ import './SettingsSheets.scss';
  * @param {() => void} onPress
  * @param {string|null} [message] result or hint shown under the tile
  * @param {'idle'|'working'|'success'|'failed'} [tone] colours the message
+ * @param {'tile'|'row'} [layout] tile = icon over label; row = icon-left card with a hint line
+ * @param {string} [hint] row layout: one short line under the label
+ * @param {string} [trailing] row layout: icon at the far edge (`chevron-right` = opens a view)
  */
-export default function SettingsTile({ icon, label, emphasis = 'default', on = false, disabled = false, onPress, message = null, tone = 'idle', className = '' }) {
+export default function SettingsTile({ icon, label, emphasis = 'default', on = false, disabled = false, onPress, message = null, tone = 'idle', className = '', layout = 'tile', hint, trailing }) {
   return (
     <div className={`piano-settings__tile${className ? ` ${className}` : ''}`}>
-      <TransportButton layout="tile" icon={icon} label={label} emphasis={emphasis} on={on} disabled={disabled} onPress={onPress} />
+      <TransportButton layout={layout} icon={icon} label={label} hint={hint} trailing={trailing} emphasis={emphasis} on={on} disabled={disabled} onPress={onPress} />
       {message && <p role="status" className={`piano-settings__tilemsg is-${tone}`}>{message}</p>}
     </div>
   );

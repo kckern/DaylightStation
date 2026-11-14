@@ -611,13 +611,15 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   // The one place that knows a Program Change is never sent bare: Bank Select
   // (MSB+LSB) always precedes it, zero included. See sendVoice for why.
-  const selectProgram = useCallback((program, bank, channel, event) => {
+  // `lsb` is Bank Select LSB (CC32). The catalog never needs it (always 0), but
+  // a saved voice patch (devices/voicePatches.js) can name one.
+  const selectProgram = useCallback((program, bank, channel, event, lsb = 0) => {
     const out = outputRef.current;
     if (!out && !bridgeOutUp()) return false;
     emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
-    emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
+    emitOut(out, [0xb0 | (channel & 0x0f), 32, lsb & 0x7f], 'midi.out.bank-lsb', { lsb, channel });
     const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
-    emitOut(out, bytes, event, { program, bank, channel });
+    emitOut(out, bytes, event, { program, bank, lsb, channel });
     flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
     return true;
   }, []);
@@ -645,8 +647,8 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // a bank-1 variation fall back to GM, creating the misleading appearance of a
   // partial/offset patch map. Each message is logged with its own seq/timestamp
   // so the send ORDER is visible when diagnosing the one-turn-late bug.
-  const sendVoice = useCallback((program, bank = 0, channel = 0) => (
-    selectProgram(program, bank, channel, 'midi.out.voice')
+  const sendVoice = useCallback((program, bank = 0, channel = 0, lsb = 0) => (
+    selectProgram(program, bank, channel, 'midi.out.voice', lsb)
   ), [selectProgram]);
 
   // General Control Change out (effects like reverb/chorus, and the monitor's

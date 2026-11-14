@@ -38,6 +38,21 @@ const TYPE_LABELS = Object.freeze({ 'Large Room': 'Big room', 'Large Hall': 'Big
 // Illustration URL for a pack basename, or undefined so the tile keeps its icon.
 const artUrl = (name) => (name ? DaylightMediaPath(`/static/img/music/instruments/${name}.svg`) : undefined);
 
+// The voice grid sizes its tiles to the family instead of stacking 4-across from
+// the top: a short family gets big tiles that fill the column, a 24-voice family
+// gets a dense 4 × 6. `rows` never drops below two so a one- or two-voice family
+// does not stretch into a single full-height slab.
+function gridShape(count) {
+  const cols = count <= 4 ? 2 : count <= 9 ? 3 : 4;
+  const rows = Math.max(2, Math.ceil(count / cols));
+  return { cols, rows, density: rows <= 3 ? 'roomy' : rows <= 4 ? 'medium' : 'dense' };
+}
+
+// One control block: a head (icon, name, live reading) over a level ladder.
+function ControlHead({ icon, name, aside }) {
+  return <div className="piano-settings__controlhead"><Icon name={icon} /><span>{name}</span>{aside && <small>{aside}</small>}</div>;
+}
+
 function EffectRows({ name, icon, value, config, onChange }) {
   // Off is Off whatever level the bundle still remembers; only the lit steps need an exact level.
   const activeIndex = value.on ? EFFECT_STEPS.findIndex((step) => step.on && step.level === value.level) : 0;
@@ -47,11 +62,22 @@ function EffectRows({ name, icon, value, config, onChange }) {
   // every tap was discarded by the engine.
   const types = config?.typeAddressable ? (config.types || []) : [];
   const typeIndex = types.findIndex((type) => type.value === value.type);
-  return <>
-    <div className="piano-settings__tonehead"><Icon name={icon} /><span>{name}</span>{activeIndex < 0 && <small>now {percent}%</small>}</div>
-    <StepGrid ariaLabel={name} steps={EFFECT_STEPS.map((step) => ({ label: step.label }))} activeIndex={activeIndex} onPick={(i) => onChange({ level: EFFECT_STEPS[i].level, on: EFFECT_STEPS[i].on })} />
-    {types.length > 0 && <StepGrid ariaLabel={`${name} type`} steps={types.map((type) => ({ label: TYPE_LABELS[type.label] || type.label }))} activeIndex={typeIndex} onPick={(i) => onChange({ type: types[i].value })} />}
-  </>;
+  return <div className="piano-settings__control">
+    <ControlHead icon={icon} name={name} aside={activeIndex < 0 ? `now ${percent}%` : null} />
+    <StepGrid variant="meter" ariaLabel={name} steps={EFFECT_STEPS.map((step) => ({ label: step.label }))} activeIndex={activeIndex} onPick={(i) => onChange({ level: EFFECT_STEPS[i].level, on: EFFECT_STEPS[i].on })} />
+    {types.length > 0 && <div className="piano-settings__types"><StepGrid ariaLabel={`${name} type`} steps={types.map((type) => ({ label: TYPE_LABELS[type.label] || type.label }))} activeIndex={typeIndex} onPick={(i) => onChange({ type: types[i].value })} /></div>}
+  </div>;
+}
+
+// The current voice's picture for the "now" panel. Same fallback contract as
+// TransportButton: the icon stands in when there is no art or the art 404s.
+function NowArt({ name }) {
+  const art = artUrl(voiceArt(name));
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [art]);
+  return <span className="piano-settings__nowart">{art && !failed
+    ? <img src={art} alt="" draggable={false} decoding="async" onError={() => setFailed(true)} />
+    : <Icon name={instrumentIcon(name)} />}</span>;
 }
 
 export default function SoundPanel({ open, onClose }) {
@@ -157,36 +183,44 @@ export default function SoundPanel({ open, onClose }) {
   const statusCopy = favoriteMessage ?? persistenceCopy;
   const showRetry = !favoriteMessage && persistenceState === 'failed';
 
+  const shape = gridShape(gridTiles.length);
+  // Type rows add two more pickers to the column; the compact pass keeps it inside the canvas.
+  const hasTypes = !!(device?.effects?.reverb?.typeAddressable || device?.effects?.chorus?.typeAddressable);
+
   return <TransportSheet open={open} title="Sound" onClose={onClose} size="canvas" className="piano-sound-sheet">
     <div className="piano-settings__sound">
       <nav className="piano-settings__rail" role="group" aria-label="Instrument families">
         <TransportButton layout="rail" icon="star" label="Mine" on={activeFamily === 'mine'} aria-pressed={activeFamily === 'mine'} onPress={() => setFamily('mine')} />
+        <span className="piano-settings__railrule" aria-hidden />
         {FAMILIES.map((item) => <TransportButton key={item.id} layout="rail" icon={item.icon} art={artUrl(familyArt(item.id))} label={item.label} on={activeFamily === item.id} aria-pressed={activeFamily === item.id} onPress={() => setFamily(item.id)} />)}
       </nav>
 
       {/* Rail items and voice tiles are radio-like sets, so each carries an explicit aria-pressed (TransportButton alone omits it when off). */}
-      <div className="piano-settings__grid" role="group" aria-label="Instruments">
+      <div className={`piano-settings__grid is-${shape.density}`} role="group" aria-label="Instruments" style={{ '--cols': shape.cols, '--rows': shape.rows }}>
         {gridTiles.length === 0 && <p className="piano-settings__empty">{activeFamily === 'mine' ? 'Save a sound and it will show up here.' : 'Waiting for the piano’s instrument list…'}</p>}
         {gridTiles.map((tile) => <TransportButton key={tile.key} layout="tile" icon={instrumentIcon(tile.name)} art={artUrl(voiceArt(tile.name))} label={tile.name} on={tile.voiceKey === currentKey} aria-pressed={tile.voiceKey === currentKey} onPress={() => pick(tile)} />)}
       </div>
 
-      <div className="piano-settings__tonecol">
-        <div className="piano-settings__current"><Icon name={instrumentIcon(currentName)} /><strong>{currentName}</strong></div>
-        {currentBundle?.reverb && <EffectRows name="Reverb" icon="reverb" value={currentBundle.reverb} config={device?.effects?.reverb} onChange={(patch) => applyEffect('reverb', patch)} />}
-        {currentBundle?.chorus && <EffectRows name="Chorus" icon="chorus" value={currentBundle.chorus} config={device?.effects?.chorus} onChange={(patch) => applyEffect('chorus', patch)} />}
-        <div className="piano-settings__tonehead"><Icon name="volume" /><span>Piano level</span>{levelIndex < 0 && <small>now {Math.round(pianoLevel * 100)}%</small>}</div>
-        <StepGrid ariaLabel="Piano level" steps={LEVEL_STEPS.map((step) => ({ label: step.label }))} activeIndex={levelIndex} onPick={(i) => setPianoLevel(LEVEL_STEPS[i].value)} />
-        <p className="piano-settings__note">This piano remembers this level.</p>
-        {/* Inline, not a tile: the column has no vertical room for an 88px audition tile once a status line shows. */}
+      {/* The "now" column: what is playing, a way to hear it, how it is dressed, and keeping it. */}
+      <div className={`piano-settings__tonecol${hasTypes ? ' is-compact' : ''}`}>
+        <div className="piano-settings__now"><NowArt name={currentName} /><strong>{currentName}</strong></div>
         <div className="piano-settings__hear">
-          <TransportButton icon="music" label="Hear it" emphasis="primary" disabled={!outputUp} onPress={hear} />
+          <TransportButton icon="play" label="Hear it" emphasis="primary" disabled={!outputUp} onPress={hear} />
           {(!outputUp || heard) && <p role="status" className="piano-settings__tilemsg is-failed">{!outputUp ? 'Piano not connected.' : heard}</p>}
         </div>
-        {canSave ? <div className="piano-settings__save">
-          <TransportButton label={savedExactly ? 'Saved' : savedInstrument ? 'Update saved sound' : 'Save sound'} icon="star" disabled={savedExactly || (!savedInstrument && saved.length >= maxFavorites)} onPress={save} />
-          {savedInstrument && <TransportButton label="Remove" icon="trash" emphasis="quiet" onPress={remove} />}
-        </div> : <p className="piano-settings__note">Pick a player to save sounds.</p>}
-        {statusCopy && <p role="status" className="piano-settings__note">{statusCopy}{showRetry && <> — <button type="button" className="piano-settings__link" onClick={retryLastSound}>Retry</button></>}</p>}
+        {currentBundle?.reverb && <EffectRows name="Reverb" icon="reverb" value={currentBundle.reverb} config={device?.effects?.reverb} onChange={(patch) => applyEffect('reverb', patch)} />}
+        {currentBundle?.chorus && <EffectRows name="Chorus" icon="chorus" value={currentBundle.chorus} config={device?.effects?.chorus} onChange={(patch) => applyEffect('chorus', patch)} />}
+        <div className="piano-settings__control">
+          <ControlHead icon="volume" name="Piano level" aside={levelIndex < 0 ? `now ${Math.round(pianoLevel * 100)}%` : 'Kept for this piano'} />
+          <StepGrid variant="meter" ariaLabel="Piano level" steps={LEVEL_STEPS.map((step) => ({ label: step.label }))} activeIndex={levelIndex} onPick={(i) => setPianoLevel(LEVEL_STEPS[i].value)} />
+        </div>
+        <div className="piano-settings__keep">
+          {canSave ? <div className="piano-settings__save">
+            <TransportButton label={savedExactly ? 'Saved' : savedInstrument ? 'Update saved sound' : 'Save sound'} icon="star" disabled={savedExactly || (!savedInstrument && saved.length >= maxFavorites)} onPress={save} />
+            {savedInstrument && <TransportButton label="Remove" icon="trash" emphasis="quiet" onPress={remove} />}
+          </div> : <p className="piano-settings__note">Pick a player to save sounds.</p>}
+          {statusCopy && <p role="status" className="piano-settings__note">{statusCopy}{showRetry && <> — <button type="button" className="piano-settings__link" onClick={retryLastSound}>Retry</button></>}</p>}
+        </div>
       </div>
     </div>
   </TransportSheet>;

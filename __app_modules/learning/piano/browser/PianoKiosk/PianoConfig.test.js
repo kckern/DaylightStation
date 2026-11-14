@@ -376,3 +376,16 @@ describe('curfew config', () => {
     expect(resolvePianoConfig(raw, 'p2').curfew.enabled).toBe(false);
   });
 });
+
+describe('resolvePianoConfig voicePatches', () => {
+  it('serves shared patches to the default piano and lets a per-piano row win per voice', async () => {
+    const { resolvePianoConfig } = await import('./pianoConfigModel.js');
+    const raw = {
+      voicePatches: { '0:0': { msb: 0, lsb: 1, pc: 0 }, '1:0': { msb: 0, lsb: 0, pc: 2 } },
+      pianos: { yellow: { voicePatches: { '0:0': { msb: 0, lsb: 3, pc: 0 } } } },
+    };
+    expect(resolvePianoConfig({ voicePatches: raw.voicePatches }, 'default').voicePatches).toEqual(raw.voicePatches);
+    expect(resolvePianoConfig(raw, 'yellow').voicePatches).toEqual({ '0:0': { msb: 0, lsb: 3, pc: 0 }, '1:0': { msb: 0, lsb: 0, pc: 2 } });
+    expect(resolvePianoConfig({}, 'default').voicePatches).toEqual({});
+  });
+});

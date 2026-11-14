@@ -27,7 +27,8 @@ export function setPianoConfigValue(raw, pianoId, keyPath, value) {
   const doc = parseDocument(raw ?? '');
   if (doc.errors?.length) throw new Error(`piano config is not valid YAML: ${doc.errors[0].message}`);
   const path = pianoConfigKeyPath(doc, pianoId, keyPath);
-  doc.setIn(path, value);
+  // `undefined` removes the key (e.g. a voice patch reset to the catalog).
+  if (value === undefined) { if (doc.hasIn(path)) doc.deleteIn(path); } else doc.setIn(path, value);
   return { raw: String(doc), path: path.join('.'), parsed: doc.toJS() };
 }
 

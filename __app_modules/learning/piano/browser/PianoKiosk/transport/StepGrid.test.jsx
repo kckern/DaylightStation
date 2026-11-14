@@ -20,6 +20,17 @@ describe('StepGrid', () => {
     expect(screen.getByText('90')).toBeInTheDocument();
   });
 
+  it('meter variant lights every bar up to the active step and keeps plain names', () => {
+    const levels = [{ label: 'Off' }, { label: 'Low' }, { label: 'Medium' }, { label: 'High' }];
+    const { rerender } = render(<StepGrid variant="meter" steps={levels} activeIndex={2} onPick={() => {}} ariaLabel="Reverb" />);
+    const lit = screen.getAllByRole('button').map((b) => b.classList.contains('is-lit'));
+    expect(lit).toEqual([true, true, true, false]);
+    expect(screen.getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true');
+    // A level that matches no step lights nothing.
+    rerender(<StepGrid variant="meter" steps={levels} activeIndex={-1} onPick={() => {}} ariaLabel="Reverb" />);
+    expect(document.querySelectorAll('.is-lit')).toHaveLength(0);
+  });
+
   it('disabled disables every step', () => {
     render(<StepGrid steps={steps} activeIndex={0} onPick={() => {}} ariaLabel="Tempo" disabled />);
     screen.getAllByRole('button').forEach((b) => expect(b).toBeDisabled());
