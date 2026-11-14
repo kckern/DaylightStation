@@ -119,7 +119,19 @@ function iconFor(subject, assignmentIcon = null) {
   return FALLBACK_ICON;
 }
 
+const SHORT_WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** `Mon, Wed` from ISO study days, read from the date alone (UTC noon, no drift). */
+function weekdayNames(days) {
+  return (days ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d ?? ''))
+    .map((d) => SHORT_WEEKDAY[new Date(`${d}T12:00:00Z`).getUTCDay()]).join(', ');
+}
+
 function labelForSegment(segment) {
+  // A Saturday catch-up offer: optional, never "not done".
+  if (segment.state === 'optional') {
+    const days = weekdayNames(segment.catchUp?.missedDays);
+    return `${segment.label}: optional catch-up${days ? ` for ${days}` : ''}`;
+  }
   const state = segment.state === 'passed' ? 'done'
     : segment.state === 'needs-retry' ? 'try again'
       : segment.state === 'in-progress' ? 'in progress'
@@ -908,6 +920,14 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 dayOffTitle(summary.dayOff) ? (
                   <span className="school-status-board__status school-status-board__status--dayoff">
                     {dayOffTitle(summary.dayOff)}
+                  </span>
+                ) : summary.catchUpCount > 0 && !day ? (
+                  // A SATURDAY CATCH-UP beside a finished day: the dashed
+                  // disc is optional, and this says how to get it. The check
+                  // mark stays; nothing here is owed. A pinned past day gets
+                  // no hint, since a scan prints TODAY's agenda.
+                  <span className="school-status-board__status school-status-board__status--catchup">
+                    Catch-up: scan your card
                   </span>
                 ) : null
               ) : summary?.restDay ? (

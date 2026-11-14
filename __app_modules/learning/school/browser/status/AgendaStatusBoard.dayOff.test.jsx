@@ -82,3 +82,58 @@ describe('naming the day off', () => {
     expect(await screen.findByText('No school today')).toBeInTheDocument();
   });
 });
+
+describe('Saturday catch-up on the board', () => {
+  const scriptureServed = {
+    subject: 'scripture', next: null, obligation: { state: 'served', reason: null },
+    servedWork: [{ unitId: 'cfm.4', assignmentUnitId: 'cfm.4' }],
+  };
+  const catchUp = (over = {}) => ({
+    subject: 'language', catchUp: true, backfill: { missedDays: ['2026-11-09'] },
+    next: { unitId: 'flashcards:x', program: 'flashcards' },
+    obligation: { state: 'excused', reason: 'not_a_school_day' }, pendingPrograms: [], ...over,
+  });
+
+  it('draws the offer as an optional disc that is never counted', () => {
+    const summary = summarize([scriptureServed, catchUp()], []);
+    expect(summary.total).toBe(1);
+    expect(summary.done).toBe(1);
+    const optional = summary.segments.find((s) => s.unitId === 'flashcards:x');
+    expect(optional).toMatchObject({ state: 'optional', supplemental: true, catchUp: { missedDays: ['2026-11-09'] }, subject: 'language' });
+    expect(summary.catchUpCount).toBe(1);
+  });
+
+  it('a second missed program on the shelf gets its own optional disc', () => {
+    const summary = summarize([scriptureServed, catchUp({
+      pendingPrograms: [{ unitId: 'story-time:daily', program: 'story-time', subject: 'language' }],
+    })], []);
+    expect(summary.segments.filter((s) => s.state === 'optional').map((s) => s.unitId))
+      .toEqual(['flashcards:x', 'story-time:daily']);
+    expect(summary.total).toBe(1);
+  });
+
+  it('an ordinary excused offer (backlog, no backfill) still draws nothing', () => {
+    const summary = summarize([scriptureServed, catchUp({ backfill: null })], []);
+    expect(summary.segments.some((s) => s.state === 'optional')).toBe(false);
+    expect(summary.catchUpCount ?? 0).toBe(0);
+  });
+
+  it('done work for the offer is not drawn twice', () => {
+    const summary = summarize([scriptureServed, catchUp({
+      servedWork: [{ unitId: 'flashcards:x', assignmentUnitId: 'flashcards:x' }],
+    })], []);
+    expect(summary.segments.filter((s) => s.unitId === 'flashcards:x')).toHaveLength(1);
+    expect(summary.segments.find((s) => s.unitId === 'flashcards:x').state).toBe('passed');
+  });
+
+  it('the board keeps the done check and shows the optional disc with a hint', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
+      sections: [scriptureServed, catchUp()], entries: [], dayOff: null,
+    } });
+    const { container } = render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByTestId('board-day-done')).toBeInTheDocument();
+    expect(container.querySelector('.school-status-board__pill[data-state="optional"]')).not.toBeNull();
+    expect(screen.getByText('Catch-up: scan your card')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /optional catch-up for Mon/ })).toBeInTheDocument();
+  });
+});
