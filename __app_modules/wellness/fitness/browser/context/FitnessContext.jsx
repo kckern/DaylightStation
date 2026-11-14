@@ -2504,8 +2504,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
   // ZoneProfileStore's hysteresis (2-sample upward confirm / 5s cooldown / 3s
   // stability / 5bpm exit margin) is what keeps this from chattering at the
-  // line; the tracker then requires Fire HELD (FIRE_CEREMONY_SUSTAIN_MS, 3+
-  // readings all at or above the line) and adds a per-person quiet period,
+  // line; the tracker then requires Fire HELD (1s and 2 readings from Hot, so
+  // it lands with the garage lights; 5s and 3 for a jump from further down —
+  // all at or above the line) and adds a per-person quiet period,
   // because interval work legitimately re-crosses that line many times.
   // The flush re-checks the rider's live state before showing anything.
   //
@@ -2554,6 +2555,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         deviceId: show.deviceId ?? null,
         sustainedMs: show.sustainedMs ?? null,
         samples: show.samples ?? null,
+        path: show.path ?? null,
         queuedForMs
       });
       return;

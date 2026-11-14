@@ -631,7 +631,14 @@ never is. Three stages, each able only to say no:
    applies.
 2. **Sustained Fire.** A crossing only opens a candidate stint. It becomes a
    ceremony after committed Fire has been held for `FIRE_CEREMONY_SUSTAIN_MS`
-   (5s) with at least `FIRE_CEREMONY_MIN_SAMPLES` (3) distinct readings
+   (1s) with at least `FIRE_CEREMONY_MIN_SAMPLES` (2) distinct readings when
+   the rider **climbed** in from the zone just below Fire (`path: 'climb'`) —
+   so the ceremony lands with the garage lights going red, which wait the same
+   1s (zone-LED debounce) after the same commit (owner ruling 2026-11-13; it
+   was 5s and read as late). A crossing that **jumped** in from further down
+   keeps `FIRE_CEREMONY_JUMP_SUSTAIN_MS` (5s) and `_JUMP_MIN_SAMPLES` (3)
+   (`path: 'jump'`): every false ceremony on record was a corrupt 204 packet on
+   a rider in Warm or Cool. Readings are distinct
    (`zoneReadingAt`), **every one at or above the Fire minimum**, from the same
    strap, under the same ladder. Leaving Fire, a new entry, any reading below
    the line (Fire held only by the exit margin), a strap change (two straps on
@@ -655,7 +662,7 @@ The tracker and the queue belong to one session: a new session object or
 session id (end, reset, new session) clears both
 (`fitness.fire_ceremony.queue_cleared`). `fitness.fire_toast.shown` logs the HR
 **at display time** (`hr`), the crossing HR (`entryHr`), `fireThreshold`,
-`zoneEntryId`, `deviceId`, `sustainedMs`, `samples` and `queuedForMs`.
+`zoneEntryId`, `deviceId`, `sustainedMs`, `samples`, `path` (`climb`/`jump`) and `queuedForMs`.
 
 ### Layer 2: GovernanceEngine (no unlock hold)
 

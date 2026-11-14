@@ -16,7 +16,9 @@
  *   accepted threshold evidence opens a stint, unless that person already fired
  *   within FIRE_TOAST_COOLDOWN_MS.
  * - The stint becomes a ceremony only after committed Fire has been held for
- *   FIRE_CEREMONY_SUSTAIN_MS with at least FIRE_CEREMONY_MIN_SAMPLES distinct
+ *   FIRE_CEREMONY_SUSTAIN_MS (a climb from the zone below Fire; the
+ *   _JUMP_ values for a crossing from further down) with at least
+ *   FIRE_CEREMONY_MIN_SAMPLES (or _JUMP_MIN_SAMPLES) distinct
  *   readings (zoneReadingAt), every one at or above the Fire minimum, all from
  *   the same strap, under the same ladder. Anything else abandons the stint —
  *   leaving Fire, a new entry, a reading below the line, a strap change, a
@@ -40,10 +42,26 @@ export const FIRE_ZONE_ID = 'fire';
 /** Per-person quiet period. Interval work legitimately re-crosses the line. */
 export const FIRE_TOAST_COOLDOWN_MS = 5 * 60 * 1000;
 
-/** Committed Fire must be held this long before it is celebrated. */
-export const FIRE_CEREMONY_SUSTAIN_MS = 5000;
+/**
+ * Committed Fire must be held this long before it is celebrated — when the
+ * rider CLIMBED in from the zone just below Fire. Owner ruling 2026-11-13: the
+ * ceremony lands when the garage lights go red, which is the zone-LED debounce
+ * (useZoneLedSync DEBOUNCE_MS, 1s of a steady zone) after the same commit. It
+ * was 5s and read as late: the room had been red for ~4s. Committing Fire
+ * already took two readings over 1s (ZoneProfileStore).
+ */
+export const FIRE_CEREMONY_SUSTAIN_MS = 1000;
 /** ...carried by at least this many distinct accepted readings. */
-export const FIRE_CEREMONY_MIN_SAMPLES = 3;
+export const FIRE_CEREMONY_MIN_SAMPLES = 2;
+/**
+ * A crossing that JUMPED into Fire past the zone below it keeps the long hold.
+ * Real hearts climb through Hot; every false ceremony on record was a corrupt
+ * packet (204 bpm) landing on a rider in Warm or Cool
+ * (ops:docs/_wip/bugs/2026-10-23-fitness-false-fire-ceremonies-recurring.md),
+ * and a short run of them would outlast a 1s hold.
+ */
+export const FIRE_CEREMONY_JUMP_SUSTAIN_MS = 5000;
+export const FIRE_CEREMONY_JUMP_MIN_SAMPLES = 3;
 
 export function createFireZoneTracker() {
   return {
@@ -67,6 +85,15 @@ function cloneTracker(tracker) {
     stints: new Map([...(source.stints || new Map())].map(([id, stint]) => [id, { ...stint }])),
   };
 }
+
+// The zone directly below Fire on this rider's ladder (normally Hot).
+const zoneBelowFireOf = (profile) => {
+  const ladder = (Array.isArray(profile?.zoneConfig) ? profile.zoneConfig : [])
+    .filter((zone) => zone?.id && Number.isFinite(zone.min))
+    .slice().sort((a, b) => a.min - b.min);
+  const fireIndex = ladder.findIndex((zone) => zone.id === FIRE_ZONE_ID);
+  return fireIndex > 0 ? ladder[fireIndex - 1].id : null;
+};
 
 const fireMinOf = (profile) => {
   const min = (Array.isArray(profile?.zoneConfig) ? profile.zoneConfig : [])
@@ -136,7 +163,7 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
         stint.lastSampleAt = at;
       }
       const heldMs = now - stint.startedAt;
-      if (heldMs < FIRE_CEREMONY_SUSTAIN_MS || stint.samples < FIRE_CEREMONY_MIN_SAMPLES) return;
+      if (heldMs < stint.sustainMs || stint.samples < stint.minSamples) return;
       next.stints.delete(userId);
       const lastFiredAt = next.lastFiredAt.get(userId);
       if (Number.isFinite(lastFiredAt) && now - lastFiredAt < FIRE_TOAST_COOLDOWN_MS) return;
@@ -156,7 +183,9 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
         previousZoneId: stint.previousZoneId,
         deviceId: stint.deviceId,
         sustainedMs: heldMs,
-        samples: stint.samples
+        samples: stint.samples,
+        // 'climb' (from the zone below Fire: the 1s hold) or 'jump' (5s).
+        path: stint.path
       });
       return;
     }
@@ -187,7 +216,11 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
       dropped.push({ userId, entryId: entry.id, reason: 'hr-below-fire', samples: 0, heldMs: 0 });
       return;
     }
+    const climbed = previous === zoneBelowFireOf(profile);
     next.stints.set(userId, {
+      path: climbed ? 'climb' : 'jump',
+      sustainMs: climbed ? FIRE_CEREMONY_SUSTAIN_MS : FIRE_CEREMONY_JUMP_SUSTAIN_MS,
+      minSamples: climbed ? FIRE_CEREMONY_MIN_SAMPLES : FIRE_CEREMONY_JUMP_MIN_SAMPLES,
       entryId: entry.id,
       entryHeartRate: entry.heartRate,
       fireThreshold,

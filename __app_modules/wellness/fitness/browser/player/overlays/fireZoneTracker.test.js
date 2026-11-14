@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   createFireZoneTracker, nextFireToasts, FIRE_TOAST_COOLDOWN_MS,
-  FIRE_CEREMONY_SUSTAIN_MS, FIRE_CEREMONY_MIN_SAMPLES
+  FIRE_CEREMONY_SUSTAIN_MS, FIRE_CEREMONY_MIN_SAMPLES,
+  FIRE_CEREMONY_JUMP_SUSTAIN_MS, FIRE_CEREMONY_JUMP_MIN_SAMPLES
 } from "./fireZoneTracker.js";
 
 let serial = 0;
@@ -9,7 +10,7 @@ let readingClock = 0;
 // One profile per call, each a NEW reading (zoneReadingAt advances).
 const profile = (id, zone, name = id, over = {}) => ({
   id, name, currentZoneId: zone, zoneTrusted: true, heartRate: 181,
-  zoneConfig: [{ id: 'cool', min: 60 }, { id: 'fire', min: 175 }],
+  zoneConfig: [{ id: 'cool', min: 60 }, { id: 'warm', min: 130 }, { id: 'hot', min: 155 }, { id: 'fire', min: 175 }],
   zoneEntry: { id: ++serial, zoneId: zone, heartRate: 181, threshold: 175, enteredAt: 1000 },
   zoneReadingAt: ++readingClock, zoneReadingDeviceId: 'strap-1', zoneReadingEligible: true,
   ...over
@@ -38,6 +39,7 @@ function crossAndHold(t, id, { from = 2000, spanMs = 6000, stepMs = 1000, previo
 const expected = (id, over = {}) => ({
   userId: id, name: id, heartRate: 181, fireThreshold: 175, entryId: expect.any(Number),
   previousZoneId: 'hot', deviceId: 'strap-1', sustainedMs: expect.any(Number), samples: expect.any(Number),
+  path: 'climb',
   ...over
 });
 
@@ -71,13 +73,45 @@ describe('nextFireToasts', () => {
     expect(entries[0].samples).toBeGreaterThanOrEqual(FIRE_CEREMONY_MIN_SAMPLES);
   });
 
-  it('does not celebrate a 4s Fire stint', () => {
-    const { entries } = crossAndHold(createFireZoneTracker(), 'learner-one', { spanMs: 4000 });
+  it('a climb from Hot celebrates on the next reading 1s into Fire — with the garage lights', () => {
+    const { entries } = crossAndHold(createFireZoneTracker(), 'learner-one', { spanMs: 1000 });
+    expect(entries).toEqual([expected('learner-one', { samples: FIRE_CEREMONY_MIN_SAMPLES, sustainedMs: FIRE_CEREMONY_SUSTAIN_MS })]);
+  });
+
+  it('a climb from Hot does not celebrate before the hold', () => {
+    const { entries } = crossAndHold(createFireZoneTracker(), 'learner-one', { spanMs: 500, stepMs: 500 });
     expect(entries).toEqual([]);
   });
 
-  it('does not celebrate 5s of Fire carried by fewer than 3 distinct readings', () => {
+  it('a JUMP into Fire from below Hot keeps the long hold: not at 4s, yes past 5s', () => {
+    // Every false ceremony on record was a corrupt 204 packet on a rider in
+    // Warm or Cool; a short run of them must not outlast the hold.
+    expect(crossAndHold(createFireZoneTracker(), 'learner-one', { spanMs: 4000, previousZone: 'warm' }).entries).toEqual([]);
+    const { entries } = crossAndHold(createFireZoneTracker(), 'learner-one', { spanMs: 6000, previousZone: 'warm' });
+    expect(entries).toEqual([expected('learner-one', { previousZoneId: 'warm', path: 'jump' })]);
+    expect(entries[0].sustainedMs).toBeGreaterThanOrEqual(FIRE_CEREMONY_JUMP_SUSTAIN_MS);
+    expect(entries[0].samples).toBeGreaterThanOrEqual(FIRE_CEREMONY_JUMP_MIN_SAMPLES);
+  });
+
+  it('three agreeing spike readings from Warm (a 204 burst) never celebrate', () => {
+    const { entries } = crossAndHold(createFireZoneTracker(), 'rider-a', { spanMs: 2000, previousZone: 'warm' });
+    expect(entries).toEqual([]);
+  });
+
+  it('a climb is not celebrated on re-synced copies of one reading', () => {
     const t = nextFireToasts(createFireZoneTracker(), [profile('rider-a', 'hot')], { now: 1000 }).tracker;
+    const crossed = profile('rider-a', 'fire');
+    let r = nextFireToasts(t, [crossed], { now: 2000 });
+    for (const at of [3000, 4000, 5000]) {
+      r = nextFireToasts(r.tracker, [crossed], { now: at });
+      expect(r.entries).toEqual([]);
+    }
+    r = nextFireToasts(r.tracker, [holding(crossed)], { now: 6000 });
+    expect(r.entries).toHaveLength(1);
+  });
+
+  it('a jump: 5s of Fire carried by fewer than 3 distinct readings does not celebrate', () => {
+    const t = nextFireToasts(createFireZoneTracker(), [profile('rider-a', 'warm')], { now: 1000 }).tracker;
     const crossed = profile('rider-a', 'fire');
     let r = nextFireToasts(t, [crossed], { now: 2000 });
     // The same reading re-synced (another rider's packet) is not a new sample.
@@ -93,7 +127,8 @@ describe('nextFireToasts', () => {
 
   it('abandons the stint if any sample in it is below the Fire minimum', () => {
     // The committed zone may hold Fire through the exit margin; the stint does not.
-    const { entries } = crossAndHold(createFireZoneTracker(), 'rider-a', { spanMs: 8000, hrs: [181, 172, 181, 181, 181, 181, 181, 181] });
+    // The first held reading is under the line: the stint dies before its 1s hold.
+    const { entries } = crossAndHold(createFireZoneTracker(), 'rider-a', { spanMs: 8000, stepMs: 500, hrs: [172, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181, 181] });
     expect(entries).toEqual([]);
   });
 
@@ -101,8 +136,8 @@ describe('nextFireToasts', () => {
     const t = nextFireToasts(createFireZoneTracker(), [profile('rider-a', 'hot')], { now: 1000 }).tracker;
     const crossed = profile('rider-a', 'fire');
     let r = nextFireToasts(t, [crossed], { now: 2000 });
-    r = nextFireToasts(r.tracker, [holding(crossed)], { now: 3000 });
-    r = nextFireToasts(r.tracker, [profile('rider-a', 'hot', 'rider-a', { heartRate: 170 })], { now: 4000 });
+    r = nextFireToasts(r.tracker, [holding(crossed)], { now: 2500 });
+    r = nextFireToasts(r.tracker, [profile('rider-a', 'hot', 'rider-a', { heartRate: 170 })], { now: 2800 });
     expect(r.dropped).toEqual([expect.objectContaining({ userId: 'rider-a', reason: 'left-fire' })]);
     const again = crossAndHold(r.tracker, 'rider-a', { from: 6000, spanMs: 6000 });
     expect(again.entries).toHaveLength(1);
@@ -112,8 +147,9 @@ describe('nextFireToasts', () => {
     const t = nextFireToasts(createFireZoneTracker(), [profile('rider-a', 'hot')], { now: 1000 }).tracker;
     const crossed = profile('rider-a', 'fire');
     let r = nextFireToasts(t, [crossed], { now: 2000 });
-    r = nextFireToasts(r.tracker, [holding(crossed)], { now: 3000 });
-    const { all } = holdFor(r, crossed, 4000, 10_000, { zoneReadingDeviceId: 'strap-2' });
+    r = nextFireToasts(r.tracker, [holding(crossed)], { now: 2500 });
+    expect(r.entries).toEqual([]);
+    const { all } = holdFor(r, crossed, 3000, 10_000, { zoneReadingDeviceId: 'strap-2' });
     expect(all).toEqual([]);
   });
 
@@ -179,7 +215,7 @@ describe('nextFireToasts', () => {
       r = nextFireToasts(r.tracker, [holding(one), holding(two)], { now: at });
       all.push(...r.entries);
     }
-    expect(all).toEqual([expected('learner-one'), expected('learner-two', { previousZoneId: 'warm' })]);
+    expect(all).toEqual([expected('learner-one'), expected('learner-two', { previousZoneId: 'warm', path: 'jump' })]);
   });
 
   it('ignores profiles with no id and non-fire zones', () => {
