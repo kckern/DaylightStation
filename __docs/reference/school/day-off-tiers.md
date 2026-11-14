@@ -160,13 +160,36 @@ even when it is backlog, which a weekday excuses as `optional_backlog`. An
 **The weekend item is the whole day.** On a weekend that asks for it, every
 other section is excused (`not_a_school_day`) *and offers nothing*: no card on
 the printed agenda, no session opened, no disc on the status board, no `next`
-in the preview — before or after the scripture item is done. (Printed beside
+in the preview — before or after the scripture item is done, save the
+Saturday catch-up below. (Printed beside
 the scripture card, a Saturday civilization or piano card read as owed work.)
 Work actually done stays served, and a course that explicitly schedules the
 weekend (`daysOfWeek` with 6 or 7) is still owed — that is configuration, not
 a default. A learner without weekend scripture keeps the old rest-day sheet:
 nothing owed, every optional lesson printed with its code. So does an `away`
 weekend, which asks for nothing.
+
+**Saturday catch-up** (2026-11-14). The one exception: on Saturday, once the
+weekend item is settled (served, or excused by a hold), a daily program the
+learner missed on a school weekday this week is offered again — optional,
+never owed, with the "Catch-up" rail on the printed card. A weekday is missed
+when the program's own schedule met it, the household calendar did not take it
+off (a keeping tier counts it only if its keep-list keeps the program), and the
+program did not report it done (a grown-up's day bypass counts as done). The
+section carries `backfill: {missedDays}` and `catchUp: true`.
+
+- **Programs only.** A past weekday's verdict is settled, so a late curriculum
+  lesson changes nothing; a weekly gem such as "Flashcards on 4 days" counts the
+  Saturday day, because its week runs Monday to Sunday.
+- **Sunday stays scripture-only.**
+- A learner without weekend scripture already sees Saturday's optional offers;
+  those that backfill a missed day gain the same label.
+- The evidence is a replay: on a live Saturday build `collectProgramStatuses`
+  asks each replayable daily program about Monday–Friday and attaches
+  `status.weekdays = {weekFrom, doneOn}` (`domain/saturdayCatchUp.mjs` turns it
+  into missed days). A replayed past Saturday or a future preview does not fold.
+  A replay failure logs `school.program-status.weekday-fold-failed` and offers
+  nothing.
 
 **Settled is not performed.** A program can report a day done with nobody
 having played — a piano co-progress lock, a grown-up's day bypass, a teacher
