@@ -808,7 +808,7 @@ async function main() {
   }
 
   console.log(`chord-staff-replay: ${takes.length} takes (${skipped} under ${MIN_ONSETS} onsets / before --since, ${failed} unreadable)`);
-  console.log(`rules: GAP_MS ${GAP_MS}, LEGATO_RELEASE_MS ${LEGATO_RELEASE_MS}, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}, SPAN_MAX_MS ${SPAN_MAX_MS}, ROLL_MARK_MS ${ROLL_MARK_MS}, MAX_COLUMN_NOTES ${MAX_COLUMN_NOTES}\n`);
+  console.log(`rules: GAP_MS ${GAP_MS}, LEGATO_RELEASE_MS ${LEGATO_RELEASE_MS}, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}, LIFT_TOGETHER_MS ${LIFT_TOGETHER_MS}, SPAN_MAX_MS ${SPAN_MAX_MS}, ROLL_MARK_MS ${ROLL_MARK_MS}, MAX_COLUMN_NOTES ${MAX_COLUMN_NOTES}\n`);
   console.table([
     row('overall', overall),
     ...Object.entries(bySource).map(([k, m]) => row(k, m)),
