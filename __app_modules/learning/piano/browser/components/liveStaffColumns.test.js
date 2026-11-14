@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { diffNoteSurface, buildRenderColumns } from './liveStaffColumns.js';
 
 const col = (midis, startedAt, extra = {}) => ({
-  midis, startedAt, lastOnsetAt: startedAt, firstMidi: midis[0], lastMidi: midis[0],
+  midis, startedAt, lastOnsetAt: startedAt, arrivals: midis.map((midi) => ({ midi, at: startedAt })),
   duration: 'q', heldAtClose: false, releasedAt: null, ...extra,
 });
 const flowOf = (...columns) => ({ columns, lastOnsetAt: 0, recentIois: [] });
@@ -62,14 +62,11 @@ describe('buildRenderColumns', () => {
     expect(cache.has(100)).toBe(false);
     expect(cache.has(400)).toBe(true);
   });
-  it('roll is carried through', () => {
-    const rolled = flowOf(
-      col([60, 64, 67], 100, { lastOnsetAt: 300, firstMidi: 60, lastMidi: 67 }),
-      col([60], 700),
-    );
-    const out = buildRenderColumns(rolled, ['q', 'q'], 'C', new Map());
-    expect(out.map((c) => c.roll)).toEqual(['up', null]);
-    expect(out[0].midis).toEqual([60, 64, 67]);
-    expect(out[0].duration).toBe('q');
+  it('arrivals are carried through, and no roll', () => {
+    const arrivals = [{ midi: 67, at: 100 }, { midi: 64, at: 180 }, { midi: 60, at: 300 }];
+    const out = buildRenderColumns(flowOf(col([60, 64, 67], 100, { arrivals }), col([60], 700)), ['q', 'q'], 'C', new Map());
+    expect(out[0].arrivals).toEqual(arrivals);
+    expect(out[1].arrivals).toEqual([{ midi: 60, at: 700 }]);
+    expect(out.every((c) => !('roll' in c))).toBe(true);
   });
 });

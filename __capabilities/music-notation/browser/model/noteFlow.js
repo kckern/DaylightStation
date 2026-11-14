@@ -24,6 +24,8 @@
 //   2. DURATION — which of the three glyphs a column earns, decided retroactively
 //      once the next column opens.
 
+import { splitByHand } from "./handSplit.js";
+
 /**
  * A column is one GESTURE: a roll or struck chord, not a moment. Four numbers decide
  * what joins it, all measured on real playing (spec: ops:docs/_wip/audits/
@@ -43,7 +45,12 @@ export const GAP_MS = 90;
  */
 export const SPAN_MAX_MS = 250;
 
-/** A column spanning at least this long is a ROLL and gets an arrow; shorter reads as struck. */
+/**
+ * A STAFF whose arrivals span at least this long is a ROLL and gets an arpeggio
+ * stroke; shorter reads as struck. Judged per staff by the renderer (from `arrivals`),
+ * because each hand rolls on its own: one column can hold a rolled right hand over a
+ * struck left, or two hands rolling in opposite directions.
+ */
 export const ROLL_MARK_MS = 100;
 
 /** Ten fingers: more notes than this in one column is two gestures, not one chord. */
@@ -107,7 +114,8 @@ export const BASELINE_MAX_MS = 800;
 export const DEFAULT_BASELINE_MS = 500;
 
 /** @typedef {'8'|'q'|'h'} Duration */
-/** @typedef {{ midis: number[], startedAt: number, lastOnsetAt: number, firstMidi: number, lastMidi: number, duration: Duration|null, heldAtClose: boolean, releasedAt: number|null }} FlowColumn */
+/** @typedef {{ midi: number, at: number }} Arrival */
+/** @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, heldAtClose: boolean, releasedAt: number|null }} FlowColumn */
 
 /** A new, empty flow. */
 export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [] });
@@ -156,8 +164,11 @@ const dedupeSorted = (midis) => [...new Set(midis)].sort((a, b) => a - b);
  * notes is already in the column (a re-strike is a new event); and the union stays
  * within MAX_COLUMN_NOTES.
  *
- * `firstMidi` / `lastMidi` are the lowest note of the batch that opened the column and
- * of the latest batch that joined it; their order gives a roll its direction.
+ * `arrivals` records every note the column took, with its onset time, in arrival order
+ * (a batch's notes share one time and go in ascending pitch). The renderer splits them
+ * by staff and reads each hand's roll — its span and direction — from them. A single
+ * column-wide first/last pair could not: in a two-hand roll the first arrival is often
+ * the bass and the last the treble, which says nothing about either hand.
  *
  * Closing a column fixes its duration: the gap to this new column is its IOI, judged
  * against the baseline as it stood BEFORE that gap joined the history — "how you have
@@ -186,7 +197,7 @@ export function pushOnsets(flow, midis, now, opts = {}) {
   const open = columns[columns.length - 1];
 
   const sorted = dedupeSorted(midis);
-  const lowest = sorted[0];
+  const arrived = sorted.map((midi) => ({ midi, at: now }));
 
   const joins = open
     && now - open.lastOnsetAt <= GAP_MS
@@ -199,8 +210,8 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     columns[columns.length - 1] = {
       ...open,
       midis: dedupeSorted([...open.midis, ...sorted]),
+      arrivals: [...(open.arrivals ?? []), ...arrived],
       lastOnsetAt: now,
-      lastMidi: lowest,
     };
     return { ...flow, columns, lastOnsetAt: now };
   }
@@ -225,7 +236,7 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     recentIois = [...recentIois, ioi].slice(-IOI_MEMORY);
   }
   columns.push({
-    midis: sorted, startedAt: now, lastOnsetAt: now, firstMidi: lowest, lastMidi: lowest,
+    midis: sorted, arrivals: arrived, startedAt: now, lastOnsetAt: now,
     duration: null, heldAtClose: false, releasedAt: null,
   });
 
@@ -322,13 +333,42 @@ export function flowDurations(flow, now) {
 }
 
 /**
- * Roll direction per column, parallel to `flowColumns`: 'up'/'down' for a gesture of
- * 2+ notes spanning at least ROLL_MARK_MS, else null (struck, or a single note).
- * @returns {Array<'up'|'down'|null>}
+ * One staff's roll from the column's arrivals: 'up' / 'down', or null when the staff
+ * was struck. A staff holding ONE note has nothing to arpeggiate — the stroke would be
+ * a stray squiggle beside a lone note — so it needs two or more heads. Its own
+ * arrivals must span ROLL_MARK_MS; direction is the pitch of its first arrival
+ * against its last.
+ *
+ * Lives with the model, not the renderer, so the replay harness counts exactly the
+ * strokes the staff draws.
+ *
+ * @param {Arrival[]} arrivals - the column's, in arrival order
+ * @param {number[]} staffMidis - the notes one staff holds (before any ottava shift)
+ * @returns {'up'|'down'|null}
  */
-export const flowRolls = (flow) => flow.columns.map((c) =>
-  c.midis.length >= 2 && c.lastOnsetAt - c.startedAt >= ROLL_MARK_MS
-    ? (c.lastMidi > c.firstMidi ? 'up' : 'down')
-    : null);
+export function staffRoll(arrivals, staffMidis) {
+  if (staffMidis.length < 2 || !arrivals?.length) return null;
+  const mine = new Set(staffMidis);
+  const own = arrivals.filter((a) => mine.has(a.midi));
+  if (own.length < 2) return null;
+  const times = own.map((a) => a.at);
+  if (Math.max(...times) - Math.min(...times) < ROLL_MARK_MS) return null;
+  const first = own[0].midi;
+  const last = own[own.length - 1].midi;
+  if (first === last) return null;
+  return last > first ? 'up' : 'down';
+}
 
-export default { emptyFlow, flowRolls, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };
+/**
+ * Both staves' rolls for one column, split by hand exactly as the staff splits it —
+ * for callers outside the renderer (the live log, the replay harness) that report
+ * what the staff draws.
+ * @param {{ midis: number[], arrivals?: Arrival[] }} column
+ * @returns {{ treble: 'up'|'down'|null, bass: 'up'|'down'|null }}
+ */
+export function columnRolls(column) {
+  const { trebleNotes, bassNotes } = splitByHand([...column.midis].sort((a, b) => a - b));
+  return { treble: staffRoll(column.arrivals, trebleNotes), bass: staffRoll(column.arrivals, bassNotes) };
+}
+
+export default { emptyFlow, staffRoll, columnRolls, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };

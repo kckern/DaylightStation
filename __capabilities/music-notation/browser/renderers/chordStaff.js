@@ -22,7 +22,7 @@
 import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke } from 'vexflow';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
-import { COLUMN_CAPACITY } from "../model/noteFlow.js";
+import { COLUMN_CAPACITY, staffRoll } from "../model/noteFlow.js";
 import { spellPitchClass } from "../model/spelling.js";
 
 // A column with no duration of its own — every column of a single-chord display, and
@@ -43,6 +43,9 @@ const INK = '#1a1a1a';
 // by up to 40 units in a tall/narrow box, and the fixed frame turns an overrun into a
 // clip. See tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs.
 const MIN_NOTE_AREA = 88;
+// Air between the key signature's last glyph and the first column's leftmost ink
+// (an accidental or a roll stroke), in logical units.
+const KEY_SIGNATURE_AIR = 4;
 
 // ─── The fixed frame ────────────────────────────────────────────────────────────
 // The viewBox is a CONSTANT frame that never depends on what is being played, so
@@ -208,7 +211,7 @@ function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION) {
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
-function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, roll = null) {
+function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = []) {
   const { bassNotes, trebleNotes } = splitByHand(midis);
   const trebleOtt = getOttavaInfo(trebleNotes, true);
   const bassOtt = getOttavaInfo(bassNotes, false);
@@ -225,20 +228,20 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, roll = n
   } catch { /* marker is decorative */ }
 
   // A rolled chord arrives as ONE column (model/noteFlow.js), so the roll is drawn as
-  // the arpeggio stroke engraving uses for it. 'up' is the plain wavy line (piano
-  // notation: bottom → top); 'down' is VexFlow's ROLL_UP, which — guitar naming —
-  // draws the arrowhead pointing DOWN. One stroke per staff note, each spanning only
-  // its own staff.
-  if (roll) {
-    try {
-      const type = roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS;
-      // A staff holding ONE note has nothing to arpeggiate: the stroke would be a stray
-      // squiggle beside a lone note, so only a staff with two or more heads gets it.
-      for (const [n, count] of [[tNote, dispTreble.length], [bNote, dispBass.length]]) {
-        if (n && count >= 2) n.addStroke(0, new Stroke(type));
+  // the arpeggio stroke engraving uses for it — decided PER STAFF from the arrivals,
+  // because each hand rolls on its own: a two-hand roll often runs the right hand top
+  // down while the left goes bottom up, or rolls one hand over a struck other. A
+  // column-wide verdict drew one direction on both staves and stroked a struck hand.
+  // 'up' is the plain wavy line (piano notation: bottom → top); 'down' is VexFlow's
+  // ROLL_UP, which — guitar naming — draws the arrowhead pointing DOWN.
+  try {
+    for (const [n, staffMidis] of [[tNote, trebleNotes], [bNote, bassNotes]]) {
+      const roll = staffRoll(arrivals, staffMidis);
+      if (n && roll) {
+        n.addStroke(0, new Stroke(roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS));
       }
-    } catch { /* stroke is decorative */ }
-  }
+    }
+  } catch { /* stroke is decorative */ }
 
   return { tNote, bNote };
 }
@@ -256,7 +259,7 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, roll = n
  *     as a one-column flow.
  *
  * @param {HTMLElement} host
- * @param {{ columns?: Array<number[]|{midis: number[], spelling?: Map}>, notes?: Map<number, any>, keySignature?: string, aspect?: number }} opts
+ * @param {{ columns?: Array<number[]|{midis: number[], spelling?: Map, duration?: string, arrivals?: Array<{midi: number, at: number}>}>, notes?: Map<number, any>, keySignature?: string, aspect?: number }} opts
  */
 export function renderChordStaff(host, { columns, notes, keySignature = 'C', aspect, capacity } = {}) {
   if (!host) return;
@@ -273,7 +276,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
       spelling: col.spelling ?? null,
       // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
       duration: col.duration ?? NOTE_DURATION,
-      roll: col.roll === 'up' || col.roll === 'down' ? col.roll : null,
+      // { midi, at } per note in arrival order — what each staff's roll is read from.
+      arrivals: Array.isArray(col.arrivals) ? col.arrivals : [],
     }));
 
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
@@ -347,7 +351,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
 
   const slotNotes = Array.from({ length: slots }, (_, i) =>
     i < flow.length
-      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i], flow[i].roll)
+      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i], flow[i].arrivals)
       : { tNote: null, bNote: null }
   );
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
@@ -368,14 +372,44 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // Notes would visibly jump sideways while you play, which is exactly what the fixed
   // frame and the full-capacity layout exist to prevent.
   //
-  // So the formatter decides widths and we decide positions: each slot is pinned to a
-  // uniform grid. getAbsoluteX() is tickContext.getX() + the stave's note start, so
-  // shifting by (target − tickContext.getX()) lands slot i at the same offset whatever
-  // its duration. Both staves take the same shift and stay aligned.
-  const slotW = noteAreaW / slots;
+  // So the formatter decides widths and we decide positions: each slot's TICK CONTEXT
+  // is pinned to a uniform grid. It has to be the tick context, not the note's x_shift.
+  // In VexFlow 4.2.5 a notehead draws at getNoteHeadBeginX() = getAbsoluteX() + x_shift
+  // (stavenote.js), but every modifier is laid out from getModifierStartXY(), which is
+  // getAbsoluteX() — tickContext.getX() + the stave's note start — WITHOUT the shift
+  // (Accidental.draw, Stroke.draw, Annotation.draw all start there). Shifting the notes
+  // walked the noteheads to the grid and left their accidentals, roll strokes and 8va
+  // labels where the formatter had put them: the replay of real takes drew sharps to
+  // the RIGHT of their notes and strokes a slot away from their chords. Moving the
+  // tick context moves the note and everything hung on it together. joinVoices put
+  // both staves on the same tick contexts, so one setX aligns treble and bass.
+  //
+  // The grid's first slot also has to clear the key signature. The formatter used to
+  // do that by placing the first tick context past its left modifiers; pinning it to
+  // NOTE_INSET leaves only NOTE_INSET + the stave's 12-unit note padding before the
+  // notehead, and a rolled cluster's accidental columns plus its stroke reach 40-65
+  // units left of the head (measured in Chrome over 4000 random 2-6 note chords:
+  // ~95% within 40, the worst 66). So the whole grid starts late by whatever slot 0's
+  // left modifiers overrun, and the slots narrow to keep the right edge where it was.
+  // That lead depends only on the leftmost column on screen, which is fixed once it
+  // closes: it changes when the line scrolls (every column moves a slot then anyway),
+  // never under a column that is already drawn mid-line.
+  // Measured against the stave, so the notes need their staves now: Voice.draw sets
+  // them, but only later, and without one getAbsoluteX() leaves out the stave's note
+  // start and padding.
+  trebleTickables.forEach((t) => t.setStave(treble));
+  bassTickables.forEach((t) => t.setStave(bass));
+  const firstTc = trebleTickables[0]?.getTickContext?.();
+  let lead = 0;
+  if (firstTc && slotNotes[0] && (slotNotes[0].tNote || slotNotes[0].bNote)) {
+    firstTc.setX(NOTE_INSET);
+    const headX = (slotNotes[0].tNote ?? slotNotes[0].bNote).getAbsoluteX();
+    const inkLeft = headX - firstTc.getMetrics().totalLeftPx;
+    lead = Math.max(0, treble.getNoteStartX() + KEY_SIGNATURE_AIR - inkLeft);
+  }
+  const slotW = (noteAreaW - lead) / slots;
   [trebleTickables, bassTickables].forEach((list) => list.forEach((t, i) => {
-    const tc = t.getTickContext?.();
-    t.setXShift(tc ? NOTE_INSET + i * slotW - tc.getX() : NOTE_INSET);
+    t.getTickContext?.()?.setX(NOTE_INSET + lead + i * slotW);
   }));
 
   // Beams, built after the snap so they span the grid positions the notes actually

@@ -1,7 +1,7 @@
 // Pure helpers behind CurrentChordStaff: turning the live MIDI surface into onsets,
 // and the flow into render columns. Kept out of the component so both are testable
 // without React.
-import { flowColumns, flowRolls } from '../../../../../__capabilities/music-notation/browser/model/noteFlow.js';
+import { flowColumns } from '../../../../../__capabilities/music-notation/browser/model/noteFlow.js';
 import { identifyChord } from '../theory/chordNaming.js';
 
 /**
@@ -48,7 +48,6 @@ export function diffNoteSurface(prev, activeNotes, now) {
  */
 export function buildRenderColumns(flow, durations, keySig, cache) {
   const midiCols = flowColumns(flow);
-  const rolls = flowRolls(flow);
   const last = flow.columns.length - 1;
   const live = new Set();
   const out = flow.columns.map((c, i) => {
@@ -63,7 +62,8 @@ export function buildRenderColumns(flow, durations, keySig, cache) {
         cache.set(c.startedAt, spelling);
       }
     }
-    return { midis: midiCols[i], spelling, duration: durations[i] ?? 'q', roll: rolls[i] };
+    // Arrivals, not a roll verdict: the renderer reads each hand's roll from them.
+    return { midis: midiCols[i], spelling, duration: durations[i] ?? 'q', arrivals: c.arrivals ?? [] };
   });
   for (const k of [...cache.keys()]) if (!live.has(k)) cache.delete(k);
   return out;

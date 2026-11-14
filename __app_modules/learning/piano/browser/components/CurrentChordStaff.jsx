@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChordStaffRenderer } from "../../../../../__capabilities/music-notation/browser/renderers/ChordStaffRenderer.jsx";
 import {
-  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, ROLL_MARK_MS,
+  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
 } from "../../../../../__capabilities/music-notation/browser/model/noteFlow.js";
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { diffNoteSurface, buildRenderColumns } from './liveStaffColumns.js';
@@ -35,8 +35,8 @@ function logger() {
  *
  * Notes read left to right, like typing: each new strike lands to the right of the
  * last, while notes struck together (within a hand's roll, see noteFlow GAP_MS /
- * SPAN_MAX_MS) stack into one column. A rolled chord is one column carrying a roll
- * direction. After a pause the next strike starts a fresh line, and an abandoned line
+ * SPAN_MAX_MS) stack into one column. A rolled chord is one column carrying its
+ * arrivals; the staff reads each hand's roll from them. After a pause the next strike starts a fresh line, and an abandoned line
  * is wiped after STALE_CLEAR_MS.
  *
  * RHYTHM, such as it is: each column draws as an eighth, a quarter, or a half,
@@ -107,11 +107,13 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
         // `before` was just closed; its stored duration is now the IOI judgement.
         const closed = flow2.columns.find((c) => c.startedAt === before.startedAt);
         if (closed) {
-          const spanMs = closed.lastOnsetAt - closed.startedAt;
+          // The strokes the staff draws for it, per hand — what the player sees.
+          const rolls = columnRolls(closed);
           logger().sampled('chord-staff.column-closed', {
             notes: closed.midis,
-            spanMs,
-            rolled: spanMs >= ROLL_MARK_MS && closed.midis.length >= 2,
+            spanMs: closed.lastOnsetAt - closed.startedAt,
+            trebleRoll: rolls.treble,
+            bassRoll: rolls.bass,
             duration: closed.duration,
           }, { maxPerMinute: 20, aggregate: true });
         }

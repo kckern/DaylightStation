@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowRolls, flowDurations, baselineOf, classifyIoi,
+  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, columnRolls, baselineOf, classifyIoi,
   GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO,
 } from "./noteFlow.js";
@@ -123,14 +123,33 @@ describe('noteFlow — the key-down overlap test', () => {
   });
 });
 
-describe('noteFlow — roll metadata', () => {
-  const rolls = (ev) => flowRolls(run(ev, { held: allHeld }));
-  it('flowRolls marks spans >= ROLL_MARK_MS, direction from first to last batch', () => {
+describe('noteFlow — arrivals', () => {
+  const arrivals = (ev) => run(ev, { held: allHeld }).columns.map((c) => c.arrivals);
+  it('records each note with its onset time, in arrival order, across joins', () => {
+    expect(arrivals([[[72], 0], [[48], 10], [[67], 40], [[52, 55], 80]])).toEqual([[
+      { midi: 72, at: 0 }, { midi: 48, at: 10 }, { midi: 67, at: 40 }, { midi: 52, at: 80 }, { midi: 55, at: 80 },
+    ]]);
+  });
+  it('a new column starts its own arrivals', () => {
+    expect(arrivals([[[60, 64], 0], [[67], 1000]])).toEqual([
+      [{ midi: 60, at: 0 }, { midi: 64, at: 0 }],
+      [{ midi: 67, at: 1000 }],
+    ]);
+  });
+  it('never mutates the column it joins', () => {
+    const f1 = pushOnsets(emptyFlow(), [60], 0, { held: allHeld });
+    const before = f1.columns[0].arrivals;
+    pushOnsets(f1, [64], 40, { held: allHeld });
+    expect(before).toEqual([{ midi: 60, at: 0 }]);
+  });
+  it('columnRolls judges each hand on its own arrivals', () => {
+    const arrivals = [[79, 0], [48, 10], [76, 60], [52, 70], [72, 120], [55, 150]].map(([midi, at]) => ({ midi, at }));
+    expect(columnRolls({ midis: [48, 52, 55, 72, 76, 79], arrivals })).toEqual({ treble: 'down', bass: 'up' });
+    expect(columnRolls({ midis: [60, 64, 67], arrivals: [60, 64, 67].map((midi) => ({ midi, at: 0 })) }))
+      .toEqual({ treble: null, bass: null });
+  });
+  it('ROLL_MARK_MS is still the threshold the renderer reads', () => {
     expect(ROLL_MARK_MS).toBe(100);
-    expect(rolls([[[60], 0], [[64], 40], [[67], 80], [[72], 120]])).toEqual(['up']);
-    expect(rolls([[[72], 0], [[67], 40], [[64], 80], [[60], 120]])).toEqual(['down']);
-    expect(rolls([[[60, 64, 67], 0]])).toEqual([null]);
-    expect(rolls([[[60], 0]])).toEqual([null]);
   });
 });
 

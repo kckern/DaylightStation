@@ -16,7 +16,8 @@
  *   - fragments: an eighth column followed within 150ms by another column.
  *   - RH-on-bass: columns entirely >= C4 that splitByHand put (partly) on the bass
  *     staff (baseline 234).
- *   - rolled columns (span >= ROLL_MARK_MS, so they draw an arpeggio stroke).
+ *   - rolled columns: at least one staff whose own arrivals span >= ROLL_MARK_MS
+ *     with 2+ notes on it, so it draws an arpeggio stroke (noteFlow staffRoll).
  *   - far-crossed (informational): columns with a treble note below G3 or a bass
  *     note above E4 — what hand-reach shedding does to a wide cluster.
  *   - held-chord whole % (informational): the same whole test on 3+ note clusters
@@ -60,7 +61,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import {
-  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, flowRolls,
+  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
   GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS,
 } from '../../../__capabilities/music-notation/browser/model/noteFlow.js';
 import { splitByHand } from '../../../__capabilities/music-notation/browser/model/handSplit.js';
@@ -326,7 +327,8 @@ function measure(events) {
   }
 
   const cols = [...columns.values()].sort((a, b) => a.startedAt - b.startedAt);
-  const rolls = flowRolls({ columns: cols });
+  // Rolled = at least one staff draws a stroke, judged as the renderer judges it.
+  const strokesOf = (c) => Object.values(columnRolls(c));
   cols.forEach((c, i) => {
     m.cols += 1;
     const d = c.duration ?? 'q';
@@ -335,7 +337,7 @@ function measure(events) {
       const nx = cols[i + 1];
       if (nx && nx.startedAt - c.startedAt <= CLUSTER_GAP_MS) m.frags += 1;
     }
-    if (rolls[i]) m.rolled += 1;
+    if (strokesOf(c).some(Boolean)) m.rolled += 1;
     const { bassNotes, trebleNotes } = splitByHand([...c.midis].sort((a, b) => a - b));
     if (c.midis.every((n) => n >= 60) && bassNotes.length) m.rhOnBass += 1;
     // Informational, not gated: a note pushed well across the pivot by hand-reach
@@ -385,7 +387,11 @@ function snapshot(frame, slots) {
         midis: c.midis,
         spelling: c.spelling ? [...c.spelling.entries()] : null,
         duration: c.duration,
-        roll: c.roll,
+        arrivals: c.arrivals,
+        roll: (() => {
+          const { treble: t, bass: b } = columnRolls(c);
+          return t || b ? `${t ? `T${t}` : ''}${b ? `${t ? '/' : ''}B${b}` : ''}` : null;
+        })(),
         startedAt: col.startedAt,
         raw: hits.map((h) => `${nn(h.note)}+${Math.round(h.t - col.startedAt)}`),
         hands: splitByHand([...c.midis].sort((a, b) => a - b)),
@@ -470,7 +476,7 @@ window.computeChordStaffLayout = computeChordStaffLayout;
         const host = document.getElementById('host');
         window.renderChordStaff(host, {
           columns: snap.columns.map((c) => ({
-            midis: c.midis, duration: c.duration, roll: c.roll,
+            midis: c.midis, duration: c.duration, arrivals: c.arrivals,
             spelling: c.spelling ? new Map(c.spelling) : null,
           })),
           keySignature: snap.key,

@@ -98,7 +98,13 @@ async function main() {
         (midis) => Array.from({ length: 8 }, (_, i) => midis.map((m) => m + i)),
         // All rolled, alternating direction: the stroke sits left of every chord, so
         // the first slot is the one that can overrun FRAME_LEFT.
-        (midis) => Array.from({ length: 8 }, (_, i) => ({ midis: midis.map((m) => m + i), roll: i % 2 ? 'down' : 'up' })),
+        // Arrivals 110ms apart (past ROLL_MARK_MS for any two notes of a staff) run bottom → top on even columns and top → bottom on odd,
+        // so each staff holding two or more notes draws its stroke, both directions.
+        (midis) => Array.from({ length: 8 }, (_, i) => {
+          const notes = midis.map((m) => m + i);
+          const order = i % 2 ? [...notes].sort((a, b) => b - a) : [...notes].sort((a, b) => a - b);
+          return { midis: notes, arrivals: order.map((midi, k) => ({ midi, at: k * 110 })) };
+        }),
       ];
 
       // The three RELATIVE durations a column can take (model/noteFlow.js), swept
@@ -118,10 +124,10 @@ async function main() {
           for (const midis of cases) {
           for (const durationAt of DURATION_PATTERNS) {
             const columns = FLOWS[renders % FLOWS.length](midis)
-              .map((c) => (Array.isArray(c) ? { midis: c, roll: null } : c))
+              .map((c) => (Array.isArray(c) ? { midis: c, arrivals: [] } : c))
               .map((c) => ({ ...c, midis: c.midis.filter((m) => m >= 21 && m <= 108) }))
               .filter((c) => c.midis.length)
-              .map((c, i) => ({ midis: c.midis, roll: c.roll, duration: durationAt(i) }));
+              .map((c, i) => ({ midis: c.midis, arrivals: c.arrivals, duration: durationAt(i) }));
             const dur = columns.map((c) => c.duration).join('');
             window.renderChordStaff(host, {
               columns, keySignature: ks, aspect,
