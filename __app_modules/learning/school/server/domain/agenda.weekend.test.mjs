@@ -206,3 +206,68 @@ describe('a program settled without play on a day that does not ask for it', () 
   });
 });
 
+
+describe('Saturday catch-up: a missed weekday program comes back', () => {
+  const weekdays = { daysOfWeek: [1, 2, 3, 4, 5] };
+  const cards = { unitId: 'flashcards:x', subject: 'language', program: 'flashcards', programInstance: 'x',
+    elective: false, status: 'available', timingState: 'available', schedule: weekdays, cadence: 'daily' };
+  const civics = { unitId: 'civ-1', title: 'A state', subject: 'civilization', courseId: 'atlas', module: 'm1', sequence: 1,
+    program: null, elective: false, status: 'available', timing: null, timingState: 'available', schedule: weekdays };
+  const cardStatus = (doneOn) => [{ programId: 'flashcards', programInstance: 'x',
+    status: { doneToday: false, ...(doneOn ? { weekdays: { weekFrom: '2026-11-09', doneOn } } : {}) } }];
+  const scripture = () => [
+    ...week('w1', ['completed', 'completed', 'completed', 'available', 'locked']),
+    ...week('w2', ['completed', 'available', 'locked', 'locked', 'locked']),
+  ];
+  const scriptureDone = [pass('w1-d4', `${SATURDAY}T15:00:00.000Z`)];
+  const MISSED_MONDAY = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+  const build = ({ entries, day = SATURDAY, sessions = [], doneOn = MISSED_MONDAY, householdSchedule = null }) =>
+    Object.fromEntries(planDailyAgenda({
+      plan: { entries }, sessions, programStatuses: cardStatus(doneOn), now: `${day}T18:00:00.000Z`, householdSchedule,
+    }).sections.map((s) => [s.subject, s]));
+
+  it('after the weekend item, offers the program with its missed days, labelled catch-up, never owed', () => {
+    const s = build({ entries: [...scripture(), cards, civics], sessions: scriptureDone });
+    expect(s.scripture.obligation.state).toBe('served');
+    expect(s.language.next.unitId).toBe('flashcards:x');
+    expect(s.language.catchUp).toBe(true);
+    expect(s.language.backfill).toEqual({ missedDays: ['2026-11-09'] });
+    expect(s.language.obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+    expect(s.civilization.next).toBeNull();
+    expect(s.civilization.backfill).toBeNull();
+  });
+  it('before the weekend item is done, scripture stays the whole day', () => {
+    const s = build({ entries: [...scripture(), cards] });
+    expect(s.language.next).toBeNull();
+    expect(s.language.catchUp).toBe(false);
+    expect(s.language.backfill).toBeNull();
+  });
+  it('nothing missed, nothing offered', () => {
+    const all = ['2026-11-09', ...MISSED_MONDAY];
+    const s = build({ entries: [...scripture(), cards], sessions: scriptureDone, doneOn: all });
+    expect(s.language.next).toBeNull();
+    expect(s.language.backfill).toBeNull();
+  });
+  it('no replayed week, no offer', () => {
+    const s = build({ entries: [...scripture(), cards], sessions: scriptureDone, doneOn: null });
+    expect(s.language.next).toBeNull();
+  });
+  it('Sunday stays scripture-only', () => {
+    const sunday = '2026-11-15';
+    const s = build({ entries: [...scripture(), cards], day: sunday, sessions: [pass('w1-d4', `${sunday}T15:00:00.000Z`)] });
+    expect(s.language.next).toBeNull();
+    expect(s.language.backfill).toBeNull();
+  });
+  it('without weekend scripture the Saturday offer gains the catch-up label', () => {
+    const s = build({ entries: [cards] });
+    expect(s.language.next.unitId).toBe('flashcards:x');
+    expect(s.language.catchUp).toBe(true);
+    expect(s.language.backfill).toEqual({ missedDays: ['2026-11-09'] });
+  });
+  it('an away Monday is not a missed day', () => {
+    const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09', label: 'Trip', tier: 'away' }] };
+    const s = build({ entries: [...scripture(), cards], sessions: scriptureDone, householdSchedule });
+    expect(s.language.next).toBeNull();
+    expect(s.language.backfill).toBeNull();
+  });
+});

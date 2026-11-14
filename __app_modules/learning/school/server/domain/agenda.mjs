@@ -20,6 +20,7 @@ import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
 import { isSameStudyDay, studyDayForInstant } from "./studyDay.mjs";
 import { dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
 import { DEFAULT_DAY_OFF_POLICY, keepsEntry } from "./dayOffPolicy.mjs";
+import { missedWeekdays } from "./saturdayCatchUp.mjs";
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -681,6 +682,18 @@ export function planDailyAgenda({
     const reopenEntry = reopenable.find((entry) => programStatusFor(programStatuses, entry)?.doneToday === true)
       ?? reopenable[0] ?? null;
 
+    // SATURDAY CATCH-UP (2026-11-14): a daily program missed on a school
+    // weekday this week is offered again, optionally, so a weekly gem can
+    // still be reached before Sunday closes the week. Excused sections only:
+    // the offer is never owed. See `saturdayCatchUp.mjs`.
+    const backfillDays = isoWeekday(today) === 6 && next?.program && obligation.state === 'excused'
+      ? missedWeekdays({
+        entry: next, doneOn: programStatusFor(programStatuses, next)?.weekdays?.doneOn,
+        today, householdSchedule, dayOffPolicy,
+      })
+      : [];
+    const backfill = backfillDays.length ? { missedDays: backfillDays } : null;
+
     return {
       subject,
       servedToday,
@@ -695,7 +708,9 @@ export function planDailyAgenda({
       // internals, and derived with the SAME `isBacklog` the obligation rules
       // above use so the paper and the policy can never disagree about what
       // counts as backlog.
-      catchUp: !!(next && isBacklog(next)),
+      catchUp: !!(next && isBacklog(next)) || backfill != null,
+      // The missed weekdays a Saturday catch-up offer backfills, or null.
+      backfill,
       lockedRemedy,
       timingNotice,
       progressLabel: progressLabelFor(list, labelStatuses),
@@ -769,11 +784,20 @@ export function planDailyAgenda({
   // done stays served, and an obligated section (a course that explicitly
   // schedules the weekend) is left alone. A learner without weekend
   // scripture keeps the old rest-day sheet with its optional offers.
+  // Exception (Saturday catch-up, 2026-11-14): once every weekend item is
+  // settled, a program offer that backfills a missed weekday stays.
   if (sections.some((section) => section._weekendAsks)) {
+    // Scripture first: a Saturday catch-up offer joins only once every weekend
+    // item is settled (served, or excused by a hold), never beside an owed one.
+    const weekendSettled = sections
+      .filter((section) => section._weekendAsks)
+      .every((section) => section.obligation.state !== 'obligated');
     sections.forEach((section) => {
       if (section._weekendAsks || section.obligation.state !== 'excused') return;
+      if (section.backfill && weekendSettled) return;
       section.next = null;
       section.catchUp = false;
+      section.backfill = null;
       section.lockedRemedy = null;
       section.timingNotice = null;
     });
@@ -804,6 +828,9 @@ export function planDailyAgenda({
       };
       candidate.next = null;
       candidate.pendingPrograms = [];
+      // A displaced offer is no catch-up either: the flags follow `next`.
+      candidate.catchUp = false;
+      candidate.backfill = null;
       // Rule 1 outranks rule 2: a section that already served its non-elective
       // obligation stays `served` even when its extra-block offer is
       // displaced for printing purposes.
