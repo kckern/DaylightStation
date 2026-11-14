@@ -74,6 +74,20 @@ describe('agendaDocument lesson cards', () => {
     expect(lessonCard(build([section({ catchUp: true })])).rail).toBe('Catch-up');
   });
 
+  it('names the missed weekdays a Saturday catch-up backfills', () => {
+    const one = section({ catchUp: true, backfill: { missedDays: ['2026-11-09'] } });
+    expect(lessonCard(build([one])).rail).toBe('Catch-up · Mon');
+    const two = section({ catchUp: true, backfill: { missedDays: ['2026-11-09', '2026-11-11'] } });
+    expect(lessonCard(build([two])).rail).toBe('Catch-up · Mon, Wed');
+    const all = section({ catchUp: true, backfill: { missedDays: ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'] } });
+    expect(lessonCard(build([all])).rail).toBe('Catch-up · Mon, Tue, Wed, Thu, Fri');
+  });
+
+  it('a malformed missed day is left out rather than printed wrong', () => {
+    const odd = section({ catchUp: true, backfill: { missedDays: ['nope', '2026-11-13'] } });
+    expect(lessonCard(build([odd])).rail).toBe('Catch-up · Fri');
+  });
+
   it('leaves on-schedule work unrailed', () => {
     // Absent, not empty: the renderer treats any non-blank string as a rail, so
     // an always-present field would put a bar on every card.
