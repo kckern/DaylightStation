@@ -32,8 +32,10 @@ describe('ChordStaffRenderer — roll strokes are part of what is drawn', () => 
     });
     const strokes = () => drawn.splice(0);
 
+    // Mounting engraves twice (before and after the box is measured), so read the
+    // stroke the LAST engrave drew.
     const { rerender } = render(<ChordStaffRenderer columns={[col(rolled), col(struck(2000))]} />);
-    const first = strokes();
+    const first = strokes().slice(-1);
     expect(first).toHaveLength(1);
 
     // Same pitches and durations; the roll is now on the second column.

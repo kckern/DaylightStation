@@ -30,16 +30,16 @@ describe('CurrentChordStaff', () => {
     renderChordStaff.mockClear();
 
     act(() => { rerender(<CurrentChordStaff activeNotes={surface([60, 10_000])} detectedKey="C" />); });
-    expect(drawn()).toEqual(['60:q']);
+    expect(drawn()).toEqual(['60:8']);
 
     act(() => { vi.setSystemTime(10_400); rerender(<CurrentChordStaff activeNotes={surface([62, 10_400])} detectedKey="C" />); });
-    expect(drawn()).toEqual(['60:q', '60:q 62:q']);
+    expect(drawn()).toEqual(['60:8', '60:8 62:8']);
 
-    // E 160ms after D: D closes as an eighth against the 400ms baseline. Durations
-    // computed a render late would first draw D with its old provisional quarter
-    // ('60:q 62:q 64:q') and engrave a second time a moment later.
-    act(() => { vi.setSystemTime(10_560); rerender(<CurrentChordStaff activeNotes={surface([64, 10_560])} detectedKey="C" />); });
-    expect(drawn()).toEqual(['60:q', '60:q 62:q', '60:q 62:8 64:q']);
+    // E 600ms after D: D closes as a quarter against the 400ms baseline (> 1.2 × 400).
+    // Durations computed a render late would first draw D with its old provisional
+    // eighth ('60:8 62:8 64:8') and engrave a second time a moment later.
+    act(() => { vi.setSystemTime(11_000); rerender(<CurrentChordStaff activeNotes={surface([64, 11_000])} detectedKey="C" />); });
+    expect(drawn()).toEqual(['60:8', '60:8 62:8', '60:8 62:q 64:8']);
   });
 
   it('an idle tick re-renders nothing', () => {
@@ -56,9 +56,9 @@ describe('CurrentChordStaff', () => {
     act(() => { vi.setSystemTime(10_100); rerender(<CurrentChordStaff activeNotes={surface([60, 10_000], [62, 10_100])} detectedKey="C" />); });
     // ...then C lets go and D stays down: a legato line, not a chord.
     act(() => { vi.setSystemTime(10_120); rerender(<CurrentChordStaff activeNotes={surface([62, 10_100])} detectedKey="C" />); });
-    expect(drawn().at(-1)).toBe('60.62:q');
+    expect(drawn().at(-1)).toBe('60.62:8');
     act(() => { vi.advanceTimersByTime(80); });
-    expect(drawn().at(-1)).toBe('60:8 62:q');
+    expect(drawn().at(-1)).toBe('60:8 62:8');
     const splits = sampled.mock.calls.filter(([event]) => event === 'chord-staff.legato-split');
     expect(splits).toHaveLength(1);
     expect(splits[0][1]).toMatchObject({ notes: [60], next: [62], stepMs: 100 });

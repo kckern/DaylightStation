@@ -111,8 +111,14 @@ export const ROLL_MARK_MS = 100;
 /** Ten fingers: more notes than this in one column is two gestures, not one chord. */
 export const MAX_COLUMN_NOTES = 10;
 
-/** Columns kept on the staff before the oldest scrolls off the left. */
-export const COLUMN_CAPACITY = 8;
+/**
+ * Columns the model keeps. NOT how many are drawn: the renderer lays columns out by
+ * duration (renderers/chordStaff.js layoutColumns) and draws the newest that fit, so a
+ * run of eighths shows ~12 at the Studio pane where quarters show 8. The model must hold
+ * at least as many as the densest line can show, or a dense staff would start empty on
+ * the left; 16 covers it with room to spare.
+ */
+export const COLUMN_CAPACITY = 16;
 
 /**
  * Silence after which the NEXT strike starts a fresh line at the left edge instead of
@@ -130,32 +136,75 @@ export const STALE_CLEAR_MS = 30000;
 
 // ─── Rhythm ─────────────────────────────────────────────────────────────────────
 
-/** Below FAST_RATIO × baseline a column is an eighth; above SLOW_RATIO × baseline, a half. */
-export const FAST_RATIO = 0.6;
-export const SLOW_RATIO = 1.5;
+/**
+ * Below FAST_RATIO × baseline a column is an eighth; above SLOW_RATIO × baseline, a half.
+ *
+ * Biased toward eighths on purpose. With no meter, an eighth is the most neutral glyph
+ * that still BEAMS, and a line of beamed eighths reads as one phrase where a row of
+ * stand-alone quarters reads as loose notes. So a note at your own pace — up to 20%
+ * slower — is an eighth; a quarter means clearly held back, a half means a real hold.
+ * Measured on the replay harness (340 takes): 0.6/1.5 drew 29.5% of columns as
+ * eighths, 0.9/2.0 56.2%, 1.2/2.0 70.5%, 1.5/2.0 77.0% (where quarters all but vanish).
+ * 2.0 × BASELINE_MAX_MS = 1600ms keeps a half reachable under the 3000ms idle line.
+ */
+export const FAST_RATIO = 1.2;
+export const SLOW_RATIO = 2.0;
 
 /**
- * How many recent inter-onset intervals feed the baseline. Deliberately longer than
- * COLUMN_CAPACITY: a capacity-8 staff yields at most 7 visible gaps, so a baseline
- * drawn only from what is on screen would be entirely rewritten by a single run.
+ * A gap longer than BREATH_RATIO × PACE before a column is a BREATH: the staff draws a
+ * thin bar line before that column and restarts its beat count there. Decided only
+ * when the column after the gap arrives (the gap isn't known before), never
+ * speculatively.
+ *
+ * PACE is how you are actually playing — the median of the recent gaps, floored at
+ * BASELINE_MIN_MS but NOT capped at BASELINE_MAX_MS like the duration baseline. The
+ * cap exists to keep halves reachable; against it, a slow chorale (a chord every two
+ * seconds) made every gap a "breath" and drew a bar line between every chord. Against
+ * the real pace a breath is what it should be: a pause relative to the playing around
+ * it. At an ordinary pace (under 800ms) the two are the same, and 2.0 with the same
+ * strict `>` is exactly the half threshold. The first gap of a line has no pace yet:
+ * it is never a breath.
+ */
+export const BREATH_RATIO = 2.0;
+
+/**
+ * Smoothing. Inside a run of eighths, a column whose gap lands just past the eighth →
+ * quarter cut-off — under SMOOTH_RATIO × FAST_RATIO × baseline, i.e. within 15% above
+ * it — closes as an EIGHTH when the column before it closed as an eighth (and no breath
+ * separates them). One slightly late note in a run otherwise drew a lone quarter that
+ * broke the beam. The column after it is the newest, which always starts as an eighth,
+ * so the note sits between eighths as drawn at that moment. Decided at close and stored;
+ * the newest column's provisional glyph uses the same raised cut-off so it doesn't show
+ * a quarter only to close as an eighth.
+ */
+export const SMOOTH_RATIO = 1.15;
+
+/** Eighth-units a duration counts for in the beat grouping: 8 = 1, q = 2, h = 4. */
+export const DURATION_UNITS = { 8: 1, q: 2, h: 4 };
+
+/**
+ * How many recent inter-onset intervals feed the baseline. Deliberately longer than a
+ * screenful: the densest line (all eighths at the Studio pane) shows about 12 columns,
+ * 11 gaps, so a baseline drawn only from what is on screen would be entirely rewritten
+ * by a single run.
  */
 export const IOI_MEMORY = 16;
 
 /**
  * The baseline is clamped, and BOTH ends of the clamp do real work.
  *
- * The FLOOR is what makes a fast run readable at all. A purely relative baseline is
- * self-defeating on a uniform passage: play twelve notes at 120ms and the median
- * becomes 120, the eighth threshold becomes 72ms, and the run classifies as ordinary
- * quarters — the exact case the feature exists to draw. Flooring the baseline at
- * 300ms means anything under 180ms reads as an eighth in any context, which matches
- * how a sub-180ms note actually sounds. Above the floor the ratio does relative work
+ * The FLOOR anchors the scale to how fast a note actually is. A purely relative
+ * baseline follows the player all the way down: play a run at 120ms and the median
+ * becomes 120, the eighth threshold 144ms, and a 200ms note inside the run — still
+ * quick by any ear — draws as a quarter, breaking the beam. Flooring the baseline at
+ * 300ms means anything under 360ms reads as an eighth in any context, which matches
+ * how a note that quick actually sounds. Above the floor the ratio does relative work
  * as intended.
  *
  * The CEILING keeps half notes reachable. A half needs a gap longer than
  * SLOW_RATIO × baseline, but a gap of IDLE_CLEAR_MS starts a fresh line first, so a
- * baseline above ~1000ms would put the half threshold past the clear and no half
- * could ever draw. 1.5 × 800 = 1200ms, a wide margin under the 3000ms idle line.
+ * baseline above ~1500ms would put the half threshold past the clear and no half
+ * could ever draw. 2.0 × 800 = 1600ms, a wide margin under the 3000ms idle line.
  */
 export const BASELINE_MIN_MS = 300;
 export const BASELINE_MAX_MS = 800;
@@ -170,7 +219,20 @@ export const DEFAULT_BASELINE_MS = 500;
 
 /** @typedef {'8'|'q'|'h'} Duration */
 /** @typedef {{ midi: number, at: number }} Arrival */
-/** @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number> }} FlowColumn */
+/**
+ * `closeDuration` is the duration the column CLOSED with, and never changes after:
+ * `duration` can still be promoted to a half when a held column is released, but the
+ * renderer takes a column's WIDTH from `closeDuration`, so a promotion redraws the glyph
+ * without shoving the columns to its right. Null while the column is the newest.
+ *
+ * `unitStart` is where the column starts in eighth-units, counted from the start of the
+ * line or the last breath (DURATION_UNITS of each column's closeDuration). Set when the
+ * column OPENS — it depends only on columns already closed — so the beat grouping it
+ * drives never shifts once drawn, and it travels with the column when the oldest
+ * scrolls off. `breathBefore`: the gap before this column was a breath (BREATH_RATIO).
+ * `smoothed`: closed as an eighth by the smoothing rule (SMOOTH_RATIO).
+ * @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number>, unitStart?: number, breathBefore?: boolean, smoothed?: boolean }} FlowColumn
+ */
 
 /** A new, empty flow. */
 export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [] });
@@ -223,8 +285,42 @@ function judgeGap(ioi, recentIois) {
   const baseline = recentIois.length
     ? baselineOf(recentIois)
     : Math.min(DEFAULT_BASELINE_MS, clamp(ioi, BASELINE_MIN_MS, BASELINE_MAX_MS));
-  return { duration: classifyIoi(ioi, baseline), recentIois: [...recentIois, ioi].slice(-IOI_MEMORY) };
+  return {
+    duration: classifyIoi(ioi, baseline),
+    recentIois: [...recentIois, ioi].slice(-IOI_MEMORY),
+    breath: isBreath(ioi, recentIois),
+    baseline,
+  };
 }
+
+/**
+ * Whether `col` (closing now) may be smoothed into an eighth given the column before
+ * it: that one closed AND is drawn as a plain eighth — not itself smoothed (so a run of
+ * slightly-late notes can't chain into eighths: smoothing is for a LONE late note), and
+ * not a held column drawn as a half (a hold promotion, released or still held past the
+ * half threshold) — with no breath between them.
+ */
+function smoothsAfter(before, col, now, baseline) {
+  if (!before || col.breathBefore) return false;
+  if (before.closeDuration !== '8' || before.duration !== '8' || before.smoothed) return false;
+  const heldIntoHalf = before.heldAtClose && before.releasedAt === null && now - before.startedAt > SLOW_RATIO * baseline;
+  return !heldIntoHalf;
+}
+
+/**
+ * A breath: the gap is longer than BREATH_RATIO × the pace, and the gap before it was
+ * not. Slowing into long notes draws ONE bar line where the pause began, not one
+ * between every long note while the pace (a median over IOI_MEMORY gaps) catches up —
+ * replay 25-kckern-dense drew four bars over six half-note chords.
+ */
+function isBreath(ioi, recentIois) {
+  if (!recentIois.length) return false;
+  const limit = BREATH_RATIO * Math.max(BASELINE_MIN_MS, median(recentIois));
+  return ioi > limit && !(recentIois[recentIois.length - 1] > limit);
+}
+
+/** Where the column after `col` starts in eighth-units (0 after a breath). */
+const nextUnitStart = (col, breath) => (breath ? 0 : (col.unitStart ?? 0) + (DURATION_UNITS[col.closeDuration] ?? 2));
 
 /**
  * Fold a batch of new note-ons into the flow.
@@ -290,21 +386,34 @@ export function pushOnsets(flow, midis, now, opts = {}) {
   }
 
   let recentIois = flow.recentIois;
+  let unitStart = 0;
+  let breathBefore = false;
   if (open) {
-    const judged = judgeGap(now - open.startedAt, recentIois);
+    const ioi = now - open.startedAt;
+    const judged = judgeGap(ioi, recentIois);
+    const before = columns[columns.length - 2];
+    const smoothed = judged.duration === 'q' && smoothsAfter(before, open, now, judged.baseline)
+      && ioi < SMOOTH_RATIO * FAST_RATIO * judged.baseline;
+    const duration = smoothed ? '8' : judged.duration;
     // heldAtClose: every key still down as the next column opens means the gap to it
     // says nothing about how long the column lasts — pushReleases/flowDurations judge
     // the hold instead.
-    columns[columns.length - 1] = {
+    const closed = {
       ...open,
-      duration: judged.duration,
+      duration,
+      closeDuration: duration,
+      smoothed,
       heldAtClose: !!held && open.midis.every((m) => held.has(m)),
     };
+    columns[columns.length - 1] = closed;
     recentIois = judged.recentIois;
+    breathBefore = judged.breath;
+    unitStart = nextUnitStart(closed, breathBefore);
   }
   columns.push({
     midis: sorted, arrivals: arrived, startedAt: now, lastOnsetAt: now,
-    duration: null, heldAtClose: false, releasedAt: null, releases: {},
+    duration: null, closeDuration: null, heldAtClose: false, releasedAt: null, releases: {},
+    unitStart, breathBefore, smoothed: false,
   });
 
   // Overflow scrolls: the oldest column falls off the left, like a line of text
@@ -425,14 +534,24 @@ function splitColumn(flow, i, t, capacity) {
   let recentIois = isNewest ? flow.recentIois : flow.recentIois.slice(0, -1);
   const first = judgeGap(b.startedAt - a.startedAt, recentIois);
   recentIois = first.recentIois;
-  const before = { ...c, ...a, duration: first.duration, heldAtClose: heldA(b.startedAt), releasedAt: null };
-  let after = { ...c, ...b, duration: null, heldAtClose: false, releasedAt: null };
+  // The split's own gap is a legato step — never a breath — and its pieces are counted
+  // on from where the merged column started; only the newest after it is re-counted.
+  // That newest's breathBefore is recomputed from the post-split gap (shorter than the
+  // merged one), so its bar line can appear or vanish — within the same redraw that
+  // already moves it to make room for the split.
+  const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, smoothed: false, heldAtClose: heldA(b.startedAt), releasedAt: null };
+  let after = {
+    ...c, ...b, duration: null, closeDuration: null, smoothed: false, heldAtClose: false, releasedAt: null,
+    breathBefore: false, unitStart: nextUnitStart(before, false),
+  };
+  let rest = flow.columns.slice(i + 1);
   if (!isNewest) {
     const second = judgeGap(next.startedAt - b.startedAt, recentIois);
     recentIois = second.recentIois;
-    after = { ...after, duration: second.duration, heldAtClose: heldB(next.startedAt) };
+    after = { ...after, duration: second.duration, closeDuration: second.duration, heldAtClose: heldB(next.startedAt) };
+    rest = [{ ...next, breathBefore: second.breath, unitStart: nextUnitStart(after, second.breath) }, ...rest.slice(1)];
   }
-  const columns = [...flow.columns.slice(0, i), before, after, ...flow.columns.slice(i + 1)];
+  const columns = [...flow.columns.slice(0, i), before, after, ...rest];
   const overflow = columns.length - capacity;
   return { ...flow, columns: overflow > 0 ? columns.slice(overflow) : columns, recentIois };
 }
@@ -529,8 +648,9 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
  *
  * Every column but the newest carries the duration it was given when it closed, so
  * what is already drawn never changes. The newest column has no gap yet: it shows as
- * a quarter provisionally, and becomes a half once it has been held past the same
- * threshold a closed column would have to clear. A closed column that was fully held
+ * an eighth provisionally — so a run beams as it is played — and grows to a quarter,
+ * then a half, as the clock passes the same thresholds a closed column's gap would
+ * have to clear. A closed column that was fully held
  * when it closed and has not been released yet promotes the same way (its stored
  * duration is only the IOI guess). Those promotions are the only things on the staff
  * that change with the clock, and why the host needs a tick. Upward only.
@@ -543,14 +663,22 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
 export function flowDurations(flow, now, prev) {
   const baseline = baselineOf(flow.recentIois);
   const longHold = (c) => now - c.startedAt > SLOW_RATIO * baseline;
+  const n = flow.columns.length;
+  // The newest column after an eighth (no breath between) grows to a quarter only past
+  // the smoothing cut-off — the one its close will use — so it never shows a quarter
+  // and then closes as an eighth.
+  const smoothNewest = n > 1 && smoothsAfter(flow.columns[n - 2], flow.columns[n - 1], now, baseline);
   const at = (c) => {
-    if (c.duration === null) return longHold(c) ? 'h' : 'q';
+    if (c.duration === null) {
+      const ioi = now - c.startedAt;
+      const d = classifyIoi(ioi, baseline);
+      return d === 'q' && smoothNewest && ioi < SMOOTH_RATIO * FAST_RATIO * baseline ? '8' : d;
+    }
     if (c.heldAtClose && c.releasedAt === null && longHold(c)) return 'h';
     return c.duration;
   };
   // With `prev`, an unchanged answer is `prev` itself and nothing is allocated — the
   // host's 80ms tick asks this of every column on screen, every tick.
-  const n = flow.columns.length;
   if (prev && prev.length === n) {
     let i = 0;
     while (i < n && prev[i] === at(flow.columns[i])) i += 1;

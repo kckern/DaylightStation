@@ -14,8 +14,8 @@ import './CurrentChordStaff.scss';
 // key detection to the shared useDetectedKey hook and rendering to ChordStaffRenderer.
 
 // How often the staff re-examines the clock. Two jobs ride this tick: the idle sweep
-// that resets the line, and the newest column's promotion from a provisional quarter
-// to a half once it has been held long enough. The second is why it is 80ms and not
+// that resets the line, and the newest column's growth from a provisional eighth to a
+// quarter, then a half, as it is held long enough. The second is why it is 80ms and not
 // the 250ms the idle sweep alone used to run at — a quarter of a second late is
 // visible on a note you are watching yourself hold.
 //
@@ -156,7 +156,7 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
       // further key event (C then D, D held) it would otherwise wait for the next touch.
       // The tick bounds that wait to LIFT_TOGETHER_MS + PROVISIONAL_TICK_MS. Same object
       // when nothing settles; commit() also re-reads the durations (the newest
-      // column's provisional quarter promotes to a half on the clock alone).
+      // column's provisional eighth grows to a quarter, then a half, on the clock alone).
       const held = activeRef.current ?? NOTHING_HELD;
       commit(settle(clearIfIdle(viewRef.current.flow, now), now, held), now);
     }, PROVISIONAL_TICK_MS);

@@ -15,7 +15,12 @@
  *   node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs
  *
  * It exits non-zero if any drawn ink falls outside the frame the renderer chose, so it
- * doubles as a no-clip check. Requires playwright (repo root) and bundles chordStaff.js
+ * doubles as a no-clip check — or if two NEIGHBOURING columns on one staff come closer
+ * than MIN_COLUMN_AIR (their ink x-ranges intersect, or nearly): the column layout
+ * spaces by duration and floors each step at the ink's needs (chordStaff.js
+ * layoutColumns), and this is what checks that floor — or if a beam crosses into the
+ * OTHER staff's lines (lone stems that do are reported, not gated), or a breath bar line
+ * comes within MIN_COLUMN_AIR of a column's ink. Requires playwright (repo root) and bundles chordStaff.js
  * against frontend/node_modules — the frontend has its OWN vexflow (4.x); the root
  * node_modules has a different, much older one.
  */
@@ -35,6 +40,13 @@ window.computeChordStaffLayout = computeChordStaffLayout;
 
 const KEYS = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'];
 const ASPECTS = [560 / 210, 300 / 220, 1.0, 1.7, 3.5, 0.6];
+// Least air (logical units) between neighbouring columns' ink on one staff.
+const MIN_COLUMN_AIR = 2;
+// The other staff's outer line, which a beam must not cross: the bass top line for a
+// treble beam, the treble bottom line for a bass beam. TOP_ROOM 58 + 4 spaces of stave
+// headroom (+ 40 more for the bottom line); STAFF_GAP 66.
+const BASS_TOP_LINE_Y = 58 + 66 + 40;
+const TREBLE_BOTTOM_LINE_Y = 58 + 40 + 40;
 
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), 'ink-sweep-'));
@@ -58,7 +70,7 @@ async function main() {
     await page.goto('file://' + join(dir, 'sweep.html'));
     await page.waitForFunction(() => !!window.renderChordStaff);
 
-    const result = await page.evaluate(({ KEYS, ASPECTS }) => {
+    const result = await page.evaluate(({ KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y }) => {
       const cases = [];
       for (let m = 21; m <= 108; m += 1) {
         cases.push([m]);                                                  // every key alone
@@ -85,6 +97,23 @@ async function main() {
       let inkTop = 1e9, inkBottom = -1e9, inkLeft = 1e9;
       let worstTop = null, worstBottom = null, worstLeft = null;
       const clips = [];
+      // Neighbouring-column collisions, ordinary playing vs forearm clusters.
+      const overlaps = [];
+      let overlapCount = 0;
+      let stressOverlaps = 0;
+      let pairsChecked = 0;
+      let tightest = Infinity;
+      // Beams that cross into the other staff's lines (gated), and lone stems that do
+      // (reported only: a stem turned away would leave the frame, or both sides cross).
+      const crossings = [];
+      let crossingCount = 0;
+      let beamsChecked = 0;
+      let loneStemCrossings = 0;
+      let loneStemWorst = null;
+      // Breath bar lines closer than MIN_COLUMN_AIR to the ink of a column beside them.
+      const barHits = [];
+      let barHitCount = 0;
+      let barsChecked = 0;
       const over = { top: 0, bottom: 0, left: 0, right: 0 };
       const perAspect = {};
       let renders = 0;
@@ -95,12 +124,14 @@ async function main() {
       const FLOWS = [
         (midis) => [midis],
         (midis) => [midis, midis.map((m) => m + 1), midis],
-        (midis) => Array.from({ length: 8 }, (_, i) => midis.map((m) => m + i)),
+        // Sixteen columns — the model's capacity — so a dense line fills the pane and
+        // scrolls, which is where the duration-weighted layout packs columns closest.
+        (midis) => Array.from({ length: 16 }, (_, i) => midis.map((m) => m + (i % 8))),
         // All rolled, alternating direction: the stroke sits left of every chord, so
         // the first slot is the one that can overrun FRAME_LEFT.
         // Arrivals 110ms apart (past ROLL_MARK_MS for any two notes of a staff) run bottom → top on even columns and top → bottom on odd,
         // so each staff holding two or more notes draws its stroke, both directions.
-        (midis) => Array.from({ length: 8 }, (_, i) => {
+        (midis) => Array.from({ length: 12 }, (_, i) => {
           const notes = midis.map((m) => m + i);
           const order = i % 2 ? [...notes].sort((a, b) => b - a) : [...notes].sort((a, b) => a - b);
           return { midis: notes, arrivals: order.map((midi, k) => ({ midi, at: k * 110 })) };
@@ -127,7 +158,9 @@ async function main() {
               .map((c) => (Array.isArray(c) ? { midis: c, arrivals: [] } : c))
               .map((c) => ({ ...c, midis: c.midis.filter((m) => m >= 21 && m <= 108) }))
               .filter((c) => c.midis.length)
-              .map((c, i) => ({ midis: c.midis, arrivals: c.arrivals, duration: durationAt(i) }));
+              // Every fifth column of a long flow comes after a breath, so bar lines are
+              // drawn — and checked against the ink either side — across the sweep.
+              .map((c, i, all) => ({ midis: c.midis, arrivals: c.arrivals, duration: durationAt(i), breathBefore: all.length >= 8 && i % 5 === 4 }));
             const dur = columns.map((c) => c.duration).join('');
             window.renderChordStaff(host, {
               columns, keySignature: ks, aspect,
@@ -152,6 +185,53 @@ async function main() {
             perAspect[a].worstRight = Math.max(perAspect[a].worstRight, +(right - (vx + vw)).toFixed(1));
             if (right > vx + vw || top < vy || bottom > vy + vh || left < vx) perAspect[a].clipped += 1;
             const pathological = stress.has(midis.join(','));
+            // Inter-column air, per staff: each drawn note's ink box (accidentals,
+            // strokes, displaced heads, flags and 8va/8vb labels all draw inside its
+            // .vf-stavenote group; beamed stems draw with the beam), tagged with its
+            // staff by the renderer (data-staff), sorted by x, neighbours compared.
+            const staffBoxes = { treble: [], bass: [] };
+            for (const g of host.querySelectorAll('g.vf-stavenote[data-staff]')) {
+              const b = g.getBBox();
+              staffBoxes[g.dataset.staff].push([b.x, b.x + b.width]);
+            }
+            const intoOther = (staff, b) => (staff === 'treble'
+              ? b.y + b.height - BASS_TOP_LINE_Y : TREBLE_BOTTOM_LINE_Y - b.y);
+            for (const g of host.querySelectorAll('g.vf-beam[data-staff]')) {
+              beamsChecked += 1;
+              const into = intoOther(g.dataset.staff, g.getBBox());
+              if (into <= 0) continue;
+              crossingCount += 1;
+              if (crossings.length < 10) crossings.push({ midis, ks, aspect: +aspect.toFixed(2), dur, staff: g.dataset.staff, into: +into.toFixed(1) });
+            }
+            for (const g of host.querySelectorAll('g.vf-stavenote[data-staff]')) {
+              const st = g.querySelector('.vf-stem');
+              if (!st || pathological) continue;
+              const into = intoOther(g.dataset.staff, st.getBBox());
+              if (into <= 0) continue;
+              loneStemCrossings += 1;
+              if (!loneStemWorst || into > loneStemWorst.into) loneStemWorst = { midis, ks, aspect: +aspect.toFixed(2), dur, staff: g.dataset.staff, into: +into.toFixed(1) };
+            }
+            const allBoxes = [...staffBoxes.treble, ...staffBoxes.bass];
+            for (const g of host.querySelectorAll('g.vf-breath-bar')) {
+              const b = g.getBBox();
+              barsChecked += 1;
+              const hit = allBoxes.some(([x0, x1]) => b.x < x1 + MIN_COLUMN_AIR && x0 - MIN_COLUMN_AIR < b.x + b.width);
+              if (!hit) continue;
+              barHitCount += 1;
+              if (barHits.length < 10) barHits.push({ midis, ks, aspect: +aspect.toFixed(2), dur, bar: +b.x.toFixed(1) });
+            }
+            for (const [staff, boxes] of Object.entries(staffBoxes)) {
+              boxes.sort((p, q) => p[0] - q[0]);
+              for (let k = 1; k < boxes.length; k += 1) {
+                const air = boxes[k][0] - boxes[k - 1][1];
+                pairsChecked += 1;
+                if (!pathological) tightest = Math.min(tightest, air);
+                if (air >= MIN_COLUMN_AIR) continue;
+                if (pathological) { stressOverlaps += 1; continue; }
+                overlapCount += 1;
+                if (overlaps.length < 10) overlaps.push({ midis, ks, aspect: +aspect.toFixed(2), dur, staff, air: +air.toFixed(1) });
+              }
+            }
             if (pathological) stressClips += (right > vx + vw ? 1 : 0);
             else if (top < vy || bottom > vy + vh || left < vx || right > vx + vw) {
               if (clips.length < 10) clips.push({ midis, ks, aspect: +aspect.toFixed(2), dur,
@@ -170,8 +250,11 @@ async function main() {
         over: Object.fromEntries(Object.entries(over).map(([k, v]) => [k, +v.toFixed(1)])),
         perAspect,
         clips,
+        overlaps, overlapCount, stressOverlaps, pairsChecked, tightest: +tightest.toFixed(1),
+        crossings, crossingCount, beamsChecked, loneStemCrossings, loneStemWorst,
+        barHits, barHitCount, barsChecked,
       };
-    }, { KEYS, ASPECTS });
+    }, { KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y });
 
     await browser.close();
 
@@ -184,13 +267,35 @@ async function main() {
     console.log(`max overrun past the frame (units): ${JSON.stringify(result.over)}`);
     console.log('\nper box aspect (2.67 = Studio row, 1.36 = Videos column):');
     console.table(result.perAspect);
+    console.log(`\nneighbouring columns: ${result.pairsChecked} pairs checked, tightest ${result.tightest} units of air (ordinary playing)`);
+    console.log(`overlapping:          ${result.overlapCount} (ordinary playing, need 0; < ${MIN_COLUMN_AIR} units counts)`);
+    console.log(`                      ${result.stressOverlaps} forearm-cluster pairs closer than ${MIN_COLUMN_AIR} — reported, not gated`);
+    console.log(`beams:                ${result.beamsChecked} checked, ${result.crossingCount} cross into the other staff's lines (need 0)`);
+    console.log(`lone stems:           ${result.loneStemCrossings} reach into the other staff (reported, not gated; worst ${JSON.stringify(result.loneStemWorst)})`);
+    console.log(`breath bars:          ${result.barsChecked} checked, ${result.barHitCount} closer than ${MIN_COLUMN_AIR} units to a column's ink (need 0)`);
+    let failed = false;
     if (result.clips.length) {
       console.error('\nINK OUTSIDE THE FRAME — the staff is clipping:');
       for (const c of result.clips) console.error('  ' + JSON.stringify(c));
-      process.exitCode = 1;
-      return;
+      failed = true;
     }
-    console.log('\nNo clipping: every drawn element is inside the frame the renderer chose.');
+    if (result.overlapCount) {
+      console.error('\nNEIGHBOURING COLUMNS COLLIDE:');
+      for (const c of result.overlaps) console.error('  ' + JSON.stringify(c));
+      failed = true;
+    }
+    if (result.crossingCount) {
+      console.error('\nA BEAM CROSSES INTO THE OTHER STAFF:');
+      for (const c of result.crossings) console.error('  ' + JSON.stringify(c));
+      failed = true;
+    }
+    if (result.barHitCount) {
+      console.error('\nA BREATH BAR LINE TOUCHES A COLUMN:');
+      for (const c of result.barHits) console.error('  ' + JSON.stringify(c));
+      failed = true;
+    }
+    if (failed) { process.exitCode = 1; return; }
+    console.log('\nNo clipping, no collisions: every drawn element is inside the frame, and neighbouring columns keep their air.');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

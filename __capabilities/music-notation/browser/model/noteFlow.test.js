@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, columnRolls, baselineOf, classifyIoi,
-  GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
+  FAST_RATIO, GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO, LIFT_TOGETHER_MS,
+  BREATH_RATIO, SMOOTH_RATIO,
 } from "./noteFlow.js";
 
 // Helper: play a sequence of [midis, atMs] and return the resulting flow.
@@ -245,18 +246,20 @@ describe('noteFlow — baseline', () => {
   });
 
   it('remembers further back than the staff can show', () => {
-    // Nine columns at 400ms: the first has scrolled off, its gap still counts.
-    const flow = run(Array.from({ length: 9 }, (_, i) => [[60 + i], i * 400]));
+    // One column more than the model keeps, at 400ms: the first has scrolled off, its
+    // gap still counts.
+    const flow = run(Array.from({ length: COLUMN_CAPACITY + 1 }, (_, i) => [[60 + i], i * 400]));
     expect(flow.columns.length).toBe(COLUMN_CAPACITY);
-    expect(flow.recentIois.length).toBe(8);
+    expect(flow.recentIois.length).toBe(COLUMN_CAPACITY);
   });
 });
 
 describe('noteFlow — duration classification', () => {
   it('classifies against the ratios', () => {
-    expect(classifyIoi(100, 500)).toBe('8');   // < 0.6 × 500
-    expect(classifyIoi(500, 500)).toBe('q');
-    expect(classifyIoi(800, 500)).toBe('h');   // > 1.5 × 500
+    expect(classifyIoi(100, 500)).toBe('8');
+    expect(classifyIoi(500, 500)).toBe('8');   // your own pace is an eighth (< 1.2 × 500)
+    expect(classifyIoi(700, 500)).toBe('q');   // clearly held back
+    expect(classifyIoi(1100, 500)).toBe('h');  // > 2.0 × 500
   });
 
   it('draws a fast run from silence as eighths all the way through', () => {
@@ -266,18 +269,23 @@ describe('noteFlow — duration classification', () => {
     expect(closed(flow)).toEqual(['8', '8', '8', '8', '8', '8', '8']);
   });
 
-  it('draws ordinary playing as quarters', () => {
+  it('draws playing at your own pace as eighths, so the line beams', () => {
     const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 500]));
-    expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
+    expect(closed(flow)).toEqual(['8', '8', '8', '8', '8']);
   });
 
   it('a uniform 250ms passage is uniform from the first gap', () => {
     const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 250]), { held: noneHeld });
-    expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
+    expect(closed(flow)).toEqual(['8', '8', '8', '8', '8']);
+  });
+
+  it('a clearly held-back note is a quarter in a line of eighths', () => {
+    const flow = run([[[60], 0], [[62], 400], [[64], 800], [[65], 1400], [[67], 1800]], { held: noneHeld });
+    expect(closed(flow)).toEqual(['8', '8', 'q', '8']);
   });
 
   it('gives a long gap a half note', () => {
-    const flow = run([[[60], 0], [[64], 900]]);
+    const flow = run([[[60], 0], [[64], 1100]]);
     expect(closed(flow)).toEqual(['h']);
   });
 
@@ -288,27 +296,31 @@ describe('noteFlow — duration classification', () => {
   });
 
   it('does NOT rewrite the duration of a column already on the staff', () => {
-    // Play steadily, then break into a run. The steady quarters must stay quarters
-    // even though the run drags the baseline down underneath them.
+    // Play steadily, then break into a run. The run drags the baseline down to the
+    // floor, under which a 400ms gap would now read as a quarter — the steady eighths
+    // already drawn must stay eighths.
     const steady = Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]);
     const before = closed(run(steady));
     const after = closed(run([...steady, [[72], 1520], [[74], 1640], [[76], 1760]]));
     expect(after.slice(0, before.length)).toEqual(before);
-    expect(before).toEqual(['q', 'q', 'q']);
+    expect(before).toEqual(['8', '8', '8']);
   });
 });
 
 describe('noteFlow — the provisional newest column', () => {
-  it('shows a quarter the moment it is struck', () => {
+  it('shows an eighth the moment it is struck', () => {
     const flow = pushOnsets(emptyFlow(), [60], 0);
-    expect(flowDurations(flow, 0)).toEqual(['q']);
+    expect(flowDurations(flow, 0)).toEqual(['8']);
   });
 
-  it('promotes itself to a half once held past the threshold', () => {
+  it('grows to a quarter, then a half, as the clock passes each threshold', () => {
     const flow = pushOnsets(emptyFlow(), [60], 0);
-    const threshold = SLOW_RATIO * DEFAULT_BASELINE_MS;
-    expect(flowDurations(flow, threshold - 1)).toEqual(['q']);
-    expect(flowDurations(flow, threshold + 1)).toEqual(['h']);
+    const toQuarter = FAST_RATIO * DEFAULT_BASELINE_MS;
+    const toHalf = SLOW_RATIO * DEFAULT_BASELINE_MS;
+    expect(flowDurations(flow, toQuarter - 1)).toEqual(['8']);
+    expect(flowDurations(flow, toQuarter + 1)).toEqual(['q']);
+    expect(flowDurations(flow, toHalf - 1)).toEqual(['q']);
+    expect(flowDurations(flow, toHalf + 1)).toEqual(['h']);
   });
 
   it('promotes before the idle wipe would take it (the half is actually visible)', () => {
@@ -317,8 +329,8 @@ describe('noteFlow — the provisional newest column', () => {
 
   it('leaves closed columns alone while the newest one promotes', () => {
     const flow = run([[[60], 0], [[64], 500]]);
-    expect(flowDurations(flow, 500)).toEqual(['q', 'q']);
-    expect(flowDurations(flow, 500 + SLOW_RATIO * 500 + 1)).toEqual(['q', 'h']);
+    expect(flowDurations(flow, 500)).toEqual(['8', '8']);
+    expect(flowDurations(flow, 500 + SLOW_RATIO * 500 + 1)).toEqual(['8', 'h']);
   });
 
   it('returns one duration per column', () => {
@@ -361,18 +373,31 @@ describe('noteFlow — holds (pushReleases)', () => {
     expect(flowDurations(flow, 900)[0]).toBe('h');
   });
 
+  it('remembers the duration a column CLOSED with, through a hold promotion', () => {
+    // The renderer takes a closed column's width from closeDuration, so a later
+    // promotion to a half must leave it alone (the glyph changes; nothing moves).
+    let flow = runHeld([[[48], 0, setOf(48)], [[72], 250, setOf(48, 72)], [[74], 500, setOf(48, 74)]]);
+    expect(flow.columns[0].closeDuration).toBe(flow.columns[0].duration);
+    const closedAs = flow.columns[0].closeDuration;
+    expect(flow.columns[flow.columns.length - 1].closeDuration).toBe(null);
+    flow = pushReleases(flow, 2000, setOf(74));
+    expect(flow.columns[0].duration).toBe('h');
+    expect(flow.columns[0].closeDuration).toBe(closedAs);
+    expect(closedAs).not.toBe('h');
+  });
+
   it('a column released before the next onset keeps its IOI duration', () => {
     const flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(64)]]);
     expect(flow.columns[0].heldAtClose).toBe(false);
-    expect(flowDurations(flow, 5000)[0]).toBe('q');
+    expect(flowDurations(flow, 5000)[0]).toBe('8');
   });
 
   it('release freezes the duration', () => {
     let flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
     flow = pushReleases(flow, 400 + 0, setOf(64)); // 60 let go at 400
     expect(flow.columns[0].releasedAt).toBe(400);
-    expect(flow.columns[0].duration).toBe('q');
-    expect(flowDurations(flow, 5000)[0]).toBe('q');
+    expect(flow.columns[0].duration).toBe('8');
+    expect(flowDurations(flow, 5000)[0]).toBe('8');
   });
 
   it('release by none-held: the column releases once none of its keys is down', () => {
@@ -594,9 +619,126 @@ describe('noteFlow — the idle tick allocates nothing', () => {
     flow = pushOnsets(flow, [64], 500);
     const first = flowDurations(flow, 600);
     expect(flowDurations(flow, 680, first)).toBe(first);
-    // ...and a new one once the newest column's provisional quarter promotes.
+    // ...and a new one once the newest column's provisional eighth promotes.
     const later = flowDurations(flow, 500 + SLOW_RATIO * 500 + 1, first);
     expect(later).not.toBe(first);
-    expect(later).toEqual(['q', 'h']);
+    expect(later).toEqual(['8', 'h']);
+  });
+});
+
+describe('noteFlow — light pulse (unitStart, breath, smoothing)', () => {
+  // Eighths at 300ms: the baseline sits on its 300ms floor, so the eighth → quarter cut
+  // is 360ms, the smoothing band runs to 414ms, and a breath is >= 600ms.
+  const at300 = (n, from = 0) => Array.from({ length: n }, (_, i) => [[60 + (i % 12)], from + i * 300]);
+
+  it('counts eighth-units from the line start, fixed when each column opens', () => {
+    const flow = run(at300(6));
+    expect(flow.columns.map((c) => c.unitStart)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(flow.columns.every((c) => c.breathBefore === false)).toBe(true);
+  });
+
+  it('counts quarters and halves by their close duration (8 = 1, q = 2, h = 4)', () => {
+    // 300 (8), 300 (8), 500 (q), 700 (h: past 2.0 × 300 — and a breath), 300 ...
+    const flow = run([[[60], 0], [[62], 300], [[64], 600], [[65], 1100], [[67], 1800], [[69], 2100]]);
+    expect(flow.columns.map((c) => c.closeDuration)).toEqual(['8', '8', 'q', 'h', '8', null]);
+    expect(flow.columns.map((c) => c.unitStart)).toEqual([0, 1, 2, 4, 0, 1]);
+    expect(flow.columns.map((c) => c.breathBefore)).toEqual([false, false, false, false, true, false]);
+  });
+
+  it('keeps every column\'s count when the oldest scrolls off', () => {
+    const before = run(at300(COLUMN_CAPACITY));
+    const after = pushOnsets(before, [80], COLUMN_CAPACITY * 300);
+    expect(after.columns).toHaveLength(COLUMN_CAPACITY);
+    // Column k of `before` is column k - 1 of `after`, with the same unitStart.
+    for (let k = 1; k < COLUMN_CAPACITY; k += 1) {
+      expect(after.columns[k - 1].unitStart).toBe(before.columns[k].unitStart);
+    }
+    expect(after.columns[COLUMN_CAPACITY - 1].unitStart).toBe(COLUMN_CAPACITY);
+  });
+
+  it('marks a breath only once the note after the gap arrives, and restarts the count', () => {
+    const flow = run(at300(3));
+    // Silence: 1s passes. Nothing about the gap is known, so nothing is marked.
+    expect(flow.columns.some((c) => c.breathBefore)).toBe(false);
+    const next = pushOnsets(flow, [72], 600 + BREATH_RATIO * 300 + 1);
+    expect(next.columns[3].breathBefore).toBe(true);
+    expect(next.columns[3].unitStart).toBe(0);
+    expect(next.columns[2].closeDuration).toBe('h');
+  });
+
+  it('a fresh line (after IDLE_CLEAR_MS) starts counting at 0 with no breath', () => {
+    const flow = pushOnsets(run(at300(3)), [72], 600 + IDLE_CLEAR_MS + 1);
+    expect(flow.columns).toHaveLength(1);
+    expect(flow.columns[0]).toMatchObject({ unitStart: 0, breathBefore: false });
+  });
+
+  it('smooths a slightly late note in a run of eighths, at close only', () => {
+    // 8 8 then a 400ms gap: past the 360 cut, inside 1.15 × 360 = 414 → still an eighth.
+    const late = run([...at300(3), [[70], 600 + 400]]);
+    expect(late.columns[2]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(late.columns[3].unitStart).toBe(3);
+    // 420ms is past the band: a real quarter.
+    const later = run([...at300(3), [[70], 600 + 420]]);
+    expect(later.columns[2]).toMatchObject({ closeDuration: 'q', smoothed: false });
+    // No eighth before it (the first gap of the line): no smoothing.
+    const first = run([[[60], 0], [[62], 300], [[64], 300 + 1.1 * 360]]);
+    expect(first.columns[0].smoothed).toBe(false);
+    expect(SMOOTH_RATIO * FAST_RATIO * 300).toBeCloseTo(414);
+  });
+
+  it('smooths a LONE late note: a second one in a row stays a quarter', () => {
+    const flow = run([...at300(3), [[70], 600 + 400], [[72], 1000 + 400]]);
+    expect(flow.columns[2]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(flow.columns[3]).toMatchObject({ closeDuration: 'q', smoothed: false });
+  });
+
+  it('does not smooth after a column held into a half', () => {
+    // A is held down while B and C arrive: by C (700ms) A has been held past 2 × 300,
+    // so it draws as a half, and B (a 400ms gap) is not "between eighths".
+    const held = (...ns) => new Set(ns);
+    const play3 = (aHeld) => [[[60], 0, held(60)], [[64], 300, aHeld ? held(60, 64) : held(64)], [[67], 700, aHeld ? held(60, 67) : held(67)]]
+      .reduce((f, [m, at, h]) => pushOnsets(f, m, at, { held: h }), emptyFlow());
+    expect(play3(false).columns[1]).toMatchObject({ closeDuration: '8', smoothed: true });
+    expect(play3(true).columns[1]).toMatchObject({ closeDuration: 'q', smoothed: false });
+  });
+
+  it('judges a breath against the real pace: a slow chorale draws no bar lines', () => {
+    // A chord every 2s: the duration baseline is capped at 800ms, but the pace is 2s, so
+    // no gap is a pause relative to it.
+    const chorale = run(Array.from({ length: 6 }, (_, i) => [[60 + i, 64 + i], i * 2000]));
+    expect(chorale.columns.some((c) => c.breathBefore)).toBe(false);
+    // The same 2s gap inside 400ms playing is a breath.
+    const phrase = run([...Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]), [[72], 1200 + 2000]]);
+    expect(phrase.columns[4].breathBefore).toBe(true);
+  });
+
+  it('slowing into long notes draws one bar where the pause began, not one per note', () => {
+    const flow = run([
+      ...Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]),
+      ...Array.from({ length: 4 }, (_, i) => [[72 + i], 1200 + (i + 1) * 1500]),
+    ]);
+    expect(flow.columns.map((c) => c.breathBefore)).toEqual([false, false, false, false, true, false, false, false]);
+  });
+
+  it('a breath is strictly past the half threshold, like the half itself', () => {
+    const exact = run([...at300(3), [[72], 600 + BREATH_RATIO * 300]]);
+    expect(exact.columns[2].closeDuration).toBe('q');
+    expect(exact.columns[3].breathBefore).toBe(false);
+  });
+
+  it("the newest after an eighth stays a provisional eighth inside the smoothing band", () => {
+    const flow = run(at300(3));
+    expect(flowDurations(flow, 600 + 400)[2]).toBe('8');
+    expect(flowDurations(flow, 600 + 420)[2]).toBe('q');
+  });
+
+  it('never re-decides a closed column: a later quarter or release does not smooth it', () => {
+    let flow = run([...at300(3), [[70], 600 + 420]]);
+    const closed = flow.columns[2];
+    flow = pushOnsets(flow, [72], 1020 + 300);
+    flow = pushReleases(flow, 1400, new Set());
+    expect(flow.columns[2].closeDuration).toBe(closed.closeDuration);
+    expect(flow.columns[2].smoothed).toBe(false);
+    expect(flow.columns[3].unitStart).toBe(closed.unitStart + 2);
   });
 });

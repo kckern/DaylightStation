@@ -54,6 +54,12 @@ describe('buildRenderColumns', () => {
     expect(b[1].spelling).toEqual(identifyChord([62, 65, 69], 'Ab').spelling);
     expect(a[1].spelling).toEqual(identifyChord([62, 65, 69], 'C').spelling);
   });
+  it("widthDuration is the duration a column closed with; the newest's is its provisional one", () => {
+    const f = flowOf(col([60], 100, { duration: 'h', closeDuration: '8' }), col([64], 400, { duration: null, closeDuration: null }));
+    const out = buildRenderColumns(f, ['h', 'q'], 'C');
+    expect(out[0]).toMatchObject({ duration: 'h', widthDuration: '8' });
+    expect(out[1]).toMatchObject({ duration: 'q', widthDuration: 'q' });
+  });
   it('arrivals are carried through, and no roll', () => {
     const arrivals = [{ midi: 67, at: 100 }, { midi: 64, at: 180 }, { midi: 60, at: 300 }];
     const out = buildRenderColumns(flowOf(col([60, 64, 67], 100, { arrivals }), col([60], 700)), ['q', 'q'], 'C');

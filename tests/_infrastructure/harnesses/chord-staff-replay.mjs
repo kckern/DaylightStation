@@ -83,7 +83,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { createRequire, register } from 'node:module';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
   GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS, LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS, LIFT_TOGETHER_MS,
@@ -94,6 +94,19 @@ import { diffNoteSurface, buildRenderColumns } from '../../../__app_modules/lear
 
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const require = createRequire(import.meta.url);
+
+// The visible window comes from the renderer's own layout (chordStaffWindow), which
+// measures each column's ink with VexFlow — so Node has to load the renderer too. Its
+// bare 'vexflow' import must resolve to the FRONTEND's copy (4.x): the root
+// node_modules has none (or a much older one), the same reason the browser bundles
+// below set nodePaths to frontend/node_modules.
+const FRONTEND_PKG = `file://${path.join(REPO, 'frontend/package.json')}`;
+register(`data:text/javascript,${encodeURIComponent(`
+export async function resolve(specifier, context, next) {
+  if (specifier === 'vexflow') return next(specifier, { ...context, parentURL: ${JSON.stringify(FRONTEND_PKG)} });
+  return next(specifier, context);
+}`)}`);
+const { chordStaffWindow } = await import('../../../__capabilities/music-notation/browser/renderers/chordStaff.js');
 const yaml = require('js-yaml');
 // The raw MIDI event parser, resolved THROUGH @tonejs/midi — a declared dependency
 // whose own declared dependency it is — so the harness never leans on midi-file being
@@ -414,6 +427,7 @@ const blank = () => ({
   takes: 0, onsets: 0, clusters: 0, whole: 0, causes: {}, gaps: {}, heldCauses: {},
   heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, lifted: 0, liftedWhole: 0, legatoExcluded: 0, seqPairs: 0, seqMerged: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
   cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
+  phrases: 0, bars: 0, smoothed: 0, beams: 0, beams4: 0,
 });
 
 function measure(events, rules) {
@@ -478,6 +492,26 @@ function measure(events, rules) {
     // staff on two or more ledger lines.
     if (trebleNotes.some((n) => n < 55) || bassNotes.some((n) => n > 64)) m.crossed += 1;
   });
+
+  // The light pulse, from the columns' close durations (what the staff votes and groups
+  // on): breath bar lines, smoothed eighths, and beat-sized beam groups — runs of eighths
+  // that share a beat group (unitStart / 4) with no breath or new line between. This
+  // counts the groups the pulse ALLOWS; the drawn beams can be fewer (a staff the column
+  // doesn't touch, an off-staff note or an 8va label splits them further).
+  let run = 0;
+  const flush = () => { if (run >= 2) { m.beams += 1; if (run === 4) m.beams4 += 1; } run = 0; };
+  cols.forEach((c, i) => {
+    const lineStart = (c.unitStart ?? 0) === 0 && !c.breathBefore;
+    if (i === 0 || lineStart || c.breathBefore) m.phrases += 1;
+    if (c.breathBefore) m.bars += 1;
+    if (c.smoothed) m.smoothed += 1;
+    const prevCol = cols[i - 1];
+    const joins = prevCol && run > 0 && !lineStart && !c.breathBefore
+      && Math.floor(prevCol.unitStart / 4) === Math.floor(c.unitStart / 4);
+    if (!joins) flush();
+    if (c.closeDuration === '8') run += 1; else flush();
+  });
+  flush();
   return m;
 }
 
@@ -497,7 +531,10 @@ function row(label, m) {
     'chord whole %': pct(m.chordWhole, m.chords), 'lifted-together whole %': `${pct(m.liftedWhole, m.lifted)} of ${m.lifted}`,
     'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
     cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
-    frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed, 'split causes': causes,
+    frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed,
+    phrases: m.phrases, 'bars/take': (m.bars / (m.takes || 1)).toFixed(1), smoothed: m.smoothed,
+    'beams/phrase': (m.beams / (m.phrases || 1)).toFixed(2), 'beams of 4 %': pct(m.beams4, m.beams),
+    'split causes': causes,
   };
 }
 
@@ -512,11 +549,16 @@ function rollCaption({ treble, bass }) {
   return parts.length ? parts.join('/') : null;
 }
 
-/** What one frame shows, if it were drawn now: the last `slots` columns. */
-function snapshot(frame, slots) {
+/**
+ * What one frame shows, if it were drawn now: the newest columns that fit the Studio
+ * pane, by the renderer's own layout (chordStaffWindow) — duration-weighted, so a run
+ * of eighths shows more columns than a line of quarters.
+ */
+function snapshot(frame) {
   const durations = flowDurations(frame.flow, frame.t);
   const render = buildRenderColumns(frame.flow, durations, frame.key);
-  const shown = frame.flow.columns.slice(-slots);
+  const { count } = chordStaffWindow(render, { aspect: ASPECT, keySignature: frame.key });
+  const shown = frame.flow.columns.slice(-count);
   const off = frame.flow.columns.length - shown.length;
   return {
     t: frame.t,
@@ -529,6 +571,9 @@ function snapshot(frame, slots) {
         midis: c.midis,
         spelling: c.spelling ? [...c.spelling.entries()] : null,
         duration: c.duration,
+        widthDuration: c.widthDuration,
+        unitStart: c.unitStart,
+        breathBefore: c.breathBefore,
         arrivals: c.arrivals,
         roll: rollCaption(columnRolls(c)),
         startedAt: col.startedAt,
@@ -559,12 +604,12 @@ function scoreScreen(cols) {
  * winners only — but spelling CACHE state must evolve as the kiosk's would, so every
  * frame calls buildRenderColumns via snapshot() when anything is on screen.
  */
-function candidatesFor(take, slots) {
+function candidatesFor(take) {
   const best = {};
   let lastSig = '';
   replay(take.events, (frame) => {
     if (!frame.flow.columns.length) return;
-    const snap = snapshot(frame, slots);
+    const snap = snapshot(frame);
     const sig = snap.columns.map((c) => `${c.midis.join('.')}${c.duration}${c.roll || ''}`).join('|');
     if (sig === lastSig) return;
     lastSig = sig;
@@ -587,10 +632,8 @@ async function openRenderer() {
   const os = await import('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'staff-replay-'));
   fs.writeFileSync(path.join(dir, 'entry.js'), `
-import { renderChordStaff, computeChordStaffLayout, columnSlots } from '${REPO}/__capabilities/music-notation/browser/renderers/chordStaff.js';
+import { renderChordStaff } from '${REPO}/__capabilities/music-notation/browser/renderers/chordStaff.js';
 window.renderChordStaff = renderChordStaff;
-window.computeChordStaffLayout = computeChordStaffLayout;
-window.columnSlots = columnSlots;
 `);
   await build({
     entryPoints: [path.join(dir, 'entry.js')], bundle: true, format: 'iife',
@@ -604,18 +647,14 @@ window.columnSlots = columnSlots;
   const page = await browser.newPage({ viewport: VIEW });
   await page.goto(`file://${path.join(dir, 'page.html')}`);
   await page.waitForFunction(() => !!window.renderChordStaff);
-  // How many columns the Studio pane draws — renderChordStaff's own slot rule (columnSlots).
-  const slots = await page.evaluate((aspect) => {
-    return window.columnSlots(window.computeChordStaffLayout(aspect).staveW);
-  }, ASPECT);
   return {
-    slots,
     async draw(snap, outFile) {
       await page.evaluate(({ snap, aspect }) => {
         const host = document.getElementById('host');
         window.renderChordStaff(host, {
           columns: snap.columns.map((c) => ({
-            midis: c.midis, duration: c.duration, arrivals: c.arrivals,
+            midis: c.midis, duration: c.duration, widthDuration: c.widthDuration, arrivals: c.arrivals,
+            unitStart: c.unitStart, breathBefore: c.breathBefore,
             spelling: c.spelling ? new Map(c.spelling) : null,
           })),
           keySignature: snap.key,
@@ -636,11 +675,11 @@ const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000
  * sorted order and ties break on file then event index, so the same corpus always
  * yields the same picks under the same names.
  */
-function selectMoments(takes, slots) {
+function selectMoments(takes) {
   const perUser = {};
   const frags = [];
   for (const take of takes) {
-    const best = candidatesFor(take, slots);
+    const best = candidatesFor(take);
     const u = (perUser[take.user] ||= { rolled: [], run: [], twoHand: [], dense: [] });
     for (const kind of Object.keys(u)) if (best[kind]) u[kind].push({ take, ...best[kind] });
     if (best.frag) frags.push({ take, ...best.frag });
@@ -686,7 +725,7 @@ function selectMoments(takes, slots) {
  * later change to the model or renderer can be compared on exactly the same playing.
  * The index is stable because loading/normalising does not depend on the model.
  */
-function momentsFromManifest(file, slots) {
+function momentsFromManifest(file) {
   const entries = JSON.parse(fs.readFileSync(file, 'utf8'));
   const cache = new Map();
   return entries.map((m) => {
@@ -697,7 +736,7 @@ function momentsFromManifest(file, slots) {
     const take = cache.get(m.file);
     let snap = null;
     replay(take.events, (frame) => {
-      const s = frame.flow.columns.length ? snapshot(frame, slots) : null;
+      const s = frame.flow.columns.length ? snapshot(frame) : null;
       if (frame.eventIndex === m.eventIndex) snap = s;
     });
     if (!snap) throw new Error(`moment ${m.name}: event ${m.eventIndex} of ${m.file} shows nothing`);
@@ -709,7 +748,7 @@ async function renderMoments(outDir, takes, manifest) {
   const r = await openRenderer();
   try {
     fs.mkdirSync(outDir, { recursive: true });
-    const picks = manifest ? momentsFromManifest(manifest, r.slots) : selectMoments(takes, r.slots);
+    const picks = manifest ? momentsFromManifest(manifest) : selectMoments(takes);
     fs.writeFileSync(path.join(outDir, 'moments.json'), `${JSON.stringify(picks.map((p) => ({
       name: p.name, user: p.user, kind: p.kind, source: p.take.source, takeUser: p.take.user,
       file: p.take.file, eventIndex: p.snap.eventIndex, t: p.snap.t,
@@ -741,7 +780,7 @@ ol{margin:6px 0 0;padding-left:22px;font-family:ui-monospace,monospace;font-size
 .gap{color:#777}.hands{color:#557;margin-left:8px}</style></head><body>
 <h1>Chord staff — real playing, as the Studio pane draws it</h1>
 <p>Each column: gap from the previous column's first onset, drawn duration (+ roll), the raw onsets
-(note + ms after the column's first onset), and the hand split. Only the ${r.slots} columns the pane shows are listed.</p>
+(note + ms after the column's first onset), and the hand split. Only the columns the pane shows are listed.</p>
 ${cards.join('\n')}</body></html>`);
     return picks.length;
   } finally {
@@ -861,6 +900,7 @@ async function main() {
   console.log(`\nwhole % over all clusters (legato steps included): ${wholePct.toFixed(1)}; legato merged ${pct(overall.legatoMerged, overall.legatoPairs)}% of ${overall.legatoPairs} legato pairs`);
   console.log(`legato pairs lifted in sequence (second key outlasts the first by > ${LIFTED_TOGETHER_MS}ms): merged ${pct(overall.seqMerged, overall.seqPairs)}% of ${overall.seqPairs}`);
   console.log(`chord whole excludes ${overall.legatoExcluded} of ${overall.clusters} clusters as legato lines`);
+  console.log(`pulse: ${overall.bars} breath bar lines (${(overall.bars / (overall.takes || 1)).toFixed(1)} per take), ${overall.smoothed} smoothed eighths (${pct(overall.smoothed, overall.cols)}% of columns), ${overall.beams} beat-sized beam groups in ${overall.phrases} phrases (${(overall.beams / (overall.phrases || 1)).toFixed(2)} per phrase), ${pct(overall.beams4, overall.beams)}% full groups of four`);
   console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), lifted-together whole ${liftedPct.toFixed(1)}% of ${overall.lifted} (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
 
   if (args.render) {

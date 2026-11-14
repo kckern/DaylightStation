@@ -113,7 +113,12 @@ horizontal axis carries order, so a rolled chord reads as a roll and an arpeggio
 an arpeggio.
 
 A column is one **gesture** — a struck or rolled chord. Durations (eighth / quarter /
-half) are coarse ratios against a moving baseline, never a measured tempo.
+half) are coarse ratios against a moving baseline, never a measured tempo. The ratios are
+biased toward eighths so a phrase beams into one connected line: a gap up to
+`FAST_RATIO` (1.2) × your recent pace is an eighth, a quarter means clearly held back,
+and only a gap past `SLOW_RATIO` (2.0) × pace is a half. On the replay corpus that draws
+~70% of columns as eighths (it was ~30% at the old 0.6 / 1.5). The newest column starts as
+an eighth and grows to a quarter, then a half, while you hold it.
 
 | Constant | Default | What it decides |
 |---|---|---|
@@ -124,7 +129,9 @@ half) are coarse ratios against a moving baseline, never a measured tempo.
 | `LIFT_TOGETHER_MS` | 10 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is settled on the first `pushReleases` after this window: the next key event or the 80ms tick, whichever comes first. Chosen by the replay sweep (5/10/15/25 at GAP 150 / release 160) with the same rule as the others, since the key-up gaps show only a 0-5ms peak and no valley. The rule picked 5, but its lifted-together whole (90.6%) cleared the gate by only 0.6 points, so 10 was taken instead (92.0%, for +0.2 points of legato merged). |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
 | `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
-| `COLUMN_CAPACITY` | 8 | Columns held before the oldest scrolls off the left. |
+| `BREATH_RATIO` | 2.0 | A gap longer than this × the PACE (median of recent gaps, floored at 300ms but not capped) before a column is a breath: a thin bar line before it, and the beat count restarts. At an ordinary pace it is exactly the half threshold; against the real pace, a slow chorale (a chord every 2s) draws no bars. A long gap right after another long gap is not a breath either (slowing into long notes draws one bar where the pause began). The first gap of a line is never a breath. |
+| `SMOOTH_RATIO` | 1.15 | A LONE late note: a column whose gap lands within 15% above the eighth → quarter cut-off closes as an eighth when the column before it closed and is drawn as a plain eighth (not itself smoothed, not held into a half; no breath between). Decided at close; the newest's provisional glyph uses the same cut-off. |
+| `COLUMN_CAPACITY` | 16 | Columns the model keeps. Not how many are drawn — the renderer draws the newest that fit (see the layout rule below); 16 covers the densest line (~12 eighths at the Studio pane). |
 | `IDLE_CLEAR_MS` | 3000 | Silence after which the next strike starts a fresh line at the left (nothing is wiped before that strike). |
 | `STALE_CLEAR_MS` | 30000 | Silence after which an untouched staff is emptied outright. |
 
@@ -165,10 +172,71 @@ Mechanics worth knowing:
   arrivals spanning `ROLL_MARK_MS`, direction from its first arrival against its last.
   One-note staves get no stroke. The renderer, the live log and the replay harness all
   go through `columnRolls`, so the strokes counted are the strokes drawn.
-- **Duration is a column property, and the staff snaps to the slot grid.** The VexFlow
-  formatter spaces by ticks, so each slot's tick context is placed at its grid position
-  (and the grid starts late enough to clear the key signature): an eighth, a quarter
-  and a half sit on the same slot centres, and strokes land beside their own chord.
+- **Columns are spaced by duration, floored at what their ink needs**
+  (`chordStaff.js` `layoutColumns`). Widths are in units of `W_Q`, a quarter's width:
+  the room a C-major line has after its clef, over 8 — the old grid's slot width
+  (floored at 54 units so a sidebar staff stays readable). An eighth takes 2/3 `W_Q`, a
+  quarter 1, a half 4/3 — close to engraving's square-root spacing, so at the Studio pane
+  (`W_Q` ≈ 71) an all-quarter line in C shows 8 columns and an all-eighth run 12. Head to head:
+  `x[i+1] = x[i] + max(width(i), right(i) + 6 + left(i+1))`, where `left`/`right` are the
+  columns' ink reach from VexFlow's tick-context metrics (accidentals, roll stroke,
+  displaced heads, flag) plus two things the metrics miss — an 8va/8vb label's drawn
+  width, and the second head of a letter spelled both ways in one chord (E with E♯ on
+  one line) — measured over BOTH stem directions because a beam group can
+  flip a column's stem after it is drawn. The 6-unit gap is sized from the ink sweep
+  (VexFlow's metrics run ~2.5 units short of drawn outlines; the sweep gates on 2 units of
+  real air between neighbours). The formatter only lays each column out internally; every
+  column's tick context is then pinned to its `x` (the tick context, not `x_shift`, so
+  accidentals and strokes move with their notes). The line starts late enough for the
+  first column's left ink to clear the key signature.
+- **Nothing already drawn moves while you play.** A column's `x` depends only on the
+  columns to its left. A closed column's width comes from the duration it CLOSED with
+  (`closeDuration` on the flow column, passed as `widthDuration`): a later hold
+  promotion to a half changes the glyph, not the width. Only the newest column's width
+  tracks its provisional duration (8 → q → h), and nothing is to its right. One thing
+  CAN move the line between strikes: a key change. A wider key signature takes room, so
+  the oldest column may drop off the left and the line shifts (the scroll); a key change
+  respells the columns anyway.
+- **The window is the newest columns that fit**, at least one. When the newest grows
+  past the room, or a new column arrives, the oldest drops off the left and the line
+  shifts — the scroll. `chordStaffWindow` exposes the same layout without drawing, and
+  the replay harness lists exactly those columns. The window is measured from the real
+  key signature, so seven sharps leave room for a column or so fewer than C; a
+  quarter's width never depends on the key, so a modulation never re-spaces the line.
+- **Consecutive eighths on a staff beam as one group with ONE stem direction** — down
+  when the noteheads of the group's FIRST TWO columns sit on or above the middle line on
+  average, up below — so a melody crossing the middle line reads as one line instead of
+  breaking at every stem flip, and appending notes never flips stems already drawn.
+  Groups and directions are VOTED on the durations the columns closed with
+  (`widthDuration`, the newest counting as the eighth it starts as), while beams are
+  DRAWN only through columns still drawn as eighths. So a held column promoted to a
+  half shows its half without its neighbours re-voting their stems, and when the newest
+  grows to a quarter and leaves a pair, the other eighth keeps the direction it was
+  drawn with (with a flag). Groups and directions are planned BEFORE the formatter runs,
+  so accidentals and strokes are laid out around the displaced heads of the final
+  direction; the Beam objects are built after positioning.
+- **An off-staff note never drags a beam off the frame.** A note outside the staff whose
+  stem the group would turn away from the staff (a high ledger note stemmed up, a low one
+  stemmed down) keeps its own flag and splits the group, which keeps every beam inside
+  the fixed frame (ink sweep: 0 clipped).
+- **No beam crosses into the other staff.** A stem runs 3.5 spaces past its farthest
+  head and the staves are 2.6 spaces apart, so a treble note stemmed down below G4
+  (line 1.9) or a bass note stemmed up above F3 (line 4.1) would carry the beam into the
+  other staff's lines — where it once crossed the other hand's beam. Such a note leaves
+  the group like an off-staff note does (own stem, own flag). A note with no beam whose
+  own stem would do the same (a wide treble chord, E♭4 under A5 B♭5, stems down by
+  auto_stem) is turned to its staff's outer side instead, when that stays in the frame.
+  The ink sweep gates on 0 beams entering the other staff and reports lone stems.
+- **A note with an ottava marker is never beamed.** Its 8va/8vb/15ma/15mb label is
+  placed from the note's own stem end; under a beam that end is the beam, and the label
+  drew on top of it. The marked note keeps its own stem and flag and splits the group.
+- **One letter, one staff position — on the staff.** The chord speller can write two
+  neighbouring pitch classes with one letter (A and A♯ in F♯ major), which puts two
+  heads on one line and an accidental through the other head. The staff alone rewrites
+  the altered one to its other spelling (A♯ → B♭) when that letter is free in the column
+  (`separateLetters`); the chord-name plaque keeps the speller's names. When that free
+  letter is the only one, the respelling can put a ♯ in a flat key (or a ♭ in a sharp
+  key): one line per note wins over the key's accidental habit.
 - **The tick is part of the model.** The staff re-reads the clock every 80ms:
   `clearIfIdle` (fresh line after `IDLE_CLEAR_MS`, emptied after `STALE_CLEAR_MS`) and
   `pushReleases` (so a pending legato split settles on the tick, not only on the next
@@ -182,20 +250,25 @@ Mechanics worth knowing:
   Krumhansl–Kessler score by 10% and the buffer must hold 8 notes before a known key
   yields (an unknown one adopts at 5). One chromatic improvisation re-detected its key
   90 times in 4.5 minutes at 5% / 5 notes.
-- **The formatter always lays out every slot**, padding with invisible `GhostNote`s.
-  That is what makes it typewriter-like rather than rubber-band: slot 1 sits at the same
-  x whether it's alone or the first of eight. Ghosts also fill the staff a column doesn't
-  touch, keeping the two hands column-aligned without printing a rest (a rest would be a
-  rhythmic claim).
-- **How many slots is decided by the width available**, not by `COLUMN_CAPACITY`. The
-  frame is fixed, so a column that doesn't fit is clipped rather than squeezed, and eight
-  chords genuinely don't fit a sidebar staff — a narrow pane shows fewer, readable
-  columns. The count is computed from the RESERVED head width (clef + widest key
-  signature) so a modulation can't add or drop a column. The flow model still retains
-  `COLUMN_CAPACITY`; this only decides how many are drawn.
-- **Ordinary playing never clips horizontally** — verified by the ink sweep harness
-  (`tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`, 0 of ~38k renders). A
-  twelve-note forearm cluster still can, and that is a known, accepted limit.
+- **A light pulse, claiming no meter.** Each column carries `unitStart` — where it
+  starts in eighth-units (8 = 1, q = 2, h = 4, by close duration), counted from the line
+  start or the last breath — set when it OPENS, so it never shifts and travels with the
+  column when the oldest scrolls off. A beam never crosses a boundary of 4 units (two
+  beats: eighths group in fours, 4/4-style), and a group whose vote (its first two) would
+  push one of those two out (off the frame or into the other staff) takes the other
+  direction. A breath (`breathBefore`, `BREATH_RATIO`) draws one thin bar line across
+  both staves before the column after it — only once that column exists — and restarts
+  the count; none is drawn before the first column on screen. The bar adds `BAR_SPACE`
+  (12) to the step into that column and sits `BAR_AIR` (6) left of its leftmost ink, so
+  it clears accidentals and strokes (ink sweep: 0 of ~30k bars within 2 units of ink).
+  Replay: 1.57 beat groups per phrase, 65% of them full fours.
+- **Ghost notes fill the staff a column doesn't touch**, keeping the two hands
+  column-aligned without printing a rest (a rest would be a rhythmic claim).
+- **Ordinary playing never clips, and neighbouring columns never collide** — verified
+  by the ink sweep harness (`tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`:
+  ~152k renders including 16-column flows; 0 clipped, 0 neighbouring-column pairs under
+  2 units of air, which is part of its exit code). A twelve-note forearm cluster can
+  still overrun a narrow pane, a known, accepted limit.
 - **Accidentals are resolved per column against the key only** — deliberately not
   VexFlow's `Accidental.applyAccidentals`, whose measure semantics would print a
   repeated F♯'s sharp once and leave the second bare, reading as a different note on a
