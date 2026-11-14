@@ -63,6 +63,9 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   const [flow, setFlow] = useState(emptyFlow);
   const [durations, setDurations] = useState([]);
   const prevStampsRef = useRef(new Map());
+  // The tick reads the key-down surface too (a pending legato split settles on it).
+  const activeRef = useRef(activeNotes);
+  activeRef.current = activeNotes;
 
   // The tick needs the current flow and the current key-down surface, but must not be
   // torn down and rebuilt on every note — hence refs rather than effect deps.
@@ -127,7 +130,13 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
 
   useEffect(() => {
     const id = setInterval(() => {
-      commit(clearIfIdle(flowRef.current, Date.now()));
+      const now = Date.now();
+      // pushReleases on the tick as well as on key events: a legato split is only
+      // decided once the next key has stayed down past LIFT_TOGETHER_MS, and with no
+      // further key event (C then D, D held) it would otherwise wait for the next touch.
+      // The tick bounds that wait to LIFT_TOGETHER_MS + PROVISIONAL_TICK_MS. Same object
+      // when nothing settles, so commit() does not re-render.
+      commit(pushReleases(clearIfIdle(flowRef.current, now), now, activeRef.current ?? new Map()));
       syncDurations();
     }, PROVISIONAL_TICK_MS);
     return () => clearInterval(id);

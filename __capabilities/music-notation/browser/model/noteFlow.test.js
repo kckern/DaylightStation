@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, columnRolls, baselineOf, classifyIoi,
   GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
-  DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO,
+  DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO, LIFT_TOGETHER_MS,
 } from "./noteFlow.js";
 
 // Helper: play a sequence of [midis, atMs] and return the resulting flow.
@@ -535,5 +535,19 @@ describe('noteFlow — legato is not a roll (release-based split)', () => {
     const snapshot = JSON.stringify(flow);
     pushReleases(flow, 110, new Set([62]));
     expect(JSON.stringify(flow)).toBe(snapshot);
+  });
+});
+
+describe('noteFlow — a pending legato split settles without a new key event', () => {
+  it('C then D, D held: the tick (pushReleases, same surface) splits once the lift window passes', () => {
+    let flow = pushOnsets(emptyFlow(), [60], 0, { held: new Set([60]) });
+    flow = pushOnsets(flow, [62], 80, { held: new Set([60, 62]) });
+    flow = pushReleases(flow, 110, new Set([62]));       // C lets go: undecided yet
+    expect(flowColumns(flow)).toEqual([[60, 62]]);
+    // A tick inside the lift window: nothing settles, same object (no re-render).
+    expect(pushReleases(flow, 110 + LIFT_TOGETHER_MS, new Set([62]))).toBe(flow);
+    // The next tick past it, D still down, no key event: [C] [D].
+    flow = pushReleases(flow, 110 + LIFT_TOGETHER_MS + 1, new Set([62]));
+    expect(flowColumns(flow)).toEqual([[60], [62]]);
   });
 });

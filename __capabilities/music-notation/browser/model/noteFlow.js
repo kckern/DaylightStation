@@ -40,11 +40,12 @@ import { splitByHand } from "./handSplit.js";
  * pieces, all at 91-150ms between notes, and held chords stayed whole only 88.0% of
  * the time. Widening alone would have merged legato: 52.1% of legato steps that lift
  * in sequence landed in one column at 90, 77.4% at 150. With the release split doing
- * that job, 150 keeps 96.2% of chords whole, 96.5% of chords lifted together and
- * 95.2% of held chords, and merges 14.8% of in-sequence legato. The rule used: both
- * gates (chords, lifted-together) >= 90, held chords >= 95% — the failure that
- * started this — then the fewest legato steps merged. 110 merges about as few (13.3%)
- * but keeps held chords only 90.9% whole.
+ * that job, 150 keeps 95.9% of chords whole, 90.6% of chords lifted together and
+ * 95.1% of held chords, and merges 11.9% of in-sequence legato. The rule used (for
+ * GAP_MS, LEGATO_RELEASE_MS and LIFT_TOGETHER_MS alike): both gates (chords,
+ * lifted-together) >= 90, held chords >= 95% — the failure that started this — then
+ * the fewest in-sequence legato steps merged. At 110 or 130 with release 160 the
+ * lifted-together gate fails (89.4%, 90.0%), and held chords stay under 95% anyway.
  */
 export const GAP_MS = 150;
 
@@ -65,10 +66,10 @@ export const SPAN_MAX_MS = 250;
  * note landing, and that note stayed down past LIFT_TOGETHER_MS longer, the line
  * moved on: pushReleases splits the column there.
  *
- * 160: at GAP_MS 150, in-sequence legato merged falls 40.7% -> 24.3% -> 14.8% over
- * 80/120/160 while chords kept whole hold at 96.7% -> 96.7% -> 96.2%. Past 160 it buys
- * little and starts to cut held chords: 200 merges 13.7% but held chords drop to
- * 94.5%, 240 to 93.3%.
+ * 160: at GAP_MS 150, in-sequence legato merged falls 40.0% -> 22.6% -> 11.9% over
+ * 80/120/160 while chords kept whole hold at 96.5% -> 96.5% -> 95.9%. Past 160 it buys
+ * little and starts to cut held chords: 200 merges 10.4% but held chords drop to
+ * 94.3%, 240 to 92.8% (and lifted-together to 89.7%).
  */
 export const LEGATO_RELEASE_MS = 160;
 
@@ -76,20 +77,26 @@ export const LEGATO_RELEASE_MS = 160;
  * A later note closer than this to the one before it was struck WITH it, and never
  * opens a legato split. Short struck chords let go as fast as legato does: on the
  * corpus, successive onsets under 15ms apart released 40-60ms later number 12,666 —
- * more than every legato step combined. At GAP_MS 150 / release 80 a 20ms floor kept
- * 91.6% of chords whole against 96.7% with no split at all; 30 keeps 96.6%. 45 merged
- * 58.0% of legato steps instead of 44.8% — a fast scale steps about 40ms.
+ * more than every legato step combined. At GAP_MS 150 / release 160 / lift 5, a 20ms
+ * floor keeps 91.2% of chords whole and 86.9% of chords lifted together (the gate
+ * fails); 30 keeps 95.9% / 90.6%; 45 keeps 96.1% / 93.9% but merges 26.7% of
+ * in-sequence legato instead of 11.9% — a fast scale steps about 40ms.
  */
 export const LEGATO_MIN_STEP_MS = 30;
 
 /**
  * Keys let go within this long of each other were lifted TOGETHER: a chord, not a line.
- * Measured on the corpus over successive onsets 30-150ms apart whose first key let go
- * shortly after the second landed: the gap between the two releases peaks at 0-5ms
- * (808), falls to its floor at 20-25ms (319), and rises again from 30ms as legato
- * (each key held about one step longer than the last).
+ * Chosen by the replay sweep, not from a valley — there is none. Over successive onsets
+ * 30-150ms apart whose first key let go shortly after the second landed, the gap
+ * between the two key-ups has one clear peak at 0-5ms (808 pairs) and is then roughly
+ * flat at 250-500 per 5ms out to 60ms: legato and a loosely lifted chord overlap. So
+ * the sweep decides (GAP_MS 150, release 160): 5/10/15/25ms keep 90.6/92.0/93.5/96.4%
+ * of chords lifted together whole and merge 11.9/12.1/12.8/14.1% of in-sequence
+ * legato; by the rule on GAP_MS (both gates >= 90, held chords >= 95, then fewest
+ * merged) 5 wins — only the peak counts as one lift. Its lifted-together margin is
+ * thin (0.6 points); 10 is the next choice if that gate ever slips.
  */
-export const LIFT_TOGETHER_MS = 25;
+export const LIFT_TOGETHER_MS = 5;
 
 /**
  * A STAFF whose arrivals span at least this long is a ROLL and gets an arpeggio

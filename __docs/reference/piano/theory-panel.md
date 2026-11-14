@@ -121,19 +121,20 @@ half) are coarse ratios against a moving baseline, never a measured tempo.
 | `SPAN_MAX_MS` | 250 | Longest a gesture may run from its first onset. |
 | `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. |
 | `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, and that key stays down longer, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
-| `LIFT_TOGETHER_MS` | 25 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is therefore settled at the first key event after this window. |
+| `LIFT_TOGETHER_MS` | 5 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is settled on the first `pushReleases` after this window: the next key event or the 80ms tick, whichever comes first. Chosen by the replay sweep (5/10/15/25 at GAP 150 / release 160) with the same rule as the others, since the key-up gaps show only a 0-5ms peak and no valley. |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
 | `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
 | `COLUMN_CAPACITY` | 8 | Columns held before the oldest scrolls off the left. |
 | `IDLE_CLEAR_MS` | 3000 | Silence after which the next strike starts a fresh line at the left (nothing is wiped before that strike). |
 | `STALE_CLEAR_MS` | 30000 | Silence after which an untouched staff is emptied outright. |
 
-`GAP_MS`, `LEGATO_RELEASE_MS` and `LEGATO_MIN_STEP_MS` were chosen by replaying real
+`GAP_MS`, `LEGATO_RELEASE_MS`, `LEGATO_MIN_STEP_MS` and `LIFT_TOGETHER_MS` were chosen by replaying real
 playing: `node tests/_infrastructure/harnesses/chord-staff-replay.mjs --sweep-gap`
 prints chords kept whole against legato steps merged for each pair; the plain run
 gates on chords kept whole >= 90%, chords lifted together kept whole >= 90% (an
 independent population: every key let go within 30ms) and no right-hand chord on the
-bass staff.
+bass staff. The choice rule: both gates >= 90%, held chords kept whole >= 95%, then the
+fewest legato steps (lifted in sequence) drawn as one column.
 
 Mechanics worth knowing:
 

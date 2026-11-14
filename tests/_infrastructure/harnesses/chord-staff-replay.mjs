@@ -5,7 +5,8 @@
  * The unit tests pin the column rules on synthetic gestures. This harness asks the
  * question those cannot: on what people actually played, does a chord stay one chord?
  * It replays two corpora through the exact CurrentChordStaff pipeline — one MIDI event
- * per render, diffNoteSurface → pushOnsets / pushReleases, an 80ms clearIfIdle tick —
+ * per render, diffNoteSurface → pushOnsets / pushReleases, an 80ms clearIfIdle +
+ * pushReleases tick —
  * and reports:
  *
  *   - chord clusters kept whole: ground-truth clusters (>= 2 notes, each onset within
@@ -79,7 +80,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
-  GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS, LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS,
+  GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS, LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS, LIFT_TOGETHER_MS,
 } from '../../../__capabilities/music-notation/browser/model/noteFlow.js';
 import { splitByHand } from '../../../__capabilities/music-notation/browser/model/handSplit.js';
 import { detectKey } from '../../../__capabilities/music-notation/browser/model/keySignature.js';
@@ -248,8 +249,8 @@ function clustersOf(events) {
     const [ia, ib] = [onIdx[k - 1], onIdx[k]];
     if (!isLegatoPair(events, ia, ib, offsAfter)) continue;
     // In SEQUENCE: the second key outlasted the first by more than LIFTED_TOGETHER_MS.
-    // The rest lifted together (or the second first) — what the model's lift guard
-    // deliberately leaves merged.
+    // The rest lifted together, or the second key let go FIRST — a short note inside a
+    // held one (an ornament or passing note); the stated split rule leaves both unsplit.
     const bOff = offsAfter(events[ib].note, events[ib].t);
     const sequential = !bOff || bOff.t - offsAfter(events[ia].note, events[ia].t).t > LIFTED_TOGETHER_MS;
     legatoPairs.push([ia, ib, sequential]);
@@ -341,7 +342,14 @@ function replay(events, onFrame, rules = {}) {
   };
 
   events.forEach((e, i) => {
-    while (nextTick <= e.t) { flow = clearIfIdle(flow, nextTick); nextTick += TICK_MS; }
+    // CurrentChordStaff's tick: clearIfIdle, then pushReleases on the unchanged surface
+    // (it settles a pending legato split with no new key event).
+    while (nextTick <= e.t) {
+      flow = pushReleases(clearIfIdle(flow, nextTick), nextTick, active, { legatoReleaseMs, ...extra });
+      tag();
+      for (const c of flow.columns) columns.set(c._id, c);
+      nextTick += TICK_MS;
+    }
     active = new Map(active);
     if (e.type === 'on') active.set(e.note, { timestamp: e.t });
     else active.delete(e.note);
@@ -718,32 +726,46 @@ ${cards.join('\n')}</body></html>`);
 
 const SWEEP_GAPS = [90, 110, 130, 150];
 const SWEEP_LEGATO = [80, 120, 160, 200, 240];
+const SWEEP_LIFT = [5, 10, 15, 25];
+const SWEEP_MIN_STEP = [20, 30, 45];
+
+/** One sweep row: the corpus replayed under `rules`, as the columns the choice reads. */
+function sweepRow(takes, label, rules) {
+  const o = blank();
+  for (const t of takes) add(o, measure(t.events, rules));
+  return {
+    ...label,
+    'whole %': pct(o.whole, o.clusters), 'held-chord whole %': pct(o.heldWhole, o.heldChords),
+    'chord whole %': pct(o.chordWhole, o.chords), 'lifted whole %': pct(o.liftedWhole, o.lifted),
+    'legato merged %': pct(o.legatoMerged, o.legatoPairs), 'in-sequence merged %': pct(o.seqMerged, o.seqPairs),
+    'eighth %': pct(o.eighths, o.cols), frags: o.frags, rolled: o.rolled, 'RH-on-bass': o.rhOnBass,
+    gate: o.chords && (100 * o.chordWhole) / o.chords >= 90 && o.lifted && (100 * o.liftedWhole) / o.lifted >= 90
+      && o.rhOnBass === 0 ? 'PASS' : '',
+  };
+}
 
 /**
  * --sweep-gap: the whole corpus under each (GAP_MS, LEGATO_RELEASE_MS) pair, plus each
  * gap with the release split OFF (legato -1: no release is ever within -1ms of an
- * arrival) to show what the split buys. The pair to ship is the one with chord whole
- * >= 90% and the lowest legato merged %.
+ * arrival) to show what the split buys; then LIFT_TOGETHER_MS and LEGATO_MIN_STEP_MS
+ * each varied alone at the module's GAP_MS / LEGATO_RELEASE_MS. The rule the constants
+ * were chosen by: both gates >= 90, held-chord whole >= 95, then the fewest
+ * in-sequence legato steps merged.
  */
 function sweep(takes) {
   const rows = [];
   for (const gapMs of SWEEP_GAPS) {
     for (const legatoReleaseMs of [-1, ...SWEEP_LEGATO]) {
-      const o = blank();
-      for (const t of takes) add(o, measure(t.events, { gapMs, legatoReleaseMs }));
-      rows.push({
-        GAP_MS: gapMs, LEGATO_RELEASE_MS: legatoReleaseMs < 0 ? 'off' : legatoReleaseMs,
-        'whole %': pct(o.whole, o.clusters), 'held-chord whole %': pct(o.heldWhole, o.heldChords),
-        'chord whole %': pct(o.chordWhole, o.chords), 'lifted whole %': pct(o.liftedWhole, o.lifted),
-        'legato merged %': pct(o.legatoMerged, o.legatoPairs), 'in-sequence merged %': pct(o.seqMerged, o.seqPairs),
-        'eighth %': pct(o.eighths, o.cols), frags: o.frags, rolled: o.rolled, 'RH-on-bass': o.rhOnBass,
-        gate: o.chords && (100 * o.chordWhole) / o.chords >= 90 && o.lifted && (100 * o.liftedWhole) / o.lifted >= 90
-          && o.rhOnBass === 0 ? 'PASS' : '',
-      });
+      rows.push(sweepRow(takes, { GAP_MS: gapMs, LEGATO_RELEASE_MS: legatoReleaseMs < 0 ? 'off' : legatoReleaseMs },
+        { gapMs, legatoReleaseMs }));
     }
   }
-  console.log(`chord-staff-replay --sweep-gap: ${takes.length} takes, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}`);
+  console.log(`chord-staff-replay --sweep-gap: ${takes.length} takes, LEGATO_MIN_STEP_MS ${LEGATO_MIN_STEP_MS}, LIFT_TOGETHER_MS ${LIFT_TOGETHER_MS}`);
   console.table(rows);
+  console.log(`LIFT_TOGETHER_MS at GAP_MS ${GAP_MS}, LEGATO_RELEASE_MS ${LEGATO_RELEASE_MS}:`);
+  console.table(SWEEP_LIFT.map((liftTogetherMs) => sweepRow(takes, { LIFT_TOGETHER_MS: liftTogetherMs }, { liftTogetherMs })));
+  console.log(`LEGATO_MIN_STEP_MS at GAP_MS ${GAP_MS}, LEGATO_RELEASE_MS ${LEGATO_RELEASE_MS}, LIFT_TOGETHER_MS ${LIFT_TOGETHER_MS}:`);
+  console.table(SWEEP_MIN_STEP.map((legatoMinStepMs) => sweepRow(takes, { LEGATO_MIN_STEP_MS: legatoMinStepMs }, { legatoMinStepMs })));
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
