@@ -337,6 +337,46 @@ describe('renderChordStaff — relative rhythm', () => {
     ]))).toBe(2);
   });
 
+  it('beams a run that crosses the middle line as ONE group, not broken at each stem flip', () => {
+    // E4 (stem up on its own) through D5 (stem down on its own): the old rule broke the
+    // beam wherever the stems disagreed, leaving a melody as a row of lone flags.
+    expect(beams(render([
+      { midis: [64], duration: '8' },
+      { midis: [67], duration: '8' },
+      { midis: [71], duration: '8' },
+      { midis: [74], duration: '8' },
+    ]))).toBe(1);
+  });
+
+  it('gives every note of a beamed group the same stem direction', () => {
+    const host = render([
+      { midis: [64], duration: '8' },
+      { midis: [72], duration: '8' },
+      { midis: [76], duration: '8' },
+    ]);
+    // Stems are the vertical strokes inside each note group; their direction is the sign
+    // of (stem end y − notehead y). One shared direction → one sign.
+    const signs = [...host.querySelectorAll('.vf-stavenote')].map((g) => {
+      const stem = g.querySelector('.vf-stem path')?.getAttribute('d') ?? '';
+      const ys = stem.match(/-?\d+(\.\d+)?/g)?.map(Number).filter((_, i) => i % 2 === 1) ?? [];
+      return Math.sign(ys[ys.length - 1] - ys[0]);
+    });
+    expect(new Set(signs).size).toBe(1);
+  });
+
+  it('leaves a ledger note out of a group that would throw its stem off the staff', () => {
+    // Middle C (below the treble staff, stem up on its own) inside a high group that
+    // stems down: flipping it would hang its stem — and the beam — below the staff, so
+    // it keeps its own flag and splits the group around it.
+    expect(beams(render([
+      { midis: [76], duration: '8' },
+      { midis: [79], duration: '8' },
+      { midis: [60], duration: '8' },
+      { midis: [77], duration: '8' },
+      { midis: [81], duration: '8' },
+    ]))).toBe(2);
+  });
+
   it('does not beam a lone eighth', () => {
     expect(beams(render([
       { midis: [60], duration: '8' },

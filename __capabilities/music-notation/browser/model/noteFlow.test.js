@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, columnRolls, baselineOf, classifyIoi,
-  GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
+  FAST_RATIO, GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO, LIFT_TOGETHER_MS,
 } from "./noteFlow.js";
 
@@ -254,9 +254,10 @@ describe('noteFlow — baseline', () => {
 
 describe('noteFlow — duration classification', () => {
   it('classifies against the ratios', () => {
-    expect(classifyIoi(100, 500)).toBe('8');   // < 0.6 × 500
-    expect(classifyIoi(500, 500)).toBe('q');
-    expect(classifyIoi(800, 500)).toBe('h');   // > 1.5 × 500
+    expect(classifyIoi(100, 500)).toBe('8');
+    expect(classifyIoi(500, 500)).toBe('8');   // your own pace is an eighth (< 1.2 × 500)
+    expect(classifyIoi(700, 500)).toBe('q');   // clearly held back
+    expect(classifyIoi(1100, 500)).toBe('h');  // > 2.0 × 500
   });
 
   it('draws a fast run from silence as eighths all the way through', () => {
@@ -266,18 +267,23 @@ describe('noteFlow — duration classification', () => {
     expect(closed(flow)).toEqual(['8', '8', '8', '8', '8', '8', '8']);
   });
 
-  it('draws ordinary playing as quarters', () => {
+  it('draws playing at your own pace as eighths, so the line beams', () => {
     const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 500]));
-    expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
+    expect(closed(flow)).toEqual(['8', '8', '8', '8', '8']);
   });
 
   it('a uniform 250ms passage is uniform from the first gap', () => {
     const flow = run(Array.from({ length: 6 }, (_, i) => [[60 + i], i * 250]), { held: noneHeld });
-    expect(closed(flow)).toEqual(['q', 'q', 'q', 'q', 'q']);
+    expect(closed(flow)).toEqual(['8', '8', '8', '8', '8']);
+  });
+
+  it('a clearly held-back note is a quarter in a line of eighths', () => {
+    const flow = run([[[60], 0], [[62], 400], [[64], 800], [[65], 1400], [[67], 1800]], { held: noneHeld });
+    expect(closed(flow)).toEqual(['8', '8', 'q', '8']);
   });
 
   it('gives a long gap a half note', () => {
-    const flow = run([[[60], 0], [[64], 900]]);
+    const flow = run([[[60], 0], [[64], 1100]]);
     expect(closed(flow)).toEqual(['h']);
   });
 
@@ -288,27 +294,31 @@ describe('noteFlow — duration classification', () => {
   });
 
   it('does NOT rewrite the duration of a column already on the staff', () => {
-    // Play steadily, then break into a run. The steady quarters must stay quarters
-    // even though the run drags the baseline down underneath them.
+    // Play steadily, then break into a run. The run drags the baseline down to the
+    // floor, under which a 400ms gap would now read as a quarter — the steady eighths
+    // already drawn must stay eighths.
     const steady = Array.from({ length: 4 }, (_, i) => [[60 + i], i * 400]);
     const before = closed(run(steady));
     const after = closed(run([...steady, [[72], 1520], [[74], 1640], [[76], 1760]]));
     expect(after.slice(0, before.length)).toEqual(before);
-    expect(before).toEqual(['q', 'q', 'q']);
+    expect(before).toEqual(['8', '8', '8']);
   });
 });
 
 describe('noteFlow — the provisional newest column', () => {
-  it('shows a quarter the moment it is struck', () => {
+  it('shows an eighth the moment it is struck', () => {
     const flow = pushOnsets(emptyFlow(), [60], 0);
-    expect(flowDurations(flow, 0)).toEqual(['q']);
+    expect(flowDurations(flow, 0)).toEqual(['8']);
   });
 
-  it('promotes itself to a half once held past the threshold', () => {
+  it('grows to a quarter, then a half, as the clock passes each threshold', () => {
     const flow = pushOnsets(emptyFlow(), [60], 0);
-    const threshold = SLOW_RATIO * DEFAULT_BASELINE_MS;
-    expect(flowDurations(flow, threshold - 1)).toEqual(['q']);
-    expect(flowDurations(flow, threshold + 1)).toEqual(['h']);
+    const toQuarter = FAST_RATIO * DEFAULT_BASELINE_MS;
+    const toHalf = SLOW_RATIO * DEFAULT_BASELINE_MS;
+    expect(flowDurations(flow, toQuarter - 1)).toEqual(['8']);
+    expect(flowDurations(flow, toQuarter + 1)).toEqual(['q']);
+    expect(flowDurations(flow, toHalf - 1)).toEqual(['q']);
+    expect(flowDurations(flow, toHalf + 1)).toEqual(['h']);
   });
 
   it('promotes before the idle wipe would take it (the half is actually visible)', () => {
@@ -317,8 +327,8 @@ describe('noteFlow — the provisional newest column', () => {
 
   it('leaves closed columns alone while the newest one promotes', () => {
     const flow = run([[[60], 0], [[64], 500]]);
-    expect(flowDurations(flow, 500)).toEqual(['q', 'q']);
-    expect(flowDurations(flow, 500 + SLOW_RATIO * 500 + 1)).toEqual(['q', 'h']);
+    expect(flowDurations(flow, 500)).toEqual(['8', '8']);
+    expect(flowDurations(flow, 500 + SLOW_RATIO * 500 + 1)).toEqual(['8', 'h']);
   });
 
   it('returns one duration per column', () => {
@@ -364,15 +374,15 @@ describe('noteFlow — holds (pushReleases)', () => {
   it('a column released before the next onset keeps its IOI duration', () => {
     const flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(64)]]);
     expect(flow.columns[0].heldAtClose).toBe(false);
-    expect(flowDurations(flow, 5000)[0]).toBe('q');
+    expect(flowDurations(flow, 5000)[0]).toBe('8');
   });
 
   it('release freezes the duration', () => {
     let flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
     flow = pushReleases(flow, 400 + 0, setOf(64)); // 60 let go at 400
     expect(flow.columns[0].releasedAt).toBe(400);
-    expect(flow.columns[0].duration).toBe('q');
-    expect(flowDurations(flow, 5000)[0]).toBe('q');
+    expect(flow.columns[0].duration).toBe('8');
+    expect(flowDurations(flow, 5000)[0]).toBe('8');
   });
 
   it('release by none-held: the column releases once none of its keys is down', () => {
@@ -594,9 +604,9 @@ describe('noteFlow — the idle tick allocates nothing', () => {
     flow = pushOnsets(flow, [64], 500);
     const first = flowDurations(flow, 600);
     expect(flowDurations(flow, 680, first)).toBe(first);
-    // ...and a new one once the newest column's provisional quarter promotes.
+    // ...and a new one once the newest column's provisional eighth promotes.
     const later = flowDurations(flow, 500 + SLOW_RATIO * 500 + 1, first);
     expect(later).not.toBe(first);
-    expect(later).toEqual(['q', 'h']);
+    expect(later).toEqual(['8', 'h']);
   });
 });

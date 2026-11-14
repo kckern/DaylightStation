@@ -130,9 +130,19 @@ export const STALE_CLEAR_MS = 30000;
 
 // ─── Rhythm ─────────────────────────────────────────────────────────────────────
 
-/** Below FAST_RATIO × baseline a column is an eighth; above SLOW_RATIO × baseline, a half. */
-export const FAST_RATIO = 0.6;
-export const SLOW_RATIO = 1.5;
+/**
+ * Below FAST_RATIO × baseline a column is an eighth; above SLOW_RATIO × baseline, a half.
+ *
+ * Biased toward eighths on purpose. With no meter, an eighth is the most neutral glyph
+ * that still BEAMS, and a line of beamed eighths reads as one phrase where a row of
+ * stand-alone quarters reads as loose notes. So a note at your own pace — up to 20%
+ * slower — is an eighth; a quarter means clearly held back, a half means a real hold.
+ * Measured on the replay harness (340 takes): 0.6/1.5 drew 29.5% of columns as
+ * eighths, 0.9/2.0 56.2%, 1.2/2.0 70.5%, 1.5/2.0 77.0% (where quarters all but vanish).
+ * 2.0 × BASELINE_MAX_MS = 1600ms keeps a half reachable under the 3000ms idle line.
+ */
+export const FAST_RATIO = 1.2;
+export const SLOW_RATIO = 2.0;
 
 /**
  * How many recent inter-onset intervals feed the baseline. Deliberately longer than
@@ -529,8 +539,9 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
  *
  * Every column but the newest carries the duration it was given when it closed, so
  * what is already drawn never changes. The newest column has no gap yet: it shows as
- * a quarter provisionally, and becomes a half once it has been held past the same
- * threshold a closed column would have to clear. A closed column that was fully held
+ * an eighth provisionally — so a run beams as it is played — and grows to a quarter,
+ * then a half, as the clock passes the same thresholds a closed column's gap would
+ * have to clear. A closed column that was fully held
  * when it closed and has not been released yet promotes the same way (its stored
  * duration is only the IOI guess). Those promotions are the only things on the staff
  * that change with the clock, and why the host needs a tick. Upward only.
@@ -544,7 +555,7 @@ export function flowDurations(flow, now, prev) {
   const baseline = baselineOf(flow.recentIois);
   const longHold = (c) => now - c.startedAt > SLOW_RATIO * baseline;
   const at = (c) => {
-    if (c.duration === null) return longHold(c) ? 'h' : 'q';
+    if (c.duration === null) return classifyIoi(now - c.startedAt, baseline);
     if (c.heldAtClose && c.releasedAt === null && longHold(c)) return 'h';
     return c.duration;
   };

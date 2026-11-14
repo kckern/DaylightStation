@@ -113,7 +113,12 @@ horizontal axis carries order, so a rolled chord reads as a roll and an arpeggio
 an arpeggio.
 
 A column is one **gesture** — a struck or rolled chord. Durations (eighth / quarter /
-half) are coarse ratios against a moving baseline, never a measured tempo.
+half) are coarse ratios against a moving baseline, never a measured tempo. The ratios are
+biased toward eighths so a phrase beams into one connected line: a gap up to
+`FAST_RATIO` (1.2) × your recent pace is an eighth, a quarter means clearly held back,
+and only a gap past `SLOW_RATIO` (2.0) × pace is a half. On the replay corpus that draws
+~70% of columns as eighths (it was ~30% at the old 0.6 / 1.5). The newest column starts as
+an eighth and grows to a quarter, then a half, while you hold it.
 
 | Constant | Default | What it decides |
 |---|---|---|
@@ -169,6 +174,12 @@ Mechanics worth knowing:
   formatter spaces by ticks, so each slot's tick context is placed at its grid position
   (and the grid starts late enough to clear the key signature): an eighth, a quarter
   and a half sit on the same slot centres, and strokes land beside their own chord.
+- **Consecutive eighths on a staff beam as one group with ONE stem direction** — down
+  when the group's noteheads sit on or above the middle line on average, up below — so
+  a melody crossing the middle line reads as one line instead of breaking at every stem
+  flip. A note outside the staff whose stem the group would turn away from the staff
+  (a high ledger note stemmed up, a low one stemmed down) keeps its own flag and splits
+  the group, which keeps every beam inside the fixed frame (ink sweep: 0 clipped).
 - **The tick is part of the model.** The staff re-reads the clock every 80ms:
   `clearIfIdle` (fresh line after `IDLE_CLEAR_MS`, emptied after `STALE_CLEAR_MS`) and
   `pushReleases` (so a pending legato split settles on the tick, not only on the next

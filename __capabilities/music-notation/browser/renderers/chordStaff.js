@@ -426,26 +426,53 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // more consecutive eighth columns on ONE staff; a slower column, or a slot this
   // staff doesn't play, breaks the run. Decorative — a beam failure must not cost the
   // staff, the same bargain the ottava markers make.
-  // A run also BREAKS where the stem direction changes, and the beam is built with
-  // auto_stem OFF so it keeps the direction each note already chose. Letting Beam pick
-  // a majority direction for the group is what the ink sweep caught clipping: it flips
-  // stems away from the staff on a low bass run, and the beam — drawn at the stem tips,
-  // which are lengthened to meet it — then lands up to 11 units below the fixed frame.
-  // auto_stem's "stems point toward the staff" is the rule the frame was measured
-  // against, so the beam has to live within it rather than overrule it.
+  // A run does NOT break where the notes' own stems would point different ways: the
+  // eighth-biased durations exist so a phrase beams into one line, and breaking on
+  // every stem flip left a melody crossing the middle line as a row of lone flags.
+  // Instead the whole group takes ONE direction, the engraver's rule: down when its
+  // noteheads sit on or above the middle line on average, up when below. That still
+  // points stems toward the staff for the group as a whole — the property the fixed
+  // frame was measured against (Beam's own majority vote, which ignores where the
+  // notes sit, is what once pushed a low bass beam 11 units past the frame). The beam
+  // is then built with auto_stem OFF so it keeps the direction chosen here.
+  //
+  // One exception, also caught by the ink sweep: a note OUTSIDE the staff whose stem
+  // the group would turn away from the staff (a high ledger note stemmed up, a low one
+  // stemmed down) throws its stem — and the beam on it — past the fixed frame. Such a
+  // note keeps its own direction and flag, and splits the group around it.
+  const MIDDLE_LINE = 3;
+  const TOP_LINE = 5;
+  const BOTTOM_LINE = 1;
+  const groupDir = (run) => {
+    const lines = run.flatMap((n) => n.getKeyProps().map((k) => k.line));
+    return lines.reduce((a, b) => a + b, 0) / lines.length >= MIDDLE_LINE ? -1 : 1;
+  };
+  const throwsOut = (note, dir) => {
+    if (note.getStemDirection() === dir) return false;
+    const lines = note.getKeyProps().map((k) => k.line);
+    return dir === 1 ? Math.max(...lines) > TOP_LINE : Math.min(...lines) < BOTTOM_LINE;
+  };
+  const plan = (run) => {
+    if (run.length < 2) return [];
+    const dir = groupDir(run);
+    const bad = run.findIndex((n) => throwsOut(n, dir));
+    if (bad < 0) return [{ run, dir }];
+    return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
+  };
   const beamRuns = (staffNotes) => {
     const runs = [];
     let group = [];
-    const flush = () => { if (group.length >= 2) runs.push(group); group = []; };
+    const flush = () => { runs.push(...plan(group)); group = []; };
     for (let i = 0; i <= slots; i += 1) {
       const note = i < slots && durations[i] === '8' ? staffNotes[i] : null;
       if (!note) { flush(); continue; }
-      const last = group[group.length - 1];
-      if (last && last.getStemDirection() !== note.getStemDirection()) flush();
       group.push(note);
     }
     flush();
-    return runs;
+    return runs.map(({ run, dir }) => {
+      run.forEach((n) => { if (n.getStemDirection() !== dir) n.setStemDirection(dir); });
+      return run;
+    });
   };
   let beams = [];
   try {
