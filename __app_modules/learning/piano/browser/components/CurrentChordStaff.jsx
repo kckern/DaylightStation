@@ -63,7 +63,6 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   const [flow, setFlow] = useState(emptyFlow);
   const [durations, setDurations] = useState([]);
   const prevStampsRef = useRef(new Map());
-  const spellingCacheRef = useRef(new Map());
 
   // The tick needs the current flow and the current key-down surface, but must not be
   // torn down and rebuilt on every note — hence refs rather than effect deps.
@@ -135,9 +134,9 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   }, [syncDurations, commit]);
 
   // Each column is spelled AS A CHORD (see identifyChord), so the staff and the chord
-  // plaque can only ever show the same reading; closed columns keep their spelling.
+  // plaque can only ever show the same reading, and the key signature beside them.
   const columns = useMemo(
-    () => buildRenderColumns(flow, durations, keySig, spellingCacheRef.current),
+    () => buildRenderColumns(flow, durations, keySig),
     [flow, keySig, durations],
   );
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { diffNoteSurface, buildRenderColumns } from './liveStaffColumns.js';
+import { identifyChord } from '../theory/chordNaming.js';
 
 const col = (midis, startedAt, extra = {}) => ({
   midis, startedAt, lastOnsetAt: startedAt, arrivals: midis.map((midi) => ({ midi, at: startedAt })),
@@ -46,25 +47,16 @@ describe('buildRenderColumns', () => {
   const flow = flowOf(col([60, 64, 67], 100), col([62, 65, 69], 400), col([60], 700, { duration: null }));
   const durs = ['q', 'q', 'q'];
 
-  it("freezes a closed column's spelling when the key changes", () => {
-    const cache = new Map();
-    const a = buildRenderColumns(flow, durs, 'C', cache);
-    const b = buildRenderColumns(flow, durs, 'Ab', cache);
-    expect(b[0].spelling).toBe(a[0].spelling);
-    expect(b[1].spelling).toBe(a[1].spelling);
-    expect(b[2].spelling).not.toBe(a[2].spelling);
-  });
-  it('prunes cache entries that scrolled off', () => {
-    const cache = new Map();
-    buildRenderColumns(flow, durs, 'C', cache);
-    expect(cache.has(100)).toBe(true);
-    buildRenderColumns(flowOf(col([62, 65, 69], 400), col([60], 700)), ['q', 'q'], 'C', cache);
-    expect(cache.has(100)).toBe(false);
-    expect(cache.has(400)).toBe(true);
+  it('spells every column, closed ones included, with the current key', () => {
+    const a = buildRenderColumns(flow, durs, 'C');
+    const b = buildRenderColumns(flow, durs, 'Ab');
+    expect(b[0].spelling).toEqual(identifyChord([60, 64, 67], 'Ab').spelling);
+    expect(b[1].spelling).toEqual(identifyChord([62, 65, 69], 'Ab').spelling);
+    expect(a[1].spelling).toEqual(identifyChord([62, 65, 69], 'C').spelling);
   });
   it('arrivals are carried through, and no roll', () => {
     const arrivals = [{ midi: 67, at: 100 }, { midi: 64, at: 180 }, { midi: 60, at: 300 }];
-    const out = buildRenderColumns(flowOf(col([60, 64, 67], 100, { arrivals }), col([60], 700)), ['q', 'q'], 'C', new Map());
+    const out = buildRenderColumns(flowOf(col([60, 64, 67], 100, { arrivals }), col([60], 700)), ['q', 'q'], 'C');
     expect(out[0].arrivals).toEqual(arrivals);
     expect(out[1].arrivals).toEqual([{ midi: 60, at: 700 }]);
     expect(out.every((c) => !('roll' in c))).toBe(true);

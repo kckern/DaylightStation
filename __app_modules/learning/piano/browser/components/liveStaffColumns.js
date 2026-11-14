@@ -36,35 +36,24 @@ export function diffNoteSurface(prev, activeNotes, now) {
 }
 
 /**
- * Columns for ChordStaffRenderer. Spelling is chosen per chord from the key, and a key
- * re-detected mid-phrase used to re-spell notes already on the page (A flat turning to
- * G sharp under your eyes). So only the newest column follows the live key; a closed
- * column keeps the spelling it was first given, cached by its startedAt.
+ * Columns for ChordStaffRenderer. Every column is spelled with the CURRENT key, so the
+ * letters drawn always agree with the key signature drawn beside them. Freezing a
+ * closed column's spelling (the old cache) saved a note from re-spelling when the key
+ * moved, but left it contradicting the new signature: a frozen G flat under six sharps
+ * drew a double flat. A column re-spelling on a key change is the lesser fault, and the
+ * key now changes rarely (see detectKey's hysteresis).
  *
  * @param {object} flow
  * @param {string[]} durations
  * @param {string} keySig
- * @param {Map<number, object>} cache - mutated: closed-column spellings, pruned here
  */
-export function buildRenderColumns(flow, durations, keySig, cache) {
+export function buildRenderColumns(flow, durations, keySig) {
   const midiCols = flowColumns(flow);
-  const last = flow.columns.length - 1;
-  const live = new Set();
-  const out = flow.columns.map((c, i) => {
-    live.add(c.startedAt);
-    let spelling;
-    if (i === last) {
-      spelling = identifyChord(midiCols[i], keySig).spelling;
-    } else {
-      spelling = cache.get(c.startedAt);
-      if (spelling === undefined) {
-        spelling = identifyChord(midiCols[i], keySig).spelling;
-        cache.set(c.startedAt, spelling);
-      }
-    }
+  return flow.columns.map((c, i) => ({
+    midis: midiCols[i],
+    spelling: identifyChord(midiCols[i], keySig).spelling,
     // Arrivals, not a roll verdict: the renderer reads each hand's roll from them.
-    return { midis: midiCols[i], spelling, duration: durations[i] ?? 'q', arrivals: c.arrivals ?? [] };
-  });
-  for (const k of [...cache.keys()]) if (!live.has(k)) cache.delete(k);
-  return out;
+    duration: durations[i] ?? 'q',
+    arrivals: c.arrivals ?? [],
+  }));
 }

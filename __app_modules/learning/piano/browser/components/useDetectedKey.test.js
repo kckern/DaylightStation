@@ -47,29 +47,29 @@ describe('useDetectedKey', () => {
     // the SAME MIDI that was held just before the release still counts as new and
     // advances the buffer.
     //
-    // Setup: four notes ending on MIDI 67 (pc 7) leave the buffer at length 4 —
-    // one short of detectKey's 5-note minimum — so the key is still 'C'. After a
-    // release, re-pressing 67 must push a 5th pitch class and let detection fire
+    // Setup: seven notes ending on MIDI 67 (pc 7) leave the buffer at length 7 —
+    // one short of detectKey's 8-note switch floor — so the key is still 'C'. After a
+    // release, re-pressing 67 must push an 8th pitch class and let detection fire
     // (→ 'G'). If the ref update moved below the early return, the release would
     // NOT clear 67 from lastKeys, the re-press would be swallowed, the buffer
-    // would stay at 4, and the key would stay stuck on 'C'.
+    // would stay at 7, and the key would stay stuck on 'C'.
     const { result, rerender } = renderHook(
       ({ notes }) => useDetectedKey(notes),
       { initialProps: { notes: new Map() } },
     );
 
-    // Four new notes, last one MIDI 67 (pc 7). Buffer pitch classes [11,2,7,7].
-    [71, 62, 79, 67].forEach((midi) => {
+    // Seven new notes, last one MIDI 67 (pc 7): one short of detectKey's 8-note floor.
+    [71, 62, 79, 74, 59, 69, 67].forEach((midi) => {
       act(() => rerender({ notes: new Map([[midi, {}]]) }));
     });
-    expect(result.current).toBe('C'); // only 4 buffered notes < 5
+    expect(result.current).toBe('C'); // only 7 buffered notes < 8
 
     // Release everything — key unchanged, and lastKeys is cleared.
     act(() => rerender({ notes: new Map() }));
     expect(result.current).toBe('C');
 
     // Re-press the SAME MIDI (67) held right before the release. This must count
-    // as a new note → 5th buffer entry → detection fires and tracks the run.
+    // as a new note → 8th buffer entry → detection fires and tracks the run.
     act(() => rerender({ notes: new Map([[67, {}]]) }));
     expect(result.current).toBe('G');
   });

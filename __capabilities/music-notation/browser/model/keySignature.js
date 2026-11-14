@@ -57,7 +57,23 @@ const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.6
 // Relative hysteresis margin: a rival key must beat the current key's own
 // profile score by this fraction before we switch, so passing notes and
 // near-ties don't flicker the displayed key.
-const HYSTERESIS = 0.05;
+//
+// 0.05 was too thin for chromatic playing: one real take (a child improvising around
+// the black keys) re-detected its key 90 times in 4.5 minutes, D♭ <-> F♯ <-> A♭ and
+// back, because those keys score within a few percent of each other on a 30-note
+// window and one passing note tips it. 10% holds the displayed key through that noise
+// while a real modulation (a new tonic plus its leading tone, tens of percent) still
+// clears it.
+const HYSTERESIS = 0.10;
+
+// A rival key may displace the current one only once the buffer holds this many
+// pitch-class observations. Five notes (the old floor) is a single chord and a half:
+// whichever key that fragment happens to fit wins, then loses to the next fragment.
+// Eight is two full triads plus passing tones, the least that separates a key from
+// its neighbours on the circle of fifths. An unknown current key still adopts the
+// winner at the old floor of five, as there is nothing to hold.
+const MIN_NOTES_TO_SWITCH = 8;
+const MIN_NOTES_TO_ADOPT = 5;
 
 /**
  * Detect the most likely major key from a buffer of recent pitch classes.
@@ -77,7 +93,7 @@ const HYSTERESIS = 0.05;
  * @returns {string} key name (e.g. 'G', 'F', 'C')
  */
 export const detectKey = (pitchClasses, currentKey = 'C') => {
-  if (pitchClasses.length < 5) return currentKey;
+  if (pitchClasses.length < MIN_NOTES_TO_ADOPT) return currentKey;
 
   const uniquePitches = new Set(pitchClasses);
   if (uniquePitches.size < 3) return currentKey;
@@ -107,6 +123,9 @@ export const detectKey = (pitchClasses, currentKey = 'C') => {
   // an unknown current key has no meaningful score, so adopt the winner.
   const currentKnown = Object.prototype.hasOwnProperty.call(KEY_TONIC, currentKey);
   if (!currentKnown) return bestKey;
+
+  // A known key yields only to a rival backed by enough notes.
+  if (pitchClasses.length < MIN_NOTES_TO_SWITCH) return currentKey;
 
   // Switch only if the winner beats the current key's own score by the margin.
   if (bestKey !== currentKey && bestScore > currentScore * (1 + HYSTERESIS)) return bestKey;

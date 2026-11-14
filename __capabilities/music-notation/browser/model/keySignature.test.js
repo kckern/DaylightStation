@@ -57,3 +57,36 @@ describe('detectKey', () => {
     expect(detectKey(pcs)).toBe('C');
   });
 });
+
+describe('detectKey stability on chromatic playing', () => {
+  // Pitch classes of the newly pressed keys in ~7s of a child improvising around the
+  // black keys (a real studio take, distilled). Replayed through the same rolling
+  // 30-note window useDetectedKey keeps. At the old 5% margin / 5-note floor this
+  // stretch re-detected the key eight times, bouncing D♭ <-> F♯ twice.
+  const IMPROV = [9,5,1,0,6,1,6,9,6,6,0,1,1,11,1,1,6,6,9,9,3,11,3,9,6,6,9,4,4,4,11,8,11,4,8,8,8,4,11,11,4,9,8,8,1,0,6,1,6,9,6,6,0,1,1,9,5,5,1,0,6,1,6,9,6,6,0,1,1,11,5,5,6,11,9,3,6,11,6,9,11,6,3,4,9,9,11,11,4,4,8,8,8,4,11,11,4,9,8,8,1,0,6,1,9,6,6,6,0,1,1,9,5,5,1,0,6,1,6,9,6,6,0,1,1];
+  const replay = (start) => {
+    let key = start; const buf = []; const changes = [];
+    IMPROV.forEach((pc) => {
+      buf.push(pc); if (buf.length > 30) buf.shift();
+      const next = detectKey(buf, key);
+      if (next !== key) { changes.push([key, next]); key = next; }
+    });
+    return changes;
+  };
+
+  it('never re-enters D♭ once it has moved to F♯ (the render-11 flap)', () => {
+    const entered = replay('Db').map(([, to]) => to);
+    expect(entered).not.toContain('Db');
+  });
+
+  it('re-detects less often than the 5% margin did (8 changes -> 6)', () => {
+    expect(replay('Db').length).toBeLessThanOrEqual(6);
+  });
+
+  it('does not let a rival win on fewer than eight notes', () => {
+    // Nine D-major tones would flip C, but only the first seven are in hand.
+    const d = [2, 6, 9, 2, 6, 9, 4, 1, 11];
+    expect(detectKey(d.slice(0, 7), 'C')).toBe('C');
+    expect(detectKey(d, 'C')).toBe('D');
+  });
+});

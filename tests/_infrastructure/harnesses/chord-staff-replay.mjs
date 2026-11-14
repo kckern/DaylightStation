@@ -61,8 +61,8 @@
  * run (>= 4 eighth columns), 1 two-hand column, 1 densest screen; plus the 10 worst
  * "fragment" moments overall. Each is drawn by renderChordStaff at aspect 2.8 (the
  * Studio pane) in Playwright at 1120x400, bundled against frontend/node_modules like
- * chord-staff-ink-sweep.mjs. Spelling is buildRenderColumns (identifyChord, closed
- * columns cached) and the key is useDetectedKey's rule replayed outside React:
+ * chord-staff-ink-sweep.mjs. Spelling is buildRenderColumns (identifyChord, every column
+ * in the current key) and the key is useDetectedKey's rule replayed outside React:
  * detectKey over the pitch classes of newly pressed keys, last 30 within 10s.
  *
  * Read-only on the data and media volumes.
@@ -288,7 +288,6 @@ function replay(events, onFrame, rules = {}) {
   const legatoSteps = [];         // ms between the halves of every legato split
   // useDetectedKey, outside React: new keys (by presence) feed the rolling buffer.
   let key = 'C'; let lastKeys = new Set(); let keyBuf = [];
-  const cache = new Map();
 
   // Every column gets a serial. A column with none is new from an onset; one that
   // repeats its left neighbour's serial is the second half of a legato split, which
@@ -349,7 +348,7 @@ function replay(events, onFrame, rules = {}) {
     flow = pushReleases(flow, e.t, active, { legatoReleaseMs, ...extra });
     tag();
     for (const c of flow.columns) columns.set(c._id, c);
-    if (onFrame) onFrame({ t: e.t, flow, key, cache, onsetsOf, eventIndex: i });
+    if (onFrame) onFrame({ t: e.t, flow, key, onsetsOf, eventIndex: i });
   });
   return { onsetColumn, onsetCause, columns, legatoSteps };
 }
@@ -449,7 +448,7 @@ const nn = (m) => `${NAMES[m % 12]}${Math.floor(m / 12) - 1}`;
 /** What one frame shows, if it were drawn now: the last `slots` columns. */
 function snapshot(frame, slots) {
   const durations = flowDurations(frame.flow, frame.t);
-  const render = buildRenderColumns(frame.flow, durations, frame.key, frame.cache);
+  const render = buildRenderColumns(frame.flow, durations, frame.key);
   const shown = frame.flow.columns.slice(-slots);
   const off = frame.flow.columns.length - shown.length;
   return {
@@ -634,7 +633,6 @@ function momentsFromManifest(file, slots) {
     const take = cache.get(m.file);
     let snap = null;
     replay(take.events, (frame) => {
-      // Spelling cache must evolve frame by frame as the kiosk's would.
       const s = frame.flow.columns.length ? snapshot(frame, slots) : null;
       if (frame.eventIndex === m.eventIndex) snap = s;
     });
