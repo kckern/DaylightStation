@@ -16,6 +16,17 @@
  *     grown-up's day bypass).
  *
  * No `doneOn` array means nobody replayed the week: no evidence, no offer.
+ *
+ * WHAT IT DOES NOT SEE. Each past day is judged against TODAY's plan entry,
+ * not the plan as it stood that day:
+ *   - a date-bound entry that swapped this program out on a past weekday (a
+ *     holiday lesson taking the subject's slot) is not in today's plan, so
+ *     that weekday still reads as missed if the program was not done;
+ *   - an enrollment that started mid-week is seen only through its
+ *     schedule's `except` span; without one, the weekdays before the
+ *     enrollment began read as missed.
+ * Cadence and electives are the caller's filter (`planDailyAgenda` asks only
+ * for required daily programs).
  */
 import { dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
 import { DEFAULT_DAY_OFF_POLICY, keepsEntry } from "./dayOffPolicy.mjs";
