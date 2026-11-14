@@ -348,20 +348,83 @@ describe('renderChordStaff — relative rhythm', () => {
     ]))).toBe(1);
   });
 
+  // Every (x, y) pair of a path's absolute coordinates. VexFlow's glyph outlines and
+  // beam polygons are drawn with absolute M/L/Q/C commands, so the pairs bound the ink.
+  const pathPoints = (p) => {
+    const nums = (p.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const pts = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push([nums[i], nums[i + 1]]);
+    return pts;
+  };
+  // Which side of its noteheads the (single) beam lies on: 'above' (stems up), 'below'
+  // (stems down), or 'mixed' if it lies above some heads and below others. Read from
+  // geometry, because a beamed note draws no stem of its own (the Beam draws them), so
+  // there is no .vf-stem to read. The beam slopes, so each head is compared with the
+  // beam's height AT that head's x (the polygon's ends, interpolated).
+  const beamSide = (host) => {
+    const pts = [...host.querySelectorAll('.vf-beam path')].flatMap((p) => pathPoints(p));
+    if (!pts.length) return 'none';
+    const x0 = Math.min(...pts.map(([x]) => x));
+    const x1 = Math.max(...pts.map(([x]) => x));
+    const yAt = (edge) => {
+      const ys = pts.filter(([x]) => x === edge).map(([, y]) => y);
+      return ys.reduce((a, b) => a + b, 0) / ys.length;
+    };
+    const [y0, y1] = [yAt(x0), yAt(x1)];
+    const beamY = (x) => y0 + ((y1 - y0) * (x - x0)) / (x1 - x0 || 1);
+    const sides = new Set([...host.querySelectorAll('g.vf-notehead')].map((g) => {
+      const [hx, hy] = pathPoints(g.querySelector(':scope > path'))[0];
+      return beamY(hx) < hy ? 'above' : 'below';
+    }));
+    return sides.size === 1 ? [...sides][0] : 'mixed';
+  };
+
   it('gives every note of a beamed group the same stem direction', () => {
+    // One direction for the group means the beam lies wholly on one side of every head.
     const host = render([
       { midis: [64], duration: '8' },
       { midis: [72], duration: '8' },
       { midis: [76], duration: '8' },
     ]);
-    // Stems are the vertical strokes inside each note group; their direction is the sign
-    // of (stem end y − notehead y). One shared direction → one sign.
-    const signs = [...host.querySelectorAll('.vf-stavenote')].map((g) => {
-      const stem = g.querySelector('.vf-stem path')?.getAttribute('d') ?? '';
-      const ys = stem.match(/-?\d+(\.\d+)?/g)?.map(Number).filter((_, i) => i % 2 === 1) ?? [];
-      return Math.sign(ys[ys.length - 1] - ys[0]);
+    expect(beams(host)).toBe(1);
+    expect(['above', 'below']).toContain(beamSide(host));
+  });
+
+  it("decides a group's direction from its first two columns: appending never flips drawn stems", () => {
+    // D5 B4 G4 averages ON the middle line → stems down. Adding E4 drags a whole-run
+    // average below it and used to flip the three stems already drawn, and the beam.
+    const run = [[74], [71], [67]].map((midis) => ({ midis, duration: '8' }));
+    expect(beamSide(render(run))).toBe('below');
+    expect(beamSide(render([...run, { midis: [64], duration: '8' }]))).toBe('below');
+  });
+
+  it('lays accidentals out for the stem direction the beam gives the chord', () => {
+    // G5 A5 decide DOWN; the E♭4-F4-G4 chord on its own stems up, with the F's head
+    // displaced to the right. Flipped after formatting, the F moved to the LEFT of the
+    // stem and drew on top of the flat, which had been placed for the up-stem layout.
+    const host = render([
+      { midis: [79], duration: '8' },
+      { midis: [81], duration: '8' },
+      { midis: [63, 65, 67], duration: '8' },
+    ]);
+    expect(beamSide(host)).toBe('below');
+    const chord = [...host.querySelectorAll('g.vf-stavenote')][2];
+    const groups = [...chord.querySelectorAll('g.vf-notehead')];
+    const bounds = (pts) => ({
+      x0: Math.min(...pts.map(([x]) => x)), x1: Math.max(...pts.map(([x]) => x)),
+      y0: Math.min(...pts.map(([, y]) => y)), y1: Math.max(...pts.map(([, y]) => y)),
     });
-    expect(new Set(signs).size).toBe(1);
+    const heads = groups.map((g) => bounds(pathPoints(g.querySelector(':scope > path'))));
+    const accidentals = groups.flatMap((g) => [...g.querySelectorAll(':scope > path')].slice(1))
+      .map((p) => bounds(pathPoints(p)));
+    expect(heads).toHaveLength(3);
+    expect(accidentals).toHaveLength(1);
+    const [flat] = accidentals;
+    for (const h of heads) {
+      const yOverlap = flat.y0 < h.y1 && h.y0 < flat.y1;
+      const xOverlap = flat.x0 < h.x1 && h.x0 < flat.x1;
+      expect(yOverlap && xOverlap).toBe(false);
+    }
   });
 
   it('leaves a ledger note out of a group that would throw its stem off the staff', () => {

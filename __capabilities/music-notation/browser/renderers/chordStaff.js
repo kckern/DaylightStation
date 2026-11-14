@@ -366,6 +366,81 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
   const bassTickables = slotNotes.map((s, i) => s.bNote ?? new GhostNote({ duration: durations[i] }));
 
+  // Beam groups and their stem directions are decided HERE, before the formatter runs.
+  // The formatter's modifier context lays accidentals and roll strokes out around the
+  // displaced noteheads of the stem direction the note has AT FORMAT TIME (Accidental
+  // and Stroke format both read getLeftDisplacedHeadPx). Flipping a stem afterwards
+  // moved a chord-with-a-second's displaced head to the other side and left its flat
+  // where the old head had been: E♭4-F4-G4 grouped with high notes flipped down and drew
+  // the F on top of the flat. Everything the plan needs — durations, staff lines, the
+  // auto_stem direction — is known at construction. The Beam objects themselves are
+  // built after positioning (below), so they span the x the notes finally take.
+  //
+  // A group is two or more consecutive eighth columns on ONE staff; a slower column, or
+  // a slot this staff doesn't play, breaks the run.
+  // A run does NOT break where the notes' own stems would point different ways: the
+  // eighth-biased durations exist so a phrase beams into one line, and breaking on
+  // every stem flip left a melody crossing the middle line as a row of lone flags.
+  // Instead the whole group takes ONE direction, the engraver's rule: down when its
+  // noteheads sit on or above the middle line on average, up when below. That still
+  // points stems toward the staff for the group as a whole — the property the fixed
+  // frame was measured against (Beam's own majority vote, which ignores where the
+  // notes sit, is what once pushed a low bass beam 11 units past the frame). The beam
+  // is then built with auto_stem OFF so it keeps the direction chosen here.
+  //
+  // The average is over the group's FIRST TWO columns only, never the whole run. The
+  // run is live: every eighth struck joins it, and the newest column can leave it again
+  // by growing to a quarter. A whole-run mean re-voted on each of those, flipping stems
+  // that were already drawn and swinging the beam to the other side of the notes under
+  // the player's eyes. Two columns are all a beam needs to exist, and once the second
+  // has closed nothing appended can reach the vote.
+  //
+  // One exception, also caught by the ink sweep: a note OUTSIDE the staff whose stem
+  // the group would turn away from the staff (a high ledger note stemmed up, a low one
+  // stemmed down) throws its stem — and the beam on it — past the fixed frame. Such a
+  // note keeps its own direction and flag, and splits the group around it.
+  const MIDDLE_LINE = 3;
+  const TOP_LINE = 5;
+  const BOTTOM_LINE = 1;
+  const groupDir = (run) => {
+    const lines = run.slice(0, 2).flatMap((n) => n.getKeyProps().map((k) => k.line));
+    return lines.reduce((a, b) => a + b, 0) / lines.length >= MIDDLE_LINE ? -1 : 1;
+  };
+  const throwsOut = (note, dir) => {
+    if (note.getStemDirection() === dir) return false;
+    const lines = note.getKeyProps().map((k) => k.line);
+    return dir === 1 ? Math.max(...lines) > TOP_LINE : Math.min(...lines) < BOTTOM_LINE;
+  };
+  const plan = (run) => {
+    if (run.length < 2) return [];
+    const dir = groupDir(run);
+    const bad = run.findIndex((n) => throwsOut(n, dir));
+    if (bad < 0) return [{ run, dir }];
+    return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
+  };
+  const beamRuns = (staffNotes) => {
+    const runs = [];
+    let group = [];
+    const flush = () => { runs.push(...plan(group)); group = []; };
+    for (let i = 0; i <= slots; i += 1) {
+      const note = i < slots && durations[i] === '8' ? staffNotes[i] : null;
+      if (!note) { flush(); continue; }
+      group.push(note);
+    }
+    flush();
+    return runs.map(({ run, dir }) => {
+      run.forEach((n) => { if (n.getStemDirection() !== dir) n.setStemDirection(dir); });
+      return run;
+    });
+  };
+  let beamGroups = [];
+  try {
+    beamGroups = [
+      ...beamRuns(slotNotes.map((s) => s.tNote)),
+      ...beamRuns(slotNotes.map((s) => s.bNote)),
+    ];
+  } catch { beamGroups = []; }
+
   const makeVoice = (tickables) =>
     new Voice({ num_beats: slots, beat_value: 4 }).setStrict(false).addTickables(tickables);
   const tVoice = makeVoice(trebleTickables);
@@ -421,66 +496,11 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     t.getTickContext?.()?.setX(NOTE_INSET + lead + i * slotW);
   }));
 
-  // Beams, built after the snap so they span the grid positions the notes actually
-  // take, and before the draw so the notes suppress their own flags. A group is two or
-  // more consecutive eighth columns on ONE staff; a slower column, or a slot this
-  // staff doesn't play, breaks the run. Decorative — a beam failure must not cost the
-  // staff, the same bargain the ottava markers make.
-  // A run does NOT break where the notes' own stems would point different ways: the
-  // eighth-biased durations exist so a phrase beams into one line, and breaking on
-  // every stem flip left a melody crossing the middle line as a row of lone flags.
-  // Instead the whole group takes ONE direction, the engraver's rule: down when its
-  // noteheads sit on or above the middle line on average, up when below. That still
-  // points stems toward the staff for the group as a whole — the property the fixed
-  // frame was measured against (Beam's own majority vote, which ignores where the
-  // notes sit, is what once pushed a low bass beam 11 units past the frame). The beam
-  // is then built with auto_stem OFF so it keeps the direction chosen here.
-  //
-  // One exception, also caught by the ink sweep: a note OUTSIDE the staff whose stem
-  // the group would turn away from the staff (a high ledger note stemmed up, a low one
-  // stemmed down) throws its stem — and the beam on it — past the fixed frame. Such a
-  // note keeps its own direction and flag, and splits the group around it.
-  const MIDDLE_LINE = 3;
-  const TOP_LINE = 5;
-  const BOTTOM_LINE = 1;
-  const groupDir = (run) => {
-    const lines = run.flatMap((n) => n.getKeyProps().map((k) => k.line));
-    return lines.reduce((a, b) => a + b, 0) / lines.length >= MIDDLE_LINE ? -1 : 1;
-  };
-  const throwsOut = (note, dir) => {
-    if (note.getStemDirection() === dir) return false;
-    const lines = note.getKeyProps().map((k) => k.line);
-    return dir === 1 ? Math.max(...lines) > TOP_LINE : Math.min(...lines) < BOTTOM_LINE;
-  };
-  const plan = (run) => {
-    if (run.length < 2) return [];
-    const dir = groupDir(run);
-    const bad = run.findIndex((n) => throwsOut(n, dir));
-    if (bad < 0) return [{ run, dir }];
-    return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
-  };
-  const beamRuns = (staffNotes) => {
-    const runs = [];
-    let group = [];
-    const flush = () => { runs.push(...plan(group)); group = []; };
-    for (let i = 0; i <= slots; i += 1) {
-      const note = i < slots && durations[i] === '8' ? staffNotes[i] : null;
-      if (!note) { flush(); continue; }
-      group.push(note);
-    }
-    flush();
-    return runs.map(({ run, dir }) => {
-      run.forEach((n) => { if (n.getStemDirection() !== dir) n.setStemDirection(dir); });
-      return run;
-    });
-  };
+  // The beams themselves, now that the notes sit where they will be drawn, and before
+  // the draw so the notes suppress their own flags. Decorative — a beam failure must not
+  // cost the staff, the same bargain the ottava markers make.
   let beams = [];
-  try {
-    beams = [
-      ...beamRuns(slotNotes.map((s) => s.tNote)),
-      ...beamRuns(slotNotes.map((s) => s.bNote)),
-    ].map((group) => new Beam(group, false));
-  } catch { beams = []; }
+  try { beams = beamGroups.map((group) => new Beam(group, false)); } catch { beams = []; }
 
   tVoice.draw(ctx, treble);
   bVoice.draw(ctx, bass);

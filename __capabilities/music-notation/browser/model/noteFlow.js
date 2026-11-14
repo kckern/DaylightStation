@@ -154,18 +154,18 @@ export const IOI_MEMORY = 16;
 /**
  * The baseline is clamped, and BOTH ends of the clamp do real work.
  *
- * The FLOOR is what makes a fast run readable at all. A purely relative baseline is
- * self-defeating on a uniform passage: play twelve notes at 120ms and the median
- * becomes 120, the eighth threshold becomes 72ms, and the run classifies as ordinary
- * quarters — the exact case the feature exists to draw. Flooring the baseline at
- * 300ms means anything under 180ms reads as an eighth in any context, which matches
- * how a sub-180ms note actually sounds. Above the floor the ratio does relative work
+ * The FLOOR anchors the scale to how fast a note actually is. A purely relative
+ * baseline follows the player all the way down: play a run at 120ms and the median
+ * becomes 120, the eighth threshold 144ms, and a 200ms note inside the run — still
+ * quick by any ear — draws as a quarter, breaking the beam. Flooring the baseline at
+ * 300ms means anything under 360ms reads as an eighth in any context, which matches
+ * how a note that quick actually sounds. Above the floor the ratio does relative work
  * as intended.
  *
  * The CEILING keeps half notes reachable. A half needs a gap longer than
  * SLOW_RATIO × baseline, but a gap of IDLE_CLEAR_MS starts a fresh line first, so a
- * baseline above ~1000ms would put the half threshold past the clear and no half
- * could ever draw. 1.5 × 800 = 1200ms, a wide margin under the 3000ms idle line.
+ * baseline above ~1500ms would put the half threshold past the clear and no half
+ * could ever draw. 2.0 × 800 = 1600ms, a wide margin under the 3000ms idle line.
  */
 export const BASELINE_MIN_MS = 300;
 export const BASELINE_MAX_MS = 800;
