@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowRolls, flowDurations, baselineOf, classifyIoi,
-  GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, HELD_CLEAR_MS,
+  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowRolls, flowDurations, baselineOf, classifyIoi,
+  GAP_MS, SPAN_MAX_MS, ROLL_MARK_MS, MAX_COLUMN_NOTES, COLUMN_CAPACITY, IDLE_CLEAR_MS, STALE_CLEAR_MS,
   DEFAULT_BASELINE_MS, BASELINE_MIN_MS, BASELINE_MAX_MS, SLOW_RATIO,
 } from "./noteFlow.js";
 
@@ -155,14 +155,12 @@ describe('noteFlow — capacity', () => {
 });
 
 describe('noteFlow — idle reset', () => {
-  it('clears once the keyboard has been quiet for IDLE_CLEAR_MS', () => {
+  it('keeps the line through a breath; the next onset starts a fresh line', () => {
     const flow = pushOnsets(emptyFlow(), [60], 1000);
-    expect(clearIfIdle(flow, 1000 + IDLE_CLEAR_MS).columns).toEqual([]);
-  });
-
-  it('holds the line through a shorter gap between phrases', () => {
-    const flow = pushOnsets(emptyFlow(), [60], 1000);
-    expect(clearIfIdle(flow, 1000 + IDLE_CLEAR_MS - 1)).toBe(flow);
+    expect(clearIfIdle(flow, 1000 + IDLE_CLEAR_MS)).toBe(flow);
+    const next = pushOnsets(flow, [64], 1000 + IDLE_CLEAR_MS + 1);
+    expect(flowColumns(next)).toEqual([[64]]);
+    expect(next.recentIois).toEqual([]);
   });
 
   it('returns the SAME object when already empty (no idle re-render churn)', () => {
@@ -173,7 +171,7 @@ describe('noteFlow — idle reset', () => {
   it('a new note after a clear starts again at the left', () => {
     let flow = pushOnsets(emptyFlow(), [60], 0);
     flow = pushOnsets(flow, [64], 500);
-    flow = clearIfIdle(flow, 500 + IDLE_CLEAR_MS);
+    flow = clearIfIdle(flow, 500 + STALE_CLEAR_MS);
     flow = pushOnsets(flow, [67], 9000);
     expect(flowColumns(flow)).toEqual([[67]]);
   });
@@ -184,9 +182,9 @@ describe('noteFlow — idle reset', () => {
     expect(clearIfIdle(flow, 1000 + IDLE_CLEAR_MS, { held: allHeld })).toBe(flow);
   });
 
-  it('clears anyway at HELD_CLEAR_MS, so a lost note-off cannot freeze the staff', () => {
+  it('empties an abandoned staff after STALE_CLEAR_MS even with a key down', () => {
     const flow = pushOnsets(emptyFlow(), [60], 1000);
-    expect(clearIfIdle(flow, 1000 + HELD_CLEAR_MS, { held: allHeld }).columns).toEqual([]);
+    expect(clearIfIdle(flow, 1000 + STALE_CLEAR_MS, { held: allHeld }).columns).toEqual([]);
   });
 
   it('still accepts a bare number as idleMs (older signature)', () => {
@@ -198,7 +196,7 @@ describe('noteFlow — idle reset', () => {
   it('clears the baseline history along with the columns', () => {
     let flow = run([[[60], 0], [[64], 400], [[67], 800]]);
     expect(flow.recentIois.length).toBeGreaterThan(0);
-    expect(clearIfIdle(flow, 800 + IDLE_CLEAR_MS).recentIois).toEqual([]);
+    expect(clearIfIdle(flow, 800 + STALE_CLEAR_MS).recentIois).toEqual([]);
   });
 });
 
@@ -315,6 +313,68 @@ describe('noteFlow — immutability', () => {
     pushOnsets(flow, [64], 10);
     clearIfIdle(flow, 999999);
     flowDurations(flow, 5000);
+    const two = pushOnsets(flow, [64], 300, { held: allHeld });
+    const twoSnap = JSON.stringify(two);
+    pushReleases(two, 400, noneHeld);
+    expect(JSON.stringify(two)).toBe(twoSnap);
     expect(JSON.stringify(flow)).toBe(snapshot);
+  });
+});
+
+describe('noteFlow — holds (pushReleases)', () => {
+  const setOf = (...ns) => new Set(ns);
+  // Build a flow, passing the held surface that was true at each onset.
+  const runHeld = (events) => events.reduce((f, [m, at, h]) => pushOnsets(f, m, at, { held: h }), emptyFlow());
+
+  it('a LH chord held under a RH melody promotes to a half', () => {
+    const lh = [48, 52, 55];
+    const flow = runHeld([
+      [lh, 0, setOf(...lh)],
+      [[72], 250, setOf(...lh, 72)],
+      [[74], 500, setOf(...lh, 72, 74)],   // RH legato: previous note still down
+      [[76], 750, setOf(...lh, 74, 76)],
+    ]);
+    // IOIs 250,250,250 -> baseline clamps to 300 -> threshold 450 < 900: wide margin.
+    expect(flow.columns[0].heldAtClose).toBe(true);
+    expect(flowDurations(flow, 900)[0]).toBe('h');
+  });
+
+  it('a column released before the next onset keeps its IOI duration', () => {
+    const flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(64)]]);
+    expect(flow.columns[0].heldAtClose).toBe(false);
+    expect(flowDurations(flow, 5000)[0]).toBe('q');
+  });
+
+  it('release freezes the duration', () => {
+    let flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
+    flow = pushReleases(flow, 400 + 0, setOf(64)); // 60 let go at 400
+    expect(flow.columns[0].releasedAt).toBe(400);
+    expect(flow.columns[0].duration).toBe('q');
+    expect(flowDurations(flow, 5000)[0]).toBe('q');
+  });
+
+  it('a re-strike of the same pitch releases the earlier column', () => {
+    let flow = runHeld([[[60], 0, setOf(60)], [[60], 400, setOf(60)]]);
+    expect(flow.columns[0].heldAtClose).toBe(true);
+    flow = pushReleases(flow, 400, setOf(60));
+    expect(flow.columns[0].releasedAt).toBe(400);
+  });
+
+  it('a column struck with both hands stays a half while the LH holds', () => {
+    let flow = runHeld([
+      [[48], 0, setOf(48)],
+      [[72], 50, setOf(48, 72)],            // joins: one column [48,72]
+      [[74], 300, setOf(48, 72, 74)],       // RH moves on legato
+    ]);
+    expect(flowColumns(flow)[0]).toEqual([48, 72]);
+    expect(flowDurations(flow, 1000)[0]).toBe('h'); // baseline 300 -> 450 threshold
+    flow = pushReleases(flow, 2000, setOf(74));
+    expect(flowDurations(flow, 2000)[0]).toBe('h');
+    expect(flowDurations(flow, 9000)[0]).toBe('h');
+  });
+
+  it('returns the same flow when nothing was released', () => {
+    const flow = runHeld([[[60], 0, setOf(60)], [[64], 400, setOf(60, 64)]]);
+    expect(pushReleases(flow, 500, setOf(60, 64))).toBe(flow);
   });
 });

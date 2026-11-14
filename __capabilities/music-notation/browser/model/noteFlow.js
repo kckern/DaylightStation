@@ -5,12 +5,18 @@
 // nothing is quantised to a grid. The horizontal axis carries ORDER, the way typed
 // letters march right across a screen.
 //
-// What it DOES carry, as of the rhythm work, is a COARSE RELATIVE duration: each
-// column is engraved as an eighth, a quarter, or a half depending on how its gap to
-// the next strike compares with how you have been playing over the last few seconds.
-// Nothing here claims to have measured a tempo — the same passage played twice as
-// fast engraves identically, because every judgement is a ratio against a moving
-// baseline.
+// What it DOES carry is a COARSE RELATIVE duration: each column is engraved as an
+// eighth, a quarter, or a half depending on how its gap to the next strike compares
+// with how you have been playing over the last few seconds. Nothing here claims to
+// have measured a tempo — the same passage played twice as fast engraves identically,
+// because every judgement is a ratio against a moving baseline.
+//
+// HOLDS count too: a column whose keys were all still down when the next column
+// opened (a left-hand chord under a right-hand melody) is judged by how long it is
+// actually held, not by the gap to the next strike, so it promotes to a half once the
+// hold outlasts the threshold. And a breath no longer wipes the line: it stays on
+// screen through IDLE_CLEAR_MS of silence, the next strike then starts a fresh line,
+// and only STALE_CLEAR_MS of nothing at all empties the staff.
 //
 // Two judgement calls live here.
 //
@@ -47,17 +53,18 @@ export const MAX_COLUMN_NOTES = 10;
 export const COLUMN_CAPACITY = 8;
 
 /**
- * Silence after which the flow resets to empty, so the next phrase starts at the
- * left edge instead of continuing a stale line.
+ * Silence after which the NEXT strike starts a fresh line at the left edge instead of
+ * continuing a stale one. Nothing is wiped at this point — the old line stays visible
+ * until that strike (or STALE_CLEAR_MS), so a breath between phrases does not blank
+ * the staff under the player. No inter-onset interval is recorded across the breath.
  */
-export const IDLE_CLEAR_MS = 1600;
+export const IDLE_CLEAR_MS = 3000;
 
 /**
- * Backstop for the held-key hold-off below. A key that is still down suppresses the
- * idle clear — that is what lets a held final chord keep showing its half note — but
- * a note-off can be lost, and a stuck note must not freeze the staff forever.
+ * Silence after which an untouched staff is emptied outright, key-down state ignored:
+ * a lost note-off must not freeze a stale line on screen forever.
  */
-export const HELD_CLEAR_MS = 6000;
+export const STALE_CLEAR_MS = 30000;
 
 // ─── Rhythm ─────────────────────────────────────────────────────────────────────
 
@@ -84,9 +91,9 @@ export const IOI_MEMORY = 16;
  * as intended.
  *
  * The CEILING keeps half notes reachable. A half needs a gap longer than
- * SLOW_RATIO × baseline, but a gap of IDLE_CLEAR_MS wipes the staff first, so a
+ * SLOW_RATIO × baseline, but a gap of IDLE_CLEAR_MS starts a fresh line first, so a
  * baseline above ~1000ms would put the half threshold past the clear and no half
- * could ever draw. 1.5 × 800 = 1200ms, a 400ms margin under the 1600ms clear.
+ * could ever draw. 1.5 × 800 = 1200ms, a wide margin under the 3000ms idle line.
  */
 export const BASELINE_MIN_MS = 300;
 export const BASELINE_MAX_MS = 800;
@@ -171,6 +178,10 @@ export function pushOnsets(flow, midis, now, opts = {}) {
   if (!midis || midis.length === 0) return flow;
   const { held = null, capacity = COLUMN_CAPACITY } = opts;
 
+  // A breath longer than IDLE_CLEAR_MS ends the phrase: start a fresh line, and
+  // record no IOI across the silence (it would poison the baseline).
+  if (flow.columns.length > 0 && now - flow.lastOnsetAt > IDLE_CLEAR_MS) flow = emptyFlow();
+
   const columns = flow.columns.slice();
   const open = columns[columns.length - 1];
 
@@ -203,7 +214,14 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     const baseline = recentIois.length
       ? baselineOf(recentIois)
       : Math.min(DEFAULT_BASELINE_MS, clamp(ioi, BASELINE_MIN_MS, BASELINE_MAX_MS));
-    columns[columns.length - 1] = { ...open, duration: classifyIoi(ioi, baseline) };
+    // heldAtClose: every key still down as the next column opens means the gap to it
+    // says nothing about how long the column lasts — pushReleases/flowDurations judge
+    // the hold instead.
+    columns[columns.length - 1] = {
+      ...open,
+      duration: classifyIoi(ioi, baseline),
+      heldAtClose: !!held && open.midis.every((m) => held.has(m)),
+    };
     recentIois = [...recentIois, ioi].slice(-IOI_MEMORY);
   }
   columns.push({
@@ -223,29 +241,53 @@ export function pushOnsets(flow, midis, now, opts = {}) {
 }
 
 /**
- * Reset the flow once the keyboard has been quiet — unless a key is still down.
- *
- * The hold-off matters now that the display depicts holds: without it, sitting on a
- * final chord wipes the staff 1.6s in, taking the half note with it while the key is
- * still pressed. HELD_CLEAR_MS caps the reprieve so a lost note-off can't freeze the
- * staff indefinitely.
+ * Empty the flow only when it has been abandoned for STALE_CLEAR_MS. Anything shorter
+ * keeps the line on screen: the idle line (IDLE_CLEAR_MS) is enforced by the next
+ * strike in `pushOnsets`, not by a wipe. Key-down state is ignored — `held` in opts is
+ * accepted for older callers and has no effect.
  *
  * Returns the same object when there is nothing to do, so React state that holds a
  * flow won't re-render on every idle tick.
  *
  * @param {{columns: FlowColumn[], lastOnsetAt: number, recentIois: number[]}} flow
  * @param {number} now
- * @param {{held?: {size: number}, idleMs?: number}|number} [opts] - a bare number is
- *   read as `idleMs`, the older signature.
+ * @param {{held?: unknown, idleMs?: number}|number} [opts] - a bare number is read
+ *   as the threshold override, the older signature.
  */
 export function clearIfIdle(flow, now, opts = {}) {
-  const { held = null, idleMs = IDLE_CLEAR_MS } =
-    typeof opts === 'number' ? { idleMs: opts } : opts;
+  const { idleMs = STALE_CLEAR_MS } = typeof opts === 'number' ? { idleMs: opts } : opts;
   if (flow.columns.length === 0) return flow;
-  const quiet = now - flow.lastOnsetAt;
-  if (quiet < idleMs) return flow;
-  if (held && held.size > 0 && quiet < HELD_CLEAR_MS) return flow;
+  if (now - flow.lastOnsetAt < idleMs) return flow;
   return emptyFlow();
+}
+
+/**
+ * Release bookkeeping for held columns. A closed column that was fully held when it
+ * closed is released once none of its keys is down, or once a later column re-strikes
+ * one of its pitches (a re-strike implies the earlier note let go). On release the
+ * duration is fixed: promoted to a half if the hold outlasted SLOW_RATIO × baseline,
+ * otherwise left as its IOI duration. Upward only.
+ *
+ * @param {{columns: FlowColumn[], recentIois: number[]}} flow
+ * @param {number} now
+ * @param {{has: (n: number) => boolean}} held
+ * @returns the SAME flow when nothing was released
+ */
+export function pushReleases(flow, now, held) {
+  let changed = false;
+  const baseline = baselineOf(flow.recentIois);
+  const columns = flow.columns.map((c, i) => {
+    if (i === flow.columns.length - 1 || !c.heldAtClose || c.releasedAt !== null) return c;
+    const restruck = flow.columns.slice(i + 1).some((later) => later.midis.some((m) => c.midis.includes(m)));
+    if (!restruck && c.midis.some((m) => held.has(m))) return c;
+    changed = true;
+    return {
+      ...c,
+      releasedAt: now,
+      duration: now - c.startedAt > SLOW_RATIO * baseline ? 'h' : c.duration,
+    };
+  });
+  return changed ? { ...flow, columns } : flow;
 }
 
 /**
@@ -260,8 +302,10 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
  * Every column but the newest carries the duration it was given when it closed, so
  * what is already drawn never changes. The newest column has no gap yet: it shows as
  * a quarter provisionally, and becomes a half once it has been held past the same
- * threshold a closed column would have to clear. That promotion is the only thing on
- * the staff that changes with the clock, and it is why the host needs a tick.
+ * threshold a closed column would have to clear. A closed column that was fully held
+ * when it closed and has not been released yet promotes the same way (its stored
+ * duration is only the IOI guess). Those promotions are the only things on the staff
+ * that change with the clock, and why the host needs a tick. Upward only.
  *
  * @param {{columns: FlowColumn[], recentIois: number[]}} flow
  * @param {number} now
@@ -269,8 +313,12 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
  */
 export function flowDurations(flow, now) {
   const baseline = baselineOf(flow.recentIois);
-  return flow.columns.map((c) =>
-    c.duration ?? (now - c.startedAt > SLOW_RATIO * baseline ? 'h' : 'q'));
+  const longHold = (c) => now - c.startedAt > SLOW_RATIO * baseline;
+  return flow.columns.map((c) => {
+    if (c.duration === null) return longHold(c) ? 'h' : 'q';
+    if (c.heldAtClose && c.releasedAt === null && longHold(c)) return 'h';
+    return c.duration;
+  });
 }
 
 /**
@@ -283,4 +331,4 @@ export const flowRolls = (flow) => flow.columns.map((c) =>
     ? (c.lastMidi > c.firstMidi ? 'up' : 'down')
     : null);
 
-export default { emptyFlow, flowRolls, pushOnsets, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };
+export default { emptyFlow, flowRolls, pushOnsets, pushReleases, clearIfIdle, flowColumns, flowDurations, baselineOf, classifyIoi };
