@@ -18,7 +18,8 @@
  * doubles as a no-clip check — or if two NEIGHBOURING columns on one staff come closer
  * than MIN_COLUMN_AIR (their ink x-ranges intersect, or nearly): the column layout
  * spaces by duration and floors each step at the ink's needs (chordStaff.js
- * layoutColumns), and this is what checks that floor. Requires playwright (repo root) and bundles chordStaff.js
+ * layoutColumns), and this is what checks that floor — or if a beam crosses into the
+ * OTHER staff's lines (lone stems that do are reported, not gated). Requires playwright (repo root) and bundles chordStaff.js
  * against frontend/node_modules — the frontend has its OWN vexflow (4.x); the root
  * node_modules has a different, much older one.
  */
@@ -40,6 +41,11 @@ const KEYS = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'F', 'Bb', 'Eb', 'Ab', 'Db', '
 const ASPECTS = [560 / 210, 300 / 220, 1.0, 1.7, 3.5, 0.6];
 // Least air (logical units) between neighbouring columns' ink on one staff.
 const MIN_COLUMN_AIR = 2;
+// The other staff's outer line, which a beam must not cross: the bass top line for a
+// treble beam, the treble bottom line for a bass beam. TOP_ROOM 58 + 4 spaces of stave
+// headroom (+ 40 more for the bottom line); STAFF_GAP 66.
+const BASS_TOP_LINE_Y = 58 + 66 + 40;
+const TREBLE_BOTTOM_LINE_Y = 58 + 40 + 40;
 
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), 'ink-sweep-'));
@@ -63,7 +69,7 @@ async function main() {
     await page.goto('file://' + join(dir, 'sweep.html'));
     await page.waitForFunction(() => !!window.renderChordStaff);
 
-    const result = await page.evaluate(({ KEYS, ASPECTS, MIN_COLUMN_AIR }) => {
+    const result = await page.evaluate(({ KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y }) => {
       const cases = [];
       for (let m = 21; m <= 108; m += 1) {
         cases.push([m]);                                                  // every key alone
@@ -96,6 +102,13 @@ async function main() {
       let stressOverlaps = 0;
       let pairsChecked = 0;
       let tightest = Infinity;
+      // Beams that cross into the other staff's lines (gated), and lone stems that do
+      // (reported only: a stem turned away would leave the frame, or both sides cross).
+      const crossings = [];
+      let crossingCount = 0;
+      let beamsChecked = 0;
+      let loneStemCrossings = 0;
+      let loneStemWorst = null;
       const over = { top: 0, bottom: 0, left: 0, right: 0 };
       const perAspect = {};
       let renders = 0;
@@ -174,6 +187,23 @@ async function main() {
               const b = g.getBBox();
               staffBoxes[g.dataset.staff].push([b.x, b.x + b.width]);
             }
+            const intoOther = (staff, b) => (staff === 'treble'
+              ? b.y + b.height - BASS_TOP_LINE_Y : TREBLE_BOTTOM_LINE_Y - b.y);
+            for (const g of host.querySelectorAll('g.vf-beam[data-staff]')) {
+              beamsChecked += 1;
+              const into = intoOther(g.dataset.staff, g.getBBox());
+              if (into <= 0) continue;
+              crossingCount += 1;
+              if (crossings.length < 10) crossings.push({ midis, ks, aspect: +aspect.toFixed(2), dur, staff: g.dataset.staff, into: +into.toFixed(1) });
+            }
+            for (const g of host.querySelectorAll('g.vf-stavenote[data-staff]')) {
+              const st = g.querySelector('.vf-stem');
+              if (!st || pathological) continue;
+              const into = intoOther(g.dataset.staff, st.getBBox());
+              if (into <= 0) continue;
+              loneStemCrossings += 1;
+              if (!loneStemWorst || into > loneStemWorst.into) loneStemWorst = { midis, ks, aspect: +aspect.toFixed(2), dur, staff: g.dataset.staff, into: +into.toFixed(1) };
+            }
             for (const [staff, boxes] of Object.entries(staffBoxes)) {
               boxes.sort((p, q) => p[0] - q[0]);
               for (let k = 1; k < boxes.length; k += 1) {
@@ -205,8 +235,9 @@ async function main() {
         perAspect,
         clips,
         overlaps, overlapCount, stressOverlaps, pairsChecked, tightest: +tightest.toFixed(1),
+        crossings, crossingCount, beamsChecked, loneStemCrossings, loneStemWorst,
       };
-    }, { KEYS, ASPECTS, MIN_COLUMN_AIR });
+    }, { KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y });
 
     await browser.close();
 
@@ -222,6 +253,8 @@ async function main() {
     console.log(`\nneighbouring columns: ${result.pairsChecked} pairs checked, tightest ${result.tightest} units of air (ordinary playing)`);
     console.log(`overlapping:          ${result.overlapCount} (ordinary playing, need 0; < ${MIN_COLUMN_AIR} units counts)`);
     console.log(`                      ${result.stressOverlaps} forearm-cluster pairs closer than ${MIN_COLUMN_AIR} — reported, not gated`);
+    console.log(`beams:                ${result.beamsChecked} checked, ${result.crossingCount} cross into the other staff's lines (need 0)`);
+    console.log(`lone stems:           ${result.loneStemCrossings} reach into the other staff (reported, not gated; worst ${JSON.stringify(result.loneStemWorst)})`);
     let failed = false;
     if (result.clips.length) {
       console.error('\nINK OUTSIDE THE FRAME — the staff is clipping:');
@@ -231,6 +264,11 @@ async function main() {
     if (result.overlapCount) {
       console.error('\nNEIGHBOURING COLUMNS COLLIDE:');
       for (const c of result.overlaps) console.error('  ' + JSON.stringify(c));
+      failed = true;
+    }
+    if (result.crossingCount) {
+      console.error('\nA BEAM CROSSES INTO THE OTHER STAFF:');
+      for (const c of result.crossings) console.error('  ' + JSON.stringify(c));
       failed = true;
     }
     if (failed) { process.exitCode = 1; return; }

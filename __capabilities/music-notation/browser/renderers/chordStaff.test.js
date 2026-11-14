@@ -397,21 +397,60 @@ describe('renderChordStaff — relative rhythm', () => {
   });
 
   it("decides a group's direction from its first two columns: appending never flips drawn stems", () => {
-    // D5 B4 G4 averages ON the middle line → stems down. Adding E4 drags a whole-run
-    // average below it and used to flip the three stems already drawn, and the beam.
+    // D5 B4 G4 averages ON the middle line → stems down. Adding another G4 drags a
+    // whole-run average below it and used to flip the three stems already drawn, and
+    // the beam. (G4, not E4: an E4 stemmed down now leaves the group, see below.)
     const run = [[74], [71], [67]].map((midis) => ({ midis, duration: '8' }));
     expect(beamSide(render(run))).toBe('below');
-    expect(beamSide(render([...run, { midis: [64], duration: '8' }]))).toBe('below');
+    const longer = render([...run, { midis: [67], duration: '8' }]);
+    expect(beamSide(longer)).toBe('below');
+    expect(beams(longer)).toBe(1);
+  });
+
+  // y of every beam polygon drawn (these cases play one staff only).
+  const beamYs = (host) => [...host.querySelectorAll('.vf-beam path')]
+    .flatMap((p) => pathPoints(p).map(([, y]) => y));
+  const BASS_TOP_LINE = 164;   // TOP_ROOM 58 + STAFF_GAP 66 + 4 spaces of headroom
+  const TREBLE_BOTTOM_LINE = 138;
+
+  it("keeps a treble beam out of the bass staff: a low note stemmed down leaves the group", () => {
+    // D5 B4 then E4: the group stems down, and E4's stem would carry the beam ~9 units
+    // into the bass staff's lines. E4 keeps its own stem and flag instead.
+    const host = render([[74], [71], [64]].map((midis) => ({ midis, duration: '8' })));
+    expect(beams(host)).toBe(1);
+    expect(Math.max(...beamYs(host))).toBeLessThanOrEqual(BASS_TOP_LINE);
+    // The replay case: wide treble chords reaching down to D4/E♭4 under high notes.
+    const wide = render([[82, 63], [82, 80, 62], [82, 81, 63]].map((midis) => ({ midis, duration: '8' })));
+    expect(beamYs(wide).every((y) => y <= BASS_TOP_LINE)).toBe(true);
+  });
+
+  it("turns a lone wide treble chord's stem up rather than down into the bass staff", () => {
+    // E♭4 under A5 B♭5: auto_stem points down from the top head, past E♭4 and on into
+    // the bass staff. On its own (no beam) it now stems up.
+    const host = render([{ midis: [63, 81, 82], duration: '8' }]);
+    const stemYs = [...host.querySelectorAll('.vf-stavenote .vf-stem path')]
+      .flatMap((p) => pathPoints(p).map(([, y]) => y));
+    expect(stemYs.length).toBeGreaterThan(0);
+    expect(Math.max(...stemYs)).toBeLessThanOrEqual(BASS_TOP_LINE);
+  });
+
+  it('keeps a bass beam out of the treble staff: a high bass note stemmed up leaves the group', () => {
+    // C3 D3 E3 F3 G3 stems up; G3's stem would reach into the treble staff's lines.
+    const host = render([[48], [50], [52], [53], [55]].map((midis) => ({ midis, duration: '8' })));
+    expect(beams(host)).toBe(1);
+    expect(Math.min(...beamYs(host))).toBeGreaterThanOrEqual(TREBLE_BOTTOM_LINE);
   });
 
   it('lays accidentals out for the stem direction the beam gives the chord', () => {
-    // G5 A5 decide DOWN; the E♭4-F4-G4 chord on its own stems up, with the F's head
-    // displaced to the right. Flipped after formatting, the F moved to the LEFT of the
+    // G5 A5 decide DOWN; the G4-A♭4-C5 chord on its own stems up, with the A♭'s head
+    // displaced to the right. Flipped after formatting, the A♭ moved to the LEFT of the
     // stem and drew on top of the flat, which had been placed for the up-stem layout.
+    // (The review's case, E♭4-F4-G4, now leaves the group instead: stemmed down from
+    // E♭4 its beam would reach into the bass staff.)
     const host = render([
       { midis: [79], duration: '8' },
       { midis: [81], duration: '8' },
-      { midis: [63, 65, 67], duration: '8' },
+      { midis: [67, 68, 72], duration: '8' },
     ]);
     expect(beamSide(host)).toBe('below');
     const chord = [...host.querySelectorAll('g.vf-stavenote')][2];
@@ -589,6 +628,42 @@ describe('renderChordStaff — duration-weighted layout', () => {
     const host = document.createElement('div');
     renderChordStaff(host, { notes: new Map([[60, {}], [62, {}], [64, {}]]), keySignature: 'F#', aspect: 1.7 });
     expect(host.querySelectorAll('g.vf-stavenote').length).toBe(1);
+  });
+});
+
+describe('renderChordStaff — one letter, one staff position', () => {
+  const pts = (p) => {
+    const nums = (p.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const out = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) out.push([nums[i], nums[i + 1]]);
+    return out;
+  };
+  const box = (p) => {
+    const q = pts(p);
+    return {
+      x0: Math.min(...q.map(([x]) => x)), x1: Math.max(...q.map(([x]) => x)),
+      y0: Math.min(...q.map(([, y]) => y)), y1: Math.max(...q.map(([, y]) => y)),
+    };
+  };
+
+  it('respells A♯ as B♭ beside an A♮ in F♯ major, so no two heads share a line', () => {
+    // The speller writes pitch class 10 as A♯ in F♯ (in key) and 9 as A — one line.
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns: [{ midis: [69, 70, 73], duration: 'q' }], keySignature: 'F#', aspect: 2.8 });
+    const groups = [...host.querySelectorAll('g.vf-notehead')];
+    const heads = groups.map((g) => box(g.querySelector(':scope > path')));
+    expect(heads).toHaveLength(3);
+    // Distinct staff positions: head centres at distinct heights.
+    const ys = heads.map((h) => Math.round((h.y0 + h.y1) / 2));
+    expect(new Set(ys).size).toBe(3);
+    // And no accidental runs through another head.
+    const accidentals = groups.flatMap((g) => [...g.querySelectorAll(':scope > path')].slice(1)).map(box);
+    expect(accidentals.length).toBeGreaterThan(0);
+    for (const a of accidentals) {
+      for (const h of heads) {
+        expect(a.x0 < h.x1 && h.x0 < a.x1 && a.y0 < h.y1 && h.y0 < a.y1).toBe(false);
+      }
+    }
   });
 });
 

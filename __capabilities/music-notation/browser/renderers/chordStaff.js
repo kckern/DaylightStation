@@ -218,12 +218,53 @@ function keyAlterFor(letter, keySig) {
  * keyboard, where the second F♯ would read as a different note than the first. Each
  * column here is self-contained: if the key doesn't imply the alteration, it shows.
  */
+// Every way to write a pitch class with at most one accidental: [letter, alter].
+const SPELLINGS_OF = (pc) => Object.entries(LETTER_PC).flatMap(([letter, natural]) =>
+  [-1, 0, 1].filter((alter) => (((natural + alter) % 12) + 12) % 12 === pc).map((alter) => [letter, alter]));
+
+/** The VexFlow key for `midi` written as `letter` + `alter`, octave corrected. */
+function writeAs(midi, letter, alter) {
+  let octave = Math.floor(midi / 12) - 1;
+  if (letter === 'c' && alter === -1) octave += 1;
+  if (letter === 'b' && alter === 1) octave -= 1;
+  return `${letter}${alter === 1 ? '#' : alter === -1 ? 'b' : ''}/${octave}`;
+}
+
+/**
+ * Keep two notes of ONE staff column off one staff position. The chord speller names
+ * the chord, and it can write two neighbouring pitch classes with one letter — A and A♯
+ * in F♯ major — which on the staff puts both heads on the same line: the second head
+ * squeezes beside the first and the ♮ draws through it (replay 16-guest-rolled). The
+ * staff alone then rewrites the ALTERED one to its other spelling (A♯ → B♭, G♭ → F♯,
+ * E♯ → F) when that letter is free in the column; when it isn't, the clash stays —
+ * there is no better line for it. The chord-name plaque keeps the speller's names.
+ */
+function separateLetters(midis, keys) {
+  const out = [...keys];
+  const pos = (key) => { const [w, o] = key.split('/'); return `${w[0]}${o}`; };
+  const alterOf = (key) => (key[1] === '#' ? 1 : key[1] === 'b' && key.indexOf('/') > 1 ? -1 : 0);
+  for (let i = 0; i < out.length; i += 1) {
+    for (let j = i + 1; j < out.length; j += 1) {
+      if (pos(out[i]) !== pos(out[j])) continue;
+      const k = alterOf(out[j]) !== 0 ? j : alterOf(out[i]) !== 0 ? i : -1;
+      if (k < 0) continue;
+      const pc = (((midis[k] % 12) + 12) % 12);
+      const taken = new Set(out.map(pos));
+      const alt = SPELLINGS_OF(pc)
+        .map(([letter, alter]) => writeAs(midis[k], letter, alter))
+        .find((key) => !taken.has(pos(key)));
+      if (alt) out[k] = alt;
+    }
+  }
+  return out;
+}
+
 function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION, stemDir = null) {
   if (!midis.length) return null;
   // auto_stem: high chords stem DOWN and low chords stem UP (stems point toward the
   // staff), so the stem doesn't add to a tall chord's overhang and the noteheads
   // stay within the frame's headroom instead of clipping.
-  const keys = midis.map((m) => midiToVexKey(m, keySig, spelling));
+  const keys = separateLetters(midis, midis.map((m) => midiToVexKey(m, keySig, spelling)));
   // `stemDir` forces a direction — only the width measurement asks for one.
   const note = new StaveNote(stemDir ? { keys, duration, clef, stem_direction: stemDir } : { keys, duration, clef, auto_stem: true });
   keys.forEach((key, i) => {
@@ -615,9 +656,30 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // the group would turn away from the staff (a high ledger note stemmed up, a low one
   // stemmed down) throws its stem — and the beam on it — past the fixed frame. Such a
   // note keeps its own direction and flag, and splits the group around it.
+  //
+  // The same split guards the OTHER staff. A treble group stemmed down hangs its stems
+  // and beam into the gap between the staves, and a low note in it (E4, or a wide chord
+  // reaching down to D4) pushes the beam on into the bass staff's lines — where it
+  // crossed the bass group's own beam (replay 16-guest-rolled). Mirror image: a bass
+  // group stemmed up with a note above its middle reaches into the treble. A stem runs
+  // STEM_SPACES (3.5) staff spaces past its farthest head, and the staves are
+  // STAFF_GAP − 40 = 26 units (2.6 spaces) apart, so a treble note stemmed down must sit
+  // on line 1.9 or higher (G4 and up: F4 already reaches 4.8 units into the bass staff,
+  // E4 9 — measured), and a bass note stemmed up on line 4.1 or lower (F3 and down).
+  // Such a note leaves the group exactly like a thrower-out. It may still stem the same
+  // way on its own; what it no longer does is drag a beam across the other staff.
   const MIDDLE_LINE = 3;
   const TOP_LINE = 5;
   const BOTTOM_LINE = 1;
+  const STEM_SPACES = 3.5;
+  const GAP_SPACES = (STAFF_GAP - 40) / 10;
+  const LOWEST_TREBLE_DOWN = BOTTOM_LINE - GAP_SPACES + STEM_SPACES; // 1.9
+  const HIGHEST_BASS_UP = TOP_LINE + GAP_SPACES - STEM_SPACES;       // 4.1
+  // The farthest head a stem may leave from on the frame's outer edges. Ottava keeps
+  // displayed heads within A6 (treble line 9) and E2 (bass line −0.5); these limits
+  // leave a flagged stem from them inside FRAME_TOP/FRAME_BOTTOM (the ink sweep checks).
+  const OUTER_HEAD_LINE_UP = 9;
+  const OUTER_HEAD_LINE_DOWN = -0.5;
   const groupDir = (run) => {
     const lines = run.slice(0, 2).flatMap((n) => n.getKeyProps().map((k) => k.line));
     return lines.reduce((a, b) => a + b, 0) / lines.length >= MIDDLE_LINE ? -1 : 1;
@@ -627,10 +689,16 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     const lines = note.getKeyProps().map((k) => k.line);
     return dir === 1 ? Math.max(...lines) > TOP_LINE : Math.min(...lines) < BOTTOM_LINE;
   };
+  const intrudes = (note, dir) => {
+    const lines = note.getKeyProps().map((k) => k.line);
+    return note.clef === 'treble'
+      ? dir === -1 && Math.min(...lines) < LOWEST_TREBLE_DOWN
+      : dir === 1 && Math.max(...lines) > HIGHEST_BASS_UP;
+  };
   const plan = (run) => {
     if (run.length < 2) return [];
     const dir = groupDir(run);
-    const bad = run.findIndex((n) => throwsOut(n, dir));
+    const bad = run.findIndex((n) => throwsOut(n, dir) || intrudes(n, dir));
     if (bad < 0) return [{ run, dir }];
     return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
   };
@@ -652,10 +720,30 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   let beamGroups = [];
   try {
     beamGroups = [
-      ...beamRuns(slotNotes.map((s) => s.tNote)),
-      ...beamRuns(slotNotes.map((s) => s.bNote)),
+      ...beamRuns(slotNotes.map((s) => s.tNote)).map((group) => ({ group, staff: 'treble' })),
+      ...beamRuns(slotNotes.map((s) => s.bNote)).map((group) => ({ group, staff: 'bass' })),
     ];
   } catch { beamGroups = []; }
+
+  // A note NOT in a beam group stems on its own, and auto_stem picks the side away
+  // from its farthest head — for a wide treble chord (E♭4 under A5 B♭5) that is DOWN,
+  // from the top head past the bottom one and on into the bass staff, where it crossed
+  // the bass beam (replay 16-guest-rolled). Such a stem is turned toward its own
+  // staff's outer side instead, when that side stays inside the frame (throwsOut's
+  // test, mirrored); a bass note likewise stems down rather than up into the treble.
+  try {
+    const beamed = new Set(beamGroups.flatMap(({ group }) => group));
+    for (const { tNote, bNote } of slotNotes) {
+      for (const note of [tNote, bNote]) {
+        if (!note || beamed.has(note)) continue;
+        const dir = note.getStemDirection();
+        const away = -dir;
+        const lines = note.getKeyProps().map((k) => k.line);
+        const outOfFrame = away === 1 ? Math.max(...lines) > OUTER_HEAD_LINE_UP : Math.min(...lines) < OUTER_HEAD_LINE_DOWN;
+        if (intrudes(note, dir) && !intrudes(note, away) && !outOfFrame) note.setStemDirection(away);
+      }
+    }
+  } catch { /* stem side is cosmetic */ }
 
   const makeVoice = (tickables) =>
     new Voice({ num_beats: Math.max(1, count), beat_value: 4 }).setStrict(false).addTickables(tickables);
@@ -695,13 +783,13 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // the draw so the notes suppress their own flags. Decorative — a beam failure must not
   // cost the staff, the same bargain the ottava markers make.
   let beams = [];
-  try { beams = beamGroups.map((group) => new Beam(group, false)); } catch { beams = []; }
+  try { beams = beamGroups.map(({ group, staff }) => ({ beam: new Beam(group, false), staff })); } catch { beams = []; }
 
   if (count) {
     tVoice.draw(ctx, treble);
     bVoice.draw(ctx, bass);
   }
-  try { beams.forEach((b) => b.setContext(ctx).draw()); } catch { /* decorative */ }
+  try { beams.forEach(({ beam }) => beam.setContext(ctx).draw()); } catch { /* decorative */ }
 
   // Say which staff and which column each drawn note belongs to, on its SVG group. The
   // geometry can't: a treble chord below middle C reaches into the bass staff's height.
@@ -711,6 +799,10 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
       const el = note && host.querySelector(`[id="vf-${note.getAttribute('id')}"]`);
       if (el) { el.setAttribute('data-staff', staff); el.setAttribute('data-column', String(i)); }
     }
+  });
+  // Beams too, so the sweep can check a beam never enters the other staff's lines.
+  beams.forEach(({ beam, staff }) => {
+    host.querySelector(`[id="vf-${beam.getAttribute('id')}"]`)?.setAttribute('data-staff', staff);
   });
 
   // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its

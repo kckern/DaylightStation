@@ -204,7 +204,20 @@ Mechanics worth knowing:
   breaking at every stem flip, and appending notes (or the newest growing out of the
   run) never flips stems already drawn. Groups and directions are planned BEFORE the
   formatter runs, so accidentals and strokes are laid out around the displaced heads of
-  the final direction; the Beam objects are built after positioning. A note outside the staff whose stem the group would turn away from the staff
+  the final direction; the Beam objects are built after positioning.
+- **No beam crosses into the other staff.** A stem runs 3.5 spaces past its farthest
+  head and the staves are 2.6 spaces apart, so a treble note stemmed down below G4
+  (line 1.9) or a bass note stemmed up above F3 (line 4.1) would carry the beam into the
+  other staff's lines — where it once crossed the other hand's beam. Such a note leaves
+  the group like an off-staff note does (own stem, own flag). A note with no beam whose
+  own stem would do the same (a wide treble chord, E♭4 under A5 B♭5, stems down by
+  auto_stem) is turned to its staff's outer side instead, when that stays in the frame.
+  The ink sweep gates on 0 beams entering the other staff and reports lone stems.
+- **One letter, one staff position — on the staff.** The chord speller can write two
+  neighbouring pitch classes with one letter (A and A♯ in F♯ major), which puts two
+  heads on one line and an accidental through the other head. The staff alone rewrites
+  the altered one to its other spelling (A♯ → B♭) when that letter is free in the column
+  (`separateLetters`); the chord-name plaque keeps the speller's names. A note outside the staff whose stem the group would turn away from the staff
   (a high ledger note stemmed up, a low one stemmed down) keeps its own flag and splits
   the group, which keeps every beam inside the fixed frame (ink sweep: 0 clipped).
 - **The tick is part of the model.** The staff re-reads the clock every 80ms:
