@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { renderChordStaff } from "./chordStaff.js";
+import { columnRolls } from "../model/noteFlow.js";
 import "./ChordStaffRenderer.scss";
 
 /**
@@ -9,7 +10,7 @@ import "./ChordStaffRenderer.scss";
  * (see ChordStaffRenderer.scss: the SVG is absolutely positioned so it can never
  * drive layout). A ResizeObserver measures the real box and feeds a bucketed aspect
  * into the engraving so a wide box WIDENS the stave to fill it. Re-renders only when
- * the flow, key, or (bucketed) aspect changes.
+ * the flow (notes, durations, roll strokes), key, or (bucketed) aspect changes.
  *
  * @param {Array<number[]|{midis: number[], spelling?: Map}>} [columns] - the note flow,
  *   oldest → newest (see model/noteFlow.js); columns may carry a chord spelling
@@ -23,13 +24,20 @@ export function ChordStaffRenderer({ columns, notes, keySignature = 'C', classNa
   // Identity of what is drawn — columns are ordered, so this must not be sorted
   // across them: [[60],[64]] and [[64],[60]] are different pictures. Duration is part
   // of the identity too: the newest column promotes from a quarter to a half without
-  // any note changing, and that has to repaint.
+  // any note changing, and that has to repaint. So is each staff's roll stroke: the
+  // same chord struck then rolled is a different picture, and a stroke must scroll with
+  // its column (and the leftmost column's stroke moves the lead). The key carries the
+  // per-staff VERDICT the engraving draws (columnRolls, the very call chordStaff makes),
+  // not the raw arrival times, so a held chord's unchanged roll never repaints.
   const notesKey = columns
     ? columns
       .map((col) => {
         const midis = Array.isArray(col) ? col : col?.midis ?? [];
         const duration = Array.isArray(col) ? '' : col?.duration ?? '';
-        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}`;
+        const arrivals = Array.isArray(col) ? null : col?.arrivals;
+        const rolls = arrivals?.length ? columnRolls({ midis, arrivals }) : null;
+        const roll = rolls && (rolls.treble || rolls.bass) ? `~${rolls.treble ?? ''}/${rolls.bass ?? ''}` : '';
+        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}${roll}`;
       })
       .join('|')
     : notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';

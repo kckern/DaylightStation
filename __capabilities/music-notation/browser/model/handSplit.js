@@ -26,9 +26,26 @@ export const getOttavaInfo = (notes, isHighRange) => {
   }
 };
 
+/** Widest column one hand can plausibly cover, in semitones (a tenth + a tone). */
+export const HAND_SPAN = 14;
+/** Middle C: where the grand staff changes clef, and so where two hands divide. */
+export const HAND_PIVOT = 60;
+
 /**
  * Infer which hand plays which notes, splitting a sorted-ascending note set into
- * bass (left hand) and treble (right hand) staves.
+ * bass (left hand) and treble (right hand) staves. Register first, not interval
+ * pattern: a column that fits under one hand (span <= HAND_SPAN) is ONE hand and
+ * goes whole to treble if its mean is at/above middle C, else to bass. A wider
+ * column that straddles middle C is two hands and divides at the best split point
+ * (see below); one wholly on one side of middle C stays whole on that side.
+ *
+ * Why: the old "octave/fifth in the lowest two = left hand" rule read right-hand
+ * octaves and fifths (C5-C6, E5+B5) as bass. In the recorded sessions that put
+ * 234 right-hand columns (5.4%) on the bass staff.
+ *
+ * Known limit: a left-hand Alberti figure played in the C4 octave reads as treble;
+ * telling it apart needs voice tracking across columns, which this pure
+ * per-column function cannot do.
  *
  * @param {number[]} notes - MIDI notes, ascending
  * @returns {{ bassNotes: number[], trebleNotes: number[] }}
@@ -36,52 +53,49 @@ export const getOttavaInfo = (notes, isHighRange) => {
 export const splitByHand = (notes) => {
   if (notes.length === 0) return { bassNotes: [], trebleNotes: [] };
 
-  // Single note: simple split at C4.
-  if (notes.length === 1) {
-    return notes[0] >= 60
+  const span = notes[notes.length - 1] - notes[0];
+  if (span <= HAND_SPAN) {
+    const mean = notes.reduce((a, b) => a + b, 0) / notes.length;
+    return mean >= HAND_PIVOT
       ? { bassNotes: [], trebleNotes: notes }
       : { bassNotes: notes, trebleNotes: [] };
   }
 
-  // Two notes: octave/fifth = bass pattern, both go to bass.
-  if (notes.length === 2) {
-    const interval = notes[1] - notes[0];
-    if (interval === 12 || interval === 7) {
-      return { bassNotes: notes, trebleNotes: [] };
-    }
-    if (notes[0] >= 60) return { bassNotes: [], trebleNotes: notes };
-    if (notes[1] < 60) return { bassNotes: notes, trebleNotes: [] };
-    return { bassNotes: [notes[0]], trebleNotes: [notes[1]] };
-  }
+  // A wide column entirely on one side of middle C has no register evidence of a
+  // second hand (a rolled left-hand twelfth C2+G3; a right-hand tenth+ roll), and
+  // splitting it strands notes on the wrong clef. The replay gate counts a column
+  // wholly at/above C4 that reaches the bass as a right-hand-on-bass fault (0 now,
+  // 1933 when this was left to the search below), so it stays whole on its side.
+  if (notes[notes.length - 1] < HAND_PIVOT) return { bassNotes: notes, trebleNotes: [] };
+  if (notes[0] >= HAND_PIVOT) return { bassNotes: [], trebleNotes: notes };
 
-  // 3+ notes: bass pattern (octave/fifth) in the lowest two → left hand.
-  const lowest = notes[0];
-  const secondLowest = notes[1];
-  const interval = secondLowest - lowest;
-  if (interval === 12 || interval === 7) {
-    return { bassNotes: [lowest, secondLowest], trebleNotes: notes.slice(2) };
-  }
-
-  // Otherwise split at the largest gap if it's significant.
-  let maxGap = 0;
-  let maxGapIndex = 0;
-  for (let i = 0; i < notes.length - 1; i++) {
-    const gap = notes[i + 1] - notes[i];
-    if (gap > maxGap) {
-      maxGap = gap;
-      maxGapIndex = i;
-    }
-  }
-  if (maxGap > 4) {
-    return {
-      bassNotes: notes.slice(0, maxGapIndex + 1),
-      trebleNotes: notes.slice(maxGapIndex + 1),
+  // Two hands: try every split point and pick the best, in one pass. The old
+  // pivot split followed by two reach-correction loops let each loop undo the
+  // other on real captures (an 18-semitone treble "hand", towers of ledger lines,
+  // notes far across middle C). Ranking, in order: both hands within reach;
+  // fewest notes on the wrong side of middle C; least reach overflow; widest gap.
+  // A three-hand cluster has no playable split; the same ranking picks the least bad.
+  let best = null;
+  for (let k = 1; k < notes.length; k++) {
+    const bassSpan = notes[k - 1] - notes[0];
+    const trebleSpan = notes[notes.length - 1] - notes[k];
+    let wrong = 0;
+    for (let i = 0; i < k; i++) if (notes[i] >= HAND_PIVOT) wrong++;
+    for (let i = k; i < notes.length; i++) if (notes[i] < HAND_PIVOT) wrong++;
+    const cand = {
+      k,
+      unplayable: bassSpan > HAND_SPAN || trebleSpan > HAND_SPAN ? 1 : 0,
+      wrong,
+      overflow: Math.max(bassSpan, trebleSpan) - HAND_SPAN,
+      gap: notes[k] - notes[k - 1],
     };
+    if (!best
+      || cand.unplayable < best.unplayable
+      || (cand.unplayable === best.unplayable && (cand.wrong < best.wrong
+        || (cand.wrong === best.wrong && (cand.overflow < best.overflow
+          || (cand.overflow === best.overflow && cand.gap > best.gap)))))) {
+      best = cand;
+    }
   }
-
-  // No clear split: all to one staff based on average.
-  const avg = notes.reduce((a, b) => a + b, 0) / notes.length;
-  return avg >= 60
-    ? { bassNotes: [], trebleNotes: notes }
-    : { bassNotes: notes, trebleNotes: [] };
+  return { bassNotes: notes.slice(0, best.k), trebleNotes: notes.slice(best.k) };
 };

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChordStaffRenderer } from "../../../../../__capabilities/music-notation/browser/renderers/ChordStaffRenderer.jsx";
 import {
-  emptyFlow, pushOnsets, clearIfIdle, flowColumns, flowDurations,
+  emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
 } from "../../../../../__capabilities/music-notation/browser/model/noteFlow.js";
-import { identifyChord } from '../theory/chordNaming.js';
+import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { diffNoteSurface, buildRenderColumns } from './liveStaffColumns.js';
 import { useDetectedKey } from './useDetectedKey.js';
 import './CurrentChordStaff.scss';
 
@@ -18,29 +19,63 @@ import './CurrentChordStaff.scss';
 // the 250ms the idle sweep alone used to run at — a quarter of a second late is
 // visible on a note you are watching yourself hold.
 //
-// It cannot cost an idle re-render: clearIfIdle returns the same flow when there is
-// nothing to clear, and the duration sync returns the same array when nothing has
-// changed, so React bails out of both.
+// It cannot cost an idle re-render: clearIfIdle and pushReleases return the same flow
+// when there is nothing to do, and flowDurations hands back the previous array when no
+// duration moved, so commit() never sets state.
 const PROVISIONAL_TICK_MS = 80;
+
+const NOTHING_HELD = new Map();
+const emptyView = () => ({ flow: emptyFlow(), durations: [] });
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'current-chord-staff' });
+  return _logger;
+}
+
+/**
+ * pushReleases, logging any legato split it made — the one release-side change that
+ * reshapes columns already drawn. A split piece is a column whose start the flow did
+ * not have before (the earlier piece keeps the merged column's start).
+ */
+function settle(flow, now, held) {
+  const next = pushReleases(flow, now, held);
+  if (next === flow) return next;
+  const known = new Set(flow.columns.map((c) => c.startedAt));
+  next.columns.forEach((c, i) => {
+    if (known.has(c.startedAt)) return;
+    const prev = next.columns[i - 1];
+    logger().sampled('chord-staff.legato-split', {
+      notes: prev?.midis ?? [],
+      next: c.midis,
+      stepMs: prev ? c.startedAt - prev.startedAt : null,
+    }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
+  });
+  return next;
+}
 
 /**
  * Live grand staff of what is being played.
  *
  * Notes read left to right, like typing: each new strike lands to the right of the
- * last, while notes struck together stack into one column. After IDLE_CLEAR_MS of
- * silence — or, if you are still holding a key, a while longer — the line resets.
+ * last, while notes struck together (within a hand's roll, see noteFlow GAP_MS /
+ * SPAN_MAX_MS) stack into one column. A rolled chord is one column carrying its
+ * arrivals; the staff reads each hand's roll from them. After a pause the next
+ * strike starts a fresh line, and an abandoned line is wiped after STALE_CLEAR_MS.
  *
  * RHYTHM, such as it is: each column draws as an eighth, a quarter, or a half,
- * decided in model/noteFlow.js by how its gap to the next strike compares with how
- * you have been playing over the last few seconds. There is still no meter, no
- * barline, no tempo, and nothing is quantised — play the same phrase twice as fast
- * and it engraves identically, because every judgement is a ratio.
+ * decided in model/noteFlow.js by how its gap to the next strike compares with the
+ * last few seconds of playing, and by how long a chord is held. No meter, no barline,
+ * nothing quantised.
  *
- * The flow is driven by ONSETS, not by which keys are currently down: a note stays on
- * the staff after you release it, until it scrolls off or the line resets. Key-down
- * state is still read, for two narrower jobs — deciding whether a new onset joins the
- * open column (a chord's notes are still held when the next lands; a run's are not)
- * and holding off the idle reset while you sit on a final chord.
+ * The flow is driven by what the surface DOES, diffed per key with its timestamp: a
+ * key going down is an onset, a re-strike of a key still held is an onset too (its
+ * timestamp changes), and a key coming up releases the columns it was holding. A note
+ * stays on the staff after release until it scrolls off or the line resets.
+ *
+ * Spelling: every column is spelled in the CURRENT key, so the letters drawn always
+ * agree with the key signature beside them; a key change re-spells the whole line
+ * (see buildRenderColumns).
  *
  * Key signature: when a `detectedKey` prop is supplied (TheoryPanel passes the shared
  * key so the circle + staff agree), it wins. Otherwise the component falls back to
@@ -50,77 +85,89 @@ const PROVISIONAL_TICK_MS = 80;
  * @param {string} [detectedKey] - externally-owned key; overrides internal detection
  */
 export function CurrentChordStaff({ activeNotes, detectedKey }) {
-  const [flow, setFlow] = useState(emptyFlow);
-  const [durations, setDurations] = useState([]);
-  const lastActiveNotesRef = useRef(new Set());
-
-  // The tick needs the current flow and the current key-down surface, but must not be
-  // torn down and rebuilt on every note — hence refs rather than effect deps.
-  const flowRef = useRef(flow);
-  flowRef.current = flow;
-  const heldRef = useRef(activeNotes);
-  heldRef.current = activeNotes;
+  // The flow and its durations are ONE piece of state, computed together in commit():
+  // a new column and the duration it draws with arrive in the same render, so one
+  // change is one engrave (durations held separately lagged a render, drawing new
+  // columns with their neighbours' glyphs for a frame and engraving twice per onset).
+  const [view, setView] = useState(emptyView);
+  // The tick needs the current view and the current key-down surface, but must not be
+  // torn down and rebuilt on every note — hence refs rather than effect deps. Only
+  // commit() writes viewRef, so it can never roll back to a stale render's view.
+  const viewRef = useRef(view);
+  const prevStampsRef = useRef(new Map());
+  // The tick reads the key-down surface too (a pending legato split settles on it).
+  const activeRef = useRef(activeNotes);
+  activeRef.current = activeNotes;
 
   // Always run the hook (Rules of Hooks); the prop takes precedence when present.
   const internalKey = useDetectedKey(activeNotes);
   const keySig = detectedKey ?? internalKey;
 
-  // Same array identity when nothing changed, so a held note doesn't re-render the
-  // staff eighty times a second waiting to become a half.
-  const syncDurations = useCallback(() => {
-    const next = flowDurations(flowRef.current, Date.now());
-    setDurations((prev) => (
-      prev.length === next.length && prev.every((d, i) => d === next[i]) ? prev : next
-    ));
+  // The next flow is computed from viewRef and then stored (ref first, so a second
+  // effect in the same batch builds on it), rather than inside a setState updater: the
+  // logs must not fire from an updater, which React may run twice. Durations are read
+  // here too, against the previous array, so a held note waiting to become a half does
+  // not re-render the staff every tick: same flow + same durations = no state change.
+  const commit = useCallback((nextFlow, now) => {
+    const prev = viewRef.current;
+    const durations = flowDurations(nextFlow, now, prev.durations);
+    if (nextFlow === prev.flow && durations === prev.durations) return;
+    const next = { flow: nextFlow, durations };
+    viewRef.current = next;
+    setView(next);
   }, []);
 
-  // Onsets only: a key going DOWN adds to the flow, a key coming up changes nothing.
   useEffect(() => {
-    const current = new Set(activeNotes.keys());
-    const previous = lastActiveNotesRef.current;
-    lastActiveNotesRef.current = current;
+    const now = Date.now();
+    const { onsets, at, released, next } = diffNoteSurface(prevStampsRef.current, activeNotes, now);
+    prevStampsRef.current = next;
+    if (onsets.length === 0 && !released) return;
 
-    const onsets = [...current].filter((note) => !previous.has(note));
-    if (onsets.length === 0) return;
-
-    // Group by the timestamp the note ARRIVED with rather than by when React got round
-    // to running this effect. Note what that stamp is and is not: useMidiSubscription
-    // takes Date.now() when the browser handles the WebSocket message, so it carries
-    // the piano → Jamcorder → backend → WS latency and is NOT a device-side capture
-    // time. It is still the better of the two available clocks — it has per-message
-    // granularity, where effect time can collapse notes that were milliseconds apart
-    // into one identical Date.now() through React batching. Earliest of the batch, so
-    // the column is anchored to the first key of the gesture.
-    const stamps = onsets.map((note) => activeNotes.get(note)?.timestamp).filter(Number.isFinite);
-    const at = stamps.length ? Math.min(...stamps) : Date.now();
-    // `held` is the surface as it stands NOW — after any release that came with this
-    // batch — which is what makes "are the open column's notes still down" answerable.
-    setFlow((prev) => pushOnsets(prev, onsets, at, { held: activeNotes }));
-  }, [activeNotes]);
-
-  // A new column closes the previous one and fixes its duration, so the durations have
-  // to be re-read whenever the flow changes, not only on the tick.
-  useEffect(() => { syncDurations(); }, [flow, syncDurations]);
+    let flow2 = viewRef.current.flow;
+    if (onsets.length) {
+      const before = flow2.columns[flow2.columns.length - 1];
+      flow2 = pushOnsets(flow2, onsets, at, { held: activeNotes });
+      const after = flow2.columns[flow2.columns.length - 1];
+      if (before && after && after.startedAt !== before.startedAt) {
+        // `before` was just closed; its stored duration is now the IOI judgement.
+        const closed = flow2.columns.find((c) => c.startedAt === before.startedAt);
+        if (closed) {
+          // The strokes the staff draws for it, per hand — what the player sees.
+          // Debug: it fires on every column while anyone plays.
+          const rolls = columnRolls(closed);
+          logger().sampled('chord-staff.column-closed', {
+            notes: closed.midis,
+            spanMs: closed.lastOnsetAt - closed.startedAt,
+            trebleRoll: rolls.treble,
+            bassRoll: rolls.bass,
+            duration: closed.duration,
+          }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
+        }
+      }
+    }
+    commit(settle(flow2, now, activeNotes), now);
+  }, [activeNotes, commit]);
 
   useEffect(() => {
     const id = setInterval(() => {
-      setFlow((prev) => clearIfIdle(prev, Date.now(), { held: heldRef.current }));
-      syncDurations();
+      const now = Date.now();
+      // pushReleases on the tick as well as on key events: a legato split is only
+      // decided once the next key has stayed down past LIFT_TOGETHER_MS, and with no
+      // further key event (C then D, D held) it would otherwise wait for the next touch.
+      // The tick bounds that wait to LIFT_TOGETHER_MS + PROVISIONAL_TICK_MS. Same object
+      // when nothing settles; commit() also re-reads the durations (the newest
+      // column's provisional quarter promotes to a half on the clock alone).
+      const held = activeRef.current ?? NOTHING_HELD;
+      commit(settle(clearIfIdle(viewRef.current.flow, now), now, held), now);
     }, PROVISIONAL_TICK_MS);
     return () => clearInterval(id);
-  }, [syncDurations]);
+  }, [commit]);
 
-  // Each column is spelled AS A CHORD, not note by note: identifyChord returns both the
-  // name and the letters its tones should be written with, so the staff and the chord
-  // plaque can only ever show the same reading. Note-by-note spelling drew G♯ minor as
-  // A♭–B–E♭ — letters that stack in no triad — under a plaque reading "G♯ minor".
+  // Each column is spelled AS A CHORD (see identifyChord), so the staff and the chord
+  // plaque can only ever show the same reading, and the key signature beside them.
   const columns = useMemo(
-    () => flowColumns(flow).map((midis, i) => ({
-      midis,
-      spelling: identifyChord(midis, keySig).spelling,
-      duration: durations[i] ?? 'q',
-    })),
-    [flow, keySig, durations],
+    () => buildRenderColumns(view.flow, view.durations, keySig),
+    [view, keySig],
   );
 
   return (

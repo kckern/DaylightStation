@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { Stroke } from 'vexflow';
 import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from "./chordStaff.js";
 
 describe('computeChordStaffLayout', () => {
@@ -420,5 +421,124 @@ describe('renderChordStaff — beams stay inside the fixed frame', () => {
   it('holds for quarters and halves too', () => {
     expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], 'q', 3.5))).toEqual([]);
     expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], 'h', 3.5))).toEqual([]);
+  });
+});
+
+// The stroke comes from the ARRIVALS the flow recorded, judged per staff: each hand
+// rolls (or strikes) on its own, so the treble and bass of one column can roll in
+// opposite directions, or one roll while the other strikes.
+describe('renderChordStaff — roll stroke from arrivals', () => {
+  const arr = (...pairs) => pairs.map(([midi, at]) => ({ midi, at }));
+  // Paths per stavenote group, treble groups first (the treble voice draws first).
+  const staffPaths = (midis, arrivals) => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns: [{ midis, arrivals }], keySignature: 'C', aspect: 2.8 });
+    return [...host.querySelectorAll('g.vf-stavenote')].map((g) => g.querySelectorAll('path').length);
+  };
+  const total = (midis, arrivals) => staffPaths(midis, arrivals).reduce((a, b) => a + b, 0);
+
+  it('draws a stroke for a staff whose arrivals span ROLL_MARK_MS', () => {
+    const struck = total([60, 64, 67, 72], arr([60, 0], [64, 0], [67, 0], [72, 0]));
+    expect(total([60, 64, 67, 72], arr([60, 0], [64, 40], [67, 70], [72, 100]))).toBeGreaterThan(struck);
+    expect(total([60, 64, 67, 72], arr([72, 0], [67, 40], [64, 70], [60, 100]))).toBeGreaterThan(struck);
+  });
+
+  it('no stroke under ROLL_MARK_MS, nor without arrivals', () => {
+    const struck = total([60, 64, 67, 72], arr([60, 0], [64, 0], [67, 0], [72, 0]));
+    expect(total([60, 64, 67, 72], arr([60, 0], [64, 40], [67, 70], [72, 99]))).toBe(struck);
+    expect(total([60, 64, 67, 72], undefined)).toBe(struck);
+  });
+
+  // Which stroke each staff drew: spy on Stroke.draw (calling through) and read the
+  // stroke's type and its note's clef. Path counts can't tell the two types apart —
+  // ROLL_UP and the directionless line span different heights, so their wiggle counts
+  // differ as well as the arrowhead.
+  const strokes = (midis, arrivals) => {
+    const seen = {};
+    const spy = vi.spyOn(Stroke.prototype, 'draw').mockImplementation(function draw() {
+      seen[this.getNote().clef] = this.type === Stroke.Type.ROLL_UP ? 'down'
+        : this.type === Stroke.Type.ARPEGGIO_DIRECTIONLESS ? 'up' : String(this.type);
+    });
+    try {
+      renderChordStaff(document.createElement('div'), { columns: [{ midis, arrivals }], keySignature: 'C', aspect: 2.8 });
+    } finally { spy.mockRestore(); }
+    return seen;
+  };
+
+  it('judges each staff on its own arrivals: RH top-down rolls down, LH bottom-up rolls up', () => {
+    const midis = [48, 52, 55, 72, 76, 79];
+    // RH 79→76→72 (down), LH 48→52→55 (up), interleaved over 150ms.
+    expect(strokes(midis, arr([79, 0], [48, 10], [76, 60], [52, 70], [72, 120], [55, 150])))
+      .toEqual({ treble: 'down', bass: 'up' });
+    expect(strokes(midis, arr([72, 0], [55, 10], [76, 60], [52, 70], [79, 120], [48, 150])))
+      .toEqual({ treble: 'up', bass: 'down' });
+    expect(strokes(midis, arr(...midis.map((m) => [m, 0])))).toEqual({});
+  });
+
+  it('ROLL_MARK_MS is per staff: a struck bass under a rolled treble gets no stroke', () => {
+    const midis = [48, 52, 55, 72, 76, 79];
+    // The column spans 140ms, but the bass's three keys land within 30ms of each other.
+    expect(strokes(midis, arr([48, 0], [52, 10], [55, 30], [72, 40], [76, 80], [79, 140])))
+      .toEqual({ treble: 'up' });
+    // Treble 99ms: just under the mark.
+    expect(strokes(midis, arr([48, 0], [52, 60], [55, 120], [72, 0], [76, 50], [79, 99])))
+      .toEqual({ bass: 'up' });
+  });
+
+  it('draws no stroke on a staff that holds one note', () => {
+    const struck = (midis) => total(midis, arr(...midis.map((m) => [m, 0])));
+    expect(total([67], arr([67, 0]))).toBe(struck([67]));
+    // Lone bass note under a rolled RH chord: only the treble chord is stroked.
+    const chordGain = total([72, 76, 79], arr([72, 0], [76, 60], [79, 120])) - struck([72, 76, 79]);
+    expect(chordGain).toBeGreaterThan(0);
+    expect(total([48, 72, 76, 79], arr([48, 0], [72, 10], [76, 60], [79, 200])) - struck([48, 72, 76, 79])).toBe(chordGain);
+  });
+});
+
+// Modifiers are laid out from the TickContext x, not the note's x_shift (VexFlow 4.2.5:
+// Accidental.draw reads note.getModifierStartXY(), which is getAbsoluteX() — the tick
+// context — while noteheads draw at getNoteHeadBeginX() = getAbsoluteX() + x_shift).
+// So the slot snap has to move the tick context, or accidentals stay where the
+// formatter put them while the noteheads walk away from them.
+describe('renderChordStaff — modifiers move with their notes', () => {
+  const firstX = (path) => Number(/^M\s*([-\d.]+)/.exec(path.getAttribute('d'))[1]);
+
+  it('every accidental sits LEFT of its notehead across a full flow', () => {
+    const host = document.createElement('div');
+    renderChordStaff(host, {
+      columns: [
+        { midis: [61], duration: '8' }, { midis: [63, 66], duration: 'h' }, { midis: [70] },
+        { midis: [49, 61, 66], duration: '8' }, { midis: [68], duration: 'h' }, { midis: [73, 78] },
+        { midis: [42, 54], duration: '8' },
+      ],
+      keySignature: 'C',
+      aspect: 2.8,
+    });
+    const heads = [...host.querySelectorAll('g.vf-notehead')]
+      .map((g) => [...g.querySelectorAll(':scope > path')])
+      .filter((paths) => paths.length > 1);
+    expect(heads.length).toBeGreaterThan(5);
+    for (const [head, accidental] of heads) expect(firstX(accidental)).toBeLessThan(firstX(head));
+  });
+
+  it("the first column's accidentals and stroke clear the key signature", () => {
+    // A lone in-key note's head sits NOTE_INSET (10) + the stave's note padding (12)
+    // past the key signature: that gives the key signature's right edge.
+    const plain = document.createElement('div');
+    renderChordStaff(plain, { columns: [{ midis: [66] }], keySignature: 'F#', aspect: 2.8 });
+    const keyEdge = firstX(plain.querySelector('g.vf-notehead > path')) - 22;
+    // A rolled cluster full of naturals in F# major: accidental columns + a stroke.
+    const midis = [60, 62, 64, 65, 67, 69];
+    const host = document.createElement('div');
+    renderChordStaff(host, {
+      columns: [{ midis, arrivals: midis.map((midi, k) => ({ midi, at: k * 40 })) }, { midis: [72] }],
+      keySignature: 'F#',
+      aspect: 2.8,
+    });
+    const first = host.querySelector('g.vf-stavenote');
+    const inkLeft = Math.min(...[...first.querySelectorAll('g.vf-notehead path')].map(firstX));
+    expect(inkLeft).toBeGreaterThanOrEqual(keyEdge);
+    // ...and by KEY_SIGNATURE_AIR (4), not more: the grid starts only as late as it must.
+    expect(inkLeft).toBeLessThanOrEqual(keyEdge + 6);
   });
 });
