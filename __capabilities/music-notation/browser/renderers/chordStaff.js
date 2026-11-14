@@ -695,10 +695,16 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
       ? dir === -1 && Math.min(...lines) < LOWEST_TREBLE_DOWN
       : dir === 1 && Math.max(...lines) > HIGHEST_BASS_UP;
   };
+  // A note carrying an ottava marker (8va/8vb/15ma/15mb — the only Annotation this
+  // staff draws) stays out of beams too. Its label is placed from the note's own stem
+  // end; under a group the stem ends at the beam instead, and the label drew on top of
+  // it (replay 19-guest-two-hand). Ottava columns are rare and already marked, so
+  // losing their beam costs little; the label then clears its own flag.
+  const labelled = (note) => note.getModifiers().some((mod) => mod instanceof Annotation);
   const plan = (run) => {
     if (run.length < 2) return [];
     const dir = groupDir(run);
-    const bad = run.findIndex((n) => throwsOut(n, dir) || intrudes(n, dir));
+    const bad = run.findIndex((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
     if (bad < 0) return [{ run, dir }];
     return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
   };

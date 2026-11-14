@@ -434,6 +434,32 @@ describe('renderChordStaff — relative rhythm', () => {
     expect(Math.max(...stemYs)).toBeLessThanOrEqual(BASS_TOP_LINE);
   });
 
+  it('leaves an 8vb-marked note out of the beam, so its label never lands on a beam', () => {
+    // D3 | a wide left-hand chord down to C2 (drawn an octave up under 8vb, stemmed
+    // down on its own like the rest of the group) | D3 E3. The replay case (19): the
+    // chord's 8vb label sat on the group's beam. Now the marked chord splits the run.
+    const host = render([[50], [36, 48, 53, 55], [50], [52]].map((midis) => ({ midis, duration: '8' })));
+    expect(beams(host)).toBe(1);
+    const labels = [...host.querySelectorAll('text')].filter((t) => /^(8|15)v?m?[ab]$/.test(t.textContent));
+    expect(labels.length).toBe(1);
+    const beamBoxes = [...host.querySelectorAll('.vf-beam path')].map((p) => {
+      const q = pathPoints(p);
+      return { x0: Math.min(...q.map(([x]) => x)), x1: Math.max(...q.map(([x]) => x)),
+        y0: Math.min(...q.map(([, y]) => y)), y1: Math.max(...q.map(([, y]) => y)) };
+    });
+    for (const t of labels) {
+      const x = Number(t.getAttribute('x'));
+      const y = Number(t.getAttribute('y'));
+      // The label's box: ~20 units of text right of x, ~10 above its baseline.
+      for (const b of beamBoxes) {
+        const hit = x < b.x1 && b.x0 < x + 20 && y - 10 < b.y1 && b.y0 < y;
+        expect(hit).toBe(false);
+      }
+      // ...and the marked note itself is not under any beam: no beam spans its x.
+      for (const b of beamBoxes) expect(x >= b.x0 && x <= b.x1).toBe(false);
+    }
+  });
+
   it('keeps a bass beam out of the treble staff: a high bass note stemmed up leaves the group', () => {
     // C3 D3 E3 F3 G3 stems up; G3's stem would reach into the treble staff's lines.
     const host = render([[48], [50], [52], [53], [55]].map((midis) => ({ midis, duration: '8' })));

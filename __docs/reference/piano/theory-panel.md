@@ -213,6 +213,9 @@ Mechanics worth knowing:
   own stem would do the same (a wide treble chord, E♭4 under A5 B♭5, stems down by
   auto_stem) is turned to its staff's outer side instead, when that stays in the frame.
   The ink sweep gates on 0 beams entering the other staff and reports lone stems.
+- **A note with an ottava marker is never beamed.** Its 8va/8vb/15ma/15mb label is
+  placed from the note's own stem end; under a beam that end is the beam, and the label
+  drew on top of it. The marked note keeps its own stem and flag and splits the group.
 - **One letter, one staff position — on the staff.** The chord speller can write two
   neighbouring pitch classes with one letter (A and A♯ in F♯ major), which puts two
   heads on one line and an accidental through the other head. The staff alone rewrites
