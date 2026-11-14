@@ -19,15 +19,39 @@ import './CurrentChordStaff.scss';
 // the 250ms the idle sweep alone used to run at — a quarter of a second late is
 // visible on a note you are watching yourself hold.
 //
-// It cannot cost an idle re-render: clearIfIdle returns the same flow when there is
-// nothing to clear, and the duration sync returns the same array when nothing has
-// changed, so React bails out of both.
+// It cannot cost an idle re-render: clearIfIdle and pushReleases return the same flow
+// when there is nothing to do, and flowDurations hands back the previous array when no
+// duration moved, so commit() never sets state.
 const PROVISIONAL_TICK_MS = 80;
+
+const NOTHING_HELD = new Map();
+const emptyView = () => ({ flow: emptyFlow(), durations: [] });
 
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'current-chord-staff' });
   return _logger;
+}
+
+/**
+ * pushReleases, logging any legato split it made — the one release-side change that
+ * reshapes columns already drawn. A split piece is a column whose start the flow did
+ * not have before (the earlier piece keeps the merged column's start).
+ */
+function settle(flow, now, held) {
+  const next = pushReleases(flow, now, held);
+  if (next === flow) return next;
+  const known = new Set(flow.columns.map((c) => c.startedAt));
+  next.columns.forEach((c, i) => {
+    if (known.has(c.startedAt)) return;
+    const prev = next.columns[i - 1];
+    logger().sampled('chord-staff.legato-split', {
+      notes: prev?.midis ?? [],
+      next: c.midis,
+      stepMs: prev ? c.startedAt - prev.startedAt : null,
+    }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
+  });
+  return next;
 }
 
 /**
@@ -49,8 +73,9 @@ function logger() {
  * timestamp changes), and a key coming up releases the columns it was holding. A note
  * stays on the staff after release until it scrolls off or the line resets.
  *
- * Spelling: only the newest column follows the live key; closed columns keep the
- * spelling they were given so a key change never rewrites notes already on the page.
+ * Spelling: every column is spelled in the CURRENT key, so the letters drawn always
+ * agree with the key signature beside them; a key change re-spells the whole line
+ * (see buildRenderColumns).
  *
  * Key signature: when a `detectedKey` prop is supplied (TheoryPanel passes the shared
  * key so the circle + staff agree), it wins. Otherwise the component falls back to
@@ -60,38 +85,36 @@ function logger() {
  * @param {string} [detectedKey] - externally-owned key; overrides internal detection
  */
 export function CurrentChordStaff({ activeNotes, detectedKey }) {
-  const [flow, setFlow] = useState(emptyFlow);
-  const [durations, setDurations] = useState([]);
+  // The flow and its durations are ONE piece of state, computed together in commit():
+  // a new column and the duration it draws with arrive in the same render, so one
+  // change is one engrave (durations held separately lagged a render, drawing new
+  // columns with their neighbours' glyphs for a frame and engraving twice per onset).
+  const [view, setView] = useState(emptyView);
+  // The tick needs the current view and the current key-down surface, but must not be
+  // torn down and rebuilt on every note — hence refs rather than effect deps. Only
+  // commit() writes viewRef, so it can never roll back to a stale render's view.
+  const viewRef = useRef(view);
   const prevStampsRef = useRef(new Map());
   // The tick reads the key-down surface too (a pending legato split settles on it).
   const activeRef = useRef(activeNotes);
   activeRef.current = activeNotes;
 
-  // The tick needs the current flow and the current key-down surface, but must not be
-  // torn down and rebuilt on every note — hence refs rather than effect deps.
-  const flowRef = useRef(flow);
-  flowRef.current = flow;
-
   // Always run the hook (Rules of Hooks); the prop takes precedence when present.
   const internalKey = useDetectedKey(activeNotes);
   const keySig = detectedKey ?? internalKey;
 
-  // Same array identity when nothing changed, so a held note doesn't re-render the
-  // staff eighty times a second waiting to become a half.
-  const syncDurations = useCallback(() => {
-    const next = flowDurations(flowRef.current, Date.now());
-    setDurations((prev) => (
-      prev.length === next.length && prev.every((d, i) => d === next[i]) ? prev : next
-    ));
-  }, []);
-
-  // The next flow is computed from flowRef and then stored (ref first, so a second
-  // effect in the same batch builds on it), rather than inside a setFlow updater: the
-  // column-closed log must not fire from an updater, which React may run twice.
-  const commit = useCallback((next) => {
-    if (next === flowRef.current) return;
-    flowRef.current = next;
-    setFlow(next);
+  // The next flow is computed from viewRef and then stored (ref first, so a second
+  // effect in the same batch builds on it), rather than inside a setState updater: the
+  // logs must not fire from an updater, which React may run twice. Durations are read
+  // here too, against the previous array, so a held note waiting to become a half does
+  // not re-render the staff every tick: same flow + same durations = no state change.
+  const commit = useCallback((nextFlow, now) => {
+    const prev = viewRef.current;
+    const durations = flowDurations(nextFlow, now, prev.durations);
+    if (nextFlow === prev.flow && durations === prev.durations) return;
+    const next = { flow: nextFlow, durations };
+    viewRef.current = next;
+    setView(next);
   }, []);
 
   useEffect(() => {
@@ -100,7 +123,7 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
     prevStampsRef.current = next;
     if (onsets.length === 0 && !released) return;
 
-    let flow2 = flowRef.current;
+    let flow2 = viewRef.current.flow;
     if (onsets.length) {
       const before = flow2.columns[flow2.columns.length - 1];
       flow2 = pushOnsets(flow2, onsets, at, { held: activeNotes });
@@ -110,6 +133,7 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
         const closed = flow2.columns.find((c) => c.startedAt === before.startedAt);
         if (closed) {
           // The strokes the staff draws for it, per hand — what the player sees.
+          // Debug: it fires on every column while anyone plays.
           const rolls = columnRolls(closed);
           logger().sampled('chord-staff.column-closed', {
             notes: closed.midis,
@@ -117,16 +141,12 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
             trebleRoll: rolls.treble,
             bassRoll: rolls.bass,
             duration: closed.duration,
-          }, { maxPerMinute: 20, aggregate: true });
+          }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
         }
       }
     }
-    commit(pushReleases(flow2, now, activeNotes));
+    commit(settle(flow2, now, activeNotes), now);
   }, [activeNotes, commit]);
-
-  // A new column closes the previous one and fixes its duration, so the durations have
-  // to be re-read whenever the flow changes, not only on the tick.
-  useEffect(() => { syncDurations(); }, [flow, syncDurations]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -135,18 +155,19 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
       // decided once the next key has stayed down past LIFT_TOGETHER_MS, and with no
       // further key event (C then D, D held) it would otherwise wait for the next touch.
       // The tick bounds that wait to LIFT_TOGETHER_MS + PROVISIONAL_TICK_MS. Same object
-      // when nothing settles, so commit() does not re-render.
-      commit(pushReleases(clearIfIdle(flowRef.current, now), now, activeRef.current ?? new Map()));
-      syncDurations();
+      // when nothing settles; commit() also re-reads the durations (the newest
+      // column's provisional quarter promotes to a half on the clock alone).
+      const held = activeRef.current ?? NOTHING_HELD;
+      commit(settle(clearIfIdle(viewRef.current.flow, now), now, held), now);
     }, PROVISIONAL_TICK_MS);
     return () => clearInterval(id);
-  }, [syncDurations, commit]);
+  }, [commit]);
 
   // Each column is spelled AS A CHORD (see identifyChord), so the staff and the chord
   // plaque can only ever show the same reading, and the key signature beside them.
   const columns = useMemo(
-    () => buildRenderColumns(flow, durations, keySig),
-    [flow, keySig, durations],
+    () => buildRenderColumns(view.flow, view.durations, keySig),
+    [view, keySig],
   );
 
   return (

@@ -213,11 +213,14 @@ Both are committed under `tests/_infrastructure/harnesses/` and need the real co
   Renders ~38k cases and exits non-zero if any ink leaves the fixed frame.
 - **Replay** — `node tests/_infrastructure/harnesses/chord-staff-replay.mjs`. Replays the
   Studio takes and the always-on MIDI capture history through the exact
-  `CurrentChordStaff` pipeline, one event per render (strictest case — the kiosk may
-  batch), and prints chords kept whole, eighths, fragments, RH-on-bass, legato merged,
+  `CurrentChordStaff` pipeline, one event per render, and prints chords kept whole, eighths, fragments, RH-on-bass, legato merged,
   rolled columns and why each split cluster split. **Two gates** (exit 1 on failure):
   chord whole % >= 90 and lifted-together whole % >= 90, plus RH-on-bass == 0. Exit 2
   means a crash, bad arguments or an empty corpus.
+  - Its gate figures are an **upper bound** for the kiosk: the harness feeds one event per
+    render at the event's own time, while on the kiosk React may batch several events
+    into one render, and a key-up is stamped at effect or 80ms-tick time (not on receipt,
+    as arrivals are), so release timing — and with it the legato split — is coarser there.
   - `--render <outDir>` screenshots chosen moments (VexFlow in Playwright at the Studio
     pane's size) with an index page and `moments.json`; `--moments <moments.json>`
     (needs `--render`) re-renders the SAME moments through the current code for
@@ -227,6 +230,13 @@ Both are committed under `tests/_infrastructure/harnesses/` and need the real co
     legato merged % — how the constants were picked.
   - Also `--users a,b`, `--limit N` (captures per user), `--since YYYY-MM-DD`,
     `--media`, `--data`.
+
+## Live logs
+
+`CurrentChordStaff` (component `current-chord-staff`) emits two sampled **debug** events,
+20 a minute each: `chord-staff.column-closed` (notes, span, per-staff roll, duration) as
+each column closes, and `chord-staff.legato-split` (`notes`, `next`, `stepMs`) when a
+release splits a drawn column into a legato line. Enable with `DAYLIGHT_LOG_LEVEL = 'debug'`.
 
 ## Guardrail
 

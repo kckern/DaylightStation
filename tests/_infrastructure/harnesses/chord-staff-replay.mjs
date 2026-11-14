@@ -38,9 +38,12 @@
  *     loose cluster rule also collects every overlapping legato step, so whole % pays
  *     for each legato line the staff correctly draws as separate notes.
  *
- * Note: one event per render is the strictest case. The kiosk can batch several events
- * into one render (React), which diffNoteSurface then folds into one onset batch; this
- * harness never does, so it measures the model's rules, not React's batching.
+ * Note: one event per render, each at its own time, so the gate figures are an UPPER
+ * BOUND for the kiosk. There React can batch several events into one render (which
+ * diffNoteSurface folds into one onset batch), and a key-up is stamped at effect or
+ * 80ms-tick time while arrivals carry their receipt stamps, so release timing — and the
+ * legato split read from it — is coarser. This measures the model's rules, not React's
+ * batching.
  *
  * Exit 1 when chord whole % < 90, lifted-together whole % < 90, or RH-on-bass > 0
  * (overall, both corpora). Exit 2 for a crash, bad arguments or an empty corpus.
@@ -92,7 +95,15 @@ import { diffNoteSurface, buildRenderColumns } from '../../../__app_modules/lear
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const require = createRequire(import.meta.url);
 const yaml = require('js-yaml');
-const { parseMidi } = require('midi-file');
+// The raw MIDI event parser, resolved THROUGH @tonejs/midi — a declared dependency
+// whose own declared dependency it is — so the harness never leans on midi-file being
+// hoisted to the root. The parser, not @tonejs/midi's note list: Midi pairs each
+// note-on with the first later note-off and DROPS a note-on it cannot close, which
+// is every re-strike of a key still down (on, on, off). The live staff counts that
+// re-strike as an onset (diffNoteSurface: its timestamp changes), so the gate must
+// too. Measured on the capture corpus: ~2% of note-ons are unpaired, and replaying
+// Midi's notes moved 792 onsets and one take out of the gate.
+const { parseMidi } = createRequire(require.resolve('@tonejs/midi'))('midi-file');
 
 const TICK_MS = 80;            // CurrentChordStaff PROVISIONAL_TICK_MS
 const CLUSTER_GAP_MS = 150;    // ground truth: successive onsets of one held cluster
@@ -155,7 +166,11 @@ function loadStudio(file) {
   return { created: doc.created ? String(doc.created).slice(0, 10) : null, events: normalise(raw) };
 }
 
-/** A .mid file as absolute-ms events: every track merged, tempo map respected. */
+/**
+ * A .mid file as absolute-ms events: every track merged, tempo map respected. A
+ * note-on at velocity 0 is a note-off (midi-file reports it as noteOff already; the
+ * velocity test is the backstop).
+ */
 function loadMidi(file) {
   const midi = parseMidi(fs.readFileSync(file));
   const tpb = midi.header.ticksPerBeat || 480;

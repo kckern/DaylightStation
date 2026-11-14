@@ -85,9 +85,10 @@ describe('splitByHand', () => {
   it('a >14-wide column wholly below C4 stays whole on bass (no second-hand evidence)', () => {
     expect(splitByHand([36, 48, 55])).toEqual({ bassNotes: [36, 48, 55], trebleNotes: [] });
   });
-  it('HAND_SPAN boundary: [60,74] is one hand (treble); [60,75] is wide but still wholly >= C4, so treble', () => {
-    expect(splitByHand([60, 74])).toEqual({ bassNotes: [], trebleNotes: [60, 74] });
-    expect(splitByHand([60, 75])).toEqual({ bassNotes: [], trebleNotes: [60, 75] });
+  it('HAND_SPAN boundary: [59,73] (span 14, mean >= 60) is one hand, whole on treble — one wider divides (below)', () => {
+    // Pinned against [59,74] (span 15, divides) so the boundary sits exactly at 14.
+    expect(splitByHand([59, 73])).toEqual({ bassNotes: [], trebleNotes: [59, 73] });
+    expect(splitByHand([59, 74])).toEqual({ bassNotes: [59], trebleNotes: [74] });
   });
   it('[50,64] (span 14, mean 57) is one hand on bass', () => {
     expect(splitByHand([50, 64])).toEqual({ bassNotes: [50, 64], trebleNotes: [] });

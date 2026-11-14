@@ -382,8 +382,8 @@ function recordReleases(flow, now, held, minStepMs) {
  *     staccato roll lifted at once must stay one column.
  * The last test cannot be passed at the instant the earlier key lets go, so a split
  * is decided at the first pushReleases call after `liftMs` has passed — the next key
- * event or the 80ms tick, whichever comes first — while the column is still one of the two young ones. Null when the column
- * is a chord (or not decided yet).
+ * event or the 80ms tick, whichever comes first — while the column is still one of
+ * the two young ones. Null when the column is a chord (or not decided yet).
  */
 function legatoSplitAt(column, now, legatoMs, minStepMs, liftMs) {
   const arrivals = column.arrivals ?? [];
@@ -446,9 +446,9 @@ function splitColumn(flow, i, t, capacity) {
  * while that later key stayed down more than LIFT_TOGETHER_MS longer, was a legato
  * line, not a chord: split at that later arrival. The second-newest counts because
  * the split is only decided at the first call after the lift window — the next key
- * event or the 80ms tick, whichever comes first; a key event may be the onset that
- * closed the column, which may be the onset that closed the column. Columns further
- * back never change shape, so what has been drawn stays drawn.
+ * event or the 80ms tick, whichever comes first — and that key event may be the very
+ * onset that closed the column. Columns further back never change shape, so what has
+ * been drawn stays drawn.
  *
  * HOLDS: a closed column that was fully held when it closed is released once none of
  * its keys is down, or once a later column re-strikes one of its pitches (a re-strike
@@ -470,6 +470,16 @@ export function pushReleases(flow, now, held, opts = {}) {
     capacity = COLUMN_CAPACITY, legatoReleaseMs = LEGATO_RELEASE_MS,
     legatoMinStepMs = LEGATO_MIN_STEP_MS, liftTogetherMs = LIFT_TOGETHER_MS,
   } = opts;
+  // The idle-tick fast path: with no young column a release could split and no closed
+  // hold waiting to be released, there is nothing to do — return before allocating.
+  // This runs every 80ms for as long as a line sits on screen.
+  let busy = false;
+  for (let i = 0; i < flow.columns.length && !busy; i += 1) {
+    const c = flow.columns[i];
+    busy = (i < flow.columns.length - 1 && c.heldAtClose && c.releasedAt === null)
+      || (i >= youngFrom(flow) && canSplit(c, legatoMinStepMs));
+  }
+  if (!busy) return flow;
   flow = recordReleases(flow, now, held, legatoMinStepMs);
   // Each split moves at least one note into a new column, so this ends; the guard is
   // only a backstop.
@@ -485,24 +495,27 @@ export function pushReleases(flow, now, held, opts = {}) {
     if (!split) break;
   }
 
-  let changed = false;
+  // Copied only once a hold actually releases, so a call that changes nothing
+  // allocates nothing here.
+  let columns = null;
   const baseline = baselineOf(flow.recentIois);
-  const columns = flow.columns.map((c, i) => {
-    if (i === flow.columns.length - 1 || !c.heldAtClose || c.releasedAt !== null) return c;
+  for (let i = 0; i < flow.columns.length - 1; i += 1) {
+    const c = flow.columns[i];
+    if (!c.heldAtClose || c.releasedAt !== null) continue;
     const restruck = flow.columns.slice(i + 1).some((later) => later.midis.some((m) => c.midis.includes(m)));
-    if (!restruck && c.midis.some((m) => held.has(m))) return c;
-    changed = true;
+    if (!restruck && c.midis.some((m) => held.has(m))) continue;
     // A young column's recorded key-ups are the real release time; `now` can be a
     // later key event (a legato split is settled one event after the lift).
     const recorded = c.midis.map((m) => c.releases?.[m]);
     const releasedAt = !restruck && recorded.every((r) => r !== undefined) ? Math.max(...recorded) : now;
-    return {
+    columns ||= flow.columns.slice();
+    columns[i] = {
       ...c,
       releasedAt,
       duration: releasedAt - c.startedAt > SLOW_RATIO * baseline ? 'h' : c.duration,
     };
-  });
-  return changed ? { ...flow, columns } : flow;
+  }
+  return columns ? { ...flow, columns } : flow;
 }
 
 /**
@@ -524,16 +537,26 @@ export const flowColumns = (flow) => flow.columns.map((c) => c.midis);
  *
  * @param {{columns: FlowColumn[], recentIois: number[]}} flow
  * @param {number} now
+ * @param {Duration[]} [prev] - the last answer; returned as-is when nothing changed
  * @returns {Duration[]}
  */
-export function flowDurations(flow, now) {
+export function flowDurations(flow, now, prev) {
   const baseline = baselineOf(flow.recentIois);
   const longHold = (c) => now - c.startedAt > SLOW_RATIO * baseline;
-  return flow.columns.map((c) => {
+  const at = (c) => {
     if (c.duration === null) return longHold(c) ? 'h' : 'q';
     if (c.heldAtClose && c.releasedAt === null && longHold(c)) return 'h';
     return c.duration;
-  });
+  };
+  // With `prev`, an unchanged answer is `prev` itself and nothing is allocated — the
+  // host's 80ms tick asks this of every column on screen, every tick.
+  const n = flow.columns.length;
+  if (prev && prev.length === n) {
+    let i = 0;
+    while (i < n && prev[i] === at(flow.columns[i])) i += 1;
+    if (i === n) return prev;
+  }
+  return flow.columns.map(at);
 }
 
 /**

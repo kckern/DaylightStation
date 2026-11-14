@@ -566,3 +566,37 @@ describe('noteFlow — a pending legato split settles without a new key event', 
     expect(flowColumns(flow)).toEqual([[60], [62]]);
   });
 });
+
+describe('noteFlow — the idle tick allocates nothing', () => {
+  // Columns whose array methods throw: any slice/map/filter on them would be a copy.
+  const sealed = (flow) => {
+    const columns = new Proxy(flow.columns, {
+      get(target, key, recv) {
+        if (['slice', 'map', 'filter', 'concat'].includes(key)) throw new Error(`columns.${String(key)} on an idle tick`);
+        return Reflect.get(target, key, recv);
+      },
+    });
+    return { ...flow, columns };
+  };
+
+  it('pushReleases returns the same flow, without copying columns, when no young column can split and no hold is pending', () => {
+    // Struck chords, each released before the next: nothing for a release to do.
+    let flow = pushOnsets(emptyFlow(), [60, 64, 67], 0, { held: new Set([60, 64, 67]) });
+    flow = pushOnsets(flow, [62, 65, 69], 500, { held: new Set([62, 65, 69]) });
+    flow = pushOnsets(flow, [64, 67, 71], 1000, { held: new Set() });
+    const idle = sealed(flow);
+    expect(pushReleases(idle, 1500, new Set())).toBe(idle);
+    expect(pushReleases(idle, 1580, new Set())).toBe(idle);
+  });
+
+  it('flowDurations hands back the previous array when nothing changed', () => {
+    let flow = pushOnsets(emptyFlow(), [60], 0);
+    flow = pushOnsets(flow, [64], 500);
+    const first = flowDurations(flow, 600);
+    expect(flowDurations(flow, 680, first)).toBe(first);
+    // ...and a new one once the newest column's provisional quarter promotes.
+    const later = flowDurations(flow, 500 + SLOW_RATIO * 500 + 1, first);
+    expect(later).not.toBe(first);
+    expect(later).toEqual(['q', 'h']);
+  });
+});
