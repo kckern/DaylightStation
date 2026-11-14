@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import Icon from '../ui/icons/Icon.jsx';
 import { usePianoKioskConfig, usePianoRosterOptional } from './PianoConfig.jsx';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './usePianoSound.js';
@@ -27,7 +28,7 @@ function AddressDial({ field, value, onStep, onSet }) {
   return (
     <div className="pf-dial" role="group" aria-label={FIELD_LABEL[field]}>
       <span className="pf-dial__label">{FIELD_LABEL[field]}</span>
-      <button type="button" className="pf-dial__step" aria-label={`${FIELD_LABEL[field]} up`} onClick={() => onStep(field, 1)}>▲</button>
+      <button type="button" className="pf-dial__step" aria-label={`${FIELD_LABEL[field]} up`} onClick={() => onStep(field, 1)}><Icon name="chevron-up" /></button>
       <input
         className="pf-dial__value"
         aria-label={`${FIELD_LABEL[field]} value`}
@@ -38,7 +39,7 @@ function AddressDial({ field, value, onStep, onSet }) {
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setDraft(null); e.currentTarget.blur(); } }}
       />
-      <button type="button" className="pf-dial__step" aria-label={`${FIELD_LABEL[field]} down`} onClick={() => onStep(field, -1)}>▼</button>
+      <button type="button" className="pf-dial__step" aria-label={`${FIELD_LABEL[field]} down`} onClick={() => onStep(field, -1)}><Icon name="chevron-down" /></button>
       <span className="pf-dial__hint">{FIELD_HINT[field]}</span>
     </div>
   );
@@ -181,7 +182,7 @@ export default function PatchFinder({ onBack }) {
 
         <div className="pf-loop">
           <button type="button" className="pf-loop__btn" onClick={() => onStep('pc', -1)}>‹ Prev</button>
-          <button type="button" className="pf-loop__btn pf-loop__play" onClick={play}>▶ Play</button>
+          <button type="button" className="pf-loop__btn pf-loop__play" onClick={play}><Icon name="play" /> Play</button>
           <button type="button" className="pf-loop__btn" onClick={() => onStep('pc', 1)}>Next ›</button>
         </div>
         <label className="pf-auto">
