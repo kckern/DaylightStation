@@ -1,0 +1,36 @@
+.school-rewards-door {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 10px;
+  background: none; cursor: pointer; pointer-events: auto;
+  &:focus-visible { outline: 3px solid #f9d681; outline-offset: 3px; }
+  .school-rewards-chest { width: clamp(44px, min(7vh, 5vw), 76px); }
+}
+.school-rewards-chest {
+  position: relative; display: inline-block; flex: 0 0 auto; width: 76px; aspect-ratio: 148 / 150; isolation: isolate;
+  &__frame { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; overflow: hidden; filter: drop-shadow(0 4px 3px #0004); }
+  &__frame--0 { opacity: 1; }
+  &.is-open &__frame--0 { opacity: 0; }
+  &.is-open &__frame--2 { opacity: 1; }
+  &::before { content: ''; position: absolute; inset: 8px -5px -3px; background: radial-gradient(ellipse, #ffdb7780, transparent 70%); opacity: 0; z-index: -1; }
+}
+.school-rewards-door.is-opening {
+  .school-rewards-chest { animation: school-chest-bounce 480ms ease both; }
+  .school-rewards-chest::before { animation: school-chest-glow 480ms ease both; }
+  .school-rewards-chest__frame--0 { animation: school-chest-closed 480ms step-end both; }
+  .school-rewards-chest__frame--1 { animation: school-chest-middle 480ms step-end both; }
+  .school-rewards-chest__frame--2 { animation: school-chest-open 480ms step-end both; }
+}
+@keyframes school-chest-closed { 0% { opacity: 1; } 24%, 100% { opacity: 0; } }
+@keyframes school-chest-middle { 0% { opacity: 0; } 24% { opacity: 1; } 48%, 100% { opacity: 0; } }
+@keyframes school-chest-open { 0% { opacity: 0; } 48%, 100% { opacity: 1; } }
+@keyframes school-chest-glow { 0%, 30% { opacity: 0; } 65%, 100% { opacity: 1; } }
+@keyframes school-chest-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  23% { transform: translateY(3px) scale(1.06, .92); }
+  50% { transform: translateY(-7px) scale(.98, 1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .school-rewards-door.is-opening .school-rewards-chest,
+  .school-rewards-door.is-opening .school-rewards-chest::before,
+  .school-rewards-door.is-opening .school-rewards-chest__frame { animation: none; }
+}
