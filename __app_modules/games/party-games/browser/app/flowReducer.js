@@ -105,6 +105,11 @@ export function flowReducer(state, action) {
       const requestedSet = action.sets.find((set) => set.valid && (action.requestedDefinition
         ? set.definitionId === action.requestedDefinition
         : action.requestedGame && set.game === action.requestedGame));
+      if (action.resetSetup) {
+        const mounted = action.sets.find(set => set.valid && set.definitionId === action.resetSetup.definitionId);
+        if (!mounted) return { ...next, phase: 'loading', error: 'Reset game is no longer available' };
+        return { ...selectSet(next, mounted), phase: 'playing', ...action.resetSetup, sessionId: null, result: null, error: null };
+      }
       if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession, action.requestedDefinition);
       if (requestedSet || action.launch?.autostart) return selectConfiguredSet(next, requestedSet, action.launch);
       return { ...next, phase: 'set-picker' };

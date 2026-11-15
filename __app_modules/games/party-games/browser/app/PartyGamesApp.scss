@@ -13,6 +13,14 @@
   // direct-mounted title cards (loading / set-loading) fill the stage
   > .gp-titlecard { flex: 1; }
 
+  &__reset-utility {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.25rem 0.75rem;
+    z-index: 51;
+  }
+
   &__play {
     flex: 1;
     min-width: 0;
