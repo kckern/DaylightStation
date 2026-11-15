@@ -304,6 +304,12 @@ An adult grade adjustment or retraction creates a new non-printing
 leaves the original result and original paper untouched. Legacy records retain
 their legacy/exact availability label and are never silently restyled.
 
+When an OMR scan first advances its session to `graded`, School also retains an
+immutable rendered machine result. Its input includes the row-count score and
+each question's scanned mark and verdict. This image is generated from grading
+evidence; it is labelled as a rendered result, not a photograph of the card.
+Retention failures are logged without undoing the recorded grade.
+
 The same rule applies to a systematic bank regrade. It first appends corrected
 attempt evidence; only when all of a session's immutable graded roster can be
 accounted for does it append a deterministic effective-grade correction through

@@ -489,7 +489,25 @@ export class RecordCardScanOutcome {
     );
     if (session?.advancedTo === 'graded' && card.sessionId && this.#resultArtifacts && this.#renderMachineResult) {
       try {
-        const bytes = await this.#renderMachineResult({ sessionId: card.sessionId, unitId, card });
+        const correctCount = card.results.filter((row) => row.status === 'correct').length;
+        const totalCount = card.results.length;
+        const bytes = await this.#renderMachineResult({
+          sessionId: card.sessionId,
+          unitId,
+          kind: 'omr',
+          title: unitId ?? card.documentId ?? card.sessionId,
+          subtitle: card.recordId ?? '',
+          score: {
+            percent: totalCount ? Math.round((correctCount / totalCount) * 10000) / 100 : null,
+            correctCount,
+            totalCount,
+          },
+          items: card.results.map((row) => ({
+            questionNumber: row.row,
+            given: Array.isArray(row.given) ? row.given.join(', ') : row.given,
+            verdict: row.status,
+          })),
+        });
         await this.#resultArtifacts.putMachineIfAbsent(card.sessionId, bytes);
       } catch (error) {
         this.#logger.warn?.('school.print.machine-result-retention-failed', {

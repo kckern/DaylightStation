@@ -500,7 +500,18 @@ describe('session bridge', () => {
       logger: quietLogger });
 
     await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
-    expect(renderMachineResult).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'ws-1', unitId: 'unit-1' }));
+    expect(renderMachineResult).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'ws-1',
+      unitId: 'unit-1',
+      kind: 'omr',
+      title: 'unit-1',
+      subtitle: 'arts/quiz-1@abcdef123:v0:1-2',
+      score: { percent: 50, totalCount: 2, correctCount: 1 },
+      items: [
+        { questionNumber: 1, given: 'blue', verdict: 'correct' },
+        { questionNumber: 2, given: 'fox', verdict: 'incorrect' },
+      ],
+    }));
     expect(resultArtifacts.putMachineIfAbsent).toHaveBeenCalledWith('ws-1', Buffer.from('png-bytes'));
   });
 
