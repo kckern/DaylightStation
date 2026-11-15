@@ -8,11 +8,26 @@ export function remapSetup(setup, participantKeyMap, itemUidMap, remapActivitySe
   next.settings = remapActivitySettings({consumer:cloneListValue(next.consumer),settings:next.settings,participantKeyMap:{...participantKeyMap},itemUidMap:{...itemUidMap}});
   return next;
 }
+const ACTIONS = ['open', 'play', 'queue', 'display'];
+
+export function itemActions(item) {
+  return ACTIONS.filter(action => Boolean(item?.[action]));
+}
+
+/** Return the single effective action, or null for a missing or ambiguous action. */
+export function itemAction(item) {
+  const actions = itemActions(item);
+  return actions.length === 1 ? actions[0] : null;
+}
+
 function assertBindings(plan) {
   const items = new Map(plan.list.sections.flatMap(section => section.items.map(item => [item.uid,item])));
   const roster = new Set(plan.participants.map(participant => participant.id));
+  for (const [uid, item] of items) {
+    if (itemActions(item).length > 1) fail(`list.items.${uid}`, 'Multiple authored actions are not allowed');
+  }
   for (const [uid, setup] of Object.entries(plan.activity_settings)) {
-    if (!items.has(uid) || !items.get(uid)[setup.action]) fail(`activity_settings.${uid}`, 'Activity binding is invalid');
+    if (!items.has(uid) || !itemAction(items.get(uid)) || itemAction(items.get(uid)) !== setup.action) fail(`activity_settings.${uid}`, 'Activity binding is invalid');
     if (setup.participants.mode === 'explicit' && (!Array.isArray(setup.participants.ids) || setup.participants.ids.some(id => !roster.has(id)))) fail(`activity_settings.${uid}.participants`, 'Participant binding is invalid');
   }
 }

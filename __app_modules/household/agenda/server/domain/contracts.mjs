@@ -1,3 +1,5 @@
+import { itemAction, itemActions } from '../../portable/planEdits.mjs';
+
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const date = value => typeof value === 'string' && /^\d{4}-\d\d-\d\d$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
@@ -31,6 +33,7 @@ function contents(participants, list, settings, errors, requireDisplay) {
       need(Array.isArray(section?.items), 'list.sections.items', errors);
       for (const item of (Array.isArray(section?.items) ? section.items : [])) {
         need(text(item?.uid) && !uids.has(item?.uid), 'list.items.uid', errors); uids.add(item?.uid); items.set(item?.uid,item);
+        need(itemActions(item).length <= 1, 'list.items.action', errors);
       }
     }
   } else need(false,'list.sections',errors);
@@ -39,7 +42,7 @@ function contents(participants, list, settings, errors, requireDisplay) {
     const path = `activity_settings.${uid}`;
     if (!keys(setup,['schema','action','participants','consumer','settings'],path,errors)) continue;
     need(setup.schema === 'agenda-activity-setup/v1',`${path}.schema`,errors);
-    need(items.has(uid) && text(setup.action) && Boolean(items.get(uid)?.[setup.action]),`${path}.action`,errors);
+    need(items.has(uid) && text(setup.action) && itemAction(items.get(uid)) === setup.action,`${path}.action`,errors);
     if (keys(setup.participants,['mode','ids'],`${path}.participants`,errors)) {
       const p = setup.participants;
       need(['plan','explicit'].includes(p.mode),`${path}.participants.mode`,errors);

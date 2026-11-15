@@ -67,3 +67,43 @@ describe('binding invariants', () => {
     expect(() => copyPlan({source:p,targetWeek:'2026-11-23',series,ids:factory,remapActivitySettings})).toThrow();
   });
 });
+describe('authored action envelope', () => {
+  it.each(['title', 'uid'])('rejects %s as a setup action in validation and edits', action => {
+    const p = make(), item = p.list.sections[0].items[0];
+    p.activity_settings[item.uid].action = action;
+    expect(validatePlan(p,{purpose:'publish'}).valid).toBe(false);
+    expect(() => applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings})).toThrow();
+  });
+  it('rejects multiple authored actions even without activity settings', () => {
+    const p = make(), item = p.list.sections[0].items[1];
+    item.open = 'games/example';
+    expect(validatePlan(p,{purpose:'draft'}).valid).toBe(false);
+    expect(() => applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings})).toThrow();
+  });
+  it.each(['open','play','queue','display'])('accepts a single matching %s action', action => {
+    const p = make(), item = p.list.sections[0].items[0];
+    delete item.open; item[action] = 'content/example';
+    p.activity_settings[item.uid].action = action;
+    expect(validatePlan(p,{purpose:'publish'}).valid).toBe(true);
+    expect(applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings}).list.sections[0].items[1].uid).toBe(item.uid);
+  });
+  it('rejects an edit that adds a second action', () => {
+    const p = make(), item = p.list.sections[0].items[0];
+    expect(() => applyPlanEdit(p,{type:'update-item',itemUid:item.uid,changes:{play:'content/example'}},{ids:ids(),remapActivitySettings})).toThrow();
+  });
+});
+it('preserves unbound non-executable list items while requiring actions for bound items', () => {
+  const p = make(), item = p.list.sections[0].items[1];
+  delete item.play;
+  expect(validatePlan(p,{purpose:'draft'}).valid).toBe(true);
+  expect(applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings}).list.sections[0].items).toHaveLength(2);
+  p.activity_settings[item.uid] = structuredClone(Object.values(p.activity_settings)[0]);
+  expect(validatePlan(p,{purpose:'draft'}).valid).toBe(false);
+  expect(() => applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings})).toThrow();
+});
+it('rejects null setup actions on an unbound-shaped item in edits', () => {
+  const p = make(), item = p.list.sections[0].items[1];
+  delete item.play;
+  p.activity_settings[item.uid] = {...structuredClone(Object.values(p.activity_settings)[0]),action:null};
+  expect(() => applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings})).toThrow();
+});
