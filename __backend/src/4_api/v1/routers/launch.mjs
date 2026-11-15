@@ -19,7 +19,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  * @returns {express.Router}
  */
 export function createLaunchRouter(config) {
-  const { launchService, logger = console } = config;
+  const { launchService, resolveAccessContext = null, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -39,12 +39,13 @@ export function createLaunchRouter(config) {
     }
 
     try {
-      const result = await launchService.launch({ contentId, targetDeviceId });
+      const accessContext = resolveAccessContext ? await resolveAccessContext(req,{targetDeviceId,activityId:contentId}) : undefined;
+      const result = await launchService.launch({ contentId, targetDeviceId, ...(accessContext && {accessContext}) });
       res.json(result);
     } catch (error) {
-      const status = error.name === 'ValidationError' ? 400
+      const status = error.status ?? (error.name === 'ValidationError' ? 400
         : error.name === 'EntityNotFoundError' ? 404
-        : 500;
+        : 500);
       logger.error?.('launch.api.error', { contentId, targetDeviceId, error: error.message });
       res.status(status).json({
         error: error.message,
@@ -66,12 +67,14 @@ export function createLaunchRouter(config) {
     }
 
     try {
-      const result = await launchService.resolveIntent(contentId);
+      const accessContext = resolveAccessContext ? await resolveAccessContext(req,{activityId:contentId}) : undefined;
+      const result = accessContext ? await launchService.resolveIntent(contentId,accessContext) : await launchService.resolveIntent(contentId);
       if (!result) {
         return res.status(404).json({ error: 'No launch intent found for ' + contentId });
       }
       res.json(result);
     } catch (error) {
+      if (error.status >= 400 && error.status < 500) return res.status(error.status).json({error:error.message,code:error.code});
       logger.error?.('launch.intent.resolve.error', { contentId, error: error.message });
       sendInternalError(res, { error: error.message });
     }

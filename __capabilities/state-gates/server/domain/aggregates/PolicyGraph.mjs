@@ -14,7 +14,7 @@ function walk(node, visitor, path = 'expression') {
   else if (node.kind === 'count') walk(node.where, visitor, `${path}/where`);
 }
 
-function validateExpression(node, graph, gate, path, bindings = new Map([['subject', gate.subjectKinds], ['period', gate.periodKinds]])) {
+function validateExpression(node, graph, gate, path, bindings = new Map([['subject', gate.subjectKinds], ['period', gate.periodKinds], ['household', ['household']]])) {
   if (!node || !NODE_KINDS.has(node.kind)) fail('Unsupported gate expression', 'UNSUPPORTED_EXPRESSION', path);
   if ((node.kind === 'all' || node.kind === 'any') && (!Array.isArray(node.children) || !node.children.length)) fail(`${node.kind} requires children`, 'EMPTY_EXPRESSION', path);
   if (node.kind === 'not' && !node.child) fail('not requires one child', 'EXPRESSION_REQUIRED', path);

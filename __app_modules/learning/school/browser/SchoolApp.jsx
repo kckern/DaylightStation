@@ -1,3 +1,7 @@
+import {SupervisedActivity,useActivityScope} from '../../../household/supervision/browser/index.js';
+import {useActivityStop} from '../../../household/supervision/browser/index.js';
+import {suspendScanCeremonySound} from './selfService/scanCeremonySound.js';
+import {stopAudio as stopCardLadderAudio} from './Programs/Flashcards/CardLadder/cardLadderAudio.js';
 /**
  * School app root (registered as 'school' in appRegistry; AppContainer passes
  * {clear}). Owns two navigation levels: the home section grid (spec §8), and
@@ -1547,6 +1551,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
  * `PanelRenderer` spreads. Both absent is today, exactly: a browsable School.
  */
 function SchoolShutdownGate(props) {
+  useActivityStop(()=>{stopCardLadderAudio();return suspendScanCeremonySound();});
   const urlBase = useMemo(schoolUrlBase, []);
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
   const shutdown = useShutdownLock(`school:${screenId}`);
@@ -1554,6 +1559,10 @@ function SchoolShutdownGate(props) {
   return <SchoolAppInner {...props} />;
 }
 
+function SchoolSupervisionProfile({children}) {
+  const {currentUser,claim}=useSchoolProfile(),scope=useActivityScope();
+  return <SupervisedActivity activityId="school:workspace" learnerId={currentUser?.id??null} fallback={<button type="button" onClick={()=>claim(scope?.learnerId)}>Continue as selected learner</button>}>{children}</SupervisedActivity>;
+}
 function SchoolAppInner({
   clear,
   mode = null,
@@ -1561,7 +1570,7 @@ function SchoolAppInner({
   screenOffTimeoutSeconds = null,
 }) {
   return (
-    <SchoolProfileProvider>
+    <SchoolProfileProvider><SchoolSupervisionProfile>
       {/* Korean typing is a property of the whole school panel, not of one
           rung: the sentence ladder needs it, and so do the free-text quiz
           items. It wraps the shell so every field School owns is covered, and
@@ -1576,7 +1585,7 @@ function SchoolAppInner({
           />
         </SchoolBreadcrumbProvider>
       </HangulTypingProvider>
-    </SchoolProfileProvider>
+    </SchoolSupervisionProfile></SchoolProfileProvider>
   );
 }
 

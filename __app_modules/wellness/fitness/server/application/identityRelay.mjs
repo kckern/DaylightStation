@@ -72,6 +72,8 @@ export function createIdentityRelay({
   userService,
   loadFitnessConfig,
   getLockdownState = null,
+  adminIntervention = null,
+  deviceId = null,
   triggerEmergencyLockdown = null,
   commitScheduler = { schedule: () => null, cancel: () => {} },
   serverCommitDelayMs = DEFAULT_SERVER_COMMIT_DELAY_MS,
@@ -203,14 +205,24 @@ export function createIdentityRelay({
     // pending detection (consumed by /emergency/{commit,abort,release}) and the
     // longer admin session (manage operations).
     if (authz.admin) {
-      pending = { userId: entry.userId, at };
+      if (!adminIntervention) pending = { userId: entry.userId, at };
       lastAdmin = { userId: entry.userId, at };
       logger.info?.('identity.pending_stamped', { userId: entry.userId });
       logger.info?.('identity.admin_verified', { userId: entry.userId });
     }
-    identityChannel.identityDetected({
+    const emitIdentity = (parentalIntervention = null) => identityChannel.identityDetected({
       modality, matched: true, userId: entry.userId, finger: entry.finger, authz, at,
+      ...(parentalIntervention ? { parentalIntervention } : {}),
     });
+    if (authz.admin && adminIntervention) {
+      recordScanOutcome(false, at);
+      return adminIntervention.observeAdmin({ userId: entry.userId, deviceId }).then(emitIdentity).catch(error => {
+        // A failed persistence/transport must still make the originating kiosk quiet.
+        emitIdentity({ purpose: 'stop', blocked: true, failed: true });
+        logger.warn?.('identity.parental_stop_failed', { userId: entry.userId, error: error.message });
+      });
+    }
+    emitIdentity();
     logger.info?.('identity.detected', {
       userId: entry.userId, finger: entry.finger, admin: authz.admin, locks: authz.locks.length,
     });

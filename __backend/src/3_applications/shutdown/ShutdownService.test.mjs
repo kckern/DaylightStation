@@ -22,7 +22,7 @@ function fakes() {
   return {
     repo, saved, events, portalCalls, haCalls,
     notifier: { publishState(payload) { events.push({ topic: 'shutdown.state', payload }); } },
-    portal: { async setLockdown(value) { portalCalls.push(value); } },
+    portal: { async setLockdown(value) { portalCalls.push(value); return {ok:true}; } },
     cue: { async announce(value) { haCalls.push(value); } },
     invalid() { result = { state: null, invalid: true }; },
   };
@@ -100,4 +100,10 @@ test('a bad timezone never withholds the cue: announce still runs', async () => 
   assert.equal(f.haCalls[0].lockedUntil, state.lockedUntil);
   // formatClockTime degrades to null, so the push still composes, without the clock time.
   assert.equal(f.haCalls[0].notification.title, '🔒 Kiosks locked — 30 min');
+});
+test('a resolved skipped Portal command cannot advance the reconciliation signature',async()=>{
+ const f=fakes();let calls=0;const portal={setLockdown:async()=>{calls++;return {ok:false,skipped:true};}};
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal,logger:{warn(){}}});
+ await service.activate({readerId:'reader',tagUid:'ABCD',now:1000});await service.reconcile(1001);
+ assert.equal(calls,2);
 });

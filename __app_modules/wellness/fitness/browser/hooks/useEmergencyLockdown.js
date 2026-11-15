@@ -1,3 +1,4 @@
+import {publishLocalStop} from '../../../../household/supervision/browser/index.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
 import { wsService } from '@/services/WebSocketService.js';
@@ -60,6 +61,8 @@ export function useEmergencyLockdown() {
     readUrlSeam() === PHASE_LOCKED ? Math.floor(Date.now() / 1000) + 1800 : null
   );
   const [lockedBy, setLockedBy] = useState(null);
+  const [supervisionEnabled, setSupervisionEnabled] = useState(false);
+  const unlockContextRef = useRef(null);
 
   // Mirror phase into a ref so async callbacks read the latest value without
   // being re-created on every transition.
@@ -72,6 +75,13 @@ export function useEmergencyLockdown() {
     if (by != null) setLockedBy(by);
     logger().info('emergency.locked', { lockedUntil: until, lockedBy: by });
   }, []);
+
+  const adoptParentalStop = useCallback(({actorId,epoch} = {}) => {
+    publishLocalStop({epoch});
+    setSupervisionEnabled(true);
+    setLockedUntil(null);
+    enterLocked(null, actorId);
+  }, [enterLocked]);
 
   const enterNormal = useCallback((reason = 'unspecified') => {
     setPhase(PHASE_NORMAL);
@@ -122,6 +132,7 @@ export function useEmergencyLockdown() {
       try {
         const res = await DaylightAPI(EMERGENCY_PATH);
         if (cancelled) return;
+        if (res?.persistent) setSupervisionEnabled(true);
         if (res && res.locked) {
           setPhase(PHASE_LOCKED);
           setLockedUntil(res.lockedUntil ?? null);
@@ -184,7 +195,7 @@ export function useEmergencyLockdown() {
       } catch (err) {
         // On error, optimistically release so the kiosk isn't stuck forever.
         logger().warn('emergency.expiry_check_failed', { message: err?.message ?? null });
-        enterNormal('expiry-check-failed');
+        // Retain the lock until a canonical status check or authenticated release succeeds.
       }
     }, ms);
     return () => clearTimeout(t);
@@ -254,7 +265,18 @@ export function useEmergencyLockdown() {
     }
   }, [enterNormal]);
 
-  return { phase, lockedUntil, lockedBy, commit, abort, release, triggerCeremony, dismissCeremony };
+  const beginUnlockContext = useCallback(async () => {
+    const context = await DaylightAPI('api/v1/supervision/identity-context', {purpose:'unlock'}, 'POST');
+    unlockContextRef.current = context.contextId;
+    return context;
+  }, []);
+  const clearUnlockContext = useCallback(async () => {
+    const id = unlockContextRef.current;
+    unlockContextRef.current = null;
+    if (id) await DaylightAPI(`api/v1/supervision/identity-context/${encodeURIComponent(id)}`, {}, 'DELETE');
+  }, []);
+
+  return { beginUnlockContext, clearUnlockContext, phase, lockedUntil, lockedBy, supervisionEnabled, adoptParentalStop, commit, abort, release, triggerCeremony, dismissCeremony };
 }
 
 export default useEmergencyLockdown;

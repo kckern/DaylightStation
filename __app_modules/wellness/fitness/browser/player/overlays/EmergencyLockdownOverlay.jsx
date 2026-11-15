@@ -210,7 +210,7 @@ function LockedScreen({ lockedUntil, release, logger }) {
       <div className="emergency-stack">
         <PowerGlyph className="emergency-glyph emergency-glyph--dim" />
         <div className="emergency-headline emergency-headline--locked">LOCKED</div>
-        {backAt && <div className="emergency-subline">Back at {backAt}</div>}
+        {backAt ? <div className="emergency-subline">Back at {backAt}</div> : <div className="emergency-subline">Parent release required</div>}
         {scanning && <div className="emergency-scanning">Scanning…</div>}
       </div>
     </div>

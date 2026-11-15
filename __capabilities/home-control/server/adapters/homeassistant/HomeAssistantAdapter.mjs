@@ -99,7 +99,9 @@ export class HomeAssistantAdapter {
         entityId: response.entity_id,
         state: response.state,
         attributes: response.attributes || {},
-        lastChanged: response.last_changed
+        lastChanged: response.last_changed,
+        lastReported: response.last_reported,
+        lastUpdated: response.last_updated
       };
     } catch (error) {
       this.#logger.debug?.('ha.getState.error', { entityId, error: error.message });
@@ -225,25 +227,25 @@ export class HomeAssistantAdapter {
    * @param {Object} [data] - Service data (e.g., { entity_id: 'light.living_room' })
    * @returns {Promise<ServiceResult>}
    */
-  async callService(domain, service, data = {}) {
+  async callService(domain, service, data = {}, options = {}) {
     if (!domain || !service) {
       return { ok: false, error: 'Domain and service are required' };
     }
 
     try {
-      this.#logger.debug?.('ha.callService', { domain, service, data });
+      this.#logger.debug?.('ha.callService', { domain, service, data:options.sensitive?{redacted:true}:data });
 
-      const response = await this.#apiPost(`/api/services/${domain}/${service}`, data);
+      const response = await this.#apiPost(`/api/services/${domain}/${service}`, data, options);
 
       this.#logger.info?.('ha.callService.success', { domain, service });
-      return { ok: true, data: response };
+      return { ok: true, data: options.sensitive?{redacted:true}:response };
     } catch (error) {
       this.#logger.error?.('ha.callService.error', {
         domain,
         service,
-        error: error.message
+        error: options.sensitive?'Sensitive HA service call failed':error.message
       });
-      return { ok: false, error: error.message };
+      return { ok: false, error: options.sensitive?'Sensitive HA service call failed':error.message };
     }
   }
 
@@ -415,15 +417,15 @@ export class HomeAssistantAdapter {
    * Make a POST request to HA API
    * @private
    */
-  async #apiPost(path, data) {
-    return this.#apiRequest('POST', path, data);
+  async #apiPost(path, data, options) {
+    return this.#apiRequest('POST', path, data, options);
   }
 
   /**
    * Make an API request
    * @private
    */
-  async #apiRequest(method, path, data = null) {
+  async #apiRequest(method, path, data = null, options = {}) {
     const url = `${this.#baseUrl}${path}`;
     const headers = {
       'Authorization': `Bearer ${this.#token}`,
@@ -449,9 +451,10 @@ export class HomeAssistantAdapter {
       this.#logger.error?.('ha.api.error', {
         method,
         path,
-        error: error.message,
-        code: error.code
+        error:options.sensitive?'Sensitive HA request failed':error.message,
+        code:options.sensitive?'HA_SERVICE_FAILED':error.code
       });
+      if(options.sensitive)throw Object.assign(new Error('Sensitive HA request failed'),{code:'HA_SERVICE_FAILED'});
       throw error;
     }
   }

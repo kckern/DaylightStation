@@ -12,6 +12,7 @@ export class LaunchService {
   #findDeviceByConstraint;
   #prepareLaunch;
   #logger;
+  #supervision;
 
   /**
    * @param {Object} config
@@ -33,6 +34,7 @@ export class LaunchService {
       || typeof config?.deviceLauncher?.launch !== 'function') {
       throw new TypeError('LaunchService requires deviceLauncher with canLaunch() and launch()');
     }
+    this.#supervision = config.supervision ?? null;
     this.#contentCatalog = config.contentCatalog;
     this.#deviceLauncher = config.deviceLauncher;
     this.#loadSchedule = config.loadSchedule || (() => null);
@@ -48,7 +50,8 @@ export class LaunchService {
    * @param {string} input.targetDeviceId - Device to launch on
    * @returns {Promise<{ success: boolean, contentId: string, targetDeviceId: string, title: string }>}
    */
-  async launch({ contentId, targetDeviceId }) {
+  async launch({ contentId, targetDeviceId, accessContext }) {
+    if (this.#supervision && !accessContext) await this.#supervision.authorize(accessContext);
     this.#logger.info?.('launch.service.requested', { contentId, targetDeviceId });
 
     // 1. Resolve content
@@ -95,6 +98,8 @@ export class LaunchService {
       });
     }
 
+    if(this.#supervision && accessContext.deviceId!==resolvedDeviceId)throw Object.assign(new Error('KIOSK_TARGET_NOT_AUTHORIZED'),{code:'KIOSK_TARGET_NOT_AUTHORIZED',status:403});
+
     // 3. Validate device
     const canLaunch = await this.#deviceLauncher.canLaunch(resolvedDeviceId);
     if (!canLaunch) {
@@ -106,8 +111,11 @@ export class LaunchService {
     }
 
     // 4. Execute
+    if (this.#supervision) await this.#supervision.authorize({...accessContext, deviceId:resolvedDeviceId, activityId:contentId});
     await this.#prepare(item, contentId);
-    await this.#deviceLauncher.launch(resolvedDeviceId, item.launchIntent);
+    const context = {...accessContext, deviceId:resolvedDeviceId, activityId:contentId};
+    if (this.#supervision) await this.#supervision.runAuthorized(context, () => this.#deviceLauncher.launch(resolvedDeviceId, item.launchIntent));
+    else await this.#deviceLauncher.launch(resolvedDeviceId, item.launchIntent);
 
     this.#logger.info?.('launch.service.success', { contentId, targetDeviceId: resolvedDeviceId, title: item.title });
 
@@ -121,14 +129,17 @@ export class LaunchService {
    * @param {string} contentId - Compound content ID
    * @returns {Promise<{ target: string, params: Object } | null>}
    */
-  async resolveIntent(contentId) {
+  async resolveIntent(contentId, accessContext) {
+    if (this.#supervision && !accessContext) await this.#supervision.authorize(accessContext);
     const resolved = this.#contentCatalog.resolve(contentId);
     if (!resolved) return null;
 
     const item = await this.#contentCatalog.getItem(resolved);
     if (!item?.launchIntent) return null;
 
+    if (this.#supervision) await this.#supervision.authorize({...accessContext, activityId:contentId});
     await this.#prepare(item, contentId);
+    if (this.#supervision) await this.#supervision.authorize({...accessContext, activityId:contentId});
     return item.launchIntent;
   }
 

@@ -83,6 +83,7 @@ try {
     const { createSchoolLifecycle } = await import("./schoolLifecycle.mjs");
     const worksheetPlatforms = await buildWorksheetPlatforms({ configService, rootLogger, logger: schoolLifecycleLogger });
     dependencies.schoolLifecycle = await createSchoolLifecycle({
+      authorizeKioskAction: dependencies.authorizeKioskAction ?? null,
       // The printed-activity program's page sources. Empty when unconfigured:
       // the program still registers and answers "Worksheets are unavailable".
       worksheetPlatforms,
@@ -749,6 +750,12 @@ try {
     })
     : null;
   v1Routers.school = createSchoolRouter(createSchoolApiServices({
+    resolveSupervisionLearner:async req=>{
+      const sessionId=req.params.sessionId,quizLearner=schoolService.sessionLearner?.(sessionId);if(quizLearner)return quizLearner;
+      const events=await dependencies.schoolLifecycle.stores?.sessions?.readEvents?.(sessionId);
+      return events?.find(event=>event.type==='created')?.learnerId??null;
+    },
+    authorizeKioskAction: dependencies.authorizeKioskAction ?? null,
     presenceMiddleware,
     schoolErrors,
     openBankAtPanel,
