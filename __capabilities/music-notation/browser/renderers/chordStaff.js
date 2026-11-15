@@ -405,6 +405,9 @@ const measureCache = new Map();
  * left reach in the column's own (auto_stem) direction, for the single-chord display.
  */
 function measureColumn(col, ks, durations) {
+  // Holds can promote after the column freezes. Reserve one conservative offset
+  // and width across every supported duration and stem direction from the start.
+  durations = [...new Set([...durations, '8', 'q', 'h'])];
   const rolls = columnRolls(col);
   const spellingKey = col.spelling ? [...col.spelling.entries()].map(([pc, sp]) => `${pc}${sp.letter}${sp.alter}`).join(',') : '';
   const key = `${ks}|${JSON.stringify(col.staffPlan??null)}|${col.midis.join('.')}|${spellingKey}|${rolls.treble ?? ''}/${rolls.bass ?? ''}|${[...durations].sort().join('')}`;
@@ -413,6 +416,7 @@ function measureColumn(col, ks, durations) {
   let left = 0;
   let right = 0;
   let autoLeft = 0;
+  let displacement = 0;
   for (const duration of durations) {
     for (const stemDir of [null, 1, -1, {treble:1,bass:-1}, {treble:-1,bass:1}]) {
       const { tNote, bNote } = columnNotes(col.midis, ks, col.spelling, duration, col.arrivals, stemDir, col.staffPlan);
@@ -439,14 +443,15 @@ function measureColumn(col, ks, durations) {
       const extra = unison ? m.glyphPx : 0;
       const l = m.totalLeftPx + extra;
       const offset = staffDisplacement(tNote, bNote);
-      const r = Math.max(m.notePx + m.totalRightPx + extra, label) + offset;
+      const r = Math.max(m.notePx + m.totalRightPx + extra, label);
+      displacement = Math.max(displacement, offset);
       // autoLeft is the plain metric, as the single-chord display has always used it.
       if (stemDir === null) autoLeft = Math.max(autoLeft, m.totalLeftPx);
       left = Math.max(left, l);
       right = Math.max(right, r);
     }
   }
-  const out = { left, right, autoLeft };
+  const out = { left, right: right + displacement, autoLeft, displacement };
   if (measureCache.size >= MEASURE_CACHE_MAX) measureCache.clear();
   measureCache.set(key, out);
   return out;
@@ -968,8 +973,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   bassTickables.forEach((t) => t.setStave(bass));
   // A separate tick context moves a staff's heads AND modifiers. x_shift alone
   // leaves accidentals and roll strokes at the original shared-column position.
-  slotNotes.forEach(({tNote,bNote},i) => {
-    const offset = staffDisplacement(tNote,bNote);
+  slotNotes.forEach((_,i) => {
+    const offset = measureColumn(flow[i],ks,[flow[i].widthDuration,flow[i].duration]).displacement;
     if(offset)logInkFallback({columnId:flow[i].id??i,epoch:flow[i].staffPlan?.epoch??0,offset});
     for(const [note,dx] of [[trebleTickables[i],0],[bassTickables[i],offset]]) {
       const tick = new TickContext().addTickable(note).preFormat();

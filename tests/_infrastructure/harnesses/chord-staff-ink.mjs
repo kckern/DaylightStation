@@ -101,7 +101,11 @@ export async function inspectStaffSvg(host, air=2, {keySignature='C',expectedCol
       if(JSON.stringify(want)!==JSON.stringify(actual))pitchFailures.push({column:i,want,actual});
     }
   }
-  return {crossStaffInkHits:hits,pitchFailures,clipped,bounds:{ink:{x:bb.x,y:bb.y,width:bb.width,height:bb.height},frame:[vx,vy,vw,vh],outside:[...svg.querySelectorAll('path,text')].map(p=>({b:p.getBBox(),p})).filter(({b})=>b.y<vy||b.y+b.height>vy+vh||b.x<vx||b.x+b.width>vx+vw).slice(0,6).map(({b,p})=>({column:p.closest('[data-column]')?.getAttribute('data-column'),staff:p.closest('[data-staff]')?.getAttribute('data-staff'),text:p.textContent,y:b.y,height:b.height}))},minimumColumnAir:Number.isFinite(minimumColumnAir)?minimumColumnAir:null,elementCount:t.count+b.count};
+  const headPositions=[...svg.querySelectorAll('g.vf-stavenote[data-staff]')].map(g=>({
+    id:Number(g.dataset.columnId),staff:g.dataset.staff,
+    xs:[...g.querySelectorAll('.vf-notehead > path:first-child')].map(p=>p.getBBox().x)
+  }));
+  return {headPositions,crossStaffInkHits:hits,pitchFailures,clipped,bounds:{ink:{x:bb.x,y:bb.y,width:bb.width,height:bb.height},frame:[vx,vy,vw,vh],outside:[...svg.querySelectorAll('path,text')].map(p=>({b:p.getBBox(),p})).filter(({b})=>b.y<vy||b.y+b.height>vy+vh||b.x<vx||b.x+b.width>vx+vw).slice(0,6).map(({b,p})=>({column:p.closest('[data-column]')?.getAttribute('data-column'),staff:p.closest('[data-staff]')?.getAttribute('data-staff'),text:p.textContent,y:b.y,height:b.height}))},minimumColumnAir:Number.isFinite(minimumColumnAir)?minimumColumnAir:null,elementCount:t.count+b.count};
 }
 
 export async function openStaffInkHarness() {

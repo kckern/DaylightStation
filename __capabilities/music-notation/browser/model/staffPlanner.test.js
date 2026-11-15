@@ -96,3 +96,42 @@ it('keeps the two ranges distinct during double-octave acquisition',()=>{
  expect(out.state.columns[0].parts.bass.midis).toEqual([24,31]);
  expect(out.state.columns[0].parts.treble.midis).toEqual([48,52,55]);
 });
+
+
+it('retains established close parts and ordinary clefs after wide context scrolls away',()=>{
+ const fixture=makeStaffFixture('close-parts',{count:40});
+ const out=runStaffFixture(fixture);
+ for(const {state} of out.history){
+   expect(epoch(state)).toMatchObject({treble:0,bass:0});
+   for(const column of state.columns){
+     expect(column.parts.bass.midis).toEqual(fixture.expected[column.id].bass);
+     expect(column.parts.treble.midis).toEqual(fixture.expected[column.id].treble);
+   }
+ }
+ expect(out.events).toEqual([]);
+});
+
+
+it.each(['alternating','sustained-bass','equal-timestamps','upper-only-shift','lower-only-shift'])('preserves labeled part membership in %s',name=>{
+ const fixture=makeStaffFixture(name),out=runStaffFixture(fixture);
+ for(const column of out.state.columns)for(const staff of ['bass','treble'])
+   expect(column.parts[staff].midis).toEqual(fixture.expected[column.id][staff]);
+});
+
+
+it.each([-12,12])('retains close parts after acquiring octave %s',transpose=>{
+ const fixture=makeStaffFixture('paired',{transpose,count:40});
+ for(const frame of fixture.frames)frame.flow.columns=frame.flow.columns.map(c=>c.id<8?c:{
+   ...c,midis:[55,59,62,65].map(m=>m+transpose),
+   arrivals:[55,59,62,65].map(m=>({midi:m+transpose,at:c.startedAt}))
+ });
+ const out=runStaffFixture(fixture);
+ for(const {state} of out.history.slice(8)){
+   expect(epoch(state)).toMatchObject({treble:transpose/12,bass:transpose/12});
+   for(const column of state.columns.filter(c=>c.id>=8)){
+     expect(column.parts.bass.midis).toEqual([55,59].map(m=>m+transpose));
+     expect(column.parts.treble.midis).toEqual([62,65].map(m=>m+transpose));
+   }
+ }
+ expect(out.events.every(e=>e.columnId<8)).toBe(true);
+});

@@ -1,12 +1,31 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {advanceStaffPlan} from '../../../__capabilities/music-notation/browser/model/staffPlanner.js';
+import {emptyFlow,pushOnsets,flowDurations} from '../../../__capabilities/music-notation/browser/model/noteFlow.js';
+import {emptyStaffPlan,advanceStaffPlan} from '../../../__capabilities/music-notation/browser/model/staffPlanner.js';
 import {makeStaffFixture,runStaffFixture} from '../../_fixtures/piano/staffRegisterFixtures.mjs';
 import {openStaffInkHarness} from './chord-staff-ink.mjs';
 export async function checkStaffRegisters() {
   const harness=await openStaffInkHarness(); let cases=0;
   try {
+    // Real flow promotion must not move a frozen staff's heads. Width and plan
+    // identity alone cannot catch an independently recalculated bass displacement.
+    let heldFlow=emptyFlow(),heldPlan=emptyStaffPlan();
+    const held=new Set([43,50,72,76,79]);
+    for(const at of [0,200,400,600]) {
+      heldFlow=pushOnsets(heldFlow,at===0?[...held]:[96],at,{held});
+      heldPlan=advanceStaffPlan(heldPlan,heldFlow).state;
+    }
+    assert.equal(heldPlan.columns[0].frozen,true);
+    const heldSnapshots=[];
+    for(const now of [600,900]) {
+      const durations=flowDurations(heldFlow,now);
+      const columns=heldFlow.columns.map((c,i)=>({...c,duration:durations[i],widthDuration:c.closeDuration??durations[i],staffPlan:heldPlan.columns.find(p=>p.id===c.id)}));
+      const result=await harness.measureCase({columns,aspect:3});cases++;
+      assert.deepEqual(result.pitchFailures,[]);assert.deepEqual(result.crossStaffInkHits,[]);assert.equal(result.clipped,false);
+      heldSnapshots.push(result.headPositions.filter(p=>p.id===0));
+    }
+    assert.deepEqual(heldSnapshots[1],heldSnapshots[0],'frozen heads move when a held eighth promotes to a half');
     const control=await harness.measureCase({columns:[[48,72]],positiveControl:true});
     assert(control.crossStaffInkHits.length>0,'ink detector must detect its positive control');
     const planned={id:0,originId:0,epoch:0,parts:{treble:{midis:[60],octave:-1,residualOctave:0},bass:{midis:[36],octave:-1,residualOctave:0}}};

@@ -277,6 +277,8 @@ The planner ranks lower/upper partitions and octave pairs -2..2 using staff-cent
 and ledger burden, continuity, reach and predicted clearance. Compact groups may
 contain both parts. It considers local whole-chord octave fitting before choosing
 membership, so acquisition does not flatten two remote ranges onto one staff.
+Recent nonempty part ranges survive temporary silence. Collapsing established parts
+when a compact chord still spans their learned boundary carries a continuity cost.
 
 At most eight distinct origins contribute evidence; plans retain at most sixteen
 columns. Acquisition needs four origins, three consecutive challenger votes, and
@@ -297,7 +299,10 @@ An inline clef marks each forward change, including an ordinary clef on return t
 zero. The left header describes the first visible epoch when older columns scroll
 away. Completed assignments/epochs are not reinterpreted; the newest two columns
 remain provisional while gesture/release refinement is possible. Sound, chord names,
-recording and grading always use original MIDI.
+recording and grading always use original MIDI. Cross-staff displacement reserves
+one conservative offset across eighth, quarter and half durations and both stem
+directions, so hold promotion does not move frozen heads; dense columns may use
+extra horizontal room.
 
 This assigns musical parts, not known physical hands. An isolated note and crossed
 or overlapping lines can be ambiguous. Display begins immediately with a conservative
@@ -309,7 +314,7 @@ sounding transpose because that library does not implement double-octave clefs.
 
 ## Harnesses (run after changing flow, assignment or engraving)
 
-- `node tests/_infrastructure/harnesses/chord-staff-register-check.mjs`: 1,201 focused
+- `node tests/_infrastructure/harnesses/chord-staff-register-check.mjs`: 1,203 focused
   key/aspect/duration/register cases, with positive controls for overlap, incorrect
   clef sign and a missing notehead. Pass an optional `rendered-columns.json` path
   to verify the exact captured replay moments with the same independent oracle. The browser reads actual drawn pitch and ink.

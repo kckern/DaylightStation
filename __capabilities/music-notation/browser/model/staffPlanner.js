@@ -23,10 +23,15 @@ export const emptyStaffPlan = () => ({
   lastOriginId: -1
 });
 const pairEqual = (a, b) => a.treble === b.treble && a.bass === b.bass;
-const partsOf = p => ({
-  treble: p?.parts.treble.midis ?? [],
-  bass: p?.parts.bass.midis ?? []
-});
+// A temporarily silent part retains its last observed range. Recovering this from
+// the bounded column history avoids storing a second, unbounded voice history.
+const contextOf = columns => {
+  const context = {treble: [], bass: []};
+  for (const column of columns) for (const staff of ['treble','bass']) {
+    if (column.parts[staff].midis.length) context[staff] = column.parts[staff].midis;
+  }
+  return context;
+};
 
 /**
  * Pure history owner. Original MIDI is never changed by notation decisions.
@@ -81,6 +86,7 @@ export function advanceStaffPlan(previous, flow, {
   if (fresh.length) {
     const ranked = rankStaffCandidates({
       columns: evidence,
+      previousParts: contextOf(previous.columns),
       octaves: current,
       keySignature
     });
@@ -138,7 +144,7 @@ export function advanceStaffPlan(previous, flow, {
         midis: inherited.parts[staff].midis.filter(m => c.midis.includes(m))
       }]));
     } else {
-      const context = partsOf(columns.at(-1) ?? previous.columns.at(-1));
+      const context = contextOf([...previous.columns, ...columns]);
       const ranked = rankStaffCandidates({
         columns: [c],
         previousParts: context,

@@ -7,6 +7,7 @@ export const STAFF_REGISTER_COSTS = Object.freeze({
   closeSplit: 1.5,
   continuity: 0.05,
   changedPart: 6,
+  missingPart: 12,
   registerChange: 0.8,
   independentChange: 3,
   residual: 8,
@@ -57,6 +58,12 @@ function assign(midis, octaves, previous = {}, cache) {
     const bp = partChoice(bass, 'bass', octaves.bass, previous.bass, cache),
       tp = partChoice(treble, 'treble', octaves.treble, previous.treble, cache);
     let cost = bp.cost + tp.cost;
+    // Silence alone is not evidence of a lost part. When notes still straddle
+    // the established ranges, collapsing both parts must pay continuity too.
+    if (previous.bass?.length && previous.treble?.length && (!bass.length || !treble.length)) {
+      const boundary = (mean(previous.bass) + mean(previous.treble)) / 2;
+      if (notes[0] < boundary && notes.at(-1) > boundary) cost += STAFF_REGISTER_COSTS.missingPart;
+    }
     if (bass.length && treble.length) {
       cost += STAFF_REGISTER_COSTS.closeSplit * Math.max(0, 7 - treble[0] + bass.at(-1));
       for (const b of bass) for (const t of treble) {
