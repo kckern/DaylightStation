@@ -413,13 +413,13 @@
 // screen the window grows with it; a fixed 64rem there left the key labels wider than their keys.
 .skyline-invaders__menu .skyline-invaders__window { width: min(100%, max(64rem, sgvw(74))); }
 .skyline-invaders__keys {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: calc(3 * var(--sg-px));
-  margin-top: sgvw(1.6);
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: calc(3 * var(--sg-px));
+  margin: 0;
 }
 .skyline-invaders__key {
   --key: var(--sg-b1); --key-shade: var(--sg-b1-shade);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: sgvw(.35);
-  min-height: 5.5rem; padding: .7rem .6rem; border: 0; border-radius: 0; font: inherit; text-align: center; cursor: pointer;
+  display: grid; grid-template-rows: auto auto 1fr; align-content: start; align-items: start; gap: max(4px, #{sgvw(.3)}); min-width: 0;
+  min-height: 48px; padding: .5rem .6rem; border: 0; border-radius: 0; font: inherit; text-align: center; cursor: pointer;
   color: var(--sg-ink); background: var(--key);
   box-shadow: inset 0 calc(-2 * var(--sg-px)) 0 0 var(--key-shade), sg-ring(var(--sg-ink));
   &[data-position="2"] { --key: var(--sg-b2); --key-shade: var(--sg-b2-shade); }
@@ -430,21 +430,22 @@
   &:active:not(:disabled) { transform: translateY(var(--sg-px)); }
   &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: calc(2 * var(--sg-px)); }
   &:disabled { --key: var(--sg-night-lift); --key-shade: var(--sg-night); color: var(--sg-mute); cursor: default; }
-  strong { font-size: var(--sg-text-m); font-weight: 900; line-height: 1; }
-  small { font-size: var(--sg-text-s); font-weight: 600; line-height: 1.05; }
+  strong { min-width: 0; min-height: 2.3em; overflow-wrap: anywhere; font-size: var(--sg-text-m); font-weight: 900; line-height: 1.15; }
+  small { font: inherit; }
 }
-.skyline-invaders__key-icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; }
+.skyline-invaders__key-icon { --sg-icon-px: var(--sg-px); display: grid; place-items: center; height: max(32px, #{sgvw(3)}); min-width: 0; svg { max-width: 100%; max-height: 100%; } }
+.skyline-invaders__key-hint { min-width: 0; min-height: 2.3em; overflow-wrap: anywhere; font-size: var(--sg-text-s); font-weight: 600; line-height: 1.15; }
 // Controls and Exit: their own smaller row under the screen's four keys, at the right.
 .skyline-invaders__keys--extra {
-  display: flex; justify-content: flex-end; margin-top: calc(2 * var(--sg-px));
-  .skyline-invaders__key { flex-direction: row; gap: .8rem; min-height: 50px; padding: .3rem 1.2rem; }
+  display: flex; justify-content: flex-end; min-height: 48px; margin-top: calc(2 * var(--sg-px));
+  .skyline-invaders__key { display: flex; align-items: center; gap: .8rem; min-height: 48px; padding: .3rem 1.2rem; }
+  .skyline-invaders__key strong { min-height: 0; }
+  .skyline-invaders__key-icon { height: 32px; }
+  .skyline-invaders__key-hint { display: none; }
 }
-// The wave list and the result are the tallest screens: with the extra key row
-// under them they give up most of the menu's top and bottom margin, so the
-// window and every key stay on the garage screen (1381 x 777).
-.skyline-invaders[data-screen="waves"] .skyline-invaders__menu, .skyline-invaders[data-screen="result"] .skyline-invaders__menu { padding-top: sgvw(.5); padding-bottom: sgvw(.5); }
-.skyline-invaders[data-screen="waves"] .skyline-invaders__keys, .skyline-invaders[data-screen="result"] .skyline-invaders__keys { margin-top: sgvw(.8); }
-.skyline-invaders[data-screen="waves"] .skyline-invaders__keys--extra, .skyline-invaders[data-screen="result"] .skyline-invaders__keys--extra { margin-top: calc(2 * var(--sg-px)); }
+@container skyline-menu (max-width: 760px) {
+  .skyline-invaders__keys:not(.skyline-invaders__keys--extra) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .skyline-invaders__people {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: calc(3 * var(--sg-px));
   margin-top: sgvw(1.4); max-height: 52vh; overflow-y: auto;
@@ -486,8 +487,6 @@
 .skyline-invaders[data-screen="method"] .skyline-invaders__menu { padding-top: sgvw(.6); padding-bottom: sgvw(.6); }
 .skyline-invaders[data-screen="method"] .skyline-invaders__window { width: min(100%, max(76rem, sgvw(90))); }
 .skyline-invaders[data-screen="method"] .skyline-menus { padding-top: sgvw(.8); padding-bottom: sgvw(.8); }
-.skyline-invaders[data-screen="method"] .skyline-invaders__keys { margin-top: sgvw(.6); }
-.skyline-invaders[data-screen="method"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
 .skyline-invaders__methods {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(2 * var(--sg-px)); margin-top: sgvw(.8);
 }
@@ -514,8 +513,6 @@
 .skyline-invaders[data-screen="sweep"] .skyline-invaders__menu { align-content: start; padding-top: sgvw(.8); }
 .skyline-invaders[data-screen="sweep"] .skyline-invaders__window { width: min(100%, max(76rem, sgvw(88))); }
 .skyline-invaders[data-screen="sweep"] .skyline-menus { padding-top: sgvw(1); padding-bottom: sgvw(1); }
-.skyline-invaders[data-screen="sweep"] .skyline-invaders__keys { margin-top: sgvw(.6); }
-.skyline-invaders[data-screen="sweep"] .skyline-invaders__key { min-height: 50px; padding: .3rem 1.2rem; flex-direction: row; }
 .skyline-invaders__sweep-body { display: flex; align-items: center; gap: sgvw(2); margin-top: sgvw(.6); }
 .skyline-invaders__sweep-body .skyline-invaders__demo { height: sgvw(9); min-height: 8rem; }
 .skyline-invaders__sweep-text { flex: 1; min-width: 0; display: grid; gap: sgvw(.6); h1 { margin: 0; } p { margin: 0; } }

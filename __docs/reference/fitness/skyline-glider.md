@@ -322,3 +322,5 @@ The lobby's flight list keeps a logical window of five rows that follows the bik
 Menu screens use `SkylineMenuLayout`, which fills the module's assigned host rather than imposing a viewport minimum height. Content scrolls when its five rows and notices do not fit; changing the cursor reveals that row inside the content region without scrolling the page or stealing focus. Resizing the host or finishing font loading also reveals the selection. Unrelated renders leave manual scrolling alone.
 
 The bike pad stays beside the content, or below it at host widths of 760 CSS px and less. A separate 56 px utility row keeps the Sound button clear of text and controls. Menu scale follows the host's width and height; flight/HUD sizing is independent.
+
+Bike controls reserve separate icon, two-line label, and two-line hint slots, including when the hint is empty. Long words wrap inside their button. Longer reasons can grow the pad inside its own overflow region on unusually short hosts; notices stay in the content scroller and never displace the controls.

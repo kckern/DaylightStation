@@ -15,7 +15,7 @@
     gap: max(8px, #{sgvw(.6)}); font-family: var(--sg-font); color: var(--sg-paper);
   }
   &[data-variant='bike'] &__grid {
-    grid-template-columns: minmax(0, 1fr) minmax(16rem, 33%);
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 44%);
     grid-template-rows: minmax(0, 1fr) 56px;
     grid-template-areas: 'content actions' 'utility utility';
   }

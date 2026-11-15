@@ -570,6 +570,8 @@ Menus use the shared `SkylineMenuLayout` from Skyline Glider. It fills the modul
 
 Menu scale uses the host's width and height, including when the game is embedded in a smaller module. The scene and in-round HUD keep their own sizing.
 
+Primary action keys reserve icon, two-line label, and two-line hint slots. Only the existing mat hint is drawn; other hints remain in the button title and empty sizing slots add no accessible words. A separate secondary-row track stays allocated even when Controls/Exit are absent. At host widths of 760 CSS px and less, primary keys form a 2 × 2 grid. Oversized external reasons may scroll the action region; the built-in action sets fit the tested host sizes without that fallback.
+
 ## Art
 
 Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skylineInvaders/sprites.js`, drawn by the shared `PixelSprite` renderer in the gaming capability. Colours are the `--si-*` tokens on `.skyline-invaders`.

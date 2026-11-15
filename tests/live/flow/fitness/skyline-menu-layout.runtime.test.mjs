@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectMenuGeometry, expectSelectedRowVisible, readMenuGeometry } from '../../../_lib/skylineLayoutAssertions.mjs';
+import { expectMenuGeometry, expectSelectedRowVisible, readMenuGeometry, readActionText, expectActionTextContained } from '../../../_lib/skylineLayoutAssertions.mjs';
 
 const sizes = [[1381, 777], [1920, 934], [1024, 600], [700, 1000]];
 export const scenario = (page, patch) => page.evaluate(p => window.__skylineLayout.setScenario(p), patch);
@@ -73,4 +73,58 @@ test('Tab reveals an offscreen row without document scrolling @shell-list', asyn
   const bounds = await last.boundingBox(), g = await readMenuGeometry(page);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(g.content.bottom + 1);
   expect(g.document).toEqual(g.viewport);
+});
+
+for (const [width, height] of sizes) {
+  test(`Retry checkpoint stays inside its button ${width}x${height} @actions`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await scenario(page, { game: 'glider', screen: 'crash' });
+    await expectActionTextContained(page); await expectMenuGeometry(page);
+  });
+  test(`open and locked waves keep action anchors ${width}x${height} @actions`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await scenario(page, { game: 'invaders', screen: 'waves', selectedIndex: 1 });
+    const before = await readActionText(page);
+    await expectActionTextContained(page);
+    await scenario(page, { selectedIndex: 2 });
+    await expectActionTextContained(page);
+    const after = await readActionText(page);
+    for (const b of before.buttons.filter(b => Number(b.position) <= 4)) {
+      const next = after.buttons.find(a => a.position === b.position);
+      for (const k of ['top', 'bottom', 'height']) expect(Math.abs(b.box[k] - next.box[k])).toBeLessThanOrEqual(1);
+      expect(Math.abs(b.label.top - next.label.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(b.hint.top - next.hint.top)).toBeLessThanOrEqual(1);
+    }
+  });
+  for (const game of ['glider', 'invaders']) test(`${game} saving error and saved keep action anchors ${width}x${height} @actions`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await scenario(page, { game, screen: 'result', selectedIndex: 13, saveStatus: 'saving' });
+    const before = await readActionText(page);
+    for (const saveStatus of ['error', 'saved']) {
+      await scenario(page, { saveStatus, notice: 'This attempt could not be saved. You can still choose what happens next. '.repeat(5) });
+      await expectActionTextContained(page); await expectMenuGeometry(page);
+      const after = await readActionText(page);
+      for (const b of before.buttons.filter(b => Number(b.position) <= 4)) {
+        const next = after.buttons.find(a => a.position === b.position);
+        expect(Math.abs(b.box.top - next.box.top)).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.label.top - next.label.top)).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.hint.top - next.hint.top)).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
+test('multiline reasons and notices do not cover controls under reduced motion @actions', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1381, height: 777 });
+  await scenario(page, { game: 'glider', screen: 'denied', notice: 'The school check is offline. A grown-up can unlock. '.repeat(5) });
+  await expectActionTextContained(page); await expectMenuGeometry(page);
+});
+test('multiline action text fits at DPR 1.39 @actions', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1381, height: 777 }, deviceScaleFactor: 1.39 });
+  const page = await context.newPage();
+  try {
+    await page.goto('/'); await page.locator('body[data-ready="true"]').waitFor();
+    await scenario(page, { game: 'glider', screen: 'crash' });
+    await expectActionTextContained(page);
+  } finally { await context.close(); }
 });

@@ -19,3 +19,10 @@ it('resolves an identity double press once instead of selecting the single rider
  vi.advanceTimersByTime(400);
  expect(onPress.mock.calls).toEqual([[1,'double']]);vi.useRealTimers();
 });
+it('reserves an empty hint slot without adding accessible words',()=>{
+ render(<SkylineControlPanel controls={[{position:1,label:'Retry checkpoint',icon:'↻',hint:''}]} onPress={vi.fn()}/>);
+ const button=screen.getByRole('button',{name:'1 Retry checkpoint'});
+ expect(button.querySelector('[data-hint-slot]')).toHaveAttribute('aria-hidden','true');
+ expect(button.querySelector('[data-hint-slot]')).toBeEmptyDOMElement();
+ expect(button.querySelector('.skyline-controls__label')).toHaveTextContent('Retry checkpoint');
+});

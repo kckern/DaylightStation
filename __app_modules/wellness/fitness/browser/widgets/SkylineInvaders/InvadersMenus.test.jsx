@@ -35,6 +35,13 @@ describe('InvadersTouchKeys', () => {
     expect(screen.getByRole('button', { name: /^Start/ }).querySelector('small').textContent).toBe('Or stomp the mat');
     expect(screen.getByRole('button', { name: 'Previous' }).querySelector('small')).toBeNull();
     expect(screen.getByRole('button', { name: 'Previous' }).getAttribute('title')).toBe('Pick a wave');
+    expect(screen.getByRole('button', { name: 'Previous' }).querySelector('[data-hint-slot]')).toHaveAttribute('aria-hidden', 'true');
+  });
+  it('reserves a secondary row without inventing actions when only primary keys are present', () => {
+    const {container}=render(<InvadersTouchKeys keys={[{position:1,label:'Resume',icon:'✓',hint:'Clock starts'}]} onPress={vi.fn()}/>);
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(container.querySelector('.skyline-invaders__keys--extra')).toBeEmptyDOMElement();
+    expect(screen.getByRole('button',{name:'Resume'})).toHaveAttribute('title','Clock starts');
   });
 });
 

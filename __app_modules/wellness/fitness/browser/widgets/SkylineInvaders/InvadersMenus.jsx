@@ -54,15 +54,15 @@ export function InvadersTouchKeys({ keys = [], onPress }) {
       key={key.position} type="button" className="skyline-invaders__key" data-position={key.position}
       disabled={key.disabled} title={key.hint || undefined} onClick={() => onPress?.(key.position)}
     >
-      {iconForSymbol(key.icon) && <span className="skyline-invaders__key-icon" aria-hidden="true"><PixelIcon name={iconForSymbol(key.icon)} /></span>}
-      <strong>{key.label}</strong>
-      {DRAWN_HINTS.includes(key.hint) && <small>{key.hint}</small>}
+      <span className="skyline-invaders__key-icon" aria-hidden="true">{iconForSymbol(key.icon) && <PixelIcon name={iconForSymbol(key.icon)} />}</span>
+      <strong className="skyline-invaders__key-label">{key.label}</strong>
+      <span className="skyline-invaders__key-hint" data-hint-slot aria-hidden={!DRAWN_HINTS.includes(key.hint)||undefined}>{DRAWN_HINTS.includes(key.hint) && <small>{key.hint}</small>}</span>
     </button>
   );
   return (
     <div className="skyline-invaders__keyboard" role="group" aria-label="Actions" data-testid="invaders-keys">
       {main.length > 0 && <div className="skyline-invaders__keys">{main.map(button)}</div>}
-      {extra.length > 0 && <div className="skyline-invaders__keys skyline-invaders__keys--extra">{extra.map(button)}</div>}
+      <div className="skyline-invaders__keys skyline-invaders__keys--extra">{extra.map(button)}</div>
     </div>
   );
 }
