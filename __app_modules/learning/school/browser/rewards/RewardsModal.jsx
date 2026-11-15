@@ -110,10 +110,16 @@ export default function RewardsModal({ learner, onClose, onOpenBank = null, idle
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const timer = useRef(null);
+  const lastActivityLog = useRef(null);
   const silver = useRewardRead(learnerId, readSilver, 'silver');
   const bank = useRewardRead(learnerId, readBank, 'bank');
   const gems = useRewardRead(learnerId, readGems, 'gems');
   const noteActivity = () => {
+    const now = Date.now();
+    if (lastActivityLog.current == null || now - lastActivityLog.current >= 30_000) {
+      lastActivityLog.current = now;
+      schoolLog.selfService('board.rewards-activity', { learnerId });
+    }
     clearTimeout(timer.current);
     if (idleMs > 0) timer.current = setTimeout(() => closeRef.current?.(), idleMs);
   };
@@ -128,6 +134,19 @@ export default function RewardsModal({ learner, onClose, onOpenBank = null, idle
     };
   }, []);
   useEffect(() => { noteActivity(); return () => clearTimeout(timer.current); }, [idleMs, learnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // Own Escape before AppContainer or the screen framework can act on it.
+    // Native cancel alone happens after their window-level keydown handlers.
+    const onKey = event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeRef.current?.();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
 
   const priced = silver.data?.learnerId === learnerId && Number.isFinite(silver.data?.totals?.silver)
     && !(silver.data.lines?.length > 0 && silver.data.lines.every(line => line.status === 'indeterminate'));

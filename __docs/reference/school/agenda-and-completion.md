@@ -307,6 +307,11 @@ viewport. The header and close button stay visible while content scrolls.
 Close, Escape, backdrop, Back to today, 45 seconds idle, or leaving the resting
 view dismisses it; focus returns to the chest when it is still mounted. Screen
 sleep and the resting-pane flip yield while rewards are open.
+Escape is consumed before the surrounding app/screen shortcuts can exit School.
+Human chest taps and modal activity emit `school.selfservice.board.rewards-*`
+events, so the Portal idle/deploy gate sees this interaction; activity logging
+is throttled to once per 30 seconds while its idle timer still resets on every
+gesture, key or scroll.
 
 Other `AgendaStatusBoard` consumers can explicitly retain the legacy coin/gem
 figures through `onOpenBank`/`onOpenGems`, by omitting `onOpenRewards`. Those

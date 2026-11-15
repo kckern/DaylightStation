@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RewardsModal from './RewardsModal.jsx';
 import { schoolApi } from '../schoolApi.js';
+import { schoolLog } from '../schoolLog.js';
 
 vi.mock('../schoolApi.js', () => ({ schoolApi: { earningsPreview: vi.fn(), economyBank: vi.fn(), gems: vi.fn() } }));
 
@@ -122,5 +123,33 @@ describe('RewardsModal', () => {
     expect(onClose).toHaveBeenCalledTimes(3);
     await act(async () => vi.advanceTimersByTimeAsync(100));
     expect(onClose).toHaveBeenCalledTimes(4);
+  });
+
+  it('owns Escape before the surrounding app can exit', () => {
+    const background = vi.fn();
+    window.addEventListener('keydown', background);
+    try {
+      const onClose = vi.fn();
+      render(<RewardsModal learner={alex} onClose={onClose} />);
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Close rewards' }), { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(background).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', background);
+    }
+  });
+
+  it('marks human rewards activity for the Portal idle gate without logging every gesture', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(schoolLog, 'selfService');
+    render(<RewardsModal learner={alex} onClose={vi.fn()} idleMs={0} />);
+    const activityCount = () => log.mock.calls.filter(([event]) => event === 'board.rewards-activity').length;
+    expect(activityCount()).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    fireEvent.pointerDown(screen.getByRole('dialog'));
+    expect(activityCount()).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(20_000));
+    fireEvent.pointerDown(screen.getByRole('dialog'));
+    expect(activityCount()).toBe(2);
   });
 });
