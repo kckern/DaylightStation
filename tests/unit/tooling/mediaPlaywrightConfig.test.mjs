@@ -13,6 +13,6 @@ describe('Playwright config: Media journeys', () => {
 
   it('keeps every other flow out of the media project and Media out of the default one', () => {
     const other = config.projects.find(({ name }) => name === 'default');
-    expect(other.testIgnore).toMatch(/live\/flow\/media/);
+    expect(other.testIgnore).toContain('live/flow/media/**');
   });
 });

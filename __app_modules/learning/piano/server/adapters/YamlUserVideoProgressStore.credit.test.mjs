@@ -54,7 +54,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'uvps-credit-'));
   piano = { videos: { completion_threshold_percent: 90, user_policies: { [ADULT]: { engagement_gate: false } }, practice: {} } };
 });
-afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { vi.useRealTimers(); fs.rmSync(root, { recursive: true, force: true }); });
 
 describe('progress store: session good-faith credit', () => {
   it('a sitting keeps the rubric version of its judgement next to the score', async () => {
@@ -188,9 +188,14 @@ describe('progress store: session good-faith credit', () => {
   });
 
   it('the sitting log upserts one row per sitting and lists newest first', async () => {
+    // Newest means updatedAt: filesystem writes need not advance the real clock.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-15T12:00:00.000Z'));
     const { store, sittingLog } = make({ judge: fakeJudge({ s1: 3 }) });
     store.record({ userId: USER, plexId: '100', percent: 40, engaged: true, practice: practice('s1', 10, 100), title: 'Lesson A' });
+    vi.setSystemTime(new Date('2026-11-15T12:00:01.000Z'));
     await post(store, { userId: USER, plexId: '100', percent: 95, engaged: true, practice: { ...practice('s1', 30, 600, { checkIns: 2, checkInsAnswered: 2, scaleCheckIns: 1 }), goodFaith: STATE }, title: 'Lesson A' });
+    vi.setSystemTime(new Date('2026-11-15T12:00:02.000Z'));
     store.record({ userId: USER, plexId: '200', percent: 95, engaged: true, practice: practice('s2', 0, 300), title: 'Lesson B' });
     const rows = sittingLog.list(USER, {});
     expect(rows.map((r) => r.sittingId)).toEqual(['s2', 's1']);
