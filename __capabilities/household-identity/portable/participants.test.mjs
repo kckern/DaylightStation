@@ -28,3 +28,17 @@ describe('shared participants', () => {
     expect((await createParticipantContext({scope:a.scope,participants:[...roster].reverse()})).context_id).not.toBe(a.context_id);
   });
 });
+
+it('rejects extra context fields and volatile avatar data with field paths', async () => {
+  const scope = {provider:'test',id:'p',revision:1};
+  const context = await createParticipantContext({scope,participants:roster});
+  const reject = (value, field) => expect(() => validateParticipantContext(value)).toThrowError(expect.objectContaining({field}));
+  reject({...context, timestamp:'today'}, 'timestamp');
+  reject({...context, scope:{...scope,url:'https://example.test'}}, 'scope.url');
+  reject({...context, participants:[{...roster[0],seats:['seat']}]}, 'participants.0.seats');
+  reject({...context, participants:[{...roster[0],display:{...roster[0].display,url:'https://example.test/?expires=1'}}]}, 'participants.0.display.url');
+  reject({...context, participants:[{...roster[0],display:{name:'User',avatar:{kind:'user-avatar',userId:'u',url:'https://example.test'}}}]}, 'participants.0.display.avatar.url');
+  await expect(createParticipantContext({scope,participants:[{...roster[0],seats:['seat']}]})).rejects.toMatchObject({field:'participants.0.seats'});
+  const withAvatar = {...roster[0],display:{name:'User',avatar:{kind:'user-avatar',userId:'u'}}};
+  expect((await createParticipantContext({scope,participants:[withAvatar]})).participants[0]).toEqual(withAvatar);
+});

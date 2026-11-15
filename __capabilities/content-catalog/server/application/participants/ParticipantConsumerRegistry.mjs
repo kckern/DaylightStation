@@ -33,11 +33,31 @@ export class ParticipantConsumerRegistry {
     if (!actions.includes(action) || !target || typeof target !== 'object') return null;
     const matches = [...this.#matchers.values()].filter(({matcher:m}) => m.action === action && m.kind === target.kind && (m.kind === 'app' ? m.appId === target.appId : m.source === target.source && Object.hasOwn(target.capabilities ?? {},m.capability)));
     if (matches.length > 1) fail('Ambiguous target capabilities');
-    if (!matches.length) return null;
+    if (target.kind === 'content') {
+      for (const [capability, descriptor] of Object.entries(target.capabilities ?? {})) {
+        if ((capability !== action && descriptor?.action !== action) || !Object.hasOwn(descriptor ?? {}, 'participantConsumer')) continue;
+        const declaration = descriptor.participantConsumer;
+        const match = matches.find(entry => entry.matcher.capability === capability);
+        if ((descriptor.action !== undefined && descriptor.action !== action) || !declaration || !match || declaration.id !== match.consumer.id || declaration.version !== match.consumer.version) fail('Declared consumer does not match target action');
+      }
+    }
+    if (!matches.length) {
+      // An app's declaration can cover a different action on the same app.
+      // Content declarations are action-specific capabilities, not ambient item state.
+      const declaration = target.kind === 'app' ? target.participantConsumer : undefined;
+      if (declaration !== undefined) {
+        if (!declaration || typeof declaration !== 'object') fail('Invalid declared consumer');
+        const installed = this.get(declaration);
+        if (!installed) fail('Declared consumer is unavailable');
+        const sibling = installed.targets.some(m => m.kind === target.kind && m.action !== action && (m.kind === 'app' ? m.appId === target.appId : m.source === target.source));
+        if (!sibling) fail('Declared consumer does not match target action');
+      }
+      return null;
+    }
     const {consumer,matcher} = matches[0];
     const declaration = matcher.kind === 'app' ? target.participantConsumer : target.capabilities[matcher.capability]?.participantConsumer;
-    if (!declaration) return null;
-    if (declaration.id !== consumer.id || declaration.version !== consumer.version) fail('Stale declared consumer');
+    if (declaration === undefined) return null;
+    if (!declaration || declaration.id !== consumer.id || declaration.version !== consumer.version) fail('Stale declared consumer');
     return consumer;
   }
   describe(input) { const consumer = this.resolve(input); return consumer ? consumer.describe(input.target) : null; }

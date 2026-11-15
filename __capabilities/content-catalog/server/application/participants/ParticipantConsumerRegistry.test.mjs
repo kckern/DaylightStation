@@ -21,3 +21,18 @@ describe('participant consumer registry', () => {
     expect(() => new ParticipantConsumerRegistry().register({consumer:consumer({findResumable:async()=>[]})})).toThrow();
   });
 });
+
+it('fails closed on explicit unknown or mismatched declarations but leaves sibling actions unbound', () => {
+  const registry = new ParticipantConsumerRegistry();
+  registry.register({consumer:consumer()});
+  registry.register({consumer:consumer({id:'app-consumer',targets:[{action:'open',kind:'app',appId:'known'}]})});
+  const app = {kind:'app',appId:'known',participantConsumer:{id:'app-consumer',version:1}};
+  expect(registry.resolve({action:'play',target:app})).toBeNull();
+  expect(() => registry.resolve({action:'open',target:{kind:'app',appId:'missing',participantConsumer:{id:'missing',version:1}}})).toThrow();
+  expect(() => registry.resolve({action:'open',target:{...app,appId:'wrong'}})).toThrow();
+  expect(() => registry.resolve({action:'display',target:{kind:'content',source:'other',capabilities:{display:{participantConsumer:{id:'missing',version:1}}}}})).toThrow();
+  expect(() => registry.resolve({action:'display',target:{...target,capabilities:{...target.capabilities,slides:{action:'display',participantConsumer:{id:'missing',version:1}}}}})).toThrow();
+  expect(() => registry.resolve({action:'display',target:{kind:'content',source:'other',capabilities:{slides:{action:'display',participantConsumer:{id:'missing',version:1}}}}})).toThrow();
+  expect(() => registry.resolve({action:'display',target:{...target,capabilities:{display:{action:'play',participantConsumer:{id:'test-display',version:1}}}}})).toThrow();
+  expect(registry.resolve({action:'play',target})).toBeNull();
+});
