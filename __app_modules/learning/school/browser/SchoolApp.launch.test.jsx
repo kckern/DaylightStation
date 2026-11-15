@@ -607,7 +607,8 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     // per-kid loads settle, which outran the 15s default on a loaded host.
     const slow = { timeout: 45000 };
     await screen.findByTestId('selfservice-keypad', {}, slow);
-    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ }, slow)));
+    const door = await screen.findByRole('button', { name: /^Alpha's bank/ }, slow);
+    await act(async () => { fireEvent.click(door); });
     return screen.findByTestId('bank-screen', {}, slow);
   }
 
@@ -656,7 +657,8 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
+    const door = await screen.findByRole('button', { name: /^Alpha's bank/ });
+    await act(async () => { fireEvent.click(door); });
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
 
     // Something else takes the panel (a reading shelf, here), then goes home.
@@ -682,7 +684,8 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
+    const door = await screen.findByRole('button', { name: /^Alpha's bank/ });
+    await act(async () => { fireEvent.click(door); });
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
     for (const d of '123456') {
       const key = screen.getByRole('button', { name: d });
