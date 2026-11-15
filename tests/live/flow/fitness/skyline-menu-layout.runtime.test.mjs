@@ -82,6 +82,29 @@ test('Tab reveals an offscreen row without document scrolling @shell-list', asyn
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(g.content.bottom + 1);
   expect(g.document).toEqual(g.viewport);
 });
+for(const game of ['glider','invaders'])test(`${game} changed text reveals the unchanged selected row @review-fix`,async({page})=>{
+  await page.setViewportSize({width:1024,height:600});
+  await scenario(page,{game,screen:game==='glider'?'flights':'waves',selectedIndex:13,longText:false});
+  await expectSelectedRowVisible(page);
+  await scenario(page,{longText:true});
+  await expectSelectedRowVisible(page);await expectMenuGeometry(page);
+  await page.locator('[data-skyline-scroll]').evaluate(e=>{e.scrollTop=0;});
+  await scenario(page,{notice:'Unrelated notice update'});
+  expect((await readMenuGeometry(page)).scrollTop).toBe(0);
+});
+for(const height of [400,500])test(`short touch host keeps readable non-overlapping content at 700x${height} @review-fix`,async({page})=>{
+  await scenario(page,{game:'invaders',screen:'waves',selectedIndex:13,host:{width:700,height}});
+  const g=await readMenuGeometry(page);
+  expect(g.content.height).toBeGreaterThanOrEqual(128);
+  expect(g.content.bottom).toBeLessThanOrEqual(g.actionRegion.top+1);
+  expect(g.actionRegion.bottom).toBeLessThanOrEqual(g.utility.top+1);
+  expect(await page.locator('.skyline-menu-layout__actions').evaluate(e=>e.scrollHeight>e.clientHeight)).toBe(true);
+  const exit=page.locator('.skyline-menu-layout__actions [data-position="6"]');await exit.focus();
+  const r=await exit.boundingBox(),after=await readMenuGeometry(page);
+  expect(r.y).toBeGreaterThanOrEqual(after.actionRegion.top-1);
+  expect(r.y+r.height).toBeLessThanOrEqual(after.actionRegion.bottom+1);
+  await expectMenuGeometry(page);
+});
 
 for (const [width, height] of sizes) {
   test(`Retry checkpoint stays inside its button ${width}x${height} @actions`, async ({ page }) => {

@@ -576,6 +576,8 @@ Primary action keys reserve icon, two-line label, and two-line hint slots. Only 
 
 The result screen reserves its primary row even during saving, when only Exit is drawn. Retry/Replay then appear without shifting the action area. Method, roster, and Sound screens retain a compact Back row.
 
+On short touch hosts, the layout keeps at least 128 px for content (bounded to 40% on very short hosts) and caps the action region to the remaining space. Actions then scroll inside their own region, including focus-revealing Exit, rather than overlapping content or pushing the utility row outside the host.
+
 Method tiles use three columns above 1100 CSS px of host width, two at 761–1100 px, and one at 760 px and less. “Yours” sits below the title, sharing its text column rather than squeezing it. Methods and people use the same content scroller; a keyboard-selected item is revealed without scrolling the document. Left/right still browse in the original linear order and wrap at either end; up/down do nothing on the method screen.
 
 Run the backend-free menu regression matrix (bundled fonts, Firefox and Chromium) with:

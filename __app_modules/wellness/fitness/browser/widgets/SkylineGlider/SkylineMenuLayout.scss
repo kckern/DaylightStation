@@ -8,11 +8,14 @@
   &__grid {
     @include sg-tokens;
     --sg-vw: min(1cqw, calc(16cqh / 9));
-    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto 56px;
+    --sg-menu-padding: max(12px, #{sgvw(1)});
+    --sg-menu-gap: max(8px, #{sgvw(.6)});
+    --sg-menu-content-min: min(128px, 40cqh);
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(var(--sg-menu-content-min), 1fr) minmax(0, auto) 56px;
     grid-template-areas: 'content' 'actions' 'utility';
     box-sizing: border-box; inline-size: 100%; block-size: 100%; min-block-size: 0;
-    padding: max(12px, #{sgvw(1)}) max(12px, #{sgvw(2)});
-    gap: max(8px, #{sgvw(.6)}); font-family: var(--sg-font); color: var(--sg-paper);
+    padding: var(--sg-menu-padding) max(12px, #{sgvw(2)});
+    gap: var(--sg-menu-gap); font-family: var(--sg-font); color: var(--sg-paper);
   }
   &[data-variant='bike'] &__grid {
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 44%);
@@ -27,6 +30,9 @@
   }
   &__content { grid-area: content; overflow-wrap: anywhere; }
   &__actions { grid-area: actions; }
+  &[data-variant='touch'] &__actions {
+    max-block-size: max(0px, calc(100cqh - 2 * var(--sg-menu-padding) - 2 * var(--sg-menu-gap) - 56px - var(--sg-menu-content-min)));
+  }
   &__utility { grid-area: utility; display: flex; justify-content: flex-end; align-items: center; min-inline-size: 0; }
   & &__utility button {
     position: static; margin: 0; width: 64px; height: 48px; min-width: 48px; min-height: 48px;

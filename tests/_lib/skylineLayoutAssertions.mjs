@@ -14,6 +14,7 @@ export async function readMenuGeometry(page) {
     };
     return {
       host: box(host), root: box(host.querySelector('main')), content: box(scroller), actionRegion: box(actions),
+      variant: document.querySelector('.skyline-menu-layout').dataset.variant,
       scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight,
       document: [document.documentElement.scrollWidth, document.documentElement.scrollHeight], viewport: [innerWidth, innerHeight],
       actions: [...actions.querySelectorAll('button')].map(e => ({ position: e.dataset.position, label: e.querySelector('strong')?.textContent || e.textContent, ...box(e) })),
@@ -38,6 +39,10 @@ export async function expectMenuGeometry(page) {
     expect(frame.box.left - frame.rim).toBeGreaterThanOrEqual(frame.owner.left - 1);
     expect(frame.box.right + frame.rim).toBeLessThanOrEqual(frame.owner.right + 1);
   }
+  if (g.variant === 'touch' || g.host.width <= 760) {
+    expect(g.content.bottom).toBeLessThanOrEqual(g.actionRegion.top + 1);
+  } else expect(g.content.right).toBeLessThanOrEqual(g.actionRegion.left + 1);
+  expect(Math.max(g.content.bottom, g.actionRegion.bottom)).toBeLessThanOrEqual(g.utility.top + 1);
 }
 export async function expectSelectedRowVisible(page) {
   await expect.poll(() => page.evaluate(() => {
