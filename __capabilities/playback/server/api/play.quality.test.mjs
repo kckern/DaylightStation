@@ -83,3 +83,27 @@ describe('explicit quality reaches the actual Plex URL', () => {
     expect(decisions).toHaveLength(0);
   });
 });
+
+
+describe('catalog completion descriptor through actual provider and play route', () => {
+  it.each(['', '?maxResolution=720&transcode=force'])('preserves catalog seconds and verified origins for direct and stream %s', async query => {
+    const { app } = setup();
+    const response = await request(app).get(`/api/v1/play/plex:42${query}`).expect(200);
+    expect(response.body.contentTimeline).toEqual({ expectedEndSeconds: 5895, provenance: 'catalog',
+      clipStartSeconds: null, clipEndSeconds: null, rendererStartSeconds: 0, contentStartSeconds: 0 });
+  });
+  it('does not adopt renderer duration or infer origins from an offset URL', () => {
+    const service = new PlayResponseService({});
+    const response = service.toPlayResponse({ id: 'other:42', mediaType: 'video', duration: 5895 }, null, {
+      descriptor: { mediaUrl: '/stream?offset=4320', duration: 4370 },
+    });
+    expect(response.contentTimeline).toMatchObject({ expectedEndSeconds: 5895, provenance: 'catalog',
+      rendererStartSeconds: null, contentStartSeconds: null });
+  });
+});
+
+
+it('leaves excluded audio descriptors on their legacy native clock', () => {
+  const response = new PlayResponseService({}).toPlayResponse({ id: 'files:audio', mediaType: 'audio', format: 'audio', duration: 300 });
+  expect(response).not.toHaveProperty('contentTimeline');
+});

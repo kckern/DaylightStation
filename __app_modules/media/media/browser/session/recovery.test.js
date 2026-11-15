@@ -116,13 +116,13 @@ describe('local playback problems (RELY.5a)', () => {
     expect(controller.problems.get()).toBeNull();
   });
 
-  it('a failure with nothing left reports failed with no replacement', () => {
+  it('a final finite movie failure stays held with no replacement', () => {
     const one = persisted({ state: 'paused', queue: { items: [entry(1, 'Arrival')], currentIndex: 0, upNextCount: 0 }, config: { shuffle: false, repeat: 'off', shader: null, volume: 40, playbackRate: 1 } });
     const { controller } = makeController({ persistedSnapshot: one });
     controller.transport.play();
     controller.onPlayerError({ message: 'resilience exhausted', code: 'resilience-exhausted' });
-    expect(controller.problems.get()).toEqual(expect.objectContaining({ kind: 'failed', replacement: null }));
-    expect(mediaLog.playbackProblem).toHaveBeenCalledWith(expect.objectContaining({ kind: 'failed', contentId: 'plex:1' }));
+    expect(controller.problems.get()).toEqual(expect.objectContaining({ kind: 'waiting', replacement: null }));
+    expect(mediaLog.playbackProblem).toHaveBeenCalledWith(expect.objectContaining({ kind: 'waiting', contentId: 'plex:1' }));
   });
 });
 

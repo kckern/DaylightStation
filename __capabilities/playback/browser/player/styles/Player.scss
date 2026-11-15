@@ -404,12 +404,34 @@
 
 // "Skip · OK" under the fixing note, on screens only. Quiet pill, legible from
 // the couch; the OK hint is what a D-pad remote presses.
+.player-held-quality {
+    position: absolute;
+    z-index: var(--player-layer-held-quality, 60);
+    inset: 5%;
+    margin: auto;
+    max-width: 36rem;
+    max-height: 90%;
+    overflow: auto;
+    padding: 1.5rem;
+    color: white;
+    background: #171717;
+    border: 2px solid #FFFFFF99;
+    border-radius: 1rem;
+    pointer-events: auto;
+}
+
+.loading-overlay .loading-recovery-actions {
+    display: flex;
+    gap: 1rem;
+}
+
 .loading-overlay .loading-skip{
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
     margin-top: 1rem;
     padding: 0.4rem 1.1rem;
+    background: #222222;
     border: 2px solid #FFFFFF55;
     border-radius: 999px;
     font-size: 1.1rem;
@@ -417,6 +439,17 @@
     color: #FFFFFFCC;
     cursor: pointer;
     pointer-events: auto;
+}
+.loading-overlay .loading-skip:focus-visible,
+.player-held-quality button:focus-visible,
+.player-held-quality select:focus-visible,
+.player-held-quality input:focus-visible {
+    outline: 3px solid white;
+    outline-offset: 4px;
+}
+.loading-overlay .loading-skip:disabled {
+    opacity: 0.65;
+    cursor: wait;
 }
 .loading-overlay .loading-skip__key{
     padding: 0.05rem 0.5rem;

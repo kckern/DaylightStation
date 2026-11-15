@@ -96,10 +96,52 @@ Use a ladder that preserves the movie and its timeline:
    successful manifest request or command acknowledgement proves neither.
 
 Steps 3–4 currently require an explicit control action. A future automatic app
-ladder needs rolling stall accounting (short healthy intervals must not erase
-repeated stalls), bounded replacements and a sustained healthy reset. It must
-respect explicit quality ceilings and `adaptive=false`. Parameter propagation
+ladder still needs evidence classification and guarded quality execution. Shared
+accounting now retains an owner/visit budget across short progress and quality
+adoption: three incident actions, six per rolling ten minutes, four-second
+minimum spacing, one action in flight, and a sixty-second continuous healthy
+reset that preserves rolling history. Explicit Retry also preserves that history.
+The future automatic ladder must respect explicit quality ceilings and `adaptive=false`. Parameter propagation
 and Plex adjustment alone do not implement that app policy.
+
+## Quality while a movie is held
+
+Recovery exhaustion keeps finite video on the current visit, including Media's
+60-second refused-source timeout. The held overlay exposes focusable Retry,
+Quality and Skip controls. Quality uses the same form and owner adoption as the
+normal controls, preserving queue, current position and deliberate pause. The
+Media bridge opens its existing Quality sheet; direct/screen Players render the
+shared form in place. The inline TV dialog has scoped D-pad navigation: arrows
+move focus, OK enters/leaves native value editing, and Back exits editing then
+closes the dialog. Apply and Close are reachable without a pointer; closing
+restores the held Quality action's focus. The shared form's desktop behavior is
+unchanged. An open direct/screen form rejects a superseded recovery
+target before changing the queue. Retry remains bounded by the rolling action
+cap and displays its remaining delay; it never replays a new Play command.
+Audio, live and continuous terminal behavior is unchanged.
+
+## Playback signal limits
+
+The player exposes `recoveryHealth` alongside its existing health fields. It
+samples native element observations every 500 ms using monotonic time; samples
+expire after 2 seconds. `contiguousRunwayMs` measures only the buffered range
+containing the playhead, divided by playback rate. A known gap yields zero;
+an absent or unreadable observation yields `null`.
+
+Clock progress and presentation progress are separate observations. Native
+`requestVideoFrameCallback` supplies submitted-frame evidence when supported;
+without that API, presentation progress remains `null`. Submitted frames do not
+prove the physical display showed them. Decoded and dropped counters remain
+available as diagnostics; increasing decoded counts alone cannot establish
+presentation progress. Dropped-frame ratios use counter deltas and stay unknown
+when either counter is unavailable or resets.
+
+Hidden intervals, scheduling gaps of 2 seconds or more, and the first sample on
+visibility return provide no progress or failure evidence. A subsequent fresh
+visible interval can establish progress again. Seeking, pause and stop provide
+no playing-progress credit. Consumers must check freshness and viewing intent
+before using these observations for automatic recovery or sustained success;
+the existing recovery ladder is still being migrated to this contract.
 
 ## HLS timeline and buffer units
 
@@ -113,6 +155,46 @@ Native HLS uses a full-timeline manifest at offset zero, then seeks after metada
 Starting an offset manifest can require fetching many synthetic placeholder
 segments before metadata becomes available. Preserve the existing renderer's
 seek strategy when replacing a stream.
+
+Catalog movie duration is preserved in `/play.contentTimeline.expectedEndSeconds`
+with `provenance: catalog`, separately from observed renderer `duration`.
+The provider's presentation descriptor supplies verified renderer and content
+origins. The current Plex descriptor supplies zero origins for originals,
+full-timeline DASH, and zero-offset HLS. A resume offset in a stream URL does
+not establish a relative timeline. A verified relative renderer maps its time
+as `nativeSeconds - rendererStartSeconds + contentStartSeconds`; these origins
+belong to its renderer generation.
+
+Native EOF, clip completion, and the at-duration watchdog pass one completion
+gate before marking ended, clearing recovery timers, or advancing. Configured
+clip ends use original content seconds and take precedence over catalog end.
+A terminal signal more than three seconds early enters the shared bounded
+recovery budget, then holds the movie with Retry, Quality, and explicit Skip.
+Known catalog end with unknown mapping holds as `timeline-unverified`. Retry
+is explicit; held playback does not spend more automatic recovery attempts.
+Accepted terminal signals complete once per visit, including repeat-one.
+Pause, play, and seek retain completion ownership for the current native node.
+A renderer replacement claim retires the prior terminal target; old-node
+callbacks stay rejected while a replacement resolves and after newer controls.
+Stop supersedes pending terminal events without spending a recovery attempt.
+Playing a stopped finite audio/video item starts a new visit through the
+existing renderer boundary, with a fresh native binding at zero or the authored
+clip start. The clip window survives a fresh full-item transport descriptor.
+Without a catalog or clip end, ordinary EOF remains available and records
+`completion-unverified`; this does not validate the whole film.
+
+Progress and durable play logs use mapped content seconds and catalog duration,
+so a renderer ending at 4,370 seconds of a 5,895-second movie reports 74.1%,
+not a completed watch. Video clip UI progress remains relative to the clip;
+its `contentSeconds` and durable resume logs remain in original movie seconds.
+Audio clips retain native track time for resume logs and use their configured
+clip window for UI progress and completion.
+Unknown mapping cannot publish a confirmed position or completed-watch log.
+Media and screen capture/Quality adoption prefer mapped content time and retain
+the prior confirmed position when mapping is unknown. The optional Player
+`getContentTime()` exposes this clock; legacy `getCurrentTime()` remains native.
+Provider-origin guarantees still require full-film verification on the target
+device; unit descriptor tests do not establish external stream behavior.
 
 A native-HLS workaround improved an incident where the encoder was ahead but
 three-second segment responses were held for six seconds. Several request and
@@ -140,3 +222,50 @@ construction, copyable-source enforcement, selected local/remote dispatch,
 receiver acknowledgements, stale targets, and a real PlayerBridge decoder
 replacement retaining a paused full-timeline position. They do not constitute
 production acceptance or measured stream-quality verification.
+
+## Fragment delivery observations
+
+VideoPlayer reports optional `onDeliveryObservation(observation)` callbacks
+through SinglePlayer and Player. DASH observations use actual media segment
+start/completion/abandon events; HLS uses fragment/part load, load failure, and
+abort events. Manifest, initialization, buffer-stall and health-probe events
+supply no fragment timing. Native HLS and original native video can recover
+without any delivery observations. A completed transfer or successful health
+probe does not establish healthy media playback or diagnose its root cause.
+
+Each request captures the full recovery target at start:
+`ownerId`, `visitId`, `intentRevision`, and `rendererGeneration`. The observation
+keeps that target, a binding-specific `requestId`, and increasing `sequence`.
+Unmatched starts, duplicate terminal events, superseded targets, and outgoing
+engine/source callbacks are discarded. Intent changes on a retained node do
+not recreate the engine for telemetry; new requests may capture the new intent.
+
+`normalizeDeliveryObservation(engine, event, context)` normalizes terminal
+fragment evidence. Context supplies the captured target, request ID, sequence,
+and `{wallMs, monotonicMs}` clock mapping. DASH runtime request dates map to
+browser monotonic milliseconds; HLS loading stats already use that clock.
+`requestStartMs`, `firstByteMs`, and `endMs` remain separate. Derived
+`firstByteDurationMs`, `transferDurationMs`, and `requestDurationMs` describe
+only observed active requests, never scheduler gaps. Missing fields stay null.
+The installed DASH runtime uses `endDate`; its synthesized first-byte fallback
+(equal to start time) is treated as unknown. Internal DASH retry timing describes
+the final attempt, with its retry count retained; earlier attempt timing and HTTP
+status are unavailable from these fragment events. HLS default zero timing
+fields are unknown. If HLS replaces loader stats after a key-gated start,
+unmatched attempt telemetry is discarded rather than assigned a new identity.
+
+The source-bound `createDeliveryObserver` adds
+`newlyDeliveredMediaSeconds`: the positive-byte completed interval union delta,
+separately for audio/video and each full target. Retries, repeated completions,
+and overlapping fragments cannot count an interval twice. Empty Plex warmup
+responses remain observable with zero bytes and zero credited media; missing
+bytes or interval values yield null credit. Failed and aborted requests credit
+zero. Intervals represent delivered media, not decoded or presented frames.
+Pathological histories beyond 512 disjoint intervals per kind retain unknown
+credit instead of forgetting intervals and double-counting them.
+
+Player emits sampled `playback.delivery-observation` summaries (at most twelve
+per minute). They contain hashed owner/visit keys, numeric generation/intent,
+request sequence, timing, byte/status/retry values and interval credit. They
+exclude source URLs, credentials and raw owner/visit tokens. Full target tokens
+remain inside the observation callback for owner validation.

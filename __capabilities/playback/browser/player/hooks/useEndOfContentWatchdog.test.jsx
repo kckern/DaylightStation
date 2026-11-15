@@ -147,4 +147,22 @@ describe('useEndOfContentWatchdog', () => {
     expect(onAdvanceA).not.toHaveBeenCalled();
     expect(onAdvanceB).toHaveBeenCalledTimes(1);
   });
+  it('guardsWatchdogCompletion before its one-shot bookkeeping and keeps rejected candidates armed', () => {
+    const el = makeFakeEl({ currentTime: 4370, duration: 4370, paused: true });
+    const onAdvance = vi.fn();
+    let accepted = false;
+    const onTerminalCandidate = vi.fn(() => ({ accepted }));
+    renderHook(() => useEndOfContentWatchdog({ mediaRef: { current: el }, sourceKey: 'movie',
+      onAdvance, onTerminalCandidate, idleMs: 3000 }));
+    act(() => el._fire('timeupdate'));
+    act(() => vi.advanceTimersByTime(3001));
+    expect(onTerminalCandidate).toHaveBeenCalledWith(expect.objectContaining({ reason: 'watchdog', nativeSeconds: 4370 }));
+    expect(onAdvance).not.toHaveBeenCalled();
+    accepted = true;
+    el.currentTime = 5895; el.duration = 5895;
+    act(() => el._fire('timeupdate'));
+    act(() => vi.advanceTimersByTime(3001));
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
 });

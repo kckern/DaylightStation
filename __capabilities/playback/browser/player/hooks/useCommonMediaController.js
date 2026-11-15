@@ -1,3 +1,5 @@
+import { toContentSeconds } from '../lib/recovery/contentTimeline.js';
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
@@ -25,6 +27,24 @@ import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { getRecoveryLedger } from '../lib/recoveryLedger.js';
 import { shouldArmAutoplay } from './shouldArmAutoplay.js';
+
+// UI clips use a relative clock; durable play logs always use original content seconds.
+function contentProgress(nativeSeconds, nativeDuration, meta, isVideo) {
+  const timeline = isVideo ? meta.contentTimeline : null;
+  const clipStart = meta.segment?.start ?? timeline?.clipStartSeconds ?? 0;
+  const clipEnd = meta.segment?.end ?? timeline?.clipEndSeconds;
+  const catalogEnd = timeline?.expectedEndSeconds;
+  // Audio clips retain their native clock; only video requires verified origins.
+  const knownEnd = isVideo && (Number.isFinite(catalogEnd) || Number.isFinite(clipEnd));
+  const mapped = toContentSeconds(nativeSeconds, timeline);
+  const contentSeconds = mapped ?? (knownEnd ? null : nativeSeconds);
+  const contentDuration = catalogEnd ?? nativeDuration;
+  const duration = Number.isFinite(clipEnd) ? clipEnd - clipStart : contentDuration;
+  const currentTime = contentSeconds === null ? null
+    : Number.isFinite(clipEnd) ? Math.max(0, contentSeconds - clipStart) : contentSeconds;
+  return { contentSeconds, contentDuration, currentTime, duration,
+    percent: currentTime === null ? null : getProgressPercent(currentTime, duration) };
+}
 
 // Lazy-init child logger for media controller diagnostics
 let _mcLogger;
@@ -54,6 +74,8 @@ export function useCommonMediaController({
   start = 0,
   playbackRate = 1,
   onEnd = () => {},
+  onTerminalCandidate,
+  recoveryHeld = false,
   onManualEnd = onEnd,
   onClear = () => {},
   isAudio = false,
@@ -74,6 +96,7 @@ export function useCommonMediaController({
   // resilienceBridge.playbackSessionKey) — scopes recovery-ledger accounting.
   // Falls back to assetId below for hosts that don't thread one.
   recoverySessionKey = null,
+  recoveryIdentity = null,
   // Remount context (Player.jsx's forceSinglePlayerRemount diagnostics, threaded
   // through resilienceBridge.remountDiagnostics). null on a normal, non-remount
   // load. Used to decide whether the rebuilt element should arm autoplay — see
@@ -104,6 +127,17 @@ export function useCommonMediaController({
   // Ledger scope: prefer the real playback session key; assetId keeps
   // accounting coherent for hosts without the resilience bridge.
   const recoveryScopeKey = recoverySessionKey || assetId || null;
+  const recoveryActionRef = useRef(null);
+  useEffect(() => {
+    if (!recoveryIdentity) return;
+    return recoveryIdentity.subscribe(target => {
+      const active = recoveryActionRef.current;
+      if (active && !sameRecoveryTarget(active.target, target)) {
+        getRecoveryLedger().completeAction(active);
+        recoveryActionRef.current = null;
+      }
+    });
+  }, [recoveryIdentity]);
   const recoveryMountIdRef = useRef(null);
   if (!recoveryMountIdRef.current) recoveryMountIdRef.current = `controller-mount-${++_controllerMountSeq}`;
 
@@ -157,6 +191,14 @@ export function useCommonMediaController({
   // parent render.
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
+  const terminalGateRef = useRef(onTerminalCandidate);
+  terminalGateRef.current = onTerminalCandidate;
+  const recoveryHeldRef = useRef(recoveryHeld);
+  recoveryHeldRef.current = recoveryHeld;
+  const terminalHandlerRef = useRef(null);
+  const terminalBindingRef = useRef(null);
+  const handleTerminalCandidate = useCallback(candidate => terminalHandlerRef.current?.(candidate)
+    ?? { accepted: false }, []);
 
   // Unique identity for this mount instance (used to scope the start-time guard)
   const mountIdRef = useRef(Symbol('mount'));
@@ -476,6 +518,7 @@ export function useCommonMediaController({
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
+    recoveryIdentity?.acceptUserIntent('seek');
     mediaEl.__seekSource = 'click';
     const rect = event.currentTarget.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
@@ -492,11 +535,24 @@ export function useCommonMediaController({
       duration,
       segment: segment ? { start: segStart, end: segEnd } : null
     });
-  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segEnd]);
+  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segEnd, recoveryIdentity]);
 
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
     getMediaEl,
+    controller: recoveryIdentity ? {
+      play: () => { recoveryIdentity.acceptUserIntent('play'); return getMediaEl()?.play?.(); },
+      pause: () => { recoveryIdentity.acceptUserIntent('pause'); return getMediaEl()?.pause?.(); },
+      toggle: () => {
+        const node = getMediaEl();
+        if (!node) return null;
+        recoveryIdentity.acceptUserIntent(node.paused ? 'play' : 'pause');
+        return node.paused ? node.play?.() : node.pause?.();
+      },
+      // The keyboard transport applies the native seek after this intent boundary.
+      seek: () => { recoveryIdentity.acceptUserIntent('seek'); },
+      seekRelative: () => { recoveryIdentity.acceptUserIntent('seek'); },
+    } : undefined,
     onEnd: onManualEnd,
     onClear,
     cycleThroughClasses,
@@ -700,7 +756,7 @@ export function useCommonMediaController({
 
   const scheduleStallDetection = useCallback(() => {
     const s = stallStateRef.current;
-    if (s.hasEnded) {
+    if (s.hasEnded || recoveryHeldRef.current) {
       return;
     }
     if (s.softTimer) {
@@ -726,13 +782,13 @@ export function useCommonMediaController({
       const s = stallStateRef.current;
       
       // If media element is gone or paused, stop checking
-      if (!mediaEl || mediaEl.paused) {
+      if (!mediaEl || mediaEl.paused || recoveryHeldRef.current) {
         clearTimers();
         return;
       }
       
       // Check if media has ended or is very close to end
-      if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+      if (s.hasEnded || (!terminalGateRef.current && (mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)))) {
         // Audit 2026-05-23 §2.2: when the guard activates due to the near-end
         // branch (not a legitimate ended event), the screens player is in the
         // stuck-at-duration failure mode. Emit a one-shot telemetry log so the
@@ -849,7 +905,7 @@ export function useCommonMediaController({
           s.hardTimer = null;
 
           // Don't attempt recovery if media has ended
-          if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
+          if (s.hasEnded || recoveryHeldRef.current || !mediaEl || (!terminalGateRef.current && (mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)))) {
             clearTimers();
             return;
           }
@@ -860,6 +916,13 @@ export function useCommonMediaController({
 
           const ledger = getRecoveryLedger();
           const fireStrategy = (strategy, method, gate) => {
+            const expected = recoveryIdentity?.getTarget();
+            const target = strategy === 'softReinit' ? recoveryIdentity?.beginRenderer(expected) : expected;
+            if (recoveryIdentity && !target) {
+              ledger.completeAction({ sessionKey: recoveryScopeKey, actionId: gate.actionId });
+              return false;
+            }
+            recoveryActionRef.current = { sessionKey: recoveryScopeKey, actionId: gate.actionId, target };
             s.lastStrategy = strategy;
             s.status = 'recovering';
             publishStallSnapshot();
@@ -961,7 +1024,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
-  }, [getMediaEl, clearTimers, assetId, dismissStallSuspicion, meta?.title, meta?.name, meta?.artist, meta?.album, meta?.grandparentTitle, meta?.parentTitle, publishStallSnapshot, recoveryScopeKey, nudgeRecovery, softReinitRecovery]);
+  }, [getMediaEl, clearTimers, assetId, dismissStallSuspicion, meta?.title, meta?.name, meta?.artist, meta?.album, meta?.grandparentTitle, meta?.parentTitle, publishStallSnapshot, recoveryScopeKey, recoveryIdentity, nudgeRecovery, softReinitRecovery]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -1004,9 +1067,9 @@ export function useCommonMediaController({
       s.sinceTs = null;
       s.status = 'monitoring';
       s.lastSuccessTs = Date.now();
-      // Controller-observed resume clears the shared ledger session (idempotent
-      // with useMediaResilience's progress-effect recordSuccess).
-      getRecoveryLedger().recordSuccess(recoveryScopeKey);
+      // Native progress completes only this actor's reservation; the incident owner observes sustained health.
+      if (recoveryActionRef.current) getRecoveryLedger().completeAction(recoveryActionRef.current);
+      recoveryActionRef.current = null;
       publishStallSnapshot();
       clearTimers();
       setIsStalled(false);
@@ -1024,10 +1087,12 @@ export function useCommonMediaController({
       const now = Date.now();
       lastUpdatedTimeRef.current = now;
       const diff = now - lastLoggedTimeRef.current;
-      const pct = getProgressPercent(mediaEl.currentTime || 0, mediaEl.duration || 0);
+      const progress = contentProgress(mediaEl.currentTime || 0, mediaEl.duration || 0, meta, isVideo);
+      if (progress.contentSeconds === null) return;
+      const pct = getProgressPercent(progress.contentSeconds, progress.contentDuration);
       if (diff > 10000 && parseFloat(pct) > 0 && !isAuxiliaryRef.current) {
         lastLoggedTimeRef.current = now;
-        const secs = mediaEl.currentTime || 0;
+        const secs = progress.contentSeconds;
         if (secs > 10) {
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
           await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null, ...(meta?.origin ? { origin: meta.origin } : {}) });
@@ -1037,11 +1102,12 @@ export function useCommonMediaController({
 
     const onTimeUpdate = () => {
       const rawTime = mediaEl.currentTime;
-      setSeconds(segDuration ? Math.max(0, rawTime - segStart) : rawTime);
+      const progress = contentProgress(rawTime, mediaEl.duration || 0, meta, isVideo);
+      if (progress.currentTime !== null) setSeconds(progress.currentTime);
       // Keep a sticky record of the last known good time
       lastPlaybackPosRef.current = mediaEl.currentTime || 0;
       // Persist last position per assetId across remounts
-      try { useCommonMediaController.__lastPosByKey[assetId] = lastPlaybackPosRef.current; } catch {}
+      try { if (progress.contentSeconds !== null) useCommonMediaController.__lastPosByKey[assetId] = progress.contentSeconds; } catch {}
       logProgress();
       const advanced = markProgress();
       const publishProgress = onProgressRef.current;
@@ -1049,13 +1115,13 @@ export function useCommonMediaController({
         const stallSnapshot = readStallState();
         const seekingNow = isSeekingRef.current;
         publishProgress({
-          currentTime: segDuration ? Math.max(0, mediaEl.currentTime - segStart) : (mediaEl.currentTime || 0),
-          duration: segDuration || (mediaEl.duration || 0),
+          currentTime: progress.currentTime,
+          contentSeconds: progress.contentSeconds,
+          nativeSeconds: rawTime,
+          duration: progress.duration,
           paused: mediaEl.paused,
           media: meta,
-          percent: segDuration
-            ? getProgressPercent(mediaEl.currentTime - segStart, segDuration)
-            : getProgressPercent(mediaEl.currentTime, mediaEl.duration),
+          percent: progress.percent,
           stalled: isStalled,
           isSeeking: seekingNow,
           // A fresh native `playing` event can be lost across a renderer
@@ -1069,63 +1135,59 @@ export function useCommonMediaController({
       }
 
       // Segment end detection — advance when playback reaches segment boundary
-      if (segEnd && mediaEl.currentTime >= segEnd) {
-        const s = stallStateRef.current;
-        s.hasEnded = true;
-        clearTimers();
-        if (s.isStalled) {
-          s.isStalled = false;
-          setIsStalled(false);
-        }
-        logProgress();
-        onEndRef.current?.();
-        return;
+      if (segEnd && progress.contentSeconds !== null && progress.contentSeconds >= segEnd) {
+        finishTerminal({ reason: 'clip-end' });
       }
     };
 
     const onDurationChange = () => {
-      const dur = segDuration || mediaEl.duration;
+      const dur = contentProgress(mediaEl.currentTime, mediaEl.duration, meta, isVideo).duration;
       setDuration(dur);
-      if (dur > 0) lastDurationRef.current = dur;
+      if (mediaEl.duration > 0) lastDurationRef.current = mediaEl.duration;
     };
 
-    const onEnded = () => {
-      getMediaEl();
-
-      // THE TERMINAL EVENT, AND IT WAS SILENT UNTIL 2026-08-28.
-      // `onEndRef.current?.()` below is what advances a queue or clears a
-      // single item, so this is the branch
-      // point for everything that happens after a story/track finishes — and it
-      // emitted nothing at all. A read-along played to its end on the
-      // living-room TV, the Player went away, and the only trace in the log
-      // store was an incidental shader resize. "Did the media actually end, or
-      // did something tear it down?" was unanswerable.
-      mcLog().info('playback.ended', {
-        assetId,
-        type,
-        seconds: Math.round(mediaEl.currentTime || 0),
-        duration: Math.round(mediaEl.duration || 0),
-      });
-
-      lastLoggedTimeRef.current = 0;
-      // Mark this asset as naturally ended so the unmount cleanup skips it
-      endedAssetRef.current = assetId;
-
-      // Immediately flag as ended to prevent any recovery attempts
-      const s = stallStateRef.current;
-      s.hasEnded = true;
-      
-      // Clear stall detection when track ends
-      clearTimers();
-      
-      if (s.isStalled) {
-        s.isStalled = false;
-        setIsStalled(false);
+    // Intent changes retain a committed native renderer. A generation-only
+    // renderer claim retires its target, even if the old node has not unmounted.
+    if (terminalBindingRef.current?.node !== mediaEl) {
+      terminalBindingRef.current = { node: mediaEl, target: recoveryIdentity?.getTarget() };
+    }
+    const terminalBinding = terminalBindingRef.current;
+    let active = true;
+    let observedTarget = recoveryIdentity?.getTarget();
+    const unsubscribeTerminalIntent = recoveryIdentity?.subscribe(target => {
+      const previous = observedTarget;
+      observedTarget = target;
+      if (active && terminalBindingRef.current === terminalBinding && getMediaEl() === mediaEl
+        && sameRecoveryTarget(terminalBinding.target, previous)
+        && target.ownerId === previous.ownerId && target.visitId === previous.visitId
+        && target.intentRevision === previous.intentRevision + 1
+        && target.rendererGeneration === previous.rendererGeneration + 1) {
+        terminalBinding.target = target;
       }
-      
+    });
+    const finishTerminal = ({ reason = 'native-ended' } = {}) => {
+      const s = stallStateRef.current;
+      if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl
+        || s.hasEnded || (recoveryIdentity && !sameRecoveryTarget(terminalBinding.target, recoveryIdentity.getTarget()))) {
+        return { accepted: false };
+      }
+      const result = terminalGateRef.current?.({ reason, nativeSeconds: mediaEl.currentTime, target: terminalBinding.target })
+        ?? { accepted: true };
+      // Rejection must precede EVERY terminal side effect, including progress logging.
+      if (result.accepted !== true) return result;
+      mcLog().info('playback.ended', { assetId, type, reason,
+        seconds: Math.round(mediaEl.currentTime || 0), duration: Math.round(mediaEl.duration || 0) });
+      lastLoggedTimeRef.current = 0;
+      endedAssetRef.current = assetId;
+      s.hasEnded = true;
+      clearTimers();
+      if (s.isStalled) { s.isStalled = false; setIsStalled(false); }
       logProgress();
       onEndRef.current?.();
+      return result;
     };
+    terminalHandlerRef.current = finishTerminal;
+    const onEnded = () => finishTerminal({ reason: 'native-ended' });
 
     // The play/seeked rate listener onLoadedMetadata attaches must die with
     // THIS effect run: a stale one resets a newer rate. Named here so the
@@ -1415,17 +1477,17 @@ export function useCommonMediaController({
       // state is interpreted as an in-flight user seek and can arm recovery.
       const publishProgress = onProgressRef.current;
       if (el && publishProgress) {
-        const currentTime = segDuration
-          ? Math.max(0, el.currentTime - segStart)
-          : (el.currentTime || 0);
-        const duration = segDuration || (el.duration || 0);
+        const progress = contentProgress(el.currentTime || 0, el.duration || 0, meta, isVideo);
+        const { currentTime, duration } = progress;
         const stallSnapshot = readStallState();
         publishProgress({
           currentTime,
+          contentSeconds: progress.contentSeconds,
+          nativeSeconds: el.currentTime,
           duration,
           paused: el.paused,
           media: meta,
-          percent: getProgressPercent(currentTime, duration),
+          percent: progress.percent,
           stalled: isStalled,
           isSeeking: false,
           playing: false,
@@ -1530,9 +1592,12 @@ export function useCommonMediaController({
     mediaEl.addEventListener('play', onResume);
 
     return () => {
+      active = false;
+      unsubscribeTerminalIntent?.();
       mediaEl.removeEventListener('timeupdate', onTimeUpdate);
       mediaEl.removeEventListener('durationchange', onDurationChange);
       mediaEl.removeEventListener('ended', onEnded);
+      if (terminalHandlerRef.current === finishTerminal) terminalHandlerRef.current = null;
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
       mediaEl.removeEventListener('waiting', onWaiting);
       mediaEl.removeEventListener('stalled', onStalled);
@@ -1548,7 +1613,7 @@ export function useCommonMediaController({
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
+  }, [playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation, recoveryIdentity]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -1591,9 +1656,10 @@ export function useCommonMediaController({
     const capturedMeta = meta;
     return () => {
       if (endedAssetRef.current === capturedAssetId) return; // onEnded already logged
-      const pos = lastPlaybackPosRef.current;
-      const dur = lastDurationRef.current;
-      if (!dur) return;
+      const progress = contentProgress(lastPlaybackPosRef.current, lastDurationRef.current, capturedMeta, isVideo);
+      const pos = progress.contentSeconds;
+      const dur = progress.contentDuration;
+      if (pos === null || !dur) return;
       const pct = getProgressPercent(pos, dur);
       if (parseFloat(pct) <= 0) return;
       // The 10s floor filters a scrub-through, but it is unreachable on media
@@ -1677,6 +1743,7 @@ export function useCommonMediaController({
     getMediaEl,
     getContainerEl,
     beginMountedPlaybackOperation,
-    cancelMountedPlaybackOperation
+    cancelMountedPlaybackOperation,
+    handleTerminalCandidate
   };
 }

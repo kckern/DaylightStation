@@ -453,10 +453,11 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const transportOp = payload?.command?.toLowerCase();
     // A photo slideshow has no media keyboard handler: a synthetic Tab never
     // reached it, so a remote Next did nothing (RQ-PLAY-12 needs "skip a
-    // photo"). Only a current IMAGE item takes this route; video/audio keep Tab.
+    // photo"). Images and held movies select the next queue visit directly.
     if (transportOp === 'skipnext') {
-      const current = (sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.())?.currentItem;
-      if (current?.format === 'image'
+      const snapshot = sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.();
+      const current = snapshot?.currentItem;
+      if ((current?.format === 'image' || snapshot?.meta?.problem?.target)
         && getPlayerQueueOpRegistry().dispatch({ op: 'skip-next', commandId: payload?.commandId })) {
         return;
       }
@@ -468,6 +469,16 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
           code: 'PLAYBACK_OWNER_UNAVAILABLE',
           error: 'No playback owner is available to select the previous queue item',
         });
+      }
+      return;
+    }
+    if (transportOp === 'retry') {
+      const onResult = result => getActionBus().emit('media:playback-applied', {
+        command: 'retry', commandId: payload.commandId,
+        ...(result ?? { ok: false, code: 'UNCONFIRMED', error: 'Playback owner did not report Retry admission' }),
+      });
+      if (!getPlayerQueueOpRegistry().dispatch({ op: 'retry', commandId: payload.commandId, target: payload.target, onResult })) {
+        onResult({ ok: false, code: 'PLAYBACK_OWNER_UNAVAILABLE', error: 'No playback owner is available to retry' });
       }
       return;
     }

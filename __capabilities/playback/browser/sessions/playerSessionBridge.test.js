@@ -823,3 +823,23 @@ describe('createRegistrySessionSource', () => {
     expect(ownerB.listenerCount()).toBe(0);
   });
 });
+
+
+describe('authoritative screen capture', () => {
+  it.each([
+    [{ expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 4320 }, 4370],
+    [{ expectedEndSeconds: 5895, provenance: 'catalog' }, 4320],
+  ])('captures verified content seconds and retains confirmed resume when mapping unknown %j', (contentTimeline, expected) => {
+    const item = { contentId: 'plex:42', format: 'video', seconds: 4320, duration: 5895, contentTimeline };
+    const registry = createPlayerSessionRegistry();
+    const handle = makeHandle({ el: { currentTime: 50, duration: 1575, paused: false }, time: 50,
+      meta: item, queueSnapshot: { items: [{ ...item, queueItemId: 'movie' }], currentIndex: 0, executionOrder: ['movie'] } });
+    const bridge = createPlayerSessionBridge({ getPlayerHandle: () => handle, registry });
+    bridge.start();
+    try {
+      const captured = bridge.queueController.capture('timeline-capture');
+      expect(captured.position).toBe(expected);
+      expect(captured.currentItem.contentTimeline.expectedEndSeconds).toBe(5895);
+    } finally { bridge.stop(); }
+  });
+});

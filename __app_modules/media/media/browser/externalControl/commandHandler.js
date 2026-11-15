@@ -49,8 +49,8 @@ export function applyCommandEnvelope(controller, envelope) {
     const { action, value } = params;
     const fn = controller.transport?.[action];
     if (typeof fn !== 'function') return { ok: false, reason: `unknown-transport-action:${action}` };
-    applyWithOrigin(controller, envelope.origin, () => fn(value));
-    return { ok: true };
+    const result = applyWithOrigin(controller, envelope.origin, () => fn(value));
+    return action === 'retry' ? (result ?? { ok: true }) : { ok: true };
   }
   if (command === 'queue') {
     if (params.op === 'item-action') {

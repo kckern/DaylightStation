@@ -3,7 +3,7 @@
 // attaches side effects (persistence, logging), and mounts the
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { createLocalSessionController } from "./LocalSessionController.js";
@@ -84,7 +84,17 @@ export function LocalSessionProvider({ children }) {
     return ctl;
   }, [clientId]);
 
-  useEffect(() => () => controller.detachers?.forEach((d) => d()), [controller]);
+  const recoveryLifecycleRef = useRef(null);
+  useEffect(() => {
+    const lifecycle = {};
+    recoveryLifecycleRef.current = { controller, lifecycle };
+    return () => {
+      controller.detachers?.forEach((d) => d());
+      queueMicrotask(() => {
+        if (recoveryLifecycleRef.current?.controller !== controller || recoveryLifecycleRef.current?.lifecycle === lifecycle) controller.disposeRecovery?.();
+      });
+    };
+  }, [controller]);
 
   const value = useMemo(() => ({ controller }), [controller]);
 

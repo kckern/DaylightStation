@@ -30,7 +30,7 @@ describe('usePlaybackHealth', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
   afterEach(() => vi.useRealTimers());
 
-  it('samples actual HLS decoded-frame progression as video health', () => {
+  it('retains HLS decoded-frame progression as diagnostics', () => {
     let total = 10;
     const el = makeFakeEl({ getVideoPlaybackQuality: () => ({ totalVideoFrames: total, droppedVideoFrames: 2 }) });
     const { result } = renderHook(() => usePlaybackHealth({ seconds: 0, getMediaEl: () => el, waitKey: 'hls', mediaType: 'hls_video' }));
@@ -204,5 +204,125 @@ describe('usePlaybackHealth — media element generation logging', () => {
       usePlaybackHealth({ seconds: 5, getMediaEl: () => plain, waitKey: 'k2', mediaType: 'video' })
     );
     expect(generations()[0].data.elSource).toBe('container');
+  });
+});
+
+describe('usePlaybackHealth — recovery evidence', () => {
+  beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  const buffered = (ranges) => ({ length: ranges.length, start: (i) => ranges[i][0], end: (i) => ranges[i][1] });
+  const frameElement = () => {
+    let nextId = 0;
+    const pending = new Map();
+    const el = makeFakeEl({
+      currentTime: 4, playbackRate: 2, buffered: buffered([[0, 10]]),
+      requestVideoFrameCallback: (callback) => { pending.set(++nextId, callback); return nextId; },
+      cancelVideoFrameCallback: (id) => pending.delete(id)
+    });
+    return { el, pending, submit: (presentedFrames) => {
+      const [id, callback] = pending.entries().next().value;
+      pending.delete(id);
+      callback(performance.now(), { presentedFrames, mediaTime: el.currentTime });
+    } };
+  };
+
+  it('reports a gap as zero runway and adjusts contiguous runway for playback rate', () => {
+    const el = makeFakeEl({ currentTime: 15, playbackRate: 1, buffered: buffered([[0, 10], [20, 30]]) });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'gap', mediaType: 'video' }));
+    expect(result.current.bufferRunwayMs).toBe(0);
+    expect(result.current.recoveryHealth.contiguousRunwayMs).toBe(0);
+    act(() => { el.currentTime = 4; el.playbackRate = 2; vi.advanceTimersByTime(500); });
+    expect(result.current.bufferRunwayMs).toBe(3000);
+    expect(result.current.recoveryHealth.contiguousRunwayMs).toBe(3000);
+  });
+
+  it('keeps decoded-frame diagnostics separate from unavailable presentation evidence', () => {
+    let total = 10;
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1, getVideoPlaybackQuality: () => ({ totalVideoFrames: total, droppedVideoFrames: total - 10 }) });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'decoded', mediaType: 'video' }));
+    act(() => { total = 20; el.currentTime = 4.5; vi.advanceTimersByTime(500); });
+    expect(result.current.frameInfo).toMatchObject({ total: 20, dropped: 10 });
+    expect(result.current.recoveryHealth).toMatchObject({ clockAdvancing: true, presentationAdvancing: null, droppedFrameRatio: 1 });
+    expect(result.current.isFrameAdvancing).toBeNull();
+  });
+
+  it('retains unknown dropped-frame evidence when a browser exposes only decoded frames', () => {
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1, webkitDecodedFrameCount: 10 });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'vendor', mediaType: 'video' }));
+    act(() => { el.webkitDecodedFrameCount = 20; vi.advanceTimersByTime(500); });
+    expect(result.current.frameInfo.dropped).toBeNull();
+    expect(result.current.recoveryHealth.droppedFrameRatio).toBeNull();
+  });
+
+  it('preserves an unreadable native buffer as unknown', () => {
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1, buffered: { length: 1, start: () => { throw new Error('detached'); } } });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'unknown-buffer', mediaType: 'video' }));
+    expect(result.current.recoveryHealth).toMatchObject({ contiguousRunwayMs: null, fresh: true });
+    expect(result.current.bufferRunwayMs).toBeNull();
+  });
+
+  it('preserves an unavailable playback rate as unknown', () => {
+    const el = makeFakeEl({ currentTime: 4, buffered: buffered([[0, 10]]) });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'unknown-rate', mediaType: 'video' }));
+    expect(result.current.recoveryHealth).toMatchObject({ playbackRate: null, contiguousRunwayMs: null, fresh: false });
+    expect(result.current.bufferRunwayMs).toBeNull();
+  });
+
+  it('uses clock progress for audio without inventing video presentation evidence', () => {
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1, buffered: buffered([[0, 10]]) });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'audio', mediaType: 'audio' }));
+    act(() => { el.currentTime = 4.5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth).toMatchObject({ fresh: true, clockAdvancing: true, presentationAdvancing: null, contiguousRunwayMs: 5500 });
+    expect(result.current.frameInfo.supported).toBe(false);
+  });
+
+  it('tracks submitted frames, cancels the old callback and ignores stale element callbacks', () => {
+    const first = frameElement();
+    const second = frameElement();
+    const holder = { current: first.el };
+    const { result, unmount } = renderHook(() => usePlaybackHealth({ getMediaEl: () => holder.current, waitKey: 'frames', mediaType: 'hls_video' }));
+    act(() => { first.submit(10); vi.advanceTimersByTime(500); });
+    act(() => { first.submit(20); first.el.currentTime = 4.5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth.presentationAdvancing).toBe(true);
+    expect(result.current.lastProgressSource).toBe('frame');
+    expect(result.current.lastProgressSeconds).toBe(4.5);
+    const lateCallback = first.pending.values().next().value;
+    act(() => { holder.current = second.el; vi.advanceTimersByTime(400); });
+    expect(first.pending.size).toBe(0);
+    expect(result.current.recoveryHealth.presentationAdvancing).toBeNull();
+    act(() => { lateCallback(performance.now(), { presentedFrames: 999 }); vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth.presentationAdvancing).toBe(false);
+    expect(first.pending.size).toBe(0);
+    unmount();
+    expect(second.pending.size).toBe(0);
+  });
+
+  it('marks hidden sampling and visibility return unknown until a fresh visible interval', () => {
+    let hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1 });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'visible', mediaType: 'video' }));
+    act(() => { el.currentTime = 4.5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth.clockAdvancing).toBe(true);
+    act(() => { hidden = true; document.dispatchEvent(new Event('visibilitychange')); el.currentTime = 5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth).toMatchObject({ visible: false, fresh: false, clockAdvancing: null });
+    expect(result.current.isAdvancing).toBe(false);
+    act(() => { hidden = false; document.dispatchEvent(new Event('visibilitychange')); });
+    expect(result.current.recoveryHealth).toMatchObject({ fresh: false, clockAdvancing: null });
+    act(() => { el.currentTime = 5.5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth).toMatchObject({ fresh: true, clockAdvancing: true });
+  });
+
+  it('does not classify a long event-loop suspension as progress or a video freeze', () => {
+    let monotonicMs = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs);
+    const el = makeFakeEl({ currentTime: 4, playbackRate: 1 });
+    const { result } = renderHook(() => usePlaybackHealth({ getMediaEl: () => el, waitKey: 'gap', mediaType: 'video' }));
+    act(() => { monotonicMs = 5000; el.currentTime = 9; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth).toMatchObject({ fresh: false, clockAdvancing: null, presentationAdvancing: null });
+    expect(result.current.isAdvancing).toBe(false);
+    act(() => { monotonicMs = 5500; el.currentTime = 9.5; vi.advanceTimersByTime(500); });
+    expect(result.current.recoveryHealth).toMatchObject({ fresh: true, clockAdvancing: true });
   });
 });

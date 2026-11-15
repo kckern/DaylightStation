@@ -33,7 +33,7 @@ export function LocalPlaybackOutcomes() {
         reason: problem.reason,
         item: problem.item,
         replacement: problem.replacement,
-        command: { kind: 'playNow', item: { contentId: problem.item?.contentId, title: problem.item?.title ?? null } },
+        command: { kind: problem.target ? 'retry' : 'playNow', ...(problem.target ? { target: problem.target } : {}), item: { contentId: problem.item?.contentId, title: problem.item?.title ?? null } },
       });
       if (problem.kind === 'waiting' || problem.kind === 'library-unavailable') heldRowRef.current = attemptId ?? null;
     };

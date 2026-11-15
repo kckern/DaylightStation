@@ -341,6 +341,7 @@ export function createRemoteSessionController({
       skipNext: () => transportPost('skipNext'),
       skipPrev: () => transportPost('skipPrev'),
       restartCurrent: () => transportPost('seekAbs', 0),
+      retry: (target) => transportPost('retry', target),
     },
 
     queue: {

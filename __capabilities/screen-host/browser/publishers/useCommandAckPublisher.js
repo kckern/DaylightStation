@@ -41,6 +41,7 @@ const PRESENCE_INTERVAL_MS = 10_000;
  * v1 contract: an ack is sent the moment a command-dispatch event with a
  * `commandId` is emitted on the ActionBus (i.e. "the command reached a
  * handler"). Downstream handlers do not yet report their own success/failure;
+ * Retry instead waits for media:playback-applied (owner admission), and
  * handlers that explicitly fail can emit `command-handler-error` with
  * `{ commandId, error, code? }` to produce an `ok: false` ack.
  *
@@ -110,6 +111,8 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
     const successHandler = (payload) => {
       const commandId = payload?.commandId;
       if (!commandId) return;
+      // Retry is acknowledged only after the guarded owner admission result.
+      if (payload?.command?.toLowerCase() === 'retry') return;
       // Add requires a durable queue-owner mutation. Its receipt event is not
       // success; ScreenActionHandler emits media:queue-op-applied only after the
       // owning Player exposes the appended item in its post-mutation snapshot.
@@ -180,6 +183,9 @@ export function useCommandAckPublisher({ deviceId, actionBus, handoffExecutor = 
     for (const evt of ACKED_COMMAND_EVENTS) {
       unsubs.push(bus.subscribe(evt, successHandler));
     }
+    unsubs.push(bus.subscribe('media:playback-applied', payload => {
+      if (payload?.command === 'retry') publishAck({ ...payload, ok: payload.ok === true });
+    }));
     unsubs.push(bus.subscribe('media:queue-op-applied', queueOpAppliedHandler));
     unsubs.push(bus.subscribe('media:session-control-applied', sessionControlAppliedHandler));
     unsubs.push(bus.subscribe('media:handoff', handoffUnsupportedHandler));

@@ -19,7 +19,7 @@
  * @property {() => Object|null} getSnapshot  current SessionSnapshot
  * @property {(fn: Function) => Function} subscribe  snapshot changes → unsubscribe
  * @property {{ get: () => {seconds: number, ts: number}, subscribe: (fn: Function) => Function }} position
- * @property {{ play, pause, stop, seekAbs, seekRel, skipNext, skipPrev, restartCurrent }} transport
+ * @property {{ play, pause, stop, seekAbs, seekRel, skipNext, skipPrev, restartCurrent, retry? }} transport — optional retry(target) repairs the held owner visit
  * @property {{ playNow, playNext, addUpNext, add, remove, reorder, jump, clear }} queue
  * @property {{ setShuffle, setRepeat, setShader, setVolume }} config
  * @property {{ setOverrides: (request: {contentId: string, queueItemId?: string, sessionId?: string, quality: Object}) => Promise<Object>|Object }} [quality] target-bound video quality replacement

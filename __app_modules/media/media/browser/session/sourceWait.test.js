@@ -12,12 +12,12 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 const entry = (id, title) => ({ queueItemId: `q-${id}`, contentId: `plex:${id}`, format: 'video', title, duration: 600, priority: 'queue', addedAt: '' });
-function controller(ids = [[1, 'Arrival'], [2, 'Nova'], [3, 'Dune']]) {
+function controller(ids = [[1, 'Arrival'], [2, 'Nova'], [3, 'Dune']], format = 'video') {
   const c = createLocalSessionController({
     clientId: 'c1',
     persistedSnapshot: {
-      sessionId: 's', state: 'paused', currentItem: { contentId: 'plex:1', format: 'video', title: 'Arrival', duration: 600 }, position: 0,
-      queue: { items: ids.map(([id, t]) => entry(id, t)), currentIndex: 0, upNextCount: 0 },
+      sessionId: 's', state: 'paused', currentItem: { contentId: 'plex:1', format, title: 'Arrival', duration: 600 }, position: 0,
+      queue: { items: ids.map(([id, t]) => ({ ...entry(id, t), format })), currentIndex: 0, upNextCount: 0 },
       config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
       meta: { ownerId: 'c1', updatedAt: '2026-10-01T00:00:00.000Z' },
     },
@@ -52,17 +52,17 @@ describe('local source wait', () => {
     expect(c.problems.get()).toBeNull();
   });
 
-  it('gives up on an unavailable file by skipping it with what plays instead', () => {
+  it('holds an unavailable movie after the bounded wait', () => {
     const c = controller();
     c.onPlayerSourceWait({ waiting: true, since: Date.now(), contentId: 'plex:1' });
     vi.advanceTimersByTime(60_000);
     c.onPlayerError({ message: 'Playback gave up (source-unavailable-gave-up)', code: 'source-unavailable-gave-up' });
-    expect(c.problems.get()).toEqual(expect.objectContaining({ kind: 'skipped', reason: 'file-unavailable', replacement: expect.objectContaining({ title: 'Nova' }) }));
-    expect(c.getSnapshot().currentItem.contentId).toBe('plex:2');
+    expect(c.problems.get()).toEqual(expect.objectContaining({ kind: 'waiting', reason: 'source-unavailable-gave-up', replacement: null }));
+    expect(c.getSnapshot().currentItem.contentId).toBe('plex:1');
   });
 
-  it('storm guard: when the next item also waits within 60 s, it holds with one library-unavailable problem instead of skipping on', () => {
-    const c = controller();
+  it('excluded audio storm guard: when the next item also waits within 60 s, it holds with one library-unavailable problem instead of skipping on', () => {
+    const c = controller(undefined, 'audio');
     c.onPlayerSourceWait({ waiting: true, since: Date.now(), contentId: 'plex:1' });
     vi.advanceTimersByTime(60_000);
     c.onPlayerError({ code: 'source-unavailable-gave-up' });
@@ -78,8 +78,8 @@ describe('local source wait', () => {
     expect(mediaLog.playbackProblem).toHaveBeenCalledWith(expect.objectContaining({ kind: 'library-unavailable' }));
   });
 
-  it('a wait more than 60 s after the last unavailable skip is an ordinary wait again', () => {
-    const c = controller();
+  it('excluded audio waits normally again after the storm window', () => {
+    const c = controller(undefined, 'audio');
     c.onPlayerSourceWait({ waiting: true, since: Date.now(), contentId: 'plex:1' });
     vi.advanceTimersByTime(60_000);
     c.onPlayerError({ code: 'source-unavailable-gave-up' });

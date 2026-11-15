@@ -391,6 +391,8 @@ describe('useMediaResilience — a mid-playback media error is a stuck cause', (
     // pinning is that it STOPS.
     installLedger();
     const el = makeFakeEl({
+      playbackRate: 1,
+      readyState: 4,
       currentTime: 1037.93,
       duration: 1399.11,
       paused: false,
@@ -414,7 +416,7 @@ describe('useMediaResilience — a mid-playback media error is a stuck cause', (
     // no third plan; the ledger's cooldown after attempt 1 is 4s, under the 6s
     // step, so it never delays a rung here. The margin is deliberate — this test
     // is about termination, not about the exact schedule.
-    for (let i = 0; i < 12; i += 1) { advance(STALL_JOLT_GRACE_MS + 1000); rerender(); }
+    for (let i = 0; i < 252; i += 1) { advance(500); rerender(); }
 
     expect(args.onExhausted).toHaveBeenCalled();
     expect(args.onExhausted.mock.calls[0][0]).toMatchObject({ reason: 'stall-jolt-exhausted' });
@@ -424,9 +426,28 @@ describe('useMediaResilience — a mid-playback media error is a stuck cause', (
     // the unbounded-retry bug, so freeze the counts and let more time pass.
     const reloadsAtExhaustion = args.onReload.mock.calls.length;
     const exhaustsAtExhaustion = args.onExhausted.mock.calls.length;
-    for (let i = 0; i < 12; i += 1) { advance(STALL_JOLT_GRACE_MS + 1000); rerender(); }
+    for (let i = 0; i < 252; i += 1) { advance(500); rerender(); }
 
     expect(args.onReload.mock.calls.length).toBe(reloadsAtExhaustion);
     expect(args.onExhausted.mock.calls.length).toBe(exhaustsAtExhaustion);
   });
+});
+
+it.each([[4370, true, 'video'], [5895, false, 'video'], [4370, false, 'audio']])('native end at %s uses catalog completion to decide whether recovery remains eligible (%s/%s)', (nativeEnd, recovers, format) => {
+  installLedger();
+  const el = makeFakeEl({ currentTime: nativeEnd - 1, duration: nativeEnd, paused: false });
+  const args = baseArgs({ getMediaEl: () => el, seconds: nativeEnd - 1,
+    meta: { mediaKey: 'movie-timeline', format, contentTimeline: { expectedEndSeconds: 5895, provenance: 'catalog',
+      rendererStartSeconds: 0, contentStartSeconds: 0 } } });
+  const hook = renderHook(() => useMediaResilience(args));
+  act(() => el._fire('playing'));
+  advance(1000);
+  act(() => {
+    el.currentTime = nativeEnd; el.ended = true;
+    el.error = { code: 2, message: 'terminal stream lost' }; el._fire('error'); el._fire('ended');
+  });
+  hook.rerender();
+  advance(STALL_JOLT_GRACE_MS + 100);
+  if (recovers) expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stall-jolt-refresh-url' }));
+  else expect(args.onReload).not.toHaveBeenCalled();
 });
