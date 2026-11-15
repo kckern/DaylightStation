@@ -166,6 +166,7 @@ export function IdentityProvider({ children }) {
       // Commit the grant: from here the outcome is decided. A cancel during the
       // hold (below) must resolve THIS, not a cancellation.
       const grantVerdict = { matched: true, userId: msg.userId };
+      const grantResolver = verdictResolverRef.current;
       pendingGrantRef.current = grantVerdict;
 
       // Hold the "Access Granted" confirmation while the chime plays, then resolve.
@@ -176,6 +177,9 @@ export function IdentityProvider({ children }) {
         if (done) return;
         done = true;
         clearTimeout(capTimer);
+        // A cancelled/replaced request owns a different resolver. Its old
+        // sound or safety timer must not touch the new request's grant.
+        if (verdictResolverRef.current !== grantResolver) return;
         pendingGrantRef.current = null;
         resolveVerdict(grantVerdict);
       };

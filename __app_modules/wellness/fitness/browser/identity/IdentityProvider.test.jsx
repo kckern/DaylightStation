@@ -38,9 +38,9 @@ vi.mock("../context/FitnessContext.jsx", () => {
 // Chime: resolve immediately so granted verdicts settle in tests. `autoDone`
 // is controllable so a test can HOLD the success screen (chime pending) and
 // exercise the cancel-during-granted race.
-const chime = vi.hoisted(() => ({ autoDone: true }));
+const chime = vi.hoisted(() => ({ autoDone: true, completions: [] }));
 vi.mock("../player/hooks/useGovernanceAudioDuck.js", () => ({
-  __esModule: true, playCueOnce: ({ onDone }) => { if (chime.autoDone) onDone?.(); return true; },
+  __esModule: true, playCueOnce: ({ onDone }) => { chime.completions.push(onDone); if (chime.autoDone) onDone?.(); return true; },
 }));
 vi.mock("../player/hooks/audioCuePlayer.js", () => ({
   __esModule: true, primeCueAudio: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock("../player/hooks/audioCuePlayer.js", () => ({
 
 function emit(payload) { act(() => { wsHandler({ topic: 'fitness.identity.detected', ...payload }); }); }
 function Probe({ onReady }) { const id = useIdentity(); onReady(id); return <div>{id.unlockState}</div>; }
-beforeEach(() => { emergency.phase = 'normal'; chime.autoDone = true; vi.clearAllMocks(); });
+beforeEach(() => { emergency.phase = 'normal'; chime.autoDone = true; chime.completions = []; vi.clearAllMocks(); });
 
 test('no modal + emergency-authorized → starts ceremony', () => {
   vi.useFakeTimers();
@@ -242,4 +242,35 @@ test('registerAdmin resolves only for an admin finger', async () => {
   // Admin finger → granted.
   emit({ matched: true, userId: 'kc', authz: { admin: true } });
   await waitFor(() => expect(verdict).toMatchObject({ matched: true, userId: 'kc' }));
+});
+
+// The old success sound may finish after its game has gone away. It must
+// never deliver that game's grant to a newly registered admin request.
+test.each(['chime', 'safety cap'])('an old %s cannot grant a later game after cancellation', async (completion) => {
+  vi.useFakeTimers();
+  try {
+    chime.autoDone = false;
+    let api;
+    render(<IdentityProvider><Probe onReady={(value) => { api = value; }} /></IdentityProvider>);
+    let first, second;
+    act(() => { api.registerAdmin('cycle_game').then((value) => { first = value; }); });
+    emit({ matched: true, userId: 'kc', authz: { admin: true } });
+    const finishFirst = chime.completions.at(-1);
+    act(() => { api.clearUnlock(); });
+    await act(async () => {});
+    expect(first).toEqual({ matched: true, userId: 'kc' });
+    act(() => { api.registerAdmin('skyline_glider').then((value) => { second = value; }); });
+    await act(async () => {
+      if (completion === 'chime') finishFirst();
+      else await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(second).toBeUndefined();
+    expect(api.unlockState).toBe('scanning');
+    emit({ matched: true, userId: 'another-parent', authz: { admin: true } });
+    await act(async () => { chime.completions.at(-1)(); });
+    expect(second).toEqual({ matched: true, userId: 'another-parent' });
+    act(() => { api.clearUnlock(); });
+  } finally {
+    vi.useRealTimers();
+  }
 });

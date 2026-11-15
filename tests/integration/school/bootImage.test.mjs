@@ -61,7 +61,7 @@ async function main() {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'school-bootimage-probe-'));
   const silent = { info() {}, warn() {}, error() {}, debug() {} };
   try {
-    const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
+    const { createSchoolLifecycle } = await import('./__app_modules/learning/school/server/composition/schoolLifecycle.mjs');
     const result = await createSchoolLifecycle({
       configService: {
         getHouseholdAppConfig: () => ({
