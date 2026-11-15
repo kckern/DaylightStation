@@ -205,8 +205,13 @@ section carries `backfill: {missedDays}` and `catchUp: true`.
   throws, errors, is unknowable (an FSRS deck keeps no history) or answers a
   `doneToday` that is not a boolean, the fold is dropped, nothing is offered,
   and `school.program-status.weekday-fold-failed` is logged with a reason.
-  Judged against today's plan, so a date-bound swap on a past weekday or an
-  enrollment that began mid-week without an `except` span can read as missed.
+  An unreadable historical day-bypass ledger also drops the fold, while
+  today's status retains its ordinary bypass-read fallback. A past enrichment
+  day with a declared `assignment` replacing this program's subject is withheld:
+  today's plan cannot establish that the program was assigned then. Without an
+  assignment, the tier's keep-list still applies. Other date-bound swaps outside
+  the household calendar, or an enrollment that began mid-week without an
+  `except` span, can still read as missed against today's plan.
 - **Where the child sees it.** The printed card's rail names the days
   (`Catch-up · Mon, Wed`). The status board draws each offer as an outlined
   optional disc outside the day's count, so the check mark and "done" stay as

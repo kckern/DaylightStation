@@ -76,6 +76,20 @@ describe('collectProgramStatuses — Saturday weekday fold', () => {
     expect(row.status.weekdays).toBeUndefined();
   });
 
+  it('a failed historical bypass lookup drops the fold while keeping today', async () => {
+    const l = launcher({ doneOn: WEEKDAYS.slice(1) });
+    const warnings = [];
+    const dayBypasses = { async activeFor({ studyDate }) {
+      if (studyDate === '2026-11-09') throw new Error('ledger unreadable');
+      return null;
+    } };
+    const [row] = await run(l, { dayBypasses, logger: { ...silent, warn: (event) => warnings.push(event) } });
+    expect(row.status.weekdays).toBeUndefined();
+    expect(row.status.doneToday).toBe(false);
+    expect(row.status.error).toBeUndefined();
+    expect(warnings).toContain('school.program-status.weekday-fold-failed');
+  });
+
   describe('fails closed on an unreadable replay', () => {
     const warns = [];
     const logger = { ...silent, warn: (event, data) => warns.push({ event, data }) };
