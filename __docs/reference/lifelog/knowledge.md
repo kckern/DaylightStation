@@ -1,6 +1,6 @@
 # Lifelog knowledge
 
-The knowledge subsystem records user-stated open loops with quoted journal evidence. It is separate from the read-only lifelog archive. The domain, recoverable persistence and read-only preview CLI are implemented in source. Runtime integration and production activation remain separate steps. No existing debrief uses the foundation until composition explicitly supplies the knowledge ports.
+The knowledge subsystem records user-stated open loops with quoted journal evidence. It is separate from the read-only lifelog archive. The domain, recoverable persistence, read-only preview CLI and bounded maintenance are implemented in source. Runtime integration and production activation remain separate steps. No existing debrief uses the foundation until composition explicitly supplies the knowledge ports.
 
 Only verified user messages can authorize committed proposals. Historical user rows can be inspected in a preview that cannot be committed. Quotes match their cited message after Unicode NFC and whitespace normalization; paraphrases are not evidence. The proposal vocabulary permits opening, touching and closing loops, candidate people and candidate aliases. It cannot delete, merge, confirm itself or loosen user pins. Sensitive proposals wait for review and default to never asking.
 
@@ -25,7 +25,9 @@ Verified journal receipts bind the configured sender and private conversation to
 an immutable message identity and a checksum of the original persisted content
 and timestamp. Edited receipts and ambiguous duplicate identities cannot
 silently become new evidence. Historical rows without trusted provenance can
-appear only in preview mode. Canonical source IDs survive sorting and restarts;
+appear only in preview mode. Older rows without a role field require an exact
+configured-sender match; known bot markers are excluded. They never authorize
+a committed proposal. Canonical source IDs survive sorting and restarts;
 the opaque cursor tracks consumed identities so equal-time arrivals during model
 work remain pending.
 
@@ -55,3 +57,36 @@ no directories, timers or state. There are no apply, send or rebuild modes.
 Real extraction previews require the separately approved historical range and
 precision review. All later runtime integration remains disabled until explicit
 production commissioning; source implementation does not activate it.
+
+
+## Maintenance and observations
+
+Maintenance reserves a durable per-user daily attempt before making a model
+call. Failures consume that attempt; a stale reservation is checked again, and
+configured lower caps remain effective. AI work runs outside serialized storage
+mutation. The final reduction re-reads original evidence and current pins, then
+commits only the captured cursor. New equal-time or out-of-order receipts arriving
+during AI work remain pending. Activation initializes a live cursor instead of
+implicitly backfilling historical journals.
+
+A verified entry of at least two hundred characters, or an attributed short
+answer, moves that user's durable deadline fifteen minutes forward. Restart
+restores that deadline. Entries over six hundred characters receive a plain
+acknowledgement and suppress the old conversational follow-up. A successful
+validated batch may echo at most three normal loop titles and a generic pending
+review count. Sensitive/person/alias candidates are never silently confirmed.
+Delivery claims precede network sends; uncertain prepared echoes are not resent
+on restart. Ready echoes older than the thirty-six-hour reply window expire.
+Callback token preparation and acknowledged-message binding belong to the
+separate delivery service. No maintenance task is scheduled until runtime
+composition explicitly enables an authorized writer.
+
+Metrics use acknowledged morning messages as the twelve-hour reply-rate
+denominator, deduplicating two questions in one message. Only attributed replies
+count. Reply-rate and fourteen-day resolution cohorts mature before entering
+denominators; absent observations produce null rates. Tap share includes
+attributed tap replies, while median reply length uses text/voice lengths.
+Drop-it and human review/back-off events are counted separately. Historical
+reports use completed ledger images when present, and identify the current-view
+fallback when no committed image exists. These are measurements, not claims that
+an improvement target has been achieved.

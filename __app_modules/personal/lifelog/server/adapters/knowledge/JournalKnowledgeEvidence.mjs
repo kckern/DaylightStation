@@ -31,7 +31,9 @@ export class JournalKnowledgeEvidence extends IKnowledgeEvidence {
     const known = new Map(), messages = [], rejected = [];
     const refuse = (sourceId, reason) => rejected.push({ sourceId, reason });
     for (const row of journal.messages) {
-      if (!row || row.role !== 'user') continue;
+      if (!row || row.role === 'assistant' || text(row.senderId) === 'bot') continue;
+      const historicalUser = preview && row.role == null && !row.source;
+      if (row.role !== 'user' && !historicalUser) continue;
       const source = row.source;
       const messageId = text(source?.messageId ?? row.id);
       const conversationId = text(source?.conversationId ?? (preview ? identity.conversationId : ''));

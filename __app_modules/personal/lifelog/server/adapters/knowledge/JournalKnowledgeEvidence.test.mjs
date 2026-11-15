@@ -58,3 +58,13 @@ describe('verified journal knowledge evidence',()=>{
   expect((await adapter.readUserMessages({...query,after:first.cursor})).messages).toHaveLength(1);
  });
 });
+it('previews historical rows without role only for the configured sender, never bots or commits',async()=>{
+ const legacy={id:'legacy-1',senderId,content:'I will submit the application Monday.',timestamp:'2026-11-02 09:30:00'};
+ const bot={...legacy,id:'legacy-bot',senderId:'bot',content:'An assistant suggestion.'};
+ const unknown={...legacy,id:'legacy-unknown',senderId:'unknown'};
+ const adapter=make([legacy,bot,unknown]);
+ expect((await adapter.readUserMessages(query)).messages).toEqual([]);
+ const result=await adapter.readUserMessages({...query,preview:true});
+ expect(result.messages).toHaveLength(1);expect(result.messages[0]).toMatchObject({messageId:'legacy-1',verified:false,previewOnly:true});
+ expect(result.rejected.some(row=>row.reason==='identity_mismatch')).toBe(true);
+});
