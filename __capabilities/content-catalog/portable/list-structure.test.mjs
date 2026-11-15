@@ -66,3 +66,15 @@ it('allocates child IDs for a new section and rejects malformed or duplicate ide
   expect(() => applyListEdit(original, { type: 'update-item', itemUid: 'a', changes: { uid: 'replacement' } }, { ids })).toThrowError(expect.objectContaining({ code: 'invalid_list_edit', field: 'changes.uid' }));
   expect(() => applyListEdit(original, { type: 'unknown' }, { ids })).toThrowError(expect.objectContaining({ code: 'invalid_list_edit', field: 'type' }));
 });
+
+it('rejects an array-valued child when adding a section', () => {
+  const list = { sections: [{ uid: 's', items: [] }] };
+  const edit = { type: 'add-section', section: { items: [[]] } };
+  const allocations = [];
+  const ids = { section: () => { allocations.push('section'); return 'new-s'; }, item: () => { allocations.push('item'); return 'new-i'; } };
+
+  expect(() => applyListEdit(list, edit, { ids })).toThrowError(
+    expect.objectContaining({ code: 'invalid_list_edit', field: 'item' })
+  );
+  expect(allocations).toEqual([]);
+});

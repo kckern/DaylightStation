@@ -31,7 +31,21 @@ export function applyListEdit(list, edit, { ids } = {}) {
     case 'delete-item': { const found = item(edit.itemUid); found.s.items.splice(found.index, 1); removedUids.push(found.value.uid); break; }
     case 'duplicate-item': { const found = item(edit.itemUid); const target = edit.toSectionUid == null ? found.s : section(edit.toSectionUid); const v = clone(found.value); v.uid = alloc('item', 'item.uid'); mapId(found.value.uid, v.uid); insert(target.items, v, edit.beforeUid); break; }
     case 'swap-items': { const a = item(edit.firstUid), b = item(edit.secondUid); if (a.value.uid === b.value.uid) fail('secondUid', 'Items must differ'); const av = a.value, bv = b.value; a.s.items[a.index] = { ...bv, uid: av.uid }; b.s.items[b.index] = { ...av, uid: bv.uid }; break; }
-    case 'add-section': { if (!edit.section || typeof edit.section !== 'object' || Array.isArray(edit.section)) fail('section', 'Section is required'); const s = clone(edit.section); s.uid = s.uid == null ? alloc('section', 'section.uid') : reserve(s.uid, 'section.uid'); if (s.items == null) s.items = []; if (!Array.isArray(s.items)) fail('section.items', 'Items must be an array'); for (const v of s.items) { if (!v || typeof v !== 'object') fail('item', 'Item is required'); v.uid = v.uid == null ? alloc('item', 'item.uid') : reserve(v.uid, 'item.uid'); } insert(next.sections, s, edit.beforeUid); break; }
+    case 'add-section': {
+      if (!edit.section || typeof edit.section !== 'object' || Array.isArray(edit.section)) fail('section', 'Section is required');
+      const s = clone(edit.section);
+      if (s.items == null) s.items = [];
+      if (!Array.isArray(s.items)) fail('section.items', 'Items must be an array');
+      for (const v of s.items) {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) fail('item', 'Item is required');
+      }
+      s.uid = s.uid == null ? alloc('section', 'section.uid') : reserve(s.uid, 'section.uid');
+      for (const v of s.items) {
+        v.uid = v.uid == null ? alloc('item', 'item.uid') : reserve(v.uid, 'item.uid');
+      }
+      insert(next.sections, s, edit.beforeUid);
+      break;
+    }
     case 'update-section': { changes(section(edit.sectionUid), edit.changes, ['uid', 'items']); break; }
     case 'move-section': { const s = section(edit.sectionUid); if (s.uid === edit.beforeUid) fail('beforeUid', 'Cannot move before itself'); next.sections.splice(next.sections.indexOf(s), 1); insert(next.sections, s, edit.beforeUid); break; }
     case 'delete-section': { const s = section(edit.sectionUid); next.sections.splice(next.sections.indexOf(s), 1); removedUids.push(s.uid, ...s.items.map(i => i.uid)); break; }
