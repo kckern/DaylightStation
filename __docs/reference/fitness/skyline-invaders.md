@@ -564,6 +564,12 @@ What the numbers mean. **Still-noise** is the spread of a gesture's signal over 
 
 The spike widget stays registered as the re-measurement tool: `/fitness/module/skyline_invaders_spike` (`widgets/SkylineInvadersSpike/`, events `skyline_invaders.spike.*`). It measures the old offset aim and one-step-one-shot firing; the pose-rate and mat-rate tests still apply.
 
+## Menu layout
+
+Menus use the shared `SkylineMenuLayout` from Skyline Glider. It fills the module's assigned host, with a named, keyboard-focusable content scroll region above the actions and a separate 56 px utility row for Sound. Content and long notices can scroll without moving actions or scrolling the page. The five-item wave window is logical: on a short host not all five rows need be visible at once. Selecting a wave reveals its row inside the content region; unrelated renders leave manual scrolling alone.
+
+Menu scale uses the host's width and height, including when the game is embedded in a smaller module. The scene and in-round HUD keep their own sizing.
+
 ## Art
 
 Threats, the cannon and buildings are original 11 × 8 pixel grids in `lib/skylineInvaders/sprites.js`, drawn by the shared `PixelSprite` renderer in the gaming capability. Colours are the `--si-*` tokens on `.skyline-invaders`.

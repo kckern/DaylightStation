@@ -1,0 +1,61 @@
+@use 'skyline-kit' as *;
+
+.skyline-menu-layout {
+  container: skyline-menu / size;
+  box-sizing: border-box;
+  inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0;
+  margin-inline: auto;
+  &__grid {
+    @include sg-tokens;
+    --sg-vw: min(1cqw, calc(16cqh / 9));
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto 56px;
+    grid-template-areas: 'content' 'actions' 'utility';
+    box-sizing: border-box; inline-size: 100%; block-size: 100%; min-block-size: 0;
+    padding: max(12px, #{sgvw(1)}) max(12px, #{sgvw(2)});
+    gap: max(8px, #{sgvw(.6)}); font-family: var(--sg-font); color: var(--sg-paper);
+  }
+  &[data-variant='bike'] &__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 33%);
+    grid-template-rows: minmax(0, 1fr) 56px;
+    grid-template-areas: 'content actions' 'utility utility';
+  }
+  &__content, &__actions {
+    box-sizing: border-box; min-inline-size: 0; min-block-size: 0;
+    padding: max(14px, calc(3 * var(--sg-px) + var(--sg-line)));
+    overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+  &__content { grid-area: content; overflow-wrap: anywhere; }
+  &__actions { grid-area: actions; }
+  &__utility { grid-area: utility; display: flex; justify-content: flex-end; align-items: center; min-inline-size: 0; }
+  & &__utility button {
+    position: static; margin: 0; width: 64px; height: 48px; min-width: 48px; min-height: 48px;
+  }
+  // MoreButton's base class is also used by the in-flight HUD.
+  &__utility .skyline-glider__more { position: static; margin: 0; width: 64px; height: 48px; }
+  .skyline-controls { inline-size: 100%; }
+  .skyline-menus { padding: sgvw(1.2) sgvw(1.6); }
+}
+
+// Only menu roots opt in; flight scenes and their HUD retain their own sizing.
+.skyline-menu-screen:has(> .skyline-menu-layout),
+.skyline-invaders[data-screen] .skyline-invaders__menu:has(> .skyline-menu-layout) {
+  display: block; box-sizing: border-box; padding: 0; min-height: 0; height: 100%; overflow: hidden;
+}
+.skyline-invaders .skyline-menu-layout__grid {
+  --sg-font: 'Press Start 2P', monospace;
+  --sg-text-s: max(22px, #{sgvw(1.35)});
+  --sg-text-xl: max(30px, #{sgvw(3.2)});
+}
+.skyline-invaders[data-screen] .skyline-menu-layout.skyline-invaders__window {
+  width: 100%; max-width: none; display: block;
+}
+
+@container skyline-menu (max-width: 760px) {
+  .skyline-menu-layout[data-variant='bike'] > .skyline-menu-layout__grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 44%) 56px;
+    grid-template-areas: 'content' 'actions' 'utility';
+  }
+  .skyline-menu-layout .skyline-controls button { min-height: 0; }
+}

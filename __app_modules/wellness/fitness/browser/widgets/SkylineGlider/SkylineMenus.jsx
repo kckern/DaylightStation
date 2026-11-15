@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import './SkylineMenus.scss';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon } from './SkylinePixelIcons.jsx';
@@ -22,8 +22,8 @@ export function crashReason(flight,entity){
 const ACT_STATUS={locked:['lock','Admin unlock required'],completed:['check','Completed']};
 const STAT_ICON={Bells:'bell',Targets:'target'};
 // The flight list shows a fixed window of rows that follows the cursor, so any
-// number of configured flights fits the screen and the chosen one is always in
-// view. The bike buttons move the cursor; nothing scrolls on its own.
+// number of configured flights stays reachable. The content region reveals
+// the chosen row when its five-row logical window is taller than the screen.
 export const FLIGHT_ROWS=5;
 export function flightWindow(count,index,rows=FLIGHT_ROWS){
  const start=Math.max(0,Math.min(Math.max(0,index)-Math.floor(rows/2),count-rows));
@@ -34,9 +34,31 @@ export function flightWindow(count,index,rows=FLIGHT_ROWS){
 // chosen one. Each row: { id, name, status, status_label (a node) }.
 export function FlightList({rows,selectedId,onSelect,testIdPrefix='skyline'}){
  const index=rows.findIndex(r=>r.id===selectedId),{start,end}=flightWindow(rows.length,index);
+ const listRef=useRef(null);
+ const windowKey=rows.slice(start,end).map(r=>r.id).join('|');
+ useLayoutEffect(()=>{
+  const list=listRef.current,scroller=list?.closest('[data-skyline-scroll]');
+  if(!scroller)return;
+  let active=true;
+  const reveal=()=>{
+   if(!active)return;
+   const row=list.querySelector('[aria-pressed="true"]');
+   if(!row)return;
+   const bounds=scroller.getBoundingClientRect(),r=row.getBoundingClientRect();
+   const inset=parseFloat(getComputedStyle(scroller).paddingTop)||0;
+   const top=bounds.top+inset,bottom=bounds.bottom-inset;
+   if(r.height>bottom-top||r.top<top)scroller.scrollTop+=r.top-top;
+   else if(r.bottom>bottom)scroller.scrollTop+=r.bottom-bottom;
+  };
+  reveal();
+  const observer=typeof ResizeObserver==='undefined'?null:new ResizeObserver(reveal);
+  observer?.observe(scroller);
+  document.fonts?.ready.then(reveal);
+  return ()=>{active=false;observer?.disconnect()};
+ },[selectedId,windowKey]);
  return <>
   <p className="skyline-menus__more" data-dir="up" data-testid={`${testIdPrefix}-more-above`} data-empty={start===0||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{start} more</p>
-  <div className="skyline-menus__options">{rows.slice(start,end).map(r=><button key={r.id} type="button" aria-pressed={r.id===selectedId} data-status={r.status} data-row={r.id} onClick={event=>{event.currentTarget.blur();onSelect?.(r.id)}}>
+  <div className="skyline-menus__options" ref={listRef}>{rows.slice(start,end).map(r=><button key={r.id} type="button" aria-pressed={r.id===selectedId} data-status={r.status} data-row={r.id} onClick={event=>{event.currentTarget.blur();onSelect?.(r.id)}}>
    <PixelIcon name="cursor" className="skyline-menus__cursor"/><strong>{r.name}</strong><small>{r.status_label}</small>
   </button>)}</div>
   <p className="skyline-menus__more" data-dir="down" data-testid={`${testIdPrefix}-more-below`} data-empty={end>=rows.length||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{rows.length-end} more</p>

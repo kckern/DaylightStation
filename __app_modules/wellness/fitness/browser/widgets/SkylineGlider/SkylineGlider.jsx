@@ -1,4 +1,5 @@
 import SkylineControlPanel from './SkylineControlPanel.jsx';
+import SkylineMenuLayout from './SkylineMenuLayout.jsx';
 import { announceGameAchievement } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import SkylineMenus, { crashReason } from './SkylineMenus.jsx';
 import { useSkylineController } from './useSkylineController.js';
@@ -733,11 +734,11 @@ export default function SkylineGlider() {
     log.info('skyline_glider.act.chosen', { riderId, actId: act.id, status: act.status });
   };
 
-  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-testid="skyline-glider-loading"><p className="skyline-glider__notice">Charting the course…</p><SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/></main>;
-  if(phase==='error')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen"><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
+  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen" data-testid="skyline-glider-loading"><SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/>}><p className="skyline-glider__notice">Charting the course…</p></SkylineMenuLayout></main>;
+  if(phase==='error')return <main className="skyline-glider skyline-glider--controls skyline-menu-screen"><SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>}><p className="skyline-glider__notice" data-tone="bad" role="alert">{error}</p></SkylineMenuLayout></main>;
   if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls skyline-menu-screen"
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
-    <div className="skyline-glider__menu">{!['settings','saving','loading'].includes(controller.state.phase)&&!(adminPromptOpen||actUnlock)&&<MoreButton onMore={openSoundSheet} className="skyline-glider__menu-more"/>}<SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch} sound={soundSheet}
+    <SkylineMenuLayout variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>} utility={!['settings','saving','loading'].includes(controller.state.phase)&&!(adminPromptOpen||actUnlock)&&<MoreButton onMore={openSoundSheet} className="skyline-glider__menu-more"/>}><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch} sound={soundSheet}
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
         // A zone with its own pickup sprite (coins) is not counted in bells.
@@ -748,8 +749,7 @@ export default function SkylineGlider() {
     {storageWarning&&<p className="skyline-glider__notice" role="status">{storageWarning}</p>}
     {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     {(adminPromptOpen||actUnlock)&&<p className="skyline-glider__notice">Present an admin badge to unlock. Bottom-left cancels.</p>}
-    </div>
-    <SkylineControlPanel controls={panelControls} onPress={pressPanel}/>
+    </SkylineMenuLayout>
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
   </main>;
   // One value for both the text and the key, so a banner replays exactly when its words change.

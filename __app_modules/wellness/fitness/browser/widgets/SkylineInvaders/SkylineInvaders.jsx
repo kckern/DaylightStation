@@ -10,6 +10,7 @@ import { useGamepadKeys } from '../../lib/useGamepadKeys.js';
 import { createSkylineAudio } from '../../lib/skylineGlider/skylineAudio.js';
 import { useGameVolume } from '../../nav/useGameVolume.js';
 import { MoreButton } from '../SkylineGlider/SkylineFlightHud.jsx';
+import SkylineMenuLayout from '../SkylineGlider/SkylineMenuLayout.jsx';
 import { driftAim, manualAim } from '../../lib/skylineInvaders/aimAssist.js';
 import { createGameState, stepFrame } from '../../lib/skylineInvaders/engine.js';
 import { GESTURES, GESTURE_INFO, isGesture } from '../../lib/skylineInvaders/gestures.js';
@@ -1126,9 +1127,9 @@ function SkylineInvadersGame({ onClose }) {
 
       {screen && (
         <section className="skyline-menu-screen skyline-invaders__menu" data-testid="skyline-invaders-menu" aria-label="Skyline Invaders menu">
-          {/* Bottom-right of the screen, clear of the window, the panel and the HUD. */}
-          {SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}
-          <div className="skyline-invaders__window">
+          <SkylineMenuLayout variant="touch" className="skyline-invaders__window"
+            actions={<InvadersTouchKeys keys={touchKeys} onPress={pressTouchKey} />}
+            utility={SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}>
             {screen === 'ready' && <InvadersReady tracker={tracker} poseStatus={poseStatus} waveName={level?.name || ''} gesture={gesture} mat={!!mat} onDone={() => begin()} />}
             {screen === 'result' && record && <InvadersResult record={record} saveStatus={saveState.status} level={roundRef.current?.level || level} />}
             {!['ready', 'result'].includes(screen) && (
@@ -1145,8 +1146,7 @@ function SkylineInvadersGame({ onClose }) {
                 }}
               />
             )}
-            <InvadersTouchKeys keys={touchKeys} onPress={pressTouchKey} />
-          </div>
+          </SkylineMenuLayout>
         </section>
       )}
 
