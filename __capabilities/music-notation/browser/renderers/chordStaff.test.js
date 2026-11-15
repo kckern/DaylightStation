@@ -976,3 +976,27 @@ describe('renderChordStaff — modifiers move with their notes', () => {
     expect(inkLeft).toBeLessThanOrEqual(keyEdge + 6 + 24);
   });
 });
+
+
+describe('cross-staff clearance', () => {
+  const points = p => (p.getAttribute('d').match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  const heads = (host, staff) => [...host.querySelectorAll(`g.vf-stavenote[data-staff=${staff}] .vf-notehead > path`)].map(p => {
+    const a=points(p); const xs=a.filter((_,i)=>i%2===0); const ys=a.filter((_,i)=>i%2===1);
+    return {x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys)};
+  });
+  it.each([[36,48,60,64,67],[24,36,60,64,67]])('separates octave-shifted bass heads from treble: %j', (...midis) => {
+    const host=document.createElement('div');
+    renderChordStaff(host,{columns:[{midis,duration:'q'}],keySignature:'C',aspect:560/210});
+    const t=heads(host,'treble'), b=heads(host,'bass');
+    expect(t.length).toBeGreaterThan(0); expect(b.length).toBeGreaterThan(0);
+    for(const a of t) for(const c of b)
+      expect(a.x0<c.x1 && c.x0<a.x1 && a.y0<c.y1 && c.y0<a.y1).toBe(false);
+  });
+  it('points a bass stem away from low treble ledger notes', () => {
+    const host=document.createElement('div');
+    renderChordStaff(host,{columns:[{midis:[43,48,53,60,64,67],duration:'q'}],aspect:560/210});
+    const stem=host.querySelector('g.vf-stavenote[data-staff=bass] .vf-stem path');
+    const ys=points(stem).filter((_,i)=>i%2===1);
+    expect(Math.min(...ys)).toBeGreaterThan(160);
+  });
+});

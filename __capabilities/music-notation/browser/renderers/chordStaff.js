@@ -19,7 +19,8 @@
 // signature doesn't already imply (in-key notes are clean; out-of-key get a
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
-import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter } from 'vexflow';
+import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter, TickContext } from 'vexflow';
+import { staffDisplacement, stemTouchesOther } from './staffInk.js';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
 import { columnRolls, DURATION_UNITS as UNITS } from "../model/noteFlow.js";
@@ -346,7 +347,7 @@ let measureStaves = null;
 const staffFor = (clef) => {
   measureStaves ||= {
     treble: new Stave(0, 0, 500).addClef('treble'),
-    bass: new Stave(0, 0, 500).addClef('bass'),
+    bass: new Stave(0, STAFF_GAP, 500).addClef('bass'),
   };
   return measureStaves[clef];
 };
@@ -406,7 +407,8 @@ function measureColumn(col, ks, durations) {
         .some((k, i, all) => all.some((o, j) => j !== i && o.line === k.line)));
       const extra = unison ? m.glyphPx : 0;
       const l = m.totalLeftPx + extra;
-      const r = Math.max(m.notePx + m.totalRightPx + extra, label);
+      const offset = staffDisplacement(tNote, bNote);
+      const r = Math.max(m.notePx + m.totalRightPx + extra, label) + offset;
       // autoLeft is the plain metric, as the single-chord display has always used it.
       if (stemDir === null) autoLeft = Math.max(autoLeft, m.totalLeftPx);
       left = Math.max(left, l);
@@ -655,6 +657,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // this display makes none.
   const durations = flow.map((c) => c.duration);
   const slotNotes = flow.map((c) => columnNotes(c.midis, ks, c.spelling, c.duration, c.arrivals));
+  slotNotes.forEach(({tNote,bNote}) => { tNote?.setStave(treble); bNote?.setStave(bass); });
+  const opposite = new Map(slotNotes.flatMap(({tNote,bNote}) => [[tNote,bNote],[bNote,tNote]]));
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
   const bassTickables = slotNotes.map((s, i) => s.bNote ?? new GhostNote({ duration: durations[i] }));
 
@@ -725,6 +729,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     return dir === 1 ? Math.max(...lines) > TOP_LINE : Math.min(...lines) < BOTTOM_LINE;
   };
   const intrudes = (note, dir) => {
+    if (stemTouchesOther(note, opposite.get(note), dir)) return true;
     const lines = note.getKeyProps().map((k) => k.line);
     return note.clef === 'treble'
       ? dir === -1 && Math.min(...lines) < LOWEST_TREBLE_DOWN
@@ -873,9 +878,15 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // the same tick contexts, so one setX aligns treble and bass.
   trebleTickables.forEach((t) => t.setStave(treble));
   bassTickables.forEach((t) => t.setStave(bass));
-  [trebleTickables, bassTickables].forEach((list) => list.forEach((t, i) => {
-    t.getTickContext?.()?.setX(xs[i]);
-  }));
+  // A separate tick context moves a staff's heads AND modifiers. x_shift alone
+  // leaves accidentals and roll strokes at the original shared-column position.
+  slotNotes.forEach(({tNote,bNote},i) => {
+    const offset = staffDisplacement(tNote,bNote);
+    for(const [note,dx] of [[trebleTickables[i],0],[bassTickables[i],offset]]) {
+      const tick = new TickContext().addTickable(note).preFormat();
+      tick.setX(xs[i]+dx);
+    }
+  });
 
   // The beams themselves, now that the notes sit where they will be drawn, and before
   // the draw so the notes suppress their own flags. Decorative — a beam failure must not
