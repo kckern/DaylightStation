@@ -49,7 +49,7 @@ export class PartyGamesParticipantConsumer {
  }
  async retainPrepared({prepared,viewer}) {
   host(viewer); const expected=prepared.setup.data.pinnedArtifacts; const definitionId=prepared.artifacts.find(x=>x.role==='definition_bundle')?.id;
-  const loaded=await this.definitions.getCurrent(definitionId);
+  let loaded; try { loaded=await this.definitions.getCurrent(definitionId); } catch (error) { throw Object.assign(new Error('Inspected definition could not be reread', {cause:error}),{code:'prepared_artifact_unavailable'}); }
   if (!loaded || loaded.hash!==expected.hash || JSON.stringify(loaded.artifacts)!==JSON.stringify(expected.artifacts)) fail('prepared_artifact_unavailable','Inspected definition is unavailable');
   let pinned; try { pinned=await this.definitions.pin(loaded); } catch (error) { throw Object.assign(new Error('Inspected artifacts could not be retained', {cause:error}),{code:'prepared_artifact_unavailable'}); }
   if (pinned.hash!==expected.hash || JSON.stringify(pinned.artifacts)!==JSON.stringify(expected.artifacts)) fail('prepared_artifact_unavailable','Retained definition differs from inspected artifacts');

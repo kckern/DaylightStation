@@ -69,3 +69,12 @@ it('reports unavailable when an inspected image can no longer be retained',async
  definitions.pin.mockRejectedValue(new Error('Clue image changed'));
  await expect(consumer.retainPrepared({prepared,viewer:{role:'host'}})).rejects.toMatchObject({code:'prepared_artifact_unavailable'});
 });
+
+it('reports unavailable without pinning when rereading the inspected definition fails',async()=>{
+ const {consumer,context,definitions}=await fixture();
+ const prepared=await consumer.prepareSetup({target,settings,participantContext:context,viewer:{role:'host'}});
+ const cause=new Error('content artifact charades:test is required');
+ definitions.getCurrent.mockRejectedValue(cause);
+ await expect(consumer.retainPrepared({prepared,viewer:{role:'host'}})).rejects.toMatchObject({code:'prepared_artifact_unavailable',cause});
+ expect(definitions.pin).not.toHaveBeenCalled();
+});
