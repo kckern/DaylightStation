@@ -94,3 +94,18 @@ describe('playScanCeremonyTone', () => {
     expect(playScanCeremonyTone('success')).toBe(false);
   });
 });
+it('parental suspension silences cached WebAudio without an HTML audio element',async()=>{
+  let silent=false;
+  const existing=installAudioContext();
+  const Original=globalThis.AudioContext;
+  globalThis.AudioContext=class extends Original{ suspend(){silent=true;return Promise.resolve();} };
+  const {suspendScanCeremonySound}=await import('./scanCeremonySound.js');
+  playScanCeremonyTone('success');expect(existing.oscillators.length).toBe(2);
+  await suspendScanCeremonySound();expect(silent).toBe(true);
+});
+it('a new deliberate cue after stop cannot revive notes frozen in an old context',async()=>{
+ const Original=globalThis.AudioContext;let contexts=0;
+ const nodes=()=>({frequency:{setValueAtTime(){}},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){return this;},start(){},stop(){}});
+ globalThis.AudioContext=class{constructor(){contexts++;this.currentTime=0;this.destination={};this.state='running';}createOscillator(){return nodes();}createGain(){return nodes();}suspend(){this.state='suspended';return Promise.resolve();}resume(){this.state='running';return Promise.resolve();}close(){this.state='closed';return Promise.resolve();}};
+ try{playScanCeremonyTone('success');const {suspendScanCeremonySound}=await import('./scanCeremonySound.js');await suspendScanCeremonySound();playScanCeremonyTone('success');expect(contexts).toBe(2);}finally{globalThis.AudioContext=Original;}
+});

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import {SupervisionHost} from '../../__app_modules/household/supervision/browser/index.js';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
@@ -178,11 +179,20 @@ function SetupCheck({ children }) {
   return children;
 }
 
+/** One boundary covers nested app, screen, bank and native-game routes alike. */
+function SupervisedRoutes({children}) {
+  const {pathname}=useLocation();
+  const screen=pathname.match(/^\/screens?\/[^/]+/);
+  const homeHref=screen?.[0]??(pathname.startsWith('/piano/')?pathname.split('/').slice(0,3).join('/'):pathname.startsWith('/fitness')?'/fitness':'/');
+  return <SupervisionHost routePath={pathname} homeHref={homeHref}>{children}</SupervisionHost>;
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <MantineProvider theme={createAppTheme(null)} defaultColorScheme="dark">
   <BrowserRouter>
     <SetupCheck>
       <React.Suspense fallback={null}>
+      <SupervisedRoutes>
       <Routes>
         <Route path="/" element={<AdminApp />} />
         <Route path="/home" element={<HomeApp />} />
@@ -238,6 +248,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/call" element={<CallApp />} />
         <Route path="*" element={<Blank />} />
       </Routes>
+      </SupervisedRoutes>
       </React.Suspense>
     </SetupCheck>
   </BrowserRouter>

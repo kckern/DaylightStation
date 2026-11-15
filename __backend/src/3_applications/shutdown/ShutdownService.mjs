@@ -3,13 +3,15 @@ import { composeKioskShutdownPush } from '#domains/shutdown/shutdownPush.mjs';
 
 /** Owns activation plus periodic disk→websocket→Portal reconciliation. */
 export class ShutdownService {
-  #repo; #notifier; #policy; #cue; #portal; #timezone; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null;
-  constructor({ repo, notifier, getPolicy, cue = null, portal = null, timezone = null, scheduleEvery = null, logger = console } = {}) {
+  #supervision; #repo; #notifier; #policy; #cue; #portal; #timezone; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null;
+  constructor({ repo, notifier, getPolicy, cue = null, portal = null, timezone = null, scheduleEvery = null, supervision = null, logger = console } = {}) {
     if (!repo || !notifier?.publishState || !getPolicy) throw new Error('ShutdownService: repo, notifier, getPolicy required');
+    this.#supervision = supervision;
     this.#repo = repo; this.#notifier = notifier; this.#policy = getPolicy; this.#cue = cue; this.#portal = portal; this.#timezone = timezone;
     this.#scheduleEvery = scheduleEvery; this.#logger = logger;
   }
   async activate({ readerId, tagUid, now = Date.now() }) {
+    if (this.#supervision) return this.#supervision.activate({readerId,tagUid,now});
     const policy = this.#policy() || {};
     const durationSeconds = Number(policy.durationSeconds) || 1800;
     const state = new ShutdownState({
@@ -34,7 +36,7 @@ export class ShutdownService {
     }
     return state;
   }
-  async status(target, now = Date.now()) { const { state, invalid } = await this.#repo.read(); return { locked: invalid || (!!state && state.isActive(now) && state.includes(target)), lockedUntil: state?.lockedUntil ?? null, invalid }; }
+  async status(target, now = Date.now()) { if (this.#supervision) return this.#supervision.status(target); const { state, invalid } = await this.#repo.read(); return { locked: invalid || (!!state && state.isActive(now) && state.includes(target)), lockedUntil: state?.lockedUntil ?? null, invalid }; }
   async #publish(state, type, invalid = false) {
     const payload = {
       type,
@@ -50,7 +52,9 @@ export class ShutdownService {
     const signature = JSON.stringify(desired);
     if (signature === this.#portalSignature) return;
     try {
-      await this.#portal?.setLockdown(desired);
+      if (!this.#portal) return;
+      const result = await this.#portal.setLockdown(desired);
+      if (result?.ok !== true) throw new Error('Portal key suppression is unavailable');
       this.#portalSignature = signature;
     } catch (error) {
       // Do not advance the signature: the five-second reconciler retries until
@@ -59,6 +63,7 @@ export class ShutdownService {
     }
   }
   async reconcile(now = Date.now()) {
+    if (this.#supervision) return this.#supervision.reconcile();
     const { state, invalid } = await this.#repo.read(); const active = state?.isActive(now) ? state : null;
     const signature = invalid ? 'invalid' : active ? `${active.lockedUntil}:${active.targets.join(',')}` : 'clear';
     if (signature !== this.#signature) {

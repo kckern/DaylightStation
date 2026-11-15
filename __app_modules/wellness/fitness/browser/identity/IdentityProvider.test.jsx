@@ -6,7 +6,7 @@ import { useIdentity } from "./useIdentity.js";
 
 const emergency = {
   phase: 'normal', lockedUntil: null, lockedBy: null,
-  commit: vi.fn(), abort: vi.fn(), release: vi.fn(), triggerCeremony: vi.fn(), dismissCeremony: vi.fn(),
+  adoptParentalStop: vi.fn(), commit: vi.fn(), abort: vi.fn(), release: vi.fn(), triggerCeremony: vi.fn(), dismissCeremony: vi.fn(),
 };
 vi.mock("../hooks/useEmergencyLockdown.js", () => ({
   __esModule: true,
@@ -242,6 +242,14 @@ test('registerAdmin resolves only for an admin finger', async () => {
   // Admin finger → granted.
   emit({ matched: true, userId: 'kc', authz: { admin: true } });
   await waitFor(() => expect(verdict).toMatchObject({ matched: true, userId: 'kc' }));
+});
+
+test('server parental stop bypasses any modal and cannot be cancelled by another scan', () => {
+  render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
+  emit({matched:true,userId:'kc',authz:{admin:true},parentalIntervention:{purpose:'stop',blocked:true}});
+  expect(emergency.adoptParentalStop).toHaveBeenCalledWith({actorId:'kc'});
+  expect(emergency.abort).not.toHaveBeenCalled();
+  expect(emergency.triggerCeremony).not.toHaveBeenCalled();
 });
 
 // The old success sound may finish after its game has gone away. It must

@@ -1,0 +1,84 @@
+import {describe,it,expect} from 'vitest';
+import {SupervisionAccessGuard} from '../../../../__app_modules/household/supervision/server/application/SupervisionAccessGuard.mjs';
+import {StopReconciler} from '../../../../__app_modules/household/supervision/server/application/StopReconciler.mjs';
+import {PortalKeysLockdownAdapter} from '../../../../__backend/src/1_adapters/devices/PortalKeysLockdownAdapter.mjs';
+import {KioskArcadeGameTerminator} from '../../../../__app_modules/games/arcade/server/adapters/devices/KioskArcadeGameTerminator.mjs';
+import {supervisionFixture,parent} from '../../../_fixtures/supervision/workflow.mjs';
+async function stopped(){const h=await supervisionFixture();await h.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'stop'});return h;}
+describe('independent native stop reconciliation',()=>{
+ it('native_session_ends_even_when_the_browser_is_not_foreground',async()=>{
+  const h=await stopped();let playing=true;
+  const adb={shell:async command=>{if(command.startsWith('pm path '))return {ok:true,output:'package:/data/app/native.apk'};if(command.startsWith('am force-stop ')){playing=false;return {ok:true};}return {ok:true,output:playing?'running':'stopped'};}};
+  const terminator=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map([['garage',adb]]),logger:{warn(){}}});
+  const consumer={deviceId:'garage',capability:'native',stop:input=>terminator.stop(input),release:async()=>({blocked:false})};
+  const reconciler=new StopReconciler({...h,consumers:[consumer]});
+  const result=await reconciler.reconcile({reason:'parent'});expect(playing).toBe(false);expect(result[0]).toMatchObject({deviceId:'garage',epoch:1,blocked:true,acknowledged:true});
+ });
+ it('resolved_skipped_is_not_acknowledged_and_has_no_false_last_contact',async()=>{
+  const h=await stopped();const reconciler=new StopReconciler({...h,consumers:[{deviceId:'portal',capability:'portal-keys',stop:async()=>({ok:false,skipped:true})}]});
+  expect((await reconciler.reconcile())[0]).toMatchObject({blocked:false,acknowledged:false,lastContactAt:null,error:'CAPABILITY_UNAVAILABLE'});
+  expect(await h.service.status({deviceId:'portal'})).toMatchObject({active:true});
+ });
+ it('offline_consumer_retries_same_epoch_on_return',async()=>{
+  const h=await stopped();let online=false,accepted=null;
+  const consumer={deviceId:'portal',capability:'portal-keys',stop:async command=>{if(!online)throw Error('offline');accepted=command;return {blocked:true};}};
+  const reconciler=new StopReconciler({...h,consumers:[consumer]});expect((await reconciler.reconcile())[0].acknowledged).toBe(false);
+  online=true;expect((await reconciler.reconcile())[0]).toMatchObject({blocked:true,epoch:1,acknowledged:true,lastContactAt:100000});expect(accepted).toMatchObject({epoch:1,commandRevision:2});
+ });
+ it('a late release acknowledgement cannot overwrite a newer stop',async()=>{
+  const h=await stopped();await h.service.release({actor:parent,scopeId:'child-public',idempotencyKey:'release'});
+  let finish,announce;const started=new Promise(resolve=>{announce=resolve;});
+  const consumer={deviceId:'portal',capability:'portal-keys',release:()=>{announce();return new Promise(resolve=>{finish=resolve;});},stop:async()=>({blocked:true})};
+  const reconciler=new StopReconciler({...h,consumers:[consumer]});const old=reconciler.reconcile();await started;
+  await h.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'new-stop'});const latest=await reconciler.reconcile();expect(latest[0]).toMatchObject({blocked:true,acknowledged:true,commandRevision:4});
+  finish({blocked:false});await old;expect(reconciler.health()[0]).toMatchObject({blocked:true,acknowledged:true,commandRevision:4});
+ });
+ it('Portal acknowledgement requires actual durable revision and key suppression state',async()=>{
+  let body;
+  const portal=new PortalKeysLockdownAdapter({baseUrl:'http://portal:8771',token:'secret',fetchFn:async(_url,options)=>{body=JSON.parse(options.body);return {ok:true,json:async()=>({lockdownActive:true,lockdownRevision:2,lockdownProtocolVersion:2})};},logger:{info(){}}});
+  expect(await portal.stop({deviceId:'portal',epoch:1,commandRevision:2})).toMatchObject({blocked:true});expect(body).toMatchObject({locked:true,lockedUntil:null,revision:2});
+  const old=new PortalKeysLockdownAdapter({baseUrl:'http://portal:8771',token:'secret',fetchFn:async()=>({ok:true,json:async()=>({lockdownActive:false})}),logger:{info(){}}});
+  await expect(old.stop({epoch:1,commandRevision:2})).rejects.toMatchObject({code:'NATIVE_ACK_MISMATCH'});
+ });
+ it('does not claim native termination when the process is still running',async()=>{
+  const native=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map([['garage',{shell:async command=>({ok:true,output:command.startsWith('pm path ')?'package:/data/app/native.apk':command.startsWith('am ')?'':'running'})}]]),logger:{warn(){}}});
+  expect(await native.stop({deviceId:'garage',epoch:1,commandRevision:2})).toMatchObject({blocked:false});
+ });
+});
+it('native release waits for every earlier kill, including overlapping old revisions',async()=>{
+ const pending=[];
+ const native=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map([['garage',{shell:command=>command.startsWith('am ')?new Promise(resolve=>pending.push(resolve)):Promise.resolve({ok:true,output:command.startsWith('pm path ')?'package:/data/app/native.apk':'stopped'})}]]),logger:{warn(){}}});
+ const first=native.stop({deviceId:'garage',commandRevision:2}),second=native.stop({deviceId:'garage',commandRevision:4});let released=false;
+ const release=native.release({deviceId:'garage',commandRevision:5}).then(()=>{released=true;});await new Promise(resolve=>setTimeout(resolve,0));pending[1]({ok:true});await second;await Promise.resolve();expect(released).toBe(false);
+ pending[0]({ok:true});await first;await release;expect(released).toBe(true);
+});
+
+it('unverified required enforcement cannot grant an otherwise normal-mode permit',async()=>{
+ const h=await supervisionFixture();let ready=false;
+ const consumer={deviceId:'portal',capability:'portal-keys',release:async()=>ready?{blocked:false}:{ok:false,skipped:true}};
+ const reconciler=new StopReconciler({...h,consumers:[consumer]});const guard=new SupervisionAccessGuard({...h,enforcementReady:context=>reconciler.isReady(context)});
+ await reconciler.reconcile();await expect(guard.authorize({deviceId:'portal',activityId:'school:workspace'})).rejects.toMatchObject({status:403});
+ ready=true;await reconciler.reconcile();expect(await guard.authorize({deviceId:'portal',activityId:'school:workspace'})).toMatchObject({expiresAt:105000});
+});
+
+it('reconciles immediately after durable intent and on boot, with bounded scheduled retry',async()=>{
+ const {createSupervisionModule}=await import('../../../../__app_modules/household/supervision/server/composition.mjs');
+ const h=await supervisionFixture();const commands=[];let tick,interval,cancelled=false;
+ const consumer={deviceId:'portal',capability:'portal-keys',stop:async command=>{commands.push(['stop',command.commandRevision]);return {blocked:true};},release:async command=>{commands.push(['release',command.commandRevision]);return {blocked:false};}};
+ const module=await createSupervisionModule({...h,scopes:{'child-public':['portal']},consumers:[consumer],scheduleEvery:(ms,callback)=>{interval=ms;tick=callback;return ()=>{cancelled=true;};},authenticatedParent:async()=>parent,resolveAccessContext:async()=>({deviceId:'portal',activityId:'school:workspace'})});
+ await new Promise(resolve=>setTimeout(resolve,0));expect(commands).toContainEqual(['release',1]);expect(interval).toBeLessThanOrEqual(5000);
+ await module.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'immediate'});
+ await new Promise(resolve=>setTimeout(resolve,0));expect(commands).toContainEqual(['stop',2]);
+ commands.length=0;await tick();await new Promise(resolve=>setTimeout(resolve,0));expect(commands).toContainEqual(['stop',2]);
+ module.dispose();expect(cancelled).toBe(true);
+});
+it('an old enforcement acknowledgement cannot issue an access lease after contact is lost',async()=>{
+ const h=await supervisionFixture();const reconciler=new StopReconciler({...h,consumers:[{deviceId:'portal',capability:'portal-keys',release:async()=>({blocked:false})}]});
+ await reconciler.reconcile();expect(await reconciler.isReady({deviceId:'portal'})).toBe(true);h.setNow(105001);expect(await reconciler.isReady({deviceId:'portal'})).toBe(false);
+});
+it('normal-mode native readiness requires a reachable installed package, not an empty release ACK',async()=>{
+ const offline=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map(),logger:{warn(){}}});
+ await expect(offline.release({deviceId:'garage'})).rejects.toThrow();
+ const missing=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map([['garage',{shell:async()=>({ok:true,output:''})}]]),logger:{warn(){}}});
+ await expect(missing.release({deviceId:'garage'})).rejects.toThrow();
+});

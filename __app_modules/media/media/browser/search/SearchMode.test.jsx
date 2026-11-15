@@ -88,9 +88,10 @@ vi.mock("../cast/DispatchTargetPicker.jsx", () => ({
 }));
 
 // ── component-local info logger ──
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ info: vi.fn() }) }),
-}));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info: vi.fn() }) });
+  return { default: getLogger, getLogger };
+});
 
 // ── SearchProvider's config fetch ──
 let scopeConfig = [

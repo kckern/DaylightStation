@@ -67,6 +67,7 @@ config.app.yml
 config.secrets.yml
 config.app-local.yml
 /scripts/*
+!scripts/migrate-supervision-policy.mjs
 !scripts/media-gate-runner.mjs
 !scripts/install-assets.mjs
 !scripts/public-tree-allowlist.yml

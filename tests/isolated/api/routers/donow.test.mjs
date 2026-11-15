@@ -7,10 +7,10 @@ import { authenticate } from "../../../../__capabilities/device-dispatch/server/
 
 const silentLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-function buildApp({ expectedToken = null, service, approvals } = {}) {
+function buildApp({ expectedToken = null, service, approvals, resolveAccessContext } = {}) {
   const app = express();
   app.use('/api/v1/donow', createDoNowRouter({
-    service, approvals, authenticateApproval: authenticate, expectedToken, logger: silentLogger,
+    service, approvals, authenticateApproval: authenticate, expectedToken, logger: silentLogger, resolveAccessContext,
   }));
   return app;
 }
@@ -53,6 +53,31 @@ describe('createDoNowRouter', () => {
         force: undefined,
         programId: undefined,
         requestedBy: 'api',
+        accessContext: null,
+      });
+    });
+
+    it('dispatches with trusted access context resolved from the request', async () => {
+      service.dispatch.mockResolvedValue({ decision: 'dispatched' });
+      const resolveAccessContext = vi.fn(async (req, { surface, learnerId }) => ({
+        deviceId: req.get('x-device-id'), surface, learnerId,
+      }));
+      const app = buildApp({ service, approvals, resolveAccessContext });
+
+      const res = await request(app)
+        .post('/api/v1/donow/dispatch')
+        .set('x-device-id', 'garage-screen')
+        .send({
+          surface: 'garage-fitness', action: { episode: 'plex:1' }, learnerId: 'kid1',
+          requestedBy: 'parent', accessContext: { deviceId: 'forged-screen' },
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ decision: 'dispatched' });
+      expect(service.dispatch).toHaveBeenCalledExactlyOnceWith({
+        surface: 'garage-fitness', action: { episode: 'plex:1' }, learnerId: 'kid1',
+        ref: undefined, force: undefined, programId: undefined, requestedBy: 'api',
+        accessContext: { deviceId: 'garage-screen', surface: 'garage-fitness', learnerId: 'kid1' },
       });
     });
   });

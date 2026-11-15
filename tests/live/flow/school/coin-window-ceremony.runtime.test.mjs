@@ -58,6 +58,8 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
     if (method !== 'GET') writes.push(`${method} ${pathname}`);
     const json = (value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
 
+    // This rewards fixture models the ordinary household with supervision disabled.
+    if (pathname === '/api/v1/supervision/bootstrap') return json({ enabled: false });
     if (pathname === '/api/v1/screens/portal') return json(SCREEN_CONFIG);
     if (pathname === '/api/v1/school/roster') return json(ROSTER);
     if (pathname === '/api/v1/school/book-scans/pending') return json({ intent: null });

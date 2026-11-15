@@ -1,3 +1,4 @@
+import {SupervisedActivity} from '../../../../household/supervision/browser/index.js';
 import React, { useState, useRef, useCallback } from 'react';
 import { useFitnessContext } from "../context/FitnessContext.jsx";
 import { getModule, getModuleManifest } from "../index.js";
@@ -5,7 +6,7 @@ import FitnessModuleErrorBoundary from "./FitnessModuleErrorBoundary.jsx";
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessModuleContainer.scss";
 
-const FitnessModuleContainer = ({ moduleId, mode = 'standalone', deviceId = null, onClose, config = {} }) => {
+const AuthorizedFitnessModule = ({ moduleId, mode = 'standalone', deviceId = null, onClose, config = {} }) => {
   const fitnessCtx = useFitnessContext();
   const ModuleComponent = getModule(moduleId);
   const manifest = getModuleManifest(moduleId);
@@ -67,4 +68,6 @@ const FitnessModuleContainer = ({ moduleId, mode = 'standalone', deviceId = null
   );
 };
 
-export default FitnessModuleContainer;
+export default function FitnessModuleContainer(props){
+  return <SupervisedActivity activityId={`fitness:module:${props.moduleId}`}><AuthorizedFitnessModule {...props}/></SupervisedActivity>;
+}

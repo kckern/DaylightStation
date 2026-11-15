@@ -1,5 +1,10 @@
 /** Reviewed build-time visibility and executable server layer; no discovery. */
 export const OWNER_ENTRY_POLICY = Object.freeze({
+  '__app_modules/household/supervision/browser/index.js': null,
+  '__app_modules/games/arcade/server/supervision-runtime.mjs': 'composition',
+  '__app_modules/wellness/fitness/server/supervision-runtime.mjs': 'composition',
+  '__app_modules/household/supervision/server/index.mjs': 'composition',
+  '__app_modules/household/supervision/server/composition.mjs': 'composition',
   '__app_modules/games/chess/server/archive-names.mjs': 'adapters',
   '__capabilities/playback/browser/volume/TouchVolumeButtons.jsx': null,
   '__capabilities/playback/browser/volume/touchVolumeModel.js': null,

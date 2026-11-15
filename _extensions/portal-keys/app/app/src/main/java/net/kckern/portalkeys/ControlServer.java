@@ -311,20 +311,11 @@ public class ControlServer extends NanoWSD {
         Map<String, String> files = new java.util.HashMap<>();
         session.parseBody(files);
         String body = files.get("postData");
-        boolean locked = body != null && body.matches("(?s).*\\\"locked\\\"\\s*:\\s*true.*");
-        Long until = null;
-        if (body != null) {
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("\\\"lockedUntil\\\"\\s*:\\s*(\\d+)").matcher(body);
-            if (m.find()) {
-                try { until = Long.parseLong(m.group(1)); } catch (NumberFormatException ignored) { }
-            }
-        }
-        if (locked && until != null && until <= System.currentTimeMillis()) {
-            return json(Response.Status.BAD_REQUEST, "{\"error\":\"lockedUntil must be in the future\"}");
-        }
-        config.setLockdown(locked, until);
-        eventLog.add("lockdown " + (locked ? (until == null ? "indefinite" : until) : "cleared"));
+        LockdownCommand command;
+        try { command=LockdownCommand.parse(body,System.currentTimeMillis()); }
+        catch (IllegalArgumentException invalid) { return json(Response.Status.BAD_REQUEST,"{\"error\":\"invalid lockdown command\"}"); }
+        if (!config.applyLockdown(command)) return json(Response.Status.CONFLICT,"{\"error\":\"stale or conflicting lockdown revision\"}");
+        eventLog.add("lockdown " + (command.locked ? "blocked" : "cleared") + " revision=" + config.lockdownRevision());
         return json(config.toJsonRedacted());
     }
 

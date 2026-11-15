@@ -18,14 +18,22 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
   // types/gates/entitlements never exist at runtime. See
   // tests/isolated/composition/installedStateGatesPolicy.test.mjs for the
   // regression test covering this exact failure mode.
-  policy_revision: 5,
+  policy_revision: 7,
   publishers: {
+    'household-presence': {description:'Trusted household approval-mode evidence'},
+    supervision: { description: 'Durable parent intervention authority' },
     school: { description: 'School learner-day completion authority' },
     fitness: { description: 'Fitness weekly movement authority' },
     'kiosk-friction-tracker': { description: 'Per-device unsupervised-input friction score' },
   },
   subject_sets: {},
   claim_types: {
+    'supervision.approval-required': {"schema_version": 1, "value": {"type": "boolean"}, "subject_kinds": ["household"], "period_kinds": ["interval"], "accepted_publishers": ["household-presence"], "visibility": "subscriber", "validity": {"max_age": "PT1M"}},
+    'supervision.grant-valid': {"schema_version": 1, "value": {"type": "boolean"}, "subject_kinds": ["device"], "period_kinds": ["occurrence"], "accepted_publishers": ["supervision"], "visibility": "subscriber", "validity": {"must_fit_period": true}},
+    'supervision.stop-active': {
+      schema_version: 1, value: { type: 'boolean' }, subject_kinds: ['device'],
+      period_kinds: ['interval'], accepted_publishers: ['supervision'], visibility: 'subscriber',
+    },
     'school.day.complete': {
       schema_version: 1,
       value: { type: 'boolean' },
@@ -54,6 +62,13 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
     },
   },
   gates: {
+    'supervision.normal-activity-allowed': {"schema_version": 1, "subject_kinds": ["device"], "period_kinds": ["interval"], "expression": {"all": [{"comparison": {"claim": {"type": "supervision.stop-active", "publisher": "supervision", "subject": "$subject", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": false}}, {"comparison": {"claim": {"type": "supervision.approval-required", "publisher": "household-presence", "subject": "$household", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": false}}]}},
+    'supervision.activity-allowed': {"schema_version": 1, "subject_kinds": ["device"], "period_kinds": ["occurrence"], "expression": {"all": [{"comparison": {"claim": {"type": "supervision.stop-active", "publisher": "supervision", "subject": "$subject", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": false}}, {"any": [{"comparison": {"claim": {"type": "supervision.approval-required", "publisher": "household-presence", "subject": "$household", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": true}}, {"comparison": {"claim": {"type": "supervision.approval-required", "publisher": "household-presence", "subject": "$household", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": false}}]}, {"any": [{"comparison": {"claim": {"type": "supervision.approval-required", "publisher": "household-presence", "subject": "$household", "period": {"kind": "interval", "id": "supervision-current", "startsAt": 0, "endsAt": null}}, "op": "eq", "value": false}}, {"comparison": {"claim": {"type": "supervision.grant-valid", "publisher": "supervision", "subject": "$subject", "period": "$period"}, "op": "eq", "value": true}}]}]}},
+    'supervision.stop-inactive': {
+      schema_version: 1, subject_kinds: ['device'], period_kinds: ['interval'],
+      expression: { comparison: { claim: { type: 'supervision.stop-active', publisher: 'supervision' }, op: 'eq', value: false } },
+      reason_labels: { CLAIM_MISSING: 'Parent access state is unavailable.', THRESHOLD_NOT_MET: 'Stopped by a parent.' },
+    },
     'fitness.games-outside-sunday': {
       schema_version: 1,
       subject_kinds: ['household'],
@@ -131,6 +146,9 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
     },
   },
   entitlements: {
+    'supervision.activity-normal': {gate:'supervision.normal-activity-allowed',failure_posture:'fail_closed'},
+    'supervision.activity': {gate:'supervision.activity-allowed',failure_posture:'fail_closed'},
+    'supervision.interactive': { gate: 'supervision.stop-inactive', failure_posture: 'fail_closed' },
     'fitness.games-unsupervised': { gate: 'fitness.games-outside-sunday', failure_posture: 'fail_closed' },
     'piano.games': { gate: 'school.day-complete', failure_posture: 'fail_closed' },
     'fitness.skyline-glider': { gate: 'school.day-complete', failure_posture: 'fail_closed' },

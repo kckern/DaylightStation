@@ -100,9 +100,10 @@ vi.mock("../logging/mediaLog.js", () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
   return { default: stub };
 });
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
-}));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) });
+  return { default: getLogger, getLogger };
+});
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   DaylightAPI: vi.fn(async (path) => (
     path === 'api/v1/media/config'

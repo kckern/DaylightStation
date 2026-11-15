@@ -100,3 +100,6 @@ export function _resetForTests() {
 }
 
 export default playScanCeremonyTone;
+
+/** Stop the cached synth even though it has no DOM audio element. */
+export async function suspendScanCeremonySound(){const active=_ctx;_ctx=null;if(active?.close)await active.close();else await active?.suspend?.();}

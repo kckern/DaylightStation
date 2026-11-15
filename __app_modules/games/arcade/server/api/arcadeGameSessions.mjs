@@ -14,7 +14,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * surface is not a special case; it is simply an observation with better
  * confidence. That is what keeps one meter behind both kinds of play surface.
  */
-export function createArcadeGameSessionsRouter({ recordObservation = null, sessions = null, trackers = [], watchdog = null, sessionMonitor = null, grantLedger = null, grantArcadeGameTime = null, checkEligibility = null, summariseArcadeGameUsage = null, placements = null, logger = console }) {
+export function createArcadeGameSessionsRouter({ authorizeKioskAction = null, recordObservation = null, sessions = null, trackers = [], watchdog = null, sessionMonitor = null, grantLedger = null, grantArcadeGameTime = null, checkEligibility = null, summariseArcadeGameUsage = null, placements = null, logger = console }) {
   const router = express.Router();
   let legacyShapeWarned = false;
 
@@ -240,11 +240,13 @@ export function createArcadeGameSessionsRouter({ recordObservation = null, sessi
    * needs in order to disagree with it.
    */
   router.get('/eligibility', async (req, res) => {
-    if (!checkEligibility) return res.json({ allowed: true, reasons: [] });
     const { userId = null, deviceId = null, contentId = null } = req.query || {};
     try {
+      if (authorizeKioskAction) await authorizeKioskAction(req);
+      if (!checkEligibility) return res.json({ allowed: true, reasons: [] });
       return res.json(await checkEligibility.execute({ userId, deviceId, contentId }));
     } catch (error) {
+      if (error.status >= 400 && error.status < 500) return res.status(error.status).json({error:error.message,code:error.code});
       logger.error?.('play.api.eligibility_failed', { error: error.message });
       return sendInternalError(res, { error: 'Failed to check play eligibility' });
     }

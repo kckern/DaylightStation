@@ -1,0 +1,51 @@
+# Copy into household supervision/config.yml only after the rollout drill.
+# Secrets belong in household auth/supervision.yml, never in this document.
+enabled: false
+credentials_auth_ref: supervision
+scope_id: child-public
+garage_device_id: garage-tv
+scanner_id: garage-reader
+scopes:
+  child-public: [garage-tv, portal, yellow-room-tablet, livingroom-tv]
+legacy_targets:
+  school:portal: portal
+  piano:yellow-room-tablet: yellow-room-tablet
+surface_devices:
+  garage: garage-tv
+  school: portal
+  piano: yellow-room-tablet
+devices:
+  - id: garage-tv
+    required_capabilities: [browser, ha-stop]
+    ha_stop:
+      observation_entities: [switch.garage_speaker_plug, binary_sensor.garage_tv_state]
+  - id: portal
+    required_capabilities: [browser, portal-keys]
+    portal_keys:
+      base_url: http://<portal-host>:<portal-keys-port>
+      auth_ref: portal-keys-lockdown
+  - id: yellow-room-tablet
+    required_capabilities: [browser]
+  - id: livingroom-tv
+    required_capabilities: [browser, 'native:com.retroarch.aarch64']
+    native_packages: [com.retroarch.aarch64]
+# auth/supervision.yml shape (generate independently random >=32-character values):
+# secret: <kiosk-signing-secret>
+# scanner_secret: <same secret provisioned only on physical reader>
+# devices:
+#   garage-tv: {credential: <device-secret>}
+#   portal: {credential: <device-secret>}
+#   yellow-room-tablet: {credential: <device-secret>}
+#   livingroom-tv: {credential: <device-secret>}
+
+# Entirely unconfigured approval mode publishes explicit normal evidence.
+# Enable only after configuring the actual HA entity, phone target and acceptance drill.
+approval_mode:
+  enabled: false
+  # entityId: person.parent_presence
+  # approvalRequiredStates: [not_home]
+  # normalStates: [home]
+  maxAgeMs: 60000
+  refreshMs: 30000
+  # notifyService: notify.mobile_app_parent_phone
+  # recipientId: configured-parent-recipient

@@ -40,7 +40,7 @@ function durationMs(value, field) {
 function binding(value, fallback) {
   if (value == null) return fallback;
   if (typeof value === 'string') return value;
-  return { kind: value.kind, id: value.id };
+  return { kind: value.kind, id: value.id, ...('startsAt' in value?{startsAt:value.startsAt}:{}), ...('endsAt' in value?{endsAt:value.endsAt}:{}) };
 }
 
 function selector(raw = {}) {
