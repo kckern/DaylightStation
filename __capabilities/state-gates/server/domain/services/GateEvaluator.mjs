@@ -152,10 +152,10 @@ function evaluateNode(node, context) {
   }
 }
 
-export function evaluateGate({ graph, assertions = [], gateId, subject, period, now, timezone, householdRevision = 0, cache = new Map() }) {
+export function evaluateGate({ householdId, graph, assertions = [], gateId, subject, period, now, timezone, householdRevision = 0, cache = new Map() }) {
   const definition = graph.gates.get(gateId);
   if (!definition) throw new ValidationError('Gate not found', { code: 'GATE_NOT_FOUND', field: 'gateId' });
-  const key = instanceKey(gateId, subject, period);
+  const key = JSON.stringify([householdId,instanceKey(gateId, subject, period)]);
   if (cache.has(key)) return cache.get(key);
   if (!definition.subjectKinds.includes(subject.kind) || !definition.periodKinds.includes(period.kind)) {
     const evaluation = new GateEvaluation({
@@ -168,9 +168,9 @@ export function evaluateGate({ graph, assertions = [], gateId, subject, period, 
     return evaluation;
   }
   const context = {
-    graph, assertions, subject, period, now, timezone, bindings: {},
+    graph, assertions, subject, period, now, timezone, bindings: {household:householdId?{kind:'household',id:householdId}:null},
     evaluateReference: (id, refSubject, refPeriod) => {
-      const value = evaluateGate({ graph, assertions, gateId: id, subject: refSubject, period: refPeriod, now, timezone, householdRevision, cache });
+      const value = evaluateGate({ householdId, graph, assertions, gateId: id, subject: refSubject, period: refPeriod, now, timezone, householdRevision, cache });
       return result(value.state, value.reasons, { boundary: value.nextBoundary, progress: value.progress });
     },
   };

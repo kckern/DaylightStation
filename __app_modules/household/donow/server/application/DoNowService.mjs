@@ -51,6 +51,7 @@ import { decideDispatch } from "../domain/policy.mjs";
 import { shortId } from '#system/utils/id.mjs';
 
 export class DoNowService {
+  #dispatchAuthority;#canRequestLegacyApproval;
   #surfaces;
   #datastore;
   #notifier;
@@ -78,6 +79,7 @@ export class DoNowService {
     datastore,
     notifier = null,
     realtimeGateway = null,
+    dispatchAuthority = null,canRequestLegacyApproval = null,
     clock = () => new Date(),
     timezone = null,
     approvalTtlSeconds = 120,
@@ -90,6 +92,7 @@ export class DoNowService {
     if (!datastore) {
       throw new Error('DoNowService requires datastore');
     }
+    this.#dispatchAuthority = dispatchAuthority;this.#canRequestLegacyApproval=canRequestLegacyApproval;
     this.#surfaces = surfaces;
     this.#datastore = datastore;
     this.#notifier = notifier;
@@ -113,7 +116,7 @@ export class DoNowService {
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */
   async dispatch({
-    surface, action, learnerId = null, requestedBy, ref = null, programId = null, force = undefined,
+    surface, action, learnerId = null, requestedBy, ref = null, programId = null, force = undefined, accessContext = null,
   }) {
     const adapter = this.#surfaces.get(surface);
     if (!adapter) {
@@ -125,6 +128,7 @@ export class DoNowService {
       return { decision: 'failed', message: errors.join('; ') };
     }
 
+    if(this.#dispatchAuthority){const permit=await this.#dispatchAuthority({surface,action,activityId:adapter.supervisionActivity?.(action),learnerId,requestedBy,ref,accessContext},permit=>permit);if(Number.isSafeInteger(permit?.epoch))accessContext={...accessContext,admittedEpoch:permit.epoch};}
     const nowIso = this.#nowIso();
 
     // Pending dedup FIRST — before any occupancy probe or notifier call.
@@ -142,7 +146,7 @@ export class DoNowService {
     const decision = decideDispatch({ occupancy, learnerId, force });
 
     if (decision === 'dispatch') {
-      return this.#actDispatch({ adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso });
+      return this.#actDispatch({ adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso, accessContext });
     }
 
     if (decision === 'denied') {
@@ -150,7 +154,8 @@ export class DoNowService {
       return { decision: 'denied', message: `The ${label} is busy right now.` };
     }
 
-    return this.#actPend({ adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso });
+    if(this.#canRequestLegacyApproval && !await this.#canRequestLegacyApproval({surface,action,learnerId,accessContext}))return {decision:'denied',message:'This screen is busy. Ask a parent at the parent controls.'};
+    return this.#actPend({ adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso, accessContext });
   }
 
   /**
@@ -204,7 +209,7 @@ export class DoNowService {
    */
   async dispatchApproved(record) {
     const {
-      surface, action, learnerId, requestedBy, ref, programId = null, id: approvalId,
+      surface, action, learnerId, requestedBy, ref, programId = null, id: approvalId, accessContext = null,
     } = record || {};
     const adapter = this.#surfaces.get(surface);
     if (!adapter) {
@@ -212,7 +217,7 @@ export class DoNowService {
     }
     const nowIso = this.#nowIso();
     return this.#actDispatch({
-      adapter, surface, action, learnerId, requestedBy, ref, programId: programId ?? null, nowIso, approvalId,
+      adapter, surface, action, learnerId, requestedBy, ref, programId: programId ?? null, nowIso, approvalId, accessContext,
     });
   }
 
@@ -234,13 +239,17 @@ export class DoNowService {
   }
 
   async #actDispatch({
-    adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso, approvalId = null,
+    adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso, approvalId = null, accessContext = null,
   }) {
     const label = this.#safeLabel(adapter, action, surface);
     let result;
     try {
-      result = await adapter.dispatch({ action, learnerId, requestedBy });
+      const dispatch = () => adapter.dispatch({ action, learnerId, requestedBy });
+      result = this.#dispatchAuthority
+        ? await this.#dispatchAuthority({surface,action,activityId:adapter.supervisionActivity?.(action),learnerId,requestedBy,ref,approvalId,accessContext},dispatch)
+        : await dispatch();
     } catch (err) {
+      if (err?.code?.startsWith('SUPERVISION_') || err?.code?.startsWith('KIOSK_')) throw err;
       this.#logger.error?.('donow.dispatch.adapter-threw', { surface, error: err?.message || String(err) });
       return { decision: 'failed', message: `Could not start the ${label}.` };
     }
@@ -272,7 +281,7 @@ export class DoNowService {
   }
 
   async #actPend({
-    adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso,
+    adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso, accessContext,
   }) {
     const label = this.#safeLabel(adapter, action, surface);
     const id = this.#newId();
@@ -295,6 +304,7 @@ export class DoNowService {
     // approved later would dispatch with no programId at all, and could
     // never count as done for that program.
     if (programId != null) record.programId = programId;
+    if(accessContext)record.accessContext=structuredClone(accessContext);
 
     await this.#datastore.putPending(record);
 

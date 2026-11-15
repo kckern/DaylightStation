@@ -1,5 +1,7 @@
+import {useActivityScope} from '../../../../../__app_modules/household/supervision/browser/index.js';
+import {screenActionActivity} from './supervisionScope.mjs';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { useScreenAction as useRawScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
 import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import { usePip } from "../../../../../__capabilities/screen-host/browser/pip.mjs";
@@ -18,6 +20,20 @@ import { getActionBus } from "../../../../../__capabilities/screen-host/browser/
 import { useSessionSourceContext } from "../../../../../__capabilities/playback/browser/sessions.mjs";
 import { getScreenItemActions } from './screenItemActions.js';
 
+function useScreenAction(action,handler){
+  const scope=useActivityScope();
+  const sessionSource=useSessionSourceContext();
+  const guarded=useCallback((payload)=>{
+    const snapshot=scope?.restricted?(sessionSource?.getBareSnapshot?.()??sessionSource?.getSnapshot?.()):null;
+    const activity=screenActionActivity(action,payload,snapshot);
+    if(scope?.restricted && activity!==null && activity!==scope.activityId){scope.onMismatch?.();return;}
+    // A paused/held current item must keep its controls. Its idle secondary
+    // selection could launch another activity, so it cannot borrow this grant.
+    if(scope?.restricted && action==='media:playback')return handler({...payload,secondary:undefined});
+    return handler(payload);
+  },[action,handler,scope,sessionSource]);
+  useRawScreenAction(action,guarded);
+}
 let _logger;
 import { withLoopAlias } from './loopAlias.js';
 function logger() {

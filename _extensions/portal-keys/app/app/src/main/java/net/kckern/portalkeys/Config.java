@@ -35,12 +35,12 @@ public class Config {
     // never returned by /status or /config, just like the FKB password.
     public static final String KEY_LOCKDOWN_TOKEN = "lockdownToken";
     private static final String KEY_LOCKDOWN_UNTIL = "lockdownUntil";
+    private static final String KEY_LOCKDOWN_REVISION = "lockdownRevision";
 
     private final SharedPreferences prefs;
 
-    public Config(Context ctx) {
-        this.prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-    }
+    public Config(Context ctx) { this(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)); }
+    Config(SharedPreferences prefs) { this.prefs=prefs; }
 
     /** FKB REST endpoint on this same device. Loopback by default. */
     public String fkbHost() {
@@ -128,9 +128,15 @@ public class Config {
 
     public long lockdownUntil() { return prefs.getLong(KEY_LOCKDOWN_UNTIL, 0); }
 
-    public void setLockdown(boolean locked, Long until) {
-        long value = !locked ? 0 : (until == null ? Long.MAX_VALUE : until);
-        prefs.edit().putLong(KEY_LOCKDOWN_UNTIL, value).apply();
+    public long lockdownRevision() { return prefs.getLong(KEY_LOCKDOWN_REVISION,0); }
+
+    /** Commit both values together before acknowledging to the safety service. */
+    public synchronized boolean applyLockdown(LockdownCommand command) {
+        if (!command.canApply(lockdownRevision(),lockdownUntil())) return false;
+        SharedPreferences.Editor update=prefs.edit().putLong(KEY_LOCKDOWN_UNTIL,command.deadline());
+        if (command.revision!=null) update.putLong(KEY_LOCKDOWN_REVISION,command.revision);
+        if (!update.commit()) throw new IllegalStateException("Lockdown persistence failed");
+        return true;
     }
 
     /** Redacted view for pkctl status — never emits the password. */
@@ -146,6 +152,8 @@ public class Config {
                 + "\"gateTokenSet\":" + (!gateToken().isEmpty()) + ","
                 + "\"gateHeartbeatMs\":" + gateHeartbeatMs() + ","
                 + "\"lockdownTokenSet\":" + (!lockdownToken().isEmpty()) + ","
+                + "\"lockdownProtocolVersion\":2,"
+                + "\"lockdownRevision\":" + lockdownRevision() + ","
                 + "\"lockdownActive\":" + lockdownActive() + ","
                 + "\"lockdownUntil\":" + (lockdownUntil() > 0 && lockdownUntil() != Long.MAX_VALUE ? lockdownUntil() : "null")
                 + "}";

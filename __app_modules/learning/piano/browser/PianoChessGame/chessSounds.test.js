@@ -86,3 +86,8 @@ describe('chessSounds', () => {
     expect(started).toHaveLength(0);
   });
 });
+it('suspends the cached chess audio context on a parental stop',async()=>{
+  stubAudio();const Original=window.AudioContext;let quiet=false;
+  window.AudioContext=function(){const value=new Original();value.suspend=()=>{quiet=true;return Promise.resolve();};return value;};
+  try{const sound=await freshModule();sound.playCue('move');await sound.suspendChessSounds();expect(quiet).toBe(true);}finally{delete window.AudioContext;}
+});

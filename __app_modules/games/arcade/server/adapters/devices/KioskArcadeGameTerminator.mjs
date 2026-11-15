@@ -15,15 +15,49 @@ import { IArcadeGameTerminator } from "../../application/ports/IArcadeGameTermin
  * and reporting otherwise would invite a retry that kills nothing twice.
  */
 export class KioskArcadeGameTerminator extends IArcadeGameTerminator {
-  #adbByDevice; #kioskByDevice; #packageName; #logger;
+  #pendingStops=new Map(); #adbByDevice; #kioskByDevice; #packageName; #logger;
 
   constructor({ adbByDevice, kioskByDevice, packageName, logger = console }) {
     super();
-    if (!packageName) throw new Error('KioskArcadeGameTerminator requires packageName');
+    if (typeof packageName!=='string' || !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(packageName)) throw new Error('KioskArcadeGameTerminator requires a valid Android packageName');
     this.#adbByDevice = adbByDevice || new Map();
     this.#kioskByDevice = kioskByDevice || new Map();
     this.#packageName = packageName;
     this.#logger = logger;
+  }
+
+  stop({deviceId}) {
+    const pending=this.#stopAndVerify(deviceId);
+    const jobs=this.#pendingStops.get(deviceId)??new Set();jobs.add(pending);this.#pendingStops.set(deviceId,jobs);
+    void pending.finally(()=>{jobs.delete(pending);if(!jobs.size && this.#pendingStops.get(deviceId)===jobs)this.#pendingStops.delete(deviceId);}).catch(()=>{});
+    return pending;
+  }
+  async release({deviceId}) {
+    // Never acknowledge release ahead of a previously admitted package kill.
+    for(;;){const pending=this.#pendingStops.get(deviceId);if(!pending?.size)break;await Promise.allSettled([...pending]);}
+    await this.#probeInstalled(deviceId);
+    return {blocked:false,detail:'Released; content remains stopped'};
+  }
+  async #probeInstalled(deviceId){
+    const adb=this.#adbByDevice.get(deviceId);
+    if(!adb?.shell)throw Object.assign(new Error('Native enforcement channel unavailable'),{code:'CAPABILITY_UNAVAILABLE'});
+    const result=await adb.shell(`pm path ${this.#packageName}`);
+    if(result?.ok && result.output?.trim().startsWith('package:'))return {hidden:false};
+    const installed=await adb.shell(`pm list packages -u ${this.#packageName}`);
+    if(installed?.ok && installed.output?.split(/\r?\n/).some(line=>line.trim()===`package:${this.#packageName}`))return {hidden:true};
+    throw Object.assign(new Error('Required native package cannot be verified'),{code:'NATIVE_PACKAGE_UNAVAILABLE',contacted:result?.ok===true});
+  }
+  async #stopAndVerify(deviceId) {
+    const installed=await this.#probeInstalled(deviceId);
+    if(installed.hidden){
+      const status=await this.#adbByDevice.get(deviceId).shell(`if pidof ${this.#packageName} >/dev/null; then printf running; else printf stopped; fi`);
+      return {blocked:status.ok && status.output?.trim()==='stopped',detail:'Local package restriction; process state checked'};
+    }
+    const result=await this.endPlay(deviceId);
+    if(!result.ok)return {blocked:false,detail:result.error};
+    const adb=this.#adbByDevice.get(deviceId);
+    const status=await adb.shell(`if pidof ${this.#packageName} >/dev/null; then printf running; else printf stopped; fi`);
+    return {blocked:status.ok && status.output?.trim()==='stopped',detail:status.ok?'Force-stop checked; unsaved progress may be lost':'Native process state unverified'};
   }
 
   async endPlay(deviceId) {

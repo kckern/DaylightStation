@@ -268,6 +268,7 @@ function cryptoRng(crypto) {
  * }>}
  */
 export async function createSchoolLifecycle({
+  authorizeKioskAction = null,
   configService, householdId = null, schoolService,
   attemptDatastore = null,
   economyService = null, economyMode = null, userService = null, eventBus = null, realtime = null,
@@ -1728,6 +1729,8 @@ export async function createSchoolLifecycle({
   const selfServiceEnabled = cfg.selfService?.enabled === true;
   const selfServiceRouter = selfServiceEnabled
     ? createSchoolSelfServiceRouter({
+      resolveCompanionLearner:async id=>(await companions.get(id))?.learnerId??null,
+      authorizeKioskAction,
       resolveAccessCode,
       runSelfServiceAction,
       recordLessonCompanionProgress,

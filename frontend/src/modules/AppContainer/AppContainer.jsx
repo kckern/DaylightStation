@@ -1,3 +1,4 @@
+import {SupervisedActivity} from '../../../../__app_modules/household/supervision/browser/index.js';
 import { useEffect, useMemo, lazy, Suspense } from "react";
 import "./AppContainer.scss";
 import { getApp } from "../../lib/appRegistry.js";
@@ -43,8 +44,8 @@ export default function AppContainer({ open, clear }) {
   }
 
   return (
-    <Suspense fallback={null}>
+    <SupervisedActivity activityId={app==='school'?'school:workspace':`app:${app}`}><Suspense fallback={null}>
       <Component {...appProps} />
-    </Suspense>
+    </Suspense></SupervisedActivity>
   );
 }

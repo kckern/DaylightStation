@@ -110,6 +110,7 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown = null,
     getLockdownState = null,
     identityRelay = null,
+    parentalSupervision = null,
     garageHumanActivityGateway = null,
     eventBus = null,
     // Workout persistence + its save-time slug guard, both built in app.mjs and passed
@@ -396,6 +397,7 @@ export function createFitnessApiRouter(config) {
   });
   const fitnessSessionPublications = new FitnessSessionPublications({ eventBus });
   const emergencyOperations = new EmergencyLockdownService({
+    supervision: parentalSupervision,
     access: emergencyAccessService,
     trigger: triggerEmergencyLockdown,
     release: releaseEmergencyLockdown,

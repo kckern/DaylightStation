@@ -41,6 +41,7 @@
  */
 export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   agents:           'agents/config',
+  supervision:      'supervision/config',
   ambient:          'ambient/config',
   art:              'art/config',
   artmode:          'art/artmode',

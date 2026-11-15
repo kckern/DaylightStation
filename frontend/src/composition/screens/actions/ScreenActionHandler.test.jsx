@@ -12,6 +12,7 @@ import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
 import { MenuNavigationProvider } from "../../../../../__capabilities/screen-host/browser/menu-context.mjs";
 import { SessionSourceProvider } from '../../../../../__capabilities/playback/browser/sessions/SessionSourceContext.jsx';
+import { ActivityScopeProvider } from '../../../../../__app_modules/household/supervision/browser/ActivityScope.jsx';
 import * as apiModule from '../../../lib/api.mjs';
 import {
   __resetPlayerQueueOpRegistryForTests,
@@ -751,6 +752,35 @@ describe('ScreenActionHandler', () => {
       expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Escape'))
         .toBe(false);
       dispatchSpy.mockRestore();
+    });
+
+    it('retains approved current-item transport without running an idle secondary selection', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const onMismatch = vi.fn();
+      let contentId = 'plex:42';
+      const source = { getBareSnapshot: () => ({ currentItem: { contentId } }) };
+      const { queryByTestId } = render(
+        <ActivityScopeProvider value={{ restricted: true, activityId: 'media:plex:42', onMismatch }}>
+          <SessionSourceProvider source={source}>
+            <ScreenOverlayProvider><ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} /></ScreenOverlayProvider>
+          </SessionSourceProvider>
+        </ActivityScopeProvider>
+      );
+
+      for (const command of ['play', 'pause', 'toggle']) {
+        act(() => getActionBus().emit('media:playback', { command,
+          secondary: { action: 'media:play', payload: { contentId: 'plex:other' } } }));
+      }
+      expect(owner.mock.calls.map(([request]) => request.op)).toEqual(['play', 'pause', 'toggle']);
+      expect(queryByTestId('player')).toBeNull();
+      expect(onMismatch).not.toHaveBeenCalled();
+
+      // Read current ownership at dispatch time, not a captured pre-change snapshot.
+      contentId = 'plex:other';
+      act(() => getActionBus().emit('media:playback', { command: 'play', contentId: 'plex:42' }));
+      expect(owner).toHaveBeenCalledTimes(3);
+      expect(onMismatch).toHaveBeenCalledTimes(1);
     });
 
     it('routes explicit remote transport commands to the active Player owner without toggling by keydown', () => {

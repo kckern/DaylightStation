@@ -246,3 +246,31 @@ describe('useEmergencyLockdown', () => {
     expect(wsCallbacks.length).toBe(0);
   });
 });
+
+it('a canonical parent stop cannot be cancelled locally or expire automatically', async () => {
+  DaylightAPI.mockResolvedValue({locked:false});
+  const {result}=renderHook(()=>useEmergencyLockdown());
+  act(()=>result.current.adoptParentalStop({actorId:'parent',epoch:1}));
+  expect(JSON.parse(localStorage.getItem('daylight.parental-stop'))).toMatchObject({epoch:1});
+  act(()=>result.current.dismissCeremony());
+  expect(result.current.phase).toBe('locked');expect(result.current.lockedUntil).toBeNull();
+});
+it('a failed expiry status check retains a lock', async()=>{
+  vi.useFakeTimers();
+  try{
+    DaylightAPI.mockResolvedValueOnce({locked:true,lockedUntil:Math.floor(Date.now()/1000)+1}).mockRejectedValue(new Error('offline'));
+    const {result}=renderHook(()=>useEmergencyLockdown());
+    await act(async()=>{await Promise.resolve();});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+    expect(result.current.phase).toBe('locked');
+  }finally{vi.useRealTimers();}
+});
+it('registers and clears an explicit unlock context before accepting its scan',async()=>{
+  DaylightAPI.mockImplementation(async path=>path==='api/v1/supervision/identity-context'?{contextId:'unlock-context'}:{locked:false,persistent:true});
+  const {result}=renderHook(()=>useEmergencyLockdown());
+  await waitFor(()=>expect(result.current.supervisionEnabled).toBe(true));
+  await act(async()=>{await result.current.beginUnlockContext();});
+  expect(DaylightAPI).toHaveBeenCalledWith('api/v1/supervision/identity-context',{purpose:'unlock'},'POST');
+  await act(async()=>{await result.current.clearUnlockContext();});
+  expect(DaylightAPI).toHaveBeenCalledWith('api/v1/supervision/identity-context/unlock-context',{},'DELETE');
+});

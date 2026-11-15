@@ -2,8 +2,9 @@ import { endedPayloadFor } from './sessionEndedPayload.mjs';
 
 /** Application workflow for emergency authorization, lockdown, and session finalization. */
 export class EmergencyLockdownService {
-  constructor({ access = null, trigger = null, release = null, state = null,
+  constructor({ access = null, trigger = null, release = null, state = null, supervision = null,
     sessions = null, timelapse = null, publications = null, clock = { now: () => Date.now() }, logger = console } = {}) {
+    this.supervision = supervision;
     this.access = access;
     this.trigger = trigger;
     this.releaseLockdown = release;
@@ -18,12 +19,20 @@ export class EmergencyLockdownService {
   nowSeconds() { return Math.floor(this.clock.now() / 1000); }
 
   async current() {
+    if (this.supervision) {
+      const state = await this.supervision.status();
+      return { locked: state.active, lockedUntil: null, lockedBy: state.actorId, persistent: true, epoch: state.epoch };
+    }
     const state = this.state ? await this.state.execute({ now: this.nowSeconds() }) : null;
     this.logger.debug?.('emergency.state_query', { locked: !!state, lockedUntil: state?.lockedUntil ?? null });
     return state ? { locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy } : { locked: false };
   }
 
   async commit(householdId) {
+    if (this.supervision) {
+      const current = await this.current();
+      return current.locked ? {kind:'committed',state:current} : {kind:'no_pending'};
+    }
     const now = this.nowSeconds();
     const existing = this.state ? await this.state.execute({ now }) : null;
     if (existing) {
@@ -75,6 +84,7 @@ export class EmergencyLockdownService {
   }
 
   abort() {
+    if (this.supervision) return { confirmed: false };
     const pending = this.access?.confirmAbort?.();
     this.logger.info?.(pending ? 'emergency.cancelled' : 'emergency.cancel_denied', pending
       ? { userId: pending.userId } : { reason: 'no-pending-detection' });
@@ -82,6 +92,8 @@ export class EmergencyLockdownService {
   }
 
   async release(householdId) {
+    // Enter explicit release before asking for a NEW scanner verification.
+    this.supervision?.beginRelease?.();
     const authorization = this.access ? await this.access.authorizeRelease(householdId) : { kind: 'unlock_unavailable' };
     if (authorization.kind === 'unlock_unavailable') {
       this.logger.warn?.('emergency.release_denied', { reason: 'unlock-service-unavailable' });
@@ -95,6 +107,11 @@ export class EmergencyLockdownService {
     if (authorization.kind === 'denied') {
       this.logger.info?.('emergency.release_denied', { reason: authorization.reason });
       return { kind: 'denied' };
+    }
+    if (this.supervision) {
+      await this.supervision.waitForIntervention?.();
+      const current = await this.supervision.status();
+      return {kind:current.active?'denied':'released'};
     }
     if (this.releaseLockdown) await this.releaseLockdown.execute({ by: authorization.userId, now: this.nowSeconds() });
     this.logger.info?.('emergency.released', { userId: authorization.userId });
