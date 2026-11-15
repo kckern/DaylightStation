@@ -58,6 +58,7 @@ try {
     const url = new URL(route.request().url());
     if (url.origin !== origin) return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
+    if (url.pathname.startsWith('/api/v1/static/img/users/')) return route.fulfill({ status: 404, body: 'No fixture avatar' });
     let data;
     if (url.pathname.includes('/preview/')) data = { learnerId: url.pathname.split('/').at(-1), totals: { silver: 24 }, lines: [] };
     else if (url.pathname.endsWith('/bank')) data = { mode: 'live', balances: { silver: 15, gold: 3 } };

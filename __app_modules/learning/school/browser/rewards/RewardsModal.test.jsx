@@ -40,6 +40,25 @@ describe('prepared personal Gem Board', () => {
     expect(document.querySelectorAll('.gem-glyph')).toHaveLength(1);
   });
 
+  it('shows the selected child avatar and only earned or partly earned gems, without empty slots or labels', () => {
+    const row = (id, cell) => ({ ...snapshot.gems[0], id, label: id, cell });
+    render(<RewardsModal learner={learner} snapshot={{ ...snapshot, gems: [
+      ...snapshot.gems,
+      row('Earned gem', { state: 'earned', week: 1 }),
+      row('Held gem', { state: 'leading', held: 1 }),
+      row('Not started', { state: 'none', week: 0 }),
+      row('Zero progress', { state: 'pending', week: 0, streak: { have: 0, need: 4, reach: 'on-track' } }),
+      row('Unknown gem', { state: 'unknown', week: 0 }),
+      row('Disabled gem', { state: 'disabled' }),
+    ] }} onClose={vi.fn()} />);
+    const modal = screen.getByRole('dialog');
+    expect(modal.querySelectorAll('.gem-glyph')).toHaveLength(3);
+    for (const name of ['Not started', 'Zero progress', 'Unknown gem', 'Disabled gem']) expect(screen.queryByText(name)).toBeNull();
+    const avatar = modal.querySelector('.piano-avatar');
+    expect(avatar).toBeTruthy();
+    expect(avatar.getAttribute('src')).toContain('/one');
+  });
+
   it('owns Escape and passes the selected child to the existing Bank log', () => {
     const onClose = vi.fn(), onOpenBank = vi.fn(), parent = vi.fn();
     window.addEventListener('keydown', parent);

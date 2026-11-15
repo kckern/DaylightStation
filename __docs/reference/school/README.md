@@ -1731,6 +1731,8 @@ polling, relevant events and visibility. Opening a modal performs no fetch:
 no loaders, late number insertion or layout change. Its prepared snapshot
 stays fixed until closed; failed background reads retain good memory.
 
+The header includes the child's avatar. Empty gem slots and labels are hidden;
+only earned/held gems and visible partial progress remain.
 The one-view overview reuses the existing Gem Board's large whole stones and
 circumferential progress segments, with compact labels, silver, gold and weekly
 fitness rings. Every category and control fits without scrolling. **Bank log**

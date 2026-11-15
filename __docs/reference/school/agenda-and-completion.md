@@ -305,9 +305,12 @@ This is memory for the page lifetime, not browser-persisted reward balances.
 **One prepared view.** Opening performs no data requests. The modal receives
 and locks a personal snapshot: background polling can update memory without
 changing its numbers, categories or size. A later opening sees newer memory.
+The header features the selected child's existing profile avatar, reusing the
+same portrait URL as the day board. Empty gem slots and labels are omitted:
+only earned/held stones and visible partial-progress rings are included.
 The overview uses the shared Gem Board's `GemGlyph`: large whole stones,
 circumferential day segments and compact category labels. Silver, gold and
-weekly fitness rings sit above the fitted glyph grid; all categories, close
+weekly fitness rings sit above the fitted glyph grid; all visible gems, close
 and **Bank log** fit in one view without scrolling. It displays only the
 selected child's rewards, with no standings or sibling navigation. The ring
 count comes from the active `fitness.weekly-rings` gate; its threshold of one

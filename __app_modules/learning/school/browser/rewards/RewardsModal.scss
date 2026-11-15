@@ -10,6 +10,7 @@
   button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 3px solid #f9d681; outline-offset: 2px; }
   &__header { display: flex; align-items: center; gap: .8em; flex: 0 0 auto; min-width: 0; }
+  &__header .piano-avatar { width: clamp(40px, 8vh, 72px); height: clamp(40px, 8vh, 72px); flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
   h2 { margin: 0; font-size: 1.5em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   &__week { color: #94a3b8; margin-left: auto; white-space: nowrap; font-size: .85em; }
   &__close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: #ffffff0d; }
@@ -32,6 +33,7 @@
   &__bank { padding: .5em .9em; border: 1px solid #ffffff26; border-radius: .5em; background: #ffffff08; }
   &__bank span { margin-left: .5em; }
   @media (max-width: 500px) {
+    &__header .piano-avatar { width: 40px; height: 40px; }
     h2 { font-size: 1.1em; }
     &__week { font-size: .7em; }
     &__header { gap: .3em; }
@@ -40,6 +42,7 @@
     &__totals .coin-icon, &__totals .ring-icon { width: 24px; height: 24px; }
   }
   @media (max-height: 400px) {
+    &__header .piano-avatar { width: 36px; height: 36px; }
     padding-block: 8px; gap: 3px !important;
     &__close { height: 36px; flex-basis: 36px; width: 36px; }
     &__totals .coin-icon, &__totals .ring-icon { width: 24px; height: 24px; }

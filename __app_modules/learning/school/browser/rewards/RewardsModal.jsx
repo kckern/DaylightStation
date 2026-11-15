@@ -2,7 +2,8 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import CoinIcon from '../../../../../frontend/src/lib/icons/CoinIcon.jsx';
 import RingIcon from '../../../../../frontend/src/lib/icons/RingIcon.jsx';
-import GemGlyph, { glyphWords } from '../../../../../frontend/src/lib/economy/GemBoard/GemGlyph.jsx';
+import ProfileAvatar from '../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
+import GemGlyph, { glyphLook, glyphWords } from '../../../../../frontend/src/lib/economy/GemBoard/GemGlyph.jsx';
 import AreaIcon from '../../../../../frontend/src/lib/economy/GemBoard/AreaIcon.jsx';
 import { coinFigure } from '../../../../../frontend/src/lib/coins/coinFigure.js';
 import '../../../../../frontend/src/lib/economy/GemBoard/GemBoard.scss';
@@ -15,8 +16,11 @@ const weekLabel = week => week ? new Date(`${week}T12:00:00Z`).toLocaleDateStrin
 
 export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = null, idleMs = 45_000 }) {
   // Lock the whole prepared opening, even when a caller receives newer memory.
-  const opening = useRef(snapshot);
-  if (opening.current?.learnerId !== learner.id) opening.current = snapshot;
+  const opening = useRef(null);
+  if (opening.current?.learnerId !== learner.id) opening.current = {
+    ...snapshot,
+    gems: snapshot.gems.filter(row => ['lit', 'holding', 'streak'].includes(glyphLook(row.cell))),
+  };
   const view = opening.current;
   const titleId = useId();
   const dialogRef = useRef(null);
@@ -73,6 +77,7 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
       }}
       onPointerDownCapture={noteActivity} onKeyDownCapture={noteActivity}>
       <header className="school-rewards-modal__header">
+        <ProfileAvatar id={learner.id} name={learner.name} size={192} />
         <h2 id={titleId}>{learner.name}'s rewards</h2>
         {view.week && <span className="school-rewards-modal__week">Week of {weekLabel(view.week)}</span>}
         <button type="button" className="school-rewards-modal__close" aria-label="Close rewards" {...pressDown(() => closeRef.current?.())} autoFocus>
