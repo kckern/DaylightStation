@@ -279,7 +279,10 @@ describe('Activity Party rules', () => {
 it('uses journaled presentation modes ahead of legacy definition arrays while preserving legacy replay', () => {
  const seats=[{id:'a'},{id:'b'}]; const args={seed:42,seats,setup:{}};
  const legacy=activityPartyRuleModule.createInitialState(casualDefinition,args);
- expect(activityPartyRuleModule.createInitialState(casualDefinition,args)).toEqual(legacy);
+ // Captured from b6f9353bc8 before participant presentation support.
+ expect(legacy.turn_order).toEqual(['a','b','b','a','a','b']);
+ expect(legacy.challenge_order).toEqual([3,1,5,2,0,4]);
+ expect(legacy.clue_presentations).toEqual(['image','image','image','image','image','image']);
  expect(legacy.clue_presentations.every(mode=>mode==='image')).toBe(true);
  const override={schema:'charades-presentation/v1',by_participant:{a:'text',b:'image'}};
  const state=activityPartyRuleModule.createInitialState(casualDefinition,{...args,setup:{charades_presentation:override}});

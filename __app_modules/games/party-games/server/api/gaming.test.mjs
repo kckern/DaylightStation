@@ -205,3 +205,12 @@ it('enforces readiness through the actual command route and authenticated coordi
   await request({ type: 'BUZZER_PRESENCE', epoch: 'tv' });
   expect(await request({ type: 'START_ROUND' })).toMatchObject({ statusCode: 200, body: { state: { phase: 'board' } } });
 });
+
+it('does not accept reserved identity through public creation', async () => {
+ const app={createSession:vi.fn(async()=>({header:{session_id:'server-allocated'}})),createReserved:vi.fn()};
+ const router=createGamingRouter({gamingApplication:app});
+ const response=await invoke(router,'post','/sessions',{roles:['gaming-host'],body:{definition_id:'charades:test',sessionId:'chosen',session_id:'chosen',creationKey:'secret',pinnedArtifacts:{}}});
+ expect(response.body.header.session_id).toBe('server-allocated');
+ expect(app.createSession).toHaveBeenCalledWith(expect.not.objectContaining({sessionId:expect.anything(),session_id:expect.anything(),creationKey:expect.anything(),pinnedArtifacts:expect.anything()}));
+ expect(app.createReserved).not.toHaveBeenCalled();
+});

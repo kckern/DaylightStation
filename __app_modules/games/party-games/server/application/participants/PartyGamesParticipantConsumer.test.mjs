@@ -10,12 +10,13 @@ const roster = [
 ];
 const definition = {experience:{id:'charades',version:1},rule_module:{id:'activity-party',version:1},competition:false,rounds:1,clues_per_turn:1,presentation:{image_participants:[]},challenges:[{id:'t',prompt:'word'},{id:'r',category:'early-reader',prompt:'run'},{id:'i',decoder:{image:'x'},prompt:'image'}]};
 const loaded = {definition,hash:'a'.repeat(64),artifacts:{rules_definition:{id:target.definitionId,hash:'b'.repeat(64)},content_pack:{id:target.definitionId,hash:'c'.repeat(64)}}};
+const manifest = {id:'charades',version:1,hash:'d'.repeat(64),surfaces:[{id:'party-games',authority_modes:['remote']}]};
 const settings = {schema:'party-games-participant-setup/v1',autostart:false,charades:{default_clue_mode:'text',clue_modes:{b:'reader',c:'image'}}};
 async function fixture(participants=roster, override={}) {
  const context=await createParticipantContext({scope:{provider:'agenda',id:'plan',revision:1},participants});
  const definitions={getCurrent:vi.fn(async()=>structuredClone(loaded)),pin:vi.fn(async x=>x)};
  const executionPort={createReserved:vi.fn(async ({sessionId})=>({header:{session_id:sessionId}})),resume:vi.fn(async()=>({header:{status:'active'}}))};
- const consumer=new PartyGamesParticipantConsumer({definitions,executionPort,clueHistory:{list:vi.fn(async()=>[{clue_id:'t'}])},...override});
+ const consumer=new PartyGamesParticipantConsumer({definitions,executionPort,manifestStore:{get:()=>structuredClone(manifest)},clueHistory:{list:vi.fn(async()=>[{clue_id:'t'}])},...override});
  return {context,definitions,executionPort,consumer};
 }
 describe('Party Games participant consumer',()=>{
@@ -77,4 +78,13 @@ it('reports unavailable without pinning when rereading the inspected definition 
  definitions.getCurrent.mockRejectedValue(cause);
  await expect(consumer.retainPrepared({prepared,viewer:{role:'host'}})).rejects.toMatchObject({code:'prepared_artifact_unavailable',cause});
  expect(definitions.pin).not.toHaveBeenCalled();
+});
+
+it('freezes the inspected manifest and rejects changes before retention',async()=>{
+ let current=structuredClone(manifest);
+ const {consumer,context}=await fixture(roster,{manifestStore:{get:()=>current}});
+ const prepared=await consumer.prepareSetup({target,settings,participantContext:context,viewer:{role:'host'}});
+ expect(prepared.setup.data.pinnedArtifacts.manifest).toEqual(manifest);
+ current={...current,hash:'e'.repeat(64)};
+ await expect(consumer.retainPrepared({prepared,viewer:{role:'host'}})).rejects.toMatchObject({code:'prepared_artifact_unavailable'});
 });

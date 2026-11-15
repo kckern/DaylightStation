@@ -37,18 +37,23 @@ function artifactRefs(loaded) {
 function ready(snapshot,id) { return {schema:'participant-launch-result/v1',kind:'ready',launch_id:snapshot.launch_id,consumer:ref,snapshot_hash:snapshot.snapshot_hash,participant_context:clone(snapshot.participant_context),output:{schema:'party-games-launch-result/v1',data:{session_id:id,definition_id:snapshot.target.definitionId}},runtime_ref:{provider:'gaming',id}}; }
 export class PartyGamesParticipantConsumer {
  id='party-games'; version=1; targets=[{action:'open',kind:'app',appId:'party-games'}];
- constructor({definitions,clueHistory,executionPort}) { if (!definitions || !executionPort) throw new Error('Definition and execution ports are required'); Object.assign(this,{definitions,clueHistory,executionPort}); }
+ constructor({definitions,clueHistory,executionPort,manifestStore}) { if (!definitions || !executionPort || !manifestStore) throw new Error('Definition and execution ports are required'); Object.assign(this,{definitions,clueHistory,executionPort,manifestStore}); }
  describe(target) { validTarget(target); return {participantRequirement:'optional',minParticipants:1,maxParticipants:128,selectorSupport:['all','explicit'],settingsSchema:'party-games-participant-setup/v1',editorKey:'party-games'}; }
  async prepareSetup({target,settings,participantContext,viewer}) {
   host(viewer); validTarget(target);
   const loaded=await this.definitions.getCurrent(target.definitionId); if (!loaded) fail('definition_not_found','Definition unavailable');
   const artifacts=artifactRefs(loaded);
+  const manifest=this.manifestStore.get(loaded.definition?.experience?.id,loaded.definition?.experience?.version);
+  const surface=manifest?.surfaces?.find(entry=>entry.id===target.surfaceId);
+  if (!manifest || !/^[a-f0-9]{64}$/.test(manifest.hash || '') || !surface?.authority_modes?.includes('remote')) fail('prepared_artifact_unavailable','Experience manifest or surface unavailable');
   const history=await this.clueHistory?.list(target.definitionId) ?? [];
   const data=buildPartyGameSetup({target,settings,participantContext,definition:loaded.definition,clueHistoryIds:history.map(x=>String(x.clue_id))});
-  return {schema:'participant-prepared-setup/v1',consumer:clone(ref),setup:{schema:'party-games-frozen-setup/v1',data:{...data,pinnedArtifacts:{hash:loaded.hash,artifacts:clone(loaded.artifacts)}}},artifacts,preview:{schema:'party-games-preview/v1',data:{participants:data.participants.map(({id,name,avatar})=>({id,name,avatar}))}},confirmation:settings.autostart?'none':'required'};
+  return {schema:'participant-prepared-setup/v1',consumer:clone(ref),setup:{schema:'party-games-frozen-setup/v1',data:{...data,pinnedArtifacts:{hash:loaded.hash,artifacts:clone(loaded.artifacts),manifest:clone(manifest),surface:clone(surface)}}},artifacts,preview:{schema:'party-games-preview/v1',data:{participants:data.participants.map(({id,name,avatar})=>({id,name,avatar}))}},confirmation:settings.autostart?'none':'required'};
  }
  async retainPrepared({prepared,viewer}) {
   host(viewer); const expected=prepared.setup.data.pinnedArtifacts; const definitionId=prepared.artifacts.find(x=>x.role==='definition_bundle')?.id;
+  let currentManifest; try { currentManifest=this.manifestStore.get(expected.manifest.id,expected.manifest.version); } catch (error) { throw Object.assign(new Error('Inspected manifest could not be reread',{cause:error}),{code:'prepared_artifact_unavailable'}); }
+  if (JSON.stringify(currentManifest)!==JSON.stringify(expected.manifest)) fail('prepared_artifact_unavailable','Inspected manifest is unavailable');
   let loaded; try { loaded=await this.definitions.getCurrent(definitionId); } catch (error) { throw Object.assign(new Error('Inspected definition could not be reread', {cause:error}),{code:'prepared_artifact_unavailable'}); }
   if (!loaded || loaded.hash!==expected.hash || JSON.stringify(loaded.artifacts)!==JSON.stringify(expected.artifacts)) fail('prepared_artifact_unavailable','Inspected definition is unavailable');
   let pinned; try { pinned=await this.definitions.pin(loaded); } catch (error) { throw Object.assign(new Error('Inspected artifacts could not be retained', {cause:error}),{code:'prepared_artifact_unavailable'}); }
