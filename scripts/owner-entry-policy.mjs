@@ -481,6 +481,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/household/homeline/browser/tv.mjs': null,
   '__app_modules/household/homeline/browser/assets.mjs': null,
   '__app_modules/personal/journalist/cli/journalist-debrief-preview.cli.mjs': null,
+  '__app_modules/personal/lifelog/cli/knowledge.cli.mjs': null,
   '__app_modules/media/newsreporter/cli/newsreporter.cli.mjs': null,
   '__capabilities/screen-host/browser/menu-navigation.mjs': null,
   '__app_modules/media/media/browser/menu.mjs': null,
