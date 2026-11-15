@@ -38,3 +38,10 @@ describe('FitnessUserHydrator school learner projection', () => {
     expect(logger.warn).toHaveBeenCalledWith('fitness.user.school_membership_unavailable', expect.objectContaining({ userId: 'parent' }));
   });
 });
+
+it('hydrates explicit shared guest references with Fitness overlays and rejects collisions', () => {
+ const hydrator=new FitnessUserHydrator({profileReader, guestResolver:(id)=>id==='visitor'?{person:{kind:'guest',id},display:{name:'Visitor',avatar:{kind:'user-avatar',userId:id}}}:null});
+ const config=hydrator.hydrateConfig({users:{friends:[{person:{kind:'guest',id:'visitor'},group_label:'Friend'}]}});
+ expect(config.users.friends[0]).toMatchObject({id:'visitor',name:'Visitor',group_label:'Friend',avatar:{kind:'user-avatar',userId:'visitor'}});
+ expect(()=>hydrator.hydrateConfig({users:{primary:['visitor'],friends:[{person:{kind:'guest',id:'visitor'}}]}})).toThrow(/collision/i);
+});
