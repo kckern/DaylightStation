@@ -56,6 +56,9 @@ final class HomeWatchdog {
                         throw e;
                     }
                 }
+                // A transition is acknowledged only after the private outbox commits it.
+                // Retry on every tick, even if Fully's observed state has not changed.
+                if (fkb != null) fkb.deliverAlerts(eventName -> enqueue(eventName, state.home));
                 policy.enforce(state.homeCorrect);
                 boolean owner = policy.isOwner();
                 boolean required = prefs.getBoolean("policyRequired", false) || owner;
@@ -112,10 +115,7 @@ final class HomeWatchdog {
         // Android 9 sends this protected broadcast, but its constant is hidden
         // from the public SDK. Keep the timer as a backup.
         context.registerReceiver(receiver, new IntentFilter("android.intent.action.ACTION_PREFERRED_ACTIVITY_CHANGED"));
-        fkb = new FkbGuard(context, event -> handler.post(() -> {
-            try { enqueue(event, state.home); }
-            catch (Exception e) { shell.note("HOME", "security alert could not be queued " + e.getClass().getSimpleName()); }
-        }));
+        fkb = new FkbGuard(context);
         fkb.start();
         handler.post(check); notifier.post(deliver); shell.note("HOME", "watchdog started intervalMs=1000");
     }
@@ -166,6 +166,7 @@ final class HomeWatchdog {
                     .put("heartbeatAgeMs", lastHeartbeat == 0 ? JSONObject.NULL : android.os.SystemClock.elapsedRealtime() - lastHeartbeat)
                     .put("deliveryError", prefs.getString("deliveryError", ""))
                     .put("ready", error == null && state.homeCorrect && configured && pending == 0
+                            && fkb != null && fkb.alertsReady()
                             && lastHeartbeat > 0 && android.os.SystemClock.elapsedRealtime() - lastHeartbeat < 15000
                             && prefs.getString("deliveryError", "").isEmpty()).toString();
         } catch (Exception e) { snapshot = "{\"ready\":false,\"error\":\"health-unavailable\"}"; }

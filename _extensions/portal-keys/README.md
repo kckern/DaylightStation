@@ -249,7 +249,7 @@ APK → `app/app/build/outputs/apk/debug/app-debug.apk`. **Bump `versionCode` on
 
 The same build creates the configured payload jar and `.sha256`, then bakes that
 jar into the APK as the recovery payload. Routine development currently builds
-`p7-kiosk-crash-recovery.jar`; shell version 32 bakes that payload as its recovery image.
+`p8-kiosk-alert-durability.jar`; shell version 32 supports this payload as its recovery image.
 
 ## Persistent shell and zero-tap payloads
 
@@ -412,7 +412,10 @@ API request restores hiding. Keep a verified ADB recovery path available.
 loopback API every two seconds. A disarm triggers a relock attempt; only a later
 readback counts as recovery. Credentials stay in private preferences and are
 never included in status. Home, native-policy, and Fully loss/recovery events
-share the persistent alert outbox. Independent heartbeat monitoring detects a
+share the persistent alert outbox. Fully transitions remain pending until that
+outbox accepts them; storage failures keep monitoring unhealthy and retry on each
+Home check, preserving breach/recovery order even when Fully recovers first.
+Independent heartbeat monitoring detects a
 stopped Home checking thread; heartbeat payloads also carry the Fully-check time.
 
 ```bash

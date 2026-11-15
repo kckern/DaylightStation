@@ -11,18 +11,16 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.function.Consumer;
 
 /** Checks/relocks Fully independently of the Home and native-policy checking thread. */
 final class FkbGuard {
     private final SharedPreferences config;
-    private final Consumer<String> report;
+    private final FkbAlertState alerts;
     private final HandlerThread thread = new HandlerThread("portal-fully-guard");
     private Handler handler;
     private volatile boolean stopped, secure;
     private volatile long checkedAt;
     private volatile String error = "not-yet-checked";
-    private boolean lastReported;
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             if (stopped) return;
@@ -31,9 +29,6 @@ final class FkbGuard {
                 secure = info.optBoolean("kioskMode", false) && info.optBoolean("kioskLocked", false);
                 error = secure ? null : "fully-kiosk-disarmed";
                 checkedAt = System.currentTimeMillis();
-                if (secure != lastReported) {
-                    report.accept(secure ? "fkb-restored" : "fkb-lost"); lastReported = secure;
-                }
                 if (!secure) {
                     call("setBooleanSetting", "key", "kioskMode");
                     call("lockKiosk", null, null);
@@ -41,22 +36,26 @@ final class FkbGuard {
                 }
             } catch (Exception e) {
                 secure = false; error = e.getClass().getSimpleName(); checkedAt = System.currentTimeMillis();
-                if (lastReported) { report.accept("fkb-lost"); lastReported = false; }
             }
+            alerts.observe(secure);
             handler.postDelayed(this, 2000);
         }
     };
-    FkbGuard(Context c, Consumer<String> report) {
-        config = c.getSharedPreferences("portalkeys", Context.MODE_PRIVATE); this.report = report;
-        lastReported = c.getSharedPreferences("home-watchdog", Context.MODE_PRIVATE).getBoolean("fkbSecure", true);
+    FkbGuard(Context c) {
+        config = c.getSharedPreferences("portalkeys", Context.MODE_PRIVATE);
+        alerts = new FkbAlertState(c.getSharedPreferences("home-watchdog", Context.MODE_PRIVATE).getBoolean("fkbSecure", true));
     }
+    void deliverAlerts(FkbAlertState.Writer writer) { alerts.deliver(writer); }
+    boolean alertsReady() { return alerts.ready(); }
     void start() { thread.start(); handler = new Handler(thread.getLooper()); handler.post(poll); }
     void stop() { stopped = true; if (handler != null) handler.removeCallbacksAndMessages(null); thread.quitSafely(); }
     boolean secure() { return secure && checkedAt > 0 && System.currentTimeMillis() - checkedAt < 10000; }
     long checkedAt() { return checkedAt; }
     JSONObject status() throws Exception {
         return new JSONObject().put("secure", secure()).put("checkedAt", checkedAt)
-                .put("error", error == null ? JSONObject.NULL : error);
+                .put("error", error == null ? JSONObject.NULL : error)
+                .put("alertsReady", alerts.ready())
+                .put("alertError", alerts.error() == null ? JSONObject.NULL : alerts.error());
     }
     private JSONObject call(String command, String key, String value) throws Exception {
         String password = config.getString("fkbPassword", "");
