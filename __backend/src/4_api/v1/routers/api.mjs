@@ -164,6 +164,7 @@ export function createApiRouter(config) {
     '/content-filter': 'content-filter',
     '/wikipedia': 'wikipedia',
     '/shutdown': 'shutdown',
+    '/supervision': 'supervision',
     // Weekly measures (rings, and whatever follows). Note this table is the
     // ONLY thing that mounts a router: adding one to `v1Routers` in app.mjs
     // gets it into the api.mounted log and still 404s until its path appears
