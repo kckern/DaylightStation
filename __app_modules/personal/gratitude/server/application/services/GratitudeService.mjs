@@ -62,6 +62,13 @@ export class GratitudeService {
     this.#store = config.store;
   }
 
+  async publishSchoolGratitude({ householdId, learnerId, studyDay, subject, selectionId, timestamp }) {
+    if (!/^[a-z0-9][a-z0-9_-]*$/i.test(learnerId ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(studyDay ?? '') || selectionId !== `school-gratitude:${learnerId}:${studyDay}` || typeof subject !== 'string' || !subject.trim() || subject.length > 160 || !Number.isFinite(Date.parse(timestamp))) throw new ValidationError('Invalid School gratitude publication');
+    const selection = new Selection({ id: selectionId, userId: learnerId, item: { id: selectionId, text: subject.trim() }, datetime: timestamp, printed: [] });
+    const result = await this.#store.addSelectionIfAbsent(householdId, 'gratitude', selection);
+    return { selectionId: result.selection.id, subject: result.selection.item.text, inserted: result.inserted };
+  }
+
   /**
    * Validate category
    * @param {string} category

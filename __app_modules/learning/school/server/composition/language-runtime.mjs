@@ -5,6 +5,7 @@ import { HmacSchoolReelGrantIssuer as HmacSchoolReelGrantIssuer } from "../adapt
 import { HmacSchoolCubeGrantIssuer as HmacSchoolCubeGrantIssuer } from "../adapters/actions/HmacSchoolCubeGrantIssuer.mjs";
 import { HmacSchoolBookGrantIssuer as HmacSchoolBookGrantIssuer } from "../adapters/actions/HmacSchoolBookGrantIssuer.mjs";
 import { HmacSchoolLaunchPreviewTokenIssuer as HmacSchoolLaunchPreviewTokenIssuer } from "../adapters/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs";
+import { HmacSchoolGratitudeGrantIssuer } from '../adapters/actions/HmacSchoolGratitudeGrantIssuer.mjs';
 import { HmacSchoolDebriefGrantIssuer as HmacSchoolDebriefGrantIssuer } from "../adapters/actions/HmacSchoolDebriefGrantIssuer.mjs";
 import { YamlDocumentFileStore as YamlDocumentFileStore } from "../adapters/YamlDocumentFileStore.mjs";
 import { LanguageReelService as LanguageReelService } from "../application/LanguageReelService.mjs";
@@ -29,6 +30,8 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
   let schoolBookGrants = null;
   let schoolBookPanelGrants = null;
   let schoolLaunchPreviewTokens = null;
+  let schoolGratitudeGrants = null;
+  try { schoolGratitudeGrants = new HmacSchoolGratitudeGrantIssuer({key:jwtSecret}); } catch(error) { rootLogger.error('school.gratitude.grants-unavailable',{error:error.message}); }
   let schoolDebriefGrants = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
@@ -126,5 +129,5 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
     },
     logger: rootLogger.child({ module: 'school-language' })
   });
-  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, schoolDebriefGrants, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
+  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, schoolDebriefGrants, schoolGratitudeGrants, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
 }

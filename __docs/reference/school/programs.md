@@ -1,5 +1,10 @@
 # School programs
 
+[Gratitude](./gratitude.md) is a daily voice-or-typed reflection on the
+Scripture & Gospel shelf, reusing Debrief infrastructure with its own Jev
+assessment, seven-day topic spacing, and persistent 30-minute retry delay
+for clear nonsense or repetition.
+
 A program unit delegates evidence and progress to a registered
 `IProgramLauncher`; School still owns assignment, agenda obligation, launch
 authority, and rewards. Program status is keyed structurally by program id and
