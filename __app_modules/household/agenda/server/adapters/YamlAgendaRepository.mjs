@@ -65,9 +65,9 @@ export class YamlAgendaRepository {
           (existing.document.seeded_from.kind === 'plan' ? existing.document.seeded_from.id : null) !== sourcePlanId)) {
         throw fail('idempotency_conflict', 'Request reused');
       }
-      if (!existing && series.document.status !== 'active') throw fail('series_archived', 'Series archived');
       existing ??= plans.find(p => p.document.week_of === weekOf);
       if (!existing) {
+        if (series.document.status !== 'active') throw fail('series_archived', 'Series archived');
         const next = await make({series:series.document, planId});
         if (next.plan_id !== planId || next.week_of !== weekOf || next.household_id !== householdId ||
             next.series_id !== seriesId || !validatePlan(next).valid) throw fail('invalid_document', 'Invalid new plan');
