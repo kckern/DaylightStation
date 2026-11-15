@@ -959,7 +959,10 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               {onOpenRewards ? (
                 <RewardsChest name={kid.name}
                   disabled={Boolean(openingRewardsFor && openingRewardsFor !== kid.id)}
-                  onBeginOpening={() => setOpeningRewardsFor(kid.id)}
+                  onBeginOpening={() => {
+                    schoolLog.selfService('board.rewards-opening', { learnerId: kid.id });
+                    setOpeningRewardsFor(kid.id);
+                  }}
                   onOpen={() => { setOpeningRewardsFor(null); onOpenRewards(kid.id); }} />
               ) : onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
                 // The coin cell is the door to this kid's bank screen: a real

@@ -31,7 +31,7 @@ const bundle = await build({
   plugins: [{ name: 'rewards-fixture', setup(builder) {
     builder.onResolve({ filter: /\.svg\?url$/ }, args => ({ path: resolve(dirname(args.importer), args.path.replace('?url', '')) }));
     builder.onResolve({ filter: /schoolLog\.js$/ }, () => ({ path: 'logger', namespace: 'fixture' }));
-    builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const schoolLog={selfServiceError(){}};' }));
+    builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const schoolLog={selfService(){},selfServiceError(){}};' }));
     builder.onLoad({ filter: /\.scss$/ }, ({ path }) => ({ contents: sass.compile(path).css, loader: 'css' }));
   } }],
 });

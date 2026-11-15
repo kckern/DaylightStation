@@ -142,7 +142,9 @@ test('icon-only chests reveal individual rewards and bank details without public
   await expect(door).toHaveText('');
   const updated = await openRewards(page);
   await expect(updated.getByText('12', { exact: true }).first()).toBeVisible();
-  await updated.getByRole('button', { name: 'Close rewards' }).click();
+  await page.keyboard.press('Escape');
+  await expect(updated).toHaveCount(0);
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
   await expect(door).toBeFocused();
   expect(world.previewReads).toBe(0);
   expect(world.writes.filter(w => /economy|earnings/.test(w))).toEqual([]);
