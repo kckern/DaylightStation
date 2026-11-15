@@ -2,7 +2,7 @@ const ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,121}$/;
 const display = guest => ({ name: guest.name, avatar: guest.avatar ?? null });
 const guestEntry = guest => ({ person: { kind: 'guest', id: guest.id }, display: display(guest), active: guest.active });
 function validateGuest(guest) {
-  if (!ID.test(guest.id || '') || typeof guest.name !== 'string' || !guest.name.trim() || typeof guest.active !== 'boolean') throw new Error('Invalid guest identity');
+  if (typeof guest.id !== 'string' || !ID.test(guest.id) || typeof guest.name !== 'string' || !guest.name.trim() || typeof guest.active !== 'boolean') throw new Error('Invalid guest identity');
   if (guest.avatar != null && (typeof guest.avatar !== 'object' || Array.isArray(guest.avatar))) throw new Error('Invalid guest avatar');
 }
 export class PeopleDirectory {
