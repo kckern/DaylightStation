@@ -834,7 +834,7 @@ export function planDailyAgenda({
   // Urgent focus entries reserve extra blocks by deferring only lower-ranked
   // flexible subject offers. The agenda remains in its normal subject order;
   // this is capacity allocation, not a child-facing priority sort.
-  const focusSections = sections.filter((section) => section.next && focusExtras(section.next) > 0)
+  const focusSections = sections.filter((section) => !section._notASchoolDay && section.next && focusExtras(section.next) > 0)
     .sort((left, right) => byEntryPriority(left.next, right.next) || left._subjectPosition - right._subjectPosition);
   focusSections.forEach((focus) => {
     let remaining = focusExtras(focus.next);

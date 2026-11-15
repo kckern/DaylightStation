@@ -26,3 +26,9 @@ describe('Sunday requires only Scripture',()=>{
   expect(build([subject('math')],day).sections[0].obligation.state).toBe('obligated');
  });
 });
+it('optional urgent Sunday work cannot spend focus blocks that suppress required Scripture',()=>{
+ const flexibleScripture={...scripture,timing:{flexibility:'flexible'},timingPriority:4};
+ const urgentMath=subject('math',{timingState:'urgent',timingPriority:1,timing:{flexibility:'protected',agenda:{normalBlocks:1,urgentBlocks:3}}});
+ const agenda=build([flexibleScripture,urgentMath]),section=agenda.sections.find(s=>s.subject==='scripture');
+ expect(section.next?.unitId).toBe('scripture-1');expect(section.suppressed).toBeNull();expect(section.obligation.state).toBe('obligated');expect(resolveDayCompletion(agenda).state).toBe('incomplete');
+});
