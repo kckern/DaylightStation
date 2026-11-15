@@ -9,14 +9,14 @@
 //   node pkctl.mjs log                    # recent key/screen/config events
 //   node pkctl.mjs config                 # effective config (password redacted)
 //   node pkctl.mjs config set <k> <v>     # patch ONE key
-//   node pkctl.mjs fkbpw                  # push the FKB password from 1Password/cache
+//   node pkctl.mjs fkbpw                  # push the Portal FKB password from private auth
 //   node pkctl.mjs lockdown-token <token> # provision the server-only shutdown token
 //   node pkctl.mjs watch                  # stream key events over the WebSocket
 //
 // `status` leads with serviceBound because the dominant failure mode is the Android
 // accessibility grant being dropped — the app CANNOT re-grant itself. See README.
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -27,7 +27,6 @@ const BASE = `http://${HOST}`;
 const DEVICE = HOST.split(':')[0];
 const SHELL_BASE = `http://${DEVICE}:8772`;
 const OPS_BASE = `http://${DEVICE}:8773`;
-const PW_CACHE = '/tmp/fkb_piano_pw';
 const TOKEN_CACHE = process.env.PK_TOKEN_FILE || join(homedir(), '.config', 'daylight', 'portal-keys-token');
 const LEGACY_TOKEN_CACHE = '/tmp/portal_keys_admin_token';
 
@@ -74,7 +73,12 @@ function resolveKeyboard(token) {
 }
 
 async function req(path) {
-  const res = await fetch(BASE + path, { signal: AbortSignal.timeout(15000) });
+  const mutatesConfig = path.startsWith('/config?')
+    && new URLSearchParams(path.split('?')[1]).has('key');
+  const res = await fetch(BASE + path, {
+    ...(mutatesConfig ? { headers: { 'X-Portal-Token': adminToken() } } : {}),
+    signal: AbortSignal.timeout(15000),
+  });
   const text = await res.text();
   try { return JSON.parse(text); } catch { return text; }
 }
@@ -160,14 +164,13 @@ async function preflight() {
   return { ok, lines };
 }
 
-/** Same resolution order as fkb.cli.mjs — env, then cache, then 1Password. */
+/** Portal credentials must never come from the unrelated piano tablet's cache. */
 function fkbPassword() {
   if (process.env.FKB_PW) return process.env.FKB_PW.trim();
-  if (existsSync(PW_CACHE)) {
-    const v = readFileSync(PW_CACHE, 'utf8').trim();
-    if (v) return v;
-  }
-  return execSync('op read "op://Private/Fully Kiosk Piano/value"', { encoding: 'utf8' }).trim();
+  const path = join(dataDir(), 'household', 'auth', 'fullykiosk.yml');
+  const value = yaml.load(readFileSync(path, 'utf8'))?.password;
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Portal Fully password missing from private auth');
+  return value.trim();
 }
 
 const commands = {
@@ -300,6 +303,30 @@ const commands = {
     pretty(await reqAt(SHELL_BASE, `/payload?url=${encodeURIComponent(url)}&sha256=${encodeURIComponent(sha256)}`, { method: 'POST' }));
   },
   async rollback() { pretty(await reqAt(SHELL_BASE, '/payload/rollback', { method: 'POST' })); },
+  async 'kiosk-home'() { pretty(await reqAt(OPS_BASE, '/kiosk-home')); },
+  async 'kiosk-verify'() {
+    const h = await reqAt(OPS_BASE, '/kiosk-home');
+    const e = h.enforcement || {};
+    const checks = {
+      actualHomeIsFully: h.home === 'de.ozerov.fully/.LauncherReplacement',
+      persistentHomePolicy: h.permanentHomeProtected === true,
+      deviceOwner: e.deviceOwner === true,
+      statusBarDisabled: e.statusBarDisabled === true,
+      portalSystemUiHidden: e.shellUiHidden === true,
+      portalControlCenterHidden: e.controlCenterHidden === true,
+      lockTaskLocked: e.lockTaskLocked === true && e.lockTaskMode === 1,
+      onlyFullyAllowed: Array.isArray(e.allowedPackages) && e.allowedPackages.length === 1
+        && e.allowedPackages[0] === 'de.ozerov.fully',
+      homeRecentsNotificationsAndGlobalActionsDisabled: e.lockTaskFeatures === 0,
+      fullyKioskLocked: h.fully?.secure === true,
+      checkingNow: Number.isFinite(h.checkedAt) && Date.now() - h.checkedAt < 5000,
+      notificationsReady: h.ready === true,
+      kioskProtected: h.kioskProtected === true,
+    };
+    const ok = Object.values(checks).every(Boolean);
+    pretty({ ok, checks });
+    if (!ok) process.exitCode = 1;
+  },
   async 'enable-a11y'() { pretty(await reqAt(OPS_BASE, '/accessibility/enable')); },
   async status() {
     const s = await req('/status');
@@ -363,8 +390,7 @@ const commands = {
     process.exit(pf.ok ? 0 : 1);
   },
 
-  // The password never lives in the repo — it is read from 1Password (or the local
-  // cache fkb.cli.mjs already populates) and pushed straight to the device.
+  // The password comes from private household auth and is never printed.
   async fkbpw() {
     const pw = fkbPassword();
     const out = await req(`/config?key=fkbPassword&value=${encodeURIComponent(pw)}`);
@@ -444,6 +470,8 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  exec <command…>        app-UID remote shell (:8773)');
   console.log('  payload [url sha256]   status or zero-tap verified payload swap');
   console.log('  rollback               roll back to the previous payload');
+  console.log('  kiosk-verify           assert current native policy, Fully lock, and monitoring health');
+  console.log('  kiosk-home             actual Home selection and watchdog readiness (:8773)');
   console.log('  enable-a11y            self-repair the accessibility grant');
   console.log('  status                 serviceBound / keysSeen / display / config');
   console.log('  log                    recent key, screen-toggle and config events');
@@ -451,7 +479,7 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  config set <k> <v>     patch one key');
   console.log('  lockdown-token <token> provision the server shutdown capability token');
   console.log('  preflight              verify wake locks BEFORE enabling the sleep gesture');
-  console.log('  fkbpw                  push the FKB password from 1Password/cache');
+  console.log('  fkbpw                  push the Portal FKB password from private auth');
   console.log('  update <apk-url>       ADB-free APK upgrade (one tap on the panel)');
   console.log('  logcat [lines]         our log lines off the device, no ADB needed');
   console.log('  watch                  live-stream key events over the WebSocket');

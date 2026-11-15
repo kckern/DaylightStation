@@ -165,7 +165,15 @@ public class ControlServer extends NanoWSD {
             }
             if ("/presence".equals(uri)) return json(presence == null ? "{}" : presence.toJson());
             if ("/log".equals(uri))    return json(eventLog.toJsonArray());
-            if ("/config".equals(uri)) return json(handleConfig(session));
+            if ("/config".equals(uri)) {
+                // A LAN caller must not be able to disarm the guard or replace its credentials.
+                // Redacted reads remain available; every configuration mutation requires the
+                // same device-generated admin token as APK and payload updates.
+                if (session.getParms().containsKey("key") && !adminAuthorized(session)) {
+                    return json(Response.Status.UNAUTHORIZED, "{\"error\":\"unauthorized\"}");
+                }
+                return json(handleConfig(session));
+            }
             if ("/lockdown".equals(uri)) return handleLockdown(session);
             // ADB-free deploy + diagnosis — see SelfUpdater for why these exist.
             // Gated on the admin token like the payload OTA on :8772: this server

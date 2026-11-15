@@ -59,6 +59,15 @@
             </intent-filter>
         </activity>
 
+        <receiver android:name=".PortalAdminReceiver" android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
+            <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED" /></intent-filter>
+        </receiver>
+        <service android:name=".PortalOwnerService" android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_SERVICE" /></intent-filter>
+        </service>
         <service android:name=".PortalBridgeService" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
