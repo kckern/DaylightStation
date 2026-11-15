@@ -36,3 +36,22 @@ it('fails closed on explicit unknown or mismatched declarations but leaves sibli
   expect(() => registry.resolve({action:'display',target:{...target,capabilities:{display:{action:'play',participantConsumer:{id:'test-display',version:1}}}}})).toThrow();
   expect(registry.resolve({action:'play',target})).toBeNull();
 });
+
+it('retains an older version without registering its matchers for new launches',()=>{
+ const registry=new ParticipantConsumerRegistry();
+ const make=version=>({id:'versioned',version,targets:[{action:'open',kind:'app',appId:'versioned'}],describe:()=>({}),prepareSetup:async()=>({}),begin:async()=>({})});
+ const old=make(1),current=make(2);
+ registry.register({consumer:old,retainedOnly:true}); registry.register({consumer:current});
+ const target={kind:'app',appId:'versioned',participantConsumer:{id:'versioned',version:2}};
+ expect(registry.resolve({action:'open',target})).toBe(current); expect(registry.get({id:'versioned',version:1})).toBe(old);
+});
+
+it('finds a retained direct access factory only for the exact version and matcher',()=>{
+ const registry=new ParticipantConsumerRegistry(); const factory=()=>{};
+ const consumer={id:'old',version:1,targets:[{action:'open',kind:'app',appId:'thing'}],describe:()=>({}),prepareSetup:async()=>({}),begin:async()=>({})};
+ registry.register({consumer,authorizeDirectAccess:factory,retainedOnly:true});
+ const target={kind:'app',appId:'thing',participantConsumer:{id:'old',version:1}};
+ expect(registry.retainedDirectAccess({action:'open',target})).toBe(factory);
+ expect(registry.retainedDirectAccess({action:'play',target})).toBeNull();
+ expect(registry.retainedDirectAccess({action:'open',target:{...target,appId:'forged'}})).toBeNull();
+});

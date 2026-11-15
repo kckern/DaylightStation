@@ -15,3 +15,11 @@ export function validateActivitySetup(setup) {
   if (!obj(setup.consumer) || !id(setup.consumer.id) || !Number.isSafeInteger(setup.consumer.version) || setup.consumer.version < 1 || !Object.hasOwn(setup,'settings')) fail('consumer');
   return setup;
 }
+
+/** Stable JSON encoding for setup and snapshot digests. */
+export function canonicalJson(value) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (obj(value) && Object.getPrototypeOf(value) === Object.prototype) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  fail('value');
+}

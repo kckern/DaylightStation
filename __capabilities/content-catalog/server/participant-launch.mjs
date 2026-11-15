@@ -18,4 +18,7 @@
 /** @typedef {import('./application/participants/ParticipantPorts.mjs').SafeReturnTarget} SafeReturnTarget */
 /** @typedef {import('./application/participants/ParticipantPorts.mjs').ReadyResult} ReadyResult */
 /** @typedef {import('./application/participants/ParticipantPorts.mjs').ActionTargetMatcher} ActionTargetMatcher */
+/** Register retainedOnly versions for exact historical lookup without new-operation matching. */
 export { ParticipantConsumerRegistry } from './application/participants/ParticipantConsumerRegistry.mjs';
+export { ParticipantSetupResolver, hashValue } from './application/participants/ParticipantSetupResolver.mjs';
+export { ParticipantLaunchService } from './application/participants/ParticipantLaunchService.mjs';

@@ -12,7 +12,8 @@ function validateMatcher(m) {
 /** @typedef {import('./ParticipantPorts.mjs').IParticipantConsumer} IParticipantConsumer */
 export class ParticipantConsumerRegistry {
   #versions = new Map(); #matchers = new Map();
-  register({consumer, authorizeDirectAccess} = {}) {
+  register({consumer, authorizeDirectAccess, retainedOnly = false} = {}) {
+    if (typeof retainedOnly !== 'boolean') fail('Invalid retained-only registration');
     if (!consumer || !validId(consumer.id) || !Number.isSafeInteger(consumer.version) || consumer.version < 1 || !Array.isArray(consumer.targets) || !consumer.targets.length || ['describe','prepareSetup','begin'].some(k => typeof consumer[k] !== 'function')) fail('Invalid consumer');
     if (authorizeDirectAccess !== undefined && typeof authorizeDirectAccess !== 'function') fail('Invalid direct authorization');
     if ((typeof consumer.findResumable === 'function') !== (typeof consumer.resume === 'function')) fail('Resume methods must be paired');
@@ -21,10 +22,10 @@ export class ParticipantConsumerRegistry {
     if (this.#versions.has(versionKey)) fail('Duplicate consumer version');
     const entries = consumer.targets.map(m => { validateMatcher(m); return [matchKey(m),{...m}]; });
     const matchers = entries.map(([,m]) => m);
-    if (matchers.some((m,i) => matchers.slice(0,i).some(other => overlaps(m,other)) || [...this.#matchers.values()].some(({matcher}) => overlaps(m,matcher)))) fail('Overlapping participant matcher');
-    const registration = {consumer, authorizeDirectAccess};
+    if (matchers.some((m,i) => matchers.slice(0,i).some(other => overlaps(m,other)) || (!retainedOnly && [...this.#matchers.values()].some(({matcher}) => overlaps(m,matcher))))) fail('Overlapping participant matcher');
+    const registration = {consumer, authorizeDirectAccess, matchers};
     this.#versions.set(versionKey,registration);
-    for (const [key,matcher] of entries) this.#matchers.set(key,{...registration,matcher});
+    if (!retainedOnly) for (const [key,matcher] of entries) this.#matchers.set(key,{...registration,matcher});
     return consumer;
   }
   get({id,version} = {}) { return this.#versions.get(JSON.stringify([id,version]))?.consumer ?? null; }
@@ -61,6 +62,18 @@ export class ParticipantConsumerRegistry {
     return consumer;
   }
   describe(input) { const consumer = this.resolve(input); return consumer ? consumer.describe(input.target) : null; }
+  /** Locate an exact version's stable direct authority without a live catalog lookup. */
+  retainedDirectAccess({action,target} = {}) {
+    if (!target || !actions.includes(action)) return null;
+    const candidates = [...this.#versions.values()].filter(({consumer,matchers}) => matchers.some(m => {
+      if (m.action !== action || m.kind !== target.kind) return false;
+      if (m.kind === 'app') return m.appId === target.appId && target.participantConsumer?.id === consumer.id && target.participantConsumer?.version === consumer.version;
+      const declaration = target.capabilities?.[m.capability]?.participantConsumer;
+      return m.source === target.source && declaration?.id === consumer.id && declaration?.version === consumer.version && (target.capabilities[m.capability].action === undefined || target.capabilities[m.capability].action === action);
+    }));
+    if (candidates.length > 1) fail('Ambiguous retained target');
+    return candidates[0]?.authorizeDirectAccess ?? null;
+  }
   directAccess({id,version} = {}) { return this.#versions.get(JSON.stringify([id,version]))?.authorizeDirectAccess ?? null; }
   remapActivitySettings({consumer,settings,participantKeyMap}) {
     const registered = this.get(consumer);

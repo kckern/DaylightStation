@@ -42,3 +42,11 @@ it('rejects extra context fields and volatile avatar data with field paths', asy
   const withAvatar = {...roster[0],display:{name:'User',avatar:{kind:'user-avatar',userId:'u'}}};
   expect((await createParticipantContext({scope,participants:[withAvatar]})).participants[0]).toEqual(withAvatar);
 });
+
+it('rejects ambiguous anonymous components across scopes', () => {
+  const context = (scope_id, slot_id) => ({schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'test',id:'p',revision:1},participants:[{key:'slot',participant_id:`anon:${scope_id}:${slot_id}`,identity:{kind:'anonymous',scope_id,slot_id},display:{name:'Guest',avatar:null}}]});
+  expect(context('week:one','seat').participants[0].participant_id).toBe(context('week','one:seat').participants[0].participant_id);
+  expect(() => validateParticipantContext(context('week:one','seat'))).toThrow();
+  expect(() => validateParticipantContext(context('week','one:seat'))).toThrow();
+  expect(validateParticipantContext(context('week','seat'))).toBeTruthy();
+});

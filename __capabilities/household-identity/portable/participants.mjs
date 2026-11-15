@@ -35,7 +35,7 @@ function validateRoster(roster) {
       if (refs.has(ref)) fail(`${path}.identity`, 'Duplicate named identity');
       refs.add(ref);
     } else if (identity.kind === 'anonymous') {
-      if (!id(identity.scope_id) || !id(identity.slot_id) || Object.keys(identity).some(k => !['kind','scope_id','slot_id'].includes(k))) fail(`${path}.identity`, 'Invalid anonymous identity');
+      if (!id(identity.scope_id) || !id(identity.slot_id) || identity.scope_id.includes(':') || identity.slot_id.includes(':') || Object.keys(identity).some(k => !['kind','scope_id','slot_id'].includes(k))) fail(`${path}.identity`, 'Invalid anonymous identity');
       if (p.participant_id !== `anon:${identity.scope_id}:${identity.slot_id}`) fail(`${path}.participant_id`, 'Runtime identity does not match anonymous identity');
     } else fail(`${path}.identity.kind`, 'Unknown identity kind');
     if (!object(p.display) || typeof p.display.name !== 'string' || !p.display.name.trim() || p.display.name.length > 256 || !Object.hasOwn(p.display,'avatar') || (p.display.avatar !== null && (!object(p.display.avatar) || !id(p.display.avatar.kind)))) fail(`${path}.display`, 'Invalid display snapshot');
