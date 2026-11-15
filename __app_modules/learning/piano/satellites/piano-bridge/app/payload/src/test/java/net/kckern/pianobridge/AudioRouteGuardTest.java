@@ -154,6 +154,28 @@ public class AudioRouteGuardTest {
         assertEquals(15, ops.speakerIndex);
     }
 
+    @Test public void acceptedRaiseThatLeavesVolumeLow_reportsObservedIndex() throws Exception {
+        FakeOps ops = new FakeOps() {
+            @Override public boolean raiseA2dpMusicVolume() {
+                raiseCalls++;
+                // The route is still present, but Android ignored or capped the write.
+                return true;
+            }
+        };
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        g.reconcile();
+        now[0] += AudioGuardPolicy.A2DP_SETTLE_MS;
+        g.reconcile();
+
+        assertEquals(1, ops.raiseCalls);
+        assertTrue(g.status().getBoolean("routeOk"));
+        assertEquals("volume-check must not invent a successful raise", 0,
+                g.status().getInt("musicIndex"));
+        assertEquals(0, g.status().getInt("a2dpRaises"));
+    }
+
     @Test public void flapResetsTheSettleWindow() {
         FakeOps ops = new FakeOps();
         ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;

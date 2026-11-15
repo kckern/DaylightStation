@@ -387,6 +387,9 @@ index: with `routeOk` that is the piano's), `a2dpRaises`, `lastA2dpRaiseFrom`.
 `raised`. The kiosk calls it on mount and on every Media Volume press
 (`browser/PianoKiosk/bridgeAudioVolume.js`); the Volume sheet warns when A2DP is the
 route and the index is still below max afterwards.
+The guard reads the active index back after each attempted raise. A surviving A2DP
+route alone does not prove Android applied the volume write; ignored or capped
+writes keep their observed low index in the response and do not count as a raise.
 
 **FKB `disableVolumeButtons` must stay off (payload p37).** FKB implements the
 button lock by remembering the media volume and reverting every change it did not

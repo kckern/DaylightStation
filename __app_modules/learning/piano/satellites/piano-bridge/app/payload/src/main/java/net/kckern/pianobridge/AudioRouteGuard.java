@@ -96,18 +96,26 @@ public final class AudioRouteGuard {
         // The A2DP floor: "connected" with the piano's own index at 0 is silence that
         // every status surface reports as healthy. Raise it; log what we found.
         if (d.raiseA2dpVolume) {
-            if (ops.raiseA2dpMusicVolume()) {
+            boolean routeHeld = ops.raiseA2dpMusicVolume();
+            // A surviving route does not prove Android applied the requested index:
+            // safe-volume caps or another writer can leave it low. Report the readback
+            // so volume-check keeps the kiosk warning visible when recovery failed.
+            musicIndex = ops.speakerMusicIndex();
+            if (routeHeld && musicIndex >= max) {
                 a2dpRaises++;
                 lastA2dpRaiseMs = now;
                 lastA2dpRaiseFrom = index;
-                musicIndex = max;
                 if (now - lastRaiseLogMs >= CLAMP_WINDOW_MS) {
                     Diag.log(TAG, "raised A2DP STREAM_MUSIC " + index + "/" + max + " -> " + max
                             + " (something lowered it; " + a2dpRaises + " raises since start)");
                     lastRaiseLogMs = now;
                 }
-            } else {
+            } else if (!routeHeld) {
                 Diag.log(TAG, "A2DP floor raise skipped: route changed under the write");
+            } else if (now - lastRaiseLogMs >= CLAMP_WINDOW_MS) {
+                Diag.log(TAG, "A2DP STREAM_MUSIC remains " + musicIndex + "/" + max
+                        + " after floor write");
+                lastRaiseLogMs = now;
             }
         }
 
