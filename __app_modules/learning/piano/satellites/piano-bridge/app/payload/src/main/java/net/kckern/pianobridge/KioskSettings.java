@@ -99,6 +99,15 @@ public final class KioskSettings {
         // Guard-only (not in fkb.cli.mjs). EMPTY is the only safe value: any level
         // (e.g. 3:0) writes the ACTIVE device's index, which is the piano.
         m.put("volumeLevels", str(""));
+
+        // A2DP volume floor (2026-11-13): FKB implements disableVolumeButtons by
+        // remembering the media volume and reverting every change it did not make
+        // itself. After an A2DP drop the remembered value is the built-in speaker's
+        // clamped 0, so on reconnect FKB "reverted" the PIANO to 0/15 — and with the
+        // p36 floor it then fought the guard ~40 writes/s (2,700 in a minute, measured).
+        // The audio guard now owns both directions (speaker clamped to 0, A2DP held at
+        // max), so FKB's lock is redundant and must stay OFF.
+        m.put("disableVolumeButtons", bool("false"));
         DESIRED = Collections.unmodifiableMap(m);
     }
 

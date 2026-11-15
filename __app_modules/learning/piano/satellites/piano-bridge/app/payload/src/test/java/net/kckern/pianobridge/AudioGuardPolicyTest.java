@@ -58,4 +58,50 @@ public class AudioGuardPolicyTest {
         assertFalse(d.clampSpeakerVolume);
         assertEquals("wired_route", d.reason);
     }
+
+    // ---- A2DP volume floor (2026-11-13: "connected" at 0/15 was silent) ----
+
+    private static World a2dp(int index, long settledMs) {
+        return new World(true, true, false, index, 15, settledMs);
+    }
+
+    @Test public void a2dpAtZero_settled_raises() {
+        Decision d = AudioGuardPolicy.decide(a2dp(0, AudioGuardPolicy.A2DP_SETTLE_MS));
+        assertTrue(d.routeOk);
+        assertTrue(d.raiseA2dpVolume);
+        assertFalse(d.clampSpeakerVolume);
+    }
+
+    @Test public void a2dpAtZero_notSettled_waitsAndAsksForRecheck() {
+        Decision d = AudioGuardPolicy.decide(a2dp(0, 1_000));
+        assertTrue(d.routeOk);
+        assertFalse(d.raiseA2dpVolume);
+        assertEquals(AudioGuardPolicy.A2DP_SETTLE_MS - 1_000, d.recheckInMs);
+    }
+
+    @Test public void a2dpPartlyLowered_isRaisedToMax() {
+        assertTrue(AudioGuardPolicy.decide(a2dp(7, 10_000)).raiseA2dpVolume);
+    }
+
+    @Test public void a2dpAtMax_noWriteNoRecheck() {
+        Decision d = AudioGuardPolicy.decide(a2dp(15, 0));
+        assertFalse(d.raiseA2dpVolume);
+        assertEquals(0, d.recheckInMs);
+    }
+
+    @Test public void a2dpWithWiredPresent_neverRaises() {
+        Decision d = AudioGuardPolicy.decide(new World(true, true, true, 0, 15, 60_000));
+        assertTrue(d.routeOk);
+        assertFalse("active device ambiguous: don't write", d.raiseA2dpVolume);
+    }
+
+    @Test public void speakerRoute_neverRaises() {
+        Decision d = AudioGuardPolicy.decide(new World(false, false, false, 0, 15, 60_000));
+        assertFalse(d.raiseA2dpVolume);
+        assertFalse(d.routeOk);
+    }
+
+    @Test public void floorDisabledWhenMaxUnknown() {
+        assertFalse(AudioGuardPolicy.decide(new World(true, true, false, 0, 0, 60_000)).raiseA2dpVolume);
+    }
 }

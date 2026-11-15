@@ -31,7 +31,7 @@ node _extensions/portal-keys/pkctl.mjs preflight           # verifies them
 node _extensions/portal-keys/pkctl.mjs config set screenToggleEnabled true
 ```
 
-`keepawake` sets `setWifiWakelock`, `setCpuWakelock`, `preventSleepWhileScreenOff`. The piano
+`keepawake` sets `setWifiWakelock` and `preventSleepWhileScreenOff`. The piano
 tablet has had these for ages; the Portal never did.
 
 Two guardrails now enforce that order rather than relying on anyone reading this:
@@ -178,7 +178,7 @@ payload jar on the Mac and swap it in over the air (see [Zero-tap payload
 upgrade](#zero-tap-payload-upgrade)); until that ships, `pkctl beep fix`
 after every reboot.
 
-### It cannot be stopped from opening — don't re-run this list
+### Legacy behavior without device-owner package hiding
 
 All measured on hardware 2026-07-21 against `com.facebook.alohaapps.controlcenter`:
 
@@ -191,9 +191,10 @@ All measured on hardware 2026-07-21 against `com.facebook.alohaapps.controlcente
 | A toggle in `settings` global/secure/system | No such key exists |
 | An overlay of our own | Its gesture strip sits at `mBaseLayer=201000`, above anything a non-system app can draw |
 
-Device owner (`dpm set-device-owner`) was not tried: it requires no other accounts on the device,
-i.e. a factory reset of a working panel, and would likely not reach a custom Facebook component
-anyway.
+Those shell-only results do not apply to the managed policy controller below.
+Device-owner package hiding, combined with disabled packages and a reboot, prevents
+both menu packages from starting on the tested firmware. The standard status-bar
+policy alone leaves the top strip visible.
 
 ### How the dismissal works
 
@@ -248,14 +249,13 @@ APK → `app/app/build/outputs/apk/debug/app-debug.apk`. **Bump `versionCode` on
 
 The same build creates the configured payload jar and `.sha256`, then bakes that
 jar into the APK as the recovery payload. Routine development currently builds
-`p2-bluetooth-usb-hid.jar`; shell version 16 retains `p1-remote-ops` as its baked
-recovery image.
+`p8-kiosk-alert-durability.jar`; shell version 32 supports this payload as its recovery image.
 
 ## Persistent shell and zero-tap payloads
 
-This follows the piano-bridge shell/payload design. Android will not silently install
-an APK on this non-rooted, non-device-owner Portal. The durable answer is one final
-USB-installed shell and executable dex payloads in app-private storage:
+This follows the piano-bridge shell/payload design. The original unprovisioned
+Portal would not silently install APK updates. A USB-installed shell supports
+executable dex payloads in app-private storage:
 
 - `PortalBridgeService` is a foreground `START_STICKY` service, restarted by
   `BOOT_COMPLETED` and `MY_PACKAGE_REPLACED`.
@@ -273,6 +273,15 @@ USB-installed shell and executable dex payloads in app-private storage:
   was ungated and anyone on the LAN could point the panel at an arbitrary APK.
   The CLI stores it mode `0600` at `~/.config/daylight/portal-keys-token` (override
   with `PK_TOKEN_FILE` or provide `PK_TOKEN`).
+
+### Configuration mutation authorization
+
+Shell version 28 requires the same device-generated admin token for **every**
+legacy configuration mutation on the key-bridge port. Redacted configuration
+reads remain available. This prevents a LAN client from disabling Control Center
+suppression, changing the Fully credential, or disabling presence reporting with
+an unauthenticated URL. Updated `pkctl config set`, `fkbpw`, and `lockdown-token`
+send the token automatically. Older shells did not protect this endpoint.
 
 ### One final USB bootstrap
 
@@ -317,6 +326,119 @@ node ../pkctl.mjs shell
 Payload swaps require no Android confirmation. Full APK replacement remains only for
 manifest/native/shell changes and may require a physical confirmation; put all routine
 logic in the payload.
+
+## Home selection watchdog
+
+Payload `p4-home-watchdog` introduced a Home watcher inside the boot-started foreground
+bridge, independently of Fully and the accessibility binding. It listens for
+Android preferred-activity changes and also resolves `ACTION_MAIN` + `CATEGORY_HOME`
+every second. Only Fully's `LauncherReplacement` and `FakeLauncher` are accepted;
+a chooser, unresolved Home, or another launcher is a breach.
+
+```bash
+node _extensions/portal-keys/pkctl.mjs kiosk-home
+```
+
+The authenticated `GET /kiosk-home` on the operations port reports the actual
+component, last check time, incident count, repair authority, pending alerts,
+delivery errors and heartbeat age. `ready` describes **monitoring readiness**;
+`permanentHomeProtected` requires the native policy authority added in p5. Neither `homeCorrect` nor Fully's
+`kioskLocked` flag establishes an Android lock-task boundary.
+
+On a breach, the watcher attempts Home assignment only when it holds
+`SET_PREFERRED_APPLICATIONS`, verifies by observing actual Home again, and brings
+Fully to the foreground. The stock APK does **not** hold that signature permission;
+it reports `denied-no-home-authority` rather than claiming repair. The app-UID
+`/exec` endpoint does not acquire the privileges of a USB ADB shell.
+
+Loss and recovery events are queued in private preferences before delivery.
+Authenticated `POST /kiosk-home/webhook` accepts a JSON body with a secret `url`
+for an HTTP(S) notification receiver. The URL is never returned by status.
+Delivery retries on network errors and non-2xx responses; a recovery cannot
+discard an undelivered breach. The queue is bounded at 128 events; storage/queue
+errors make health fail rather than reporting readiness. The receiver should
+use event sequence numbers for duplicate suppression when needed.
+
+The receiver handles `home-lost/restored`, `policy-lost/restored`,
+`fkb-lost/restored`, and `heartbeat` events. Heartbeats carry `checkedAt` and
+`fkbCheckedAt` so an independent server detects either checking thread stopping,
+as well as a dead APK. The deployed Home Assistant receiver
+notifies the parent's phone on breach and recovery; an independent five-second
+check alerts after fifteen seconds without a recent check report. Configure
+its webhook ID through HA secrets, and keep the URL in the household's private
+auth storage. A 2xx webhook acknowledgement proves receiver acceptance, not
+physical delivery to a phone; inspect notification-action traces during setup.
+
+**Home permanence and menu suppression are separate enforcement checks.**
+The observed down-swipe surface is SystemUI's transient top strip with Back,
+Home and Wi-Fi. It is not the bottom-edge Meta Control Center that the older
+guard dismisses. Collapsing notifications does not remove that strip, and the
+existing immersive/status-bar settings do not disable it. The managed controller
+below hides both packages. Verify both native lock task and actual gesture behavior
+after provisioning. A watchdog cannot report its own complete death; keep
+independent supervision enabled.
+
+## Managed kiosk policy controller (p7, shell 32+)
+
+Portal Keys can be provisioned as Android's **device owner** while **Fully remains
+Home**. The helper does not register any HOME activity. Its `PortalAdminReceiver`
+and Android-bound `PortalOwnerService` let the system maintain the controller
+independently of Fully's activity or the accessibility binding.
+
+When provisioned, `KioskPolicy` applies persistent HOME resolution to Fully,
+allowlists only `de.ozerov.fully` in Android lock task, disables all optional
+lock-task features, and applies status-bar, uninstall, app-control, safe-boot,
+factory-reset restrictions. It clears `DISALLOW_CREATE_WINDOWS`, which otherwise
+breaks Fully's required overlay permission. It starts Fully in true lock task
+using the Android 9 device-owner launch API. Extra Chrome apps are hidden unless
+they provide the active WebView engine. It reasserts policy at startup and every
+five seconds and checks actual lock-task state on the one-second watchdog tick.
+After a native task loss it recreates Fully's task on the first repair launch;
+launching an existing unpinned task does not apply lock-task options on this ROM.
+
+It hides `com.android.systemui` and `com.facebook.alohaapps.controlcenter` through
+device-owner policy. During provisioning, also disable both packages with
+`adb shell pm disable-user --user 0 <package>`, then reboot. Hiding/disable flags
+do not remove already-running persistent windows on this firmware. Verify the
+processes are absent and both edge swipes show only the working school page.
+Disable keyguard through device policy before removing SystemUI.
+
+For administrative recovery, authenticated `POST /kiosk-policy/system-ui` with
+`{"hidden":false}` stops the helper from hiding those packages. Use authorized
+ADB to `pm enable --user 0 <package>` for both packages, then reboot. The inverse
+API request restores hiding. Keep a verified ADB recovery path available.
+
+`FkbGuard` separately reads Fully's kiosk flags through its password-protected
+loopback API every two seconds. A disarm triggers a relock attempt; only a later
+readback counts as recovery. Credentials stay in private preferences and are
+never included in status. Home, native-policy, and Fully loss/recovery events
+share the persistent alert outbox. Fully transitions remain pending until that
+outbox accepts them; storage failures keep monitoring unhealthy and retry on each
+Home check, preserving breach/recovery order even when Fully recovers first.
+Independent heartbeat monitoring detects a
+stopped Home checking thread; heartbeat payloads also carry the Fully-check time.
+
+```bash
+node _extensions/portal-keys/pkctl.mjs kiosk-verify
+```
+
+This asserts current reported policy, actual Home resolution, native lock-task
+readback and allowlist/features, Fully lock, and alert readiness. It is a runtime
+check, not a substitute for gesture, app-launch, process-death and reboot tests.
+`ready` describes monitoring; `kioskProtected` additionally requires native
+policy, true lock task, correct Home, hidden menu packages, and a recent
+locked-Fully readback. Hidden flags alone do not prove existing windows are gone.
+
+The stock ADB device-owner command rejects this Portal's Meta accounts. A pinned,
+exact-firmware Portal provisioner can establish the controller role through
+temporary root without removing accounts. Use a reviewed, narrowly scoped owner
+adaptation for `net.kckern.portalkeys/.PortalAdminReceiver`; do not run the upstream
+full Kiosk Satellite profile. It targets a different app and includes account
+removal and unrelated changes. Keep the provisioning patch, build hashes and
+native verification output in the private ops evidence. Kernel provisioning
+requires explicit authorization and a backup. The upstream connection driver
+expects a network ADB address; enable authorized TCP ADB from USB first rather
+than passing the USB serial to its reconnect loop.
 
 ## Keyboard transports measured on this Portal
 
@@ -476,7 +598,9 @@ adb -s <portal-ip>:5555 shell "settings put secure enabled_accessibility_service
 adb -s <portal-ip>:5555 shell 'settings put secure accessibility_enabled 1'
 ```
 
-Then push the FKB password (never stored in the repo — read from 1Password/cache):
+Then push the Portal FKB password from private `household/auth/fullykiosk.yml`
+(or explicit `FKB_PW`). Set `DAYLIGHT_BASE_PATH` or `DAYLIGHT_DATA_PATH` when
+running outside the configured checkout. The piano tablet cache is never used:
 
 ```bash
 node _extensions/portal-keys/pkctl.mjs fkbpw

@@ -8,11 +8,14 @@ import java.util.List;import java.util.Map;
 
 final class OpsServer extends NanoHTTPD{
     static final int PORT=8773;private final ShellServices shell;private final Context context;
-    private final UsbHidController usbHid;private final BluetoothController bluetooth;private final VolumeBeepGuard beepGuard;
-    OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth,VolumeBeepGuard beepGuard){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;this.beepGuard=beepGuard;}
+    private final UsbHidController usbHid;private final BluetoothController bluetooth;private final VolumeBeepGuard beepGuard;private final HomeWatchdog homeWatchdog;
+    OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth,VolumeBeepGuard beepGuard,HomeWatchdog homeWatchdog){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;this.beepGuard=beepGuard;this.homeWatchdog=homeWatchdog;}
     @Override public Response serve(IHTTPSession x){String u=x.getUri();try{
         if(!authorized(x))return json(Response.Status.UNAUTHORIZED,new JSONObject().put("ok",false).put("error","unauthorized"));
-        if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload","p2-bluetooth-usb-hid").put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
+        if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload",Main.VERSION).put("homeWatchdog",homeWatchdog.status()).put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
+        if(u.equals("/kiosk-home"))return json(homeWatchdog.status());
+        if(u.equals("/kiosk-policy/system-ui")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureShellUi(new JSONObject(body(x)).getBoolean("hidden")));
+        if(u.equals("/kiosk-home/webhook")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureWebhook(new JSONObject(body(x)).getString("url")));
         if(u.equals("/input"))return json(InputProbe.snapshot(context));
         if(u.equals("/usb-hid"))return json(usbHid==null?new JSONObject().put("ok",false).put("error","USB HID unavailable"):usbHid.inventory());
         if(u.equals("/usb-hid/retry")&&x.getMethod()==Method.POST){if(usbHid==null)return err("USB HID unavailable");usbHid.retry();return json(usbHid.status());}
@@ -34,7 +37,7 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/accessibility/silence-beep")&&x.getMethod()==Method.POST){if(beepGuard==null)return err("beep guard unavailable");return json(beepGuard.silence("request"));}
         if(u.equals("/payload")){if(x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadSwap(param(x,"url"),param(x,"sha256"))));return json(new JSONObject(shell.payloadStatusJson()));}
         if(u.equals("/payload/rollback")&&x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadRollback()));
-        return err("routes: /status /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
+        return err("routes: /status /kiosk-home /kiosk-home/webhook /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
     }catch(Exception e){return err(e.toString());}}
     private static String param(IHTTPSession x,String k){Map<String,List<String>>p=x.getParameters();List<String>v=p.get(k);return v==null||v.isEmpty()?null:v.get(0);}
     private static int intParam(IHTTPSession x,String k,int d){try{return Integer.parseInt(param(x,k));}catch(Exception e){return d;}}

@@ -1723,35 +1723,38 @@ burn-in without losing a half-typed code. The board component lives at
 `frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
 same agenda-preview + teacher-day models the teacher console uses.
 
-**Personal rewards.** Every child's School board card has an identical closed
-treasure chest icon, with no visible label, balance or badge. Tap it to play a
-short opening animation, followed by a modal containing only that child's
-weekly silver, gold bank balance, gem achievements and progress. Reduced motion
-opens immediately. The modal fits the viewport, keeps its close control visible,
-and scrolls its contents; Escape, backdrop, Back to today, 45 seconds idle or
-leaving the resting view closes it. Looking at rewards does not claim a learner.
-There is no family Gems entry or automatic public reward-total ceremony on the
-School resting screen. See [rewards and bank details](./agenda-and-completion.md#the-status-board-card).
+**Personal rewards.** Each child has an identical large chest filling its
+board partition, with no visible label or balance. Mouse/touch-down starts
+opening immediately, with keyboard support and no duplicate release action.
+School preloads reward snapshots into memory and refreshes them by minute
+polling, relevant events and visibility. Opening a modal performs no fetch:
+no loaders, late number insertion or layout change. Its prepared snapshot
+stays fixed until closed; failed background reads retain good memory.
 
-- **Two silvers, two names.** The rewards modal's silver is what the week's
-  work earned (the earnings preview). The bank screen's silver is what is in
-  the bank (the ledger, less spending). They can differ after a purchase or
-  before a payout lands; both use the standard `CoinIcon`.
-- **Gold** is read from the bank's `balances.gold`; a silver `balance` is
-  never treated as gold. Loading, unavailable and zero are distinct states.
-- **`coins-changed`.** The economy still publishes `economy.coins-changed`
-  after balance/pass writes; `EventBusSchoolRealtimeAdapter.relayCoinsChanged`
-  forwards `school {event: 'coins-changed', learnerId}`. The bank screen
-  subscribes as before. Personal rewards read fresh when opened; the resting
-  School board does not request roster balances or bank histories.
-- **Below 820 px** the existing board pane is hidden, and with it the chest
-  buttons. The modal itself supports narrow screens when mounted.
+The one-view overview reuses the existing Gem Board's large whole stones and
+circumferential progress segments, with compact labels, silver, gold and weekly
+fitness rings. Every category and control fits without scrolling. **Bank log**
+opens the existing checked bank History view for itemization. Close, Escape,
+backdrop, idle or navigation returns to the board. There is no family Gems
+entry or automatic public reward-total ceremony. See
+[rewards and bank details](./agenda-and-completion.md#the-status-board-card).
+
+- **Two silvers, two names.** Overview silver is what the week earned; the
+  bank's silver is its ledger balance after spending. Gold uses the wallet's
+  gold field, and rings use the active weekly fitness gate. Unknown is never
+  manufactured as zero.
+- **Memory freshness.** `coins-changed` and other relevant School events,
+  weekly-ring/day-completion gate changes and visibility refresh the roster
+  cache. Events coalesce; the visible-page poll is once per minute. A new
+  opening uses the latest prepared memory; an open view remains stable.
+- **Below 820 px** the existing board pane remains hidden, along with its
+  chest buttons. The overview itself fits narrow screens when mounted.
 
 **The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
 kid's bank, full screen over the locked panel.
 
 - **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. The
-  personal rewards modal's bank-details button names the child, so it sends
+  personal rewards modal's Bank log button names the child, so it sends
   the request directly and closes the modal. There is no header button or strip.
   It posts `POST /api/v1/school/bank/open {screenId, learnerId}`
   (`OpenBankAtPanel`): the learner must be on the current roster and a School

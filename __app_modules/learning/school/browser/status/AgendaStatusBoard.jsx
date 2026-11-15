@@ -414,7 +414,7 @@ const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} si
 // School passes onOpenRewards: identical chest doors replace the legacy
 // coin/gem figures and public coin ceremony. Other consumers can retain the
 // explicit onOpenBank/onOpenGems controls described above.
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, onOpenRewards = null, coinCeremony = null }) {
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, onOpenRewards = null, rewardsReady = null, coinCeremony = null }) {
   const [openingRewardsFor, setOpeningRewardsFor] = useState(null);
   useEffect(() => {
     if (openingRewardsFor && !kids.some(kid => kid.id === openingRewardsFor)) setOpeningRewardsFor(null);
@@ -958,7 +958,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
             <div className="school-status-board__coins" data-testid="board-coins">
               {onOpenRewards ? (
                 <RewardsChest name={kid.name}
-                  disabled={Boolean(openingRewardsFor && openingRewardsFor !== kid.id)}
+                  disabled={Boolean((openingRewardsFor && openingRewardsFor !== kid.id) || (rewardsReady && !rewardsReady[kid.id]))}
                   onBeginOpening={() => {
                     schoolLog.selfService('board.rewards-opening', { learnerId: kid.id });
                     setOpeningRewardsFor(kid.id);

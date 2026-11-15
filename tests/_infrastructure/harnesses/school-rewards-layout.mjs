@@ -17,9 +17,12 @@ import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import RewardsChest from './__app_modules/learning/school/browser/rewards/RewardsChest.jsx';
 import RewardsModal from './__app_modules/learning/school/browser/rewards/RewardsModal.jsx';
+const snapshot = id => ({ learnerId:id, week:'2026-11-09', mode:'live', silver:24, gold:3, rings:1260,
+ groups:[{id:'move',label:'Move'},{id:'school',label:'School'},{id:'games',label:'Games'}],
+ gems:Array.from({length:13},(_,index)=>({id:'gem-'+index,label:['Moved 5 days','Most rings','Green week','Reading','Piano'][index%5],group:['move','school','games'][index%3],color:['#1e88e5','#f2c94c','#2e9e5b'][index%3],cell:{state:index%3?'pending':'earned',week:index%3?0:1,streak:index%3?{have:3,need:4,reach:'on-track'}:null,parts:[]}})) });
 function Fixture(){
  const [kid,setKid]=useState(null);
- return <main style={{padding:24}}><h1>Today at school</h1>{['Alex','Jamie'].map(name => <div key={name} style={{display:'flex',gap:32,alignItems:'center'}}><span>{name}</span><RewardsChest name={name} onOpen={()=>setKid({id:name.toLowerCase(),name})}/></div>)}{kid&&<RewardsModal key={kid.id} learner={kid} onClose={()=>setKid(null)} onOpenBank={()=>setKid(null)} />}</main>;
+ return <main style={{padding:24}}><h1>Today at school</h1>{['Alex','Jamie'].map(name => <div key={name} style={{display:'flex',gap:32,alignItems:'center'}}><span>{name}</span><div style={{width:160,height:160}}><RewardsChest name={name} onOpen={()=>setKid({id:name.toLowerCase(),name})}/></div></div>)}{kid&&<RewardsModal key={kid.id} learner={kid} snapshot={snapshot(kid.id)} onClose={()=>setKid(null)} onOpenBank={()=>setKid(null)} />}</main>;
 }
 createRoot(document.getElementById('root')).render(<Fixture/>);
 `;
@@ -65,25 +68,37 @@ try {
     } else throw Error(`Unexpected API call: ${url.pathname}`);
     return route.fulfill({ json: data });
   });
-  for (const [width, height] of [[320, 568], [390, 844], [667, 375], [820, 450], [1024, 600], [1920, 1080], [320, 256]]) {
+  for (const [width, height] of [[1280, 800], [320, 568], [390, 844], [667, 375], [820, 450], [1024, 600], [1920, 1080], [320, 256]]) {
     await page.setViewportSize({ width, height }); await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto(origin);
     const door = page.getByRole('button', { name: "Open Alex's rewards" });
     assert.equal(await door.textContent(), '');
-    await door.click();
+    const doorBox = await door.boundingBox();
+    const chestBox = await door.locator('.school-rewards-chest').boundingBox();
+    assert.ok(chestBox.width >= doorBox.width * .9 && chestBox.height >= doorBox.height * .9, 'chest fills its cell');
+    await page.mouse.move(doorBox.x + doorBox.width/2, doorBox.y + doorBox.height/2);
+    await page.mouse.down();
+    assert.ok((await door.getAttribute('class')).includes('is-opening'), 'starts before release');
+    await page.mouse.up();
     assert.equal(await page.getByRole('dialog').count(), 0, 'modal waits for opening');
     const modal = page.getByRole('dialog', { name: "Alex's rewards" });
     await modal.waitFor({ state: 'visible' }); await modal.getByText('24', { exact: true }).waitFor();
     const geometry = await modal.evaluate(el => {
-      const r = el.getBoundingClientRect(), close = el.querySelector('.school-rewards-modal__close').getBoundingClientRect(), body = el.querySelector('.school-rewards-modal__body');
-      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, closeTop: close.top, closeBottom: close.bottom, bodyOverflow: body.scrollWidth > body.clientWidth, documentOverflow: document.documentElement.scrollWidth > innerWidth, scrolls: body.scrollHeight > body.clientHeight };
+      const r = el.getBoundingClientRect(), close = el.querySelector('.school-rewards-modal__close').getBoundingClientRect(), body = el.querySelector('.school-rewards-modal__grid-box');
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, closeTop: close.top, closeBottom: close.bottom, bodyOverflow: body.scrollWidth > body.clientWidth, documentOverflow: document.documentElement.scrollWidth > innerWidth, scrolls: el.scrollHeight > el.clientHeight || body.scrollHeight > body.clientHeight, gems: el.querySelectorAll('.gem-glyph').length, gemWidth: el.querySelector('.gem-glyph')?.getBoundingClientRect().width };
     });
     assert.ok(geometry.left >= 0 && geometry.top >= 0 && geometry.right <= width + .5 && geometry.bottom <= height + .5, JSON.stringify(geometry));
     assert.ok(geometry.closeTop >= 0 && geometry.closeBottom <= height, 'close visible');
     assert.ok(!geometry.bodyOverflow && !geometry.documentOverflow, 'no horizontal overflow');
-    assert.ok(geometry.scrolls, 'long rewards scroll inside modal');
+    assert.ok(!geometry.scrolls, 'all rewards fit in one view');
+    assert.equal(geometry.gems, 13);
+    if(width===1280) assert.ok(geometry.gemWidth>=80, 'large gems on the Portal');
+    const bankBox=await modal.getByRole('button',{name:'Bank log'}).boundingBox();
+    assert.ok(bankBox.y+bankBox.height<=height, 'bank link visible without scrolling');
+    const fitting=await modal.locator('.school-rewards-modal__grid').evaluate(el=>{const p=el.parentElement.getBoundingClientRect(),r=el.getBoundingClientRect();return r.width<=p.width+.5&&r.height<=p.height+.5});
+    assert.ok(fitting, 'glyph grid is not clipped');
     assert.ok(!(await modal.textContent()).includes('Jamie'), 'only own data');
     await page.screenshot({ path: join(outDir, `${width}x${height}.png`) });
-    await modal.getByRole('button', { name: 'Back to today' }).scrollIntoViewIfNeeded();
+
     // The title/close control stays visible after scrolling the rewards.
     const close = await modal.getByRole('button', { name: 'Close rewards' }).boundingBox();
     assert.ok(close.y >= 0 && close.y + close.height <= height);
@@ -95,8 +110,7 @@ try {
   await page.getByRole('button', { name: "Open Jamie's rewards" }).click();
   await page.getByRole('dialog', { name: "Jamie's rewards" }).waitFor({ state: 'visible' });
   assert.equal(await page.getByRole('dialog').evaluate(el => getComputedStyle(el).animationName), 'none');
-  await page.getByRole('button', { name: 'Back to today' }).scrollIntoViewIfNeeded();
-  await page.getByRole('button', { name: 'Back to today' }).click();
+  await page.getByRole('button', { name: 'Close rewards' }).click();
   await page.getByRole('dialog').waitFor({ state: 'detached' });
   assert.deepEqual(errors, []);
   writeFileSync(join(outDir, 'geometry.json'), JSON.stringify(evidence, null, 2));

@@ -16,6 +16,7 @@ import android.media.midi.MidiOutputPort;
 import android.media.midi.MidiReceiver;
 import android.os.Bundle;
 import android.os.Handler;
+import org.json.JSONException;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
@@ -389,6 +390,29 @@ public class BridgeCore {
         AudioRouteGuard g = audioGuard;
         if (g == null) return;
         try { g.reconcile(); } catch (Throwable t) { Log.w(TAG, "reconcile threw", t); }
+        // The A2DP volume floor waits out a settle window after a connect; a steady
+        // route fires no further edges, so schedule the follow-up ourselves.
+        Handler h = audioGuardHandler;
+        long recheck = g.recheckInMs();
+        if (h != null) {
+            h.removeCallbacks(guardRecheck);
+            if (recheck > 0) h.postDelayed(guardRecheck, recheck + 50);
+        }
+    }
+    private final Runnable guardRecheck = this::safeReconcile;
+
+    /**
+     * Run the guard NOW on the caller's thread (reconcile() is synchronized) and say
+     * whether the A2DP floor had to raise the index. Backs POST /audio-guard/volume-check,
+     * which the kiosk calls on every Media Volume press: a UI "max" over an OS index of
+     * 0/15 is still silence, so the press itself must verify the OS level.
+     */
+    public JSONObject checkAudioVolumeNow() throws JSONException {
+        AudioRouteGuard g = audioGuard;
+        if (g == null) return null;
+        int before = g.a2dpRaises();
+        safeReconcile();
+        return g.status().put("raised", g.a2dpRaises() > before);
     }
 
     /**

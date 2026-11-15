@@ -12,7 +12,7 @@ import StepGrid from './StepGrid.jsx';
  * StepGrids, plus the Log/Linear curve toggle. Successor to VolumeModal,
  * rebuilt on the transport primitives; opened everywhere via VolumeControl.
  */
-function ChannelCard({ icon, name, level, onLevel, curve }) {
+function ChannelCard({ icon, name, level, onLevel, curve, warning }) {
   return (
     <div className="piano-volsheet__card">
       <div className="piano-volsheet__cardhead">
@@ -25,16 +25,22 @@ function ChannelCard({ icon, name, level, onLevel, curve }) {
         onPick={(i) => onLevel(stepToLevel(i, curve))}
         ariaLabel={name}
       />
+      {warning && <p className="piano-volsheet__warning" role="alert">{warning}</p>}
     </div>
   );
 }
 
 export default function VolumeSheet({ open, onClose }) {
-  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel } = usePianoMix();
+  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, mediaOutput } = usePianoMix();
+  // The bridge checked the tablet's OS media volume and could not bring it up:
+  // the slider below would be multiplying against zero.
+  const mediaWarning = mediaOutput?.silent
+    ? `Tablet speaker volume is ${mediaOutput.musicIndex}/${mediaOutput.musicMax} and couldn’t be raised.`
+    : null;
   const [curve, setCurve] = useState('log');
   return (
     <TransportSheet open={open} title="Volume" onClose={onClose}>
-      <ChannelCard icon="volume" name="Media Volume" level={mediaLevel} onLevel={setMediaLevel} curve={curve} />
+      <ChannelCard icon="volume" name="Media Volume" level={mediaLevel} onLevel={setMediaLevel} curve={curve} warning={mediaWarning} />
       <ChannelCard icon="piano" name="MIDI Volume" level={pianoLevel} onLevel={setPianoLevel} curve={curve} />
       <div className="piano-volsheet__curve" role="group" aria-label="Volume curve">
         <TransportButton label="Linear" on={curve === 'linear'} onPress={() => setCurve('linear')} />

@@ -5,11 +5,13 @@ import net.kckern.portalkeys.api.Payload;
 import net.kckern.portalkeys.api.ShellServices;
 
 public final class Main implements Payload {
+    static final String VERSION = "p8-kiosk-alert-durability";
     private OpsServer ops;
     private HidBridgeServer hidBridge;
     private UsbHidController usbHid;
     private BluetoothController bluetooth;
     private VolumeBeepGuard beepGuard;
+    private HomeWatchdog homeWatchdog;
 
     @Override public void start(ShellServices shell) {
         Context context = ((Context) shell.context()).getApplicationContext();
@@ -42,7 +44,9 @@ public final class Main implements Payload {
             beepGuard = null;
         }
         try {
-            ops = new OpsServer(shell, usbHid, bluetooth, beepGuard);
+            homeWatchdog = new HomeWatchdog(context, shell);
+            homeWatchdog.start();
+            ops = new OpsServer(shell, usbHid, bluetooth, beepGuard, homeWatchdog);
             ops.start(0, true);
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -51,16 +55,18 @@ public final class Main implements Payload {
 
     @Override public void stop() {
         if (ops != null) ops.stop();
+        if (homeWatchdog != null) homeWatchdog.stop();
         if (beepGuard != null) beepGuard.stop();
         if (bluetooth != null) bluetooth.stop();
         if (usbHid != null) usbHid.stop();
         if (hidBridge != null) hidBridge.stop();
         ops = null;
+        homeWatchdog = null;
         beepGuard = null;
         bluetooth = null;
         usbHid = null;
         hidBridge = null;
     }
 
-    @Override public String version() { return "p3-quiet-volume"; }
+    @Override public String version() { return VERSION; }
 }

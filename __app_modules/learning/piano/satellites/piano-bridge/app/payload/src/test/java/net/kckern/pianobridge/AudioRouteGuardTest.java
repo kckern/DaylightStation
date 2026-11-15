@@ -13,12 +13,21 @@ public class AudioRouteGuardTest {
         int speakerIndex = 15;
         Boolean lastGate = null;
         int clampCalls = 0;
+        int raiseCalls = 0;
+        boolean dropDuringRaise = false;
 
         public boolean a2dpProfileConnected() { return a2dpConnected; }
         public boolean a2dpOutputPresent()    { return a2dpOut; }
         public boolean wiredOutputPresent()   { return wired; }
         public int  speakerMusicIndex()       { return speakerIndex; }
+        public int  musicMaxIndex()           { return 15; }
         public void clampSpeakerMusicVolume() { clampCalls++; speakerIndex = 0; }
+        public boolean raiseA2dpMusicVolume() {
+            raiseCalls++;
+            if (dropDuringRaise) { a2dpOut = false; speakerIndex = 0; return false; }
+            speakerIndex = 15;
+            return true;
+        }
         public void setSynthGate(boolean open) { lastGate = open; }
     }
 
@@ -104,5 +113,102 @@ public class AudioRouteGuardTest {
         now[0] += 61_000;
         g.reconcile();
         assertEquals(1, g.status().getInt("clampsPerMin"));
+    }
+
+    // ---- A2DP volume floor ----
+
+    @Test public void a2dpAtZero_raisedOnlyAfterSettle() throws Exception {
+        FakeOps ops = new FakeOps();
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+
+        g.reconcile();                                   // just connected
+        assertEquals(0, ops.raiseCalls);
+        assertEquals(AudioGuardPolicy.A2DP_SETTLE_MS, g.recheckInMs());
+        assertTrue(g.routeOk());
+
+        now[0] += AudioGuardPolicy.A2DP_SETTLE_MS;       // the scheduled recheck
+        g.reconcile();
+        assertEquals(1, ops.raiseCalls);
+        assertEquals(15, ops.speakerIndex);
+        assertEquals(0, g.recheckInMs());
+        assertEquals(1, g.status().getInt("a2dpRaises"));
+        assertEquals(0, g.status().getInt("lastA2dpRaiseFrom"));
+        assertEquals(15, g.status().getInt("musicIndex"));
+
+        g.reconcile();                                   // idempotent at max
+        assertEquals(1, ops.raiseCalls);
+    }
+
+    @Test public void volumeDownWhileOnA2dp_isRaisedBack() {
+        FakeOps ops = new FakeOps();
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 15;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        g.reconcile();
+        now[0] += 60_000;
+        ops.speakerIndex = 0;                            // someone pressed volume-down
+        g.reconcile();                                   // VOLUME_CHANGED edge
+        assertEquals(1, ops.raiseCalls);
+        assertEquals(15, ops.speakerIndex);
+    }
+
+    @Test public void acceptedRaiseThatLeavesVolumeLow_reportsObservedIndex() throws Exception {
+        FakeOps ops = new FakeOps() {
+            @Override public boolean raiseA2dpMusicVolume() {
+                raiseCalls++;
+                // The route is still present, but Android ignored or capped the write.
+                return true;
+            }
+        };
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        g.reconcile();
+        now[0] += AudioGuardPolicy.A2DP_SETTLE_MS;
+        g.reconcile();
+
+        assertEquals(1, ops.raiseCalls);
+        assertTrue(g.status().getBoolean("routeOk"));
+        assertEquals("volume-check must not invent a successful raise", 0,
+                g.status().getInt("musicIndex"));
+        assertEquals(0, g.status().getInt("a2dpRaises"));
+    }
+
+    @Test public void flapResetsTheSettleWindow() {
+        FakeOps ops = new FakeOps();
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        g.reconcile();
+        now[0] += 2_000;
+        ops.a2dpOut = false; g.reconcile();              // drop
+        ops.a2dpOut = true;  now[0] += 1_500; g.reconcile(); // back: window restarts
+        assertEquals(0, ops.raiseCalls);
+        now[0] += AudioGuardPolicy.A2DP_SETTLE_MS; g.reconcile();
+        assertEquals(1, ops.raiseCalls);
+    }
+
+    @Test public void raiseThatLosesTheRoute_isNotCounted() throws Exception {
+        FakeOps ops = new FakeOps();
+        ops.a2dpConnected = true; ops.a2dpOut = true; ops.speakerIndex = 0;
+        ops.dropDuringRaise = true;
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        g.reconcile();
+        now[0] += AudioGuardPolicy.A2DP_SETTLE_MS; g.reconcile();
+        assertEquals(1, ops.raiseCalls);
+        assertEquals(0, g.status().getInt("a2dpRaises"));
+        assertEquals(0, ops.speakerIndex);
+    }
+
+    @Test public void speakerRoute_neverRaised() {
+        FakeOps ops = new FakeOps();
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        for (int i = 0; i < 5; i++) { g.reconcile(); now[0] += 10_000; }
+        assertEquals(0, ops.raiseCalls);
+        assertEquals(0, ops.speakerIndex);
     }
 }

@@ -359,6 +359,49 @@ Two fixes, both keeping the guard fail-closed:
   non-zero `clampsPerMin` while A2DP is up, or a large one while it is down, means a
   writer is fighting the guard again.
 
+### The other direction: A2DP volume floor (payload p36, 2026-11-13)
+
+The guard used to stop at "route OK". Emptying `volumeLevels` (above) removed the only
+writer that ever raised the **A2DP device's own** `STREAM_MUSIC` index, and AudioService
+persists that index across reconnects and reboots. So once anything lowered it, the
+piano sat at **0/15** while `/speaker` said `connected`, the guard said `routeOk`, and
+the kiosk's Media Volume said max (2026-10-28, again 2026-11-13). The writer was never
+identified: `dumpsys audio`'s volume history does not survive a reboot.
+
+`AudioGuardPolicy` now also decides `raiseA2dpVolume`: A2DP connected **and** present,
+no wired output, index below max, and A2DP continuously confirmed for
+`A2DP_SETTLE_MS` (3 s). Below that window it returns `recheckInMs` and `BridgeCore`
+posts the follow-up reconcile itself, since a steady route fires no further edges.
+`VOLUME_CHANGED_ACTION` already triggers reconcile, so a volume-down on A2DP is put back.
+
+The raise targets **max**: the speaker is an external receiver whose loudness lives on
+its amp, and the kiosk's Media Volume is a software level on the media element above
+it. `AndroidAudioOps.raiseA2dpMusicVolume()` re-senses A2DP right before the write and
+again right after. If A2DP vanished across the write, the raise may have landed on the
+built-in speaker, so it clamps the active device straight back to 0. The speaker index
+itself is never raised.
+
+`GET /speaker` → `guard` now carries `musicIndex`/`musicMax` (the **active** route's
+index: with `routeOk` that is the piano's), `a2dpRaises`, `lastA2dpRaiseFrom`.
+`POST /audio-guard/volume-check` runs the guard synchronously and returns the same plus
+`raised`. The kiosk calls it on mount and on every Media Volume press
+(`browser/PianoKiosk/bridgeAudioVolume.js`); the Volume sheet warns when A2DP is the
+route and the index is still below max afterwards.
+The guard reads the active index back after each attempted raise. A surviving A2DP
+route alone does not prove Android applied the volume write; ignored or capped
+writes keep their observed low index in the response and do not count as a raise.
+
+**FKB `disableVolumeButtons` must stay off (payload p37).** FKB implements the
+button lock by remembering the media volume and reverting every change it did not
+make. After an A2DP drop it remembers the built-in speaker's clamped 0, and on
+reconnect it "reverts" the piano to 0/15, which is the most likely origin of the
+silent-but-connected state. Against the p36 floor it became a ~40 writes/s fight
+(2,718 raises in about a minute, `dumpsys audio` alternating `index:15 from
+net.kckern.pianobridge` / `index:0 from de.ozerov.fully`), stopped the instant the lock
+was turned off. The guard already owns both directions, so `KioskSettingsGuard`
+holds `disableVolumeButtons=false`. A `/speaker` `a2dpRaises` count that keeps
+climbing means some writer is fighting the floor again.
+
 ### Who reconnects the speaker
 
 `A2dpConnector` keeps the sink connected with a 20 s `connect()` sweep. That cannot
