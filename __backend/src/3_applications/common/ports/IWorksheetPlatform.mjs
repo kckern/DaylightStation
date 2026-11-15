@@ -17,10 +17,13 @@ export class IWorksheetPlatform {
   get id() { throw new Error('IWorksheetPlatform.id must be implemented'); }
 
   /**
-   * @param {{kind: string, level: number, paper?: 'letter'|'a4'}} query
+   * @param {{kind: string, level: number, paper?: 'letter'|'a4', rotation?: {characters: string, digitLevel: number, supplementalIds?: string[]}}} query
    * @returns {Promise<WorksheetActivity[]>}
    */
   async listActivities(query) { throw new Error('IWorksheetPlatform.listActivities must be implemented'); }
+
+  /** Resolve semantic metadata for a historical page. Required by tracing rotation. */
+  async getActivity(externalId) { throw new Error('IWorksheetPlatform.getActivity must be implemented'); }
 
   /**
    * @param {string} externalId

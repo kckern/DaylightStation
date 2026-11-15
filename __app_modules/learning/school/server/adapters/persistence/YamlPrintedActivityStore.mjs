@@ -43,6 +43,7 @@
  * with `saveYamlToPathAtomic`.
  */
 import path from 'path';
+import { countsAsIssuedActivity } from '../../domain/printedActivity.mjs';
 import yaml from 'js-yaml';
 import {
   fileExists, readFile, listYamlFiles, writeFileAtomic, saveYamlToPathAtomic,
@@ -99,7 +100,7 @@ export class CorpusAlreadyOpenError extends Error {
 
 /**
  * The learner's log holds evidence that could not be read (corrupt or
- * unreadable). Thrown by `listCompletedForDay` only, so a day's status answers
+ * unreadable). Thrown by strict history and `listCompletedForDay` reads, so a day's status answers
  * "unavailable" instead of a false "0 of 1".
  */
 export class LogUnreadableError extends Error {
@@ -314,6 +315,7 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
       externalId: issuance.externalId,
       title: orNull(issuance.title),
       kind: orNull(issuance.kind),
+      ...(issuance.character ? { character: issuance.character } : {}),
       level: Number.isInteger(issuance.level) ? issuance.level : null,
       issuedAt: orNull(issuance.issuedAt),
       issuedStudyDay: orNull(issuance.issuedStudyDay),
@@ -352,8 +354,10 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
   }
 
   /** @inheritdoc */
-  async listForLearner(learnerId) {
-    return this.#readRows(learnerId).rows;
+  async listForLearner(learnerId, { strict = false } = {}) {
+    const read = this.#readRows(learnerId);
+    if (strict && read.lost) throw new LogUnreadableError({ learnerId, file: this.#fileFor(learnerId) });
+    return read.rows;
   }
 
   /** @inheritdoc */
@@ -366,7 +370,7 @@ export class YamlPrintedActivityStore extends IPrintedActivityStore {
     if (!isNonEmptyString(platform)) return [];
     const ids = new Set();
     for (const row of this.#allRows()) {
-      if (row.platform === platform && row.voidedAt == null && isNonEmptyString(row.externalId)) ids.add(row.externalId);
+      if (row.platform === platform && countsAsIssuedActivity(row) && isNonEmptyString(row.externalId)) ids.add(row.externalId);
     }
     return [...ids];
   }
