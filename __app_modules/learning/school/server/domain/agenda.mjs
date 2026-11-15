@@ -327,6 +327,10 @@ export function planDailyAgenda({
   });
 
   const sections = order.filter((subject) => bySubject.has(subject)).map((subject, subjectPosition) => {
+    // Sunday owes only Scripture, even when an enrollment explicitly meets
+    // Sunday or its program status is unavailable. Keep diagnostics and actual
+    // performed work; the existing day-off override below excuses what is left.
+    const sundayRest = isoWeekday(today) === 7 && subject !== 'scripture';
     // A program enrollment whose own `except` span covers today does not exist
     // today: it is neither offered, nor owed, nor able to fault the section.
     // That span is how an enrollment is dated — a program retired mid-term
@@ -541,7 +545,7 @@ export function planDailyAgenda({
     // weekday-only one keeps the section obligated rather than borrowing its
     // vacation.
     const requiredVerdicts = verdicts.filter(({ entry: e }) => !e.elective);
-    const noSchoolToday = householdOff
+    const noSchoolToday = sundayRest || householdOff
       || (requiredVerdicts.length > 0 && requiredVerdicts.every((v) => !v.schoolDay));
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
     const hasNonElective = (pred) => nonElectiveList.some(pred);
@@ -793,7 +797,7 @@ export function planDailyAgenda({
       _notASchoolDay: noSchoolToday || tierDropsSection,
       // Internal: this section carries a weekend-policy course that the day
       // still asks for (not excused by the household calendar or a tier).
-      _weekendAsks: weekendTrack.length > 0 && !householdOff && !tierDropsSection,
+      _weekendAsks: weekendTrack.length > 0 && !sundayRest && !householdOff && !tierDropsSection,
     };
   });
 
