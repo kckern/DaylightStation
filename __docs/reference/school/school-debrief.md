@@ -1,5 +1,10 @@
 # School debrief
 
+Debrief shares voice-or-text UI, keyboard controls, audio/transcription,
+day-event storage, and purpose-bound grant machinery with
+[Gratitude](./gratitude.md). Its wrappers preserve existing paths, tokens,
+input shortcuts, prompts, and scoring; domain workflows remain separate.
+
 A short daily after-school debrief for a learner who attends an outside school.
 None of that learner's schoolwork reaches the household School system, so each
 day they say or type one real moment and something they can now explain, an AI

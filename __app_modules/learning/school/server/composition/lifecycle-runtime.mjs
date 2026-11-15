@@ -1,4 +1,5 @@
 /** Existing school lifecycle runtime assembly; preserves construction order. */
+import { createGratitudeRuntime } from './gratitude-runtime.mjs';
 import { declaredEntryActions as declaredEntryActions } from "../domain/reachability.mjs";
 import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScans.mjs";
 import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
@@ -155,6 +156,7 @@ try {
       // target, the Books domain's resolver and repository for the shelf.
       bookGrants: dependencies.schoolBookGrants,
       debriefGrants: dependencies.schoolDebriefGrants,
+      gratitudeGrants: dependencies.schoolGratitudeGrants,
       resolveBook: books.resolveBook,
       bookRepository: books.bookRepository,
       // Shelf and teacher views render covers from OUR address, never the
@@ -1012,6 +1014,19 @@ try {
       }),
       logger: rootLogger.child({ module: 'school-books-api' }),
     }));
+  }
+
+  if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.gratitudeLauncher && dependencies.schoolGratitudeGrants) {
+    const lifecycle = dependencies.schoolLifecycle;
+    const logger = rootLogger.child({module:'school-gratitude'});
+    const runtime = createGratitudeRuntime({configService,store:lifecycle.gratitudeStore,assignments:lifecycle.gratitudeAssignments,grants:dependencies.schoolGratitudeGrants,teacherGate:schoolTeacherGate,
+      aiGateway:dependencies.scopedGateway?.(dependencies.sharedAiGateway,{app:'school',feature:'gratitude'}),
+      decisionGateway:dependencies.scopedGateway?.(dependencies.decisionGateway,{app:'school',feature:'gratitude'}),
+      scheduler:new NodeAsyncScheduler(),timezone:configService.getTimezone?.()??null,householdSchedule:()=>lifecycle.householdSchedule,logger,
+      publish:body=>dependencies.gratitudeServices.publishSchoolGratitude({...body,householdId}),
+      notify:async body=>{let userName=body.learnerId;try{userName=await learnerDisplayName(body.learnerId)||userName;}catch{}; dependencies.broadcastGratitude?.({topic:'gratitude',action:'item_added',source:'school',persisted:true,category:'gratitude',userId:body.learnerId,userName,items:[{id:body.selectionId,text:body.subject}]});},
+    });
+    v1Routers.school.use('/gratitude',runtime.router);
   }
 
   // After-school debrief (spec 2026-10-21-school-debrief-design).

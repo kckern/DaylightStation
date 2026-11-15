@@ -1,0 +1,67 @@
+import { describe,it,expect } from 'vitest';
+import { GratitudeService } from './GratitudeService.mjs';
+
+function harness({ verdict='eligible', publishFailure=false }={}) {
+  const days=new Map(), selections=new Map(); let now=new Date('2026-11-16T18:00:00Z'); let fail=publishFailure; let assessment=verdict; let calls=0;
+  const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){days.set(day,[...(days.get(day)??[]),structuredClone(event)]);},async listDays(){return [...days.keys()].sort();} };
+  const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',
+    judge:{assess:async()=>{calls++;return {verdict:assessment,confidence:.99,model:'test',rubricVersion:1,matchedId:assessment==='repetition'?'school-gratitude:child:2026-11-16':null};}},
+    extractor:{extract:async()=>({subject:'Toys',model:'cheap'})},publish:async body=>{selections.set(body.selectionId,body);if(fail)throw new Error('lost response');return {selectionId:body.selectionId,subject:body.subject};},logger:{}};
+  return {service:new GratitudeService(deps),restart:()=>new GratitudeService(deps),days,selections,setNow:value=>{now=new Date(value);},setVerdict:value=>{assessment=value;},restore:()=>{fail=false;},calls:()=>calls};
+}
+const body={attemptId:'attempt-1',text:"I'm grateful for my toys",via:'typed',audioRef:null,edited:false};
+describe('School gratitude workflow',()=>{
+  it('restores a server-saved take when the upload response was lost',async()=>{
+    const h=harness();
+    h.days.set('2026-11-16',[{type:'take-saved',at:'2026-11-16T18:00:00Z',takeId:'take-1',audioRef:'child/2026-11-16-1.webm',text:'My toys'}]);
+    expect((await h.restart().day('child','2026-11-16')).draft).toMatchObject({text:'My toys',audioRef:'child/2026-11-16-1.webm',takeId:'take-1',via:'voice'});
+  });
+  it('publishes one accepted subject before completing and replays duplicate attempts',async()=>{
+    const h=harness();
+    expect(await h.service.submit('child','2026-11-16',body)).toMatchObject({phase:'completed',subject:'Toys'});
+    await h.service.submit('child','2026-11-16',body);
+    expect(h.selections.size).toBe(1);expect(h.calls()).toBe(1);
+    await expect(h.service.submit('child','2026-11-16',{...body,text:'Different'})).rejects.toMatchObject({status:409});
+  });
+  it('persists a nonsense cooldown and does not extend it on blocked requests',async()=>{
+    const h=harness({verdict:'nonsense'});
+    expect(await h.service.submit('child','2026-11-16',{...body,text:'stinky stinky lalalal'})).toMatchObject({phase:'cooldown',retryAt:'2026-11-16T18:30:00.000Z'});
+    h.setNow('2026-11-16T18:20:00Z');
+    await expect(h.restart().submit('child','2026-11-16',{...body,attemptId:'attempt-2'})).rejects.toMatchObject({status:429,retryAt:'2026-11-16T18:30:00.000Z'});
+    expect(h.calls()).toBe(1);expect(h.selections.size).toBe(0);
+    h.setNow('2026-11-16T18:30:00Z');h.setVerdict('eligible');
+    expect((await h.restart().submit('child','2026-11-16',{...body,attemptId:'attempt-2'})).phase).toBe('completed');
+  });
+  it('recovers a crash after publication with the same durable identity',async()=>{
+    const h=harness({publishFailure:true});
+    expect((await h.service.submit('child','2026-11-16',body)).phase).toBe('pending');
+    h.restore();
+    expect((await h.restart().retry('child','2026-11-16',{attemptId:'attempt-1'})).phase).toBe('completed');
+    expect(h.selections.size).toBe(1);expect(h.calls()).toBe(1);
+  });
+  it('keeps uncertain answers and technical failures free of behavioral penalties',async()=>{
+    const h=harness({verdict:'uncertain'});
+    expect(await h.service.submit('child','2026-11-16',body)).toMatchObject({phase:'retry',reason:'unclear',retryAt:null});
+    h.setVerdict('unavailable');
+    expect(await h.service.submit('child','2026-11-16',{...body,attemptId:'attempt-2'})).toMatchObject({phase:'pending',reason:'service',retryAt:null});
+    expect(h.selections.size).toBe(0);
+  });
+  it('serializes competing tabs so a refusal prevents a queued new attempt',async()=>{
+    const h=harness({verdict:'nonsense'});
+    const outcomes=await Promise.allSettled([h.service.submit('child','2026-11-16',body),h.service.submit('child','2026-11-16',{...body,attemptId:'other-attempt'})]);
+    expect(outcomes[0].value.phase).toBe('cooldown');expect(outcomes[1].reason.status).toBe(429);expect(h.calls()).toBe(1);
+  });
+  it('rejects borrowed audio and corrupt history without a cheating verdict',async()=>{
+    const h=harness();
+    await expect(h.service.submit('child','2026-11-16',{...body,audioRef:'other/take.webm',via:'voice'})).rejects.toMatchObject({status:400});
+    expect(h.calls()).toBe(0);
+  });
+  it('recovers yesterday pending work into its original day before accepting fresh work',async()=>{
+    const h=harness({publishFailure:true});await h.service.submit('child','2026-11-16',body);
+    h.setNow('2026-11-17T18:00:00Z');h.restore();
+    await h.restart().open('child','2026-11-17');
+    expect(h.days.get('2026-11-16').at(-1).type).toBe('completed');
+    expect((await h.restart().day('child','2026-11-17')).phase).not.toBe('completed');
+    await expect(h.service.submit('child','2026-11-16',{...body,attemptId:'backdate'})).rejects.toMatchObject({status:409});
+  });
+});

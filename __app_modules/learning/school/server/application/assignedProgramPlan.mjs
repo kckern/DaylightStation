@@ -5,6 +5,7 @@
  * educational projection of that answer.
  */
 
+import { GRATITUDE_PROGRAM_ID, GRATITUDE_UNIT_ID } from '../domain/gratitude.mjs';
 import { STORY_TIME_PROGRAM_ID } from "../domain/storyTime.mjs";
 import { SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE } from "../domain/schoolDebrief.mjs";
 import {
@@ -138,6 +139,9 @@ export function appendAssignedProgramEntries(plan, assignment) {
         elective: enrollment.elective === true,
         icon: enrollment.icon,
       }));
+    }
+    if (enrollment?.programId === GRATITUDE_PROGRAM_ID) {
+      plan.entries.push(baseEntry({unitId:GRATITUDE_UNIT_ID,title:enrollment.title??'Gratitude',subject:enrollment.subject??'scripture',program:GRATITUDE_PROGRAM_ID,programInstance:'daily',schedule:enrollment.schedule,cadence:'daily',elective:enrollment.elective,icon:enrollment.icon}));
     }
     if (enrollment?.programId === SCHOOL_DEBRIEF_PROGRAM_ID) {
       // One debrief a day per learner (`corpusId: null` is the dedupe key).

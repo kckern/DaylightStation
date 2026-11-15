@@ -1,7 +1,7 @@
 // S/api/schoolDebrief.mjs
 import express from 'express';
 
-const AUDIO_FILE_RE = /^\d{4}-\d{2}-\d{2}-\d+\.(webm|ogg|m4a)$/;
+const AUDIO_FILE_RE = /^\d{4}-\d{2}-\d{2}-\d+(?:-\d+)?\.(webm|ogg|m4a)$/;
 
 const STUDY_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 class RouteError extends Error { constructor(message, status) { super(message); this.status = status; } }

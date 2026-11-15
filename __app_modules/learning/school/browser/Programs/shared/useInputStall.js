@@ -16,7 +16,7 @@ export const STALL_MS = [45_000, 120_000];
  * Shared by the word ladder (`item.stalled`) and the sentence ladder
  * (`rung.stalled`); what a stall MEANS, and how it is logged, stays with them.
  */
-export function useInputStall(key, onStall, { enabled = true } = {}) {
+export function useInputStall(key, onStall, { enabled = true, thresholds = STALL_MS } = {}) {
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
 
@@ -26,7 +26,7 @@ export function useInputStall(key, onStall, { enabled = true } = {}) {
     const clear = () => { timers.forEach(clearTimeout); timers = []; };
     const arm = () => {
       clear();
-      timers = STALL_MS.map((ms) => setTimeout(() => onStallRef.current?.(ms), ms));
+      timers = thresholds.map((ms) => setTimeout(() => onStallRef.current?.(ms), ms));
     };
     const onActivity = () => arm();
     arm();
@@ -37,7 +37,7 @@ export function useInputStall(key, onStall, { enabled = true } = {}) {
       window.removeEventListener('keydown', onActivity);
       window.removeEventListener('pointerdown', onActivity);
     };
-  }, [key, enabled]);
+  }, [key, enabled, thresholds]);
 }
 
 export default useInputStall;
