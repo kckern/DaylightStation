@@ -5,6 +5,7 @@
  * answer is recorded.
  */
 import { PROMPTS, TEACHER_EVENTS, deriveDebriefState, promptsFor, shouldProbe, debriefMetrics } from "../../domain/schoolDebrief.mjs";
+import { captureProgramTake } from '../shared/captureProgramTake.mjs';
 
 const MIN_TAKE_BYTES = 1000;
 const LEGACY_TO_CURRENT = Object.freeze({ learned: 'teach', notable: 'hard' });
@@ -74,11 +75,9 @@ export class SchoolDebriefService {
   }
   async take(learnerId, day, { buffer, mimeType = 'audio/webm' }) {
     if (!Buffer.isBuffer(buffer) || buffer.length < MIN_TAKE_BYTES) throw new DebriefError('Recording too short');
-    const audioRef = this.#saveAudio ? await this.#saveAudio({ learnerId, studyDay: day, buffer, mimeType }) : null;
-    let text = null;
-    try { text = this.#transcribe ? (await this.#transcribe(buffer, { prompt: 'A child describing their school day.' }))?.trim() || null : null; }
-    catch (err) { this.#logger.warn?.('school.debrief.transcribe-failed', { learnerId, day, error: err?.message }); }
-    return { audioRef, text };
+    return captureProgramTake({ learnerId, studyDay: day, buffer, mimeType,
+      saveAudio: this.#saveAudio ?? (async () => null), transcribe: this.#transcribe,
+      prompt: 'A child describing their school day.', logger: this.#logger });
   }
   async #assertOpen(learnerId, day) {
     const s = deriveDebriefState(await this.#events(learnerId, day));

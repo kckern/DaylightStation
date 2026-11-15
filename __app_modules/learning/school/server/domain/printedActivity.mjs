@@ -84,6 +84,22 @@ export function validatePrintedActivityEnrollment(raw) {
   const paper = a.paper ?? DEFAULT_PAPER;
   if (!PAPERS.includes(paper)) errors.push(`activity.paper must be ${PAPERS.join('|')}, got: ${a.paper}`);
 
+  let rotation;
+  if (a.rotation != null) {
+    const value = a.rotation;
+    if (kind !== 'tracing' || !value || typeof value !== 'object' || Array.isArray(value)
+      || typeof value.characters !== 'string' || !/^[A-Z0-9]+$/.test(value.characters)
+      || new Set(value.characters).size !== value.characters.length
+      || !Number.isInteger(value.digitLevel) || value.digitLevel < 1
+      || (value.supplementalIds != null && (!Array.isArray(value.supplementalIds)
+        || !value.supplementalIds.every(id => typeof id === 'string' && /^[A-Za-z0-9_-]{4,32}$/.test(id))))) {
+      errors.push('activity.rotation requires tracing, unique A-Z/0-9 characters, a positive digitLevel and optional supplementalIds');
+    } else {
+      rotation = { characters: value.characters, digitLevel: value.digitLevel,
+        ...(value.supplementalIds ? { supplementalIds: [...value.supplementalIds] } : {}) };
+    }
+  }
+
   // An optional disc icon (a name in the School icon registry); no default
   // here, so a sheet falls back to its shelf's icon on the board.
   // `printOnCardTap: true` makes the learner's card print this sheet instead
@@ -105,7 +121,7 @@ export function validatePrintedActivityEnrollment(raw) {
     // Only a real string is a title: `{}` must not become "[object Object]" on the board.
     title: trimmedOrNull(raw.title),
     target,
-    activity: { platform, kind, level: a.level, paper },
+    activity: { platform, kind, level: a.level, paper, ...(rotation ? { rotation } : {}) },
     ...(iconCheck.icon ? { icon: iconCheck.icon } : {}),
     ...(raw.printOnCardTap === true ? { printOnCardTap: true } : {}),
   } };
@@ -133,4 +149,10 @@ export function pickActivity({ pool, exclude, rng }) {
   if (!left.length) return null;
   const at = Math.floor(rng() * left.length);
   return left[Math.min(left.length - 1, Math.max(0, Number.isFinite(at) ? at : 0))];
+}
+
+/** Only an explicitly failed, unprinted reservation releases its page id. */
+export function countsAsIssuedActivity(row) {
+  return row.voidedAt == null || row.lastPrintedAt != null || row.completedAt != null
+    || !['print-failed', 'print-unconfirmed'].includes(row.voidReason);
 }

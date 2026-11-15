@@ -743,3 +743,40 @@ describe('PrintedActivityProgramLauncher — the tablet hears a printed sheet', 
     expect(quiet.recordChanged).not.toHaveBeenCalled();
   });
 });
+
+describe('tracing rotation through the real launcher', () => {
+  const characters='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const entry={...MAZE,corpusId:'beeloo:tracing',subject:'writing',activity:{platform:'beeloo',kind:'tracing',level:4,paper:'letter',rotation:{characters,digitLevel:3}}};
+  const old=(character,i,extra={})=>issuance({issuanceId:`old-${i}`,corpusId:entry.corpusId,kind:'tracing',externalId:`old-${character}-${i}`,character,completedAt:NOW.toISOString(),...extra});
+  const pool=[...characters].map(character=>({externalId:`new-${character}`,character,kind:'tracing',level:/[0-9]/.test(character)?3:4}));
+  function setup(rows) {
+    const store=fakeStore(rows);
+    const platform={listActivities:vi.fn(async()=>pool),getPrintable:vi.fn(async()=>Buffer.from('%PDF')),getActivity:vi.fn(async id=>({kind:'tracing',character:id.split('-')[1]}))};
+    const printer={printPdf:vi.fn(async()=>({confirmed:true}))};
+    return {...make({programs:[entry],store,platforms:new Map([['beeloo',platform]]),printer}),platform,printer};
+  }
+  it('resolves old metadata and skips both previous Q pages and W', async()=>{
+    const {launcher,store,platform}=setup([old(null,0,{externalId:'old-W-0'}),old('Q',1),old('Q',2)]);
+    const result=await launcher.launch({userId:'learner_a',corpusId:entry.corpusId});
+    expect(result.decision).toBe('dispatched');
+    expect(store.rows.at(-1)).toMatchObject({character:'A',level:4});
+    expect(platform.getActivity).toHaveBeenCalledWith('old-W-0');
+  });
+  it('forces the last digit before resetting, recording its actual level',async()=>{
+    const {launcher,store}=setup([...characters.slice(0,-1)].map(old));
+    await launcher.launch({userId:'learner_a',corpusId:entry.corpusId});
+    expect(store.rows.at(-1)).toMatchObject({character:'9',level:3});
+  });
+  it('fails closed on exhausted character pages rather than repeating another letter',async()=>{
+    const {launcher,printer,platform}=setup([...characters.slice(0,-1)].map(old));
+    platform.listActivities.mockResolvedValue(pool.filter(p=>p.character!=='9'));
+    expect((await launcher.launch({userId:'learner_a',corpusId:entry.corpusId})).decision).toBe('failed');
+    expect(printer.printPdf).not.toHaveBeenCalled();
+  });
+  it('keeps normal reprints on the held sheet',async()=>{
+    const {launcher,store,platform}=setup([old('Q',1,{completedAt:null,issuedAt:'2026-11-12T18:00:00Z'})]);
+    await launcher.launch({userId:'learner_a',corpusId:entry.corpusId});
+    expect(platform.listActivities).not.toHaveBeenCalled();
+    expect(store.rows).toHaveLength(1);
+  });
+});

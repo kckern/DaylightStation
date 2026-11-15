@@ -27,6 +27,7 @@ import {
   fileExists,
   loadYamlFromPath,
   saveYamlToPath,
+  saveYamlToPathAtomic,
   getStats,
 } from '#system/utils/FileIO.mjs';
 
@@ -221,6 +222,13 @@ export class DataService {
       write(relativePath, data, householdId = null) {
         const fullPath = this.resolvePath(relativePath, householdId);
         return writeYamlFile(fullPath, data);
+      },
+      /** Confirmed atomic replacement for recoverable cross-owner publication. */
+      writeAtomic(relativePath, data, householdId = null) {
+        try {
+          saveYamlToPathAtomic(this.resolvePath(relativePath, householdId), data, { durable: true, lineWidth: -1, quotingType: '"' });
+          return true;
+        } catch { return false; }
       },
     };
   }

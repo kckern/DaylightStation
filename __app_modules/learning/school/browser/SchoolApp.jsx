@@ -33,6 +33,8 @@ import FlashcardDeckBrowser from "./Programs/Flashcards/FlashcardDeckBrowser.jsx
 import CardLadderProgram from "./Programs/Flashcards/CardLadder/CardLadderProgram.jsx";
 import { isCardLadderPolicy } from "./Programs/Flashcards/CardLadder/cardLadderMode.js";
 import RubiksCubeProgram from "./Programs/RubiksCube/RubiksCubeProgram.jsx";
+import GratitudeProgram from './Programs/Gratitude/GratitudeProgram.jsx';
+import {readGratitudeLaunch,saveGratitudeLaunch} from './Programs/Gratitude/gratitudeLaunchStorage.js';
 import SchoolDebriefProgram from "./Programs/SchoolDebrief/SchoolDebriefProgram.jsx";
 import BookShelf from "./books/BookShelf.jsx";
 import BookScanEntry from "./books/BookScanEntry.jsx";
@@ -282,6 +284,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [reelLaunch, setReelLaunch] = useState(null);
   const [cubeLaunch, setCubeLaunch] = useState(null);
   const [debriefLaunch, setDebriefLaunch] = useState(null);
+  const [gratitudeLaunch,setGratitudeLaunch] = useState(()=>readGratitudeLaunch(urlBase));
+  useEffect(()=>saveGratitudeLaunch(urlBase,gratitudeLaunch),[urlBase,gratitudeLaunch]);
   const [bookLaunch, setBookLaunch] = useState(null);
   // The coin bank screen (economy slice 1, C3): `{ learnerId }`
   // from the panel's bank door. Memory only: no path names it, so a reload
@@ -532,6 +536,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       setCubeLaunch({ learnerId, courseId: target.courseId, cubeGrant: target.cubeGrant });
       openSection('rubiks-cube');
       return true;
+    }
+    if (target?.kind === 'program' && target.program === 'gratitude') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.gratitudeGrant || !learnerId) return false;
+      setGratitudeLaunch({learnerId,gratitudeGrant:target.gratitudeGrant,today:target.today});
+      openSection('gratitude'); return true;
     }
     if (target?.kind === 'program' && target.program === 'school-debrief') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
@@ -992,6 +1002,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
                   : section === 'rubiks-cube' ? 'Rubik’s Cube'
+                  : section === 'gratitude' ? 'Gratitude'
                   : section === 'school-debrief' ? 'After-school debrief'
                   : section === 'book-shelf' ? 'Reading'
                   : section === 'bank' ? 'Bank'
@@ -1470,6 +1481,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             the agenda code, LOCKED, so the `!lock.locked` wrapper never paints.
             With no launch (a grown-up opening it from /school) it shows its
             own no-grant state; a launch claimed by another learner never paints. */}
+        {section === 'gratitude' && (!gratitudeLaunch || gratitudeLaunch.learnerId === currentUser?.id) && (
+          <GratitudeProgram learnerId={gratitudeLaunch?.learnerId??null} gratitudeGrant={gratitudeLaunch?.gratitudeGrant??null} today={gratitudeLaunch?.today??null} onExit={()=>{setGratitudeLaunch(null);goHome();}}/>
+        )}
         {section === 'school-debrief' && (!debriefLaunch || debriefLaunch.learnerId === currentUser?.id) && (
           <SchoolDebriefProgram
             learnerId={debriefLaunch?.learnerId ?? null}

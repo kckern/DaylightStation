@@ -30,10 +30,11 @@
  * `CORPUS_ALREADY_OPEN`, `DUPLICATE_ISSUANCE_ID`) are recognised by `code`, so
  * this file never imports the adapter that defines them.
  */
+import { remainingTracingCharacters } from '../domain/tracingRotation.mjs';
 import { studyDayForInstant } from '../domain/studyDay.mjs';
 import { scheduleVerdict } from '../domain/schoolCalendar.mjs';
 import {
-  PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity, printedActivityLabel,
+  PRINTED_ACTIVITY_PROGRAM_ID, servedUnitId, validatePrintedActivityEnrollment, pickActivity, printedActivityLabel, countsAsIssuedActivity,
 } from '../domain/printedActivity.mjs';
 import { announceRecordChanged } from "./usecases/announceRecordChanged.mjs";
 
@@ -325,11 +326,24 @@ export class PrintedActivityProgramLauncher {
    * points, so a lost race never puts paper in the wrong child's hand.
    */
   async #reserve({ userId, entry, platform, now, studyDay }) {
-    const { platform: platformId, kind, level, paper } = entry.activity;
+    const { platform: platformId, kind, level, paper, rotation } = entry.activity;
     let pool;
     try {
-      pool = await platform.listActivities({ kind, level, paper });
+      pool = await platform.listActivities({ kind, level, paper, ...(rotation ? { rotation } : {}) });
     } catch (err) { throw new PlatformFault(err); }
+    if (rotation) {
+      const history = (await this.#store.listForLearner(userId, { strict: true }) ?? []).filter(row => row.platform === platformId
+        && row.kind === kind && countsAsIssuedActivity(row));
+      const byId = new Map(pool.map(page => [page.externalId, page]));
+      const resolved = [];
+      for (const row of history) {
+        const metadata = row.character ? row : byId.get(row.externalId) ?? await platform.getActivity(row.externalId);
+        if (!metadata?.character || (metadata.kind && metadata.kind !== kind)) throw new PlatformFault(new Error('Tracing history metadata unavailable'));
+        resolved.push({ ...row, character: metadata.character });
+      }
+      const remaining = remainingTracingCharacters({ characters: rotation.characters, history: resolved });
+      pool = pool.filter(page => typeof page.character === 'string' && /^[A-Z0-9]$/.test(page.character) && remaining.includes(page.character));
+    }
     // Never-repeat is household-wide per platform: every page that reached
     // paper for ANY child (open or completed) is excluded. Every copy of a page
     // carries the same QR, so re-issuing a sibling's completed page would let
@@ -339,7 +353,7 @@ export class PrintedActivityProgramLauncher {
 
     let raceRetried = false;
     let idRetried = false;
-    let resampled = false;
+    let resampled = Boolean(rotation); // Semantic catalogues are complete; never resample away the character filter.
     let page = null;
     let bytes = null;
     for (;;) {
@@ -351,7 +365,7 @@ export class PrintedActivityProgramLauncher {
           // Ask once more for a fresh sample before telling a grown-up.
           resampled = true;
           try {
-            pool = await platform.listActivities({ kind, level, paper });
+            pool = await platform.listActivities({ kind, level, paper, ...(rotation ? { rotation } : {}) });
           } catch (err) {
             // The first list loaded fine, so the honest answer is still "no
             // new pages", not "worksheets are unavailable".
@@ -380,7 +394,8 @@ export class PrintedActivityProgramLauncher {
         externalId: page.externalId,
         title: page.title ?? null,
         kind,
-        level,
+        level: page.level ?? level,
+        ...(page.character ? { character: page.character } : {}),
         issuedAt: now.toISOString(),
         issuedStudyDay: studyDay,
         completedAt: null,
@@ -479,7 +494,7 @@ export class PrintedActivityProgramLauncher {
       const now = this.#clock();
       const studyDay = studyDayForInstant(now.getTime(), { timezone: this.#timezone });
 
-      const mine = (await this.#store.listForLearner(userId) ?? []).filter((r) => r?.corpusId === entry.corpusId);
+      const mine = (await this.#store.listForLearner(userId, { strict: Boolean(entry.activity.rotation) }) ?? []).filter((r) => r?.corpusId === entry.corpusId);
       const opens = mine.filter((r) => r.completedAt == null && r.voidedAt == null);
       if (opens.length > 1) {
         this.#log('warn', 'school.printed-activity.multiple-open', { userId, corpusId, issuanceIds: opens.map((r) => r.issuanceId) });

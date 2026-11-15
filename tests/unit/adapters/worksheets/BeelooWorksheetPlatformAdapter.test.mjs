@@ -97,3 +97,22 @@ describe('BeelooWorksheetPlatformAdapter', () => {
     }));
   });
 });
+
+it('loads the complete tracing catalogue with semantic metadata, including supplemental digits', async () => {
+  const entries = [
+    {beeloo_id:'pageQ',contentType:'tracing',skillLevel:4,data:{computedData:{content:'q',templateId:'upperlowercaseSingleLetter'}}},
+    {beeloo_id:'page0',contentType:'tracing',skillLevel:3,data:{computedData:{content:0,templateId:'uppercaseSingleLetter'}}},
+    {beeloo_id:'words',contentType:'tracing',skillLevel:4,data:{computedData:{content:'Queen',templateId:'singleWords'}}},
+  ];
+  const fetchImpl = vi.fn(async url => {
+    const u = new URL(url);
+    return json({valid:true,items: u.pathname === '/api/printables' ? entries.slice(0,1) : entries.filter(p=>u.searchParams.getAll('beeloo_ids[]').includes(p.beeloo_id))});
+  });
+  const adapter=make(fetchImpl);
+  const query={kind:'tracing',level:4,rotation:{characters:'Q0',digitLevel:3,supplementalIds:['page0','words']}};
+  const rows=await adapter.listActivities(query);
+  expect(rows.map(p=>[p.externalId,p.character,p.level])).toEqual([['pageQ','Q',4],['page0','0',3]]);
+  expect(fetchImpl.mock.calls[0][0]).toContain('/api/printables?');
+  await adapter.listActivities(query);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});

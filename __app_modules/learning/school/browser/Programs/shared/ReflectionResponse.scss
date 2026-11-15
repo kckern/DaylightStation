@@ -1,0 +1,5 @@
+.reflection-response { display: flex; flex-direction: column; gap: 1.25rem; max-width: 60rem; margin: 1.5rem auto 0; width: 100%; }
+.reflection-response__prompt { font-size: 2.2rem; line-height: 1.25; margin: 0; }
+.reflection-response__field { font-size: 1.6rem; line-height: 1.4; padding: 0.9rem 1rem; border-radius: 12px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); resize: none; }
+.reflection-response__notice { font-size: 1.3rem; color: var(--ds-warning); }
+.reflection-controls { display: flex; gap: 1rem; justify-content: flex-end; }

@@ -24,12 +24,12 @@
  *   - an issuance is a RESERVATION made before printing: if the print fails or
  *     is unconfirmed (a dry-run printer), the caller `void`s it. A voided row
  *     stays on record as evidence but is not open, never counts as completed,
- *     and is not "history" for the never-repeat rule (the child never got the
- *     page). `listForLearner` still returns voided rows; callers that build an
- *     exclude set skip rows with `voidedAt` set.
+ *     and releases its page id only when explicitly print-failed/unconfirmed
+ *     without print or completion evidence. Printed/replaced legacy voids
+ *     retain page-id and character history. `listForLearner` returns all rows.
  *
  * Issuance: `{issuanceId, learnerId, programId, corpusId, platform, externalId,
- * title, kind, level, issuedAt, issuedStudyDay, completedAt, completedStudyDay,
+ * title, kind, level, character?, issuedAt, issuedStudyDay, completedAt, completedStudyDay,
  * completedVia, voidedAt, voidReason, lastPrintedAt}`. `lastPrintedAt` is the
  * last time paper came out for it (`markPrinted`); older rows without it read
  * `issuedAt` instead. Open means `completedAt == null` and
@@ -53,7 +53,7 @@ export class IPrintedActivityStore {
    */
   async append() { throw new Error('IPrintedActivityStore.append must be implemented'); }
 
-  /** @returns {Promise<object[]>} every issuance for the learner (voided included), oldest first; [] on any read problem */
+  /** Every issuance (voided included), oldest first. Optional {strict:true} throws LOG_UNREADABLE on lost evidence. */
   async listForLearner() { throw new Error('IPrintedActivityStore.listForLearner must be implemented'); }
 
   /** @returns {Promise<object[]>} every open issuance across all learners */
@@ -62,8 +62,8 @@ export class IPrintedActivityStore {
   /**
    * The household's never-repeat set for one platform.
    * @param {string} platform
-   * @returns {Promise<string[]>} distinct externalIds of every NON-voided
-   *   issuance (open or completed) on that platform, across all learners;
+   * @returns {Promise<string[]>} distinct externalIds of every issued/printed page
+   *   (including retired printed pages, excluding failed unprinted reservations) on that platform, across all learners;
    *   [] for a blank platform
    */
   async listIssuedExternalIds() { throw new Error('IPrintedActivityStore.listIssuedExternalIds must be implemented'); }

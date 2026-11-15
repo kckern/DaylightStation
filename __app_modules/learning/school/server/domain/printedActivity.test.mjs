@@ -105,3 +105,11 @@ describe('printedActivityLabel', () => {
     expect(printedActivityLabel({})).toBe('Printed activity');
   });
 });
+
+it('validates and preserves explicit tracing character policy', () => {
+  const raw={programId:'printed-activity',corpusId:'beeloo:tracing',subject:'writing',activity:{platform:'beeloo',kind:'tracing',level:4,rotation:{characters:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',digitLevel:3,supplementalIds:['zeroPage']}}};
+  expect(validatePrintedActivityEnrollment(raw).enrollment.activity.rotation).toEqual(raw.activity.rotation);
+  for(const rotation of [{characters:'QQ',digitLevel:3},{characters:'Q0',digitLevel:0},{characters:'q',digitLevel:3},{characters:'Q0',digitLevel:3,supplementalIds:['../bad']}]) {
+    expect(validatePrintedActivityEnrollment({...raw,activity:{...raw.activity,rotation}}).errors.length).toBeGreaterThan(0);
+  }
+});
