@@ -377,7 +377,7 @@ describe('Finance API Router', () => {
 
       expect(mockHarvestService.harvest).toHaveBeenCalledWith(
         'default',
-        { skipCategorization: true, skipCompilation: true }
+        { skipCategorization: true, skipCompilation: true, skipRebalance: false }
       );
     });
 
@@ -388,7 +388,7 @@ describe('Finance API Router', () => {
       expect(res.status).toBe(200);
       expect(mockHarvestService.harvest).toHaveBeenCalledWith(
         'default',
-        { skipCategorization: false, skipCompilation: false }
+        { skipCategorization: false, skipCompilation: false, skipRebalance: false }
       );
     });
 

@@ -286,7 +286,7 @@ describe('print-agenda — the cooldown acknowledgement', () => {
     }]);
   });
 
-  it('does NOT broadcast on an ordinary agenda_printed tap', async () => {
+  it('announces the printed card without a cooldown acknowledgement on an ordinary agenda_printed tap', async () => {
     const broadcasts = [];
     const handler = makePrintAgendaHandler({
       resolvePersonalCard: { execute: async () => ({ status: 'agenda_printed', printed: true }) },
@@ -294,7 +294,10 @@ describe('print-agenda — the cooldown acknowledgement', () => {
       logger: silent,
     });
     await handler({ learnerId: 'user_3', location: 'study' });
-    expect(broadcasts).toEqual([]);
+    expect(broadcasts).toEqual([{
+      topic: 'omr',
+      payload: expect.objectContaining({ event: 'card-printed', learnerId: 'user_3', what: 'agenda' }),
+    }]);
   });
 
   it('reaches the panel through the whole pipeline, not just when called directly', async () => {
