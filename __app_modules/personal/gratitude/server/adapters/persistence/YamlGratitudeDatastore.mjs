@@ -14,6 +14,7 @@
 import path from 'path';
 import { moment } from '#system/libraries/gratitudeRuntime.mjs';
 import {
+  fileExists,
   ensureDir,
   dirExists,
   listYamlFiles,
@@ -226,6 +227,23 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
     const selections = this.#readArray(householdId, `selections.${category}`);
     selections.unshift(this.#dehydrateSelection(selection));
     this.#writeArray(householdId, `selections.${category}`, selections);
+  }
+
+  /** No await between read/check/write: atomic in the single authoritative backend. */
+  async addSelectionIfAbsent(householdId, category, selection) {
+    const key = `selections.${category}`;
+    const raw = this.#dataService.household.read(`gratitude/${key}.yml`, householdId);
+    if (raw == null && this.#dataService.household.resolvePath && fileExists(this.#dataService.household.resolvePath(`gratitude/${key}.yml`, householdId))) throw new Error('Gratitude selections are unreadable');
+    if (raw !== null && raw !== undefined && !Array.isArray(raw)) throw new Error('Gratitude selections are unreadable');
+    const selections = raw ?? [];
+    const existing = selections.find(row => row.id === selection.id);
+    if (existing) {
+      if (existing.userId !== selection.userId || existing.item?.id !== selection.item.id || existing.item?.text !== selection.item.text || existing.datetime !== selection.datetime) throw new Error('Gratitude publication identity conflict');
+      return { selection: this.#hydrateSelection(existing), inserted: false };
+    }
+    selections.unshift(this.#dehydrateSelection(selection));
+    if (this.#dataService.household.writeAtomic?.(`gratitude/${key}.yml`, selections, householdId) !== true) throw new Error('Gratitude publication persistence failed');
+    return { selection, inserted: true };
   }
 
   /**

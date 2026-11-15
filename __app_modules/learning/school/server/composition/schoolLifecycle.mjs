@@ -97,6 +97,8 @@ import { PrintedActivityProgramLauncher } from "../application/PrintedActivityPr
 import { RecordPrintedActivityScan } from "../application/usecases/RecordPrintedActivityScan.mjs";
 import { YamlPrintedActivityStore } from "../adapters/persistence/YamlPrintedActivityStore.mjs";
 import { PRINTED_ACTIVITY_PROGRAM_ID } from "../domain/printedActivity.mjs";
+import { YamlGratitudeStore } from '../adapters/persistence/YamlGratitudeStore.mjs';
+import { GratitudeProgramLauncher } from '../application/GratitudeProgramLauncher.mjs';
 import { YamlDebriefStore } from "../adapters/persistence/YamlDebriefStore.mjs";
 import { SchoolDebriefProgramLauncher } from "../application/SchoolDebriefProgramLauncher.mjs";
 import { SCHOOL_DEBRIEF_PROGRAM_ID, debriefConfigOf } from "../domain/schoolDebrief.mjs";
@@ -307,7 +309,7 @@ export async function createSchoolLifecycle({
   // Books domain's resolver and repository come from `booksApi.mjs`. Null for
   // any of them degrades: the launcher still registers (an enrollment with no
   // obligation is complete on its own), only the shelf use cases are skipped.
-  bookGrants = null, debriefGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
+  bookGrants = null, debriefGrants = null, gratitudeGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   // Kiosk unsupervised-input friction tracker (kiosk-friction-detection Task
@@ -610,6 +612,7 @@ export async function createSchoolLifecycle({
     // study day so the launcher's "how many today" is one file read.
     readingLog: new YamlReadingLogStore({ configService, logger }),
     debriefs: new YamlDebriefStore({ configService, logger }),
+    gratitudes: new YamlGratitudeStore({ configService, logger }),
     // Book-log evidence: the learner-sharded reading shelf (`records/`), one
     // file per learner, read by the launcher for "how much today/this week".
     // The household's study-day rule, so a v1 shelf file read through this
@@ -794,6 +797,8 @@ export async function createSchoolLifecycle({
     householdSchedule: liveCalendar.schedule, timezone, clock, logger, donow,
   });
   launchers.set(SCHOOL_DEBRIEF_PROGRAM_ID, debriefLauncher);
+  const gratitudeLauncher = new GratitudeProgramLauncher({store:stores.gratitudes,assignments:stores.assignments,grants:gratitudeGrants,timezone,clock,logger,donow});
+  launchers.set('gratitude',gratitudeLauncher);
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
@@ -1846,6 +1851,9 @@ export async function createSchoolLifecycle({
     liveCalendar,
     realtime: schoolRealtime,
     bookLogLauncher,
+    gratitudeLauncher,
+    gratitudeStore: stores.gratitudes,
+    gratitudeAssignments: stores.assignments,
     debriefLauncher,
     debriefStore: stores.debriefs,
     debriefConfig: debriefConfigOf(cfg),

@@ -438,3 +438,23 @@ describe('YamlPrintedActivityStore', () => {
     expect(read('learner_b').issuances).toHaveLength(1);
   });
 });
+
+it('preserves character metadata and keeps replaced printed page QR ids reserved', async () => {
+  const subject = store();
+  await subject.append(issuance({character:'Q'}));
+  expect((await subject.listForLearner('learner_a'))[0].character).toBe('Q');
+  await subject.markPrinted('learner_a','pa_k3j9x2qd',{at:FIXED.toISOString()});
+  await subject.void('learner_a','pa_k3j9x2qd',{at:FIXED.toISOString(),reason:'replaced'});
+  expect(await subject.listIssuedExternalIds('beeloo')).toContain('glD5B71Bj');
+});
+
+it('keeps legacy voided replacement QR ids reserved without a print receipt',async()=>{
+  const subject=store();
+  await subject.append(issuance());
+  await subject.void('learner_a','pa_k3j9x2qd',{at:FIXED.toISOString(),reason:'replaced'});
+  expect(await subject.listIssuedExternalIds('beeloo')).toContain('glD5B71Bj');
+});
+it('refuses unreadable rotation history instead of treating it as a fresh learner',async()=>{
+  write('learner_a','issuances: [broken');
+  await expect(store().listForLearner('learner_a',{strict:true})).rejects.toMatchObject({code:'LOG_UNREADABLE'});
+});

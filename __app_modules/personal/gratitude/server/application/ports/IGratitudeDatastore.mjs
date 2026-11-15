@@ -48,6 +48,10 @@
  * @class IGratitudeDatastore
  */
 export class IGratitudeDatastore {
+  /** Atomic identity-based insert for recoverable external publishers. */
+  async addSelectionIfAbsent(householdId, category, selection) {
+    throw new Error('IGratitudeDatastore.addSelectionIfAbsent must be implemented');
+  }
   // Options (available items queue)
 
   /**

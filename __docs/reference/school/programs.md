@@ -1,5 +1,10 @@
 # School programs
 
+[Gratitude](./gratitude.md) is a daily voice-or-typed reflection on the
+Scripture & Gospel shelf, reusing Debrief infrastructure with its own Jev
+assessment, seven-day topic spacing, and persistent 30-minute retry delay
+for clear nonsense or repetition.
+
 A program unit delegates evidence and progress to a registered
 `IProgramLauncher`; School still owns assignment, agenda obligation, launch
 authority, and rewards. Program status is keyed structurally by program id and
@@ -645,6 +650,32 @@ holds one entry per corpus, each on its own subject shelf:
 `corpusId` is the instance key (SetAssignments dedupes on programId+corpusId),
 `target` is sheets per study day (1–5), `level` is the platform's own
 difficulty step. Raising a child a level is an edit to the entry.
+
+**Tracing character rotation.** Opt in on the enrollment to use every configured
+character once per learner before another cycle begins. Case variants count as
+one letter; different worksheet titles or themes do not bypass the rotation.
+Existing issued sheets are identified from the platform's computed metadata.
+Open sheets and replaced printed sheets count; failed unprinted reservations do
+not. Ordinary lost-sheet reprints still use the held sheet.
+
+```yaml
+activity:
+  platform: beeloo
+  kind: tracing
+  level: 4                  # upper/lowercase letter format
+  paper: letter
+  rotation:
+    characters: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+    digitLevel: 3           # digit worksheets use the single-character format
+    # supplementalIds: [...]  # explicitly include pages hidden by the source listing
+```
+
+The adapter loads and caches the complete catalogue with character metadata,
+rather than a random sample. Missing metadata or an unavailable next character
+stops issuance instead of silently repeating another letter. Page IDs remain
+unique across the household because their printed QR identifies the page, not
+the physical copy. A later cycle therefore needs another unused page for every
+character; exhausted variants require new source content.
 
 **Printing on a card tap.** An entry with `printOnCardTap: true` prints when
 the learner taps their card, with no code and no ticket. The tap prints every

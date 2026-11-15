@@ -7,6 +7,7 @@ export function createGratitudeServices({dataService, logger=console}) {
   const gratitudeService=new GratitudeService({store:gratitudeStore});
   return {
     gratitudeStore, gratitudeService,
+    publishSchoolGratitude: args => gratitudeService.publishSchoolGratitude(args),
     readSelectionQuotes: () => dataService.household.read('gratitude/selections.gratitude.yml'),
     addSelections: (...args) => gratitudeService.addSelections(...args)
   };

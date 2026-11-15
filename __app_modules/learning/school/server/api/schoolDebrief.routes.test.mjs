@@ -6,6 +6,11 @@ import request from 'supertest';
 import { createSchoolDebriefRouter } from "./schoolDebrief.mjs";
 
 const grants = { verify: (t, { learnerId, day }) => (t === 'good' && learnerId === 'test-learner' && day === '2026-10-21' ? { ok: true } : { ok: false, reason: 'day' }) };
+it('serves a collision-suffixed audio filename from the shared take store',async()=>{
+  const a=express();a.use('/debrief',createSchoolDebriefRouter({service:{},grants,teacherGate:{assert(){}},audioStore:{read:()=>({buffer:Buffer.from('saved take'),mimeType:'audio/webm'})}}));
+  const result=await request(a).get('/debrief/teacher/test-learner/audio/2026-10-21-1-2.webm?by=adult');
+  expect(result.status).toBe(200);
+});
 function app({ gateThrows = false } = {}) {
   const service = {
     day: vi.fn(async () => ({ phase: 'not-started' })), open: vi.fn(async () => ({ phase: 'entry' })),

@@ -1,3 +1,4 @@
+import { mergeGratitudeItems,shouldPersistIncoming } from './gratitudeLiveItems.js';
 import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { WebSocketProvider, useWebSocket } from "../../../../frontend/src/contexts/WebSocketContext.jsx";
@@ -435,7 +436,7 @@ function GratitudeApp({
     
     setSelected(prev => ({
       ...prev,
-      [itemCategory]: [...newItems, ...(prev[itemCategory] || [])]
+      [itemCategory]: mergeGratitudeItems(prev[itemCategory] || [],newItems)
     }));
     
     // 4. Track webhook highlight IDs
@@ -452,7 +453,7 @@ function GratitudeApp({
     }, 4000);
     
     // 6. Persist to backend (only if NOT from homebot - homebot already persists)
-    if (payload.source !== 'homebot') {
+    if (shouldPersistIncoming(payload)) {
       newItems.forEach(item => {
         DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
           userId,
