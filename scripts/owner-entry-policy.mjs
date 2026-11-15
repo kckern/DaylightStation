@@ -429,6 +429,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/music-notation/browser/model/heldPitch.js': null,
   '__capabilities/music-notation/browser/model/keySignature.js': null,
   '__capabilities/music-notation/browser/model/noteFlow.js': null,
+  '__capabilities/music-notation/browser/model/staffPlanner.js': null,
   '__capabilities/music-notation/browser/model/pitch.js': null,
   '__capabilities/music-notation/browser/model/spellMidi.js': null,
   '__capabilities/music-notation/browser/model/spelling.js': null,

@@ -47,9 +47,11 @@ export function diffNoteSurface(prev, activeNotes, now) {
  * @param {string[]} durations
  * @param {string} keySig
  */
-export function buildRenderColumns(flow, durations, keySig) {
+export function buildRenderColumns(flow, durations, keySig, staffPlanState = null) {
   const midiCols = flowColumns(flow);
+  const plans = new Map((staffPlanState?.columns ?? []).map(p=>[p.id,p]));
   return flow.columns.map((c, i) => ({
+    id: c.id, originId: c.originId, staffPlan: plans.get(c.id) ?? null,
     midis: midiCols[i],
     spelling: identifyChord(midiCols[i], keySig).spelling,
     // Arrivals, not a roll verdict: the renderer reads each hand's roll from them.

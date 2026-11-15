@@ -88,6 +88,8 @@ import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
   GAP_MS, SPAN_MAX_MS, MAX_COLUMN_NOTES, ROLL_MARK_MS, LEGATO_RELEASE_MS, LEGATO_MIN_STEP_MS, LIFT_TOGETHER_MS,
 } from '../../../__capabilities/music-notation/browser/model/noteFlow.js';
+import { emptyStaffPlan, advanceStaffPlan } from '../../../__capabilities/music-notation/browser/model/staffPlanner.js';
+import { staffPlanFailures,makeStaffFixture,runStaffFixture } from '../../_fixtures/piano/staffRegisterFixtures.mjs';
 import { splitByHand } from '../../../__capabilities/music-notation/browser/model/handSplit.js';
 import { detectKey } from '../../../__capabilities/music-notation/browser/model/keySignature.js';
 import { diffNoteSurface, buildRenderColumns } from '../../../__app_modules/learning/piano/browser/components/liveStaffColumns.js';
@@ -337,6 +339,18 @@ function splitCause(open, sorted, at, held, gapMs, spanMs) {
 function replay(events, onFrame, rules = {}) {
   const { gapMs = GAP_MS, spanMs = SPAN_MAX_MS, legatoReleaseMs = LEGATO_RELEASE_MS, ...extra } = rules;
   let flow = emptyFlow();
+  let staffPlan = emptyStaffPlan();
+  let planFailures = 0, registerChanges = 0;
+  const planFrame = () => {
+    const result=advanceStaffPlan(staffPlan,flow,{keySignature:key});
+    if(result.state!==staffPlan) {
+      planFailures+=staffPlanFailures(flow,result.state).length;
+      registerChanges+=result.events.filter(e=>e.type==='register-changed').length;
+    }
+    staffPlan=result.state;
+    const planned=new Map(staffPlan.columns.map(p=>[p.id,p]));
+    for(const c of flow.columns)columns.set(c._id,{...c,staffPlan:planned.get(c.id)});
+  };
   let active = new Map();
   let prev = new Map();
   let nextTick = TICK_MS;
@@ -384,7 +398,7 @@ function replay(events, onFrame, rules = {}) {
     while (nextTick <= e.t) {
       flow = pushReleases(clearIfIdle(flow, nextTick), nextTick, active, { legatoReleaseMs, ...extra });
       tag();
-      for (const c of flow.columns) columns.set(c._id, c);
+      planFrame();
       nextTick += TICK_MS;
     }
     active = new Map(active);
@@ -415,10 +429,10 @@ function replay(events, onFrame, rules = {}) {
     }
     flow = pushReleases(flow, e.t, active, { legatoReleaseMs, ...extra });
     tag();
-    for (const c of flow.columns) columns.set(c._id, c);
-    if (onFrame) onFrame({ t: e.t, flow, key, onsetsOf, eventIndex: i });
+    planFrame();
+    if (onFrame) onFrame({ t: e.t, flow, key, staffPlan, onsetsOf, eventIndex: i });
   });
-  return { onsetColumn, onsetCause, columns, legatoSteps };
+  return { onsetColumn, onsetCause, columns, legatoSteps, planFailures, registerChanges };
 }
 
 // ─── metrics ─────────────────────────────────────────────────────────────────
@@ -426,7 +440,7 @@ function replay(events, onFrame, rules = {}) {
 const blank = () => ({
   takes: 0, onsets: 0, clusters: 0, whole: 0, causes: {}, gaps: {}, heldCauses: {},
   heldChords: 0, heldWhole: 0, chords: 0, chordWhole: 0, lifted: 0, liftedWhole: 0, legatoExcluded: 0, seqPairs: 0, seqMerged: 0, legatoPairs: 0, legatoMerged: 0, legatoSteps: {},
-  cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
+  planFailures: 0, registerChanges: 0, cols: 0, eighths: 0, frags: 0, rhOnBass: 0, rolled: 0, crossed: 0,
   phrases: 0, bars: 0, smoothed: 0, beams: 0, beams4: 0,
 });
 
@@ -434,7 +448,8 @@ function measure(events, rules) {
   const m = blank();
   const ons = events.filter((e) => e.type === 'on');
   m.takes = 1; m.onsets = ons.length;
-  const { onsetColumn, onsetCause, columns, legatoSteps } = replay(events, null, rules);
+  const { onsetColumn, onsetCause, columns, legatoSteps, planFailures, registerChanges } = replay(events, null, rules);
+  m.planFailures=planFailures; m.registerChanges=registerChanges;
   for (const g of legatoSteps) {
     const b = g < 30 ? '<30' : g <= 60 ? '30-60' : g <= 90 ? '61-90' : '>90';
     m.legatoSteps[b] = (m.legatoSteps[b] || 0) + 1;
@@ -531,7 +546,7 @@ function row(label, m) {
     'chord whole %': pct(m.chordWhole, m.chords), 'lifted-together whole %': `${pct(m.liftedWhole, m.lifted)} of ${m.lifted}`,
     'legato merged %': `${pct(m.legatoMerged, m.legatoPairs)} of ${m.legatoPairs}`,
     cols: m.cols, 'eighth %': pct(m.eighths, m.cols),
-    frags: m.frags, rolled: m.rolled, 'RH-on-bass': m.rhOnBass, 'far-crossed': m.crossed,
+    frags: m.frags, rolled: m.rolled, 'legacy C4 heuristic': m.rhOnBass, 'plan failures':m.planFailures, 'register changes':m.registerChanges, 'far-crossed': m.crossed,
     phrases: m.phrases, 'bars/take': (m.bars / (m.takes || 1)).toFixed(1), smoothed: m.smoothed,
     'beams/phrase': (m.beams / (m.phrases || 1)).toFixed(2), 'beams of 4 %': pct(m.beams4, m.beams),
     'split causes': causes,
@@ -556,7 +571,7 @@ function rollCaption({ treble, bass }) {
  */
 function snapshot(frame) {
   const durations = flowDurations(frame.flow, frame.t);
-  const render = buildRenderColumns(frame.flow, durations, frame.key);
+  const render = buildRenderColumns(frame.flow, durations, frame.key, frame.staffPlan);
   const { count } = chordStaffWindow(render, { aspect: ASPECT, keySignature: frame.key });
   const shown = frame.flow.columns.slice(-count);
   const off = frame.flow.columns.length - shown.length;
@@ -568,6 +583,7 @@ function snapshot(frame) {
       const col = shown[i];
       const hits = (frame.onsetsOf.get(col._id) || []).slice().sort((a, b) => a.t - b.t);
       return {
+        id:c.id,originId:c.originId,staffPlan:c.staffPlan,
         midis: c.midis,
         spelling: c.spelling ? [...c.spelling.entries()] : null,
         duration: c.duration,
@@ -578,7 +594,7 @@ function snapshot(frame) {
         roll: rollCaption(columnRolls(c)),
         startedAt: col.startedAt,
         raw: hits.map((h) => `${nn(h.note)}+${Math.round(h.t - col.startedAt)}`),
-        hands: splitByHand([...c.midis].sort((a, b) => a - b)),
+        hands: c.staffPlan ? {bassNotes:c.staffPlan.parts.bass.midis,trebleNotes:c.staffPlan.parts.treble.midis} : splitByHand([...c.midis].sort((a,b)=>a-b)),
       };
     }),
   };
@@ -896,13 +912,25 @@ async function main() {
   // It shares nothing with the legato-pair definition, so it cannot be gamed by a
   // split that also removes its clusters from the chord-whole denominator.
   const liftedPct = overall.lifted ? (100 * overall.liftedWhole) / overall.lifted : 0;
-  const pass = chordPct >= 90 && liftedPct >= 90 && overall.rhOnBass === 0;
+  const labeledErrors=[];
+  for(const transpose of [-12,0,12]) {
+    const fixture=makeStaffFixture('paired',{transpose});const out=runStaffFixture(fixture);
+    labeledErrors.push(...staffPlanFailures(fixture.frames.at(-1).flow,out.state));
+    const epoch=out.state.epochs.find(e=>e.id===out.state.activeEpoch);
+    if(epoch.treble!==transpose/12||epoch.bass!==transpose/12)labeledErrors.push(`paired-register:${transpose}`);
+    for(const c of out.state.columns.filter(c=>c.epoch!==0||transpose===0)) {
+      const expected=fixture.expected[c.id];
+      for(const staff of ['treble','bass'])if(JSON.stringify(c.parts[staff].midis)!==JSON.stringify(expected[staff]))labeledErrors.push(`part:${transpose}:${c.id}:${staff}`);
+    }
+  }
+  const pass = chordPct >= 90 && liftedPct >= 90 && overall.planFailures === 0 && labeledErrors.length === 0;
   console.log(`\nwhole % over all clusters (legato steps included): ${wholePct.toFixed(1)}; legato merged ${pct(overall.legatoMerged, overall.legatoPairs)}% of ${overall.legatoPairs} legato pairs`);
   console.log(`legato pairs lifted in sequence (second key outlasts the first by > ${LIFTED_TOGETHER_MS}ms): merged ${pct(overall.seqMerged, overall.seqPairs)}% of ${overall.seqPairs}`);
   console.log(`chord whole excludes ${overall.legatoExcluded} of ${overall.clusters} clusters as legato lines`);
   console.log(`pulse: ${overall.bars} breath bar lines (${(overall.bars / (overall.takes || 1)).toFixed(1)} per take), ${overall.smoothed} smoothed eighths (${pct(overall.smoothed, overall.cols)}% of columns), ${overall.beams} beat-sized beam groups in ${overall.phrases} phrases (${(overall.beams / (overall.phrases || 1)).toFixed(2)} per phrase), ${pct(overall.beams4, overall.beams)}% full groups of four`);
-  console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), lifted-together whole ${liftedPct.toFixed(1)}% of ${overall.lifted} (need >= 90), RH-on-bass ${overall.rhOnBass} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
+  console.log(`gate: chord whole ${chordPct.toFixed(1)}% (need >= 90), lifted-together whole ${liftedPct.toFixed(1)}% of ${overall.lifted} (need >= 90), staff-plan failures ${overall.planFailures}, labeled failures ${labeledErrors.length} (need 0) -> ${pass ? 'PASS' : 'FAIL'}`);
 
+  if(labeledErrors.length)console.error('Labeled staff failures:',labeledErrors);
   if (args.render) {
     const n = await renderMoments(args.render, takes, args.moments);
     console.log(`\nrendered ${n} moments -> ${path.join(args.render, 'index.html')}`);

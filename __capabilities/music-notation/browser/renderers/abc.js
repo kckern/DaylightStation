@@ -5,6 +5,7 @@
 // (key signatures, hand split, ottava). The abcjs render call lives in
 // AbcRenderer.jsx; this module is pure string-building so it can be unit-tested.
 
+import { displayStaffMidi } from '../model/staffRegister.js';
 import { KEY_SIGNATURES, NATURAL_NOTES, PITCH_TO_NATURAL } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
 
@@ -98,18 +99,18 @@ export const generateScaleAbc = (midiNotes, keySignature = 'C') => {
  * @param {Map} activeNotes - Map of MIDI note numbers to note data
  * @param {string} keySignature - e.g. 'G', 'F', 'C'
  */
-export const generateAbc = (activeNotes, keySignature = 'C') => {
+export const generateAbc = (activeNotes, keySignature = 'C', {staffPlan = null} = {}) => {
   const notes = Array.from(activeNotes.keys()).sort((a, b) => a - b);
 
-  const { bassNotes, trebleNotes } = splitByHand(notes);
+  const { bassNotes, trebleNotes } = staffPlan ? {bassNotes:staffPlan.parts.bass.midis,trebleNotes:staffPlan.parts.treble.midis} : splitByHand(notes);
 
-  const trebleOttava = getOttavaInfo(trebleNotes, true);
-  const bassOttava = getOttavaInfo(bassNotes, false);
+  const trebleOttava = staffPlan ? {octaves:0,marker:''} : getOttavaInfo(trebleNotes, true);
+  const bassOttava = staffPlan ? {octaves:0,marker:''} : getOttavaInfo(bassNotes, false);
 
-  const displayTrebleNotes = trebleOttava.octaves > 0
+  const displayTrebleNotes = staffPlan ? trebleNotes.map(n=>displayStaffMidi(n,staffPlan.parts.treble)) : trebleOttava.octaves > 0
     ? trebleNotes.map(n => n - (trebleOttava.octaves * 12))
     : trebleNotes;
-  const displayBassNotes = bassOttava.octaves > 0
+  const displayBassNotes = staffPlan ? bassNotes.map(n=>displayStaffMidi(n,staffPlan.parts.bass)) : bassOttava.octaves > 0
     ? bassNotes.map(n => n + (bassOttava.octaves * 12))
     : bassNotes;
 
@@ -132,6 +133,14 @@ export const generateAbc = (activeNotes, keySignature = 'C') => {
     ? `!${bassOttava.marker}(!${bassAbc}!${bassOttava.marker})!`
     : bassAbc;
 
+  const total = staff => staffPlan ? staffPlan.parts[staff].octave+staffPlan.parts[staff].residualOctave : 0;
+  const clef = staff => {
+    const n=total(staff);
+    return Math.abs(n)===1 ? `${staff}${n>0?'+':'-'}8` : n ? `${staff} transpose=${n*12}` : staff;
+  };
+  // abcjs silently ignores double-octave clefs. A single-column snapshot therefore
+  // uses an explicit 15ma/15mb indication plus a sounding transpose for those cases.
+  const registerText = staff => Math.abs(total(staff))>=2 ? `"^${Math.abs(total(staff))*7+1}m${total(staff)>0?'a':'b'}"` : '';
   const abc = `X:1
 L:1/4
 M:none
@@ -145,10 +154,10 @@ K:${keySignature}
 %%staffsep 60
 %%sysstaffsep 40
 %%staves {(RH) (LH)}
-V:RH clef=treble
-V:LH clef=bass
-[V:RH] x x ${trebleContent} x x |]
-[V:LH] x x ${bassContent} x x |]`;
+V:RH clef=${clef('treble')}
+V:LH clef=${clef('bass')}
+[V:RH] x x ${registerText('treble')}${trebleContent} x x |]
+[V:LH] x x ${registerText('bass')}${bassContent} x x |]`;
 
   return abc;
 };

@@ -40,7 +40,7 @@ const ABC_STAFF_SPACING = 7.75;
  *   that should use the whole stage instead of retaining abcjs page whitespace.
  * @param {(tune:object, staffNotes:Array)=>void} [onRender] - post-paint hook
  */
-export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, fitContent = false, onRender }) {
+export function AbcRenderer({ notes, abc, staffPlan = null, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, fitContent = false, onRender }) {
   const containerRef = useRef(null);
   const onRenderRef = useRef(onRender);
   onRenderRef.current = onRender;
@@ -48,7 +48,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
 
   // `abc` (a pre-built tune string, e.g. a Hanon melodic figure) takes precedence
   // over `notes` (a Map rendered as a single chord).
-  const notesKey = abc ?? (notes ? Array.from(notes.keys()).sort((a, b) => a - b).join(',') : '');
+  const notesKey = abc ?? `${notes ? Array.from(notes.keys()).sort((a, b) => a - b).join(',') : ''}|${JSON.stringify(staffPlan)}`;
 
   // Holds the latest render closure so a ResizeObserver can re-render with current
   // props (staffwidth + pin both depend on the live container width) without
@@ -59,7 +59,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
     const render = () => {
     if (!containerRef.current) return;
     try {
-      const tune = abc ?? generateAbc(notes, keySignature);
+      const tune = abc ?? generateAbc(notes, keySignature, {staffPlan});
       const containerWidth = containerRef.current.parentElement?.offsetWidth || 600;
       const sidePad = 12;
       // singleLine: force one long horizontal staff line (no wrapping) so a

@@ -74,3 +74,22 @@ describe('CurrentChordStaff', () => {
     expect(closed[0][2]).toMatchObject({ level: 'debug' });
   });
 });
+
+
+it('feeds adaptive parts and octave registers into the live renderer',()=>{
+ vi.useFakeTimers();vi.setSystemTime(10000);
+ try {
+ const {rerender,unmount}=render(<CurrentChordStaff activeNotes={surface()} detectedKey="C"/>);
+ for(let i=0;i<9;i++)act(()=>{const t=10000+i*500;vi.setSystemTime(t);rerender(<CurrentChordStaff activeNotes={surface(...[60,67,84,88,91].map(m=>[m,t]))} detectedKey="C"/>);});
+ const last=renderChordStaff.mock.calls.at(-1)[1].columns.at(-1);
+ expect(last.staffPlan.parts.treble.octave).toBe(1);
+ expect(last.staffPlan.parts.bass.octave).toBe(1);
+ expect(last.staffPlan.parts.bass.midis).toEqual([60,67]);
+ const before=renderChordStaff.mock.calls.length;
+ act(()=>vi.advanceTimersByTime(80));
+ expect(renderChordStaff.mock.calls.length).toBe(before);
+ unmount();
+ render(<CurrentChordStaff activeNotes={surface([60,20000])} detectedKey="C"/>);
+ expect(renderChordStaff.mock.calls.at(-1)[1].columns.at(-1).staffPlan.epoch).toBe(0);
+ }finally{vi.useRealTimers();}
+});

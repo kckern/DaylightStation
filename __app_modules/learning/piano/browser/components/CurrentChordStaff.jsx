@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { emptyStaffPlan, advanceStaffPlan } from '../../../../../__capabilities/music-notation/browser/model/staffPlanner.js';
 import { ChordStaffRenderer } from "../../../../../__capabilities/music-notation/browser/renderers/ChordStaffRenderer.jsx";
 import {
   emptyFlow, pushOnsets, pushReleases, clearIfIdle, flowDurations, columnRolls,
@@ -25,7 +26,7 @@ import './CurrentChordStaff.scss';
 const PROVISIONAL_TICK_MS = 80;
 
 const NOTHING_HELD = new Map();
-const emptyView = () => ({ flow: emptyFlow(), durations: [] });
+const emptyView = () => ({ flow: emptyFlow(), durations: [], staffPlan: emptyStaffPlan() });
 
 let _logger;
 function logger() {
@@ -102,6 +103,8 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   // Always run the hook (Rules of Hooks); the prop takes precedence when present.
   const internalKey = useDetectedKey(activeNotes);
   const keySig = detectedKey ?? internalKey;
+  const keyRef = useRef(keySig);
+  keyRef.current = keySig;
 
   // The next flow is computed from viewRef and then stored (ref first, so a second
   // effect in the same batch builds on it), rather than inside a setState updater: the
@@ -112,7 +115,13 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
     const prev = viewRef.current;
     const durations = flowDurations(nextFlow, now, prev.durations);
     if (nextFlow === prev.flow && durations === prev.durations) return;
-    const next = { flow: nextFlow, durations };
+    const planned = nextFlow === prev.flow ? {state:prev.staffPlan,events:[]}
+      : advanceStaffPlan(prev.staffPlan,nextFlow,{keySignature:keyRef.current});
+    const next = { flow: nextFlow, durations, staffPlan:planned.state };
+    for(const event of planned.events) {
+      if(event.type==='register-changed') logger().info('chord-staff.register-changed',event);
+      else logger().sampled('chord-staff.register-uncertain',event,{maxPerMinute:10,aggregate:true,level:'debug'});
+    }
     viewRef.current = next;
     setView(next);
   }, []);
@@ -134,7 +143,8 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
         if (closed) {
           // The strokes the staff draws for it, per hand — what the player sees.
           // Debug: it fires on every column while anyone plays.
-          const rolls = columnRolls(closed);
+          const plan=viewRef.current.staffPlan.columns.find(p=>p.id===closed.id);
+          const rolls = columnRolls({...closed,staffPlan:plan});
           logger().sampled('chord-staff.column-closed', {
             notes: closed.midis,
             spanMs: closed.lastOnsetAt - closed.startedAt,
@@ -166,7 +176,7 @@ export function CurrentChordStaff({ activeNotes, detectedKey }) {
   // Each column is spelled AS A CHORD (see identifyChord), so the staff and the chord
   // plaque can only ever show the same reading, and the key signature beside them.
   const columns = useMemo(
-    () => buildRenderColumns(view.flow, view.durations, keySig),
+    () => buildRenderColumns(view.flow, view.durations, keySig, view.staffPlan),
     [view, keySig],
   );
 

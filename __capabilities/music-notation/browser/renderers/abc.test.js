@@ -1,3 +1,5 @@
+import abcjs from 'abcjs';
+import tone from '@tonejs/midi';
 import { describe, it, expect } from 'vitest';
 import { midiToAbc, generateAbc, generateScaleAbc, generateMelodyAbc, abcNoteLine } from "./abc.js";
 
@@ -98,4 +100,18 @@ describe('generateMelodyAbc', () => {
     expect(abc).toContain('[V:RH] C D |]');
     expect(abc).toContain('[V:LH] C, D, |]');
   });
+});
+
+
+describe('planned ABC snapshots',()=>{
+ it.each([-2,-1,0,1,2])('preserves sounding MIDI with register %s',octave=>{
+   const treble=[72+12*octave],bass=[48+12*octave];
+   const staffPlan={parts:{treble:{midis:treble,octave,residualOctave:0},bass:{midis:bass,octave,residualOctave:0}}};
+   const text=generateAbc(new Map([...treble,...bass].map(m=>[m,{}])),'C',{staffPlan});
+   const bytes=abcjs.synth.getMidiFile(text,{midiOutputType:'binary'})[0];
+   const sounding=new tone.Midi(bytes).tracks.flatMap(t=>t.notes.map(n=>n.midi)).sort((a,b)=>a-b);
+   expect(sounding).toEqual([...bass,...treble]);
+   if(Math.abs(octave)===1)expect(text).toContain(`clef=treble${octave>0?'+':'-'}8`);
+   if(Math.abs(octave)===2)expect(text).toContain(octave>0?'15ma':'15mb');
+ });
 });

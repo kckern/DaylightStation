@@ -68,3 +68,13 @@ describe('buildRenderColumns', () => {
     expect(out.every((c) => !('roll' in c))).toBe(true);
   });
 });
+
+
+it('preserves shared original-pitch part assignments through key respelling',()=>{
+ const f=flowOf({...col([48,60,64],100),id:7,originId:5});
+ const plan={columns:[{id:7,originId:5,epoch:2,parts:{treble:{midis:[60,64],octave:-1,residualOctave:0},bass:{midis:[48],octave:-1,residualOctave:0}}}]};
+ const a=buildRenderColumns(f,['q'],'C',plan),b=buildRenderColumns(f,['q'],'F#',plan);
+ expect(a[0]).toMatchObject({id:7,originId:5,staffPlan:plan.columns[0]});
+ expect(b[0].staffPlan).toBe(a[0].staffPlan);
+ expect(b[0].midis).toEqual([48,60,64]);
+});

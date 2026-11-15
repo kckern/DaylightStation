@@ -762,3 +762,9 @@ describe('notation gesture identity',()=>{
     expect(f.columns.map(c=>c.originId)).toEqual([0,0]);
   });
 });
+
+
+it('uses explicit staff membership for roll strokes below middle C',()=>{
+ const parts={treble:{midis:[48,52],octave:-1,residualOctave:0},bass:{midis:[36],octave:-1,residualOctave:0}};
+ expect(columnRolls({midis:[36,48,52],arrivals:[{midi:36,at:0},{midi:48,at:20},{midi:52,at:140}],staffPlan:{parts}})).toEqual({treble:'up',bass:null});
+});

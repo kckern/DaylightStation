@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {emptyStaffPlan,advanceStaffPlan} from './staffPlanner.js';
 import {displayStaffMidi} from './staffRegister.js';
-import {makeStaffFixture,runStaffFixture} from '../../../../tests/_fixtures/piano/staffRegisterFixtures.mjs';
+import {makeStaffFixture,runStaffFixture,staffPlanFailures} from '../../../../tests/_fixtures/piano/staffRegisterFixtures.mjs';
 const epoch=state=>state.epochs.find(e=>e.id===state.activeEpoch);
 describe('adaptive staff planner',()=>{
   it.each([-12,0,12])('acquires paired register for transposition %s',transpose=>{
@@ -77,4 +77,13 @@ describe('adaptive staff planner',()=>{
     s=advanceStaffPlan(s,{...frames.at(-1).flow,columns:[...frames.at(-1).flow.columns,c]}).state;
     expect(epoch(s)).toMatchObject({treble:1,bass:1});
   });
+});
+
+
+it('replay invariants reject dropped pitches and incorrect epoch signs',()=>{
+ const fixture=makeStaffFixture('paired');const out=runStaffFixture(fixture);const flow=fixture.frames.at(-1).flow;
+ expect(staffPlanFailures(flow,out.state)).toEqual([]);
+ const bad={...out.state,columns:out.state.columns.map((c,i)=>i?c:{...c,parts:{...c.parts,treble:{...c.parts.treble,midis:[],octave:1}}})};
+ expect(staffPlanFailures(flow,bad)).toContain('pitch-coverage:0');
+ expect(staffPlanFailures(flow,bad)).toContain('epoch-mismatch:0');
 });
