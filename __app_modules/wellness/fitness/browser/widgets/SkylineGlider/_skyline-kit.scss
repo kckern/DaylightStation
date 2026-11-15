@@ -3,7 +3,9 @@
 // states the rules of the look.
 @use 'sass:string';
 
-// A length in viewport-width percent, read through --sg-vw. Unset, that is 1vw.
+// A length in width percent, read through --sg-vw. Unset, that is 1vw.
+// SkylineMenuLayout sets this on its inner grid using cqw/cqh, so menus fit
+// their assigned host even when the surrounding browser is larger.
 // A game whose screen must fit a window shorter than 16:9 sets
 // `--sg-vw: min(1vw, calc(16vh / 9))` on its root: on 16:9 or narrower it is still 1vw;
 // on a shorter window everything sized this way shrinks with the height instead

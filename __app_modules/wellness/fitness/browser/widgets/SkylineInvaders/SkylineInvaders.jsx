@@ -1127,7 +1127,7 @@ function SkylineInvadersGame({ onClose }) {
 
       {screen && (
         <section className="skyline-menu-screen skyline-invaders__menu" data-testid="skyline-invaders-menu" aria-label="Skyline Invaders menu">
-          <SkylineMenuLayout variant="touch" className="skyline-invaders__window"
+          <SkylineMenuLayout key={screen} variant="touch" className="skyline-invaders__window"
             actions={<InvadersTouchKeys keys={touchKeys} onPress={pressTouchKey} />}
             utility={SOUND_SCREENS.includes(screen) && !prompt && <MoreButton onMore={() => openSound('touch')} className="skyline-invaders__more" />}>
             {screen === 'ready' && <InvadersReady tracker={tracker} poseStatus={poseStatus} waveName={level?.name || ''} gesture={gesture} mat={!!mat} onDone={() => begin()} />}

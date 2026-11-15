@@ -324,3 +324,5 @@ Menu screens use `SkylineMenuLayout`, which fills the module's assigned host rat
 The bike pad stays beside the content, or below it at host widths of 760 CSS px and less. A separate 56 px utility row keeps the Sound button clear of text and controls. Menu scale follows the host's width and height; flight/HUD sizing is independent.
 
 Bike controls reserve separate icon, two-line label, and two-line hint slots, including when the hint is empty. Long words wrap inside their button. Longer reasons can grow the pad inside its own overflow region on unusually short hosts; notices stay in the content scroller and never displace the controls.
+
+The desktop bike panel uses 44% of the available grid width so built-in labels such as “Retry checkpoint” do not break into extra fragments at 1024 px. The narrow layout gives the lower controls a stable 44% height allocation. Content scrolls earlier in exchange for keeping the full labels readable. The backend-free browser regression command is documented in [Skyline Invaders](./skyline-invaders.md#menu-layout).

@@ -18,10 +18,10 @@ describe('InvadersTouchKeys', () => {
     expect(container.querySelectorAll('.skyline-invaders__keys--extra')).toHaveLength(1);
   });
 
-  it('draws only the row that has keys, and reports a press by position', () => {
+  it('keeps empty row tracks free of invented keys, and reports a press by position', () => {
     const onPress = vi.fn();
     const exitOnly = render(<InvadersTouchKeys keys={[{ position: 6, label: 'Exit', hint: 'Leave the game', icon: '×' }]} onPress={onPress} />);
-    expect(rows(exitOnly.container)).toEqual([['Exit']]);
+    expect(rows(exitOnly.container)).toEqual([[], ['Exit']]);
     fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
     expect(onPress).toHaveBeenCalledWith(6);
     exitOnly.unmount();

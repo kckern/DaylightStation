@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import useSkylineSelectionVisibility from '../SkylineGlider/useSkylineSelectionVisibility.js';
 import SkylineAvatar from '../SkylineGlider/SkylineAvatar.jsx';
 import GameSoundSheet from '../SkylineGlider/GameSoundSheet.jsx';
 import { FlightList } from '../SkylineGlider/SkylineMenus.jsx';
@@ -61,7 +62,7 @@ export function InvadersTouchKeys({ keys = [], onPress }) {
   );
   return (
     <div className="skyline-invaders__keyboard" role="group" aria-label="Actions" data-testid="invaders-keys">
-      {main.length > 0 && <div className="skyline-invaders__keys">{main.map(button)}</div>}
+      <div className="skyline-invaders__keys">{main.map(button)}</div>
       <div className="skyline-invaders__keys skyline-invaders__keys--extra">{extra.map(button)}</div>
     </div>
   );
@@ -69,8 +70,10 @@ export function InvadersTouchKeys({ keys = [], onPress }) {
 
 /** People as tiles to tap: avatar and name. `cursorId` marks the keyboard/gamepad cursor. */
 function PeopleTiles({ people = [], cursorId = null, onPick, extra = null }) {
+  const peopleRef = useRef(null);
+  useSkylineSelectionVisibility(peopleRef, cursorId);
   return (
-    <div className="skyline-invaders__people" role="group" aria-label="People">
+    <div className="skyline-invaders__people" ref={peopleRef} role="group" aria-label="People">
       {people.map((person) => (
         <button
           key={person.id} type="button" className="skyline-invaders__person" data-testid={`invaders-person-${person.id}`}
@@ -222,11 +225,13 @@ function GamepadGlyph() {
 function MethodScreen({ setup = {}, shooterName = '', onMethod }) {
   // `setup.cursor` is null under touch: a gold tile would read as already chosen.
   const cameraOff = setup.camera === 'off';
+  const methodsRef = useRef(null);
+  useSkylineSelectionVisibility(methodsRef, setup.cursor);
   return (
     <Window screen="method">
       <p className="skyline-menus__kicker">{shooterName ? `${shooterName}: how do you aim?` : 'How do you aim?'}</p>
       <h1>Choose your controls</h1>
-      <div className="skyline-invaders__methods" role="group" aria-label="Controls">
+      <div className="skyline-invaders__methods" ref={methodsRef} role="group" aria-label="Controls">
         {SETUP_METHODS.map((method, index) => {
           const gesture = method !== MANUAL_METHOD;
           return (

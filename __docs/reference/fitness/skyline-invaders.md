@@ -570,7 +570,21 @@ Menus use the shared `SkylineMenuLayout` from Skyline Glider. It fills the modul
 
 Menu scale uses the host's width and height, including when the game is embedded in a smaller module. The scene and in-round HUD keep their own sizing.
 
+Opening a different menu starts its content at the top before revealing any keyboard-selected item. Updating the same menu preserves manual scrolling.
+
 Primary action keys reserve icon, two-line label, and two-line hint slots. Only the existing mat hint is drawn; other hints remain in the button title and empty sizing slots add no accessible words. A separate secondary-row track stays allocated even when Controls/Exit are absent. At host widths of 760 CSS px and less, primary keys form a 2 × 2 grid. Oversized external reasons may scroll the action region; the built-in action sets fit the tested host sizes without that fallback.
+
+The result screen reserves its primary row even during saving, when only Exit is drawn. Retry/Replay then appear without shifting the action area. Method, roster, and Sound screens retain a compact Back row.
+
+Method tiles use three columns above 1100 CSS px of host width, two at 761–1100 px, and one at 760 px and less. “Yours” sits below the title, sharing its text column rather than squeezing it. Methods and people use the same content scroller; a keyboard-selected item is revealed without scrolling the document. Left/right still browse in the original linear order and wrap at either end; up/down do nothing on the method screen.
+
+Run the backend-free menu regression matrix (bundled fonts, Firefox and Chromium) with:
+
+```sh
+npx playwright test --config tests/_infrastructure/config/playwright.skyline-layout.config.mjs
+```
+
+This covers 1381 × 777, 1920 × 934, 1024 × 600, and 700 × 1000 CSS px, embedded hosts, delayed fonts, DPR 1.39, the five-row logical window, label/hint geometry, method reflow, input, and every menu phase. It starts only the fixture's Vite server and calls no household APIs.
 
 ## Art
 

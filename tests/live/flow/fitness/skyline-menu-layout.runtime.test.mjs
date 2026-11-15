@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectMenuGeometry, expectSelectedRowVisible, readMenuGeometry, readActionText, expectActionTextContained } from '../../../_lib/skylineLayoutAssertions.mjs';
+import { expectMenuGeometry, expectSelectedRowVisible, readMenuGeometry, readActionText, expectActionTextContained, expectContentTextContained } from '../../../_lib/skylineLayoutAssertions.mjs';
 
 const sizes = [[1381, 777], [1920, 934], [1024, 600], [700, 1000]];
 export const scenario = (page, patch) => page.evaluate(p => window.__skylineLayout.setScenario(p), patch);
@@ -57,6 +57,14 @@ test('an unrelated render does not recapture manual scroll @shell-list', async (
   await scenario(page, { notice: 'Reading a notice must not drag the menu back to the chosen flight.' });
   expect((await readMenuGeometry(page)).scrollTop).toBe(0);
 });
+test('a new menu starts at its own heading instead of inheriting prior scroll @shell-list',async({page})=>{
+  await page.setViewportSize({width:700,height:1000});
+  await scenario(page,{game:'invaders',screen:'waves',longText:true,selectedIndex:13});
+  await expectSelectedRowVisible(page);
+  expect((await readMenuGeometry(page)).scrollTop).toBeGreaterThan(0);
+  await scenario(page,{screen:'method',longText:false,methodCursor:0});
+  expect((await readMenuGeometry(page)).scrollTop).toBe(0);
+});
 test('an oversized row exposes its start and can be read by scrolling @shell-list', async ({ page }) => {
   await scenario(page, { game: 'glider', screen: 'flights', longText: true, selectedIndex: 13, host: { width: 700, height: 500 } });
   await expectSelectedRowVisible(page);
@@ -100,10 +108,13 @@ for (const [width, height] of sizes) {
     await page.setViewportSize({ width, height });
     await scenario(page, { game, screen: 'result', selectedIndex: 13, saveStatus: 'saving' });
     const before = await readActionText(page);
+    const areaBefore = (await readMenuGeometry(page)).actionRegion;
     for (const saveStatus of ['error', 'saved']) {
       await scenario(page, { saveStatus, notice: 'This attempt could not be saved. You can still choose what happens next. '.repeat(5) });
       await expectActionTextContained(page); await expectMenuGeometry(page);
       const after = await readActionText(page);
+      const areaAfter = (await readMenuGeometry(page)).actionRegion;
+      expect(Math.abs(areaAfter.top - areaBefore.top)).toBeLessThanOrEqual(1);
       for (const b of before.buttons.filter(b => Number(b.position) <= 4)) {
         const next = after.buttons.find(a => a.position === b.position);
         expect(Math.abs(b.box.top - next.box.top)).toBeLessThanOrEqual(1);
@@ -119,6 +130,48 @@ test('multiline reasons and notices do not cover controls under reduced motion @
   await scenario(page, { game: 'glider', screen: 'denied', notice: 'The school check is offline. A grown-up can unlock. '.repeat(5) });
   await expectActionTextContained(page); await expectMenuGeometry(page);
 });
+
+for (const [width, columns] of [[1381,3], [1920,3], [1101,3], [1100,2], [1024,2], [761,2], [760,1], [700,1]]) {
+  test(`methods reflow at host ${width}px to ${columns} columns @methods`, async ({ page }) => {
+    await page.setViewportSize({width:1920,height:1080});
+    await scenario(page, { game: 'invaders', screen: 'method', host: { width, height: 777 }, currentMethod: 'wheel', methodCursor: 3 });
+    expect(await page.locator('.skyline-invaders__methods').evaluate(e => getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(columns);
+    await expectMenuGeometry(page);
+  });
+}
+for (const [width,height] of sizes) test(`Steering wheel and Yours have disjoint glyph bounds ${width}x${height} @methods`, async ({ page }) => {
+  await page.setViewportSize({width,height});
+  await scenario(page, {game:'invaders',screen:'method',currentMethod:'wheel',methodCursor:3});
+  const tile=page.getByTestId('invaders-method-wheel');
+  const geometry=await tile.evaluate(e=>{
+    const rects = node => {const range=document.createRange();range.selectNodeContents(node);return [...range.getClientRects()].map(r=>({left:r.left,right:r.right,top:r.top,bottom:r.bottom}));};
+    const r=e.getBoundingClientRect();return {tile:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},label:rects(e.querySelector('strong')),marker:rects(e.querySelector('small'))};
+  });
+  for(const r of [...geometry.label,...geometry.marker]) {
+    expect(r.left).toBeGreaterThanOrEqual(geometry.tile.left-1);expect(r.right).toBeLessThanOrEqual(geometry.tile.right+1);
+    expect(r.top).toBeGreaterThanOrEqual(geometry.tile.top-1);expect(r.bottom).toBeLessThanOrEqual(geometry.tile.bottom+1);
+  }
+  for(const a of geometry.label)for(const b of geometry.marker)expect(Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1).toBe(false);
+});
+test('every method is reachable after scrolling and resizing @methods', async ({page})=>{
+  await scenario(page,{game:'invaders',screen:'method',methodCursor:0,host:{width:700,height:600}});
+  for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');
+  const last=page.getByTestId('invaders-method-gamepad');
+  await expect(last).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>{const r=await last.boundingBox(),g=await readMenuGeometry(page);return r.y>=g.content.top-1&&r.y+r.height<=g.content.bottom+1;}).toBe(true);
+  await scenario(page,{host:{width:1101,height:777}});
+  await expect(last).toHaveAttribute('aria-pressed','true');
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(()=>window.__skylineLayout.actions.at(-1))).toEqual({type:'method',value:'gamepad'});
+});
+test('long people names stay in their tiles without a nested scroller @methods',async({page})=>{
+  await scenario(page,{game:'invaders',screen:'roster',longText:true,host:{width:700,height:600}});
+  const people=page.locator('.skyline-invaders__people');
+  expect(await people.evaluate(e=>getComputedStyle(e).overflowY)).toBe('visible');
+  const tile=page.getByTestId('invaders-person-r3');await tile.focus();
+  const contained=await tile.evaluate(e=>{const r=e.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e.querySelector('strong'));return [...range.getClientRects()].every(t=>t.left>=r.left-1&&t.right<=r.right+1&&t.top>=r.top-1&&t.bottom<=r.bottom+1);});
+  expect(contained).toBe(true);await expectMenuGeometry(page);
+});
 test('multiline action text fits at DPR 1.39 @actions', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1381, height: 777 }, deviceScaleFactor: 1.39 });
   const page = await context.newPage();
@@ -127,4 +180,21 @@ test('multiline action text fits at DPR 1.39 @actions', async ({ browser }) => {
     await scenario(page, { game: 'glider', screen: 'crash' });
     await expectActionTextContained(page);
   } finally { await context.close(); }
+});
+
+const screenMatrix = {
+  glider: ['identity','roster','flights','ready','countdown','menu','settings','crash','result','save-details','denied','loading','error'],
+  invaders: ['who','roster','waves','method','sweep','locked','ready','paused','result','sound','loading','error'],
+};
+for(const game of Object.keys(screenMatrix))for(const [width,height]of sizes)test(`${game} every menu screen stays usable ${width}x${height} @matrix`,async({page},testInfo)=>{
+  await page.setViewportSize({width,height});
+  for(const screen of screenMatrix[game]){
+    await scenario(page,{game,screen,longText:false,selectedIndex:1,host:null,saveStatus:'saved',notice:screen==='result'?'Flight saved · +3 rings':''});
+    await expectMenuGeometry(page);await expectActionTextContained(page);await expectContentTextContained(page);
+    if(game==='invaders'&&width>=1381){
+      const small=await page.locator('.skyline-menus').evaluate(e=>{const t=document.createElement('span');t.style.fontSize='var(--sg-text-s)';e.append(t);const size=parseFloat(getComputedStyle(t).fontSize);t.remove();return size;});
+      expect(small).toBeGreaterThanOrEqual(22);
+    }
+    if(['flights','waves','method','save-details','result'].includes(screen))await page.screenshot({path:testInfo.outputPath(`${game}-${screen}-${width}.png`)});
+  }
 });

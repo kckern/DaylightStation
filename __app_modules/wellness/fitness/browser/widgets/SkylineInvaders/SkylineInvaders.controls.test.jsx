@@ -224,6 +224,20 @@ describe('Skyline Invaders controls', () => {
     expect(routes.controls).not.toHaveBeenCalled();
   });
 
+  it('keeps method browsing linear, wrapping left/right and ignoring up/down', async () => {
+    await mount({ controls: { gesture: 'wiper' } });
+    await status('detecting');
+    await pad(4);
+    expect(menuScreen()).toBe('method');
+    await keyDown('ArrowLeft');
+    expect(screen.getByTestId('invaders-method-gamepad')).toHaveAttribute('aria-pressed','true');
+    await keyDown('ArrowDown');await keyDown('ArrowUp');
+    expect(screen.getByTestId('invaders-method-gamepad')).toHaveAttribute('aria-pressed','true');
+    await keyDown('ArrowRight');
+    expect(screen.getByTestId('invaders-method-wiper')).toHaveAttribute('aria-pressed','true');
+    expect(routes.controls).not.toHaveBeenCalled();
+  });
+
   it('the method can be changed mid-round from the pause screen: the round waits, the new method is tested, and the record carries it', async () => {
     await mount();
     await status('detecting');

@@ -93,3 +93,21 @@ export async function expectActionTextContained(page) {
     }
   }
 }
+
+export async function expectContentTextContained(page) {
+  const escaped = await page.evaluate(() => {
+    const content = document.querySelector('[data-skyline-scroll]');
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    const out = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode, parent = node.parentElement;
+      if (!node.textContent.trim() || parent.closest('svg,[aria-hidden="true"]') || getComputedStyle(parent).visibility === 'hidden') continue;
+      const owner = parent.closest('button,.skyline-menus,.skyline-glider__notice') || content;
+      const bounds = owner.getBoundingClientRect();
+      const range = document.createRange(); range.selectNodeContents(node);
+      for (const r of range.getClientRects()) if (r.left < bounds.left - 1 || r.right > bounds.right + 1) out.push({ text: node.textContent, left: r.left, right: r.right, ownerLeft: bounds.left, ownerRight: bounds.right });
+    }
+    return out;
+  });
+  expect(escaped).toEqual([]);
+}

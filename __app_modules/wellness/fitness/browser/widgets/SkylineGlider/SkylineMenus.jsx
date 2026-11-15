@@ -1,4 +1,5 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import useSkylineSelectionVisibility from './useSkylineSelectionVisibility.js';
 import './SkylineMenus.scss';
 import SkylineAvatar from './SkylineAvatar.jsx';
 import { PixelIcon } from './SkylinePixelIcons.jsx';
@@ -35,27 +36,8 @@ export function flightWindow(count,index,rows=FLIGHT_ROWS){
 export function FlightList({rows,selectedId,onSelect,testIdPrefix='skyline'}){
  const index=rows.findIndex(r=>r.id===selectedId),{start,end}=flightWindow(rows.length,index);
  const listRef=useRef(null);
- const windowKey=rows.slice(start,end).map(r=>r.id).join('|');
- useLayoutEffect(()=>{
-  const list=listRef.current,scroller=list?.closest('[data-skyline-scroll]');
-  if(!scroller)return;
-  let active=true;
-  const reveal=()=>{
-   if(!active)return;
-   const row=list.querySelector('[aria-pressed="true"]');
-   if(!row)return;
-   const bounds=scroller.getBoundingClientRect(),r=row.getBoundingClientRect();
-   const inset=parseFloat(getComputedStyle(scroller).paddingTop)||0;
-   const top=bounds.top+inset,bottom=bounds.bottom-inset;
-   if(r.height>bottom-top||r.top<top)scroller.scrollTop+=r.top-top;
-   else if(r.bottom>bottom)scroller.scrollTop+=r.bottom-bottom;
-  };
-  reveal();
-  const observer=typeof ResizeObserver==='undefined'?null:new ResizeObserver(reveal);
-  observer?.observe(scroller);
-  document.fonts?.ready.then(reveal);
-  return ()=>{active=false;observer?.disconnect()};
- },[selectedId,windowKey]);
+ const selectionKey=JSON.stringify([selectedId,rows.slice(start,end).map(r=>r.id)]);
+ useSkylineSelectionVisibility(listRef,selectionKey);
  return <>
   <p className="skyline-menus__more" data-dir="up" data-testid={`${testIdPrefix}-more-above`} data-empty={start===0||undefined}><PixelIcon name="right" className="skyline-menus__more-icon"/>{start} more</p>
   <div className="skyline-menus__options" ref={listRef}>{rows.slice(start,end).map(r=><button key={r.id} type="button" aria-pressed={r.id===selectedId} data-status={r.status} data-row={r.id} onClick={event=>{event.currentTarget.blur();onSelect?.(r.id)}}>
