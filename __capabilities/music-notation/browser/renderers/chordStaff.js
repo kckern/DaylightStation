@@ -19,7 +19,9 @@
 // signature doesn't already imply (in-key notes are clean; out-of-key get a
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
-import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter, TickContext } from 'vexflow';
+import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter, TickContext, Clef } from 'vexflow';
+import { STAFF_GEOMETRY } from '../model/staffGeometry.js';
+import { displayStaffMidi } from '../model/staffRegister.js';
 import { staffDisplacement, stemTouchesOther } from './staffInk.js';
 import { KEY_SIGNATURES } from "../model/keySignature.js";
 import { splitByHand, getOttavaInfo } from "../model/handSplit.js";
@@ -36,8 +38,8 @@ import { spellPitchClass } from "../model/spelling.js";
 const NOTE_DURATION = 'q';
 
 const PAD = 8;          // stave's x offset inside the drawing canvas
-const TOP_ROOM = 58;    // y of the treble stave's top line (the drawing anchor)
-const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
+const TOP_ROOM = STAFF_GEOMETRY.trebleY;    // y of the treble stave's top line (the drawing anchor)
+const STAFF_GAP = STAFF_GEOMETRY.gap;   // treble top line → bass top line (one grand-staff system)
 const INK = '#1a1a1a';
 // Note area the content floor reserves in a narrow slot. Sized from the ink sweep, not
 // guessed: at 40 a 12-note cluster's accidental columns overran the frame's right edge
@@ -78,8 +80,8 @@ const KEY_SIGNATURE_AIR = 4;
 // the displayed range at A6 on top and E2 at the bottom — so only those notes' ledger
 // lines and the 8va/8vb markers reach the extremes. Horizontal is different and is
 // handled by the column layout below (layoutColumns), not here.
-const FRAME_TOP = 20;        // worst ink top 20.5 → 0.5 units of air
-const FRAME_BOTTOM = 258;    // worst ink bottom 254.2 → 3.8 units of air
+const FRAME_TOP = STAFF_GEOMETRY.top;        // worst ink top 20.5 → 0.5 units of air
+const FRAME_BOTTOM = STAFF_GEOMETRY.bottom;    // worst ink bottom 254.2 → 3.8 units of air
 const FRAME_LEFT = -14;      // worst ink left −6 (brace) → 8 units of air
 const FRAME_RIGHT_PAD = 16;  // air to the right of the stave's right edge
 const FRAME_H = FRAME_BOTTOM - FRAME_TOP;
@@ -302,12 +304,17 @@ function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION, stem
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
-function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = [], stemDir = null) {
-  const { bassNotes, trebleNotes } = splitByHand(midis);
-  const trebleOtt = getOttavaInfo(trebleNotes, true);
-  const bassOtt = getOttavaInfo(bassNotes, false);
-  const dispTreble = trebleOtt.octaves ? trebleNotes.map((n) => n - trebleOtt.octaves * 12) : trebleNotes;
-  const dispBass = bassOtt.octaves ? bassNotes.map((n) => n + bassOtt.octaves * 12) : bassNotes;
+function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = [], stemDir = null, staffPlan = null) {
+  const { bassNotes, trebleNotes } = staffPlan
+    ? {bassNotes:staffPlan.parts.bass.midis,trebleNotes:staffPlan.parts.treble.midis}
+    : splitByHand(midis);
+  const marker = octave => octave === 0 ? '' : `${Math.abs(octave)===2?'15m':'8v'}${octave>0?'a':'b'}`;
+  const trebleOtt = staffPlan ? {marker:marker(staffPlan.parts.treble.residualOctave)} : getOttavaInfo(trebleNotes, true);
+  const bassOtt = staffPlan ? {marker:marker(staffPlan.parts.bass.residualOctave)} : getOttavaInfo(bassNotes, false);
+  const dispTreble = staffPlan ? trebleNotes.map(n=>displayStaffMidi(n,staffPlan.parts.treble))
+    : trebleOtt.octaves ? trebleNotes.map((n) => n - trebleOtt.octaves * 12) : trebleNotes;
+  const dispBass = staffPlan ? bassNotes.map(n=>displayStaffMidi(n,staffPlan.parts.bass))
+    : bassOtt.octaves ? bassNotes.map((n) => n + bassOtt.octaves * 12) : bassNotes;
 
   const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration, stemDir);
   const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration, stemDir);
@@ -328,7 +335,7 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals
   try {
     // columnRolls splits the column by hand exactly as above, so the strokes drawn
     // and the strokes the log/harness report come from one pairing.
-    const rolls = columnRolls({ midis, arrivals });
+    const rolls = columnRolls({ midis, arrivals, staffPlan });
     for (const [n, roll] of [[tNote, rolls.treble], [bNote, rolls.bass]]) {
       if (n && roll) {
         n.addStroke(0, new Stroke(roll === 'down' ? Stroke.Type.ROLL_UP : Stroke.Type.ARPEGGIO_DIRECTIONLESS));
@@ -376,7 +383,7 @@ const measureCache = new Map();
 function measureColumn(col, ks, durations) {
   const rolls = columnRolls(col);
   const spellingKey = col.spelling ? [...col.spelling.entries()].map(([pc, sp]) => `${pc}${sp.letter}${sp.alter}`).join(',') : '';
-  const key = `${ks}|${col.midis.join('.')}|${spellingKey}|${rolls.treble ?? ''}/${rolls.bass ?? ''}|${[...durations].sort().join('')}`;
+  const key = `${ks}|${JSON.stringify(col.staffPlan??null)}|${col.midis.join('.')}|${spellingKey}|${rolls.treble ?? ''}/${rolls.bass ?? ''}|${[...durations].sort().join('')}`;
   const hit = measureCache.get(key);
   if (hit) return hit;
   let left = 0;
@@ -384,7 +391,7 @@ function measureColumn(col, ks, durations) {
   let autoLeft = 0;
   for (const duration of durations) {
     for (const stemDir of [null, 1, -1]) {
-      const { tNote, bNote } = columnNotes(col.midis, ks, col.spelling, duration, col.arrivals, stemDir);
+      const { tNote, bNote } = columnNotes(col.midis, ks, col.spelling, duration, col.arrivals, stemDir, col.staffPlan);
       const notes = [[tNote, 'treble'], [bNote, 'bass']].filter(([n]) => n);
       notes.forEach(([n, clef]) => n.setStave(staffFor(clef)));
       const voices = notes.map(([n]) => new Voice({ num_beats: 1, beat_value: 4 }).setStrict(false).addTickables([n]));
@@ -467,6 +474,7 @@ function normalizeColumns(columns, notes) {
       // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
       const duration = col.duration ?? NOTE_DURATION;
       return {
+        id: col.id, originId: col.originId, staffPlan: col.staffPlan ?? null,
         midis: [...col.midis].sort((a, b) => a - b),
         spelling: col.spelling ?? null,
         duration,
@@ -520,6 +528,32 @@ function normalizeColumns(columns, notes) {
  * @returns {{ start: number, xs: number[], quarterW: number }} `start`: index of the
  *   first column on screen; `xs`: tick x of columns start..end.
  */
+
+const CLEF_CHANGE_WIDTH = 34;
+const octaveOf = (column,staff) => column?.staffPlan?.parts[staff].octave ?? 0;
+const clefChanges = (before,after) => ['treble','bass'].filter(staff=>octaveOf(before,staff)!==octaveOf(after,staff));
+
+// The installed VexFlow has no bass-8va or double-octave clef metrics. Draw its
+// regular clef and attach a small explicit 8/15 consistently, above or below it.
+// This changes pitch interpretation, never the staff's physical coordinates.
+function markClef(group,stave,staff,octave,epoch,{header=false,x=0,small=false}={}) {
+  if(!group)return;
+  group.setAttribute('data-staff',staff);
+  group.setAttribute('data-epoch',String(epoch));
+  group.setAttribute('data-octave',String(octave));
+  group.setAttribute(header?'data-header':'data-inline','true');
+  if(!octave)return;
+  const text=document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('class','staff-clef-octave');
+  text.setAttribute('font-family','serif');text.setAttribute('font-size',small?'8':'9');
+  text.setAttribute('text-anchor','middle');
+  text.setAttribute('x',String(x+(staff==='treble'?(small?8:12):(small?7:10))));
+  const line=octave>0 ? (staff==='treble'?(small?-0.6:-1):-0.8)
+    : (staff==='treble'?(small?5.4:6.5):(small?3.7:4.5));
+  text.setAttribute('y',String(stave.getYForLine(line)));
+  text.textContent=Math.abs(octave)===2?'15':'8';group.appendChild(text);
+}
+
 function layoutColumns(cols, ks, stave, staveW, maxCount, { reachBothWays = true } = {}) {
   const n = cols.length;
   const quarterW = quarterWidth(staveW);
@@ -532,7 +566,8 @@ function layoutColumns(cols, ks, stave, staveW, maxCount, { reachBothWays = true
   const durW = (d) => (DURATION_WIDTH[d] ?? 1) * quarterW;
   // A breath bar line before column i + 1 adds its own room on top (see BAR_SPACE).
   const step = (i) => Math.max(durW(cols[i].widthDuration), m[i].right + COLUMN_GAP + m[i + 1].left)
-    + (cols[i + 1].breathBefore ? BAR_SPACE : 0);
+    + (cols[i + 1].breathBefore ? BAR_SPACE : 0)
+    + (clefChanges(cols[i],cols[i+1]).length ? CLEF_CHANGE_WIDTH : 0);
   // The head of the stave puts the note start KEY_SIGNATURE_AIR - pad left of x = 0.
   const leadOf = (j) => Math.max(0, KEY_SIGNATURE_AIR + leftOf(j) - pad - NOTE_INSET);
   let start = n - 1;
@@ -645,6 +680,14 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const { start, xs, bars } = layoutColumns(allColumns, ks, treble, staveW, maxCount, { reachBothWays: isFlow });
   const flow = allColumns.slice(start);
   const count = flow.length;
+  if(flow[0]?.staffPlan) {
+    const headers=[...host.querySelectorAll('g.vf-clef')];
+    for(const [i,staff,stave] of [[0,'treble',treble],[1,'bass',bass]]) {
+      const native=stave.getModifiers().find(m=>m instanceof Clef);
+      markClef(headers[i],stave,staff,octaveOf(flow[0],staff),flow[0].staffPlan.epoch,{header:true,x:native.getX()});
+    }
+  }
+
 
   // A column's duration belongs to the COLUMN, not to a staff: treble, bass, and the
   // ghost standing in for whichever staff the column doesn't touch all take the same
@@ -656,7 +699,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // column-aligned, but draws nothing. No rests, because a rest is a rhythmic claim and
   // this display makes none.
   const durations = flow.map((c) => c.duration);
-  const slotNotes = flow.map((c) => columnNotes(c.midis, ks, c.spelling, c.duration, c.arrivals));
+  const slotNotes = flow.map((c) => columnNotes(c.midis, ks, c.spelling, c.duration, c.arrivals, null, c.staffPlan));
   slotNotes.forEach(({tNote,bNote}) => { tNote?.setStave(treble); bNote?.setStave(bass); });
   const opposite = new Map(slotNotes.flatMap(({tNote,bNote}) => [[tNote,bNote],[bNote,tNote]]));
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
@@ -774,7 +817,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const voteDurations = flow.map((c, i) => (isFlow && i === count - 1 ? '8' : c.widthDuration));
   // Columns i and j (= i + 1) may share a beam only inside one beat group, no breath between.
   const beatOf = (i) => Math.floor(flow[i].unitStart / BEAT_GROUP_UNITS);
-  const sameBeat = (i, j) => !flow[j].breathBefore && beatOf(i) === beatOf(j);
+  const sameBeat = (i, j) => !flow[j].breathBefore && !clefChanges(flow[i],flow[j]).length && beatOf(i) === beatOf(j);
   const beamRuns = (staffNotes) => {
     const index = new Map(staffNotes.map((n, i) => [n, i]));
     const groups = [];
@@ -894,6 +937,19 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   let beams = [];
   try { beams = beamGroups.map(({ group, staff }) => ({ beam: new Beam(group, false), staff })); } catch { beams = []; }
 
+  // Epoch changes are forward notation; returning to zero prints an ordinary clef.
+  for(let i=1;i<flow.length;i++) {
+    for(const staff of clefChanges(flow[i-1],flow[i])) {
+      const stave=staff==='treble'?treble:bass;
+      const left=measureColumn(flow[i],ks,[flow[i].duration]).left;
+      const x=stave.getNoteStartX()+notePaddingOf(stave)+xs[i]-left-CLEF_CHANGE_WIDTH+2;
+      const clef=new Clef(staff,'small').setStave(stave).setX(x);
+      clef.draw();
+      const group=host.querySelector(`[id="vf-${clef.getAttribute('id')}"]`);
+      markClef(group,stave,staff,octaveOf(flow[i],staff),flow[i].staffPlan?.epoch??0,{x,small:true});
+    }
+  }
+
   // Breath bar lines: one thin line across both staves, like a system bar line.
   if (bars.length) {
     const pad = notePaddingOf(treble);
@@ -923,7 +979,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   slotNotes.forEach(({ tNote, bNote }, i) => {
     for (const [note, staff] of [[tNote, 'treble'], [bNote, 'bass']]) {
       const el = note && groupsById.get(`vf-${note.getAttribute('id')}`);
-      if (el) { el.setAttribute('data-staff', staff); el.setAttribute('data-column', String(i)); }
+      if (el) { el.setAttribute('data-staff', staff); el.setAttribute('data-column', String(i)); el.setAttribute('data-column-id',String(flow[i].id??i)); el.setAttribute('data-epoch',String(flow[i].staffPlan?.epoch??0)); }
     }
   });
   // Beams too, so the sweep can check a beam never enters the other staff's lines.

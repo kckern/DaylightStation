@@ -58,3 +58,13 @@ describe('ChordStaffRenderer — roll strokes are part of what is drawn', () => 
     expect(container.querySelector('svg')).toBe(svg);
   });
 });
+
+
+it('repaints when only a staff assignment or register changes',()=>{
+ const make=octave=>({midis:[60],duration:'q',staffPlan:{id:0,originId:0,epoch:octave,parts:{treble:{midis:[60],octave,residualOctave:0},bass:{midis:[],octave:0,residualOctave:0}}}});
+ const {container,rerender}=render(<ChordStaffRenderer columns={[make(0)]}/>);
+ const first=container.querySelector('svg');rerender(<ChordStaffRenderer columns={[make(1)]}/>);
+ expect(container.querySelector('svg')).not.toBe(first);
+ const second=container.querySelector('svg');rerender(<ChordStaffRenderer columns={[make(1)]}/>);
+ expect(container.querySelector('svg')).toBe(second);
+});

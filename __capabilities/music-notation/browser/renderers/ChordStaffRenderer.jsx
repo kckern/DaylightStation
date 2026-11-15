@@ -39,9 +39,11 @@ export function ChordStaffRenderer({ columns, notes, keySignature = 'C', classNa
         // Beat grouping and breath bar lines are drawn from these.
         const pulse = Array.isArray(col) ? '' : `@${col?.unitStart ?? ''}${col?.breathBefore ? '|' : ''}`;
         const arrivals = Array.isArray(col) ? null : col?.arrivals;
-        const rolls = arrivals?.length ? columnRolls({ midis, arrivals }) : null;
+        const rolls = arrivals?.length ? columnRolls({ midis, arrivals, staffPlan: col?.staffPlan }) : null;
         const roll = rolls && (rolls.treble || rolls.bass) ? `~${rolls.treble ?? ''}/${rolls.bass ?? ''}` : '';
-        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}/${width}${pulse}${roll}`;
+        const plan=Array.isArray(col)?null:col?.staffPlan;
+        const notation=plan?JSON.stringify({epoch:plan.epoch,parts:plan.parts}):'';
+        return `${notation}:${[...midis].sort((a, b) => a - b).join('.')}:${duration}/${width}${pulse}${roll}`;
       })
       .join('|')
     : notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';

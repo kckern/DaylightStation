@@ -1,3 +1,4 @@
+import { STAFF_GEOMETRY, staffYForPosition } from './staffGeometry.js';
 import { getStaffPositionOnClef } from './pitch.js';
 
 export const STAFF_REGISTER_COSTS = Object.freeze({
@@ -18,8 +19,8 @@ function partCost(midis, staff, octave, previous) {
   cost+=w.reach*Math.max(0,midis.at(-1)-midis[0]-14)**2;
   if(previous?.length) cost+=w.continuity*(mean(midis)-mean(previous))**2;
   // Actual outer frame, independent of the conventional five staff lines.
-  const ys=positions.map(p=>(staff==='treble'?138:204)-5*p);
-  if(ys.some(y=>y<35||y>235)) cost+=w.outsideFrame;
+  const ys=positions.map(p=>staffYForPosition(p,staff));
+  if(ys.some(y=>y<STAFF_GEOMETRY.top+15||y>STAFF_GEOMETRY.bottom-23)) cost+=w.outsideFrame;
   return cost;
 }
 
@@ -32,8 +33,8 @@ function assign(midis, octaves, previous={}) {
     if(bass.length&&treble.length) {
       cost+=STAFF_REGISTER_COSTS.closeSplit*Math.max(0,7-treble[0]+bass.at(-1));
       for(const b of bass) for(const t of treble) {
-        const by=204-position(b-12*octaves.bass,'bass')*5;
-        const ty=138-position(t-12*octaves.treble,'treble')*5;
+        const by=staffYForPosition(position(b-12*octaves.bass,'bass'),'bass');
+        const ty=staffYForPosition(position(t-12*octaves.treble,'treble'),'treble');
         cost+=STAFF_REGISTER_COSTS.collision*Math.max(0,12-Math.abs(by-ty))**2;
       }
     }
@@ -72,8 +73,8 @@ export function rankStaffCandidates({columns,previousParts={},octaves={treble:0,
 // Rare initial/outlier columns may need a local mark before sufficient register
 // evidence exists. Evaluate the whole assigned range, never its lowest key alone.
 export function fitStaffPart(part,staff) {
-  const ys=part.midis.map(m=>(staff==='treble'?138:204)-5*position(displayStaffMidi(m,part),staff));
-  if(!ys.some(y=>y<35||y>235)) return part;
+  const ys=part.midis.map(m=>staffYForPosition(position(displayStaffMidi(m,part),staff),staff));
+  if(!ys.some(y=>y<STAFF_GEOMETRY.top+15||y>STAFF_GEOMETRY.bottom-23)) return part;
   const ranked=OCTAVES.map(residualOctave=>({residualOctave,
     cost:partCost(part.midis,staff,part.octave+residualOctave)+Math.abs(residualOctave)})).sort((a,b)=>a.cost-b.cost);
   return {...part,residualOctave:ranked[0].residualOctave};

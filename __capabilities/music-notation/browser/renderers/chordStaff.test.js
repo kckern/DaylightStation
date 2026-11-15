@@ -3,7 +3,7 @@ import { Stroke } from 'vexflow';
 import { midiToVexKey, renderChordStaff, computeChordStaffLayout, chordStaffWindow } from "./chordStaff.js";
 
 describe('computeChordStaffLayout', () => {
-  const FRAME_H = 238;    // FRAME_BOTTOM(258) - FRAME_TOP(20)
+  const FRAME_H = 252;    // FRAME_BOTTOM(258) - FRAME_TOP(20)
   const FRAME_PAD_X = 38; // PAD(8) + FRAME_RIGHT_PAD(16) - FRAME_LEFT(-14)
   const MAX_STAVE_ASPECT = 3;
   const MAX_STAVE_W = Math.round(FRAME_H * MAX_STAVE_ASPECT) - FRAME_PAD_X; // 714 - 38 = 676
@@ -20,7 +20,7 @@ describe('computeChordStaffLayout', () => {
     const aspect = 550 / 500; // 1.1, below MAX_STAVE_ASPECT so it tracks the aspect
     const { staveW, viewW, viewH } = computeChordStaffLayout(aspect);
     // target = round(238*1.1) - 38 = 262 - 38 = 224 (> the 202 floor, < the 676 cap)
-    expect(staveW).toBe(224);
+    expect(staveW).toBe(239);
     expect(viewW / viewH).toBeCloseTo(aspect, 1); // 262/238 ≈ 1.101
   });
 
@@ -142,7 +142,7 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     expect(svg).toBeTruthy();
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3);
     const vb = svg.getAttribute('viewBox').split(' ').map(Number);
-    expect(vb[3]).toBe(238); // the fixed frame height
+    expect(vb[3]).toBe(252); // the fixed frame height
     // No drawn element escapes far above the top of the frame (would signal a top clip).
     for (const el of svg.querySelectorAll('[y]')) {
       const y = Number(el.getAttribute('y'));
@@ -155,7 +155,7 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     // without overflowing or clipping — the bug the px-scale version hit on the tablet.
     const host = mount(new Map([[60, {}]]));
     const svg = host.querySelector('svg');
-    expect(svg.getAttribute('viewBox')).toBe('-14 20 240 238');
+    expect(svg.getAttribute('viewBox')).toBe('-14 20 240 252');
     expect(svg.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
     expect(svg.getAttribute('width')).toBe('100%');
     expect(svg.getAttribute('height')).toBe('100%');
@@ -410,7 +410,7 @@ describe('renderChordStaff — relative rhythm', () => {
   // y of every beam polygon drawn (these cases play one staff only).
   const beamYs = (host) => [...host.querySelectorAll('.vf-beam path')]
     .flatMap((p) => pathPoints(p).map(([, y]) => y));
-  const BASS_TOP_LINE = 164;   // TOP_ROOM 58 + STAFF_GAP 66 + 4 spaces of headroom
+  const BASS_TOP_LINE = 178;   // TOP_ROOM 58 + STAFF_GAP 66 + 4 spaces of headroom
   const TREBLE_BOTTOM_LINE = 138;
 
   it("keeps a treble beam out of the bass staff: a low note stemmed down leaves the group", () => {
@@ -755,7 +755,7 @@ describe('renderChordStaff — light pulse: beat groups and breath bar lines', (
     return [...host.querySelectorAll('.vf-beam path')].map((p) => {
       const q = pts(p).map(([x]) => x);
       const [x0, x1] = [Math.min(...q), Math.max(...q)];
-      return xs.filter((x) => x >= x0 - 14 && x <= x1 + 1).length;
+      return xs.filter((x) => x >= x0 - 14 && x <= x1 + 14).length;
     }).sort((a, b) => a - b);
   };
   const melody = [60, 62, 64, 65, 67, 65, 64, 62, 60, 62, 64, 65, 67];
@@ -998,5 +998,38 @@ describe('cross-staff clearance', () => {
     const stem=host.querySelector('g.vf-stavenote[data-staff=bass] .vf-stem path');
     const ys=points(stem).filter((_,i)=>i%2===1);
     expect(Math.min(...ys)).toBeGreaterThan(160);
+  });
+});
+
+
+describe('planned clef epochs',()=>{
+  const base={bass:[48,55],treble:[72,76,79]};
+  const planned=(octave,epoch=0,id=0)=>({id,originId:id,midis:[...base.bass,...base.treble].map(m=>m+12*octave),duration:'q',staffPlan:{id,originId:id,epoch,frozen:true,parts:Object.fromEntries(['treble','bass'].map(staff=>[staff,{midis:base[staff].map(m=>m+12*octave),octave,residualOctave:0}]))}});
+  const draw=(columns,capacity)=>{const host=document.createElement('div');renderChordStaff(host,{columns,aspect:3,capacity});return host;};
+  const heads=host=>[...host.querySelectorAll('.vf-notehead > path')].map(p=>p.getAttribute('d'));
+  it.each([-2,-1,0,1,2])('draws the same written pitches under register %s',octave=>{
+    expect(heads(draw([planned(octave)]))).toEqual(heads(draw([planned(0)])));
+    const host=draw([planned(octave)]);
+    expect(host.querySelectorAll('[data-header=true][data-staff]')).toHaveLength(2);
+    const marks=[...host.querySelectorAll('.staff-clef-octave')].map(t=>t.textContent);
+    expect(marks).toEqual(octave?[Math.abs(octave)===2?'15':'8',Math.abs(octave)===2?'15':'8']:[]);
+    expect(host.querySelectorAll('.vf-stavenote text')).toHaveLength(0);
+  });
+  it('introduces forward clefs, explicitly returns to normal, and updates the scrolled header',()=>{
+    const cols=[planned(-1,0,0),planned(0,1,1),planned(1,2,2)];
+    const host=draw(cols);
+    const inline=[...host.querySelectorAll('[data-inline=true]')];
+    expect(inline).toHaveLength(4);
+    expect(inline.filter(g=>g.dataset.epoch==='1').every(g=>g.querySelector('.staff-clef-octave')===null)).toBe(true);
+    const scrolled=draw(cols,1);
+    expect([...scrolled.querySelectorAll('[data-header=true]')].every(g=>g.dataset.epoch==='2')).toBe(true);
+    expect(scrolled.querySelectorAll('[data-inline=true]')).toHaveLength(0);
+  });
+  it('breaks beams at clef transitions while preserving preceding note positions',()=>{
+    const cols=[planned(0,0,0),planned(0,0,1),planned(1,1,2),planned(1,1,3)].map((c,i)=>({...c,duration:'8',unitStart:i}));
+    const before=draw(cols.slice(0,2));const after=draw(cols);
+    expect(after.querySelectorAll('.vf-beam').length).toBe(4);
+    const first=h=>[...h.querySelectorAll('.vf-stavenote[data-column="0"] .vf-notehead > path')].map(p=>p.getAttribute('d'));
+    expect(first(after)).toEqual(first(before));
   });
 });

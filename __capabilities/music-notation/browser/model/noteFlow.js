@@ -724,7 +724,9 @@ export function staffRoll(arrivals, staffMidis) {
  * @returns {{ treble: 'up'|'down'|null, bass: 'up'|'down'|null }}
  */
 export function columnRolls(column) {
-  const { trebleNotes, bassNotes } = splitByHand([...column.midis].sort((a, b) => a - b));
+  const { trebleNotes, bassNotes } = column.staffPlan
+    ? {trebleNotes:column.staffPlan.parts.treble.midis,bassNotes:column.staffPlan.parts.bass.midis}
+    : splitByHand([...column.midis].sort((a, b) => a - b));
   return { treble: staffRoll(column.arrivals, trebleNotes), bass: staffRoll(column.arrivals, bassNotes) };
 }
 
