@@ -90,6 +90,31 @@ changed" (a folder whose directory mtime didn't move, or one where a first pass 
 > / `set-from-yaml` (artist is `originalTitle`; track number is `index`), or give the files new paths
 > so Plex adds them fresh. Plex ignores `parentIndex` (disc) edits.
 
+### `set <id>` and `set-from-yaml <file>`
+
+Edit scalar fields or replace tag lists. `--lock` prevents metadata agents from
+overwriting edited fields; `--dry-run` previews changes without sending PUTs.
+An explicit `--year YYYY` works for tracks as well as other item types.
+
+```bash
+node cli/plex.cli.mjs set 12345 --year 1996 --lock
+node cli/plex.cli.mjs set-from-yaml manifest.yml --lock
+```
+
+For existing tags containing literal commas, use a YAML array and
+`clearTagTypes` to reset the listed tag types before applying their values:
+
+```yaml
+items:
+  - id: 12345
+    genres: [Mystery, Detective Fiction]
+    clearTagTypes: [genres]
+```
+
+Each listed tag type must also have its replacement array in the entry. An
+empty array clears that type. Other tag types retain the usual replacement
+behavior.
+
 ### `refresh-metadata <id> [id2…]` (alias: `refresh-meta`)
 
 Ask Plex to refresh metadata for items and everything under them. `--dry-run` / `--json` supported.

@@ -2,7 +2,7 @@
 // Library listing (seasons/albums/movies) and cover-art (audit/rematch/select-thumbs)
 // commands, driven through the real CLI over an in-memory Plex fixture.
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -93,6 +93,45 @@ describe('plex.cli listing commands', () => {
     expect(r.code).toBe(0);
     expect(r.calls.length).toBeGreaterThan(0);
     for (const c of r.calls) expect(c.timeout).toBe(30000);
+  });
+});
+
+describe('plex.cli set', () => {
+  it('sends an explicit year for a track and locks it', async () => {
+    const r = await cli({
+      '/library/metadata/42': meta({
+        ratingKey: '42', type: 'track', title: 'South Sea Tales',
+        librarySectionID: 9, year: 2026
+      }),
+      'PUT /library/metadata/42': { body: {} }
+    }, 'set', '42', '--year', '1996', '--lock');
+    expect(r.code).toBe(0);
+    expect(r.calls.some((c) => c.method === 'PUT'
+      && c.url.includes('year.value=1996')
+      && c.url.includes('year.locked=1'))).toBe(true);
+  });
+
+  it.each([{ genres: ['Mystery', 'Detective Fiction'] }, { genres: [] }])('resets comma-containing tags before applying $genres', async ({ genres }) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'plex-tags-manifest-'));
+    const manifest = path.join(root, 'manifest.yml');
+    writeFileSync(manifest, JSON.stringify({ items: [{ id: 42, genres, clearTagTypes: ['genres'] }] }));
+    try {
+      const r = await cli({
+        '/library/metadata/42': meta({ ratingKey: '42', type: 'track', librarySectionID: 9,
+          Genre: [{ tag: 'Mystery, Detective Fiction' }] }),
+        'PUT /library/sections/9/all': { body: {} }
+      }, 'set-from-yaml', manifest, '--lock');
+      expect(r.code).toBe(0);
+      const writes = r.calls.filter((c) => c.method === 'PUT');
+      expect(writes).toHaveLength(1);
+      const params = new URL(writes[0].url, base).searchParams;
+      expect(params.get('genre[].tag')).toBe('');
+      expect(params.has('genre[].tag.tag-')).toBe(false);
+      expect(params.get('genre.locked')).toBe('1');
+      expect([...params].filter(([key]) => /^genre\[\d+\]\.tag\.tag$/.test(key)).map(([, value]) => value)).toEqual(genres);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

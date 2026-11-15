@@ -134,7 +134,7 @@ const args = process.argv.slice(2);
  */
 const SCALAR_FIELDS = [
     'title', 'titleSort', 'summary', 'tagline', 'studio',
-    'contentRating', 'originalTitle', 'originallyAvailableAt',
+    'contentRating', 'originalTitle', 'originallyAvailableAt', 'year',
     'index', 'parentIndex'   // track number / disc number (tracks)
 ];
 
@@ -701,8 +701,9 @@ class PlexCLI {
      * @param {string[]} values - Desired final tag list
      * @param {Object} [opts]
      * @param {boolean} [opts.lock=false] - Send `<field>.locked=1`
+     * @param {boolean} [opts.clearAll=false] - Reset existing tags before applying values
      */
-    async editTags(meta, tagKey, values, { lock = false } = {}) {
+    async editTags(meta, tagKey, values, { lock = false, clearAll = false } = {}) {
         const spec = TAG_FIELDS[tagKey];
         if (!spec) throw new Error(`Unknown tag field "${tagKey}"`);
         const typeNum = PLEX_TYPE_NUM[meta.type];
@@ -716,7 +717,12 @@ class PlexCLI {
             id: String(meta.ratingKey),
             [`${spec.field}.locked`]: lock ? '1' : '0'
         };
-        if (removals.length) params[`${spec.field}[].tag.tag-`] = removals.join(',');
+        // `tag.tag-` is comma-delimited, so it cannot unambiguously remove an
+        // existing tag whose literal name contains commas. In that case callers
+        // can request a full reset; Plex removes the type's associations first,
+        // then the indexed values below establish the desired final set.
+        if (clearAll) params[`${spec.field}[].tag`] = '';
+        else if (removals.length) params[`${spec.field}[].tag.tag-`] = removals.join(',');
         values.forEach((v, i) => { params[`${spec.field}[${i}].tag.tag`] = v; });
 
         return this.put(`library/sections/${meta.librarySectionID}/all`, params);
@@ -738,6 +744,7 @@ class PlexCLI {
         for (const k of Object.keys(TAG_FIELDS)) {
             if (Array.isArray(entry[k])) tagEdits[k] = entry[k].map(String);
         }
+        const clearAllTags = new Set(Array.isArray(entry.clearTagTypes) ? entry.clearTagTypes : []);
 
         const touched = [...Object.keys(scalars), ...Object.keys(tagEdits)];
         if (touched.length === 0) return [];
@@ -745,7 +752,7 @@ class PlexCLI {
 
         if (Object.keys(scalars).length) await this.setMetadata(plexId, scalars, { lock });
         for (const [k, values] of Object.entries(tagEdits)) {
-            await this.editTags(meta, k, values, { lock });
+            await this.editTags(meta, k, values, { lock, clearAll: clearAllTags.has(k) });
         }
         return touched;
     }
@@ -1448,7 +1455,7 @@ function entryFromFlags() {
 
 async function cmdSet(plex, plexId) {
     const usage = 'Usage: plex set <id> [--title "..."] [--summary "..."] [--studio "..."] '
-        + '[--genres "a,b"] [--labels "a,b"] [--lock] [--dry-run]';
+        + '[--year YYYY] [--genres "a,b"] [--labels "a,b"] [--lock] [--dry-run]';
     if (!plexId) {
         console.error(usage);
         process.exit(1);
@@ -1525,6 +1532,8 @@ async function cmdSetFromYaml(plex, yamlPath) {
         console.error('  items:            # any type (episodes, movies, collections)');
         console.error('    - id: 603900');
         console.error('      tagline: "..."');
+        console.error('      genres: [Mystery, Detective Fiction]');
+        console.error('      clearTagTypes: [genres]  # remove all existing tags of these types before setting values');
         process.exit(1);
     }
 
@@ -1990,6 +1999,7 @@ Options:
   --contentRating "..."    (set) New contentRating.value
   --originalTitle "..."    (set) New originalTitle.value
   --originallyAvailableAt  (set) New originallyAvailableAt.value (YYYY-MM-DD)
+  --year <YYYY>           (set) New year.value
   --genres "a,b"           (set) Replace the genre tag list
   --labels "a,b"           (set) Replace the label tag list
   --collections "a,b"      (set) Replace the collection tag list
