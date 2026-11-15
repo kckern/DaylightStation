@@ -76,7 +76,15 @@ function selectConfiguredSet(state, set, overrides = {}) {
   if (!set) error = 'Configured game is not available';
   else if ((set.setupProfile?.kind || set.setup) !== 'individuals') error = 'Automatic participant setup requires an individual game';
   else if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length) error = 'Automatic setup requires distinct participant IDs';
-  const known = new Map((state.config?.household_members || []).map(member => [member.id, member]));
+  const participants = [...(state.config?.household_members || []), ...(state.config?.named_guests || [])];
+  const known = new Map();
+  for (const participant of participants) {
+    if (known.has(participant.id)) {
+      error ||= `Duplicate participant identity: ${participant.id}`;
+      break;
+    }
+    known.set(participant.id, participant);
+  }
   if (!error) {
     const unknown = ids.find(id => !known.has(id));
     if (unknown) error = `Unknown configured participant: ${unknown}`;

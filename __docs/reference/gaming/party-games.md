@@ -480,3 +480,10 @@ Run both `jeopardy-reliable-input.runtime.test.mjs` and `jeopardy-durable-latenc
 Compare reviewed and installed authored content with `node scripts/audit-jeopardy-content.mjs reviewed.yml installed.yml`. The read-only auditor exits 1 on a normalized mismatch,2 on invalid input, and prints paths/hashes rather than answers. A passing source fixture is insufficient: compare actual mounted content and compiled definition identities as well. New Jeremiah and Isaiah packs require31 nonblank references, open-book mode, hosted rounds and explicit risked DD policy. Publishing source content applies to new/restarted games; existing pinned journals and scores remain unchanged.
 
 Ready renewals recheck the current phase, setup epoch, tested assignments and fresh hardware when dequeued and before retrying an explicitly uncommitted conflict. An ambiguous acknowledgment still reconciles with the identical command envelope. TV snapshot notifications share one fetch with a pending follow-up; an older failed read cannot hide a newer accepted command or another session. Suppressed renewals and superseded reads use bounded structured diagnostics.
+
+
+### Named guests in explicit autostart
+
+The Party Games environment profile exposes active shared-directory guests in `named_guests`, separately from `household_members`. A guest has runtime ID `guest:<id>`, a typed `person` reference, display name, and avatar. Its avatar's user key is independent of its runtime ID. Archived guests are omitted; a missing named-guest document produces an empty list.
+
+An individual game's explicit `launch.participants` may include both household member IDs and guest runtime IDs in the desired order. Unknown IDs, duplicate launch IDs, and collisions in the available participant IDs reject automatic setup. Listing a guest does not grant host authority. Existing sessions retain their saved roster; start a new game to use changes to the launch roster.
