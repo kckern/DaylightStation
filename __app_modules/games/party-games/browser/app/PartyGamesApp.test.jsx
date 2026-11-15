@@ -329,3 +329,70 @@ it('Retry after a failed reconnect read attaches the newly created current sessi
   expect(fetchBoot).toHaveBeenNthCalledWith(3, { diagnosticSessionId: null, sessionId: 'new' });
   expect(createSession).toHaveBeenCalledTimes(1);
 });
+
+
+it.each(['session=saved', 'diagnostic_session=diagnostic:saved'])(
+ 'force resets a resumed Charades session after confirmation (%s)', async query => {
+  window.history.replaceState({}, '', `/screens/living-room/fhe/charades?${query}`);
+  const oldId = query.startsWith('diagnostic') ? 'diagnostic:saved' : 'saved';
+  const seats = [{ id:'b', name:'Bob', members:[config.household_members[1]] }];
+  const key = 'party-games:charades:family:active-session';
+  window.localStorage.setItem(key, oldId);
+  fetchBoot.mockImplementation(async attachment => attachment.sessionId || attachment.diagnosticSessionId
+   ? {config, sets, attachedSession:{header:{session_id:oldId,experience:{id:'charades'},seats},state:{competition:false}}}
+   : {config,sets});
+  let resolveCreation;
+  createSession.mockImplementationOnce(() => new Promise(resolve => {resolveCreation=resolve;}));
+  render(<React.StrictMode><PartyGamesApp definitionId="charades:family" /></React.StrictMode>);
+  await screen.findByRole('button',{name:`Complete ${oldId}`});
+  fireEvent.click(screen.getByRole('button',{name:'Force reset'}));
+  expect(await screen.findByRole('dialog',{name:'Reset Charades?'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Keep playing'}));
+  expect(createSession).not.toHaveBeenCalled();
+  expect(window.localStorage.getItem(key)).toBe(oldId);
+  fireEvent.click(screen.getByRole('button',{name:'Force reset'}));
+  fireEvent.click(screen.getByRole('button',{name:'Confirm reset'}));
+  await waitFor(()=>expect(createSession).toHaveBeenCalledTimes(1));
+  expect(createSession.mock.calls[0][0]).toMatchObject({definitionId:'charades:family',seats});
+  expect(screen.queryByRole('button',{name:`Complete ${oldId}`})).toBeNull();
+  expect(window.localStorage.getItem(key)).toBeNull();
+  expect(new URLSearchParams(window.location.search).has('session')).toBe(false);
+  expect(new URLSearchParams(window.location.search).has('diagnostic_session')).toBe(false);
+  await act(async()=>resolveCreation({header:{session_id:'fresh'}}));
+  await screen.findByRole('button',{name:'Complete fresh'});
+  expect(window.localStorage.getItem(key)).toBe('fresh');
+  expect(new URLSearchParams(window.location.search).get('session')).toBe('fresh');
+ });
+
+it('force reset recovers an explicit session that fails to load', async()=>{
+ window.history.replaceState({},'', '/screens/living-room/fhe/charades?session=broken');
+ fetchBoot.mockRejectedValueOnce(new Error('Session cannot load')).mockResolvedValue({config,sets});
+ render(<PartyGamesApp definitionId="charades:family" />);
+ await screen.findByRole('alert');
+ fireEvent.click(screen.getByRole('button',{name:'Force reset'}));
+ fireEvent.click(screen.getByRole('button',{name:'Confirm reset'}));
+ await screen.findByRole('button',{name:'Start with 2 players'});
+ expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:null,sessionId:null});
+ fireEvent.click(screen.getByRole('button',{name:'Start with 2 players'}));
+ await screen.findByRole('button',{name:'Complete session-one'});
+});
+
+
+it('retries fresh creation after a reset without resurrecting the old session', async()=>{
+ const seats=[{id:'a',name:'Alice',members:[config.household_members[0]]}];
+ window.history.replaceState({},'', '/screens/living-room/fhe/charades?session=old');
+ fetchBoot.mockImplementation(async attachment=>attachment.sessionId
+  ? {config,sets,attachedSession:{header:{session_id:'old',experience:{id:'charades'},seats},state:{competition:false}}}
+  : {config,sets});
+ createSession.mockRejectedValueOnce(new Error('Creation offline')).mockResolvedValueOnce({header:{session_id:'fresh'}});
+ render(<PartyGamesApp definitionId="charades:family" />);
+ await screen.findByRole('button',{name:'Complete old'});
+ fireEvent.click(screen.getByRole('button',{name:'Force reset'}));
+ fireEvent.click(screen.getByRole('button',{name:'Confirm reset'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Creation offline');
+ fireEvent.click(screen.getByRole('button',{name:'Retry'}));
+ await screen.findByRole('button',{name:'Complete fresh'});
+ expect(createSession).toHaveBeenCalledTimes(2);
+ expect(createSession.mock.calls[1][0].seats).toEqual(seats);
+ expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:null,sessionId:null});
+});

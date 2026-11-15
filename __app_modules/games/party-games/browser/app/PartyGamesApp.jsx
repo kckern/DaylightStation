@@ -135,6 +135,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useEffect(() => () => audio.stopAll('owner-unmount'), [audio]);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [confirmExit, setConfirmExit] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
   const backActionRef = useRef(null);
   const forwardActionRef = useRef(null);
@@ -153,6 +154,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return () => { if (remoteActionRef.current === handler) remoteActionRef.current = null; };
   }, []);
   const requestExit = useCallback(() => {
+    if (confirmReset) { setConfirmReset(false); return; }
     if (confirmExit) { logger.info('party-games.exit-cancelled', { sessionId: flow.sessionId }); setConfirmExit(false); return; }
     if (backActionRef.current?.()) return;
     if (flow.phase === 'playing' && flow.sessionId) {
@@ -160,20 +162,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       setConfirmExit(true); return;
     }
     exit();
-  }, [confirmExit, exit, flow.phase, flow.sessionId, logger]);
+  }, [confirmReset, confirmExit, exit, flow.phase, flow.sessionId, logger]);
   const requestDirectionalBack = useCallback(() => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return backActionRef.current?.() === true;
-  }, [flow.phase, confirmExit]);
+  }, [flow.phase, confirmExit, confirmReset]);
   const requestAdvance = useCallback(() => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return forwardActionRef.current?.() ?? false;
-  }, [confirmExit, flow.phase]);
+  }, [confirmExit, confirmReset, flow.phase]);
   const offerRemoteAction = useCallback((remote) => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return remoteActionRef.current?.(remote) === true;
-  }, [confirmExit, flow.phase]);
-  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction });
+  }, [confirmExit, confirmReset, flow.phase]);
+  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction, focusSelector: 'button:not(:disabled):not([tabindex="-1"]), a[href], input:not(:disabled)' });
   // Keep disconnect guidance specific to the mounted controller model.
   const { connected } = useWebSocketStatus();
 
@@ -246,7 +248,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             resumed: true,
             source: attachment.savedSession ? 'saved' : 'url',
           });
-          dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame, launch });
+          dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame, launch, resetSetup: attachment.resetSetup });
         }
       })
       .catch((err) => {
@@ -316,6 +318,30 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' });
   };
 
+  const forceReset = () => {
+    const sourceId = flow.sessionId || attachment.diagnosticSessionId || attachment.sessionId;
+    logger.info('party-games.force-reset', { sessionId: sourceId, definitionId: flow.definitionId || requestedDefinition });
+    audio.stopAll('force-reset');
+    const definition = flow.definitionId || requestedDefinition;
+    try { if (definition) window.localStorage.removeItem(activeSessionKey(definition)); } catch { /* A clean URL still prevents attachment recovery. */ }
+    const location = new URL(window.location.href);
+    location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
+    window.history.replaceState({}, '', `${location.pathname}${location.search}${location.hash}`);
+    const resetSetup = flow.definitionId ? {
+      definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode,
+      buzzerBindings: flow.buzzerBindings ?? loadBuzzerBindings(sourceId),
+    } : attachment.resetSetup;
+    if (sourceId) forgetBuzzerBindings(sourceId);
+    // Invalidate callbacks before the old experience unmounts.
+    currentSession.current = null;
+    completedSession.current = null;
+    creation.current = null;
+    backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
+    setConfirmReset(false); setConfirmExit(false);
+    dispatchFlow({ type: 'SESSION_RESTARTING' });
+    setAttachment({ diagnosticSessionId: null, sessionId: null, savedSession: false, resetSetup });
+  };
+
   const onComplete = useCallback((result) => {
     const sessionId = flow.sessionId;
     if (!sessionId || currentSession.current !== sessionId || completedSession.current === sessionId) return;
@@ -324,14 +350,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   }, [flow.sessionId]);
 
   const isJeopardy = flow.presenterId === 'jeopardy-board';
+  const canForceReset = flow.game === 'charades' || requestedGame === 'charades' || requestedDefinition?.startsWith('charades:');
   const Game = EXPERIENCE_REGISTRY[flow.presenterId]?.component;
 
   return (
     <div ref={rootRef} className="party-games-container"><PartyStage className={`party-games${isJeopardy ? ' party-games--jeopardy' : ''}`} theme={flow.theme?.id} phase={flow.phase}>
+
       {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => {
         // A session created after boot has no initial URL attachment. Recover the
         // current authority after a reconnect read fails, including its successor.
         if (flow.sessionId) setAttachment({ diagnosticSessionId: flow.sessionId.startsWith('diagnostic:') ? flow.sessionId : null, sessionId: flow.sessionId.startsWith('diagnostic:') ? null : flow.sessionId, savedSession: false });
+        if (flow.phase === 'playing' && !flow.sessionId) {
+          creation.current = null;
+          dispatchFlow({ type: 'SESSION_RESTARTING' });
+        }
         setBootAttempt((value) => value + 1);
       }}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
       {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>{isJeopardy ? 'Host controls are unavailable. Reconnecting…' : 'Keyboard and on-screen controls still work.'}</span></div>}
@@ -364,7 +396,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
       {flow.phase === 'playing' && Game && flow.sessionId && (
         <>
-          <div className="party-games__play" aria-hidden={confirmExit || undefined}>
+          <div className="party-games__play" aria-hidden={confirmExit || confirmReset || undefined}>
             <div className="party-games__play-stage"><PartyGamesExperience
               key={flow.sessionId}
               component={Game}
@@ -389,6 +421,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
       {flow.phase === 'playing' && flow.sessionId && !Game && (
         <div className="party-games__error" role="alert">Mounted presenter unavailable: {flow.presenterId || 'missing'}</div>
+      )}
+
+      {canForceReset && (['loading', 'playing', 'results'].includes(flow.phase) || flow.error) && !confirmReset && !confirmExit && (
+        <div className="party-games__reset-utility"><GameButton tone="quiet" tabIndex={flow.phase === 'playing' && !flow.sessionId ? -1 : undefined} onClick={() => setConfirmReset(true)}>Force reset</GameButton></div>
+      )}
+      {confirmReset && (
+        <div className="party-games__confirm-exit" role="dialog" aria-modal="true" aria-labelledby="party-games-reset-title">
+          <h2 id="party-games-reset-title">Reset Charades?</h2>
+          <p>Discard this game's progress and start fresh with the same players?</p>
+          <div>
+            <GameButton tone="primary" autoFocus onClick={() => setConfirmReset(false)}>Keep playing</GameButton>
+            <GameButton tone="danger" onClick={forceReset}>Confirm reset</GameButton>
+          </div>
+        </div>
       )}
 
       {confirmExit && (

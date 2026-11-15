@@ -10,6 +10,14 @@ TV and companion presenters share two import aliases: `@gaming` resolves to the 
 
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
+Charades provides a **Force reset** control during play, loading, errors, and
+results. Confirming discards the current session attachment and starts a fresh
+session with the same players and definition. The shell stops audio, unmounts
+the previous experience, and clears its URL and saved resume key before creating
+the new session. If an attachment cannot load, reset returns to fresh setup.
+Recorded clue history is retained; history-disabled test routes remain isolated.
+Leaving normally still preserves the active session for later resumption.
+
 Charades is also mounted as a focused Party Games experience with a seeded,
 deterministic clue bank. Its reusable sixteen-segment text decoder
 (`SegmentedSecretText`) lights every segment of every cell, spaces included, so
