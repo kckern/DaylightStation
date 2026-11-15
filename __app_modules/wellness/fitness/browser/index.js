@@ -1,3 +1,5 @@
+import React from 'react';
+import {FitnessGameGate} from './components/FitnessGameGate.jsx';
 import { getWidgetRegistry } from "../../../../__capabilities/screen-host/browser/public.mjs";
 
 // Auto-register modules into the unified widget registry
@@ -63,8 +65,15 @@ const LEGACY_ID_MAP = {
 
 // Register all modules into the unified widget registry
 const registry = getWidgetRegistry();
+const directlyGatedGames = new Set(['cycle_game', 'skyline_glider', 'skyline_invaders']);
 for (const [key, mod] of Object.entries(REGISTRY_KEYS)) {
-  registry.register(key, mod.default, mod.manifest);
+  const needsSundayGate = (mod.manifest?.category === 'games' || mod.manifest?.id === 'emulator')
+    && !directlyGatedGames.has(mod.manifest.id);
+  const Component = needsSundayGate
+    ? function SundayGatedGame(props) {
+      return React.createElement(FitnessGameGate, {moduleId:mod.manifest.id,label:mod.manifest.name,onClose:props.onClose}, React.createElement(mod.default, props));
+    } : mod.default;
+  registry.register(key, Component, mod.manifest);
 }
 
 // Dashboard widgets (screen-framework compatible, sibling modules)

@@ -19,8 +19,10 @@ const scssFiles = walk(here);
 // pre-2026-11-10 rem values, not the race screen's read-from-the-bike scale: the
 // owner had both reverted after the scale made them too big on the 1381x777
 // kiosk. The race screen stays on the scale.
-const OFF_SCALE = (f) => /[\\/]home[\\/]/.test(f)
-  || /(CycleGameHome|RaceResults|RaceRecap)\.scss$/.test(f);
+const OFF_SCALE = (file) => {
+  const relative = path.relative(here, file);
+  return /^home[\\/]/.test(relative) || /^(CycleGameHome|RaceResults|RaceRecap)\.scss$/.test(relative);
+};
 
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
