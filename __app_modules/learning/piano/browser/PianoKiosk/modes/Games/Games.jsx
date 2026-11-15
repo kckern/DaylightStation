@@ -1,3 +1,4 @@
+import {SupervisedActivity} from '../../../../../../household/supervision/browser/index.js';
 import { useMemo, useCallback, useContext, useEffect, useRef, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams, useLocation, useResolvedPath } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
@@ -242,7 +243,11 @@ function BudgetLock({ kind }) {
  * Game host — resolves the game entry from the URL param, wires MIDI, and
  * renders the game fullscreen. Back navigates up (relative).
  */
-function GameHost({ earlyPass = null }) {
+function GameHost(props) {
+  const {gameId}=useParams();const pianoUser=useContext(PianoUserContext);
+  return <SupervisedActivity activityId={`piano:game:${gameId}`} learnerId={pianoUser?.currentUser??null}><AuthorizedGameHost {...props}/></SupervisedActivity>;
+}
+function AuthorizedGameHost({ earlyPass = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const { gameId, subRoute } = useParams();
   const navigate = useNavigate();

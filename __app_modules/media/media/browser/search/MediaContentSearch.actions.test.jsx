@@ -27,9 +27,10 @@ vi.mock("../cast/DestinationLine.jsx", () => ({
   DestinationLine: () => <div data-testid="destination-line" />,
 }));
 vi.mock('@mantine/notifications', () => ({ notifications: { show: vi.fn() } }));
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
-}));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) });
+  return { default: getLogger, getLogger };
+});
 vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({
   getChildLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }),
 }));

@@ -28,7 +28,10 @@ vi.mock("../logging/mediaLog.js", () => {
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
 vi.mock("../shell/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => null }));
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({ default: () => ({ child: () => ({ info: vi.fn() }) }) }));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info: vi.fn() }) });
+  return { default: getLogger, getLogger };
+});
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: vi.fn(async () => ({})) }));
 let carryOnItems = [];
 vi.mock("../../../../../frontend/src/lib/hooks/useApiResource.js", () => ({

@@ -45,3 +45,7 @@ describe('KioskArcadeGameTerminator', () => {
     expect(() => new KioskArcadeGameTerminator({})).toThrow(/packageName/);
   });
 });
+it('recognizes a locally hidden installed package and verifies it has no process',async()=>{
+ const hidden={shell:async command=>command.startsWith('pm path')?{ok:true,output:''}:command.startsWith('pm list packages -u')?{ok:true,output:`package:${PKG}`}:{ok:true,output:'stopped'}};
+ const terminator=build({adbByDevice:new Map([['tv',hidden]])});expect(await terminator.release({deviceId:'tv'})).toMatchObject({blocked:false});expect(await terminator.stop({deviceId:'tv'})).toMatchObject({blocked:true});
+});

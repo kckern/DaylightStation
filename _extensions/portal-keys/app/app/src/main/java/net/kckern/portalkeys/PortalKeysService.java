@@ -200,7 +200,7 @@ public class PortalKeysService extends AccessibilityService
         // Shutdown is enforced below the browser: it must also suppress the
         // physical double-press screen toggle and Android volume changes.
         if (config.lockdownActive()) {
-            eventLog.add("key-suppressed-lockdown " + name);
+            eventLog.add("key-suppressed-lockdown " + name + " revision=" + config.lockdownRevision());
             return true;
         }
         broadcast(name, down ? "down" : "up", interactive);

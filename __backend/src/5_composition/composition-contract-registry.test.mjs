@@ -116,7 +116,7 @@ const contracts = [
         // kiosk-friction-tracker) needs authenticated authority here, or
         // PolicyGraph.create rejects the whole graph as UNKNOWN_PUBLISHER_AUTHORITY
         // — this fixture mirrors app.mjs's real producerPrincipals wiring.
-        producerPrincipals: { school: schoolPrincipal, fitness: fitnessPrincipal, 'kiosk-friction-tracker': kioskFrictionPrincipal },
+        producerPrincipals: { supervision: Object.freeze({service:'supervision'}), 'household-presence':Object.freeze({service:'household-presence'}), school: schoolPrincipal, fitness: fitnessPrincipal, 'kiosk-friction-tracker': kioskFrictionPrincipal },
         clock: { now: () => now },
         configService: {
           getHouseholdPath: () => path.join(directory, 'state-gates/current'),
@@ -221,6 +221,7 @@ const contracts = [
         getAllHouseholdIds: () => [],
       });
       const producerPrincipals = {
+        supervision: Object.freeze({service:'supervision'}), 'household-presence':Object.freeze({service:'household-presence'}),
         school: Object.freeze({ service: 'school' }),
         fitness: Object.freeze({ service: 'fitness' }),
         'kiosk-friction-tracker': Object.freeze({ service: 'kiosk-friction-tracker' }),

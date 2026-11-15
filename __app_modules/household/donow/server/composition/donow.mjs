@@ -93,7 +93,7 @@ export async function createDonow({
   configService, householdId = null, eventBus = null,
   thermalPrinterRegistry = null, homeAutomationAdapters = null,
   wakeAndLoadService = null, playbackHubContainer = null,
-  schoolService = null, clock = () => new Date(), logger = console,
+  schoolService = null, clock = () => new Date(), logger = console, dispatchAuthority = null, resolveAccessContext = null,canRequestLegacyApproval = null,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'donow') || {};
   const timezone = configService.getTimezone?.() || null;
@@ -195,6 +195,8 @@ export async function createDonow({
   }
 
   const service = new DoNowService({
+    canRequestLegacyApproval,
+    dispatchAuthority,
     surfaces,
     datastore,
     notifier,
@@ -220,6 +222,7 @@ export async function createDonow({
     logger.warn?.('donow.approvals.no-token', { householdId });
   }
   const router = createDoNowRouter({
+    resolveAccessContext,
     service,
     approvals,
     authenticateApproval: authenticate,

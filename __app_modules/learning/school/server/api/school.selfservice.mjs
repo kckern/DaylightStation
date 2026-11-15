@@ -51,8 +51,11 @@ export function createSchoolSelfServiceRouter({
   readPrinterHealth = null,
   curriculum = null,
   issueSubjectNext = null,
+  authorizeKioskAction = null,
+  resolveCompanionLearner = null,
 } = {}) {
   const router = express.Router();
+  if (authorizeKioskAction) router.use(asyncHandler(async (req,_res,next)=>{await authorizeKioskAction(req);next();}));
 
   // Registered only when the use case is actually injected, so a deployment
   // without it 404s rather than half-answering — the same rule the lifecycle
@@ -65,6 +68,7 @@ export function createSchoolSelfServiceRouter({
       // nothing else — keying on it would let one screen throttle another.
       const { code, deviceId } = req.body || {};
       const card = await resolveAccessCode.execute({ code, deviceId });
+      if(authorizeKioskAction && card?.ok)await authorizeKioskAction(req,{learnerId:card.learner??null});
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
@@ -90,6 +94,7 @@ export function createSchoolSelfServiceRouter({
   if (resolveAccessCode?.preview) {
     router.get('/preview/:link', asyncHandler(async (req, res) => {
       const card = await resolveAccessCode.preview({ link: req.params.link });
+      if(authorizeKioskAction && card?.ok)await authorizeKioskAction(req,{learnerId:card.learner??null});
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
@@ -149,6 +154,7 @@ export function createSchoolSelfServiceRouter({
     // a sentence, not a 400.
     router.post('/act', asyncHandler(async (req, res) => {
       const { code, action } = req.body || {};
+      if(authorizeKioskAction){const card=await resolveAccessCode?.execute({code,deviceId:req.body?.deviceId});if(card?.ok)await authorizeKioskAction(req,{learnerId:card.learner??null});}
       const result = await runSelfServiceAction.execute({ code, action });
       res.set('Cache-Control', 'no-store').json(result);
     }));
@@ -177,6 +183,7 @@ export function createSchoolSelfServiceRouter({
       // `id` LAST, so the path wins. Spread second, a body-supplied `id` would
       // override the path parameter — and `id` is not one field among many, it
       // selects which learner's companion record gets written.
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:await resolveCompanionLearner?.(req.params.id)??null});
       const result = await recordLessonCompanionProgress.execute({ ...(req.body || {}), id: req.params.id });
       res.set('Cache-Control', 'no-store').json(result);
     }));
@@ -192,6 +199,7 @@ export function createSchoolSelfServiceRouter({
   // by the caller. A refusal or a printer failure is a 200 with a sentence.
   if (issueSubjectNext) {
     router.post('/learners/:learnerId/print-next', asyncHandler(async (req, res) => {
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:req.params.learnerId});
       const { subject = null, deviceId = null } = req.body || {};
       const result = await issueSubjectNext.execute({
         learnerId: req.params.learnerId, subject, deviceId,
@@ -202,6 +210,7 @@ export function createSchoolSelfServiceRouter({
     // The dry run behind the button's label: which unit would print, and the
     // reward for it when the economy can say. Opens no session.
     router.get('/learners/:learnerId/next', asyncHandler(async (req, res) => {
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:req.params.learnerId});
       const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
       const result = await issueSubjectNext.preview({ learnerId: req.params.learnerId, subject });
       res.set('Cache-Control', 'no-store').json(result);

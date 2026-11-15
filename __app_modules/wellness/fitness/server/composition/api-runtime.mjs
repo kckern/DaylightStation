@@ -1,3 +1,5 @@
+import {randomUUID} from 'node:crypto';
+import {createAdminInterventionRuntime} from './adminIntervention.mjs';
 /** Existing fitness api runtime assembly; preserves construction order. */
 import path from "path";
 import { YamlFitnessHistoryRepository as YamlFitnessHistoryRepository } from "../adapters/YamlFitnessHistoryRepository.mjs";
@@ -199,8 +201,16 @@ let providerWebhookAdapters = {};
   // Passive identity relay: enriches the garage's dumb `biometric.scan` events into
   // `fitness.identity.detected` and stamps a short-lived pending-detection that the
   // /emergency/{commit,abort,release} endpoints consume. No reader loop, no contention.
+  const parentalIntervention = dependencies.parentalSupervision ? createAdminInterventionRuntime({
+    service: dependencies.parentalSupervision.service,
+    deviceId: dependencies.parentalSupervision.garageDeviceId,
+    scopeId: dependencies.parentalSupervision.scopeId,
+    userService, householdId, clock: {now:()=>Date.now()}, makeId: randomUUID,
+  }) : null;
   const identityRelay = createIdentityRelay({
-    identityChannel: new FitnessIdentityChannel({ eventBus }),
+    adminIntervention: parentalIntervention?.authority,
+    deviceId: dependencies.parentalSupervision?.garageDeviceId,
+    identityChannel: new FitnessIdentityChannel({ eventBus,verifyScan:dependencies.parentalSupervision?.verifyScan }),
     userService,
     loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
     getLockdownState,
@@ -259,6 +269,7 @@ let providerWebhookAdapters = {};
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    parentalSupervision: parentalIntervention?.legacy,
     garageHumanActivityGateway: emergencyHaGateway,
     eventBus,
     workoutRepository,
@@ -268,5 +279,5 @@ let providerWebhookAdapters = {};
     onSessionsChanged: (change) => dependencies.fitnessStateGatesProducer?.requestReconcile(change),
     logger: rootLogger.child({ module: 'fitness-api' })
   });
-  return { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth };
+  return { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention: parentalIntervention?.authority };
 }

@@ -10,7 +10,7 @@
  * but HTMLAudioElement.play() is gated separately; play() rejection is swallowed
  * and logged rather than thrown.
  */
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { DaylightMediaPath } from '../../../../../frontend/src/lib/api.mjs';
 
@@ -38,15 +38,20 @@ function defaultCreateAudio(src) {
 export function createSfxPlayer(sounds = {}, { createAudio = defaultCreateAudio, logger } = {}) {
   const log = logger ?? getChildLogger({ component: 'side-scroller-sfx' });
   const elements = {};
+  const active=new Set();
+  let stopped=false;
   for (const [name, path] of Object.entries(sounds)) {
     if (path) elements[name] = createAudio(resolveSoundSrc(path));
   }
 
   function play(name) {
+    if(stopped)return false;
     const base = elements[name];
     if (!base) return false; // null path or unknown name → silent no-op
     const el = typeof base.cloneNode === 'function' ? base.cloneNode() : base;
     el.currentTime = 0;
+    active.add(el);
+    el.addEventListener?.('ended',()=>active.delete(el),{once:true});
     try {
       const result = el.play();
       if (result && typeof result.catch === 'function') {
@@ -58,10 +63,12 @@ export function createSfxPlayer(sounds = {}, { createAudio = defaultCreateAudio,
     return true;
   }
 
-  return { play };
+  return { play, stopAll(){stopped=true;for(const el of active)el.pause?.();active.clear();} };
 }
 
 /** React hook: memoize an SFX player for the resolved theme sounds. */
 export function useSideScrollerSfx(sounds) {
-  return useMemo(() => createSfxPlayer(sounds), [sounds]);
+  const player=useMemo(() => createSfxPlayer(sounds), [sounds]);
+  useEffect(()=>()=>player.stopAll(),[player]);
+  return player;
 }

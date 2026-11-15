@@ -156,7 +156,7 @@ export class StateGatesEngine {
     const oldEvaluations = new Map((snapshot.evaluations ?? []).map(value => [instanceKey(value.gateId, value.subject, value.period), value]));
     const oldDecisions = new Map((snapshot.decisions ?? []).map(value => [instanceKey(value.capabilityId, value.subject, value.period), value]));
     const evaluations = instances.map(instance => evaluateGate({
-      graph, assertions: snapshot.assertions, gateId: instance.gateId,
+      householdId,graph, assertions: snapshot.assertions, gateId: instance.gateId,
       subject: instance.subject, period: instance.period, now,
       timezone: this.#timezone(householdId), householdRevision: nextRevision,
     }));

@@ -319,6 +319,8 @@ export class SchoolService {
    * runs first — an expired sitting must not read as "occupied" just
    * because nobody has looked it up by id since it went stale.
    */
+  sessionLearner(sessionId){const session=this.#sessions.get(sessionId);return session && !this.#isExpired(session)?session.userId:null;}
+
   activeSittings() {
     this.#sweepExpired();
     return [...this.#sessions.values()].map((s) => ({ userId: s.userId, lastActiveAt: s.lastActiveAt }));

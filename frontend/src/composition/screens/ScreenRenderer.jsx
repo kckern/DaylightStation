@@ -1,3 +1,4 @@
+import {useActivityStop} from '../../../../__app_modules/household/supervision/browser/index.js';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import useDocumentTitle from '../../hooks/useDocumentTitle.js';
@@ -376,6 +377,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     return controls;
   }, [sessionDeviceId]);
   useEffect(() => () => sessionControls?.dispose(), [sessionControls]);
+  useActivityStop(()=>sessionControls?.dispose());
   const sessionSource = useMemo(() => {
     if (!sessionDeviceId) return null;
     try {

@@ -13,7 +13,10 @@ vi.mock("../logging/mediaLog.js", () => {
   const logger = new Proxy({}, { get: (target, key) => (target[key] ??= vi.fn()) });
   return { default: logger };
 });
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({ default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }) }));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) });
+  return { default: getLogger, getLogger };
+});
 vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({ getChildLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   DaylightAPI: vi.fn(async (path) => (path === 'api/v1/media/config'

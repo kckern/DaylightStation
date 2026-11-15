@@ -86,9 +86,10 @@ vi.mock("../../../../../__capabilities/content-catalog/browser/picker.mjs", () =
   },
 }));
 
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ info }) }),
-}));
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+  const getLogger = () => ({ child: () => ({ info }) });
+  return { default: getLogger, getLogger };
+});
 
 import { MediaContentSearch } from "./MediaContentSearch.jsx";
 
