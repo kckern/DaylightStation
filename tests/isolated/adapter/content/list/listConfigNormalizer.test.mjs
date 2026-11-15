@@ -871,3 +871,13 @@ describe('round-trip: normalizeListConfig → serializeListConfig', () => {
     expect(serialized.items[0].play).toBeUndefined();
   });
 });
+
+describe('legacy section round trip', () => {
+  it('retains titles, labels, identities, images, activity, playback and string Open', () => {
+    const raw = { title: 'Gathering', sections: [{ title: 'Opening', uid: 'section', items: [
+      { title: 'Welcome', label: 'Greeting', uid: 'one', input: 'app:welcome', action: 'Open', image: '/cover', active: false },
+      { label: 'Song', uid: 'two', input: 'files:song', resume: false, seconds: 3, shuffle: true },
+    ] }] };
+    expect(JSON.parse(JSON.stringify(serializeListConfig(normalizeListConfig(raw))))).toEqual(raw);
+  });
+});

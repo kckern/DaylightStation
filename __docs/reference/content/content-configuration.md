@@ -580,3 +580,9 @@ Household-level configuration can override system defaults:
 | Household aliases | household content config | Shorthand names for this household |
 | Watch state classifiers | household content config | Custom watched/unwatched thresholds |
 | Default shader | household display config | Visual preferences |
+
+### Reusable list values and projections
+
+The content catalog exposes `server/list-codec.mjs` for the existing list normalization, serialization, cascade and action extraction rules. It preserves the legacy persistence format; runtime action decorations are projection values and are not list settings. `server/list-menu-projector.mjs` projects a canonical list into an internal `{id, title, image, items}` envelope containing content `Item` entities. Its `sourceId` identifies the caller's list; authored order follows sections and items. An optional `artworkForUid(uid)` callback supplies artwork for items without explicit images, and an optional `resourcePresenter(resource)` presents resolved thumbnail resources. The optional action decorator receives isolated `{item, resolved}` values and returns an item with runtime actions, or returns nothing to retain the original projection.
+
+`portable/list-structure.mjs` exports `applyListEdit(list, edit, {ids})` for UID-addressed list edits. Section and item UIDs must be unique nonblank strings. It supports add, update, move, delete, duplicate and swap item operations and add, update, move, delete and duplicate section operations; its result contains the copied list, an old-to-new `idMap` for duplication, and `removedUids`. `ids.item()` and `ids.section()` allocate fresh identities. Explicit artwork moves with content; callers can use `idMap` to copy UID-associated resources. Invalid edits throw an error with `code: 'invalid_list_edit'` and a field identifying the problem. Existing index-based list administration remains separate.

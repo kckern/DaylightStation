@@ -254,3 +254,22 @@ describe('GamingApplication mounted launch authority', () => {
     });
   });
 });
+
+it('rejects malformed or incomplete journaled Charades presentation at session setup', async () => {
+ const { prepareGamingSessionSetup } = await import('./gamingSessionSetup.mjs');
+ expect(() => prepareGamingSessionSetup({manifest:{id:'charades',setup:{kind:'individuals-or-teams'}},request:{seats:[{id:'a'}],setup:{charades_presentation:{schema:'charades-presentation/v1',by_participant:{other:'image'}}}}})).toThrow(/presentation/i);
+});
+
+ it('uses frozen inputs for reserved creation and initiates the effect only once', async () => {
+  const definition = {rule_module:{id:'rules',version:3},experience:{id:'experience',version:2}};
+  const definitions = {getPinned:vi.fn(async()=>definition),getCurrent:vi.fn()};
+  const view = {header:{session_id:'reserved:1'},definition};
+  const coordinator = {createReserved:vi.fn().mockResolvedValueOnce({view,created:true}).mockResolvedValueOnce({view,created:false})};
+  const effects = {afterCreate:vi.fn(async()=>{})};
+  const app = new GamingApplication({coordinator,definitions,effects,manifestStore:{get:vi.fn()}});
+  const args = {sessionId:'reserved:1',seed:4,pinnedArtifacts:{hash:mounted.hash,artifacts:{rules_definition:{id:'d',hash:mounted.hash}},manifest, surface:manifest.surfaces[0]},participants:[],seats:[],setup:{saved:true},creationKey:'secret',viewer:{role:'host'}};
+  await app.createReserved(args); await app.createReserved(args);
+  expect(effects.afterCreate).toHaveBeenCalledOnce();
+  expect(definitions.getCurrent).not.toHaveBeenCalled();
+  expect(coordinator.createReserved.mock.calls[0][0].reservation).toMatchObject({setup:{saved:true},pinnedDefinition:{definition},experience:{manifest_hash:manifest.hash}});
+ });

@@ -142,3 +142,20 @@ describe('ListAdapter._buildListItems display labels', () => {
     expect(item.label).toBe('Opening Hymn');
   });
 });
+
+describe('ListAdapter ordinary item projection', () => {
+  it('preserves UID artwork, playback options and authored action output', async () => {
+    const adapter = new ListAdapter({ dataPath: '/fake/data', configService: { getMediaDir: () => '/fake/media' } });
+    const items = await adapter._buildListItems([
+      { uid: 'one', title: 'Clip', label: 'Watch', input: 'files:clip', resume: false, seconds: 3 },
+      { uid: 'two', title: 'App', open: 'welcome', image: '/cover' },
+      { uid: 'hidden', title: 'Hidden', input: 'files:hidden', active: false },
+    ], 'menu', 'fixture');
+    expect(items.map(item => item.metadata.uid)).toEqual(['one', 'two']);
+    expect(items[0].thumbnail).toBe('/media/img/lists/one.jpg');
+    expect(items[0].label).toBe('Watch');
+    expect(items[0].actions.play).toEqual({ files: 'clip', resume: false, seconds: 3 });
+    expect(items[1].thumbnail).toBe('/cover');
+    expect(items[1].actions.open).toEqual({ app: 'welcome' });
+  });
+});
