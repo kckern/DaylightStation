@@ -106,3 +106,10 @@ describe('explicit user decisions', () => {
     expect(second.batch.upserts[0].aliases[0].confirmed).toBe(true);
   });
 });
+
+it('attributes closure to the user-local closure date rather than the old evidence year',()=>{
+ const asOf=Date.parse('2027-01-01T01:00Z'), original=loop();
+ const updated=applyUserReply({object:original,action:'yes',receiptId:'year-boundary',asOf,timezone:TZ});expect(updated.closedOn).toBe('2026-12-31');
+ const result=reduce({snapshot:snapshot({[original.id]:original}),asOf,proposals:[proposal({op:'close_loop',fields:{status:'answered'}})]});
+ expect(result.batch.upserts[0].closedOn).toBe('2026-12-31');
+});

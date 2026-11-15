@@ -28,6 +28,7 @@ export function sweepKnowledge({ snapshot, asOf, timezone }) {
     if (Number.isFinite(lastSkip) && !isPinned(object, 'loop.ask.deferred_until')) object.loop.ask.deferred_until = addDays(localDateFor(lastSkip, timezone), 3);
     if (JSON.stringify(original) !== JSON.stringify(object)) {
       batch.upserts.push(object); batch.events.push({ id: 'sweep:' + object.id + ':' + today + ':' + object.status, type: 'knowledge.loop.' + object.status, at: asOf, objectId: object.id });
+      if (object.status === 'stale' && !isPinned(object,'closedOn'))object.closedOn=today;
       if (object.status === 'stale') batch.moves.push({ id: object.id, closedYear: today.slice(0,4) });
     }
   }

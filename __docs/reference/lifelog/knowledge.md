@@ -9,3 +9,11 @@ Question choice is deterministic, with at most two independent morning questions
 Dates are interpreted against the original entry's local date. For example, an explicit Monday on a Monday means the next Monday, while today stays on the entry date. Unsupported date phrases remain uninferred for review. All domain operations receive explicit time and timezone; model output never supplies the clock or selection order.
 
 Direct user decisions are distinct from model proposals: a verified application-level reply may change a pinned status while recording the edit and preserving the pin. Model proposals and sweeps cannot do that. Storage and delivery authority must enforce identity and acknowledged-message binding before invoking these transitions.
+
+## Storage and recovery
+
+The YAML store writes one file per loop/person, a confirmed-alias projection, dated ask files, and state. A production writer must match the configured environment and host, have both enable/write flags, and hold a real kernel lease. Disabled/read-only reads do not acquire a lease or create files. Losing an acquired lease makes the writer's view unhealthy immediately.
+
+Transactions durably append before/after images, write atomic object files and state last, then append a completion marker. Recovery accepts only known before/after images; an intervening hand edit blocks replay instead of being overwritten. An incomplete final ledger line is reported by readers and repaired only by the authorized writer. Conflicted copies, corrupt state, removed evidence and altered derived projections prevent participation.
+
+A revision is an opaque sequence-plus-content-hash token. Callers pass the observed token back unchanged; a new direct edit invalidates it even without a state-file revision change. Valid object edits are compared with their prior ledger image and recorded with dotted field pins. Direct edit timestamps use filesystem modification metadata, so repeated reads remain stable while model work is in flight. Closed loops retain identity and are filed by the user-local closure year.

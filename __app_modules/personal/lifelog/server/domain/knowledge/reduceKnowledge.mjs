@@ -52,9 +52,10 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
       if (f.dueText && !due) queue(p, 'unsupported_due_text');
     } else if (p.op === 'close_loop') {
       object.status = f.status;
+      if(!isPinned(object,'closedOn'))object.closedOn=['answered','dropped'].includes(f.status)?localDateFor(asOf,timezone):null;
       object.loop.answer = { at: asOf, by: 'text', result: f.answer && normalizeQuote(p.quote).includes(normalizeQuote(f.answer)) ? f.answer : p.quote, evidence: [ref] };
     } else if (p.op === 'touch' && object.kind === 'loop' && object.status === 'stale' && !isPinned(object, 'status')) {
-      object.status = 'open'; object.loop.ask.reopenedAt = asOf;
+      object.status = 'open';if(!isPinned(object,'closedOn'))object.closedOn=null;object.loop.ask.reopenedAt = asOf;
     } else if (p.op === 'propose_entity') {
       object.names = [...new Set([...(object.names ?? []), f.name])]; object.aliases ??= [];
       object.status = new Set(object.evidence.filter(e => !e.retracted).map(e => e.date)).size >= 2 ? 'active' : 'candidate';
@@ -89,6 +90,9 @@ export function applyUserReply({ object, action, receiptId, asOf, timezone }) {
     next.loop.answer = {at:asOf,by:'tap',result:action,receiptId};
     if (action === 'not_yet') next.loop.ask.eligible_from = addDays(today,Math.max(3,next.loop.ask.cooldown_days ?? 7));
   }
+  next.closedOn=['answered','dropped','stale'].includes(next.status)?today:null;
   next.user_edits.push({path:'status',before,after:next.status,at:asOf,by:'tap',receiptId});
+  next.user_edits.push({path:'loop',before:structuredClone(object.loop),after:structuredClone(next.loop),at:asOf,by:'tap',receiptId});
+  if(object.closedOn!==next.closedOn)next.user_edits.push({path:'closedOn',before:object.closedOn??null,after:next.closedOn,at:asOf,by:'tap',receiptId});
   return next;
 }

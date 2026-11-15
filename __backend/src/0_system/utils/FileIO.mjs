@@ -526,9 +526,16 @@ export function writeFileExclusive(filePath, content, { mode } = {}) {
 }
 
 /** Append text to a file, creating its parent directory if needed. */
-export function appendTextFile(filePath, content) {
-  ensureDir(path.dirname(filePath));
+export function appendTextFile(filePath, content, { durable = false } = {}) {
+  const dir = path.dirname(filePath);
+  ensureDir(dir);
   fs.appendFileSync(filePath, content, 'utf8');
+  if (durable) {
+    for (const target of [filePath, dir]) {
+      const fd = fs.openSync(target, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
+  }
 }
 
 /** Truncate an existing file to an exact byte length. */
@@ -608,8 +615,14 @@ export function copyFileOnce(sourcePath, destinationPath) {
 }
 
 /** Atomically move a prepared file into place on the same filesystem. */
-export function renameFile(sourcePath, destinationPath) {
+export function renameFile(sourcePath, destinationPath, { durable = false } = {}) {
   fs.renameSync(sourcePath, destinationPath);
+  if (durable) {
+    for (const dir of new Set([path.dirname(sourcePath), path.dirname(destinationPath)])) {
+      const fd = fs.openSync(dir, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
+  }
 }
 
 /** Set filesystem timestamps synchronously, preserving native errors. */
