@@ -63,3 +63,13 @@ it('requires saved sessions to match current setup revision while preserving ord
 });
 
 it('restarts through the dedicated authenticated session endpoint', async () => { const { restartJeopardySession } = await import('./sessionClient.js'); await restartJeopardySession('diagnostic:one'); expect(DaylightAPI).toHaveBeenLastCalledWith('api/v1/gaming/sessions/diagnostic%3Aone/restart', {}, 'POST'); });
+
+
+it('sends a named guest seat and its runtime participant identity in a fresh session', async () => {
+  DaylightAPI.mockReset();
+  DaylightAPI.mockResolvedValueOnce({ header: { session_id: 'game:guest' } });
+  const guest = { id: 'guest:visitor', name: 'Visitor', avatar: '/api/v1/static/users/portrait', person: { kind: 'guest', id: 'visitor' } };
+  const seats = [{ id: guest.id, name: guest.name, members: [guest], slot: 'slot_1' }];
+  await createSession({ definitionId: 'charades:one', seats, setupProfile: { kind: 'individuals' } });
+  expect(DaylightAPI.mock.calls[0][1]).toMatchObject({ participants: [guest], seats, setup: { seats } });
+});

@@ -1,8 +1,9 @@
 /** Fitness-specific projection over generic user profiles. */
 export class FitnessUserHydrator {
-  constructor({ profileReader, schoolLearnerDirectory = null, logger = console } = {}) {
+  constructor({ profileReader, schoolLearnerDirectory = null, guestResolver = null, logger = console } = {}) {
     if (!profileReader?.getProfile) throw new Error('FitnessUserHydrator requires profileReader');
     this.profileReader = profileReader;
+    this.guestResolver = guestResolver;
     this.schoolLearnerDirectory = schoolLearnerDirectory;
     this.logger = logger;
   }
@@ -49,6 +50,14 @@ export class FitnessUserHydrator {
         hydrated.users.primary = this.hydrateUsers(fitnessConfig.users.primary, deviceMappings);
       }
       const hydrateInline = (user) => {
+        if (user.person) {
+          if (user.person.kind !== 'guest' || !user.person.id || typeof this.guestResolver !== 'function') throw new Error('Invalid shared guest reference');
+          const entry = this.guestResolver(user.person.id);
+          if (!entry || entry.person?.kind !== 'guest' || entry.person.id !== user.person.id) throw new Error('Unknown shared guest');
+          const { person, ...overlay } = user;
+          if (overlay.id || overlay.name || overlay.avatar) throw new Error('Shared guest identity collision');
+          user = { ...overlay, id: person.id, name: entry.display.name, avatar: entry.display.avatar ?? null };
+        }
         if (!user.id) {
           this.logger.warn?.('fitness.user.inline_id_missing', { name: user.name });
           return null;
@@ -63,6 +72,17 @@ export class FitnessUserHydrator {
       }
       if (Array.isArray(fitnessConfig.users.friends)) {
         hydrated.users.friends = fitnessConfig.users.friends.map(hydrateInline).filter(Boolean);
+      }
+    }
+    const sharedIds = new Set();
+    for (const group of [fitnessConfig.users?.family, fitnessConfig.users?.friends]) {
+      for (const user of group || []) if (user.person?.kind === 'guest') sharedIds.add(user.person.id);
+    }
+    const ids = new Set();
+    for (const group of [hydrated.users?.primary, hydrated.users?.family, hydrated.users?.friends]) {
+      for (const user of group || []) {
+        if (ids.has(user.id) && sharedIds.has(user.id)) throw new Error(`Fitness identity collision: ${user.id}`);
+        ids.add(user.id);
       }
     }
     if (fitnessConfig.devices && fitnessConfig.device_colors) {

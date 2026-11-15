@@ -1,5 +1,10 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
+import { PeopleDirectory } from '../../../../../../__capabilities/household-identity/server/public.mjs';
+import { YamlNamedGuestStore } from '../../../../../../__capabilities/household-identity/server/adapters/index.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PartyGamesCatalog } from "./PartyGamesCatalog.mjs";
 
 const publicResourceUrl = (ref) => ref?.kind === 'user-avatar' ? `/api/v1/static/users/${ref.userId}` : null;
@@ -11,7 +16,7 @@ const HOUSEHOLD_CFG = {
   defaults: { timer_seconds: 15 }, sounds: { pack: 'classic' },
 };
 
-function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch, partyGames, rounds, experienceId = 'quiz' } = {}) {
+function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch, partyGames, rounds, peopleDirectory, householdId, experienceId = 'quiz' } = {}) {
   const userService = {
     getProfile: (id) => id === 'ghost_user' ? null : id === 'kckern'
       ? { username: id, display_name: 'User_1', group_label: 'Dad' }
@@ -38,7 +43,7 @@ function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch, partyGames, 
     ['solo@1', { id: 'solo', version: 1, surfaces: [{ id: 'school', presenter: 'solo-view' }] }],
   ]);
   const manifestStore = { get: (id, version) => manifests.get(`${id}@${version}`) || null };
-  return new PartyGamesCatalog({ configProjection: { raw: () => cfg }, userService, definitionStore, manifestStore, resourcePresenter: publicResourceUrl, logger: NOOP });
+  return new PartyGamesCatalog({ configProjection: { raw: () => cfg }, userService, peopleDirectory, householdId, definitionStore, manifestStore, resourcePresenter: publicResourceUrl, logger: NOOP });
 }
 
 describe('PartyGamesCatalog', () => {
@@ -103,4 +108,22 @@ it('projects preset-specific anonymous teams and skips buzzers only for all-turn
  expect(entry.input_profile.gamepad).toBe('host');
  expect(makeService({partyGames,experienceId:'jeopardy',rounds:[{mode:'turns'},{mode:'hosted'}]}).listCatalog()[0].input_profile.gamepad).toBe('host-and-buzzer');
  expect(makeService({partyGames:{anonymous_teams:[]}}).listCatalog()[0]).toMatchObject({valid:false});
+});
+
+
+it('projects active shared guests with their independent avatar key and handles a missing store', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'party-guests-'));
+  try {
+    const store = new YamlNamedGuestStore({ pathForHousehold: () => join(dir, 'guests.yml') });
+    const peopleDirectory = new PeopleDirectory({ householdDirectory: { userIds: () => [], userProfile: () => null }, guestStore: store });
+    const service = makeService({ peopleDirectory, householdId: 'test' });
+    expect(service.getConfig().named_guests).toEqual([]);
+    await store.write('test', 0, [
+      { id: 'visitor', name: 'Visitor', avatar: { kind: 'user-avatar', userId: 'portrait' }, active: true },
+      { id: 'former', name: 'Former', avatar: null, active: false },
+    ]);
+    expect(service.getConfig().named_guests).toEqual([{ id: 'guest:visitor', person: { kind: 'guest', id: 'visitor' }, name: 'Visitor', avatar: '/api/v1/static/users/portrait' }]);
+    expect(service.getResourceConfig().named_guests[0].avatar).toEqual({ kind: 'user-avatar', userId: 'portrait' });
+    expect(service.getConfig().household_members).toEqual([]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

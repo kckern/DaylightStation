@@ -642,6 +642,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/personal/gratitude/browser/admin.mjs': null,
   '__app_modules/personal/gratitude/browser/assets.mjs': null,
   '__capabilities/household-identity/server/public.mjs': 'application',
+  '__capabilities/household-identity/server/adapters/index.mjs': 'adapters',
   '__capabilities/household-identity/browser/public.mjs': null,
   '__app_modules/learning/piano/server/public.mjs': 'application',
   '__app_modules/learning/piano/server/budget.mjs': 'domain',
