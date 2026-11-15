@@ -287,37 +287,40 @@ registry does not know falls back to the shelf icon and logs
 `school.surface.assignment-icon-missing` once per name. Curriculum entries carry no
 icon yet. The printed agenda still draws the subject icon.
 
-**Rewards.** On the School resting screen every child has the same closed
-treasure chest SVG button. It has no visible label, balance, badge, or
-wealth-dependent styling; its accessible name is "Open <name>'s rewards".
-Tapping plays a 480ms opening animation and then opens that child's personal
-rewards modal. Reduced motion opens immediately, and leaving the board cancels
-a pending opening. The chest remains usable while reward data is unavailable.
+**Rewards.** Each School board card has the same large treasure chest SVG,
+filling its reward cell without amounts, badges or a visible label. Mouse-down
+or touch/pen-down starts the 480ms opening immediately; keyboard activation is
+preserved and synthesized release clicks do not repeat an action. Reduced
+motion opens immediately. The accessible name is "Open <name>'s rewards".
 
-The modal reads the learner's weekly silver (`GET /api/v1/earnings/preview/:id`),
-gold balance (`GET /api/v1/economy/users/:id/bank`), and gem cells from a fresh
-`GET /api/v1/earnings/gems?fresh=1`. It renders only that child's achievements,
-progress and own contest scores: no sibling rows, standings, or child-switching
-arrows. Loading and unavailable resources are distinct from zero. Coins say
-"Coins start soon" before the bank is live. Viewing rewards does not claim a
-learner or start tracked work. The School header has no family Gems entry.
+**Preloaded memory.** `rewards/useRewardsCache.js` starts while School loads,
+using one roster earnings preview, one shared gem read, weekly ring gates and
+one wallet per learner. It polls each minute while visible, coalesces relevant
+school and state-gate events, and refreshes on visibility. Reads have a 15-second
+deadline. Chests become available after their first preload batch settles.
+Failed reads retain good memory; unknown values stay unknown, and a new week's
+silver is never combined with an old gem board or a failed old ring total.
+This is memory for the page lifetime, not browser-persisted reward balances.
 
-`rewards/RewardsModal.jsx` uses a native modal dialog, capped to the dynamic
-viewport. The header and close button stay visible while content scrolls.
-Close, Escape, backdrop, Back to today, 45 seconds idle, or leaving the resting
-view dismisses it; focus returns to the chest when it is still mounted. Screen
-sleep and the resting-pane flip yield while rewards are open.
-Escape is consumed before the surrounding app/screen shortcuts can exit School.
-Human chest taps and modal activity emit `school.selfservice.board.rewards-*`
-events, so the Portal idle/deploy gate sees this interaction; activity logging
-is throttled to once per 30 seconds while its idle timer still resets on every
-gesture, key or scroll.
+**One prepared view.** Opening performs no data requests. The modal receives
+and locks a personal snapshot: background polling can update memory without
+changing its numbers, categories or size. A later opening sees newer memory.
+The overview uses the shared Gem Board's `GemGlyph`: large whole stones,
+circumferential day segments and compact category labels. Silver, gold and
+weekly fitness rings sit above the fitted glyph grid; all categories, close
+and **Bank log** fit in one view without scrolling. It displays only the
+selected child's rewards, with no standings or sibling navigation. The ring
+count comes from the active `fitness.weekly-rings` gate; its threshold of one
+is not shown as a quota.
 
-Other `AgendaStatusBoard` consumers can explicitly retain the legacy coin/gem
-figures through `onOpenBank`/`onOpenGems`, by omitting `onOpenRewards`. Those
-figures retain their school-week validation and snapshot behavior. The personal
-School board skips roster-wide balance/bank reads and public coin ceremonies;
-its rewards are read fresh when a child opens the modal.
+Close, Escape, backdrop, 45 seconds idle or leaving the resting view dismisses
+the panel and returns focus to its chest. Escape is consumed before app/screen
+shortcuts. Screen sleep and the resting-pane flip yield while it is open.
+Human opening/activity events remain visible to the Portal idle gate, with
+activity logging throttled to once per 30 seconds. Viewing does not claim a
+learner. School's header has no shared Gem Board entry or public reward-total
+ceremony. Other `AgendaStatusBoard` consumers can retain legacy coin/gem
+controls by omitting `onOpenRewards`.
 
 **Days.** Last week (dimmer) above this week, seven squares each, today
 outlined, weekday letters above. The ring count with its ring icon sits
@@ -329,7 +332,7 @@ A pinned `day` anchors the two rows on that day, not on the term read's own
 
 ## The coin window
 
-The personal rewards modal's **Open bank details** button opens the existing
+The personal rewards modal's **Bank log** button opens the existing
 bank screen through the panel's checked bank door (`bank/BankDoor.jsx`,
 `POST /school/bank/open`). The learner is already known, so no face picker is
 needed. Opening details closes the rewards modal and starts no tracked work.

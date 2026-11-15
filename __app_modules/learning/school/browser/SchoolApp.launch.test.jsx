@@ -613,7 +613,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     await act(async () => { fireEvent.click(door); });
     const rewards = await screen.findByRole('dialog', { name: "Alpha's rewards" }, slow);
     expect(bankOpenMock).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Open bank details' })); });
+    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Bank log' })); });
     return screen.findByTestId('bank-screen', {}, slow);
   }
 
@@ -666,7 +666,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     const door = await screen.findByRole('button', { name: "Open Alpha's rewards" });
     await act(async () => { fireEvent.click(door); });
     const rewards = await screen.findByRole('dialog', { name: "Alpha's rewards" });
-    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Open bank details' })); });
+    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Bank log' })); });
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
 
     // Something else takes the panel (a reading shelf, here), then goes home.
@@ -695,7 +695,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     const door = await screen.findByRole('button', { name: "Open Alpha's rewards" });
     await act(async () => { fireEvent.click(door); });
     const rewards = await screen.findByRole('dialog', { name: "Alpha's rewards" });
-    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Open bank details' })); });
+    await act(async () => { fireEvent.click(within(rewards).getByRole('button', { name: 'Bank log' })); });
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
     for (const d of '123456') {
       const key = screen.getByRole('button', { name: d });

@@ -62,6 +62,8 @@ import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
 import RewardsModal from './rewards/RewardsModal.jsx';
+import useRewardsCache from './rewards/useRewardsCache.js';
+import { pressDown } from './shared/pressDown.js';
 import "./School.scss";
 
 /**
@@ -685,6 +687,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
+  const rewardSnapshots = useRewardsCache(roster, lock.locked && status === 'ready');
+  const rewardSnapshotsRef = useRef(rewardSnapshots);
+  rewardSnapshotsRef.current = rewardSnapshots;
   // Rewards live behind identical child-specific chest icons. The existing
   // bank door is available from the individual modal's details button.
 
@@ -728,9 +733,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // The resting board never exposes reward amounts or sibling gem standings.
   // Looking at rewards is read-only; opening bank details uses the checked door.
   const [rewardsFor, setRewardsFor] = useState(null);
-  const openRewardsFor = useCallback(learnerId => setRewardsFor(learnerId), []);
+  const openRewardsFor = useCallback(learnerId => {
+    const snapshot = rewardSnapshotsRef.current[learnerId];
+    if (snapshot) setRewardsFor({ learnerId, snapshot });
+  }, []);
   const closeRewards = useCallback(() => setRewardsFor(null), []);
-  const rewardsLearner = rewardsFor ? roster.find(kid => kid.id === rewardsFor) : null;
+  const rewardsLearner = rewardsFor ? roster.find(kid => kid.id === rewardsFor.learnerId) : null;
   const openRewardsBank = useCallback(learnerId => {
     setRewardsFor(null);
     openBankFor(learnerId);
@@ -1063,7 +1071,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <button
             type="button"
             className="school-app__home"
-            onClick={onApple}
+            {...pressDown(onApple)}
             aria-label={section || active ? 'Home' : (clear ? 'School' : 'Refresh')}
           >
             <Icon name="apple" />
@@ -1074,7 +1082,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               <Fragment key={`${c.label}-${i}`}>
                 <span className="school-app__crumb-sep" aria-hidden>›</span>
                 {!isLast && c.onClick ? (
-                  <button type="button" className="school-app__crumb" onClick={c.onClick}>{c.label}</button>
+                  <button type="button" className="school-app__crumb" {...pressDown(c.onClick)}>{c.label}</button>
                 ) : (
                   <span className={`school-app__crumb${isLast ? ' school-app__crumb--current' : ''}`}>{c.label}</span>
                 )}
@@ -1087,7 +1095,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             only appears once there IS an identity to show (or a guest to
             un-guest). */}
         {(currentUser || isGuest) && (
-          <button type="button" className="school-app__chip" onClick={openPicker}>
+          <button type="button" className="school-app__chip" {...pressDown(openPicker)}>
             {currentUser
               ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
               : <span>Guest</span>}
@@ -1138,7 +1146,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               <>
                 <h2>Could not open that</h2>
                 <p role="alert">{directError}</p>
-                <button type="button" className="school-runner__done" onClick={goHome}>Back to School</button>
+                <button type="button" className="school-runner__done" {...pressDown(goHome)}>Back to School</button>
               </>
             ) : (
               <p role="status">Opening {directProgramId} for {directLearnerId}…</p>
@@ -1188,12 +1196,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenRewards={openRewardsFor} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenRewards={openRewardsFor} rewardsReady={rewardSnapshots} />
               </div>
               {/* Over the whole panel, keypad included, only while a child holds
                   it open: a tap anywhere outside, × or 45 s idle closes it. */}
               {bankDoorView && rewardsLearner && (
-                <RewardsModal key={rewardsLearner.id} learner={rewardsLearner} onClose={closeRewards} onOpenBank={openRewardsBank} />
+                <RewardsModal key={rewardsLearner.id} learner={rewardsLearner} snapshot={rewardsFor.snapshot} onClose={closeRewards} onOpenBank={openRewardsBank} />
               )}
               {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
                   the board pane, so it is never clipped by or stacked under
@@ -1362,7 +1370,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <section className="school-runner">
             <h2>{active.module.title ?? 'Interactive module'}</h2>
             <p>This module needs a capability that is not installed on this screen.</p>
-            <button type="button" className="school-runner__done" onClick={() => setActive(null)}>Return to lesson</button>
+            <button type="button" className="school-runner__done" {...pressDown(() => setActive(null))}>Return to lesson</button>
           </section>
         )}
         {active?.mode === 'drill' && <GeoQuizRunner bank={active.bank} onExit={() => setActive(null)} />}
@@ -1421,7 +1429,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
             data-testid="selfservice-section-exit"
-            onClick={goHome}
+            {...pressDown(goHome)}
           >
             Done
           </button>

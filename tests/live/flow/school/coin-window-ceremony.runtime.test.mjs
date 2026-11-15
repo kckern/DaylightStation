@@ -69,6 +69,7 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
     if (pathname === '/api/v1/earnings/gems') return json({ mode: 'live', learners: ROSTER.map(k => ({ learnerId: k.id, name: k.name })), categories: [{ id: 'reading', label: 'Reading', color: '#82c5b8' }], cells: { reading: { 'test-learner': { state: 'earned', week: 1, held: 1, parts: [{ ruleId: 'reader', label: 'Story time', state: 'earned', week: 1 }] } } } });
     if (pathname === '/api/v1/earnings/preview') {
       world.previewReads += 1;
+      if (world.holdPreview) await world.holdPreview;
       return json({ windows: { school: WEEK }, learners: [learnerWeek('test-learner', world.silver, 2), learnerWeek('test-learner-2', 4)] });
     }
     if (/^\/api\/v1\/economy\/users\/[^/]+\/wallet$/.test(pathname)) return json({ balance: 5, balances: { silver: 5, gold: 12, gems: 1 } });
@@ -83,7 +84,7 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
     if (pathname === '/api/v1/school/materials') return json({ materials: [] });
     if (pathname === '/api/v1/school/sentence-ladder/courses' || pathname === '/api/v1/school/banks') return json([]);
     if (pathname === '/api/v1/school/surfaces/profile') return json({ surfaceId: 'portal' });
-    if (pathname === '/api/v1/state-gates') return json({ gates: [] });
+    if (pathname === '/api/v1/state-gates') return json({ items: ROSTER.map(k => ({ evaluation: { gateId: 'fitness.weekly-rings', subject: { kind: 'learner', id: k.id }, period: { kind: 'interval', startsAt: 0, endsAt: 4102444800000 }, progress: { current: 1260, target: 1 } } })) });
     if (/\/api\/v1\/(?:users|user-pics|static|proxy)\//.test(pathname)) {
       return route.fulfill({ status: 404, contentType: 'text/plain', body: 'no fixture' });
     }
@@ -95,7 +96,9 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
 const shot = (page, name) => page.screenshot({ path: path.join(OUT_DIR, `${name}.png`) });
 
 async function openRewards(page) {
-  await page.getByRole('button', { name: "Open Alpha's rewards" }).click();
+  const chest = page.getByRole('button', { name: "Open Alpha's rewards" });
+  await expect(chest).toBeEnabled();
+  await chest.click();
   await page.clock.runFor(500);
   const modal = page.getByRole('dialog', { name: "Alpha's rewards" });
   await expect(modal).toBeVisible();
@@ -104,7 +107,7 @@ async function openRewards(page) {
 
 async function openBankDetails(page) {
   const modal = await openRewards(page);
-  await modal.getByRole('button', { name: 'Open bank details' }).click();
+  await modal.getByRole('button', { name: 'Bank log' }).click();
   await expect(modal).toHaveCount(0);
 }
 
@@ -116,6 +119,7 @@ test('icon-only chests reveal individual rewards and bank details without public
   const door = page.getByRole('button', { name: "Open Alpha's rewards" });
   await expect(door).toBeVisible();
   await expect(door).toHaveText('');
+  await expect(door).toBeEnabled();
   await expect(page.getByRole('button', { name: "Open Beta's rewards" })).toBeVisible();
   await expect(page.getByTestId('board-coins-door')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open the gem board' })).toHaveCount(0);
@@ -125,7 +129,7 @@ test('icon-only chests reveal individual rewards and bank details without public
   await expect(rewards.getByText('9', { exact: true })).toBeVisible();
   await expect(rewards).not.toContainText('Beta');
   await shot(page, '02-personal-rewards');
-  await rewards.getByRole('button', { name: 'Open bank details' }).click();
+  await rewards.getByRole('button', { name: 'Bank log' }).click();
   const bank = page.getByTestId('bank-screen');
   await expect(bank).toBeVisible();
   await expect(bank.getByTestId('bank-tab-history')).toHaveAttribute('aria-selected', 'true');
@@ -142,11 +146,13 @@ test('icon-only chests reveal individual rewards and bank details without public
   await expect(door).toHaveText('');
   const updated = await openRewards(page);
   await expect(updated.getByText('12', { exact: true }).first()).toBeVisible();
+  await expect(updated.getByText(/Loading/)).toHaveCount(0);
+  await expect(updated.getByText('1,260')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(updated).toHaveCount(0);
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
   await expect(door).toBeFocused();
-  expect(world.previewReads).toBe(0);
+  expect(world.previewReads).toBeGreaterThan(0);
   expect(world.writes.filter(w => /economy|earnings/.test(w))).toEqual([]);
 });
 
@@ -183,4 +189,53 @@ test('a refused open shows the refusal on "Whose bank?", outside the board, and 
   await expect(who).toHaveCount(0);
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
   await expect(door).toBeFocused();
+});
+
+
+test('preloaded rewards open without requests and stay fixed while a held background poll settles', async ({ page }) => {
+  await page.setViewportSize(VIEWPORT);
+  const world = await installWorld(page);
+  await page.goto('/school');
+  const chest = page.getByRole('button', { name: "Open Alpha's rewards" });
+  await expect(chest).toBeEnabled({ timeout: 20000 });
+  let release;
+  world.silver = 31;
+  world.holdPreview = new Promise(resolve => { release = resolve; });
+  await page.clock.fastForward('01:01');
+  await expect.poll(() => world.previewReads).toBeGreaterThan(1);
+  const reads = world.previewReads;
+  const modal = await openRewards(page);
+  await expect(modal.getByText('9', { exact: true })).toBeVisible();
+  await expect(modal.getByText(/Loading/)).toHaveCount(0);
+  const before = await modal.boundingBox();
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/earnings/preview');
+  release(); world.holdPreview = null; await response;
+  await page.clock.runFor(200);
+  await expect(modal.getByText('9', { exact: true })).toBeVisible();
+  expect(await modal.boundingBox()).toEqual(before);
+  expect(world.previewReads).toBe(reads);
+  await modal.getByRole('button', { name: 'Close rewards' }).click();
+  const refreshed = await openRewards(page);
+  await expect(refreshed.getByText('31', { exact: true })).toBeVisible();
+  expect(world.previewReads).toBe(reads);
+});
+
+
+test('touch-down starts the chest before release and keyboard activation still works', async ({ page }) => {
+  await page.setViewportSize(VIEWPORT); await installWorld(page); await page.goto('/school');
+  const chest = page.getByRole('button', { name: "Open Alpha's rewards" });
+  await expect(chest).toBeEnabled({ timeout: 20000 });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const box = await chest.boundingBox();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+  await expect(chest).toHaveClass(/is-opening/);
+  await page.clock.runFor(500);
+  const modal = page.getByRole('dialog', { name: "Alpha's rewards" });
+  await expect(modal).toBeVisible();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(modal).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(chest).toBeFocused();
+  await page.keyboard.press('Enter'); await page.clock.runFor(500);
+  await expect(modal).toBeVisible(); await cdp.detach();
 });

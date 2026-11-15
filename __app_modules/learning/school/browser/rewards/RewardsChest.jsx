@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import chestSheet from './treasure-chests.svg?url';
+import { pressDown } from '../shared/pressDown.js';
 import './RewardsChest.scss';
 
 export const CHEST_OPEN_MS = 480;
@@ -27,7 +28,7 @@ export default function RewardsChest({ name, onOpen, onBeginOpening = null, disa
 
   const open = () => {
     if (disabled || pending.current) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { openRef.current?.(); return; }
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { onBeginOpening?.(); openRef.current?.(); return; }
     pending.current = true;
     onBeginOpening?.();
     setOpening(true);
@@ -40,7 +41,7 @@ export default function RewardsChest({ name, onOpen, onBeginOpening = null, disa
 
   return (
     <button type="button" className={`school-rewards-door${opening ? ' is-opening' : ''}`}
-      aria-label={`Open ${name}'s rewards`} aria-haspopup="dialog" disabled={disabled} aria-disabled={opening || undefined} onClick={open}>
+      aria-label={`Open ${name}'s rewards`} aria-haspopup="dialog" disabled={disabled} aria-disabled={opening || undefined} {...pressDown(open)}>
       <TreasureChest />
     </button>
   );
