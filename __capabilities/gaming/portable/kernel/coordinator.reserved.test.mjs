@@ -33,3 +33,12 @@ describe('reserved creation',()=>{
   expect(await snapshots.get(reservation.sessionId)).toBeTruthy(); expect(await journal.read(reservation.sessionId)).toHaveLength(1);
  });
 });
+
+it('retries the same reserved creation after a failure before the journal write',async()=>{
+ const {coordinator,journal,reservation}=fixture();
+ const create=journal.create.bind(journal);journal.create=vi.fn().mockRejectedValueOnce(Error('before journal')).mockImplementation(create);
+ await expect(coordinator.createReserved({reservation,viewer})).rejects.toThrow('before journal');
+ expect(await journal.read(reservation.sessionId)).toHaveLength(0);
+ const recovered=await coordinator.createReserved({reservation,viewer});
+ expect(recovered.view.state.value).toBe(3);expect(await journal.read(reservation.sessionId)).toHaveLength(1);
+});

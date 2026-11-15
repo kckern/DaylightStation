@@ -88,3 +88,13 @@ it('freezes the inspected manifest and rejects changes before retention',async()
  current={...current,hash:'e'.repeat(64)};
  await expect(consumer.retainPrepared({prepared,viewer:{role:'host'}})).rejects.toMatchObject({code:'prepared_artifact_unavailable'});
 });
+
+it('discovers resumable games only through a read-only port and fails closed when absent',async()=>{
+ const {consumer,executionPort}=await fixture();
+ const receipts=[{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'}}];
+ await expect(consumer.findResumable({receipts,viewer:{role:'host'}})).rejects.toMatchObject({code:'participant_discovery_unavailable'});
+ expect(executionPort.resume).not.toHaveBeenCalled();
+ executionPort.inspect=vi.fn(async()=>({header:{status:'active'}}));
+ expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'Resume game'}]);
+ expect(executionPort.inspect).toHaveBeenCalledOnce();expect(executionPort.resume).not.toHaveBeenCalled();
+});

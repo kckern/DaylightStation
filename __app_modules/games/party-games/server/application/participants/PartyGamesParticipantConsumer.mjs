@@ -69,7 +69,18 @@ export class PartyGamesParticipantConsumer {
   return ready(snapshot,sessionId);
  }
  async findResumable({receipts,viewer}) {
-  const result=[]; for (const receipt of receipts) { if (receipt.runtime_ref?.provider !== 'gaming') continue; try { const runtime=await this.executionPort.resume(receipt.runtime_ref.id,viewer); if (runtime && ['active','suspended'].includes(runtime.header?.status)) result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label:'Resume game'}); } catch (error) { if (error.code !== 'runtime_unavailable' && error.code !== 'session_not_found') throw error; } } return result;
+  const result=[];
+  for (const receipt of receipts) {
+   if (receipt.runtime_ref?.provider !== 'gaming') continue;
+   if (typeof this.executionPort.inspect !== 'function') fail('participant_discovery_unavailable','Read-only game discovery is unavailable');
+   try {
+    const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
+    if (runtime && ['active','suspended'].includes(runtime.header?.status)) result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label:'Resume game'});
+   } catch (error) {
+    if (error.code !== 'runtime_unavailable' && error.code !== 'session_not_found') throw error;
+   }
+  }
+  return result;
  }
  async resume({snapshot,receipt,viewer}) {
   host(viewer); const runtimeRef=receipt?.runtime_ref; if (runtimeRef?.provider!=='gaming' || !validId(runtimeRef.id)) fail('runtime_unavailable','Saved game is unavailable');
