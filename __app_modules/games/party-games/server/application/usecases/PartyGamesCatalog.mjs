@@ -81,7 +81,7 @@ function catalogEntry(definitionId, loaded, manifest) {
 }
 
 export class PartyGamesCatalog {
-  constructor({ configProjection, userService, definitionStore, manifestStore, resourcePresenter, logger = null }) {
+  constructor({ configProjection, userService, definitionStore, manifestStore, resourcePresenter, peopleDirectory = null, householdId = null, logger = null }) {
     if (!manifestStore) throw new Error('PartyGamesCatalog manifestStore is required');
     if (!configProjection?.raw) throw new Error('PartyGamesCatalog configProjection is required');
     if (!resourcePresenter) throw new Error('PartyGamesCatalog resourcePresenter is required');
@@ -91,6 +91,8 @@ export class PartyGamesCatalog {
       definitionStore,
       manifestStore,
       resourcePresenter,
+      peopleDirectory,
+      householdId,
       logger,
     });
   }
@@ -124,9 +126,16 @@ export class PartyGamesCatalog {
       name: profile.group_label || profile.name || profile.id,
       avatar: semanticResources ? userAvatarRef(profile.id) : this.resourcePresenter(userAvatarRef(profile.id)),
     }));
+    const namedGuests = (this.peopleDirectory?.list({ householdId: this.householdId }) || [])
+      .filter((entry) => entry.person.kind === 'guest' && entry.active)
+      .map((entry) => ({
+        id: `guest:${entry.person.id}`, person: entry.person, name: entry.display.name,
+        avatar: semanticResources ? entry.display.avatar : this.resourcePresenter(entry.display.avatar),
+      }));
     return {
       buzzers: settings.buzzers,
       household_members: householdMembers,
+      named_guests: namedGuests,
       team_presets: presets,
       defaults: { timer_seconds: settings.defaults.timerSeconds, mute: settings.defaults.mute },
       sounds: { pack: settings.sounds.pack },
