@@ -59,6 +59,25 @@ public final class AndroidAudioOps implements AudioRouteGuard.Ops {
         return am == null ? 0 : am.getStreamVolume(AudioManager.STREAM_MUSIC);
     }
 
+    @Override public int musicMaxIndex() {
+        return am == null ? 0 : am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+    }
+
+    @Override public boolean raiseA2dpMusicVolume() {
+        if (am == null) return false;
+        // Re-sense at the write: the policy's view is up to a reconcile old.
+        if (!a2dpProfileConnected() || !a2dpOutputPresent() || wiredOutputPresent()) return false;
+        am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 0);
+        // If A2DP dropped across the write, the raise may have landed on the built-in
+        // speaker. Clamp the now-active device back to 0. If it dropped just AFTER the
+        // write, this writes the speaker's index, which is already 0 — harmless.
+        if (!a2dpOutputPresent()) {
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0);
+            return false;
+        }
+        return true;
+    }
+
     @Override public void clampSpeakerMusicVolume() {
         if (am == null) return;
         // Writes the index of the ACTIVE device. The policy only sets clamp=true when

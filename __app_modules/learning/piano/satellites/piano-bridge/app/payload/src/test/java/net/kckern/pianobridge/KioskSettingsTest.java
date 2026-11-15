@@ -46,7 +46,7 @@ public class KioskSettingsTest {
                 "reloadPageFailure", "reloadOnIdle", "reloadEachSeconds"}) {
             assertNotNull("desired set must contain " + k, KioskSettings.DESIRED.get(k));
         }
-        assertEquals(12, KioskSettings.DESIRED.size());
+        assertEquals(13, KioskSettings.DESIRED.size());
     }
 
     @Test
@@ -155,5 +155,16 @@ public class KioskSettingsTest {
         java.util.Map<String, String> live = new java.util.HashMap<>();
         live.put("volumeLevels", "");
         assertEquals(0, KioskSettings.detect(live).size());
+    }
+
+    @Test public void disableVolumeButtons_on_isDriftAndRepairsToOff() {
+        // FKB's volume-button lock reverts the A2DP index to whatever it remembered —
+        // the speaker's clamped 0 after a BT drop — and fights the A2DP floor.
+        java.util.Map<String, String> live = new java.util.HashMap<>();
+        live.put("disableVolumeButtons", "true");
+        java.util.List<KioskSettings.Drift> d = KioskSettings.detect(live);
+        assertEquals(1, d.size());
+        assertEquals("disableVolumeButtons", d.get(0).key);
+        assertEquals("false", d.get(0).desired);
     }
 }

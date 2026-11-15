@@ -2,12 +2,18 @@ import { createContext, useState, useMemo, useCallback, useEffect, useRef } from
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoKioskConfigOptional } from './PianoConfig.jsx';
+import { checkBridgeMediaVolume } from './bridgeAudioVolume.js';
 
 /**
  * PianoMix — the single owner of the two software output levels that share the
  * BT speaker's one physical slider: the onboard Suzuki voice (driven by MIDI
  * CC7 / channel volume) and BT media audio (the media element's .volume). Both
  * levels persist; the physical slider stays the master above them.
+ *
+ * The media level is software only — it multiplies against the tablet's OS
+ * STREAM_MUSIC index for the A2DP speaker. So every media-level change (and mount)
+ * asks the bridge to verify that index (`checkBridgeMediaVolume`); the bridge raises
+ * it if it was lowered. `mediaOutput.silent` says the check could NOT fix it.
  */
 const PIANO_KEY = 'piano.mix.pianoLevel';
 const MEDIA_KEY = 'piano.mix.mediaLevel';
@@ -32,6 +38,7 @@ const FALLBACK = {
   setPianoLevel: () => {},
   setMediaLevel: () => {},
   reassertPianoLevel: () => false,
+  mediaOutput: null,
 };
 const Ctx = createContext(FALLBACK);
 
@@ -79,12 +86,30 @@ export function PianoMixProvider({ children }) {
     setPianoLevelState(level);
   }, [readPianoLevel]);
 
+  const [mediaOutput, setMediaOutput] = useState(null);
+  const checkMediaOutput = useCallback(async (trigger) => {
+    const r = await checkBridgeMediaVolume();
+    if (!r.available) {
+      logger.debug('piano.mix.os-volume.unavailable', { trigger, error: r.error });
+      return r;
+    }
+    setMediaOutput(r);
+    const data = { trigger, routeOk: r.routeOk, musicIndex: r.musicIndex, musicMax: r.musicMax };
+    if (r.silent) logger.warn('piano.mix.os-volume.silent', data);
+    else if (r.raised) logger.warn('piano.mix.os-volume.raised', data);
+    else logger.debug('piano.mix.os-volume.ok', data);
+    return r;
+  }, [logger]);
+
+  useEffect(() => { checkMediaOutput('mount'); }, [checkMediaOutput]);
+
   const setMediaLevel = useCallback((v) => {
     const level = clamp01(v);
     setMediaLevelState(level);
     try { localStorage.setItem(MEDIA_KEY, String(level)); } catch { /* storage unavailable */ }
     logger.info('piano.mix.media-level', { level });
-  }, [logger]);
+    checkMediaOutput('media-level');
+  }, [logger, checkMediaOutput]);
 
   // Re-assert the piano CC7 level whenever the MIDI OUT LINK (re)connects, so a
   // reconnect, keyboard power-cycle, or BLE flap restores the chosen balance —
@@ -99,8 +124,8 @@ export function PianoMixProvider({ children }) {
   }, [outputConnected, sendControlChange, logger]);
 
   const value = useMemo(
-    () => ({ pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel }),
-    [pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel],
+    () => ({ pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel, mediaOutput }),
+    [pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel, mediaOutput],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -206,6 +206,11 @@
 }
 
 .piano-volsheet__card { margin-bottom: 0.75rem; }
+.piano-volsheet__warning {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #ffb4a8;
+}
 .piano-volsheet__cardhead {
   display: flex;
   align-items: center;

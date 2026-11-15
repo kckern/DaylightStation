@@ -121,7 +121,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p35-wifi-bssid";
+    public static final String BUILT_BY = "p37-fkb-volume-lock";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -472,6 +472,18 @@ public class ControlServer extends NanoWSD {
                     JSONObject after = g.status();
                     spk.connectNow();
                     return json(ok().put("action", "bootstrap").put("guard", after));
+                }
+                case "/audio-guard/volume-check": {
+                    // The kiosk asks on every Media Volume press: is the piano's OS-level
+                    // STREAM_MUSIC index actually up? The guard raises it if A2DP is the
+                    // settled route. Never touches the built-in speaker's index.
+                    JSONObject st = service.checkAudioVolumeNow();
+                    if (st == null) return json(err("not_ready"));
+                    if (st.optBoolean("raised")) {
+                        Diag.log(TAG, "/audio-guard/volume-check raised A2DP index from "
+                                + st.optInt("lastA2dpRaiseFrom") + " (" + session.getRemoteIpAddress() + ")");
+                    }
+                    return json(ok().put("guard", st));
                 }
                 case "/audio-guard/override": {
                     AudioRouteGuard g = service.getAudioGuard();
