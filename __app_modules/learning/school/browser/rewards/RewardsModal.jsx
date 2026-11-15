@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import CoinIcon from '../../../../../frontend/src/lib/icons/CoinIcon.jsx';
 import GemIcon from '../../../../../frontend/src/lib/icons/GemIcon.jsx';
 import { coinFigure } from '../../../../../frontend/src/lib/coins/coinFigure.js';
-import { formatMeasure, streakLine } from '../../../../../frontend/src/lib/economy/GemBoard/GemDetail.jsx';
+import { formatMeasure, gemsLine, streakLine } from '../../../../../frontend/src/lib/economy/GemBoard/GemDetail.jsx';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import { TreasureChest } from './RewardsChest.jsx';
@@ -19,16 +19,24 @@ function useRewardRead(learnerId, read, resource) {
   const [result, setResult] = useState(LOADING);
   useEffect(() => {
     let alive = true;
+    const deadline = setTimeout(() => {
+      if (!alive) return;
+      alive = false;
+      setResult({ learnerId, status: 'unavailable', data: null });
+      schoolLog.selfServiceError('rewards.read-failed', { learnerId, resource, reason: 'timeout' });
+    }, 15_000);
     Promise.resolve().then(() => read(learnerId)).then(response => {
       if (!alive) return;
+      clearTimeout(deadline);
       setResult({ learnerId, status: response?.ok && response.data ? 'ok' : 'unavailable', data: response?.ok ? response.data : null });
       if (!response?.ok) schoolLog.selfServiceError('rewards.read-failed', { learnerId, resource, status: response?.status ?? null });
     }).catch(error => {
       if (!alive) return;
+      clearTimeout(deadline);
       setResult({ learnerId, status: 'unavailable', data: null });
       schoolLog.selfServiceError('rewards.read-failed', { learnerId, resource, error: error?.message });
     });
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(deadline); };
   }, [learnerId, read, resource]);
   return result.learnerId === learnerId ? result : LOADING;
 }
@@ -52,7 +60,7 @@ function CoinTotal({ metal, label, value, status }) {
 function GemPart({ part }) {
   const progress = part.progress;
   const line = progress ? streakLine(part)
-    : part.cadence === 'contest' ? formatMeasure(part.score?.mine, part.score?.unit)
+    : part.cadence === 'contest' ? formatMeasure(part.score?.value ?? part.score?.mine, part.score?.unit)
       : part.state === 'earned' || part.state === 'won' ? 'Earned this week'
         : part.state === 'unknown' ? 'Can’t tell yet' : null;
   return (
@@ -69,6 +77,7 @@ function GemPart({ part }) {
 
 function PersonalGems({ result, learnerId }) {
   if (result.status === 'loading') return <p role="status">Loading gems…</p>;
+  if (result.status === 'ok' && ['off', 'dry-run'].includes(result.data?.mode)) return <p>Gems start soon.</p>;
   if (result.status !== 'ok' || !Array.isArray(result.data?.categories) || !result.data?.learners?.some(l => l.learnerId === learnerId)) {
     return <p>Gems are unavailable.</p>;
   }
@@ -85,7 +94,7 @@ function PersonalGems({ result, learnerId }) {
         <GemIcon color={category.color} size="1.8rem" />
         <div>
           <h4>{category.label}</h4>
-          {held > 0 && <p>{held} {held === 1 ? 'gem' : 'gems'} {cell.state === 'leading' ? 'held this week' : 'earned this week'}</p>}
+          {held > 0 && <p>{gemsLine(cell)}</p>}
           {parts.length ? parts.map(part => <GemPart key={part.ruleId} part={part} />)
             : <p>{cell.state === 'unknown' ? 'Can’t tell yet' : held ? 'Well done!' : 'No gem yet this week'}</p>}
         </div>
@@ -149,7 +158,12 @@ export default function RewardsModal({ learner, onClose, onOpenBank = null, idle
         )}
         <h3>Your gems this week</h3>
         <PersonalGems result={gems} learnerId={learnerId} />
-        {onOpenBank && <button type="button" className="school-rewards-modal__bank" onClick={() => onOpenBank(learnerId)}>Open bank details</button>}
+        {onOpenBank && <button type="button" className="school-rewards-modal__bank" onClick={() => {
+          // Release native modal focus before BankDoor records its return
+          // target, so a refused bank open can return to the child's chest.
+          dialogRef.current.close();
+          onOpenBank(learnerId);
+        }}>Open bank details</button>}
         <button type="button" className="school-rewards-modal__done" onClick={() => closeRef.current?.()}>Back to today</button>
       </div>
     </dialog>, document.body,

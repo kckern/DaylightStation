@@ -77,6 +77,7 @@ import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
 import { dayOffTitle, dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
+import RewardsChest from '../rewards/RewardsChest.jsx';
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
@@ -410,7 +411,14 @@ function GemDoor({ name, figure, studyDay, onOpen }) {
 
 const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, coinCeremony = null }) {
+// School passes onOpenRewards: identical chest doors replace the legacy
+// coin/gem figures and public coin ceremony. Other consumers can retain the
+// explicit onOpenBank/onOpenGems controls described above.
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, onOpenRewards = null, coinCeremony = null }) {
+  const [openingRewardsFor, setOpeningRewardsFor] = useState(null);
+  useEffect(() => {
+    if (openingRewardsFor && !kids.some(kid => kid.id === openingRewardsFor)) setOpeningRewardsFor(null);
+  }, [kids, openingRewardsFor]);
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -434,7 +442,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // never replays a pop and a deposit never celebrates. Called through a ref
   // so `refreshCoins` keeps its identity (its identity drives the first-read
   // effect).
-  const ceremony = useCoinCeremony({ kids, config: coinCeremony });
+  const ceremonyConfig = useMemo(() => onOpenRewards ? { ...coinCeremony, enabled: false } : coinCeremony, [coinCeremony, onOpenRewards]);
+  const ceremony = useCoinCeremony({ kids, config: ceremonyConfig });
   const observeCoinsRef = useRef(ceremony.observe);
   observeCoinsRef.current = ceremony.observe;
   const openBank = useCallback((kidId) => {
@@ -541,6 +550,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   const bankSentRef = useRef({});
   const bankAppliedRef = useRef({});
   const refreshCoins = useCallback(() => {
+    // Personal rewards are read fresh inside their modal; no roster balances or
+    // public earning announcements are needed on the resting School screen.
+    if (onOpenRewards) return;
     if (schoolApi.earningsRoster) {
       // One roster read prices everyone. Fired alongside the plans, never
       // awaited; a failed read keeps the figures already on the cards.
@@ -604,7 +616,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
         });
     }
-  }, [day, kids]);
+  }, [day, kids, onOpenRewards]);
 
   /**
    * Re-read the given learners (all of them when `learnerIds` is omitted).
@@ -860,7 +872,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     && visible.every((row) => !row.loading && row.summary === null);
   if (!visible.length || settledEmpty) return null;
   return (
-    <div className="school-status-board" data-testid="agenda-status-board">
+    <div className={`school-status-board${onOpenRewards ? ' school-status-board--personal-rewards' : ''}`} data-testid="agenda-status-board">
       {/* One card per student, equal height whether or not a plan loaded —
           the board is a wall fixture, and four uneven rows read as broken. */}
       <ul className="school-status-board__rows">
@@ -944,7 +956,12 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               )}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
-              {onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
+              {onOpenRewards ? (
+                <RewardsChest name={kid.name}
+                  disabled={Boolean(openingRewardsFor && openingRewardsFor !== kid.id)}
+                  onBeginOpening={() => setOpeningRewardsFor(kid.id)}
+                  onOpen={() => { setOpeningRewardsFor(null); onOpenRewards(kid.id); }} />
+              ) : onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
                 // The coin cell is the door to this kid's bank screen: a real
                 // button, so keyboard/OK reach it. Opening the bank starts no
                 // tracked work; the bank screen's Back returns to the keypad.
@@ -960,7 +977,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               ) : (
                 <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
               )}
-              {onOpenGems && (
+              {!onOpenRewards && onOpenGems && (
                 <GemDoor name={kid.name} figure={earnings[kid.id]} studyDay={studyDay} onOpen={() => onOpenGems(kid.id)} />
               )}
             </div>
@@ -1003,7 +1020,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           onClose={closeTerm}
         />
       )}
-      {ceremony.toast && (
+      {!onOpenRewards && ceremony.toast && (
         <CoinCeremony key={ceremony.toast.id} toast={ceremony.toast} durationMs={ceremony.durationMs} onDone={ceremony.done} />
       )}
     </div>

@@ -394,6 +394,12 @@ One view of every learner against every gem, for one week: one table, rows
 under section headings, a column per learner. Design:
 `ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md`.
 
+School uses this same response for its individual rewards modal, filtering to
+the selected learner's cells and own progress. Its resting board shows identical
+icon-only treasure chests, with no family Gem Board door, sibling standings, or
+automatic reward-total announcements. The shared board on other surfaces is
+unchanged. See [School rewards](../school/agenda-and-completion.md#the-status-board-card).
+
 **Response** (`GET /api/v1/earnings/gems`):
 
 | Field | Holds |
@@ -1293,10 +1299,10 @@ built from `economyApi` (`composition/economyApi.mjs`).
   `zero_days_alert` and `mode` are read on every run, and null turns the alert
   off. In `dry-run` the digest shows no silver figure and ends `Coins not live
   yet`; with `off` coins are not mentioned.
-- **School: Portal coin cell, bank door and bank screen.** The board's coin
-  cell opens the bank door, and the bank screen reads `GET …/bank`; there is no
-  bank strip. See the School README ("The coin cell is the bank's door", "The
-  bank screen").
+- **School: personal rewards, bank door and bank screen.** Each child's chest
+  opens an individual rewards modal. Its bank-details button opens the checked
+  bank door, and the bank screen reads `GET …/bank`; there is no bank strip.
+  See [School rewards and bank details](../school/agenda-and-completion.md#the-coin-window).
   School forwards `economy.coins-changed` to the Portal's `school` topic
   (`EventBusSchoolRealtimeAdapter.relayCoinsChanged`, see
   [Events](#events-and-logging)).

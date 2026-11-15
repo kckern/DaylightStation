@@ -17,7 +17,7 @@ export function TreasureChest({ open = false }) {
   );
 }
 
-export default function RewardsChest({ name, onOpen }) {
+export default function RewardsChest({ name, onOpen, onBeginOpening = null, disabled = false }) {
   const [opening, setOpening] = useState(false);
   const pending = useRef(false);
   const timer = useRef(null);
@@ -26,9 +26,10 @@ export default function RewardsChest({ name, onOpen }) {
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const open = () => {
-    if (pending.current) return;
+    if (disabled || pending.current) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { openRef.current?.(); return; }
     pending.current = true;
+    onBeginOpening?.();
     setOpening(true);
     timer.current = setTimeout(() => {
       pending.current = false;
@@ -39,7 +40,7 @@ export default function RewardsChest({ name, onOpen }) {
 
   return (
     <button type="button" className={`school-rewards-door${opening ? ' is-opening' : ''}`}
-      aria-label={`Open ${name}'s rewards`} aria-haspopup="dialog" aria-disabled={opening || undefined} onClick={open}>
+      aria-label={`Open ${name}'s rewards`} aria-haspopup="dialog" disabled={disabled} aria-disabled={opening || undefined} onClick={open}>
       <TreasureChest />
     </button>
   );

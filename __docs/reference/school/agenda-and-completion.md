@@ -239,7 +239,7 @@ response remains unchanged.
 
 ## The status board card
 
-Each learner's card is four cells, left to right: who, today, coins, days.
+Each learner's card is four cells, left to right: who, today, rewards, days.
 
 **Today.** A big number of how many assignments are left, set before the
 subject pins. A finished day shows one green check mark in its place. There is
@@ -287,27 +287,32 @@ registry does not know falls back to the shelf icon and logs
 `school.surface.assignment-icon-missing` once per name. Curriculum entries carry no
 icon yet. The printed agenda still draws the subject icon.
 
-**Coins.** A fixed-width column so the figures line up down every card. Silver
-is the big figure: the learner's earnings so far this week from the roster
-earnings preview (`GET /api/v1/earnings/preview`; see
-`__docs/reference/economy/economy.md`). It is a preview: PayoutService mints
-its earned lines into the ledger only while the economy catalog is `live`.
-Gold is smaller beneath it: the wallet's `balances.gold`
-(`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
-close converts unspent silver.
-On the Portal (where `SchoolApp` passes `onOpenGems`) the gems leave the coin
-grid for their own **gem door** under it: this week's count, a faint gem at
-zero, and a tap opens the family's Gem Board focused on that child (see the
-economy reference, "Gem Board"). The board header carries a **Gems** door to
-the same board. Without `onOpenGems`, gems stay in the coin grid as below.
-Gems are a third line only while some are held. One number per coin, no faded
-`+N`: silver is what was earned; gems are what the child holds this week,
-including the ring contest's gem while they lead it (the preview files that one
-under `pending` until Saturday noon, beside a silver prize the board does not
-show). It used to read `0 +1`. There are no
-captions; icons carry the meaning and each figure is an image whose name says
-it. A wallet or roster read that comes back not-ok is logged
-(`status-board.wallet-failed` / `status-board.earnings-failed`).
+**Rewards.** On the School resting screen every child has the same closed
+treasure chest SVG button. It has no visible label, balance, badge, or
+wealth-dependent styling; its accessible name is "Open <name>'s rewards".
+Tapping plays a 480ms opening animation and then opens that child's personal
+rewards modal. Reduced motion opens immediately, and leaving the board cancels
+a pending opening. The chest remains usable while reward data is unavailable.
+
+The modal reads the learner's weekly silver (`GET /api/v1/earnings/preview/:id`),
+gold balance (`GET /api/v1/economy/users/:id/bank`), and gem cells from a fresh
+`GET /api/v1/earnings/gems?fresh=1`. It renders only that child's achievements,
+progress and own contest scores: no sibling rows, standings, or child-switching
+arrows. Loading and unavailable resources are distinct from zero. Coins say
+"Coins start soon" before the bank is live. Viewing rewards does not claim a
+learner or start tracked work. The School header has no family Gems entry.
+
+`rewards/RewardsModal.jsx` uses a native modal dialog, capped to the dynamic
+viewport. The header and close button stay visible while content scrolls.
+Close, Escape, backdrop, Back to today, 45 seconds idle, or leaving the resting
+view dismisses it; focus returns to the chest when it is still mounted. Screen
+sleep and the resting-pane flip yield while rewards are open.
+
+Other `AgendaStatusBoard` consumers can explicitly retain the legacy coin/gem
+figures through `onOpenBank`/`onOpenGems`, by omitting `onOpenRewards`. Those
+figures retain their school-week validation and snapshot behavior. The personal
+School board skips roster-wide balance/bank reads and public coin ceremonies;
+its rewards are read fresh when a child opens the modal.
 
 **Days.** Last week (dimmer) above this week, seven squares each, today
 outlined, weekday letters above. The ring count with its ring icon sits
@@ -317,27 +322,14 @@ full term in a read-only popup — the one tappable thing on a panel board
 A pinned `day` anchors the two rows on that day, not on the term read's own
 `today`.
 
-One roster read prices every card. It runs beside the plans, never blocking
-them, on the board's refresh timer, on visibility, and after every school,
-scan, or ring event, since that work is what moves the figures. Each figure
-appears when its own read lands ("0" and "not loaded" are different facts), a
-failed re-read keeps what is shown, and a learner the preview cannot price
-(every line "can't tell") shows no silver figure. The snapshot cache keeps the
-figures with the week they price, so last week's total is never painted as
-this week's. Cards stay in roster order; the economy never ranks.
-
 ## The coin window
 
-The coin cell on a card is a native button (so keyboard and OK reach it). It
-opens that learner's bank screen directly; there is no popup between. Opening it
-starts no tracked work (it logs `status-board.bank-open`), and the Portal wires it
-to the panel's bank door (`bank/BankDoor.jsx`, `POST /school/bank/open`), with
-the learner already known so no face picker is shown. The coin cell is the only
-way into the bank on the Portal; there is no bank strip. A refused open shows
-the "Whose bank?" sheet with the refusal under the faces. The door logs
-`economy.bank.door-opened` and `economy.bank.door-open-failed`. The cell is a plain figure, not a button, when
-the board has no `onOpenBank` or the learner has no coin figure yet. Its spoken
-name carries the week: "<name>'s bank, N silver this week".
+The personal rewards modal's **Open bank details** button opens the existing
+bank screen through the panel's checked bank door (`bank/BankDoor.jsx`,
+`POST /school/bank/open`). The learner is already known, so no face picker is
+needed. Opening details closes the rewards modal and starts no tracked work.
+A refused bank open shows the existing "Whose bank?" sheet. Returning from the
+bank goes to the resting board. The door retains its opened/failed logging.
 
 The bank screen (`bank/BankScreen.jsx`) has three tabs, History (the default),
 How to earn and How to spend; Back returns to the board. History shows:
@@ -363,7 +355,11 @@ soon". The screen has its own idle exit. Log events are `economy.bank.*`
 
 ## The coin ceremony
 
-When a child is paid (a minted earning lands in their bank), a short "+N" pop appears over the board.
+The personal-rewards School resting screen suppresses public coin and gem
+ceremonies so totals stay inside the child’s modal. The legacy coin ceremony
+below remains available to other board consumers without `onOpenRewards`.
+
+When enabled, a minted earning produces a short "+N" pop over the board.
 
 **What is celebrated.** Silver actually minted, read from the learner's bank
 history (the ledger), not the week's projection and not a bare balance (owner

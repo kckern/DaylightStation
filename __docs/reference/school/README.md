@@ -1723,43 +1723,36 @@ burn-in without losing a half-typed code. The board component lives at
 `frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
 same agenda-preview + teacher-day models the teacher console uses.
 
-**The coin cell is the bank's door.** There is no bank strip on the Portal
-(owner ruling 2026-10-21; the old `BankStrip` component is gone). Each kid's
-board card carries a coin cell, the week's EARNED silver from the earnings
-preview, read out as "<name>'s bank, N silver this week". It is a native button
-and the only thing on a card that takes a tap besides the term rows; it opens
-that kid's bank screen (below) directly. Details, and the coin ceremony that
-pops when the figure rises: `__docs/reference/school/agenda-and-completion.md`
-("The coin window", "The coin ceremony").
+**Personal rewards.** Every child's School board card has an identical closed
+treasure chest icon, with no visible label, balance or badge. Tap it to play a
+short opening animation, followed by a modal containing only that child's
+weekly silver, gold bank balance, gem achievements and progress. Reduced motion
+opens immediately. The modal fits the viewport, keeps its close control visible,
+and scrolls its contents; Escape, backdrop, Back to today, 45 seconds idle or
+leaving the resting view closes it. Looking at rewards does not claim a learner.
+There is no family Gems entry or automatic public reward-total ceremony on the
+School resting screen. See [rewards and bank details](./agenda-and-completion.md#the-status-board-card).
 
-- **Two silvers, two names.** The board's silver is what the week's work
-  *earned* (the earnings preview). The bank screen's silver is what is *in the
-  bank* (the ledger, less what was spent). They differ after a pass purchase or
-  before a payout lands, which is why each is named. The coin icons are the
-  standard `CoinIcon` (`metal="silver"` / `"gold"`); the figures' text colours
-  are the School tokens `--school-coin-silver` and `--school-coin-gold`.
-- **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
-  field is the silver figure, never gold.
-- **`coins-changed`.** The economy publishes `economy.coins-changed {userId,
-  reason}` on the internal bus after every write that moves coins or a pass:
-  deposit, adjust, earn, mint, convert, and a pass bought, consumed or refunded,
-  once the write's user lock is released. A dry run, a duplicate or a refusal
-  publishes nothing. `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started
-  by `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
-  learnerId}`. The lifecycle returns it as `coinsChangedRelay` (`{stop}`, null
-  when there is no subscribable bus), and `app.mjs` stops it on SIGTERM. A
-  payout run mints entry by entry, so the events come in bursts; the board
-  re-reads only its coin figures on it, coalesced (`status/schoolRefreshEvents.js`:
-  750 ms of quiet, never more than 3 s after a burst's first event).
-- **Below 820 px** the board pane is hidden, and with it the coin cells and the
-  ceremony; a narrow panel has no way into the bank.
+- **Two silvers, two names.** The rewards modal's silver is what the week's
+  work earned (the earnings preview). The bank screen's silver is what is in
+  the bank (the ledger, less spending). They can differ after a purchase or
+  before a payout lands; both use the standard `CoinIcon`.
+- **Gold** is read from the bank's `balances.gold`; a silver `balance` is
+  never treated as gold. Loading, unavailable and zero are distinct states.
+- **`coins-changed`.** The economy still publishes `economy.coins-changed`
+  after balance/pass writes; `EventBusSchoolRealtimeAdapter.relayCoinsChanged`
+  forwards `school {event: 'coins-changed', learnerId}`. The bank screen
+  subscribes as before. Personal rewards read fresh when opened; the resting
+  School board does not request roster balances or bank histories.
+- **Below 820 px** the existing board pane is hidden, and with it the chest
+  buttons. The modal itself supports narrow screens when mounted.
 
 **The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
 kid's bank, full screen over the locked panel.
 
 - **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. The
-  coin cell on each kid's board card names the kid, so it sends the request
-  straight away. There is no header button and no strip.
+  personal rewards modal's bank-details button names the child, so it sends
+  the request directly and closes the modal. There is no header button or strip.
   It posts `POST /api/v1/school/bank/open {screenId, learnerId}`
   (`OpenBankAtPanel`): the learner must be on the current roster and a School
   panel must be configured (`resolveBookScanTarget`), or it refuses with 400 /
@@ -1768,7 +1761,7 @@ kid's bank, full screen over the locked panel.
   `{ launchTarget: { kind: 'program', program: 'economy-bank', learnerId } }`.
   A refusal is shown on "Whose bank?" (the shelf's own face grid,
   `LearnerChoice`), drawn by the panel outside the board pane. It takes focus
-  on its Back button, hands focus back to the coin cell when it closes, closes
+  on its Back button, returns focus when its original trigger is still mounted, closes
   itself after the
   panel's idle time, and is closed by `goHome` and whenever the panel leaves
   its resting keypad-and-board view, so a refusal never waits for the next
@@ -1840,9 +1833,9 @@ kid's bank, full screen over the locked panel.
   `economy.bank.opened {learnerId}` under component `school-bank-screen`.
 - **Contract test:** `npm run test:coins-ui`
   (`tests/live/flow/school/coin-window-ceremony.runtime.test.mjs`, a Vite dev
-  server with every `/api/v1/**` call stubbed): coin cell, bank screen and its
-  History tab, back, a napping bank, a refused open on "Whose bank?", and the
-  coin ceremony.
+  server with every `/api/v1/**` call stubbed and sockets blocked): icon-only
+  chests, the individual rewards modal, bank History, back, a napping bank,
+  refusal on "Whose bank?", focus return, and absence of public totals/popups.
 
 A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
 only screen in the house that mounts School, so ignoring them would break the

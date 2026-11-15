@@ -76,6 +76,35 @@ describe('RewardsModal', () => {
     expect(screen.getByRole('dialog', { name: "Jamie's rewards" })).toBeTruthy();
   });
 
+  it('treats an empty off-mode gem board as not started, not an outage', async () => {
+    schoolApi.gems.mockResolvedValue(ok({ mode: 'off', learners: [], categories: [], cells: {} }));
+    render(<RewardsModal learner={alex} onClose={vi.fn()} />);
+    expect(await screen.findByText('Gems start soon.')).toBeTruthy();
+    expect(screen.queryByText('Gems are unavailable.')).toBeNull();
+  });
+
+  it('bounds stalled reads and ignores their answers after the timeout', async () => {
+    vi.useFakeTimers();
+    let resolve;
+    schoolApi.earningsPreview.mockReturnValue(new Promise(r => { resolve = r; }));
+    render(<RewardsModal learner={alex} onClose={vi.fn()} idleMs={0} />);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(screen.getByText('Silver is unavailable.')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    await act(async () => resolve(preview('alex', 999)));
+    expect(screen.queryByText('999')).toBeNull();
+  });
+
+  it('formats contest display values and keeps provisional gems distinct from earned gems', async () => {
+    schoolApi.gems.mockResolvedValue(ok({ ...gems, cells: { ...gems.cells, rings: {
+      alex: { state: 'earned', week: 1, held: 2, parts: [{ ruleId: 'race', label: 'Best lap', cadence: 'contest', state: 'leading', score: { mine: 1e6 / 314, value: 314, unit: 'seconds' } }] },
+    } } }));
+    render(<RewardsModal learner={alex} onClose={vi.fn()} />);
+    expect(await screen.findByText('5:14')).toBeTruthy();
+    expect(screen.getByText('1 gem this week, and 1 more while leading')).toBeTruthy();
+    expect(screen.queryByText('2 gems earned this week')).toBeNull();
+  });
+
   it('closes on Escape/native cancel, backdrop, close and idle, resetting idle on interaction', async () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
