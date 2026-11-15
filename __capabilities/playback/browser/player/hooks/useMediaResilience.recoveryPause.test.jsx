@@ -67,6 +67,8 @@ describe('a pause caused by a failed recovery load', () => {
     await act(async () => { result.current.requestRecovery('stall-jolt-remount', { forceRemount: true, bypassCooldown: true }); });
     await flush();
     await remountAndFail('plex:55854:1');
+    // A failed action completes its slot; the next still respects four-second spacing.
+    await advance(4000);
     // …one fresh-URL remount is tried, and it fails the same way.
     expect(args.onReload.mock.calls.some(([opts]) => opts?.reason === 'media-error-unplayable' && opts?.forceRemount === true)).toBe(true);
     await remountAndFail('plex:55854:2');

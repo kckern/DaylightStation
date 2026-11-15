@@ -43,6 +43,7 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     ...(input.artist != null ? { artist: input.artist } : {}),
     ...(input.album != null ? { album: input.album } : {}),
     ...(input.mediaType != null ? { mediaType: input.mediaType } : {}),
+    ...(input.contentTimeline ? { contentTimeline: { ...input.contentTimeline } } : {}),
     ...(input.isLive != null ? { isLive: !!input.isLive } : {}),
     // "Keep similar things playing" marks what it added (RQ-STEER-19) and the
     // next-episode countdown recognises episodes (RQ-STEER-20); both are
@@ -82,6 +83,7 @@ function itemFields(entry) {
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
     ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
+    ...(entry.contentTimeline ? { contentTimeline: { ...entry.contentTimeline } } : {}),
     ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
     // PLAY.4a: an explicitly chosen start reaches the Player (see toQueueItem).
     ...(Number.isFinite(entry.seconds) ? { seconds: entry.seconds } : {}),

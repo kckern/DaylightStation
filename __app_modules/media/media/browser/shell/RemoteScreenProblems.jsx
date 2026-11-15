@@ -79,7 +79,7 @@ export function RemoteScreenProblems() {
           replacement: problem.replacement ?? null,
           targetId: deviceId,
           targetName,
-          command: { kind: 'playNow', item: { contentId: problem.item?.contentId ?? null, title: problem.item?.title ?? null } },
+          command: { kind: problem.target ? 'retry' : 'playNow', ...(problem.target ? { target: problem.target } : {}), item: { contentId: problem.item?.contentId ?? null, title: problem.item?.title ?? null } },
         });
         if (problem.kind === 'waiting' || problem.kind === 'library-unavailable') {
           heldRowsRef.current.set(deviceId, { attemptId: attemptId ?? null, at: problem.at });

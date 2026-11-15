@@ -1,3 +1,4 @@
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { playbackLog } from '../lib/playbackLogger.js';
@@ -21,7 +22,9 @@ import { HLS_REFUSAL_EVENT } from '../lib/hlsRefusal.js';
  * `retry` or `normal`. While waiting it re-checks on a 2s/4s/8s/15s backoff.
  * `onSettled(decision)` fires for `resume` / `retry` / `normal` (and `gave-up`
  * after SOURCE_UNAVAILABLE_MAX_MS) so the caller — useMediaResilience — decides
- * what reload, if any, follows.
+ * what reload, if any, follows. Owner-managed checks retain their initiating
+ * recovery target through all polls. Superseded settlement returns `superseded`
+ * without calling onSettled; backend availability can still clear the wait.
  */
 export function useSourceAvailability({
   contentId,
@@ -31,6 +34,7 @@ export function useSourceAvailability({
   mediaType = null,
   disabled = false,
   onSettled,
+  recoveryIdentity = null,
   // Owner option (monitor.sourceUnavailableMaxMs): how long to wait before
   // `gave-up`. The final check is scheduled to land on the limit itself.
   maxWaitMs = SOURCE_UNAVAILABLE_MAX_MS,
@@ -50,6 +54,9 @@ export function useSourceAvailability({
   const [unavailableSince, setUnavailableSince] = useState(null);
 
   const sinceRef = useRef(null);
+  const waitTargetRef = useRef(null);
+  const recoveryIdentityRef = useRef(recoveryIdentity);
+  recoveryIdentityRef.current = recoveryIdentity;
   const attemptRef = useRef(0);
   const pollTimerRef = useRef(null);
   const inflightRef = useRef(null);
@@ -73,6 +80,7 @@ export function useSourceAvailability({
   const endWait = useCallback(() => {
     clearPoll();
     sinceRef.current = null;
+    waitTargetRef.current = null;
     attemptRef.current = 0;
     unknownRef.current = 0;
     setUnavailableSince(null);
@@ -91,6 +99,15 @@ export function useSourceAvailability({
     const id = idRef.current;
     if (!id) return Promise.resolve('normal');
     if (inflightRef.current) return inflightRef.current;
+    // Polls belong to the check that opened the wait, even after newer user intent.
+    const target = sinceRef.current !== null
+      ? waitTargetRef.current : recoveryIdentityRef.current?.getTarget();
+    const settle = (decision, context = {}) => {
+      const identity = recoveryIdentityRef.current;
+      if (identity && !sameRecoveryTarget(target, identity.getTarget())) return 'superseded';
+      onSettledRef.current?.(decision, { ...context, target });
+      return decision;
+    };
 
     const run = (async () => {
       let state = null;
@@ -127,6 +144,7 @@ export function useSourceAvailability({
 
       if (decision === 'wait') {
         if (!waiting) {
+          waitTargetRef.current = target;
           sinceRef.current = Date.now();
           attemptRef.current = 0;
           setUnavailableSince(sinceRef.current);
@@ -138,8 +156,7 @@ export function useSourceAvailability({
           playbackLog('source-unavailable-gave-up', { contentId: id, waitedMs, attempts: attemptRef.current, maxWaitMs: maxWaitRef.current }, { level: 'warn' });
           endWait();
           onWaitChangeRef.current?.({ waiting: false, decision: 'gave-up', contentId: id, waitedMs });
-          onSettledRef.current?.('gave-up');
-          return 'gave-up';
+          return settle('gave-up', { reason, suspected });
         }
         const delayMs = Math.max(250, Math.min(sourcePollDelayMs(attemptRef.current), maxWaitRef.current - waitedMs));
         attemptRef.current += 1;
@@ -162,8 +179,7 @@ export function useSourceAvailability({
       } else if (decision === 'retry') {
         playbackLog('source-refusal-cleared', { contentId: id, reason }, { level: 'info' });
       }
-      onSettledRef.current?.(decision, { reason, suspected });
-      return decision;
+      return settle(decision, { reason, suspected });
     })().finally(() => {
       if (inflightRef.current === run) inflightRef.current = null;
     });
@@ -231,6 +247,7 @@ export function useSourceAvailability({
         onWaitChangeRef.current?.({ waiting: false, decision: 'abandoned', contentId: idRef.current });
       }
       sinceRef.current = null;
+      waitTargetRef.current = null;
       attemptRef.current = 0;
       inflightRef.current = null;
     };

@@ -35,6 +35,9 @@ export function PlayerOverlayLoading({
   showPauseIcon = false,
   isExhausted = false,
   onRetryFromExhausted,
+  retryAfterMs = 0,
+  held = false,
+  onOpenQuality = null,
   // "Fixing this video… · 2:05" while the Player waits out a
   // file the server refuses to read (useSourceAvailability). Null otherwise.
   sourceNotice = null,
@@ -66,7 +69,17 @@ export function PlayerOverlayLoading({
   // (higher z-index in CSS) and tells the user "you paused", while the spinner
   // underneath signals "still trying to recover." Without this, stalled-pause
   // shows a black screen with no affordance — see the 2026-05-22 audit.
-  const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || stalled);
+  const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || stalled || held || isExhausted);
+
+  const loadingRootRef = useRef(null);
+  useEffect(() => {
+    if (!isExhausted || !overlayDisplayActive || suppressForBlackout) return;
+    const root = loadingRootRef.current;
+    const active = document.activeElement;
+    if (active === document.body || active === document.documentElement || root?.contains(active)) {
+      root?.querySelector('button:not(:disabled)')?.focus();
+    }
+  }, [isExhausted, held, overlayDisplayActive, suppressForBlackout]);
 
   const logIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
@@ -270,15 +283,16 @@ export function PlayerOverlayLoading({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.nativeEvent?.stopImmediatePropagation?.();
+    if (isExhausted && retryAfterMs > 0) return;
     if (isExhausted && typeof onRetryFromExhausted === 'function') {
       onRetryFromExhausted();
       return;
     }
     emitManualReset('overlay-spinner-manual', { eventType: event?.type });
-  }, [emitManualReset, isExhausted, onRetryFromExhausted]);
+  }, [emitManualReset, isExhausted, onRetryFromExhausted, retryAfterMs]);
 
 
-  const spinnerInteractionProps = {
+  const spinnerInteractionProps = isExhausted ? { onClick: handleSpinnerInteraction } : {
     onClick: handleSpinnerInteraction,
     onTouchStart: handleSpinnerInteraction,
     onDoubleClick: handleSpinnerInteraction,
@@ -406,19 +420,36 @@ export function PlayerOverlayLoading({
     ? 'opacity 0.3s ease-in-out 0.3s' // 0.3s delay before showing
     : 'opacity 0.2s ease-in-out 0s';  // No delay when hiding
 
-  if (isPausedAtDuration) {
+  if (isPausedAtDuration && !isExhausted && !held) {
     return null;
   }
 
   return (
     <div
+      ref={loadingRootRef}
       className={`loading-overlay ${showPauseIcon ? 'paused' : 'loading'}`}
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
         transition: transitionStyle
       }}
-      onDoubleClick={togglePauseOverlay}
+      onKeyDown={(event) => {
+        if (!event.target.closest('button')) return;
+        event.stopPropagation();
+        if (['Enter', 'NumpadEnter', ' '].includes(event.key)) {
+          event.preventDefault();
+          if (!event.repeat) event.target.closest('button').click();
+          return;
+        }
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+          const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')];
+          const index = buttons.indexOf(event.target.closest('button'));
+          const delta = ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1;
+          buttons[(index + delta + buttons.length) % buttons.length]?.focus();
+          event.preventDefault();
+        }
+      }}
+      onDoubleClick={(event) => { if (!event.target.closest('button')) togglePauseOverlay?.(); }}
     >
       <div className="loading-overlay__inner">
         <div className="loading-timing">
@@ -445,17 +476,24 @@ export function PlayerOverlayLoading({
           {!sourceNotice && linkNotice ? (
             <div className="loading-notice" data-testid="player-link-notice">{linkNotice}</div>
           ) : null}
+          {isExhausted && <div className="loading-recovery-actions">
+            <button type="button" className="loading-skip" disabled={retryAfterMs > 0}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onRetryFromExhausted?.(); }}>
+              {retryAfterMs > 0 ? `Retry in ${Math.ceil(retryAfterMs / 1000)}s` : 'Retry'}
+            </button>
+            {typeof onOpenQuality === 'function' && <button type="button" className="loading-skip"
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); onOpenQuality(); }}>Quality…</button>}
+          </div>}
           {(sourceNotice || isExhausted) && typeof onSkipSource === 'function' ? (
-            <div
+            <button
+              type="button"
               className="loading-skip"
               data-testid="player-source-skip"
               data-no-fullscreen="true"
-              role="button"
-              tabIndex={-1}
               onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSkipSource({ key: 'tap' }); }}
             >
               Skip<span className="loading-skip__key">OK</span>
-            </div>
+            </button>
           ) : null}
         </div>
       </div>
@@ -496,6 +534,9 @@ PlayerOverlayLoading.propTypes = {
   showPauseIcon: PropTypes.bool,
   isExhausted: PropTypes.bool,
   onRetryFromExhausted: PropTypes.func,
+  retryAfterMs: PropTypes.number,
+  held: PropTypes.bool,
+  onOpenQuality: PropTypes.func,
   sourceNotice: PropTypes.string,
   linkNotice: PropTypes.string
 };

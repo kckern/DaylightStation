@@ -10,7 +10,8 @@ const api = vi.hoisted(() => ({ DaylightAPI: vi.fn() }));
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => api);
 
 import { useMediaResilience } from './useMediaResilience.js';
-import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { createRecoveryLedger, getRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { createRecoveryIdentity, recoverySessionKey } from '../lib/recovery/recoveryIdentity.js';
 import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 import { HLS_REFUSAL_EVENT } from '../lib/hlsRefusal.js';
 
@@ -96,6 +97,20 @@ describe('HLS refusal joins the path', () => {
     expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-restored', refreshUrl: true, forceRemount: true }));
   });
 
+  it('refusal clearing retains prior incident and rolling action debits', async () => {
+    api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+    const el = makeFakeEl({ currentTime: 12, paused: false });
+    const args = baseArgs(el, { seconds: 12 });
+    const ledger = getRecoveryLedger();
+    const gate = ledger.reserveAction({ sessionKey: args.playbackSessionKey, actionId: 'before-refusal', actor: 'jolt', reason: 'stall' });
+    ledger.completeAction({ sessionKey: args.playbackSessionKey, actionId: gate.actionId });
+    renderHook(() => useMediaResilience(args));
+    await fireHls(el, { status: 503, message: '503 Service Unavailable' });
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
+    await advance(4000);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-restored' }));
+    expect(ledger.snapshot(args.playbackSessionKey)).toMatchObject({ count: 2, rollingCount: 2 });
+  });
   it('a readable answer to an HLS suspicion hands back to the stall ladder (no extra reload)', async () => {
     api.DaylightAPI.mockResolvedValue(answer('readable'));
     const el = makeFakeEl({ currentTime: 10, duration: 420 });
@@ -104,6 +119,85 @@ describe('HLS refusal joins the path', () => {
     await fireHls(el, { status: 503, details: 'fragLoadError', urlKind: 'segment', fatal: true, count: 1 });
     expect(args.onReload).not.toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-refusal-cleared' }));
     expect(args.onExhausted).not.toHaveBeenCalled();
+  });
+});
+
+describe('source settlement retains its initiating recovery identity', () => {
+  it.each([
+    ['initial check', 'pause'], ['initial check', 'seek'], ['initial check', 'manual-quality'],
+    ['waiting poll', 'pause'], ['waiting poll', 'seek'], ['waiting poll', 'manual-quality'],
+    ['before waiting poll', 'pause'], ['before waiting poll', 'seek'], ['before waiting poll', 'manual-quality'],
+  ])('rejects a readable %s superseded by accepted %s without spending an action', async (stage, intent) => {
+    const identity = createRecoveryIdentity({ ownerId: 'source-race-owner' });
+    const el = makeFakeEl({ currentTime: 183, duration: 420, playbackRate: 1, readyState: 4, paused: false });
+    const play = vi.fn();
+    el.play = play;
+    let settle;
+    const pending = new Promise(resolve => { settle = resolve; });
+    if (stage !== 'initial check') {
+      api.DaylightAPI.mockResolvedValueOnce(answer('unreadable')).mockReturnValue(pending);
+    } else api.DaylightAPI.mockReturnValue(pending);
+    const args = baseArgs(el, { seconds: 183, recoveryIdentity: identity,
+      onReload: vi.fn(({ resumePlayback }) => { if (resumePlayback) el.play(); }),
+      playbackSessionKey: recoverySessionKey(identity.getTarget()) });
+    const hook = renderHook(props => useMediaResilience(props), { initialProps: args });
+    act(() => el._fire('playing'));
+    if (stage === 'initial check') await refuse(el);
+    else await fireHls(el, { status: 503, details: 'fragLoadError', urlKind: 'segment', fatal: true, count: 1 });
+    if (stage === 'waiting poll') {
+      expect(args.onSourceWait).toHaveBeenCalledWith(expect.objectContaining({ waiting: true }));
+      await advance(2000);
+      expect(api.DaylightAPI).toHaveBeenCalledTimes(2);
+    } else expect(api.DaylightAPI).toHaveBeenCalledTimes(1);
+    act(() => {
+      identity.acceptUserIntent(intent);
+      if (intent === 'pause') el.paused = true;
+      if (intent === 'seek') el.currentTime = 240;
+      hook.rerender({ ...args, isPaused: intent === 'pause', isSeeking: intent === 'seek' });
+    });
+    if (stage === 'before waiting poll') { await advance(2000); expect(api.DaylightAPI).toHaveBeenCalledTimes(2); }
+    await act(async () => { settle(answer('readable')); });
+    await flush();
+    await advance(4000);
+    expect(args.onReload).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+    expect(args.onExhausted).not.toHaveBeenCalled();
+    expect(getRecoveryLedger().snapshot(args.playbackSessionKey)).toBeNull();
+  });
+
+  it('recovers a readable wait when its initiating identity and intent remain current', async () => {
+    const identity = createRecoveryIdentity({ ownerId: 'current-source-owner' });
+    const expected = identity.getTarget();
+    const el = makeFakeEl({ currentTime: 183, duration: 420, paused: false });
+    const args = baseArgs(el, { seconds: 183, recoveryIdentity: identity, playbackSessionKey: recoverySessionKey(expected) });
+    api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+    renderHook(() => useMediaResilience(args));
+    await fireHls(el, { status: 503 });
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
+    await advance(2000);
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-restored', resumePlayback: true, target: expected }));
+    expect(getRecoveryLedger().snapshot(args.playbackSessionKey)).toMatchObject({ count: 1, rollingCount: 1 });
+  });
+
+  it('retains the initiating target for a cooldown-deferred source restore', async () => {
+    const identity = createRecoveryIdentity({ ownerId: 'deferred-source-owner' });
+    const el = makeFakeEl({ currentTime: 183, duration: 420, paused: false });
+    const args = baseArgs(el, { seconds: 183, recoveryIdentity: identity,
+      playbackSessionKey: recoverySessionKey(identity.getTarget()) });
+    const ledger = getRecoveryLedger();
+    const previous = ledger.reserveAction({ sessionKey: args.playbackSessionKey, actionId: 'prior', actor: 'jolt', reason: 'stall' });
+    ledger.completeAction({ sessionKey: args.playbackSessionKey, actionId: previous.actionId });
+    api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+    const hook = renderHook(props => useMediaResilience(props), { initialProps: args });
+    await fireHls(el, { status: 503 });
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
+    await advance(2000);
+    expect(args.onReload).not.toHaveBeenCalled();
+    act(() => { identity.acceptUserIntent('pause'); el.paused = true; hook.rerender({ ...args, isPaused: true }); });
+    await advance(4000);
+    expect(args.onReload).not.toHaveBeenCalled();
+    expect(ledger.snapshot(args.playbackSessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: null });
   });
 });
 

@@ -6,3 +6,6 @@ export { setNaturalEndPolicy } from "./player/lib/naturalEndPolicy.js";
 export { playbackLog, configurePlaybackLogger, default as Default_playbackLogger_js } from "./player/lib/playbackLogger.js";
 export { resolveContentId, durationFromSeconds } from "./player/utils/mediaIdentity.js";
 export { guid } from "./player/lib/helpers.js";
+export { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from "./player/lib/recovery/recoveryIdentity.js";
+export { getRecoveryLedger } from "./player/lib/recoveryLedger.js";
+export { toContentSeconds, readContentPosition } from "./player/lib/recovery/contentTimeline.js";

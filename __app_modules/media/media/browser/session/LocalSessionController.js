@@ -1,3 +1,4 @@
+import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget, getRecoveryLedger, readContentPosition } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 // frontend/src/modules/Media/session/LocalSessionController.js
 // The local half of the controller symmetry seam (controllerShape.js): a thin
 // facade composing the session store, the pure queue/advancement modules, the
@@ -43,6 +44,7 @@ function itemFromQueueEntry(entry) {
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
     ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
+    ...(entry.contentTimeline ? { contentTimeline: { ...entry.contentTimeline } } : {}),
     ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
     // PLAY.4a: an explicitly chosen start reaches the Player (see toQueueItem).
     ...(Number.isFinite(entry.seconds) ? { seconds: entry.seconds } : {}),
@@ -57,6 +59,7 @@ function observedItemPatch(observation = {}) {
   for (const key of ['format', 'mediaType', 'title', 'thumbnail']) {
     if (source[key] != null) patch[key] = source[key];
   }
+  if (source.contentTimeline && typeof source.contentTimeline === 'object') patch.contentTimeline = source.contentTimeline;
   if (typeof source.isLive === 'boolean') patch.isLive = source.isLive;
   if (source.isLive === true) patch.duration = null;
   else {
@@ -133,6 +136,18 @@ export function createLocalSessionController({
     meta: { ...restored.meta, revision: canonicalRevision },
   };
   const store = createSessionStore(initial);
+  const recoveryIdentity = createRecoveryIdentity({ ownerId: ownerInstanceId });
+  let recoveryKey = recoverySessionKey(recoveryIdentity.getTarget());
+  recoveryIdentity.subscribe(target => {
+    const nextKey = recoverySessionKey(target);
+    if (nextKey !== recoveryKey) getRecoveryLedger().releaseSession(recoveryKey);
+    recoveryKey = nextKey;
+  });
+  store.onTransition((_prev, _next, action) => {
+    if (action?.type === 'LOAD_ITEM' || (action?.type === 'ADOPT_SNAPSHOT'
+      && !['manual-quality', 'recovery-quality'].includes(action.reason))) recoveryIdentity.beginVisit();
+    if (['STOP', 'RESET'].includes(action?.type)) recoveryIdentity.acceptUserIntent('stop');
+  });
 
   // ---- Restore hold (RELY.7a) ----
   let restoreHeld = !!initial.currentItem && !!persistedSnapshot;
@@ -199,6 +214,23 @@ export function createLocalSessionController({
   let sourceWaitTimer = null;
   let lastSourceSkipAt = null;
   let holdContentId = null;
+  let heldFailureTarget = null;
+  const isFiniteVideo = () => {
+    const item = store.getSnapshot().currentItem;
+    return (item?.mediaType === 'video' || ['video', 'hls_video', 'dash_video'].includes(item?.format))
+      && !item?.isLive && !item?.continuous && store.getSnapshot().config.repeat !== 'all';
+  };
+  const holdFailure = ({ reason = 'playback-failed', attempts = 0, target, retryAfterMs = 0 } = {}) => {
+    const currentTarget = recoveryIdentity.getTarget();
+    if (target && !sameRecoveryTarget(target, currentTarget)) return false;
+    const item = store.getSnapshot().currentItem;
+    if (!item || !isFiniteVideo()) return false;
+    clearSourceWaitTimer();
+    heldFailureTarget = currentTarget;
+    mediaLog.playbackProblem({ sessionId: store.getSnapshot().sessionId, kind: 'waiting', reason, contentId: item.contentId, replacementContentId: null });
+    setProblem({ kind: 'waiting', reason, attempts, target: currentTarget, retryAfterMs, item: problemItem(item), replacement: null, at: Date.now() });
+    return true;
+  };
   const clearSourceWaitTimer = () => {
     if (sourceWaitTimer) { clearTimeout(sourceWaitTimer); sourceWaitTimer = null; }
   };
@@ -211,6 +243,7 @@ export function createLocalSessionController({
   store.onTransition((_prev, _next, action) => {
     if (['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT', 'RESET', 'STOP'].includes(action?.type)) {
       clearSourceWaitTimer();
+      heldFailureTarget = null;
       const current = store.getSnapshot().currentItem;
       if (holdContentId && current?.contentId !== holdContentId) holdContentId = null;
     }
@@ -497,7 +530,10 @@ export function createLocalSessionController({
       && nativeBinding.resolvedContentId != null
       && String(currentEntry?.contentId ?? '') === nativeBinding.resolvedContentId
       && nativeBinding.ownerPlaybackRevision === playbackRevision;
-    const nativePosition = nativeMatchesCurrent ? native.currentTime : null;
+    const nativePosition = nativeMatchesCurrent
+      ? typeof player.getContentTime === 'function' ? player.getContentTime()
+        : readContentPosition(native.currentTime, current.currentItem?.contentTimeline ?? currentEntry?.contentTimeline)
+      : null;
     const hotPosition = Number.isFinite(nativePosition) && nativePosition >= 0
       ? nativePosition
       : position.get().seconds;
@@ -624,7 +660,7 @@ export function createLocalSessionController({
     store.dispatch({ type: 'SET_CONFIG', patch });
   };
 
-  const adopt = (incoming, { autoplay = true, preserveQueuePolicy = false } = {}) => {
+  const adopt = (incoming, { autoplay = true, preserveQueuePolicy = false, reason } = {}) => {
     const prepared = preparePlaybackOwnerAdoption(incoming);
     if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
     const adopted = prepared.snapshot;
@@ -637,7 +673,7 @@ export function createLocalSessionController({
     adopted.state = adopted.queue.currentIndex >= 0 && adopted.currentItem
       ? (autoplay ? 'loading' : 'paused')
       : (adopted.queue.items.length > 0 ? 'ready' : 'idle');
-    store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted, autoplay });
+    store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted, autoplay, reason });
     position.set(adopted.position);
     // The previous node may still be mounted for the same content/entry. Its
     // facts belong to the pre-adoption owner revision until PlayerBridge
@@ -812,9 +848,18 @@ export function createLocalSessionController({
     },
 
     transport: {
+      retry: (expectedTarget) => {
+        const current = recoveryIdentity.getTarget();
+        if (expectedTarget && (expectedTarget.ownerId !== current.ownerId || expectedTarget.visitId !== current.visitId)) return { ok: false, code: 'PLAYBACK_CHANGED' };
+        beginAction();
+        stampOrigin(pendingOrigin);
+        mediaLog.transportCommand({ action: 'retry', target: 'local' });
+        return player.retryMediaResilience?.(expectedTarget) ?? { ok: false, code: 'PLAYER_NOT_READY' };
+      },
       play: () => {
         beginAction();
         const opOrigin = pendingOrigin;
+        recoveryIdentity.acceptUserIntent('play');
         mediaLog.transportCommand({ action: 'play', target: 'local' });
         controls?.noteCommand('play');
         controls?.notePlayedOn();
@@ -845,6 +890,7 @@ export function createLocalSessionController({
       pause: () => {
         beginAction();
         const opOrigin = pendingOrigin;
+        recoveryIdentity.acceptUserIntent('pause');
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
         controls?.noteCommand('pause');
         // Flush the hot-tier position durably — pausing is the moment the
@@ -868,6 +914,7 @@ export function createLocalSessionController({
       seekAbs: (seconds) => {
         beginAction();
         const opOrigin = pendingOrigin;
+        recoveryIdentity.acceptUserIntent('seek');
         mediaLog.transportCommand({ action: 'seekAbs', value: seconds, target: 'local' });
         controls?.noteCommand('seek');
         if (restoreHeld) {
@@ -993,13 +1040,18 @@ export function createLocalSessionController({
 
     quality: {
       setOverrides: (request) => {
+        if (request.reason === 'recovery-quality' && !sameRecoveryTarget(request.target, recoveryIdentity.getTarget())) return { ok: false, code: 'PLAYBACK_CHANGED' };
         const current = { ...snap(), position: capture().snapshot.position };
         const result = playbackQualityChange(current, request);
         if (!result.ok) return result;
         beginAction();
         mediaLog.qualityChanged?.({ target: 'local', contentId: current.currentItem.contentId,
           quality: normalizePlaybackQuality(request.quality), position: current.position, paused: current.state === 'paused' });
-        return adopt(result.snapshot, { autoplay: current.state !== 'paused', preserveQueuePolicy: true });
+        const reason = request.reason === 'recovery-quality' ? 'recovery-quality' : 'manual-quality';
+        if (reason === 'manual-quality') recoveryIdentity.acceptUserIntent(reason);
+        const target = recoveryIdentity.beginRenderer(reason === 'recovery-quality' ? request.target : recoveryIdentity.getTarget());
+        if (!target) return { ok: false, code: 'PLAYBACK_CHANGED' };
+        return adopt(result.snapshot, { autoplay: current.state !== 'paused', preserveQueuePolicy: true, reason });
       },
     },
 
@@ -1101,6 +1153,11 @@ export function createLocalSessionController({
       };
     },
 
+    recoveryIdentity,
+    disposeRecovery() {
+      getRecoveryLedger().releaseSession(recoveryKey);
+      recoveryIdentity.dispose();
+    },
     // ---- PlayerBridge surface (not part of the controller shape) ----
     setPlayerHandle(handle) {
       player = {
@@ -1142,16 +1199,22 @@ export function createLocalSessionController({
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       store.dispatch({ type: 'PLAYER_STATE', playerState: state, __playerDriven: true });
       // Playback is moving again: the handle's problem sign clears.
-      if (state === 'playing') clearProblem('playing');
+      if (state === 'playing') { heldFailureTarget = null; holdContentId = null; clearProblem('playing'); }
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       // Holding on a refused file during a library outage: its clear is not an end.
+      if (heldFailureTarget?.visitId === recoveryIdentity.getTarget().visitId) return;
       if (holdContentId && snap().currentItem?.contentId === holdContentId) return;
       if (consultNaturalEnd()) return;
       advance('item-ended', { playerDriven: true });
     },
+    onPlayerHeld: (event) => holdFailure(event),
     onPlayerError: ({ message, code } = {}) => {
+      if (holdFailure({ reason: code ?? 'playback-failed' })) {
+        mediaLog.playbackError({ sessionId: snap().sessionId, contentId: snap().currentItem.contentId, error: message ?? 'playback held', code });
+        return;
+      }
       if (code === 'source-unavailable-gave-up') {
         clearSourceWaitTimer();
         const failedItem = snap().currentItem;
@@ -1209,6 +1272,7 @@ export function createLocalSessionController({
     onPlayerStalled: ({ stalledMs } = {}) => {
       const current = snap().currentItem;
       if (!current) return;
+      if (holdFailure({ reason: 'stalled' })) return;
       mediaLog.playbackStallAutoAdvanced({
         sessionId: snap().sessionId,
         contentId: current.contentId,

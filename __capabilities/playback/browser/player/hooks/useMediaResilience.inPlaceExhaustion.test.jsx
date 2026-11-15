@@ -32,9 +32,9 @@ describe('useMediaResilience: in-place recovery that never produces a frame', ()
     renderHook(() => useMediaResilience(args));
     // Each deadline is 15s; the ledger cooldown grows (4s x3^n) but is shorter
     // than the 15s re-arm until late attempts, so step generously.
-    for (let i = 0; i < 40; i += 1) {
-      fakeNow += 20_000;
-      act(() => { vi.advanceTimersByTime(20_000); });
+    for (let i = 0; i < 240; i += 1) {
+      fakeNow += 500;
+      act(() => { vi.advanceTimersByTime(500); });
     }
     expect(args.onReload).toHaveBeenCalledTimes(RECOVERY_MAX_ATTEMPTS);
     expect(args.onExhausted).toHaveBeenCalledTimes(1);

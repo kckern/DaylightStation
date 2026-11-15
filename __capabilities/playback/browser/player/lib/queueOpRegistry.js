@@ -15,6 +15,9 @@ function logger() {
  * is never a safe transport. Registrations form a mount-order stack; only the
  * newest live Player receives a command, and removing it restores the prior
  * owner without letting a stale unregister clobber a newer one.
+ * An optional payload.onResult observes the handler's settled return value;
+ * dispatch's boolean still reports only owner presence. Retry uses the result
+ * to acknowledge guarded admission instead of optimistic command receipt.
  */
 export function createPlayerQueueOpRegistry() {
   let nextToken = 0;
@@ -37,7 +40,9 @@ export function createPlayerQueueOpRegistry() {
       if (!current) return false;
       try {
         const result = current.handler(payload);
-        if (result && typeof result.catch === 'function') {
+        if (typeof payload?.onResult === 'function') {
+          Promise.resolve(result).then(payload.onResult, error => payload.onResult({ ok: false, code: 'PLAYBACK_OWNER_ERROR', error: error?.message ?? String(error) }));
+        } else if (result && typeof result.catch === 'function') {
           result.catch((err) => logger().warn('player.queue-op.handler-failed', {
             op: payload?.op,
             contentId: payload?.contentId,
@@ -45,6 +50,7 @@ export function createPlayerQueueOpRegistry() {
           }));
         }
       } catch (err) {
+        payload?.onResult?.({ ok: false, code: 'PLAYBACK_OWNER_ERROR', error: err?.message ?? String(err) });
         logger().warn('player.queue-op.handler-failed', {
           op: payload?.op,
           contentId: payload?.contentId,

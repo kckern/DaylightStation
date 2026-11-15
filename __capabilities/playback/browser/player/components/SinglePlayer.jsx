@@ -1,3 +1,4 @@
+import { createContentTimeline } from '../lib/recovery/contentTimeline.js';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import AppContainer from '../../../../../frontend/src/modules/AppContainer/AppContainer.jsx';
@@ -20,15 +21,19 @@ export function SinglePlayer(props = {}) {
   const {
     onResolvedMeta,
     onPlaybackMetrics,
+    onDeliveryObservation,
     onRegisterMediaAccess,
     onRegisterResilienceBridge,
     onRequestRecovery,
+    onTerminalCandidate,
+    recoveryHeld = false,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
     remountDiagnostics,
     // Player's itemSessionKey — the recoveryLedger session scope. Distinct from
     // the local playbackSessionKey below (watchedDuration storage key).
     resilienceSessionKey = null,
+    recoveryIdentity = null,
     wrapWithContainer = true,
     suppressLocalOverlay = false,
     plexClientSession = null,
@@ -39,7 +44,22 @@ export function SinglePlayer(props = {}) {
   } = props;
   const resolveTracksRef = useRef(resolveTracks);
   resolveTracksRef.current = resolveTracks;
-  const withTracks = (info) => (typeof resolveTracksRef.current === 'function' ? resolveTracksRef.current(info) ?? info : info);
+  const withTracks = (info) => {
+    // The owner-authored clip survives a fresh transport descriptor, which
+    // describes the full item when restarting the same content.
+    const resolvedInfo = play?.segment ? { ...info, segment: play.segment } : info;
+    const descriptor = resolvedInfo.contentTimeline;
+    const isVideo = ['video', 'hls_video', 'dash_video'].includes(info.format)
+      || ['video', 'hls_video', 'dash_video'].includes(info.mediaType);
+    const normalized = isVideo ? { ...resolvedInfo, contentTimeline: createContentTimeline({
+      catalogDurationSeconds: descriptor ? descriptor.expectedEndSeconds : info.duration,
+      rendererStartSeconds: descriptor?.rendererStartSeconds,
+      contentStartSeconds: descriptor?.contentStartSeconds,
+      clipStartSeconds: resolvedInfo.segment?.start ?? descriptor?.clipStartSeconds,
+      clipEndSeconds: resolvedInfo.segment?.end ?? descriptor?.clipEndSeconds,
+    }) } : resolvedInfo;
+    return typeof resolveTracksRef.current === 'function' ? resolveTracksRef.current(normalized) ?? normalized : normalized;
+  };
   const {
     contentId: contentIdProp,
     plex,
@@ -171,7 +191,7 @@ export function SinglePlayer(props = {}) {
     // This bridges useCommonMediaController's stall state to useMediaResilience
     if (typeof onPlaybackMetrics === 'function') {
       onPlaybackMetrics({
-        seconds: payload?.currentTime,
+        seconds: Object.prototype.hasOwnProperty.call(payload, 'contentSeconds') ? payload.contentSeconds : payload?.currentTime,
         isPaused: payload?.paused,
         isSeeking: payload?.isSeeking ?? false,
         stalled: payload?.stalled,
@@ -275,7 +295,7 @@ export function SinglePlayer(props = {}) {
       if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
         directInfo.seconds = play.resumePosition;
       }
-      setMediaInfo(directInfo);
+      setMediaInfo(withTracks(directInfo));
       setIsReady(true);
       return;
     }
@@ -418,13 +438,17 @@ export function SinglePlayer(props = {}) {
 
   const resilienceBridge = useMemo(() => ({
     onPlaybackMetrics,
+    onDeliveryObservation,
     onRegisterMediaAccess,
+    onTerminalCandidate,
+    held: recoveryHeld,
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics,
     requestRecovery: typeof onRequestRecovery === 'function' ? onRequestRecovery : null,
     // Ledger session scope for renderer-level recovery actors (dash-error).
     playbackSessionKey: resilienceSessionKey,
+    recoveryIdentity,
     // New: accessor registration for children
     registerAccessors: ({ getMediaEl, getContainerEl }) => {
       mediaAccessorsRef.current = {
@@ -435,7 +459,7 @@ export function SinglePlayer(props = {}) {
     // New: accessors that delegate to registered functions
     getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
     getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, resilienceSessionKey]);
+  }), [onPlaybackMetrics, onDeliveryObservation, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, onTerminalCandidate, recoveryHeld, resilienceSessionKey, recoveryIdentity]);
 
   // Register the resilienceBridge with the parent Player component
   useEffect(() => {
@@ -503,6 +527,7 @@ export function SinglePlayer(props = {}) {
           onMediaRef={onMediaRef}
           keyboardOverrides={play?.keyboardOverrides}
           onController={play?.onController}
+          onDeliveryObservation={onDeliveryObservation}
           resilienceBridge={resilienceBridge}
           maxVideoBitrate={mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null}
           maxResolution={mediaInfo?.maxResolution ?? play?.maxResolution ?? null}
@@ -616,6 +641,7 @@ SinglePlayer.propTypes = {
   wrapWithContainer: PropTypes.bool,
   onResolvedMeta: PropTypes.func,
   onPlaybackMetrics: PropTypes.func,
+  onDeliveryObservation: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
   onRegisterResilienceBridge: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,

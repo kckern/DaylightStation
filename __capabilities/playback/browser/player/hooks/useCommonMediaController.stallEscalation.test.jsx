@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
 import { useCommonMediaController } from './useCommonMediaController.js';
+import { createRecoveryIdentity } from '../lib/recovery/recoveryIdentity.js';
 import * as Logger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 import { registerPlaybackLinkProbe } from '../lib/linkProbe.js';
@@ -57,11 +58,12 @@ function makeFakeVideo({ currentTime = 100, duration = 1000 } = {}) {
   return el;
 }
 
-function Harness({ ctrlRef, apiRef, video, recoverySessionKey, onProgress = null }) {
+function Harness({ ctrlRef, apiRef, video, recoverySessionKey, recoveryIdentity, onProgress = null }) {
   const api = useCommonMediaController({
     meta: { assetId: 'plex:1', title: 'T' },
     isVideo: true,
     recoverySessionKey,
+    recoveryIdentity,
     onProgress,
     onController: (c) => { ctrlRef.current = c; }
   });
@@ -75,7 +77,6 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
   let debugEvents;
   let ledger;
   let requestSpy;
-  let successSpy;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -95,10 +96,24 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     // advanced timers.
     ledger = createRecoveryLedger({ cooldownMs: TEST_COOLDOWN_MS });
     requestSpy = vi.spyOn(ledger, 'request');
-    successSpy = vi.spyOn(ledger, 'recordSuccess');
     _setSharedLedgerForTests(ledger);
   });
 
+  it('keyboard pause and click seek invalidate recovery before mutating native playback', () => {
+    const identity = createRecoveryIdentity({ ownerId: 'keyboard-owner' });
+    const ctrlRef = { current: null }, apiRef = { current: null };
+    const video = makeFakeVideo({ currentTime: 10 });
+    const before = identity.getTarget();
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoveryIdentity={identity} />);
+    act(() => video.fire('durationchange'));
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+    expect(video.paused).toBe(true);
+    expect(identity.getTarget().intentRevision).toBe(before.intentRevision + 1);
+    const beforeSeek = identity.getTarget();
+    act(() => apiRef.current.handleProgressClick({ currentTarget: { getBoundingClientRect: () => ({ left: 0, width: 100 }) }, clientX: 50 }));
+    expect(video.currentTime).toBe(500);
+    expect(identity.getTarget().intentRevision).toBe(beforeSeek.intentRevision + 1);
+  });
   it('reports healthy advancing playback as playing after a buffering episode', () => {
     const ctrlRef = { current: null };
     const apiRef = { current: null };
@@ -224,9 +239,9 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
     expect(strategiesFired()).toEqual(['nudge']);
 
-    // Progress resumes (clears the episode AND the ledger via recordSuccess)…
+    // Progress completes the nudge while retaining incident debit and cooldown.
     // then another actor (e.g. a resilience jolt rung) records an attempt,
-    // starting a fresh cooldown window.
+    // which cannot bypass the retained cooldown.
     resumeThenRestall(video, { advanceTo: 102 });
     ledger.request({ sessionKey: SESSION_KEY, mountId: 'test-jolt', actor: 'jolt', reason: 'test-prior-recovery' });
     const playCallsBefore = video.play.mock.calls.length;
@@ -243,7 +258,7 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     expect(denied[0][1]).toMatchObject({ strategy: 'nudge', deniedBy: 'cooldown' });
   });
 
-  it('duration-lost escalates to softReinit through the ledger with bypassCooldown (cannot be starved by a jolt cooldown)', () => {
+  it('duration-lost cannot overlap another actor reservation even with bypassCooldown', () => {
     const { video } = renderStalled();
 
     // A prior recovery (another actor) has an active cooldown window.
@@ -252,8 +267,8 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     act(() => { video.duration = NaN; });
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
 
-    expect(events.filter(([e]) => e === 'playback.duration-lost').length).toBe(1);
-    expect(strategiesFired()).toEqual(['softReinit']);
+    expect(events.filter(([e]) => e === 'playback.duration-lost').length).toBe(0);
+    expect(strategiesFired()).toEqual([]);
     const reinitRequests = requestSpy.mock.calls
       .map(([arg]) => arg)
       .filter((arg) => arg.actor === 'controller-softreinit');
@@ -266,7 +281,7 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
       })
     ]);
     // The softReinit attempt still counts toward the session cap (visibility).
-    expect(ledger.snapshot(SESSION_KEY)?.count).toBe(2);
+    expect(ledger.snapshot(SESSION_KEY)).toMatchObject({ count: 1, rollingCount: 1 });
   });
 
   // 2026-10-28: on a 0.3x link a reload's moov fetch outlasted HARD_STALL_MS;
@@ -304,14 +319,14 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     } finally { off(); }
   });
 
-  it('resolves only on genuine forward advance and clears the ledger via recordSuccess', () => {
+  it('genuine forward advance completes its own action while retaining incident history', () => {
     const { ctrlRef, apiRef, video } = renderStalled();
 
     // Non-advancing timeupdate (nudge / buffer poke) must NOT resolve.
     act(() => { video._ct = 100.5; video.fire('timeupdate'); });
     expect(events.filter(([e]) => e === 'playback.recovery-resolved').length).toBe(0);
     expect(ctrlRef.current.readStallState().status).toBe('stalled');
-    expect(successSpy).not.toHaveBeenCalled();
+    expect(ledger.snapshot(SESSION_KEY)?.inFlightActionId ?? null).toBeNull();
 
     // Escalate past the hard threshold so recovery state is genuinely
     // non-default before the resume: one nudge fires.
@@ -319,25 +334,22 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     expect(strategiesFired()).toEqual(['nudge']);
     expect(ctrlRef.current.readStallState().strategy).toBe('nudge');
 
-    // Genuine forward advance resolves exactly once, resets the snapshot to
-    // monitoring, and clears the shared ledger session. (The nudge's pause()
+    // Genuine forward advance resolves exactly once and completes its own action
+    // while retaining shared incident/rolling history. (The nudge's pause()
     // left the fake paused and its play() mock never flips it back, so mark
     // the element playing again — real resumed playback is not paused.)
     act(() => { video.paused = false; video._ct = 102.0; video.fire('timeupdate'); });
     expect(events.filter(([e]) => e === 'playback.recovery-resolved').length).toBe(1);
-    expect(successSpy).toHaveBeenCalledWith(SESSION_KEY);
-    expect(ledger.snapshot(SESSION_KEY)?.count).toBe(0);
+    expect(ledger.snapshot(SESSION_KEY)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: null });
     const snap = ctrlRef.current.readStallState();
     expect(snap.status).toBe('monitoring');
     expect(apiRef.current.isStalled).toBe(false);
 
-    // markProgress re-armed detection AND recordSuccess cleared the cooldown:
-    // a second stall episode after the resume is detected fresh and fires a
-    // second nudge, proving the per-episode gate restarts.
+    // A fresh stall is detected, but the retained shared cooldown prevents another action.
     act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + STALL_CHECK_INTERVAL_MS + 300); });
     expect(ctrlRef.current.readStallState().status).toBe('stalled');
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
-    expect(strategiesFired()).toEqual(['nudge', 'nudge']);
+    expect(strategiesFired()).toEqual(['nudge']);
     expect(nudgeRequests().length).toBe(2);
   });
 

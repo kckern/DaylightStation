@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SinglePlayer } from './SinglePlayer.jsx';
 import { fetchMediaInfo } from '../lib/api.js';
@@ -85,4 +85,24 @@ describe('SinglePlayer transport descriptor', () => {
     expect(await screen.findByTestId('video-transport')).toHaveTextContent('video|0-15');
     expect(fetchMediaInfo).not.toHaveBeenCalled();
   });
+});
+
+
+it('keeps excluded audio metadata on its existing native timeline', async () => {
+  fetchMediaInfo.mockResolvedValue({ id: 'files:audio', contentId: 'files:audio', title: 'Audio',
+    mediaUrl: '/audio.mp3', mediaType: 'audio', format: 'audio', duration: 300 });
+  const onResolvedMeta = vi.fn();
+  render(<SinglePlayer contentId="files:audio" onResolvedMeta={onResolvedMeta} clear={() => {}} advance={() => {}} />);
+  await waitFor(() => expect(onResolvedMeta).toHaveBeenCalled());
+  expect(onResolvedMeta.mock.calls.at(-1)[0]).not.toHaveProperty('contentTimeline');
+});
+
+it('retains the caller clip window when an owner restart refetch returns the full item', async () => {
+  fetchMediaInfo.mockResolvedValue({ id: 'files:clip', contentId: 'files:clip', title: 'Clip',
+    mediaUrl: '/clip.mp4', mediaType: 'video', format: 'video', duration: 100 });
+  render(<SinglePlayer contentId="files:clip" mediaUrl="/clip.mp4" format="video" mediaType="video"
+    segment={{ start: 10, end: 20 }} remountDiagnostics={{ remountClass: 'owner-operation',
+      rendererOperation: { operationId: 'restart-clip', expectedContentId: 'files:clip', targetSeconds: 10, autoplay: true } }}
+    clear={() => {}} advance={() => {}} />);
+  expect(await screen.findByTestId('video-transport')).toHaveTextContent('video|10-20');
 });

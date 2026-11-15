@@ -245,3 +245,57 @@ describe('Player scheduled remount vs. playback success', () => {
       .toEqual(['stalling', 'playing', 'paused']);
   });
 });
+
+it('retains owner visit and ledger count across decoder remount and pause intent', async () => {
+  const ref = { current: null };
+  render(<Player ref={ref} play={{ contentId: 'plex:620561' }} />);
+  await waitFor(() => expect(ref.current).not.toBeNull());
+  const identity = ref.current.getRecoveryIdentity();
+  const before = identity.getTarget();
+  const { getRecoveryLedger } = await import('./lib/recoveryLedger.js');
+  const ledger = getRecoveryLedger();
+  const key = `${before.ownerId}:${before.visitId}`;
+  const action = ledger.reserveAction({ sessionKey: key, actor: 'test', actionId: 'test-remount', reason: 'stall' });
+  expect(action.allowed).toBe(true);
+  act(() => resilience.onReload({ reason: 'playback-stalled', actionId: action.actionId, target: before }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(identity.getTarget().visitId).toBe(before.visitId);
+  expect(identity.getTarget().rendererGeneration).toBeGreaterThan(before.rendererGeneration);
+  const beforePause = identity.getTarget();
+  act(() => ref.current.pause());
+  expect(identity.getTarget().intentRevision).toBe(beforePause.intentRevision + 1);
+  expect(ledger.snapshot(key).count).toBe(1);
+});
+
+it('retains a live identity after StrictMode effect replay', async () => {
+  const { StrictMode } = await import('react');
+  const ref = { current: null };
+  render(<StrictMode><Player ref={ref} play={{ contentId: 'plex:620561' }} /></StrictMode>);
+  await waitFor(() => expect(ref.current).not.toBeNull());
+  const identity = ref.current.getRecoveryIdentity();
+  const before = identity.getTarget();
+  let claimed;
+  act(() => { claimed = identity.beginRenderer(before); });
+  expect(claimed).toMatchObject({ ownerId: before.ownerId, visitId: before.visitId });
+  expect(claimed.rendererGeneration).toBeGreaterThan(before.rendererGeneration);
+});
+
+it('cancels a scheduled decoder action after accepted pause without renewing its budget', async () => {
+  const ref = { current: null };
+  render(<Player ref={ref} play={{ contentId: 'plex:620561' }} />);
+  await waitFor(() => expect(ref.current).not.toBeNull());
+  act(() => resilience.onReload({ reason: 'playback-stalled' }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  const identity = ref.current.getRecoveryIdentity();
+  const before = identity.getTarget();
+  const { getRecoveryLedger } = await import('./lib/recoveryLedger.js');
+  const ledger = getRecoveryLedger(); const key = `${before.ownerId}:${before.visitId}`;
+  const gate = ledger.reserveAction({ sessionKey: key, actionId: 'scheduled', actor: 'test', reason: 'stall' });
+  expect(gate.allowed).toBe(true);
+  act(() => resilience.onReload({ reason: 'playback-stalled', target: before, actionId: gate.actionId }));
+  act(() => ref.current.pause());
+  const mountsBefore = mounts.length;
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(mounts).toHaveLength(mountsBefore);
+  expect(ledger.snapshot(key)).toMatchObject({ count: 1, inFlightActionId: null });
+});

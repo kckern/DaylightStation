@@ -3,11 +3,16 @@
 // controller as a failure rather than as a normal end.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, renderHook, act } from '@testing-library/react';
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { createLocalSessionController } from "./LocalSessionController.js";
+import { useMediaResilience } from '../../../../../__capabilities/playback/browser/player/hooks/useMediaResilience.js';
+import { makeFakeEl } from '../../../../../__capabilities/playback/browser/player/hooks/__testHelpers/fakeMediaEl.js';
+import { applyCommandEnvelope } from '../externalControl/commandHandler.js';
 import mediaLog from "../logging/mediaLog.js";
+
+vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockResolvedValue({ state: 'unreadable', steps: [] }) }));
 
 vi.mock("../logging/mediaLog.js", () => {
   const stub = new Proxy({}, { get: (t, k) => (t[k] ??= vi.fn()) });
@@ -147,5 +152,112 @@ describe('PlayerBridge recovery', () => {
     act(() => { latestProps.onProgress({ currentTime: 590, paused: false }); });
     act(() => { latestProps.clear(); });
     expect(controller.getSnapshot().currentItem.contentId).toBe('plex:3');
+  });
+});
+
+const movieSnapshot = () => {
+  const value = structuredClone(restored);
+  value.currentItem.format = 'video';
+  value.queue.items.forEach(item => { item.format = 'video'; });
+  return value;
+};
+
+describe('held movie owner', () => {
+  it('holdsRefusedMovieAfterMediaTimeout through the actual refused-source clock', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: movieSnapshot() });
+      mount(controller);
+      act(() => controller.transport.play());
+      const before = controller.getSnapshot();
+      const target = controller.recoveryIdentity.getTarget();
+      const source = makeFakeEl({ currentTime: 321, duration: 600, paused: false });
+      const hook = renderHook(() => useMediaResilience({
+        meta: { contentId: 'plex:1', mediaType: 'video' }, getMediaEl: () => source,
+        seconds: 321, waitKey: 'movie', playbackSessionKey: 'timeout-test',
+        configOverrides: latestProps.mediaResilienceConfig,
+        onSourceWait: event => latestProps.onResilienceEvent({ kind: event.waiting ? 'source-wait' : 'source-wait-ended', ...event }),
+        onExhausted: event => latestProps.onResilienceEvent({ kind: 'resilience-exhausted', ...event }),
+      }));
+      await act(async () => { source.error = { code: 4, message: '503 Service Unavailable' }; source._fire('error'); });
+      for (let tick = 0; tick < 64; tick++) await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(hook.result.current.overlayProps.isExhausted).toBe(true);
+      const after = controller.getSnapshot();
+      expect(after.currentItem.contentId).toBe(before.currentItem.contentId);
+      expect(after.position).toBe(321);
+      expect(after.queue).toEqual(before.queue);
+      expect(controller.recoveryIdentity.getTarget()).toEqual(target);
+      expect(controller.problems.get()).toMatchObject({ kind: 'waiting', reason: 'source-unavailable-gave-up' });
+      hook.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+  it('does not interpret a held report or subsequent clear as completion', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: movieSnapshot() });
+    mount(controller);
+    act(() => controller.transport.play());
+    const target = controller.recoveryIdentity.getTarget();
+    act(() => latestProps.onResilienceEvent({ kind: 'resilience-held', reason: 'stall', attempts: 3, target, retryAfterMs: 12000 }));
+    act(() => latestProps.clear());
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:1');
+    expect(controller.problems.get()).toMatchObject({ kind: 'waiting', reason: 'stall', retryAfterMs: 12000 });
+  });
+  it('remoteRetryPreservesPause and the queue visit through the browser command receiver', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: movieSnapshot() });
+    const retried = [];
+    controller.setPlayerHandle({ retryMediaResilience: () => { retried.push(controller.getSnapshot()); return { ok: true }; } });
+    controller.transport.pause();
+    controller.onPlayerError({ code: 'resilience-exhausted' });
+    const target = controller.recoveryIdentity.getTarget();
+    const response = applyCommandEnvelope(controller, { commandId: 'remote-retry', command: 'transport', params: { action: 'retry' }, origin: { kind: 'device', id: 'phone' }, ts: new Date().toISOString() });
+    expect(response).toMatchObject({ ok: true });
+    expect(retried).toHaveLength(1);
+    expect(retried[0].state).toBe('paused');
+    expect(retried[0].position).toBe(321);
+    expect(controller.recoveryIdentity.getTarget().visitId).toBe(target.visitId);
+    expect(controller.getSnapshot().queue.items).toHaveLength(2);
+  });
+  it('explicitSkipAdvancesOnce after failure, and the retired clear cannot advance again', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: movieSnapshot() });
+    mount(controller); act(() => controller.transport.play());
+    const oldClear = latestProps.clear;
+    act(() => latestProps.onResilienceEvent({ kind: 'resilience-held', reason: 'stall', target: controller.recoveryIdentity.getTarget() }));
+    act(() => controller.transport.skipNext());
+    act(() => oldClear());
+    expect(controller.getSnapshot().queue.currentIndex).toBe(1);
+    expect(controller.getSnapshot().state).not.toBe('ended');
+  });
+  it('existing quality adoption remains usable while held and paused', () => {
+    const controller = createLocalSessionController({ clientId: 'c1', persistedSnapshot: movieSnapshot() });
+    controller.transport.pause();
+    controller.onPlayerError({ code: 'resilience-exhausted' });
+    const target = controller.recoveryIdentity.getTarget();
+    const outcome = controller.quality.setOverrides({ contentId: 'plex:1', quality: { maxResolution: '480' } });
+    expect(outcome).toMatchObject({ ok: true });
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', position: 321, currentItem: { contentId: 'plex:1', maxResolution: '480' } });
+    expect(controller.recoveryIdentity.getTarget().visitId).toBe(target.visitId);
+  });
+});
+
+
+describe('authoritative movie timeline in the Media owner', () => {
+  it('keeps catalog end separate from observed native duration and holds timeline rejection without queue advance', () => {
+    const snapshot = movieSnapshot();
+    const timeline = { expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 0 };
+    snapshot.currentItem.contentTimeline = timeline;
+    snapshot.queue.items[0].contentTimeline = timeline;
+    const controller = createLocalSessionController({ clientId: 'timeline-owner', persistedSnapshot: snapshot });
+    mount(controller);
+    act(() => controller.transport.play());
+    expect(latestProps.play.contentTimeline).toMatchObject({ expectedEndSeconds: 5895 });
+    act(() => latestProps.onProgress({ currentTime: 4370, duration: 4370, paused: false }));
+    expect(controller.getSnapshot().currentItem.contentTimeline.expectedEndSeconds).toBe(5895);
+    act(() => latestProps.onProgress({ currentTime: 50, contentSeconds: 4370, nativeSeconds: 50, duration: 60, paused: false }));
+    expect(controller.position.get().seconds).toBe(4370);
+    const before = controller.getSnapshot();
+    act(() => latestProps.onResilienceEvent({ kind: 'resilience-held', reason: 'early-eof', attempts: 3,
+      target: controller.recoveryIdentity.getTarget(), retryAfterMs: 0 }));
+    expect(controller.getSnapshot().queue).toEqual(before.queue);
+    expect(controller.getSnapshot().position).toBe(4370);
+    expect(controller.problems.get()).toMatchObject({ kind: 'waiting', reason: 'early-eof' });
   });
 });

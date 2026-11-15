@@ -68,7 +68,7 @@ export function useSourceWaitSkipKeys({ active, onSkip, canConsume, rootRef }) {
       if (event.defaultPrevented) return; // someone nearer already took it
       const t = event.target;
       if (t instanceof Element && (
-        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
+        t.closest('button, [role="button"], [role="dialog"]') || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
       )) return;
       if (!focusIsOurs(t, rootRefRef.current?.current ?? null)) return;
       const now = Date.now();

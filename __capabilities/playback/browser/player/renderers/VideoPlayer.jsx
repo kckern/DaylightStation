@@ -1,3 +1,6 @@
+import { createDeliveryObserver } from '../lib/recovery/deliveryObservation.js';
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
+import { getRecoveryLedger } from '../lib/recoveryLedger.js';
 import { useVideoPresentation } from '../../presentation.mjs';
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
@@ -55,6 +58,7 @@ export function VideoPlayer({
   fetchVideoInfo,
   ignoreKeys,
   onProgress,
+  onDeliveryObservation,
   onMediaRef,
   keyboardOverrides,
   onController,
@@ -68,6 +72,7 @@ export function VideoPlayer({
   // native <video> branch but WITHOUT a static src — the attach effect below
   // assigns the source.
   const isHls = media?.mediaType === 'hls_video';
+  const dashRecoveryActionRef = useRef(null);
   const isOwnerOperationMount = resilienceBridge?.remountDiagnostics?.remountClass === 'owner-operation';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const hlsOwnerRef = useRef(null);
@@ -78,6 +83,8 @@ export function VideoPlayer({
   // (captured at first render) can always reach the current bridge instance.
   // The bridge identity changes on every render (Player.jsx passes an inline
   // arrow for onRequestRecovery), so a direct closure capture would go stale.
+  const deliveryCallbackRef = useRef(onDeliveryObservation);
+  deliveryCallbackRef.current = onDeliveryObservation;
   const resilienceBridgeRef = useRef(resilienceBridge);
   useEffect(() => {
     resilienceBridgeRef.current = resilienceBridge;
@@ -136,7 +143,8 @@ export function VideoPlayer({
     getMediaEl,
     getContainerEl,
     beginMountedPlaybackOperation,
-    cancelMountedPlaybackOperation
+    cancelMountedPlaybackOperation,
+    handleTerminalCandidate
   } = useCommonMediaController({
     // ?goto overrides the start position so the transcode mints AT the target
     // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
@@ -144,6 +152,8 @@ export function VideoPlayer({
       : (media.segment ? media.segment.start : media.seconds),
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
+    onTerminalCandidate: resilienceBridge?.onTerminalCandidate,
+    recoveryHeld: resilienceBridge?.held === true,
     onManualEnd: manualAdvance,
     onClear: clear,
     isAudio: false,
@@ -163,6 +173,7 @@ export function VideoPlayer({
     keyboardOverrides,
     onController,
     recoverySessionKey: resilienceBridge?.playbackSessionKey || null,
+    recoveryIdentity: resilienceBridge?.recoveryIdentity || null,
     // Threaded from Player.jsx's forceSinglePlayerRemount diagnostics via
     // resilienceBridge (SinglePlayer.jsx) — not previously forwarded into this
     // call, so a resilience remount always armed autoplay regardless of pause
@@ -178,7 +189,7 @@ export function VideoPlayer({
   useEndOfContentWatchdog({
     getMediaEl,
     sourceKey: media?.mediaKey || media?.src || media?.mediaUrl,
-    onAdvance: advance,
+    onTerminalCandidate: handleTerminalCandidate,
     enabled: !!advance
   });
 
@@ -490,6 +501,9 @@ export function VideoPlayer({
     if (!video || !mediaUrl) return undefined;
     let hls;
     let cancelled = false;
+    const delivery = createDeliveryObserver({ engine: 'hls',
+      identity: resilienceBridgeRef.current?.recoveryIdentity,
+      clock: { wallMs: Date.now(), monotonicMs: performance.now() } });
     const sessions = createPlexHlsSessionCleanup({
       isPlex, origin: window.location.origin, logger: hlsLogger,
     });
@@ -511,10 +525,19 @@ export function VideoPlayer({
       // the saved native resume position. Do not alter live/non-Plex starts.
       hls = new Hls({ enableWorker: true, ...(isPlex ? { startPosition: 0 } : {}) });
       owner.hls = hls;
+      const observeDelivery = (type, data) => {
+        if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;
+        const observation = delivery.observe({ ...data, type });
+        if (observation) deliveryCallbackRef.current?.(observation);
+      };
+      for (const event of [Hls.Events.FRAG_LOADING, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED]) {
+        if (event) hls.on(event, observeDelivery);
+      }
       const refusalTracker = createHlsRefusalTracker();
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (cancelled || hlsOwnerRef.current !== owner || containerRef.current !== video) return;
         if (data?.fatal) owner.fatalType = data.type;
+        observeDelivery(Hls.Events.ERROR, data);
         // Logs details/status/URL kind, and raises a refusal event when a
         // segment/manifest keeps answering 403/404/5xx (a transcode of a file
         // Plex cannot read) — hls.js errors are not MediaErrors.
@@ -535,6 +558,7 @@ export function VideoPlayer({
     }).catch((e) => hlsLogger.error('video.hls.load_failed', { error: e?.message }));
     return () => {
       cancelled = true;
+      delivery.dispose();
       owner.restoreCleanup?.();
       if (hlsOwnerRef.current === owner) hlsOwnerRef.current = null;
       try { if (hls) hls.destroy(); }
@@ -572,6 +596,12 @@ export function VideoPlayer({
     // than when the component first mounted — which is the interval that matters,
     // because each generation gets its own dash.js MediaPlayer.
     const generationStartedAt = Date.now();
+    const delivery = createDeliveryObserver({ engine: 'dash',
+      identity: resilienceBridgeRef.current?.recoveryIdentity,
+      clock: { wallMs: generationStartedAt, monotonicMs: performance.now() } });
+    let deliveryApi = null;
+    let deliveryActive = true;
+    const deliveryHandlers = [];
     let apiReached = false;
     let neverReadyEmitted = false;
 
@@ -605,6 +635,16 @@ export function VideoPlayer({
       clearInterval(waitForApi);
       apiReached = true;
       const api = el.api;
+      deliveryApi = api;
+      for (const type of ['fragmentLoadingStarted', 'fragmentLoadingCompleted', 'fragmentLoadingAbandoned']) {
+        const handler = data => {
+          if (!deliveryActive || containerRef.current !== el || el.api !== api) return;
+          const observation = delivery.observe({ ...data, type });
+          if (observation) deliveryCallbackRef.current?.(observation);
+        };
+        deliveryHandlers.push([type, handler]);
+        api.on(type, handler);
+      }
 
       // Read the player's current state as well as subscribing. The old payload
       // counted event constants on the constructor, which is 0 on this build and
@@ -742,12 +782,19 @@ export function VideoPlayer({
         // Escalate to hardReset with refreshUrl so the backend mints a fresh
         // transcode. Gated by the shared recoveryLedger: 3 per mount for the
         // 'dash-error' actor, counted against the session-wide cap (audit §3.1).
+        const identity = resilienceBridgeRef.current?.recoveryIdentity;
+        const expectedTarget = identity?.getTarget();
         const { fire, decision, gate } = requestDashErrorRecovery({
           errorCode: code,
           sessionKey: resilienceBridgeRef.current?.playbackSessionKey || null,
           mountId: mountIdRef.current
         });
         if (fire) {
+          const target = identity?.beginRenderer(expectedTarget);
+          if (identity && !target) {
+            getRecoveryLedger().completeAction({ sessionKey: resilienceBridgeRef.current?.playbackSessionKey, actionId: gate.actionId });
+            return;
+          }
           const innerEl = getMediaEl();
           const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
           dashLog.warn('dash.error-recovery', {
@@ -756,6 +803,7 @@ export function VideoPlayer({
             attempt: gate.attempt,
             seekToSeconds
           });
+          dashRecoveryActionRef.current = { sessionKey: resilienceBridgeRef.current?.playbackSessionKey || 'player-item:unkeyed', actionId: gate.actionId, target };
           hardReset({ seekToSeconds, refreshUrl: true });
         } else if (gate) {
           // Refreshable code, but the ledger denied it (mount budget spent or
@@ -820,6 +868,9 @@ export function VideoPlayer({
     el.addEventListener('playing', handlePlaying);
 
     return () => {
+      deliveryActive = false;
+      delivery.dispose();
+      for (const [type, handler] of deliveryHandlers) deliveryApi?.off?.(type, handler);
       el.removeEventListener('play', cancelAutoplayCheck);
       el.removeEventListener('canplay', handleReady);
       el.removeEventListener('playing', handlePlaying);
@@ -846,7 +897,7 @@ export function VideoPlayer({
     };
     // deliberately narrow deps — this file has hard-won "generation churn / storm" caution comments elsewhere
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDash, mediaUrl, elementKey]);
+  }, [isDash, dashElementKey]);
 
   // FPS logging every 10 seconds during playback
   // TIMER THRASHING FIX: Use ref for timer ID and stable dependencies
@@ -920,6 +971,33 @@ export function VideoPlayer({
     
   
   
+  useEffect(() => {
+    const identity = resilienceBridge?.recoveryIdentity;
+    if (!identity) return;
+    return identity.subscribe(target => {
+      const active = dashRecoveryActionRef.current;
+      if (active && !sameRecoveryTarget(active.target, target)) {
+        getRecoveryLedger().completeAction(active);
+        dashRecoveryActionRef.current = null;
+      }
+    });
+  }, [resilienceBridge?.recoveryIdentity]);
+  useEffect(() => {
+    const node = getMediaEl();
+    if (!node?.addEventListener) return;
+    let lastTime = node.currentTime;
+    const complete = () => {
+      const active = dashRecoveryActionRef.current;
+      if (active && node.readyState >= 1 && node.currentTime > lastTime && !node.seeking) {
+        getRecoveryLedger().completeAction(active);
+        dashRecoveryActionRef.current = null;
+      }
+      lastTime = node.currentTime;
+    };
+    node.addEventListener('timeupdate', complete);
+    return () => node.removeEventListener('timeupdate', complete);
+  });
+
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar
@@ -982,6 +1060,7 @@ VideoPlayer.propTypes = {
   fetchVideoInfo: PropTypes.func,
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
+  onDeliveryObservation: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
   upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),

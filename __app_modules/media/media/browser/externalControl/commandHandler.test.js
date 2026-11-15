@@ -340,10 +340,10 @@ describe('applyCommandEnvelope', () => {
     const fetchImpl = () => new Promise((resolve) => { resolveFetch = resolve; });
     return { fetchImpl, resolve: () => resolveFetch({ ok: true, json: async () => ({ items: [{ id: 'plex:track-1', play: { contentId: 'plex:track-1' }, title: 'Track 1' }] }) }) };
   };
-  const playingQueue = (fetchImpl, contentIds) => {
+  const playingQueue = (fetchImpl, contentIds, format = 'video') => {
     const controller = createLocalSessionController({ clientId: 'origin-owner', fetchImpl });
     controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
-    for (const contentId of contentIds) controller.queue.add({ contentId, format: 'video' });
+    for (const contentId of contentIds) controller.queue.add({ contentId, format });
     controller.transport.play();
     controller.onPlayerStateChange('playing');
     expect(controller.getSnapshot().currentItem.contentId).toBe(contentIds[0]);
@@ -365,7 +365,7 @@ describe('applyCommandEnvelope', () => {
     ['onPlayerError', (controller) => controller.onPlayerError({ message: 'decode failed', code: 'E_DECODE' })],
   ])('%s auto-advancing during a pending routine item action never stamps the routine origin', async (_name, fire) => {
     const { fetchImpl, resolve } = albumFetch();
-    const controller = playingQueue(fetchImpl, ['plex:1', 'plex:2']);
+    const controller = playingQueue(fetchImpl, ['plex:1', 'plex:2'], _name === 'onPlayerError' ? 'audio' : 'video');
     const pending = pendingRoutineAdd(controller, `advance-${_name}`);
 
     fire(controller);

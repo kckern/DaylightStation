@@ -79,6 +79,15 @@ export class PlayResponseService {
       format: descriptor.format ?? item.format ?? null,
       title: item.title,
       duration: item.duration,
+      // Catalog seconds are authoritative; descriptor/native duration is observational.
+      ...(['video', 'hls_video', 'dash_video'].includes(descriptor.mediaType ?? item.mediaType) ? { contentTimeline: {
+        expectedEndSeconds: Number.isFinite(item.duration) && item.duration > 0 ? item.duration : null,
+        provenance: Number.isFinite(item.duration) && item.duration > 0 ? 'catalog' : 'unknown',
+        clipStartSeconds: null,
+        clipEndSeconds: null,
+        rendererStartSeconds: descriptor.contentTimeline?.rendererStartSeconds ?? null,
+        contentStartSeconds: descriptor.contentTimeline?.contentStartSeconds ?? null,
+      } } : {}),
       resumable: item.resumable ?? false,
       thumbnail: item.thumbnail,
       image: item.thumbnail,

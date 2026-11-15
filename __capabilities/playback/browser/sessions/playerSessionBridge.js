@@ -1,3 +1,4 @@
+import { readContentPosition } from '../player/lib/recovery/contentTimeline.js';
 // frontend/src/screen-framework/publishers/playerSessionBridge.js
 //
 // createPlayerSessionBridge — adapts the legacy Player's imperative handle
@@ -82,6 +83,9 @@ export function normalizePlayableItem(meta, hint = null) {
   const replacement = fallback?.qualityOverrides ?? src?.qualityOverrides;
   const item = { contentId, format, ...normalizePlaybackQuality(replacement ?? { ...fallback, ...src }),
     ...(replacement ? { qualityOverrides: normalizePlaybackQuality(replacement) } : {}) };
+
+  const contentTimeline = src?.contentTimeline ?? fallback?.contentTimeline;
+  if (contentTimeline) item.contentTimeline = { ...contentTimeline };
 
   const title = firstString(src?.title, src?.label, fallback?.title, fallback?.label);
   if (title) item.title = title;
@@ -505,8 +509,11 @@ export function createPlayerSessionBridge({
     const handle = readHandle();
     if (!handle) return 0;
     try {
-      const t = handle.getCurrentTime?.();
-      return Number.isFinite(t) && t >= 0 ? t : 0;
+      const meta = readNowPlayingMeta()?.item ?? readHint();
+      const t = typeof handle.getContentTime === 'function' ? handle.getContentTime()
+        : readContentPosition(handle.getCurrentTime?.(), meta?.contentTimeline);
+      return Number.isFinite(t) && t >= 0 ? t
+        : Number.isFinite(meta?.seconds) && meta.seconds >= 0 ? meta.seconds : 0;
     } catch {
       return 0;
     }
@@ -578,6 +585,8 @@ export function createPlayerSessionBridge({
   };
 
   const player = {
+    getRecoveryIdentity: () => readHandle()?.getRecoveryIdentity?.() ?? null,
+    getRecoveryTarget: () => readHandle()?.getRecoveryTarget?.() ?? null,
     getState,
     getPosition,
     getDuration,

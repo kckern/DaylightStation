@@ -26,6 +26,7 @@ import { isNearEnd } from './nearEnd.js';
 
 export function createEndOfContentWatchdog({
   onAdvance,
+  onTerminalCandidate,
   getMediaInfo,           // () => { currentTime, duration, paused, seeking }
   thresholdSeconds = 0.5, // currentTime must be within this of duration
   idleMs = 3000,          // how long to wait before advancing
@@ -61,6 +62,8 @@ export function createEndOfContentWatchdog({
     const info = getMediaInfo();
     if (!info || !isAtDuration(info)) return;
     if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) return;
+    const result = onTerminalCandidate?.({ reason: 'watchdog', nativeSeconds: info.currentTime });
+    if (onTerminalCandidate && result?.accepted !== true) return;
     fired = true;
     log('playback.end-of-content-advance', {
       currentTime: info.currentTime,

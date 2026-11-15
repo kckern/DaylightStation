@@ -49,8 +49,8 @@ vi.mock('../../../../frontend/src/lib/api.mjs', () => ({
 
 import Player from './Player.jsx';
 
-const instanceOf = (sessionKey) => String(sessionKey).split('#')[1];
-const contentOf = (sessionKey) => String(sessionKey).split('#')[0];
+const ownerOf = sessionKey => String(sessionKey).split(':').slice(0, 2).join(':');
+const visitOf = sessionKey => String(sessionKey).split(':').slice(2).join(':');
 
 beforeEach(() => {
   mounts.length = 0;
@@ -76,10 +76,8 @@ describe('Player — per-instance session scope', () => {
     // The two Players must be telling the ledger and the playback session store
     // that they are different players …
     expect(mounts[0]).not.toBe(mounts[1]);
-    expect(instanceOf(mounts[0])).toBeTruthy();
-    expect(instanceOf(mounts[1])).toBeTruthy();
-    // … while still agreeing about what is playing.
-    expect(contentOf(mounts[0])).toBe(contentOf(mounts[1]));
+    expect(ownerOf(mounts[0])).not.toBe(ownerOf(mounts[1]));
+    expect(visitOf(mounts[0])).not.toBe(visitOf(mounts[1]));
 
     // Neither Player may pay for that isolation with a churning player key: a
     // re-render with equivalent-but-new literals must not remount either one.
@@ -103,9 +101,8 @@ describe('Player — per-instance session scope', () => {
     rerender(<Player play={{ contentId: 'plex:694720' }} />);
     await waitFor(() => expect(mounts).toHaveLength(2));
 
-    expect(contentOf(mounts[0])).not.toBe(contentOf(mounts[1]));
-    expect(instanceOf(mounts[0])).toBeTruthy();
-    expect(instanceOf(mounts[1])).toBe(instanceOf(mounts[0]));
+    expect(visitOf(mounts[0])).not.toBe(visitOf(mounts[1]));
+    expect(ownerOf(mounts[1])).toBe(ownerOf(mounts[0]));
   });
 
   it('presents two simultaneously mounted Players as two Plex sessions', async () => {

@@ -281,9 +281,10 @@ What terminates this is the ladder's rung count, and it binds long before the
 ledger's cap. `STALL_JOLT_LADDER` has two rungs, so a code that never clears
 reaches "no third plan" after `STALL_JOLT_GRACE_MS` (9.5s) plus two
 `STALL_JOLT_STEP_MS` (6s each) — about 21.5s — and declares exhaustion. The
-shared ledger's 5-attempt session cap is looser by a wide margin: its backoff
-(4s, 12s, 36s, 108s between attempts) needs roughly 160s of continuous stuck time
-to spend.
+shared ledger also enforces three incident actions and six per rolling ten
+minutes. One pending action occupies the shared slot for up to fifteen eligible
+seconds, so an unresolved renderer delays the next rung; the timing above is
+the ladder's earliest schedule when operations complete promptly.
 
 Do **not** add a test asserting "rung 1 never fires". Between rung 0's `load()`
 and the `playing` that clears the code, `hasMediaError` is true while
@@ -381,13 +382,12 @@ all of the same shape: the code trusted a bare event instead of checking for gen
 forward motion. Two invariants and one ownership boundary keep them fixed. Full
 writeup: `ops:docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
 
-1. **`recordSuccess` requires strictly-forward playhead motion.** A progress event at
-   a frozen position is NOT recovery. `usePlaybackHealth` bumps `progressToken` on any
-   progress event — including the `playing` a jolt's own remount fires at the frozen
-   playhead — without comparing seconds. The `useMediaResilience` effect gates
-   `recordSuccess` on `evaluatePlayheadProgress` against a per-session
-   `lastSuccessPosRef` baseline. Breaking this re-defeats the ledger's attempt cap and
-   cooldown, and the jolt ladder loops at rung 1 forever (`f96a60a23`).
+1. **Brief progress never resets accounting.** `useMediaResilience` alone reports
+   eligible health to the shared ledger. Sixty continuous healthy seconds close
+   the incident while retaining rolling safety history. A frozen `playing` event,
+   a three-second advance, source-refusal clear, remount, seek or pause cannot
+   replenish attempts. Controller and DASH progress may complete only their own
+   action reservation; they cannot reset shared history.
 
 2. **`STALL_JOLT_GRACE_MS` must stay greater than `HARD_STALL_MS`.** Both ladders arm
    off the same soft-stall boundary; the expensive jolt (a fresh Plex transcode
@@ -421,7 +421,7 @@ therefore sits on the **key**, in `Player.jsx`, not on the explicit remount path
 (`lib/remountStormGuard.js` holds the arithmetic; `Player.jsx` holds the wiring).
 
 The cap has to clear the legitimate worst case: one initial mount plus the
-five-attempt recovery ladder is six key changes inside about eight seconds, and a
+three-action recovery ladder is four key changes inside about eight seconds, and a
 viewer who then picks something else must not be turned away. Ten in thirty seconds
 leaves that headroom while capping a runaway at 20 remounts per minute — the storm
 ran about 124.
@@ -486,8 +486,8 @@ would have held exactly one value.
 
 > A legitimate `refreshUrl` recovery also changes identity, because
 > `resolveMediaIdentity` falls through to `meta.mediaUrl`. It cannot reach this
-> threshold on its own: the recovery ledger caps a session at 5 attempts with a
-> 4s/12s/36s backoff. If you see a churn line whose `samples.guid` are near-
+> threshold on its own: the recovery ledger allows three incident actions and
+> six per rolling ten minutes, with four-second minimum spacing. If you see a churn line whose `samples.guid` are near-
 > identical signed URLs, read it as URL refreshes, not as content churn.
 
 ### Reading `waitKey` and `waitKeyHash`
