@@ -275,3 +275,13 @@ describe('Activity Party rules', () => {
     expect(turns.every(([p, clue]) => (p === 'reader') === (clue.category === 'early-reader'))).toBe(true);
   });
 });
+
+it('uses journaled presentation modes ahead of legacy definition arrays while preserving legacy replay', () => {
+ const seats=[{id:'a'},{id:'b'}]; const args={seed:42,seats,setup:{}};
+ const legacy=activityPartyRuleModule.createInitialState(casualDefinition,args);
+ expect(activityPartyRuleModule.createInitialState(casualDefinition,args)).toEqual(legacy);
+ expect(legacy.clue_presentations.every(mode=>mode==='image')).toBe(true);
+ const override={schema:'charades-presentation/v1',by_participant:{a:'text',b:'image'}};
+ const state=activityPartyRuleModule.createInitialState(casualDefinition,{...args,setup:{charades_presentation:override}});
+ state.turn_order.forEach((id,i)=>expect(state.clue_presentations[i]).toBe(override.by_participant[id]));
+});

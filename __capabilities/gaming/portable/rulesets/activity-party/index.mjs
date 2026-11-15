@@ -91,12 +91,14 @@ export const activityPartyRuleModule = defineRuleModule({
       const historyPolicy = Object.hasOwn(setup, 'charades_history_ids')
         ? 'recorded' : setup.charades_history_policy === 'disabled' ? 'disabled' : null;
       const turns = createSeededRoundOrder(performers, definition.rounds, seed);
+      const override = setup.charades_presentation;
+      if (override !== undefined && (override?.schema !== 'charades-presentation/v1' || !override.by_participant || typeof override.by_participant !== 'object' || Array.isArray(override.by_participant) || performers.some(p => !['text','reader','image'].includes(override.by_participant[p.id])) || Object.keys(override.by_participant).some(id => !performers.some(p => String(p.id) === id)))) throw new Error('Invalid Charades presentation override');
       const challenges = createCharadesChallengeOrder({
         challenges: definition.challenges,
         turnOrder: turns.order,
         cluesPerTurn: definition.clues_per_turn,
-        imageParticipantIds: definition.presentation.image_participants,
-        readerParticipantIds: definition.presentation.reader_participants || [],
+        imageParticipantIds: override ? Object.keys(override.by_participant).filter(id => override.by_participant[id] === 'image') : definition.presentation.image_participants,
+        readerParticipantIds: override ? Object.keys(override.by_participant).filter(id => override.by_participant[id] === 'reader') : definition.presentation.reader_participants || [],
         historyIds: setup.charades_history_ids,
         seed: turns.rngState,
       });
@@ -248,3 +250,5 @@ export const activityPartyRuleModule = defineRuleModule({
     };
   },
 });
+
+export { createCharadesChallengeOrder } from './charadesSelection.mjs';

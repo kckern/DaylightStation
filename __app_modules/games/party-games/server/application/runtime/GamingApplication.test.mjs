@@ -254,3 +254,8 @@ describe('GamingApplication mounted launch authority', () => {
     });
   });
 });
+
+it('rejects malformed or incomplete journaled Charades presentation at session setup', async () => {
+ const { prepareGamingSessionSetup } = await import('./gamingSessionSetup.mjs');
+ expect(() => prepareGamingSessionSetup({manifest:{id:'charades',setup:{kind:'individuals-or-teams'}},request:{seats:[{id:'a'}],setup:{charades_presentation:{schema:'charades-presentation/v1',by_participant:{other:'image'}}}}})).toThrow(/presentation/i);
+});

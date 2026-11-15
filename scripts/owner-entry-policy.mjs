@@ -49,6 +49,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/exercise-catalog/server/adapters/index.mjs': 'adapters',
   '__capabilities/screen-host/server/application/ScreensQueryService.mjs': 'application',
   '__app_modules/games/party-games/server/application/effects/partyGamesBuzzerInput.mjs': 'application',
+  '__app_modules/games/party-games/server/participants.mjs': 'application',
   '__capabilities/printable-sheets/server/composition.mjs': 'composition',
   '__app_modules/learning/school/server/composition/weekly-measures.mjs': 'composition',
   '__capabilities/measures/server/application/MeasureRegistry.mjs': 'application',

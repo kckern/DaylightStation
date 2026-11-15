@@ -19,6 +19,14 @@ export function prepareGamingSessionSetup({ manifest, request, partyGamesCatalog
   if (setupKind === 'individuals-or-teams' && participants.length === 0 && seats.length === 0) throw new GamingKernelError('invalid_session_setup', 'This experience requires participants or team seats');
   const seatIds = seats.map((seat) => seat?.id).filter(Boolean).map(String);
   if (seatIds.length !== seats.length || new Set(seatIds).size !== seats.length) throw new GamingKernelError('invalid_session_setup', 'Session seats require unique IDs');
+  if (Object.hasOwn(setup, 'charades_presentation')) {
+    const presentation = setup.charades_presentation;
+    const ids = seats.length ? seatIds : participants.map(participant => String(participant.id || participant.user_id || ''));
+    const entries = presentation?.by_participant;
+    if (manifest.id !== 'charades' || presentation?.schema !== 'charades-presentation/v1' || !entries || typeof entries !== 'object' || Array.isArray(entries) || ids.some(id => !['text', 'reader', 'image'].includes(entries[id])) || Object.keys(entries).some(id => !ids.includes(id))) {
+      throw new GamingKernelError('invalid_session_setup', 'Invalid Charades presentation override');
+    }
+  }
   const allowedHostModes = manifest.setup?.host_modes || [];
   if (setup.host?.mode && !allowedHostModes.includes(setup.host.mode)) {
     throw new GamingKernelError('invalid_session_setup', `Host mode ${setup.host.mode} is not allowed by the experience manifest`);
