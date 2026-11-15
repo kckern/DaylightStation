@@ -1,6 +1,10 @@
+import React from 'react';
+import {FitnessGameGate} from '../../components/FitnessGameGate.jsx';
 import SkylineInvaders from "./SkylineInvaders.jsx";
 
-export default SkylineInvaders;
+export default function GatedSkylineInvaders(props){
+  return <FitnessGameGate moduleId="skyline_invaders" label="Skyline Invaders" onClose={props.onClose}><SkylineInvaders {...props}/></FitnessGameGate>;
+}
 export const manifest = {
   id: 'skyline_invaders', name: 'Skyline Invaders', icon: '👾',
   description: 'Aim with your arms, step to fire, defend the skyline.',

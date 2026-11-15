@@ -6,7 +6,7 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 // A spare port. Never the household app or the dev backends (3111/3112/3113).
 const baseURL = 'http://127.0.0.1:3199';
 
-// The board's coin cells, bank screen and coin ceremony, frontend only: every
+// Personal reward chests, their modal and bank details, frontend only: every
 // API response is intercepted by the test, so no backend boots and no ledger
 // is touched.
 export default defineConfig({

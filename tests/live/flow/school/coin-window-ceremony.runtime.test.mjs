@@ -1,6 +1,5 @@
 /**
- * The status board's coin cells, the bank screen they open, and the coin
- * ceremony, in a real browser at the Portal's 1280x800. Frontend only: every
+ * Personal reward chests, their modal, and the bank-details door, in a real browser at the Portal's 1280x800. Frontend only: every
  * /api/v1/** call is stubbed here, so no backend runs and no ledger is
  * touched. The test fails on any write to the economy or earnings APIs.
  */
@@ -50,6 +49,8 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
   // count of reads cannot mark the moment.
   const world = { silver: 9, writes, previewReads: 0 };
   await page.clock.install({ time: NOW });
+  // Confine both APIs and sockets to this fixture; no household backend/HMR.
+  await page.routeWebSocket('**/*', socket => socket.close());
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -64,6 +65,8 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
       if (openRefusal) return json({ error: openRefusal }, 403);
       return json({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: request.postDataJSON().learnerId } });
     }
+    if (pathname.startsWith('/api/v1/earnings/preview/')) return json(learnerWeek(pathname.split('/').at(-1), world.silver));
+    if (pathname === '/api/v1/earnings/gems') return json({ mode: 'live', learners: ROSTER.map(k => ({ learnerId: k.id, name: k.name })), categories: [{ id: 'reading', label: 'Reading', color: '#82c5b8' }], cells: { reading: { 'test-learner': { state: 'earned', week: 1, held: 1, parts: [{ ruleId: 'reader', label: 'Story time', state: 'earned', week: 1 }] } } } });
     if (pathname === '/api/v1/earnings/preview') {
       world.previewReads += 1;
       return json({ windows: { school: WEEK }, learners: [learnerWeek('test-learner', world.silver, 2), learnerWeek('test-learner-2', 4)] });
@@ -91,49 +94,58 @@ async function installWorld(page, { bankFails = false, openRefusal = null } = {}
 
 const shot = (page, name) => page.screenshot({ path: path.join(OUT_DIR, `${name}.png`) });
 
-test('coin cells open the bank screen, and a silver rise pops the ceremony over the board', async ({ page }) => {
+async function openRewards(page) {
+  await page.getByRole('button', { name: "Open Alpha's rewards" }).click();
+  await page.clock.runFor(500);
+  const modal = page.getByRole('dialog', { name: "Alpha's rewards" });
+  await expect(modal).toBeVisible();
+  return modal;
+}
+
+async function openBankDetails(page) {
+  const modal = await openRewards(page);
+  await modal.getByRole('button', { name: 'Open bank details' }).click();
+  await expect(modal).toHaveCount(0);
+}
+
+test('icon-only chests reveal individual rewards and bank details without public totals or ceremonies', async ({ page }) => {
   await page.setViewportSize(VIEWPORT);
   const world = await installWorld(page);
   await page.goto('/school');
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
-
-  const door = page.getByRole('button', { name: /^Alpha's bank/ });
+  const door = page.getByRole('button', { name: "Open Alpha's rewards" });
   await expect(door).toBeVisible();
-  await expect(door).toContainText('9');
-  await expect(page.getByTestId('board-coins-door')).toHaveCount(2);
+  await expect(door).toHaveText('');
+  await expect(page.getByRole('button', { name: "Open Beta's rewards" })).toBeVisible();
+  await expect(page.getByTestId('board-coins-door')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open the gem board' })).toHaveCount(0);
   await shot(page, '01-board');
 
-  await door.click();
+  const rewards = await openRewards(page);
+  await expect(rewards.getByText('9', { exact: true })).toBeVisible();
+  await expect(rewards).not.toContainText('Beta');
+  await shot(page, '02-personal-rewards');
+  await rewards.getByRole('button', { name: 'Open bank details' }).click();
   const bank = page.getByTestId('bank-screen');
   await expect(bank).toBeVisible();
   await expect(bank.getByTestId('bank-tab-history')).toHaveAttribute('aria-selected', 'true');
   await expect(bank.getByTestId('bank-balances')).toBeVisible();
-  await expect(bank.getByTestId('bank-pending')).toBeVisible();
   await expect(bank.getByTestId('bank-ledger-row')).toHaveCount(3);
-  await shot(page, '02-bank-history');
-
+  await shot(page, '03-bank-history');
   await bank.getByTestId('screen-header-back').click();
   await expect(bank).toHaveCount(0);
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
 
-  // The board polls every five minutes: flip the silver, then advance the clock.
   world.silver = 12;
   await page.clock.fastForward('05:05');
-  await expect.poll(async () => page.getByRole('button', { name: /^Alpha's bank/ }).getAttribute('aria-label')).toContain('12 silver');
-  await page.clock.runFor(2_000); // past the 1.5 s burst window
-  const pop = page.getByTestId('coin-ceremony');
-  await expect(pop).toBeVisible();
-  await expect(pop).toContainText('+3');
-  await expect(pop).toContainText('12 this week');
-  await expect(pop).toContainText('Alpha');
-  // The ceremony sits in the board pane, clear of the keypad.
-  const card = await pop.getByRole('button').boundingBox();
-  const keypad = await page.getByTestId('selfservice-keypad').boundingBox();
-  expect(card.x >= keypad.x + keypad.width || card.x + card.width <= keypad.x).toBe(true);
-  await page.waitForTimeout(400); // let the enter animation settle for the screenshot
-  await shot(page, '03-ceremony');
-
-  expect(world.writes.filter((w) => /economy|earnings/.test(w))).toEqual([]);
+  await expect(page.getByTestId('coin-ceremony')).toHaveCount(0);
+  await expect(door).toHaveText('');
+  const updated = await openRewards(page);
+  await expect(updated.getByText('12', { exact: true }).first()).toBeVisible();
+  await updated.getByRole('button', { name: 'Close rewards' }).click();
+  await expect(door).toBeFocused();
+  expect(world.previewReads).toBe(0);
+  expect(world.writes.filter(w => /economy|earnings/.test(w))).toEqual([]);
 });
 
 test('a bank that cannot be read naps, with no numbers', async ({ page }) => {
@@ -142,7 +154,7 @@ test('a bank that cannot be read naps, with no numbers', async ({ page }) => {
   await page.goto('/school');
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
 
-  await page.getByRole('button', { name: /^Alpha's bank/ }).click();
+  await openBankDetails(page);
   const bank = page.getByTestId('bank-screen');
   await expect(bank.getByTestId('bank-napping')).toHaveText('The bank is napping. Try again soon.');
   await expect(bank.getByTestId('bank-balances')).toHaveCount(0);
@@ -156,8 +168,8 @@ test('a refused open shows the refusal on "Whose bank?", outside the board, and 
   await page.goto('/school');
   await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
 
-  const door = page.getByRole('button', { name: /^Alpha's bank/ });
-  await door.click();
+  const door = page.getByRole('button', { name: "Open Alpha's rewards" });
+  await openBankDetails(page);
   const who = page.getByRole('dialog', { name: 'Whose bank' });
   await expect(who).toBeVisible();
   await expect(who.getByRole('alert')).toHaveText('Choose a current School learner.');

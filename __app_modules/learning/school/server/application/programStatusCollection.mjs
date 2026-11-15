@@ -64,7 +64,7 @@ async function withWeekdayFold({ launcher, learnerId, programId, programInstance
   try {
     answers = await Promise.all(days.map(async (day) => {
       const replayed = await launcher.status({ userId: learnerId, programInstance, day });
-      return withDayBypass({ dayBypasses, learnerId, programId, studyDay: day, status: replayed, logger });
+      return withDayBypass({ dayBypasses, learnerId, programId, studyDay: day, status: replayed, logger, strict: true });
     }));
   } catch (err) {
     return failed('replay_threw', { error: err?.message ?? String(err) });
@@ -120,9 +120,10 @@ export const UNKNOWABLE_STATUS = Object.freeze({
  * its own status. A broken program stays broken (a bypass must never hide a
  * fault). An unknowable replayed day with a bypass on file is no longer
  * unknowable: the ledger IS a record of that day. A ledger read failure is a
- * missing convenience, not a status failure.
+ * missing convenience, not a status failure. The optional Saturday fold uses
+ * strict reads: an unreadable bypass ledger makes that historical day unknown.
  */
-async function withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger }) {
+async function withDayBypass({ dayBypasses, learnerId, programId, studyDay, status, logger, strict = false }) {
   if (!dayBypasses?.activeFor || !studyDay || !status || status.error === true || status.doneToday === true) {
     return status;
   }
@@ -133,6 +134,7 @@ async function withDayBypass({ dayBypasses, learnerId, programId, studyDay, stat
     logger.warn?.('school.program-status.bypass-read-failed', {
       learnerId, program: programId, error: err?.message ?? String(err),
     });
+    if (strict) throw err;
     return status;
   }
   if (!bypass) return status;

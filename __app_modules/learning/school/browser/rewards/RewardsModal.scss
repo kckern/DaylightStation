@@ -1,0 +1,50 @@
+.school-rewards-modal {
+  box-sizing: border-box; width: min(560px, calc(100vw - 24px)); max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); margin: auto; padding: 0;
+  border: 1px solid #51616e; border-radius: 24px; background: #1c2c39; color: #eef3f6;
+  font: 16px/1.5 system-ui, sans-serif; overflow: hidden; box-shadow: 0 32px 100px #0007;
+  &, * { box-sizing: border-box; }
+  &[open] { display: flex; flex-direction: column; animation: school-rewards-arrive 220ms ease-out; }
+  &::backdrop { background: #080f19bb; backdrop-filter: blur(7px); }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible { outline: 3px solid #f9d681; outline-offset: 3px; }
+  &__header { display: flex; align-items: center; gap: 14px; padding: 24px 28px 18px; flex: 0 0 auto; min-width: 0; }
+  &__header > div { min-width: 0; }
+  &__header .school-rewards-chest { width: 76px; }
+  h2 { margin: 4px 0; font-size: 26px; line-height: 1.2; overflow-wrap: anywhere; }
+  &__header p { margin: 0; color: #a9bbc8; font-size: 13px; }
+  &__close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; margin-left: auto; align-self: flex-start; border: 1px solid #52616c; border-radius: 50%; background: transparent; color: #dce6ed; }
+  &__close svg { width: 24px; height: 24px; }
+  &__body { min-height: 0; padding: 0 28px 28px; overflow-y: auto; overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  &__totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  &__total { min-width: 0; padding: 16px; background: #263a49; border-radius: 15px; }
+  &__amount { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; font-size: 30px; font-weight: 700; line-height: 1.2; }
+  &__amount .coin-icon { width: 28px; height: 28px; flex: 0 0 auto; }
+  &__amount &__message { font-size: 13px; font-weight: 400; }
+  &__total p { color: #bbcad4; font-size: 12px; margin: 9px 0 0; }
+  h3 { font-size: 16px; margin: 26px 0 12px; }
+  &__achievement { display: flex; align-items: flex-start; gap: 13px; padding: 15px 0; border-top: 1px solid #3a4a57; }
+  &__achievement > svg { flex: 0 0 auto; }
+  &__achievement > div { min-width: 0; flex: 1; }
+  h4 { font-size: 15px; margin: 0; }
+  &__achievement p { color: #aebfca; font-size: 13px; margin: 5px 0; }
+  &__part { margin-top: 10px; font-size: 13px; }
+  progress { display: block; width: 100%; height: 8px; margin: 10px 0 6px; accent-color: #a9cbb7; }
+  &__bank, &__done { width: 100%; border: 0; border-radius: 12px; padding: 13px; margin-top: 20px; font-weight: 650 !important; }
+  &__bank { background: #304758; color: #e4eef5; }
+  &__done { background: #e5cf9e; color: #30291e; margin-top: 12px; }
+  @media (max-width: 400px) {
+    &__header { padding: 16px; gap: 10px; }
+    &__header .school-rewards-chest { width: 50px; }
+    h2 { font-size: 21px; }
+    &__body { padding: 0 16px 18px; }
+    &__total { padding: 12px; }
+  }
+  @media (max-height: 500px) {
+    &__header { padding: 12px 20px; }
+    &__header .school-rewards-chest { width: 50px; }
+    h2 { font-size: 21px; }
+  }
+}
+@keyframes school-rewards-arrive { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .school-rewards-modal[open] { animation: none; } }

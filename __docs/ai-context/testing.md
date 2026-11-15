@@ -208,3 +208,9 @@ Unit tests for each: `tests/_lib/media-household-fixture.test.mjs`, `media-phase
 ## Reference
 
 See `__docs/reference/core/testing.md` for full documentation.
+
+## Browser environment lifecycle
+
+Use the configured `tests/_infrastructure/frontend-env.mjs` for browser tests. It supplies the shared DOM compatibility behavior; a per-file `happy-dom` override bypasses that setup.
+
+Animation cancellation marks the internal `finished` promise as handled, as required by the [Web Animations cancellation algorithm](https://www.w3.org/TR/web-animations-1/#canceling-an-animation). Explicit promise consumers still receive `AbortError`; unrelated rejected promises remain failures. Environment teardown drains through Node's native clock so a test's simulated page timers cannot strand its worker. Subprocess regressions in `tests/isolated/system/frontendDomCancellation.test.mjs` cover both behaviors.

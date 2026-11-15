@@ -1,6 +1,10 @@
+import React from 'react';
+import {FitnessGameGate} from '../../components/FitnessGameGate.jsx';
 import CycleGameContainer from "./CycleGameContainer.jsx";
 
-export default CycleGameContainer;
+export default function GatedCycleGame(props){
+  return <FitnessGameGate moduleId="cycle_game" label="Cycle Race" onClose={props.onClose}><CycleGameContainer {...props}/></FitnessGameGate>;
+}
 
 // Widget registry pattern: default export + manifest, consumed via `import * as X`
 // across 14+ widgets in Fitness/index.js - splitting out of scope for a lint pass.

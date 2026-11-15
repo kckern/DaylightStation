@@ -61,11 +61,7 @@ import { useScanCeremony } from "./selfService/useScanCeremony.js";
 import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../__capabilities/playback/browser/readalong.mjs";
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
-import GemBoardOverlay from "../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx";
-import GemCeremony from "../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx";
-import { useGemCeremony } from "../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js";
-import { playCoinCue } from "../../../../frontend/src/lib/economy/coinCeremonyAudio.js";
-import GemIcon from "../../../../frontend/src/lib/icons/GemIcon.jsx";
+import RewardsModal from './rewards/RewardsModal.jsx';
 import "./School.scss";
 
 /**
@@ -206,9 +202,6 @@ function schoolUrlBase() {
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from "./schoolPathModel.js";
 import { setSchoolDeviceId } from "./schoolDevice.js";
-import { GEMS_LOOK_EVENT } from "./status/schoolRefreshEvents.js";
-// The board asks for a gem look when coins change or a day completes.
-const GEMS_LOOK_EVENTS = [GEMS_LOOK_EVENT];
 
 /**
  * Turning the diagnostics up, from outside the code.
@@ -692,9 +685,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
-  // The bank opens from the board's coin cells (`onOpenBank`); there is no
-  // bank strip. Below 820px the board pane, and with it the coin cells, is
-  // hidden.
+  // Rewards live behind identical child-specific chest icons. The existing
+  // bank door is available from the individual modal's details button.
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -718,8 +710,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     deviceId: deviceIdFor(screenId),
   });
 
-  // The panel's bank door: a tap on a kid's coin cell on the board opens that
-  // kid's bank through `POST /school/bank/open`. Like the shelf
+  // The panel's bank door: the personal rewards modal's details button opens
+  // that kid's bank through `POST /school/bank/open`. Like the shelf
   // door, it claims the kid and lands in `onPortalLaunch`.
   const launchFromBankDoor = useCallback((target, learnerId) => {
     claim(learnerId);
@@ -727,23 +719,23 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, [claim, onPortalLaunch]);
   const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
   const { choose: chooseBank, close: closeBankDoor } = bankDoor;
-  // The board's coin cell: the kid is known, so no face picker.
-  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-cell'); }, [chooseBank]);
+  // The rewards modal already knows the child, so the bank needs no face picker.
+  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'rewards'); }, [chooseBank]);
   // The door belongs to the locked panel's resting view (keypad + board).
   // Anything that leaves it (a code's card, a runner, a section) closes it.
   const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
   useEffect(() => { if (!bankDoorView) closeBankDoor(); }, [bankDoorView, closeBankDoor]);
-  // The family Gem Board: from the header's Gems door, or a kid's gem door on
-  // the board (focused on that kid). Read-only; it belongs to the same resting
-  // view as the bank door and closes when that view is left.
-  const [gemBoard, setGemBoard] = useState(null); // null closed, else { focus }
-  const openGemsFor = useCallback((learnerId) => setGemBoard({ focus: learnerId ?? null }), []);
-  useEffect(() => { if (!bankDoorView) setGemBoard(null); }, [bankDoorView]);
-  // A gem that landed since the panel last looked (a worksheet graded, a race
-  // of the week taken in the garage, a book logged): celebrated over the board
-  // pane — never the keypad — while the panel rests, from a minute poll and
-  // each time a child comes back to the keypad.
-  const gemCeremony = useGemCeremony({ surface: `school-${screenId}`, enabled: bankDoorView, pollMs: 60_000, events: GEMS_LOOK_EVENTS });
+  // The resting board never exposes reward amounts or sibling gem standings.
+  // Looking at rewards is read-only; opening bank details uses the checked door.
+  const [rewardsFor, setRewardsFor] = useState(null);
+  const openRewardsFor = useCallback(learnerId => setRewardsFor(learnerId), []);
+  const closeRewards = useCallback(() => setRewardsFor(null), []);
+  const rewardsLearner = rewardsFor ? roster.find(kid => kid.id === rewardsFor) : null;
+  const openRewardsBank = useCallback(learnerId => {
+    setRewardsFor(null);
+    openBankFor(learnerId);
+  }, [openBankFor]);
+  useEffect(() => { if (!bankDoorView) setRewardsFor(null); }, [bankDoorView]);
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:
@@ -818,7 +810,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const LOCK_FLIP_QUIET_MS = 8_000;
   const LOCK_FLIP_TICK_MS = 1_000;
   useEffect(() => {
-    if (!lock.locked || selfService.view !== 'keypad' || active || section) return undefined;
+    if (!lock.locked || selfService.view !== 'keypad' || active || section || rewardsFor) return undefined;
     let dueAt = Date.now() + LOCK_FLIP_INTERVAL_MS;
     const timer = window.setInterval(() => {
       const now = Date.now();
@@ -829,7 +821,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       dueAt = now + LOCK_FLIP_INTERVAL_MS;
     }, LOCK_FLIP_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [active, lock.locked, section, selfService.view]);
+  }, [active, lock.locked, section, selfService.view, rewardsFor]);
 
   // The scan ceremony (Slice D, omr-grading-integrity design): a scan must
   // always be acknowledged on screen. Subscribed here — not inside the lock
@@ -852,6 +844,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     setStudyLaunch(null);
     setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
     setBankLaunch(null);
+    setRewardsFor(null);
     closeBankDoor(); // a "Whose bank?" sheet (or its refusal) never waits for the next child
     setActive(null);
     setNotice(null);
@@ -1173,7 +1166,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 onRetry={selfService.retry}
                 onReload={selfService.reload}
                 screenOffTimeoutSeconds={lock.screenOffTimeoutSeconds}
-                screenOffSuppressed={!!ceremony.current}
+                screenOffSuppressed={!!ceremony.current || !!rewardsFor}
                 onActivity={onKeypadActivity}
                 onEngagedChange={onKeypadEngagedChange}
                 onEntryStart={selfService.startEntry}
@@ -1186,31 +1179,22 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   header. The book door rides in the HEADER, which is the board's
                   neighbour rather than a row on it, so the pane's
                   `pointer-events: none` is re-enabled on the button alone and
-                  it survives a day the board draws nothing. The bank's door
-                  is the coin cell on each kid's own card (`onOpenBank`). */}
+                  it survives a day the board draws nothing. Each child's
+                  chest opens their individual read-only rewards modal. */}
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
                   <div className="school-board-header__doors">
-                    <button type="button" className="school-book-door school-gem-door" data-testid="board-gem-board-door"
-                      aria-label="Open the gem board" onClick={() => openGemsFor(null)}>
-                      <GemIcon className="school-book-door__icon" size="1.6rem" />
-                      <span className="school-book-door__label">Gems</span>
-                    </button>
                     <BookShelfDoor screenId={screenId} roster={roster}
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} onOpenGems={openGemsFor} coinCeremony={lock.coinCeremony} />
-                {gemCeremony.ceremony && !gemBoard && (
-                  <GemCeremony key={gemCeremony.ceremony.id} surface="school" contained awards={gemCeremony.ceremony.awards}
-                    onShow={() => playCoinCue({ sound: lock.coinCeremony?.sound ?? 'school/_ux/coin.mp3', volume: lock.coinCeremony?.volume ?? 0.8 })}
-                    onDone={gemCeremony.done} />
-                )}
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenRewards={openRewardsFor} />
               </div>
               {/* Over the whole panel, keypad included, only while a child holds
                   it open: a tap anywhere outside, × or 45 s idle closes it. */}
-              <GemBoardOverlay open={gemBoard != null} surface="school" focusLearnerId={gemBoard?.focus ?? null}
-                idleMs={45_000} onClose={() => setGemBoard(null)} />
+              {bankDoorView && rewardsLearner && (
+                <RewardsModal key={rewardsLearner.id} learner={rewardsLearner} onClose={closeRewards} onOpenBank={openRewardsBank} />
+              )}
               {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
                   the board pane, so it is never clipped by or stacked under
                   the board. */}

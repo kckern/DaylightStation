@@ -19,9 +19,10 @@
  *
  * WHAT IT DOES NOT SEE. Each past day is judged against TODAY's plan entry,
  * not the plan as it stood that day:
- *   - a date-bound entry that swapped this program out on a past weekday (a
- *     holiday lesson taking the subject's slot) is not in today's plan, so
- *     that weekday still reads as missed if the program was not done;
+ *   - a past enrichment assignment declared by the household calendar
+ *     withholds its replaced subject: without the old plan, the program
+ *     cannot be known to have been assigned. Other date-bound swaps that
+ *     are not declared in that calendar are not visible here;
  *   - an enrollment that started mid-week is seen only through its
  *     schedule's `except` span; without one, the weekdays before the
  *     enrollment began read as missed.
@@ -36,7 +37,12 @@ import { addDays } from "./termVerdict.mjs";
 /** Mirrors `planDailyAgenda`'s keepingTier / householdOff reading of a day. */
 function householdTookOff(day, entry, householdSchedule, dayOffPolicy) {
   if (householdSchedule == null) return false;
-  const tier = dayOffTier(day, householdSchedule)?.tier ?? null;
+  const span = dayOffTier(day, householdSchedule);
+  const tier = span?.tier ?? null;
+  // Today's plan omits past date-bound lessons. A calendar-declared swap is
+  // enough to withhold catch-up for its subject, even though its historical
+  // assignment cannot be resolved here. No assignment means stay-home rules.
+  if (tier === 'enrichment' && span.assignment && span.replaces === entry?.subject) return true;
   const keepingTier = tier != null && tier !== 'normal' && tier !== 'away';
   if (keepingTier) return !keepsEntry(dayOffPolicy, tier, entry);
   return !scheduleVerdict(day, householdSchedule).schoolDay;

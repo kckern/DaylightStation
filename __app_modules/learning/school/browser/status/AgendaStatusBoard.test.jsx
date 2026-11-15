@@ -1609,6 +1609,37 @@ describe('AgendaStatusBoard silver earned this week', () => {
   });
   const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver earned this week$`));
 
+  it('personal reward doors replace all coin/gem figures with identical icon-only buttons', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21, { gems: 3 }), priced('learner2', 45, { gems: 1 })));
+    const onOpenRewards = vi.fn();
+    const onOpenBank = vi.fn();
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} onOpenRewards={onOpenRewards} onOpenBank={onOpenBank} onOpenGems={vi.fn()} />);
+    const first = await screen.findByRole('button', { name: "Open Learner One's rewards" });
+    const second = screen.getByRole('button', { name: "Open Learner Two's rewards" });
+    expect(first.textContent).toBe('');
+    expect(first.innerHTML).toBe(second.innerHTML);
+    expect(screen.queryByLabelText(/silver earned this week/)).toBeNull();
+    expect(screen.queryByTestId('board-gems-door')).toBeNull();
+    expect(screen.queryByTestId('board-coins-door')).toBeNull();
+    expect(schoolApi.earningsRoster).not.toHaveBeenCalled();
+    expect(schoolApi.wallet).not.toHaveBeenCalled();
+    fireEvent.click(first);
+    await waitFor(() => expect(onOpenRewards).toHaveBeenCalledWith('learner1'));
+    expect(onOpenBank).not.toHaveBeenCalled();
+  });
+
+  it('a second child cannot replace the first child during the chest opening', async () => {
+    const onOpenRewards = vi.fn();
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} onOpenRewards={onOpenRewards} />);
+    const first = await screen.findByRole('button', { name: "Open Learner One's rewards" });
+    const second = screen.getByRole('button', { name: "Open Learner Two's rewards" });
+    fireEvent.click(first);
+    expect(second.disabled).toBe(true);
+    fireEvent.click(second);
+    await waitFor(() => expect(onOpenRewards).toHaveBeenCalledTimes(1));
+    expect(onOpenRewards).toHaveBeenCalledWith('learner1');
+  });
+
   it('shows each learner\'s silver once the read lands, and nothing before it', async () => {
     let land;
     schoolApi.earningsRoster.mockReturnValue(new Promise((r) => { land = r; }));

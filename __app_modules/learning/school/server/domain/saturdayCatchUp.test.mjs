@@ -37,6 +37,24 @@ describe('missedWeekdays', () => {
     expect(missedWeekdays({ entry: cards, doneOn, today: SATURDAY, householdSchedule, dayOffPolicy: dropsLanguage })).toEqual([]);
     expect(missedWeekdays({ entry: cards, doneOn, today: SATURDAY, householdSchedule, dayOffPolicy: keepsLanguage })).toEqual(['2026-11-11']);
   });
+  it('withholds a day whose enrichment assignment replaced the program subject', () => {
+    const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09',
+      tier: 'enrichment', replaces: 'language', assignment: 'holiday-language' }] };
+    const doneOn = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+    expect(missedWeekdays({ entry: cards, doneOn, today: SATURDAY, householdSchedule })).toEqual([]);
+  });
+  it('a replacement in another subject still permits a kept program to be missed', () => {
+    const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09',
+      tier: 'enrichment', replaces: 'english', assignment: 'holiday-english' }] };
+    const doneOn = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+    expect(missedWeekdays({ entry: cards, doneOn, today: SATURDAY, householdSchedule })).toEqual(['2026-11-09']);
+  });
+  it('enrichment without an assignment keeps the ordinary program', () => {
+    const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09',
+      tier: 'enrichment', replaces: 'language' }] };
+    const doneOn = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+    expect(missedWeekdays({ entry: cards, doneOn, today: SATURDAY, householdSchedule })).toEqual(['2026-11-09']);
+  });
   it('never looks at today or later', () => {
     expect(missedWeekdays({ entry: cards, doneOn: [], today: '2026-11-11' })).toEqual(['2026-11-09', '2026-11-10']);
   });

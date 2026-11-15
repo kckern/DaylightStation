@@ -90,6 +90,9 @@ describe('locked kiosk split home', () => {
     expect(within(screen.getByTestId('agenda-status-board')).getByText('Learner3')).toBeInTheDocument();
     // No bank-strip cards above the board: the coin column is the one place coins show.
     expect(split.querySelector('.school-bank-strip')).toBeNull();
+    expect(await screen.findByRole('button', { name: "Open Learner3's rewards" })).toHaveTextContent('');
+    expect(screen.queryByRole('button', { name: 'Open the gem board' })).toBeNull();
+    expect(screen.queryByTestId('board-coins-door')).toBeNull();
     // The board loads in TWO stages: the roster names it, and `teacherDay`
     // supplies what has been passed today. `agenda-status-board` exists after
     // the first, so a synchronous query here races the second — it failed at

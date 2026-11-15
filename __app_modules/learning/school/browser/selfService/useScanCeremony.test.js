@@ -554,13 +554,13 @@ describe('useScanCeremony — the school day is done', () => {
   });
 
   it('celebrates the day turning complete', () => {
-    const { result } = renderHook(() => useScanCeremony());
+    const { result } = renderHook(() => useScanCeremony({ today: () => '2026-11-13' }));
     act(() => { deliver(dayDone()); });
     expect(result.current.current).toMatchObject({ tone: 'success', title: 'School done!', detail: 'Every circle is green for today.' });
   });
 
   it('celebrates once, however often the gate change is replayed', () => {
-    const { result } = renderHook(() => useScanCeremony());
+    const { result } = renderHook(() => useScanCeremony({ today: () => '2026-11-13' }));
     act(() => { deliver(dayDone()); });
     act(() => { result.current.clear(); });
     act(() => { deliver(dayDone()); });
@@ -568,7 +568,7 @@ describe('useScanCeremony — the school day is done', () => {
   });
 
   it('says nothing when the day reopens, or for another gate', () => {
-    const { result } = renderHook(() => useScanCeremony());
+    const { result } = renderHook(() => useScanCeremony({ today: () => '2026-11-13' }));
     act(() => { deliver(dayDone({ from: 'satisfied', to: 'unsatisfied' })); });
     act(() => { deliver(dayDone({ gateId: 'fitness.weekly-rings' })); });
     expect(result.current.current).toBeNull();

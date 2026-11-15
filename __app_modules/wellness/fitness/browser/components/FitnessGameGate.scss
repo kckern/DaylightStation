@@ -1,0 +1,8 @@
+.fitness-game-gate {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-md, 1rem);
+  min-height: 100%;
+  text-align: center;
+}

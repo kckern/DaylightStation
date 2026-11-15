@@ -2956,6 +2956,7 @@
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
 .school-status-board {
+  &--personal-rewards &__coins { justify-content: center; }
   // The coin ceremony is absolutely placed over the board pane (never the keypad).
   position: relative;
   color: var(--school-board-ink);

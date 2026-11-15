@@ -18,7 +18,7 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
   // types/gates/entitlements never exist at runtime. See
   // tests/isolated/composition/installedStateGatesPolicy.test.mjs for the
   // regression test covering this exact failure mode.
-  policy_revision: 4,
+  policy_revision: 5,
   publishers: {
     school: { description: 'School learner-day completion authority' },
     fitness: { description: 'Fitness weekly movement authority' },
@@ -54,6 +54,15 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
     },
   },
   gates: {
+    'fitness.games-outside-sunday': {
+      schema_version: 1,
+      subject_kinds: ['household'],
+      period_kinds: ['local_day'],
+      // A direct allowed schedule retains OUTSIDE_SCHEDULE on Sunday denial.
+      // Negating a Sunday schedule would lose that reason in the evaluator.
+      expression: { schedule: { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], start: '00:00', end: '24:00' } },
+      reason_labels: { OUTSIDE_SCHEDULE: 'Admin unlock required for Fitness games on Sundays.' },
+    },
     'school.day-complete': {
       schema_version: 1,
       subject_kinds: ['learner'],
@@ -122,6 +131,7 @@ export const INSTALLED_STATE_GATES_POLICY = Object.freeze({
     },
   },
   entitlements: {
+    'fitness.games-unsupervised': { gate: 'fitness.games-outside-sunday', failure_posture: 'fail_closed' },
     'piano.games': { gate: 'school.day-complete', failure_posture: 'fail_closed' },
     'fitness.skyline-glider': { gate: 'school.day-complete', failure_posture: 'fail_closed' },
     'fitness.skyline-invaders': { gate: 'school.day-complete', failure_posture: 'fail_closed' },

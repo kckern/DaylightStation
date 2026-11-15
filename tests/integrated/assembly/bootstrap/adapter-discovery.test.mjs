@@ -8,10 +8,19 @@ import path from 'node:path';
 // locate repository fixtures here. Integrated tests always run from repo root.
 const adaptersRoot = path.resolve(process.cwd(), '__backend/src/1_adapters');
 const execFileAsync = promisify(execFile);
+let relocatedProviderManifests;
+beforeAll(async () => {
+  // Resolve import.meta-based ownership paths with the production Node loader.
+  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '--eval', `
+    const { relocatedProviderManifests } = await import('./__backend/src/5_composition/integrations/providerManifests.mjs');
+    process.stdout.write(JSON.stringify(relocatedProviderManifests));
+  `], { cwd: process.cwd() });
+  relocatedProviderManifests = JSON.parse(stdout);
+});
 
 describe('Adapter Discovery Integration', () => {
   test('discovers all manifests in adapters directory', async () => {
-    const registry = new AdapterRegistry({ adaptersRoot });
+    const registry = new AdapterRegistry({ adaptersRoot, relocatedManifests: relocatedProviderManifests });
     await registry.discover();
 
     // Verify expected adapters were discovered
@@ -27,8 +36,9 @@ describe('Adapter Discovery Integration', () => {
     // transform rewrites import.meta inside Plex modules to CommonJS require,
     // which is a test-runner artifact rather than an adapter loading failure.
     const script = `
-      const { AdapterRegistry } = await import('./backend/src/5_composition/integrations/AdapterRegistry.mjs');
-      const registry = new AdapterRegistry({ adaptersRoot: ${JSON.stringify(adaptersRoot)} });
+      const { AdapterRegistry } = await import('./__backend/src/5_composition/integrations/AdapterRegistry.mjs');
+      const { relocatedProviderManifests } = await import('./__backend/src/5_composition/integrations/providerManifests.mjs');
+      const registry = new AdapterRegistry({ adaptersRoot: ${JSON.stringify(adaptersRoot)}, relocatedManifests: relocatedProviderManifests });
       await registry.discover();
       const manifest = registry.getManifest('media', 'plex');
       const module = await manifest.adapter();
@@ -42,7 +52,7 @@ describe('Adapter Discovery Integration', () => {
   });
 
   test('manifests have required fields', async () => {
-    const registry = new AdapterRegistry({ adaptersRoot });
+    const registry = new AdapterRegistry({ adaptersRoot, relocatedManifests: relocatedProviderManifests });
     await registry.discover();
 
     for (const capability of registry.getAllCapabilities()) {

@@ -276,6 +276,15 @@ describe('Saturday catch-up: a missed weekday program comes back', () => {
     expect(s.language.backfill).toBeNull();
   });
 
+  it('does not backfill a weekday whose calendar assignment replaced the subject', () => {
+    const householdSchedule = { except: [{ from: '2026-11-09', to: '2026-11-09',
+      tier: 'enrichment', replaces: 'language', assignment: 'holiday-language' }] };
+    const s = build({ entries: [...scripture(), cards], sessions: scriptureDone, householdSchedule });
+    expect(s.language.next).toBeNull();
+    expect(s.language.catchUp).toBe(false);
+    expect(s.language.backfill).toBeNull();
+  });
+
   it('a missed program wins over an in-progress lesson in the same subject', () => {
     const grammar = { unitId: 'gram-3', title: 'Grammar 3', subject: 'language', courseId: 'gram', module: 'm1', sequence: 3,
       program: null, elective: false, status: 'in_progress', timing: null, timingState: 'available', schedule: weekdays };

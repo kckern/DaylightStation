@@ -205,8 +205,13 @@ section carries `backfill: {missedDays}` and `catchUp: true`.
   throws, errors, is unknowable (an FSRS deck keeps no history) or answers a
   `doneToday` that is not a boolean, the fold is dropped, nothing is offered,
   and `school.program-status.weekday-fold-failed` is logged with a reason.
-  Judged against today's plan, so a date-bound swap on a past weekday or an
-  enrollment that began mid-week without an `except` span can read as missed.
+  An unreadable historical day-bypass ledger also drops the fold, while
+  today's status retains its ordinary bypass-read fallback. A past enrichment
+  day with a declared `assignment` replacing this program's subject is withheld:
+  today's plan cannot establish that the program was assigned then. Without an
+  assignment, the tier's keep-list still applies. Other date-bound swaps outside
+  the household calendar, or an enrollment that began mid-week without an
+  `except` span, can still read as missed against today's plan.
 - **Where the child sees it.** The printed card's rail names the days
   (`Catch-up · Mon, Wed`). The status board draws each offer as an outlined
   optional disc outside the day's count, so the check mark and "done" stay as
@@ -301,3 +306,11 @@ on its day like any lesson (on a major holiday it is the day's scripture item),
 and a grown-up attests it done. An activity saved with blank instructions stays
 `placeholder: true` and the day works as described under *Date-bound units and
 placeholders* above. Giving it a bank or document is still an authoring step.
+
+## Sunday: only Scripture is required
+
+On a Sunday **study day**, non-Scripture sections are excused even when their enrollment explicitly schedules Sunday, they have unfinished/backlog or weekly work, or their program is unavailable. They cannot fault or block day completion. Actual completed work remains credited, and ordinary optional browsing remains subject to the existing weekend presentation rules.
+
+Scripture retains its existing obligation, weekend review, teacher-hold, calendar and completion rules. Missing or faulty Scripture evidence is not silently treated as done. Optional urgent work on an off day cannot consume focus blocks that hide the Scripture requirement. Saturday catch-up and weekday requirements are unchanged.
+
+School uses its existing household timezone and study-day boundary; Fitness's separate Sunday admin requirement uses calendar midnight. Completing Sunday's Scripture does not unlock Fitness games without the parent's Sunday admin approval.

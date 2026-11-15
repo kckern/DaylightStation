@@ -106,6 +106,8 @@ export const schoolApi = {
   // A learner's wallet: `balances.gold` is the lasting coin; `balance` is the silver figure.
   wallet: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/wallet`),
   earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
+  // Fresh achievement read; the personal rewards view renders only its learner's cells.
+  gems: () => reqAbsolute('/api/v1/earnings/gems?fresh=1', { timeoutMs: 15_000 }),
   putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
   teacherDebriefs: (learnerId, by) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/history?by=${encodeURIComponent(by)}`),
   teacherDebriefAction: (learnerId, day, action, body) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/day/${encodeURIComponent(day)}/${action}`, body, 'POST'),

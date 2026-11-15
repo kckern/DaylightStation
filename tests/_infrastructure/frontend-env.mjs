@@ -3,6 +3,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, realpathSync } from 'fs';
+import { setTimeout as nativeSetTimeout } from 'node:timers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const worktreeRoot = path.resolve(__dirname, '../..');
@@ -137,6 +138,19 @@ export default {
       },
     });
 
+    // Web Animations marks the current finished promise handled on cancel:
+    // https://www.w3.org/TR/web-animations-1/#canceling-an-animation
+    // happy-dom rejects it without that step. Mark only this internal promise
+    // handled; explicit consumers still observe AbortError, and unrelated
+    // rejected promises remain errors.
+    const cancelAnimation = win.Animation?.prototype.cancel;
+    if (cancelAnimation) {
+      win.Animation.prototype.cancel = function cancel() {
+        if (this.playState !== 'idle') this.finished?.catch(() => {});
+        return cancelAnimation.call(this);
+      };
+    }
+
     // ── No sockets to the fictional page origin ────────────────────────────
     //
     // happy-dom needs a page URL, and the default above is
@@ -202,7 +216,9 @@ export default {
         // pending" — an intermittent, file-shifting sweep failure (exit 1 with
         // zero test failures). The await gives in-flight forwards a tick to
         // settle before the channel can tear down.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // A test may leave page timers faked. The worker drain belongs to
+        // Node's clock, so it must not wait on that page's simulated clock.
+        await new Promise((resolve) => nativeSetTimeout(resolve, 0));
         keys.forEach(key => {
           try { delete g[key]; } catch {}
         });
