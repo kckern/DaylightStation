@@ -44,6 +44,11 @@ export function printHostPacket(id) { return DaylightAPI(`api/v1/gaming/sessions
 // Explicit session links remain attachable; automatic local recovery follows the
 // currently authored setup revision so an old roster cannot replace new defaults.
 export function canResumeSavedSession(session, set) {
+  const configured = set?.launch?.autostart && set.launch.participants;
+  if (Array.isArray(configured)) {
+    const actual = (session?.header?.participants || []).map(person => person.id);
+    if (actual.length !== configured.length || configured.some((id, index) => actual[index] !== id)) return false;
+  }
   const revision = set?.setupProfile?.setup_revision;
   return !revision || session?.state?.set?.party_games?.setup_revision === revision;
 }

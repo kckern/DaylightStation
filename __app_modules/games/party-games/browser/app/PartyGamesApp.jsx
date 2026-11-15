@@ -232,6 +232,15 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             followReplacement(attachedSession.header.session_id, attachedSession.replacementSessionId, attachedSession);
             return;
           }
+          const configuredSet = sets.find(set => set.definitionId === requestedDefinition);
+          if (attachedSession && !attachment.diagnosticSessionId && configuredSet?.launch?.autostart && !canResumeSavedSession(attachedSession, configuredSet)) {
+            logger.info('party-games.configured-roster-changed', {sessionId: attachedSession.header?.session_id, definitionId: requestedDefinition});
+            try { window.localStorage.removeItem(activeSessionKey(requestedDefinition)); } catch { /* URL recovery remains available. */ }
+            const url = new URL(window.location.href); url.searchParams.delete('session');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+            setAttachment(value => ({...value, sessionId: null, savedSession: false}));
+            return;
+          }
           if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
             throw new Error('Saved session uses an older team setup');
           }

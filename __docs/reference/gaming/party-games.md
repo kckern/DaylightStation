@@ -495,3 +495,5 @@ Ready renewals recheck the current phase, setup epoch, tested assignments and fr
 The Party Games environment profile exposes active shared-directory guests in `named_guests`, separately from `household_members`. A guest has runtime ID `guest:<id>`, a typed `person` reference, display name, and avatar. Its avatar's user key is independent of its runtime ID. Archived guests are omitted; a missing named-guest document produces an empty list.
 
 An individual game's explicit `launch.participants` may include both household member IDs and guest runtime IDs in the desired order. Unknown IDs, duplicate launch IDs, and collisions in the available participant IDs reject automatic setup. Listing a guest does not grant host authority. Existing sessions retain their saved roster; start a new game to use changes to the launch roster.
+
+Configured automatic launches compare the attached participant IDs and order with the current launch roster. A changed roster starts a fresh session, including when an old session ID remains in the URL. Existing session journals are preserved.

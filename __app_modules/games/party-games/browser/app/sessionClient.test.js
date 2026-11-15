@@ -73,3 +73,9 @@ it('sends a named guest seat and its runtime participant identity in a fresh ses
   await createSession({ definitionId: 'charades:one', seats, setupProfile: { kind: 'individuals' } });
   expect(DaylightAPI.mock.calls[0][1]).toMatchObject({ participants: [guest], seats, setup: { seats } });
 });
+
+it('rejects an attached roster that differs from configured autostart participants', () => {
+ const set={launch:{autostart:true,participants:['user_a','guest:visitor']}};
+ expect(canResumeSavedSession({header:{participants:[{id:'user_a'}]}},set)).toBe(false);
+ expect(canResumeSavedSession({header:{participants:[{id:'user_a'},{id:'guest:visitor'}]}},set)).toBe(true);
+});

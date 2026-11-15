@@ -396,3 +396,15 @@ it('retries fresh creation after a reset without resurrecting the old session', 
  expect(createSession.mock.calls[1][0].seats).toEqual(seats);
  expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:null,sessionId:null});
 });
+it('replaces an explicit outdated configured roster with a fresh current-roster session', async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:fhe?return_to=%2Fscreens%2Fliving-room%2Ffhe&session=old-game');
+ const currentSet={...sets[0],id:'charades:fhe',definitionId:'charades:fhe',setId:'fhe',launch:{autostart:true,participants:['a','b','guest:visitor']}};
+ const currentConfig={...config,named_guests:[{id:'guest:visitor',name:'Visitor',avatar:'/portrait'}]};
+ fetchBoot.mockResolvedValueOnce({config:currentConfig,sets:[currentSet],attachedSession:{header:{session_id:'old-game',participants:[{id:'a'},{id:'b'}]},state:{charades_history_policy:'recorded'}}}).mockResolvedValue({config:currentConfig,sets:[currentSet]});
+ render(<PartyGamesApp appPath="charades:fhe"/>);
+ await screen.findByRole('button',{name:'Complete session-one'});
+ expect(createSession).toHaveBeenCalledTimes(1);
+ expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['a','b','guest:visitor']);
+ expect(new URLSearchParams(window.location.search).get('session')).toBe('session-one');
+ expect(new URLSearchParams(window.location.search).get('return_to')).toBe('/screens/living-room/fhe');
+});
