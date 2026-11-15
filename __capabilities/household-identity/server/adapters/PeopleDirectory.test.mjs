@@ -22,3 +22,12 @@ it('keeps ordered members separate from revisioned visitors and resolves archive
   expect(members).toEqual(['b','a']);
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
+it('rejects non-string guest IDs without persisting a revision', async () => {
+ const dir=mkdtempSync(join(tmpdir(),'people-'));
+ try {
+  const store=new YamlNamedGuestStore({pathForHousehold:()=>join(dir,'named-guests.yml')});
+  const directory=new PeopleDirectory({householdDirectory:{userIds:()=>[]},guestStore:store});
+  await expect(directory.createGuest({householdId:'h',input:{id:42,name:'Visitor'},expectedRevision:0})).rejects.toThrow(/invalid/i);
+  expect(store.read('h')).toEqual({schema:'named-guests/v1',revision:0,guests:[]});
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
