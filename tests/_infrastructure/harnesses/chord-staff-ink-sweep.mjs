@@ -24,6 +24,8 @@
  * against frontend/node_modules — the frontend has its OWN vexflow (4.x); the root
  * node_modules has a different, much older one.
  */
+import { inspectStaffSvg } from './chord-staff-ink.mjs';
+import { STAFF_GEOMETRY } from '../../../__capabilities/music-notation/browser/model/staffGeometry.js';
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -45,7 +47,7 @@ const MIN_COLUMN_AIR = 2;
 // The other staff's outer line, which a beam must not cross: the bass top line for a
 // treble beam, the treble bottom line for a bass beam. TOP_ROOM 58 + 4 spaces of stave
 // headroom (+ 40 more for the bottom line); STAFF_GAP 66.
-const BASS_TOP_LINE_Y = 58 + 66 + 40;
+const BASS_TOP_LINE_Y = STAFF_GEOMETRY.trebleY + STAFF_GEOMETRY.gap + 40;
 const TREBLE_BOTTOM_LINE_Y = 58 + 40 + 40;
 
 async function main() {
@@ -56,6 +58,7 @@ async function main() {
       entryPoints: [join(dir, 'entry.js')],
       bundle: true,
       format: 'iife',
+      define: {'import.meta.env': JSON.stringify({MODE:'test',VITE_BUILD_ID:'staff-render-check'})},
       outfile: join(dir, 'bundle.js'),
       nodePaths: [join(REPO, 'frontend/node_modules')],
       logLevel: 'warning',
@@ -70,7 +73,8 @@ async function main() {
     await page.goto('file://' + join(dir, 'sweep.html'));
     await page.waitForFunction(() => !!window.renderChordStaff);
 
-    const result = await page.evaluate(({ KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y }) => {
+    await page.addScriptTag({content:`window.inspectStaffSvg=${inspectStaffSvg.toString()}`});
+    const result = await page.evaluate(async ({ KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y }) => {
       const cases = [];
       for (let m = 21; m <= 108; m += 1) {
         cases.push([m]);                                                  // every key alone
@@ -105,6 +109,7 @@ async function main() {
       let tightest = Infinity;
       // Beams that cross into the other staff's lines (gated), and lone stems that do
       // (reported only: a stem turned away would leave the frame, or both sides cross).
+      const crossInk=[]; let crossInkCount=0;
       const crossings = [];
       let crossingCount = 0;
       let beamsChecked = 0;
@@ -185,6 +190,13 @@ async function main() {
             perAspect[a].worstRight = Math.max(perAspect[a].worstRight, +(right - (vx + vw)).toFixed(1));
             if (right > vx + vw || top < vy || bottom > vy + vh || left < vx) perAspect[a].clipped += 1;
             const pathological = stress.has(midis.join(','));
+            if(!pathological) {
+              const actual=await window.inspectStaffSvg(host,MIN_COLUMN_AIR);
+              if(actual.crossStaffInkHits.length) {
+                crossInkCount++;
+                if(crossInk.length<10)crossInk.push({midis,ks,aspect,dur,hits:actual.crossStaffInkHits});
+              }
+            }
             // Inter-column air, per staff: each drawn note's ink box (accidentals,
             // strokes, displaced heads, flags and 8va/8vb labels all draw inside its
             // .vf-stavenote group; beamed stems draw with the beam), tagged with its
@@ -251,7 +263,7 @@ async function main() {
         perAspect,
         clips,
         overlaps, overlapCount, stressOverlaps, pairsChecked, tightest: +tightest.toFixed(1),
-        crossings, crossingCount, beamsChecked, loneStemCrossings, loneStemWorst,
+        crossInk,crossInkCount, crossings, crossingCount, beamsChecked, loneStemCrossings, loneStemWorst,
         barHits, barHitCount, barsChecked,
       };
     }, { KEYS, ASPECTS, MIN_COLUMN_AIR, BASS_TOP_LINE_Y, TREBLE_BOTTOM_LINE_Y });
@@ -273,7 +285,9 @@ async function main() {
     console.log(`beams:                ${result.beamsChecked} checked, ${result.crossingCount} cross into the other staff's lines (need 0)`);
     console.log(`lone stems:           ${result.loneStemCrossings} reach into the other staff (reported, not gated; worst ${JSON.stringify(result.loneStemWorst)})`);
     console.log(`breath bars:          ${result.barsChecked} checked, ${result.barHitCount} closer than ${MIN_COLUMN_AIR} units to a column's ink (need 0)`);
+    console.log(`cross-staff ink: ${result.crossInkCount} collisions/clearance failures (need 0)`);
     let failed = false;
+    if(result.crossInkCount){console.error('CROSS-STAFF INK:',JSON.stringify(result.crossInk));failed=true;}
     if (result.clips.length) {
       console.error('\nINK OUTSIDE THE FRAME — the staff is clipping:');
       for (const c of result.clips) console.error('  ' + JSON.stringify(c));
@@ -301,4 +315,4 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+main().catch((err) => { console.error(err); process.exitCode = 2; });

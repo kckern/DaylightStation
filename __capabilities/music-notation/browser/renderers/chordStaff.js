@@ -20,6 +20,7 @@
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
 import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam, Stroke, TextFormatter, TickContext, Clef } from 'vexflow';
+import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 import { STAFF_GEOMETRY } from '../model/staffGeometry.js';
 import { displayStaffMidi } from '../model/staffRegister.js';
 import { staffDisplacement, stemTouchesOther } from './staffInk.js';
@@ -41,6 +42,11 @@ const PAD = 8;          // stave's x offset inside the drawing canvas
 const TOP_ROOM = STAFF_GEOMETRY.trebleY;    // y of the treble stave's top line (the drawing anchor)
 const STAFF_GAP = STAFF_GEOMETRY.gap;   // treble top line → bass top line (one grand-staff system)
 const INK = '#1a1a1a';
+let inkLogger;
+const logInkFallback = data => {
+  inkLogger ??= getLogger().child({component:'chord-staff-renderer'});
+  inkLogger.sampled('chord-staff.engraving-fallback',data,{maxPerMinute:10,aggregate:true,level:'debug'});
+};
 // Note area the content floor reserves in a narrow slot. Sized from the ink sweep, not
 // guessed: at 40 a 12-note cluster's accidental columns overran the frame's right edge
 // by up to 40 units in a tall/narrow box, and the fixed frame turns an overrun into a
@@ -304,11 +310,27 @@ function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION, stem
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
+function leavesStaffFrame(note,direction) {
+  const ys=note.getYs();
+  let top=Math.min(...ys)-(direction===1?35:0);
+  let bottom=Math.max(...ys)+(direction===-1?35:0);
+  if(note.getDuration()==='8') {
+    if(direction===1)top-=4;else bottom+=13;
+  }
+  for(const modifier of note.getModifiers()) {
+    if(!(modifier instanceof Annotation))continue;
+    const height=TextFormatter.create(modifier.textFont).getYForStringInPx(modifier.text).height;
+    if(modifier.text.endsWith('a'))top=Math.min(top,Math.min(...ys)-(direction===1?35:0)-height-10);
+    else bottom=Math.max(bottom,Math.max(...ys)+(direction===-1?35:10)+height+2);
+  }
+  return top<FRAME_TOP+2||bottom>FRAME_BOTTOM-2;
+}
+
 function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals = [], stemDir = null, staffPlan = null) {
   const { bassNotes, trebleNotes } = staffPlan
     ? {bassNotes:staffPlan.parts.bass.midis,trebleNotes:staffPlan.parts.treble.midis}
     : splitByHand(midis);
-  const marker = octave => octave === 0 ? '' : `${Math.abs(octave)===2?'15m':'8v'}${octave>0?'a':'b'}`;
+  const marker = octave => octave === 0 ? '' : `${Math.abs(octave)===1?'8v':`${Math.abs(octave)*7+1}m`}${octave>0?'a':'b'}`;
   const trebleOtt = staffPlan ? {marker:marker(staffPlan.parts.treble.residualOctave)} : getOttavaInfo(trebleNotes, true);
   const bassOtt = staffPlan ? {marker:marker(staffPlan.parts.bass.residualOctave)} : getOttavaInfo(bassNotes, false);
   const dispTreble = staffPlan ? trebleNotes.map(n=>displayStaffMidi(n,staffPlan.parts.treble))
@@ -316,13 +338,15 @@ function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION, arrivals
   const dispBass = staffPlan ? bassNotes.map(n=>displayStaffMidi(n,staffPlan.parts.bass))
     : bassOtt.octaves ? bassNotes.map((n) => n + bassOtt.octaves * 12) : bassNotes;
 
-  const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration, stemDir);
-  const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration, stemDir);
+  const tStem = stemDir && typeof stemDir === 'object' ? stemDir.treble : stemDir;
+  const bStem = stemDir && typeof stemDir === 'object' ? stemDir.bass : stemDir;
+  const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration, tStem);
+  const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration, bStem);
   // Best-effort 8va/8vb markers (don't fail the render if the Annotation enum shape
   // ever shifts between VexFlow versions).
   try {
-    if (trebleOtt.marker && tNote) tNote.addModifier(new Annotation(trebleOtt.marker).setVerticalJustification(Annotation.VerticalJustify.TOP));
-    if (bassOtt.marker && bNote) bNote.addModifier(new Annotation(bassOtt.marker).setVerticalJustification(Annotation.VerticalJustify.BOTTOM));
+    if (trebleOtt.marker && tNote) tNote.addModifier(new Annotation(trebleOtt.marker).setVerticalJustification(trebleOtt.marker.endsWith('a')?Annotation.VerticalJustify.TOP:Annotation.VerticalJustify.BOTTOM));
+    if (bassOtt.marker && bNote) bNote.addModifier(new Annotation(bassOtt.marker).setVerticalJustification(bassOtt.marker.endsWith('a')?Annotation.VerticalJustify.TOP:Annotation.VerticalJustify.BOTTOM));
   } catch { /* marker is decorative */ }
 
   // A rolled chord arrives as ONE column (model/noteFlow.js), so the roll is drawn as
@@ -390,7 +414,7 @@ function measureColumn(col, ks, durations) {
   let right = 0;
   let autoLeft = 0;
   for (const duration of durations) {
-    for (const stemDir of [null, 1, -1]) {
+    for (const stemDir of [null, 1, -1, {treble:1,bass:-1}, {treble:-1,bass:1}]) {
       const { tNote, bNote } = columnNotes(col.midis, ks, col.spelling, duration, col.arrivals, stemDir, col.staffPlan);
       const notes = [[tNote, 'treble'], [bNote, 'bass']].filter(([n]) => n);
       notes.forEach(([n, clef]) => n.setStave(staffFor(clef)));
@@ -546,7 +570,7 @@ function markClef(group,stave,staff,octave,epoch,{header=false,x=0,small=false}=
   const text=document.createElementNS('http://www.w3.org/2000/svg','text');
   text.setAttribute('class','staff-clef-octave');
   text.setAttribute('font-family','serif');text.setAttribute('font-size',small?'8':'9');
-  text.setAttribute('text-anchor','middle');
+  text.setAttribute('text-anchor','middle');text.setAttribute('fill',INK);
   text.setAttribute('x',String(x+(staff==='treble'?(small?8:12):(small?7:10))));
   const line=octave>0 ? (staff==='treble'?(small?-0.6:-1):-0.8)
     : (staff==='treble'?(small?5.4:6.5):(small?3.7:4.5));
@@ -701,6 +725,13 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const durations = flow.map((c) => c.duration);
   const slotNotes = flow.map((c) => columnNotes(c.midis, ks, c.spelling, c.duration, c.arrivals, null, c.staffPlan));
   slotNotes.forEach(({tNote,bNote}) => { tNote?.setStave(treble); bNote?.setStave(bass); });
+  // Resolve frame constraints before either hand votes on beams. Otherwise a later
+  // bass reversal could invalidate a treble beam planned against its old direction.
+  for(const {tNote,bNote} of slotNotes)for(const note of [tNote,bNote]) {
+    if(!note)continue;
+    const direction=note.getStemDirection();
+    if(leavesStaffFrame(note,direction)&&!leavesStaffFrame(note,-direction))note.setStemDirection(-direction);
+  }
   const opposite = new Map(slotNotes.flatMap(({tNote,bNote}) => [[tNote,bNote],[bNote,tNote]]));
   const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
   const bassTickables = slotNotes.map((s, i) => s.bNote ?? new GhostNote({ duration: durations[i] }));
@@ -745,9 +776,9 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // crossed the bass group's own beam (replay 16-guest-rolled). Mirror image: a bass
   // group stemmed up with a note above its middle reaches into the treble. A stem runs
   // STEM_SPACES (3.5) staff spaces past its farthest head, and the staves are
-  // STAFF_GAP − 40 = 26 units (2.6 spaces) apart, so a treble note stemmed down must sit
-  // on line 1.9 or higher (G4 and up: F4 already reaches 4.8 units into the bass staff,
-  // E4 9 — measured), and a bass note stemmed up on line 4.1 or lower (F3 and down).
+  // STAFF_GAP − 40 = 40 units (4 spaces) apart, so a treble note stemmed down must sit
+  // high enough that its beam stays in the gap; the mirrored limit applies to bass.
+  // The actual opposite-part ink and beam envelope provide the tighter guard below.
   // Such a note leaves the group exactly like a thrower-out. It may still stem the same
   // way on its own; what it no longer does is drag a beam across the other staff.
   const MIDDLE_LINE = 3;
@@ -755,8 +786,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const BOTTOM_LINE = 1;
   const STEM_SPACES = 3.5;
   const GAP_SPACES = (STAFF_GAP - 40) / 10;
-  const LOWEST_TREBLE_DOWN = BOTTOM_LINE - GAP_SPACES + STEM_SPACES; // 1.9
-  const HIGHEST_BASS_UP = TOP_LINE + GAP_SPACES - STEM_SPACES;       // 4.1
+  const LOWEST_TREBLE_DOWN = BOTTOM_LINE - GAP_SPACES + STEM_SPACES; // 0.5 at the current fixed gap
+  const HIGHEST_BASS_UP = TOP_LINE + GAP_SPACES - STEM_SPACES;       // 5.5 at the current fixed gap
   // The farthest head a stem may leave from on the frame's outer edges. Ottava keeps
   // displayed heads within A6 (treble line 9) and E2 (bass line −0.5); these limits
   // leave a flagged stem from them inside FRAME_TOP/FRAME_BOTTOM (the ink sweep checks).
@@ -790,15 +821,29 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // beat-sized groups this matters — a group opening on D5 then an F4 chord averages on
   // the middle line, voted DOWN, and the F4 chord (which can't stem down without
   // reaching the bass staff) fell out, leaving the D5 a lone flag.
+  const beamConflicts = (run,dir) => {
+    if(run.length<2)return false;
+    const tips=run.map(n=>dir===1?Math.min(...n.getYs())-35:Math.max(...n.getYs())+35);
+    const low=Math.min(...tips)-7,high=Math.max(...tips)+7;
+    return run.some(note=>{
+      const other=opposite.get(note);if(!other)return false;
+      const ys=other.getYs(),up=other.getStemDirection()===1;
+      const above=other.getModifiers().some(m=>/^(8v|(?:15|22|29)m)a$/.test(m.text??''));
+      const below=other.getModifiers().some(m=>/^(8v|(?:15|22|29)m)b$/.test(m.text??''));
+      const otherLow=Math.min(...ys)-(up?35:0)-Math.max(up?4:6,above?25:0);
+      const otherHigh=Math.max(...ys)+(up?0:35)+Math.max(up?6:13,below?25:0);
+      return low<otherHigh&&high>otherLow;
+    });
+  };
   const voteDir = (run) => {
     const dir = groupDir(run);
-    const blocks = (d) => run.slice(0, 2).some((n) => throwsOut(n, d) || intrudes(n, d));
+    const blocks = (d) => run.slice(0, 2).some((n) => throwsOut(n, d) || intrudes(n, d)) || beamConflicts(run.slice(0,2),d);
     return blocks(dir) && !blocks(-dir) ? -dir : dir;
   };
   const plan = (run) => {
     if (run.length < 2) return [];
     const dir = voteDir(run);
-    const bad = run.findIndex((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
+    const bad = run.findIndex((n,i) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n) || beamConflicts(run.slice(0,i+1),dir));
     if (bad < 0) return [{ run, dir }];
     return [...plan(run.slice(0, bad)), ...plan(run.slice(bad + 1))];
   };
@@ -855,7 +900,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
       const y = staffNotes[i + 1];
       if (!x || !y || directed.has(x) || voteDurations[i] !== '8' || !sameBeat(i, i + 1)) return;
       const dir = voteDir([x, y]);
-      const blocked = [x, y].some((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n));
+      const blocked = [x, y].some((n) => throwsOut(n, dir) || intrudes(n, dir) || labelled(n)) || beamConflicts([x,y],dir);
       if (blocked) return;
       if (x.getStemDirection() !== dir) x.setStemDirection(dir);
       directed.add(x);
@@ -885,8 +930,8 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
         const dir = note.getStemDirection();
         const away = -dir;
         const lines = note.getKeyProps().map((k) => k.line);
-        const outOfFrame = away === 1 ? Math.max(...lines) > OUTER_HEAD_LINE_UP : Math.min(...lines) < OUTER_HEAD_LINE_DOWN;
-        if (intrudes(note, dir) && !intrudes(note, away) && !outOfFrame) note.setStemDirection(away);
+        const outOfFrame = direction => leavesStaffFrame(note,direction);
+        if (!outOfFrame(away) && (outOfFrame(dir) || (intrudes(note,dir) && !intrudes(note,away)))) note.setStemDirection(away);
       }
     }
   } catch { /* stem side is cosmetic */ }
@@ -925,6 +970,7 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // leaves accidentals and roll strokes at the original shared-column position.
   slotNotes.forEach(({tNote,bNote},i) => {
     const offset = staffDisplacement(tNote,bNote);
+    if(offset)logInkFallback({columnId:flow[i].id??i,epoch:flow[i].staffPlan?.epoch??0,offset});
     for(const [note,dx] of [[trebleTickables[i],0],[bassTickables[i],offset]]) {
       const tick = new TickContext().addTickable(note).preFormat();
       tick.setX(xs[i]+dx);

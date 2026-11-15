@@ -4,7 +4,7 @@ The **TheoryPanel** is the shared music-theory composite shown alongside the pia
 kiosk's Studio and Videos modes: a circle of fifths, a live "current chord" grand
 staff, and a chord-name plaque, all reading from the same live MIDI surface.
 
-- Component: `frontend/src/modules/Piano/components/TheoryPanel.jsx` (+ `TheoryPanel.scss`)
+- Component: `__app_modules/learning/piano/browser/components/TheoryPanel.jsx` (+ `TheoryPanel.scss`)
 - Regression test: `tests/live/flow/piano/piano-theory-panel.runtime.test.mjs`
 
 ## One component, two layouts
@@ -63,14 +63,11 @@ re-centred everything. Measured in Chrome at 560×210, between a middle-C triad 
 60px right and 32px down. In the narrow sidebar it kept its size but still slid 28px
 vertically.
 
-The fix is a constant frame (`FRAME_TOP`/`FRAME_BOTTOM` in `chordStaff.js`) that always
-reserves the worst-case headroom. The bounds are measured, and the thing that measures
-them is committed: `node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`
-renders ~38k cases and exits non-zero if any ink lands outside the frame. Current
-extremes: ink y ∈ [30.5, 249.2], x ≥ −6 (the brace overhangs the stave's left edge).
-Ottava shifting is what bounds it: the displayed range can never exceed A6 on top or
-go below E2 at the bottom, so only those notes' ledger lines and the 8va/8vb markers
-reach the extremes.
+The fix is a constant frame defined in `model/staffGeometry.js` and consumed by both
+register feasibility and engraving. Treble stays at y=58, the staff-to-staff anchor
+gap is 80 units, and the frame is y=20..272. The extra fixed gap clears octave-clef
+labels; it does not grow or shrink while someone plays. The independent browser ink
+checks include the heads, modifiers, stems, flags, beams and clef indications.
 
 Two consequences worth knowing:
 
@@ -108,7 +105,7 @@ Full rules, worked examples, rejected alternatives and limitations:
 `model/noteFlow.js` turns the live MIDI surface into **columns** that march left to
 right like typed characters, instead of piling every note onto one stack.
 
-**This is not meter.** No time signature, no barline, no quantisation, no rests. The
+**This is not meter.** No time signature, quantisation or rests; thin phrase separators mark breaths, not measured bars. The
 horizontal axis carries order, so a rolled chord reads as a roll and an arpeggio reads as
 an arpeggio.
 
@@ -126,7 +123,7 @@ an eighth and grows to a quarter, then a half, while you hold it.
 | `SPAN_MAX_MS` | 250 | Longest a gesture may run from its first onset. |
 | `MAX_COLUMN_NOTES` | 10 | Ten fingers; more is two gestures. A re-strike of a pitch already in the column also opens a new one. |
 | `LEGATO_RELEASE_MS` | 160 | **Legato is not a roll.** When every key that landed before a later key of a young column (newest or second-newest) has let go, the last within this long of that key landing, and that key stays down longer, the line moved on: `pushReleases` splits the column there. A held roll never splits. |
-| `LIFT_TOGETHER_MS` | 10 | Keys let go within this long of each other were lifted together — a chord (even a staccato roll), never split. The split is settled on the first `pushReleases` after this window: the next key event or the 80ms tick, whichever comes first. Chosen by the replay sweep (5/10/15/25 at GAP 150 / release 160) with the same rule as the others, since the key-up gaps show only a 0-5ms peak and no valley. The rule picked 5, but its lifted-together whole (90.6%) cleared the gate by only 0.6 points, so 10 was taken instead (92.0%, for +0.2 points of legato merged). |
+| `LIFT_TOGETHER_MS` | 15 | Keys lifted within this window stay a chord. A pending split settles on the next key event or 80ms tick. On the expanded 338-take corpus, 10ms kept 89.9% of lifted-together chords whole; 15ms kept 91.2%, with chord-whole unchanged at 95.2% and sequential legato merged rising from 13.2% to 13.8%. |
 | `LEGATO_MIN_STEP_MS` | 30 | A later key closer than this to the one before it was struck with it and never opens a legato split (short struck chords let go as fast as legato does). |
 | `ROLL_MARK_MS` | 100 | A staff whose own arrivals span this long draws an arpeggio stroke. |
 | `BREATH_RATIO` | 2.0 | A gap longer than this × the PACE (median of recent gaps, floored at 300ms but not capped) before a column is a breath: a thin bar line before it, and the beat count restarts. At an ordinary pace it is exactly the half threshold; against the real pace, a slow chorale (a chord every 2s) draws no bars. A long gap right after another long gap is not a breath either (slowing into long notes draws one bar where the pause began). The first gap of a line is never a breath. |
@@ -135,13 +132,11 @@ an eighth and grows to a quarter, then a half, while you hold it.
 | `IDLE_CLEAR_MS` | 3000 | Silence after which the next strike starts a fresh line at the left (nothing is wiped before that strike). |
 | `STALE_CLEAR_MS` | 30000 | Silence after which an untouched staff is emptied outright. |
 
-`GAP_MS`, `LEGATO_RELEASE_MS`, `LEGATO_MIN_STEP_MS` and `LIFT_TOGETHER_MS` were chosen by replaying real
-playing: `node tests/_infrastructure/harnesses/chord-staff-replay.mjs --sweep-gap`
-prints chords kept whole against legato steps merged for each pair; the plain run
-gates on chords kept whole >= 90%, chords lifted together kept whole >= 90% (an
-independent population: every key let go within 30ms) and no right-hand chord on the
-bass staff. The choice rule: both gates >= 90%, held chords kept whole >= 95%, then the
-fewest legato steps (lifted in sequence) drawn as one column.
+Gesture thresholds are verified against real recordings with the replay harness.
+Chord-whole and lifted-together-whole must each be >=90%. The former absolute-C4
+"RH-on-bass" heuristic is informational only: an upper part can correctly be below C4,
+and a lower part can correctly be above it. Labeled phrases, original-pitch coverage,
+and register-epoch consistency are the adaptive assignment gates.
 
 Mechanics worth knowing:
 
@@ -157,16 +152,9 @@ Mechanics worth knowing:
   notes milliseconds apart into one identical `Date.now()` through React batching.
   `GAP_MS` and the legato thresholds are therefore tuned against transport-inclusive
   jitter, which is a reason to re-check them on the real instrument.
-- **Hands are inferred from register first** (`model/handSplit.js`, `splitByHand`). A
-  column that fits under one hand (span <= `HAND_SPAN`, 14 semitones) is ONE hand: whole
-  to treble when its mean is at/above middle C (`HAND_PIVOT`, 60), else whole to bass.
-  A wider column that straddles middle C is two hands, divided at the best split point
-  over every possible one (both hands within reach, then fewest notes on the wrong side
-  of C4, then least overflow, then widest gap). A wider column wholly on one side of C4
-  stays whole in that clef (the **one-side rule**): splitting it to satisfy reach drew
-  right-hand notes on the bass staff, the original complaint (the replay gate counts
-  that as a fault and requires zero). Known limit: a left-hand Alberti figure in the
-  C4 octave reads as treble — telling it apart needs voice tracking across columns.
+- **Live staff assignment uses phrase context**, described below. `splitByHand()`
+  remains the compatible stateless fallback for unplanned exercise/game callers;
+  its C4 boundary and 14-semitone reach are not live-planner prohibitions.
 - **A roll is per staff.** The column carries its arrivals (`{ midi, at }`); each staff
   draws its own stroke from `staffRoll`: needs >= 2 heads on that staff, its own
   arrivals spanning `ROLL_MARK_MS`, direction from its first arrival against its last.
@@ -219,14 +207,13 @@ Mechanics worth knowing:
   stem the group would turn away from the staff (a high ledger note stemmed up, a low one
   stemmed down) keeps its own flag and splits the group, which keeps every beam inside
   the fixed frame (ink sweep: 0 clipped).
-- **No beam crosses into the other staff.** A stem runs 3.5 spaces past its farthest
-  head and the staves are 2.6 spaces apart, so a treble note stemmed down below G4
-  (line 1.9) or a bass note stemmed up above F3 (line 4.1) would carry the beam into the
-  other staff's lines — where it once crossed the other hand's beam. Such a note leaves
-  the group like an off-staff note does (own stem, own flag). A note with no beam whose
-  own stem would do the same (a wide treble chord, E♭4 under A5 B♭5, stems down by
-  auto_stem) is turned to its staff's outer side instead, when that stays in the frame.
-  The ink sweep gates on 0 beams entering the other staff and reports lone stems.
+- **Cross-staff clearance uses the actual opposing notes**, including ledger notes
+  outside the five lines. Near the gap, bass-down/treble-up wins when safe; flags
+  and local octave labels also have to remain inside the frame. If neither direction
+  gives clearance, one staff's whole note/modifier group is displaced horizontally
+  using its own tick context, and the width is reserved before column placement.
+  Beam groups retain their established direction and split at incompatible extensions
+  or clef-register changes.
 - **A note with an ottava marker is never beamed.** Its 8va/8vb/15ma/15mb label is
   placed from the note's own stem end; under a beam that end is the beam, and the label
   drew on top of it. The marked note keeps its own stem and flag and splits the group.
@@ -264,45 +251,83 @@ Mechanics worth knowing:
   Replay: 1.57 beat groups per phrase, 65% of them full fours.
 - **Ghost notes fill the staff a column doesn't touch**, keeping the two hands
   column-aligned without printing a rest (a rest would be a rhythmic claim).
-- **Ordinary playing never clips, and neighbouring columns never collide** — verified
-  by the ink sweep harness (`tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`:
-  ~152k renders including 16-column flows; 0 clipped, 0 neighbouring-column pairs under
-  2 units of air, which is part of its exit code). A twelve-note forearm cluster can
-  still overrun a narrow pane, a known, accepted limit.
+- **Ink clearance is a release gate**, not a claim inferred from note grouping.
+  The sweep checks clipping, neighboring-column air, beams, breath bars and actual
+  cross-staff glyph masks. The focused register gate independently reconstructs
+  sounding MIDI from rendered note positions, accidental outlines and visible octave
+  indications. Forearm-sized stress clusters remain separately reported.
 - **Accidentals are resolved per column against the key only** — deliberately not
   VexFlow's `Accidental.applyAccidentals`, whose measure semantics would print a
   repeated F♯'s sharp once and leave the second bare, reading as a different note on a
   live display. Watch out: parse the accidental positionally, since the letter `b` is
   itself a `'b'` (`spelling.includes('b')` marked every B natural as B flat).
-- **Ottava is decided per column**, so one low bass note gets its own 8vb without
-  dragging the rest of the phrase down an octave.
+- **Octave interpretation belongs to a register epoch** in the live staff. A local
+  residual ottava is available for an outlier or acquisition fallback. Legacy
+  unplanned callers retain the per-column ottava behavior.
 
-## Harnesses (run these after touching the flow, split or renderer)
+## Adaptive staff assignment and register
 
-Both are committed under `tests/_infrastructure/harnesses/` and need the real corpora
-(`DAYLIGHT_DATA_PATH`, optionally `DAYLIGHT_MEDIA_PATH`; read-only).
+`staffPlanner.js` owns the live decisions. It consumes distinct onset gestures,
+not the median of accumulated held keys, and shares its original-pitch assignments
+with roll strokes, measurement, the VexFlow renderer and corpus replay. Stable flow
+column IDs distinguish equal timestamps; origin IDs keep a delayed legato split from
+becoming new register evidence.
 
-- **Ink sweep** — `node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`.
-  Renders ~38k cases and exits non-zero if any ink leaves the fixed frame.
-- **Replay** — `node tests/_infrastructure/harnesses/chord-staff-replay.mjs`. Replays the
-  Studio takes and the always-on MIDI capture history through the exact
-  `CurrentChordStaff` pipeline, one event per render, and prints chords kept whole, eighths, fragments, RH-on-bass, legato merged,
-  rolled columns and why each split cluster split. **Two gates** (exit 1 on failure):
-  chord whole % >= 90 and lifted-together whole % >= 90, plus RH-on-bass == 0. Exit 2
-  means a crash, bad arguments or an empty corpus.
-  - Its gate figures are an **upper bound** for the kiosk: the harness feeds one event per
-    render at the event's own time, while on the kiosk React may batch several events
-    into one render, and a key-up is stamped at effect or 80ms-tick time (not on receipt,
-    as arrivals are), so release timing — and with it the legato split — is coarser there.
-  - `--render <outDir>` screenshots chosen moments (VexFlow in Playwright at the Studio
-    pane's size) with an index page and `moments.json`; `--moments <moments.json>`
-    (needs `--render`) re-renders the SAME moments through the current code for
-    before/after comparison.
-  - `--sweep-gap` replays the corpus under each `GAP_MS` x `LEGATO_RELEASE_MS` pair and
-    each `LIFT_TOGETHER_MS` / `LEGATO_MIN_STEP_MS` value, printing whole-chord % against
-    legato merged % — how the constants were picked.
-  - Also `--users a,b`, `--limit N` (captures per user), `--since YYYY-MM-DD`,
-    `--media`, `--data`.
+The planner ranks lower/upper partitions and octave pairs -2..2 using staff-center
+and ledger burden, continuity, reach and predicted clearance. Compact groups may
+contain both parts. It considers local whole-chord octave fitting before choosing
+membership, so acquisition does not flatten two remote ranges onto one staff.
+
+At most eight distinct origins contribute evidence; plans retain at most sixteen
+columns. Acquisition needs four origins, three consecutive challenger votes, and
+an improvement of at least `max(1, 20% of incumbent cost)`. A change takes effect at
+a new column on a breath or four-eighth-unit group boundary. No-op ticks, key changes,
+releases, growing rolls and hold promotions do not add votes. Ties favor the current
+reading. A paired shift is preferred for a whole passage played lower/higher;
+independent changes are allowed when one part moves.
+
+The clef carries a small 8 or 15 above/below it. Positive register means sounding
+above the written notes; negative means sounding below them:
+
+```text
+displayed MIDI = sounding MIDI - 12 * (clef octave + residual octave)
+```
+
+An inline clef marks each forward change, including an ordinary clef on return to
+zero. The left header describes the first visible epoch when older columns scroll
+away. Completed assignments/epochs are not reinterpreted; the newest two columns
+remain provisional while gesture/release refinement is possible. Sound, chord names,
+recording and grading always use original MIDI.
+
+This assigns musical parts, not known physical hands. An isolated note and crossed
+or overlapping lines can be ambiguous. Display begins immediately with a conservative
+reading. The register may take several gestures to settle; rare local octave marks
+are preferable to a prematurely changing header. The pure model is published through
+the capability's `staffPlanner.js` facet and browser index. Optional ABC snapshots
+consume the same plan; abcjs double-octave snapshots use explicit 15ma/15mb text and
+sounding transpose because that library does not implement double-octave clefs.
+
+## Harnesses (run after changing flow, assignment or engraving)
+
+- `node tests/_infrastructure/harnesses/chord-staff-register-check.mjs`: 1,201 focused
+  key/aspect/duration/register cases, with positive controls for overlap, incorrect
+  clef sign and a missing notehead. Pass an optional `rendered-columns.json` path
+  to verify the exact captured replay moments with the same independent oracle. The browser reads actual drawn pitch and ink.
+- `node tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`: the full 151,944-case keyboard,
+  chord, key, duration and aspect sweep. Independent cross-staff raster masks confirm
+  suspected geometric contact; zero ordinary clipping/collisions is required.
+- `node tests/_infrastructure/harnesses/chord-staff-replay.mjs --data <data> --media <media>`:
+  read-only replay of Studio takes and MIDI history through the live planner. Exit 1
+  means a failed chord/staff invariant gate; exit 2 means setup/crash/empty corpus.
+  Private corpora must be explicitly available; absence does not pass.
+  `--render <dir>` writes selected images, `moments.json`, `rendered-columns.json`
+  and an index. `--moments <manifest>` reuses exact event indices for comparisons.
+  Existing `--users`, `--limit`, `--since`, and grouping-threshold sweep options remain.
+
+Replay still models one event per render and per-event arrival timestamps. Real
+React batching and coarse release timestamps can change gesture grouping; passing
+replay does not establish physical-hand truth or replace checking rendered examples.
+Use the configured data/media paths; never recursively crawl the SMB mount.
 
 ## Live logs
 
@@ -310,6 +335,8 @@ Both are committed under `tests/_infrastructure/harnesses/` and need the real co
 20 a minute each: `chord-staff.column-closed` (notes, span, per-staff roll, duration) as
 each column closes, and `chord-staff.legato-split` (`notes`, `next`, `stepMs`) when a
 release splits a drawn column into a legato line. Enable with `DAYLIGHT_LOG_LEVEL = 'debug'`.
+Register transitions also emit `chord-staff.register-changed` at info; engraving
+displacements emit sampled `chord-staff.engraving-fallback` at debug.
 
 ## Guardrail
 

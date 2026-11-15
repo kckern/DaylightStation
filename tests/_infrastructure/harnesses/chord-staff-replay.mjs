@@ -653,6 +653,7 @@ window.renderChordStaff = renderChordStaff;
 `);
   await build({
     entryPoints: [path.join(dir, 'entry.js')], bundle: true, format: 'iife',
+      define: {'import.meta.env': JSON.stringify({MODE:'test',VITE_BUILD_ID:'staff-render-check'})},
     outfile: path.join(dir, 'bundle.js'), nodePaths: [path.join(REPO, 'frontend/node_modules')], logLevel: 'warning',
   });
   fs.writeFileSync(path.join(dir, 'page.html'), `<!doctype html><html><body style="margin:0;background:#fff">
@@ -770,6 +771,7 @@ async function renderMoments(outDir, takes, manifest) {
       file: p.take.file, eventIndex: p.snap.eventIndex, t: p.snap.t,
     })), null, 2)}\n`);
 
+    fs.writeFileSync(path.join(outDir,'rendered-columns.json'),JSON.stringify(picks.map(p=>({name:p.name,keySignature:p.snap.key,columns:p.snap.columns})),null,2));
     const cards = [];
     for (const p of picks) {
       const { user, name } = p;

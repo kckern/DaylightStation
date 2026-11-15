@@ -42,7 +42,7 @@ export function staffPlanFailures(flow,state) {
     if(JSON.stringify(pitches)!==JSON.stringify([...raw.midis].sort((a,b)=>a-b)))failures.push(`pitch-coverage:${raw.id}`);
     const epoch=state.epochs.find(e=>e.id===c.epoch);
     if(!epoch||['treble','bass'].some(s=>c.parts[s].octave!==epoch[s]))failures.push(`epoch-mismatch:${raw.id}`);
-    if(Object.values(c.parts).some(p=>!Number.isInteger(p.octave)||!Number.isInteger(p.residualOctave)||Math.abs(p.octave)>2||Math.abs(p.residualOctave)>2))failures.push(`invalid-octave:${raw.id}`);
+    if(Object.values(c.parts).some(p=>!Number.isInteger(p.octave)||!Number.isInteger(p.residualOctave)||Math.abs(p.octave)>2||Math.abs(p.residualOctave)>4||Math.abs(p.octave+p.residualOctave)>2))failures.push(`invalid-octave:${raw.id}`);
   }
   return failures;
 }

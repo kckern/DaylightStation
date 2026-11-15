@@ -87,3 +87,12 @@ it('replay invariants reject dropped pitches and incorrect epoch signs',()=>{
  expect(staffPlanFailures(flow,bad)).toContain('pitch-coverage:0');
  expect(staffPlanFailures(flow,bad)).toContain('epoch-mismatch:0');
 });
+
+
+it('keeps the two ranges distinct during double-octave acquisition',()=>{
+ const frame=makeStaffFixture('paired',{transpose:-24}).frames[0];
+ const out=advanceStaffPlan(emptyStaffPlan(),frame.flow);
+ expect(out.state.activeEpoch).toBe(0);
+ expect(out.state.columns[0].parts.bass.midis).toEqual([24,31]);
+ expect(out.state.columns[0].parts.treble.midis).toEqual([48,52,55]);
+});

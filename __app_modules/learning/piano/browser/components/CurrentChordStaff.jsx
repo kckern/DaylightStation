@@ -66,7 +66,7 @@ function settle(flow, now, held) {
  *
  * RHYTHM, such as it is: each column draws as an eighth, a quarter, or a half,
  * decided in model/noteFlow.js by how its gap to the next strike compares with the
- * last few seconds of playing, and by how long a chord is held. No meter, no barline,
+ * last few seconds of playing, and by how long a chord is held. No meter or measured barline,
  * nothing quantised.
  *
  * The flow is driven by what the surface DOES, diffed per key with its timestamp: a

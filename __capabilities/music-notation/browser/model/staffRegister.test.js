@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {displayStaffMidi,rankStaffCandidates} from './staffRegister.js';
+import {displayStaffMidi,rankStaffCandidates,fitStaffPart} from './staffRegister.js';
 describe('staff register candidates',()=>{
   it.each([[-1,0,36,48],[1,0,84,72],[0,-2,24,48]])('uses signed clef and residual shifts', (octave,residualOctave,midi,written)=>{
     expect(displayStaffMidi(midi,{octave,residualOctave})).toBe(written);
@@ -10,4 +10,11 @@ describe('staff register candidates',()=>{
     expect(fixed.parts.bass.midis).toEqual([55,59]);
     expect(fixed.parts.treble.midis).toEqual([62,65]);
   });
+});
+
+
+it.each([['bass',1,21,-3],['bass',2,21,-4],['treble',-2,108,4]])('fits a keyboard extreme under an opposite acquired register', (staff,octave,midi,residualOctave)=>{
+ const part=fitStaffPart({midis:[midi],octave,residualOctave:0},staff);
+ expect(part.residualOctave).toBe(residualOctave);
+ expect(displayStaffMidi(midi,part)+12*(part.octave+part.residualOctave)).toBe(midi);
 });

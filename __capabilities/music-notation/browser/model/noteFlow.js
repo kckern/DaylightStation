@@ -98,7 +98,10 @@ export const LEGATO_MIN_STEP_MS = 30;
  * corpus that grows daily. Ruling: take 10 — 92.0% lifted together whole, a 2-point
  * margin, for +0.2 points of in-sequence legato merged (12.1% vs 11.9%).
  */
-export const LIFT_TOGETHER_MS = 10;
+// Rechecked on the expanded 2026-11-14 corpus: 10ms keeps lifted-together chords
+// whole 89.9%; 15ms keeps 91.2%, with chord-whole unchanged at 95.2% and
+// sequential legato merged rising 13.2% -> 13.8%. See the adaptive staff audit.
+export const LIFT_TOGETHER_MS = 15;
 
 /**
  * A STAFF whose arrivals span at least this long is a ROLL and gets an arpeggio
@@ -231,7 +234,7 @@ export const DEFAULT_BASELINE_MS = 500;
  * drives never shifts once drawn, and it travels with the column when the oldest
  * scrolls off. `breathBefore`: the gap before this column was a breath (BREATH_RATIO).
  * `smoothed`: closed as an eighth by the smoothing rule (SMOOTH_RATIO).
- * @typedef {{ midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number>, unitStart?: number, breathBefore?: boolean, smoothed?: boolean }} FlowColumn
+ * @typedef {{ id: number, originId: number, midis: number[], arrivals: Arrival[], startedAt: number, lastOnsetAt: number, duration: Duration|null, closeDuration?: Duration|null, heldAtClose: boolean, releasedAt: number|null, releases?: Record<number, number>, unitStart?: number, breathBefore?: boolean, smoothed?: boolean }} FlowColumn
  */
 
 /** A new, empty flow. */

@@ -1033,3 +1033,23 @@ describe('planned clef epochs',()=>{
     expect(first(after)).toEqual(first(before));
   });
 });
+
+
+it('places local octave indications on the side their sign describes',()=>{
+ const draw=(staff,residualOctave)=>{
+  const parts={treble:{midis:[],octave:0,residualOctave:0},bass:{midis:[],octave:0,residualOctave:0}};
+  parts[staff]={midis:[60],octave:0,residualOctave};
+  const host=document.createElement('div');renderChordStaff(host,{columns:[{midis:[60],staffPlan:{id:0,originId:0,epoch:0,parts}}],aspect:2.8});
+  return Number(host.querySelector('.vf-stavenote text').getAttribute('y'));
+ };
+ expect(draw('treble',-1)).toBeGreaterThan(113);
+ expect(draw('bass',1)).toBeLessThan(203);
+});
+
+
+it('keeps a dense closed column width when a held glyph grows into a half',()=>{
+ const cols=[{midis:[60,61,62,63,64,65,66,67],duration:'8',widthDuration:'8'},{midis:[72],duration:'8',widthDuration:'8'},{midis:[76],duration:'8',widthDuration:'8'}];
+ const before=chordStaffWindow(cols,{aspect:2.8,keySignature:'F#'});
+ const after=chordStaffWindow(cols.map((c,i)=>i?c:{...c,duration:'h'}),{aspect:2.8,keySignature:'F#'});
+ expect(after.xs).toEqual(before.xs);
+});

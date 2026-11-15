@@ -768,3 +768,12 @@ it('uses explicit staff membership for roll strokes below middle C',()=>{
  const parts={treble:{midis:[48,52],octave:-1,residualOctave:0},bass:{midis:[36],octave:-1,residualOctave:0}};
  expect(columnRolls({midis:[36,48,52],arrivals:[{midi:36,at:0},{midi:48,at:20},{midi:52,at:140}],staffPlan:{parts}})).toEqual({treble:'up',bass:null});
 });
+
+
+it('keeps a rolled chord whose keys lift twelve milliseconds apart whole',()=>{
+ let f=pushOnsets(emptyFlow(),[60],0,{held:new Set([60])});
+ f=pushOnsets(f,[64],80,{held:new Set([60,64])});
+ f=pushReleases(f,150,new Set([64]));
+ f=pushReleases(f,162,new Set());
+ expect(flowColumns(f)).toEqual([[60,64]]);
+});
