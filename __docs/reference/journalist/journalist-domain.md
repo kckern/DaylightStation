@@ -62,6 +62,16 @@ A journal entry's `source` records how it was captured: typed text, voice-transc
 
 ---
 
+## Morning debrief inputs
+
+`GenerateMorningDebrief` (application layer) builds the daily message from the lifelog aggregate. Three rules keep it truthful:
+
+- **Journal entries feed it.** The journalist lifelog extractor matches entries by *local* date and reads both stored timestamp shapes: legacy local `YYYY-MM-DD HH:mm:ss` and ISO UTC. Entries stopped reaching the debrief for most of 2026 when the store switched to ISO; a late-evening ISO entry belongs to the day it was written, not the next UTC day.
+- **GitHub reports what moved, not time spent.** Most commits are made by AI coding agents running in the background. The GitHub extractor groups commit messages by repo, counts agent co-authored commits, and prints no clock times. The prompt forbids inferring late nights, sprints or focus from commits.
+- **It sees its own recent output.** The last seven debriefs' hooks and questions go to the model as shapes to avoid. Without them it settles into a template ("X crowded out your day", "What drove the late-night push—deadline or momentum?"). The prompt also bans displacement and grind framing, either/or question menus, and the stock music and email questions. Household speakers mean children's listening shows up in scrobbles.
+
+---
+
 ## Boundary
 
 The domain does not:

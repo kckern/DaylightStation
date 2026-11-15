@@ -119,4 +119,31 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
       expect(result.summary.startsWith('🌅 Morning')).toBe(true);
     });
   });
+  describe('recent debriefs fed back as shapes to avoid', () => {
+    it('sends last week\'s hooks and questions to the model', async () => {
+      mockAiGateway.chat.mockResolvedValueOnce('HOOK: Hugh smiled through his baptism.\n\n🌅 Morning\n• x');
+      const debriefRepository = {
+        getDebriefByDate: vi.fn().mockResolvedValue(null),
+        getRecentDebriefs: vi.fn().mockResolvedValue([
+          {
+            headline: 'Church business crowded out your day.',
+            summary: '🌅 Morning\n• 9:00a x\n\n• What drove the late-night push—deadline, or momentum?',
+          },
+        ]),
+      };
+
+      await new GenerateMorningDebrief({
+        lifelogAggregator: mockLifelogAggregator,
+        aiGateway: mockAiGateway,
+        debriefRepository,
+        logger: mockLogger,
+      }).execute({ username: 'user_1', date: '2026-05-31' });
+
+      const userMsg = mockAiGateway.chat.mock.calls[0][0][1].content;
+      expect(userMsg).toContain('RECENT DEBRIEFS (shapes to avoid)');
+      expect(userMsg).toContain('- Church business crowded out your day.');
+      expect(userMsg).toContain('• What drove the late-night push');
+      expect(userMsg).not.toContain('• 9:00a x');
+    });
+  });
 });

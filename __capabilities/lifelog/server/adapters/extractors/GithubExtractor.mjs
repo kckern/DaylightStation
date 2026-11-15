@@ -63,15 +63,34 @@ export class GithubExtractor extends ILifelogExtractor {
     const commits = entries.filter((e) => e.type === 'commit');
     if (!commits.length) return null;
 
-    const repos = [...new Set(commits.map((c) => c.repo))];
-    const lines = [`GITHUB COMMITS (${commits.length}) to ${repos.join(', ')}:`];
+    // Most commits are made by AI coding agents running in the background, so
+    // commit times say when an agent finished, not when the user was working.
+    // Report WHAT moved per project, with no clock times, so the debrief can't
+    // read a 50-commit day as "coding until midnight".
+    const agentCount = commits.filter((c) => isAgentCommit(c)).length;
+    const byRepo = new Map();
+    for (const c of commits) {
+      if (!byRepo.has(c.repo)) byRepo.set(c.repo, []);
+      byRepo.get(c.repo).push(c.message);
+    }
 
-    commits.forEach((c) => {
-      lines.push(`  - ${c.time}: "${c.message}"`);
-    });
+    const lines = [
+      `GITHUB (what moved, not time spent): ${commits.length} commits, ${agentCount} made by AI coding agents running in the background. Commit times are omitted on purpose; they do not show when the user was working.`,
+    ];
+    for (const [repo, messages] of byRepo) {
+      lines.push(`  ${repo} (${messages.length}):`);
+      for (const m of messages) lines.push(`    - ${m}`);
+    }
 
     return lines.join('\n');
   }
+}
+
+/** A commit co-authored by an AI coding agent (Claude, Codex, Copilot...). */
+export function isAgentCommit(commit) {
+  return /co-authored-by:[^\n]*(claude|anthropic|openai|codex|copilot|cursor|gemini)/i.test(
+    commit?.fullMessage || '',
+  );
 }
 
 // Export singleton instance for backward compatibility

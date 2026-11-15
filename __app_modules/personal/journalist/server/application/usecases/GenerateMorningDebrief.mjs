@@ -109,11 +109,15 @@ export class GenerateMorningDebrief {
       // Step 2.5: Load recent conversation context (last 3 days of user messages)
       const conversationContext = await this.#loadConversationContext(conversationId);
 
+      // Step 2.6: Recent hooks/questions, so today's message doesn't clone them
+      const recentOutput = await this.#loadRecentOutput(username);
+
       // Step 3: Generate AI summary (+ adaptive headline)
       const { summary, headline } = await this.#generateSummary(
         lifelog,
         username,
         conversationContext,
+        recentOutput,
       );
 
       const duration = Date.now() - startTime;
@@ -184,27 +188,54 @@ export class GenerateMorningDebrief {
   }
 
   /**
+   * Hooks and questions from the last week of debriefs. Fed back to the model as
+   * shapes to avoid: without them every morning re-derives the same template
+   * ("X crowded out your day", "What drove the late-night push?").
+   * @param {string} username
+   * @returns {Promise<{headlines: string[], questions: string[]}>}
+   */
+  async #loadRecentOutput(username) {
+    const empty = { headlines: [], questions: [] };
+    if (!this.#debriefRepository?.getRecentDebriefs) return empty;
+    try {
+      const recent = (await this.#debriefRepository.getRecentDebriefs(username, 7)) || [];
+      return {
+        headlines: recent.map((d) => d.headline).filter(Boolean),
+        questions: recent.flatMap((d) =>
+          String(d.summary || '')
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.startsWith('•') && l.endsWith('?')),
+        ),
+      };
+    } catch (err) {
+      this.#logger.warn?.('debrief.recent-output.failed', { error: err.message });
+      return empty;
+    }
+  }
+
+  /**
    * Generate natural language summary using AI
    */
-  async #generateSummary(lifelog, username, conversationContext = []) {
+  async #generateSummary(lifelog, username, conversationContext = [], recentOutput = { headlines: [], questions: [] }) {
     const systemPrompt = `You produce a compact morning data roundup from yesterday's logged data. Telegram message — no markdown headers.
 
 FORMAT — a one-line hook, then three sections, separated by blank lines:
 
 SECTION 0: HOOK
 A single opening line that makes the message worth opening. It is the bot venturing a read on the day.
-DEFAULT to a confident STATEMENT — an assumption or deduction inferred from the data and what the user told you. Pitch it so that:
+DEFAULT to a STATEMENT — a read on the day inferred from the data and what the user told you. Pitch it so that:
   • if it's off-base, the user will want to correct it ("no, actually…"), and
   • if it's right, it invites them to add detail or color ("yeah, and…").
-A deduction is a NON-OBVIOUS inference, not a recap. Name the specific thread and take a position on it. Keep it PUNCHY — one crisp clause. Do NOT pad with stacked "but…"/"and…" clauses, em-dash tails, or a list of the day's activities.
-State it FLATLY, as fact — committed, not hedged. A confident wrong guess is better than a mushy safe one; that's what earns a correction.
+A deduction is a NON-OBVIOUS inference, not a recap. Name the specific thread. Keep it PUNCHY — one crisp clause. Do NOT pad with stacked "but…"/"and…" clauses, em-dash tails, or a list of the day's activities.
+State it plainly, without hedging words — but it MUST be supported by the data. Never invent a cause, a duration, a time of day, or a feeling the data does not show. A plain true line beats a dramatic false one.
 NEVER use hedging or speculation words: seem/seems/seemed, looks like, appears, apparently, probably, likely, maybe, perhaps, "must have", "I think", "sounds like", "it feels like".
-  GOOD: "Church leadership swallowed your morning before you got any real focus time."
-  GOOD: "The assessor in the house threw off more than just your coding."
-  BAD (hedged — never do this): "Church leadership seemed to swallow your morning." / "Looks like it was a full day."
-  BAD (lame/generic — never do this): "Seems like you've been busy." / "Sounds like a full day." / "Lots going on."
-When a sharp, specific question is in reach, REACH for it — on its own, or appended to the deduction ("Deduction. Pointed question?"). A pointed question that opens a real thread beats a flat statement; use them freely. Just never manufacture a limp one.
-NEVER use a generic, templated journaling question. BANNED: "What prompted you to…?", "What was it like to…?", "How did that make you feel?", "How was your day?", "Any thoughts on…?". If your question fits that mold, drop it and just state the deduction.
+BANNED FRAMES (overused, and usually false):
+  • Displacement: "X crowded out / swallowed / boxed out / squeezed out / took over / dominated / consumed your day", "left little room for…", "but you still carved out…". One event filling a block of time does not mean it displaced anything else.
+  • Grind drama: "marathon", "hammered", "cranked out", "blitz", "deep into the night", "pushed through".
+  • Coding as the headline. Commits are mostly made by AI coding agents (see DATA CAVEATS); lead with a person, place, run, church, family or something the user said instead, unless code is the ONLY thing in the data.
+When a sharp, specific question is in reach, REACH for it — on its own, or appended to the deduction ("Deduction. Pointed question?"). A pointed question that opens a real thread beats a flat statement. Just never manufacture a limp one.
+NEVER use a generic, templated journaling question. BANNED: "What prompted you to…?", "What drove…?", "What was it like to…?", "How did that make you feel?", "How was your day?", "Any thoughts on…?". If your question fits that mold, drop it and just state the deduction.
 Either way: specific to THIS day, never generic, and TIGHT. Keep the WHOLE hook on ONE line. No emoji, no "Yesterday", no date. At most two short sentences — shorter is better.
 Output it as the VERY FIRST line, prefixed exactly with "HOOK: ".
 
@@ -220,7 +251,7 @@ Under each header, one line per fact. Use • for bullets. Keep each bullet SHOR
 - Times inline: "• 5:33a P90X3 Dynamix, 31min ❤️84avg"
 - Locations: "• 8:22a 📍 King Street Station"
 - Music: "• 🎵 Dashboard Confessional, Jimmy Eat World" (just artists, not every track)
-- Code: "• 💻 DaylightStation — health-coach coaching fix"
+- Code: ONE bullet under 📌 Other, no time: "• 💻 Projects moved: DaylightStation (school panel, chord staff), BookofMormonOnline (ops rollback)". Never give code a time or a time range, and never place it in a time-of-day section.
 - Email sent: summarize what YOU said, not the subject line. "• 2:15p ✉️ Emailed Darwin — chapel cleaning Saturday" not "Sent 1 email to Darwin Powell: 'Re: Reminder...'"
 - Email received: only mention if notable/personal/actionable. Skip newsletters/spam/receipts.
 - Weight: "• ⚖️ 169.8 lbs (+0.5 7d)"
@@ -239,9 +270,17 @@ Focus on: activity patterns, productivity, social, mood signals, unusual gaps.
 
 SECTION 3: QUESTIONS (2-3 bullets)
 Short prompts for journaling. Use • bullets.
-- Ask about context/feelings behind events
-- Ask about gaps the data doesn't explain
-- Ask about people mentioned
+- Ask about people, places and events that are specific to THIS day (a visit, a baptism, a run, a meeting, a talk).
+- Ask about something the user said recently and left open.
+- Each question asks ONE thing, open-ended. NO either/or menus: never "X, Y, or Z?", "…or just background noise?", "…or just momentum?", "deadline, inspiration, or…?".
+- Do NOT ask why code was committed late, what drove a coding push, or whether a feature hit a milestone.
+- Do NOT ask whether music was background, a wind-down, or a mood reset. Only ask about music when a specific artist or album is unusual for the user.
+- Do NOT ask whether an email needs action or is noise. Only ask about an email when it is personal and from a named person.
+
+DATA CAVEATS — read the data for what it can and cannot show:
+- GITHUB: most commits are made by AI coding agents the user runs; the summary line says how many. Commit times are when an agent finished work, NOT when the user was at the keyboard. Never infer late nights, focus, sprints or "coding until midnight" from commit times or counts.
+- MUSIC: scrobbles come from the whole household's speakers. Children's stories, lullabies and kids' songs are the kids' listening, not the user's mood.
+- Absence of data is not absence of activity. Don't claim the user did "nothing else" or "barely looked up".
 
 CONVERSATION CONTEXT:
 You may also receive recent messages the user sent in the last few days. This is context the user has ALREADY shared with you. Use it to:
@@ -256,7 +295,10 @@ RULES:
 - NO "Yesterday" or date at the start — the message already has a date header.
 - NO flowery language. Dense, specific, terse.
 - Second person throughout.
-- Keep the ENTIRE message under 1500 characters if possible.`;
+- Keep the ENTIRE message under 1500 characters if possible.
+
+RECENT DEBRIEFS:
+You may receive the hooks and questions you sent on recent days. They are what the user is tired of. Do NOT reuse their sentence shapes, openers, verbs or question templates. If today's draft resembles any of them, rewrite it.`;
 
     const dataPrompt = this.#buildDataPrompt(lifelog);
 
@@ -268,6 +310,12 @@ RULES:
         return `- ${msg.content}${ts}`;
       });
       contextSection = `\n\nRECENT USER MESSAGES (context they've already shared):\n${contextLines.join('\n')}`;
+    }
+
+    if (recentOutput.headlines.length || recentOutput.questions.length) {
+      contextSection += `\n\nRECENT DEBRIEFS (shapes to avoid):\nHooks:\n${recentOutput.headlines
+        .map((h) => `- ${h}`)
+        .join('\n')}\nQuestions:\n${recentOutput.questions.join('\n')}`;
     }
 
     try {

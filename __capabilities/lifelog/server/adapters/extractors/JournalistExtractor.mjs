@@ -7,7 +7,21 @@
  * @module applications/lifelog/extractors
  */
 
+import moment from 'moment';
 import { ILifelogExtractor, ExtractorCategory } from "../../application/ports/ILifelogExtractor.mjs";
+
+/**
+ * Parse a stored message timestamp into the process's local time.
+ * Two shapes exist in messages.yml: legacy local strings ('2025-12-30 23:42:43',
+ * no zone) and, since early 2026, ISO UTC ('2026-11-07T19:55:44.036Z').
+ * moment reads the first as local and converts the second to local, so a late
+ * evening ISO entry lands on the day it was written, not the next UTC day.
+ */
+function localTime(timestamp) {
+  if (!timestamp) return null;
+  const m = moment(String(timestamp).replace(' ', 'T'));
+  return m.isValid() ? m : null;
+}
 
 /**
  * User journal entries extractor
@@ -35,13 +49,10 @@ export class JournalistExtractor extends ILifelogExtractor {
   extractForDate(data, date) {
     const messages = data?.messages || [];
 
-    // Filter messages for the target date
-    // Timestamps are in format: '2025-12-30 23:42:43'
-    const dayMessages = messages.filter((msg) => {
-      if (!msg.timestamp) return false;
-      const msgDate = msg.timestamp.split(' ')[0]; // Extract YYYY-MM-DD
-      return msgDate === date;
-    });
+    // Filter messages for the target local date (see localTime for both shapes)
+    const dayMessages = messages.filter(
+      (msg) => localTime(msg.timestamp)?.format('YYYY-MM-DD') === date
+    );
 
     if (dayMessages.length === 0) return null;
 
@@ -89,7 +100,7 @@ export class JournalistExtractor extends ILifelogExtractor {
     // Add each message with timestamp - FULL CONTENT, no truncation
     // Journal entries are the most valuable data for day reconstruction
     entry.messages.forEach((msg) => {
-      const time = msg.timestamp.split(' ')[1].substring(0, 5); // HH:mm
+      const time = localTime(msg.timestamp)?.format('HH:mm') ?? '--:--';
 
       // Include full content - never truncate journal entries
       lines.push(`  [${time}] ${msg.content}`);
