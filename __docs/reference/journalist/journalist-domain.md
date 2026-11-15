@@ -70,6 +70,8 @@ A journal entry's `source` records how it was captured: typed text, voice-transc
 - **GitHub reports what moved, not time spent.** Most commits are made by AI coding agents running in the background. The GitHub extractor groups commit messages by repo, counts agent co-authored commits, and prints no clock times. The prompt forbids inferring late nights, sprints or focus from commits.
 - **It sees its own recent output.** The last seven debriefs' hooks and questions go to the model as shapes to avoid. Without them it settles into a template ("X crowded out your day", "What drove the late-night push—deadline or momentum?"). The prompt also bans displacement and grind framing, either/or question menus, and the stock music and email questions. Household speakers mean children's listening shows up in scrobbles.
 
+Starting an interview preserves the delivered debrief, its message IDs and category questions. Interview progress lives in `flowState`; the existing root fields remain available to debrief callbacks. The transition sets `subFlow: 'interview'` so an earlier source picker cannot keep handling replies.
+
 ---
 
 ## Boundary

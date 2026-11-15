@@ -161,13 +161,15 @@ export class InitiateDebriefInterview {
         const updatedQuestions = [...(currentFlowState.askedQuestions || []), question];
 
         await this.#conversationStateStore.set(conversationId, {
+          ...currentState,
           activeFlow: 'morning_debrief',
+          subFlow: 'interview',
           flowState: {
             ...currentFlowState,
             lastQuestion: question,
             askedQuestions: updatedQuestions.slice(-5), // Keep last 5 questions
             lastMessageId: messageId,
-            debrief: currentState?.flowState?.debrief || currentFlowState.debrief,
+            debrief: currentFlowState.debrief || currentState?.debrief || debrief,
           },
         });
       }
