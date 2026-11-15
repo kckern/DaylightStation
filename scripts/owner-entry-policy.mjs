@@ -461,6 +461,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/content-catalog/server/list-codec.mjs': 'domain',
   '__capabilities/content-catalog/server/list-menu-projector.mjs': 'application',
   '__capabilities/content-catalog/portable/list-structure.mjs': 'domain',
+  '__app_modules/household/agenda/portable/planEdits.mjs': 'domain',
   '__capabilities/playback/server/spot-history.mjs': 'domain',
   '__capabilities/playback/browser/surround-host.mjs': null,
   '__capabilities/content-catalog/server/image-dimensions.mjs': 'domain',
