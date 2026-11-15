@@ -235,7 +235,7 @@ export const DEFAULT_BASELINE_MS = 500;
  */
 
 /** A new, empty flow. */
-export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [] });
+export const emptyFlow = () => ({ columns: [], lastOnsetAt: 0, recentIois: [], nextColumnId: 0 });
 
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -360,7 +360,7 @@ export function pushOnsets(flow, midis, now, opts = {}) {
 
   // A breath longer than IDLE_CLEAR_MS ends the phrase: start a fresh line, and
   // record no IOI across the silence (it would poison the baseline).
-  if (flow.columns.length > 0 && now - flow.lastOnsetAt > IDLE_CLEAR_MS) flow = emptyFlow();
+  if (flow.columns.length > 0 && now - flow.lastOnsetAt > IDLE_CLEAR_MS) flow = { ...emptyFlow(), nextColumnId: flow.nextColumnId ?? 0 };
 
   const columns = flow.columns.slice();
   const open = columns[columns.length - 1];
@@ -410,7 +410,9 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     breathBefore = judged.breath;
     unitStart = nextUnitStart(closed, breathBefore);
   }
+  const id = flow.nextColumnId ?? 0;
   columns.push({
+    id, originId: id,
     midis: sorted, arrivals: arrived, startedAt: now, lastOnsetAt: now,
     duration: null, closeDuration: null, heldAtClose: false, releasedAt: null, releases: {},
     unitStart, breathBefore, smoothed: false,
@@ -424,6 +426,7 @@ export function pushOnsets(flow, midis, now, opts = {}) {
     columns: overflow > 0 ? columns.slice(overflow) : columns,
     lastOnsetAt: now,
     recentIois,
+    nextColumnId: id + 1,
   };
 }
 
@@ -541,7 +544,7 @@ function splitColumn(flow, i, t, capacity) {
   // already moves it to make room for the split.
   const before = { ...c, ...a, duration: first.duration, closeDuration: first.duration, smoothed: false, heldAtClose: heldA(b.startedAt), releasedAt: null };
   let after = {
-    ...c, ...b, duration: null, closeDuration: null, smoothed: false, heldAtClose: false, releasedAt: null,
+    ...c, ...b, id: flow.nextColumnId ?? 0, originId: c.originId ?? c.id, duration: null, closeDuration: null, smoothed: false, heldAtClose: false, releasedAt: null,
     breathBefore: false, unitStart: nextUnitStart(before, false),
   };
   let rest = flow.columns.slice(i + 1);
@@ -553,7 +556,7 @@ function splitColumn(flow, i, t, capacity) {
   }
   const columns = [...flow.columns.slice(0, i), before, after, ...rest];
   const overflow = columns.length - capacity;
-  return { ...flow, columns: overflow > 0 ? columns.slice(overflow) : columns, recentIois };
+  return { ...flow, columns: overflow > 0 ? columns.slice(overflow) : columns, recentIois, nextColumnId: (flow.nextColumnId ?? 0) + 1 };
 }
 
 /**

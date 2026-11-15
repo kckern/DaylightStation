@@ -742,3 +742,23 @@ describe('noteFlow — light pulse (unitStart, breath, smoothing)', () => {
     expect(flow.columns[3].unitStart).toBe(closed.unitStart + 2);
   });
 });
+
+
+describe('notation gesture identity',()=>{
+  it('allocates distinct IDs for equal millisecond onsets and across line resets',()=>{
+    let f=pushOnsets(emptyFlow(),[60],100);
+    f=pushOnsets(f,[60],100);
+    expect(f.columns.map(c=>c.id)).toEqual([0,1]);
+    expect(f.columns.map(c=>c.originId)).toEqual([0,1]);
+    f=pushOnsets(f,[60],5000);
+    expect(f.columns[0].id).toBe(2);
+  });
+  it('a release split preserves origin and allocates a new column ID',()=>{
+    let f=pushOnsets(emptyFlow(),[60],0);
+    f=pushOnsets(f,[62],80,{held:allHeld});
+    f=pushReleases(f,100,new Map([[62,{}]]));
+    f=pushReleases(f,120,new Map([[62,{}]]));
+    expect(f.columns.map(c=>c.id)).toEqual([0,1]);
+    expect(f.columns.map(c=>c.originId)).toEqual([0,0]);
+  });
+});

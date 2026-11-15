@@ -21,3 +21,6 @@ export { midiToAbc, generateAbc, generateScaleAbc, generateMelodyAbc } from "./r
 
 // Facade
 export { Notation } from "./Notation.jsx";
+
+export { emptyStaffPlan, advanceStaffPlan } from './model/staffPlanner.js';
+export { displayStaffMidi } from './model/staffRegister.js';
