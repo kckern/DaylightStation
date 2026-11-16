@@ -28,6 +28,9 @@ export default {
   server: { host: '127.0.0.1' },
   // Vitest runs on Vite 8; OXC supplies JSX without the production Vite 6 plugin.
   oxc: { jsx: { runtime: 'automatic' } },
+  // Vite 6 uses esbuild; Vite 8 uses the OXC setting above. Both runners
+  // must apply the same automatic JSX runtime to owner-local test files.
+  esbuild: { jsx: 'automatic' },
   plugins: [
     {
       // Modules under __app_modules/ and __capabilities/ import frontend
