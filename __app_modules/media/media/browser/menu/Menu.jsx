@@ -166,6 +166,7 @@ export function TVMenu({
         itemCount={menuItems.length}
         image={menuMeta.image}
       />
+      {menuMeta.notice && <p role="status">{menuMeta.notice}</p>}
       <MenuItems
         items={menuItems}
         columns={5}
@@ -175,7 +176,7 @@ export function TVMenu({
         onSelectedIndexChange={onSelectedIndexChange}
         onSelect={handleSelect}
         onClose={onEscape}
-        MENU_TIMEOUT={MENU_TIMEOUT}
+        MENU_TIMEOUT={menuMeta.disableAutoCountdown ? 0 : MENU_TIMEOUT}
         containerRef={containerRef}
       />
     </div>
@@ -547,6 +548,7 @@ const MenuItem = React.memo(function MenuItem({
     <div
       className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
       onClick={onActivate}
+      aria-disabled={isDisabled || undefined}
     >
       <MenuIMG key={imageKey} img={img} label={item.label} />
       <h3 className="menu-item-label">{item.label}</h3>
@@ -657,7 +659,7 @@ function MenuItems({
     const action = item?.play || item?.queue || item?.list || item?.open;
     const actionVal = action && (Array.isArray(action) ? action[0] : Object.values(action)[0]);
     const androidKey = item?.android ? `android:${item.android.package}` : null;
-    return item?.id ?? item?.key ?? actionVal ?? androidKey ?? item?.label ?? null;
+    return item?.uid ?? item?.id ?? item?.key ?? actionVal ?? androidKey ?? item?.label ?? null;
   }, []);
   
   const setSelectedIndex = useCallback((value, key = null) => {
@@ -808,7 +810,7 @@ function MenuItems({
 
   const handleItemActivate = useCallback((index) => {
     const item = items[index];
-    if (!item) return;
+    if (!item || item.disabled) return;
 
     const key = findKeyForItem(item);
     navigateTo(index);
@@ -931,6 +933,7 @@ function MenuItems({
         setTimeout(() => { selectCooldown = false; }, 300);
         // Sync React state on selection (Enter) — this is the only time React needs to know
         const idx = activeIndexRef.current;
+        if (curItems[idx]?.disabled) return;
         logger.info('menu.select', { key, index: idx, title: curItems[idx]?.label });
         setSelectedIndex(idx, findKeyForItem(curItems[idx]));
         onSelectRef.current?.(curItems[idx]);
@@ -949,7 +952,7 @@ function MenuItems({
    * Optional countdown timer to auto-select.
    */
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
-    onSelect?.(items[activeIndexRef.current]);
+    if (!items[activeIndexRef.current]?.disabled) onSelect?.(items[activeIndexRef.current]);
   });
   resetTimeRef.current = resetTime;
 
@@ -1011,7 +1014,7 @@ function MenuItems({
     }
 
     const isAndroid = !!item.android;
-    const isDisabled = isAndroid && !_fkbAvailable;
+    const isDisabled = item.disabled || (isAndroid && !_fkbAvailable);
 
     return { item, itemKey, imageSrc, isDisabled };
   }), [items, findKeyForItem]);

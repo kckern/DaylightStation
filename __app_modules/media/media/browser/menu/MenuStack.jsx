@@ -8,6 +8,9 @@ import { getLogger } from "../../../../../frontend/src/lib/logging/Logger.js";
 import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { artSceneIdFromDisplay } from "./displaySelection.js";
 import SurroundHost from "../surround-host.mjs";
+import { dispatchParticipantAction } from '../../../../../frontend/src/composition/participants/dispatchParticipantAction.js';
+import { ParticipantLaunchHost } from '../../../../../frontend/src/composition/participants/ParticipantLaunchHost.jsx';
+import { participantBrowserRegistry } from '../../../../../frontend/src/composition/participants/participantBrowserRegistry.js';
 
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import("../playback.mjs").then(m => ({ default: m.default || m.Player })));
@@ -47,8 +50,10 @@ function threadShaderIntoContent(selection) {
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
-  const { currentContent, depth, push, pop, reset } = useMenuNavigationContext();
+export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, refreshToken = 0 }) {
+  const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth } = useMenuNavigationContext();
+  const [navigationError, setNavigationError] = React.useState(null);
+  const returnFromActivityRef = React.useRef(null);
   const { registerEscapeInterceptor, unregisterEscapeInterceptor, dismissOverlay } = useScreenOverlay();
 
   // Reset navigation state when rootMenu changes (including initial mount).
@@ -68,6 +73,10 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
 
     const interceptor = () => {
       if (depth > 0) {
+        if (rootMenu?.navigationPolicy === 'return-to-selected' && ['player','composite','app','display','participant-result','participant-passthrough'].includes(currentContent?.type)) {
+          returnFromActivityRef.current?.();
+          return true;
+        }
         // If popping back to root on a timed menu, dismiss the overlay entirely
         // to avoid the auto-select timer creating an escape trap
         if (depth === 1 && MENU_TIMEOUT > 0) {
@@ -82,7 +91,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
 
     registerEscapeInterceptor(interceptor);
     return () => unregisterEscapeInterceptor?.();
-  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor]);
+  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor, rootMenu, currentContent]);
 
   /**
    * Handle selection from any menu level.
@@ -92,7 +101,20 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
    * For items with type already set (from season/show responses), route directly.
    */
   const handleSelect = useCallback((selection) => {
-    if (!selection) return;
+    if (!selection || selection.disabled) return;
+    const action = selection.list || selection.menu ? null : ['play','queue','display','open'].find(key => selection[key]);
+    if (action) onActivityStart?.(currentContent?.type === 'menu' ? currentContent.props.list : rootMenu);
+    if (action && Object.hasOwn(selection, 'participantLaunches')) {
+      let intercepted = true;
+      dispatchParticipantAction({selection, action, onOrdinaryAction: () => { intercepted = false; }, onPresentation: ({ref, action: selectedAction}) => push({type:'participant-launch', props:{ref, action:selectedAction}})});
+      if (intercepted) return;
+    }
+
+    const contentId = selection.list?.contentId;
+    if (contentId && loadContentMenu) {
+      loadContentMenu(contentId).then(menu => push({type:'menu', props:{list:menu}})).catch(error => { if (error.code === 'stale_menu_request') return; getLogger().warn('menu.navigation.error', {code:error.code}); setNavigationError({contentId}); });
+      return;
+    }
 
     // If type is already known (e.g., from ShowView/SeasonView selecting a child),
     // we can route directly to specialized views.
@@ -176,22 +198,40 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       push({ type: 'android-launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
-  }, [push]);
+  }, [push, loadContentMenu, onActivityStart, currentContent, rootMenu]);
 
   /**
    * Clear function for Player/AppContainer to pop back
    */
   const clear = useCallback(() => {
-    pop();
-  }, [pop]);
+    const targetId = getReturnMenuId?.();
+    let targetDepth = depth - 1;
+    if (targetId && rootMenu?.navigationPolicy === 'return-to-selected') {
+      const index = stack.findLastIndex(entry => entry.type === 'menu' && entry.props.list?.id === targetId);
+      if (index >= 0) targetDepth = index + 1;
+      else if (rootMenu.id === targetId) targetDepth = 0;
+    }
+    for (let i = depth; i > targetDepth; i--) pop();
+    onActivityReturn?.();
+  }, [pop, onActivityReturn, getReturnMenuId, depth, stack, rootMenu]);
+
+  returnFromActivityRef.current = clear;
 
   // Player exits dismiss the entire MenuStack overlay rather than popping back to
   // the source menu. The auto-select countdown on the source menu would otherwise
   // re-launch the first item, trapping the user; "exit means home" matches the
   // NFC/voice launch path's behavior (ScreenActionHandler).
   const exitToHome = useCallback(() => {
-    dismissOverlay?.();
-  }, [dismissOverlay]);
+    if (rootMenu?.navigationPolicy === 'return-to-selected') clear();
+    else dismissOverlay?.();
+  }, [dismissOverlay, rootMenu, clear]);
+
+  if (navigationError) {
+    return <div role="alert"><p>Unable to load menu.</p>
+      <button onClick={() => loadContentMenu(navigationError.contentId).then(menu => { setNavigationError(null); push({type:'menu',props:{list:menu}}); }).catch(error => getLogger().warn('menu.navigation.error',{code:error.code}))}>Retry</button>
+      <button onClick={() => setNavigationError(null)}>Back</button>
+    </div>;
+  }
 
   // If stack is empty, render root menu
   if (!currentContent) {
@@ -202,6 +242,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
         onSelect={handleSelect}
         onEscape={() => {}} // At root, escape does nothing
         MENU_TIMEOUT={MENU_TIMEOUT}
+        refreshToken={refreshToken}
       />
     );
   }
@@ -210,6 +251,35 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
   const { type, props } = currentContent;
 
   switch (type) {
+    case 'participant-launch':
+      return <ParticipantLaunchHost refValue={props.ref} action={props.action} client={participantClient} onClose={pop} canLaunch={consumer => participantRegistry.supports(consumer)}
+        onPassthrough={(result, consumer) => {
+          const Adapter = participantRegistry.resolvePassthrough(consumer);
+          if (!Adapter || result.action !== props.action) throw new Error('This activity is unavailable on this device');
+          replace({type:'participant-passthrough', props:{Adapter, action:result.action, target:result.target}});
+        }}
+        onReady={result => {
+          const Adapter = participantRegistry.resolve(result);
+          if (!Adapter) throw new Error('This activity is unavailable on this device');
+          if (result.return_to?.kind === 'content' && typeof result.return_to.item_uid === 'string') {
+            const parentDepth = Math.max(0, depth - 1);
+            setSelectionAtDepth(parentDepth, getSelection(parentDepth).index, result.return_to.item_uid);
+          }
+          onReturnTarget?.(result.return_to);
+          const {return_to: _returnTarget, ...participantLaunch} = result;
+          replace({type:'participant-result', props:{Adapter, result:participantLaunch}});
+        }} />;
+
+    case 'participant-passthrough': {
+      const Adapter = props.Adapter;
+      return <Adapter action={props.action} target={props.target} clear={clear} />;
+    }
+
+    case 'participant-result': {
+      const Adapter = props.Adapter;
+      return <Adapter participantLaunch={props.result} clear={clear} />;
+    }
+
     case 'menu':
       return (
         <TVMenu
@@ -218,6 +288,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
           onSelect={handleSelect}
           onEscape={clear}
           MENU_TIMEOUT={MENU_TIMEOUT}
+          refreshToken={refreshToken}
         />
       );
 

@@ -11,6 +11,8 @@ import glympseIcon from '../assets/app-icons/glympse.svg';
 import websocketIcon from '../assets/app-icons/websocket.svg';
 import { videocallIcon } from "../../../__app_modules/household/homeline/browser/assets.mjs";
 
+// Optional participantLaunch: {consumer:{id,version}, outputSchema}; only an
+// exact matching ready result is forwarded by AppContainer to that app.
 export const APP_REGISTRY = {
   'webcam':          { label: 'Webcam',           icon: webcamIcon,         param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
   'videocall':       { label: 'Video Call',       icon: videocallIcon,      param: { name: 'device' }, component: () => import("../../../__app_modules/household/homeline/browser/tv.mjs") },

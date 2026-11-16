@@ -75,12 +75,20 @@ vi.mock('../../../../../__capabilities/screen-host/browser/widgets/registry.js',
   }),
 }));
 
+vi.mock('../../../../../__app_modules/household/agenda/browser/screen.mjs', () => ({ default: ({contentId}) => <div data-testid="agenda-host">{contentId}</div> }));
+
 describe('ScreenActionHandler', () => {
   beforeEach(() => {
     resetActionBus();
     resetVolumeModuleState();
     __resetPlayerQueueOpRegistryForTests();
     window.localStorage.clear();
+  });
+
+  it('opens Agenda content in its capable host', () => {
+    const { getByTestId } = render(<ScreenOverlayProvider><ScreenActionHandler /></ScreenOverlayProvider>);
+    act(() => getActionBus().emit('menu:open', {menuId:'agenda:series/current'}));
+    expect(getByTestId('agenda-host').textContent).toBe('agenda:series/current');
   });
 
   it('opens MenuStack overlay on menu:open action', () => {

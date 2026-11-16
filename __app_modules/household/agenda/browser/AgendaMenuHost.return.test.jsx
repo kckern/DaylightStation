@@ -1,0 +1,26 @@
+import React from 'react';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {it,expect,vi} from 'vitest';
+import {MenuNavigationProvider} from '../../../../__capabilities/screen-host/browser/menu-context.mjs';
+import {ScreenOverlayProvider} from '../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import {createParticipantBrowserRegistry} from '../../../../frontend/src/composition/participants/participantBrowserRegistry.js';
+import {AgendaMenuHost} from './AgendaMenuHost.jsx';
+vi.mock('../../../media/media/browser/menu/PlexMenuRouter.jsx',()=>({PlexMenuRouter:()=>null}));
+vi.mock('../../../media/media/browser/surround-host.mjs',()=>({default:({children})=>children}));
+vi.mock('../../../media/media/browser/playback.mjs',()=>({default:()=>null,PlayerOverlayLoading:()=>null}));
+it('returns to the selected dated plan and refreshes it after an activity',async()=>{
+ const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'};
+ const row={uid:'uid',label:'Activity',display:{contentId:'fake:x'},participantLaunches:{display:ref}};
+ const response=(title,items)=>({ok:true,json:async()=>({id:'agenda:s/plans/p',title,items,navigationPolicy:'return-to-selected',disableAutoCountdown:true})});
+ const fetcher=vi.fn().mockResolvedValueOnce(response('Original',[row])).mockResolvedValueOnce(response('Updated',[{uid:'other',label:'Other',disabled:true},{uid:'uid',label:'Cancelled',disabled:true}]));
+ const client={inspect:vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'neutral',version:1},confirmation:'required',setup_hash:'h',choices:[]}),begin:vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'neutral',version:1},output:{schema:'neutral/v1',data:{}},return_to:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'uid'}})};
+ const Adapter=({clear})=><button onClick={clear}>Close activity</button>;
+ const registry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral/v1',render:Adapter}]);
+ render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:s/current" fetcher={fetcher} participantClient={client} participantRegistry={registry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Activity'));
+ fireEvent.click(await screen.findByRole('button',{name:'Start'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Close activity'}));
+ const cancelled=await screen.findByText('Cancelled');
+ await waitFor(()=>expect(cancelled.closest('.menu-item').classList.contains('active')).toBe(true));
+ await waitFor(()=>expect(fetcher.mock.calls[1][0]).toBe('/api/v1/list/agenda/s/plans/p'));
+});

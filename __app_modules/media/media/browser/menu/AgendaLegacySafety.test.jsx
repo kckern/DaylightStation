@@ -29,3 +29,14 @@ it('old Menu and MenuStack do not reconstruct an action from a disabled row iden
  expect(screen.queryByTestId('plex')).toBeNull();
  expect(screen.queryByTestId('loading')).toBeNull();
 });
+
+it('blocks disabled rows from pointer and remote activation even if an action remains', async () => {
+ const select=vi.fn();
+ const {TVMenu}=await import('./Menu.jsx');
+ render(<TVMenu list={{title:'Preview',notice:'Preview only',items:[{uid:'x',label:'Disabled',disabled:true,open:{app:'game'}}]}} onSelect={select}/>);
+ const label=await screen.findByText('Disabled');
+ fireEvent.click(label); fireEvent.keyDown(window,{key:'Enter'}); fireEvent.keyDown(window,{key:'GamepadA'});
+ await act(async()=>{});
+ expect(select).not.toHaveBeenCalled();
+ expect(screen.getByText('Preview only')).toBeTruthy();
+});
