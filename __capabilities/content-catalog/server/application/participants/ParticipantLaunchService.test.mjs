@@ -108,13 +108,27 @@ it('retains the declared returnTo of a contract-only non-Agenda provider for beg
 });
 
 it('rejects an unsafe provider returnTo before retention or admission',async()=>{
- let pins=0,writes=0;
+ let pins=0,writes=0,preparations=0;
  const target={kind:'app',appId:'fake',participantConsumer:{id:'fake',version:1}};
- const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:5,selectorSupport:['all']}),prepareSetup:async()=>({schema:'participant-prepared-setup/v1',consumer:{id:'fake',version:1},setup:{schema:'fake/v1',data:{}},preview:{schema:'preview/v1',data:{}},artifacts:[],confirmation:'none'}),retainPrepared:async()=>{pins++;},begin:async()=>{throw Error('unexpected');}};
+ const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:5,selectorSupport:['all']}),prepareSetup:async()=>{preparations++;return {schema:'participant-prepared-setup/v1',consumer:{id:'fake',version:1},setup:{schema:'fake/v1',data:{}},preview:{schema:'preview/v1',data:{}},artifacts:[],confirmation:'none'};},retainPrepared:async()=>{pins++;},begin:async()=>{throw Error('unexpected');}};
  const registry=new ParticipantConsumerRegistry();registry.register({consumer});
  const store={reserve:async(_,build)=>{const result=await build([]);writes++;return result;}};
  const source={scope:{provider:'other',id:'p',revision:1},roster:[participant],selector:{schema:'participant-selector/v1',mode:'all'},target,action:'open',consumer:{id:'fake',version:1},settings:{},returnTo:{kind:'content',content_id:'https:evil'}};
  const service=new ParticipantLaunchService({registry,providers:[{id:'other',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>source}],resolveDirectTarget:async()=>target,logger:{info(){}}});
  await expect(service.begin({ref:{schema:'participant-launch-ref/v1',provider:'other',ref:'opaque'},action:'open',requestId:'r',intent:'new',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
- expect(pins).toBe(0);expect(writes).toBe(0);
+ expect(preparations).toBe(0);expect(pins).toBe(0);expect(writes).toBe(0);
+});
+
+it('rejects an unsafe fresh returnTo before aliasing an existing pending launch',async()=>{
+ const {ParticipantSetupResolver}=await import('./ParticipantSetupResolver.mjs');
+ let writes=0,retentions=0;
+ const target={kind:'app',appId:'fake',participantConsumer:{id:'fake',version:1}};
+ const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:5,selectorSupport:['all']}),prepareSetup:async()=>({schema:'participant-prepared-setup/v1',consumer:{id:'fake',version:1},setup:{schema:'fake/v1',data:{}},preview:{schema:'preview/v1',data:{}},artifacts:[],confirmation:'none'}),retainPrepared:async()=>{retentions++;},begin:async()=>{throw Error('unexpected')}};
+ const registry=new ParticipantConsumerRegistry();registry.register({consumer});
+ const source={scope:{provider:'other',id:'p',revision:1},roster:[participant],selector:{schema:'participant-selector/v1',mode:'all'},target,action:'open',consumer:{id:'fake',version:1},settings:{},returnTo:{kind:'content',content_id:'https:evil'}};
+ const {setupHash}=await new ParticipantSetupResolver({registry}).resolve({resolvedSource:source,viewer:{}});
+ const store={reserve:async(_,build)=>{const result=await build([{launch_id:'pending',consumer:{id:'fake',version:1},setup_hash:setupHash}]);writes++;return result;}};
+ const service=new ParticipantLaunchService({registry,providers:[{id:'other',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>source}],resolveDirectTarget:async()=>target,logger:{info(){}}});
+ await expect(service.begin({ref:{schema:'participant-launch-ref/v1',provider:'other',ref:'opaque'},action:'open',requestId:'new',intent:'open',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
+ expect(writes).toBe(0);expect(retentions).toBe(0);
 });

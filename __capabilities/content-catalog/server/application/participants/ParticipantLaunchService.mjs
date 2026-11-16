@@ -54,11 +54,12 @@ class ParticipantLaunchService {
     if (this.registry.directAccess(refOf(consumer))) fail("authorization_denied", "Direct target declaration mismatch");
     return { target: resolved, consumer, access: null, resolved: true };
   }
-  async prepare(input, access) {
+  async prepare(input, access, {validateReturn = false} = {}) {
     const source = access.provider ? await access.provider.resolve(input.ref.ref, { viewer: input.viewer }) : { action: input.action, target: access.resolved ? access.target : await this.resolveDirectTarget({ target: access.target, action: input.action, viewer: input.viewer }) };
     if (source.action !== input.action) fail("invalid_participant_launch", "Action mismatch");
+    const returnTo = validateReturn ? safeReturn(source.returnTo) : undefined;
     const setup = await this.setupResolver.resolve({ resolvedSource: source, viewer: input.viewer });
-    return { source, ...setup };
+    return { source, ...setup, returnTo };
   }
   async findChoices(receipts, viewer) {
     const groups = new Map();
@@ -102,7 +103,8 @@ class ParticipantLaunchService {
     const requestDigest = hashValue({ ref: input.ref ?? null, target: input.target ?? null, action: input.action, intent: input.intent, expectedSetupHash: input.expectedSetupHash ?? null });
     // Store lookup precedes the callback, so retries retain their original inputs.
     const reservation = await store.reserve({ scopeKey, requestId: input.requestId, requestDigest }, async (receipts) => {
-      const value = await this.prepare(input, access);
+      const value = await this.prepare(input, access, {validateReturn:true});
+      const returnTo = value.returnTo;
       if (!value.participantContext) return { schema: "participant-launch-result/v1", kind: "passthrough", action: input.action, target: clone(value.source.target) };
       if (value.prepared.confirmation === "required" && !input.expectedSetupHash || input.expectedSetupHash && input.expectedSetupHash !== value.setupHash) fail("setup_conflict", "Setup changed or confirmation required");
       if (input.intent === "open") {
@@ -111,7 +113,6 @@ class ParticipantLaunchService {
         const choices = await this.findChoices(receipts, input.viewer);
         if (choices.length) return { schema: "participant-launch-result/v1", kind: "resume_available", consumer: refOf(value.consumer), current_setup_hash: value.setupHash, choices };
       }
-      const returnTo = safeReturn(value.source.returnTo);
       const providerProvenance = value.source.provenance ?? {};
       if (typeof providerProvenance !== "object" || Array.isArray(providerProvenance)) {
         fail("invalid_provenance", "Invalid provider provenance");
