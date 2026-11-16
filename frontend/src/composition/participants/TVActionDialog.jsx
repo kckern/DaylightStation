@@ -1,4 +1,5 @@
 import React, {useEffect, useRef} from 'react';
+import './TVActionDialog.css';
 import {getActionBus} from '../../../../__capabilities/screen-host/browser/input.mjs';
 
 /** A visible dialog owns semantic and keyboard input until it unmounts. */
@@ -35,5 +36,5 @@ export function TVActionDialog({children, label, onBack, focusKey, role='dialog'
     window.addEventListener('keydown',handle,true);
     return () => { release(); window.removeEventListener('keydown',handle,true); };
   }, []);
-  return <div ref={root} role={role} aria-label={label}>{children}</div>;
+  return <div ref={root} className="tv-action-dialog" role={role} aria-label={label}><div className="tv-action-dialog__panel">{children}</div></div>;
 }

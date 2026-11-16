@@ -23,6 +23,7 @@ describe('Party Games participant consumer',()=>{
  it('prepares display snapshots and modes without archiving; retains the exact inspected artifact',async()=>{
   const {consumer,context,definitions}=await fixture();
   const prepared=await consumer.prepareSetup({target,settings,participantContext:context,viewer:{role:'host'}});
+  expect(prepared.preview).toEqual({schema:'party-games-preview/v2',data:{participants:[{name:'Alex',avatar:{kind:'user-avatar',userId:'alex'},clue_mode:'text'},{name:'Visitor',avatar:{kind:'user-avatar',userId:'visitor'},clue_mode:'reader'},{name:'Guest',avatar:null,clue_mode:'image'}]}});
   expect(prepared.setup.data.seats.map(x=>x.id)).toEqual(['alex','guest:visitor','anon:plan:slot']);
   expect(prepared.setup.data.seats[1].members[0]).toMatchObject({id:'guest:visitor',name:'Visitor',avatar:{kind:'user-avatar',userId:'visitor'}});
   expect(prepared.setup.data.setup.charades_presentation.by_participant).toEqual({alex:'text','guest:visitor':'reader','anon:plan:slot':'image'});

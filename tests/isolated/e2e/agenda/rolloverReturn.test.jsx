@@ -38,7 +38,7 @@ it('returns a saved activity to its dated preview after the injected clock rolls
   const adapter=new AgendaContentAdapter({repository:repo,projector,clock:()=>now,resolveHousehold:async()=> 'home'});
   const fetcher=async url=>{const address=decodeURIComponent(url.split('/agenda/')[1]);const menu=await adapter.getList(address,{viewer:{},participantLaunchVersion:1});return {ok:true,json:async()=>({...menu,items:menu.items.map(item=>toListItem(item))})};};
   const client=Object.fromEntries(['inspect','begin'].map(op=>[op,input=>service[op]({...input,viewer:{}})]));
-  const browserRegistry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral-output/v1',render:({clear})=><button onClick={()=>{now=new Date('2026-11-24T00:00:00Z');clear();}}>Roll over and return</button>}]);
+  const browserRegistry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral-output/v1',previewSchema:'neutral-preview/v1',preview:()=> <p>Neutral preview</p>,render:({clear})=><button onClick={()=>{now=new Date('2026-11-24T00:00:00Z');clear();}}>Roll over and return</button>}]);
   render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:series/current" fetcher={fetcher} participantClient={client} participantRegistry={browserRegistry}/></ScreenOverlayProvider></MenuNavigationProvider>);
   fireEvent.click(await screen.findByText('Activity'));fireEvent.click(await screen.findByRole('button',{name:'Start'}));fireEvent.click(await screen.findByText('Roll over and return'));
   const activity=await screen.findByText('Activity');await waitFor(()=>expect(activity.closest('.menu-item')).toHaveClass('active'));expect(await screen.findByText(/Preview only/i)).toBeTruthy();

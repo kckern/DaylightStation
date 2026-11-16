@@ -24,7 +24,7 @@ it('two confirmed hosts reuse one real service and ledger pending execution',asy
   const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async()=>target,logger:{info(){}}});
   const client={inspect:input=>service.inspect({...input,viewer:{}}),begin:input=>service.begin({...input,viewer:{}})};
   const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'};
-  const ready=vi.fn(); const view=render(<><ParticipantLaunchHost refValue={ref} action="open" client={client} onReady={ready} onClose={()=>{}} requestIdFactory={()=> 'one'}/><ParticipantLaunchHost refValue={ref} action="open" client={client} onReady={ready} onClose={()=>{}} requestIdFactory={()=> 'two'}/></>);
+  const ready=vi.fn(); const view=render(<><ParticipantLaunchHost refValue={ref} action="open" client={client} resolvePreview={()=>()=>null} onReady={ready} onClose={()=>{}} requestIdFactory={()=> 'one'}/><ParticipantLaunchHost refValue={ref} action="open" client={client} resolvePreview={()=>()=>null} onReady={ready} onClose={()=>{}} requestIdFactory={()=> 'two'}/></>);
   await waitFor(()=>expect(screen.getAllByRole('button',{name:'Start'})).toHaveLength(2)); const buttons=screen.getAllByRole('button',{name:'Start'}); fireEvent.click(buttons[0]); await waitFor(()=>expect(executions).toHaveLength(1)); fireEvent.click(buttons[1]); await waitFor(()=>expect(executions).toHaveLength(2));
   expect(executions[0]).toBe(executions[1]);
   await act(async()=>{release(); await gate;}); await waitFor(()=>expect(ready).toHaveBeenCalledTimes(2)); view.unmount();

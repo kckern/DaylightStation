@@ -289,7 +289,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
 
   switch (type) {
     case 'participant-launch':
-      return <ParticipantLaunchHost key={`${props.ref.ref}:${props.attempt || 0}`} refValue={props.ref} action={props.action} client={participantClient} onClose={pop} requireConfirmation={props.requireConfirmation} canLaunch={consumer => participantRegistry.supports(consumer)}
+      return <ParticipantLaunchHost key={`${props.ref.ref}:${props.attempt || 0}`} refValue={props.ref} action={props.action} client={participantClient} onClose={pop} requireConfirmation={props.requireConfirmation} canLaunch={consumer => participantRegistry.supports(consumer)} resolvePreview={options => participantRegistry.resolvePreview?.(options)}
         onConflict={async () => {
           if (!refreshParticipant) { pop(); return; }
           const originatingContent = currentContent;

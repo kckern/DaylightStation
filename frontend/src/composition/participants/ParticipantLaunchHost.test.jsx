@@ -127,3 +127,24 @@ it('logs safe lifecycle and validation outcomes without participant or setup det
  const logged=JSON.stringify([...info.mock.calls,...warn.mock.calls]);expect(logged).not.toMatch(/Private name|secret-hash|private-ref|private failure/);
  info.mockRestore();warn.mockRestore();
 });
+it('renders a registered readable preview without dumping opaque consumer data',async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'neutral',version:1},confirmation:'required',setup_hash:'hash',participant_summary:[{key:'internal-key',display:{name:'Guest'}}],consumer_summary:{schema:'neutral-preview/v1',data:{secret_id:'internal-id',mode:'Image'}},choices:[]});
+ const Preview=({summary})=><p>Guest — {summary.data.mode}</p>;
+ render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'x'}} action="display" client={{inspect}} resolvePreview={()=>Preview} onClose={()=>{}}/>);
+ expect(await screen.findByText('Guest — Image')).toBeVisible();expect(screen.queryByText(/internal-id|internal-key/)).toBeNull();expect(screen.getByRole('button',{name:'Start'})).toBeVisible();
+});
+
+it('blocks fresh launches for an unknown preview while preserving retained Resume', async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'none',consumer:{id:'neutral',version:1},setup_hash:'hash',consumer_summary:{schema:'unknown/v1',data:{secret:'private'}},choices:[{launch_id:'old',label:'Resume old'}]});
+ const begin=vi.fn();const resume=vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready'});const ready=vi.fn();
+ render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'x'}} action="open" client={{inspect,begin,resume}} onReady={ready} onClose={()=>{}}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Activity preview unavailable');
+ expect(screen.queryByText('private')).toBeNull();expect(screen.queryByRole('button',{name:'New'})).toBeNull();expect(begin).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Resume old'}));await waitFor(()=>expect(resume).toHaveBeenCalledWith(expect.objectContaining({launchId:'old'})));
+});
+
+it('does not autostart an unrenderable preview without retained choices', async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'none',consumer:{id:'neutral',version:1},consumer_summary:{schema:'unknown/v1',data:{}},choices:[]});const begin=vi.fn();
+ render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'x'}} action="open" client={{inspect,begin}} onClose={()=>{}}/>);
+ expect(await screen.findByRole('alert')).toBeVisible();expect(screen.queryByRole('button',{name:'Start'})).toBeNull();expect(begin).not.toHaveBeenCalled();
+});

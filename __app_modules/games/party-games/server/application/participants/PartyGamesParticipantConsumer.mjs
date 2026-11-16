@@ -49,7 +49,7 @@ export class PartyGamesParticipantConsumer {
   if (!manifest || !/^[a-f0-9]{64}$/.test(manifest.hash || '') || !surface?.authority_modes?.includes('remote')) fail('prepared_artifact_unavailable','Experience manifest or surface unavailable');
   const history=await this.clueHistory?.list(target.definitionId) ?? [];
   const data=buildPartyGameSetup({target,settings,participantContext,definition:loaded.definition,clueHistoryIds:history.map(x=>String(x.clue_id))});
-  return {schema:'participant-prepared-setup/v1',consumer:clone(ref),setup:{schema:'party-games-frozen-setup/v1',data:{...data,pinnedArtifacts:{hash:loaded.hash,artifacts:clone(loaded.artifacts),manifest:clone(manifest),surface:clone(surface)}}},artifacts,preview:{schema:'party-games-preview/v1',data:{participants:data.participants.map(({id,name,avatar})=>({id,name,avatar}))}},confirmation:settings.autostart?'none':'required'};
+  return {schema:'participant-prepared-setup/v1',consumer:clone(ref),setup:{schema:'party-games-frozen-setup/v1',data:{...data,pinnedArtifacts:{hash:loaded.hash,artifacts:clone(loaded.artifacts),manifest:clone(manifest),surface:clone(surface)}}},artifacts,preview:{schema:'party-games-preview/v2',data:{participants:data.participants.map(({id,name,avatar})=>({name,avatar,clue_mode:data.setup.charades_presentation.by_participant[id]}))}},confirmation:settings.autostart?'none':'required'};
  }
  async retainPrepared({prepared,viewer}) {
   host(viewer); const expected=prepared.setup.data.pinnedArtifacts; const definitionId=prepared.artifacts.find(x=>x.role==='definition_bundle')?.id;
