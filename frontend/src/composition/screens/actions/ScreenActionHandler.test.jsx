@@ -125,6 +125,27 @@ describe('ScreenActionHandler', () => {
     expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
     expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');vi.restoreAllMocks();
   });
+  it.each(['success','failure'])('hardware Back cancels an old Retry without dismissing newer playback on late %s',async outcome=>{
+    let resolve,reject;
+    vi.spyOn(apiModule,'DaylightAPI').mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(()=>new Promise((yes,no)=>{resolve=yes;reject=no;}));
+    const view=render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider></MenuNavigationProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+    await view.findByRole('alert',{name:'Menu error'});
+    fireEvent.click(view.getByRole('button',{name:'Retry'}));
+    act(()=>getActionBus().emit('media:play',{contentId:'plex:12345'}));
+    await view.findByTestId('player');
+    fireEvent.popState(window);
+    expect(view.getByTestId('player')).toBeTruthy();
+    await act(async()=>{
+      if(outcome==='success')resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+      else reject(new Error('offline'));
+      await Promise.resolve();await Promise.resolve();
+    });
+    expect(view.queryByTestId('agenda-host')).toBeNull();
+    expect(view.queryByRole('alert',{name:'Menu error'})).toBeNull();
+    expect(view.getByTestId('player')).toBeTruthy();
+    vi.restoreAllMocks();
+  });
   it('does not replace playback that starts during an alias lookup',async()=>{
     let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
     const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);

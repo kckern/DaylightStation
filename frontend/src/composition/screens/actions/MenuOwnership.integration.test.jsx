@@ -23,3 +23,41 @@ it('retries an ownership error without remounting the real widget or resetting t
  api.DaylightAPI.mockImplementation(async url=>url.includes('_ownership/menu/') ? {alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}} : {title:'Widget',items:[{label:'Widget item'}]});
  fireEvent.click(screen.getByRole('button',{name:'Retry'}));expect(await screen.findByText('Agenda host: agenda:neutral')).toBeTruthy();await waitFor(()=>expect(screen.queryByRole('alert',{name:'Menu error'})).toBeNull());
 });
+
+it.each(['success','failure'])('closes a pending ownership Retry on hardware Back and ignores late %s',async outcome=>{
+ let resolveRetry,rejectRetry;
+ const retryResponse=new Promise((resolve,reject)=>{resolveRetry=resolve;rejectRetry=reject;});
+ let ownershipRequests=0;
+ api.DaylightAPI.mockImplementation(async url=>{
+  if(!url.includes('_ownership/menu/')) return {title:'Widget',items:[{label:'Widget item'}]};
+  ownershipRequests++;
+  if(ownershipRequests===1) throw new Error('offline');
+  if(ownershipRequests===2) return retryResponse;
+  return {alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}};
+ });
+ render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler actions={{menu:{duplicate:'ignore'}}}/><Driver/><MenuWidget source="neutral"/></ScreenOverlayProvider></MenuNavigationProvider>);
+ await screen.findByText('Widget item');
+ fireEvent.click(screen.getByText('Open overlay'));
+ fireEvent.click(screen.getByText('Push nested'));
+ await screen.findByText('Nested item');
+ act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+ await screen.findByRole('alert',{name:'Menu error'});
+ fireEvent.click(screen.getByRole('button',{name:'Retry'}));
+ expect(ownershipRequests).toBe(2);
+ expect(screen.getByTestId('depth')).toHaveTextContent('1');
+ fireEvent.popState(window);
+ expect(screen.queryByRole('alert',{name:'Menu error'})).toBeNull();
+ expect(await screen.findByText('Widget item')).toBeTruthy();
+ expect(screen.getByTestId('depth')).toHaveTextContent('0');
+ await act(async()=>{
+  if(outcome==='success') resolveRetry({alias:{owner:'agenda',canonicalContentId:'agenda:stale'}});
+  else rejectRetry(new Error('still offline'));
+  await retryResponse.catch(()=>{});
+ });
+ expect(screen.queryByRole('alert',{name:'Menu error'})).toBeNull();
+ expect(screen.queryByText('Agenda host: agenda:stale')).toBeNull();
+ expect(screen.getByText('Widget item')).toBeTruthy();
+ act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+ expect(await screen.findByText('Agenda host: agenda:neutral')).toBeTruthy();
+ expect(screen.queryByText('Widget item')).toBeNull();
+});

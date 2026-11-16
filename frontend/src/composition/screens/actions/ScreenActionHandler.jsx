@@ -701,6 +701,13 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   pipRef.current = pip;
 
   const consumeBack = useCallback(() => {
+    // The visible error owns Back even while Retry is pending. Its lifecycle
+    // invalidates the lookup AND dismisses the dialog; cancellation alone
+    // would leave its retry callback attached to an obsolete generation.
+    if (fullscreenRef.current?.Component === MenuOwnershipError) {
+      fullscreenRef.current.props.back();
+      return true;
+    }
     if(pendingMenuLookupRef.current){pendingMenuLookupRef.current=false;menuRequestRef.current++;currentMenuRef.current=null;return true;}
     // An overlay that manages its own back navigation (MenuStack popping levels,
     // Piano blocking escapes) registers an escape interceptor — defer to the

@@ -19,7 +19,16 @@ export async function createAgendaFixture({page,request,createCleanupContext=()=
   if (manifest.callerMenu?.created) steps.push(recordFailure('caller-menu',async()=>{
    const path=`/api/v1/admin/content/lists/menus/${encodeURIComponent(manifest.callerMenu.name)}`;
    const current=await cleanupRequest.get(path,{headers});
-   if(current.status()!==404) {await check(current);const saved=await current.json();expect(saved.type).toBe('menus');expect(saved.name).toBe(manifest.callerMenu.name);const items=saved.sections.flatMap(section=>section.items);expect(items.length).toBeLessThanOrEqual(1);if(items.length) expect(items[0].list?.contentId || items[0].input).toBe(manifest.callerMenu.contentId);await check(await cleanupRequest.delete(path,{headers}));}
+   if(current.status()!==404) {
+    await check(current);
+    const owned=manifest.callerMenu;
+    // After an acknowledged update only its verified readback is applicable.
+    // A lost/rejected update may clean the original only if it is unchanged.
+    const expected=owned.updateSucceeded ? owned.postUpdateState : owned.preUpdateState;
+    expect(expected,'Caller menu has no proven unchanged state').toBeTruthy();
+    expect(await current.json(),'Caller menu changed since the proven owned state').toEqual(expected);
+    await check(await cleanupRequest.delete(path,{headers}));
+   }
    const absent=await cleanupRequest.get(path,{headers});expect(absent.status()).toBe(404);
    manifest.callerMenu.cleanupVerified=true;
   }));
@@ -55,9 +64,19 @@ export async function createAgendaFixture({page,request,createCleanupContext=()=
   expect(created.status()).toBe(201);const result=await created.json();
   expect(result).toMatchObject({ok:true,type:'menus',list:name,path:`content/lists/menus/${name}.yml`});
   manifest.callerMenu={name,contentId,created:true,createAttempted:true,createResponse:result};await saveManifest();
-  await check(await request.put(path,{headers,data:{items:[{title:'Open week',list:{contentId}}]}}));
-  const read=await check(await request.get(path,{headers}));const document=await read.json();expect(document.type).toBe('menus');expect(document.name).toBe(name);
-  const items=document.sections.flatMap(section=>section.items);expect(items).toHaveLength(1);expect(items[0].list?.contentId || items[0].input).toBe(contentId);
+  const initial=await (await check(await request.get(path,{headers}))).json();
+  // GET returns the complete normalized Admin document, including derived
+  // indices/action labels. Retain all fields so metadata edits cannot disappear.
+  expect(initial).toEqual({type:'menus',name,title:name,metadata:{},sections:[{items:[],index:0}],household});
+  manifest.callerMenu.preUpdateState=initial;
+  manifest.callerMenu.updateAttempted=true;await saveManifest();
+  const updated=await check(await request.put(path,{headers,data:{items:[{title:'Open week',list:{contentId}}]}}));
+  manifest.callerMenu.updateSucceeded=true;await saveManifest();
+  expect(await updated.json()).toEqual({ok:true,type:'menus',list:name,count:1});
+  const document=await (await check(await request.get(path,{headers}))).json();
+  const expected={...initial,sections:[{items:[{title:'Open week',list:{contentId},label:'Open week',input:contentId,action:'List',sectionIndex:0,itemIndex:0}],index:0}]};
+  expect(document).toEqual(expected);
+  manifest.callerMenu.postUpdateState=document;await saveManifest();
   return name;
  }
  const series={schema:'agenda-series/v1',series_id:id,household_id:household,revision:0,title:`Agenda ${id}`,calendar:{frequency:'weekly',timezone:process.env.AGENDA_TEST_TIMEZONE || 'UTC',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};

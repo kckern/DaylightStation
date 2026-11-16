@@ -2,6 +2,8 @@ import {it,expect,vi} from 'vitest';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {ListManagementService} from '../../../../__capabilities/content-catalog/server/application/services/ListManagementService.mjs';
+import {normalizeListConfig,serializeListConfig} from '../../../../__capabilities/content-catalog/server/domain/utils/listConfigCodec.mjs';
 import {createAgendaFixture} from '../../../live/flow/agenda/fixture.mjs';
 const response=(url,body,status=200)=>({ok:()=>status<400,url:()=>url,status:()=>status,text:async()=>JSON.stringify(body),json:async()=>body,headers:()=>({etag:'"one"'})});
 it('cleans other owned records when initialization and an individual plan cleanup fail',async()=>{
@@ -36,20 +38,120 @@ it('continues archiving a discovered guest when its manifest update fails',async
   expect(caught).toBe(original);expect(actions.some(url=>url.endsWith('/people/guests/own/archive'))).toBe(true);
  } finally {vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
 });
-it('records a uniquely created caller menu before editing and deletes only that exact owned menu',async()=>{
- const dir=mkdtempSync(path.join(tmpdir(),'agenda-fixture-'));vi.stubEnv('BASE_URL','http://managed');vi.stubEnv('AGENDA_TEST_TOKEN','fixture-token');vi.stubEnv('AGENDA_TEST_HOUSEHOLD','home');
- const actions=[];let menuName,menuExists=false,contentId;
- const request={post:async(url,{data})=>{actions.push(['post',url]);if(url==='/api/v1/admin/content/agendas')return response(url,{},201);if(url==='/api/v1/admin/content/lists/menus'){menuName=data.name;menuExists=true;return response(url,{ok:true,type:'menus',list:menuName,path:`content/lists/menus/${menuName}.yml`},201);}return response(url,{});},get:async url=>{actions.push(['get',url]);if(url.includes('/lists/menus/'))return response(url,menuExists?{type:'menus',name:menuName,sections:[{items:[{title:'Open week',list:{contentId}}]}]}:{},menuExists?200:404);if(url.endsWith('/plans'))return response(url,{plans:[]});if(url.includes('/people?'))return response(url,{people:[]});return response(url,{status:'archived'});},put:async(url)=>{const manifest=JSON.parse(readFileSync(path.join(dir,'agenda-fixture-private.json')));expect(manifest.callerMenu.created).toBe(true);expect(manifest.callerMenu.name).toBe(menuName);actions.push(['put',url]);return response(url,{ok:true});},delete:async url=>{actions.push(['delete',url]);menuExists=false;return response(url,{ok:true});}};
- try {const fixture=await createAgendaFixture({page:{addInitScript:async()=>{}},request,createCleanupContext:async()=>({...request,dispose:async()=>{}})},{outputPath:name=>path.join(dir,name)});contentId=`agenda:${fixture.id}/current`;await fixture.createCallerMenu(contentId);await fixture.cleanup();expect(actions.filter(([method])=>method==='delete')).toEqual([['delete',`/api/v1/admin/content/lists/menus/${menuName}`]]);expect(actions.at(-1)[0]).not.toBe('delete');expect(menuExists).toBe(false);} finally {vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
+// Keep the real API normalization/serialization path; only HTTP and persistence
+// are in memory, so cleanup must compare the same complete documents as live GET.
+async function callerFixture(run,{update='success',readback='success',collision=false}={}) {
+ const dir=mkdtempSync(path.join(tmpdir(),'agenda-caller-'));
+ vi.stubEnv('BASE_URL','http://managed');vi.stubEnv('AGENDA_TEST_TOKEN','fixture-token');vi.stubEnv('AGENDA_TEST_HOUSEHOLD','home');
+ const records=new Map(),actions=[];let menuName,updated=false,manifestAtPut;
+ const service=new ListManagementService({logger:{},listStore:{
+  createList:(_type,name)=>{records.set(name,{items:[]});return true;},
+  getList:(_type,name)=>records.has(name)?normalizeListConfig(records.get(name),name):null,
+  saveList:(_type,name,_household,document)=>records.set(name,JSON.parse(JSON.stringify(serializeListConfig(document)))),
+  deleteList:(_type,name)=>records.delete(name)
+ }});
+ const manifest=()=>JSON.parse(readFileSync(path.join(dir,'agenda-fixture-private.json')));
+ const request={
+  post:async(url,{data})=>{
+   actions.push(['post',url]);
+   if(url==='/api/v1/admin/content/lists/menus') {
+    menuName=data.name;return response(url,service.createList('menus',menuName,'home'),201);
+   }
+   return response(url,{},url==='/api/v1/admin/content/agendas'?201:200);
+  },
+  get:async url=>{
+   actions.push(['get',url]);
+   if(url.includes('/lists/menus/')) {
+    if(collision && !menuName)return response(url,{});
+    if(!records.has(menuName))return response(url,{},404);
+    if(updated && readback==='failure')throw Error('readback unavailable');
+    return response(url,JSON.parse(JSON.stringify(service.getList('menus',menuName,'home'))));
+   }
+   if(url.endsWith('/plans'))return response(url,{plans:[]});
+   if(url.includes('/people?'))return response(url,{people:[]});
+   return response(url,{status:'archived'});
+  },
+  put:async(url,{data})=>{
+   const saved=manifest();manifestAtPut=saved;expect(saved.callerMenu.created).toBe(true);expect(saved.callerMenu.name).toBe(menuName);
+   actions.push(['put',url]);
+   if(update==='rejected')return response(url,{},500);
+   const result=service.replaceContents('menus',menuName,'home',data.items);updated=true;
+   if(update==='ambiguous')throw Error('response lost');
+   if(update==='malformed')return response(url,{});
+   return response(url,result);
+  },
+  delete:async url=>{actions.push(['delete',url]);return response(url,service.deleteList('menus',menuName,'home'));}
+ };
+ try {
+  const fixture=await createAgendaFixture({page:{addInitScript:async()=>{}},request,createCleanupContext:async()=>({...request,dispose:async()=>{}})},{outputPath:name=>path.join(dir,name)});
+  await run({fixture,actions,manifest,records,service,get menuName(){return menuName;},get manifestAtPut(){return manifestAtPut;},allowReadback:()=>{readback='success';}});
+ } finally {vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
+}
+
+it('records complete caller-menu states before editing and deletes the unchanged owned menu',async()=>{
+ await callerFixture(async context=>{
+  const {fixture,manifest,actions,records}=context;
+  await fixture.createCallerMenu(`agenda:${fixture.id}/current`);
+  const saved=manifest().callerMenu;
+  expect(saved.preUpdateState).toEqual({type:'menus',name:context.menuName,title:context.menuName,metadata:{},sections:[{items:[],index:0}],household:'home'});
+  expect(context.manifestAtPut.callerMenu.preUpdateState).toEqual(saved.preUpdateState);
+  expect(context.manifestAtPut.callerMenu.updateAttempted).toBe(true);
+  expect(saved.postUpdateState.sections[0].items).toEqual([{title:'Open week',list:{contentId:`agenda:${fixture.id}/current`},label:'Open week',input:`agenda:${fixture.id}/current`,action:'List',sectionIndex:0,itemIndex:0}]);
+  await fixture.cleanup();
+  const menuPath=`/api/v1/admin/content/lists/menus/${context.menuName}`;
+  expect(actions.filter(([method])=>method==='delete')).toEqual([['delete',menuPath]]);
+  expect(actions.slice(actions.findIndex(([method])=>method==='delete')+1)).toContainEqual(['get',menuPath]);
+  expect(records.size).toBe(0);expect(manifest().callerMenu.cleanupVerified).toBe(true);
+ });
 });
 it('refuses an existing caller menu without creating, editing or deleting it',async()=>{
- const dir=mkdtempSync(path.join(tmpdir(),'agenda-fixture-'));vi.stubEnv('BASE_URL','http://managed');vi.stubEnv('AGENDA_TEST_TOKEN','fixture-token');vi.stubEnv('AGENDA_TEST_HOUSEHOLD','home');
- const post=vi.fn(async url=>response(url,{},201)),put=vi.fn(),del=vi.fn(),get=vi.fn(async url=>response(url,{}));
- try {const fixture=await createAgendaFixture({page:{addInitScript:async()=>{}},request:{post,get,put,delete:del}},{outputPath:name=>path.join(dir,name)});await expect(fixture.createCallerMenu(`agenda:${fixture.id}/current`)).rejects.toThrow();expect(post).toHaveBeenCalledTimes(1);expect(put).not.toHaveBeenCalled();expect(del).not.toHaveBeenCalled();expect(fixture.manifest.callerMenu).toBeNull();} finally {vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
+ await callerFixture(async({fixture,actions})=>{
+  await expect(fixture.createCallerMenu(`agenda:${fixture.id}/current`)).rejects.toThrow();
+  expect(actions.filter(([method])=>method!=='get')).toEqual([['post','/api/v1/admin/content/agendas']]);
+  expect(fixture.manifest.callerMenu).toBeNull();
+ },{collision:true});
 });
-it('refuses caller-menu deletion if its contents no longer match the recorded owner',async()=>{
- const dir=mkdtempSync(path.join(tmpdir(),'agenda-fixture-'));vi.stubEnv('BASE_URL','http://managed');vi.stubEnv('AGENDA_TEST_TOKEN','fixture-token');vi.stubEnv('AGENDA_TEST_HOUSEHOLD','home');
- let menuName,exists=false,modified=false;const del=vi.fn();
- const request={post:async(url,{data})=>{if(url==='/api/v1/admin/content/agendas')return response(url,{},201);if(url==='/api/v1/admin/content/lists/menus'){menuName=data.name;exists=true;return response(url,{ok:true,type:'menus',list:menuName,path:`content/lists/menus/${menuName}.yml`},201);}return response(url,{});},get:async url=>{if(url.includes('/lists/menus/'))return response(url,exists?{type:'menus',name:menuName,sections:[{items:[{input:modified?'agenda:other/current':contentId}]}]}:{},exists?200:404);if(url.endsWith('/plans'))return response(url,{plans:[]});if(url.includes('/people?'))return response(url,{people:[]});return response(url,{status:'archived'});},put:async url=>response(url,{ok:true}),delete:del};let contentId;
- try {const fixture=await createAgendaFixture({page:{addInitScript:async()=>{}},request,createCleanupContext:async()=>({...request,dispose:async()=>{}})},{outputPath:name=>path.join(dir,name)});contentId=`agenda:${fixture.id}/current`;await fixture.createCallerMenu(contentId);modified=true;await expect(fixture.cleanup()).rejects.toThrow();expect(del).not.toHaveBeenCalled();expect(fixture.manifest.cleanupFailures.some(item=>item.operation==='caller-menu')).toBe(true);} finally {vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
+it.each([
+ ['target',document=>{document.sections[0].items[0].list.contentId='agenda:other/current';}],
+ ['item title',document=>{document.sections[0].items[0].title='Changed';}],
+ ['item flags',document=>{document.sections[0].items[0].shuffle=true;}],
+ ['section metadata',document=>{document.sections[0].title='Changed section';}],
+ ['list metadata',document=>{document.metadata.active=false;}],
+ ['list title',document=>{document.title='Changed menu';}],
+ ['removed item',document=>{document.sections[0].items=[];}],
+ ['added empty section',document=>{document.sections.push({items:[]});}]
+])('refuses caller-menu deletion after changed %s',async(_label,change)=>{
+ await callerFixture(async context=>{
+  const {fixture,service,actions}=context;
+  await fixture.createCallerMenu(`agenda:${fixture.id}/current`);
+  const document=normalizeListConfig(context.records.get(context.menuName),context.menuName);
+  change(document);
+  context.records.set(context.menuName,JSON.parse(JSON.stringify(serializeListConfig(document))));
+  await expect(fixture.cleanup()).rejects.toThrow('Fixture cleanup failed');
+  expect(actions.filter(([method])=>method==='delete')).toEqual([]);
+  expect(fixture.manifest.cleanupFailures.some(item=>item.operation==='caller-menu')).toBe(true);
+  expect(service.getList('menus',context.menuName,'home')).toBeTruthy();
+ });
+});
+it('cleans the proven initial caller menu after a rejected update leaves it unchanged',async()=>{
+ await callerFixture(async({fixture,actions,records,manifest})=>{
+  await expect(fixture.createCallerMenu(`agenda:${fixture.id}/current`)).rejects.toThrow();
+  expect(manifest().callerMenu.preUpdateState.sections[0].items).toEqual([]);
+  await fixture.cleanup();expect(actions.filter(([method])=>method==='delete')).toHaveLength(1);expect(records.size).toBe(0);
+ },{update:'rejected'});
+});
+it.each(['ambiguous','malformed'])('refuses altered caller-menu cleanup after an %s update response',async update=>{
+ await callerFixture(async({fixture,actions,records})=>{
+  await expect(fixture.createCallerMenu(`agenda:${fixture.id}/current`)).rejects.toThrow();
+  await expect(fixture.cleanup()).rejects.toThrow('Fixture cleanup failed');
+  expect(actions.filter(([method])=>method==='delete')).toEqual([]);expect(records.size).toBe(1);
+ },{update});
+});
+it('refuses cleanup when successful update readback failed, even if the item is later removed',async()=>{
+ await callerFixture(async context=>{
+  await expect(context.fixture.createCallerMenu(`agenda:${context.fixture.id}/current`)).rejects.toThrow('readback unavailable');
+  context.allowReadback();context.records.set(context.menuName,{items:[]});
+  await expect(context.fixture.cleanup()).rejects.toThrow('Fixture cleanup failed');
+  expect(context.actions.filter(([method])=>method==='delete')).toEqual([]);
+ },{readback:'failure'});
 });
