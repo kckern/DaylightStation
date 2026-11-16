@@ -13,6 +13,35 @@ const deck = {
 beforeEach(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); });
 
 describe('FlashcardProgram', () => {
+  it('requires a recorded session before showing tracked review controls and offers retry after failed open', async () => {
+    const onEvent = vi.fn().mockResolvedValue({ ok: true });
+    const studyApi = { open: vi.fn().mockResolvedValue({ ok: false, status: 503, data: null }), review: vi.fn() };
+    render(<FlashcardProgram descriptor={{ deck, userId: 'kid', policy: { modes: ['review'] } }} studyApi={studyApi} onEvent={onEvent} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not open');
+    expect(screen.queryByRole('button', { name: 'Show answer' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Review complete')).not.toBeInTheDocument();
+    studyApi.open.mockResolvedValueOnce({ ok: true, data: { session: { sessionId: 'retry', reviews: 0, cardIds: ['mitochondrion'] } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('button', { name: 'Show answer' })).toBeInTheDocument();
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'review' }));
+  });
+
+  it('keeps an unrecorded card and accepts one pending rating at a time', async () => {
+    let settle;
+    const studyApi = {
+      open: vi.fn().mockResolvedValue({ ok: true, data: { session: { sessionId: 's1', reviews: 0, cardIds: ['mitochondrion'] } } }),
+      review: vi.fn(() => new Promise(resolve => { settle = resolve; })),
+    };
+    render(<FlashcardProgram descriptor={{ deck, userId: 'kid', policy: { modes: ['review'] } }} studyApi={studyApi} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show answer' }));
+    const rate = screen.getByRole('button', { name: 'good' });
+    fireEvent.click(rate); fireEvent.click(rate);
+    expect(studyApi.review).toHaveBeenCalledTimes(1);
+    settle({ ok: false, status: 503 });
+    expect(await screen.findByRole('alert')).toHaveTextContent('not saved');
+    expect(screen.queryByText('Review complete')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'good' })).toBeEnabled();
+  });
   it('renders accessible rich card media and lets a learner flip it', () => {
     render(<FlashcardProgram descriptor={{ deck, policy: { modes: ['cards'] } }} resolveAssetUrl={(id) => `/media/${id}`} />);
     expect(screen.getByText('Where is ATP made?')).toBeInTheDocument();
