@@ -13,7 +13,7 @@ test('creates and edits two independent weekly plans in Admin',async({page,reque
   await page.getByRole('button',{name:'Publish',exact:true}).click();await expect(page.getByText('published',{exact:true})).toBeVisible();
   await page.getByRole('link',{name:'Back to series'}).click();await page.getByRole('button',{name:'Create next week'}).click();
   await expect(page.getByRole('heading',{name:'Next week'})).toBeVisible();await page.getByLabel('Title',{exact:true}).fill('Next acceptance week');
-  await page.getByRole('button',{name:'Save draft'}).click();await page.screenshot({path:testInfo.outputPath('admin-next-week.png'),fullPage:true});
+  await page.getByRole('button',{name:'Save draft'}).click();const heading=page.getByRole('heading',{name:'Next week'});await heading.scrollIntoViewIfNeeded();await expect(heading).toBeInViewport();await expect(page.getByText('People',{exact:true})).toBeInViewport();await page.screenshot({path:testInfo.outputPath('admin-next-week.png'),fullPage:true});
   await page.getByRole('link',{name:'Back to series'}).click();
   const plansResponse=await request.get(`${fixture.base}/${fixture.id}/plans`,{headers:fixture.headers});expect(plansResponse.ok()).toBe(true);
   const plans=(await plansResponse.json()).plans.map(p=>p.document);expect(plans).toHaveLength(2);
