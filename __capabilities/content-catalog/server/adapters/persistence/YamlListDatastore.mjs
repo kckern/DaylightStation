@@ -31,6 +31,7 @@ export class YamlListDatastore extends IListStore {
     super();
     if (!config.dataDir) throw new Error('YamlListDatastore requires dataDir');
     this.dataDir = config.dataDir;
+    this.assertWritable=config.assertWritable ?? (()=>{});
     if (!config.listConfigCodec) throw new Error('YamlListDatastore requires listConfigCodec');
     this.listConfigCodec = config.listConfigCodec;
   }
@@ -101,6 +102,7 @@ export class YamlListDatastore extends IListStore {
   /** @inheritdoc */
   saveList(type, name, householdId, listConfig) {
     const listPath = this._getListPath(type, name, householdId);
+    this.assertWritable({kind:({menus:'menu',watchlists:'watchlist',programs:'program'})[type],id:name});
     saveYaml(listPath, this.listConfigCodec.serializeListConfig(listConfig));
   }
 
@@ -117,6 +119,7 @@ export class YamlListDatastore extends IListStore {
     ensureDir(typeDir);
 
     // Create empty list with new object format
+    this.assertWritable({kind:({menus:'menu',watchlists:'watchlist',programs:'program'})[type],id:name});
     saveYaml(listPath, { items: [] });
     return true;
   }
@@ -129,6 +132,7 @@ export class YamlListDatastore extends IListStore {
     const existing = loadYamlSafe(listPath);
     if (existing === null) return false;
 
+    this.assertWritable({kind:({menus:'menu',watchlists:'watchlist',programs:'program'})[type],id:name});
     deleteYaml(listPath);
     return true;
   }

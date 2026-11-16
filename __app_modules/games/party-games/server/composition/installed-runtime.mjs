@@ -18,7 +18,7 @@ import { FilesystemGamingMediaRepository } from "../adapters/FilesystemGamingMed
 import { PeopleDirectory } from '../../../../../__capabilities/household-identity/server/public.mjs';
 import { YamlNamedGuestStore } from '../../../../../__capabilities/household-identity/server/adapters/index.mjs';
 
-export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
+export function createPartyGamesCatalogRuntime({ contentPath, rootLogger,assertIdentityWritable }) {
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
     definitionsDir: configService.getHouseholdPath('gaming/games'),
     archiveDir: configService.getHouseholdPath('gaming/definitions'),
@@ -35,6 +35,7 @@ export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
       userProfile: id => configService.getUserProfile(id),
     },
     guestStore: new YamlNamedGuestStore({
+      assertWritable:assertIdentityWritable,
       pathForHousehold: id => configService.getHouseholdPath('identity/named-guests.yml', id),
     }),
   });

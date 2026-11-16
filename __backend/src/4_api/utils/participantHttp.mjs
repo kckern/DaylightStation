@@ -22,7 +22,7 @@ export function precondition(req) {
   if (!/^"[^"\r\n]+"$/.test(value)) throw httpError('invalid_request','Strong If-Match required',[{field:'If-Match',message:'Strong ETag required'}]);
   return value;
 }
-const STATUS={authentication_required:401, authorization_denied:403, not_found:404, launch_not_found:404, revision_conflict:409, idempotency_conflict:409, setup_conflict:409, precondition_required:428, feature_unavailable:503, provider_unavailable:503, consumer_unavailable:503, consumer_version_unavailable:503, launch_store_unavailable:503, participant_discovery_unavailable:503, participant_context_required:422, agenda_not_launchable:409, prepared_artifact_unavailable:503, runtime_unavailable:503};
+const STATUS={source_changed:409,identity_conflict:409,migration_busy:409,resource_moved:409,ownership_unavailable:503,unsupported_downgrade:422,authentication_required:401, authorization_denied:403, not_found:404, launch_not_found:404, revision_conflict:409, idempotency_conflict:409, setup_conflict:409, precondition_required:428, feature_unavailable:503, provider_unavailable:503, consumer_unavailable:503, consumer_version_unavailable:503, launch_store_unavailable:503, participant_discovery_unavailable:503, participant_context_required:422, agenda_not_launchable:409, prepared_artifact_unavailable:503, runtime_unavailable:503};
 export function handler(logger, operation, {hideForbidden=false}={}) {
   return async (req,res) => { try { await operation(req,res); } catch (error) {
     const code=error.code || 'internal_error';

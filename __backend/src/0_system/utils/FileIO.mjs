@@ -308,9 +308,9 @@ export function fileMtimeMs(filePath) {
  * Ensure a directory exists, creating it if necessary
  * @param {string} dirPath - Directory path
  */
-export function ensureDir(dirPath) {
+export function ensureDir(dirPath, { mode } = {}) {
   if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+    fs.mkdirSync(dirPath, { recursive: true, ...(mode === undefined ? {} : { mode }) });
   }
 }
 
@@ -769,8 +769,12 @@ export function deleteFile(filePath) {
 }
 
 /** Delete one path while preserving native filesystem errors for the caller. */
-export function deleteFileStrict(filePath) {
+export function deleteFileStrict(filePath, { durable = false } = {}) {
   fs.unlinkSync(filePath);
+  if (durable) {
+    const fd = fs.openSync(path.dirname(filePath), 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  }
 }
 
 /** Asynchronously delete one path while preserving native filesystem errors. */
@@ -831,16 +835,16 @@ export function writeBinary(filePath, buffer) {
 }
 
 /** Atomically replace a binary file using a same-directory staging file. */
-export function writeBinaryAtomic(filePath, buffer, { durable = false } = {}) {
+export function writeBinaryAtomic(filePath, buffer, { durable = false, mode, directoryMode } = {}) {
   const dir = path.dirname(filePath);
   const newDirectories = [];
   if (durable) {
     for (let current = dir; !fs.existsSync(current); current = path.dirname(current)) newDirectories.push(current);
   }
-  ensureDir(dir);
+  ensureDir(dir, { mode: directoryMode });
   const stagingPath = atomicStagingPath(filePath);
   try {
-    fs.writeFileSync(stagingPath, buffer);
+    fs.writeFileSync(stagingPath, buffer, mode === undefined ? undefined : { mode });
     if (durable) {
       const fd = fs.openSync(stagingPath, 'r');
       try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }

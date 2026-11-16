@@ -2,7 +2,7 @@ const fail = (code, message, errors) => Object.assign(new Error(message), {code,
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,121}$/;
 const display = guest => ({ name: guest.name, avatar: guest.avatar ?? null });
 const guestEntry = guest => ({ person: { kind: 'guest', id: guest.id }, display: display(guest), active: guest.active });
-function validateGuest(guest) {
+export function validateNamedGuest(guest) {
   if (typeof guest.id !== 'string' || !ID.test(guest.id) || typeof guest.name !== 'string' || !guest.name.trim() || typeof guest.active !== 'boolean') throw fail('invalid_guest','Invalid guest identity',[{field:typeof guest.id !== 'string' || !ID.test(guest.id) ? 'id' : 'name',message:'Invalid value'}]);
   if (guest.avatar != null) {
     const avatar=guest.avatar;
@@ -29,7 +29,7 @@ export class PeopleDirectory {
   async createGuest({ householdId, input, expectedRevision }) {
     const doc = this.guestStore.read(householdId);
     const guest = { id: input?.id, name: input?.name, avatar: input?.avatar ?? null, active: true };
-    validateGuest(guest);
+    validateNamedGuest(guest);
     if (doc.guests.some(g => g.id === guest.id)) throw fail('revision_conflict','Guest identity already exists');
     return this.guestStore.write(householdId, expectedRevision, [...doc.guests, guest]);
   }
@@ -39,7 +39,7 @@ export class PeopleDirectory {
     if (index < 0) throw fail('not_found','Unknown guest');
     if (!input || Object.keys(input).some(k => !['name','avatar'].includes(k))) throw fail('invalid_guest','Invalid guest update',[{field:'body',message:'Invalid update'}]);
     const guest = { ...doc.guests[index], ...input };
-    validateGuest(guest);
+    validateNamedGuest(guest);
     const guests = [...doc.guests]; guests[index] = guest;
     return this.guestStore.write(householdId, expectedRevision, guests);
   }

@@ -1,5 +1,6 @@
 /** Reviewed build-time visibility and executable server layer; no discovery. */
 export const OWNER_ENTRY_POLICY = Object.freeze({
+  '__app_modules/household/agenda/cli/agenda.cli.mjs': null,
   '__capabilities/content-catalog/server/list-artwork.mjs': 'adapters',
   '__capabilities/screen-host/portable/appIds.mjs': null,
   '__app_modules/household/agenda/server/agenda.mjs': 'composition',

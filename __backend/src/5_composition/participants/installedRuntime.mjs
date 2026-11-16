@@ -9,7 +9,7 @@ import {createAdminAgendasRouter} from '../../../../__app_modules/household/agen
 import {createPartyGamesParticipantConsumer,createPartyGamesTargetResolver} from '../../../../__app_modules/games/party-games/server/participants.mjs';
 import {createContentTargetResolver,createParticipantTargetResolver} from './targetResolver.mjs';
 
-export function installParticipantRuntime({enabled,configService,peopleDirectory,contentRegistry,contentServices,gaming,logger,clock,resourceAliases = new AgendaResourceAliases()}) {
+export function installParticipantRuntime({enabled,configService,peopleDirectory,contentRegistry,contentServices,gaming,logger,clock,ownership,resourceAliases = ownership?.aliases ?? new AgendaResourceAliases()}) {
  const householdId=configService.getDefaultHouseholdId();
  if (enabled !== true) return {participantRouter:createParticipantLaunchesRouter({householdId,service:null,logger}),peopleRouter:createPeopleRouter({householdId,directory:null,logger}),agenda:{adminRouter:createAdminAgendasRouter({householdId,planning:null,logger})}};
  const registry=new ParticipantConsumerRegistry();
@@ -26,7 +26,7 @@ export function installParticipantRuntime({enabled,configService,peopleDirectory
  const resolveDirectTarget=createParticipantTargetResolver({apps,resolveContent});
  const resolveTarget=({item,action,viewer})=>resolveDirectTarget({target:{kind:'authored-action',value:item[action]},action,viewer});
  const artwork=createListArtworkResolver({mediaDir:configService.getMediaDir()});
- const agenda=createAgendaRuntime({configService,peopleDirectory,listCodec:EmbeddedListCodec,listProjector:new ListMenuProjector({registry:contentRegistry,artworkForUid:uid=>artwork({item:{uid}})}),consumerRegistry:registry,gaming:{resolveTarget,resolveItemImage:artwork,resourceAliases},logger,clock});
+ const agenda=createAgendaRuntime({configService,peopleDirectory,listCodec:EmbeddedListCodec,listProjector:new ListMenuProjector({registry:contentRegistry,artworkForUid:uid=>artwork({item:{uid}})}),consumerRegistry:registry,gaming:{resolveTarget,resolveItemImage:artwork,resourceAliases},logger,clock,ownership});
  contentRegistry.register(agenda.contentAdapter);
  const service=new ParticipantLaunchService({registry,providers:[agenda.contextProvider],resolveDirectTarget,logger});
  return {participantRouter:createParticipantLaunchesRouter({householdId,service,logger}),peopleRouter:createPeopleRouter({householdId,directory:peopleDirectory,logger}),agenda,registry,service};

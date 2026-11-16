@@ -38,6 +38,7 @@ export class AgendaParticipantContextProvider {
     if (!plan || plan.household_id !== data.householdId || plan.plan_id !== data.planId) {
       fail('launch_not_found', 'Plan unavailable');
     }
+    this.repository.assertWritable?.({householdId:data.householdId,seriesId:plan.series_id});
     if (plan.revision !== data.revision) fail('revision_conflict', 'Plan changed');
     const series = await this.repository.readSeries({householdId:data.householdId, seriesId:plan.series_id});
     if (!series || series.document.status !== 'active' || plan.state !== 'published' ||

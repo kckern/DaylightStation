@@ -1,4 +1,4 @@
-import {AgendaResourceAliases} from '../../__app_modules/household/agenda/server/composition.mjs';
+import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
 import {viewerFor} from './4_api/utils/participantHttp.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
@@ -1144,7 +1144,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const {playLedger,loadOriginHints}=await createMediaPlayLedger({configService,householdId,rootLogger});
 
-  const agendaResourceAliases=new AgendaResourceAliases();
+  const agendaOwnership=createConfiguredMigrationOwnership(configService);
+  const agendaResourceAliases=agendaOwnership.aliases;
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     resourceAliases:agendaResourceAliases,
     registry: contentRegistry,
@@ -1317,7 +1318,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const notificationConfigService = new NotificationConfigService({
     repository: new YamlNotificationConfigRepository({
       configService,
-      configFiles: new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) }),
+      configFiles: new YamlConfigFileStore({ assertWritable:agendaOwnership.assertFileWritable,logger: rootLogger.child({ module: 'config-files' }) }),
     }),
     logger: rootLogger.child({ module: 'notifications', submodule: 'config' }),
   });
@@ -1753,7 +1754,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
-  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory } = createPartyGamesCatalogRuntime({ contentPath, rootLogger });
+  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory } = createPartyGamesCatalogRuntime({ contentPath, rootLogger,assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
   const { gamingModule, gamingAssetCatalog } = createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath });
 
@@ -1764,7 +1765,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { gamingRouter } = createPartyGamesHttpRuntime({ gamingModule, gamingAssetCatalog, mediaBasePath, contentPath, rootLogger });
 
   v1Routers.gaming = gamingRouter;
-  const participantRuntime=installParticipantRuntime({enabled:configService.getHouseholdAppConfig(householdId,'agenda')?.enabled === true,configService,peopleDirectory,contentRegistry,contentServices,gaming:{gamingApplication:gamingModule.gamingApplication,definitions:gamingDefinitionStore,manifestStore:gamingManifestStore,clueHistory:gamingModule.clueHistory},logger:rootLogger.child({module:'agenda'}),resourceAliases:agendaResourceAliases});
+  const participantRuntime=installParticipantRuntime({enabled:configService.getHouseholdAppConfig(householdId,'agenda')?.enabled === true,configService,peopleDirectory,contentRegistry,contentServices,gaming:{gamingApplication:gamingModule.gamingApplication,definitions:gamingDefinitionStore,manifestStore:gamingManifestStore,clueHistory:gamingModule.clueHistory},logger:rootLogger.child({module:'agenda'}),resourceAliases:agendaResourceAliases,ownership:agendaOwnership});
+  if(participantRuntime.agenda.migrationRouter) app.use('/api/v1/admin/agenda-migration',participantRuntime.agenda.migrationRouter);
   v1Routers.participantLaunches=participantRuntime.participantRouter;
   const { GetPublicPresentationCatalog } = await import("./3_applications/presentation/GetPublicPresentationCatalog.mjs");
   v1Routers.presentation = createPresentationRouter({
@@ -4143,7 +4145,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // in these services; the sub-routers are thin HTTP shells.
   const adminApiLogger = rootLogger.child({ module: 'admin-api' });
   // D5: the admin services decide WHICH config file; this store does the I/O.
-  const adminConfigStore = new YamlAdminConfigStore({ dataRoot: configService.getDataDir() });
+  const adminConfigStore = new YamlAdminConfigStore({ dataRoot: configService.getDataDir(),assertWritable:agendaOwnership.assertFileWritable });
   const householdAdminService = new HouseholdAdminService({
     configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
@@ -4203,6 +4205,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     listStore: new YamlListDatastore({
       dataDir: configService.getDataDir(),
       listConfigCodec: ListConfigCodec,
+      assertWritable:agendaOwnership.assertLegacyWritable,
     }),
     logger: adminApiLogger.child?.({ submodule: 'content' }) || adminApiLogger,
   });

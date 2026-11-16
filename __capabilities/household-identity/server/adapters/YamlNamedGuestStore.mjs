@@ -2,9 +2,10 @@ import { readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs
 
 /** One installed server is the write authority; revision checks are not multi-process CAS. */
 export class YamlNamedGuestStore {
-  constructor({ pathForHousehold }) {
+  constructor({ pathForHousehold,assertWritable = () => {} }) {
     if (typeof pathForHousehold !== 'function') throw new Error('pathForHousehold is required');
     this.pathForHousehold = pathForHousehold;
+    this.assertWritable=assertWritable;
   }
   read(householdId) {
     let document;
@@ -17,6 +18,7 @@ export class YamlNamedGuestStore {
     const current = this.read(householdId);
     if (!Number.isInteger(expectedRevision) || expectedRevision !== current.revision) throw Object.assign(new Error('Named guest revision conflict'), {code:'revision_conflict'});
     const document = { schema: 'named-guests/v1', revision: current.revision + 1, guests };
+    this.assertWritable();
     saveYamlToPathAtomic(this.pathForHousehold(householdId), document);
     return document;
   }
