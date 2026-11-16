@@ -1735,7 +1735,10 @@ The header includes the child's avatar. Empty gem slots and labels are hidden;
 only earned/held gems and visible partial progress remain.
 The one-view overview reuses the existing Gem Board's large whole stones and
 circumferential progress segments, with compact labels, silver, gold and weekly
-fitness rings. Every category and control fits without scrolling. **Bank log**
+fitness rings. Coin, ring and gem illustrations share a responsive square size;
+the grid may shrink them further to fit. The close button completes on click so
+a touch cannot fall through to a control behind the dialog. Every category and
+control fits without scrolling. **Bank log**
 opens the existing checked bank History view for itemization. Close, Escape,
 backdrop, idle or navigation returns to the board. There is no family Gems
 entry or automatic public reward-total ceremony. See
