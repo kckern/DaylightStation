@@ -1,6 +1,6 @@
 import React from 'react';
 import {it,expect,vi} from 'vitest';
-import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,act} from '@testing-library/react';
 import {MantineProvider} from '@mantine/core';
 import {MemoryRouter} from 'react-router-dom';
 import AgendaDefaultsEditor from './AgendaDefaultsEditor.jsx';
@@ -50,4 +50,36 @@ it('does not apply a delayed template duplicate over a newer roster edit',async(
  render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={()=>{}} onSaved={()=>{}}/></MemoryRouter></MantineProvider>);
  fireEvent.click(screen.getByRole('button',{name:'Duplicate section'}));fireEvent.click(screen.getByRole('button',{name:'Add anonymous guest'}));finish({document:{images:{item:'/media/img/lists/item.jpg'}}});
  await screen.findByText(/defaults changed while artwork was loading/i);expect(screen.getByLabelText('Guest 1 name')).toBeTruthy();expect(screen.getAllByRole('button',{name:'Duplicate section'})).toHaveLength(1);
+});
+it('retains a newer defaults edit when a pending save completes',async()=>{
+ let finish;const pending=new Promise(resolve=>{finish=resolve;});const document={series_id:'s',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};const onSaved=vi.fn();
+ const client={people:async()=>({document:{people:[]},etag:'"0"'}),saveSeries:vi.fn(()=>pending)};
+ render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={()=>{}} onSaved={onSaved}/></MemoryRouter></MantineProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Save defaults'}));expect(screen.getByRole('button',{name:'Save defaults'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'Add anonymous guest'}));finish({document,etag:'"2"'});
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());expect(onSaved).not.toHaveBeenCalled();expect(screen.getByLabelText('Guest 1 name')).toBeTruthy();
+});
+it('shows returned defaults field paths and preserves the draft',async()=>{
+ const document={series_id:'s',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};
+ const client={people:async()=>({document:{people:[]},etag:'"0"'}),saveSeries:vi.fn(async()=>{throw Object.assign(new Error('Invalid document'),{status:422,errors:[{field:'defaults.participants.0.display.name',message:'Name required'}]});})};
+ render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={()=>{}} onSaved={()=>{}}/></MemoryRouter></MantineProvider>);
+ fireEvent.click(screen.getByRole('button',{name:'Add anonymous guest'}));await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Save defaults'}));
+ expect(await screen.findByText(/defaults.participants.0.display.name/)).toBeTruthy();expect(screen.getByLabelText('Guest 1 name')).toBeTruthy();
+});
+it.each(['Reload defaults','Reapply defaults edits'])('ignores delayed %s after a newer defaults edit',async label=>{
+ let finish;const pending=new Promise(resolve=>{finish=resolve;});const document={series_id:'s',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};
+ const client={people:async()=>({document:{people:[]},etag:'"0"'}),saveSeries:async()=>{throw Object.assign(new Error('changed'),{status:409});},series:()=>pending};
+ render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={()=>{}} onSaved={()=>{}}/></MemoryRouter></MantineProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Save defaults'}));await screen.findByText(/changed elsewhere/);fireEvent.click(screen.getByRole('button',{name:label}));fireEvent.click(screen.getByRole('button',{name:'Add anonymous guest'}));finish({document,etag:'"new"'});await screen.findByText(/changed while the request was pending/i);expect(screen.getByLabelText('Guest 1 name')).toBeTruthy();
+});
+it('does not close a defaults editor after its pending save outlives the editor',async()=>{
+ let finish;const pending=new Promise(resolve=>{finish=resolve;});const document={series_id:'s',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};const onSaved=vi.fn();
+ const client={people:async()=>({document:{people:[]},etag:'"0"'}),saveSeries:()=>pending};
+ const view=render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={()=>{}} onSaved={onSaved}/></MemoryRouter></MantineProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Save defaults'}));view.unmount();await act(async()=>finish({document,etag:'"new"'}));expect(onSaved).not.toHaveBeenCalled();
+});
+it('invalidates a pending save as soon as defaults are closed',async()=>{
+ let finish;const pending=new Promise(resolve=>{finish=resolve;});const document={series_id:'s',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};const onSaved=vi.fn(),onClose=vi.fn();
+ const client={people:async()=>({document:{people:[]},etag:'"0"'}),saveSeries:()=>pending};
+ render(<MantineProvider><MemoryRouter><AgendaDefaultsEditor series={{document,etag:'"1"'}} client={client} editors={{}} onClose={onClose} onSaved={onSaved}/></MemoryRouter></MantineProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Save defaults'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Save defaults'}));fireEvent.click(screen.getByRole('button',{name:'Cancel'}));expect(onClose).toHaveBeenCalledOnce();await act(async()=>finish({document,etag:'"new"'}));expect(onSaved).not.toHaveBeenCalled();
 });

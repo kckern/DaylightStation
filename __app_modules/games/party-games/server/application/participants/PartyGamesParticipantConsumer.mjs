@@ -92,7 +92,6 @@ export class PartyGamesParticipantConsumer {
   if (!runtime) fail('runtime_unavailable','Saved game is unavailable'); return ready(snapshot,runtimeRef.id);
  }
  remapParticipantKeys({settings,keyMap}) {
-  settingsValue(settings);
   return remapParticipantKeys({settings,keyMap});
  }
 }

@@ -22,6 +22,8 @@ export function materializeBindings(document,descriptors,editors) {
  return next;
 }
 export default function ActivitySettings({item,document,descriptor,editors,onChange,readOnly=false}) {
+ const [remapError,setRemapError]=useState(null);
+ useEffect(()=>setRemapError(null),[item.uid,document.activity_settings[item.uid]?.settings]);
  const editor=descriptor && editors[descriptor.editorKey];
  if(!editor || !descriptor.consumer || editor.consumer.id!==descriptor.consumer.id || editor.consumer.version!==descriptor.consumer.version)return null;
  const existing=document.activity_settings[item.uid];
@@ -32,10 +34,15 @@ export default function ActivitySettings({item,document,descriptor,editors,onCha
   const previous=setup.participants.mode==='plan' ? document.participants.map(p=>p.id) : setup.participants.ids;
   const next=participants.mode==='plan' ? document.participants.map(p=>p.id) : participants.ids;
   const removed=Object.fromEntries(previous.filter(id=>!next.includes(id)).map(id=>[id,null]));
-  const settings=Object.keys(removed).length ? editor.remapParticipantKeys({settings:setup.settings,keyMap:removed}) : setup.settings;
-  update({participants,settings});
+  try {
+   const settings=Object.keys(removed).length ? editor.remapParticipantKeys({settings:setup.settings,keyMap:removed}) : setup.settings;
+   setRemapError(null);
+   update({participants,settings});
+  } catch (error) {
+   setRemapError({field:error.field || 'settings',message:error.message});
+  }
  };
  const selected=(setup.participants.mode==='plan'?document.participants:document.participants.filter(p=>setup.participants.ids.includes(p.id))).map(p=>({...p,display:p.display || {name:p.person?.id || 'Guest',avatar:null}}));
  const Panel=editor.Panel;
- return <Stack><Text fw={600}>Participants</Text>{Number.isInteger(descriptor.minParticipants) && Number.isInteger(descriptor.maxParticipants) && <Text size="sm">Allowed participants: {descriptor.minParticipants}–{descriptor.maxParticipants}</Text>}<label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='plan'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('all'))} onChange={()=>changeSelection({mode:'plan'})}/> Everyone in this plan</label><label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='explicit'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('explicit'))} onChange={()=>changeSelection({mode:'explicit',ids:[]})}/> Choose participants</label>{setup.participants.mode==='explicit'&&<Text size="sm">Removing someone clears their individual activity settings.</Text>}{setup.participants.mode==='explicit'&&document.participants.map(p=><Checkbox key={p.id} label={p.display?.name || p.person?.id || 'Guest'} checked={setup.participants.ids.includes(p.id)} disabled={readOnly} onChange={e=>changeSelection({mode:'explicit',ids:e.currentTarget.checked?[...setup.participants.ids,p.id]:setup.participants.ids.filter(id=>id!==p.id)})}/>)}<Panel settings={setup.settings} participants={selected} readOnly={readOnly} onChange={settings=>update({settings})}/></Stack>;
+ return <Stack><Text fw={600}>Participants</Text>{remapError && <Text c="red" role="alert">{remapError.field}: {remapError.message}</Text>}{Number.isInteger(descriptor.minParticipants) && Number.isInteger(descriptor.maxParticipants) && <Text size="sm">Allowed participants: {descriptor.minParticipants}–{descriptor.maxParticipants}</Text>}<label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='plan'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('all'))} onChange={()=>changeSelection({mode:'plan'})}/> Everyone in this plan</label><label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='explicit'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('explicit'))} onChange={()=>changeSelection({mode:'explicit',ids:[]})}/> Choose participants</label>{setup.participants.mode==='explicit'&&<Text size="sm">Removing someone clears their individual activity settings.</Text>}{setup.participants.mode==='explicit'&&document.participants.map(p=><Checkbox key={p.id} label={p.display?.name || p.person?.id || 'Guest'} checked={setup.participants.ids.includes(p.id)} disabled={readOnly} onChange={e=>changeSelection({mode:'explicit',ids:e.currentTarget.checked?[...setup.participants.ids,p.id]:setup.participants.ids.filter(id=>id!==p.id)})}/>)}<Panel settings={setup.settings} participants={selected} readOnly={readOnly} onChange={settings=>update({settings})}/></Stack>;
 }

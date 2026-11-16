@@ -100,3 +100,25 @@ it('discovers resumable games only through a read-only port and fails closed whe
  executionPort.inspect.mockResolvedValue({header:{status:'complete'}});
  expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'View result'}]);
 });
+it('rejects incomplete settings at publication preparation',async()=>{
+ const {consumer,context}=await fixture();
+ await expect(consumer.prepareSetup({target,settings:{},participantContext:context,viewer:{role:'host'}})).rejects.toMatchObject({code:'invalid_session_setup'});
+});
+it('remaps incomplete consumer settings safely and reports malformed fields',async()=>{
+ const {consumer}=await fixture();expect(consumer.remapParticipantKeys({settings:{},keyMap:{a:null}})).toEqual({});
+ expect(()=>consumer.remapParticipantKeys({settings:{charades:{clue_modes:null}},keyMap:{a:null}})).toThrow(expect.objectContaining({code:'invalid_session_setup',field:'settings.charades.clue_modes'}));
+});
+it('rejects publication of a structurally valid draft with incomplete consumer settings',async()=>{
+ const {AgendaPlanningService,AgendaParticipantContextProvider,createAgendaActivityValidator}=await import('../../../../../household/agenda/server/agenda.mjs');
+ const {ParticipantConsumerRegistry,ParticipantSetupResolver}=await import('../../../../../../__capabilities/content-catalog/server/participant-launch.mjs');
+ const {consumer}=await fixture();const registry=new ParticipantConsumerRegistry();registry.register({consumer});
+ const resolved={...target,kind:'app',appId:'party-games',participantConsumer:{id:'party-games',version:1}};
+ const provider=new AgendaParticipantContextProvider({repository:{},store:{},codec:{},clock:()=>new Date('2026-11-17T00:00:00Z'),directory:{resolve:async()=>null},authorize:async()=>true,resolveTarget:async()=>resolved});
+ const validateActivities=createAgendaActivityValidator({provider,setupResolver:new ParticipantSetupResolver({registry})});
+ const plan={schema:'agenda-plan/v1',plan_id:'plan',series_id:'series',household_id:'home',revision:1,week_of:'2026-11-16',scheduled_on:'2026-11-16',calendar:{timezone:'UTC',week_starts_on:'monday'},state:'draft',seeded_from:{kind:'series',id:'series',revision:1},title:'Together',participants:[{id:'p',anonymous:true,display:{name:'Guest',avatar:null}}],list:{sections:[{uid:'s',items:[{uid:'i',title:'Game',open:'party-games/charades:test'}]}]},activity_settings:{i:{schema:'agenda-activity-setup/v1',action:'open',participants:{mode:'plan'},consumer:{id:'party-games',version:1},settings:{}}}};
+ let stored=structuredClone(plan);const repository={mutatePlan:async({mutate})=>{const next=await mutate(structuredClone(stored));stored=next;return {document:next,etag:'"next"'};}};
+ const planning=new AgendaPlanningService({repository,clock:()=>new Date('2026-11-17T00:00:00Z'),ids:{},validateActivities,logger:{info(){}}});
+ expect(planning.validatePlanDocument(plan).valid).toBe(true);
+ await expect(planning.publishPlan({householdId:'home',planId:'plan',expectedEtag:'"one"',viewer:{role:'host'}})).rejects.toMatchObject({code:'invalid_agenda',errors:[expect.objectContaining({code:'invalid_session_setup'})]});
+ expect(stored.state).toBe('draft');
+});

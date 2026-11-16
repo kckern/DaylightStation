@@ -5,17 +5,79 @@ import {agendaClient} from './agendaClient.js';
 import AgendaDefaultsEditor from './AgendaDefaultsEditor.jsx';
 
 export default function AgendaSeriesPage({client=agendaClient,editors={}}) {
- const {seriesId}=useParams(),navigate=useNavigate();
- const createIntent=useRef(null);
- const [series,setSeries]=useState(null),[plans,setPlans]=useState([]),[context,setContext]=useState(null),[defaults,setDefaults]=useState(false),[error,setError]=useState('');
- useEffect(()=>{let active=true;Promise.all([client.series(seriesId),client.plans(seriesId),client.planningContext(seriesId)]).then(([s,p,c])=>{if(active){setSeries(s);setPlans(p.document.plans);setContext(c.document);}}).catch(e=>active&&setError(e.message));return()=>{active=false;};},[client,seriesId]);
- if(!series||!context)return <Text>{error||'Loading series…'}</Text>;
- const create=async source=>{if(source && !window.confirm(`Copy ${source.week_of} to ${context.nextWeek}? The new week will be a draft.`))return;try{const sourceRevision=source?.revision ?? series.document.revision;const key=JSON.stringify([context.nextWeek,source?.plan_id ?? null,sourceRevision]);if(createIntent.current?.key!==key)createIntent.current={key,requestId:crypto.randomUUID()};const result=await client.createPlan(seriesId,{weekOf:context.nextWeek,requestId:createIntent.current.requestId,sourceRevision,...(source?{sourcePlanId:source.plan_id}:{})});createIntent.current=null;navigate(`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(result.document.plan_id)}`);}catch(e){setError(e.message);}};
- const nextExists=plans.some(p=>p.document.week_of===context.nextWeek);
- return <Stack><Title order={2}>{series.document.title}</Title><Text>{series.document.calendar.timezone}</Text>{error&&<Alert color="red">{error}</Alert>}
- <Text>This week ({context.thisWeek}): {plans.find(p=>p.document.week_of===context.thisWeek)?.document.state || 'missing'}</Text><Text>Next week ({context.nextWeek}): {plans.find(p=>p.document.week_of===context.nextWeek)?.document.state || 'missing'}</Text>
- <Group><Button disabled={nextExists || defaults} onClick={()=>create()}>Create next week</Button><Button disabled={defaults} onClick={()=>setDefaults(true)}>Edit defaults</Button></Group>
- {defaults&&<AgendaDefaultsEditor series={series} client={client} editors={editors} onClose={()=>setDefaults(false)} onSaved={value=>{setSeries(value);setDefaults(false);}}/>}
- {!defaults&&<><Title order={3}>Weeks</Title>{plans.slice().sort((a,b)=>a.document.week_of.localeCompare(b.document.week_of)).map(({document:p})=><Group key={p.plan_id}><Link to={`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(p.plan_id)}`}>{p.week_of}</Link><Badge>{p.state}</Badge>{p.week_of===context.thisWeek&&<Badge>This week</Badge>}{p.week_of===context.nextWeek&&<Badge>Next week</Badge>}<Button disabled={nextExists} onClick={()=>create(p)}>Copy this week</Button></Group>)}</>}
- </Stack>;
+  const {seriesId}=useParams();
+  const navigate=useNavigate();
+  const scope=useRef({id:seriesId,generation:0});
+  if (scope.current.id!==seriesId) scope.current={id:seriesId,generation:scope.current.generation+1};
+  const generation=scope.current.generation;
+  const createIntent=useRef(null);
+  const pendingCreate=useRef(null);
+  const mounted=useRef(true);
+  const [data,setData]=useState(null);
+  const [defaultsScope,setDefaultsScope]=useState(null);
+  const [busyScope,setBusyScope]=useState(null);
+  const [failure,setFailure]=useState(null);
+  const isCurrent=token=>mounted.current && scope.current.id===token.id && scope.current.generation===token.generation;
+
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{
+    let active=true;
+    const token={id:seriesId,generation};
+    Promise.all([client.series(seriesId),client.plans(seriesId),client.planningContext(seriesId)])
+      .then(([series,plans,context])=>{
+        if (active && isCurrent(token)) setData({token,series,plans:plans.document.plans,context:context.document});
+      })
+      .catch(error=>{if (active && isCurrent(token)) setFailure({token,message:error.message});});
+    return ()=>{active=false;};
+  },[client,seriesId,generation]);
+
+  if (!data || data.token.id!==seriesId || data.token.generation!==generation) {
+    const error=failure?.token.id===seriesId && failure.token.generation===generation ? failure.message : '';
+    return <Text>{error || 'Loading series…'}</Text>;
+  }
+  const {series,plans,context}=data;
+  const defaultsOpen=defaultsScope?.id===seriesId && defaultsScope.generation===generation;
+  const nextExists=plans.some(plan=>plan.document.week_of===context.nextWeek);
+  const creating=busyScope?.id===seriesId && busyScope.generation===generation;
+
+  const create=async source=>{
+    const token={id:seriesId,generation};
+    if (creating || pendingCreate.current?.generation===generation) return;
+    if (source && !window.confirm(`Copy ${source.week_of} to ${context.nextWeek}? The new week will be a draft.`)) return;
+    const sourceRevision=source?.revision ?? series.document.revision;
+    const key=JSON.stringify([seriesId,generation,context.nextWeek,source?.plan_id ?? null,sourceRevision]);
+    if (createIntent.current?.key!==key) createIntent.current={key,requestId:crypto.randomUUID()};
+    const operation={...token};
+    pendingCreate.current=operation;
+    setBusyScope(token);
+    try {
+      const result=await client.createPlan(seriesId,{weekOf:context.nextWeek,requestId:createIntent.current.requestId,sourceRevision,...(source?{sourcePlanId:source.plan_id}:{})});
+      if (!isCurrent(token) || pendingCreate.current!==operation) return;
+      createIntent.current=null;
+      navigate(`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(result.document.plan_id)}`);
+    } catch (error) {
+      if (isCurrent(token) && pendingCreate.current===operation) setFailure({token,message:error.message});
+    } finally {
+      if (pendingCreate.current===operation) {
+        pendingCreate.current=null;
+        if (isCurrent(token)) setBusyScope(null);
+      }
+    }
+  };
+  const failureMessage=failure?.token.id===seriesId && failure.token.generation===generation ? failure.message : '';
+  return <Stack>
+    <Title order={2}>{series.document.title}</Title><Text>{series.document.calendar.timezone}</Text>
+    {failureMessage && <Alert color="red">{failureMessage}</Alert>}
+    <Text>This week ({context.thisWeek}): {plans.find(p=>p.document.week_of===context.thisWeek)?.document.state || 'missing'}</Text>
+    <Text>Next week ({context.nextWeek}): {plans.find(p=>p.document.week_of===context.nextWeek)?.document.state || 'missing'}</Text>
+    <Group><Button disabled={nextExists || defaultsOpen || creating} onClick={()=>create()}>Create next week</Button><Button disabled={defaultsOpen || creating} onClick={()=>setDefaultsScope({id:seriesId,generation})}>Edit defaults</Button></Group>
+    {defaultsOpen && <AgendaDefaultsEditor key={`${seriesId}:${generation}`} series={series} client={client} editors={editors}
+      onClose={()=>{if(isCurrent({id:seriesId,generation})) setDefaultsScope(null);}}
+      onSaved={value=>{if(isCurrent({id:seriesId,generation})){setData(previous=>({...previous,series:value}));setDefaultsScope(null);}}}/>}
+    {!defaultsOpen && <><Title order={3}>Weeks</Title>{plans.slice().sort((a,b)=>a.document.week_of.localeCompare(b.document.week_of)).map(({document:plan})=><Group key={plan.plan_id}>
+      <Link to={`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.week_of}</Link><Badge>{plan.state}</Badge>
+      {plan.week_of===context.thisWeek && <Badge>This week</Badge>}{plan.week_of===context.nextWeek && <Badge>Next week</Badge>}
+      <Button disabled={nextExists || creating} onClick={()=>create(plan)}>Copy this week</Button>
+    </Group>)}</>}
+  </Stack>;
 }

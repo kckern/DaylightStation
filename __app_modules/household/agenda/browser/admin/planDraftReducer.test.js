@@ -23,3 +23,11 @@ it('detects a stale consumer binding after authoritative discovery',async()=>{
  const doc=structuredClone(plan);doc.activity_settings.a={action:'play',consumer:{id:'old',version:1}};
  expect(bindingErrors(doc,{a:null})).toEqual([{field:'activity_settings.a',message:'The participant consumer no longer matches this activity'}]);
 });
+it('rejects a saved event scoped to a different current plan',()=>{
+ const current=planDraftReducer(null,{type:'load',document:{...plan,plan_id:'q'},etag:'"q"',scope:'q'});
+ expect(planDraftReducer(current,{type:'saved',document:{...plan,plan_id:'p'},etag:'"p"',scope:'p'})).toEqual(current);
+});
+it('rejects a stale rebase from an earlier visit to the same plan',()=>{
+ const current=planDraftReducer(null,{type:'load',document:plan,etag:'"new"',scope:'p',generation:2});
+ expect(planDraftReducer(current,{type:'rebase',etag:'"old"',scope:'p',generation:0})).toEqual(current);
+});

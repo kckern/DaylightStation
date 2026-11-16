@@ -9,8 +9,9 @@ export function changesBoundTarget(draft, command) {
 
 /** The editor's copy is never persisted until its owner sends an explicit save. */
 export function planDraftReducer(state, event) {
+  if (event.type !== 'load' && event.scope && (state?.scope !== event.scope || (event.generation !== undefined && state?.generation !== event.generation))) return state;
   if (event.type === 'load' || event.type === 'saved') {
-    return {draft:structuredClone(event.document),baseEtag:event.etag,dirty:false,fieldErrors:[],conflict:false,scope:event.scope ?? state?.scope};
+    return {draft:structuredClone(event.document),baseEtag:event.etag,dirty:false,fieldErrors:[],conflict:false,scope:event.scope ?? state?.scope,generation:event.generation ?? state?.generation};
   }
   if (!state) return state;
   if (event.type === 'conflict') return {...state,conflict:true};
