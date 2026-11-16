@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * The week at a glance, above the Day record (plan Task 17). Columns are days
  * (choose one to open it below), rows are subjects; a cell is the subject's
@@ -18,7 +19,7 @@
  *
  * On a phone the table scrolls sideways inside the panel; the page does not.
  */
-import { schoolApi } from "../../schoolApi.js";
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
 import { usePanelFetch } from "../usePanelFetch.js";
 import { weekDays, buildWeek } from "../learnerWeek.js";
 import { DAY_STATUS_LABEL } from "../learnerDay.js";
@@ -62,7 +63,7 @@ function afterFirstPaint() {
   });
 }
 
-async function readDay(learnerId, studyDay) {
+async function readDay(schoolApi, learnerId, studyDay) {
   try {
     const [agenda, digest] = await Promise.all([schoolApi.agendaPreview(learnerId, studyDay), schoolApi.teacherDay(studyDay, { learnerId })]);
     const rows = Array.isArray(digest?.data) ? digest.data : (digest?.data?.learners ?? []);
@@ -91,11 +92,12 @@ function dayName(total) {
 }
 
 export default function WeekGrid({ learnerId, endDay, selectedDay, onSelectDay }) {
+  const schoolApi = useSchoolApi();
   const week = usePanelFetch(async ({ signal } = {}) => {
     await afterFirstPaint();
     // Unmounted, or moved to another learner, while waiting: read nothing.
     if (signal?.aborted) return { ok: false, status: 0, data: null };
-    const days = await mapWithConcurrency(weekDays(endDay), WEEK_DAY_CONCURRENCY, (studyDay) => readDay(learnerId, studyDay), signal);
+    const days = await mapWithConcurrency(weekDays(endDay), WEEK_DAY_CONCURRENCY, (studyDay) => readDay(schoolApi, learnerId, studyDay), signal);
     if (signal?.aborted) return { ok: false, status: 0, data: null };
     // Every day failed: that is the panel failing, not seven unknown days.
     // All-404 is the lifecycle routes missing on this install.
@@ -121,11 +123,11 @@ export default function WeekGrid({ learnerId, endDay, selectedDay, onSelectDay }
                 <th scope="col"><span className="teacher-visually-hidden">Subject</span></th>
                 {data.totals.map((total) => (
                   <th key={total.studyDay} scope="col">
-                    <button type="button" aria-pressed={total.studyDay === selectedDay}
+                    <SchoolButton variant="plain" type="button" aria-pressed={total.studyDay === selectedDay}
                       aria-label={dayName(total)} onClick={() => choose(total.studyDay)}>
                       <span aria-hidden="true">{humanDate(total.studyDay, { short: true })}</span>
                       <small aria-hidden="true">{total.known ? (total.planned ? `${total.done}/${total.planned}` : '—') : '?'}</small>
-                    </button>
+                    </SchoolButton>
                   </th>
                 ))}
               </tr>
@@ -148,11 +150,11 @@ export default function WeekGrid({ learnerId, endDay, selectedDay, onSelectDay }
                             the keyboard way in, and seven stops per subject
                             would bury it. Still a button, and still named,
                             for a pointer or a screen reader. */}
-                        <button type="button" tabIndex={-1} title={words}
+                        <SchoolButton variant="plain" type="button" tabIndex={-1} title={words}
                           aria-label={`${subjectTitle(row.subject)}, ${humanDate(total.studyDay)}: ${words}`}
                           onClick={() => choose(total.studyDay)}>
                           {percent ?? STATUS_MARK[cell.status] ?? ''}
-                        </button>
+                        </SchoolButton>
                       </td>
                     );
                   })}

@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * SystemHealthPanel — the surface for two teacher read models that had no UI
  * at all (School Operations, plan item 4.4): which quiz banks failed to
@@ -43,7 +46,7 @@
  * wants confirmed, not absence of information.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import PeriodSelect from "./PeriodSelect.jsx";
@@ -58,6 +61,7 @@ const IconCheck = () => (
 );
 
 export default function SystemHealthPanel({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const actorName = useActorName();
   // --- Section 1: quiz bank health --------------------------------------
   const banks = usePanelFetch(() => schoolApi.bankHealth(), { panel: 'system-health-banks' });
@@ -128,13 +132,13 @@ export default function SystemHealthPanel({ kids = [] }) {
           <p className="teacher-panel__empty">No learners configured.</p>
         ) : (
           <div className="teacher-health__selectors">
-            <select aria-label="Learner" value={learnerId ?? ''} onChange={(e) => setLearnerId(e.target.value)}>
+            <SchoolSelect aria-label="Learner" value={learnerId ?? ''} onChange={(e) => setLearnerId(e.target.value)}>
               {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
-            </select>
+            </SchoolSelect>
             {periods.state === 'error' ? (
               <span className="teacher-panel__error">
                 Couldn&rsquo;t load periods.
-                <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
+                <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</SchoolButton>
               </span>
             ) : (
               <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />

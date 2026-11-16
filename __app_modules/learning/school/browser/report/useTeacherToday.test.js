@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useTeacherToday } from "./useTeacherToday.js";
 
 const teacherTodayMock = vi.fn();
@@ -45,4 +45,35 @@ describe('useTeacherToday', () => {
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.byLearner.size).toBe(0);
   });
+});
+
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});
+import { wsService } from '../../../../../frontend/src/services/WebSocketService.js';
+
+it('updates mounted teacher evidence after an external scan and reconnect', async () => {
+  teacherTodayMock.mockResolvedValue({ ok: true, status: 200, data: [row()] });
+  const { result } = renderHook(() => useTeacherToday());
+  await waitFor(() => expect(result.current.byLearner.get('kid1')?.attemptsToday).toBe(3));
+  teacherTodayMock.mockResolvedValue({ ok: true, status: 200, data: [row({ attemptsToday: 4 })] });
+  act(() => wsService.emit({ topic: 'school', event: 'assessment-changed', learnerId: 'kid1' }));
+  await waitFor(() => expect(result.current.byLearner.get('kid1')?.attemptsToday).toBe(4));
+  teacherTodayMock.mockResolvedValue({ ok: true, status: 200, data: [row({ attemptsToday: 5 })] });
+  act(() => { wsService.status(false); wsService.status(true); });
+  await waitFor(() => expect(result.current.byLearner.get('kid1')?.attemptsToday).toBe(5));
+});
+it('retains verified teacher data and timestamp when a refresh fails', async () => {
+  teacherTodayMock.mockResolvedValue({ ok: true, status: 200, data: [row()] });
+  const { result } = renderHook(() => useTeacherToday());
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  const verified = result.current.lastSuccessAt;
+  expect(verified).toEqual(expect.any(Number));
+  teacherTodayMock.mockResolvedValue({ ok: false, status: 503, data: null });
+  act(() => result.current.retry());
+  await waitFor(() => expect(result.current.error).toMatchObject({ status: 503 }));
+  expect(result.current.byLearner.get('kid1')?.attemptsToday).toBe(3);
+  expect(result.current.lastSuccessAt).toBe(verified);
+  expect(result.current.stale).toBe(true);
 });

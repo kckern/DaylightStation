@@ -21,25 +21,61 @@ const ok = (data) => ({ ok: true, status: 200, data });
 const call = async (fn) => {
   try { return ok(await fn()); } catch (error) { return { ok: false, status: error.status ?? 500, data: { error: { message: error.message } } }; }
 };
-vi.mock("../schoolApi.js", () => ({ schoolApi: {
-  roster: async () => ok([]),
-  books: {
-    shelf: (...a) => h.shelf(...a), open: (...a) => h.open(...a),
-    progress: async () => ok({ ok: true }), mode: async () => ok({}), resolve: async () => ok({}),
-  },
-  bookScans: {
-    pending: async (screenId) => call(() => {
-      const queue = h.service.queue(screenId);
-      return { intent: h.service.pending(screenId), ...(queue ? { queue } : {}) };
-    }),
-    claim: async (id, { screenId, learnerId }) => (h.failClaims.has(id)
-      ? { ok: false, status: 410, data: { error: { message: 'This scan is no longer available. Scan again.' } } }
-      : call(() => h.service.claim({ id, screenId, learnerId }))),
-    dismiss: async (id, { screenId }) => call(() => h.service.dismiss({ id, screenId })),
-    pile: async (screenId) => call(() => ({ pile: h.service.pile(screenId) })),
-    filePile: async () => ({ ok: false, status: 503, data: {} }),
-  },
-} }));
+vi.mock("../schoolApi.js", () => {const endpoints = {
+  schoolApi: {
+    roster: async () => ok([]),
+    books: {
+      shelf: (...a) => h.shelf(...a),
+      open: (...a) => h.open(...a),
+      progress: async () => ok({
+        ok: true
+      }),
+      mode: async () => ok({}),
+      resolve: async () => ok({})
+    },
+    bookScans: {
+      pending: async screenId => call(() => {
+        const queue = h.service.queue(screenId);
+        return {
+          intent: h.service.pending(screenId),
+          ...(queue ? {
+            queue
+          } : {})
+        };
+      }),
+      claim: async (id, {
+        screenId,
+        learnerId
+      }) => h.failClaims.has(id) ? {
+        ok: false,
+        status: 410,
+        data: {
+          error: {
+            message: 'This scan is no longer available. Scan again.'
+          }
+        }
+      } : call(() => h.service.claim({
+        id,
+        screenId,
+        learnerId
+      })),
+      dismiss: async (id, {
+        screenId
+      }) => call(() => h.service.dismiss({
+        id,
+        screenId
+      })),
+      pile: async screenId => call(() => ({
+        pile: h.service.pile(screenId)
+      })),
+      filePile: async () => ({
+        ok: false,
+        status: 503,
+        data: {}
+      })
+    }
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", async () => {
   const { useEffect, useRef } = await import('react');
   return { useWebSocketSubscription: (_topic, cb) => {

@@ -1,7 +1,8 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
 import { wsService } from "../../../../../frontend/src/services/WebSocketService.js";
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { isPanelSurface } from "../schoolPathModel.js";
 
@@ -16,6 +17,7 @@ import { isPanelSurface } from "../schoolPathModel.js";
  * about an anonymous scan changes: without a scope it still waits for `safe`.
  */
 export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = null, shelfLearnerId }) {
+  const schoolApi = useSchoolApi();
   const enabled = isPanelSurface(screenId);
   // `shelfLearnerId` — whose shelf is OPEN, ready for a barcode or not.
   // `scopeLearnerId` drops to null whenever the shelf is mid-step (a cover, an
@@ -89,7 +91,7 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     }
     current.current = accepted;
     setIntent(accepted);
-  }, [enabled, screenId]);
+  }, [enabled, screenId, schoolApi]);
   useWebSocketSubscription('school', msg => {
     if (msg?.type === 'school.book-scan' && msg.screenId === screenId) void refresh();
   }, [screenId, refresh]);
@@ -124,7 +126,7 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     const result = await schoolApi.bookScans.dismiss(selected.id, { screenId });
     schoolLog.bookShelf('scan.dismissed', { ok: result.ok });
     void refresh();
-  }, [screenId, refresh]);
+  }, [screenId, refresh, schoolApi]);
   const claim = useCallback(async learnerId => {
     const selected = current.current;
     const allowed = () => state.current.safe || (learnerId && state.current.scopeLearnerId === learnerId);
@@ -157,7 +159,7 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     // log how long the scan took to reach the screen (`scan.visible`).
     state.current.onLaunch({ ...result.data.launchTarget, bookEntry: { ...result.data.bookEntry, intentId: selected.id, receivedAt: selected.receivedAt ?? null, screenId } }, learnerId);
     void refresh();
-  }, [screenId, refresh]);
+  }, [screenId, refresh, schoolApi]);
   // A shelf only claims what is scanned WHILE it is open. A scan already
   // waiting when it FIRST opened belongs to the pile (another child's stack,
   // most likely); claiming it would launch this child's shelf with that book.

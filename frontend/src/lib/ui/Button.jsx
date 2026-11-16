@@ -4,7 +4,7 @@ import './TouchButton.scss';
 /** Native button with house focus, density, pending and optional touch-down activation. */
 export const Button = forwardRef(function Button({
   variant = 'primary', density = 'touch', busy = false, activation = 'release',
-  type = 'button', disabled = false, className = '', children, keyHint = null,
+  type = 'button', wrapLabel = true, disabled = false, className = '', children, keyHint = null,
   onClick, onPointerDown, onPointerCancel, 'aria-busy': ariaBusy, ...rest
 }, ref) {
   const suppressPointerClick = useRef(false);
@@ -32,7 +32,7 @@ export const Button = forwardRef(function Button({
       suppressPointerClick.current = false;
       onClick?.(event);
     }}>
-    <span className="ds-touch__label">{children}</span>
+    {wrapLabel ? <span className="ds-touch__label">{children}</span> : children}
     {keyHint && <kbd className="ds-touch__key" aria-hidden="true">{keyHint}</kbd>}
   </button>;
 });

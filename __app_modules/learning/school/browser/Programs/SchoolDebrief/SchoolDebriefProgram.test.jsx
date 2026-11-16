@@ -61,13 +61,14 @@ describe('SchoolDebriefProgram start card', () => {
       expect(screen.queryByText(/silver/i)).toBeNull();
       expect(school.earningsPreview).not.toHaveBeenCalled();
     });
-    it('live bank: shows the earned line', async () => {
+    it('labels unrelated earnings changes as a weekly preview, without claiming a debrief payout', async () => {
       school.economyBank.mockResolvedValue(ok({ mode: 'live' }));
       let calls = 0;
-      school.earningsPreview.mockImplementation(async () => ok({ totals: { silver: calls++ ? 3 : 0 }, lines: calls > 1 ? [{ ruleId: 'r1', label: 'Debrief', amount: { silver: 3, gems: 0 } }] : [] }));
+      school.earningsPreview.mockImplementation(async () => ok({ totals: { silver: calls++ ? 9 : 0 }, lines: calls > 1 ? [{ ruleId: 'fitness', label: 'Exercise', amount: { silver: 9, gems: 0 } }] : [] }));
       await run();
-      expect(await screen.findByText(/\+3 silver/)).toBeInTheDocument();
-      expect(screen.queryByText('Coins start soon')).toBeNull();
+      expect(await screen.findByText(/Weekly earnings preview/i)).toBeInTheDocument();
+      expect(screen.getByText(/9 silver this week/)).toBeInTheDocument();
+      expect(screen.queryByText(/\+9 silver/)).toBeNull();
     });
   });
 

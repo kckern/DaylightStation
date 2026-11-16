@@ -135,3 +135,52 @@ describe('stale-while-revalidate retry', () => {
     await hookWaitFor(() => expect(result.current.state).toBe('error'));
   });
 });
+
+describe('resource metadata and query changes', () => {
+  it('keeps the verification time and failure status when a useful read goes stale', async () => {
+    let calls = 0;
+    const fetcher = async () => ++calls === 1
+      ? { ok: true, status: 200, data: ['verified'] }
+      : { ok: false, status: 503, data: null };
+    const { result } = renderHook(() => usePanelFetch(fetcher, { panel: 'metadata' }));
+    await waitFor(() => expect(result.current.state).toBe('ok'));
+    const verified = result.current.lastSuccessAt;
+    expect(verified).toEqual(expect.any(Number));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(result.current.data).toEqual(['verified']);
+    expect(result.current.stale).toBe(true);
+    expect(result.current.error).toMatchObject({ status: 503 });
+    expect(result.current.lastSuccessAt).toBe(verified);
+  });
+
+  it('does not show the previous learner data or accept its late response after a key changes', async () => {
+    const resolvers = {};
+    const { result, rerender } = renderHook(({ learner }) => usePanelFetch(
+      () => new Promise(resolve => { resolvers[learner] = resolve; }), { panel: 'identity', deps: [learner] },
+    ), { initialProps: { learner: 'first' } });
+    rerender({ learner: 'second' });
+    await act(async () => resolvers.first({ ok: true, status: 200, data: ['first'] }));
+    expect(result.current.data).toBeNull();
+    await act(async () => resolvers.second({ ok: true, status: 200, data: ['second'] }));
+    expect(result.current.data).toEqual(['second']);
+  });
+});
+
+it('repairs a mounted teacher read when an external correction arrives', async () => {
+  const { wsService } = await import('../../../../../frontend/src/services/WebSocketService.js');
+  let receive;
+  const stopMessages = vi.fn(); const stopStatus = vi.fn();
+  const messages = vi.spyOn(wsService, 'subscribe').mockImplementation((_topics, callback) => { receive = callback; return stopMessages; });
+  const statuses = vi.spyOn(wsService, 'onStatusChange').mockImplementation(callback => { callback({ connected: true }); return stopStatus; });
+  let revision = 0;
+  const { result, unmount } = renderHook(() => usePanelFetch(async () => ({ ok: true, status: 200, data: { revision: ++revision } }), { panel: 'live-teacher' }));
+  try {
+    await waitFor(() => expect(result.current.data).toEqual({ revision: 1 }));
+    expect(receive).toEqual(expect.any(Function));
+    act(() => receive({ topic: 'school', event: 'record-changed', learnerId: 'kid' }));
+    await waitFor(() => expect(result.current.data).toEqual({ revision: 2 }));
+    unmount();
+    expect(stopMessages).toHaveBeenCalledOnce(); expect(stopStatus).toHaveBeenCalledOnce();
+  } finally { unmount(); messages.mockRestore(); statuses.mockRestore(); }
+});

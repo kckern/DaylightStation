@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * useMediaLessonSession — the living-room MEDIA LESSON's whole state machine,
  * driven by one WebSocket topic, one snapshot fetch, and the four moments the
@@ -84,7 +85,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
-import { schoolApi } from "../schoolApi.js";
+
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 // Lazy module logger — `getLogger()` at import time binds before the app has
@@ -168,6 +169,7 @@ export function useMediaLessonSession({
   checkpointCelebrateMs = CHECKPOINT_CELEBRATE_MS,
   lessonCelebrateMs = LESSON_CELEBRATE_MS,
 } = {}) {
+  const schoolApi = useSchoolApi();
   const [view, setView] = useState('idle');
   const [lesson, setLesson] = useState(null);        // { sessionId, contentId, title, resumePosition }
   const [learner, setLearner] = useState(null);      // { id, name } — frozen at open
@@ -240,7 +242,7 @@ export function useMediaLessonSession({
     if (!res.ok) {
       logger().warn('school.lesson.position.failed', { sessionId, status: res.status });
     }
-  }, []);
+  }, [schoolApi]);
 
   /**
    * The session is gone server-side. See header decision 1: this is the branch
@@ -349,7 +351,7 @@ export function useMediaLessonSession({
       checkpoints: Array.isArray(data.checkpoints) ? data.checkpoints.length : 0,
       resumePosition: positionRef.current,
     });
-  }, [cue, say]);
+  }, [cue, say, schoolApi]);
 
   // ── the four moments the backend cannot see ──────────────────────────────
 
@@ -435,7 +437,7 @@ export function useMediaLessonSession({
       setCelebration(null);
       setView('done');
     }, lessonCelebrateMs);
-  }, [commitClear, cue, lessonCelebrateMs, say]);
+  }, [commitClear, cue, lessonCelebrateMs, say, schoolApi]);
 
   /**
    * The Player went away without a natural-end notification — a load failure,
@@ -544,7 +546,7 @@ export function useMediaLessonSession({
       cue('warn');
     }
     return { ok: true, status: res.status, ...data };
-  }, [checkpointCelebrateMs, commitClear, cue, endBecauseGone, say]);
+  }, [checkpointCelebrateMs, commitClear, cue, endBecauseGone, say, schoolApi]);
 
   /**
    * "Rewind and rewatch" — the option offered beside every wrong answer. It

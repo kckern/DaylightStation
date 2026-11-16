@@ -16,14 +16,14 @@ const rosterMock = vi.fn();
 const learnerSessionsMock = vi.fn();
 const sessionEventsMock = vi.fn();
 
-vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.js", () => ({
+vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.js", () => { const endpoints = {
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     learnerSessions: (...a) => learnerSessionsMock(...a),
     sessionEvents: (...a) => sessionEventsMock(...a),
   },
   default: {},
-}));
+}; return { ...endpoints, createSchoolAdminApi: () => ({ ...endpoints.schoolAdminApi }) }; });
 
 const THIS_YEAR = new Date().getFullYear();
 const PARENT = { id: 'dad', name: 'Papa', birthyear: THIS_YEAR - 42 };

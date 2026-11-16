@@ -1,3 +1,4 @@
+import { useSchoolAdminApi } from '../runtime/useSchoolFeatureApi.js';
 /**
  * The household roster, for every parent-facing School screen.
  *
@@ -14,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { schoolAdminApi } from "./schoolAdminApi.js";
+
 
 let _logger;
 function logger() {
@@ -26,6 +27,7 @@ function logger() {
  * @returns {{roster: object[], loading: boolean, error: string|null, reload: () => void}}
  */
 export function useRoster() {
+  const schoolAdminApi = useSchoolAdminApi();
   const [roster, setRoster] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -50,7 +52,7 @@ export function useRoster() {
       })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [nonce]);
+  }, [nonce, schoolAdminApi]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 

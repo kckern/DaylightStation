@@ -58,3 +58,20 @@ describe('teacherWorkspaceApi', () => {
     }));
   });
 });
+
+describe('shared teacher transport', () => {
+  it('fails closed on malformed successful JSON', async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad'); } }));
+    expect((await teacherWorkspaceApi.session('session')).ok).toBe(false);
+  });
+
+  it('scoped teacher clients retain independent device headers and shared transport lifetimes', async () => {
+    const { createTeacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
+    const seen = [];
+    const fetchImpl = async (url, options) => { seen.push(options.headers); return { ok: true, status: 200, json: async () => ({}) }; };
+    const a = createTeacherWorkspaceApi({ deviceId: 'a', fetchImpl });
+    const b = createTeacherWorkspaceApi({ deviceId: 'b', fetchImpl });
+    await a.session('session'); await b.session('session'); await a.session('session');
+    expect(seen.map(headers => headers['X-Daylight-Device'])).toEqual(['a', 'b', 'a']);
+  });
+});

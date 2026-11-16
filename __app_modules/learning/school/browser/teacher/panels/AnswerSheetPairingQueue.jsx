@@ -1,5 +1,7 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { humanDateTime } from "../teacherDates.js";
 
@@ -28,6 +30,7 @@ const reasonCopy = (reason) => REASON_COPY[reason] ?? 'The scan could not be mat
 const when = (value) => humanDateTime(value) ?? 'at an unknown time';
 
 export default function AnswerSheetPairingQueue({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((kid) => kid.id === id)?.name ?? id ?? 'Unknown learner';
   const { run, busy, errors } = useTeacherWrite({ panel: 'answer-sheet-pairing' });
   const [items, setItems] = useState(null);
@@ -49,7 +52,7 @@ export default function AnswerSheetPairingQueue({ kids = [] }) {
     return (
       <section className="answer-sheet-pairing">
         <p>Answer-sheet mix-ups are kept apart from question-by-question grading.</p>
-        <button type="button" disabled={busy === 'load'} onClick={load}>Open answer-sheet reviews</button>
+        <SchoolButton variant="plain" type="button" disabled={busy === 'load'} onClick={load}>Open answer-sheet reviews</SchoolButton>
         {errors.load && <p className="teacher-panel__error">{errors.load}</p>}
       </section>
     );
@@ -83,14 +86,14 @@ export default function AnswerSheetPairingQueue({ kids = [] }) {
                   </div>
                   <div className="answer-sheet-pairing__actions">
                     {candidate.cardId === held.evidence.rawCardId && (
-                      <button type="button" disabled={busy === confirmKey} onClick={() => resolve(held, 'confirm', candidate.recordId)}>
+                      <SchoolButton variant="plain" type="button" disabled={busy === confirmKey} onClick={() => resolve(held, 'confirm', candidate.recordId)}>
                         Confirm this worksheet
-                      </button>
+                      </SchoolButton>
                     )}
                     {candidate.cardId !== held.evidence.rawCardId && (
-                      <button type="button" disabled={busy === reassignKey} onClick={() => resolve(held, 'reassign', candidate.recordId)}>
+                      <SchoolButton variant="plain" type="button" disabled={busy === reassignKey} onClick={() => resolve(held, 'reassign', candidate.recordId)}>
                         Reassign marks here
-                      </button>
+                      </SchoolButton>
                     )}
                   </div>
                   {(errors[confirmKey] || errors[reassignKey]) && (
@@ -100,7 +103,7 @@ export default function AnswerSheetPairingQueue({ kids = [] }) {
               );
             })}
           </div>
-          <button type="button" disabled={busy === redoKey} onClick={() => resolve(held, 'redo')}>Redo without a grade</button>
+          <SchoolButton variant="plain" type="button" disabled={busy === redoKey} onClick={() => resolve(held, 'redo')}>Redo without a grade</SchoolButton>
           {errors[redoKey] && <p className="teacher-panel__error">{errors[redoKey]}</p>}
         </article>
         );

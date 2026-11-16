@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * The enrollment editor for one learner × one course. Enrolling materializes a
  * syllabus through `createCourseEnrollment`; the resulting order is a SNAPSHOT,
@@ -6,12 +9,13 @@
  * session on this course is open.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherLog } from "../teacherLog.js";
 import { teacherSectionPath } from "../teacherUrl.js";
 
 export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Course title unavailable', cell, syllabi = [], baseUpdatedAt = null, onClose, onChanged }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrollment' });
   const offered = syllabi.filter((s) => s.courseId === courseId);
   const [choice, setChoice] = useState(cell?.syllabusId ?? offered[0]?.syllabusId ?? '');
@@ -54,7 +58,7 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
     <aside className="teacher-drawer" data-testid="enrollment-drawer" role="dialog" aria-modal="true" aria-label={`${learner.name} — ${courseTitle}`} ref={drawerRef} onKeyDown={onKeyDown}>
       <header className="teacher-drawer__head">
         <h3>{learner.name} · {courseTitle}</h3>
-        <button type="button" onClick={onClose} aria-label="Close" ref={closeRef}>✕</button>
+        <SchoolButton variant="plain" type="button" onClick={onClose} aria-label="Close" ref={closeRef}>✕</SchoolButton>
       </header>
 
       {/* These three facts are read-only for a reason: their one home is the
@@ -98,9 +102,9 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
       ) : (
         <label className="teacher-drawer__pick">
           Syllabus
-          <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+          <SchoolSelect value={choice} onChange={(e) => setChoice(e.target.value)}>
             {offered.map((s) => <option key={s.syllabusId} value={s.syllabusId}>{s.title}</option>)}
-          </select>
+          </SchoolSelect>
         </label>
       )}
 
@@ -111,25 +115,25 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
             {armed === 'rematerialize' && 'Rebuild from the current syllabus? The existing order is replaced.'}
             {armed === 'unenroll' && `Remove ${courseTitle} from ${learner.name}’s program?`}
           </span>
-          <button
+          <SchoolButton variant="plain"
             type="button"
             disabled={busy === armed}
             onClick={() => { const action = armed; setArmed(null); if (action === 'unenroll') unenroll(); else enroll(action === 'rematerialize'); }}
           >
             Confirm
-          </button>
-          <button type="button" onClick={() => setArmed(null)}>Cancel</button>
+          </SchoolButton>
+          <SchoolButton variant="plain" type="button" onClick={() => setArmed(null)}>Cancel</SchoolButton>
         </div>
       ) : (
         <div className="teacher-drawer__actions">
           {!cell?.enrolled && (
-            <button type="button" disabled={!choice || busy === 'enroll'} onClick={() => setArmed('enroll')}>Enroll</button>
+            <SchoolButton variant="plain" type="button" disabled={!choice || busy === 'enroll'} onClick={() => setArmed('enroll')}>Enroll</SchoolButton>
           )}
           {cell?.enrolled && (
-            <button type="button" disabled={!choice || busy === 'rematerialize'} onClick={() => setArmed('rematerialize')}>Re-materialize</button>
+            <SchoolButton variant="plain" type="button" disabled={!choice || busy === 'rematerialize'} onClick={() => setArmed('rematerialize')}>Re-materialize</SchoolButton>
           )}
           {cell?.enrolled && (
-            <button type="button" disabled={busy === 'unenroll'} onClick={() => setArmed('unenroll')}>Unenroll</button>
+            <SchoolButton variant="plain" type="button" disabled={busy === 'unenroll'} onClick={() => setArmed('unenroll')}>Unenroll</SchoolButton>
           )}
         </div>
       )}

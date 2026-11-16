@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { useTeacherWorkspaceApi } from '../runtime/useSchoolFeatureApi.js';
 /**
  * useBookFacts — what the console shows about one ISBN before a grown-up
  * logs it: the book (cover, title, author, length) and the household's
@@ -18,9 +20,9 @@
  * StrictMode double-run (whose first pass is abandoned) still loads the book.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { useTeacherProfileOptional } from "./TeacherProfileContext.jsx";
-import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
+
 import { teacherLog } from "./teacherLog.js";
 
 /**
@@ -41,6 +43,8 @@ export const IDLE_BOOK_FACTS = Object.freeze({ bookStatus: 'idle', book: null, r
  *   readersStatus: 'idle'|'loading'|'ok'|'refused'|'error', readers: object|null}}
  */
 export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
+  const schoolApi = useSchoolApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   // The picked teacher names the readers read (see teacherWorkspaceApi `byQuery`).
   const actorId = useTeacherProfileOptional()?.currentTeacher?.id ?? null;
   const [state, setState] = useState(IDLE_BOOK_FACTS);
@@ -86,7 +90,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
       if (!readable) teacherLog.fetch('book-readers-failed', { isbn: isbn13, status: readers?.status ?? 0 });
     })();
     return () => { alive = false; };
-  }, [isbn13, reloadKey, actorId]);
+  }, [isbn13, reloadKey, actorId, schoolApi, teacherWorkspaceApi]);
 
   return state;
 }

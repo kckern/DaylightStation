@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * PrintPendingView — over-budget print jobs awaiting a grown-up, with
  * approve/deny (wave 2, teacher.print.decide). Approve prints and logs with
@@ -13,7 +15,7 @@
  * list, not one per job: two pending jobs from the same kid share it.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherLog } from "../teacherLog.js";
@@ -28,6 +30,7 @@ import { waitAge } from "./waitAge.js";
  * untouched either way.
  */
 function useQuotaByUser(userIds) {
+  const schoolApi = useSchoolApi();
   const key = userIds.join(',');
   const [quotaByUser, setQuotaByUser] = useState({});
   useEffect(() => {
@@ -47,11 +50,12 @@ function useQuotaByUser(userIds) {
     });
     return () => { alive = false; };
      
-  }, [key]);
+  }, [key, schoolApi]);
   return quotaByUser;
 }
 
 export default function PrintPendingView({ kids, onChanged }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   // 404 = the feature isn't wired on this install — the quiet unavailable
   // copy, never a Retry that can't succeed.
@@ -91,8 +95,8 @@ export default function PrintPendingView({ kids, onChanged }) {
                 </span>
               )}
               <span className="teacher-prints__actions">
-                <button type="button" disabled={busy === job.id} onClick={() => decide(job, 'approve')}>Approve</button>
-                <button type="button" disabled={busy === job.id} onClick={() => decide(job, 'deny')}>Deny</button>
+                <SchoolButton variant="plain" type="button" disabled={busy === job.id} onClick={() => decide(job, 'approve')}>Approve</SchoolButton>
+                <SchoolButton variant="plain" type="button" disabled={busy === job.id} onClick={() => decide(job, 'deny')}>Deny</SchoolButton>
               </span>
               {errors[job.id] && <p className="teacher-panel__error">{errors[job.id]}</p>}
             </li>

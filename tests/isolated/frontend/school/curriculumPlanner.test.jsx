@@ -19,7 +19,7 @@ const rosterMock = vi.fn();
 const assignmentsMock = vi.fn();
 const putAssignmentMock = vi.fn();
 
-vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.js", () => ({
+vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.js", () => { const endpoints = {
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     assignments: (...a) => assignmentsMock(...a),
@@ -27,7 +27,7 @@ vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.
     teachers: async () => ({ configured: false, teachers: [] }),
   },
   default: {},
-}));
+}; return { ...endpoints, createSchoolAdminApi: () => ({ ...endpoints.schoolAdminApi }) }; });
 
 const THIS_YEAR = new Date().getFullYear();
 const PARENT = { id: 'dad', name: 'Papa', birthyear: THIS_YEAR - 42 };

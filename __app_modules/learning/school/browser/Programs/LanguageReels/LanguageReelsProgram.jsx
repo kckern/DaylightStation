@@ -2,7 +2,8 @@ import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useTakeRecorder from "../shared/useTakeRecorder.js";
 import { schoolLog } from "../../schoolLog.js";
-import { languageReelsApi } from "./languageReelsApi.js";
+import { useScopedSchoolClient } from "../../runtime/useSchoolApi.js";
+import { createLanguageReelsApi, languageReelsApi } from "./languageReelsApi.js";
 import "./LanguageReels.scss";
 
 const ORDER = ['flashcards', 'listen', 'cloze', 'watch', 'comprehension', 'speaking'];
@@ -61,11 +62,14 @@ function Speaking({ reel, mediaUrl, onDone }) {
   const recording = capture.phase === 'recording';
   const rawSegment = segments[index]; const line = asList(reel.transcript).find((cue) => cue.id === rawSegment?.lineId); const segment = { ...line, ...rawSegment }; const duration = rawSegment ? Math.max(0.25, (segment.endMs - segment.startMs) / 1000 * 1.25) : 0;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => () => {
-    capture.release(); preview.current?.pause(); scene.current?.pause();
-    if (scene.current) scene.current.ontimeupdate = null;
-    if (replacement.current) { replacement.current.pause(); replacement.current.onended = null; replacement.current = null; }
-    if (take) URL.revokeObjectURL(take);
+  useEffect(() => {
+    const previewPlayer = preview.current; const scenePlayer = scene.current;
+    return () => {
+      capture.release(); previewPlayer?.pause(); scenePlayer?.pause();
+      if (scenePlayer) scenePlayer.ontimeupdate = null;
+      if (replacement.current) { replacement.current.pause(); replacement.current.onended = null; replacement.current = null; }
+      if (take) URL.revokeObjectURL(take);
+    };
   }, [take, index, capture.release]);
   if (!segments.length) return <StageNotice text="Speaking is optional for this reel." onDone={onDone} />;
   const begin = async () => {
@@ -80,6 +84,7 @@ function Speaking({ reel, mediaUrl, onDone }) {
     const before = Math.max(0, (segment.startMs - (segment.replacementPaddingMs?.before ?? 0)) / 1000);
     const after = (segment.endMs + (segment.replacementPaddingMs?.after ?? 0)) / 1000;
     player.currentTime = before; player.muted = false; replacementStarted.current = false;
+    if (replacement.current) { replacement.current.pause(); replacement.current.onended = null; }
     replacement.current = new Audio(take);
     replacement.current.onended = () => { player.muted = false; if (player.paused && player.currentTime >= after) player.play().catch(() => {}); };
     player.ontimeupdate = () => {
@@ -102,17 +107,18 @@ function StageNotice({ text, onDone }) { return <section className="language-ree
 
 /** Standalone reel sequence; its session/grant never shares Sentence Ladder state. */
 export default function LanguageReelsProgram({ userId, reelId, reelGrant, onExit }) {
+  const api = useScopedSchoolClient(createLanguageReelsApi, languageReelsApi);
   const [activity, setActivity] = useState(null); const [error, setError] = useState(null); const [saving, setSaving] = useState(false); const [card, setCard] = useState(0); const [revealed, setRevealed] = useState(false); const [mediaComplete, setMediaComplete] = useState(false);
   const generation = useRef(0); const stageBusy = useRef(false);
   const load = useCallback(async () => {
     const run = ++generation.current; setError(null);
     try {
-      const result = await languageReelsApi.open(userId, reelId, reelGrant);
+      const result = await api.open(userId, reelId, reelGrant);
       if (run !== generation.current) return;
       if (!result.ok || !result.data?.session || !result.data?.reel) { setError({ message: result.status === 403 ? 'This reel needs a current assignment.' : 'This reel could not open.', terminal: [401, 403, 404].includes(result.status), operation: 'open' }); return; }
       setActivity(result.data); schoolLog.session('reel-opened', { reelId });
     } catch { if (run === generation.current) setError({ message: 'This reel could not open.', operation: 'open' }); }
-  }, [userId, reelId, reelGrant]);
+  }, [userId, reelId, reelGrant, api]);
   useEffect(() => { setActivity(null); setCard(0); setRevealed(false); setSaving(false); stageBusy.current = false; load(); return () => { generation.current += 1; }; }, [load]);
   const current = useMemo(() => {
     const stages = activity?.session?.stages ?? {};
@@ -123,7 +129,7 @@ export default function LanguageReelsProgram({ userId, reelId, reelGrant, onExit
     if (!current || stageBusy.current) return;
     stageBusy.current = true; setSaving(true); const run = generation.current;
     try {
-      const result = await languageReelsApi.stage(userId, reelId, current, reelGrant);
+      const result = await api.stage(userId, reelId, current, reelGrant);
       if (run !== generation.current) return;
       if (!result.ok || result.data?.stages?.[current] !== true) { schoolLog.answerError('reel-stage-unrecorded', { reelId, stage: current, status: result.status }); setError({ message: 'That step did not save. Try again.', terminal: [401, 403, 404].includes(result.status), operation: 'stage' }); return; }
       setActivity((value) => ({ ...value, session: result.data })); setError(null);
@@ -135,7 +141,7 @@ export default function LanguageReelsProgram({ userId, reelId, reelGrant, onExit
   const reel = activity.reel; const cards = asList(reel.vocabulary);
   const recordAttempt = async (attempt) => {
     const run = generation.current;
-    const result = await languageReelsApi.attempt(userId, reelId, reelGrant, attempt);
+    const result = await api.attempt(userId, reelId, reelGrant, attempt);
     if (run !== generation.current) throw new Error('Reel closed');
     if ([401, 403, 404].includes(result.status)) setError({ message: 'This reel needs a current assignment. Exit and open it again from your assignment.', terminal: true, operation: 'attempt' });
     const saved = result.data?.attempts?.at(-1);

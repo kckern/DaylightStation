@@ -1,5 +1,6 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 import { schoolLog } from "../schoolLog.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 import MultipleChoiceItem from "../quiz/items/MultipleChoiceItem.jsx";
@@ -23,6 +24,7 @@ const ITEM_COMPONENTS = {
  * Feedback acknowledgement and continuation are separate evidence calls.
  */
 export default function LearningProbeRunner({ module, learning = {}, onExit }) {
+  const schoolApi = useSchoolApi();
   const { status, currentUser, isGuest } = useSchoolProfile();
   const bank = module?.bank;
   const [sessionId, setSessionId] = useState(null);
@@ -77,7 +79,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
       });
     });
     return () => { alive = false; };
-  }, [bank, currentUser?.id, identity, learningContext, onExit, status]);
+  }, [bank, currentUser?.id, identity, learningContext, onExit, status, schoolApi]);
 
   const item = bank?.items?.[index];
   const ItemComponent = ITEM_COMPONENTS[item?.type];
@@ -125,7 +127,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
     if (!verdict || verdict.unrecorded || savingInteraction || abandoned.current) return;
     setSavingInteraction(true);
     setRecordError(null);
-    const recorded = await recordInteractions({
+    const recorded = await recordInteractions(schoolApi, {
       sessionId, index, attemptNumber, continuation,
       learnerId: currentUser?.id ?? null,
       item, module, learning: learningContext,
@@ -175,7 +177,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
       <div className="school-runner school-runner--error" data-testid="session-lost">
         <h2>{module.title ?? bank.title}</h2>
         <p>This check took a long break and timed out. Your answers so far are saved — you can try it again from the start.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -184,7 +186,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
       <div className="school-runner school-runner--error" data-testid="probe-open-failed">
         <h2>{module.title ?? bank.title}</h2>
         <p>This one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -193,7 +195,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
     return (
       <div className="school-runner school-probe">
         <p>This one won&rsquo;t work on this screen. Tell a grown-up what happened.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Return</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Return</SchoolButton>
       </div>
     );
   }
@@ -216,7 +218,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
         verdict={verdict?.unrecorded ? null : verdict}
       />
       {verdict?.unrecorded && (
-        <button type="button" className="school-runner__next" onClick={retryUnrecorded}>Retry same answer</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__next" onClick={retryUnrecorded}>Retry same answer</SchoolButton>
       )}
       {verdict && !verdict.unrecorded && (
         <div className={`school-probe__feedback${verdict.correct ? ' is-correct' : ' is-corrective'}`}>
@@ -229,13 +231,13 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
           )}
           <div className="school-probe__actions">
             {canRetry && (
-              <button type="button" disabled={savingInteraction} onClick={() => continueAfterFeedback('retry')}>
+              <SchoolButton variant="plain" type="button" disabled={savingInteraction} onClick={() => continueAfterFeedback('retry')}>
                 Try again
-              </button>
+              </SchoolButton>
             )}
-            <button type="button" disabled={savingInteraction} onClick={() => continueAfterFeedback('continue')}>
+            <SchoolButton variant="plain" type="button" disabled={savingInteraction} onClick={() => continueAfterFeedback('continue')}>
               {canRetry ? 'Continue without retry' : 'Continue'}
-            </button>
+            </SchoolButton>
           </div>
         </div>
       )}
@@ -243,7 +245,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
   );
 }
 
-async function recordInteractions({
+async function recordInteractions(schoolApi, {
   sessionId, index, attemptNumber, continuation, learnerId, item, module, learning,
 }) {
   if (!learnerId) return true;

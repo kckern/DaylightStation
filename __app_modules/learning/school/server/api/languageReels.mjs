@@ -19,6 +19,9 @@ export function createLanguageReelsRouter({ service, grants, logger = console, s
   const authorized = (req, res) => {
     const result = grants?.verify(req.get('X-School-Reel-Grant'), { learnerId: req.params.userId, reelId: req.params.reelId });
     if (!result?.ok) { res.status(403).json({ error: 'A current assigned-reel launch is required' }); return null; }
+    if (result.payload.revision !== service.getReel(result.payload.reelId).revision) {
+      res.status(403).json({ error: 'This reel changed. Open it again from your assignment.' }); return null;
+    }
     return result.payload;
   };
   const wrap = (fn) => async (req, res, next) => { try { await fn(req, res); } catch (error) {

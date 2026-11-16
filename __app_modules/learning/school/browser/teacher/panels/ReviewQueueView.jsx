@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * ReviewQueueView — the pending marks awaiting a grown-up, grouped by
  * learner, with INLINE resolution (wave 2, teacher.review.resolve): a
@@ -24,7 +26,7 @@
  * paper, not in the record — so the row says so instead of showing nothing.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { waitAge } from "./waitAge.js";
 import { teacherSessionPath, TEACHER_BASE } from "../teacherUrl.js";
@@ -37,6 +39,7 @@ const REASON_COPY = {
 };
 
 export default function ReviewQueueView({ items, kids, onResolved, titleFor = () => null }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id ?? 'Unknown';
   const { run, busy, errors } = useTeacherWrite({ panel: 'review-queue' });
   const [notes, setNotes] = useState({});
@@ -111,20 +114,20 @@ export default function ReviewQueueView({ items, kids, onResolved, titleFor = ()
                     />
                     {arming ? (
                       <>
-                        <button
+                        <SchoolButton variant="plain"
                           type="button"
                           disabled={busy === key || !noteWritten}
                           onClick={() => resolve(item, 'void')}
                         >
                           Can&rsquo;t mark it &mdash; tell them
-                        </button>
-                        <button type="button" onClick={() => setVoiding(null)}>Cancel</button>
+                        </SchoolButton>
+                        <SchoolButton variant="plain" type="button" onClick={() => setVoiding(null)}>Cancel</SchoolButton>
                       </>
                     ) : (
                       <>
-                        <button type="button" disabled={busy === key} onClick={() => resolve(item, 'correct')}>Correct</button>
-                        <button type="button" disabled={busy === key} onClick={() => resolve(item, 'incorrect')}>Incorrect</button>
-                        <button type="button" disabled={busy === key} onClick={() => setVoiding(key)}>Can&rsquo;t mark this</button>
+                        <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={() => resolve(item, 'correct')}>Correct</SchoolButton>
+                        <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={() => resolve(item, 'incorrect')}>Incorrect</SchoolButton>
+                        <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={() => setVoiding(key)}>Can&rsquo;t mark this</SchoolButton>
                       </>
                     )}
                   </div>

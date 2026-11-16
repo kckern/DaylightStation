@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * ContextualLaunchCard — the identified, learner-facing surface opened by a
  * valid panel code. The keypad remains anonymous; this card confirms whose
@@ -327,7 +328,7 @@ function CardAction({ action, onAction, onExit, busy, inert = false, actionRef =
   const named = subtitle && action.kind !== 'exit' && subtitle !== label
     ? `${label}: ${subtitle}` : null;
   return (
-    <button
+    <SchoolButton variant="plain"
       type="button"
       ref={actionRef}
       className={`school-selfservice-card__action is-${role}`}
@@ -347,7 +348,7 @@ function CardAction({ action, onAction, onExit, busy, inert = false, actionRef =
     >
       <Icon name={icon} className="school-selfservice-card__action-icon" />
       <span className="school-selfservice-card__action-label">{label}</span>
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -375,14 +376,14 @@ function PreviewBanner({ card, onExit }) {
         <span>Nothing here is live — no work opens, nothing prints.</span>
         {scope && <span className="school-selfservice-card__preview-scope">{scope}</span>}
       </div>
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="school-selfservice-card__preview-leave"
         data-testid="selfservice-preview-leave"
         onClick={onExit}
       >
         Leave preview
-      </button>
+      </SchoolButton>
     </div>
   );
 }
@@ -585,7 +586,7 @@ export default function LaunchCard({
                   {identityName === 'you' ? 'Is this you?' : `Is this you, ${identityName}?`}
                 </p>
                 <div className="school-selfservice-card__actions">
-                  <button
+                  <SchoolButton variant="plain"
                     type="button"
                     ref={actionFocusRef}
                     className="school-selfservice-card__action is-primary"
@@ -594,8 +595,8 @@ export default function LaunchCard({
                     disabled={busy}
                   >
                     <span className="school-selfservice-card__action-label">{isReading ? (identityName === 'you' ? 'Open my books' : `Open ${identityName}'s books`) : IDENTITY_YES}</span>
-                  </button>
-                  <button
+                  </SchoolButton>
+                  <SchoolButton variant="plain"
                     type="button"
                     className="school-selfservice-card__action is-secondary"
                     data-testid="selfservice-identity-no"
@@ -603,7 +604,7 @@ export default function LaunchCard({
                     disabled={busy}
                   >
                     {IDENTITY_NO}
-                  </button>
+                  </SchoolButton>
                 </div>
               </div>
             )}
@@ -612,7 +613,7 @@ export default function LaunchCard({
               <div className="school-selfservice-card__confirm">
                 <p className="school-selfservice-card__sentence" role="status">{PRINT_QUESTION}</p>
                 <div className="school-selfservice-card__actions">
-                  <button
+                  <SchoolButton variant="plain"
                     type="button"
                     ref={actionFocusRef}
                     className="school-selfservice-card__action is-primary"
@@ -638,8 +639,8 @@ export default function LaunchCard({
                       />
                     )}
                     <span className="school-selfservice-card__action-label">{CONFIRM_YES}</span>
-                  </button>
-                  <button
+                  </SchoolButton>
+                  <SchoolButton variant="plain"
                     type="button"
                     className="school-selfservice-card__action is-secondary"
                     data-testid="selfservice-print-failed"
@@ -647,7 +648,7 @@ export default function LaunchCard({
                     disabled={busy}
                   >
                     {CONFIRM_NO}
-                  </button>
+                  </SchoolButton>
                 </div>
                 {confirmElapsed !== null && (
                   <p className="school-selfservice-card__confirm-hint">{PRINT_AUTO_HINT}</p>
@@ -661,7 +662,7 @@ export default function LaunchCard({
                   {sentence || 'Something went wrong here. Tell a grown-up.'}
                 </p>
                 <div className="school-selfservice-card__actions is-single">
-                  <button
+                  <SchoolButton variant="plain"
                     type="button"
                     ref={actionFocusRef}
                     className="school-selfservice-card__action is-primary"
@@ -670,7 +671,7 @@ export default function LaunchCard({
                     disabled={busy}
                   >
                     Done
-                  </button>
+                  </SchoolButton>
                 </div>
               </div>
             )}

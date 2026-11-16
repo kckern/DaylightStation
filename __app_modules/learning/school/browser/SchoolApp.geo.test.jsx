@@ -7,44 +7,154 @@ import SchoolApp from "./SchoolApp.jsx";
 const banksMock = vi.fn();
 const materialsMock = vi.fn();
 const geoDecksMock = vi.fn();
-vi.mock("./schoolApi.js", () => ({
+vi.mock("./schoolApi.js", () => {const endpoints = {
   schoolApi: {
-    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
+    bookScans: {
+      pending: vi.fn(async () => ({
+        ok: true,
+        data: {
+          intent: null
+        }
+      })),
+      claim: vi.fn(),
+      dismiss: vi.fn()
+    },
+    roster: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: [{
+        id: 'kid1',
+        name: 'Alpha',
+        birthyear: 2016
+      }]
+    })),
     banks: (...a) => banksMock(...a),
-    bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'US Capitals', audience: 'generic', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
-    openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
-    answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
+    bank: vi.fn(async id => ({
+      ok: true,
+      status: 200,
+      data: {
+        id,
+        title: 'US Capitals',
+        audience: 'generic',
+        items: [{
+          id: 'q1',
+          type: 'multiple_choice',
+          prompt: 'WA?',
+          answer: 'Olympia',
+          choices: ['Seattle', 'Olympia']
+        }]
+      }
+    })),
+    openSession: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sessionId: 'ses_1'
+      }
+    })),
+    answer: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        correct: true,
+        expected: 'Olympia',
+        attemptId: 'att_1'
+      }
+    })),
     materials: (...a) => materialsMock(...a),
-    materialUnits: vi.fn(async () => ({ ok: true, status: 200, data: { material: {}, units: [] } })),
-    unitProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
-    report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
-    results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    materialUnits: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        material: {},
+        units: []
+      }
+    })),
+    unitProgress: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    quizRequests: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    requestQuiz: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        requested: true,
+        duplicate: false
+      }
+    })),
+    report: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: []
+      }
+    })),
+    results: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    materialProgress: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     geoDecks: (...a) => geoDecksMock(...a),
-    surfaceProfile: vi.fn(async () => ({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } })),
-    certification: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    surfaceProfile: vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      data: {
+        error: 'surface-profile-unresolved'
+      }
+    })),
+    certification: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Feedback delivery + kid-visible standing (Task 9) — the student panel
     // fetches these unconditionally once a learner is claimed.
-    periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
-    reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    periods: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    reportCard: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: null
+    })),
+    reviewLearner: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Today's dry-run plan (debt W7a) — the student panel fetches this
     // unconditionally once a learner is claimed.
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
-  },
-}));
+    agendaPreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sections: []
+      }
+    }))
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => { const endpoints = {
   languageApi: {
     courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     day: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },
-}));
+}; return {...endpoints, createLanguageApi: () => endpoints.languageApi}; });
 
 // A material shelved under `civilization` so that tile is enabled
 // (subjectHasContent looks at the actual catalog, not the built-in

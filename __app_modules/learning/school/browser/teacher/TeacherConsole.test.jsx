@@ -10,7 +10,7 @@ const TeacherConsole = () => <MantineProvider><TeacherConsoleView PianoProgramsP
 
 vi.mock("../schoolApi.js", () => {
   const okEmpty = async () => ({ ok: true, status: 200, data: [] });
-  return { schoolApi: {
+  const endpoints = { schoolApi: {
     teachers: vi.fn(async () => ({ ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] } })),
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }] })),
     teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'user_4', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'user_2', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
@@ -38,9 +38,9 @@ vi.mock("../schoolApi.js", () => {
     programDayBypasses: vi.fn(async () => ({ ok: true, status: 200, data: { active: [], history: [] } })),
     pianoLessonGate: vi.fn(async () => ({ ok: true, status: 200, data: { gated: false, reason: 'not-enrolled' } })),
     grantProgramDayBypass: vi.fn(), retractProgramDayBypass: vi.fn(),
-  } };
+  } }; return { ...endpoints, createSchoolApi: () => ({ ...endpoints.schoolApi }) };
 });
-vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
+vi.mock("./teacherWorkspaceApi.js", () => { const endpoints = { teacherWorkspaceApi: {
   timeline: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
   session: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   curriculumExceptions: vi.fn(async () => ({ ok: true, status: 200, data: { active: [] } })),
@@ -61,7 +61,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
       projection: { status: 'reading', page: 84, percent: 46, minutes: null, daysRead: 6, lastAt: '2026-09-03T18:00:00.000Z' },
     }],
   } })),
-} }));
+} }; return { ...endpoints, createTeacherWorkspaceApi: () => ({ ...endpoints.teacherWorkspaceApi }) }; });
 const { teacherWorkspaceApi } = await import("./teacherWorkspaceApi.js");
 const { schoolApi } = await import("../schoolApi.js");
 
@@ -424,6 +424,30 @@ describe('TeacherConsole workspace', () => {
       unmount();
       await act(async () => { resolve({ ok: true, status: 200, data: new Blob(['%PDF']) }); });
       await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:late'));
+    } finally {
+      URL.createObjectURL = created;
+      URL.revokeObjectURL = revoked;
+    }
+  });
+
+  it('disposes a marked-sheet response when the teacher signs out mid-fetch', async () => {
+    localStorage.setItem('school-teacher-claim', 'teacher');
+    const created = URL.createObjectURL;
+    const revoked = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:actor-discard');
+    URL.revokeObjectURL = vi.fn();
+    try {
+      teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
+      let resolve;
+      teacherWorkspaceApi.artifactPostview.mockImplementationOnce(() => new Promise(answer => { resolve = answer; }));
+      window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
+      render(<TeacherConsole />);
+      fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
+      await waitFor(() => expect(resolve).toEqual(expect.any(Function)));
+      fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+      await act(async () => resolve({ ok: true, status: 200, data: new Blob(['%PDF']) }));
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:actor-discard');
+      expect(screen.queryByRole('link', { name: 'Open the marked sheet (PDF)' })).toBeNull();
     } finally {
       URL.createObjectURL = created;
       URL.revokeObjectURL = revoked;

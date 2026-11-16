@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * CoinsPanel — one learner's week in silver (teacher console, Coins tab).
  *
@@ -9,7 +11,7 @@
  * Nothing here pays anyone; the bank/exchange comes later.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
@@ -94,18 +96,19 @@ function RateCell({ line, busy, onSave, onReset }) {
         aria-label={`Silver for ${line.label}`} onChange={(e) => setValue(e.target.value)} />
       <span className="teacher-coins__unit">{rate.unit}</span>
       {changed && (
-        <button type="button" disabled={busy} aria-label={`Save rate for ${line.label}`} onClick={() => onSave(line, parsed)}>Save</button>
+        <SchoolButton variant="plain" type="button" disabled={busy} aria-label={`Save rate for ${line.label}`} onClick={() => onSave(line, parsed)}>Save</SchoolButton>
       )}
       {line.overridden && !changed && (
-        <button type="button" className="teacher-coins__reset" disabled={busy} aria-label={`Use household rate for ${line.label}`} onClick={() => onReset(line)}>
+        <SchoolButton variant="plain" type="button" className="teacher-coins__reset" disabled={busy} aria-label={`Use household rate for ${line.label}`} onClick={() => onReset(line)}>
           Household rate
-        </button>
+        </SchoolButton>
       )}
     </div>
   );
 }
 
 export default function CoinsPanel({ learnerId, learnerName }) {
+  const schoolApi = useSchoolApi();
   const [week, setWeek] = useState(null);
   const preview = usePanelFetch(() => schoolApi.earningsPreview(learnerId, week), {
     // A 404 here is an unknown learner (the route itself always exists), so it
@@ -132,10 +135,10 @@ export default function CoinsPanel({ learnerId, learnerName }) {
       {data && from && (
         <div className="teacher-coins">
           <div className="teacher-coins__week">
-            <button type="button" aria-label="Previous week" onClick={() => setWeek(shiftWeek(from, -1))}>‹</button>
+            <SchoolButton variant="plain" type="button" aria-label="Previous week" onClick={() => setWeek(shiftWeek(from, -1))}>‹</SchoolButton>
             <span>Week of {weekLabel(data.windows.school)}</span>
-            <button type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</button>
-            {week && <button type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</button>}
+            <SchoolButton variant="plain" type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</SchoolButton>
+            {week && <SchoolButton variant="plain" type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</SchoolButton>}
           </div>
 
           <div className="teacher-coins__summary">
@@ -181,7 +184,7 @@ export default function CoinsPanel({ learnerId, learnerName }) {
               onChange={(e) => setMultiplier(e.target.value)} />
             <span className="teacher-coins__unit">× every silver rate</span>
             {multiplierChanged && (
-              <button type="button" disabled={busy === 'multiplier'} onClick={() => save('multiplier', { multiplier: m })}>Save multiplier</button>
+              <SchoolButton variant="plain" type="button" disabled={busy === 'multiplier'} onClick={() => save('multiplier', { multiplier: m })}>Save multiplier</SchoolButton>
             )}
             {errors.multiplier && <p className="teacher-panel__error">{errors.multiplier}</p>}
           </div>

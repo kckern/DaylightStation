@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** A recognizable cover plus server-projected progress or effective finish date. */
 import BookCover from "./BookCover.jsx";
 import Icon from "../home/icons/Icon.jsx";
@@ -110,8 +111,8 @@ export default function ShelfTile({ item, onSelect = null, incompatibleMetric = 
     return <div className={`${classes} school-books-tile--still`} title={title}>{body}</div>;
   }
   return (
-    <button type="button" className={classes} title={title} aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
+    <SchoolButton variant="plain" type="button" className={classes} title={title} aria-label={`Open ${title}`} onClick={() => onSelect(item.itemId)}>
       {body}
-    </button>
+    </SchoolButton>
   );
 }

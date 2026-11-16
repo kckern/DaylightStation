@@ -4,13 +4,13 @@ import ReflectionResponse from '../shared/ReflectionResponse.jsx';
 import ProgramRetryButton from '../shared/ProgramRetryButton.jsx';
 import { useProgramKeys } from '../shared/useProgramKeys.js';
 import { useInputStall } from '../shared/useInputStall.js';
-import { createGratitudeApi } from './gratitudeApi.js';
+import { useGratitudeApi } from '../../runtime/useSchoolFeatureApi.js';
 import { gratitudeLog } from './gratitudeLog.js';
 import './GratitudeProgram.scss';
 const IDLE_THRESHOLDS=[45_000,120_000,300_000];
 
 export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}){
-  const api=useMemo(()=>createGratitudeApi({learnerId,grant:gratitudeGrant}),[learnerId,gratitudeGrant]);
+  const api=useGratitudeApi({learnerId,grant:gratitudeGrant});
   const [view,setView]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[now,setNow]=useState(Date.now());
   const live=useRef(true),sending=useRef(false),lastBody=useRef(null),clockOffset=useRef(0),expiryCheck=useRef(null);
   const takeIds=useRef(new WeakMap());

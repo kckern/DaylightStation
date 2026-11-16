@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import PropTypes from 'prop-types';
 import Icon from "../home/icons/Icon.jsx";
 import "./screenHeader.scss";
@@ -28,7 +29,7 @@ export default function ScreenHeader({
     <header className={`school-screen-header ${className}`.trim()} data-testid={testId}>
       <div className="school-screen-header__lead">
         {onBack ? (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-screen-header__back"
             disabled={backDisabled}
@@ -37,7 +38,7 @@ export default function ScreenHeader({
           >
             <Icon name="back" className="school-screen-header__back-icon" />
             <span>{backLabel}</span>
-          </button>
+          </SchoolButton>
         ) : null}
         {title ? <h2 className="school-screen-header__title">{title}</h2> : null}
         {identity ? <div className="school-screen-header__identity">{identity}</div> : null}
@@ -46,7 +47,7 @@ export default function ScreenHeader({
           Done: inside the header row, so it moves nothing below it. */}
       {status}
       {onDone ? (
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className="school-screen-header__done"
           disabled={doneDisabled}
@@ -54,7 +55,7 @@ export default function ScreenHeader({
           data-testid="screen-header-done"
         >
           {doneLabel}
-        </button>
+        </SchoolButton>
       ) : null}
     </header>
   );

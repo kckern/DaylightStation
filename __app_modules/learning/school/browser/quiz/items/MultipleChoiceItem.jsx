@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /** Tap-target multiple choice. The first tap arms a choice and the second tap
  * confirms it; tapping a different choice moves the arm instead. This keeps a
  * stray kiosk tap from becoming an irreversible answer while preserving the
@@ -53,7 +54,7 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
             cls.push('school-item__choice--armed');
           }
           return (
-            <button key={choice} type="button" className={cls.join(' ')} disabled={!!verdict}
+            <SchoolButton variant="plain" key={choice} type="button" className={cls.join(' ')} disabled={!!verdict}
               aria-pressed={!verdict && choice === chosen}
               onClick={() => submit(choice)}>
               {choice}
@@ -63,7 +64,7 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
               {verdict && choice === chosen && (
                 <span className="school-item__you" aria-hidden="true"> — your pick</span>
               )}
-            </button>
+            </SchoolButton>
           );
         })}
       </div>

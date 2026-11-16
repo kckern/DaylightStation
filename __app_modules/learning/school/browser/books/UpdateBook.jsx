@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** Compact book details with direct finish/check-in actions and opt-in progress/date tasks. */
 import { useCallback, useState } from 'react';
 import NumberPad from "./NumberPad.jsx";
@@ -66,7 +67,7 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
       <div className="school-books-update__chooser" data-testid="mode-chooser">
         <p className="school-books-update__prompt">How do you want to keep track?</p>
         {MODES.map(({ mode: m, label }) => (
-          <button
+          <SchoolButton variant="plain"
             key={m}
             type="button"
             className={`school-books-update__mode${m === mode ? ' is-current' : ''}`}
@@ -75,9 +76,9 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
             {...press(() => { if (m !== mode) actions.setMode(m); })}
           >
             {label}
-          </button>
+          </SchoolButton>
         ))}
-        <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setChoosing(false))}>never mind</button>
+        <SchoolButton variant="plain" type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setChoosing(false))}>never mind</SchoolButton>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>
     );
@@ -86,7 +87,7 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
       <div className="school-books-update__finish">
         <p className="school-books-update__prompt">When did you finish it?</p>
         <DayPicker key={today} compact initiallyOpen today={today} minDay={earliestDay} busy={busy} onConfirm={(key) => { if (!busy) actions.finish(key); }} />
-        <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setFinishing(false))}>never mind</button>
+        <SchoolButton variant="plain" type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setFinishing(false))}>never mind</SchoolButton>
         {message && <p className="school-books-update__fault" role="alert">{message}</p>}
       </div>
     );
@@ -99,19 +100,19 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
         canSubmit={!busy} disabled={busy} hint={message}
         onChange={actions.noteActivity} onSubmit={submitPad}
       />
-      <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setProgressing(false))}>never mind</button>
+      <SchoolButton variant="plain" type="button" className="school-books-update__quiet" disabled={busy} {...press(() => setProgressing(false))}>never mind</SchoolButton>
     </>;
   } else {
     control = <>
       <div className="school-books-update__actions">
-        <button type="button" className="school-books-add__door" disabled={busy}
+        <SchoolButton variant="plain" type="button" className="school-books-add__door" disabled={busy}
           {...press(() => mode === 'check' ? actions.checkIn() : setProgressing(true))}>
           <Icon name="book-partway" className="school-books-add__door-icon" />
           <span>{mode === 'check' ? 'I read some today' : mode === 'minutes' ? 'Log minutes' : 'Update page'}</span>
-        </button>
-        <button type="button" className="school-books-add__door" disabled={busy} {...press(() => actions.finish(today))}>
+        </SchoolButton>
+        <SchoolButton variant="plain" type="button" className="school-books-add__door" disabled={busy} {...press(() => actions.finish(today))}>
           <Icon name="book-finished" className="school-books-add__door-icon" /><span>Finished today</span>
-        </button>
+        </SchoolButton>
       </div>
       {message && <p className="school-books-update__fault" role="alert">{message}</p>}
     </>;
@@ -127,7 +128,7 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
             {presentation.author && (
               <p className="school-books-update__author" title={presentation.allAuthors}>{presentation.author}</p>
             )}
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className="school-books-update__progress"
               aria-expanded={choosing}
@@ -147,7 +148,7 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
                 </span>
               )}
               <span className="school-books-update__caption">{progressLine(item)}</span>
-            </button>
+            </SchoolButton>
           </div>
         </div>
 
@@ -156,22 +157,22 @@ export default function UpdateBook({ item, today, earliestDay = null, error = nu
 
         {!choosing && !finishing && !progressing && (
           <div className="school-books-update__outcomes">
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className="school-books-update__quiet"
               disabled={busy}
               {...press(() => setFinishing(true))}
             >
               Finished on another day
-            </button>
-            <button
+            </SchoolButton>
+            <SchoolButton variant="plain"
               type="button"
               className="school-books-update__aside"
               disabled={busy}
               {...press(() => actions.setAside())}
             >
               set it aside
-            </button>
+            </SchoolButton>
           </div>
         )}
         </div>

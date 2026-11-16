@@ -32,7 +32,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function Probe({ name }) {
   const scope = useSchoolSurface();
   return <div data-testid={name}>
-    <output>{JSON.stringify({ ...scope, overlayRoot: undefined })}</output>
+    <output>{JSON.stringify({ ...scope, overlayRoot: undefined, resourceStore: undefined, provided: undefined, api: undefined })}</output>
     {scope.overlayRoot && createPortal(<span>{name} overlay</span>, scope.overlayRoot)}
   </div>;
 }
@@ -76,6 +76,25 @@ describe('school surfaces', () => {
     render(<SchoolSurfaceProvider><Probe name="invalid" /></SchoolSurfaceProvider>);
     act(() => observers[0].resize(Infinity, -12));
     expect(screen.getByTestId('invalid').textContent).toContain('"bounds":{"width":0,"height":0}');
+  });
+
+
+  it('keeps resource stores stable within one surface and isolated from another', async () => {
+    const stores = {}, apis = {};
+    function ResourceProbe({ name }) { const surface = useSchoolSurface(); stores[name] = surface.resourceStore; apis[name] = surface.api; return null; }
+    const view = render(<><SchoolSurfaceProvider surfaceId="one" deviceId="one-device"><ResourceProbe name="one" /></SchoolSurfaceProvider><SchoolSurfaceProvider surfaceId="two" deviceId="two-device"><ResourceProbe name="two" /></SchoolSurfaceProvider></>);
+    const first = stores.one;
+    const firstApi = apis.one;
+    expect(firstApi).toBeDefined();
+    expect(firstApi).not.toBe(apis.two);
+    expect(first).toBeDefined();
+    expect(first).not.toBe(stores.two);
+    await act(async () => first.read(['course', 'learner'], async () => ({ ok: true, status: 200, data: ['ready'] })));
+    expect(first.getSnapshot(['course', 'learner']).data).toEqual(['ready']);
+    expect(stores.two.getSnapshot(['course', 'learner']).data).toBeNull();
+    view.rerender(<><SchoolSurfaceProvider surfaceId="one" deviceId="one-device"><ResourceProbe name="one" /></SchoolSurfaceProvider><SchoolSurfaceProvider surfaceId="two" deviceId="two-device"><ResourceProbe name="two" /></SchoolSurfaceProvider></>);
+    expect(stores.one).toBe(first);
+    expect(apis.one).toBe(firstApi);
   });
 
   it('works without ResizeObserver', () => {
@@ -190,6 +209,11 @@ describe('school controls', () => {
 });
 
 describe('school activity frame', () => {
+  it('leaves chrome to an existing activity when no header slots are provided', () => {
+    const view = render(<SchoolActivityFrame className="school-activity--adapter"><button>Done</button></SchoolActivityFrame>);
+    expect(view.container.querySelector('header')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1);
+  });
   it.each(['workspace', 'focus', 'split', 'media', 'board'])('renders %s slots and dispatches back/done independently', layout => {
     const back = vi.fn();
     const done = vi.fn();

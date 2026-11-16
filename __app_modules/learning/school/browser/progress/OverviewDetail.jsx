@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 /**
@@ -82,7 +83,7 @@ export default function OverviewDetail({
         {stableItems.map((item, index) => {
           const selected = item.key === active.key;
           return (
-            <button
+            <SchoolButton variant="plain"
               key={item.key}
               ref={(element) => {
                 if (element) itemRefs.current.set(item.key, element);
@@ -100,7 +101,7 @@ export default function OverviewDetail({
               onKeyDown={(event) => onKeyDown(event, index)}
             >
               {renderItem(item, { selected })}
-            </button>
+            </SchoolButton>
           );
         })}
       </div>

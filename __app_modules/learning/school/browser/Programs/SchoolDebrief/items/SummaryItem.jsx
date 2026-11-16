@@ -3,7 +3,7 @@ import Icon from "../../../home/icons/Icon.jsx";
 import { COINS_SOON } from "../../../bank/coinsSoon.js";
 import { useSchoolDebriefKeys } from "../useSchoolDebriefKeys.js";
 
-/** What they told, how the questions went, on time or late, and what moved in this week's (preview) earnings. */
+/** Debrief result plus the bank's weekly earnings preview; no inferred payout. */
 /** `coinsLive`: true (bank live), false (show "Coins start soon"), null (bank not read yet: show neither). */
 export default function SummaryItem({ view, earned = null, coinsLive = false, onFinish }) {
   useSchoolDebriefKeys({ enter: onFinish, ' ': onFinish });
@@ -16,11 +16,11 @@ export default function SummaryItem({ view, earned = null, coinsLive = false, on
       {view.summary?.teachable && <p className="sd-summary__reason">You explained it so someone could try it</p>}
       <p>{view.late ? 'Late' : 'On time'}</p>
       {coinsLive === false && <p className="sd-summary__soon">{COINS_SOON}</p>}
-      {coinsLive && earned && earned.lines.length > 0 && (
-        <ul className="sd-summary__earned">
-          {earned.lines.map((l) => <li key={l.ruleId}>+{l.silver} silver{l.gems ? ` · +${l.gems} gem` : ''} · {l.label}</li>)}
-          <li className="sd-summary__week">{earned.weekSilver} silver this week</li>
-        </ul>
+      {coinsLive && earned && Number.isFinite(earned.weekSilver) && (
+        <div className="sd-summary__earned">
+          <p>Weekly earnings preview</p>
+          <p className="sd-summary__week">{earned.weekSilver} silver this week</p>
+        </div>
       )}
       <div className="sd-controls"><TouchButton variant="primary" keyHint="Enter" onClick={onFinish}>Done</TouchButton></div>
     </section>

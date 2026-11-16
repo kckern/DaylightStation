@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import FlashcardProgram from "./FlashcardProgram.jsx";
 
 const deck = {
@@ -90,4 +90,67 @@ describe('FlashcardProgram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start graded test' }));
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'start_test', testPlan: { count: 1, types: ['multiple_choice', 'matching'] } }));
   });
+});
+
+
+const reviewDeck = () => ({ id: 'two-cards', title: 'Two cards', cards: ['A', 'B'].map(cardId => ({
+  cardId, front: { blocks: [{ type: 'text', text: cardId }] }, back: { blocks: [{ type: 'text', text: `${cardId} back` }] },
+})) });
+
+it('locks mode navigation during a pending rating and retains B after A is acknowledged', async () => {
+  const twoCards = reviewDeck(); let acknowledge;
+  const studyApi = {
+    open: vi.fn().mockResolvedValue({ ok: true, data: { session: { sessionId: 'two', cardIds: ['A', 'B'] } } }),
+    review: vi.fn(() => new Promise(resolve => { acknowledge = resolve; })),
+  };
+  render(<FlashcardProgram descriptor={{ deck: twoCards, userId: 'kid', policy: { modes: ['review', 'cards'] } }} studyApi={studyApi} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Show answer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'good' }));
+  expect(screen.getByRole('button', { name: 'cards' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'review' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Leave for now' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'cards' }));
+  expect(screen.getByText('A back')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+  await act(async () => { acknowledge({ ok: true }); });
+  expect(screen.getByText('B')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'cards' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  fireEvent.click(screen.getByRole('button', { name: 'review' }));
+  expect(screen.getByText('B')).toBeInTheDocument();
+  expect(screen.queryByText('A')).not.toBeInTheDocument();
+  expect(studyApi.review).toHaveBeenCalledTimes(1);
+});
+
+it('locks Learn direction and answer controls while its formative review is pending', async () => {
+  let acknowledge;
+  const onEvent = vi.fn(() => new Promise(resolve => { acknowledge = resolve; }));
+  render(<FlashcardProgram descriptor={{ deck: reviewDeck(), policy: { modes: ['learn', 'cards'] } }} onEvent={onEvent} />);
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'A back' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Check answer' }));
+  expect(screen.getByRole('button', { name: 'Study other direction' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Check answer' })).toBeDisabled();
+  expect(screen.getByRole('textbox')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Leave for now' })).toBeEnabled();
+  await act(async () => { acknowledge({ ok: true }); });
+  expect(screen.getByText('B')).toBeInTheDocument();
+});
+
+it.each(['good', 'again'])('applies %s to the exact rated card even if the caller reorders the queue during its save', async rating => {
+  const twoCards = reviewDeck(); const descriptor = { deck: twoCards, policy: { modes: ['review'] } };
+  let acknowledge;
+  const onEvent = vi.fn(event => event.type === 'review' ? new Promise(resolve => { acknowledge = resolve; }) : Promise.resolve({ ok: true }));
+  const view = render(<FlashcardProgram descriptor={descriptor} onEvent={onEvent} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Show answer' }));
+  fireEvent.click(screen.getByRole('button', { name: rating }));
+  act(() => { twoCards.cards.reverse(); view.rerender(<FlashcardProgram descriptor={descriptor} onEvent={onEvent} />); });
+  await act(async () => { acknowledge({ ok: true }); });
+  expect(screen.getByText('B')).toBeInTheDocument();
+  expect(screen.getByText(rating === 'again' ? /1 of 2/ : /1 of 1/)).toBeInTheDocument();
+  if (rating === 'again') {
+    fireEvent.click(screen.getByRole('button', { name: 'Show answer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'good' }));
+    await act(async () => { acknowledge({ ok: true }); });
+    expect(screen.getByText('A')).toBeInTheDocument();
+  }
 });

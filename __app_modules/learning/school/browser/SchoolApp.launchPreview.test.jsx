@@ -39,22 +39,75 @@ const PREVIEW_CARD = {
   ],
 };
 
-vi.mock("./schoolApi.js", () => ({
+vi.mock("./schoolApi.js", () => {const endpoints = {
   schoolApi: {
-    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner3', name: 'Learner3', birthyear: 2016 }] })),
-    wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
-    surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),
-    materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
-    banks: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
-    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
-    selfServicePreview: vi.fn(async () => ({ ok: true, status: 200, data: PREVIEW_CARD })),
-  },
-}));
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
+    bookScans: {
+      pending: vi.fn(async () => ({
+        ok: true,
+        data: {
+          intent: null
+        }
+      })),
+      claim: vi.fn(),
+      dismiss: vi.fn()
+    },
+    roster: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: [{
+        id: 'learner3',
+        name: 'Learner3',
+        birthyear: 2016
+      }]
+    })),
+    wallet: vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      data: null
+    })),
+    surfaceProfile: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        surfaceId: 'screen-browser'
+      }
+    })),
+    materials: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        materials: []
+      }
+    })),
+    banks: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    agendaPreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sections: []
+      }
+    })),
+    teacherDay: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: []
+      }
+    })),
+    selfServicePreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: PREVIEW_CARD
+    }))
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => { const endpoints = {
   languageApi: { courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })) },
-}));
+}; return {...endpoints, createLanguageApi: () => endpoints.languageApi}; });
 vi.mock("./useSchoolLaunch.js", () => ({ useSchoolLaunch: vi.fn() }));
 vi.mock("./selfService/useScanCeremony.js", () => ({ useScanCeremony: () => ({ current: null, clear: vi.fn() }) }));
 vi.mock("./selfService/useSelfService.js", () => ({

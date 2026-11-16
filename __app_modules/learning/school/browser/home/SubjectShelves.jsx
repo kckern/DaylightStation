@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useState } from 'react';
 import Icon from "./icons/Icon.jsx";
 import { planBands } from "./shelfLayout.js";
@@ -33,12 +34,12 @@ function KindShelf({ shelf }) {
         <h2 className="school-shelf__verb">{verb}</h2>
         <span className="school-shelf__count">{items.length}</span>
         {hidden > 0 && !expanded && (
-          <button type="button" className="school-shelf__more" onClick={() => setExpanded(true)}>
+          <SchoolButton variant="plain" type="button" className="school-shelf__more" onClick={() => setExpanded(true)}>
             See {hidden} more →
-          </button>
+          </SchoolButton>
         )}
         {expanded && items.length > cap && (
-          <button type="button" className="school-shelf__more" onClick={() => setExpanded(false)}>Less</button>
+          <SchoolButton variant="plain" type="button" className="school-shelf__more" onClick={() => setExpanded(false)}>Less</SchoolButton>
         )}
       </header>
       <ul className="school-shelf__grid">

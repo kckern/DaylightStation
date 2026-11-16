@@ -58,7 +58,7 @@ describe('useTeacherWrite — a run waiting on the teacher picker (awaitClaim)',
     profile.currentTeacher = TEACHER;
     rerender();
     await expect(settled).resolves.toBe(false);
-    expect(teacherLog.writeRefused).toHaveBeenCalledWith('replay-failed', expect.objectContaining({ panel: 'test', key: 'k', error: 'boom' }));
+    expect(teacherLog.writeRefused).toHaveBeenCalledWith('replay-failed', expect.objectContaining({ panel: 'test', key: 'k', errorKind: 'exception' }));
   });
 
   it('without awaitClaim, a blocked run still answers false at once', async () => {
@@ -71,6 +71,30 @@ describe('useTeacherWrite — a run waiting on the teacher picker (awaitClaim)',
 });
 
 describe('useTeacherWrite — a claimed teacher', () => {
+  it('settles thrown composed writes and releases busy state for retry', async () => {
+    profile.currentTeacher = TEACHER;
+    const { result } = renderHook(() => useTeacherWrite({ panel: 'test' }));
+    await act(async () => {
+      await expect(result.current.run('save', async () => { throw new Error('offline'); })).resolves.toBe(false);
+    });
+    expect(result.current.busy).toBe(null);
+    expect(result.current.errors.save).toMatch(/try again/i);
+  });
+
+  it('serializes immediate duplicate activations and ignores a late success after exit', async () => {
+    profile.currentTeacher = TEACHER;
+    const { result, unmount } = renderHook(() => useTeacherWrite({ panel: 'test' }));
+    let settle;
+    const call = vi.fn(() => new Promise(resolve => { settle = resolve; }));
+    const onSuccess = vi.fn();
+    let first;
+    act(() => { first = result.current.run('save', call, { onSuccess }); result.current.run('save', call, { onSuccess }); });
+    expect(call).toHaveBeenCalledTimes(1);
+    unmount();
+    settle({ ok: true, data: { saved: true } });
+    await expect(first).resolves.toBe(false);
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
   it('sends the picked teacher as actorId and nothing else', async () => {
     profile.currentTeacher = TEACHER;
     const { result } = renderHook(() => useTeacherWrite({ panel: 'test' }));

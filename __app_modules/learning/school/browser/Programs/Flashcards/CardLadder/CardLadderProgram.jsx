@@ -1,6 +1,7 @@
+import { useSchoolApi } from '../../../runtime/useSchoolApi.js';
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 import { useWebSocketStatus, useWebSocketSubscription } from "../../../../../../../frontend/src/hooks/useWebSocket.js";
-import { schoolApi } from "../../../schoolApi.js";
+
 import PracticeAssessmentPanel from "./PracticeAssessmentPanel.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
@@ -17,7 +18,7 @@ import DrillOfferItem from "./items/DrillOfferItem.jsx";
 import MatchItem from "./items/MatchItem.jsx";
 import ListenItem from "./items/ListenItem.jsx";
 import MenuItem from "./items/MenuItem.jsx";
-import { createCardLadderApi } from "./cardLadderApi.js";
+import { useCardLadderApi } from '../../../runtime/useSchoolFeatureApi.js';
 import { cardLadderLog, setTrace, clearTrace } from "./cardLadderLog.js";
 import { createTrace } from "./createTrace.js";
 import { useItemStall } from "./useItemStall.js";
@@ -102,8 +103,10 @@ function remainingLabel(progress) {
  * the page's user gesture, so every clip after it may autoplay.
  */
 export default function CardLadderProgram({ descriptor, api: injected = null, resolveAssetUrl = (id) => id, onExit = () => {} }) {
+  const schoolApi = useSchoolApi();
   const { userId = null, deckId = null, test = false, scenario = null, title = null, entry = null } = descriptor ?? {};
-  const api = useMemo(() => injected ?? createCardLadderApi({ test }), [injected, test]);
+  const scopedApi = useCardLadderApi({ test });
+  const api = injected ?? scopedApi;
   // One trace per mount (spec §8) — created once, bound to the cardLadderLog
   // facade for this component's lifetime so every event below (and every
   // item's facade call, via the ambient binding) is stamped with it.
@@ -638,7 +641,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       } while (request.dirty && !request.cancelled);
     })().finally(() => { request.running = null; });
     return request.running;
-  }, [test, userId, deckId, assessmentLogger]);
+  }, [test, userId, deckId, assessmentLogger, schoolApi]);
   useEffect(() => {
     const request = { cancelled: false, running: null, dirty: false };
     assessmentRequest.current = request;
@@ -678,7 +681,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       setAssessmentNotice(reply.data?.message ?? (reply.ok ? 'Your quiz is ready.' : 'The quiz could not be printed. Try again.'));
       await refreshAssessment();
     }
-  }, [assessment, assessmentBusy, userId, refreshAssessment]);
+  }, [assessment, assessmentBusy, userId, refreshAssessment, schoolApi]);
   const reviewAssessment = useCallback(async () => {
     if (!assessment || assessmentBusy || assessment.access?.allowed === false) return;
     const request = assessmentRequest.current;
@@ -701,7 +704,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     setAssessmentBusy(false);
     if (reply.ok && reply.data?.item) { show(reply.data.item, reply.data.progress); setAssessmentNotice(null); }
     else { setStarted(false); setAssessmentNotice(reply.data?.error?.message ?? 'Review could not start. Try again.'); }
-  }, [assessment, assessmentBusy, api, userId, deckId, trace, show]);
+  }, [assessment, assessmentBusy, api, userId, deckId, trace, show, schoolApi]);
 
   /** Any practice item can end the run early: back to the menu. */
   const inPractice = item?.source === 'practice';

@@ -4,6 +4,6 @@ import { useSchoolSurface } from './SchoolSurface.jsx';
 
 export const SchoolButton = forwardRef(function SchoolButton({ density, ...props }, ref) {
   const surface = useSchoolSurface();
-  return <Button {...props} density={density ?? surface.density} ref={ref} />;
+  return <Button wrapLabel={false} {...props} density={density ?? surface.density} ref={ref} />;
 });
 export default SchoolButton;

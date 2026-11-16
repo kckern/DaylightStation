@@ -1,1 +1,1 @@
-export { sentenceLadderApi as default, sentenceLadderApi, languageApi } from "./languageApi.js";
+export { sentenceLadderApi as default, sentenceLadderApi, languageApi, createSentenceLadderApi, createLanguageApi } from "./languageApi.js";

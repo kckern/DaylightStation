@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * LearnerPage — one child, one page (owner ruling 2026-10-29: "one rich page,
  * not ten tabs").
@@ -54,11 +55,11 @@ function Fold({ fold, open, onToggle, children }) {
   }, [open, fold.deepLinked]);
   return (
     <section ref={ref} className={`teacher-learner-fold${open ? ' is-open' : ''}`} data-fold={fold.id}>
-      <button type="button" className="teacher-learner-fold__head" aria-expanded={open} onClick={onToggle}>
+      <SchoolButton variant="plain" type="button" className="teacher-learner-fold__head" aria-expanded={open} onClick={onToggle}>
         <span className="teacher-learner-fold__label">{fold.label}</span>
         <span className="teacher-learner-fold__hint">{fold.hint}</span>
         <span className="teacher-learner-fold__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
-      </button>
+      </SchoolButton>
       {open && <div className="teacher-learner-fold__body">{children}</div>}
     </section>
   );

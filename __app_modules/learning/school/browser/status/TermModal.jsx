@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * TermModal — one learner's whole term, opened by tapping the two weeks on
  * their status-board card.
@@ -93,9 +94,9 @@ export default function TermModal({ kid, term, onClose }) {
         <header className="school-term-modal__header">
           <ProfileAvatar id={kid.id} name={kid.name} size={96} />
           <h2 className="school-term-modal__title">{kid.name}</h2>
-          <button type="button" className="school-term-modal__close" aria-label="Close" onClick={onClose}>
+          <SchoolButton variant="plain" type="button" className="school-term-modal__close" aria-label="Close" onClick={onClose}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
-          </button>
+          </SchoolButton>
         </header>
         <TermGrid term={term} />
       </div>

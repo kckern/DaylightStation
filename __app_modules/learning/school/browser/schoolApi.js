@@ -1,70 +1,21 @@
-/**
- * Status-aware fetch client for /api/v1/school. NOT DaylightAPI: the runners
- * must distinguish 403 (guest/assigned), 410 (session gone), and 500 (attempt
- * unrecorded — spec §8), and DaylightAPI hides status codes. Never throws.
- */
-import { schoolDeviceHeaders, getSchoolDeviceId } from "./schoolDevice.js";
+/** Status-aware School endpoint facade. New surfaces own a client; the default keeps browser compatibility. */
+import { schoolDeviceHeaders, getSchoolDeviceId } from './schoolDevice.js';
+import { createSchoolTransport } from './runtime/schoolTransport.js';
 
 const BASE = '/api/v1/school';
 
-// Identical GETs already on the wire, by path. Panels mount side by side and
-// several ask for the same read at once (the report card twice on Reports,
-// curriculum units on most pages, today's Day pair from both the record and
-// the week): one request answers them all. Only while in flight — nothing is
-// cached once it settles, so a later read is always fresh.
-const inFlight = new Map();
+function buildSchoolApi(transport, legacy = false) {
+  const compatible = promise => legacy ? promise.then(({ ok, status, data }) => ({ ok, status, data })) : promise;
+  const req = (path, body, method, headers = {}) => compatible(transport.request(path, {
+    body, method, headers: legacy ? schoolDeviceHeaders(headers) : headers,
+  }));
+  const reqAbsolute = (path, options = {}) => compatible(transport.request(path, {
+    ...options, ...(legacy && getSchoolDeviceId() ? { headers: schoolDeviceHeaders(options.headers) } : {}),
+  }));
 
-function req(path, body, method, headers = {}) {
-  const plainGet = body === undefined && (!method || method === 'GET') && Object.keys(headers).length === 0;
-  if (!plainGet) return send(path, body, method, headers);
-  const pending = inFlight.get(path);
-  // Each caller gets its own copy: a panel that edits its data must not
-  // reach into another's.
-  if (pending) return pending.then((result) => ({ ...result, data: structuredCloneSafe(result.data) }));
-  const started = send(path, body, method, headers).finally(() => inFlight.delete(path));
-  inFlight.set(path, started);
-  return started;
-}
-
-function structuredCloneSafe(value) {
-  try { return value == null ? value : structuredClone(value); } catch { return value; }
-}
-
-async function send(path, body, method, headers = {}) {
-  try {
-    const opts = body === undefined
-      ? { method: method || 'GET', credentials: 'same-origin', headers: schoolDeviceHeaders(headers) }
-      : { method: method || 'POST', credentials: 'same-origin', headers: schoolDeviceHeaders({ 'Content-Type': 'application/json', ...headers }), body: JSON.stringify(body) };
-    const r = await fetch(BASE + path, opts);
-    const data = await r.json().catch(() => null);
-    return { ok: r.ok, status: r.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  }
-}
-
-/**
- * Same never-throws `{ok, status, data}` contract as `req`, but for a path
- * OUTSIDE `/api/v1/school`. State Gates is a shared subscriber resource, so
- * the school board consumes it without pretending it is a School endpoint.
- */
-async function reqAbsolute(path, { timeoutMs = null } = {}) {
-  const controller = Number.isFinite(timeoutMs) && timeoutMs > 0 ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-  try {
-    const r = await fetch(path, {
-      method: 'GET', credentials: 'same-origin', ...(getSchoolDeviceId() ? { headers: schoolDeviceHeaders() } : {}), ...(controller ? { signal: controller.signal } : {}),
-    });
-    const data = await r.json().catch(() => null);
-    return { ok: r.ok, status: r.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-export const schoolApi = {
+  return {
+    request: (path, options = {}) => transport.request(path, { ...options, headers: legacy ? schoolDeviceHeaders(options.headers) : options.headers }),
+    transport,
   practiceAssessment: ({ learnerId, deckId }) => req(`/lifecycle/practice-assessments?${new URLSearchParams({ learnerId, deckId })}`),
   printPracticeAssessment: ({ learnerId, unitId }) => req(`/lifecycle/practice-assessments/${encodeURIComponent(unitId)}/print`, { learnerId }),
   reviewPracticeAssessment: ({ learnerId, unitId, sittingId }) => req(`/lifecycle/practice-assessments/${encodeURIComponent(unitId)}/review`, { learnerId, sittingId }),
@@ -434,25 +385,8 @@ export const schoolApi = {
     `/self-service/learners/${encodeURIComponent(learnerId)}/print-next`,
     { ...(subject ? { subject } : {}), ...(deviceId ? { deviceId } : {}) },
   ),
-  // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
-  // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
-  // Different base to BASE, hence the raw fetch — same never-throws contract.
-  screenSchoolConfig: async (screenId) => {
-    try {
-      const r = await fetch(`/api/v1/screens/${encodeURIComponent(screenId)}`);
-      const data = await r.json().catch(() => null);
-      return { ok: r.ok, status: r.status, data };
-    } catch { return { ok: false, status: 0, data: null }; }
-  },
-  // The coin balance lives on the economy API (different base) — same
-  // never-throws contract as req().
-  wallet: async (userId) => {
-    try {
-      const r = await fetch(`/api/v1/economy/users/${encodeURIComponent(userId)}/wallet`);
-      const data = await r.json().catch(() => null);
-      return { ok: r.ok, status: r.status, data };
-    } catch { return { ok: false, status: 0, data: null }; }
-  },
+  // Shared resources outside School retain the same status-aware transport and device scope.
+  screenSchoolConfig: (screenId) => reqAbsolute(`/api/v1/screens/${encodeURIComponent(screenId)}`),
   progressReport: ({ learnerId, periodId }) => req(
     `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
   ),
@@ -596,4 +530,11 @@ export const schoolApi = {
   lessonEnded: (sessionId) => req(`/lesson/${encodeURIComponent(sessionId)}/ended`, {}),
 };
 
+}
+
+export function createSchoolApi({ deviceId = null, ...options } = {}) {
+  return buildSchoolApi(createSchoolTransport({ ...options, deviceId: deviceId ? String(deviceId) : null }));
+}
+
+export const schoolApi = buildSchoolApi(createSchoolTransport(), true);
 export default schoolApi;

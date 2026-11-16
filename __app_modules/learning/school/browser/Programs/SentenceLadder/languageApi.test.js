@@ -49,7 +49,7 @@ describe('languageApi failure reporting', () => {
       path: '/courses',
       method: 'GET',
       status: 0,
-      error: 'NetworkError when attempting to fetch resource.',
+      error: 'network',
     });
     expect(typeof failures[0].data.ms).toBe('number');
   });
@@ -168,4 +168,10 @@ describe('recording upload', () => {
     expect(url).toContain('ext=wav');
     expect(init.headers['Content-Type']).toBe('audio/wav');
   });
+});
+
+it('keeps exception text out of diagnostics', async () => {
+  globalThis.fetch.mockRejectedValue(new Error('grant-private-and-learner-sentence'));
+  await languageApi.courses();
+  expect(JSON.stringify(emitted)).not.toContain('grant-private-and-learner-sentence');
 });

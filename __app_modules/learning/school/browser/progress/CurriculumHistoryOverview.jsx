@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import "./ProgressOverview.scss";
 import { useMemo, useState } from 'react';
 import OverviewDetail from "./OverviewDetail.jsx";
@@ -20,9 +21,9 @@ export default function CurriculumHistoryOverview({ history, resolveTitle = null
           <h3 id="school-progress-history-title">Learning history</h3>
           <p>Move through the overview to inspect recorded work.</p>
         </div>
-        <button type="button" onClick={() => setListView((value) => !value)}>
+        <SchoolButton variant="plain" type="button" onClick={() => setListView((value) => !value)}>
           {listView ? 'Compact map' : 'List view'}
-        </button>
+        </SchoolButton>
       </header>
       <OverviewDetail
         items={items}

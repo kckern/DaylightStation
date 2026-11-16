@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
 /**
  * ReportCardView — the live period snapshot for one learner, recomputed on
  * every read. It reads DRAFT while the period is open; once `closed`, it says
@@ -6,12 +7,13 @@
  * `unavailable`, never to a quiet nothing-graded-yet zero-state (spec §4.3).
  * The PDF link renders the same snapshot server-side.
  */
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 
 export default function ReportCardView({ learnerId, periodId, closed = false }) {
+  const schoolApi = useSchoolApi();
   const card = usePanelFetch(() => schoolApi.reportCard({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'report-card',

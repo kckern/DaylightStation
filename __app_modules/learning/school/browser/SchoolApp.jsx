@@ -1,3 +1,12 @@
+import { ErrorState } from '#frontend/lib/ui/states.jsx';
+import { useSchoolCatalog } from './runtime/useSchoolCatalog.js';
+import { useLanguageApi } from './runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from './portal/SchoolButton.jsx';
+import { useSchoolActivityState } from './activities/useSchoolActivityState.js';
+import { SchoolSurfaceProvider, useSchoolSurface } from './portal/SchoolSurface.jsx';
+import { useSchoolApi } from './runtime/useSchoolApi.js';
+import SchoolActivityHost from './activities/SchoolActivityHost.jsx';
+import { activityFor, programRequestForSection, validateActivityTarget } from './activities/activityManifest.js';
 import {SupervisedActivity,useActivityScope} from '../../../household/supervision/browser/index.js';
 import {useActivityStop} from '../../../household/supervision/browser/index.js';
 import {suspendScanCeremonySound} from './selfService/scanCeremonySound.js';
@@ -15,56 +24,37 @@ import ProfileAvatar from "../../../../frontend/src/lib/identity/ProfileAvatar.j
 import { SchoolProfileProvider, useSchoolProfile } from "./identity/SchoolProfileContext.jsx";
 import useArmedAction from "../../../../frontend/src/lib/identity/useArmedAction.js";
 import BankBrowser from "./browse/BankBrowser.jsx";
-import QuizRunner from "./quiz/QuizRunner.jsx";
-import FlashcardRunner from "./flashcards/FlashcardRunner.jsx";
-import SchoolHome from "./home/SchoolHome.jsx";
-import SubjectPage from "./home/SubjectPage.jsx";
-import LibraryPage from "./home/LibraryPage.jsx";
-import PrintCenter from "./print/PrintCenter.jsx";
-import TypingTutor from "./Typing/TypingTutor.jsx";
-import GeographyGrid from "./geography/GeographyGrid.jsx";
-import ChessLessons from "./chess/ChessLessons.jsx";
-import GeoQuizRunner from "./geography/GeoQuizRunner.jsx";
+
 import Icon from "./home/icons/Icon.jsx";
 import { configure as configureLogger } from "../../../../frontend/src/lib/logging/Logger.js";
 import { SchoolBreadcrumbProvider } from "./SchoolBreadcrumbContext.jsx";
 import { useSchoolBreadcrumbBar } from "./useSchoolBreadcrumb.js";
 import { groupBySubject, subjectLabel } from "./home/subjects.js";
-import SentenceLadderProgram from "./Programs/SentenceLadder/SentenceLadderProgram.jsx";
-import LanguageReelsProgram from "./Programs/LanguageReels/LanguageReelsProgram.jsx";
-import FlashcardProgram from "./Programs/Flashcards/FlashcardProgram.jsx";
+
 import FlashcardDeckBrowser from "./Programs/Flashcards/FlashcardDeckBrowser.jsx";
-import CardLadderProgram from "./Programs/Flashcards/CardLadder/CardLadderProgram.jsx";
+
 import { isCardLadderPolicy } from "./Programs/Flashcards/CardLadder/cardLadderMode.js";
-import RubiksCubeProgram from "./Programs/RubiksCube/RubiksCubeProgram.jsx";
-import GratitudeProgram from './Programs/Gratitude/GratitudeProgram.jsx';
+
 import {readGratitudeLaunch,saveGratitudeLaunch} from './Programs/Gratitude/gratitudeLaunchStorage.js';
-import SchoolDebriefProgram from "./Programs/SchoolDebrief/SchoolDebriefProgram.jsx";
-import BookShelf from "./books/BookShelf.jsx";
+
 import BookScanEntry from "./books/BookScanEntry.jsx";
 import BookPile from "./books/BookPile.jsx";
 import BookShelfDoor from "./books/BookShelfDoor.jsx";
-import ReportPanel from "./report/ReportPanel.jsx";
-import AdaptiveTutorPanel from "./remediation/AdaptiveTutorPanel.jsx";
-import LearningCatalogBrowser from "./catalog/LearningCatalogBrowser.jsx";
-import LearningContentReader from "./catalog/LearningContentReader.jsx";
-import LearningProbeRunner from "./probes/LearningProbeRunner.jsx";
-import { languageApi } from "./Programs/SentenceLadder/languageApi.js";
-import { schoolApi } from "./schoolApi.js";
+
 import { schoolLog } from "./schoolLog.js";
 import { useSchoolLaunch } from "./useSchoolLaunch.js";
 import { moduleLaunchAllowed } from "./catalog/certification.js";
 import Keypad from "./selfService/Keypad.jsx";
 import AgendaStatusBoard from "./status/AgendaStatusBoard.jsx";
 import BoardHeader from "./status/BoardHeader.jsx";
-import BankScreen from "./bank/BankScreen.jsx";
+
 import { useBankDoor, BankDoorSheet } from "./bank/BankDoor.jsx";
 import LaunchCard from "./selfService/LaunchCard.jsx";
 import LaunchCardPreview from "./selfService/LaunchCardPreview.jsx";
 import ScanCeremony from "./selfService/ScanCeremony.jsx";
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from "./selfService/useSelfService.js";
 import { useScanCeremony } from "./selfService/useScanCeremony.js";
-import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../__capabilities/playback/browser/readalong.mjs";
+
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
 import RewardsModal from './rewards/RewardsModal.jsx';
@@ -127,6 +117,7 @@ const configuredSeconds = (value) => (
 );
 
 export function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
+  const schoolApi = useSchoolApi();
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
   // A standalone mount resolves synchronously — there is no screen config to
   // fetch — and it defaults to LOCKED so the keypad is what opens.
@@ -209,7 +200,6 @@ function schoolUrlBase() {
   return null;
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from "./schoolPathModel.js";
-import { setSchoolDeviceId } from "./schoolDevice.js";
 
 /**
  * Turning the diagnostics up, from outside the code.
@@ -238,13 +228,38 @@ function debugRequested() {
 }
 
 function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffTimeoutSeconds = null }) {
-  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
+  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim: claimProfile, continueAsGuest: guestProfile } = useSchoolProfile();
+  const identityScope = useRef({learnerId:currentUser?.id ?? null,guest:isGuest});
+  const observedIdentity = useRef({learnerId:currentUser?.id ?? null,guest:isGuest});
+  const launchRequest = useRef(0);
+  const launchAlive = useRef(true);
+  const learnerId = currentUser?.id ?? null;
+  if (observedIdentity.current.learnerId !== learnerId || observedIdentity.current.guest !== isGuest) {
+    observedIdentity.current = {learnerId,guest:isGuest};
+    if (identityScope.current.learnerId !== learnerId || identityScope.current.guest !== isGuest) {
+      identityScope.current = {learnerId,guest:isGuest};
+    }
+  }
+  const claim = useCallback(id => {
+    if (identityScope.current.learnerId !== id || identityScope.current.guest) identityScope.current = {learnerId:id,guest:false};
+    claimProfile(id);
+  }, [claimProfile]);
+  const continueAsGuest = useCallback(() => {
+    identityScope.current = {learnerId:null,guest:true};
+    guestProfile();
+  }, [guestProfile]);
+  useEffect(() => {
+    launchAlive.current=true;
+    return () => { launchAlive.current=false; launchRequest.current++; };
+  }, []);
+  const beginLaunch = useCallback(() => ({identity:identityScope.current,request:++launchRequest.current}), []);
+  const launchIsCurrent = useCallback(token => launchAlive.current && token.identity === identityScope.current && token.request === launchRequest.current, []);
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
-  const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
-  // Set synchronously (idempotent) so children's first effects already carry it.
-  useMemo(() => setSchoolDeviceId(deviceIdFor(screenId)), [screenId]);
-  useEffect(() => () => setSchoolDeviceId(null), []);
+  const host = useSchoolSurface();
+  const screenId = host.provided ? host.surfaceId : screenIdFromUrlBase(urlBase);
+  const schoolApi = useSchoolApi();
+  const languageApi = useLanguageApi();
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
   // Whether the open reading shelf is ASKING for a barcode right now (see
@@ -264,7 +279,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // live nav state it reports back so the URL stays in lock-step with the
   // breadcrumb all the way down to a playing track.
   const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
-  const [active, setActive] = useState(null);
+  const { active, setActive, studyLaunch, setStudyLaunch, reelLaunch, setReelLaunch,
+    cubeLaunch, setCubeLaunch, debriefLaunch, setDebriefLaunch, gratitudeLaunch, setGratitudeLaunch,
+    bookLaunch, setBookLaunch, bankLaunch, setBankLaunch, clearActivity,
+  } = useSchoolActivityState({initialGratitude:()=>readGratitudeLaunch(urlBase)});
+  const flashcardStudyApi = useMemo(() => ({ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary, preview: schoolApi.flashcardPreview }), [schoolApi]);
   const [runNonce, setRunNonce] = useState(0); // Try-again remount counter   // bounded runner or shared remediation session
   // Whether the NEXT runner mount should open its session fresh (Task 17):
   // Try again on a finished quiz restarts from q1 (wipes the sitting), while
@@ -282,25 +301,19 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, []);
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
-  const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
-  const [courses, setCourses] = useState([]);     // sentence-ladder language courses
-  const [studyLaunch, setStudyLaunch] = useState(null);
-  const [reelLaunch, setReelLaunch] = useState(null);
-  const [cubeLaunch, setCubeLaunch] = useState(null);
-  const [debriefLaunch, setDebriefLaunch] = useState(null);
-  const [gratitudeLaunch,setGratitudeLaunch] = useState(()=>readGratitudeLaunch(urlBase));
+  const {materials,courses,banks,catalogLoaded,error:catalogError,retry:retryCatalog} = useSchoolCatalog({enabled:status==='ready',api:schoolApi,languageApi});
+
   useEffect(()=>saveGratitudeLaunch(urlBase,gratitudeLaunch),[urlBase,gratitudeLaunch]);
-  const [bookLaunch, setBookLaunch] = useState(null);
+
   // The coin bank screen (economy slice 1, C3): `{ learnerId }`
   // from the panel's bank door. Memory only: no path names it, so a reload
   // or a back button never reopens a kid's bank.
-  const [bankLaunch, setBankLaunch] = useState(null);
-  const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
+
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
   // a subject shelf can show a skeleton during the load rather than the empty
   // state, which otherwise reads as "stuck/broken" while it's legitimately loading.
-  const [catalogLoaded, setCatalogLoaded] = useState(false);
+
   // This mount's certified surface (spec §4.2). Resolved once on ready and
   // held for the session — a screen doesn't change identity mid-visit. A
   // failed/unresolved profile (404 fail-closed, or any other non-ok) leaves
@@ -323,27 +336,6 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     return () => { alive = false; };
   }, [status, screenId]);
 
-  // Un-grey the subject wall on materials + courses — the fast catalogues — and
-  // do NOT block that render on the bank catalogue (thousands of files). Banks
-  // load independently and fill the Practice shelves when ready; a subject that
-  // has only banks simply un-greys a beat later. Any fetch failing just leaves
-  // its content absent, never a broken panel.
-  useEffect(() => {
-    if (status !== 'ready') return;
-    let alive = true;
-    Promise.all([schoolApi.materials(), languageApi.courses()]).then(([mat, lang]) => {
-      if (!alive) return;
-      if (!mat.ok || !mat.data) schoolLog.materials('catalog-failed', { ok: mat.ok });
-      setMaterials(mat.ok && Array.isArray(mat.data?.materials) ? mat.data.materials : []);
-      setCourses(lang.ok && Array.isArray(lang.data) ? lang.data : []);
-      setCatalogLoaded(true);
-    });
-    schoolApi.banks().then(({ ok, data }) => {
-      if (alive) setBanks(ok && Array.isArray(data) ? data : []);
-    });
-    return () => { alive = false; };
-  }, [status]);
-
   // The nine shelves + the Library, from the three catalogues.
   const grouped = useMemo(
     // Sentence Ladder is assigned work, not a browsable app catalogue. Keep
@@ -365,17 +357,19 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       setNotice('Sign in to take this one — guests get the practice sets.');
       return;
     }
+    const token=beginLaunch();
     const { ok, data } = await schoolApi.bank(bankSummary.id);
+    if (!launchIsCurrent(token)) return false;
     // setRunFresh(false): a new launch is never a restart — cleared here (not
     // only in the active-change effect) so correctness never rides on
     // parent/child effect ordering.
-    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode }); }
+    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode, learnerId:identityScope.current.learnerId }); }
     // Reports whether a runner actually mounted. The keypad path needs this:
     // it must keep its card up and say something when the mount misses,
     // rather than closing to a bare keypad. Callers that ignore it (the
     // picker flow, progress follow-ups) are unaffected.
     return ok;
-  }, []);
+  }, [schoolApi,beginLaunch,launchIsCurrent]);
 
   // Returns the in-flight promise (rather than firing-and-forgetting) so a
   // caller — BankBrowser's double-tap guard — can await completion before
@@ -390,7 +384,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, [currentUser, isGuest, openPicker, start]);
 
   const startFlashcardDeck = useCallback(async (deckSummary, learnerId = currentUser?.id ?? null) => {
+    const token=beginLaunch();
     const { ok, data } = await schoolApi.flashcardDeck(deckSummary.id);
+    if (!launchIsCurrent(token)) return false;
     if (ok && data?.deck) {
       setNotice(null);
       setActive({ mode: 'flashcard_program', descriptor: {
@@ -398,7 +394,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       }, learning: null });
     }
     return ok;
-  }, [currentUser?.id]);
+  }, [currentUser?.id,schoolApi,beginLaunch,launchIsCurrent]);
 
   const onFlashcardDeckLaunch = useCallback(async (deckSummary) => {
     if (!currentUser && !isGuest) { setPending({ kind: 'flashcard-deck', deckSummary }); openPicker(); return false; }
@@ -485,11 +481,22 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, [urlBase]);
 
   const openSection = useCallback((id) => {
+    const request = programRequestForSection(id);
+    if (request) {
+      if (!currentUser?.id) { openPicker(); return; }
+      const chain = [currentUser.id, request.programId, ...(request.instanceId ? [request.instanceId] : [])];
+      setSection('direct-launch'); setMaterialPath(chain); syncUrl('direct-launch', chain);
+      return;
+    }
     setSection(id);
     setMaterialPath([]);
     syncUrl(id, []);
     schoolLog.nav('section', { section: id });
-  }, [syncUrl]);
+  }, [syncUrl, currentUser?.id, openPicker]);
+
+  useEffect(() => {
+    if (status === 'ready' && programRequestForSection(section)) openSection(section);
+  }, [status, section, currentUser?.id, openSection]);
 
   // Portal-launch subscription (design §4.3): a scan resolves to on-screen
   // work and the backend hands it to whichever screen has School mounted.
@@ -508,6 +515,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // a child who just pressed a button and got nothing needs words, so
   // `useSelfService` keeps the card up unless this answers `true`.
   const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
+    const token=beginLaunch();
+    const checked = validateActivityTarget(target, launchedLearnerId ?? target?.learnerId ?? null);
+    if (!checked.ok) {
+      if (target?.program === 'book-log') schoolLog.bookShelf('launch-refused', { reason: checked.reason === 'missing-bookGrant' ? 'no-grant' : 'no-learner' });
+      else if (target?.program === 'economy-bank') schoolLog.bank('economy-bank-refused', { reason: checked.reason === 'learner-mismatch' ? 'learner-mismatch' : 'no-learner' });
+      else if (target?.kind === 'program') schoolLog.bank('program-unavailable', { program: target.program });
+      else schoolLog.bank('launch-refused', { reason: checked.reason, kind: target?.kind ?? null });
+      return false;
+    }
     if (target?.kind === 'companion' && target.presentation === 'readalong') {
       setActive({ mode: 'lesson_companion', descriptor: target });
       return true;
@@ -600,8 +616,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
       const { ok, data } = await schoolApi.flashcardDeck(target.deckId);
-      if (!ok || !data?.deck) return false;
+      if (!launchIsCurrent(token) || !ok || !data?.deck) return false;
       const assessment = await schoolApi.flashcardAssessment(target.deckId, { userId: learnerId });
+      if (!launchIsCurrent(token)) return false;
       const bank = assessment.ok ? assessment.data?.bank ?? null : null;
       setActive({ mode: 'flashcard_program', descriptor: { deck: data.deck, bank, policy: target.policy ?? {}, userId: learnerId }, learning: null });
       openSection('flashcards');
@@ -614,7 +631,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     }
     schoolLog.bank('launch-unroutable', { kind: target?.kind ?? null });
     return false;
-  }, [courses, banks, openSection, start]);
+  }, [courses, banks, openSection, start,schoolApi,beginLaunch,launchIsCurrent]);
 
   /**
    * The code-free door: `/school/go/<learner>/<program>[/<instance>][/test]`.
@@ -673,9 +690,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     }
     (async () => {
       claim(directLearnerId);
+      const token=beginLaunch();
       const { ok, status: httpStatus, data } = await schoolApi.directLaunch(
         directLearnerId, directProgramId, directInstance,
       );
+      if (!launchIsCurrent(token)) return;
       if (!ok || !data?.target) {
         schoolLog.bank('direct-launch-refused', { program: directProgramId, status: httpStatus });
         setDirectError(httpStatus === 404
@@ -696,7 +715,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       const mounted = await onPortalLaunch(target, directLearnerId);
       if (!mounted) setDirectError(`${directProgramId} would not mount for ${directLearnerId}.`);
     })();
-  }, [directLearnerId, directProgramId, directInstance, directTest, status, catalogLoaded, roster, claim, onPortalLaunch]);
+  }, [directLearnerId, directProgramId, directInstance, directTest, status, catalogLoaded, roster, claim, onPortalLaunch,schoolApi,beginLaunch,launchIsCurrent]);
 
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
@@ -862,6 +881,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
+    launchRequest.current++;
+    clearActivity();
     setSection(null);
     setStudyLaunch(null);
     setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
@@ -884,6 +905,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // is mounted (you can't change section without unmounting it).
     setSection((sec) => { syncUrl(sec, next); return sec; });
   }, [syncUrl]);
+
+  const companionId = active?.mode === 'lesson_companion' ? active.descriptor.companionId : null;
+  const onCompanionProgress = useCallback(async payload => {
+    if (!companionId) return null;
+    const { ok, data } = await schoolApi.companionProgress(companionId, payload);
+    return ok ? data : null;
+  }, [schoolApi, companionId]);
 
   const onProgressFollowUp = useCallback(async (action) => {
     if (action?.target?.type === 'bank') {
@@ -941,37 +969,16 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // the notice (continueAsGuest() + the refusal inside start(), batched into
   // the same render) -- justSetNoticeRef lets that single pass through.
   useEffect(() => {
-    if (justSetNoticeRef.current) { justSetNoticeRef.current = false; return; }
-    setNotice(null);
-    // A remediation session is learner-scoped at the API boundary. Changing
-    // profiles pauses the panel instead of trying to reopen it as someone else.
-    setActive((current) => (current?.mode === 'remediation' ? null : current));
-    setStudyLaunch((current) => (
-      current && current.learnerId !== currentUser?.id ? null : current
-    ));
-    setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
-    setCubeLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
-    setDebriefLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
-    // The shelf is the one section that hides BOTH its runner and the locked
-    // panel's Done overlay (it carries its own), so an identity lapse that
-    // only nulled the launch would leave `section` on a blank wall with no
-    // way back. A lapse ends the workspace: home, which is the keypad here.
-    if (bookLaunch && bookLaunch.learnerId !== currentUser?.id) goHome();
-    // The bank screen likewise carries its own Back and no Done overlay, and
-    // shows one kid's coins: a lapse closes it.
-    if (bankLaunch && bankLaunch.learnerId !== currentUser?.id) goHome();
-    // The ladder is the OTHER section that hides the locked panel's Done
-    // overlay (`!courseId`, below), for the same reason: it carries its own
-    // exit. So a lapse that only nulled the launch leaves `section` set with
-    // nothing rendered under it and no control on screen — the same blank wall
-    // the line above exists to prevent, on a panel with no address bar to
-    // escape it. A lapse ends the session: home, which is the keypad here.
-    if (studyLaunch && studyLaunch.learnerId !== currentUser?.id) goHome();
-    // Deps are deliberately the identity alone: `bookLaunch`/`goHome` are read,
-    // not watched — listing them would re-run this on every launch and clear
-    // the notice/panel state it exists to protect. `SchoolApp.launch.test.jsx`
-    // ("an identity lapse with the shelf up …") pins the lapse path.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- identity changes alone own this reset; see rationale above
+    if (justSetNoticeRef.current) justSetNoticeRef.current = false;
+    else setNotice(null);
+    const activityLearner = active?.descriptor?.userId ?? active?.learnerId
+      ?? studyLaunch?.learnerId ?? reelLaunch?.learnerId ?? cubeLaunch?.learnerId
+      ?? debriefLaunch?.learnerId ?? gratitudeLaunch?.learnerId
+      ?? bookLaunch?.learnerId ?? bankLaunch?.learnerId ?? null;
+    // Identity changes end the whole scoped workspace, including its section.
+    // Watching launches would also close a legitimate claim+launch transition.
+    if ((activityLearner && activityLearner !== currentUser?.id) || active?.mode === 'remediation') goHome();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- identity changes own this reset
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
@@ -996,23 +1003,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       window.history.replaceState({}, '', `${window.location.pathname}${query.size ? `?${query}` : ''}`);
     }
   }, [queryPreviewLink, goHome]);
-  const sectionLabel = !section ? null
-      : subjectId ? subjectLabel(subjectId)
-      : section === 'library' ? 'Library'
-        : section === 'catalog' ? 'Catalog'
-        : section === 'progress' ? 'My Progress'
-          : section === 'banks' ? 'Practice'
-            : section === 'print' ? 'Print'
-              : section === 'typing' ? 'Typing'
-                : section === 'geography' ? 'Geography'
-                  : section === 'rubiks-cube' ? 'Rubik’s Cube'
-                  : section === 'gratitude' ? 'Gratitude'
-                  : section === 'school-debrief' ? 'After-school debrief'
-                  : section === 'book-shelf' ? 'Reading'
-                  : section === 'bank' ? 'Bank'
-                  : launchPreviewLink ? 'Launch card preview'
-                  : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
-                    : section;
+  const sectionLabel = !section ? null : subjectId ? subjectLabel(subjectId)
+    : programRequestForSection(section) ? activityFor(programRequestForSection(section).programId)?.label
+    : launchPreviewLink ? activityFor('launch-preview').label
+    : languageCourseId ? (courses.find(course=>course.id===languageCourseId)?.label ?? activityFor('sentence-ladder').label)
+    : activityFor(section)?.label ?? section;
 
   // The apple is the one fixed control in the header, so it carries the one
   // thing the Portal otherwise has no affordance for. From any depth it goes
@@ -1083,21 +1078,21 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             in-between navigation and are published by the deep routes
             themselves rather than each inventing its own back header. */}
         <nav className="school-app__crumbs" aria-label="Breadcrumb">
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-app__home"
             {...pressDown(onApple)}
             aria-label={section || active ? 'Home' : (clear ? 'School' : 'Refresh')}
           >
             <Icon name="apple" />
-          </button>
+          </SchoolButton>
           {breadcrumbTrail.map((c, i) => {
             const isLast = i === breadcrumbTrail.length - 1;
             return (
               <Fragment key={`${c.label}-${i}`}>
                 <span className="school-app__crumb-sep" aria-hidden>›</span>
                 {!isLast && c.onClick ? (
-                  <button type="button" className="school-app__crumb" {...pressDown(c.onClick)}>{c.label}</button>
+                  <SchoolButton variant="plain" type="button" className="school-app__crumb" {...pressDown(c.onClick)}>{c.label}</SchoolButton>
                 ) : (
                   <span className={`school-app__crumb${isLast ? ' school-app__crumb--current' : ''}`}>{c.label}</span>
                 )}
@@ -1110,11 +1105,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             only appears once there IS an identity to show (or a guest to
             un-guest). */}
         {(currentUser || isGuest) && (
-          <button type="button" className="school-app__chip" {...pressDown(openPicker)}>
+          <SchoolButton variant="plain" type="button" className="school-app__chip" {...pressDown(openPicker)}>
             {currentUser
               ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
               : <span>Guest</span>}
-          </button>
+          </SchoolButton>
         )}
         {leaveArmed && (
           <div className="school-app__leave-confirm" data-testid="leave-confirm" role="alert">
@@ -1124,6 +1119,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       </header>
       )}
       <main className="school-app__body">
+        {!lock.locked && catalogError && <ErrorState label="School catalog" error={{message:'Some learning materials could not be loaded.'}} onRetry={retryCatalog} />}
         {/* Scan ceremony (Slice D): a sibling of the lock branch below, NOT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
@@ -1161,7 +1157,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               <>
                 <h2>Could not open that</h2>
                 <p role="alert">{directError}</p>
-                <button type="button" className="school-runner__done" {...pressDown(goHome)}>Back to School</button>
+                <SchoolButton variant="plain" type="button" className="school-runner__done" {...pressDown(goHome)}>Back to School</SchoolButton>
               </>
             ) : (
               <p role="status">Opening {directProgramId} for {directLearnerId}…</p>
@@ -1245,7 +1241,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             claim affordance when nobody has tapped in. An explicit guest still
             browses — the pre-existing rule that browsing never prompts. */}
         {!section && (
-          <SchoolHome grouped={grouped} onOpen={openSection} bankTitles={bankTitles} />
+          <SchoolActivityHost activityId="home" renderProps={{
+  grouped: grouped,
+  onOpen: openSection,
+  bankTitles: bankTitles
+}} />
         )}
         {/* Only an EXPLICIT guest (continueAsGuest()) is restricted to the
             generic catalogue. An unclaimed child has not declined identity --
@@ -1256,170 +1256,205 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {/* Opens on the signed-in learner when there is one, otherwise the
             whole household. Both scopes are the same endpoint, filtered. */}
         {section === 'progress' && !active && (
-          <ReportPanel
-            userId={currentUser?.id || null}
-            onFollowUp={currentUser ? onProgressFollowUp : null}
-            /* A claimed KID gets a kid-scoped board: no Everyone unfocus, no
-               admin links, no Needs-attention flag (advocacy: the kiosk board
-               a child reads is theirs, not a supervision surface). Missing
-               birthyear fails toward kid — same rule as the claim faces. */
-            kidMode={!!currentUser && (() => {
-              const u = roster.find((r) => r.id === currentUser.id);
-              return !u?.birthyear || new Date().getFullYear() - u.birthyear < 18;
-            })()}
-          />
+          <SchoolActivityHost activityId="progress" renderProps={{
+  userId: currentUser?.id || null,
+  onFollowUp: currentUser ? onProgressFollowUp : null,
+  kidMode: !!currentUser && (() => {
+    const u = roster.find(r => r.id === currentUser.id);
+    return !u?.birthyear || new Date().getFullYear() - u.birthyear < 18;
+  })()
+}} />
         )}
-        {section === 'catalog' && !active && <LearningCatalogBrowser onLaunch={onLearningLaunch} surfaceId={surfaceId} />}
-        {section === 'print' && <PrintCenter />}
-        {section === 'typing' && <TypingTutor />}
-        {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
-        {section === 'chess' && !active && <ChessLessons />}
-        {section === 'rubiks-cube' && !active && (
-          <RubiksCubeProgram
-            userId={cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null}
-            courseId={cubeLaunch?.courseId ?? 'beginner-v1'}
-            cubeGrant={cubeLaunch?.cubeGrant ?? null}
-            onExit={goHome}
-          />
-        )}
+        {section === 'catalog' && !active && <SchoolActivityHost activityId="catalog" renderProps={{
+  onLaunch: onLearningLaunch,
+  surfaceId: surfaceId
+}} />}
+        {section === 'print' && <SchoolActivityHost activityId="print" renderProps={{}} />}
+        {section === 'typing' && <SchoolActivityHost activityId="typing" renderProps={{}} />}
+        {section === 'geography' && !active && <SchoolActivityHost activityId="geography" renderProps={{
+  onLaunch: onLaunch
+}} />}
+        {section === 'chess' && !active && <SchoolActivityHost activityId="chess" renderProps={{}} />}
         {section === 'banks' && !active && <><FlashcardDeckBrowser onLaunch={onFlashcardDeckLaunch} /><BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} /></>}
         {subjectId && !active && (
-          <SubjectPage
-            subjectId={subjectId}
-            shelf={grouped.bySubject[subjectId]}
-            guestOnly={isGuest}
-            onLaunch={onLaunch}
-            notice={notice}
-            onOpen={openSection}
-            initialMaterialPath={materialPath}
-            onMaterialNav={onMaterialNav}
-            catalogLoading={!catalogLoaded}
-          />
+          <SchoolActivityHost activityId="subject" renderProps={{
+  subjectId: subjectId,
+  shelf: grouped.bySubject[subjectId],
+  guestOnly: isGuest,
+  onLaunch: onLaunch,
+  notice: notice,
+  onOpen: openSection,
+  initialMaterialPath: materialPath,
+  onMaterialNav: onMaterialNav,
+  catalogLoading: !catalogLoaded
+}} />
         )}
         {section === 'library' && !active && (
-          <LibraryPage
-            library={grouped.library}
-            guestOnly={isGuest}
-            onLaunch={onLaunch}
-            notice={notice}
-            initialMaterialPath={materialPath}
-            onMaterialNav={onMaterialNav}
-          />
+          <SchoolActivityHost activityId="library" renderProps={{
+  library: grouped.library,
+  guestOnly: isGuest,
+  onLaunch: onLaunch,
+  notice: notice,
+  initialMaterialPath: materialPath,
+  onMaterialNav: onMaterialNav
+}} />
         )}
         </>)}
+        {section === 'rubiks-cube' && !active && (
+          <SchoolActivityHost activityId="rubiks-cube" renderProps={{
+  userId: cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null,
+  courseId: cubeLaunch?.courseId ?? 'beginner-v1',
+  cubeGrant: cubeLaunch?.cubeGrant ?? null,
+  onExit: goHome
+}} />
+        )}
         {/* Runners sit outside the lock branch: the locked panel mounts the
             SAME QuizRunner/FlashcardRunner the SPA does, via the same
             `start()`, which is what opens the SchoolService sitting that
             `PortalSurface.occupancy()` reads. Exiting one lands back on the
             keypad. */}
         {active?.mode === 'quiz' && (
-          <QuizRunner
-            key={`quiz:${active.bank.id}:${runNonce}`}
-            bank={active.bank}
-            learning={active.learning}
-            purpose={active.purpose ?? null}
-            deckId={active.deckId ?? null}
-            testPlan={active.testPlan ?? null}
-            fresh={runFresh}
-            onExit={() => setActive(null)}
-            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
-            onReview={onReviewLesson}
-            onTutor={onOpenTutor}
-          />
+          <SchoolActivityHost activityId="quiz" key={`quiz:${active.bank.id}:${runNonce}`} renderProps={{
+  bank: active.bank,
+  learning: active.learning,
+  purpose: active.purpose ?? null,
+  deckId: active.deckId ?? null,
+  testPlan: active.testPlan ?? null,
+  fresh: runFresh,
+  onExit: () => setActive(null),
+  onRestart: ({
+    fresh = true
+  } = {}) => {
+    setRunFresh(fresh);
+    setRunNonce(n => n + 1);
+  },
+  onReview: onReviewLesson,
+  onTutor: onOpenTutor
+}} />
         )}
-        {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'flashcard' && <SchoolActivityHost activityId="flashcard" renderProps={{
+  bank: active.bank,
+  learning: active.learning,
+  onExit: () => setActive(null)
+}} />}
         {active?.mode === 'flashcard_program' && (
-          <FlashcardProgram
-            descriptor={active.descriptor}
-            onEvent={async (event) => {
-              schoolLog.session('flashcard-program-event', { ...event, learning: active.learning });
-              if (event.type === 'start_test' && active.descriptor.bank && active.learning) {
-                const plan = event.testPlan ?? null;
-                const eligible = plan
-                  ? active.descriptor.bank.items.filter((item) => plan.types.includes(item.type)).slice(0, plan.count)
-                  : active.descriptor.bank.items;
-                setRunFresh(false);
-                setActive({ mode: 'quiz', bank: { ...active.descriptor.bank, items: eligible }, learning: active.learning, purpose: 'flashcard_test', testPlan: plan });
-              } else if (event.type === 'start_test' && active.descriptor.userId) {
-                const plan = event.testPlan ?? null;
-                const { ok, data } = await schoolApi.flashcardAssessment(active.descriptor.deck.id, { userId: active.descriptor.userId, testPlan: plan });
-                if (!ok || !data?.bank) return { ok: false };
-                setRunFresh(false);
-                setActive({ mode: 'quiz', bank: data.bank, learning: null, purpose: 'flashcard_assessment', deckId: active.descriptor.deck.id, testPlan: plan });
-              }
-              return { ok: true };
-            }}
-            studyApi={{ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary }}
-            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
-            onExit={() => setActive(null)}
-          />
+          <SchoolActivityHost activityId="flashcards" renderProps={{
+  descriptor: active.descriptor,
+  onEvent: async event => {
+    schoolLog.session('flashcard-program-event', {
+      ...event,
+      learning: active.learning
+    });
+    if (event.type === 'start_test' && active.descriptor.bank && active.learning) {
+      const plan = event.testPlan ?? null;
+      const eligible = plan ? active.descriptor.bank.items.filter(item => plan.types.includes(item.type)).slice(0, plan.count) : active.descriptor.bank.items;
+      setRunFresh(false);
+      setActive({
+        mode: 'quiz',
+        bank: {
+          ...active.descriptor.bank,
+          items: eligible
+        },
+        learning: active.learning,
+        purpose: 'flashcard_test',
+        testPlan: plan
+      });
+    } else if (event.type === 'start_test' && active.descriptor.userId) {
+      const plan = event.testPlan ?? null;
+      const {
+        ok,
+        data
+      } = await schoolApi.flashcardAssessment(active.descriptor.deck.id, {
+        userId: active.descriptor.userId,
+        testPlan: plan
+      });
+      if (!ok || !data?.bank) return {
+        ok: false
+      };
+      setRunFresh(false);
+      setActive({
+        mode: 'quiz',
+        bank: data.bank,
+        learning: null,
+        purpose: 'flashcard_assessment',
+        deckId: active.descriptor.deck.id,
+        testPlan: plan
+      });
+    }
+    return {
+      ok: true
+    };
+  },
+  studyApi: flashcardStudyApi,
+  resolveAssetUrl: schoolApi.flashcardAssetUrl ?? (assetId => assetId),
+  onExit: () => setActive(null)
+}} />
         )}
         {active?.mode === 'card_ladder' && (
-          <CardLadderProgram
-            descriptor={active.descriptor}
-            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
-            onExit={() => setActive(null)}
-          />
+          <SchoolActivityHost activityId="card-ladder" renderProps={{
+  descriptor: active.descriptor,
+  resolveAssetUrl: schoolApi.flashcardAssetUrl ?? (assetId => assetId),
+  onExit: () => setActive(null)
+}} />
         )}
         {/* Same remount-by-key restart as the quiz mount above (2026-10-21:
             on-screen quizzes retake until passed) — without onRestart a failed
             drill had no way to go again. */}
         {active?.mode === 'problems' && (
-          <QuizRunner
-            key={`drill:${active.bank.id}:${runNonce}`}
-            bank={active.bank}
-            mode="drill"
-            learning={active.learning}
-            fresh={runFresh}
-            onExit={() => setActive(null)}
-            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
-          />
+          <SchoolActivityHost activityId="quiz" key={`drill:${active.bank.id}:${runNonce}`} renderProps={{
+  bank: active.bank,
+  mode: "drill",
+  learning: active.learning,
+  fresh: runFresh,
+  onExit: () => setActive(null),
+  onRestart: ({
+    fresh = true
+  } = {}) => {
+    setRunFresh(fresh);
+    setRunNonce(n => n + 1);
+  }
+}} />
         )}
         {active?.mode === 'learning_probe' && (
-          <LearningProbeRunner module={active.module} learning={active.learning} onExit={() => setActive(null)} />
+          <SchoolActivityHost activityId="learning-probe" renderProps={{
+  module: active.module,
+  learning: active.learning,
+  onExit: () => setActive(null)
+}} />
         )}
         {active?.mode === 'learning_reader' && (
-          <LearningContentReader module={active.module} onExit={() => setActive(null)} />
+          <SchoolActivityHost activityId="learning-reader" renderProps={{
+  module: active.module,
+  onExit: () => setActive(null)
+}} />
         )}
         {active?.mode === 'learning_unsupported' && (
           <section className="school-runner">
             <h2>{active.module.title ?? 'Interactive module'}</h2>
             <p>This module needs a capability that is not installed on this screen.</p>
-            <button type="button" className="school-runner__done" {...pressDown(() => setActive(null))}>Return to lesson</button>
+            <SchoolButton variant="plain" type="button" className="school-runner__done" {...pressDown(() => setActive(null))}>Return to lesson</SchoolButton>
           </section>
         )}
-        {active?.mode === 'drill' && <GeoQuizRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {active?.mode === 'drill' && <SchoolActivityHost activityId="geography-drill" renderProps={{
+  bank: active.bank,
+  onExit: () => setActive(null)
+}} />}
         {active?.mode === 'remediation' && currentUser && (
-          <AdaptiveTutorPanel
-            sessionId={active.sessionId}
-            learnerId={currentUser.id}
-            onExit={() => setActive(null)}
-          />
+          <SchoolActivityHost activityId="remediation" renderProps={{
+  sessionId: active.sessionId,
+  learnerId: currentUser.id,
+  onExit: () => setActive(null)
+}} />
         )}
         {active?.mode === 'lesson_companion' && active.descriptor.presentation === 'readalong' && (
-          <ReadalongPlaylistPlayer
-            title={active.descriptor.title}
-            parts={active.descriptor.parts}
-            progress={active.descriptor.state}
-            // Whether this companion gates a worksheet. It rides the backend
-            // handler's `open()` effect and `useSelfService`'s `launchTarget`
-            // already carries it onto the descriptor; this is the last hop. The
-            // player clamps rate and forward seeking only when it is 'required',
-            // so dropping it here would silently give every gated companion the
-            // optional affordances back.
-            participation={active.descriptor.participation}
-            // Answers with the VERDICT BODY, not `schoolApi`'s `{ok, status,
-            // data}` envelope: the player renders its completion card from what
-            // this resolves to, and an envelope has no `gate` on it — the card
-            // would never appear and nothing would say why. A transport failure
-            // resolves to null, which the player reads as "nothing is known"
-            // and leaves the last good verdict standing.
-            onProgress={async (payload) => {
-              const { ok, data } = await schoolApi.companionProgress(active.descriptor.companionId, payload);
-              return ok ? data : null;
-            }}
-            onExit={() => setActive(null)}
-          />
+          <SchoolActivityHost activityId="lesson-companion" renderProps={{
+  title: active.descriptor.title,
+  parts: active.descriptor.parts,
+  progress: active.descriptor.state,
+  participation: active.descriptor.participation,
+  onProgress: onCompanionProgress,
+  onExit: () => setActive(null)
+}} />
         )}
         {/* A program mounted from the keypad has no header behind it (lock
             mode omits the whole header, apple included), so without this there
@@ -1440,14 +1475,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             and carries its own always-visible Done; a second one, drawn
             bottom-right over its `history ›` link, would be a duplicate. */}
         {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && section !== 'bank' && (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
             data-testid="selfservice-section-exit"
             {...pressDown(goHome)}
           >
             Done
-          </button>
+          </SchoolButton>
         )}
         {/* Language study needs a claimed identity: every rung produces a
             record, and a guest's work is discarded. The program itself shows
@@ -1455,47 +1490,58 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {courseId && studyLaunch
           && studyLaunch.corpusId === courseId
           && studyLaunch.learnerId === currentUser?.id && (
-          <SentenceLadderProgram
-            userId={studyLaunch.learnerId}
-            corpusId={courseId}
-            languages={courses.find((course) => course.id === courseId)?.languages ?? null}
-            studyGrant={studyLaunch.studyGrant}
-            onSignIn={lock.locked ? goHome : openPicker}
-            onExit={lock.locked ? goHome : null}
-            locked={lock.locked}
-          />
+          <SchoolActivityHost activityId="sentence-ladder" renderProps={{
+  userId: studyLaunch.learnerId,
+  corpusId: courseId,
+  languages: courses.find(course => course.id === courseId)?.languages ?? null,
+  studyGrant: studyLaunch.studyGrant,
+  onSignIn: lock.locked ? goHome : openPicker,
+  onExit: lock.locked ? goHome : null,
+  locked: lock.locked
+}} />
         )}
         {previewCourseId && courses.some((course) => course.id === previewCourseId) && (
-          <SentenceLadderProgram
-            corpusId={previewCourseId}
-            languages={courses.find((course) => course.id === previewCourseId)?.languages ?? null}
-            preview
-            onExit={goHome}
-          />
+          <SchoolActivityHost activityId="sentence-ladder" renderProps={{
+  corpusId: previewCourseId,
+  languages: courses.find(course => course.id === previewCourseId)?.languages ?? null,
+  preview: true,
+  onExit: goHome
+}} />
         )}
         {section === 'language-reels' && reelLaunch && reelLaunch.learnerId === currentUser?.id && (
-          <LanguageReelsProgram
-            userId={reelLaunch.learnerId}
-            reelId={reelLaunch.reelId}
-            reelGrant={reelLaunch.reelGrant}
-            onExit={goHome}
-          />
+          <SchoolActivityHost activityId="language-reels" renderProps={{
+  userId: reelLaunch.learnerId,
+  reelId: reelLaunch.reelId,
+  reelGrant: reelLaunch.reelGrant,
+  onExit: goHome
+}} />
         )}
         {/* The debrief sits out here with the reels: the Portal mounts it from
             the agenda code, LOCKED, so the `!lock.locked` wrapper never paints.
             With no launch (a grown-up opening it from /school) it shows its
             own no-grant state; a launch claimed by another learner never paints. */}
         {section === 'gratitude' && (!gratitudeLaunch || gratitudeLaunch.learnerId === currentUser?.id) && (
-          <GratitudeProgram learnerId={gratitudeLaunch?.learnerId??null} gratitudeGrant={gratitudeLaunch?.gratitudeGrant??null} today={gratitudeLaunch?.today??null} onExit={()=>{setGratitudeLaunch(null);goHome();}}/>
+          <SchoolActivityHost activityId="gratitude" renderProps={{
+  learnerId: gratitudeLaunch?.learnerId ?? null,
+  gratitudeGrant: gratitudeLaunch?.gratitudeGrant ?? null,
+  today: gratitudeLaunch?.today ?? null,
+  onExit: () => {
+    setGratitudeLaunch(null);
+    goHome();
+  }
+}} />
         )}
         {section === 'school-debrief' && (!debriefLaunch || debriefLaunch.learnerId === currentUser?.id) && (
-          <SchoolDebriefProgram
-            learnerId={debriefLaunch?.learnerId ?? null}
-            debriefGrant={debriefLaunch?.debriefGrant ?? null}
-            lateDay={debriefLaunch?.lateDay ?? null}
-            today={debriefLaunch?.today ?? null}
-            onExit={() => { setDebriefLaunch(null); goHome(); }}
-          />
+          <SchoolActivityHost activityId="school-debrief" renderProps={{
+  learnerId: debriefLaunch?.learnerId ?? null,
+  debriefGrant: debriefLaunch?.debriefGrant ?? null,
+  lateDay: debriefLaunch?.lateDay ?? null,
+  today: debriefLaunch?.today ?? null,
+  onExit: () => {
+    setDebriefLaunch(null);
+    goHome();
+  }
+}} />
         )}
         {/* The reading shelf sits out here with the ladder and the reels, not
             beside the cube: the wall panel mounts it LOCKED, from the reading
@@ -1503,31 +1549,25 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             mode. The idle knob is the panel's own lock config — the same
             source the keypad's card timer reads — never a constant here. */}
         {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
-          <BookShelf
-            // ONE MOUNT PER CHILD. A scan claimed while the shelf is open is
-            // handed in as `initialBookEntry` (keyed by its intentId) and the
-            // mounted shelf queues it; keying the mount on the scan remounted
-            // and reloaded the shelf on every scan, throwing away an Add the
-            // child had just started (2026-11-05).
-            key={bookLaunch.learnerId}
-            learnerId={bookLaunch.learnerId}
-            grant={bookLaunch.bookGrant}
-            initialBookEntry={bookLaunch.bookEntry}
-            openAdd={bookLaunch.openAdd}
-            idleTimeoutSeconds={lock.idleTimeoutSeconds}
-            onScanReadyChange={setShelfScanReady}
-            scanStatus={shelfScanStatus}
-            onExit={goHome}
-          />
+          <SchoolActivityHost activityId="book-log" key={bookLaunch.learnerId} renderProps={{
+  learnerId: bookLaunch.learnerId,
+  grant: bookLaunch.bookGrant,
+  initialBookEntry: bookLaunch.bookEntry,
+  openAdd: bookLaunch.openAdd,
+  idleTimeoutSeconds: lock.idleTimeoutSeconds,
+  onScanReadyChange: setShelfScanReady,
+  scanStatus: shelfScanStatus,
+  onExit: goHome
+}} />
         )}
         {/* The coin bank: out here with the shelf for the same reason (the
             panel mounts it LOCKED), with its own Back and no Done overlay. */}
         {section === 'bank' && !active && bankLaunch && bankLaunch.learnerId === currentUser?.id && (
-          <BankScreen
-            learner={currentUser}
-            idleTimeoutSeconds={lock.idleTimeoutSeconds}
-            onExit={goHome}
-          />
+          <SchoolActivityHost activityId="economy-bank" renderProps={{
+  learner: currentUser,
+  idleTimeoutSeconds: lock.idleTimeoutSeconds,
+  onExit: goHome
+}} />
         )}
       </main>
       {/* No picker on a locked panel: the code already named the learner, and
@@ -1567,7 +1607,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
 function SchoolShutdownGate(props) {
   useActivityStop(()=>{stopCardLadderAudio();return suspendScanCeremonySound();});
   const urlBase = useMemo(schoolUrlBase, []);
-  const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
+  const screenId = props.surfaceId ?? screenIdFromUrlBase(urlBase);
   const shutdown = useShutdownLock(`school:${screenId}`);
   if (shutdown.locked) return <ShutdownBlackout />;
   return <SchoolAppInner {...props} />;
@@ -1575,15 +1615,22 @@ function SchoolShutdownGate(props) {
 
 function SchoolSupervisionProfile({children}) {
   const {currentUser,claim}=useSchoolProfile(),scope=useActivityScope();
-  return <SupervisedActivity activityId="school:workspace" learnerId={currentUser?.id??null} fallback={<button type="button" onClick={()=>claim(scope?.learnerId)}>Continue as selected learner</button>}>{children}</SupervisedActivity>;
+  return <SupervisedActivity activityId="school:workspace" learnerId={currentUser?.id??null} fallback={<SchoolButton variant="plain" type="button" onClick={()=>claim(scope?.learnerId)}>Continue as selected learner</SchoolButton>}>{children}</SupervisedActivity>;
 }
 function SchoolAppInner({
   clear,
+  surfaceId: configuredSurfaceId = null,
+  deviceId: configuredDeviceId = undefined,
   mode = null,
   idleTimeoutSeconds = null,
   screenOffTimeoutSeconds = null,
 }) {
+  const urlBase = useMemo(schoolUrlBase, []);
+  const inherited = useSchoolSurface();
+  const screenId = configuredSurfaceId ?? (inherited.provided ? inherited.surfaceId : screenIdFromUrlBase(urlBase));
+  const deviceId = configuredDeviceId !== undefined ? configuredDeviceId : inherited.provided ? inherited.deviceId : deviceIdFor(screenId);
   return (
+    <SchoolSurfaceProvider surfaceId={screenId} deviceId={deviceId}>
     <SchoolProfileProvider><SchoolSupervisionProfile>
       {/* Korean typing is a property of the whole school panel, not of one
           rung: the sentence ladder needs it, and so do the free-text quiz
@@ -1600,6 +1647,7 @@ function SchoolAppInner({
         </SchoolBreadcrumbProvider>
       </HangulTypingProvider>
     </SchoolSupervisionProfile></SchoolProfileProvider>
+    </SchoolSurfaceProvider>
   );
 }
 

@@ -17,12 +17,12 @@ export function SchoolActivityFrame({ layout = 'workspace', title, identity, pro
     callback(event);
   };
   return <section className={`school-activity school-activity--${effectiveLayout} ${className}`.trim()} data-layout={effectiveLayout} aria-labelledby={title ? titleId : undefined}>
-    <header className="school-activity__header">
+    {(title || identity != null || onBack || onDone) && <header className="school-activity__header">
       {onBack && <SchoolButton variant="plain" onClick={terminal('back', onBack)}>Back</SchoolButton>}
       {title && <h1 id={titleId} className="school-activity__title">{title}</h1>}
       {identity != null && <div className="school-activity__identity">{identity}</div>}
       {onDone && <SchoolButton variant="secondary" onClick={terminal('done', onDone)}>Done</SchoolButton>}
-    </header>
+    </header>}
     {progress != null && <div className="school-activity__progress">{progress}</div>}
     <div className="school-activity__content">{children}</div>
     {feedback != null && <div className="school-activity__feedback" role="status">{feedback}</div>}

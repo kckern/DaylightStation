@@ -46,7 +46,7 @@ describe('preloaded rewards memory', () => {
     const old = cache.getLearner('one');
     api.earningsRoster.mockResolvedValue(ok({ windows: { school: { from: '2026-11-16', to: '2026-11-22' } }, learners: [{ learnerId: 'one', totals: { silver: 1 }, lines: [] }] }));
     await cache.refresh(['one']);
-    expect(cache.getLearner('one')).toBe(old);
+    expect(cache.getLearner('one')).toMatchObject({ week: old.week, silver: old.silver, stale: true });
     await cache.refresh(['two']); expect(cache.getLearner('one')).toBeUndefined();
     expect(cache.getLearner('two').learnerId).toBe('two');
   });
@@ -71,4 +71,30 @@ describe('preloaded rewards memory', () => {
     await cache.refresh(['one']);
     expect(cache.getLearner('one')).toMatchObject({ week: nextWeek, silver: 1, rings: null });
   });
+});
+
+
+it('retains each field verification time and marks failed retained data stale', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-16T10:00:00Z'));
+  const api = fixture(); const cache = createRewardsCache(api); await cache.refresh(['one']);
+  const first = cache.getLearner('one');
+  expect(first.fields.silver).toMatchObject({ lastSuccessAt: Date.now(), stale: false, error: null });
+  vi.setSystemTime(new Date('2026-11-16T11:00:00Z'));
+  api.earningsRoster.mockResolvedValue({ ok: false, status: 503 });
+  api.gems.mockResolvedValue({ ok: false, status: 503 });
+  await cache.refresh(['one']);
+  const current = cache.getLearner('one');
+  expect(current.silver).toBe(24);
+  expect(current.fields.silver).toMatchObject({ lastSuccessAt: first.fields.silver.lastSuccessAt, stale: true, error: { status: 503 } });
+  expect(current.fields.gems.lastSuccessAt).toBe(first.fields.gems.lastSuccessAt);
+  expect(current.fields.gold).toMatchObject({ lastSuccessAt: Date.now(), stale: false });
+  expect(current.updatedAt).toBe(first.updatedAt);
+  expect(current.stale).toBe(true);
+});
+
+it('does not stamp an unaligned cold opening as a verified rewards snapshot', async () => {
+  const api = fixture();
+  api.earningsRoster.mockResolvedValue(ok({ windows: { school: { from: '2026-11-16' } }, learners: [{ learnerId: 'one', totals: { silver: 1 } }] }));
+  const cache = createRewardsCache(api); await cache.refresh(['one']);
+  expect(cache.getLearner('one')).toMatchObject({ week: null, silver: null, stale: true, updatedAt: null, lastSuccessAt: null, error: { kind: 'week-mismatch' } });
 });

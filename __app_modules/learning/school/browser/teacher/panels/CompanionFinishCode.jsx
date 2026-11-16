@@ -1,3 +1,5 @@
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * The grown-up's escape hatch when a read-along will not play.
  *
@@ -17,7 +19,7 @@
  */
 import { useState } from 'react';
 import { useTeacherWrite } from "../useTeacherWrite.js";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 
 /**
  * What each unavailable answer means to the grown-up reading it. Every one is a
@@ -33,6 +35,7 @@ const UNAVAILABLE = {
 const FALLBACK = 'There is no code to read out for this lesson.';
 
 export function CompanionFinishCode({ sessionId, embedded = false }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [revealed, setRevealed] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'companion-finish-code' });
   const key = `finish-code:${sessionId}`;
@@ -52,9 +55,9 @@ export function CompanionFinishCode({ sessionId, embedded = false }) {
       </p>
       {!revealed && (
         <div className="teacher-action-row">
-          <button type="button" className="teacher-btn" disabled={busy === key} onClick={reveal}>
+          <SchoolButton variant="plain" type="button" className="teacher-btn" disabled={busy === key} onClick={reveal}>
             Show the code…
-          </button>
+          </SchoolButton>
         </div>
       )}
       {revealed?.available && (
@@ -66,7 +69,7 @@ export function CompanionFinishCode({ sessionId, embedded = false }) {
               : 'Nobody has listened to this yet. Reading it out does not change that, and the record will show a grown-up gave it.'}
           </p>
           <div className="teacher-action-row">
-            <button type="button" onClick={() => setRevealed(null)}>Hide it</button>
+            <SchoolButton variant="plain" type="button" onClick={() => setRevealed(null)}>Hide it</SchoolButton>
           </div>
         </div>
       )}
@@ -74,7 +77,7 @@ export function CompanionFinishCode({ sessionId, embedded = false }) {
         <>
           <p className="teacher-muted">{UNAVAILABLE[revealed.reason] ?? FALLBACK}</p>
           <div className="teacher-action-row">
-            <button type="button" onClick={() => setRevealed(null)}>Close</button>
+            <SchoolButton variant="plain" type="button" onClick={() => setRevealed(null)}>Close</SchoolButton>
           </div>
         </>
       )}

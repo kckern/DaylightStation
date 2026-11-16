@@ -25,6 +25,7 @@ import { SentenceLadderProgramLauncher } from "./SentenceLadderProgramLauncher.m
 import { FlashcardProgramLauncher } from "./FlashcardProgramLauncher.mjs";
 import { StoryTimeProgramLauncher } from "./StoryTimeProgramLauncher.mjs";
 import { SchoolDebriefProgramLauncher } from "./SchoolDebriefProgramLauncher.mjs";
+import { GratitudeProgramLauncher } from "./GratitudeProgramLauncher.mjs";
 import { BookLogProgramLauncher } from "./BookLogProgramLauncher.mjs";
 import { PianoCourseProgramLauncher } from "./PianoCourseProgramLauncher.mjs";
 import { PrintedActivityProgramLauncher } from "./PrintedActivityProgramLauncher.mjs";
@@ -244,6 +245,12 @@ const COVERED = {
     args: { userId: 'test-learner' },
   },
 
+  GratitudeProgramLauncher: {
+    done: () => gratitudeLauncher(gratitudeEvents()),
+    open: () => gratitudeLauncher(gratitudeEvents().slice(0, 3)),
+    args: { userId: 'test-learner' },
+  },
+
   PianoCourseProgramLauncher: {
     // The COMPLETED-LESSON branch. Piano's two excused branches answer
     // `doneToday: true` with EMPTY served work on purpose — see the exception
@@ -259,6 +266,49 @@ const COVERED = {
     args: { userId: 'test-learner', programInstance: 'plex:1' },
   },
 };
+
+function gratitudeEvents(day = '2026-09-11') {
+  const at = `${day}T18:00:00Z`;
+  const attemptId = 'gratitude-attempt';
+  const selectionId = `school-gratitude:test-learner:${day}`;
+  const text = 'A neighbour helped me carry my books.';
+  return [
+    { type: 'submitted', at, attemptId, text, via: 'typed' },
+    { type: 'assessed', at, attemptId, verdict: 'eligible' },
+    { type: 'publication-pending', at, attemptId, text, subject: 'A helpful neighbour', timestamp: at, selectionId },
+    { type: 'completed', at, attemptId, selectionId },
+  ];
+}
+
+function gratitudeLauncher(events, { recordDay = '2026-09-11', enrolled = true } = {}) {
+  return new GratitudeProgramLauncher({
+    store: { listDays: async () => [recordDay], read: async () => ({ status: 'ok', events }) },
+    assignments: { get: async () => ({ programs: enrolled ? [{ programId: 'gratitude', subject: 'scripture', title: 'Daily gratitude' }] : [] }) },
+    clock, timezone: 'UTC', logger: silent,
+  });
+}
+
+describe('GratitudeProgramLauncher — served work', () => {
+  it('names the assigned daily work only after assessed publication completes', async () => {
+    const completed = await gratitudeLauncher(gratitudeEvents()).status({ userId: 'test-learner' });
+    expect(completed).toMatchObject({ doneToday: true, obligationProgress: { completed: 1, total: 1 } });
+    expect(completed.servedWork).toEqual([{ unitId: 'gratitude:daily', title: 'Daily gratitude' }]);
+    const pending = await gratitudeLauncher(gratitudeEvents().slice(0, 3)).status({ userId: 'test-learner' });
+    expect(pending).toMatchObject({ doneToday: false, servedWork: [] });
+  });
+
+  it('does not count a different study day or an unenrolled learner as served today', async () => {
+    await expect(gratitudeLauncher(gratitudeEvents('2026-09-10'), { recordDay: '2026-09-10' }).status({ userId: 'test-learner' }))
+      .resolves.toMatchObject({ doneToday: false, servedWork: [] });
+    await expect(gratitudeLauncher(gratitudeEvents(), { enrolled: false }).status({ userId: 'test-learner' }))
+      .resolves.toMatchObject({ enrolled: false, doneToday: false, servedWork: [] });
+  });
+
+  it('refuses orphan completion evidence instead of claiming served work', async () => {
+    await expect(gratitudeLauncher([{ type: 'completed', at: TODAY }]).status({ userId: 'test-learner' }))
+      .resolves.toMatchObject({ error: true, doneToday: false, servedWork: [] });
+  });
+});
 
 function printedActivity(completedRows) {
   return new PrintedActivityProgramLauncher({

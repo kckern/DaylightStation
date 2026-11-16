@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * EmptyState — THE kiosk empty-state pattern (design audit, remediation #8):
  * icon + one-line what-this-is + one-line how-it-fills + optional action,
@@ -9,24 +10,22 @@
  * unanchored string in three different positions on three screens.
  */
 import Icon from "./icons/Icon.jsx";
+import { StateMessage, LoadingState as HouseLoadingState } from "#frontend/lib/ui/states.jsx";
 
 export default function EmptyState({ icon = null, title, hint = null, actionLabel = null, onAction = null }) {
   return (
-    <div className="school-empty" data-testid="empty-state">
-      {icon && <Icon name={icon} className="school-empty__icon" />}
-      <p className="school-empty__title">{title}</p>
-      {hint && <p className="school-empty__hint">{hint}</p>}
+    <StateMessage className="school-empty" data-testid="empty-state" title={title} detail={hint} icon={icon && <Icon name={icon} className="school-empty__icon" />}>
       {actionLabel && onAction && (
-        <button type="button" className="school-empty__action" onClick={onAction}>{actionLabel}</button>
+        <SchoolButton variant="plain" type="button" className="school-empty__action" onClick={onAction}>{actionLabel}</SchoolButton>
       )}
-    </div>
+    </StateMessage>
   );
 }
 
 export function LoadingState({ label = 'Loading…' }) {
   return (
-    <div className="school-empty school-empty--loading" data-testid="loading-state" aria-live="polite">
+    <HouseLoadingState label={label} rows={0} className="school-empty school-empty--loading" data-testid="loading-state" aria-live="polite">
       <p className="school-empty__title">{label}</p>
-    </div>
+    </HouseLoadingState>
   );
 }

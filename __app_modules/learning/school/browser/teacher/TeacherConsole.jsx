@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * TeacherConsole — a route-driven adult operations workspace.
  *
@@ -11,7 +14,7 @@ import ProfilePicker from "../../../../../frontend/src/lib/identity/ProfilePicke
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
-import { schoolApi } from "../schoolApi.js";
+
 import { teacherLog } from "./teacherLog.js";
 import { useBacklog } from "./useBacklog.js";
 import {
@@ -47,6 +50,7 @@ const SECTION_LABEL = { ...Object.fromEntries(GLOBAL_NAV.map((item) => [item.id,
 const PHONE_QUERY = '(max-width: 760px)';
 
 function TeacherShell({ PianoProgramsPanel }) {
+  const schoolApi = useSchoolApi();
   const {
     status, configured, teachers, currentTeacher, claim, release,
     pickerOpen, openPicker, closePicker,
@@ -116,7 +120,7 @@ function TeacherShell({ PianoProgramsPanel }) {
       }
     });
     return () => { alive = false; };
-  }, [initial]);
+  }, [initial, schoolApi]);
 
   useEffect(() => {
     const onPop = () => setRoute(parseTeacherPath(window.location.pathname));
@@ -154,7 +158,7 @@ function TeacherShell({ PianoProgramsPanel }) {
   const noTeachers = !configured || teachers.length === 0;
   let view;
   if (route.kind === 'not-found') {
-    view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
+    view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><SchoolButton variant="plain" type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</SchoolButton></section>;
   } else if (route.kind === 'session') {
     // Back returns to the view that opened the session (?from=today → the
     // dashboard digest), not always History. The dashboard return carries the
@@ -213,17 +217,17 @@ function TeacherShell({ PianoProgramsPanel }) {
     <div className="teacher-console-page" data-ime="off" onClick={onLinkClick}>
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
-          <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
-          <button type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></button>
+          <SchoolButton variant="plain" type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</SchoolButton>
+          <SchoolButton variant="plain" type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></SchoolButton>
           <div className="teacher-workspace__context" title={learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}>{learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}</div>
           {noTeachers ? (
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (
             <div className="teacher-console__identity">
-              <button type="button" className="teacher-console__chip" onClick={openPicker} title={currentTeacher ? 'Switch teacher' : 'Choose teacher'}>
+              <SchoolButton variant="plain" type="button" className="teacher-console__chip" onClick={openPicker} title={currentTeacher ? 'Switch teacher' : 'Choose teacher'}>
                 {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span></> : <span>Teacher tools</span>}
-              </button>
-              {currentTeacher && <button type="button" className="teacher-console__sign-out" onClick={release}>Sign out</button>}
+              </SchoolButton>
+              {currentTeacher && <SchoolButton variant="plain" type="button" className="teacher-console__sign-out" onClick={release}>Sign out</SchoolButton>}
             </div>
           )}
         </header>
@@ -232,24 +236,24 @@ function TeacherShell({ PianoProgramsPanel }) {
           <aside className={`teacher-workspace__rail${railOpen ? ' is-open' : ''}`} aria-label="Teacher workspace navigation">
             <nav className="teacher-workspace__global" aria-label="Workspace">
               {GLOBAL_NAV.map((item) => (
-                <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
+                <SchoolButton variant="plain" key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
                   <span>{item.label}</span>{item.id === 'dashboard' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
-                </button>
+                </SchoolButton>
               ))}
-              <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
+              <SchoolButton variant="plain" type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
                 <span>Log a book</span>
-              </button>
+              </SchoolButton>
             </nav>
             <div className="teacher-workspace__rail-label">Students</div>
             <nav className="teacher-workspace__students" aria-label="Students">
               {kids.map((kid) => (
-                <button key={kid.id} type="button" aria-current={kid.id === route.learnerId ? 'page' : undefined} onClick={() => goLearner(kid.id)}>
+                <SchoolButton variant="plain" key={kid.id} type="button" aria-current={kid.id === route.learnerId ? 'page' : undefined} onClick={() => goLearner(kid.id)}>
                   <ProfileAvatar id={kid.id} name={kid.name} /><span>{kid.name}</span>
-                </button>
+                </SchoolButton>
               ))}
             </nav>
           </aside>
-          {railOpen && <button type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
+          {railOpen && <SchoolButton variant="plain" type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
 
           <div className="teacher-workspace__main">
             {(shellWarnings.roster || backlog.failed) && (
@@ -260,7 +264,7 @@ function TeacherShell({ PianoProgramsPanel }) {
             )}
             <main className="teacher-console__body" id="teacher-main">
               {!learner && route.kind === 'learner' ? (
-                <section className="teacher-panel"><h2 className="teacher-panel__title">Student not found</h2><p className="teacher-panel__empty">This bookmark names a learner who is no longer on the roster.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>
+                <section className="teacher-panel"><h2 className="teacher-panel__title">Student not found</h2><p className="teacher-panel__empty">This bookmark names a learner who is no longer on the roster.</p><SchoolButton variant="plain" type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</SchoolButton></section>
               ) : (
                 <TabErrorBoundary tab={route.section} resetKey={`${route.learnerId ?? ''}:${route.sessionId ?? ''}`}>{view}</TabErrorBoundary>
               )}
@@ -269,8 +273,8 @@ function TeacherShell({ PianoProgramsPanel }) {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'dashboard' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
-          <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
+          {GLOBAL_NAV.map((item) => <SchoolButton variant="plain" key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'dashboard' && backlog.total > 0 && <b>{backlog.total}</b>}</SchoolButton>)}
+          <SchoolButton variant="plain" type="button" data-from="tab-bar" onClick={openLogBook}>Log book</SchoolButton>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />
         <ProfilePicker open={pickerOpen} users={teachers} activeId={currentTeacher?.id} onPick={claim} onDismiss={closePicker} timeoutMs={600000} title="Who’s teaching?" />
@@ -280,5 +284,5 @@ function TeacherShell({ PianoProgramsPanel }) {
 }
 
 export default function TeacherConsole({ PianoProgramsPanel } = {}) {
-  return <TeacherProfileProvider><TeacherShell PianoProgramsPanel={PianoProgramsPanel} /></TeacherProfileProvider>;
+  return <SchoolSurfaceProvider surfaceId="teacher" density="compact"><TeacherProfileProvider><TeacherShell PianoProgramsPanel={PianoProgramsPanel} /></TeacherProfileProvider></SchoolSurfaceProvider>;
 }

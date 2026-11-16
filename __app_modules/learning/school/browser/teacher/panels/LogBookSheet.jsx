@@ -1,3 +1,5 @@
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * LogBookSheet — "this book, these kids, today" (quick-log design, 2026-10-20).
  *
@@ -35,7 +37,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useBarcodeScanner } from "../../../../../../frontend/src/lib/camera/useBarcodeScanner.js";
 import ProfileAvatar from "../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useTeacherProfile } from "../TeacherProfileContext.jsx";
 import { useBookFacts } from "../useBookFacts.js";
@@ -139,21 +141,21 @@ function ScanStep({ onNumber }) {
               value={typed}
               onChange={(event) => { setTyped(event.target.value); setHint(null); }}
             />
-            <button type="button" disabled={final.state !== 'valid'} onClick={() => accept(typed, 'typed')}>
+            <SchoolButton variant="plain" type="button" disabled={final.state !== 'valid'} onClick={() => accept(typed, 'typed')}>
               Use this number
-            </button>
+            </SchoolButton>
           </div>
           {hintFor(live) && <p className="teacher-logbook__note">{hintFor(live)}</p>}
           {!denied && (
-            <button type="button" className="teacher-logbook__link" onClick={() => { setTyping(false); setHint(null); }}>
+            <SchoolButton variant="plain" type="button" className="teacher-logbook__link" onClick={() => { setTyping(false); setHint(null); }}>
               Use the camera
-            </button>
+            </SchoolButton>
           )}
         </>
       ) : (
-        <button type="button" className="teacher-logbook__link" onClick={() => { setTyping(true); setHint(null); }}>
+        <SchoolButton variant="plain" type="button" className="teacher-logbook__link" onClick={() => { setTyping(true); setHint(null); }}>
           Type the number
-        </button>
+        </SchoolButton>
       )}
     </section>
   );
@@ -197,6 +199,7 @@ function BookCard({ isbn, facts }) {
 
 /** Steps 2 and 3 for one book. Remounted per book (see the module note). */
 function BookStep({ isbn, onAnother, onSaving }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const { currentTeacher, openPicker } = useTeacherProfile();
   const { run, errors } = useTeacherWrite({ panel: PANEL });
   const [reloadKey, setReloadKey] = useState(0);
@@ -369,7 +372,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
     <>
       <BookCard isbn={isbn} facts={facts} />
       {!anyResult && (
-        <button type="button" className="teacher-logbook__link" disabled={saving} onClick={onAnother}>Scan a different book</button>
+        <SchoolButton variant="plain" type="button" className="teacher-logbook__link" disabled={saving} onClick={onAnother}>Scan a different book</SchoolButton>
       )}
 
       {facts.readersStatus === 'loading' && <p className="teacher-logbook__note">Checking who has this book…</p>}
@@ -378,13 +381,13 @@ function BookStep({ isbn, onAnother, onSaving }) {
       ) : (
         <div className="teacher-logbook__actions">
           <p className="teacher-logbook__note">Choose who is logging to see this book’s readers.</p>
-          <button type="button" onClick={openPicker}>Choose teacher</button>
+          <SchoolButton variant="plain" type="button" onClick={openPicker}>Choose teacher</SchoolButton>
         </div>
       ))}
       {facts.readersStatus === 'error' && (
         <div className="teacher-logbook__actions">
           <p className="teacher-logbook__note">Couldn’t check who has this book.</p>
-          <button type="button" onClick={() => setReloadKey((n) => n + 1)}>Try again</button>
+          <SchoolButton variant="plain" type="button" onClick={() => setReloadKey((n) => n + 1)}>Try again</SchoolButton>
         </div>
       )}
 
@@ -397,7 +400,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
               const pressed = selected.has(reader.learnerId);
               return (
                 <div key={reader.learnerId} className="teacher-logbook__face-wrap">
-                  <button
+                  <SchoolButton variant="plain"
                     type="button"
                     className="teacher-logbook__face"
                     aria-pressed={pressed}
@@ -411,7 +414,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
                     {reader.openReadingId && <b className="teacher-logbook__badge teacher-logbook__badge--open">Reading now</b>}
                     {reader.unreadable && <b className="teacher-logbook__badge teacher-logbook__badge--warn">Shelf unreadable</b>}
                     {shown && <i aria-hidden="true">{shown.glyph}</i>}
-                  </button>
+                  </SchoolButton>
                   {pressed && reader.today && !result && (
                     <p className="teacher-logbook__note">Already logged today. Saving logs it again.</p>
                   )}
@@ -420,7 +423,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
                     <>
                       <p className="teacher-panel__error">{result.message}</p>
                       {result.frozen && <p className="teacher-logbook__note">{FROZEN_NOTE}</p>}
-                      <button
+                      <SchoolButton variant="plain"
                         type="button"
                         className="teacher-logbook__retry"
                         aria-label={`Retry ${reader.name}`}
@@ -428,7 +431,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
                         onClick={() => save([reader.learnerId])}
                       >
                         Retry
-                      </button>
+                      </SchoolButton>
                     </>
                   )}
                 </div>
@@ -439,10 +442,10 @@ function BookStep({ isbn, onAnother, onSaving }) {
           {!allSaved && (
             <>
               <div className="teacher-logbook__happened" role="group" aria-label="What happened">
-                <button type="button" aria-pressed={happened === HAPPENED.FINISHED} onClick={() => setHappened(HAPPENED.FINISHED)}>Finished today</button>
-                <button type="button" aria-pressed={happened === HAPPENED.STARTED} onClick={() => setHappened(HAPPENED.STARTED)}>Started today</button>
+                <SchoolButton variant="plain" type="button" aria-pressed={happened === HAPPENED.FINISHED} onClick={() => setHappened(HAPPENED.FINISHED)}>Finished today</SchoolButton>
+                <SchoolButton variant="plain" type="button" aria-pressed={happened === HAPPENED.STARTED} onClick={() => setHappened(HAPPENED.STARTED)}>Started today</SchoolButton>
                 {partwayOffered && (
-                  <button type="button" aria-pressed={happened === HAPPENED.PARTWAY} onClick={() => setHappened(HAPPENED.PARTWAY)}>Partway</button>
+                  <SchoolButton variant="plain" type="button" aria-pressed={happened === HAPPENED.PARTWAY} onClick={() => setHappened(HAPPENED.PARTWAY)}>Partway</SchoolButton>
                 )}
               </div>
               {happened === HAPPENED.PARTWAY && (
@@ -453,15 +456,15 @@ function BookStep({ isbn, onAnother, onSaving }) {
               )}
               <div className="teacher-logbook__mode" role="group" aria-label="Tracking">
                 <span>Tracking:</span>
-                <button type="button" aria-pressed={mode === 'check'} onClick={() => setModeChoice('check')}>Check-ins</button>
-                <button type="button" aria-pressed={mode === 'page'} onClick={() => setModeChoice('page')}>Pages</button>
+                <SchoolButton variant="plain" type="button" aria-pressed={mode === 'check'} onClick={() => setModeChoice('check')}>Check-ins</SchoolButton>
+                <SchoolButton variant="plain" type="button" aria-pressed={mode === 'page'} onClick={() => setModeChoice('page')}>Pages</SchoolButton>
               </div>
               {chosen.some((reader) => reader.openReadingId) && (
                 <p className="teacher-logbook__note">A book someone is reading now keeps its own tracking.</p>
               )}
               <div className="teacher-logbook__actions">
-                <button type="button" className="teacher-primary" disabled={!canSave}
-                  onClick={() => save(chosen.map((reader) => reader.learnerId))}>Save</button>
+                <SchoolButton variant="plain" type="button" className="teacher-primary" disabled={!canSave}
+                  onClick={() => save(chosen.map((reader) => reader.learnerId))}>Save</SchoolButton>
               </div>
             </>
           )}
@@ -483,7 +486,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
                 })}
               </p>
               <div className="teacher-logbook__actions">
-                <button type="button" disabled={saving} onClick={onAnother}>Log another book</button>
+                <SchoolButton variant="plain" type="button" disabled={saving} onClick={onAnother}>Log another book</SchoolButton>
               </div>
             </>
           )}
@@ -569,7 +572,7 @@ export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
       <div className="teacher-logbook__card">
         <header className="teacher-logbook__head">
           <h2 ref={headingRef} tabIndex={-1}>Log a book</h2>
-          <button type="button" className="teacher-logbook__close" ref={closeRef} disabled={saving} onClick={close}>Close</button>
+          <SchoolButton variant="plain" type="button" className="teacher-logbook__close" ref={closeRef} disabled={saving} onClick={close}>Close</SchoolButton>
         </header>
         {isbn
           ? <BookStep key={generation} isbn={isbn} onAnother={reset} onSaving={setSaving} />

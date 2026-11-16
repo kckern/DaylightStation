@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Real material player (Task 7). Wraps the shared Player the same way
  * PianoVideoPlayer does (lazy import, error boundary, a single `clear`
@@ -21,16 +22,12 @@
  * (tapping it calls onExit, which unmounts this component) and any
  * unmount that happens some other way (e.g. the header's own Back).
  *
- * On natural end (Player's `clear` — for a single, non-queue `play`,
- * useQueueController's advance() calls `clear()` once the one-item queue is
- * exhausted, exactly the signal PianoVideoPlayer treats as "done"): flush
- * progress, then either hand off to QuizRunner (unit.quiz.bankId) or return
- * to the detail view with {refetch: true} so lock state re-evaluates. A
- * bank-fetch failure never stands the child up on a dead screen — it falls
- * back to the same return-to-detail exit.
+ * Natural completion uses Player's onPlaybackCompleted contract. clear only
+ * dismisses/cleans up playback; it cannot start a gate quiz. A quiz-bank
+ * response belongs to the current unit lifetime and is ignored after exit.
  */
 import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+import { useSchoolApi } from "../runtime/useSchoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import QuizRunner from "../quiz/QuizRunner.jsx";
 import useMediaChrome from "./useMediaChrome.js";
@@ -59,7 +56,7 @@ class SchoolPlayerBoundary extends Component {
       return (
         <div className="school-material-player__placeholder">
           Playback failed.
-          <button type="button" onClick={this.props.onBack}>Back</button>
+          <SchoolButton variant="plain" type="button" onClick={this.props.onBack}>Back</SchoolButton>
         </div>
       );
     }
@@ -68,6 +65,7 @@ class SchoolPlayerBoundary extends Component {
 }
 
 export default function SchoolMaterialPlayer({ material, unit, userId, onExit, onNavigate }) {
+  const schoolApi = useSchoolApi();
   const materialId = material?.id;
   const unitId = unit?.id;
   const contentId = unitId || null; // unit.id IS the plex:<key> content id (spec §2b)
@@ -93,14 +91,15 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
       if (alive && ok && Array.isArray(data?.units)) setSiblings(data.units);
     });
     return () => { alive = false; };
-  }, [materialId, userId]);
+  }, [materialId, userId, schoolApi]);
   const idx = siblings ? siblings.findIndex((u) => u.id === unitId) : -1;
   const prevUnit = idx > 0 ? siblings[idx - 1] : null;
   const nextUnit = idx >= 0 && siblings && idx < siblings.length - 1 ? siblings[idx + 1] : null;
 
   const lastWriteAtRef = useRef(0);
   const latestProgressRef = useRef(null); // {percent, playhead, durationMs}
-  const endedRef = useRef(false); // guards against clear() firing more than once
+  const endedRef = useRef(false); // natural completion and dismissal are mutually exclusive
+  const lifetimeRef = useRef(0);
 
   useEffect(() => {
     schoolLog.materials('player-start', { materialId, unitId, medium: material?.medium });
@@ -115,7 +114,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     schoolApi.unitProgress(materialId, unitId, {
       userId, percent: p.percent, playhead: p.playhead, durationMs: p.durationMs,
     });
-  }, [userId, materialId, unitId]);
+  }, [userId, materialId, unitId, schoolApi]);
 
   // Final write on unmount. Exiting (manual back row, or the header's own
   // Back navigating away) always unmounts this component, so this single
@@ -144,23 +143,40 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     onExit({ refetch: true });
   }, [materialId, unitId, onExit]);
 
+  useEffect(() => {
+    lifetimeRef.current += 1; endedRef.current = false;
+    latestProgressRef.current = null; lastWriteAtRef.current = 0;
+    setQuizBank(null);
+    return () => { lifetimeRef.current += 1; };
+  }, [materialId, unitId, userId]);
+
+  const handleClear = useCallback(() => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    commitProgress(); exitToDetail();
+  }, [commitProgress, exitToDetail]);
+
   const handleEnded = useCallback(async () => {
     if (endedRef.current) return;
     endedRef.current = true;
+    const lifetime = lifetimeRef.current;
     // Explicit here (not just the unmount effect): the quiz branch below
     // keeps this component mounted, so unmount-triggered flush never fires.
     commitProgress();
     const bankId = unit?.quiz?.bankId;
     if (!bankId) { exitToDetail(); return; }
     schoolLog.materials('quiz-handoff', { bankId });
-    const { ok, data } = await schoolApi.bank(bankId);
+    let response;
+    try { response = await schoolApi.bank(bankId); } catch { response = { ok: false, data: null }; }
+    if (lifetime !== lifetimeRef.current) return;
+    const { ok, data } = response;
     if (!ok || !data) {
       schoolLog.materialsError('quiz-bank-load-failed', { bankId });
       exitToDetail();
       return;
     }
     setQuizBank(data);
-  }, [commitProgress, unit, exitToDetail]);
+  }, [commitProgress, unit, exitToDetail, schoolApi]);
 
   // THE critical fix (mirrors PianoVideoPlayer): memoize the heavy Player
   // element so the chrome's high-frequency re-renders (a setState every
@@ -173,8 +189,8 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     [contentId, isAudio],
   );
   const playerEl = useMemo(
-    () => <Player ref={playerRef} play={playObj} clear={handleEnded} onProgress={handleProgress} />,
-    [playObj, handleEnded, handleProgress],
+    () => <Player ref={playerRef} play={playObj} clear={handleClear} onPlaybackCompleted={handleEnded} onProgress={handleProgress} />,
+    [playObj, handleClear, handleEnded, handleProgress],
   );
 
   // Telemetry: count the audio/video elements actually in the DOM a moment
@@ -285,17 +301,17 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
         {!isAudio && (
           <div className={`school-material-player__overlay${chrome.visible ? ' is-visible' : ' is-hidden'}`}>
             <div className="school-material-player__zones">
-              <button
+              <SchoolButton variant="plain"
                 type="button" className="school-material-player__zone"
                 aria-label={`Back ${TAP_SKIP_S} seconds`}
                 onClick={zoneTap(() => chrome.skip(-TAP_SKIP_S))}
               />
-              <button
+              <SchoolButton variant="plain"
                 type="button" className="school-material-player__zone"
                 aria-label={chrome.isPlaying ? 'Pause' : 'Play'}
                 onClick={zoneTap(chrome.toggle)}
               />
-              <button
+              <SchoolButton variant="plain"
                 type="button" className="school-material-player__zone"
                 aria-label={`Forward ${TAP_SKIP_S} seconds`}
                 onClick={zoneTap(() => chrome.skip(TAP_SKIP_S))}

@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * CoinsRosterPanel — Saturday morning at a glance: every learner's week in
  * silver (`GET /api/v1/earnings/preview`). Roster order, never ranked — the
@@ -5,7 +7,7 @@
  * that learner's Coins tab for the detail and the rates.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { weekLabel, shiftWeek } from "./earningsModel.js";
@@ -25,6 +27,7 @@ function pendingText(pending) {
 }
 
 export default function CoinsRosterPanel({ onSelectLearner }) {
+  const schoolApi = useSchoolApi();
   const [week, setWeek] = useState(null);
   const roster = usePanelFetch(() => schoolApi.earningsRoster(week), {
     deps: [week], panel: 'coins-roster', notFoundAs: 'unavailable',
@@ -38,10 +41,10 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
       {data && from && (
         <div className="teacher-coins">
           <div className="teacher-coins__week">
-            <button type="button" aria-label="Previous week" onClick={() => setWeek(shiftWeek(from, -1))}>‹</button>
+            <SchoolButton variant="plain" type="button" aria-label="Previous week" onClick={() => setWeek(shiftWeek(from, -1))}>‹</SchoolButton>
             <span>Week of {weekLabel(data.windows.school)}</span>
-            <button type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</button>
-            {week && <button type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</button>}
+            <SchoolButton variant="plain" type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</SchoolButton>
+            {week && <SchoolButton variant="plain" type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</SchoolButton>}
           </div>
           <div className="teacher-coins__scroll">
           <table className="teacher-coins__lines" aria-label="Everyone's week">
@@ -56,7 +59,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
                   <td>{greenDays(l.work, data.today ?? null)}</td>
                   <td>{Number.isFinite(l.work?.rings) ? l.work.rings : (l.evidence?.rings === 'unavailable' ? '?' : '')}</td>
                   <td>
-                    <button type="button" aria-label={`Open ${l.learnerName ?? l.learnerId}’s coins`} onClick={() => onSelectLearner?.(l.learnerId)}>Details</button>
+                    <SchoolButton variant="plain" type="button" aria-label={`Open ${l.learnerName ?? l.learnerId}’s coins`} onClick={() => onSelectLearner?.(l.learnerId)}>Details</SchoolButton>
                   </td>
                 </tr>
               ))}

@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LanguageReelsProgram from './LanguageReelsProgram.jsx';
 import { languageReelsApi } from './languageReelsApi.js';
-vi.mock('./languageReelsApi.js', () => ({ languageReelsApi: { open: vi.fn(), attempt: vi.fn(), stage: vi.fn() } }));
+vi.mock('./languageReelsApi.js', () => ({ createLanguageReelsApi: vi.fn(), languageReelsApi: { open: vi.fn(), attempt: vi.fn(), stage: vi.fn() } }));
 const stages = { flashcards: true, listen: true, cloze: false, watch: false, comprehension: false, speaking: true };
 const activity = () => ({ session: { stages: { ...stages }, attempts: [] }, mediaUrl: '/reel.mp4', reel: { title: 'Conversation', transcript: [], authoring: { cloze: [{ id: 'fill', prompt: 'Say ___', answer: 'hello', decoys: ['bye', 'yes', 'no'] }] } } });
 const acknowledged = (answer = 'hello') => ({ ok: true, status: 200, data: { stages: { ...stages }, attempts: [{ type: 'cloze', itemId: 'fill', answer, correct: answer === 'hello' }] } });
@@ -84,5 +84,31 @@ it('releases microphone permission that arrives after the speaking stage exits',
     expect(stop).toHaveBeenCalledTimes(1);
   } finally {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: oldMedia }); globalThis.MediaRecorder = oldRecorder;
+  }
+});
+
+it('pauses and revokes a recorded preview before replacing its media elements', async () => {
+  const spoken = activity(); spoken.session.stages = { ...stages, cloze: true, watch: true, comprehension: true, speaking: false };
+  spoken.reel.transcript = [{ id: 'line', startMs: 0, endMs: 1000, text: 'Hello' }];
+  spoken.reel.authoring.speaking = { enabled: true, segments: [{ lineId: 'line' }] };
+  languageReelsApi.open.mockResolvedValue({ ok: true, status: 200, data: spoken });
+  const oldMedia = navigator.mediaDevices; const oldRecorder = globalThis.MediaRecorder;
+  const oldCreate = URL.createObjectURL; const oldRevoke = URL.revokeObjectURL;
+  const stop = vi.fn(); const revoke = vi.fn();
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } });
+  URL.createObjectURL = vi.fn(() => 'blob:reel-take'); URL.revokeObjectURL = revoke;
+  globalThis.MediaRecorder = class { state = 'inactive'; start() { this.state = 'recording'; } stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['voice']) }); this.onstop?.(); } };
+  try {
+    const view = mount(); fireEvent.click(await screen.findByRole('button', { name: 'Record my line' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop recording' }));
+    await screen.findByRole('button', { name: 'Record again' });
+    const audio = view.container.querySelector('audio'); const pause = vi.spyOn(audio, 'pause').mockImplementation(() => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Record again' }));
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('blob:reel-take');
+    expect(stop).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup(); Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: oldMedia }); globalThis.MediaRecorder = oldRecorder;
+    URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke;
   }
 });

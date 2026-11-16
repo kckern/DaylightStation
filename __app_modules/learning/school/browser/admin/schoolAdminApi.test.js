@@ -21,13 +21,13 @@ describe('schoolAdminApi.putAssignment', () => {
       assignedBy: 'parent', baseUpdatedAt: '2026-09-03T12:00:00.000Z',
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/assignments/user_4', {
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/assignments/user_4', expect.objectContaining({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         courses: ['math'], units: [], programs,
         assignedBy: 'parent', baseUpdatedAt: '2026-09-03T12:00:00.000Z',
       }),
-    });
+    }));
   });
 });

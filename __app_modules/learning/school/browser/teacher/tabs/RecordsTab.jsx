@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * Records — grades, mastery, printouts (spec §4.2), learner + period scoped.
  * The evidence tree and tutor-insight views reuse the module's existing
@@ -5,7 +7,7 @@
  * InstructionalInsightsOverview) — same read models, teacher-side chrome.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { curriculumTitles } from "../curriculumTitles.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "../panels/PanelFrame.jsx";
@@ -18,6 +20,7 @@ import { currentPeriodId } from "../panels/currentPeriodId.js";
 import CurriculumHistoryOverview from "../../progress/CurriculumHistoryOverview.jsx";
 import InstructionalInsightsOverview from "../../progress/InstructionalInsightsOverview.jsx";
 export default function RecordsTab({ learnerId }) {
+  const schoolApi = useSchoolApi();
   const periods = usePanelFetch(() => schoolApi.periods(), { panel: 'periods' });
   const [periodId, setPeriodId] = useState(null);
   const [frozenRefresh, setFrozenRefresh] = useState(0);
@@ -90,7 +93,7 @@ export default function RecordsTab({ learnerId }) {
       {periods.state === 'error' && (
         <p className="teacher-panel__error">
           Couldn&rsquo;t load the academic periods.
-          <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
+          <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</SchoolButton>
         </p>
       )}
       {periods.state === 'empty' && (

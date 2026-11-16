@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * Shared session plumbing for a graded runner (GeoQuizRunner). Mirrors the
  * hardened dance in QuizRunner/FlashcardRunner — single open gated on profile
@@ -6,11 +7,12 @@
  * the existing runners are intentionally NOT migrated.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 
 export function useGradedSession({ bank, mode, onExit }) {
+  const schoolApi = useSchoolApi();
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [openFailed, setOpenFailed] = useState(false);
@@ -46,7 +48,7 @@ export function useGradedSession({ bank, mode, onExit }) {
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, identityKey]);
+  }, [status, identityKey, schoolApi]);
 
   const submit = async (itemId, given) => {
     if (!sessionId || abandonedRef.current) return null;

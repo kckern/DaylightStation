@@ -99,3 +99,11 @@ describe('PrintCenter', () => {
     expect(links[1]).toHaveAttribute('href', '/api/v1/school/print/printables/state-capitals/preview');
   });
 });
+
+it('shows a retryable catalogue error instead of claiming no printables exist', async () => {
+  printablesMock.mockResolvedValueOnce({ ok: false, status: 503, data: null });
+  render(<PrintCenter />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.t load/i);
+  fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+  await waitFor(() => expect(printablesMock).toHaveBeenCalledTimes(2));
+});

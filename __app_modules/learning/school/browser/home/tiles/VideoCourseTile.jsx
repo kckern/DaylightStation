@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 // Video course tile: portrait poster (2/3), a play chip overlaid on the
 // poster corner, clamped 2-line title, and — when in progress — a thin
 // underline showing percent complete. Pure/presentational: no fetching,
@@ -10,7 +11,7 @@ export default function VideoCourseTile({ item, onOpen }) {
   const hasProgress = typeof item.percent === 'number' && item.percent > 0;
   return (
     <li className="school-tile school-tile--video">
-      <button type="button" className="school-tile__button" onClick={() => onOpen(item)}>
+      <SchoolButton variant="plain" type="button" className="school-tile__button" onClick={() => onOpen(item)}>
         <span className="school-tile__poster-wrap">
           {item.poster ? (
             <PosterImg src={item.poster} alt={item.title} />
@@ -30,7 +31,7 @@ export default function VideoCourseTile({ item, onOpen }) {
             style={{ width: `${item.percent}%`, background: 'var(--kind-video)' }}
           />
         )}
-      </button>
+      </SchoolButton>
     </li>
   );
 }

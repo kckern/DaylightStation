@@ -2,33 +2,40 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import useRewardsCache from './useRewardsCache.js';
 import { createRewardsCache } from './rewardsCache.js';
-
-const handlers = vi.hoisted(() => ({}));
-vi.mock('../../../../../frontend/src/hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: (topic, callback) => { handlers[topic] = callback; },
-}));
-afterEach(() => { cleanup(); vi.useRealTimers(); });
-it('preloads once, polls each minute, coalesces relevant events and stops polling on unmount', async () => {
+import { wsService } from '../../../../../frontend/src/services/WebSocketService.js';
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); wsService.reset(); vi.restoreAllMocks(); });
+it('preloads, coalesces roster mutations, repairs reconnect, and stops after unmount', async () => {
   vi.useFakeTimers();
   const api = Object.fromEntries(['earningsRoster', 'wallet', 'gems', 'stateGates'].map(name => [name, vi.fn(async () => ({ ok: true, data: {} }))]));
   const cache = createRewardsCache(api);
   const { unmount } = renderHook(() => useRewardsCache([{ id: 'one' }], true, cache));
   await act(async () => vi.advanceTimersByTimeAsync(0));
   expect(api.earningsRoster).toHaveBeenCalledTimes(1);
-  await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  expect(api.earningsRoster).toHaveBeenCalledTimes(2);
-  act(() => {
-    for (let n = 0; n < 5; n += 1) handlers.school({ event: 'coins-changed', learnerId: 'one' });
-  });
-  await act(async () => vi.advanceTimersByTimeAsync(750));
-  expect(api.earningsRoster).toHaveBeenCalledTimes(3);
-  act(() => handlers['state-gates']({ payload: { gateId: 'unrelated' } }));
+  act(() => wsService.emit({ topic: 'school', event: 'coins-changed', learnerId: 'other' }));
   await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(api.earningsRoster).toHaveBeenCalledTimes(1);
+  act(() => { for (let n = 0; n < 5; n += 1) wsService.emit({ topic: 'school', event: 'coins-changed', learnerId: 'one' }); });
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(api.earningsRoster).toHaveBeenCalledTimes(2);
+  act(() => wsService.emit({ topic: 'state-gates', payload: { gateId: 'unrelated' } }));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(api.earningsRoster).toHaveBeenCalledTimes(2);
+  act(() => wsService.emit({ topic: 'state-gates', payload: { gateId: 'fitness.weekly-rings' } }));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
   expect(api.earningsRoster).toHaveBeenCalledTimes(3);
-  act(() => handlers['state-gates']({ payload: { gateId: 'fitness.weekly-rings' } }));
+  act(() => { wsService.status(false); wsService.status(true); });
   await act(async () => vi.advanceTimersByTimeAsync(750));
   expect(api.earningsRoster).toHaveBeenCalledTimes(4);
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(api.earningsRoster).toHaveBeenCalledTimes(5);
   unmount();
+  act(() => { wsService.status(false); wsService.status(true); });
   await act(async () => vi.advanceTimersByTimeAsync(120_000));
-  expect(api.earningsRoster).toHaveBeenCalledTimes(4);
+  expect(api.earningsRoster).toHaveBeenCalledTimes(5);
 });

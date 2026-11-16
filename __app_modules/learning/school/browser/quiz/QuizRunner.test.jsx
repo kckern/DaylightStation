@@ -8,14 +8,14 @@ const answerMock = vi.fn();
 const openSessionMock = vi.fn();
 const requestRetakeMock = vi.fn();
 const remediationOfferMock = vi.fn();
-vi.mock("../schoolApi.js", () => ({
+vi.mock("../schoolApi.js", () => {const endpoints = {
   schoolApi: {
     openSession: (...a) => openSessionMock(...a),
     answer: (...a) => answerMock(...a),
     requestRetake: (...a) => requestRetakeMock(...a),
-    remediationOffer: (...a) => remediationOfferMock(...a),
-  },
-}));
+    remediationOffer: (...a) => remediationOfferMock(...a)
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 
 let profile;
 vi.mock("../identity/SchoolProfileContext.jsx", () => ({

@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /** Fill-in-the-blank: the prompt is split around the single ___ marker
  *  (validation guarantees exactly one), with the input inline. */
 import { useEffect, useRef, useState } from 'react';
@@ -24,7 +25,7 @@ export default function ClozeItem({ item, onSubmit, verdict }) {
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
         {after}
       </p>
-      {!verdict && <button type="button" className="school-item__check" onClick={submit}>Check</button>}
+      {!verdict && <SchoolButton variant="plain" type="button" className="school-item__check" onClick={submit}>Check</SchoolButton>}
       {verdict && !verdict.correct && verdict.expected && (
         <p className="school-item__expected">Answer: <strong>{verdict.expected}</strong></p>
       )}

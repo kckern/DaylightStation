@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /** Free-text answer via the device's soft keyboard. Empty submits are ignored. */
 import { useEffect, useRef, useState } from 'react';
 
@@ -19,7 +20,7 @@ export default function ShortAnswerItem({ item, onSubmit, verdict }) {
       <input className="school-item__input" type="text" value={text} disabled={!!verdict}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
-      {!verdict && <button type="button" className="school-item__check" onClick={submit}>Check</button>}
+      {!verdict && <SchoolButton variant="plain" type="button" className="school-item__check" onClick={submit}>Check</SchoolButton>}
       {verdict && !verdict.correct && verdict.expected && (
         <p className="school-item__expected">Answer: <strong>{verdict.expected}</strong></p>
       )}

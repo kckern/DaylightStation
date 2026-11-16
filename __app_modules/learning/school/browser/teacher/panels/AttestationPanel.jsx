@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * AttestationPanel — "I verify this was done" (wave 5, spec D2): record a
  * gated override when the tech failed a child who did the work, and read
@@ -6,7 +9,7 @@
  * kind, always with a reason.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -17,6 +20,7 @@ import { useActorName } from "../useActorName.js";
 // `initialUnitId`: opened from a "needs a grown-up" link that named the
 // lesson, so the form opens with it already picked.
 export default function AttestationPanel({ learnerId, learnerName, initialUnitId = null }) {
+  const schoolApi = useSchoolApi();
   const log = usePanelFetch(() => schoolApi.attestations(learnerId), {
     deps: [learnerId],
     panel: 'attestations',
@@ -61,11 +65,11 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
                   <span className="teacher-enrichment__note">{a.reason}</span>
                   {retracting === a.id ? (
                     <>
-                      <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Confirm retract</button>
-                      <button type="button" onClick={() => setRetracting(null)}>Cancel</button>
+                      <SchoolButton variant="plain" type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Confirm retract</SchoolButton>
+                      <SchoolButton variant="plain" type="button" onClick={() => setRetracting(null)}>Cancel</SchoolButton>
                     </>
                   ) : (
-                    <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => setRetracting(a.id)}>Retract</button>
+                    <SchoolButton variant="plain" type="button" disabled={busy === `retract:${a.id}`} onClick={() => setRetracting(a.id)}>Retract</SchoolButton>
                   )}
                   {errors[`retract:${a.id}`] && <p className="teacher-panel__error">{errors[`retract:${a.id}`]}</p>}
                 </li>
@@ -73,14 +77,14 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
             </ul>
           )}
           {!open && catalog.state === 'ok' && (
-            <button type="button" className="teacher-assignments__edit" onClick={() => setOpen(true)}>Attest a unit</button>
+            <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={() => setOpen(true)}>Attest a unit</SchoolButton>
           )}
           {open && (
             <div className="teacher-enrichment__form">
-              <select aria-label="Unit to attest" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+              <SchoolSelect aria-label="Unit to attest" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
                 <option value="">Pick a unit…</option>
                 {units.map((u) => <option key={u.unitId} value={u.unitId}>{titles.lesson(u.unitId)}</option>)}
-              </select>
+              </SchoolSelect>
               <textarea
                 aria-label="Reason"
                 placeholder="Why the override — what actually happened? (required)"
@@ -88,8 +92,8 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
                 onChange={(e) => setReason(e.target.value)}
               />
               <div className="teacher-assignments__actions">
-                <button type="button" disabled={busy === 'save' || !unitId || !reason.trim()} onClick={save}>Attest</button>
-                <button type="button" onClick={() => setOpen(false)}>Cancel</button>
+                <SchoolButton variant="plain" type="button" disabled={busy === 'save' || !unitId || !reason.trim()} onClick={save}>Attest</SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => setOpen(false)}>Cancel</SchoolButton>
               </div>
               {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
             </div>

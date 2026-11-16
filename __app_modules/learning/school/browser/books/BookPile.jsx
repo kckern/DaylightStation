@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * BookPile — the Portal screen for scanning a stack of books and filing them.
  *
@@ -50,9 +51,9 @@ function CornerOffer({ count, confirmExit, onOpen }) {
         <p className="school-book-scan__notice-title">{count === 1 ? '1 book scanned — open when ready' : `${count} books scanned — open when ready`}</p>
         {armed && <p className="school-book-scan__notice-warn">Leave the quiz? Your answers so far won&rsquo;t be saved.</p>}
         <div className="school-book-scan__notice-actions">
-          <button type="button" className="school-book-scan__open" onClick={() => (confirmExit ? trigger() : onOpen())}>
+          <SchoolButton variant="plain" type="button" className="school-book-scan__open" onClick={() => (confirmExit ? trigger() : onOpen())}>
             {armed ? 'Yes, open it' : 'Open it'}
-          </button>
+          </SchoolButton>
         </div>
       </div>
     </aside>
@@ -73,11 +74,11 @@ function ChangeSheet({ card, title, roster, busy, onMove, onRemove, onClose }) {
           </>
         ) : (
           <div className="school-book-pile__sheet-actions">
-            <button type="button" className="school-book-scan__open" disabled={busy} onClick={() => setChoosing(true)}>Give to someone else</button>
-            <button type="button" className="school-books__back" disabled={busy} onClick={() => { onRemove(card.id); onClose(); }}>Remove</button>
+            <SchoolButton variant="plain" type="button" className="school-book-scan__open" disabled={busy} onClick={() => setChoosing(true)}>Give to someone else</SchoolButton>
+            <SchoolButton variant="plain" type="button" className="school-books__back" disabled={busy} onClick={() => { onRemove(card.id); onClose(); }}>Remove</SchoolButton>
           </div>
         )}
-        <button type="button" className="school-books__back" onClick={onClose}>Cancel</button>
+        <SchoolButton variant="plain" type="button" className="school-books__back" onClick={onClose}>Cancel</SchoolButton>
       </div>
     </div>
   );
@@ -183,9 +184,9 @@ export default function BookPile({ screenId, roster = [], safe, onOpen = null, c
                 {chip && <span className={`school-book-pile__chip school-book-pile__chip--${chip.tone}`}>{chip.text}</span>}
                 {card.duplicates > 0 && <span className="school-book-pile__chip school-book-pile__chip--note">Scanned twice</span>}
                 {(card.state === 'unfiled' || card.state === 'filed') && (
-                  <button type="button" className="school-book-pile__change" aria-label={`Change ${label}`} onClick={() => setChanging(card.id)}>
+                  <SchoolButton variant="plain" type="button" className="school-book-pile__change" aria-label={`Change ${label}`} onClick={() => setChanging(card.id)}>
                     Change
-                  </button>
+                  </SchoolButton>
                 )}
               </li>
             );

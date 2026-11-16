@@ -1,5 +1,7 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 import { buildVerdictMap } from "./certification.js";
 import EmptyState, { LoadingState } from "../home/EmptyState.jsx";
@@ -20,6 +22,7 @@ const MODULE_LABELS = Object.freeze({
  * launch on this screen refused (moduleLaunchAllowed's own fail-closed rule).
  */
 export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
+  const schoolApi = useSchoolApi();
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [catalogs, setCatalogs] = useState(null);
   const [path, setPath] = useState([]);
@@ -63,7 +66,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
       setCatalogs(data.catalogs);
     });
     return () => { alive = false; };
-  }, [currentUser?.id, isGuest, status]);
+  }, [currentUser?.id, isGuest, status, schoolApi]);
 
   const current = path[path.length - 1] ?? null;
   const choices = useMemo(() => {
@@ -138,11 +141,11 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
           row only once there is a path to walk back. */}
       {path.length > 0 && (
       <nav className="school-learning-catalog__trail" aria-label="Catalog location">
-        <button type="button" onClick={() => goTo(0)}>Catalog</button>
+        <SchoolButton variant="plain" type="button" onClick={() => goTo(0)}>Catalog</SchoolButton>
         {path.map((entry, index) => (
           <span key={`${entry.kind}:${entry.value[`${entry.kind}Id`] ?? index}`}>
             <span aria-hidden>›</span>
-            <button type="button" onClick={() => goTo(index + 1)}>{entry.value.title}</button>
+            <SchoolButton variant="plain" type="button" onClick={() => goTo(index + 1)}>{entry.value.title}</SchoolButton>
           </span>
         ))}
       </nav>
@@ -154,11 +157,11 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
           {choices.map((choice) => {
             const id = choice[`${kind}Id`];
             return (
-              <button key={id} type="button" onClick={() => open(choice)}>
+              <SchoolButton variant="plain" key={id} type="button" onClick={() => open(choice)}>
                 <strong>{choice.title}</strong>
                 {choice.description && <span>{choice.description}</span>}
                 {choice.estimatedMinutes && <small>{choice.estimatedMinutes} min</small>}
-              </button>
+              </SchoolButton>
             );
           })}
           {choices.length === 0 && !error && (
@@ -187,7 +190,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
           <ol className="school-learning-catalog__modules">
             {modules.map((module, index) => (
               <li key={module.moduleId}>
-                <button type="button" onClick={() => onLaunch({
+                <SchoolButton variant="plain" type="button" onClick={() => onLaunch({
                   module,
                   learning: {
                     catalogId: lesson.context.catalog.catalogId,
@@ -213,7 +216,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
                     )}
                   </span>
                   <span aria-hidden>›</span>
-                </button>
+                </SchoolButton>
               </li>
             ))}
           </ol>
@@ -225,6 +228,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
 
 /** A read-only, offline calculator route. It is intentionally not a login token. */
 function CalculatorContinuationCode({ learnerId, moduleCode }) {
+  const schoolApi = useSchoolApi();
   const [code, setCode] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -232,7 +236,7 @@ function CalculatorContinuationCode({ learnerId, moduleCode }) {
       if (alive && ok && data?.schema === 'school.continuation-code/v1') setCode(data.code);
     });
     return () => { alive = false; };
-  }, [learnerId, moduleCode]);
+  }, [learnerId, moduleCode, schoolApi]);
   if (!code) return null;
   return <small className="school-learning-catalog__calculator-code">Continue on calculator · Code: {code}</small>;
 }

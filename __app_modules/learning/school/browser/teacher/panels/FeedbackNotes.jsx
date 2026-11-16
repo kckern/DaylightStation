@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * FeedbackNotes — the child's-eye view of resolved verdicts and notes
  * (GET /review/learner/:id answers only RESOLVED items, newest first): what
@@ -5,7 +7,7 @@
  * teacher.notes.standalone stub.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
@@ -39,6 +41,7 @@ function attribution(item, actorName) {
 }
 
 export default function FeedbackNotes({ learnerId, learnerName }) {
+  const schoolApi = useSchoolApi();
   const actorName = useActorName();
   const [limit, setLimit] = useState(20);
   const feedback = usePanelFetch(() => schoolApi.reviewLearner(learnerId, { limit }), {
@@ -65,7 +68,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
               <span className="teacher-feedback__meta">{attribution(item, actorName)}</span>
               {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
               {item.kind === 'note' && (
-                <button type="button" className="teacher-feedback__retract" disabled={busy === item.itemId} onClick={() => retract(item)}>Retract</button>
+                <SchoolButton variant="plain" type="button" className="teacher-feedback__retract" disabled={busy === item.itemId} onClick={() => retract(item)}>Retract</SchoolButton>
               )}
               {errors[item.itemId] && <p className="teacher-panel__error">{errors[item.itemId]}</p>}
             </li>
@@ -94,7 +97,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
       {Array.isArray(feedback.data) && feedback.data.length >= limit && limit < 100 && (
         // The route clamps at 100 — never ask past it (a 400 here would
         // collapse the whole panel).
-        <button type="button" className="teacher-assignments__edit" onClick={() => setLimit((n) => Math.min(n + 20, 100))}>Show more</button>
+        <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={() => setLimit((n) => Math.min(n + 20, 100))}>Show more</SchoolButton>
       )}
     </PanelFrame>
   );
@@ -106,6 +109,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
  * notes do. Rendered by HistoryView beside FeedbackNotes.
  */
 export function NoteComposer({ learnerId, learnerName, onSent }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'note-composer' });
   const [draft, setDraft] = useState('');
   const send = () => run('send', ({ actorId }) => schoolApi.postTeacherNote({
@@ -123,7 +127,7 @@ export function NoteComposer({ learnerId, learnerName, onSent }) {
           onChange={(e) => setDraft(e.target.value)}
         />
         <div className="teacher-assignments__actions">
-          <button type="button" disabled={busy === 'send' || !draft.trim()} onClick={send}>Send</button>
+          <SchoolButton variant="plain" type="button" disabled={busy === 'send' || !draft.trim()} onClick={send}>Send</SchoolButton>
         </div>
         {errors.send && <p className="teacher-panel__error">{errors.send}</p>}
       </div>

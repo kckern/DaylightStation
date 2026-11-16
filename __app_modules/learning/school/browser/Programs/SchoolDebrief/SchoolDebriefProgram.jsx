@@ -11,7 +11,7 @@ import ShortAnswerItem from "./items/ShortAnswerItem.jsx";
 import RetryButton from "./RetryButton.jsx";
 import SummaryItem from "./items/SummaryItem.jsx";
 import TalkToGrownUpItem from "./items/TalkToGrownUpItem.jsx";
-import { schoolApi } from "../../schoolApi.js";
+import { useSchoolApi, useScopedSchoolClient } from "../../runtime/useSchoolApi.js";
 import "./SchoolDebrief.scss";
 
 // "Still there?" at the first stall (45 s, spec §6); close to the keypad 5 minutes after the last input.
@@ -24,7 +24,8 @@ const QUOTE_LIMIT_MS = 2000;
 const withLimit = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), QUOTE_LIMIT_MS))]);
 
 export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay = null, today: todayProp = null, onExit }) {
-  const api = useMemo(() => createSchoolDebriefApi({ learnerId, grant: debriefGrant }), [learnerId, debriefGrant]);
+  const api = useScopedSchoolClient(createSchoolDebriefApi, null, { learnerId, grant: debriefGrant });
+  const schoolApi = useSchoolApi();
   const [todayView, setTodayView] = useState(null);
   const [day, setDay] = useState(null);       // the study day being worked on (null = start card)
   const [view, setView] = useState(null);
@@ -34,7 +35,6 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   const [error, setError] = useState(null);
   const [nudge, setNudge] = useState(false);
   const [earned, setEarned] = useState(null);
-  const [weekBefore, setWeekBefore] = useState(null);
   const [retry, setRetry] = useState(0);
   const [failedStart, setFailedStart] = useState(null);
   const prompts = view?.prompts ?? todayView?.prompts ?? null; // the server owns the list; never a local fallback
@@ -85,7 +85,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     const missing = list ? firstMissing(list, r.data.entries) : -1;
     setPromptIdx(!list || missing < 0 ? (list?.length ?? 0) : missing);
     schoolDebriefLog.resume({ day: d, phase: r.data.phase });
-    setWeekBefore(await weekSilver());
+    await weekSilver();
   }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const takeFor = useCallback(async (blob) => { const r = await api.take(day, blob); return r.ok ? r.data : null; }, [api, day]);
@@ -172,12 +172,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
       setBusy(false);
       if (apply(done)) {
         const after = await weekSilver();
-        if (after && weekBefore) {
-          const before = new Map(weekBefore.lines.map((l) => [l.ruleId, l.amount?.silver ?? 0]));
-          const lines = after.lines.filter((l) => (l.amount?.silver ?? 0) > (before.get(l.ruleId) ?? 0))
-            .map((l) => ({ ruleId: l.ruleId, label: l.label, silver: (l.amount?.silver ?? 0) - (before.get(l.ruleId) ?? 0), gems: 0 }));
-          setEarned({ lines, weekSilver: after.total });
-        }
+        if (after) setEarned({ weekSilver: after.total });
       }
       completing.current = false;
     })();

@@ -1,3 +1,5 @@
+import { useCardLadderAdminApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * CardLadderDaysPanel — one card-ladder deck, day by day, for a grown-up:
  * every day the learner opened (when, how long, how the graded answers went,
@@ -15,7 +17,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
 import PanelFrame from "./PanelFrame.jsx";
-import { cardLadderAdminApi } from "../cardLadderAdminApi.js";
+
 import { humanDate } from "../teacherDates.js";
 import { clockOf, describeResponse, describeStep, minutesOf, outcomeOf } from "../cardLadderDayLog.js";
 
@@ -50,6 +52,7 @@ function Answer({ row }) {
 }
 
 function Takes({ learnerId, deckId, day, actorId, recordings }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   const byWord = new Map();
   for (const take of recordings) {
     if (!byWord.has(take.wordId)) byWord.set(take.wordId, { ...take, takes: [] });
@@ -76,13 +79,14 @@ function Takes({ learnerId, deckId, day, actorId, recordings }) {
 }
 
 function DayDetail({ learnerId, deckId, day, actorId }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   const record = usePanelFetch(() => cardLadderAdminApi.day(learnerId, deckId, day, actorId), {
     deps: [learnerId, deckId, day, actorId], panel: `${PANEL}-day`,
     isEmpty: (d) => !(d?.answers ?? []).length && !(d?.recordings ?? []).length,
   });
   if (record.state === 'loading') return <div className="teacher-panel__skeleton" aria-label="Loading the day" />;
   if (record.state === 'error') {
-    return <p className="teacher-panel__error">Couldn’t load this day. <button type="button" className="teacher-panel__retry" onClick={record.retry}>Retry</button></p>;
+    return <p className="teacher-panel__error">Couldn’t load this day. <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={record.retry}>Retry</SchoolButton></p>;
   }
   if (record.state !== 'ok') return <p className="teacher-panel__empty">Nothing was answered this day.</p>;
   const { answers = [], recordings = [] } = record.data;
@@ -98,7 +102,7 @@ function DayRow({ summary, open, onToggle, children }) {
   const minutes = minutesOf(summary.activeMs);
   return (
     <li className={`teacher-ladder-day${open ? ' is-open' : ''}`}>
-      <button type="button" className="teacher-ladder-day__head" aria-expanded={open} onClick={onToggle}>
+      <SchoolButton variant="plain" type="button" className="teacher-ladder-day__head" aria-expanded={open} onClick={onToggle}>
         <span className="teacher-ladder-day__date">{humanDate(summary.day) ?? summary.day}</span>
         <span className="teacher-ladder-day__facts">
           {summary.graded > 0 ? `${summary.correct} / ${summary.graded} right` : 'Nothing graded'}
@@ -107,7 +111,7 @@ function DayRow({ summary, open, onToggle, children }) {
         </span>
         {summary.missedWords?.length > 0 && <span className="teacher-ladder-day__missed">Missed {summary.missedWords.length}</span>}
         <span className="teacher-ladder-day__chevron" aria-hidden>{open ? '▾' : '▸'}</span>
-      </button>
+      </SchoolButton>
       {open && children}
     </li>
   );
@@ -127,6 +131,7 @@ export default function CardLadderDaysPanel({ learnerId, deckId, title = null })
 }
 
 function Loaded({ learnerId, deckId, title, actorId }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   const record = usePanelFetch(() => cardLadderAdminApi.days(learnerId, deckId, actorId), {
     deps: [learnerId, deckId, actorId], panel: PANEL, notFoundAs: 'unavailable',
     isEmpty: (d) => !(d?.days ?? []).length,

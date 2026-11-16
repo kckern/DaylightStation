@@ -33,7 +33,7 @@ function personalGems(board, learnerId) {
 }
 
 /** Page-memory only. The opening retains its snapshot while later polls replace memory. */
-export function createRewardsCache(api = schoolApi) {
+export function createRewardsCache(api = schoolApi, { readGates = () => api.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' }) } = {}) {
   let snapshots = {};
   let currentIds = [];
   let active = null;
@@ -53,7 +53,7 @@ export function createRewardsCache(api = schoolApi) {
     active = Promise.all([
       bounded(() => api.earningsRoster(), 'earnings'),
       bounded(() => api.gems(), 'gems'),
-      bounded(() => api.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' }), 'rings'),
+      bounded(readGates, 'rings'),
       ...readingIds.map(id => bounded(() => api.wallet(id), 'wallet')),
     ]).then(([earnings, gems, gates, ...wallets]) => {
       const priced = good(earnings) ? earningsByLearner(earnings.data) : {};
@@ -70,15 +70,36 @@ export function createRewardsCache(api = schoolApi) {
         const gemWeek = board?.week ?? board?.windows?.school?.from;
         const aligned = !week || !gemWeek || week === gemWeek;
         // A week changes as one unit: never open new silver beside old gems.
-        if ((old?.week && week && old.week !== week && (!good(earnings) || !board || !aligned)) || (!aligned && old)) return;
+        if ((old?.week && week && old.week !== week && (!good(earnings) || !board || !aligned)) || (!aligned && old)) {
+          next[id] = { ...old, stale: true, error: { kind: 'week-mismatch' }, fields: Object.fromEntries(Object.entries(old.fields ?? {}).map(([name, field]) => [name, { ...field, stale: true, error: { kind: 'week-mismatch' } }])) };
+          return;
+        }
         if (!aligned) {
           next[id] = { learnerId: id, week: null, mode: 'unknown', silver: null,
             gold: good(wallets[index]) ? number(wallets[index].data?.balances?.gold) : null,
-            rings: number(rings[id]?.current), gems: [], groups: [], updatedAt: Date.now() };
+            rings: number(rings[id]?.current), gems: [], groups: [], updatedAt: null, lastSuccessAt: null,
+            stale: true, error: { kind: 'week-mismatch' },
+            fields: Object.fromEntries(['silver', 'gold', 'rings', 'gems'].map(name => [name, {
+              lastSuccessAt: null, stale: true, error: { kind: 'week-mismatch' },
+            }])),
+          };
           return;
         }
         const sameWeek = !old?.week || !week || old.week === week;
         const gemReady = board && (board.mode !== 'live' || board.learners?.some(learner => learner.learnerId === id));
+        const now = Date.now();
+        const verified = {
+          silver: number(priced[id]?.silver) !== null && Boolean(good(earnings)),
+          gold: number(good(wallets[index]) ? wallets[index].data?.balances?.gold : null) !== null,
+          rings: gatesReady, gems: Boolean(gemReady),
+        };
+        const responses = { silver: earnings, gold: wallets[index], rings: gates, gems };
+        const fields = Object.fromEntries(Object.entries(verified).map(([name, ready]) => [name, {
+          lastSuccessAt: ready ? now : (name === 'gold' || sameWeek ? old?.fields?.[name]?.lastSuccessAt ?? null : null),
+          stale: !ready,
+          error: ready ? null : { status: responses[name]?.status ?? 0, kind: responses[name]?.ok ? 'invalid-data' : 'unavailable' },
+        }]));
+        const stale = Object.values(fields).some(field => field.stale);
         next[id] = {
           learnerId: id,
           week: week ?? old?.week ?? null,
@@ -88,7 +109,9 @@ export function createRewardsCache(api = schoolApi) {
           rings: gatesReady ? number(rings[id]?.current) : sameWeek ? old?.rings ?? null : null,
           gems: gemReady ? personalGems(board, id) : sameWeek ? old?.gems ?? [] : [],
           groups: gemReady ? (Array.isArray(board.groups) ? board.groups : []) : sameWeek ? old?.groups ?? [] : [],
-          updatedAt: Date.now(),
+          fields, stale, error: stale ? { kind: 'partial-read' } : null,
+          updatedAt: stale ? old?.updatedAt ?? null : now,
+          lastSuccessAt: stale ? old?.lastSuccessAt ?? null : now,
         };
       });
       publish(next);

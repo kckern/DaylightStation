@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * BankDoor — the one way into a kid's bank on the locked panel (school economy
  * slice 1, C3). The board's coin cell (a button on the kid's own card) names
@@ -23,7 +24,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { schoolApi } from "../schoolApi.js";
+
 import LearnerChoice from "../books/LearnerChoice.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 
@@ -45,6 +46,7 @@ const refusalText = (result) => {
  * @returns {{asking: boolean, busy: boolean, error: string|null, close: () => void, choose: (learnerId: string, via?: string) => Promise<void>}}
  */
 export function useBankDoor({ screenId = null, onLaunch }) {
+  const schoolApi = useSchoolApi();
   const log = useMemo(() => getLogger().child({ component: 'school-bank-door' }), []);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -97,7 +99,7 @@ export function useBankDoor({ screenId = null, onLaunch }) {
     trigger.current = null; // the bank screen takes over; nothing to hand back to
     setAsking(false);
     onLaunch(target, learnerId);
-  }, [screenId, onLaunch, log, noteTrigger]);
+  }, [screenId, onLaunch, log, noteTrigger, schoolApi]);
 
   return useMemo(() => ({ asking, busy, error, close, choose }), [asking, busy, error, close, choose]);
 }

@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * RosterStrip — one card per learner from GET /teacher/today, joined with the
  * kids' roster for names (digest rows carry learnerId only, by design).
@@ -28,7 +30,7 @@ import ProfileAvatar from "../../../../../../frontend/src/lib/identity/ProfileAv
 import SafeImg from "./SafeImg.jsx";
 import { agendaPreviewSrc } from "./agendaPreviewSrc.js";
 import { AgendaDispatch } from "./AgendaDispatch.jsx";
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { joinLearnerDay, DAY_STATUS_LABEL } from "../learnerDay.js";
 import { teacherBaseFor, teacherDayPath, teacherSessionPath, teacherLearnerPath, teacherLearnerOpsPath } from "../teacherUrl.js";
@@ -223,11 +225,11 @@ export function DigestArtifactButtons({ session, onOpen = () => {} }) {
           onClick={() => onOpen('worksheet', session)}><IconPdf /></a>
       )}
       {receiptUrl && (
-        <button type="button" className="teacher-artifact-btn" aria-label="Open the result receipt"
+        <SchoolButton variant="plain" type="button" className="teacher-artifact-btn" aria-label="Open the result receipt"
           title={receiptStatus}
           onClick={() => { onOpen('receipt', session); window.open(receiptUrl, '_blank', 'noopener'); }}>
           <IconReceipt />
-        </button>
+        </SchoolButton>
       )}
       {/* Only a FAILED print is news. "Sent; the printer cannot confirm" is the
           ordinary case and printed under every row (audit 2026-10-29); it
@@ -528,7 +530,7 @@ function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, age
     <>
       {agenda.state === 'error' && (
         <p className="teacher-roster__plan-notice">Couldn&rsquo;t load the day&rsquo;s plan — showing recorded work only.
-          <button type="button" className="teacher-panel__retry" onClick={agenda.retry}>Retry</button></p>
+          <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={agenda.retry}>Retry</SchoolButton></p>
       )}
       {/* The grid waits for the plan. Rendering the recorded sessions first and
           letting the planned ones drop in when the agenda read lands re-flows
@@ -607,6 +609,7 @@ function attentionLabel(item) {
  * non-recording.
  */
 function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeedsGrownUp, coins = null }) {
+  const schoolApi = useSchoolApi();
   const learnerId = row.learnerId;
   const name = kids.find((k) => k.id === learnerId)?.name ?? learnerId;
   const panelId = `teacher-day-${String(learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
@@ -733,7 +736,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   }, [onNeedsGrownUp, settled, planUnknown, learnerId, grownUpSignature, base, studyDay]);
   return (
     <div className="teacher-roster__entry">
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="teacher-roster__card"
         onClick={onToggle}
@@ -761,7 +764,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
             two targets stacked in one corner of a row whose whole surface is
             already the toggle. */}
         <span className="teacher-roster__disclosure" aria-hidden="true"><IconChevron open={open} /></span>
-      </button>
+      </SchoolButton>
       {/* PRINT, beside the thing that only PREVIEWS. The icon below opens the
           sheet on screen; this puts it on paper. Ordered BEFORE that icon
           because grid auto-placement is order-sensitive — once the column-3
