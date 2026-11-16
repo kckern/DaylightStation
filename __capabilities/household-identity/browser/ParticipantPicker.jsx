@@ -3,16 +3,18 @@ import { Alert, Avatar, Button, Group, Stack, Text, TextInput } from '@mantine/c
 import { DaylightMediaPath } from '../../../frontend/src/lib/api.mjs';
 
 /** Controlled roster editor. allocateEntryId is supplied by the owning draft. */
-export default function ParticipantPicker({ value = [], people = [], onChange, onCreateGuest, allocateEntryId, readOnly = false, scopeKey }) {
-  const [id, setId] = useState('');
+export default function ParticipantPicker({ value = [], people = [], onChange, onCreateGuest, allocateEntryId, allocateGuestId, readOnly = false, scopeKey }) {
+  const guestId = useRef(null);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const scope = useRef({key:scopeKey, generation:0});
+  if (scope.current.key !== scopeKey) scope.current = {key:scopeKey, generation:scope.current.generation + 1};
   const current = useRef({});
   current.current = {value, onChange, allocateEntryId, readOnly, scopeKey};
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { setCreating(false); setError(''); setId(''); setName(''); }, [scopeKey]);
+  useEffect(() => { setCreating(false); setError(''); guestId.current = null; setName(''); }, [scopeKey]);
   const selected = person => value.some(entry => entry.person?.kind === person.kind && entry.person?.id === person.id);
   const add = entry => {
     const latest = current.current;
@@ -22,19 +24,21 @@ export default function ParticipantPicker({ value = [], people = [], onChange, o
     latest.onChange([...latest.value, { ...entry, id: entryId }]);
   };
   const create = async () => {
-    if (creating || !id.trim() || !name.trim()) return;
+    if (creating || !name.trim()) return;
     setCreating(true); setError('');
-    const requestedScope = scopeKey;
+    const requestedGeneration = scope.current.generation;
     let saved = false;
     try {
-      const entry = await onCreateGuest({ id: id.trim(), name: name.trim() });
+      if (!guestId.current) guestId.current = allocateGuestId();
+      if (typeof guestId.current !== 'string' || !guestId.current.trim()) throw new Error('Guest ID allocator returned an invalid ID');
+      const entry = await onCreateGuest({ id: guestId.current, name: name.trim() });
       saved = true;
-      if (!mounted.current || current.current.scopeKey !== requestedScope) return;
+      if (!mounted.current || scope.current.generation !== requestedGeneration) return;
+      guestId.current = null; setName('');
       if (!entry?.person || !entry?.display) throw new Error('Guest directory returned an invalid person');
       add({ person: entry.person, display: entry.display });
-      setId(''); setName('');
-    } catch (e) { if (mounted.current && current.current.scopeKey === requestedScope) setError(saved ? `Guest saved in directory; could not add to this roster: ${e.message}` : (e.message || 'Could not create guest')); }
-    finally { if (mounted.current && current.current.scopeKey === requestedScope) setCreating(false); }
+    } catch (e) { if (mounted.current && scope.current.generation === requestedGeneration) setError(saved ? `Guest saved in directory; could not add to this roster: ${e.message}` : (e.message || 'Could not create guest')); }
+    finally { if (mounted.current && scope.current.generation === requestedGeneration) setCreating(false); }
   };
   let anonymousIndex = 0;
   return <Stack gap="sm">
@@ -51,7 +55,7 @@ export default function ParticipantPicker({ value = [], people = [], onChange, o
     {!readOnly && <>
       {['user','guest'].map(kind => <div key={kind}><Text fw={600}>{kind === 'user' ? 'Household' : 'Named visitors'}</Text><Group>{people.filter(entry => entry.person?.kind === kind && entry.active !== false).map(entry => <Button key={`${kind}:${entry.person.id}`} size="xs" variant="light" disabled={selected(entry.person)} onClick={() => add({person:entry.person,display:entry.display})}>Add {entry.display.name}</Button>)}</Group></div>)}
       <Group><Button variant="light" onClick={() => { let number = 1; while (value.some(p => p.anonymous && p.display?.name === `Guest ${number}`)) number++; add({anonymous:true,display:{name:`Guest ${number}`,avatar:null}}); }}>Add anonymous guest</Button></Group>
-      {onCreateGuest && <><Group align="end"><TextInput label="Named guest ID" value={id} onChange={e=>setId(e.currentTarget.value)}/><TextInput label="Named guest name" value={name} onChange={e=>setName(e.currentTarget.value)}/><Button loading={creating} disabled={!id.trim() || !name.trim()} onClick={create}>Add named guest</Button></Group>{error && <Alert color="red" role="alert">{error}</Alert>}</>}
+      {onCreateGuest && <><Group align="end"><TextInput label="Named guest name" value={name} disabled={creating} onChange={e=>{guestId.current = null; setError(''); setName(e.currentTarget.value);}}/><Button loading={creating} disabled={!name.trim()} onClick={create}>Add named guest</Button></Group>{error && <Alert color="red" role="alert">{error}</Alert>}</>}
     </>}
   </Stack>;
 }
