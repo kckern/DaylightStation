@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "scope": "__app_modules/learning/school/browser",
+  "reviewedOn": "2026-11-16",
+  "policy": "Per-file legacy palette/art, motion and passive/IME input debt; allowances cannot move or cover new portal/runtime/activity mechanisms. Reduce counts with each reviewed cleanup. Shared dispatcher is the sole mechanism listener exemption.",
+  "files": {
+    "Programs/Flashcards/CardLadder/CardLadder.scss": {
+      "raw-motion": 1
+    },
+    "Programs/Flashcards/CardLadder/CardLadderProgram.jsx": {
+      "raw-keydown": 1
+    },
+    "Programs/Flashcards/CardLadder/items/TypedItem.jsx": {
+      "raw-keydown": 1
+    },
+    "Programs/Flashcards/FlashcardProgram.scss": {
+      "raw-color": 10
+    },
+    "Programs/LanguageReels/LanguageReels.scss": {
+      "raw-color": 7
+    },
+    "Programs/RubiksCube/RubiksCube.scss": {
+      "raw-color": 23
+    },
+    "Programs/SchoolDebrief/SchoolDebriefProgram.jsx": {
+      "raw-keydown": 1
+    },
+    "Programs/SentenceLadder/SentenceLadder.scss": {
+      "raw-color": 3,
+      "raw-motion": 3
+    },
+    "Programs/SentenceLadder/rungs/VoiceBand.jsx": {
+      "raw-color": 3
+    },
+    "Programs/shared/useInputStall.js": {
+      "raw-keydown": 1
+    },
+    "School.scss": {
+      "raw-color": 98,
+      "raw-motion": 17
+    },
+    "admin/VirtualConsole.scss": {
+      "raw-color": 1
+    },
+    "books/scanStatusChip.scss": {
+      "raw-motion": 3
+    },
+    "books/useBookShelf.js": {
+      "raw-keydown": 1
+    },
+    "chess/ChessLessons.scss": {
+      "raw-color": 12,
+      "raw-motion": 1
+    },
+    "home/StudentPanel.jsx": {
+      "raw-color": 2
+    },
+    "ime/HangulTypingProvider.jsx": {
+      "raw-keydown": 1
+    },
+    "ime/ime.scss": {
+      "raw-color": 7,
+      "raw-motion": 2
+    },
+    "lesson/CheckpointQuizOverlay.scss": {
+      "raw-color": 33
+    },
+    "lesson/MediaLessonScreen.scss": {
+      "raw-color": 8
+    },
+    "lesson/surround/CheckpointMap.scss": {
+      "raw-color": 10,
+      "raw-motion": 2
+    },
+    "lesson/surround/LessonScore.scss": {
+      "raw-color": 6
+    },
+    "reading/ReadingSessionScreen.scss": {
+      "raw-color": 63,
+      "raw-motion": 5
+    },
+    "reading/pips.scss": {
+      "raw-color": 9,
+      "raw-motion": 2
+    },
+    "reading/surround/ReadingCredit.scss": {
+      "raw-color": 14
+    },
+    "rewards/RewardsChest.scss": {
+      "raw-color": 3,
+      "raw-motion": 10
+    },
+    "rewards/RewardsModal.jsx": {
+      "raw-keydown": 1
+    },
+    "rewards/RewardsModal.scss": {
+      "raw-color": 13
+    },
+    "shared/dayGrid/dayGrid.scss": {
+      "raw-color": 12
+    },
+    "teacher/Teacher.scss": {
+      "raw-color": 730,
+      "raw-motion": 4
+    }
+  }
+}

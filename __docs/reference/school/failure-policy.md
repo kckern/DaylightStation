@@ -4,6 +4,46 @@ One stated policy for "the content or collaborator I need is absent",
 applied the same way everywhere in school. Two kinds of absence exist, and
 they fail in opposite directions on purpose.
 
+## Browser reads retain status, scope and verification evidence
+
+`browser/runtime/schoolTransport.js` owns status-aware School requests. A
+surface owns its client (`createSchoolApi({deviceId})`); feature facades can
+receive that client's `transport` to share causal read generations. The legacy
+browser singletons remain available to isolated callers. Scoped clients never
+read the mutable legacy device id.
+
+Successful writes invalidate earlier in-flight GET generations. An explicit
+`request(path, {fresh: true})` starts another read; requests with a caller's
+abort signal have private lifetimes. JSON, blobs and raw audio bodies preserve
+HTTP status and same-origin credentials. Malformed JSON fails the read even
+on HTTP 200; valid JSON null and bodyless 204/205 retain their distinct
+meanings. Timeout, abort and network diagnostics include safe classifications,
+methods and statuses, without grants, payloads or exception text.
+
+`useSchoolResource` exposes `ready`, `empty`, `loading`, `unavailable` and
+`error`, together with `refreshing`, `stale`, `error` and `lastSuccessAt`.
+Teacher `usePanelFetch` adapts `ready` to its established `ok` state. Keys name
+the surface, device, learner and effective query. A retry retains useful old
+data and its original verification time; a failed retry also retains its
+failure status. Old generations cannot overwrite newer reads. The default
+`current` policy verifies on mount and retains useful data during refresh;
+`replace` clears the former payload while loading. Stale data is display
+evidence, never authorization for work, credit, grades or payouts.
+
+Stores have explicit surface lifetimes and retain at most 128 inactive
+entries by default (`createSchoolResourceStore({maxEntries})`). Least recently
+used inactive entries are evicted first; subscribed and in-flight entries stay
+until their owners finish. Hook-local stores preserve independently composed
+teacher queries. The final subscriber leaving cancels discarded work.
+
+`useSchoolInvalidation` coalesces published School and State Gates changes,
+filters learner or roster scope, and repairs missed events when the surface
+becomes visible or its shared websocket reconnects. Cleanup removes message,
+status and visibility listeners and cancels pending bursts. Invalidation only
+re-reads; room/session commands and celebration semantics remain with their
+existing owners. Catalogues, geography decks and printables expose retryable
+read errors independently from their valid empty states.
+
 ## Content problems fail soft, per item, with a visible receipt
 
 A draft unit, a missing question bank, an absent generated-content recipe —

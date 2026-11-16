@@ -1,5 +1,7 @@
 # School — reference index
 
+[Portal design system and runtime contracts](./portal-design-system.md) describe the shared surface, layouts, controls, activity registry, resource lifecycles and integration boundaries.
+
 > **Repository status:** the learner surface, curriculum/session lifecycle,
 > assignments and whole-course enrollment, timed planning, agenda printing,
 > quizzes and OMR, teacher console, feedback, repair, reporting, program
@@ -411,7 +413,10 @@ Per-child playhead/percent lives at
 store (parameterised, Piano untouched); School reads raw playhead/percent only
 and computes its own completion. The home grid grows one section per category
 present in config; grid → detail → player, with the player wrapping the shared
-Player from the consumer side and handing off to the quiz on unit end.
+Player from the consumer side and handing off to the quiz only through its
+semantic `onPlaybackCompleted` callback. Explicit clear, dismissal, and playback
+failure never start a gate quiz. Progress still flushes on exit, and a late
+quiz-bank response is discarded after leaving the unit.
 
 **Explicitly not built** (named deferrals, not gaps): the video forward-clamp
 (the quiz gate is the enforcement; clamp is anti-skip UX), the readalong source

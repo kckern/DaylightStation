@@ -45,7 +45,9 @@ and each assessed stage requires persisted correct attempts for every item befor
 advancing in sequence. The browser waits for an acknowledged answer, retains a
 failed submission for retry, and offers an exit when recording is unavailable.
 Listening, watching, and speaking remain participation steps; speaking may be
-skipped and does not certify pronunciation mastery.
+skipped and does not certify pronunciation mastery. Reels uses the shared guarded
+take recorder; exiting releases late microphone permission, pauses preview and
+replacement audio, and revokes the recorded preview URL.
 
 ## Every launcher must report `servedWork` — the rule, and why
 
