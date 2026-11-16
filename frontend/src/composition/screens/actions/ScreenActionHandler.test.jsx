@@ -1,4 +1,4 @@
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
@@ -11,6 +11,7 @@ import {
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
 import { MenuNavigationProvider } from "../../../../../__capabilities/screen-host/browser/menu-context.mjs";
+import {useMenuNavigationContext} from '../../../../../__capabilities/screen-host/browser/menu-navigation.mjs';
 import { SessionSourceProvider } from '../../../../../__capabilities/playback/browser/sessions/SessionSourceContext.jsx';
 import { ActivityScopeProvider } from '../../../../../__app_modules/household/supervision/browser/ActivityScope.jsx';
 import * as apiModule from '../../../lib/api.mjs';
@@ -75,7 +76,7 @@ vi.mock('../../../../../__capabilities/screen-host/browser/widgets/registry.js',
   }),
 }));
 
-vi.mock('../../../../../__app_modules/household/agenda/browser/screen.mjs', () => ({ default: ({contentId}) => <div data-testid="agenda-host">{contentId}</div> }));
+vi.mock('../../../../../__app_modules/household/agenda/browser/screen.mjs', () => ({ default: ({contentId}) => <div data-testid="agenda-host">{contentId}</div>, createAgendaMenuController: vi.fn() }));
 
 describe('ScreenActionHandler', () => {
   beforeEach(() => {
@@ -91,6 +92,47 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('agenda-host').textContent).toBe('agenda:series/current');
   });
 
+  it('resolves direct menu alias before opening the capable owner', async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+    expect((await view.findByTestId('agenda-host')).textContent).toBe('agenda:neutral');
+    expect(apiModule.DaylightAPI).toHaveBeenCalledWith('/api/v1/list/_ownership/menu/neutral');vi.restoreAllMocks();
+  });
+  it('leaves an unclaimed direct alias ordinary and fails closed on malformed ownership',async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockResolvedValueOnce({alias:null}).mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral',extra:true}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:ordinary'}));expect((await view.findByTestId('menu-stack')).dataset.menuContentid).toBe('menu:ordinary');
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:invalid'}));const error=await view.findByRole('alert',{name:'Menu error'});expect(error.textContent).toContain('Unable to load menu');fireEvent.click(view.getByRole('button',{name:'Back'}));expect(view.queryByRole('alert')).toBeNull();vi.restoreAllMocks();
+  });
+  it('retries a failed direct ownership lookup without falling back',async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));await view.findByRole('alert',{name:'Menu error'});expect(view.queryByTestId('menu-stack')).toBeNull();
+    fireEvent.click(view.getByRole('button',{name:'Retry'}));expect((await view.findByTestId('agenda-host')).textContent).toBe('agenda:neutral');vi.restoreAllMocks();
+  });
+  it('ignores a late alias response after a later menu opens',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));act(()=>getActionBus().emit('menu:open',{menuId:'music'}));
+    expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');vi.restoreAllMocks();
+  });
+  it('does not replace playback that starts during an alias lookup',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));act(()=>getActionBus().emit('media:play',{contentId:'plex:12345'}));
+    await view.findByTestId('player');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('player')).toBeTruthy();vi.restoreAllMocks();
+  });
+  it('does not replace an activity started on the menu stack during alias lookup',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    function OpenActivity(){const {push}=useMenuNavigationContext();return <button onClick={()=>push({type:'player',props:{}})}>Start stack activity</button>;}
+    const view=render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><OpenActivity/></ScreenOverlayProvider></MenuNavigationProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));fireEvent.click(view.getByText('Start stack activity'));
+    await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();vi.restoreAllMocks();
+  });
   it('opens MenuStack overlay on menu:open action', () => {
     const { getByTestId, queryByTestId } = render(
       <ScreenOverlayProvider>

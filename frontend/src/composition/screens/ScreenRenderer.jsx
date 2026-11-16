@@ -1,4 +1,4 @@
-import {menuSourceHost} from './menuSourceHosts.js';
+import {menuSourceHost,screenOwnership} from './menuSourceHosts.js';
 import {focusUidFromSearch} from '../../../../__capabilities/screen-host/browser/return-navigation.mjs';
 import {useActivityStop} from '../../../../__app_modules/household/supervision/browser/index.js';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -67,15 +67,6 @@ enableGlobalKeyCapture();
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
  */
-async function screenOwnership(contentId) {
-  const match=typeof contentId === 'string' && contentId.match(/^menu:([A-Za-z0-9][A-Za-z0-9_.-]*)$/);
-  if (!match) return null;
-  const result=await DaylightAPI(`/api/v1/list/_ownership/menu/${encodeURIComponent(match[1])}`);
-  if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).join(',') !== 'alias') throw Error('Invalid ownership response');
-  if (result.alias === null) return null;
-  if (!result.alias || typeof result.alias !== 'object' || Array.isArray(result.alias) || Object.keys(result.alias).sort().join(',') !== 'canonicalContentId,owner' || typeof result.alias.owner !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(result.alias?.canonicalContentId || '') || result.alias.canonicalContentId.split(':',1)[0] !== result.alias.owner || !menuSourceHost(result.alias.canonicalContentId)) throw Error('Invalid ownership response');
-  return result.alias;
-}
 
 export function ScreenAutoplay({ routes, layout }) {
   const { push } = useMenuNavigationContext();

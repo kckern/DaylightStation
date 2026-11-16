@@ -1,1 +1,1 @@
-export { useHasMenuNavigationContext, useMenuNavigationContext } from "./navigation/useMenuNavigationContext.js";
+export { useHasMenuNavigationContext, useMenuNavigationContext, useOptionalMenuNavigationContext } from "./navigation/useMenuNavigationContext.js";

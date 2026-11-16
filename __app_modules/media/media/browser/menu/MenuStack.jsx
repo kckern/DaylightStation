@@ -51,14 +51,22 @@ function threadShaderIntoContent(selection) {
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
+export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, resolveMenuSource, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
   const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth, registerMenuBackHandler, unregisterMenuBackHandler } = useMenuNavigationContext();
   const currentContentRef = React.useRef(currentContent);
   currentContentRef.current = currentContent;
   const [navigationError, setNavigationError] = React.useState(null);
+  const [sourceVersion,setSourceVersion] = React.useState(0);
   const navigationGeneration = React.useRef(0);
+  const pendingNavigation = React.useRef(false);
   useEffect(() => () => { navigationGeneration.current += 1; }, []);
   const returnFromActivityRef = React.useRef(null);
+  const sourceFrame = [...stack].reverse().find(entry => entry.type === 'menu' && entry.props.sourceController);
+  const sourceController = sourceFrame?.props.sourceController;
+  const returnPolicy = sourceFrame?.props.list?.navigationPolicy || rootMenu?.navigationPolicy;
+  const sourceRef = React.useRef(sourceController);
+  useEffect(() => { const previous=sourceRef.current; if(previous && previous!==sourceController) previous.cancel(); sourceRef.current=sourceController; }, [sourceController]);
+  useEffect(() => () => sourceRef.current?.cancel(), []);
   const { registerEscapeInterceptor, unregisterEscapeInterceptor, dismissOverlay } = useScreenOverlay();
 
   // Reset navigation state when rootMenu changes (including initial mount).
@@ -81,14 +89,16 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     if (!registerEscapeInterceptor) return;
 
     const interceptor = () => {
+      if (pendingNavigation.current) {pendingNavigation.current=false;navigationGeneration.current++;sourceController?.cancel();return true;}
       if (depth > 0) {
-        if (rootMenu?.navigationPolicy === 'return-to-selected' && ['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) {
+        if (returnPolicy === 'return-to-selected' && ['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) {
           returnFromActivityRef.current?.();
           return true;
         }
+        navigationGeneration.current++;sourceController?.cancel();
         // If popping back to root on a timed menu, dismiss the overlay entirely
         // to avoid the auto-select timer creating an escape trap
-        if (depth === 1 && MENU_TIMEOUT > 0) {
+        if (depth === 1 && MENU_TIMEOUT > 0 && !sourceController) {
           pop();
           return false; // let overlay dismiss
         }
@@ -100,7 +110,15 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
 
     registerEscapeInterceptor(interceptor);
     return () => unregisterEscapeInterceptor?.();
-  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor, rootMenu, currentContent]);
+  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor, rootMenu, currentContent, returnPolicy, sourceController]);
+
+  const pushOrdinaryList = useCallback(selection => {
+    const id=selection.list?.contentId || selection.list?.plex;
+    if(id && selection.type==='show') {push({type:'show-view',props:selection});return;}
+    if(id && selection.type==='season') {push({type:'season-view',props:selection});return;}
+    if(id && (id.startsWith('plex:') || /^\d+$/.test(id)) && !selection.type) {push({type:'plex-menu',props:selection});return;}
+    push({type:'menu',props:selection});
+  },[push]);
 
   /**
    * Handle selection from any menu level.
@@ -111,15 +129,15 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
    */
   const handleSelect = useCallback((selection) => {
     if (!selection || selection.disabled) return;
-    if (rootMenu?.navigationPolicy === 'return-to-selected' && selection.uid) {
+    if (returnPolicy === 'return-to-selected' && selection.uid) {
       const menu = currentContent?.type === 'menu' ? currentContent.props.list : rootMenu;
       const index = menu?.items?.findIndex(item => item.uid === selection.uid) ?? -1;
       if (index >= 0) setSelectionAtDepth(depth, index, selection.uid);
     }
     const action = selection.list || selection.menu ? null : ['play','queue','display','open'].find(key => selection[key]);
     const startsActivity = action || selection.launch || selection.android;
-    if (startsActivity) navigationGeneration.current += 1;
-    if (startsActivity) onActivityStart?.(currentContent?.type === 'menu' ? currentContent.props.list : rootMenu);
+    if (startsActivity) {navigationGeneration.current += 1;pendingNavigation.current=false;}
+    if (startsActivity) (sourceController?.activityStart || onActivityStart)?.(currentContent?.type === 'menu' ? currentContent.props.list : rootMenu);
     if (action && Object.hasOwn(selection, 'participantLaunches')) {
       let intercepted = true;
       dispatchParticipantAction({selection, action, onOrdinaryAction: () => { intercepted = false; }, onInvalid: () => setNavigationError({kind:'invalid_participant'}), onPresentation: ({ref, action: selectedAction}) => push({type:'participant-launch', props:{ref, action:selectedAction, uid:selection.uid}})});
@@ -127,39 +145,27 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     }
 
     const contentId = selection.list?.contentId;
-    if (contentId && loadContentMenu) {
-      const request = ++navigationGeneration.current;
-      loadContentMenu(contentId).then(menu => { if (navigationGeneration.current === request) push({type:'menu', props:{list:menu}}); }).catch(error => { if (navigationGeneration.current !== request || error.code === 'stale_menu_request') return; getLogger().warn('menu.navigation.error', {code:error.code}); setNavigationError({contentId}); });
+    if (contentId && (sourceController || loadContentMenu || resolveMenuSource)) {
+      const request = ++navigationGeneration.current;pendingNavigation.current=true;
+      const open = async token => {
+        if (sourceController) return {menu:await sourceController.navigate(contentId)};
+        if (loadContentMenu) return {menu:await loadContentMenu(contentId)};
+        const source=await resolveMenuSource(contentId);
+        if (navigationGeneration.current!==token) {source?.controller?.cancel();return null;}
+        if (!source) return null;
+        return {menu:await source.controller.navigate(source.contentId),controller:source.controller};
+      };
+      open(request).then(result => {
+        if (navigationGeneration.current !== request) {result?.controller?.cancel();return;}
+        pendingNavigation.current=false;
+        if (result) push({type:'menu',props:{list:result.menu,...(result.controller ? {sourceController:result.controller} : {})}});
+        else pushOrdinaryList(selection);
+      }).catch(error => {if (navigationGeneration.current !== request || error.code === 'stale_menu_request') return;pendingNavigation.current=false;getLogger().warn('menu.navigation.error',{code:error.code});setNavigationError({contentId,open,fallback:()=>pushOrdinaryList(selection)});});
       return;
     }
 
-    // If type is already known (e.g., from ShowView/SeasonView selecting a child),
-    // we can route directly to specialized views.
-    // Check contentId first (unified), fall back to legacy plex key.
-    const listContentId = selection.list?.contentId || selection.list?.plex;
-    if (listContentId && selection.type === 'show') {
-      push({ type: 'show-view', props: selection });
-      return;
-    }
-
-    if (listContentId && selection.type === 'season') {
-      push({ type: 'season-view', props: selection });
-      return;
-    }
-
-    // For Plex items with unknown type, use the router to determine view
-    // Non-plex lists (menu:, watchlist:, program:, query:) go through generic menu handler
-    const isPlex = listContentId && (
-      listContentId.startsWith('plex:') || /^\d+$/.test(listContentId)
-    );
-    if (isPlex && !selection.type) {
-      push({ type: 'plex-menu', props: selection });
-      return;
-    }
-
-    // Default handling for other lists
     if (selection.list || selection.menu) {
-      push({ type: 'menu', props: selection });
+      pushOrdinaryList(selection);
     } else if (selection.play || selection.queue) {
       // Log playback intent - user initiated playback from menu
       const logger = getLogger();
@@ -215,53 +221,57 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
       push({ type: 'android-launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
-  }, [push, loadContentMenu, onActivityStart, currentContent, rootMenu, depth, setSelectionAtDepth]);
+  }, [push, loadContentMenu, resolveMenuSource, sourceController, onActivityStart, currentContent, rootMenu, depth, setSelectionAtDepth, returnPolicy, pushOrdinaryList]);
 
   /**
    * Clear function for Player/AppContainer to pop back
    */
   const clear = useCallback(() => {
-    const targetId = getReturnMenuId?.();
+    const targetId = sourceController?.returnMenuId() || getReturnMenuId?.();
     let targetDepth = depth - 1;
-    if (targetId && rootMenu?.navigationPolicy === 'return-to-selected') {
+    if (targetId && returnPolicy === 'return-to-selected') {
       const index = stack.findLastIndex(entry => entry.type === 'menu' && entry.props.list?.id === targetId);
       if (index >= 0) targetDepth = index + 1;
       else if (rootMenu.id === targetId) targetDepth = 0;
     }
     for (let i = depth; i > targetDepth; i--) pop();
-    onActivityReturn?.();
-  }, [pop, onActivityReturn, getReturnMenuId, depth, stack, rootMenu]);
+    if (sourceController) {const request=++navigationGeneration.current;sourceController.refresh().then(()=>{if(navigationGeneration.current===request)setSourceVersion(v=>v+1);}).catch(error=>{if(navigationGeneration.current===request && error.code!=='stale_menu_request')setNavigationError({kind:'refresh',controller:sourceController});});}
+    else onActivityReturn?.();
+  }, [pop, onActivityReturn, getReturnMenuId, depth, stack, rootMenu, returnPolicy, sourceController]);
 
   returnFromActivityRef.current = clear;
   React.useLayoutEffect(() => {
-    if (rootMenu?.navigationPolicy !== 'return-to-selected' || !registerMenuBackHandler) return;
+    if ((!resolveMenuSource && returnPolicy !== 'return-to-selected') || !registerMenuBackHandler) return;
     const handler = () => {
+      if (pendingNavigation.current) {pendingNavigation.current=false;navigationGeneration.current++;sourceController?.cancel();return true;}
+      if (returnPolicy !== 'return-to-selected') return false;
       if (onHostErrorBack) { onHostErrorBack(); return true; }
-      if (!['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) return false;
+      if (!['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) {navigationGeneration.current++;sourceController?.cancel();return false;}
       returnFromActivityRef.current?.();
       return true;
     };
     registerMenuBackHandler(handler);
     return () => unregisterMenuBackHandler?.(handler);
-  }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler]);
+  }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler, returnPolicy, resolveMenuSource, sourceController]);
 
   // Player exits dismiss the entire MenuStack overlay rather than popping back to
   // the source menu. The auto-select countdown on the source menu would otherwise
   // re-launch the first item, trapping the user; "exit means home" matches the
   // NFC/voice launch path's behavior (ScreenActionHandler).
   const exitToHome = useCallback(() => {
-    if (rootMenu?.navigationPolicy === 'return-to-selected') clear();
+    if (returnPolicy === 'return-to-selected') clear();
     else dismissOverlay?.();
-  }, [dismissOverlay, rootMenu, clear]);
+  }, [dismissOverlay, rootMenu, clear, returnPolicy]);
 
   if (navigationError) {
-    const closeError = () => { navigationGeneration.current += 1; onNavigationCancel?.(); setNavigationError(null); };
+    const closeError = () => { navigationGeneration.current += 1; sourceController?.cancel(); onNavigationCancel?.(); setNavigationError(null); };
     if (navigationError.kind === 'invalid_participant') return <TVActionDialog role="alert" label="Activity unavailable" onBack={closeError}><p>Activity launch unavailable.</p><button onClick={closeError}>Back</button></TVActionDialog>;
     const retry = () => {
       const request = ++navigationGeneration.current;
-      loadContentMenu(navigationError.contentId).then(menu => {
+      const work = navigationError.kind==='refresh' ? navigationError.controller.refresh().then(()=>({refresh:true})) : navigationError.open ? navigationError.open(request) : loadContentMenu(navigationError.contentId).then(menu=>({menu}));
+      work.then(result => {
         if (navigationGeneration.current !== request) return;
-        setNavigationError(null); push({type:'menu',props:{list:menu}});
+        setNavigationError(null);if(result?.refresh) setSourceVersion(v=>v+1);else if(result) push({type:'menu',props:{list:result.menu,...(result.controller ? {sourceController:result.controller} : {})}});else navigationError.fallback?.();
       }).catch(error => { if (navigationGeneration.current === request) getLogger().warn('menu.navigation.error',{code:error.code}); });
     };
     return <TVActionDialog role="alert" label="Menu error" onBack={closeError}><p>Unable to load menu.</p>
@@ -279,7 +289,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
         onSelect={handleSelect}
         onEscape={() => {}} // At root, escape does nothing
         MENU_TIMEOUT={MENU_TIMEOUT}
-        refreshToken={refreshToken}
+        refreshToken={refreshToken + sourceVersion}
       />
     );
   }
@@ -291,9 +301,9 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     case 'participant-launch':
       return <ParticipantLaunchHost key={`${props.ref.ref}:${props.attempt || 0}`} refValue={props.ref} action={props.action} client={participantClient} onClose={pop} requireConfirmation={props.requireConfirmation} canLaunch={consumer => participantRegistry.supports(consumer)} resolvePreview={options => participantRegistry.resolvePreview?.(options)}
         onConflict={async () => {
-          if (!refreshParticipant) { pop(); return; }
+          if (!refreshParticipant && !sourceController) { pop(); return; }
           const originatingContent = currentContent;
-          const ref = await refreshParticipant(props.uid, props.action);
+          const ref = await (sourceController ? sourceController.refreshParticipant(props.uid, props.action) : refreshParticipant(props.uid, props.action));
           if (currentContentRef.current !== originatingContent) return;
           if (!ref) { pop(); return; }
           replace({type:'participant-launch',props:{...props,ref,requireConfirmation:true,attempt:(props.attempt || 0)+1}});
@@ -310,7 +320,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
             const parentDepth = Math.max(0, depth - 1);
             setSelectionAtDepth(parentDepth, getSelection(parentDepth).index, result.return_to.item_uid);
           }
-          onReturnTarget?.(result.return_to);
+          if(sourceController) sourceController.returnTarget(result.return_to); else onReturnTarget?.(result.return_to);
           const {return_to: _returnTarget, ...participantLaunch} = result;
           replace({type:'participant-result', props:{Adapter, result:participantLaunch}});
         }} />;
@@ -331,9 +341,9 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
           list={props.list || props.menu || props}
           depth={depth}
           onSelect={handleSelect}
-          onEscape={clear}
+          onEscape={props.sourceController ? () => {navigationGeneration.current++;props.sourceController.cancel();pop();} : clear}
           MENU_TIMEOUT={MENU_TIMEOUT}
-          refreshToken={refreshToken}
+          refreshToken={refreshToken + sourceVersion}
         />
       );
 

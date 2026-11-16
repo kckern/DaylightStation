@@ -3,11 +3,12 @@ import {screenActionActivity} from './supervisionScope.mjs';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useScreenAction as useRawScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
-import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
+import { useHasMenuNavigationContext, useMenuNavigationContext, useOptionalMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import { usePip } from "../../../../../__capabilities/screen-host/browser/pip.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
 import MenuStack from "../../../../../__app_modules/media/media/browser/menu.mjs";
-import {menuSourceHost} from '../menuSourceHosts.js';
+import {menuSourceHost,resolveMenuSource,screenOwnership} from '../menuSourceHosts.js';
+import {TVActionDialog} from '../../participants/TVActionDialog.jsx';
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
 import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
@@ -99,12 +100,18 @@ const toMenuRoot = (menuId) => (
   typeof menuId === 'string' && menuId.includes(':') ? { contentId: menuId } : menuId
 );
 
+function MenuOwnershipError({retry,back}) {
+  return <TVActionDialog role="alert" label="Menu error" onBack={back}><p>Unable to load menu.</p><button onClick={retry}>Retry</button><button onClick={back}>Back</button></TVActionDialog>;
+}
+
 export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const sessionSource = useSessionSourceContext();
   const itemActions = useMemo(() => getScreenItemActions(sessionSource), [sessionSource]);
-  const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef, fullscreenIdentity } = useScreenOverlay();
+  const fullscreenRef=useRef(fullscreenIdentity);fullscreenRef.current=fullscreenIdentity;
   const pip = usePip();
   const hasMenuNav = useHasMenuNavigationContext();
+  const nav=useOptionalMenuNavigationContext();const navContentRef=useRef(nav?.currentContent);navContentRef.current=nav?.currentContent;
   const { step: stepVolume, toggleMute: toggleVolumeMute, stepSize: volumeStepSize } = useScreenVolume();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
@@ -130,6 +137,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
   // --- Menu ---
   const currentMenuRef = useRef(null);
+  const menuRequestRef = useRef(0);
+  useEffect(()=>()=>{menuRequestRef.current++;},[]);
 
   // Nav-stack Player session bridge: MenuStack overlays mount the legacy
   // Player for menu selections (type:player). Forward a ref so the mounted
@@ -142,6 +151,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const menuId = payload.menuId;
     const appId = menuId?.split('/')[0];
     if (appId && getApp(appId)) {
+      menuRequestRef.current++;
       logger().info('app.open', { menuId, appId });
       showOverlay(AppContainer, { open: menuId, clear: () => dismissOverlay() });
       return;
@@ -162,17 +172,27 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     currentMenuRef.current = menuId;
+    const request=++menuRequestRef.current;
+    let initialFullscreen=fullscreenRef.current;const initialNavContent=navContentRef.current;
     const menuTimeout = actions?.menu?.timeout ?? 0;
     // `ownsNavStack`: a MenuStack overlay RENDERS the shared MenuNavigation
     // stack, so for as long as it is up it is the stack's only renderer and the
     // screen's own menu widget yields (MenuWidget). Without it, a selection made
     // here mounted a Player in BOTH — two unmuted videos in sync.
-    const host = menuSourceHost(menuId);
-    showOverlay(
-      host || MenuStack,
-      host ? {contentId: menuId, initialFocusUid:payload.focusUid, playerRef: navPlayerRef, onClose: () => dismissOverlay()} : { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
-      { priority: 'high', ownsNavStack: true },
-    );
+    const open = id => {
+      if(menuRequestRef.current!==request || fullscreenRef.current!==initialFullscreen || navContentRef.current!==initialNavContent) return;
+      const host=menuSourceHost(id);
+      showOverlay(host || MenuStack,
+        host ? {contentId:id,initialFocusUid:payload.focusUid,playerRef:navPlayerRef,onClose:()=>dismissOverlay()} : {rootMenu:toMenuRoot(id),MENU_TIMEOUT:menuTimeout,playerRef:navPlayerRef,resolveMenuSource},
+        {priority:'high',ownsNavStack:true});
+    };
+    const resolveAlias = () => screenOwnership(menuId).then(alias=>open(alias?.canonicalContentId || menuId)).catch(()=>{
+      if(menuRequestRef.current!==request || fullscreenRef.current!==initialFullscreen || navContentRef.current!==initialNavContent) return;
+      const back=()=>{menuRequestRef.current++;dismissOverlay();};
+      const retry=()=>{initialFullscreen=fullscreenRef.current;resolveAlias();};
+      showOverlay(MenuOwnershipError,{retry,back},{priority:'high'});
+    });
+    if(typeof menuId==='string' && menuId.startsWith('menu:')) resolveAlias(); else open(menuId);
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
@@ -460,7 +480,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       } else if (action === 'media:play') {
         showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef }, { ownsNavStack: true });
+        handleMenuOpen(secPayload);
       }
       return;
     }
@@ -527,7 +547,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
-  }, [actions, showOverlay, dismissOverlay, sessionSource]);
+  }, [actions, showOverlay, dismissOverlay, sessionSource, handleMenuOpen]);
 
   // --- Playback rate ---
   // ArtMode's background music is excluded: rate is meaningless for it, and the

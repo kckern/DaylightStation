@@ -8,6 +8,8 @@ import {MenuNavigationProvider} from '../../../../__capabilities/screen-host/bro
 import {ScreenOverlayProvider} from '../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 import {createParticipantBrowserRegistry} from '../../../../frontend/src/composition/participants/participantBrowserRegistry.js';
 import {AgendaMenuHost} from '../../../../__app_modules/household/agenda/browser/AgendaMenuHost.jsx';
+import {createAgendaMenuController} from '../../../../__app_modules/household/agenda/browser/agendaMenuController.js';
+import MenuStack from '../../../../__app_modules/media/media/browser/menu/MenuStack.jsx';
 import {AgendaParticipantContextProvider} from '../../../../__app_modules/household/agenda/server/application/AgendaParticipantContextProvider.mjs';
 import {AgendaMenuProjector} from '../../../../__app_modules/household/agenda/server/application/AgendaMenuProjector.mjs';
 import {AgendaContentAdapter} from '../../../../__app_modules/household/agenda/server/adapters/AgendaContentAdapter.mjs';
@@ -21,7 +23,7 @@ vi.mock('../../../../frontend/src/lib/api.mjs',async original=>({...await origin
 vi.mock('../../../../__app_modules/media/media/browser/menu/PlexMenuRouter.jsx',()=>({PlexMenuRouter:()=>null}));
 vi.mock('../../../../__app_modules/media/media/browser/surround-host.mjs',()=>({default:({children})=>children}));
 vi.mock('../../../../__app_modules/media/media/browser/playback.mjs',()=>({default:()=>null,PlayerOverlayLoading:()=>null}));
-it('returns a saved activity to its dated preview after the injected clock rolls forward',async()=>{
+it.each(['root','nested'])('returns a saved activity to its dated preview after injected rollover from %s',async entry=>{
  const dir=mkdtempSync(path.join(tmpdir(),'agenda-rollover-'));
  try {
   let now=new Date('2026-11-17T00:00:00Z');const target={kind:'content',source:'neutral',id:'neutral:one',capabilities:{displayable:{action:'display',participantConsumer:{id:'neutral',version:1}}}};
@@ -36,11 +38,13 @@ it('returns a saved activity to its dated preview after the injected clock rolls
   const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async({target:t})=>t,logger:{info(){}}});
   const projector=new AgendaMenuProjector({listProjector:new ListMenuProjector(),codec,resolveTarget,registry,logger:{warn(){}}});
   const adapter=new AgendaContentAdapter({repository:repo,projector,clock:()=>now,resolveHousehold:async()=> 'home'});
-  const fetcher=async url=>{const address=decodeURIComponent(url.split('/agenda/')[1]);const menu=await adapter.getList(address,{viewer:{},participantLaunchVersion:1});return {ok:true,json:async()=>({...menu,items:menu.items.map(item=>toListItem(item))})};};
+  const fetcher=async (url,options)=>{expect(options.headers['X-Daylight-Participant-Launch-Version']).toBe('1');const address=decodeURIComponent(url.split('/agenda/')[1]);const menu=await adapter.getList(address,{viewer:{},participantLaunchVersion:1});return {ok:true,json:async()=>({...menu,items:menu.items.map(item=>toListItem(item))})};};
   const client=Object.fromEntries(['inspect','begin'].map(op=>[op,input=>service[op]({...input,viewer:{}})]));
   const browserRegistry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral-output/v1',previewSchema:'neutral-preview/v1',preview:()=> <p>Neutral preview</p>,render:({clear})=><button onClick={()=>{now=new Date('2026-11-24T00:00:00Z');clear();}}>Roll over and return</button>}]);
-  render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:series/current" fetcher={fetcher} participantClient={client} participantRegistry={browserRegistry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+  const resolveMenuSource=async id=>({contentId:id,controller:createAgendaMenuController(id,{fetcher})});
+  render(<MenuNavigationProvider><ScreenOverlayProvider>{entry==='root' ? <AgendaMenuHost contentId="agenda:series/current" fetcher={fetcher} participantClient={client} participantRegistry={browserRegistry}/> : <MenuStack rootMenu={{title:'Caller',items:[{label:'Open week',list:{contentId:'agenda:series/current'}}]}} resolveMenuSource={resolveMenuSource} participantClient={client} participantRegistry={browserRegistry}/>}</ScreenOverlayProvider></MenuNavigationProvider>);
+  if(entry==='nested') fireEvent.click(await screen.findByText('Open week'));
   fireEvent.click(await screen.findByText('Activity'));fireEvent.click(await screen.findByRole('button',{name:'Start'}));fireEvent.click(await screen.findByText('Roll over and return'));
-  const activity=await screen.findByText('Activity');await waitFor(()=>expect(activity.closest('.menu-item')).toHaveClass('active'));expect(await screen.findByText(/Preview only/i)).toBeTruthy();
+  const activity=await screen.findByText('Activity');await waitFor(()=>expect(activity.closest('.menu-item')).toHaveClass('active'));expect(await screen.findByText(/Preview only/i)).toBeTruthy();if(entry==='nested'){fireEvent.popState(window);expect(await screen.findByText('Open week')).toBeTruthy();}
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
