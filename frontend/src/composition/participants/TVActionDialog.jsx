@@ -2,12 +2,15 @@ import React, {useEffect, useRef} from 'react';
 import './TVActionDialog.css';
 import {getActionBus} from '../../../../__capabilities/screen-host/browser/input.mjs';
 
+const reveal = control => control?.scrollIntoView?.({block:'nearest', inline:'nearest'});
+const focus = control => { control?.focus(); reveal(control); };
+
 /** A visible dialog owns semantic and keyboard input until it unmounts. */
 export function TVActionDialog({children, label, onBack, focusKey, role='dialog'}) {
   const root = useRef(null);
   const back = useRef(onBack);
   back.current = onBack;
-  useEffect(() => { root.current?.querySelector('[data-tv-scroll], button:not(:disabled)')?.focus(); }, [focusKey]);
+  useEffect(() => { focus(root.current?.querySelector('[data-tv-scroll], button:not(:disabled)')); }, [focusKey]);
   useEffect(() => {
     const perform = key => {
       if (['Escape','GoBack','BrowserBack'].includes(key)) { back.current?.(); return; }
@@ -15,6 +18,8 @@ export function TVActionDialog({children, label, onBack, focusKey, role='dialog'
       if (!controls.length) return;
       const current = controls.indexOf(document.activeElement);
       const focused = controls[current];
+      // The viewport can shrink while focus stays on the same inner scroll region.
+      reveal(focused);
       if (focused?.hasAttribute('data-tv-scroll') && ['ArrowUp','ArrowDown'].includes(key)) {
         const max = Math.max(0, focused.scrollHeight - focused.clientHeight);
         const next = Math.max(0, Math.min(max, focused.scrollTop + (key === 'ArrowDown' ? 1 : -1) * Math.max(1, focused.clientHeight * .8)));
@@ -22,7 +27,7 @@ export function TVActionDialog({children, label, onBack, focusKey, role='dialog'
       }
       if (['Enter',' ','GamepadA','GamepadStart','MediaPlayPause'].includes(key)) { if (focused?.tagName === 'BUTTON') focused.click(); return; }
       const step = ['ArrowUp','ArrowLeft'].includes(key) ? -1 : 1;
-      controls[(current + step + controls.length) % controls.length].focus();
+      focus(controls[(current + step + controls.length) % controls.length]);
     };
     const keys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter',' ','GamepadA','GamepadStart','MediaPlayPause','Escape','GoBack','BrowserBack'];
     const handle = event => {

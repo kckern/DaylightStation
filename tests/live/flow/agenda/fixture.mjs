@@ -79,7 +79,7 @@ export async function createAgendaFixture({page,request,createCleanupContext=()=
   manifest.callerMenu.postUpdateState=document;await saveManifest();
   return name;
  }
- const series={schema:'agenda-series/v1',series_id:id,household_id:household,revision:0,title:`Agenda ${id}`,calendar:{frequency:'weekly',timezone:process.env.AGENDA_TEST_TIMEZONE || 'UTC',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};
+ const series={schema:'agenda-series/v1',series_id:id,household_id:household,revision:0,title:'Acceptance',calendar:{frequency:'weekly',timezone:process.env.AGENDA_TEST_TIMEZONE || 'UTC',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{sections:[]},activity_settings:{}}};
  await saveManifest();
  try {
   manifest.seriesCreateAttempted=true;await saveManifest();
