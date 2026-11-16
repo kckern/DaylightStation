@@ -17,11 +17,12 @@ function presentation(item, index) {
 function changesFor(item, changes) {
   const result = {...changes};
   delete result.uid; delete result.index;
-  if ('label' in result) result.title = result.label;
+  if ('label' in result && item.label == null) { result.title = result.label; delete result.label; }
   if ('action' in result || 'input' in result) {
     const view = {...presentation(item, 0), ...changes};
     for (const action of actions) result[action] = undefined;
-    const action = view.action.toLowerCase();
+    const selected = view.action.toLowerCase();
+    const action = actions.includes(selected) ? selected : 'play';
     const prior = item[action];
     const input = action === 'open' ? view.input.replace(/^app:\s*/, '') : view.input;
     result[action] = action === 'open' ? input : (prior && typeof prior === 'object' ? {...prior, contentId:input} : {contentId:input});
@@ -33,6 +34,7 @@ function changesFor(item, changes) {
 export default function ListDraftEditor({list, onEdit, renderItemSettings, readOnly = false}) {
   const [editing, setEditing] = useState(null);
   const [cache, setCache] = useState(new Map());
+  const editingView = useMemo(() => editing?.item ? presentation(editing.item, 0) : null, [editing]);
   const sections = list.sections || [];
   const flatItems = useMemo(() => sections.flatMap(s => s.items.map((item, index) => presentation(item,index))), [sections]);
   const setContentInfo = useCallback((id, info) => setCache(old => new Map(old).set(id,info)), []);
@@ -66,6 +68,6 @@ export default function ListDraftEditor({list, onEdit, renderItemSettings, readO
       {renderItemSettings?.({item,readOnly})}</div>; })}</div></SortableContext>
     {!readOnly && <Button size="xs" onClick={()=>setEditing({item:null,sectionUid:section.uid})}>Add item</Button>}</section>)}</Stack></DndContext>
     {!readOnly && <Button onClick={()=>emit({type:'add-section',section:{title:'New section',items:[]}})}>Add section</Button>}
-    <ListsItemEditor hideSection opened={!!editing && !readOnly} item={editing?.item ? presentation(editing.item,0) : null} sections={sections} onClose={()=>setEditing(null)} onSave={payload=>{if(editing.item) { const defaults = Object.fromEntries(Object.keys(ITEM_DEFAULTS).filter(k=>k !== 'action').map(k=>[k, payload[k] ?? ITEM_DEFAULTS[k]])); emit({type:'update-item',itemUid:editing.item.uid,changes:changesFor(editing.item,{...defaults,...payload,action:payload.action || 'Play'})}); } else emit({type:'add-item',sectionUid:editing.sectionUid,item:changesFor({},payload)}); setEditing(null);}}/>
+    <ListsItemEditor hideSection preserveImageClear opened={!!editing && !readOnly} item={editingView} sections={sections} onClose={()=>setEditing(null)} onSave={payload=>{if(editing.item) { const defaults = Object.fromEntries(Object.keys(ITEM_DEFAULTS).filter(k=>k !== 'action').map(k=>[k, payload[k] ?? ITEM_DEFAULTS[k]])); emit({type:'update-item',itemUid:editing.item.uid,changes:changesFor(editing.item,{...defaults,...payload,action:payload.action || 'Play'})}); } else emit({type:'add-item',sectionUid:editing.sectionUid,item:changesFor({},payload)}); setEditing(null);}}/>
   </Stack></ListsContext.Provider>;
 }

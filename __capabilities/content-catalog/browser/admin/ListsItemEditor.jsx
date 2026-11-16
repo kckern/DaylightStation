@@ -38,7 +38,7 @@ function extractCustomFields(item) {
  * Build save payload with only non-default values
  * Always includes label and input as they are required
  */
-function buildSavePayload(formData, customFields) {
+function buildSavePayload(formData, customFields, preserveImageClear) {
   const payload = {
     label: formData.label?.trim() || '',
     input: formData.input?.trim() || ''
@@ -75,9 +75,9 @@ function buildSavePayload(formData, customFields) {
     }
   }
 
-  // Add image if it has a value (not in ITEM_DEFAULTS)
-  if (formData.image) {
-    payload.image = formData.image;
+  // Controlled hosts can request an explicit null when an override is removed.
+  if (formData.image || preserveImageClear) {
+    payload.image = formData.image || null;
   }
 
   // Merge custom fields
@@ -192,7 +192,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ hideSection = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
+function ListsItemEditor({ hideSection = false, preserveImageClear = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -292,7 +292,7 @@ function ListsItemEditor({ hideSection = false, opened, onClose, onSave, item, l
     e.preventDefault();
     if (!validate()) return;
 
-    const payload = buildSavePayload(formData, customFields);
+    const payload = buildSavePayload(formData, customFields, preserveImageClear);
     await onSave(payload);
   };
 

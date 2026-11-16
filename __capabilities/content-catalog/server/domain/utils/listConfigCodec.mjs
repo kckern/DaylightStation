@@ -42,8 +42,8 @@ function normalizeInput(input) {
 export function normalizeListItem(item) {
   if (!item) return item;
 
-  // Already new format with no old-format keys — pass through
-  if (!item.input && !item.label && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
+  // Canonical actions without a legacy input retain independent labels as well.
+  if (!item.input && (!item.label || !Object.hasOwn(item, 'input')) && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
     return preserveAuthoredTitle({ ...item }, item);
   }
 
