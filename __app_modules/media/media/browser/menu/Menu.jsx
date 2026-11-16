@@ -900,7 +900,7 @@ function MenuItems({
       const menuAdminLink=containerRef?.current?.querySelector('[data-menu-admin-link]');
       const adminLink=document.activeElement;
       if (menuAdminLink && key==='ArrowUp' && adminLink!==menuAdminLink && activeIndexRef.current===0) {e.preventDefault();menuAdminLink.focus();return;}
-      if (menuAdminLink && adminLink===menuAdminLink && key==='ArrowDown') {e.preventDefault();menuAdminLink.blur();return;}
+      if (menuAdminLink && adminLink===menuAdminLink && key.startsWith('Arrow')) {e.preventDefault();if(key==='ArrowDown') menuAdminLink.blur();return;}
       if (menuAdminLink && adminLink===menuAdminLink && ['Enter',' ','GamepadA','GamepadB','GamepadStart','MediaPlayPause'].includes(key)) {
         e.preventDefault();if(!e.repeat) adminLink.click();return;
       }

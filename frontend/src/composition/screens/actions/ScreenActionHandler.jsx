@@ -138,6 +138,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // --- Menu ---
   const currentMenuRef = useRef(null);
   const menuRequestRef = useRef(0);
+  const pendingMenuLookupRef = useRef(false);
   useEffect(()=>()=>{menuRequestRef.current++;},[]);
 
   // Nav-stack Player session bridge: MenuStack overlays mount the legacy
@@ -151,7 +152,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const menuId = payload.menuId;
     const appId = menuId?.split('/')[0];
     if (appId && getApp(appId)) {
-      menuRequestRef.current++;
+      menuRequestRef.current++;pendingMenuLookupRef.current=false;
       logger().info('app.open', { menuId, appId });
       showOverlay(AppContainer, { open: menuId, clear: () => dismissOverlay() });
       return;
@@ -172,6 +173,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     currentMenuRef.current = menuId;
+    pendingMenuLookupRef.current=false;
     const request=++menuRequestRef.current;
     let initialFullscreen=fullscreenRef.current;const initialNavContent=navContentRef.current;
     const menuTimeout = actions?.menu?.timeout ?? 0;
@@ -186,12 +188,13 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
         host ? {contentId:id,initialFocusUid:payload.focusUid,playerRef:navPlayerRef,onClose:()=>dismissOverlay()} : {rootMenu:toMenuRoot(id),MENU_TIMEOUT:menuTimeout,playerRef:navPlayerRef,resolveMenuSource},
         {priority:'high',ownsNavStack:true});
     };
-    const resolveAlias = () => screenOwnership(menuId).then(alias=>open(alias?.canonicalContentId || menuId)).catch(()=>{
+    const resolveAlias = () => {pendingMenuLookupRef.current=true;return screenOwnership(menuId).then(alias=>{if(menuRequestRef.current===request) pendingMenuLookupRef.current=false;open(alias?.canonicalContentId || menuId);}).catch(()=>{
       if(menuRequestRef.current!==request || fullscreenRef.current!==initialFullscreen || navContentRef.current!==initialNavContent) return;
-      const back=()=>{menuRequestRef.current++;dismissOverlay();};
+      pendingMenuLookupRef.current=false;
+      const back=()=>{menuRequestRef.current++;pendingMenuLookupRef.current=false;currentMenuRef.current=null;dismissOverlay();};
       const retry=()=>{initialFullscreen=fullscreenRef.current;resolveAlias();};
-      showOverlay(MenuOwnershipError,{retry,back},{priority:'high'});
-    });
+      showOverlay(MenuOwnershipError,{retry,back},{priority:'high',suspendsNavStack:true});
+    });};
     if(typeof menuId==='string' && menuId.startsWith('menu:')) resolveAlias(); else open(menuId);
   }, [showOverlay, dismissOverlay, actions]);
 
@@ -625,6 +628,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
   // --- Escape ---
   const handleEscape = useCallback(() => {
+    if(pendingMenuLookupRef.current){pendingMenuLookupRef.current=false;menuRequestRef.current++;currentMenuRef.current=null;return;}
     // First priority: let any registered interceptor handle escape
     // (e.g., MenuStack pops its navigation stack before the framework acts)
     if (escapeInterceptorRef?.current) {
@@ -697,6 +701,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   pipRef.current = pip;
 
   const consumeBack = useCallback(() => {
+    if(pendingMenuLookupRef.current){pendingMenuLookupRef.current=false;menuRequestRef.current++;currentMenuRef.current=null;return true;}
     // An overlay that manages its own back navigation (MenuStack popping levels,
     // Piano blocking escapes) registers an escape interceptor — defer to the
     // normal menu pop for those. Otherwise a "dumb" fullscreen scene (e.g. a
