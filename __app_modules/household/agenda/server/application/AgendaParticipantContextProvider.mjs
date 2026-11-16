@@ -73,7 +73,7 @@ export class AgendaParticipantContextProvider {
     const returnTo = {kind:'content', content_id:`agenda:${plan.series_id}/plans/${plan.plan_id}`, item_uid:item.uid};
     const provenance = {
       household_id:plan.household_id, series_id:plan.series_id, plan_id:plan.plan_id,
-      item_uid:item.uid, source_revision:plan.revision, item:structuredClone(item), return_to:returnTo,
+      item_uid:item.uid, source_revision:plan.revision, item:structuredClone(item),
     };
     return {sourceRevision:plan.revision, scope:{provider:'agenda', id:plan.plan_id, revision:plan.revision},
       roster, selector, action:binding.action, target, consumer:binding.consumer,
@@ -92,7 +92,14 @@ export function createAgendaActivityValidator({provider, setupResolver}) {
         await setupResolver.resolve({resolvedSource, viewer});
       } catch (error) {
         if (['service_unavailable', 'prepared_artifact_unavailable'].includes(error.code)) throw error;
-        errors.push({field:`activity_settings.${itemUid}${error.field ? `.${error.field}` : ''}`, message:error.message, code:error.code});
+        const sourceField = error.field;
+        let field;
+        if (sourceField === 'participants' || sourceField?.startsWith('participants.')) field = sourceField;
+        else if (sourceField === 'selector') field = `activity_settings.${itemUid}.participants`;
+        else if (sourceField === 'selector.keys' || sourceField?.startsWith('selector.keys.')) field = `activity_settings.${itemUid}.participants.ids${sourceField.slice('selector.keys'.length)}`;
+        else if (sourceField === 'selector.mode') field = `activity_settings.${itemUid}.participants.mode`;
+        else field = `activity_settings.${itemUid}${sourceField ? `.${sourceField}` : ''}`;
+        errors.push({field, message:error.message, code:error.code});
       }
     }
     return {valid:errors.length === 0, errors};

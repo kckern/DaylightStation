@@ -1,8 +1,8 @@
 import { sha256Text } from "#system/utils/sha256.mjs";
 import { canonicalJson } from "../../../portable/participant-launch.mjs";
 import { createParticipantContext, selectParticipants, validateParticipantContext } from "../../../../household-identity/portable/participants.mjs";
-const fail = (code, message) => {
-  throw Object.assign(new Error(message), { code });
+const fail = (code, message, field) => {
+  throw Object.assign(new Error(message), { code, ...(field ? {field} : {}) });
 };
 const hashValue = (value) => sha256Text(canonicalJson(value));
 const sameRef = (a, b) => a?.id === b?.id && a?.version === b?.version;
@@ -24,7 +24,7 @@ class ParticipantSetupResolver {
     }
     let participantContext;
     if (resolvedSource.scope) {
-      if (!descriptor.selectorSupport?.includes(resolvedSource.selector?.mode)) fail("invalid_participant_selector", "Selector unsupported");
+      if (!descriptor.selectorSupport?.includes(resolvedSource.selector?.mode)) fail("invalid_participant_selector", "Selector unsupported", "selector.mode");
       participantContext = await createParticipantContext({ scope: resolvedSource.scope, participants: selectParticipants({ roster: resolvedSource.roster, selector: resolvedSource.selector }) });
     } else {
       participantContext = await consumer.resolveDefaultContext?.(target, viewer) ?? null;
@@ -37,11 +37,14 @@ class ParticipantSetupResolver {
       }
     }
     if (!participantContext) {
-      if (descriptor.participantRequirement === "required") fail("participant_context_required", "Participant context required");
+      if (descriptor.participantRequirement === "required") fail("participant_context_required", "Participant context required", "participantContext");
       return { participantContext: null, prepared: null, setupHash: null, consumer };
     }
     const n = participantContext.participants.length;
-    if (n < Math.max(descriptor.minParticipants ?? 0, descriptor.participantRequirement === "required" ? 1 : 0) || n > descriptor.maxParticipants) fail("participant_context_required", "Participant count outside supported range");
+    if (n < Math.max(descriptor.minParticipants ?? 0, descriptor.participantRequirement === "required" ? 1 : 0) || n > descriptor.maxParticipants) {
+      const field = resolvedSource.scope ? (resolvedSource.selector?.mode === "explicit" ? "selector.keys" : "selector") : "participantContext.participants";
+      fail("participant_context_required", "Participant count outside supported range", field);
+    }
     const prepared = await consumer.prepareSetup({ target, participantContext, settings, viewer });
     if (prepared?.schema !== "participant-prepared-setup/v1" || !sameRef(prepared.consumer, consumer) || !["required", "none"].includes(prepared.confirmation) || !Array.isArray(prepared.artifacts) ||
         typeof prepared.setup?.schema !== "string" || !Object.hasOwn(prepared.setup, "data") ||

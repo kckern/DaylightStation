@@ -25,3 +25,18 @@ it('rejects a direct default with a forged context digest',async()=>{
  const bad={...consumer,resolveDefaultContext:async()=>({schema:'participant-context/v1',context_id:'pc_forged',scope:{provider:'test',id:'p',revision:1},participants:[person]})};
  await expect(new ParticipantSetupResolver({registry:{resolve:()=>bad}}).resolve({resolvedSource:{target:source.target,action:'display'},viewer:{}})).rejects.toMatchObject({code:'invalid_participant_context'});
 });
+
+it('reports field-addressed invalid supplied selections, including optional consumers',async()=>{
+ const required=new ParticipantSetupResolver({registry});
+ await expect(required.resolve({resolvedSource:{...source,selector:{schema:'participant-selector/v1',mode:'explicit',keys:[]}},viewer:{}})).rejects.toMatchObject({code:'participant_context_required',field:'selector.keys'});
+ await expect(required.resolve({resolvedSource:{...source,selector:{schema:'participant-selector/v1',mode:'explicit',keys:['missing']}},viewer:{}})).rejects.toMatchObject({code:'invalid_participant_context',field:'selector.keys.0'});
+ const optional={...consumer,describe:()=>({participantRequirement:'optional',minParticipants:1,maxParticipants:3,selectorSupport:['all','explicit']})};
+ await expect(new ParticipantSetupResolver({registry:{resolve:()=>optional}}).resolve({resolvedSource:{...source,selector:{schema:'participant-selector/v1',mode:'explicit',keys:[]}},viewer:{}})).rejects.toMatchObject({code:'participant_context_required',field:'selector.keys'});
+});
+
+it('reports a too-small supplied direct default even for an optional consumer',async()=>{
+ const {createParticipantContext}=await import('../../../../household-identity/portable/participants.mjs');
+ const context=await createParticipantContext({scope:{provider:'fake',id:'p',revision:1},participants:[]});
+ const optional={...consumer,describe:()=>({participantRequirement:'optional',minParticipants:1,maxParticipants:3,selectorSupport:['all']}),resolveDefaultContext:async()=>context};
+ await expect(new ParticipantSetupResolver({registry:{resolve:()=>optional}}).resolve({resolvedSource:{target:source.target,action:'display'},viewer:{}})).rejects.toMatchObject({code:'participant_context_required',field:'participantContext.participants'});
+});

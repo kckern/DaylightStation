@@ -111,10 +111,20 @@ class ParticipantLaunchService {
         const choices = await this.findChoices(receipts, input.viewer);
         if (choices.length) return { schema: "participant-launch-result/v1", kind: "resume_available", consumer: refOf(value.consumer), current_setup_hash: value.setupHash, choices };
       }
+      const returnTo = safeReturn(value.source.returnTo);
+      const providerProvenance = value.source.provenance ?? {};
+      if (typeof providerProvenance !== "object" || Array.isArray(providerProvenance)) {
+        fail("invalid_provenance", "Invalid provider provenance");
+      }
+      const provenance = clone(providerProvenance);
+      delete provenance.return_to;
+      if (returnTo) provenance.return_to = returnTo;
+      // Validate that provider evidence is serializable before retention.
+      hashValue(provenance);
       const frozen = hashValue(value.prepared);
       await value.consumer.retainPrepared?.({ prepared: value.prepared, viewer: input.viewer });
       if (hashValue(value.prepared) !== frozen) fail("prepared_artifact_unavailable", "Retention changed setup");
-      return { snapshot: { schema: "participant-launch-snapshot/v1", consumer: refOf(value.consumer), action: input.action, target: clone(value.source.target), participant_context: clone(value.participantContext), prepared: clone(value.prepared), setup_hash: value.setupHash }, provenance: clone(value.source.provenance ?? {}) };
+      return { snapshot: { schema: "participant-launch-snapshot/v1", consumer: refOf(value.consumer), action: input.action, target: clone(value.source.target), participant_context: clone(value.participantContext), prepared: clone(value.prepared), setup_hash: value.setupHash }, provenance };
     });
     if (reservation.kind === "resume_available" || reservation.kind === "passthrough") return reservation;
     const snapshot = reservation.snapshot;

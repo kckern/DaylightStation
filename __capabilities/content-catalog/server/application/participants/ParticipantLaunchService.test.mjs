@@ -87,3 +87,34 @@ it('passes only receipts for the exact consumer version to resumable discovery',
  const service=new ParticipantLaunchService({registry,providers:[{id:'agenda',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>source}],resolveDirectTarget:async()=>target,logger:{info(){}}});
  await service.inspect({ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'},action:'open',viewer:{}});expect(observed).toEqual([receipts[1]]);
 });
+
+it('retains the declared returnTo of a contract-only non-Agenda provider for begin and resume',async()=>{
+ const {hashValue}=await import('./ParticipantSetupResolver.mjs');
+ const target={kind:'app',appId:'fake',participantConsumer:{id:'fake',version:1}};
+ const destination={kind:'content',content_id:'collection:week/plan',item_uid:'item'};const expectedDestination=structuredClone(destination);
+ const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:5,selectorSupport:['all']}),prepareSetup:async()=>({schema:'participant-prepared-setup/v1',consumer:{id:'fake',version:1},setup:{schema:'fake/v1',data:{}},preview:{schema:'preview/v1',data:{}},artifacts:[],confirmation:'none'}),begin:async({snapshot})=>({schema:'participant-launch-result/v1',kind:'ready',launch_id:snapshot.launch_id,consumer:snapshot.consumer,snapshot_hash:snapshot.snapshot_hash,participant_context:snapshot.participant_context,output:{schema:'fake/v1',data:{}}}),findResumable:async()=>[],resume:async({receipt})=>receipt.result};
+ const registry=new ParticipantConsumerRegistry();registry.register({consumer});let saved;
+ const store={reserve:async(_,build)=>{const value=await build([]);const base={...value.snapshot,launch_id:'one'};saved={snapshot:{...base,snapshot_hash:hashValue(base)},provenance:value.provenance};return {kind:'reserved',snapshot:saved.snapshot,executionKey:'key'};},complete:async({result})=>{saved.result=result;return result;},readRetained:async()=>({snapshot:saved.snapshot,receipt:{launch_id:'one',snapshot_hash:saved.snapshot.snapshot_hash,result:saved.result},return_to:saved.provenance.return_to})};
+ const source={sourceRevision:1,scope:{provider:'other',id:'p',revision:1},roster:[participant],selector:{schema:'participant-selector/v1',mode:'all'},target,action:'open',consumer:{id:'fake',version:1},settings:{},returnTo:destination};
+ const provider={id:'other',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>source};
+ const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async()=>target,logger:{info(){}}});const ref={schema:'participant-launch-ref/v1',provider:'other',ref:'opaque'};
+ const started=await service.begin({ref,action:'open',requestId:'one',intent:'new',viewer:{}});
+ expect(saved.provenance.return_to).toEqual(expectedDestination);expect(started.return_to).toEqual(expectedDestination);
+ destination.content_id='collection:changed';
+ expect((await service.resume({ref,action:'open',launchId:'one',viewer:{}})).return_to).toEqual(expectedDestination);
+ source.returnTo=expectedDestination;source.provenance={evidence:'owned',return_to:{kind:'content',content_id:'collection:other'}};
+ const second=await service.begin({ref,action:'open',requestId:'two',intent:'new',viewer:{}});
+ expect(saved.provenance).toEqual({evidence:'owned',return_to:expectedDestination});expect(second.return_to).toEqual(expectedDestination);
+});
+
+it('rejects an unsafe provider returnTo before retention or admission',async()=>{
+ let pins=0,writes=0;
+ const target={kind:'app',appId:'fake',participantConsumer:{id:'fake',version:1}};
+ const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:5,selectorSupport:['all']}),prepareSetup:async()=>({schema:'participant-prepared-setup/v1',consumer:{id:'fake',version:1},setup:{schema:'fake/v1',data:{}},preview:{schema:'preview/v1',data:{}},artifacts:[],confirmation:'none'}),retainPrepared:async()=>{pins++;},begin:async()=>{throw Error('unexpected');}};
+ const registry=new ParticipantConsumerRegistry();registry.register({consumer});
+ const store={reserve:async(_,build)=>{const result=await build([]);writes++;return result;}};
+ const source={scope:{provider:'other',id:'p',revision:1},roster:[participant],selector:{schema:'participant-selector/v1',mode:'all'},target,action:'open',consumer:{id:'fake',version:1},settings:{},returnTo:{kind:'content',content_id:'https:evil'}};
+ const service=new ParticipantLaunchService({registry,providers:[{id:'other',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>source}],resolveDirectTarget:async()=>target,logger:{info(){}}});
+ await expect(service.begin({ref:{schema:'participant-launch-ref/v1',provider:'other',ref:'opaque'},action:'open',requestId:'r',intent:'new',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
+ expect(pins).toBe(0);expect(writes).toBe(0);
+});
