@@ -502,6 +502,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/personal/journalist/cli/journalist-debrief-preview.cli.mjs': null,
   '__app_modules/media/newsreporter/cli/newsreporter.cli.mjs': null,
   '__capabilities/screen-host/browser/menu-navigation.mjs': null,
+  '__capabilities/screen-host/browser/return-navigation.mjs': null,
   '__app_modules/media/media/browser/menu.mjs': null,
   '__capabilities/content-catalog/browser/picker.mjs': null,
   '__capabilities/content-catalog/browser/combobox-state.mjs': null,

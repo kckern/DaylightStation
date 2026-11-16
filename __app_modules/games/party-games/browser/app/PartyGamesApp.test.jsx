@@ -413,7 +413,7 @@ it('attaches the frozen participant launch in StrictMode without creating or res
  const participantLaunch={schema:'participant-launch-result/v1',kind:'ready',launch_id:'launch-one',snapshot_hash:'hash-one',consumer:{id:'party-games',version:1},participant_context:{schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'agenda',id:'plan',revision:1},participants:[{key:'one',participant_id:'guest-1',identity:{kind:'user',id:'guest-1'},display:{name:'Guest',avatar:null}}]},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}},runtime_ref:{provider:'gaming',id:'game:one'}};
  window.history.replaceState({},'','/screens/living-room/fhe?participants=a');
  window.localStorage.setItem('party-games:charades:family:active-session','stale');
- fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},experience:{id:'charades'},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch-one',snapshot_hash:'hash-one',consumer:{id:'party-games',version:1}}},seats:[{id:'guest-1',name:'Guest'}]},state:{competition:false}}});
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},experience:{id:'charades',version:1},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch-one',snapshot_hash:'hash-one',consumer:{id:'party-games',version:1}}},seats:[{id:'guest-1',name:'Guest'}]},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
  render(<React.StrictMode><PartyGamesApp participantLaunch={participantLaunch}/></React.StrictMode>);
  await screen.findByRole('button',{name:'Complete game:one'});
  expect(screen.getByTestId('attached-seats')).toHaveTextContent('guest-1');
@@ -431,17 +431,17 @@ it('fails closed on mixed participant and explicit session links',async()=>{
 });
 it('resumes a source session from its durable URL and keeps the dated return',async()=>{
  window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=game%3Aone&participants=a');
- fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',experience:{id:'charades'},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch',snapshot_hash:'hash',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/old',item_uid:'item'}}}},state:{competition:false}}});
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch',snapshot_hash:'hash',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/old',item_uid:'item'}}}},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
  render(<PartyGamesApp definitionId="charades:family"/>);
  await screen.findByRole('button',{name:'Complete game:one'});
  const query=new URLSearchParams(window.location.search);
- expect(query.get('return_to')).toBe('/screens/living-room?list=agenda%3As%2Fplans%2Fold');
+ expect(query.get('return_to')).toBe('/screens/living-room?list=agenda%3As%2Fplans%2Fold&focus_uid=item');
  expect(query.has('participants')).toBe(false); expect(createSession).not.toHaveBeenCalled();
 });
 it('renders the registered production adapter and attaches its returned session',async()=>{
  const {participantBrowserRegistry}=await import('../../../../../frontend/src/composition/participants/index.js');
  const result={schema:'participant-launch-result/v1',kind:'ready',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},participant_context:{schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'agenda',id:'plan',revision:1},participants:[{key:'one',participant_id:'guest-1',identity:{kind:'user',id:'guest-1'},display:{name:'Guest',avatar:null}}]},runtime_ref:{provider:'gaming',id:'game:one'},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}}};
- fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',experience:{id:'charades'},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},state:{competition:false}}});
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
  const Adapter=participantBrowserRegistry.resolve(result);render(<Adapter participantLaunch={result} clear={()=>{}}/>);
  await screen.findByRole('button',{name:'Complete game:one'});expect(screen.getByTestId('attached-seats')).toHaveTextContent('guest-1');expect(createSession).not.toHaveBeenCalled();
 });
@@ -456,4 +456,20 @@ it('rejects a participant launch mixed with a different explicit definition',asy
  fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},participants:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},state:{}}});
  render(<PartyGamesApp definitionId="charades:other" participantLaunch={result}/>);
  expect(await screen.findByRole('alert')).toHaveTextContent('different game definition');expect(createSession).not.toHaveBeenCalled();
+});
+it('renders a frozen explicit session when its definition is absent from the current catalog',async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=game%3Aone');
+ fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[{id:'saved-seat'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},definition:{experience:{id:'charades',version:1},competition:false},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
+ render(<PartyGamesApp definitionId="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete game:one'});expect(screen.getByTestId('attached-seats')).toHaveTextContent('saved-seat');expect(createSession).not.toHaveBeenCalled();
+});
+it('exits a standalone saved source session to its stored dated target and UID, ignoring ambient return',async()=>{
+ window.history.replaceState({},'','/app/party-games/charades:family?session=game%3Aone&return_to=%2Funrelated');
+ const replace=vi.spyOn(window.location,'replace').mockImplementation(()=>{});
+ fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'saved'}}}},definition:{experience:{id:'charades',version:1},competition:false},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
+ render(<PartyGamesApp definitionId="charades:family" clear={vi.fn()}/>);
+ await screen.findByRole('button',{name:'Complete game:one'});
+ expect(new URLSearchParams(window.location.search).get('return_to')).toBe('/tv?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');
+ fireEvent.keyDown(window,{key:'Escape'});fireEvent.click(await screen.findByRole('button',{name:'Leave game'}));
+ expect(replace).toHaveBeenCalledWith('/tv?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');
 });

@@ -162,3 +162,18 @@ it.each([['button','failure'],['button','success'],['hardware','failure'],['hard
  await act(async()=>{if(outcome==='failure') rejectRetry(new Error('late failure')); else resolveRetry(result('Stale update',[{uid:'uid',label:'Stale',disabled:true}])); await Promise.resolve();await Promise.resolve();});
  expect(screen.getByText('Activity')).toBeTruthy(); expect(screen.queryByRole('button',{name:'Retry'})).toBeNull(); expect(screen.queryByText('Stale')).toBeNull();
 });
+it('restores the saved item UID when opening a dated menu after a document reload',async()=>{
+ const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:'agenda:s/plans/p',title:'Dated plan',navigationPolicy:'return-to-selected',disableAutoCountdown:true,items:[{uid:'first',label:'First',display:{contentId:'fake:a'}},{uid:'saved',label:'Saved activity',display:{contentId:'fake:b'}}]})});
+ render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:s/plans/p" initialFocusUid="saved" fetcher={fetcher}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ const saved=await screen.findByText('Saved activity');await waitFor(()=>expect(saved.closest('.menu-item')).toHaveClass('active'));
+});
+it('reopens the saved UID through ScreenAutoplay and the screen action host',async()=>{
+ const {ScreenAutoplay}=await import('../../../../frontend/src/composition/screens/ScreenRenderer.jsx');
+ window.history.replaceState({},'','/screen/living-room?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');
+ const previous=globalThis.fetch;
+ globalThis.fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({id:'agenda:s/plans/p',title:'Dated plan',navigationPolicy:'return-to-selected',disableAutoCountdown:true,items:[{uid:'first',label:'First',display:{contentId:'fake:a'}},{uid:'saved',label:'Saved activity',display:{contentId:'fake:b'}}]})});
+ try {
+  render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><ScreenAutoplay/></ScreenOverlayProvider></MenuNavigationProvider>);
+  const saved=await screen.findByText('Saved activity');await waitFor(()=>expect(saved.closest('.menu-item')).toHaveClass('active'));
+ } finally {globalThis.fetch=previous;window.history.replaceState({},'','/');}
+});

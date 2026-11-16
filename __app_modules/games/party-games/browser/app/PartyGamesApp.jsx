@@ -1,6 +1,7 @@
 // Shell root: outer flow (loading → set-picker → team-setup → buzzer-bind →
 // playing → results). Mounts the selected game from the registry
 // during 'playing'. Game-agnostic — knows nothing about clues or boards.
+import {contentReturnUrl} from '../../../../../__capabilities/screen-host/browser/return-navigation.mjs';
 import {participantSessionAttachment} from '../participants/participantSessionAttachment.js';
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
@@ -105,20 +106,18 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     if (friendlyPath) return friendlyPath.replace(/\/charades(?:\/test)?$/, '');
     return window.location.pathname.replace(/\/party-games(?:\/.*)?$/, '') || '/';
   });
-  const screenRoot = window.location.pathname.match(/^(\/screens?\/[^/]+)/)?.[1];
-  const dated = sourceAttachment?.returnTo;
-  const effectiveReturnTo = dated?.kind === 'content' && /^agenda:[A-Za-z0-9_.-]+\/plans\/[A-Za-z0-9_.-]+$/.test(dated.content_id) && screenRoot ? `${screenRoot}?list=${encodeURIComponent(dated.content_id)}` : returnTo;
+  const effectiveReturnTo = sourceAttachment?.returnTo ? contentReturnUrl(sourceAttachment.returnTo, window.location.pathname) : returnTo;
   const restoreLocation = useCallback(() => {
     window.history.replaceState({}, '', effectiveReturnTo);
   }, [effectiveReturnTo]);
   const exit = useCallback(() => {
     audioRef.current?.stopAll('app-exit');
-    if (needsDocumentReturn) {
+    if (needsDocumentReturn || (sourceAttachment && /^\/app\/party-games(?:\/|$)/.test(window.location.pathname))) {
       window.location.replace(effectiveReturnTo);
       return;
     }
     restoreLocation(); shellExit?.();
-  }, [needsDocumentReturn, effectiveReturnTo, restoreLocation, shellExit]);
+  }, [needsDocumentReturn, effectiveReturnTo, restoreLocation, shellExit, sourceAttachment]);
   const [attachment, setAttachment] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     // Embedded previews must not inherit a previous game's ambient URL attachment.
@@ -229,8 +228,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useEffect(() => {
     let cancelled = false;
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
-      .then(({ config, sets, attachedSession }) => {
+      .then(({ config, sets, catalogUnavailable, attachedSession }) => {
         if (!cancelled) {
+          if (catalogUnavailable && attachment.savedSession) throw new Error('Current game catalog unavailable');
           const explicitDefinition = (definitionId || param || appPath || '').split('?')[0];
           if (participantLaunch && explicitDefinition.includes(':') && explicitDefinition !== participantLaunch.output?.data?.definition_id) throw new Error('Attached session belongs to a different game definition');
           const attachedDefinition = attachedSession?.diagnostic?.definition_id || attachedSession?.header?.artifacts?.rules_definition?.id;
@@ -239,6 +239,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             const ambientSession = /^\/screens?\/[^/]+\/party-games(?:\/|$)|^\/app\/party-games(?:\/|$)/.test(window.location.pathname) ? new URLSearchParams(window.location.search).get('session') : null;
             if (participantLaunch && ambientSession && ambientSession !== attachment.sessionId) throw new Error('Attached session identity does not match');
             const resolved = participantSessionAttachment({participantLaunch, explicitSession:attachment.sessionId, sessionHeader:attachedSession?.header});
+            if (resolved.returnTo && !contentReturnUrl(resolved.returnTo, window.location.pathname)) throw new Error('Invalid saved return target');
             setSourceAttachment(resolved);
           }
           if (attachedSession?.replacementSessionId) {

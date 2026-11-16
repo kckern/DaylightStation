@@ -137,3 +137,8 @@ it('autostarts the ordered explicit member and named guest roster and rejects am
   const duplicate = { ...set, launch: { autostart: true, participants: [member.id, member.id] } };
   expect(flowReducer(initialFlowState, { type: 'BOOT_LOADED', config: { household_members: [member] }, sets: [duplicate], requestedDefinition: duplicate.definitionId }).error).toMatch(/distinct/);
 });
+it('fails closed for an unsupported frozen experience version',()=>{
+ const session={header:{session_id:'game:old',experience:{id:'charades',version:99},artifacts:{rules_definition:{id:'charades:old'}},launch:{participant_launch:{schema:'participant-session-attachment/v1'}},seats:[]},definition:{experience:{id:'charades',version:99}},state:{}};
+ const state=flowReducer(initialFlowState,{type:'BOOT_LOADED',config:CONFIG,sets:[{valid:true,definitionId:'charades:old',game:'charades',presenter_id:'charades-stage'}],attachedSession:session,requestedDefinition:'charades:old'});
+ expect(state.error).toMatch(/not mounted/i);expect(state.sessionId).toBeNull();expect(state.phase).toBe('loading');
+});

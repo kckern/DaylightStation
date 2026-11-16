@@ -1,15 +1,22 @@
 import { DaylightAPI } from '@/lib/api.mjs';
 
-export async function fetchBoot({ diagnosticSessionId = null, sessionId = null } = {}) {
+export async function fetchBoot({ diagnosticSessionId = null, sessionId = null, allowCatalogFailure = Boolean(sessionId) } = {}) {
   if (diagnosticSessionId && !diagnosticSessionId.startsWith('diagnostic:')) throw new Error('Diagnostic session id must use the diagnostic: prefix');
   if (diagnosticSessionId && sessionId) throw new Error('Only one session attachment may be requested');
   const attachedSessionId = diagnosticSessionId || sessionId;
-  const [config, catalog, attachedSession] = await Promise.all([
-    DaylightAPI('api/v1/gaming/environments/party-games/profile'),
-    DaylightAPI('api/v1/gaming/environments/party-games/catalog'),
+  const [profile, catalog, attachedSession] = await Promise.all([
+    DaylightAPI('api/v1/gaming/environments/party-games/profile').then(value => ({value}), error => ({error})),
+    DaylightAPI('api/v1/gaming/environments/party-games/catalog').catch(error => ({error})),
     attachedSessionId ? DaylightAPI(`api/v1/gaming/sessions/${encodeURIComponent(attachedSessionId)}`) : null,
   ]);
-  const sets = (catalog.entries || []).map((entry) => ({
+  const frozenAttachment = Boolean(sessionId && allowCatalogFailure && attachedSession?.header?.launch?.participant_launch);
+  if (profile.error && !frozenAttachment) throw profile.error;
+  if (catalog?.error && !frozenAttachment) throw catalog.error;
+  const config = profile.value || {};
+  const entries = catalog?.entries ?? [];
+  const invalidCatalog = !Array.isArray(entries) || entries.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry));
+  if (invalidCatalog && !frozenAttachment) throw new Error('Invalid game catalog');
+  const sets = (invalidCatalog ? [] : entries).map((entry) => ({
     ...entry,
     game: entry.experience_id,
     setId: entry.content_id,
@@ -17,7 +24,7 @@ export async function fetchBoot({ diagnosticSessionId = null, sessionId = null }
     setupProfile: entry.setup_profile || { kind: entry.setup || 'none' },
     roundCount: entry.round_count,
   }));
-  return { config, sets, attachedSession, diagnosticSession: diagnosticSessionId ? attachedSession : null };
+  return { config, sets, catalogUnavailable:Boolean(profile.error || catalog?.error || invalidCatalog), attachedSession, diagnosticSession: diagnosticSessionId ? attachedSession : null };
 }
 
 export function createSession({ definitionId, seats = [], teams = null, hostMode = 'human', setupProfile = {}, historyPolicy = null }) {

@@ -1,3 +1,4 @@
+import {focusUidFromSearch} from '../../../../__capabilities/screen-host/browser/return-navigation.mjs';
 import {useActivityStop} from '../../../../__app_modules/household/supervision/browser/index.js';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
@@ -126,6 +127,8 @@ export function ScreenAutoplay({ routes, layout }) {
 
     // Emit appropriate action after a brief delay to let the screen framework mount
     const action = autoplayToAction(autoplay);
+    const focusUid = focusUidFromSearch(search);
+    if (action?.event === 'menu:open' && autoplay.list && focusUid) action.payload.focusUid = focusUid;
     if (action) {
       timer = setTimeout(() => {
         bus.emit(action.event, action.payload);

@@ -42,15 +42,26 @@ function selectSet(state, set) {
   };
 }
 
+// Explicit support is versioned: a retired catalog cannot choose a presenter.
+const FROZEN_EXPERIENCES = Object.freeze({ 'charades:1': 'charades-stage' });
 function attachSession(state, sets, session, requestedDefinition) {
   const diagnosticDefinitionId = session?.diagnostic?.definition_id || requestedDefinition;
   const experienceId = session?.header?.experience?.id;
-  const mounted = sets.find((set) => set.valid && (
+  const frozen = session?.header?.launch?.participant_launch;
+  const ref = session?.header?.experience;
+  const declared = session?.definition?.experience;
+  const presenter = ref && declared && ref.id === declared.id && ref.version === declared.version
+    ? FROZEN_EXPERIENCES[`${ref.id}:${ref.version}`] : null;
+  const mounted = frozen && presenter ? {
+    game:ref.id, setId:session.header.artifacts?.content_pack?.id || null,
+    definitionId:session.header.artifacts?.rules_definition?.id,
+    presenter_id:presenter, setup:'none', competition:session.definition.competition,
+  } : !frozen && sets.find((set) => set.valid && (
     diagnosticDefinitionId ? set.definitionId === diagnosticDefinitionId : set.game === experienceId
   ));
   if (!mounted) {
     const identity = diagnosticDefinitionId || experienceId || 'missing';
-    return { ...state, phase: 'set-picker', error: `Session experience is not mounted: ${identity}` };
+    return { ...state, phase: frozen ? 'loading' : 'set-picker', error: `Session experience is not mounted: ${identity}` };
   }
   return {
     ...selectSet(state, mounted),

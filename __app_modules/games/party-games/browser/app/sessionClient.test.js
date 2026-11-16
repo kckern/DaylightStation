@@ -79,3 +79,15 @@ it('rejects an attached roster that differs from configured autostart participan
  expect(canResumeSavedSession({header:{participants:[{id:'user_a'}]}},set)).toBe(false);
  expect(canResumeSavedSession({header:{participants:[{id:'user_a'},{id:'guest:visitor'}]}},set)).toBe(true);
 });
+it('loads a saved session even if the current catalog is unavailable',async()=>{
+ DaylightAPI.mockImplementation(path=>path.endsWith('/profile')?Promise.resolve({defaults:{}}):path.endsWith('/catalog')?Promise.reject(Error('retired catalog')):Promise.resolve({header:{session_id:'game:old',launch:{participant_launch:{schema:'participant-session-attachment/v1'}}}}));
+ await expect(fetchBoot({sessionId:'game:old',allowCatalogFailure:true})).resolves.toMatchObject({sets:[],attachedSession:{header:{session_id:'game:old'}}});
+});
+it('treats malformed catalog rows as unavailable for an explicit attached session',async()=>{
+ DaylightAPI.mockImplementation(path=>path.endsWith('/profile')?Promise.resolve({defaults:{}}):path.endsWith('/catalog')?Promise.resolve({entries:{invalid:true}}):Promise.resolve({header:{session_id:'game:old',launch:{participant_launch:{schema:'participant-session-attachment/v1'}}}}));
+ await expect(fetchBoot({sessionId:'game:old'})).resolves.toMatchObject({sets:[],catalogUnavailable:true,attachedSession:{header:{session_id:'game:old'}}});
+});
+it('keeps a legacy explicit session catalog failure as an error',async()=>{
+ DaylightAPI.mockImplementation(path=>path.endsWith('/profile')?Promise.resolve({defaults:{}}):path.endsWith('/catalog')?Promise.reject(Error('catalog unavailable')):Promise.resolve({header:{session_id:'game:legacy'}}));
+ await expect(fetchBoot({sessionId:'game:legacy'})).rejects.toThrow('catalog unavailable');
+});

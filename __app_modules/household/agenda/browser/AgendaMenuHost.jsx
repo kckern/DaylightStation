@@ -8,7 +8,7 @@ const isDatedPlan = id => /^agenda:[^/]+\/plans\/[^/]+$/.test(id || '');
 const defaultFetch = (...args) => fetch(...args);
 
 /** Fetches a protocol-capable Agenda menu and pins its selected dated address. */
-export function AgendaMenuHost({contentId, fetcher=defaultFetch, playerRef, onClose, participantClient, participantRegistry}) {
+export function AgendaMenuHost({contentId, initialFocusUid, fetcher=defaultFetch, playerRef, onClose, participantClient, participantRegistry}) {
   const [state,setState] = useState({phase:'loading',version:0});
   const root = useRef(null);
   const generation = useRef(0);
@@ -81,6 +81,6 @@ export function AgendaMenuHost({contentId, fetcher=defaultFetch, playerRef, onCl
   if (state.phase==='loading') return <p>Loading menu…</p>;
   const error = state.error && <TVActionDialog role="alert" label="Menu error" focusKey={state.error} onBack={dismissError}><p>{state.error}</p><button onClick={() => load()}>Retry</button><button onClick={dismissError}>Back</button></TVActionDialog>;
   if (!root.current) return error;
-  return <><div style={state.error ? {display:'none'} : undefined}><MenuStack rootMenu={root.current} refreshToken={state.version} playerRef={playerRef} onActivityReturn={load} onHostErrorBack={state.error ? dismissError : null} onActivityStart={activityStart} onReturnTarget={returnTarget} getReturnMenuId={() => selectedId.current} loadContentMenu={navigate} onNavigationCancel={() => { generation.current += 1; }} refreshParticipant={refreshParticipant} participantClient={participantClient} participantRegistry={participantRegistry}/></div>{error}</>;
+  return <><div style={state.error ? {display:'none'} : undefined}><MenuStack initialFocusUid={initialFocusUid} rootMenu={root.current} refreshToken={state.version} playerRef={playerRef} onActivityReturn={load} onHostErrorBack={state.error ? dismissError : null} onActivityStart={activityStart} onReturnTarget={returnTarget} getReturnMenuId={() => selectedId.current} loadContentMenu={navigate} onNavigationCancel={() => { generation.current += 1; }} refreshParticipant={refreshParticipant} participantClient={participantClient} participantRegistry={participantRegistry}/></div>{error}</>;
 }
 export default AgendaMenuHost;

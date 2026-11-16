@@ -171,7 +171,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const host = typeof menuId === 'string' && menuId.includes(':') ? menuHosts[menuId.split(':', 1)[0]] : null;
     showOverlay(
       host || MenuStack,
-      host ? {contentId: menuId, playerRef: navPlayerRef, onClose: () => dismissOverlay()} : { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
+      host ? {contentId: menuId, initialFocusUid:payload.focusUid, playerRef: navPlayerRef, onClose: () => dismissOverlay()} : { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
       { priority: 'high', ownsNavStack: true },
     );
   }, [showOverlay, dismissOverlay, actions]);

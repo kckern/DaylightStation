@@ -80,3 +80,6 @@ describe('routeRedirects — the query string is part of the destination', () =>
     expect(redirect('/office?stale=1', '/office', <OfficeRedirect />)).toBe('/screen/office');
   });
 });
+it('preserves a saved content target and focus UID through the TV redirect',()=>{
+ expect(redirect('/tv?list=agenda%3As%2Fplans%2Fp&focus_uid=saved','/tv',<TVRedirect/>)).toBe('/screen/living-room?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');
+});

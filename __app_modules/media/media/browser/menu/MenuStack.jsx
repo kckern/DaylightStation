@@ -51,7 +51,7 @@ function threadShaderIntoContent(selection) {
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
+export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
   const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth, registerMenuBackHandler, unregisterMenuBackHandler } = useMenuNavigationContext();
   const currentContentRef = React.useRef(currentContent);
   currentContentRef.current = currentContent;
@@ -68,9 +68,13 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantCl
   React.useEffect(() => {
     if (rootMenu !== prevRootMenuRef.current) {
       reset();
+      if (initialFocusUid && Array.isArray(rootMenu?.items)) {
+        const index = rootMenu.items.findIndex(item => item.uid === initialFocusUid);
+        if (index >= 0) setSelectionAtDepth(0, index, initialFocusUid);
+      }
       prevRootMenuRef.current = rootMenu;
     }
-  }, [rootMenu, reset]);
+  }, [rootMenu, reset, initialFocusUid, setSelectionAtDepth]);
 
   // Register escape interceptor: pop navigation stack before overlay dismisses
   useEffect(() => {
