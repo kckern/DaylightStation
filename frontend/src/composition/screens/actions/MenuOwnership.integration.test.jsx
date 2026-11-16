@@ -61,3 +61,33 @@ it.each(['success','failure'])('closes a pending ownership Retry on hardware Bac
  expect(await screen.findByText('Agenda host: agenda:neutral')).toBeTruthy();
  expect(screen.queryByText('Widget item')).toBeNull();
 });
+
+it.each(['before','success','failure'])('hardware Back closes the widget local error (%s Retry) without losing its frame/selection',async outcome=>{
+ let resolveRetry,rejectRetry,requests=0;
+ const retry=new Promise((resolve,reject)=>{resolveRetry=resolve;rejectRetry=reject;});
+ api.DaylightAPI.mockImplementation(async url=>{
+  if(!url.includes('_ownership/menu/')) return {title:'Widget',items:[{label:'Widget item'}]};
+  requests++;if(requests===1)throw Error('offline');return retry;
+ });
+ function Nested(){const {push,setSelectionAtDepth,depth,getSelection}=useMenuNavigationContext();return <><button onClick={()=>{push({type:'menu',props:{list:{title:'Caller',items:[{uid:'safe',label:'Safe'},{uid:'nested',label:'Nested lookup',list:{contentId:'menu:child'}}]}}});setSelectionAtDepth(1,1,'nested');}}>Caller frame</button><output data-testid="caller">{depth}:{getSelection(1).key}</output></>;}
+ render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><MenuWidget source="neutral"/><Nested/></ScreenOverlayProvider></MenuNavigationProvider>);
+ await screen.findByText('Widget item');fireEvent.click(screen.getByText('Caller frame'));await screen.findByText('Nested lookup');
+ fireEvent.click(screen.getByText('Nested lookup'));await screen.findByRole('alert',{name:'Menu error'});
+ expect(screen.getByTestId('caller')).toHaveTextContent('1:nested');
+ if(outcome!=='before') fireEvent.click(screen.getByRole('button',{name:'Retry'}));
+ fireEvent.popState(window);
+ expect(screen.queryByRole('alert',{name:'Menu error'})).toBeNull();
+ expect(screen.getByTestId('caller')).toHaveTextContent('1:nested');expect(screen.getByText('Nested lookup')).toBeTruthy();
+ if(outcome!=='before') await act(async()=>{if(outcome==='success')resolveRetry({alias:null});else rejectRetry(Error('still offline'));await retry.catch(()=>{});});
+ expect(screen.queryByRole('alert',{name:'Menu error'})).toBeNull();expect(screen.getByTestId('caller')).toHaveTextContent('1:nested');expect(screen.getByText('Nested lookup')).toBeTruthy();
+});
+
+it('commits a successful local Retry without treating its own push as cancellation',async()=>{
+ const cancelled=vi.fn();let attempts=0;
+ const resolveMenuSource=async()=>{attempts++;if(attempts===1)throw Error('offline');return null;};
+ const rootMenu={title:'Caller',items:[{uid:'nested',label:'Nested retry',list:{contentId:'menu:child'}}]};
+ api.DaylightAPI.mockResolvedValue({title:'Child',items:[{label:'Child item'}]});
+ render(<MenuNavigationProvider><ScreenOverlayProvider><MenuStack rootMenu={rootMenu} resolveMenuSource={resolveMenuSource} onNavigationCancel={cancelled}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Nested retry'));await screen.findByRole('alert',{name:'Menu error'});fireEvent.click(screen.getByRole('button',{name:'Retry'}));
+ expect(await screen.findByText('Child item')).toBeTruthy();expect(cancelled).not.toHaveBeenCalled();
+});

@@ -4,8 +4,42 @@ import { weekOf } from '../domain/calendar.mjs';
 
 const fail=(code,message,errors)=>Object.assign(new Error(message),{code,...(errors ? {errors} : {})});
 export class AgendaPlanningService {
-  constructor({repository,clock,ids,validateActivities,logger,resolveDisplay,remapActivitySettings,resolveItemImage,householdTimezone}) { if (!repository || typeof clock!=='function' || !ids || typeof validateActivities!=='function' || !logger) throw new Error('Repository, clock, IDs, activity validation and logger required'); Object.assign(this,{repository,clock,ids,validateActivities,logger,resolveDisplay,remapActivitySettings,resolveItemImage,householdTimezone}); }
-  async createPlan({householdId,seriesId,weekOf:week,requestId,sourcePlanId=null,sourceRevision=null}) { return this.repository.createPlan({householdId,seriesId,weekOf:week,requestId,sourcePlanId,sourceRevision,make:async({series,planId})=>{ const sourcePlan=sourcePlanId ? (await this.repository.readPlanInSeries({householdId,seriesId,planId:sourcePlanId}))?.document : undefined; if (sourcePlanId && !sourcePlan) throw fail('not_found','Source plan not found'); if (sourceRevision !== null && (sourcePlan ?? series).revision !== sourceRevision) throw fail('revision_conflict','Source changed'); const displaySnapshots={}; if (!sourcePlan) for (const p of series.defaults.participants) if (p.person) { if (typeof this.resolveDisplay!=='function') throw fail('invalid_agenda','Identity display resolver required'); const entry=await this.resolveDisplay({householdId,person:p.person}); if (!entry?.display || entry.active===false) throw fail('invalid_agenda','Person unavailable'); displaySnapshots[`${p.person.kind}:${p.person.id}`]=entry.display; } const imageRefs=await this.resolveArtwork({source:sourcePlan ?? series.defaults,householdId}); const plan=instantiate({series,weekOf:week,sourcePlan,imageRefs,ids:{...this.ids,plan:()=>planId},displaySnapshots,remapActivitySettings:this.remapActivitySettings}); const now=new Date(this.clock()).toISOString(); return {...plan,created_at:now,updated_at:now}; }}); }
+  constructor({repository,clock,ids,validateActivities,logger,resolveDisplay,remapActivitySettings,resolveItemImage,householdTimezone}) {
+    if (!repository || typeof clock !== 'function' || !ids || typeof validateActivities !== 'function' || !logger) {
+      throw new Error('Repository, clock, IDs, activity validation and logger required');
+    }
+    Object.assign(this,{repository,clock,ids,validateActivities,logger,resolveDisplay,remapActivitySettings,resolveItemImage,householdTimezone});
+  }
+
+  async createPlan({householdId,seriesId,weekOf:week,requestId,sourcePlanId=null,sourceRevision=null}) {
+    const instantiatePlan = async ({series,planId}) => {
+      const sourcePlan = sourcePlanId
+        ? (await this.repository.readPlanInSeries({householdId,seriesId,planId:sourcePlanId}))?.document
+        : undefined;
+      if (sourcePlanId && !sourcePlan) throw fail('not_found','Source plan not found');
+      const revisionSource = sourcePlan ?? series;
+      if (sourceRevision !== null && revisionSource.revision !== sourceRevision) {
+        throw fail('revision_conflict','Source changed');
+      }
+
+      const displaySnapshots = {};
+      if (!sourcePlan) {
+        for (const participant of series.defaults.participants) {
+          if (!participant.person) continue;
+          if (typeof this.resolveDisplay !== 'function') throw fail('invalid_agenda','Identity display resolver required');
+          const entry = await this.resolveDisplay({householdId,person:participant.person});
+          if (!entry?.display || entry.active === false) throw fail('invalid_agenda','Person unavailable');
+          displaySnapshots[`${participant.person.kind}:${participant.person.id}`] = entry.display;
+        }
+      }
+      const imageRefs = await this.resolveArtwork({source:sourcePlan ?? series.defaults,householdId});
+      const plan = instantiate({series,weekOf:week,sourcePlan,imageRefs,
+        ids:{...this.ids,plan:()=>planId},displaySnapshots,remapActivitySettings:this.remapActivitySettings});
+      const now = new Date(this.clock()).toISOString();
+      return {...plan,created_at:now,updated_at:now};
+    };
+    return this.repository.createPlan({householdId,seriesId,weekOf:week,requestId,sourcePlanId,sourceRevision,make:instantiatePlan});
+  }
   async resolveArtwork({source,householdId}) {
     const images=Object.create(null);
     for (const item of source.list.sections.flatMap(section=>section.items)) {
@@ -24,8 +58,32 @@ export class AgendaPlanningService {
   }
   validateSeriesDocument(series) { const result=validateSeries(series); if (this.householdTimezone && series?.calendar?.timezone !== this.householdTimezone) return {valid:false,errors:[...result.errors,{field:'calendar.timezone',message:'Must match household timezone'}]}; return result; }
   validatePlanDocument(plan) { return validatePlan(plan); }
-  async validateDraft({plan,viewer}) { const structural=validatePlan(plan,{purpose:'publish'}); if (!structural.valid) return structural; const validation=await this.validateActivities({plan,viewer}); if (!validation || typeof validation.valid!=='boolean' || !Array.isArray(validation.errors)) throw fail('invalid_validation','Activity validation returned an invalid result'); return validation; }
-  async change({householdId,planId,expectedEtag,viewer,update,validate=false}) { return this.repository.mutatePlan({householdId,planId,expectedEtag,mutate:async old=>{ if (old.week_of < weekOf({instant:this.clock(),timezone:old.calendar.timezone})) throw fail('past_plan','Past plans are read-only'); const next=await update(old); next.created_at=old.created_at; next.updated_at=new Date(this.clock()).toISOString(); if (validate || next.state==='published') { const result=await this.validateDraft({plan:next,viewer}); if (!result.valid) throw fail('invalid_agenda','Plan validation failed',result.errors); } this.logger.info?.('agenda.plan.changed',{householdId,planId,state:next.state}); return next; }}); }
+  async validateDraft({plan,viewer}) {
+    const structural = validatePlan(plan,{purpose:'publish'});
+    if (!structural.valid) return structural;
+    const validation = await this.validateActivities({plan,viewer});
+    if (!validation || typeof validation.valid !== 'boolean' || !Array.isArray(validation.errors)) {
+      throw fail('invalid_validation','Activity validation returned an invalid result');
+    }
+    return validation;
+  }
+
+  async change({householdId,planId,expectedEtag,viewer,update,validate=false}) {
+    const mutatePlan = async old => {
+      const currentWeek = weekOf({instant:this.clock(),timezone:old.calendar.timezone});
+      if (old.week_of < currentWeek) throw fail('past_plan','Past plans are read-only');
+      const next = await update(old);
+      next.created_at = old.created_at;
+      next.updated_at = new Date(this.clock()).toISOString();
+      if (validate || next.state === 'published') {
+        const result = await this.validateDraft({plan:next,viewer});
+        if (!result.valid) throw fail('invalid_agenda','Plan validation failed',result.errors);
+      }
+      this.logger.info?.('agenda.plan.changed',{householdId,planId,state:next.state});
+      return next;
+    };
+    return this.repository.mutatePlan({householdId,planId,expectedEtag,mutate:mutatePlan});
+  }
   async savePlan({householdId,planId,expectedEtag,plan,viewer}) { return this.change({householdId,planId,expectedEtag,viewer,update:old=>{ if (!['draft','published'].includes(old.state) || plan.state!==old.state) throw fail('invalid_transition','Cannot save this plan state'); return structuredClone(plan); }}); }
   async transition(args,state,from,validate=false) { return this.change({...args,validate,update:old=>{if (!from.includes(old.state)) throw fail('invalid_transition','Invalid plan transition'); return {...old,state};}}); }
   publishPlan(args) { return this.transition(args,'published',['draft'],true); }

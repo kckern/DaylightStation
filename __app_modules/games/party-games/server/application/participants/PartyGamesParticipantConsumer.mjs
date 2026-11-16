@@ -1,3 +1,4 @@
+import { isParticipantCharades } from '../../../portable/participantEligibility.mjs';
 import { remapParticipantKeys } from '../../../portable/participantSettings.mjs';
 import { validateParticipantContext } from '../../../../../../__capabilities/household-identity/portable/participants.mjs';
 import { createCharadesChallengeOrder } from '../../../../../../__capabilities/gaming/portable/rulesets/activity-party/index.mjs';
@@ -10,13 +11,20 @@ function fail(code,message) { throw Object.assign(new Error(message),{code}); }
 function validTarget(target) { if (!target || !validId(target.definitionId) || target.surfaceId !== 'party-games') fail('invalid_target','Invalid Party Games target'); }
 function host(viewer) { if (viewer?.role !== 'host') fail('authorization_denied','Host authority is required'); }
 function settingsValue(settings) {
- if (!settings || settings.schema !== 'party-games-participant-setup/v1' || typeof settings.autostart !== 'boolean' || !settings.charades || !modes.includes(settings.charades.default_clue_mode) || !settings.charades.clue_modes || typeof settings.charades.clue_modes !== 'object' || Array.isArray(settings.charades.clue_modes) || Object.values(settings.charades.clue_modes).some(v=>!modes.includes(v))) fail('invalid_session_setup','Invalid Party Games settings');
+ const validClueModes = settings?.charades?.clue_modes;
+ const validSettings = settings?.schema === 'party-games-participant-setup/v1'
+  && typeof settings.autostart === 'boolean'
+  && modes.includes(settings.charades?.default_clue_mode)
+  && validClueModes && typeof validClueModes === 'object'
+  && !Array.isArray(validClueModes)
+  && Object.values(validClueModes).every(mode => modes.includes(mode));
+ if (!validSettings) fail('invalid_session_setup','Invalid Party Games settings');
  return settings;
 }
 export function buildPartyGameSetup({target,settings,participantContext,definition,clueHistoryIds}) {
  validTarget(target); settingsValue(settings); validateParticipantContext(participantContext);
  if (!participantContext.participants.length) fail('invalid_session_setup','Participants are required');
- if (definition?.experience?.id !== 'charades' || definition?.rule_module?.id !== 'activity-party' || definition.competition !== false) fail('invalid_session_setup','Target must be casual Charades');
+ if (!isParticipantCharades(definition)) fail('invalid_session_setup','Target must be casual Charades');
  const keys = new Set(participantContext.participants.map(p=>p.key));
  for (const key of Object.keys(settings.charades.clue_modes)) if (!keys.has(key)) fail('invalid_session_setup',`Unknown participant key ${key}`);
  const participants = participantContext.participants.map(p=>{

@@ -1,3 +1,4 @@
+import { isParticipantCharades } from '../../../portable/participantEligibility.mjs';
 import { GamingKernelError } from "../../../../../../__capabilities/gaming/portable/kernel/index.mjs";
 import { completedResult } from "./gamingResult.mjs";
 import { authorizeGamingSessionCreation, prepareGamingSessionSetup } from "./gamingSessionSetup.mjs";
@@ -36,6 +37,8 @@ export class GamingApplication {
     return {
       definition_id: definitionId,
       definition_hash: loaded.hash,
+      ...(surface.id === 'party-games' && isParticipantCharades(loaded.definition)
+        ? { participantConsumer: { id: 'party-games', version: 1 } } : {}),
       ruleset: structuredClone(ruleset),
       experience: { id: manifest.id, version: manifest.version },
       surface: structuredClone(surface),

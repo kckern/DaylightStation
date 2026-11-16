@@ -25,6 +25,10 @@ export function createPartyGamesTargetResolver({ gamingApplication, householdId 
     if (descriptor?.definition_id !== path || descriptor.surface?.id !== 'party-games') {
       throw Object.assign(new Error('Party Games target unavailable'), {code:'invalid_target'});
     }
-    return {kind:'app',appId:'party-games',definitionId:path,surfaceId:'party-games',participantConsumer:{id:'party-games',version:1}};
+    const target = {kind:'app', appId:'party-games', definitionId:path, surfaceId:'party-games'};
+    if (descriptor.participantConsumer?.id === 'party-games' && descriptor.participantConsumer.version === 1) {
+      target.participantConsumer = {id:'party-games', version:1};
+    }
+    return target;
   };
 }

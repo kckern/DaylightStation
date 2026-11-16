@@ -34,6 +34,16 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
   // Current depth (derived from stack length)
   const depth = stack.length;
 
+  // Pending navigation work observes intent synchronously, before a new frame renders.
+  const intentListeners = useRef(new Set());
+  const notifyNavigationIntent = useCallback(() => {
+    for (const listener of intentListeners.current) listener();
+  }, []);
+  const subscribeNavigationIntent = useCallback(listener => {
+    intentListeners.current.add(listener);
+    return () => intentListeners.current.delete(listener);
+  }, []);
+
   // Pop guard: when set, pop() calls this instead of popping.
   // Guard returns true to allow pop, false to block it.
   const popGuardRef = useRef(null);
@@ -69,6 +79,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
    * @param {StackItem} content - Content to push
    */
   const push = useCallback((content) => {
+    notifyNavigationIntent();
     navLogger().info('nav.push', { type: content.type });
     setStack(prev => [...prev, content]);
     // Initialize selection for the new depth
@@ -76,13 +87,14 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
       ...prev,
       [prev.length || Object.keys(prev).length]: { index: 0, key: null }
     }));
-  }, []);
+  }, [notifyNavigationIntent]);
   
   /**
    * Pop from the stack (go back)
    * @returns {boolean} Whether pop was successful (false if at root)
    */
   const pop = useCallback(() => {
+    notifyNavigationIntent();
     // If a pop guard is set, let it handle the back action
     if (popGuardRef.current) {
       const allowed = popGuardRef.current();
@@ -104,7 +116,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     // Note: We don't clear selections when popping so state is preserved
     // when navigating back
     return true;
-  }, [onBackAtRoot]);
+  }, [onBackAtRoot, notifyNavigationIntent]);
   
   /**
    * Update selection at a specific depth
@@ -141,11 +153,12 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
    * @param {StackItem} content - New content for current level
    */
   const replace = useCallback((content) => {
+    notifyNavigationIntent();
     setStack(prev => {
       if (prev.length === 0) return prev;
       return [...prev.slice(0, -1), content];
     });
-  }, []);
+  }, [notifyNavigationIntent]);
 
   // Back button capture (browser popstate handling)
   useEffect(() => {
@@ -186,6 +199,8 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     setSelectionAtDepth,
 
     // Navigation
+    notifyNavigationIntent,
+    subscribeNavigationIntent,
     push,
     pop,
     reset,

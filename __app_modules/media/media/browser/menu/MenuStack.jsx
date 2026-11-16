@@ -52,10 +52,12 @@ function threadShaderIntoContent(selection) {
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
 export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, resolveMenuSource, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
-  const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth, registerMenuBackHandler, unregisterMenuBackHandler } = useMenuNavigationContext();
+  const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth, registerMenuBackHandler, unregisterMenuBackHandler, notifyNavigationIntent, subscribeNavigationIntent } = useMenuNavigationContext();
   const currentContentRef = React.useRef(currentContent);
   currentContentRef.current = currentContent;
   const [navigationError, setNavigationError] = React.useState(null);
+  const navigationErrorRef = React.useRef(null);
+  navigationErrorRef.current = navigationError;
   const [sourceVersion,setSourceVersion] = React.useState(0);
   const navigationGeneration = React.useRef(0);
   const pendingNavigation = React.useRef(false);
@@ -84,11 +86,30 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     }
   }, [rootMenu, reset, initialFocusUid, setSelectionAtDepth]);
 
+  const closeNavigationError = useCallback(() => {
+    navigationGeneration.current += 1;
+    pendingNavigation.current = false;
+    sourceController?.cancel();
+    onNavigationCancel?.();
+    navigationErrorRef.current = null;
+    setNavigationError(null);
+  }, [sourceController, onNavigationCancel]);
+
+  useEffect(() => {
+    const cancelPendingIntent = () => {
+      if (pendingNavigation.current || navigationErrorRef.current) closeNavigationError();
+    };
+    const unsubscribe = subscribeNavigationIntent?.(cancelPendingIntent);
+    const unsubscribeOverlay = getActionBus().subscribe('screen:overlay-mounted', cancelPendingIntent);
+    return () => { unsubscribe?.(); unsubscribeOverlay(); };
+  }, [subscribeNavigationIntent, navigationError, closeNavigationError]);
+
   // Register escape interceptor: pop navigation stack before overlay dismisses
   useEffect(() => {
     if (!registerEscapeInterceptor) return;
 
     const interceptor = () => {
+      if (navigationError) { closeNavigationError(); return true; }
       if (pendingNavigation.current) {pendingNavigation.current=false;navigationGeneration.current++;sourceController?.cancel();return true;}
       if (depth > 0) {
         if (returnPolicy === 'return-to-selected' && ['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) {
@@ -110,7 +131,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
 
     registerEscapeInterceptor(interceptor);
     return () => unregisterEscapeInterceptor?.();
-  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor, rootMenu, currentContent, returnPolicy, sourceController]);
+  }, [MENU_TIMEOUT, depth, pop, registerEscapeInterceptor, unregisterEscapeInterceptor, rootMenu, currentContent, returnPolicy, sourceController, navigationError, closeNavigationError]);
 
   const pushOrdinaryList = useCallback(selection => {
     const id=selection.list?.contentId || selection.list?.plex;
@@ -129,6 +150,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
    */
   const handleSelect = useCallback((selection) => {
     if (!selection || selection.disabled) return;
+    notifyNavigationIntent?.();
     if (returnPolicy === 'return-to-selected' && selection.uid) {
       const menu = currentContent?.type === 'menu' ? currentContent.props.list : rootMenu;
       const index = menu?.items?.findIndex(item => item.uid === selection.uid) ?? -1;
@@ -221,7 +243,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
       push({ type: 'android-launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
-  }, [push, loadContentMenu, resolveMenuSource, sourceController, onActivityStart, currentContent, rootMenu, depth, setSelectionAtDepth, returnPolicy, pushOrdinaryList]);
+  }, [push, loadContentMenu, resolveMenuSource, sourceController, onActivityStart, currentContent, rootMenu, depth, setSelectionAtDepth, returnPolicy, pushOrdinaryList, notifyNavigationIntent]);
 
   /**
    * Clear function for Player/AppContainer to pop back
@@ -241,8 +263,9 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
 
   returnFromActivityRef.current = clear;
   React.useLayoutEffect(() => {
-    if ((!resolveMenuSource && returnPolicy !== 'return-to-selected') || !registerMenuBackHandler) return;
+    if ((!navigationError && !resolveMenuSource && returnPolicy !== 'return-to-selected') || !registerMenuBackHandler) return;
     const handler = () => {
+      if (navigationError) { closeNavigationError(); return true; }
       if (pendingNavigation.current) {pendingNavigation.current=false;navigationGeneration.current++;sourceController?.cancel();return true;}
       if (returnPolicy !== 'return-to-selected') return false;
       if (onHostErrorBack) { onHostErrorBack(); return true; }
@@ -252,7 +275,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     };
     registerMenuBackHandler(handler);
     return () => unregisterMenuBackHandler?.(handler);
-  }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler, returnPolicy, resolveMenuSource, sourceController]);
+  }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler, returnPolicy, resolveMenuSource, sourceController, navigationError, closeNavigationError]);
 
   // Player exits dismiss the entire MenuStack overlay rather than popping back to
   // the source menu. The auto-select countdown on the source menu would otherwise
@@ -264,15 +287,22 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
   }, [dismissOverlay, rootMenu, clear, returnPolicy]);
 
   if (navigationError) {
-    const closeError = () => { navigationGeneration.current += 1; sourceController?.cancel(); onNavigationCancel?.(); setNavigationError(null); };
+    const closeError = closeNavigationError;
     if (navigationError.kind === 'invalid_participant') return <TVActionDialog role="alert" label="Activity unavailable" onBack={closeError}><p>Activity launch unavailable.</p><button onClick={closeError}>Back</button></TVActionDialog>;
     const retry = () => {
       const request = ++navigationGeneration.current;
+      pendingNavigation.current = true;
       const work = navigationError.kind==='refresh' ? navigationError.controller.refresh().then(()=>({refresh:true})) : navigationError.open ? navigationError.open(request) : loadContentMenu(navigationError.contentId).then(menu=>({menu}));
       work.then(result => {
-        if (navigationGeneration.current !== request) return;
+        if (navigationGeneration.current !== request) { result?.controller?.cancel(); return; }
+        pendingNavigation.current = false;
+        navigationErrorRef.current = null;
         setNavigationError(null);if(result?.refresh) setSourceVersion(v=>v+1);else if(result) push({type:'menu',props:{list:result.menu,...(result.controller ? {sourceController:result.controller} : {})}});else navigationError.fallback?.();
-      }).catch(error => { if (navigationGeneration.current === request) getLogger().warn('menu.navigation.error',{code:error.code}); });
+      }).catch(error => {
+        if (navigationGeneration.current !== request) return;
+        pendingNavigation.current = false;
+        getLogger().warn('menu.navigation.error',{code:error.code});
+      });
     };
     return <TVActionDialog role="alert" label="Menu error" onBack={closeError}><p>Unable to load menu.</p>
       <button onClick={retry}>Retry</button>

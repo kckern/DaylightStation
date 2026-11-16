@@ -1,3 +1,4 @@
+import {assertArchivedHistory} from './archivedHistory.mjs';
 import {test,expect} from './agendaTest.mjs';
 
 test('creates and edits two independent weekly plans in Admin',async({page,request,agendaFixture:fixture},testInfo)=>{
@@ -34,6 +35,6 @@ test('creates and edits two independent weekly plans in Admin',async({page,reque
   const futureAfter=await readMenu(`plans/${next.plan_id}`);expect(futureAfter.preview).toBe(true);noExecutable(futureAfter);
   const series=await request.get(`${fixture.base}/${fixture.id}`,{headers:fixture.headers});expect(series.ok()).toBe(true);
   const archived=await request.post(`${fixture.base}/${fixture.id}/archive`,{headers:{...fixture.headers,'If-Match':series.headers().etag},data:{}});expect(archived.ok()).toBe(true);
-  await page.goto('/admin/content/agendas');const history=page.locator('details').filter({has:page.getByText('Archived agendas',{exact:true})});const summary=history.locator('summary');await expect(history).not.toHaveAttribute('open');
-  const ownLink=history.getByRole('link',{name:`Agenda ${fixture.id}`});await expect(ownLink).toBeHidden();await summary.focus();await page.keyboard.press('Enter');await expect(history).toHaveAttribute('open');await expect(ownLink).toBeVisible();await page.keyboard.press('Enter');await expect(history).not.toHaveAttribute('open');
+  await page.goto('/admin/content/agendas');
+  await assertArchivedHistory(page,fixture.id,'Acceptance');
 });

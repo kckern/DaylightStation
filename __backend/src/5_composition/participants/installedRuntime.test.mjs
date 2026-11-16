@@ -150,7 +150,7 @@ it('retains only existing UID artwork when the installed planner copies a templa
 it('authorizes and canonicalizes direct Party Games targets with no launch-store writes',async()=>{
  const {readdirSync}=await import('node:fs');const dir=mkdtempSync(join(tmpdir(),'agenda-direct-'));
  try {
-  const logger={info(){},warn(){},error(){}};const gamingApplication={getLaunchDescriptor:async id=>({definition_id:id,surface:{id:'party-games'}})};
+  const logger={info(){},warn(){},error(){}};const gamingApplication={getLaunchDescriptor:async id=>({definition_id:id,surface:{id:'party-games'},participantConsumer:{id:'party-games',version:1}})};
   const runtime=installParticipantRuntime({enabled:true,configService:{getDefaultHouseholdId:()=> 'h',getHouseholdPath:()=>dir,getMediaDir:()=>dir},peopleDirectory:{resolve:()=>null},contentRegistry:{register(){}},contentServices:{contentIdResolver:{resolve:()=>null},contentCatalog:{getItem:async()=>null,capabilities:()=>[]}},gaming:{gamingApplication,definitions:{},manifestStore:{}},logger});
   const viewer={role:'host',participant_id:'host',householdId:'h'};
   const target={kind:'app',appId:'party-games',definitionId:'charades:test',participantConsumer:{id:'spoof',version:77}};
@@ -171,7 +171,7 @@ it('negotiates participant references on exact legacy aliases through the instal
  try {
   const aliases=new AgendaResourceAliases({registrations:[{kind:'menu',id:'fhe',owner:'agenda',canonicalContentId:'agenda:s',adminUrl:'/admin/content/agendas/s'}],authority:()=>true});
   const registry=new ContentSourceRegistry(),logger={info(){},warn(){},error(){}};
-  const runtime=installParticipantRuntime({enabled:true,resourceAliases:aliases,configService:{getDefaultHouseholdId:()=> 'h',getHouseholdPath:()=>dir,getMediaDir:()=>dir},peopleDirectory:{resolve:()=>null},contentRegistry:registry,contentServices:{contentIdResolver:{resolve:()=>null},contentCatalog:{getItem:async()=>null,capabilities:()=>[]}},gaming:{gamingApplication:{getLaunchDescriptor:async id=>({definition_id:id,surface:{id:'party-games'}})},definitions:{},manifestStore:{}},logger,clock:()=>new Date('2026-11-17T00:00:00Z')});
+  const runtime=installParticipantRuntime({enabled:true,resourceAliases:aliases,configService:{getDefaultHouseholdId:()=> 'h',getHouseholdPath:()=>dir,getMediaDir:()=>dir},peopleDirectory:{resolve:()=>null},contentRegistry:registry,contentServices:{contentIdResolver:{resolve:()=>null},contentCatalog:{getItem:async()=>null,capabilities:()=>[]}},gaming:{gamingApplication:{getLaunchDescriptor:async id=>({definition_id:id,surface:{id:'party-games'},participantConsumer:{id:'party-games',version:1}})},definitions:{},manifestStore:{}},logger,clock:()=>new Date('2026-11-17T00:00:00Z')});
   const gateway=new RegistryContentCatalogGateway({registry});const browse=new ListBrowseService({contentCatalog:gateway,contentIdResolver:{resolve:id=>gateway.resolve(id)}});
   const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user={sub:'host',roles:['parent']};next();});app.use('/agendas',runtime.agenda.adminRouter);app.use('/list',createListRouter({listBrowse:browse,resourceAliases:aliases,viewerForRequest:()=>({participant_id:'host',role:'host',householdId:'h'}),logger}));
   const binding={schema:'agenda-activity-setup/v1',action:'open',participants:{mode:'plan'},consumer:{id:'party-games',version:1},settings:{}};

@@ -191,7 +191,7 @@ it('installs the read-only Gaming discovery port', async () => {
 
 it('resolves a Party Games app target from authorized owner metadata', async () => {
  const {createPartyGamesTargetResolver}=await import('../../participants.mjs');
- const gamingApplication={getLaunchDescriptor:vi.fn(async()=>({definition_id:'charades:test',surface:{id:'party-games'}}))};
+ const gamingApplication={getLaunchDescriptor:vi.fn(async()=>({definition_id:'charades:test',surface:{id:'party-games'},participantConsumer:{id:'party-games',version:1}}))};
  const resolve=createPartyGamesTargetResolver({gamingApplication,householdId:'home'});
  await expect(resolve({path:'charades:test',viewer:{role:'host',participant_id:'u',householdId:'home'}})).resolves.toEqual({kind:'app',appId:'party-games',definitionId:'charades:test',surfaceId:'party-games',participantConsumer:{id:'party-games',version:1}});
  expect(gamingApplication.getLaunchDescriptor).toHaveBeenCalledWith('charades:test',{surfaceId:'party-games',authorityMode:'remote'});
