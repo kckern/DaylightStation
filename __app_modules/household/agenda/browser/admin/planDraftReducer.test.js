@@ -31,3 +31,26 @@ it('rejects a stale rebase from an earlier visit to the same plan',()=>{
  const current=planDraftReducer(null,{type:'load',document:plan,etag:'"new"',scope:'p',generation:2});
  expect(planDraftReducer(current,{type:'rebase',etag:'"old"',scope:'p',generation:0})).toEqual(current);
 });
+it('reapplies editable content against a newly published server revision',()=>{
+ const local={...plan,plan_id:'p',series_id:'s',household_id:'h',week_of:'2026-11-16',calendar:{timezone:'UTC'},seeded_from:{kind:'series',id:'s',revision:1},revision:1,state:'draft',title:'Local'};
+ let state=planDraftReducer(null,{type:'load',document:local,etag:'"old"',scope:'p',generation:1});
+ state=planDraftReducer(state,{type:'replace',document:{...local,title:'Newer'}});
+ state=planDraftReducer(state,{type:'conflict',scope:'p',generation:1});
+ const remote={...local,title:'Remote',state:'published',revision:3,updated_at:'now'};
+ state=planDraftReducer(state,{type:'rebase',document:remote,etag:'"new"',scope:'p',generation:1});
+ expect(state).toMatchObject({baseEtag:'"new"',dirty:true,conflict:false,draft:{title:'Newer',state:'published',revision:3,updated_at:'now'}});
+});
+it('keeps the conflict and local buffer when a remote plan is terminal',()=>{
+ const local={...plan,plan_id:'p',series_id:'s',household_id:'h',week_of:'2026-11-16',calendar:{timezone:'UTC'},seeded_from:{kind:'series',id:'s',revision:1},revision:1,state:'draft',title:'Local'};
+ let state=planDraftReducer(null,{type:'load',document:local,etag:'"old"',scope:'p',generation:1});state=planDraftReducer(state,{type:'conflict',scope:'p',generation:1});
+ state=planDraftReducer(state,{type:'rebase',document:{...local,state:'cancelled',revision:2},etag:'"new"',scope:'p',generation:1});
+ expect(state).toMatchObject({baseEtag:'"old"',conflict:true,draft:{title:'Local',state:'draft'},fieldErrors:[{field:'plan.state'}]});
+});
+it('refuses to reapply against a different identity or invalid revision',()=>{
+ const local={...plan,plan_id:'p',series_id:'s',household_id:'h',week_of:'2026-11-16',calendar:{timezone:'UTC'},seeded_from:{kind:'series',id:'s',revision:1},revision:1,state:'draft'};
+ const initial=planDraftReducer(null,{type:'load',document:local,etag:'"old"',scope:'p',generation:1});
+ for (const remote of [{...local,plan_id:'other',revision:2},{...local,state:'published',revision:null}]) {
+  const result=planDraftReducer(initial,{type:'rebase',document:remote,etag:'"new"',scope:'p',generation:1});
+  expect(result).toMatchObject({baseEtag:'"old"',conflict:true,draft:{plan_id:'p',state:'draft'},fieldErrors:[{field:'plan.state'}]});
+ }
+});

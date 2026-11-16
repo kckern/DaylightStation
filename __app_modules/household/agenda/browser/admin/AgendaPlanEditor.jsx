@@ -137,7 +137,13 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
       if (!ownsOperation(operation)) { warnChangedOperation(operation); return; }
       if (publish) {
         const published=await client.transition(seriesId,planId,'publish',saved.etag);
-        if (!ownsOperation(operation)) { warnChangedOperation(operation); return; }
+        if (!ownsOperation(operation)) {
+          if (pendingOperation.current===operation && sameScope(operation)) {
+            dispatch({type:'published-with-edits',...published,scope:operation.scopeKey,generation:operation.generation});
+            setError('The plan was published. Your newer edits are retained; save them to update the published plan.');
+          }
+          return;
+        }
         dispatch({type:'saved',...published,scope:operation.scopeKey,generation:operation.generation});
       } else {
         dispatch({type:'saved',...saved,scope:operation.scopeKey,generation:operation.generation});
@@ -186,7 +192,7 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
     try {
       const result=await client.plan(seriesId,planId);
       if (!ownsOperation(operation)) { warnChangedOperation(operation); return; }
-      dispatch(reapply ? {type:'rebase',etag:result.etag,scope:operation.scopeKey,generation:operation.generation} : {type:'load',...result,scope:operation.scopeKey,generation:operation.generation});
+      dispatch(reapply ? {type:'rebase',document:result.document,etag:result.etag,scope:operation.scopeKey,generation:operation.generation} : {type:'load',...result,scope:operation.scopeKey,generation:operation.generation});
     } catch (error) {
       if (ownsOperation(operation)) setError(error.message);
       else warnChangedOperation(operation);
