@@ -116,18 +116,18 @@ async function preloadSiblings(contentId, contentInfo) {
   }
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, dragId, allowSublistNavigation = true, allowNewSection = true }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `row-${sectionIndex}-${item.index}`
+    id: dragId ? `row:${dragId}` : `row-${sectionIndex}-${item.index}`
   });
 
   const { attributes: contentDragAttrs, listeners: contentDragListeners, setNodeRef: setContentDragRef } = useDraggable({
-    id: `content-${sectionIndex}-${item.index}`,
+    id: dragId ? `content:${dragId}` : `content-${sectionIndex}-${item.index}`,
   });
 
   const { setNodeRef: setContentDropRef, isOver: isContentDropTarget } = useDroppable({
-    id: `content-${sectionIndex}-${item.index}`,
+    id: dragId ? `content:${dragId}` : `content-${sectionIndex}-${item.index}`,
   });
 
   const navigate = useNavigate();
@@ -363,12 +363,12 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               </Menu.Item>
             );
           })}
-          <Menu.Item
+          {allowNewSection && <Menu.Item
             leftSection={<IconPlus size={14} />}
             onClick={() => { log.info('move.new_section', { index: item.index }); onMoveItem('new-section'); }}
           >
             New Section
-          </Menu.Item>
+          </Menu.Item>}
         </Menu.Dropdown>
       </Menu>
 
@@ -430,7 +430,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-preview">
-        {item.action === 'List' && item.input && (() => {
+        {allowSublistNavigation && item.action === 'List' && item.input && (() => {
           const match = item.input.match(/^([^:]+):\s*(.+)$/);
           const listName = match ? match[2].trim() : item.input.trim();
           if (!listName) return null;

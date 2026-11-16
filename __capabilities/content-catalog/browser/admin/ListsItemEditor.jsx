@@ -93,7 +93,7 @@ function buildSavePayload(formData, customFields) {
 /**
  * Simple mode - Just the essential fields
  */
-function SimpleMode({ formData, onChange, errors, sections }) {
+function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const imageSrc = formData.image
     ? (formData.image.startsWith('/media/') || formData.image.startsWith('media/')
@@ -135,13 +135,13 @@ function SimpleMode({ formData, onChange, errors, sections }) {
         onChange={(value) => onChange('action', value)}
       />
 
-      <Select
+      {!hideSection && <Select
         label="Section"
         description="Which section this item belongs to"
         data={sections.map((s, i) => ({ value: String(i), label: s.title || `Section ${i + 1}` }))}
         value={String(formData.sectionIndex ?? 0)}
         onChange={(val) => onChange('sectionIndex', parseInt(val))}
-      />
+      />}
 
       <Switch
         label="Active"
@@ -192,7 +192,7 @@ function SimpleMode({ formData, onChange, errors, sections }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
+function ListsItemEditor({ hideSection = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -342,6 +342,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = []
               onChange={handleInputChange}
               errors={errors}
               sections={sections}
+              hideSection={hideSection}
             />
           ) : (
             <EditorCategories
