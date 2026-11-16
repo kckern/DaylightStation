@@ -1,9 +1,10 @@
 import {test,expect} from '@playwright/test';
 import {createAgendaFixture} from './fixture.mjs';
+import {withCleanup} from './cleanup.mjs';
 
 test('creates and edits two independent weekly plans in Admin',async({page,request},testInfo)=>{
  const fixture=await createAgendaFixture({page,request},testInfo);
- try {
+ await withCleanup(async()=>{
   await page.goto(`/admin/content/agendas/${fixture.id}`);
   await page.getByRole('button',{name:'Create this week'}).click();
   await expect(page.getByRole('heading',{name:'This week'})).toBeVisible();
@@ -22,5 +23,5 @@ test('creates and edits two independent weekly plans in Admin',async({page,reque
   const plans=(await plansResponse.json()).plans.map(p=>p.document);expect(plans).toHaveLength(2);
   const current=plans.find(p=>p.title==='Current acceptance week'),next=plans.find(p=>p.title==='Next acceptance week');
   expect(current.state).toBe('published');expect(current.participants).toHaveLength(3);expect(new Set(current.participants.map(p=>p.id)).size).toBe(3);expect(next.participants).toHaveLength(0);expect(next.plan_id).not.toBe(current.plan_id);
- } finally {await fixture.cleanup();}
+ },fixture.cleanup);
 });
