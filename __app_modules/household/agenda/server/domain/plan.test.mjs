@@ -107,3 +107,25 @@ it('rejects null setup actions on an unbound-shaped item in edits', () => {
   p.activity_settings[item.uid] = {...structuredClone(Object.values(p.activity_settings)[0]),action:null};
   expect(() => applyPlanEdit(p,{type:'move-item',itemUid:item.uid},{ids:ids(),remapActivitySettings})).toThrow();
 });
+it('rejects roster edits that introduce duplicate named identities',()=>{
+ const p=make(),existing=p.participants[0];
+ expect(()=>applyPlanEdit(p,{type:'add-participant',participant:{person:existing.person,display:existing.display}},{ids:ids(),remapActivitySettings})).toThrow(/duplicate/i);
+ const other=applyPlanEdit(p,{type:'add-participant',participant:{person:{kind:'guest',id:'visitor'},display:{name:'Visitor',avatar:null}}},{ids:ids(),remapActivitySettings});
+ expect(()=>applyPlanEdit(other,{type:'update-participant',participantId:other.participants[1].id,changes:{person:existing.person}},{ids:ids(),remapActivitySettings})).toThrow(/duplicate/i);
+});
+it('rejects replacement allocations that collide with current draft identities',async()=>{
+ const {copyContent}=await import('../../portable/copyContent.mjs');const p=make();const template=structuredClone(series.defaults);const existing=p.participants[0].id;
+ expect(()=>copyContent({source:template,ids:{...ids(),rosterEntry:()=>existing},displaySnapshots:{'user:u':{name:'User',avatar:null}},remapActivitySettings,reservedIds:[existing]})).toThrow(/unique/i);
+});
+it.each(['duplicate-item','duplicate-section'])('retains resolved source artwork when %s allocates fresh IDs',type=>{
+ const p=make(),before=structuredClone(p),section=p.list.sections[0],item=section.items[0];
+ const command=type==='duplicate-item'?{type,itemUid:item.uid}:{type,sectionUid:section.uid};
+ const result=applyPlanEdit(p,command,{ids:ids(),remapActivitySettings,imageRefs:{[item.uid]:'/media/img/lists/source.jpg'}});
+ const copied=type==='duplicate-item'?result.list.sections[0].items[2]:result.list.sections[1].items[0];
+ expect(copied.uid).not.toBe(item.uid);expect(copied.image).toBe('/media/img/lists/source.jpg');expect(p).toEqual(before);
+});
+it('does not treat inherited object properties as artwork references',async()=>{
+ const {copyContent}=await import('../../portable/copyContent.mjs');const template=structuredClone(series.defaults);template.list.sections[0].items[1].uid='constructor';
+ const copy=copyContent({source:template,ids:ids(),displaySnapshots:{'user:u':{name:'User',avatar:null}},remapActivitySettings,imageRefs:{}});
+ expect(copy.list.sections[0].items[1].image).toBeUndefined();
+});

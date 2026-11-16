@@ -1,3 +1,4 @@
+import { remapParticipantKeys } from '../../../portable/participantSettings.mjs';
 import { validateParticipantContext } from '../../../../../../__capabilities/household-identity/portable/participants.mjs';
 import { createCharadesChallengeOrder } from '../../../../../../__capabilities/gaming/portable/rulesets/activity-party/index.mjs';
 
@@ -91,8 +92,7 @@ export class PartyGamesParticipantConsumer {
   if (!runtime) fail('runtime_unavailable','Saved game is unavailable'); return ready(snapshot,runtimeRef.id);
  }
  remapParticipantKeys({settings,keyMap}) {
-  settingsValue(settings); const copy=clone(settings); const mapped=new Map();
-  for (const [key,value] of Object.entries(copy.charades.clue_modes)) { if (!Object.hasOwn(keyMap,key)) fail('invalid_session_setup',`Missing participant mapping ${key}`); const next=keyMap[key]; if (next===null) continue; if (typeof next!=='string' || !next || mapped.has(next)) fail('invalid_session_setup','Invalid participant mapping'); mapped.set(next,value); }
-  copy.charades.clue_modes=Object.fromEntries(mapped); return copy;
+  settingsValue(settings);
+  return remapParticipantKeys({settings,keyMap});
  }
 }

@@ -23,6 +23,8 @@ import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import NotificationsIndex from '../modules/Admin/Notifications/NotificationsIndex.jsx';
 import { AgentsIndex, AgentDetail } from "../../../__capabilities/agent-runtime/browser/admin.mjs";
 import AgentDashboard from "../../../__app_modules/wellness/health/browser/agent-dashboard.mjs";
+import { AgendasIndex, AgendaSeriesPage, AgendaPlanEditor, AgendaWeekRedirect } from "../../../__app_modules/household/agenda/browser/admin.mjs";
+import { CharadesParticipantSettings, defaultParticipantSettings, remapParticipantKeys } from "../../../__app_modules/games/party-games/browser/participant-settings.mjs";
 import GamesIndex from "../../../__app_modules/games/party-games/browser/admin-games.mjs";
 import ConsoleDetail from "../../../__app_modules/games/party-games/browser/admin-console.mjs";
 import { ContentFilterLibrary, ContentFilterReview } from "../modules/Admin/ContentFilter/ContentFilterAdmin.jsx";
@@ -128,6 +130,10 @@ const theme = createTheme({
   },
 });
 
+const participantEditors = {
+  'party-games': { consumer:{id:'party-games',version:1}, Panel:CharadesParticipantSettings, defaultSettings:defaultParticipantSettings, remapParticipantKeys },
+};
+
 function AdminApp() {
   useDocumentTitle('Admin');
   const logger = useMemo(() => getLogger().child({ app: 'admin', sessionLog: true }), []);
@@ -149,6 +155,10 @@ function AdminApp() {
               <Route index element={<Navigate to="content/lists/menus" replace />} />
               <Route path="content/lists/:type" element={<ListsIndex />} />
               <Route path="content/lists/:type/:name" element={<ListsFolder />} />
+              <Route path="content/agendas" element={<AgendasIndex />} />
+              <Route path="content/agendas/:seriesId" element={<AgendaSeriesPage editors={participantEditors} />} />
+              <Route path="content/agendas/:seriesId/weeks/:weekOf" element={<AgendaWeekRedirect />} />
+              <Route path="content/agendas/:seriesId/plans/:planId" element={<AgendaPlanEditor editors={participantEditors} />} />
               <Route path="content/games" element={<GamesIndex />} />
               <Route path="content/games/:consoleId" element={<ConsoleDetail />} />
               <Route path="content/art" element={<ArtLibrary />} />

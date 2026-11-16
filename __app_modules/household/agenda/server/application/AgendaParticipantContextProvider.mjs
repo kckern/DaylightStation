@@ -51,6 +51,8 @@ export class AgendaParticipantContextProvider {
     return source;
   }
 
+  async validateRoster(plan) { return resolveParticipants({plan,directory:this.directory}); }
+
   /** Caller has already enforced Admin authority and structural validation. */
   async resolveDraft({plan, itemUid, viewer}) {
     const item = plan.list.sections.flatMap(section => section.items).find(entry => entry.uid === itemUid);
@@ -83,9 +85,25 @@ export class AgendaParticipantContextProvider {
 
 /** Adapter for AgendaPlanningService's Admin-only activity validation port. */
 export function createAgendaActivityValidator({provider, setupResolver}) {
-  if (!provider || !setupResolver) throw Error('Provider and setup resolver required');
+  if (!provider || !setupResolver || typeof provider.validateRoster !== 'function' || typeof provider.resolveTarget !== 'function' || typeof setupResolver.registry?.resolve !== 'function') throw Error('Provider, setup resolver and consumer registry required');
   return async ({plan, viewer}) => {
     const errors = [];
+    try { await provider.validateRoster(plan); }
+    catch (error) {
+      if (['service_unavailable','prepared_artifact_unavailable'].includes(error.code)) throw error;
+      return {valid:false,errors:[{field:error.field || 'participants',message:error.message,code:error.code}]};
+    }
+    for (const item of plan.list?.sections.flatMap(section=>section.items) ?? []) {
+      const action=itemAction(item);
+      if (!action || plan.activity_settings[item.uid]) continue;
+      try {
+        const target=await provider.resolveTarget({item,action,viewer});
+        if (setupResolver.registry.resolve({target,action})) errors.push({field:`activity_settings.${item.uid}`,message:'Participant setup is required for this activity',code:'participant_setup_required'});
+      } catch (error) {
+        if (['service_unavailable','prepared_artifact_unavailable'].includes(error.code)) throw error;
+        errors.push({field:`list.items.${item.uid}`,message:error.message,code:error.code});
+      }
+    }
     for (const itemUid of Object.keys(plan.activity_settings)) {
       try {
         const resolvedSource = await provider.resolveDraft({plan, itemUid, viewer});

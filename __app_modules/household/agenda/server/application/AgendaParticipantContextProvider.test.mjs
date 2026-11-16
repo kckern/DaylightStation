@@ -40,11 +40,18 @@ it('rejects foreign households, stale revisions and target spoofing',async()=>{
  await expect(provider.resolve(make({targetDigest:'a'.repeat(64)}),{viewer:{}})).rejects.toMatchObject({code:'revision_conflict'});
 });
 
+function validatorWithDoubles(factory,{provider,setupResolver}) {
+ if (!provider.validateRoster) provider.validateRoster=async()=>[];
+ if (!provider.resolveTarget) provider.resolveTarget=async()=>({});
+ if (!setupResolver.registry) setupResolver.registry={resolve:()=>null};
+ return factory({provider,setupResolver});
+}
+
 it('uses shared setup preparation for Admin activity validation without retaining',async()=>{
  const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');
  const seen=[];const provider={resolveDraft:async({itemUid})=>({itemUid})};
  const setupResolver={resolve:async({resolvedSource})=>{seen.push(resolvedSource.itemUid);if(resolvedSource.itemUid==='bad')throw Object.assign(Error('Incomplete'),{code:'invalid_session_setup',field:'settings'});}};
- const validate=createAgendaActivityValidator({provider,setupResolver});
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider,setupResolver});
  const result=await validate({plan:{activity_settings:{good:{},bad:{}}},viewer:{}});
  expect(seen).toEqual(['good','bad']);expect(result).toEqual({valid:false,errors:[{field:'activity_settings.bad.settings',message:'Incomplete',code:'invalid_session_setup'}]});
 });
@@ -58,7 +65,7 @@ it('passes the retained item and action to the authority boundary',async()=>{
 
 it('propagates temporary service failure during Admin validation',async()=>{
  const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');
- const validate=createAgendaActivityValidator({provider:{resolveDraft:async()=>({})},setupResolver:{resolve:async()=>{throw Object.assign(Error('Unavailable'),{code:'service_unavailable'});}}});
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider:{resolveDraft:async()=>({})},setupResolver:{resolve:async()=>{throw Object.assign(Error('Unavailable'),{code:'service_unavailable'});}}});
  await expect(validate({plan:{activity_settings:{item:{}}},viewer:{}})).rejects.toMatchObject({code:'service_unavailable'});
 });
 
@@ -69,14 +76,14 @@ it('reports an unknown person at its roster path to runtime and Admin validation
  const provider=new AgendaParticipantContextProvider({repository:{readPlan:async()=>({document:plan}),readSeries:async()=>({document:{status:'active'}})},store:{},codec,clock:()=>new Date('2026-11-17T00:00:00Z'),directory:{resolve:async()=>null},authorize:async()=>true,resolveTarget:async()=>target});
  const ref=codec.encode({householdId:'home',planId:'plan',itemUid:'item',revision:1,action:'open',targetDigest:hashValue(target)});
  await expect(provider.resolve(ref,{viewer:{}})).rejects.toMatchObject({code:'invalid_participant_context',field:'participants.0.person'});
- const validate=createAgendaActivityValidator({provider,setupResolver:{resolve:async()=>{throw Error('unexpected')}}});
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider,setupResolver:{resolve:async()=>{throw Error('unexpected')}}});
  expect(await validate({plan,viewer:{}})).toMatchObject({valid:false,errors:[{code:'invalid_participant_context',field:'participants.0.person'}]});
 });
 
 it('maps shared selector errors to the authored activity selector in Admin validation',async()=>{
  const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');
  const provider={resolveDraft:async()=>({})};const setupResolver={resolve:async()=>{throw Object.assign(Error('Empty'),{code:'participant_context_required',field:'selector.keys'});}};
- const validate=createAgendaActivityValidator({provider,setupResolver});
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider,setupResolver});
  expect(await validate({plan:{activity_settings:{item:{}}},viewer:{}})).toMatchObject({valid:false,errors:[{code:'participant_context_required',field:'activity_settings.item.participants.ids'}]});
 });
 
@@ -89,7 +96,7 @@ it('surfaces selector and unknown-identity paths through runtime and Admin entry
  const provider=new AgendaParticipantContextProvider({repository:{readPlan:async()=>({document:plan}),readSeries:async()=>({document:{status:'active'}})},store,codec,clock:()=>new Date('2026-11-17T00:00:00Z'),directory:{resolve:async()=>null},authorize:async()=>true,resolveTarget:async()=>target});
  const consumer={id:'fake',version:1,targets:[{action:'open',kind:'app',appId:'fake'}],describe:()=>({participantRequirement:'optional',minParticipants:1,maxParticipants:5,selectorSupport:['all','explicit']}),prepareSetup:async()=>{throw Error('must not prepare')},begin:async()=>{throw Error('must not begin')}};
  const registry=new ParticipantConsumerRegistry();registry.register({consumer});const setupResolver=new ParticipantSetupResolver({registry});
- const validate=createAgendaActivityValidator({provider,setupResolver});const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async()=>target,logger:{info(){}}});
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider,setupResolver});const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async()=>target,logger:{info(){}}});
  const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:codec.encode({householdId:'home',planId:'plan',itemUid:'item',revision:1,action:'open',targetDigest:hashValue(target)})};
  const inspect=()=>service.inspect({ref,action:'open',viewer:{}});const begin=()=>service.begin({ref,action:'open',requestId:'r',intent:'new',viewer:{}});
  for (const operation of [inspect,begin]) await expect(operation()).rejects.toMatchObject({code:'invalid_participant_context',field:'participants.0.person'});
@@ -100,4 +107,19 @@ it('surfaces selector and unknown-identity paths through runtime and Admin entry
  plan.activity_settings.item.participants.ids=['missing'];
  for (const operation of [inspect,begin]) await expect(operation()).rejects.toMatchObject({code:'invalid_participant_context',field:'selector.keys.0'});
  expect(await validate({plan,viewer:{}})).toMatchObject({valid:false,errors:[{code:'invalid_participant_context',field:'activity_settings.item.participants.ids.0'}]});
+});
+it('validates the roster even without activity bindings',async()=>{
+ const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');
+ const provider=new AgendaParticipantContextProvider({repository:{},store:{},codec:{},clock:()=>new Date(),directory:{resolve:async()=>null},authorize:async()=>true,resolveTarget:async()=>({})});
+ const validate=createAgendaActivityValidator({provider,setupResolver:{resolve:async()=>{throw Error('unexpected')},registry:{resolve:()=>null}}});
+ const plan={household_id:'home',plan_id:'p',revision:1,participants:[{id:'r',person:{kind:'guest',id:'missing'},display:{name:'Visitor',avatar:null}}],list:{sections:[]},activity_settings:{}};
+ expect(await validate({plan,viewer:{}})).toMatchObject({valid:false,errors:[{field:'participants.0.person',code:'invalid_participant_context'}]});
+});
+it('requires an authored binding for registered targets and leaves ordinary media unprepared',async()=>{
+ const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');let prepares=0;
+ const provider=new AgendaParticipantContextProvider({repository:{},store:{},codec:{},clock:()=>new Date(),directory:{resolve:async()=>null},authorize:async()=>true,resolveTarget:async({item})=>({kind:'content',id:item.uid})});
+ const setupResolver={registry:{resolve:({target})=>target.id==='aware'?{id:'fake',version:1}:null},resolve:async()=>{prepares++;}};
+ const validate=validatorWithDoubles(createAgendaActivityValidator,{provider,setupResolver});
+ const plan={household_id:'home',plan_id:'p',revision:1,participants:[],list:{sections:[{items:[{uid:'aware',play:'a'},{uid:'ordinary',play:'b'}]}]},activity_settings:{}};
+ expect(await validate({plan,viewer:{}})).toMatchObject({valid:false,errors:[{field:'activity_settings.aware',code:'participant_setup_required'}]});expect(prepares).toBe(0);
 });

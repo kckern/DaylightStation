@@ -19,7 +19,7 @@ import { getDeviceId } from './deviceIdentity.js';
  * @param {boolean} [withContentType]
  * @returns {Object}
  */
-const buildHeaders = (token, withContentType = true) => ({
+export const buildHeaders = (token, withContentType = true) => ({
     ...readRequestContextHeaders(),
     ...(withContentType ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),

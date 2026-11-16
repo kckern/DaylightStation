@@ -61,7 +61,7 @@ export class ParticipantConsumerRegistry {
     if (!declaration || declaration.id !== consumer.id || declaration.version !== consumer.version) fail('Stale declared consumer');
     return consumer;
   }
-  describe(input) { const consumer = this.resolve(input); return consumer ? consumer.describe(input.target) : null; }
+  describe(input) { const consumer = this.resolve(input); return consumer ? {...consumer.describe(input.target), consumer:{id:consumer.id,version:consumer.version}} : null; }
   /** Locate an exact version's stable direct authority without a live catalog lookup. */
   retainedDirectAccess({action,target} = {}) {
     if (!target || !actions.includes(action)) return null;

@@ -34,6 +34,17 @@ export function createAdminAgendasRouter({householdId,planning,logger}={}) {
     logger?.info?.('agenda.series.saved',{seriesId:req.params.seriesId}); sendRecord(res,result);
   }));
   router.post('/:seriesId/archive',route(async(req,res,service)=>{bodyFields(req.body ?? {},[]);const expectedEtag=precondition(req);sendRecord(res,await service.archiveSeries({...scope(req),expectedEtag}));}));
+  router.post('/:seriesId/artwork/resolve',route(async(req,res,service)=>{
+    const {itemUids}=bodyFields(req.body,['itemUids']);
+    if (!Array.isArray(itemUids) || itemUids.length > 1000 || itemUids.some(id=>typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id))) {
+      throw httpError('invalid_request','Invalid item identities',[{field:'itemUids',message:'Valid item IDs required'}]);
+    }
+    found(await service.readSeries(scope(req)));
+    const source={list:{sections:[{items:itemUids.map(uid=>({uid}))}]}};
+    res.json({images:await service.resolveArtwork({source,householdId})});
+  }));
+  router.get('/:seriesId/defaults/artwork',route(async(req,res,service)=>res.json(await service.defaultsArtwork(scope(req)))));
+  router.get('/:seriesId/planning-context',route(async(req,res,service)=>res.json(await service.planningContext(scope(req)))));
   router.get('/:seriesId/plans',route(async(req,res,service)=>{found(await service.readSeries(scope(req)));res.json({plans:await service.listPlans(scope(req))});}));
   router.post('/:seriesId/plans',route(async(req,res,service)=>{
     const body=bodyFields(req.body,['weekOf','requestId','sourcePlanId','sourceRevision']);

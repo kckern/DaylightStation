@@ -1,0 +1,7 @@
+import React,{useState} from 'react';
+import {Alert,Button,Group,Stack,Text,TextInput} from '@mantine/core';
+export default function GuestDirectory({client,directory,onChange}) {
+ const [names,setNames]=useState({}),[error,setError]=useState('');
+ const save=async (entry,archive)=>{try{setError('');const result=archive?await client.archiveGuest(entry.person.id,directory.etag):await client.updateGuest(entry.person.id,{name:names[entry.person.id] ?? entry.display.name},directory.etag);onChange({people:directory.people.map(p=>p.person.kind==='guest'&&p.person.id===entry.person.id?result.document:p),etag:result.etag});}catch(e){setError(e.message);try{const refreshed=await client.people();onChange({people:refreshed.document.people,etag:refreshed.etag});}catch{}}};
+ return <details><summary>Manage named guests</summary><Stack>{error&&<Alert color="red">Directory: {error}</Alert>}{directory.people.filter(p=>p.person.kind==='guest').map(p=><Group key={p.person.id}><TextInput label={`Name for ${p.display.name}`} value={names[p.person.id] ?? p.display.name} onChange={e=>setNames({...names,[p.person.id]:e.currentTarget.value})}/><Button disabled={!p.active} onClick={()=>save(p,false)}>Save {p.display.name}</Button><Button disabled={!p.active} onClick={()=>{if(window.confirm(`Archive ${p.display.name}?`))save(p,true);}}>Archive {p.display.name}</Button>{!p.active&&<Text>Archived</Text>}</Group>)}</Stack></details>;
+}

@@ -17,6 +17,7 @@ const navSections = [
   {
     label: 'CONTENT',
     items: [
+      { label: 'Agendas', icon: IconCalendarEvent, to: '/admin/content/agendas' },
       { label: 'Menus', icon: IconMenu2, to: '/admin/content/lists/menus' },
       { label: 'Watchlists', icon: IconPlayerRecord, to: '/admin/content/lists/watchlists' },
       { label: 'Programs', icon: IconCalendarEvent, to: '/admin/content/lists/programs' },
