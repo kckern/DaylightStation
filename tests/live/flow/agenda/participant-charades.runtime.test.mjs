@@ -1,19 +1,17 @@
-import {test,expect} from '@playwright/test';
-import {createAgendaFixture} from './fixture.mjs';
-import {withCleanup} from './cleanup.mjs';
+import {test,expect} from './agendaTest.mjs';
 import {assertCharadesSchedule} from './charadesSchedule.mjs';
 
-test('launches a participant-bound Charades session and returns to its dated menu',async({page,request},testInfo)=>{
+test.use({actionTimeout:10000});
+
+test('launches a participant-bound Charades session and returns to its dated menu',async({page,request,agendaFixture:fixture},testInfo)=>{
  const definition=process.env.AGENDA_TEST_CHARADES_DEFINITION;
  if (!definition) throw Error('AGENDA_TEST_CHARADES_DEFINITION must identify an installed Charades definition');
- const fixture=await createAgendaFixture({page,request},testInfo);
- await withCleanup(async()=>{
   await page.goto(`/admin/content/agendas/${fixture.id}`);await page.getByRole('button',{name:'Create this week'}).click();
   await page.getByLabel('Named guest name').fill(fixture.guestName);await page.getByRole('button',{name:'Add named guest'}).click();await expect(page.getByText(fixture.guestName,{exact:true}).first()).toBeVisible();
   await page.getByRole('button',{name:'Add anonymous guest'}).click();await page.getByRole('button',{name:'Add anonymous guest'}).click();
   await page.getByRole('button',{name:'Add section'}).click();await page.getByRole('button',{name:'Add item',exact:true}).click();
-  await page.getByTestId('item-label-input').fill('Acceptance Charades');await page.getByPlaceholder('Search content or type source:id').fill(`app:party-games/${definition}`);
-  await page.getByLabel('Action',{exact:true}).click();await page.getByRole('option',{name:'Open',exact:true}).click();await page.getByTestId('save-item-button').click();
+  await page.getByTestId('item-label-input').fill('Acceptance Charades');await page.getByPlaceholder('Search content or type source:id').fill(`app:party-games/${definition}`);const rawChoice=page.getByRole('option',{name:/Use .* as raw value/});await expect(rawChoice).toBeVisible();await rawChoice.click();
+  await page.getByRole('textbox',{name:'Action',exact:true}).click();const openOption=page.getByRole('option',{name:'Open',exact:true});await expect(openOption).toBeVisible();const optionBox=await openOption.boundingBox(),dialogBox=await page.getByRole('dialog',{name:'Add Item'}).boundingBox(),viewport=page.viewportSize();expect(optionBox.y).toBeGreaterThanOrEqual(Math.max(0,dialogBox.y));expect(optionBox.y+optionBox.height).toBeLessThanOrEqual(Math.min(viewport.height,dialogBox.y+dialogBox.height));await page.screenshot({path:testInfo.outputPath('admin-action-options.png')});await openOption.click();await page.getByTestId('save-item-button').click();
   await expect(page.getByText('Participants',{exact:true})).toBeVisible();await page.getByLabel('Choose participants').check();
   await page.getByLabel(fixture.guestName,{exact:true}).check();await page.getByLabel('Guest 1',{exact:true}).check();await page.getByLabel('Guest 2',{exact:true}).check();
   await page.getByLabel(`${fixture.guestName} clue mode`).selectOption('reader');await page.getByLabel('Guest 1 clue mode').selectOption('image');await page.getByLabel('Guest 2 clue mode').selectOption('text');await page.getByLabel('Start automatically').uncheck();
@@ -47,5 +45,4 @@ test('launches a participant-bound Charades session and returns to its dated men
   await page.getByText('Acceptance Charades',{exact:true}).click();await expect(page.getByRole('button',{name:/^(Resume|View)/}).first()).toBeVisible();
   const resumePromise=page.waitForResponse(r=>r.request().method()==='POST' && /participant-launches\/resume$/.test(new URL(r.url()).pathname));await page.getByRole('button',{name:/^(Resume|View)/}).first().click();const resumed=await resumePromise;expect(resumed.ok()).toBe(true);expect((await resumed.json()).output.data.session_id).toBe(launch.output.data.session_id);
   await page.keyboard.press('Escape');await page.getByRole('button',{name:'Leave game'}).click();const returned=page.getByText('Acceptance Charades',{exact:true});await expect(returned).toBeVisible();await expect(returned.locator('..')).toHaveClass(/active/);await page.screenshot({path:testInfo.outputPath('tv-return-focus.png')});
- },fixture.cleanup);
 });

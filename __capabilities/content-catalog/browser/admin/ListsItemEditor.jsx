@@ -121,6 +121,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
           onChange={(val) => onChange('input', val)}
           placeholder="Search content or type source:id"
           selectContainers
+          withinPortal={false}
         />
         <Text size="xs" c="dimmed" mt={4}>
           Search or type directly: plex:123, media:path, youtube:xyz
@@ -130,6 +131,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
 
       <Select
         label="Action"
+        comboboxProps={{withinPortal:false}}
         data={ACTION_OPTIONS}
         value={formData.action}
         onChange={(value) => onChange('action', value)}
@@ -137,6 +139,7 @@ function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
 
       {!hideSection && <Select
         label="Section"
+        comboboxProps={{withinPortal:false}}
         description="Which section this item belongs to"
         data={sections.map((s, i) => ({ value: String(i), label: s.title || `Section ${i + 1}` }))}
         value={String(formData.sectionIndex ?? 0)}

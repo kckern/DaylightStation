@@ -89,9 +89,9 @@ function optionTopIn(viewport, option) {
  *   rendered here once the hook reports `fellBackToAll`. Optional.
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
  * @param {string} [props.logApp] - app name stamped on this combobox's log events
- * @param {string} [props.dropdownClassName] - extra class on the dropdown. It is
- *   portaled to <body>, so this is the only way a consumer can style it (e.g.
- *   Media's dock gives it a minimum width beside a narrow input).
+ * @param {string} [props.dropdownClassName] - extra class on the dropdown.
+ * @param {boolean} [props.withinPortal] - render the dropdown in a portal (default true).
+ *   Modal hosts can keep it within the dialog accessibility boundary.
  * @param {(args: {onStartEdit: () => void, value: string, resolvedTitle: ?string}) => JSX} [props.renderValue]
  *   - when provided, rendered INSTEAD of the TextInput while in DISPLAY mode
  *     (lets callers keep rich display cards; clicking must call onStartEdit)
@@ -128,6 +128,7 @@ export function ContentCombobox({
   onClose = null,
   logApp = 'admin',
   dropdownClassName = null,
+  withinPortal = true,
   onPlayAll = null,
   onMore = null,
   onAction = null,
@@ -665,7 +666,7 @@ export function ContentCombobox({
 
   return (
     <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
-    <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
+    <Combobox store={combobox} onOptionSubmit={handleOptionSubmit} withinPortal={withinPortal}>
       <Combobox.Target withKeyboardNavigation={false}>
         <TextInput
           ref={inputRef}
