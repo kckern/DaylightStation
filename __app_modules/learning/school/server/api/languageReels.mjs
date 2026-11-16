@@ -39,7 +39,8 @@ export function createLanguageReelsRouter({ service, grants, logger = console, s
   }));
   router.post('/users/:userId/reels/:reelId/attempts', express.json(), wrap((req, res) => {
     const grant = authorized(req, res); if (!grant) return;
-    res.json(service.recordAttempt({ userId: grant.learnerId, reelId: grant.reelId, ...req.body }));
+    const { type, itemId, answer } = req.body ?? {};
+    res.json(service.recordAttempt({ userId: grant.learnerId, reelId: grant.reelId, type, itemId, answer }));
   }));
   router.get('/media/:reelId', wrap((req, res) => {
     const result = grants?.verify(req.query.grant, { reelId: req.params.reelId });
