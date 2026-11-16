@@ -4,7 +4,7 @@ import RewardsModal from '../../../../__app_modules/learning/school/browser/rewa
 
 const learner = { id: 'one', name: 'One' };
 const snapshot = {
-  learnerId: 'one', mode: 'live', silver: 24, gold: 3, rings: 20, groups: [],
+  learnerId: 'one', mode: 'live', silver: 24, gold: 3, rings: 1260, groups: [],
   gems: [{ id: 'g', label: 'Gem', group: 'school', color: '#f2c94c', cell: { state: 'earned', week: 1 } }],
 };
 

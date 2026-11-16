@@ -41,3 +41,24 @@ for (const key of ['Enter', 'Space', 'Escape']) test(`${key} closes and returns 
   await page.keyboard.press(key); await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('#under')).toBeFocused();
 });
+
+for (const viewport of [{ width: 320, height: 812 }, { width: 390, height: 844 }]) {
+  test(`portrait totals stay inside the dialog at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto(url);
+    const dialog = await page.getByRole('dialog').boundingBox();
+    const contents = page.locator('.school-rewards-modal__totals > div > svg, .school-rewards-modal__totals > div > strong, .school-rewards-modal__totals > div > span');
+    await expect(contents).toHaveCount(9);
+    const gem = page.locator('.gem-glyph');
+    const gemLabel = page.locator('.school-rewards-modal__gem-label');
+    const icons = [await contents.nth(0).boundingBox(), await contents.nth(3).boundingBox(), await contents.nth(6).boundingBox(), await gem.boundingBox()];
+    for (const icon of icons) { expect(icon.width).toBeCloseTo(icons[0].width, 0); expect(icon.height).toBeCloseTo(icons[0].height, 0); }
+    for (const element of [...await contents.all(), gem, gemLabel]) {
+      const box = await element.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(dialog.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(dialog.x + dialog.width);
+      expect(box.y).toBeGreaterThanOrEqual(dialog.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(dialog.y + dialog.height);
+    }
+  });
+}

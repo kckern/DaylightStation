@@ -16,7 +16,7 @@
   &__week { color: #94a3b8; margin-left: auto; white-space: nowrap; font-size: .85em; }
   &__close { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; margin-left: auto; border: 0; border-radius: 50%; background: #ffffff0d; }
   &__close svg { width: 32px; height: 32px; }
-  &__totals { display: flex; justify-content: center; gap: clamp(16px, 5vw, 90px); flex: 0 0 auto; padding: .35em 0; }
+  &__totals { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(16px, 5vw, 90px); flex: 0 0 auto; padding: .35em 0; }
   &__totals > div { display: grid; grid-template-columns: auto auto; align-items: center; column-gap: .5em; }
   &__totals .coin-icon, &__totals .ring-icon { width: var(--rewards-icon-size); height: var(--rewards-icon-size); grid-row: 1 / 3; }
   &__totals strong { font-size: clamp(20px, 4vh, 44px); line-height: 1; font-variant-numeric: tabular-nums; }
