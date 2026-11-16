@@ -5,7 +5,7 @@ import { initManageService as initManageService } from "../application/manageSer
 import { createFingerprintProfileWriter as createFingerprintProfileWriter } from "../application/fingerprintProfileWriter.mjs";
 
 export async function createFitnessIdentityRuntime(dependencies) {
-  const { eventBus, YamlUserProfileDatastore, configService } = dependencies;
+  const { eventBus, YamlUserProfileDatastore, configService, assertIdentityWritable } = dependencies;
 const biometricGateway = new EventBusBiometricGateway({ eventBus });
   initUnlockService({
     biometricGateway,
@@ -18,7 +18,7 @@ const biometricGateway = new EventBusBiometricGateway({ eventBus });
   });
   // Persistence adapter (1_adapters) → application writer (3_applications): the
   // writer never touches the filesystem itself, satisfying the DDD layering.
-  const userProfileDatastore = new YamlUserProfileDatastore({ configService });
+  const userProfileDatastore = new YamlUserProfileDatastore({ configService, assertWritable:assertIdentityWritable });
   const fingerprintProfileWriter = createFingerprintProfileWriter({
     datastore: userProfileDatastore,
     profileCache: { refresh: (username) => configService.reloadUserProfile(username) },

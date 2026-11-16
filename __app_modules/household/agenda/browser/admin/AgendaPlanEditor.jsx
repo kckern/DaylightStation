@@ -8,6 +8,7 @@ import GuestDirectory from './GuestDirectory.jsx';
 import ActivitySettings, {useDescriptors,materializeBindings,bindingErrors} from './ActivitySettings.jsx';
 import { useUnsavedGuard } from '../../../../../frontend/src/modules/Admin/shared/useUnsavedGuard.js';
 import { agendaClient } from './agendaClient.js';
+import {getLogger} from '../../../../../frontend/src/lib/logging/Logger.js';
 import { planDraftReducer, changesBoundTarget } from './planDraftReducer.js';
 
 const id = prefix => `${prefix}_${crypto.randomUUID()}`;
@@ -131,6 +132,8 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
     const operation=startOperation();
     if (!operation) return;
     let saved;
+    const operationName=publish ? 'publish' : 'save';
+    getLogger().info('agenda-admin.save',{operation:operationName});
     try {
       setError('');
       saved=await client.savePlan(seriesId,planId,materializeBindings(operation.draft,descriptors,editors),state.baseEtag);
@@ -148,9 +151,11 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
       } else {
         dispatch({type:'saved',...saved,scope:operation.scopeKey,generation:operation.generation});
       }
+      getLogger().info('agenda-admin.saved',{operation:operationName});
     } catch (error) {
       if (!ownsOperation(operation)) { warnChangedOperation(operation); return; }
       if (saved) dispatch({type:'saved',...saved,scope:operation.scopeKey,generation:operation.generation});
+      getLogger().warn('agenda-admin.error',{operation:operationName,code:error.status===409 ? 'conflict' : 'request_failed'});
       if (error.status===409) dispatch({type:'conflict',scope:operation.scopeKey,generation:operation.generation});
       else dispatch({type:'errors',scope:operation.scopeKey,generation:operation.generation,errors:error.errors || [{field:'plan',message:error.message}]});
     } finally {

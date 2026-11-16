@@ -5,8 +5,8 @@ import {itemAction} from '../../portable/planEdits.mjs';
 /** Authored payload stays opaque to Agenda; the composed resolver owns canonicalization. */
 export const targetFor = (item,action) => ({kind:'authored-action',value:item[action]});
 export function useDescriptors(client,list) {
- const signature=JSON.stringify(list?.sections.flatMap(s=>s.items.map(i=>({uid:i.uid,action:itemAction(i),value:i[itemAction(i)]}))) ?? []);
- const [result,setResult]=useState({signature:null,values:{},error:''});
+ const signature=list ? JSON.stringify(list.sections.flatMap(s=>s.items.map(i=>({uid:i.uid,action:itemAction(i),value:i[itemAction(i)]})))) : null;
+ const [result,setResult]=useState({signature:undefined,values:{},error:''});
  useEffect(()=>{if(!list)return;let active=true;Promise.all(list.sections.flatMap(s=>s.items).map(async item=>{const action=itemAction(item);if(!action)return [item.uid,null];return [item.uid,(await client.describe(targetFor(item,action),action)).document];})).then(entries=>{if(active)setResult({signature,values:Object.fromEntries(entries),error:''});}).catch(error=>{if(active)setResult({signature,values:{},error:error.message || 'Could not resolve activity capabilities'});});return()=>{active=false;};},[client,signature]);
  return {values:result.signature===signature?result.values:{},loading:result.signature!==signature,error:result.signature===signature?result.error:''};
 }
@@ -42,7 +42,8 @@ export default function ActivitySettings({item,document,descriptor,editors,onCha
    setRemapError({field:error.field || 'settings',message:error.message});
   }
  };
- const selected=(setup.participants.mode==='plan'?document.participants:document.participants.filter(p=>setup.participants.ids.includes(p.id))).map(p=>({...p,display:p.display || {name:p.person?.id || 'Guest',avatar:null}}));
+ const byId=new Map(document.participants.map(p=>[p.id,p]));
+ const selected=(setup.participants.mode==='plan'?document.participants:setup.participants.ids.map(id=>byId.get(id)).filter(Boolean)).map(p=>({...p,display:p.display || {name:p.person?.id || 'Guest',avatar:null}}));
  const Panel=editor.Panel;
  return <Stack><Text fw={600}>Participants</Text>{remapError && <Text c="red" role="alert">{remapError.field}: {remapError.message}</Text>}{Number.isInteger(descriptor.minParticipants) && Number.isInteger(descriptor.maxParticipants) && <Text size="sm">Allowed participants: {descriptor.minParticipants}–{descriptor.maxParticipants}</Text>}<label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='plan'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('all'))} onChange={()=>changeSelection({mode:'plan'})}/> Everyone in this plan</label><label><input type="radio" name={`selection-${item.uid}`} checked={setup.participants.mode==='explicit'} disabled={readOnly || (descriptor.selectorSupport && !descriptor.selectorSupport.includes('explicit'))} onChange={()=>changeSelection({mode:'explicit',ids:[]})}/> Choose participants</label>{setup.participants.mode==='explicit'&&<Text size="sm">Removing someone clears their individual activity settings.</Text>}{setup.participants.mode==='explicit'&&document.participants.map(p=><Checkbox key={p.id} label={p.display?.name || p.person?.id || 'Guest'} checked={setup.participants.ids.includes(p.id)} disabled={readOnly} onChange={e=>changeSelection({mode:'explicit',ids:e.currentTarget.checked?[...setup.participants.ids,p.id]:setup.participants.ids.filter(id=>id!==p.id)})}/>)}<Panel settings={setup.settings} participants={selected} readOnly={readOnly} onChange={settings=>update({settings})}/></Stack>;
 }

@@ -39,3 +39,10 @@ test('writeProfile saves to <userDir>/profile.yml via the injected saver', () =>
 test('constructor rejects a configService without getUserDir', () => {
   assert.throws(() => new YamlUserProfileDatastore({ configService: {} }), /getUserDir/);
 });
+
+test('rejects profile writes when shared identity migration is transitioning', () => {
+ let writes = 0;
+ const store = new YamlUserProfileDatastore({configService:{getUserDir:u=>`/data/users/${u}`},load:()=>({}),save:()=>{writes++;},assertWritable:()=>{throw Object.assign(new Error('busy'),{code:'migration_busy'});}});
+ assert.throws(()=>store.writeProfile('test-user',{}),{code:'migration_busy'});
+ assert.equal(writes,0);
+});

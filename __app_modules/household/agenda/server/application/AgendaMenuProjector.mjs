@@ -46,6 +46,6 @@ export class AgendaMenuProjector {
       }
       row.participantLaunches = {[action]:{schema:'participant-launch-ref/v1',provider:'agenda',ref:this.codec.encode({householdId:plan.household_id,planId:plan.plan_id,itemUid:item.uid,revision:plan.revision,action,targetDigest:hashValue(target)})}};
     }
-    return {...menu, ...(updateRequired ? {notice:'Update this device to start participant-aware activities.'} : {}),title:`${plan.title} — ${plan.scheduled_on || plan.week_of}${preview ? ' (Preview)' : ''}`,preview};
+    return {...menu, revision:plan.revision, ...(updateRequired ? {notice:'Update this device to start participant-aware activities.'} : {}),title:`${plan.title} — ${plan.scheduled_on || plan.week_of}${preview ? ' (Preview)' : ''}`,preview};
   }
 }

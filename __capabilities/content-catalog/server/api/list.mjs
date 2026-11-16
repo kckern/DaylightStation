@@ -559,7 +559,7 @@ export function createListRouter(config) {
 
       const presentation = browseResult.sourceResult;
       if (presentation) {
-        for (const field of ['id','notice','preview','disableAutoCountdown','navigationPolicy','fixedOrder','adminUrl']) {
+        for (const field of ['id','revision','notice','preview','disableAutoCountdown','navigationPolicy','fixedOrder','adminUrl']) {
           if (presentation[field] !== undefined) response[field] = presentation[field];
         }
         if (presentation.privateResponse) {

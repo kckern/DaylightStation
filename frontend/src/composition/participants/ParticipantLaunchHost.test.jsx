@@ -113,3 +113,17 @@ it('activates Retry and Back through the gamepad synthetic route',async()=>{
  adapter._emit({action:'navigate',key:'ArrowDown',payload:{direction:'down'}}); adapter._emit({action:'select',key:'Enter'});
  expect(close).toHaveBeenCalledTimes(1); expect(inspect).toHaveBeenCalledTimes(2);
 });
+it('logs safe lifecycle and validation outcomes without participant or setup details',async()=>{
+ const {getLogger}=await import('../../lib/logging/Logger.js');
+ const info=vi.spyOn(getLogger(),'info');const warn=vi.spyOn(getLogger(),'warn');
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'secret-hash',participant_summary:[{key:'a',display:{name:'Private name'}}],choices:[{launch_id:'old',label:'Earlier'}]});
+ const resume=vi.fn().mockRejectedValue(Object.assign(new Error('private failure'),{code:'revision_conflict'}));
+ const close=vi.fn();render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'private-ref'}} action="open" client={{inspect,resume}} onClose={close}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Resume Earlier'}));await screen.findByRole('button',{name:'Refresh'});fireEvent.click(screen.getByRole('button',{name:'Back'}));
+ expect(info).toHaveBeenCalledWith('participant-launch.operation',expect.objectContaining({operation:'inspect'}));
+ expect(info).toHaveBeenCalledWith('participant-launch.operation',expect.objectContaining({operation:'resume'}));
+ expect(warn).toHaveBeenCalledWith('participant-launch.error',expect.objectContaining({code:'revision_conflict'}));
+ expect(info).toHaveBeenCalledWith('participant-launch.cancel',expect.any(Object));
+ const logged=JSON.stringify([...info.mock.calls,...warn.mock.calls]);expect(logged).not.toMatch(/Private name|secret-hash|private-ref|private failure/);
+ info.mockRestore();warn.mockRestore();
+});

@@ -38,7 +38,7 @@ export function AgendaMenuHost({contentId, initialFocusUid, fetcher=defaultFetch
       selectedId.current = data.id || id;
       if (!root.current) { root.current = data; selectedMenu.current = data; }
       else {
-        const changed = JSON.stringify(menu.items) !== JSON.stringify(data.items);
+        const changed = menu.revision != null && data.revision != null && menu.revision !== data.revision;
         if (changed && !data.notice) data.notice = 'This plan has been updated.';
         for (const key of Object.keys(menu)) delete menu[key];
         Object.assign(menu, data);

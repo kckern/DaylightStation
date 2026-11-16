@@ -177,3 +177,14 @@ it('reopens the saved UID through ScreenAutoplay and the screen action host',asy
   const saved=await screen.findByText('Saved activity');await waitFor(()=>expect(saved.closest('.menu-item')).toHaveClass('active'));
  } finally {globalThis.fetch=previous;window.history.replaceState({},'','/');}
 });
+
+it('notices a metadata-only plan revision after returning from an activity',async()=>{
+ const row={uid:'uid',label:'Activity',display:{contentId:'fake:x'},participantLaunches:{display:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}}};
+ const response=(revision,title)=>({ok:true,json:async()=>({id:'agenda:s/plans/p',revision,title,items:[row],navigationPolicy:'return-to-selected',disableAutoCountdown:true})});
+ const fetcher=vi.fn().mockResolvedValueOnce(response(1,'Original')).mockResolvedValueOnce(response(2,'Renamed'));
+ const client={inspect:vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'neutral',version:1},confirmation:'required',setup_hash:'h',choices:[]}),begin:vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'neutral',version:1},output:{schema:'neutral/v1',data:{}}})};
+ const registry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral/v1',render:({clear})=><button onClick={clear}>Close activity</button>}]);
+ render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:s/current" fetcher={fetcher} participantClient={client} participantRegistry={registry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Activity'));fireEvent.click(await screen.findByRole('button',{name:'Start'}));fireEvent.click(await screen.findByText('Close activity'));
+ expect(await screen.findByText('This plan has been updated.')).toBeTruthy();
+});

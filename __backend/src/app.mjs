@@ -955,7 +955,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
   // `fitness.unlock.result` replies settle the pending request (Task 2.3).
   // Task 2.4's HTTP endpoint imports requestUnlock from this module.
-  const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService });
+  const agendaOwnership=createConfiguredMigrationOwnership(configService);
+  const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService, assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
@@ -1144,7 +1145,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const {playLedger,loadOriginHints}=await createMediaPlayLedger({configService,householdId,rootLogger});
 
-  const agendaOwnership=createConfiguredMigrationOwnership(configService);
   const agendaResourceAliases=agendaOwnership.aliases;
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     resourceAliases:agendaResourceAliases,

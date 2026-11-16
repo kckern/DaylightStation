@@ -115,6 +115,7 @@ it('clears the attachment only on results or Play Again', async()=>{
 });
 
 it('rebuilds the FHE menu when exiting a session reloaded without its original menu stack',async()=>{
+ vi.spyOn(await import('../../../../../frontend/src/lib/api.mjs'),'DaylightAPI').mockResolvedValue({alias:null});
  window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=saved&return_to=%2Fscreens%2Fliving-room%2Ffhe');
  fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'saved',experience:{id:'charades'},seats:[],status:'complete'},state:{competition:false},result:{outcome:{kind:'completed'},scores:[]}}});
  function ReloadedScreen() {
@@ -459,14 +460,14 @@ it('rejects a participant launch mixed with a different explicit definition',asy
 });
 it('renders a frozen explicit session when its definition is absent from the current catalog',async()=>{
  window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=game%3Aone');
- fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[{id:'saved-seat'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},definition:{experience:{id:'charades',version:1},competition:false},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
+ fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[{id:'saved-seat'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
  render(<PartyGamesApp definitionId="charades:family"/>);
  await screen.findByRole('button',{name:'Complete game:one'});expect(screen.getByTestId('attached-seats')).toHaveTextContent('saved-seat');expect(createSession).not.toHaveBeenCalled();
 });
 it('exits a standalone saved source session to its stored dated target and UID, ignoring ambient return',async()=>{
  window.history.replaceState({},'','/app/party-games/charades:family?session=game%3Aone&return_to=%2Funrelated');
  const replace=vi.spyOn(window.location,'replace').mockImplementation(()=>{});
- fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'saved'}}}},definition:{experience:{id:'charades',version:1},competition:false},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
+ fetchBoot.mockResolvedValue({config,sets:[],attachedSession:{header:{session_id:'game:one',experience:{id:'charades',version:1},artifacts:{rules_definition:{id:'charades:family'}},participants:[],seats:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'saved'}}}},definition:{experience:{id:'charades',version:1},competition:false},state:{competition:false}}});
  render(<PartyGamesApp definitionId="charades:family" clear={vi.fn()}/>);
  await screen.findByRole('button',{name:'Complete game:one'});
  expect(new URLSearchParams(window.location.search).get('return_to')).toBe('/tv?list=agenda%3As%2Fplans%2Fp&focus_uid=saved');

@@ -6,7 +6,7 @@ This runbook does **not** authorize deployment or household data changes. Live o
 
 ## Installed authority and activation order
 
-Only the existing installed backend writes. The CLI is an authenticated HTTP client; it never constructs a writable repository, starts a backend, or falls back to an offline writer. Stop other writers and direct filesystem/Dropbox/SMB edits during the authorized window. Atomic rename is not multi-process compare-and-swap.
+Only the existing installed backend writes. The CLI is an authenticated HTTP client; it never constructs a writable repository, starts a backend, or falls back to an offline writer. Stop other writers and direct filesystem/Dropbox/SMB edits during the authorized window. Atomic rename is not multi-process compare-and-swap. The installed Fitness fingerprint profile writer observes the shared identity transition guard; other direct filesystem writers must remain stopped.
 
 The registered household app path is `agendas/config.yml`. Canonical Agenda can be enabled without transferring a legacy list. Migration inputs are separately configured:
 

@@ -25,7 +25,7 @@ it('transports viewer, protocol, references, notices and privacy through real re
  const browse=new ListBrowseService({contentCatalog:gateway,contentIdResolver:{resolve:id=>gateway.resolve(id)}});
  const app=express(); app.use((req,res,next)=>{req.user={sub:'u',householdId:'h'};next()}); app.use('/list',createListRouter({listBrowse:browse,viewerForRequest:req=>({householdId:req.user.householdId,participant_id:req.user.sub})}));
  const supported=await request(app).get('/list/agenda/s/current').set('X-Daylight-Participant-Launch-Version','1');
- expect(supported.status).toBe(200); expect(supported.body.items[0].participantLaunches.open.schema).toBe('participant-launch-ref/v1');
+ expect(supported.status).toBe(200); expect(supported.body.revision).toBe(1); expect(supported.body.items[0].participantLaunches.open.schema).toBe('participant-launch-ref/v1');
  expect(supported.body.items[0].open).toEqual({app:'game'});
  expect(supported.body.notice).toBeUndefined();
  expect(supported.body.items[1].list).toBeDefined(); expect(supported.body.items[1].queue).toBeUndefined();

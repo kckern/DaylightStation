@@ -37,21 +37,22 @@ export default function AgendaSeriesPage({client=agendaClient,editors={}}) {
   }
   const {series,plans,context}=data;
   const defaultsOpen=defaultsScope?.id===seriesId && defaultsScope.generation===generation;
+  const currentExists=plans.some(plan=>plan.document.week_of===context.thisWeek);
   const nextExists=plans.some(plan=>plan.document.week_of===context.nextWeek);
   const creating=busyScope?.id===seriesId && busyScope.generation===generation;
 
-  const create=async source=>{
+  const create=async (week,source)=>{
     const token={id:seriesId,generation};
     if (creating || pendingCreate.current?.generation===generation) return;
-    if (source && !window.confirm(`Copy ${source.week_of} to ${context.nextWeek}? The new week will be a draft.`)) return;
+    if (source && !window.confirm(`Copy ${source.week_of} to ${week}? The new week will be a draft.`)) return;
     const sourceRevision=source?.revision ?? series.document.revision;
-    const key=JSON.stringify([seriesId,generation,context.nextWeek,source?.plan_id ?? null,sourceRevision]);
+    const key=JSON.stringify([seriesId,generation,week,source?.plan_id ?? null,sourceRevision]);
     if (createIntent.current?.key!==key) createIntent.current={key,requestId:crypto.randomUUID()};
     const operation={...token};
     pendingCreate.current=operation;
     setBusyScope(token);
     try {
-      const result=await client.createPlan(seriesId,{weekOf:context.nextWeek,requestId:createIntent.current.requestId,sourceRevision,...(source?{sourcePlanId:source.plan_id}:{})});
+      const result=await client.createPlan(seriesId,{weekOf:week,requestId:createIntent.current.requestId,sourceRevision,...(source?{sourcePlanId:source.plan_id}:{})});
       if (!isCurrent(token) || pendingCreate.current!==operation) return;
       createIntent.current=null;
       navigate(`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(result.document.plan_id)}`);
@@ -70,14 +71,14 @@ export default function AgendaSeriesPage({client=agendaClient,editors={}}) {
     {failureMessage && <Alert color="red">{failureMessage}</Alert>}
     <Text>This week ({context.thisWeek}): {plans.find(p=>p.document.week_of===context.thisWeek)?.document.state || 'missing'}</Text>
     <Text>Next week ({context.nextWeek}): {plans.find(p=>p.document.week_of===context.nextWeek)?.document.state || 'missing'}</Text>
-    <Group><Button disabled={nextExists || defaultsOpen || creating} onClick={()=>create()}>Create next week</Button><Button disabled={defaultsOpen || creating} onClick={()=>setDefaultsScope({id:seriesId,generation})}>Edit defaults</Button></Group>
+    <Group><Button disabled={currentExists || defaultsOpen || creating} onClick={()=>create(context.thisWeek)}>Create this week</Button><Button disabled={nextExists || defaultsOpen || creating} onClick={()=>create(context.nextWeek)}>Create next week</Button><Button disabled={defaultsOpen || creating} onClick={()=>setDefaultsScope({id:seriesId,generation})}>Edit defaults</Button></Group>
     {defaultsOpen && <AgendaDefaultsEditor key={`${seriesId}:${generation}`} series={series} client={client} editors={editors}
       onClose={()=>{if(isCurrent({id:seriesId,generation})) setDefaultsScope(null);}}
       onSaved={value=>{if(isCurrent({id:seriesId,generation})){setData(previous=>({...previous,series:value}));setDefaultsScope(null);}}}/>}
     {!defaultsOpen && <><Title order={3}>Weeks</Title>{plans.slice().sort((a,b)=>a.document.week_of.localeCompare(b.document.week_of)).map(({document:plan})=><Group key={plan.plan_id}>
       <Link to={`/admin/content/agendas/${encodeURIComponent(seriesId)}/plans/${encodeURIComponent(plan.plan_id)}`}>{plan.week_of}</Link><Badge>{plan.state}</Badge>
       {plan.week_of===context.thisWeek && <Badge>This week</Badge>}{plan.week_of===context.nextWeek && <Badge>Next week</Badge>}
-      <Button disabled={nextExists || creating} onClick={()=>create(plan)}>Copy this week</Button>
+      <Button disabled={nextExists || creating} onClick={()=>create(context.nextWeek,plan)}>Copy this week</Button>
     </Group>)}</>}
   </Stack>;
 }
