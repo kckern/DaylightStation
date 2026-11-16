@@ -93,6 +93,11 @@ export class GamingApplication {
     if (result.created) this.#launchEffect('after-create', this.effects?.afterCreate({ session: result.view, definition: result.view.definition }), { sessionId });
     return result;
   }
+  async inspectSession(sessionId, viewer) {
+    const view = await this.coordinator.inspect(sessionId, viewer);
+    const normalized = completedResult(view);
+    return normalized ? { ...view, result: normalized } : view;
+  }
   async resumeSession(sessionId, viewer) {
     const view = await this.coordinator.resume(sessionId, viewer);
     const normalized = completedResult(view);

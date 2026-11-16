@@ -141,7 +141,8 @@ it('threads retained source through service, real consumer and Gaming journal on
  const definitions={getCurrent:vi.fn(async()=>structuredClone(loaded)),pin:vi.fn(async value=>value),getPinned:vi.fn(async()=>structuredClone(definition))};
  const coordinator=new GameSessionCoordinator({runtime:new GameRuntime({rulesets:[rules]}),snapshots,journal,definitions,ids:{session:()=>'',seed:()=>1},clock:{now:()=>new Date('2026-01-01')},authorization:new SessionActorAuthorization()});
  const app=new GamingApplication({coordinator,definitions,manifestStore:{get:()=>manifest}});
- const consumer=new PartyGamesParticipantConsumer({definitions,manifestStore:{get:()=>structuredClone(manifest)},executionPort:{createReserved:args=>app.createReserved(args),inspect:id=>coordinator.resume(id,{role:'host'})},clueHistory:{list:async()=>[]}});
+ const {createPartyGamesParticipantConsumer}=await import('../../participants.mjs');
+ const consumer=createPartyGamesParticipantConsumer({definitions,manifestStore:{get:()=>structuredClone(manifest)},gamingApplication:app,clueHistory:{list:async()=>[]}});
  const canonicalTarget={...target,kind:'app',appId:'party-games',participantConsumer:{id:'party-games',version:1}};
  const source={scope:{provider:'agenda',id:'plan',revision:1},roster,selector:{schema:'participant-selector/v1',mode:'explicit',keys:['c','b']},action:'open',target:canonicalTarget,consumer:{id:'party-games',version:1},settings,sourceLabel:'Week of 2026-11-16',returnTo:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'i'}};
  let record, live=true;
@@ -150,7 +151,14 @@ it('threads retained source through service, real consumer and Gaming journal on
  const service=new ParticipantLaunchService({registry,providers:[{id:'agenda',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>{if(!live)throw Error('source changed');return source;}}],resolveDirectTarget:async()=>canonicalTarget,logger:{info(){}}});
  const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'}, input={ref,action:'open',intent:'new',requestId:'same',viewer:{role:'host'}};
  const inspect=await service.inspect({...input});input.expectedSetupHash=inspect.setup_hash;
- await expect(service.begin(input)).rejects.toThrow('snapshot interrupted');live=false;
+ await expect(service.begin(input)).rejects.toThrow('snapshot interrupted');
+ const sessionId=[...journal.records.keys()][0];
+ store.inspect=async(_scope,build)=>build([{launch_id:'launch',consumer:{id:'party-games',version:1},runtime_ref:{provider:'gaming',id:sessionId}}]);
+ snapshots.put.mockClear();
+ await service.inspect(input);
+ expect(snapshots.put).not.toHaveBeenCalled();
+ expect(await snapshots.get(sessionId)).toBeNull();
+ live=false;
  const result=await service.begin(input); const saved=(await journal.read(result.runtime_ref.id))[0];
  expect(saved.header.launch.participant_launch).toMatchObject({launch_id:'launch',snapshot_hash:result.snapshot_hash,source_ref:ref,source_label:'Week of 2026-11-16',return_to:source.returnTo});
  expect(saved.participant_evidence.snapshot.participant_context.participants.map(p=>p.participant_id)).toEqual(['anon:plan:slot','guest:visitor']);
@@ -164,4 +172,23 @@ it('labels a saved game with its saved roster',async()=>{
  const {consumer}=await fixture(); consumer.executionPort.inspect=async()=>({header:{status:'active',launch:{participant_launch:{source_label:'Week of 2026-11-16'}},participants:[{name:'Saved guest'},{name:'Saved player'}]}});
  const [choice]=await consumer.findResumable({receipts:[{launch_id:'l',runtime_ref:{provider:'gaming',id:'game:one'}}],viewer:{role:'host'}});
  expect(choice.label).toBe('Resume game — Week of 2026-11-16 — Saved guest, Saved player');
+});
+
+it('installs the read-only Gaming discovery port', async () => {
+ const {createPartyGamesParticipantConsumer}=await import('../../participants.mjs');
+ const gamingApplication={inspectSession:vi.fn(),resumeSession:vi.fn(),createReserved:vi.fn()};
+ const consumer=createPartyGamesParticipantConsumer({definitions:{},manifestStore:{},gamingApplication});
+ await consumer.executionPort.inspect('session',{role:'host'});
+ expect(gamingApplication.inspectSession).toHaveBeenCalledWith('session',{role:'host'});
+ expect(gamingApplication.resumeSession).not.toHaveBeenCalled();
+});
+
+it('resolves a Party Games app target from authorized owner metadata', async () => {
+ const {createPartyGamesTargetResolver}=await import('../../participants.mjs');
+ const gamingApplication={getLaunchDescriptor:vi.fn(async()=>({definition_id:'charades:test',surface:{id:'party-games'}}))};
+ const resolve=createPartyGamesTargetResolver({gamingApplication,householdId:'home'});
+ await expect(resolve({path:'charades:test',viewer:{role:'host',participant_id:'u',householdId:'home'}})).resolves.toEqual({kind:'app',appId:'party-games',definitionId:'charades:test',surfaceId:'party-games',participantConsumer:{id:'party-games',version:1}});
+ expect(gamingApplication.getLaunchDescriptor).toHaveBeenCalledWith('charades:test',{surfaceId:'party-games',authorityMode:'remote'});
+ await expect(resolve({path:'charades:test',viewer:{role:'host',participant_id:'u',householdId:'other'}})).rejects.toMatchObject({code:'authorization_denied'});
+ await expect(resolve({path:'charades:test?x=1',viewer:{role:'host',participant_id:'u',householdId:'home'}})).rejects.toMatchObject({code:'invalid_target'});
 });

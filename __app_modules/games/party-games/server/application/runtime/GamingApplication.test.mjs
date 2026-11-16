@@ -273,3 +273,11 @@ it('rejects malformed or incomplete journaled Charades presentation at session s
   expect(definitions.getCurrent).not.toHaveBeenCalled();
   expect(coordinator.createReserved.mock.calls[0][0].reservation).toMatchObject({setup:{saved:true},pinnedDefinition:{definition},experience:{manifest_hash:manifest.hash}});
  });
+
+it('uses read-only coordinator inspection for saved-session discovery', async () => {
+ const {application,coordinator}=fixture();
+ coordinator.inspect=vi.fn(async()=>({state:{status:'active'}}));
+ await application.inspectSession('saved',{role:'host'});
+ expect(coordinator.inspect).toHaveBeenCalledWith('saved',{role:'host'});
+ expect(coordinator.resume).not.toHaveBeenCalled();
+});

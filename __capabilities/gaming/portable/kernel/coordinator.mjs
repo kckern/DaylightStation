@@ -105,6 +105,15 @@ export class GameSessionCoordinator {
     });
   }
 
+  async inspect(sessionId, viewer = {}) {
+    return this.#operation('inspect', sessionId, async metric => {
+      const { session, definition } = await this.#verified(sessionId, metric, { repair: false });
+      this.authorization.authorizeView({ session, viewer });
+      metric.revision = session.header.revision;
+      return this.#timed(metric, 'projectMs', () => this.#view(session, definition, viewer));
+    });
+  }
+
   async dispatch(sessionId, envelope, viewer = {}) {
     return this.#operation('dispatch', sessionId, async metric => {
       const { session, definition } = await this.#verified(sessionId, metric);
@@ -159,7 +168,7 @@ export class GameSessionCoordinator {
     if (this.#same(versions, await this.#versions(id))) this.cache.set(id, { session, definition, ...versions });
   }
 
-  async #verified(sessionId, metric) {
+  async #verified(sessionId, metric, { repair = true } = {}) {
     const before = await this.#timed(metric, 'loadMs', () => this.#versions(sessionId));
     const cached = this.cache.get(sessionId, before);
     if (cached) { metric.cacheResult = 'hit'; return cached; }
@@ -193,13 +202,14 @@ export class GameSessionCoordinator {
     let versions = await this.#versions(sessionId);
     if (before && !this.#same(before, versions)) throw this.#changed();
     if (snapshot && session.header.revision < snapshot.header.revision) throw new GamingKernelError('journal_corrupt', 'Gaming snapshot is ahead of its journal');
-    if (!snapshot || stableHash(session) !== stableHash(snapshot)) {
+    const needsRepair = !snapshot || stableHash(session) !== stableHash(snapshot);
+    if (repair && needsRepair) {
       const checkpoint = await this.#timed(metric, 'checkpointMs', () => this.snapshots.put(session, { expectedRevision: snapshot ? snapshot.header.revision : null }));
       versions = before && checkpoint?.version !== undefined ? { journalVersion: before.journalVersion, snapshotVersion: checkpoint.version } : null;
     }
     if (versions) {
       if (!this.#same(versions, await this.#versions(sessionId))) throw this.#changed();
-      this.cache.set(sessionId, { session, definition, ...versions });
+      if (repair || !needsRepair) this.cache.set(sessionId, { session, definition, ...versions });
     }
     return { session, definition };
   }

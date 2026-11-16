@@ -50,3 +50,23 @@ it('journals frozen participant creation evidence and rejects changed evidence o
  expect((await journal.read(reservation.sessionId))[0].participant_evidence).toEqual(evidence);
  await expect(coordinator.createReserved({reservation:{...frozen,participantEvidence:{...evidence,metadata:{...evidence.metadata,return_to:{kind:'content',content_id:'agenda:family/plans/new'}}}},viewer})).rejects.toMatchObject({code:'creation_conflict'});
 });
+
+it('inspects a journal with a missing snapshot without repairing storage', async () => {
+ const {coordinator,snapshots,journal,reservation}=fixture();
+ const put=snapshots.put.bind(snapshots); snapshots.put=vi.fn().mockRejectedValueOnce(Error('interrupted')).mockImplementation(put);
+ await expect(coordinator.createReserved({reservation,viewer})).rejects.toThrow('interrupted');
+ const before=await journal.read(reservation.sessionId);
+ snapshots.put.mockClear();
+ expect((await coordinator.inspect(reservation.sessionId,viewer)).state.value).toBe(3);
+ expect(snapshots.put).not.toHaveBeenCalled();
+ expect(await snapshots.get(reservation.sessionId)).toBeNull();
+ expect(await journal.read(reservation.sessionId)).toEqual(before);
+ await coordinator.resume(reservation.sessionId, viewer);
+ expect(await snapshots.get(reservation.sessionId)).toBeTruthy();
+});
+
+it('enforces view authorization during read-only inspection', async () => {
+ const {coordinator,reservation}=fixture();
+ await coordinator.createReserved({reservation,viewer});
+ await expect(coordinator.inspect(reservation.sessionId,{role:'spectator',participant_id:'stranger'})).rejects.toMatchObject({code:'authorization_denied'});
+});
