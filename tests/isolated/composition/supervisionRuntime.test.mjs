@@ -1,4 +1,6 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
+import {PortalKeysLockdownAdapter} from '../../../__backend/src/1_adapters/devices/PortalKeysLockdownAdapter.mjs';
+import {ShutdownService} from '../../../__backend/src/3_applications/shutdown/ShutdownService.mjs';
 import express from 'express';
 import request from 'supertest';
 import {createSupervisionRuntime} from '../../../__backend/src/5_composition/modules/supervision.mjs';
@@ -62,4 +64,55 @@ it('a failed parent verification cannot pair or accept a forged actor body',asyn
 it('malformed but parseable legacy lock records migrate as blocked',async()=>{
  const {readLegacyStops}=await import('../../../__app_modules/household/supervision/server/index.mjs');
  const legacy=readLegacyStops({configService:{getHouseholdPath:name=>name},load:()=>({lockedBy:'user_9'})});expect(legacy.invalid).toBe(true);
+});
+
+it('configured and legacy auth refs reach their own consumers',async()=>{
+ const fixtureSecret='configured-portal-secret',legacySecret='legacy-portal-secret',requests=[];
+ const fetchFn=vi.fn(async(url,request)=>{
+  const body=JSON.parse(request.body);requests.push({url,...request});
+  return {ok:true,json:async()=>({lockdownActive:body.locked,lockdownProtocolVersion:2,lockdownRevision:body.revision})};
+ });
+ vi.stubGlobal('fetch',fetchFn);
+ let runtime;
+ try{
+  const h=await supervisionFixture();
+  const authLookups=[];
+  const configService={
+   getHouseholdDevices:()=>({devices:{}}),getHouseholdPath:name=>name,
+   getHouseholdAuth:(ref,householdId)=>{authLookups.push([ref,householdId]);return ref==='configured-portal'?{token:fixtureSecret}:ref==='legacy-portal'?legacySecret:null;},
+  };
+  const configured={enabled:true,scopes:{'child-public':['portal']},devices:[{id:'portal',required_capabilities:['portal-keys'],portal_keys:{base_url:'http://configured.test:8771/',auth_ref:'configured-portal'}}]};
+  runtime=await createSupervisionRuntime({...h,configuration:configured,credentials,configService,householdId:'home',legacy:{}});
+  await runtime.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'auth-ref'});
+  await runtime.reconciler.reconcile();
+  const nativeRequest=requests.find(value=>value.url==='http://configured.test:8771/lockdown' && JSON.parse(value.body).locked);
+  expect(nativeRequest.headers['X-Lockdown-Token']).toBe(fixtureSecret);
+  expect((await runtime.health()).consumers).toContainEqual(expect.objectContaining({deviceId:'portal',capability:'portal-keys',acknowledged:true,blocked:true}));
+  expect(authLookups).toContainEqual(['configured-portal','home']);
+
+  // app.mjs already builds this legacy boundary independently when supervision is disabled.
+  const legacyConfig={duration_seconds:1800,portal_keys:{base_url:'http://legacy.test:8771',auth_ref:'legacy-portal'}};
+  const auth=configService.getHouseholdAuth(legacyConfig.portal_keys.auth_ref,'home');
+  const portal=new PortalKeysLockdownAdapter({baseUrl:legacyConfig.portal_keys.base_url,token:typeof auth==='string'?auth:auth?.token,fetchFn,logger:{info(){}}});
+  const legacyFixture=await supervisionFixture();
+  await legacyFixture.repository.transaction(state=>{state.devices={};state.revisions={};state.outbox=[];});
+  const disabledRuntime=await createSupervisionRuntime({...legacyFixture,configuration:null,householdId:'home'});
+  expect(disabledRuntime.enabled).toBe(false);
+  let saved=null,legacyRuntimeDelegatedToSupervision=false;
+  const legacyRuntime=new ShutdownService({
+   repo:{read:async()=>({state:saved,invalid:false}),save:async state=>{saved=state;}},
+   notifier:{publishState(){}},getPolicy:()=>({durationSeconds:legacyConfig.duration_seconds,targets:['school:portal']}),portal,
+   supervision:disabledRuntime.enabled?{activate:async()=>{legacyRuntimeDelegatedToSupervision=true;}}:null,logger:{warn(){}},
+  });
+  const state=await legacyRuntime.activate({readerId:'reader',tagUid:'fixture',now:1000});
+  expect(legacyRuntimeDelegatedToSupervision).toBe(false);
+  expect(state.lockedUntil).toBe('1970-01-01T00:30:01.000Z');
+  const legacyRequest=requests.find(value=>value.url==='http://legacy.test:8771/lockdown');
+  expect(legacyRequest.headers['X-Lockdown-Token']).toBe(legacySecret);
+  expect(JSON.parse(legacyRequest.body)).toEqual({locked:true,lockedUntil:1801000});
+  expect(authLookups).toContainEqual(['legacy-portal','home']);
+  await legacyRuntime.reconcile(1801001);
+  expect(await legacyRuntime.status('school:portal',1801001)).toMatchObject({locked:false});
+  expect(JSON.parse(requests.at(-1).body)).toEqual({locked:false,lockedUntil:null});
+ }finally{runtime?.dispose();vi.unstubAllGlobals();}
 });

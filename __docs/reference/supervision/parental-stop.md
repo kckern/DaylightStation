@@ -31,3 +31,55 @@ An approved media activity retains Retry, Play, Pause and Toggle for its current
 item. Screen commands derive that scope from the current playback owner's
 snapshot at dispatch, and the owner still validates Retry's visit target. Queue
 changes, other content and idle secondary selections cannot borrow that grant.
+
+Portal capability preflight must inventory both composition paths independently.
+An installation with no enabled supervision configuration or retained ledger
+uses `shutdown/config.yml` → `portal_keys.base_url` and `portal_keys.auth_ref`.
+Configured supervision uses `supervision/config.yml` →
+`devices[].portal_keys.base_url` and `devices[].portal_keys.auth_ref`. Each auth
+reference resolves through the household auth store and accepts either a token
+string or `{token: <secret>}`. A configured consumer does not supply credentials
+to the legacy shutdown adapter. The legacy `Portal key suppression is
+unavailable` warning establishes a skipped or missing capability; it does not
+establish that any particular parent command reached the native service.
+
+Prepare an additive candidate of the currently installed legacy policy, preserving
+its duration, targets, cue and reconciliation settings, with this additional block:
+
+```yaml
+portal_keys:
+  base_url: http://<portal-host>:<portal-keys-port>
+  auth_ref: <existing-household-auth-reference>
+```
+
+Keep tokens in household auth. Verify that the reference exists and resolves to
+a nonempty token without printing it. Check the loaded configuration, not an
+unregistered flat config file. Do not enable supervision or remove required
+capabilities to make inventory checks pass. URL and auth wiring is composed at
+backend startup; policy reload alone does not replace this adapter.
+
+Before installing that candidate, read `GET <base_url>/status` without changing
+native state. Require `serviceBound: true` and
+`config.lockdownProtocolVersion: 2`. A successful HTTP response alone is
+insufficient. The adapter's credential-aware `probe()` must advertise
+`portal-keys`; absent configuration, missing service, unsupported protocol,
+invalid status or an unreachable endpoint remains `CAPABILITY_UNAVAILABLE`.
+A probe does not prove that the token can actuate keys. During the separately
+authorized device drill, an ordered Stop must return `lockdownActive: true`,
+`lockdownProtocolVersion: 2` and `lockdownRevision` equal to the current command
+revision. Release must acknowledge false at its own current revision. HTTP
+rejection is `NATIVE_LOCKDOWN_REJECTED`; malformed or mismatched acknowledgements
+are `NATIVE_ACK_MISMATCH`. Observe physical key suppression as well. Keep the
+configured runtime's 5,000 ms ACK freshness and 2,000 ms reconcile cadence.
+Legacy mode keeps its existing finite shutdown window and does not acquire
+persistent supervision Stop semantics from this wiring repair.
+
+For configuration rollback, retain a separate copy of the exact previous
+`shutdown/config.yml` before authorized installation. Restore that policy and
+reload it through the selected backend deployment procedure; a backend restart
+is required to restore the previous Portal URL/auth wiring. Preserve
+`shutdown/lockdown.yml`, any `supervision/current.json`, command revisions and
+the HA latch. Do not remove auth records or reset native state. If restoring the
+old config removes a required native capability, acceptance fails and the kiosk
+must retain required enforcement or locked maintenance until repaired. Neither
+config rollback nor a successful probe authorizes releasing an active Stop.
