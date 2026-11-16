@@ -51,7 +51,7 @@ function threadShaderIntoContent(selection) {
  * @param {Object|string} props.rootMenu - The root menu configuration (list name or menu object)
  * @param {React.RefObject} [props.playerRef] - Optional ref forwarded to Player for playback broadcast
  */
-export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
+export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantClient, participantRegistry = participantBrowserRegistry, onActivityReturn, onHostErrorBack, onActivityStart, onReturnTarget, getReturnMenuId, loadContentMenu, onNavigationCancel, refreshParticipant, refreshToken = 0 }) {
   const { stack, currentContent, depth, push, pop, reset, replace, getSelection, setSelectionAtDepth, registerMenuBackHandler, unregisterMenuBackHandler } = useMenuNavigationContext();
   const currentContentRef = React.useRef(currentContent);
   currentContentRef.current = currentContent;
@@ -107,6 +107,11 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantCl
    */
   const handleSelect = useCallback((selection) => {
     if (!selection || selection.disabled) return;
+    if (rootMenu?.navigationPolicy === 'return-to-selected' && selection.uid) {
+      const menu = currentContent?.type === 'menu' ? currentContent.props.list : rootMenu;
+      const index = menu?.items?.findIndex(item => item.uid === selection.uid) ?? -1;
+      if (index >= 0) setSelectionAtDepth(depth, index, selection.uid);
+    }
     const action = selection.list || selection.menu ? null : ['play','queue','display','open'].find(key => selection[key]);
     const startsActivity = action || selection.launch || selection.android;
     if (startsActivity) navigationGeneration.current += 1;
@@ -206,7 +211,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantCl
       push({ type: 'android-launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
-  }, [push, loadContentMenu, onActivityStart, currentContent, rootMenu]);
+  }, [push, loadContentMenu, onActivityStart, currentContent, rootMenu, depth, setSelectionAtDepth]);
 
   /**
    * Clear function for Player/AppContainer to pop back
@@ -224,16 +229,17 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0, participantCl
   }, [pop, onActivityReturn, getReturnMenuId, depth, stack, rootMenu]);
 
   returnFromActivityRef.current = clear;
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (rootMenu?.navigationPolicy !== 'return-to-selected' || !registerMenuBackHandler) return;
     const handler = () => {
+      if (onHostErrorBack) { onHostErrorBack(); return true; }
       if (!['player','composite','app','display','launch','android-launch','participant-result','participant-passthrough'].includes(currentContent?.type)) return false;
       returnFromActivityRef.current?.();
       return true;
     };
     registerMenuBackHandler(handler);
     return () => unregisterMenuBackHandler?.(handler);
-  }, [rootMenu, currentContent, registerMenuBackHandler, unregisterMenuBackHandler]);
+  }, [rootMenu, currentContent, onHostErrorBack, registerMenuBackHandler, unregisterMenuBackHandler]);
 
   // Player exits dismiss the entire MenuStack overlay rather than popping back to
   // the source menu. The auto-select countdown on the source menu would otherwise

@@ -2,6 +2,8 @@ import React from 'react';
 import {render,screen,fireEvent,waitFor,act} from '@testing-library/react';
 import {it,expect,vi} from 'vitest';
 import {MenuNavigationProvider} from '../../../../__capabilities/screen-host/browser/menu-context.mjs';
+import {useMenuNavigationContext} from '../../../../__capabilities/screen-host/browser/menu-navigation.mjs';
+function SelectionProbe(){const nav=useMenuNavigationContext();return <div data-testid="selection-probe">{JSON.stringify(nav.getSelection(1))}</div>}
 import {ScreenOverlayProvider} from '../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 import {createParticipantBrowserRegistry} from '../../../../frontend/src/composition/participants/participantBrowserRegistry.js';
 import {AgendaMenuHost} from './AgendaMenuHost.jsx';
@@ -126,4 +128,37 @@ it('keeps an external launch open when an earlier refresh fails late',async()=>{
  fireEvent.click(await screen.findByText('External')); await screen.findByText('External activity');
  await act(async()=>{rejectRefresh(new Error('offline'));await Promise.resolve();});
  expect(screen.getByText('External activity')).toBeTruthy(); expect(screen.queryByRole('button',{name:'Retry'})).toBeNull();
+});
+
+it('hardware Back dismisses a nested return error without popping the dated menu or losing UID focus',async()=>{
+ const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'};
+ const row={uid:'uid',label:'Activity',display:{contentId:'fake:x'},participantLaunches:{display:ref}};
+ const result=(id,title,items)=>({ok:true,json:async()=>({id,title,items,navigationPolicy:'return-to-selected'})});
+ const fetcher=vi.fn().mockResolvedValueOnce(result('agenda:s/weeks','Weeks',[{label:'Week',list:{contentId:'agenda:s/plans/p'}}])).mockResolvedValueOnce(result('agenda:s/plans/p','Plan',[{uid:'other',label:'Other',disabled:true},row])).mockRejectedValueOnce(new Error('offline'));
+ const client={inspect:vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'neutral',version:1},confirmation:'required',setup_hash:'h',choices:[]}),begin:vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'neutral',version:1},output:{schema:'neutral/v1',data:{}}})};
+ const registry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral/v1',render:({clear})=><button onClick={clear}>Close activity</button>}]);
+ render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><SelectionProbe/><AgendaMenuHost contentId="agenda:s/weeks" fetcher={fetcher} participantClient={client} participantRegistry={registry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Week')); fireEvent.click(await screen.findByText('Activity')); await screen.findByRole('button',{name:'Start'});
+ expect(screen.getByTestId('selection-probe').textContent).toBe(JSON.stringify({index:1,key:'uid'}));
+ fireEvent.click(screen.getByRole('button',{name:'Start'})); fireEvent.click(await screen.findByText('Close activity')); await screen.findByRole('button',{name:'Retry'});
+ expect(screen.getByTestId('selection-probe').textContent).toBe(JSON.stringify({index:1,key:'uid'}));
+ fireEvent.popState(window);
+ const activity=await screen.findByText('Activity');
+ await waitFor(()=>expect(activity.closest('.menu-item').classList.contains('active')).toBe(true));
+ expect(screen.queryByRole('button',{name:'Retry'})).toBeNull(); expect(screen.queryByText('Week')).toBeNull();
+});
+
+it.each([['button','failure'],['button','success'],['hardware','failure'],['hardware','success']])('%s Back cancels a pending return Retry and ignores its late %s',async (backKind,outcome)=>{
+ let resolveRetry,rejectRetry;
+ const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'};
+ const row={uid:'uid',label:'Activity',display:{contentId:'fake:x'},participantLaunches:{display:ref}};
+ const result=(title,items)=>({ok:true,json:async()=>({id:'agenda:s/plans/p',title,items,navigationPolicy:'return-to-selected'})});
+ const fetcher=vi.fn().mockResolvedValueOnce(result('Plan',[row])).mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(()=>new Promise((resolve,reject)=>{resolveRetry=resolve;rejectRetry=reject;}));
+ const client={inspect:vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'neutral',version:1},confirmation:'required',setup_hash:'h',choices:[]}),begin:vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'neutral',version:1},output:{schema:'neutral/v1',data:{}}})};
+ const registry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral/v1',render:({clear})=><button onClick={clear}>Close activity</button>}]);
+ render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><AgendaMenuHost contentId="agenda:s/current" fetcher={fetcher} participantClient={client} participantRegistry={registry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Activity')); fireEvent.click(await screen.findByRole('button',{name:'Start'})); fireEvent.click(await screen.findByText('Close activity')); fireEvent.click(await screen.findByRole('button',{name:'Retry'}));
+ if (backKind === 'hardware') fireEvent.popState(window); else fireEvent.click(screen.getByRole('button',{name:'Back'}));
+ await act(async()=>{if(outcome==='failure') rejectRetry(new Error('late failure')); else resolveRetry(result('Stale update',[{uid:'uid',label:'Stale',disabled:true}])); await Promise.resolve();await Promise.resolve();});
+ expect(screen.getByText('Activity')).toBeTruthy(); expect(screen.queryByRole('button',{name:'Retry'})).toBeNull(); expect(screen.queryByText('Stale')).toBeNull();
 });
