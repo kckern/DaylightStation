@@ -7,3 +7,10 @@ it('validates typed source references and single action envelopes', () => {
   expect(validateActivitySetup(setup)).toEqual(setup);
   expect(() => validateActivitySetup({...setup,action:['display','play']})).toThrow();
 });
+it('bounds opaque handles separately from short provider identifiers',()=>{
+ const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'.repeat(2048)};
+ expect(validateParticipantLaunchRef(ref)).toEqual(ref);
+ expect(()=>validateParticipantLaunchRef({...ref,ref:'x'.repeat(2049)})).toThrow();
+ expect(()=>validateParticipantLaunchRef({...ref,ref:' x'})).toThrow();
+ expect(()=>validateParticipantLaunchRef({...ref,provider:'p'.repeat(257)})).toThrow();
+});

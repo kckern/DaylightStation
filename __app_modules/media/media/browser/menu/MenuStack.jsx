@@ -122,7 +122,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
     if (startsActivity) onActivityStart?.(currentContent?.type === 'menu' ? currentContent.props.list : rootMenu);
     if (action && Object.hasOwn(selection, 'participantLaunches')) {
       let intercepted = true;
-      dispatchParticipantAction({selection, action, onOrdinaryAction: () => { intercepted = false; }, onPresentation: ({ref, action: selectedAction}) => push({type:'participant-launch', props:{ref, action:selectedAction, uid:selection.uid}})});
+      dispatchParticipantAction({selection, action, onOrdinaryAction: () => { intercepted = false; }, onInvalid: () => setNavigationError({kind:'invalid_participant'}), onPresentation: ({ref, action: selectedAction}) => push({type:'participant-launch', props:{ref, action:selectedAction, uid:selection.uid}})});
       if (intercepted) return;
     }
 
@@ -256,6 +256,7 @@ export function MenuStack({ rootMenu, initialFocusUid, playerRef, MENU_TIMEOUT =
 
   if (navigationError) {
     const closeError = () => { navigationGeneration.current += 1; onNavigationCancel?.(); setNavigationError(null); };
+    if (navigationError.kind === 'invalid_participant') return <TVActionDialog role="alert" label="Activity unavailable" onBack={closeError}><p>Activity launch unavailable.</p><button onClick={closeError}>Back</button></TVActionDialog>;
     const retry = () => {
       const request = ++navigationGeneration.current;
       loadContentMenu(navigationError.contentId).then(menu => {

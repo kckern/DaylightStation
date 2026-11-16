@@ -1,10 +1,11 @@
 const id = value => typeof value === 'string' && value.trim() === value && value.length > 0 && value.length <= 256;
+const opaqueRef = value => typeof value === 'string' && value.trim() === value && value.length > 0 && value.length <= 2048;
 const obj = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const actions = ['open','play','queue','display'];
 function fail(field) { const error = new Error(`Invalid ${field}`); error.code = 'invalid_participant_launch'; error.field = field; throw error; }
 /** A typed, opaque source handle, never an authorization grant. */
 export function validateParticipantLaunchRef(ref) {
-  if (!obj(ref) || ref.schema !== 'participant-launch-ref/v1' || !id(ref.provider) || !id(ref.ref) || Object.keys(ref).some(k=>!['schema','provider','ref'].includes(k))) fail('ref');
+  if (!obj(ref) || ref.schema !== 'participant-launch-ref/v1' || !id(ref.provider) || !opaqueRef(ref.ref) || Object.keys(ref).some(k=>!['schema','provider','ref'].includes(k))) fail('ref');
   return ref;
 }
 /** Agenda envelope; settings remain opaque and are owned by the registered consumer. */

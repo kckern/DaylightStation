@@ -31,7 +31,8 @@ it('retains isolated participant context for the same content across plans and s
   const makePlan=(id,name)=>({household_id:'home',series_id:'series',plan_id:id,revision:1,state:'published',week_of:'2026-11-16',calendar:{timezone:'UTC'},participants:[{id:'guest',anonymous:true,display:{name,avatar:null}}],list:{sections:[{items:[{uid:'item',display:{contentId:'neutral:aware'}}]}]},activity_settings:{item:{action:'display',participants:{mode:'plan'},consumer:{id:'display-test',version:1},settings:{}}}});
   const plans={first:makePlan('first','One'),second:makePlan('second','Two')};const repo=new YamlAgendaRepository({pathForHousehold:()=>dir});repo.readPlan=async({planId})=>({document:plans[planId]});repo.readSeries=async()=>({document:{status:'active'}});
   const store=new YamlAgendaLaunchLedger({repository:repo,pathForHousehold:()=>dir});const codec=new AgendaLaunchRefCodec();
-  const provider=new AgendaParticipantContextProvider({repository:repo,store,codec,clock:()=>new Date('2026-11-17T00:00:00Z'),directory:{},authorize:async({viewer})=>viewer.householdId==='home',resolveTarget:({item,action,viewer})=>resolve({target:{kind:'authored-action',value:item[action]},action,viewer})});
+  let now=new Date('2026-11-17T00:00:00Z');
+  const provider=new AgendaParticipantContextProvider({repository:repo,store,codec,clock:()=>now,directory:{},authorize:async({viewer})=>viewer.householdId==='home',resolveTarget:({item,action,viewer})=>resolve({target:{kind:'authored-action',value:item[action]},action,viewer})});
   const projector=new AgendaMenuProjector({listProjector:new ListMenuProjector(),codec,resolveTarget:({item,action,viewer})=>resolve({target:{kind:'authored-action',value:item[action]},action,viewer}),registry,logger:{warn(){}}});
   const projectedPlan={...plans.first,title:'Week',list:{sections:[{items:[...plans.first.list.sections[0].items,{uid:'ordinary',title:'Ordinary',display:{contentId:'neutral:ordinary'}}]}]}};
   const projection=await projector.project({plan:projectedPlan,viewer:{householdId:'home'},participantLaunchVersion:1});
@@ -45,5 +46,10 @@ it('retains isolated participant context for the same content across plans and s
   const saved=await inspect('first');expect(saved.body.choices).toEqual([{launch_id:begin.body.launch_id,label:'Saved'}]);expect(saved.body.consumer_summary).toEqual({schema:'display-preview/v1',data:{count:1}});
   const two=await inspect('second');expect(two.body.choices).toEqual([]);expect(two.body.participant_summary[0].display.name).toBe('Two');
   const second=await request(app).post('/launches/begin').send({ref:ref('second'),action:'display',requestId:'second-request',intent:'new',expectedSetupHash:two.body.setup_hash});expect(second.status).toBe(200);expect(second.body.participant_context.participants[0].display.name).toBe('Two');expect(second.body.launch_id).not.toBe(begin.body.launch_id);
+  // Advance only the existing injected clock; the real provider and ledger remain in use.
+  now=new Date('2026-11-24T00:00:00Z');
+  const resumed=await request(app).post('/launches/resume').send({ref:ref('first'),action:'display',launchId:begin.body.launch_id});expect(resumed.status).toBe(200);expect(resumed.body.launch_id).toBe(begin.body.launch_id);expect(resumed.body.participant_context.participants[0].display.name).toBe('One');expect(resumed.body.return_to).toEqual({kind:'content',content_id:'agenda:series/plans/first',item_uid:'item'});
+  const expired=await request(app).post('/launches/begin').send({ref:ref('first'),action:'display',requestId:'after-rollover',intent:'new',expectedSetupHash:one.body.setup_hash});expect(expired.status).toBe(409);expect(expired.body.code).toBe('agenda_not_launchable');
+
  } finally {rmSync(dir,{recursive:true,force:true});}
 });

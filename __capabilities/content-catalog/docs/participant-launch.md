@@ -55,3 +55,5 @@ Legacy ownership is an exact composition-injected decision, independent of enabl
 The legacy list create guard resolves the same canonical name used by list storage before checking ownership, including case, whitespace and punctuation normalization. Embedded lists reject multiple effective action representations before plan or request receipt writes; equivalent watchlist and legacy encodings of the same target remain supported. Screen composition retains the existing durable `fhe` suffix as a compatibility default when no `persistPath` is specified; an explicit route policy takes precedence.
 
 The [controlled list editor](./list-editor.md) describes draft ownership and modal picker placement.
+
+Opaque source handles may be up to 2048 characters; provider identifiers remain limited to 256. This matches the Agenda codec’s input ceiling and stays well within the JSON request limit. Agenda’s largest canonical handle is 686 characters: three 128-character identifiers, a maximum safe-integer revision, the longest action and a 64-character digest. Each provider validates its own handle format and authorization independently.

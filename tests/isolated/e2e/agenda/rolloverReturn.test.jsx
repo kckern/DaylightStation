@@ -1,0 +1,46 @@
+import React from 'react';
+import {it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {MenuNavigationProvider} from '../../../../__capabilities/screen-host/browser/menu-context.mjs';
+import {ScreenOverlayProvider} from '../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import {createParticipantBrowserRegistry} from '../../../../frontend/src/composition/participants/participantBrowserRegistry.js';
+import {AgendaMenuHost} from '../../../../__app_modules/household/agenda/browser/AgendaMenuHost.jsx';
+import {AgendaParticipantContextProvider} from '../../../../__app_modules/household/agenda/server/application/AgendaParticipantContextProvider.mjs';
+import {AgendaMenuProjector} from '../../../../__app_modules/household/agenda/server/application/AgendaMenuProjector.mjs';
+import {AgendaContentAdapter} from '../../../../__app_modules/household/agenda/server/adapters/AgendaContentAdapter.mjs';
+import {YamlAgendaRepository} from '../../../../__app_modules/household/agenda/server/adapters/YamlAgendaRepository.mjs';
+import {YamlAgendaLaunchLedger} from '../../../../__app_modules/household/agenda/server/adapters/YamlAgendaLaunchLedger.mjs';
+import {AgendaLaunchRefCodec} from '../../../../__app_modules/household/agenda/server/adapters/AgendaLaunchRefCodec.mjs';
+import {ListMenuProjector} from '../../../../__capabilities/content-catalog/server/list-menu-projector.mjs';
+import {toListItem} from '../../../../__capabilities/content-catalog/server/api/list.mjs';
+import {ParticipantLaunchService,ParticipantConsumerRegistry,hashValue} from '../../../../__capabilities/content-catalog/server/participant-launch.mjs';
+vi.mock('../../../../frontend/src/lib/api.mjs',async original=>({...await original(),DaylightAPI:vi.fn().mockResolvedValue({})}));
+vi.mock('../../../../__app_modules/media/media/browser/menu/PlexMenuRouter.jsx',()=>({PlexMenuRouter:()=>null}));
+vi.mock('../../../../__app_modules/media/media/browser/surround-host.mjs',()=>({default:({children})=>children}));
+vi.mock('../../../../__app_modules/media/media/browser/playback.mjs',()=>({default:()=>null,PlayerOverlayLoading:()=>null}));
+it('returns a saved activity to its dated preview after the injected clock rolls forward',async()=>{
+ const dir=mkdtempSync(path.join(tmpdir(),'agenda-rollover-'));
+ try {
+  let now=new Date('2026-11-17T00:00:00Z');const target={kind:'content',source:'neutral',id:'neutral:one',capabilities:{displayable:{action:'display',participantConsumer:{id:'neutral',version:1}}}};
+  const planId='ap_'+ 'a'.repeat(64),itemUid='item_'+ 'b'.repeat(36);
+  const plan={household_id:'home',series_id:'series',plan_id:planId,revision:1,title:'Week',state:'published',week_of:'2026-11-16',calendar:{timezone:'UTC'},participants:[{id:'slot',anonymous:true,display:{name:'Guest',avatar:null}}],list:{sections:[{items:[{uid:itemUid,title:'Activity',display:{contentId:'neutral:one'}}]}]},activity_settings:{[itemUid]:{action:'display',participants:{mode:'plan'},consumer:{id:'neutral',version:1},settings:{}}}};
+  const repo=new YamlAgendaRepository({pathForHousehold:()=>dir});repo.readPlan=async()=>({document:plan});repo.readSeries=async()=>({document:{title:'Series',status:'active',calendar:{timezone:'UTC'}}});repo.listPlans=async()=>[{document:plan}];
+  const store=new YamlAgendaLaunchLedger({repository:repo,pathForHousehold:()=>dir}),codec=new AgendaLaunchRefCodec();
+  expect(codec.encode({householdId:'home',planId,itemUid,revision:1,action:'display',targetDigest:hashValue(target)}).length).toBeGreaterThan(256);
+  const consumer={id:'neutral',version:1,targets:[{action:'display',kind:'content',source:'neutral',capability:'displayable'}],describe:()=>({participantRequirement:'required',minParticipants:1,maxParticipants:3,selectorSupport:['all']}),prepareSetup:async()=>({schema:'participant-prepared-setup/v1',consumer:{id:'neutral',version:1},setup:{schema:'neutral/v1',data:{}},preview:{schema:'neutral-preview/v1',data:{}},artifacts:[],confirmation:'required'}),begin:async({snapshot})=>({schema:'participant-launch-result/v1',kind:'ready',launch_id:snapshot.launch_id,consumer:snapshot.consumer,snapshot_hash:snapshot.snapshot_hash,participant_context:snapshot.participant_context,output:{schema:'neutral-output/v1',data:{}}})};
+  const registry=new ParticipantConsumerRegistry();registry.register({consumer});const resolveTarget=async()=>target;
+  const provider=new AgendaParticipantContextProvider({repository:repo,store,codec,clock:()=>now,directory:{},authorize:async()=>true,resolveTarget});
+  const service=new ParticipantLaunchService({registry,providers:[provider],resolveDirectTarget:async({target:t})=>t,logger:{info(){}}});
+  const projector=new AgendaMenuProjector({listProjector:new ListMenuProjector(),codec,resolveTarget,registry,logger:{warn(){}}});
+  const adapter=new AgendaContentAdapter({repository:repo,projector,clock:()=>now,resolveHousehold:async()=> 'home'});
+  const fetcher=async url=>{const address=decodeURIComponent(url.split('/agenda/')[1]);const menu=await adapter.getList(address,{viewer:{},participantLaunchVersion:1});return {ok:true,json:async()=>({...menu,items:menu.items.map(item=>toListItem(item))})};};
+  const client=Object.fromEntries(['inspect','begin'].map(op=>[op,input=>service[op]({...input,viewer:{}})]));
+  const browserRegistry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral-output/v1',render:({clear})=><button onClick={()=>{now=new Date('2026-11-24T00:00:00Z');clear();}}>Roll over and return</button>}]);
+  render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:series/current" fetcher={fetcher} participantClient={client} participantRegistry={browserRegistry}/></ScreenOverlayProvider></MenuNavigationProvider>);
+  fireEvent.click(await screen.findByText('Activity'));fireEvent.click(await screen.findByRole('button',{name:'Start'}));fireEvent.click(await screen.findByText('Roll over and return'));
+  const activity=await screen.findByText('Activity');await waitFor(()=>expect(activity.closest('.menu-item')).toHaveClass('active'));expect(await screen.findByText(/Preview only/i)).toBeTruthy();
+ } finally {rmSync(dir,{recursive:true,force:true});}
+});

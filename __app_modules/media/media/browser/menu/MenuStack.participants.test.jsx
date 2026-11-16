@@ -45,3 +45,8 @@ it('does not push a menu after Retry was cancelled with Back',async()=>{
  await act(async()=>{resolveRetry({title:'Stale menu',items:[]});await Promise.resolve();});
  expect(screen.queryByText('Stale menu')).toBeNull(); expect(screen.getByText('Open menu')).toBeTruthy();
 });
+it('shows a safe error instead of silently ignoring an invalid participant reference',async()=>{
+ const client={inspect:vi.fn()};const root={title:'Week',items:[{label:'Activity',open:{app:'fake'},participantLaunches:{open:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'.repeat(2049)}}}]};
+ render(<MenuNavigationProvider><ScreenOverlayProvider><MenuStack rootMenu={root} participantClient={client}/></ScreenOverlayProvider></MenuNavigationProvider>);
+ fireEvent.click(await screen.findByText('Activity'));expect(await screen.findByRole('alert',{name:'Activity unavailable'})).toHaveTextContent('Activity launch unavailable');expect(client.inspect).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Back'}));expect(await screen.findByText('Activity')).toBeTruthy();
+});
