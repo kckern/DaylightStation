@@ -65,3 +65,11 @@ describe('hasInitialScreenAction', () => {
     expect(hasInitialScreenAction('/screens/living-room')).toBe(false);
   });
 });
+
+it('uses explicit route persistence before legacy compatibility defaults', async () => {
+  const {preservesScreenPath}=await import('./screenAppPath.js');
+  expect(preservesScreenPath('fhe',{})).toBe(true);
+  expect(preservesScreenPath('fhe',{fhe:{persistPath:false}})).toBe(false);
+  expect(preservesScreenPath('meeting',{meeting:{persistPath:true}})).toBe(true);
+  expect(preservesScreenPath('meeting',{})).toBe(false);
+});

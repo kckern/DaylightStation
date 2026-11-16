@@ -33,7 +33,8 @@ function contents(participants, list, settings, errors, requireDisplay) {
       need(Array.isArray(section?.items), 'list.sections.items', errors);
       for (const item of (Array.isArray(section?.items) ? section.items : [])) {
         need(text(item?.uid) && !uids.has(item?.uid), 'list.items.uid', errors); uids.add(item?.uid); items.set(item?.uid,item);
-        need(itemActions(item).length <= 1, 'list.items.action', errors);
+        const actionCount=itemActions(item).length + Number(Boolean(item?.list)) + Number(Boolean(item?.android));
+        need(actionCount <= 1, 'list.items.action', errors);
       }
     }
   } else need(false,'list.sections',errors);

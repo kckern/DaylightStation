@@ -41,3 +41,12 @@ export function hasInitialScreenAction(pathname, search = '') {
   const hasPathSuffix = /^\/screens?\/[^/]+\/.+/.test(String(pathname || ''));
   return hasPathSuffix || String(search || '').replace(/^\?/, '').length > 0;
 }
+
+// Existing screen links whose suffix is intentionally durable until their
+// screen configuration can declare persistence explicitly.
+const LEGACY_PERSISTENT_PATHS = new Set(['fhe']);
+
+export function preservesScreenPath(subPath, routes = {}) {
+  const configured = routes?.[subPath]?.persistPath;
+  return typeof configured === 'boolean' ? configured : LEGACY_PERSISTENT_PATHS.has(subPath);
+}

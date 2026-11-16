@@ -44,7 +44,7 @@ import { useInitialActionGate } from "../../../../__capabilities/screen-host/bro
 import { useFleetDeviceIdentity } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { ActionLoadingShell } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { layoutOwnsRouting } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
-import { resolveScreenAppPath } from './screenAppPath.js';
+import { resolveScreenAppPath, preservesScreenPath } from './screenAppPath.js';
 import { rescueGesture, RESCUE_PRESSES, RESCUE_WINDOW_MS } from "../../../../__capabilities/screen-host/browser/input.mjs";
 
 // Register built-ins on module load
@@ -126,7 +126,7 @@ export function ScreenAutoplay({ routes, layout }) {
 
       // App deep links are durable: keep the canonical URL so a refresh opens
       // the same app/game. One-shot menu suffixes retain the legacy cleanup.
-      if (!appRoute?.appPath && routes?.[subPath]?.persistPath !== true) {
+      if (!appRoute?.appPath && !preservesScreenPath(subPath, routes)) {
         const cleanPath = pathname.replace(/\/[^/]+$/, '');
         window.history.replaceState({}, '', cleanPath);
       }

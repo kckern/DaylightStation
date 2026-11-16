@@ -58,8 +58,17 @@ export function createAdminContentRouter(config) {
   const checkOwnership = (req,res,next) => {
     const kind=({menus:'menu',watchlists:'watchlist',programs:'program'})[req.params.type];
     if (!kind) return next();
+    let id=req.params.name;
+    if (id == null && req.method === 'POST') {
+      const name=req.body?.name;
+      if (typeof name !== 'string' || !name.trim()) return next();
+      if (resourceAliases && typeof listManagementService.canonicalCreateName !== 'function') {
+        return res.status(503).json({code:'ownership_unavailable',message:'Resource ownership unavailable'});
+      }
+      id=resourceAliases ? listManagementService.canonicalCreateName(name) : name;
+    }
     let alias;
-    try { alias=resourceAliases?.resolve({kind,id:req.params.name ?? req.body?.name}); }
+    try { alias=resourceAliases?.resolve({kind,id}); }
     catch (error) { if (error.code === 'ownership_unavailable') return res.status(503).json({code:'ownership_unavailable',message:'Resource ownership unavailable'}); return next(error); }
     if (!alias) return next();
     return res.status(409).json({code:'resource_moved',canonicalContentId:alias.canonicalContentId,adminUrl:alias.adminUrl});

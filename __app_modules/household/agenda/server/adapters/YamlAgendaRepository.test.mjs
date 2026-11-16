@@ -148,3 +148,26 @@ it('round trips plan list edits without passing roster or settings to the codec'
  expect(saved.document.participants).toEqual(before.document.participants);expect(saved.document.activity_settings).toEqual(before.document.activity_settings);
  expect(calls.length).toBeGreaterThan(0);expect(calls.every(value=>!Object.hasOwn(value,'participants') && !Object.hasOwn(value,'activity_settings'))).toBe(true);
 });
+
+it('rejects multiple persisted actions before writing a plan or receipt',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const existing=await create('source-mixed');const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ const {readdirSync}=await import('node:fs');const receipts=path.join(dir,'agendas','series','family','requests');const before=readdirSync(receipts);
+ for (const [index,item] of [
+  {uid:'i',title:'Two',play:{contentId:'files:song'},list:{contentId:'menu:other'}},
+  {uid:'i',title:'Two',android:{package:'org.example',activity:'Main'},open:'party-games/charades:test'},
+  {uid:'i',title:'Two',src:'files',media_key:'song',list:{contentId:'menu:other'}},
+ ].entries()) {
+  await expect(strict.createPlan({householdId:'home',seriesId:'family',weekOf:'2026-11-23',requestId:`mixed-${index}`,make:({planId})=>({...existing.document,plan_id:planId,week_of:'2026-11-23',scheduled_on:'2026-11-23',list:{sections:[{uid:'s',items:[item]}]}})})).rejects.toMatchObject({code:'invalid_document'});
+ }
+ expect(readdirSync(receipts)).toEqual(before);expect(await strict.listPlans({householdId:'home',seriesId:'family'})).toHaveLength(1);
+});
+
+it('retains equivalent watchlist and legacy encodings across repeated saves',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const initial=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(initial.document);next.defaults.list.sections[0].items=[{uid:'watch',title:'Watch',src:'files',media_key:'one'},{uid:'legacy',label:'Song',input:'files:song',action:'Play'}];
+ const first=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:initial.etag,mutate:()=>next});
+ const second=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:first.etag,mutate:doc=>doc});
+ expect(second.document.defaults.list.sections[0].items).toMatchObject([{uid:'watch',src:'files',media_key:'one',play:{contentId:'files:one'}},{uid:'legacy',label:'Song',play:{contentId:'files:song'}}]);
+});

@@ -129,3 +129,11 @@ it('does not treat inherited object properties as artwork references',async()=>{
  const copy=copyContent({source:template,ids:ids(),displaySnapshots:{'user:u':{name:'User',avatar:null}},remapActivitySettings,imageRefs:{}});
  expect(copy.list.sections[0].items[1].image).toBeUndefined();
 });
+
+it('rejects ambiguous canonical list and Android actions in the aggregate',()=>{
+ const plan=make();
+ plan.list.sections[0].items[0].list={contentId:'menu:other'};
+ expect(validatePlan(plan).valid).toBe(false);
+ const android=make();android.list.sections[0].items[0].android={package:'org.example',activity:'Main'};
+ expect(validatePlan(android).valid).toBe(false);
+});

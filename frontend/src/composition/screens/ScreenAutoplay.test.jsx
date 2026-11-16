@@ -10,7 +10,7 @@ beforeEach(async()=>{vi.spyOn(await import('../../lib/api.mjs'),'DaylightAPI').m
 afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();hooks.push.mockClear();});
 it('preserves the FHE entry and pushes its menu only once in StrictMode',async()=>{
  vi.useFakeTimers();window.history.replaceState({},'','/screens/living-room/fhe');
- render(<React.StrictMode><ScreenAutoplay routes={{fhe:{contentId:'menu:fhe',persistPath:true}}}/></React.StrictMode>);
+ render(<React.StrictMode><ScreenAutoplay routes={{fhe:{contentId:'menu:fhe'}}}/></React.StrictMode>);
  await act(async()=>{await Promise.resolve();await Promise.resolve();});act(()=>vi.advanceTimersByTime(501));
  expect(window.location.pathname).toBe('/screens/living-room/fhe');expect(hooks.push).toHaveBeenCalledTimes(1);
 });
@@ -63,4 +63,12 @@ it('fails closed when ownership metadata contains unexpected fields',async()=>{
  vi.useFakeTimers();window.history.replaceState({},'','/screens/living-room?list=menu%3Afhe');
  const {getByRole}=render(<ScreenAutoplay routes={{}}/>);await act(async()=>{await Promise.resolve();await Promise.resolve();});
  expect(getByRole('alert')).toBeTruthy();expect(hooks.push).not.toHaveBeenCalled();
+});
+
+it('preserves the unconfigured legacy path and cleans an ordinary suffix',async()=>{
+ vi.useFakeTimers();window.history.replaceState({},'','/screens/living-room/fhe');
+ const first=render(<ScreenAutoplay routes={{}}/>);act(()=>vi.advanceTimersByTime(501));
+ expect(window.location.pathname).toBe('/screens/living-room/fhe');first.unmount();
+ window.history.replaceState({},'','/screens/living-room/ordinary');render(<ScreenAutoplay routes={{}}/>);
+ act(()=>vi.advanceTimersByTime(501));expect(window.location.pathname).toBe('/screens/living-room');
 });

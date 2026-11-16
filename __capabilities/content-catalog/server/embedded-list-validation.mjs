@@ -20,7 +20,20 @@ export function validateEmbeddedList(list) {
    if (item.action != null && (typeof item.action !== 'string' || !['play','queue','display','list','open','android'].includes(item.action.toLowerCase()))) throw Object.assign(Error('Unsupported legacy action'),{code:'invalid_document'});
    if (item.action?.toLowerCase() === 'android' && !item.input?.startsWith('android:')) throw Object.assign(Error('Invalid Android action'),{code:'invalid_document'});
    if (item.android != null && (!object(item.android) || typeof item.android.package !== 'string' || typeof item.android.activity !== 'string' || Object.keys(item.android).sort().join(',') !== 'activity,package')) throw Object.assign(Error('Invalid Android target'),{code:'invalid_document'});
-   if (item.input && ['play','queue','display','list','open'].some(action=>item[action])) throw Object.assign(Error('Ambiguous action'),{code:'invalid_document'});
+   const actions=['play','queue','display','list','open','android'].filter(action=>item[action] != null);
+   if (actions.length > 1 || (item.input && actions.length)) {
+    throw Object.assign(Error('Ambiguous action'),{code:'invalid_document'});
+   }
+   // A watchlist's src/media_key and its derived play/input are two encodings
+   // of one target. Any different action or target would be discarded.
+   if (item.src != null && item.media_key != null) {
+    const watchTarget=`${item.src}:${String(item.media_key)}`;
+    const input=item.input?.trim().replace(/^(\w+):\s+/, '$1:');
+    if ((actions.length && (actions[0] !== 'play' || item.play?.contentId !== watchTarget)) ||
+        (input && (input !== watchTarget || (item.action && item.action.toLowerCase() !== 'play')))) {
+     throw Object.assign(Error('Ambiguous watchlist action'),{code:'invalid_document'});
+    }
+   }
    for (const action of ['play','queue','display','list']) {
     const value=item[action];
     if (value != null && (!object(value) || typeof value.contentId !== 'string' || !value.contentId || Object.keys(value).some(key=>key !== 'contentId'))) throw Object.assign(Error('Unsupported action options'),{code:'invalid_document'});

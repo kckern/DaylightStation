@@ -183,3 +183,19 @@ it('negotiates participant references on exact legacy aliases through the instal
   const old=await request(app).get('/list/menu/fhe');expect(old.status).toBe(200);expect(old.body.items[0].disabled).toBe(true);expect(old.body.items[0].open).toBeUndefined();expect(old.body.items[0].participantLaunches).toBeUndefined();
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+it('guards normalized create names at the real list mutation boundary', async () => {
+ const {AgendaResourceAliases}=await import('../../../../__app_modules/household/agenda/server/composition.mjs');
+ const {createAdminContentRouter}=await import('../../../../__capabilities/content-catalog/server/api/admin/content.mjs');
+ const {ListManagementService}=await import('../../../../__capabilities/content-catalog/server/application/services/ListManagementService.mjs');
+ const calls=[];const service=new ListManagementService({listStore:{createList:(...args)=>{calls.push(args);return true;}},logger:{info(){}}});
+ const aliases=new AgendaResourceAliases({registrations:[{kind:'menu',id:'fhe',owner:'agenda',canonicalContentId:'agenda:fhe',adminUrl:'/admin/content/agendas/fhe'}],authority:()=>true});
+ const app=express();app.use(express.json());app.use('/admin',createAdminContentRouter({householdContext:{resolve:()=> 'h'},listManagementService:service,resourceAliases:aliases,logger:{info(){},warn(){},error(){}}}));
+ for (const name of ['FHE',' FHE ','F.H.E.']) {
+  const response=await request(app).post('/admin/lists/menus').send({name});
+  expect(response.status).toBe(409);expect(response.body.code).toBe('resource_moved');
+ }
+ expect(calls).toEqual([]);
+ expect((await request(app).post('/admin/lists/menus').send({name:'Other List'})).status).toBe(201);
+ expect(calls).toEqual([['menus','other-list','h']]);
+});
