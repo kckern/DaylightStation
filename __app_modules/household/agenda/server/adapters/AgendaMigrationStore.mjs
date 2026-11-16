@@ -35,11 +35,16 @@ export class AgendaMigrationStore {
     Object.assign(this, deps);
     this.checkpoint ??= () => {};
   }
-  completedApply(manifest) {
+  applyState(manifest) {
     if (!fileExists(this.manifestPath)) return null;
     const state = this.ownership.read();
     if (state.digest !== manifest.digest) fail('idempotency_conflict', 'Another migration is already admitted');
-    return state.phase === 'complete' ? state : null;
+    return state;
+  }
+  async refreshFitness() {
+    if (typeof this.reloadFitness !== 'function') fail('ownership_unavailable', 'Installed Fitness reload port required');
+    const refreshed = await this.reloadFitness();
+    if (!refreshed || JSON.stringify(refreshed) !== JSON.stringify(yaml.load(readTextFromPath(this.sourcePaths.fitnessGuests)))) fail('ownership_unavailable', 'Fitness cache reload failed');
   }
   captureSources(paths = this.sourcePaths) {
     this.inventory?.();
@@ -59,6 +64,12 @@ export class AgendaMigrationStore {
   backupPath(manifest, key) {
     if (!Object.hasOwn(this.sourcePaths, key)) fail('invalid_manifest', 'Unknown backup key');
     return path.join(`${this.manifestPath}.transactions`, manifest.digest, 'backups', key);
+  }
+  validateDestinationPaths(manifest) {
+    // Recovery skips obsolete source content, never the installed path binding.
+    for (const key of ['legacyList', 'gameDefaults', 'namedGuests', 'fitnessGuests']) {
+      if (manifest.sources[key]?.path !== this.sourcePaths[key]) fail('invalid_manifest', 'Configured migration destination changed');
+    }
   }
   validateSources(manifest) {
     this.inventory?.();
@@ -93,7 +104,6 @@ export class AgendaMigrationStore {
   async apply(manifest, {
     assertCurrent = () => {}
   } = {}) {
-    this.validateSources(manifest);
     const {
       householdId,
       seriesId
@@ -106,10 +116,14 @@ export class AgendaMigrationStore {
         if (state.phase !== 'complete') fail('idempotency_conflict', 'Migration is backing out');
         return state;
       }
-      this.checkSources(manifest, {
-        allowOwnWrites: !!state,
-        retired: ['owned', 'retired'].includes(state?.phase)
-      });
+      this.validateDestinationPaths(manifest);
+      // Ownership is durable: recovery now retires legacy bytes, never re-installs identities.
+      if (!['owned', 'retired'].includes(state?.phase)) {
+        this.validateSources(manifest);
+        this.checkSources(manifest, {
+          allowOwnWrites: !!state
+        });
+      }
       if (!state) {
         assertCurrent();
         if (await this.repository.readSeries({
@@ -132,6 +146,7 @@ export class AgendaMigrationStore {
         await this.checkpoint('named-guests-written');
         write(this.sourcePaths.fitnessGuests, encoded(manifest.documents.fitnessGuests));
         await this.checkpoint('fitness-written');
+        await this.refreshFitness();
         state = await this.phase(state, 'identities');
       }
       if (state.phase === 'identities') {
@@ -146,6 +161,7 @@ export class AgendaMigrationStore {
       }
       if (state.phase === 'owned') {
         if (fileExists(this.sourcePaths.legacyList)) {
+          if (migrationHash(raw(this.sourcePaths.legacyList)) !== manifest.sourceHashes.legacyList) fail('source_changed', 'Source changed: legacyList');
           deleteFileStrict(this.sourcePaths.legacyList, {
             durable: true
           });
@@ -155,75 +171,130 @@ export class AgendaMigrationStore {
       return this.phase(state, 'complete');
     }));
   }
-  async backout(manifest, planId) {
-    const admitted = this.ownership.read();
-    if (admitted.digest !== manifest.digest) fail('idempotency_conflict', 'Migration digest mismatch');
-    if (admitted.backoutPlanId && admitted.backoutPlanId !== planId) fail('idempotency_conflict', 'Backout selection changed');
-    if (['backed-out', 'aborted'].includes(admitted.phase)) return admitted;
-    this.validateSources(manifest);
+  backoutPath(manifest) {
+    return path.join(`${this.manifestPath}.transactions`, manifest.digest, 'backout.json');
+  }
+  verifyBackout(manifest, planId, review, digest) {
     const {
-      householdId,
-      seriesId
-    } = manifest;
-    return this.repository.withSeriesLane(this.repository.laneKey(householdId, seriesId), () => this.ownership.withTransition(async () => {
+      digest: actual,
+      ...value
+    } = review || {};
+    if (!['abort', 'export'].includes(value.mode) || Object.keys(value.destinations || {}).sort().join() !== (value.mode === 'abort' ? 'fitnessGuests,namedGuests' : 'gameDefaults,legacyList')) fail('invalid_manifest', 'Invalid backout preconditions');
+    if (!actual || digest !== actual || actual !== migrationHash(value) || value.schema !== 'agenda-backout-review/v1' || value.migrationDigest !== manifest.digest || value.householdId !== manifest.householdId || value.seriesId !== manifest.seriesId || value.planId !== planId) fail('invalid_manifest', 'Explicit reviewed backout digest and matching selection required');
+  }
+  destinationHashes(keys) {
+    return Object.fromEntries(keys.map(key => {
+      const data = raw(this.sourcePaths[key]);
+      return [key, data ? migrationHash(data) : null];
+    }));
+  }
+  async prepareBackout(manifest, planId, state, expectedReview = null) {
+    this.validateDestinationPaths(manifest);
+    if (state.digest !== manifest.digest) fail('idempotency_conflict', 'Migration digest mismatch');
+    if (state.backoutPlanId && state.backoutPlanId !== planId) fail('idempotency_conflict', 'Backout selection changed');
+    if (state.backoutHash) {
+      const retained = JSON.parse(readTextFromPath(this.backoutPath(manifest)));
+      this.verifyBackout(manifest, planId, retained, retained.digest);
+      if (migrationHash(retained) !== state.backoutHash) fail('idempotency_conflict', 'Retained backout changed');
+      return retained;
+    }
+    const abort = ['prepared', 'identities', 'installed'].includes(state.phase);
+    if (!abort && state.phase !== 'complete') fail('migration_busy', 'Recover apply before backout');
+    if (abort) for (const key of ['namedGuests', 'fitnessGuests']) {
+      const data = raw(this.sourcePaths[key]);
+      if (!data || ![manifest.sourceHashes[key], migrationHash(encoded(manifest.documents[key]))].includes(migrationHash(data))) fail('source_changed', `Cannot abort changed source: ${key}`);
+    }
+    let output = null,
+      revision = null,
+      etag = null;
+    const destinations = this.destinationHashes(abort ? ['fitnessGuests', 'namedGuests'] : ['legacyList', 'gameDefaults']);
+    if (!abort) {
+      const saved = await this.repository.readPlanInSeries({
+        householdId: manifest.householdId,
+        seriesId: manifest.seriesId,
+        planId
+      });
+      if (!saved) fail('not_found', 'Selected plan missing');
+      if (expectedReview && (saved.etag !== expectedReview.etag || saved.document.revision !== expectedReview.revision)) fail('revision_conflict', 'Selected plan changed since backout review');
+      revision = saved.document.revision;
+      etag = saved.etag;
+      const exported = exportLegacyPlan({
+        plan: saved.document,
+        originalRules: yaml.load(readTextFromPath(this.sourcePaths.gameDefaults)),
+        originalRoster: yaml.load(bytes(manifest.sources.gameDefaults.base64).toString('utf8')).launch.participants,
+        listCodec: this.repository.listCodec
+      });
+      output = {
+        list: encoded(exported.list).toString('base64'),
+        rules: encoded(exported.rules).toString('base64')
+      };
+    }
+    const value = {
+      schema: 'agenda-backout-review/v1',
+      migrationDigest: manifest.digest,
+      householdId: manifest.householdId,
+      seriesId: manifest.seriesId,
+      planId,
+      mode: abort ? 'abort' : 'export',
+      revision,
+      etag,
+      destinations,
+      output
+    };
+    return {
+      ...value,
+      digest: migrationHash(value)
+    };
+  }
+  async previewBackout(manifest, planId) {
+    return this.repository.withSeriesLane(this.repository.laneKey(manifest.householdId, manifest.seriesId), () => this.prepareBackout(manifest, planId, this.ownership.read()));
+  }
+  async backout(manifest, planId, review, digest) {
+    this.verifyBackout(manifest, planId, review, digest);
+    return this.repository.withSeriesLane(this.repository.laneKey(manifest.householdId, manifest.seriesId), () => this.ownership.withTransition(async () => {
       let state = this.ownership.read();
-      if (state.digest !== manifest.digest) fail('idempotency_conflict', 'Migration digest mismatch');
-      if (state.backoutPlanId && state.backoutPlanId !== planId) fail('idempotency_conflict', 'Backout selection changed');
+      if (state.digest !== manifest.digest || state.backoutPlanId && state.backoutPlanId !== planId || state.backoutHash && state.backoutHash !== migrationHash(review)) fail('idempotency_conflict', 'Backout operation changed');
       if (['backed-out', 'aborted'].includes(state.phase)) return state;
-      if (['prepared', 'identities', 'installed', 'aborting'].includes(state.phase)) {
-        for (const key of ['namedGuests', 'fitnessGuests']) {
-          const current = raw(this.sourcePaths[key]);
-          if (!current || ![manifest.sourceHashes[key], migrationHash(encoded(manifest.documents[key]))].includes(migrationHash(current))) fail('source_changed', `Cannot abort changed source: ${key}`);
-        }
-        state = await this.phase({
-          ...state,
-          backoutPlanId: planId
-        }, 'aborting');
-        // Restore inline Fitness identities before removing any newly shared guests.
-        for (const key of ['fitnessGuests', 'namedGuests']) {
-          write(this.sourcePaths[key], bytes(manifest.sources[key].base64));
-          await this.checkpoint(`${key}-restored`);
-        }
-        return this.phase(state, 'aborted');
-      }
-      if (!['complete', 'backout-prepared', 'backout-exported'].includes(state.phase)) fail('migration_busy', 'Recover apply before backout');
-      const exportPath = path.join(`${this.manifestPath}.transactions`, manifest.digest, 'backout.json');
-      let output;
-      if (state.phase === 'complete') {
-        const saved = await this.repository.readPlanInSeries({
-          householdId,
-          seriesId,
-          planId
-        });
-        if (!saved) fail('not_found', 'Selected plan missing');
-        const plan = saved.document;
-        const originalRules = yaml.load(readTextFromPath(this.sourcePaths.gameDefaults));
-        const originalRoster = yaml.load(bytes(manifest.sources.gameDefaults.base64).toString('utf8')).launch.participants;
-        const exported = exportLegacyPlan({
-          plan,
-          originalRules,
-          originalRoster,
-          listCodec: this.repository.listCodec
-        });
-        output = {
-          planId,
-          etag: saved.etag,
-          list: encoded(exported.list).toString('base64'),
-          rules: encoded(exported.rules).toString('base64')
-        };
-        writePrivate(exportPath, JSON.stringify(output, null, 2) + '\n');
+      const admitted = !!state.backoutHash;
+      if (!admitted && JSON.stringify(this.destinationHashes(Object.keys(review.destinations))) !== JSON.stringify(review.destinations)) fail('source_changed', 'Backout destinations changed since review');
+      const current = await this.prepareBackout(manifest, planId, state, review);
+      if (!admitted) {
+        if (current.etag !== review.etag || current.revision !== review.revision) fail('revision_conflict', 'Selected plan changed since backout review');
+        if (JSON.stringify(current.destinations) !== JSON.stringify(review.destinations)) fail('source_changed', 'Backout destinations changed since review');
+        if (current.digest !== review.digest) fail('invalid_manifest', 'Backout export differs from reviewed preview');
+        writePrivate(this.backoutPath(manifest), JSON.stringify(review, null, 2) + '\n');
         state = await this.phase({
           ...state,
           backoutPlanId: planId,
-          backoutHash: migrationHash(output)
-        }, 'backout-prepared');
-      } else {
-        output = JSON.parse(readTextFromPath(exportPath));
-        if (output.planId !== planId || migrationHash(output) !== state.backoutHash) fail('idempotency_conflict', 'Backout selection or export changed');
+          backoutHash: migrationHash(review)
+        }, review.mode === 'abort' ? 'aborting' : 'backout-prepared');
+      }
+      if (review.mode === 'abort') {
+        for (const key of ['namedGuests', 'fitnessGuests']) {
+          const data = raw(this.sourcePaths[key]);
+          if (!data || ![manifest.sourceHashes[key], migrationHash(encoded(manifest.documents[key]))].includes(migrationHash(data))) fail('source_changed', `Cannot abort changed source: ${key}`);
+        }
+        // A restarted process may have booted with shared references. Refresh its
+        // served cache successfully before removing any extracted identities.
+        write(this.sourcePaths.fitnessGuests, bytes(manifest.sources.fitnessGuests.base64));
+        await this.refreshFitness();
+        await this.checkpoint('fitnessGuests-restored');
+        write(this.sourcePaths.namedGuests, bytes(manifest.sources.namedGuests.base64));
+        await this.checkpoint('namedGuests-restored');
+        return this.phase(state, 'aborted');
+      }
+      const output = current.output;
+      // Admitted retries may encounter either the reviewed destination or our exact
+      // retained output after an interrupted write. Never overwrite a third value.
+      for (const [key, field] of [['legacyList', 'list'], ['gameDefaults', 'rules']]) {
+        const hash = this.destinationHashes([key])[key];
+        if (![review.destinations[key], migrationHash(bytes(output[field]))].includes(hash)) fail('source_changed', `Backout destination changed: ${key}`);
       }
       if (state.phase === 'backout-prepared') {
         write(this.sourcePaths.legacyList, bytes(output.list));
+        await this.checkpoint('backout-list-written');
         write(this.sourcePaths.gameDefaults, bytes(output.rules));
+        await this.checkpoint('backout-rules-written');
         state = await this.phase(state, 'backout-exported');
       }
       return this.phase(state, 'backed-out');

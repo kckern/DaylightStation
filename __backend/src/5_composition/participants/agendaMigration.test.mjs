@@ -9,6 +9,9 @@ import { createConfiguredMigrationOwnership } from '../../../../__app_modules/ho
 import { installParticipantRuntime } from './installedRuntime.mjs';
 import { PeopleDirectory } from '../../../../__capabilities/household-identity/server/public.mjs';
 import { YamlNamedGuestStore } from '../../../../__capabilities/household-identity/server/adapters/index.mjs';
+import { ConfigService } from '../../0_system/config/ConfigService.mjs';
+import { FitnessConfigProjection } from '../../../../__app_modules/wellness/fitness/server/adapters/FitnessConfigProjection.mjs';
+import { FitnessUserHydrator } from '../../../../__app_modules/wellness/fitness/server/application/services/FitnessUserHydrator.mjs';
 import { runAgendaCli } from '../../../../__app_modules/household/agenda/cli/agenda.cli.mjs';
 it('runs authenticated CLI dry-run, apply retry and selected backout through the installed server authority', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'installed-migration-'));
@@ -46,7 +49,13 @@ it('runs authenticated CLI dry-run, apply retry and selected backout through the
     write('household/fitness/config.yml', {
       users: {
         primary: ['member'],
-        family: [],
+        family: [{
+          id: 'visitor',
+          name: 'Visitor',
+          zones: {
+            high: 140
+          }
+        }],
         friends: []
       }
     });
@@ -95,16 +104,24 @@ it('runs authenticated CLI dry-run, apply retry and selected backout through the
       }]
     };
     write('household/gaming/manifests/charades.yml', manifest);
-    const configService = {
-      getDefaultHouseholdId: () => 'home',
-      getHouseholdAppConfig: () => yaml.load(readFileSync(path.join(root, 'household/agendas/config.yml'), 'utf8')),
-      getHouseholdPath: p => path.join(root, 'household', p),
-      getHouseholdAppConfigPath: (_id, app) => path.join(root, 'household', app === 'agenda' ? 'agendas' : app, 'config.yml'),
-      getDataDir: () => root,
-      getMediaDir: () => root,
-      getHouseholdTimezone: () => 'UTC',
-      getUserDir: id => path.join(root, 'users', id)
-    };
+    const configService = new ConfigService({
+      system: {
+        dataDir: root,
+        mediaDir: root,
+        defaultHouseholdId: 'home',
+        timezone: 'UTC'
+      },
+      households: {
+        home: {
+          _folderName: 'household',
+          users: ['member'],
+          apps: {
+            agenda: yaml.load(readFileSync(path.join(root, 'household/agendas/config.yml'), 'utf8')),
+            fitness: yaml.load(readFileSync(path.join(root, 'household/fitness/config.yml'), 'utf8'))
+          }
+        }
+      }
+    });
     const ownership = createConfiguredMigrationOwnership(configService);
     const directory = new PeopleDirectory({
       householdDirectory: {
@@ -243,7 +260,44 @@ it('runs authenticated CLI dry-run, apply retry and selected backout through the
       kind: 'menu',
       id: 'other'
     })).toBeNull();
-    expect((await runAgendaCli(['migration', 'backout', ...args, '--plan-id', review.documents.plan.plan_id], deps)).phase).toBe('backed-out');
+    const projection = new FitnessConfigProjection({
+      configService,
+      logger: {}
+    });
+    const hydrator = new FitnessUserHydrator({
+      profileReader: {
+        getProfile: () => ({
+          username: 'member'
+        })
+      },
+      guestResolver: id => directory.resolve({
+        householdId: 'home',
+        person: {
+          kind: 'guest',
+          id
+        }
+      })
+    });
+    expect(projection.raw('home').users.family[0].person.kind).toBe('guest');
+    const guestStore = new YamlNamedGuestStore({
+      pathForHousehold: () => path.join(root, 'household/identity/named-guests.yml'),
+      assertWritable: ownership.assertSharedWritable
+    });
+    const guestDoc = guestStore.read('home');
+    guestStore.write('home', guestDoc.revision, guestDoc.guests.map(g => ({
+      ...g,
+      name: 'Changed after apply'
+    })));
+    expect(hydrator.hydrateConfig(projection.raw('home')).users.family[0].name).toBe('Changed after apply');
+    const backoutFile = path.join(root, 'backout-review.json');
+    const preview = await runAgendaCli(['migration', 'backout-preview', ...args, '--plan-id', review.documents.plan.plan_id, '--output', backoutFile], deps);
+    expect(preview.revision).toBe(review.documents.plan.revision);
+    await expect(runAgendaCli(['migration', 'backout', ...args, '--plan-id', review.documents.plan.plan_id, '--backout-review', backoutFile, '--backout-digest', review.digest], deps)).rejects.toMatchObject({
+      code: 'invalid_manifest'
+    });
+    expect(ownership.read().phase).toBe('complete');
+    await expect(runAgendaCli(['migration', 'backout', ...args, '--plan-id', review.documents.plan.plan_id], deps)).rejects.toThrow('Reviewed backout preview');
+    expect((await runAgendaCli(['migration', 'backout', ...args, '--plan-id', review.documents.plan.plan_id, '--backout-review', backoutFile, '--backout-digest', preview.digest], deps)).phase).toBe('backed-out');
     expect(ownership.aliases.resolve({
       kind: 'menu',
       id: 'family'

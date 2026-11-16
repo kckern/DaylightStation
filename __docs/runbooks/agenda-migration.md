@@ -56,28 +56,40 @@ The shared gate protects actual synchronous legacy-list commits, named-directory
 | Durable phase | Authority | Recovery |
 | --- | --- | --- |
 | `prepared` | Legacy | Exact private backups and review persisted; resume identity writes. |
-| `identities` | Legacy | Named identities precede Fitness references; install validated aggregates through the repository codec. |
+| `identities` | Legacy | Named identities precede Fitness references and successful ConfigService cache reload; install validated aggregates through the repository codec. |
 | `installed` | Legacy | Recheck source hashes, then switch the one authority file. |
-| `owned` | Agenda | Stale legacy commits are rejected; retire legacy file. |
+| `owned` | Agenda | Stale legacy commits are rejected; verify original legacy bytes before retirement, preserving later shared identity edits. |
 | `retired` / `complete` | Agenda | Complete or return the same operation; never reinstall over later edits. |
-| `aborting` / `aborted` | Legacy | Restore exact Fitness bytes before named-directory bytes; preserve later legacy list edits. |
+| `aborting` / `aborted` | Legacy | Restore exact Fitness bytes and successfully reload the served cache before named-directory bytes; preserve later legacy list edits. |
 | `backout-prepared` | Agenda | Durable export binds selected plan ID/revision and bytes; recover the same export. |
 | `backout-exported` | Agenda | Legacy export exists but is not editable until ownership changes. |
 | `backed-out` | Legacy | Agenda documents/runtime records remain retained and protected. |
 
-After a lost response or crash, repeat the same command, review digest, and selected plan. A different admitted payload conflicts. Retry accepts original sources or its own exact identity outputs, validates persisted review authority, and does not reinstall over later Agenda edits. Investigate external source conflicts rather than editing hashes or phases. Before ownership switches, backout aborts staged identity changes while leaving current legacy list edits intact. Terminal aborted/backed-out receipts remain retained; a later migration needs a separately reviewed operation rather than receipt reuse.
+After a lost response or crash, repeat the same command and reviewed payloads. A different admitted payload conflicts. Before ownership, apply retry accepts original sources or its own exact identity outputs. After `owned`, it only finishes legacy retirement and the receipt: shared guest edits and later target changes do not invalidate the committed identity transfer. A changed legacy file is never deleted. Retry validates persisted review authority and does not reinstall over later Agenda edits. A failed Fitness cache reload stops apply before ownership or leaves abort recoverable with extracted guests still present; retry reloads through the same owner port. Investigate external source conflicts rather than editing hashes or phases. Before ownership switches, backout aborts staged identity changes while leaving current legacy list edits intact. Terminal aborted/backed-out receipts remain retained; a later migration needs a separately reviewed operation rather than receipt reuse.
 
 Private backups live under `<authority>.transactions/<digest>/backups/`; absence is retained in the review. These directories restrict access. Do not copy them into source fixtures or public docs. A corrupt configured authority stays unavailable after restart.
 
 ## Backout after Agenda edits
 
-Choose the plan explicitly. Backout exports its current saved list, roster, and clue modes, preserving other current game-rule fields. It does not restore the stale original list over newer edits.
+Choose the plan explicitly and prepare a new read-only review. The original migration manifest is not approval to export later Agenda edits. The preview binds the migration identity, selected plan ID, revision and etag, exact legacy list/rule bytes, and current destination hashes (including an absent legacy list). It preserves other current game-rule fields. No transaction or output is written during preview.
+
+```sh
+node cli/agenda.cli.mjs migration backout-preview \
+  --server "$DAYLIGHT_AGENDA_SERVER" --manifest "$PRIVATE_REVIEW_FILE" \
+  --review-digest "$REVIEW_DIGEST" --plan-id "$SELECTED_PLAN_ID" \
+  --output "$PRIVATE_BACKOUT_REVIEW_FILE"
+```
+
+Independently review the private `agenda-backout-review/v1` preview. After explicit authorization for that backout, submit its separate digest:
 
 ```sh
 node cli/agenda.cli.mjs migration backout \
   --server "$DAYLIGHT_AGENDA_SERVER" --manifest "$PRIVATE_REVIEW_FILE" \
-  --review-digest "$REVIEW_DIGEST" --plan-id "$SELECTED_PLAN_ID"
+  --review-digest "$REVIEW_DIGEST" --plan-id "$SELECTED_PLAN_ID" \
+  --backout-review "$PRIVATE_BACKOUT_REVIEW_FILE" --backout-digest "$BACKOUT_DIGEST"
 ```
+
+The installed server rechecks the plan and destination preconditions under the same series lane and transition gate before admitting any export. A plan edit returns `revision_conflict`; a destination edit returns `source_changed`, without writing legacy output. Obtain and review a fresh preview after either conflict. The admitted preview/export is retained privately at `<authority>.transactions/<digest>/backout.json`; retry the same reviewed command after failure. Recovery uses those retained bytes, accepts only the original destination or its own exact output after an interrupted write, and rejects a changed payload or third-party destination bytes. A repeated preview after admission returns that retained review. Pre-cutover abort also requires a preview (mode `abort`) binding its current identity destinations; no selected-plan export is performed.
 
 Anonymous participants, newly introduced named guests unsupported by the original direct roster, differing per-activity setups, and unsupported consumers/subsets return `unsupported_downgrade`; Agenda remains authoritative. Recoverable export phases freeze edits. Completed-cutover backout retains shared identity support and Fitness references: retain that reader when rolling back code. Downgrading to a backend without guest-reference support requires a separately reviewed identity export and is not performed here.
 

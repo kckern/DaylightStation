@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
+import { migrationHash } from '../domain/migrationValues.mjs';
 import { AgendaMigration } from './AgendaMigration.mjs';
 import { YamlAgendaRepository } from '../adapters/YamlAgendaRepository.mjs';
 import { AgendaMigrationStore } from '../adapters/AgendaMigrationStore.mjs';
@@ -12,6 +13,9 @@ import { YamlListDatastore } from '../../../../../__capabilities/content-catalog
 import { YamlNamedGuestStore } from '../../../../../__capabilities/household-identity/server/adapters/YamlNamedGuestStore.mjs';
 import { YamlAdminConfigStore } from '../../../../../__backend/src/1_adapters/persistence/yaml/YamlAdminConfigStore.mjs';
 import { PeopleDirectory } from '../../../../../__capabilities/household-identity/server/public.mjs';
+import { ConfigService } from '../../../../../__backend/src/0_system/config/ConfigService.mjs';
+import { FitnessConfigProjection } from '../../../../wellness/fitness/server/adapters/FitnessConfigProjection.mjs';
+import { FitnessUserHydrator } from '../../../../wellness/fitness/server/application/services/FitnessUserHydrator.mjs';
 const dirs = [];
 afterEach(() => dirs.splice(0).forEach(dir => rmSync(dir, {
   recursive: true,
@@ -40,15 +44,15 @@ it('rejects a different selected-plan payload after backout has completed', asyn
     reviewedManifest: manifest,
     expectedSourceHashes: manifest.sourceHashes
   });
-  await f.migration.backoutMigration({
+  await f.backout({
     reviewedManifest: manifest,
     planId: manifest.documents.plan.plan_id
   });
-  await expect(f.migration.backoutMigration({
+  await expect(f.backout({
     reviewedManifest: manifest,
     planId: 'different'
   })).rejects.toMatchObject({
-    code: 'idempotency_conflict'
+    code: 'invalid_manifest'
   });
 });
 it('does not import one definition roster into a different Party Games target', async () => {
@@ -127,7 +131,7 @@ async function fixture({
     }
   };
   const sourcePaths = Object.fromEntries(Object.entries(sources).map(([k, v]) => {
-    const file = path.join(dir, k === 'legacyList' ? 'content/lists/menus/family.yml' : k + '.yml');
+    const file = path.join(dir, k === 'legacyList' ? 'content/lists/menus/family.yml' : k === 'fitnessGuests' ? 'household/fitness/config.yml' : k + '.yml');
     mkdirSync(path.dirname(file), {
       recursive: true
     });
@@ -158,7 +162,22 @@ async function fixture({
     listCodec: EmbeddedListCodec,
     assertWritable: args => ownership.assertAgendaWritable(args)
   });
+  const configService = new ConfigService({
+    system: {
+      dataDir: dir,
+      defaultHouseholdId: 'home'
+    },
+    households: {
+      home: {
+        _folderName: 'household',
+        apps: {
+          fitness: structuredClone(sources.fitnessGuests)
+        }
+      }
+    }
+  });
   const store = new AgendaMigrationStore({
+    reloadFitness: () => configService.reloadHouseholdAppConfig('home', 'fitness'),
     manifestPath,
     sourcePaths,
     repository,
@@ -192,8 +211,19 @@ async function fixture({
     seriesId: 'family',
     sourcePaths
   });
+  let retainedBackout;
+  const backout = async args => {
+    if (!retainedBackout) retainedBackout = await migration.previewBackout(args);
+    return migration.backoutMigration({
+      ...args,
+      reviewedBackout: retainedBackout,
+      backoutDigest: retainedBackout.digest
+    });
+  };
   return {
+    backout,
     dir,
+    configService,
     migration,
     store,
     repository,
@@ -367,7 +397,7 @@ it('exports the selected edited plan on backout and retains independent session 
       return p;
     }
   });
-  await f.migration.backoutMigration({
+  await f.backout({
     reviewedManifest: plan,
     planId: saved.document.plan_id
   });
@@ -487,7 +517,7 @@ it('preserves a completed legacy store write and refuses stale retry under the s
     id: 'family'
   })).toBeNull();
 });
-it.each(['backout-prepared', 'backout-exported', 'backed-out'])('recovers backout failure at %s without reopening legacy early', async phase => {
+it.each(['backout-prepared', 'backout-list-written', 'backout-rules-written', 'backout-exported', 'backed-out'])('recovers backout failure at %s without reopening legacy early', async phase => {
   let failOnce = true;
   const f = await fixture({
     checkpoint: name => {
@@ -502,7 +532,7 @@ it.each(['backout-prepared', 'backout-exported', 'backed-out'])('recovers backou
     reviewedManifest: manifest,
     expectedSourceHashes: manifest.sourceHashes
   });
-  await expect(f.migration.backoutMigration({
+  await expect(f.backout({
     reviewedManifest: manifest,
     planId: manifest.documents.plan.plan_id
   })).rejects.toThrow('backout crash');
@@ -510,7 +540,10 @@ it.each(['backout-prepared', 'backout-exported', 'backed-out'])('recovers backou
     kind: 'menu',
     id: 'family'
   }))).toBe(phase !== 'backed-out');
-  await f.migration.backoutMigration({
+  f.repository.readPlanInSeries = async () => {
+    throw Error('must use retained export');
+  };
+  await f.backout({
     reviewedManifest: manifest,
     planId: manifest.documents.plan.plan_id
   });
@@ -519,7 +552,7 @@ it.each(['backout-prepared', 'backout-exported', 'backed-out'])('recovers backou
     id: 'family'
   })).toBeNull();
 });
-it.each(['anonymous','new-named-guest'])('refuses unsupported %s downgrade while keeping Agenda authoritative', async kind => {
+it.each(['anonymous', 'new-named-guest'])('refuses unsupported %s downgrade while keeping Agenda authoritative', async kind => {
   const f = await fixture();
   const manifest = await f.plan();
   await f.migration.applyMigration({
@@ -537,7 +570,14 @@ it.each(['anonymous','new-named-guest'])('refuses unsupported %s downgrade while
     mutate: p => {
       p.participants.push({
         id: 'anonymous',
-        ...(kind==='anonymous'?{anonymous:true}:{person:{kind:'guest',id:'new-visitor'}}),
+        ...(kind === 'anonymous' ? {
+          anonymous: true
+        } : {
+          person: {
+            kind: 'guest',
+            id: 'new-visitor'
+          }
+        }),
         display: {
           name: 'Visitor',
           avatar: null
@@ -546,7 +586,7 @@ it.each(['anonymous','new-named-guest'])('refuses unsupported %s downgrade while
       return p;
     }
   });
-  await expect(f.migration.backoutMigration({
+  await expect(f.backout({
     reviewedManifest: manifest,
     planId: saved.document.plan_id
   })).rejects.toMatchObject({
@@ -570,7 +610,7 @@ it('aborts a failed pre-cutover migration without overwriting later legacy list 
     expectedSourceHashes: manifest.sourceHashes
   })).rejects.toThrow();
   writeFileSync(f.sourcePaths.legacyList, 'title: Later legacy edit\nitems: []\n');
-  const result = await f.migration.backoutMigration({
+  const result = await f.backout({
     reviewedManifest: manifest,
     planId: manifest.documents.plan.plan_id
   });
@@ -629,4 +669,383 @@ it('preserves an exact canonical household member inline using the shared People
   expect(result.documents.plan.participants).toHaveLength(2);
   expect(result.identityPolicy.canonicalHouseholdMembers).toBe('preserve-fitness-inline');
   expect(result.warnings.some(w => w.includes('household member'))).toBe(true);
+});
+it('refreshes the actual cached Fitness reader so named directory edits hydrate immediately', async () => {
+  const f = await fixture(),
+    manifest = await f.plan();
+  const projection = new FitnessConfigProjection({
+    configService: f.configService,
+    logger: {}
+  });
+  const guests = new YamlNamedGuestStore({
+    pathForHousehold: () => f.sourcePaths.namedGuests,
+    assertWritable: f.ownership.assertSharedWritable
+  });
+  const hydrator = new FitnessUserHydrator({
+    profileReader: {
+      getProfile: () => ({
+        username: 'member'
+      })
+    },
+    guestResolver: id => ({
+      person: {
+        kind: 'guest',
+        id
+      },
+      display: {
+        name: guests.read('home').guests.find(g => g.id === id).name
+      }
+    })
+  });
+  await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  });
+  const current = guests.read('home');
+  guests.write('home', current.revision, current.guests.map(g => ({
+    ...g,
+    name: 'Renamed'
+  })));
+  expect(projection.raw('home').users.family[0].person).toEqual({
+    kind: 'guest',
+    id: 'visitor'
+  });
+  expect(hydrator.hydrateConfig(projection.raw('home')).users.family[0]).toMatchObject({
+    id: 'visitor',
+    name: 'Renamed',
+    zones: {
+      high: 140
+    },
+    hr: 12
+  });
+});
+it.each(['owned', 'retired'])('recovers %s after a real allowed guest edit without undoing it', async phase => {
+  let once = true;
+  const f = await fixture({
+      checkpoint: name => {
+        if (name === phase && once) {
+          once = false;
+          throw Error('crash');
+        }
+      }
+    }),
+    manifest = await f.plan();
+  await expect(f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).rejects.toThrow('crash');
+  const guests = new YamlNamedGuestStore({
+    pathForHousehold: () => f.sourcePaths.namedGuests,
+    assertWritable: f.ownership.assertSharedWritable
+  });
+  const current = guests.read('home');
+  guests.write('home', current.revision, current.guests.map(g => ({
+    ...g,
+    name: 'After cutover'
+  })));
+  const edited = readFileSync(f.sourcePaths.namedGuests);
+  f.migration.validateActivities = async () => {
+    throw Error('later target change');
+  };
+  expect((await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).phase).toBe('complete');
+  expect(readFileSync(f.sourcePaths.namedGuests)).toEqual(edited);
+  await f.backout({
+    reviewedManifest: manifest,
+    planId: manifest.documents.plan.plan_id
+  });
+  expect(readFileSync(f.sourcePaths.namedGuests)).toEqual(edited);
+});
+it.each(['label', 'unsupported-participant'])('refuses a backout preview made before a selected plan %s edit, without any output writes', async edit => {
+  const f = await fixture(),
+    manifest = await f.plan();
+  await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  });
+  const planId = manifest.documents.plan.plan_id;
+  const reviewedBackout = await f.migration.previewBackout({
+    reviewedManifest: manifest,
+    planId
+  });
+  const saved = await f.repository.readPlan({
+    householdId: 'home',
+    planId
+  });
+  await f.repository.mutatePlan({
+    householdId: 'home',
+    planId,
+    expectedEtag: saved.etag,
+    mutate: p => {
+      p.list.sections[0].items[0].label = 'Later';
+      if (edit === 'unsupported-participant') p.participants.push({
+        id: 'later',
+        anonymous: true,
+        display: {
+          name: 'Later',
+          avatar: null
+        }
+      });
+      return p;
+    }
+  });
+  const before = readFileSync(f.store.manifestPath),
+    rules = readFileSync(f.sourcePaths.gameDefaults);
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout,
+    backoutDigest: reviewedBackout.digest
+  })).rejects.toMatchObject({
+    code: 'revision_conflict'
+  });
+  expect(readFileSync(f.store.manifestPath)).toEqual(before);
+  expect(readFileSync(f.sourcePaths.gameDefaults)).toEqual(rules);
+  expect(existsSync(f.sourcePaths.legacyList)).toBe(false);
+});
+it('refuses changed backout destination inputs before writing any export', async () => {
+  const f = await fixture(),
+    manifest = await f.plan();
+  await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  });
+  const planId = manifest.documents.plan.plan_id;
+  const reviewedBackout = await f.migration.previewBackout({
+    reviewedManifest: manifest,
+    planId
+  });
+  writeFileSync(f.sourcePaths.gameDefaults, 'later rules');
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout,
+    backoutDigest: reviewedBackout.digest
+  })).rejects.toMatchObject({
+    code: 'source_changed'
+  });
+  expect(readFileSync(f.sourcePaths.gameDefaults, 'utf8')).toBe('later rules');
+  expect(existsSync(f.sourcePaths.legacyList)).toBe(false);
+  expect(f.ownership.read().phase).toBe('complete');
+});
+it('restores and reloads a restarted cached reader before removing extracted guests, retrying reload failure safely', async () => {
+  const f = await fixture({
+    checkpoint: phase => {
+      if (phase === 'installed') throw Error('stop');
+    }
+  });
+  f.sources.namedGuests.guests = [];
+  writeFileSync(f.sourcePaths.namedGuests, yaml.dump(f.sources.namedGuests));
+  const manifest = await f.plan();
+  await expect(f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).rejects.toThrow('stop');
+  const restarted = new ConfigService({
+    system: {
+      dataDir: f.dir,
+      defaultHouseholdId: 'home'
+    },
+    households: {
+      home: {
+        _folderName: 'household',
+        apps: {
+          fitness: yaml.load(readFileSync(f.sourcePaths.fitnessGuests, 'utf8'))
+        }
+      }
+    }
+  });
+  const projection = new FitnessConfigProjection({
+    configService: restarted,
+    logger: {}
+  });
+  const hydrator = new FitnessUserHydrator({
+    profileReader: {
+      getProfile: () => ({
+        username: 'member'
+      })
+    },
+    guestResolver: id => {
+      const guest = yaml.load(readFileSync(f.sourcePaths.namedGuests, 'utf8')).guests.find(g => g.id === id);
+      return guest && {
+        person: {
+          kind: 'guest',
+          id
+        },
+        display: {
+          name: guest.name
+        }
+      };
+    }
+  });
+  expect(projection.raw('home').users.family[0].person).toBeTruthy();
+  f.store.reloadFitness = () => {
+    throw Error('reload failed');
+  };
+  await expect(f.backout({
+    reviewedManifest: manifest,
+    planId: manifest.documents.plan.plan_id
+  })).rejects.toThrow('reload failed');
+  expect(yaml.load(readFileSync(f.sourcePaths.namedGuests, 'utf8')).guests).toHaveLength(1);
+  expect(f.ownership.read().phase).toBe('aborting');
+  expect(() => f.ownership.assertSharedWritable()).toThrow();
+  f.store.reloadFitness = () => restarted.reloadHouseholdAppConfig('home', 'fitness');
+  f.store.checkpoint = phase => {
+    if (phase === 'namedGuests-restored') expect(hydrator.hydrateConfig(projection.raw('home')).users.family[0]).toMatchObject({
+      id: 'visitor',
+      name: 'Visitor',
+      hr: 12,
+      zones: {
+        high: 140
+      }
+    });
+  };
+  await f.backout({
+    reviewedManifest: manifest,
+    planId: manifest.documents.plan.plan_id
+  });
+  expect(projection.raw('home').users.family[0].person).toBeUndefined();
+  expect(yaml.load(readFileSync(f.sourcePaths.namedGuests, 'utf8')).guests).toEqual([]);
+});
+it('does not delete changed legacy bytes during owned recovery', async () => {
+  const f = await fixture({
+      checkpoint: phase => {
+        if (phase === 'owned') throw Error('stop');
+      }
+    }),
+    manifest = await f.plan();
+  await expect(f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).rejects.toThrow('stop');
+  writeFileSync(f.sourcePaths.legacyList, 'changed legacy bytes');
+  await expect(f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).rejects.toMatchObject({
+    code: 'source_changed'
+  });
+  expect(readFileSync(f.sourcePaths.legacyList, 'utf8')).toBe('changed legacy bytes');
+  expect(f.ownership.aliases.resolve({
+    kind: 'menu',
+    id: 'family'
+  }).owner).toBe('agenda');
+});
+it('does not switch ownership on a failed cache reload and retries through the same port', async () => {
+  const f = await fixture(),
+    manifest = await f.plan(),
+    reload = f.store.reloadFitness;
+  f.store.reloadFitness = () => null;
+  await expect(f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).rejects.toMatchObject({
+    code: 'ownership_unavailable'
+  });
+  expect(f.ownership.read().phase).toBe('prepared');
+  expect(existsSync(f.sourcePaths.legacyList)).toBe(true);
+  f.store.reloadFitness = reload;
+  expect((await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  })).phase).toBe('complete');
+  expect(f.configService.getHouseholdAppConfig('home', 'fitness').users.family[0].person.id).toBe('visitor');
+});
+it('requires a separate backout digest and rejects altered admitted export payloads', async () => {
+  const f = await fixture(),
+    manifest = await f.plan(),
+    planId = manifest.documents.plan.plan_id;
+  await f.migration.applyMigration({
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  });
+  const before = readFileSync(f.store.manifestPath),
+    rules = readFileSync(f.sourcePaths.gameDefaults);
+  const reviewedBackout = await f.migration.previewBackout({
+    reviewedManifest: manifest,
+    planId
+  });
+  expect(readFileSync(f.store.manifestPath)).toEqual(before);
+  expect(readFileSync(f.sourcePaths.gameDefaults)).toEqual(rules);
+  expect(existsSync(f.store.backoutPath(manifest))).toBe(false);
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId
+  })).rejects.toMatchObject({
+    code: 'invalid_manifest'
+  });
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout,
+    backoutDigest: manifest.digest
+  })).rejects.toMatchObject({
+    code: 'invalid_manifest'
+  });
+  f.store.checkpoint = phase => {
+    if (phase === 'backout-prepared') throw Error('stop');
+  };
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout,
+    backoutDigest: reviewedBackout.digest
+  })).rejects.toThrow('stop');
+  const changed = {
+    ...reviewedBackout,
+    revision: 99
+  };
+  const {
+    digest,
+    ...value
+  } = changed;
+  changed.digest = migrationHash(value);
+  await expect(f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout: changed,
+    backoutDigest: changed.digest
+  })).rejects.toMatchObject({
+    code: 'idempotency_conflict'
+  });
+  expect(await f.migration.previewBackout({
+    reviewedManifest: manifest,
+    planId
+  })).toEqual(reviewedBackout);
+  f.store.checkpoint = () => {};
+  await f.migration.backoutMigration({
+    reviewedManifest: manifest,
+    planId,
+    reviewedBackout,
+    backoutDigest: reviewedBackout.digest
+  });
+  expect(readFileSync(f.sourcePaths.legacyList).toString('base64')).toBe(reviewedBackout.output.list);
+});
+it.each(['owned', 'complete'])('rejects changed configured destination paths after %s without touching either file', async phase => {
+  const f = await fixture({
+    checkpoint: name => {
+      if (phase === 'owned' && name === 'owned') throw Error('stop');
+    }
+  });
+  const manifest = await f.plan();
+  const request = {
+    reviewedManifest: manifest,
+    expectedSourceHashes: manifest.sourceHashes
+  };
+  if (phase === 'owned') await expect(f.migration.applyMigration(request)).rejects.toThrow('stop');else await f.migration.applyMigration(request);
+  const original = f.sourcePaths.legacyList;
+  const redirected = path.join(f.dir, 'other-list.yml');
+  writeFileSync(redirected, Buffer.from(manifest.sources.legacyList.base64, 'base64'));
+  f.sourcePaths.legacyList = redirected;
+  const operation = phase === 'owned' ? f.migration.applyMigration(request) : f.migration.previewBackout({
+    reviewedManifest: manifest,
+    planId: manifest.documents.plan.plan_id
+  });
+  await expect(operation).rejects.toMatchObject({
+    code: 'invalid_manifest'
+  });
+  expect(readFileSync(redirected).toString('base64')).toBe(manifest.sources.legacyList.base64);
+  expect(existsSync(original)).toBe(phase === 'owned');
 });

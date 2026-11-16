@@ -315,9 +315,9 @@ export class AgendaMigration {
     const guestIds = reviewedManifest.documents.namedGuests.guests.map(guest => guest.id);
     if (new Set(guestIds).size !== guestIds.length) fail('identity_conflict', 'Duplicate named guest identities');
     if (JSON.stringify(expectedSourceHashes) !== JSON.stringify(reviewedManifest.sourceHashes)) fail('source_changed', 'Reviewed source hashes required');
-    const completed = this.store.completedApply(reviewedManifest);
-    if (completed) return completed;
-    await this.validateDocuments(reviewedManifest.documents, viewer);
+    const state = this.store.applyState(reviewedManifest);
+    if (state?.phase === 'complete') return state;
+    if (!['owned', 'retired'].includes(state?.phase)) await this.validateDocuments(reviewedManifest.documents, viewer);
     return this.store.apply(reviewedManifest, {
       assertCurrent: () => {
         if (reviewedManifest.targetWeek !== weekOf({
@@ -334,14 +334,20 @@ export class AgendaMigration {
     } = manifest || {};
     if (value.schema !== 'agenda-migration-review/v1' || digest !== migrationHash(value) || value.householdId !== this.householdId || this.seriesId && value.seriesId !== this.seriesId || value.documents?.series?.series_id !== value.seriesId || value.documents?.plan?.series_id !== value.seriesId || value.documents?.plan?.week_of !== value.targetWeek || value.identityPolicy?.canonicalHouseholdMembers !== 'preserve-fitness-inline' || value.identityPolicy?.visitorIdentities !== 'reconcile-named-guests' || value.documents?.plan?.household_id !== this.householdId || value.documents?.series?.household_id !== this.householdId || JSON.stringify(value.aliases) !== JSON.stringify(this.aliases)) fail('invalid_manifest', 'Manifest identity or review digest mismatch');
   }
+  async previewBackout({
+    reviewedManifest,
+    planId
+  }) {
+    this.verifyManifest(reviewedManifest);
+    return this.store.previewBackout(reviewedManifest, planId);
+  }
   async backoutMigration({
     reviewedManifest,
     planId,
-    viewer
+    reviewedBackout,
+    backoutDigest
   }) {
     this.verifyManifest(reviewedManifest);
-    return this.store.backout(reviewedManifest, planId, {
-      viewer
-    });
+    return this.store.backout(reviewedManifest, planId, reviewedBackout, backoutDigest);
   }
 }

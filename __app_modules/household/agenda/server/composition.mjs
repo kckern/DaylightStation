@@ -26,7 +26,7 @@ export function createAgendaRuntime({configService,peopleDirectory,listCodec,lis
   let migration=null;
   if(ownership?.configuration){
     const configuration=ownership.configuration;
-    const store=new AgendaMigrationStore({...configuration,repository,ownership});
+    const store=new AgendaMigrationStore({...configuration,repository,ownership,reloadFitness:()=>configService.reloadHouseholdAppConfig(householdId,'fitness')});
     migration=new AgendaMigration({...configuration,store,repository,listCodec,clock,timezone:configService.getHouseholdTimezone(householdId),resolvePerson:person=>peopleDirectory.resolve({householdId,person}),validateActivities:createAgendaActivityValidator({provider:contextProvider,setupResolver})});
   }
   const migrationRouter=createAgendaMigrationRouter({householdId,migration,logger});

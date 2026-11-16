@@ -8,10 +8,10 @@ export async function runAgendaCli(argv, {
   stdout = process.stdout
 } = {}) {
   const [group, command, ...args] = argv;
-  if (group !== 'migration' || !['dry-run', 'apply', 'backout'].includes(command)) throw Error('Usage: agenda migration dry-run|apply|backout --server URL [--manifest FILE] [--output FILE] [--review-digest SHA256] [--plan-id ID]');
+  if (group !== 'migration' || !['dry-run', 'apply', 'backout-preview', 'backout'].includes(command)) throw Error('Usage: agenda migration dry-run|apply|backout-preview|backout --server URL [--manifest FILE] [--output FILE] [--review-digest SHA256] [--plan-id ID] [--backout-review FILE] [--backout-digest SHA256]');
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--server', '--manifest', '--output', '--review-digest', '--plan-id'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw Error('Invalid CLI option');
+    if (!['--server', '--manifest', '--output', '--review-digest', '--plan-id', '--backout-review', '--backout-digest'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw Error('Invalid CLI option');
     options[args[i]] = args[i + 1];
   }
   const server = options['--server'] ?? env.DAYLIGHT_AGENDA_SERVER;
@@ -31,8 +31,15 @@ export async function runAgendaCli(argv, {
         planId: options['--plan-id']
       })
     };
-    if (command === 'backout' && !body.planId) throw Error('Explicit selected plan ID required for backout');
+    if (['backout', 'backout-preview'].includes(command) && !body.planId) throw Error('Explicit selected plan ID required for backout');
   }
+  if (command === 'backout') {
+    if (!options['--backout-review'] || !options['--backout-digest']) throw Error('Reviewed backout preview and explicit backout digest required');
+    body.reviewedBackout = JSON.parse(readFileSync(options['--backout-review'], 'utf8'));
+    body.backoutDigest = options['--backout-digest'];
+  }
+  const preview = ['dry-run', 'backout-preview'].includes(command);
+  if (preview && !options['--output']) throw Error('A private --output review path is required');
   const response = await fetchImpl(new URL(`/api/v1/admin/agenda-migration/${command}`, url), {
     method: 'POST',
     headers: {
@@ -46,8 +53,7 @@ export async function runAgendaCli(argv, {
   if (!response.ok) throw Object.assign(Error(`Migration refused: ${result.code ?? response.status}`), {
     code: result.code
   });
-  if (command === 'dry-run') {
-    if (!options['--output']) throw Error('A private --output manifest path is required');
+  if (preview) {
     writeFileSync(options['--output'], JSON.stringify(result, null, 2) + '\n', {
       mode: 0o600,
       flag: 'wx'
@@ -55,7 +61,7 @@ export async function runAgendaCli(argv, {
   }
   stdout.write(JSON.stringify({
     digest: result.digest,
-    phase: result.phase ?? 'dry-run',
+    phase: result.phase ?? command,
     ...(result.sourceHashes ? {
       sourceHashes: result.sourceHashes,
       conflicts: result.identityChanges.conflicts.length
