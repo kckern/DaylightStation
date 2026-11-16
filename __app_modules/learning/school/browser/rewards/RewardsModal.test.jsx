@@ -1,3 +1,4 @@
+import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RewardsModal from './RewardsModal.jsx';
@@ -76,5 +77,27 @@ describe('prepared personal Gem Board', () => {
     render(<RewardsModal learner={learner} snapshot={{ ...snapshot, silver: null, gold: null, rings: null, gems: [] }} onClose={close} idleMs={1000} />);
     expect(screen.queryByText('0')).toBeNull(); expect(screen.queryByText(/Loading/)).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rewards close gesture', () => {
+  it.each(['mouse', 'touch', 'pen'])('keeps the dialog until the %s press completes and accepts a later Log book click', (type) => {
+    function Fixture() {
+      const [open, setOpen] = React.useState(true);
+      const [books, setBooks] = React.useState(0);
+      return <><button onClick={() => setBooks(n => n + 1)}>Log book {books}</button>{open && <RewardsModal learner={learner} snapshot={snapshot} idleMs={0} onClose={() => setOpen(false)} />}</>;
+    }
+    render(<Fixture />);
+    const close = screen.getByRole('button', { name: 'Close rewards' });
+    fireEvent.pointerDown(close, { pointerType: type, isPrimary: true, button: 0 });
+    if (type === 'mouse') fireEvent.mouseDown(close, { button: 0 });
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.pointerUp(close, { pointerType: type, isPrimary: true, button: 0 });
+    fireEvent.mouseUp(close, { button: 0 });
+    fireEvent.click(close, { detail: 1 });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Log book 0' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Log book 0' }));
+    expect(screen.getByRole('button', { name: 'Log book 1' })).toBeTruthy();
   });
 });
