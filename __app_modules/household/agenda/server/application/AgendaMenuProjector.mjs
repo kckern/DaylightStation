@@ -18,6 +18,7 @@ export class AgendaMenuProjector {
     const sourceId = `agenda:${plan.series_id}/plans/${plan.plan_id}`;
     const menu = await this.listProjector.project({list:plan.list, sourceId, order:'authored'});
     const byUid = new Map(plan.list.sections.flatMap(section => section.items).map(item => [item.uid,item]));
+    let updateRequired = false;
     for (const row of menu.items) {
       const item = byUid.get(row.metadata?.uid);
       const action = itemAction(item);
@@ -36,11 +37,15 @@ export class AgendaMenuProjector {
         disable(row); continue;
       }
       if (!consumer && !binding) continue;
-      if (!consumer || !binding || binding.action !== action || binding.consumer?.id !== consumer.id || binding.consumer?.version !== consumer.version || participantLaunchVersion !== 1) {
+      if (!consumer || !binding || binding.action !== action || binding.consumer?.id !== consumer.id || binding.consumer?.version !== consumer.version) {
+        disable(row); continue;
+      }
+      if (participantLaunchVersion !== 1) {
+        updateRequired = true;
         disable(row); continue;
       }
       row.participantLaunches = {[action]:{schema:'participant-launch-ref/v1',provider:'agenda',ref:this.codec.encode({householdId:plan.household_id,planId:plan.plan_id,itemUid:item.uid,revision:plan.revision,action,targetDigest:hashValue(target)})}};
     }
-    return {...menu,title:`${plan.title} — ${plan.scheduled_on || plan.week_of}${preview ? ' (Preview)' : ''}`,preview};
+    return {...menu, ...(updateRequired ? {notice:'Update this device to start participant-aware activities.'} : {}),title:`${plan.title} — ${plan.scheduled_on || plan.week_of}${preview ? ' (Preview)' : ''}`,preview};
   }
 }
