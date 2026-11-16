@@ -4,6 +4,7 @@ export class IContentCatalogGateway {
   resolveSource() { throw new Error('resolveSource must be implemented'); }
   hasSource() { throw new Error('hasSource must be implemented'); }
   getItem() { throw new Error('getItem must be implemented'); }
+  /** getList(resolution, contentRef, {viewer, participantLaunchVersion}) forwards request context to a source. */
   getList() { throw new Error('getList must be implemented'); }
   /**
    * Optional: one `{ skip, take }` window of a container as `{ items, total }`,

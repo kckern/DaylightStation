@@ -10,6 +10,11 @@ export class ListBrowseService {
     this.logger = logger;
   }
 
+  capabilitiesFor(item) {
+    const resolved = this.contentCatalog.resolve(item.id);
+    return resolved ? this.contentCatalog.capabilities(item, resolved) : undefined;
+  }
+
   getSourceNames() {
     return this.contentCatalog.sourceNames();
   }
@@ -20,7 +25,7 @@ export class ListBrowseService {
    *   launchable), the source is asked for just that window. A `paged` result
    *   carries the source's `total`; otherwise the caller slices `items` itself.
    */
-  async browse({ source, localId, modifiers, page = null }) {
+  async browse({ source, localId, modifiers, page = null, viewer = null, participantLaunchVersion = null }) {
     const resolved = this.contentIdResolver.resolve(`${source}:${localId}`);
     const resolvedLocalId = resolved?.localId ?? localId;
     const resolvedSource = resolved?.source ?? source;
@@ -55,6 +60,7 @@ export class ListBrowseService {
     const resolvedViaPrefix = resolvedSource !== source;
     const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
     let items;
+    let sourceResult = null;
     let pagedTotal = null;
     const pageAtSource = page && !modifiers.shuffle && !modifiers.recent_on_top
       && !modifiers.launchable && !modifiers.playable
@@ -72,7 +78,8 @@ export class ListBrowseService {
       items = await this.contentCatalog.resolvePlayables(resolved, compoundId);
       if (items === null) return { kind: 'unsupported_playable' };
     } else {
-      const result = await this.contentCatalog.getList(resolved, compoundId);
+      const result = await this.contentCatalog.getList(resolved, compoundId, {viewer, participantLaunchVersion});
+      sourceResult = Array.isArray(result) ? null : result;
       if (Array.isArray(result)) items = result;
       else if (Array.isArray(result?.children)) items = result.children;
       else if (Array.isArray(result?.items)) items = result.items;
@@ -89,7 +96,7 @@ export class ListBrowseService {
       }));
     }
 
-    const hasFixedOrder = items.some((item) => item.metadata?.fixedOrder);
+    const hasFixedOrder = sourceResult?.fixedOrder || items.some((item) => item.metadata?.fixedOrder);
     if (modifiers.shuffle && !hasFixedOrder) items = shuffle([...items], this.random);
     if (modifiers.recent_on_top && !hasFixedOrder) {
       const values = this.menuMemory?.getAll?.() || {};
@@ -99,7 +106,7 @@ export class ListBrowseService {
     const containerInfo = await this.contentCatalog.getItem(resolved, compoundId);
     const info = await this.contentCatalog.getContainerInfo(resolved, compoundId);
     return {
-      kind: 'found', items, containerInfo, info, compoundId,
+      kind: 'found', items, containerInfo, info, compoundId, sourceResult,
       ...(pagedTotal !== null ? { paged: true, total: pagedTotal } : {}),
     };
   }

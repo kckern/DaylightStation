@@ -473,6 +473,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/household-identity/portable/participants.mjs': 'domain',
   '__capabilities/content-catalog/server/participant-launch.mjs': 'application',
   '__app_modules/household/agenda/portable/planEdits.mjs': 'domain',
+  '__app_modules/household/agenda/server/content.mjs': 'composition',
   '__capabilities/playback/server/spot-history.mjs': 'domain',
   '__capabilities/playback/browser/surround-host.mjs': null,
   '__capabilities/content-catalog/server/image-dimensions.mjs': 'domain',

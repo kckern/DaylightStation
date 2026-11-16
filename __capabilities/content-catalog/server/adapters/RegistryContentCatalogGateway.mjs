@@ -200,10 +200,11 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     };
   }
 
-  async getList(resolution, contentRef = null) {
+  async getList(resolution, contentRef = null, context = undefined) {
     const source = this.#source(resolution);
     if (typeof source?.getList !== 'function') return [];
-    return source.getList(contentRef ?? resolution.localId);
+    const ref = contentRef ?? resolution.localId;
+    return source.acceptsListContext === true ? source.getList(ref, context) : source.getList(ref);
   }
 
   async getListPage(resolution, contentRef = null, page) {

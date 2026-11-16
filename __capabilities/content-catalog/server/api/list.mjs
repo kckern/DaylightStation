@@ -69,7 +69,7 @@ function compactItem(obj, playbackAction = false) {
  * @param {Object} item - Item entity or similar object
  * @returns {Object} Flattened list item
  */
-export function toListItem(item) {
+export function toListItem(item, { capabilities } = {}) {
   // Compute default play/queue/list actions using contentId only.
   // Legacy source-specific keys (plex, media, etc.) are derived generically.
   const isContainer = item.itemType === 'container';
@@ -82,7 +82,7 @@ export function toListItem(item) {
   const computedPlay = item.mediaUrl
     ? { contentId, ...legacySourceField }
     : undefined;
-  const computedQueue = isContainer
+  const computedQueue = isContainer && (!capabilities || capabilities.includes('queueable'))
     ? { contentId, ...legacySourceField }
     : undefined;
   const computedList = isContainer
@@ -259,7 +259,21 @@ export function toListItem(item) {
     }
   }
 
-  return compactItem(base);
+  const result = compactItem(base);
+  if (item.disabled !== undefined) result.disabled = item.disabled;
+  if (item.notice !== undefined) result.notice = item.notice;
+  if (item.participantLaunches) {
+    const refs = {};
+    for (const action of ['open', 'play', 'queue', 'display']) {
+      const ref = item.participantLaunches[action];
+      if (ref?.schema === 'participant-launch-ref/v1' && typeof ref.provider === 'string' && typeof ref.ref === 'string') {
+        refs[action] = {schema:ref.schema, provider:ref.provider, ref:ref.ref};
+      }
+    }
+    if (Object.keys(refs).length) result.participantLaunches = refs;
+  }
+  if (item.disabled) for (const action of ['open', 'play', 'queue', 'display', 'launch', 'list', 'android']) delete result[action];
+  return result;
 }
 
 /**
@@ -296,7 +310,7 @@ export function pageListItems(items, query = {}) {
 }
 
 export function createListRouter(config) {
-  const { browseCatalog, listBrowse, recordMenuSelection, logger = console } = config;
+  const { browseCatalog, listBrowse, recordMenuSelection, viewerForRequest = req => req.user ?? null, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -381,7 +395,9 @@ export function createListRouter(config) {
 
       logger.info?.('list.request', { source, localId, modifiers, ip: req.ip });
 
-      const browseResult = await listBrowse.browse({ source, localId, modifiers, page: parseListPage(req.query) });
+      const participantLaunchVersion = req.get('X-Daylight-Participant-Launch-Version') === '1' ? 1 : null;
+      const viewer = await viewerForRequest(req);
+      const browseResult = await listBrowse.browse({ source, localId, modifiers, page: parseListPage(req.query), viewer, participantLaunchVersion });
       if (browseResult.kind === 'category') {
         return res.json({
           [source]: '',
@@ -392,7 +408,7 @@ export function createListRouter(config) {
           label: source,
           info: null,
           parents: null,
-          items: browseResult.items.map(toListItem)
+          items: browseResult.items.map(item => toListItem(item))
         });
       }
       if (browseResult.kind === 'unknown_source') {
@@ -509,15 +525,27 @@ export function createListRouter(config) {
         assetId: localId,
         source,
         path: localId,
-        title: containerInfo?.title || localId,
-        label: containerInfo?.title || localId,
+        title: (browseResult.sourceResult?.resolveCapabilities && browseResult.sourceResult.title) || containerInfo?.title || localId,
+        label: (browseResult.sourceResult?.resolveCapabilities && browseResult.sourceResult.title) || containerInfo?.title || localId,
         image: containerInfo?.thumbnail,
         info,
         parents,
         total: page.total,
-        items: page.items.map(toListItem)
+        items: page.items.map(item => toListItem(item, {capabilities:browseResult.sourceResult?.resolveCapabilities ? listBrowse.capabilitiesFor(item) : undefined}))
       };
 
+      const presentation = browseResult.sourceResult;
+      if (presentation) {
+        for (const field of ['id','notice','preview','disableAutoCountdown','navigationPolicy','fixedOrder','adminUrl']) {
+          if (presentation[field] !== undefined) response[field] = presentation[field];
+        }
+        if (presentation.privateResponse) {
+          res.set('Cache-Control', 'private, no-store');
+          res.vary('X-Daylight-Participant-Launch-Version');
+          res.vary('Authorization');
+          res.vary('Cookie');
+        }
+      }
       const totalMs = Math.round(performance.now() - requestStart);
       logger.info?.('list.response', {
         source, localId,
