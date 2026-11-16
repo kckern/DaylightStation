@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { participantLaunchClient } from './participantLaunchClient.js';
+import {TVActionDialog} from './TVActionDialog.jsx';
 
 const allowConsumer = () => true;
 
 /** Presents server-owned summaries and choices without interpreting consumer setup. */
-export function ParticipantLaunchHost({ refValue, action, client = participantLaunchClient, onReady, onPassthrough, onClose, canLaunch = allowConsumer, requestIdFactory = () => crypto.randomUUID() }) {
+export function ParticipantLaunchHost({ refValue, action, client = participantLaunchClient, onReady, onPassthrough, onClose, onConflict, requireConfirmation = false, canLaunch = allowConsumer, requestIdFactory = () => crypto.randomUUID() }) {
   const [state, setState] = useState({ phase: 'loading' });
-  const dialog = useRef(null);
   const id = useRef(null);
   const busy = useRef(null);
   const generation = useRef(0);
   useEffect(() => { generation.current += 1; return () => { generation.current += 1; }; }, []);
-  const callbacks = useRef({onReady,onPassthrough,canLaunch});
-  callbacks.current = {onReady,onPassthrough,canLaunch};
+  const callbacks = useRef({onReady,onPassthrough,canLaunch,onConflict});
+  callbacks.current = {onReady,onPassthrough,canLaunch,onConflict};
   const lastOperation = useRef(null);
   const inspectedConsumer = useRef(null);
   const execute = useCallback(async (operation, input) => {
@@ -34,45 +34,40 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
         if (!callbacks.current.onPassthrough) throw new Error('Launch unavailable');
         callbacks.current.onPassthrough(result, inspectedConsumer.current);
       } else if (result.schema === 'participant-launch-result/v1' && result.kind === 'resume_available') {
-        setState({ phase: 'options', options: { ready: true, confirmation: 'required', setup_hash: result.current_setup_hash, choices: result.choices } });
+        setState(s => ({ phase: 'options', options: {...s.options, ready: true, confirmation: 'required', setup_hash: result.current_setup_hash, choices: result.choices} }));
       } else throw new Error('Invalid launch response');
     } catch (error) {
       if (generation.current !== requestGeneration) return;
-      setState({ phase: 'error', message: error.message });
+      setState({ phase: ['setup_conflict','revision_conflict','agenda_not_launchable','invalid_participant_launch_ref'].includes(error.code) ? 'conflict' : 'error', message: error.message });
     } finally { if (busy.current === requestGeneration) busy.current = null; }
   }, [client]);
   useEffect(() => { execute('inspect', { ref: refValue, action }); }, [refValue, action, execute]);
+  const recover = async () => {
+    setState({phase:'loading'});
+    try {
+      if (!callbacks.current.onConflict) throw new Error('Refresh unavailable');
+      await callbacks.current.onConflict();
+    } catch (error) { setState({phase:'conflict',message:error.message}); }
+  };
   const options = state.options;
   const begin = useCallback((intent) => {
-    if (!id.current) id.current = requestIdFactory();
+    if (!id.current || intent === 'new') id.current = requestIdFactory();
     execute('begin', { ref: refValue, action, requestId: id.current, intent, expectedSetupHash: options?.setup_hash });
   }, [action, execute, options, refValue, requestIdFactory]);
   useEffect(() => {
-    if (state.phase === 'options' && options.confirmation === 'none' && !options.choices?.length) begin('new');
-  }, [state.phase, options, begin]);
-  useEffect(() => {
-    dialog.current?.querySelector('button')?.focus();
-  }, [state.phase]);
-  const handleKeys = event => {
-    if (event.key === 'Escape' || event.key === 'GoBack') { event.preventDefault(); event.stopPropagation(); onClose?.(); return; }
-    if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
-    const buttons = [...dialog.current.querySelectorAll('button:not(:disabled)')];
-    if (!buttons.length) return;
-    event.preventDefault(); event.stopPropagation();
-    const step = ['ArrowUp','ArrowLeft'].includes(event.key) ? -1 : 1;
-    const index = buttons.indexOf(document.activeElement);
-    buttons[(index + step + buttons.length) % buttons.length].focus();
-  };
-  return <div ref={dialog} role="dialog" aria-label="Activity launch" onKeyDown={handleKeys}>
+    if (state.phase === 'options' && options.confirmation === 'none' && !options.choices?.length && !requireConfirmation) begin('open');
+  }, [state.phase, options, begin, requireConfirmation]);
+  return <TVActionDialog label="Activity launch" focusKey={state.phase} onBack={onClose}>
     {state.phase === 'loading' && <p>Loading activity…</p>}
+    {state.phase === 'conflict' && <><p>{state.message}</p><button onClick={recover}>Refresh</button></>}
     {state.phase === 'error' && <><p>{state.message}</p><button onClick={() => execute(lastOperation.current.operation, lastOperation.current.input)}>Retry</button></>}
     {state.phase === 'options' && <>
       <p>Review activity</p>
       {options.participant_summary?.map(person => <p key={person.key}>{person.display?.name}</p>)}
       {options.consumer_summary?.data && <pre>{JSON.stringify(options.consumer_summary.data, null, 2)}</pre>}
       {options.choices?.map(choice => <button key={choice.launch_id} onClick={() => execute('resume', {ref:refValue,action,launchId:choice.launch_id})}>Resume {choice.label}</button>)}
-      <button onClick={() => begin('new')}>{options.choices?.length ? 'New' : 'Start'}</button>
+      <button onClick={() => begin(options.choices?.length ? 'new' : 'open')}>{options.choices?.length ? 'New' : 'Start'}</button>
     </>}
     <button onClick={onClose}>Back</button>
-  </div>;
+  </TVActionDialog>;
 }

@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { it, expect, vi } from 'vitest';
 import { ParticipantLaunchHost } from './ParticipantLaunchHost.jsx';
+import {getActionBus} from '../../../../__capabilities/screen-host/browser/input.mjs';
+import { GamepadAdapter } from '../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js';
 
 it('confirms before reserving and retries a failed begin with the same request ID', async () => {
   const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'hash',participant_summary:[],choices:[]});
@@ -13,7 +15,7 @@ it('confirms before reserving and retries a failed begin with the same request I
   fireEvent.click(screen.getByRole('button',{name:'Retry'}));
   await waitFor(()=>expect(ready).toHaveBeenCalledTimes(1));
   expect(begin.mock.calls[0][0]).toEqual(begin.mock.calls[1][0]);
-  expect(begin.mock.calls[0][0]).toMatchObject({requestId:'request-1',expectedSetupHash:'hash',intent:'new'});
+  expect(begin.mock.calls[0][0]).toMatchObject({requestId:'request-1',expectedSetupHash:'hash',intent:'open'});
 });
 
 it('does not reserve when the consumer adapter is unavailable',async()=>{
@@ -67,4 +69,47 @@ it('cancels confirmation without reserving an execution',async()=>{
  fireEvent.click(await screen.findByRole('button',{name:'Back'}));
  expect(close).toHaveBeenCalledTimes(1);
  expect(begin).not.toHaveBeenCalled();
+});
+
+
+it.each(['captured','synthetic'])('accepts %s gamepad arrows and Enter exactly once',async path=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'h',choices:[]});
+ const begin=vi.fn().mockResolvedValue({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'fake',version:1},output:{schema:'fake/v1',data:{}}});
+ render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect,begin}} onReady={()=>{}} onClose={()=>{}}/>);
+ await screen.findByRole('button',{name:'Start'});
+ const adapter=new GamepadAdapter(path === 'captured' ? getActionBus() : {emit:()=>false});
+ adapter._emit({action:'navigate',key:'ArrowDown',payload:{direction:'down'}}); expect(document.activeElement.textContent).toBe('Back');
+ adapter._emit({action:'navigate',key:'ArrowUp',payload:{direction:'up'}}); adapter._emit({action:'select',key:'Enter'});
+ await waitFor(()=>expect(begin).toHaveBeenCalledTimes(1)); expect(begin.mock.calls[0][0].intent).toBe('open');
+});
+
+it('uses a fresh New request after open returns choices',async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'h',choices:[]});
+ const begin=vi.fn().mockResolvedValueOnce({schema:'participant-launch-result/v1',kind:'resume_available',current_setup_hash:'h',choices:[{launch_id:'old',label:'Earlier'}]}).mockResolvedValueOnce({schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'fake',version:1},output:{schema:'fake/v1',data:{}}});
+ let next=0;
+ render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect,begin}} onReady={()=>{}} onClose={()=>{}} requestIdFactory={()=>`id-${++next}`}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Start'}));
+ fireEvent.click(await screen.findByRole('button',{name:'New'}));
+ await waitFor(()=>expect(begin).toHaveBeenCalledTimes(2));
+ expect(begin.mock.calls.map(([x])=>[x.intent,x.requestId])).toEqual([['open','id-1'],['new','id-2']]);
+});
+
+it('offers fresh source refresh on setup conflict instead of replaying stale begin',async()=>{
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'old',choices:[]});
+ const begin=vi.fn().mockRejectedValue(Object.assign(new Error('changed'),{code:'setup_conflict',status:409}));
+ const refresh=vi.fn();
+ render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect,begin}} onConflict={refresh} onClose={()=>{}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Start'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Refresh'}));
+ expect(refresh).toHaveBeenCalledTimes(1); expect(begin).toHaveBeenCalledTimes(1);
+});
+
+it('activates Retry and Back through the gamepad synthetic route',async()=>{
+ const inspect=vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({schema:'participant-launch-options/v1',ready:true,confirmation:'required',setup_hash:'h',choices:[]});
+ const close=vi.fn();
+ render(<ParticipantLaunchHost refValue={{schema:'participant-launch-ref/v1',provider:'agenda',ref:'x'}} action="open" client={{inspect}} onClose={close}/>);
+ await screen.findByRole('button',{name:'Retry'}); const adapter=new GamepadAdapter(getActionBus());
+ adapter._emit({action:'select',key:'Enter'}); await screen.findByRole('button',{name:'Start'});
+ adapter._emit({action:'navigate',key:'ArrowDown',payload:{direction:'down'}}); adapter._emit({action:'select',key:'Enter'});
+ expect(close).toHaveBeenCalledTimes(1); expect(inspect).toHaveBeenCalledTimes(2);
 });

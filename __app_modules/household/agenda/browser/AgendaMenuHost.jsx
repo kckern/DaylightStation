@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import MenuStack from '../../../media/media/browser/menu.mjs';
 import {buildHeaders} from '../../../../frontend/src/lib/api.mjs';
 import {getLogger} from '../../../../frontend/src/lib/logging/Logger.js';
+import {TVActionDialog} from '../../../../frontend/src/composition/participants/TVActionDialog.jsx';
 
 const isDatedPlan = id => /^agenda:[^/]+\/plans\/[^/]+$/.test(id || '');
 const defaultFetch = (...args) => fetch(...args);
@@ -27,25 +28,40 @@ export function AgendaMenuHost({contentId, fetcher=defaultFetch, playerRef, onCl
       throw error;
     }
   },[fetcher]);
-  const load = useCallback(async () => {
+  const load = useCallback(async ({surfaceError = true} = {}) => {
     const request = ++generation.current;
+    const id = selectedId.current;
+    const menu = selectedMenu.current;
     try {
-      const data = await fetchMenu(selectedId.current);
-      if (generation.current !== request) return;
-      selectedId.current = data.id || selectedId.current;
+      const data = await fetchMenu(id);
+      if (generation.current !== request) return null;
+      selectedId.current = data.id || id;
       if (!root.current) { root.current = data; selectedMenu.current = data; }
       else {
-        const changed = JSON.stringify(selectedMenu.current.items) !== JSON.stringify(data.items);
+        const changed = JSON.stringify(menu.items) !== JSON.stringify(data.items);
         if (changed && !data.notice) data.notice = 'This plan has been updated.';
-        for (const key of Object.keys(selectedMenu.current)) delete selectedMenu.current[key];
-        Object.assign(selectedMenu.current, data);
+        for (const key of Object.keys(menu)) delete menu[key];
+        Object.assign(menu, data);
       }
-      setState(s=>({phase:'ready',version:s.version+1}));
-    } catch (error) { if (generation.current === request) setState(s=>({...s,phase:'error',message:error.message})); }
+      setState(s=>({phase:'ready',version:s.version+1,error:null}));
+      return data;
+    } catch (error) {
+      if (generation.current !== request) return null;
+      if (!surfaceError) throw error;
+      setState(s=>({...s,phase:root.current ? 'ready' : 'error',error:error.message}));
+      return null;
+    }
   },[fetchMenu]);
   const activityStart = useCallback(menu => {
+    generation.current += 1;
+    setState(s => s.error ? {...s,error:null} : s);
     if (isDatedPlan(menu?.id)) { selectedId.current = menu.id; selectedMenu.current = menu; }
   }, []);
+  const refreshParticipant = useCallback(async (uid, action) => {
+    const data = await load({surfaceError:false});
+    const row = data?.items?.find(item => item.uid === uid);
+    return !row?.disabled ? row?.participantLaunches?.[action] || null : null;
+  }, [load]);
   const returnTarget = useCallback(target => {
     if (target?.kind === 'content' && typeof target.content_id === 'string' && target.content_id.startsWith('agenda:')) selectedId.current = target.content_id;
   }, []);
@@ -58,7 +74,8 @@ export function AgendaMenuHost({contentId, fetcher=defaultFetch, playerRef, onCl
   },[fetchMenu]);
   useEffect(()=>{selectedId.current=contentId;root.current=null;selectedMenu.current=null;setState(s=>({...s,phase:'loading'}));load();return () => { generation.current += 1; };},[contentId,load]);
   if (state.phase==='loading') return <p>Loading menu…</p>;
-  if (state.phase==='error') return <div role="alert"><p>{state.message}</p><button onClick={load}>Retry</button><button onClick={onClose}>Back</button></div>;
-  return <MenuStack rootMenu={root.current} refreshToken={state.version} playerRef={playerRef} onActivityReturn={load} onActivityStart={activityStart} onReturnTarget={returnTarget} getReturnMenuId={() => selectedId.current} loadContentMenu={navigate} participantClient={participantClient} participantRegistry={participantRegistry}/>;
+  const error = state.error && <TVActionDialog role="alert" label="Menu error" focusKey={state.error} onBack={() => root.current ? setState(s=>({...s,error:null})) : onClose?.()}><p>{state.error}</p><button onClick={() => load()}>Retry</button><button onClick={() => root.current ? setState(s=>({...s,error:null})) : onClose?.()}>Back</button></TVActionDialog>;
+  if (!root.current) return error;
+  return <><div style={state.error ? {display:'none'} : undefined}><MenuStack rootMenu={root.current} refreshToken={state.version} playerRef={playerRef} onActivityReturn={load} onActivityStart={activityStart} onReturnTarget={returnTarget} getReturnMenuId={() => selectedId.current} loadContentMenu={navigate} onNavigationCancel={() => { generation.current += 1; }} refreshParticipant={refreshParticipant} participantClient={participantClient} participantRegistry={participantRegistry}/></div>{error}</>;
 }
 export default AgendaMenuHost;

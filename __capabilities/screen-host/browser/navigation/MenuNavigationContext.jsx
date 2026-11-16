@@ -52,6 +52,9 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
   // in which case the menu is left untouched. Separate from popGuard, which is an
   // in-menu confirmation gate; this is an above-the-menu overlay escape hatch.
   const backConsumerRef = useRef(null);
+  const menuBackHandlerRef = useRef(null);
+  const registerMenuBackHandler = useCallback(fn => { menuBackHandlerRef.current = fn; }, []);
+  const unregisterMenuBackHandler = useCallback(fn => { if (menuBackHandlerRef.current === fn) menuBackHandlerRef.current = null; }, []);
 
   const registerBackConsumer = useCallback((fn) => {
     backConsumerRef.current = fn;
@@ -154,7 +157,7 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
       // instead of silently popping the hidden menu stack beneath it.
       if (backConsumerRef.current && backConsumerRef.current()) {
         navLogger().info('nav.popstate-consumed', {});
-      } else {
+      } else if (!menuBackHandlerRef.current?.()) {
         pop();
       }
       // Push a new state to keep the trap active
@@ -191,6 +194,8 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     clearPopGuard,
     registerBackConsumer,
     unregisterBackConsumer,
+    registerMenuBackHandler,
+    unregisterMenuBackHandler,
 
     // Bug 04 fix: Refetch counter for data invalidation
     refetchCounter,
