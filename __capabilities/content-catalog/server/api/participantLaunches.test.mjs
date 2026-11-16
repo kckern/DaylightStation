@@ -18,3 +18,9 @@ it('makes describe and inspect read-only through the real service',async()=>{
 it('rejects invalid describe inputs before resolving a target',async()=>{const {ParticipantLaunchService,ParticipantConsumerRegistry}=await import('../participant-launch.mjs');let calls=0;const service=new ParticipantLaunchService({registry:new ParticipantConsumerRegistry(),resolveDirectTarget:async()=>{calls++;return null;},logger:{info(){}}});const response=await request(app(service)).post('/launches/describe').send({action:'delete'});expect(response.status).toBe(422);expect(calls).toBe(0);});
 it('marks read-only responses as non-cacheable',async()=>{const response=await request(app({describe:async()=>({participantRequirement:'required'})})).post('/launches/describe').send({action:'open',target:{kind:'app'}});expect(response.headers['cache-control']).toBe('no-store');});
 it('reports unavailable launch service on a mounted endpoint',async()=>{expect(await request(app(null)).post('/launches/inspect').send({action:'open',ref:{}})).toMatchObject({status:503,body:{code:'feature_unavailable'}});});
+
+it('does not turn a foreign household token into installed-household authority',async()=>{
+ let called=false;const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user={sub:'alice',hid:'other',roles:['parent']};next();});
+ app.use('/launches',createParticipantLaunchesRouter({householdId:'home',service:{describe:async()=>{called=true;return null;}},logger:{info(){},warn(){},error(){}}}));
+ expect((await request(app).post('/launches/describe').send({action:'open',target:{kind:'app'}})).status).toBe(404);expect(called).toBe(false);
+});

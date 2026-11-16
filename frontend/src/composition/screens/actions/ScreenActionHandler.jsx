@@ -7,7 +7,7 @@ import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../
 import { usePip } from "../../../../../__capabilities/screen-host/browser/pip.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
 import MenuStack from "../../../../../__app_modules/media/media/browser/menu.mjs";
-import AgendaMenuHost from "../../../../../__app_modules/household/agenda/browser/screen.mjs";
+import {menuSourceHost} from '../menuSourceHosts.js';
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
 import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
@@ -167,8 +167,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     // stack, so for as long as it is up it is the stack's only renderer and the
     // screen's own menu widget yields (MenuWidget). Without it, a selection made
     // here mounted a Player in BOTH — two unmuted videos in sync.
-    const menuHosts = {agenda: AgendaMenuHost};
-    const host = typeof menuId === 'string' && menuId.includes(':') ? menuHosts[menuId.split(':', 1)[0]] : null;
+    const host = menuSourceHost(menuId);
     showOverlay(
       host || MenuStack,
       host ? {contentId: menuId, initialFocusUid:payload.focusUid, playerRef: navPlayerRef, onClose: () => dismissOverlay()} : { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },

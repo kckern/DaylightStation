@@ -8,7 +8,7 @@ Browse by purpose, then work inside the application that owns the feature.
 | [Games](games/) | [Arcade](games/arcade/), [Chess](games/chess/), [Emulator](games/emulator/), [Party games](games/party-games/) |
 | [Wellness](wellness/) | [Fitness](wellness/fitness/), [Health](wellness/health/), [Nutribot](wellness/nutribot/) |
 | [Media](media/) | [Art](media/art/), [Feed](media/feed/), [Livestream](media/livestream/), [Media](media/media/), [NewsReporter](media/newsreporter/) |
-| [Household](household/) | [Auto](household/auto/), [Camera](household/camera/), [Concierge](household/concierge/), [DoNow](household/donow/), [Home](household/home/), [HomeBot](household/homebot/), [Home Line](household/homeline/), [Screens](household/screens/) |
+| [Household](household/) | [Agenda](household/agenda/), [Auto](household/auto/), [Camera](household/camera/), [Concierge](household/concierge/), [DoNow](household/donow/), [Home](household/home/), [HomeBot](household/homebot/), [Home Line](household/homeline/), [Screens](household/screens/) |
 | [Personal](personal/) | [Calendar](personal/calendar/), [Gratitude](personal/gratitude/), [Journalist](personal/journalist/), [Life](personal/life/), [Lifelog](personal/lifelog/), [Weekly review](personal/weekly-review/) |
 | [Money](money/) | [Economy](money/economy/), [Finance](money/finance/) |
 

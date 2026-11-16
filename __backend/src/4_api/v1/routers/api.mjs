@@ -89,6 +89,7 @@ export function createApiRouter(config) {
     '/content': 'content',
     '/proxy': 'proxy',
     '/list': 'list',
+    '/participant-launches': 'participantLaunches',
     '/siblings': 'siblings',
     '/queue': 'queue',
     '/play': 'play',

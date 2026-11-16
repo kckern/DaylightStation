@@ -1,3 +1,4 @@
+import { SCREEN_APP_IDS } from '../../../__capabilities/screen-host/portable/appIds.mjs';
 import { DaylightAPI, DaylightMediaPath } from './api.mjs';
 
 // App icon SVGs (Vite resolves these to hashed URLs)
@@ -35,7 +36,7 @@ export const APP_REGISTRY = {
  * @returns {object|null} Registry entry or null if not found
  */
 export function getApp(id) {
-  return APP_REGISTRY[id] || null;
+  return SCREEN_APP_IDS.includes(id) ? APP_REGISTRY[id] || null : null;
 }
 
 /**

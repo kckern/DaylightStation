@@ -49,6 +49,9 @@ import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
 export function createAdminRouter(config) {
   const {
     householdContext,
+    agendaRouter,
+    peopleRouter,
+    resourceAliases,
     adminMediaService,
     eventBusAdministration,
     householdAdminService,
@@ -68,10 +71,14 @@ export function createAdminRouter(config) {
   } = config;
   const router = express.Router();
 
+  if (agendaRouter) router.use('/content/agendas', agendaRouter);
+  if (peopleRouter) router.use('/people', peopleRouter);
+
   // Mount content router
   const contentRouter = createAdminContentRouter({
     householdContext,
     listManagementService,
+    resourceAliases,
     logger: logger.child?.({ submodule: 'content' }) || logger
   });
   router.use('/content', contentRouter);

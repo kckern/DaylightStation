@@ -29,7 +29,8 @@ function requireDataDir() {
  */
 // Supervision is opt-in. With neither enabled configuration nor persisted
 // authority, createSupervisionRuntime returns its disabled router without writes.
-const OPTIONAL_CONFIGS = new Set(['state-gates', 'libby', 'supervision']);
+// Agenda is disabled without its colocated config; its loader/runtime tests cover that default.
+const OPTIONAL_CONFIGS = new Set(['state-gates', 'libby', 'supervision', 'agenda']);
 
 it('every registered app config exists on disk at its registered path', () => {
   const dataDir = requireDataDir();

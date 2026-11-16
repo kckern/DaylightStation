@@ -159,9 +159,12 @@ function ListsFolder() {
 
   useEffect(() => {
     if (type && listName) {
-      fetchList(type, listName);
+      fetchList(type, listName).catch(error => {
+        const target=error?.body?.adminUrl;
+        if (error?.body?.code === 'resource_moved' && typeof target === 'string' && /^\/admin\/content\/agendas\/[A-Za-z0-9_.-]+$/.test(target)) navigate(target,{replace:true});
+      });
     }
-  }, [type, listName, fetchList]);
+  }, [type, listName, fetchList, navigate]);
 
   // Filter items by search query
   const filteredItems = useMemo(() => {

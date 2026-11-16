@@ -1,3 +1,4 @@
+import {menuSourceHost} from './menuSourceHosts.js';
 import {focusUidFromSearch} from '../../../../__capabilities/screen-host/browser/return-navigation.mjs';
 import {useActivityStop} from '../../../../__app_modules/household/supervision/browser/index.js';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -66,13 +67,26 @@ enableGlobalKeyCapture();
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
  */
+async function screenOwnership(contentId) {
+  const match=typeof contentId === 'string' && contentId.match(/^menu:([A-Za-z0-9][A-Za-z0-9_.-]*)$/);
+  if (!match) return null;
+  const result=await DaylightAPI(`/api/v1/list/_ownership/menu/${encodeURIComponent(match[1])}`);
+  if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).join(',') !== 'alias') throw Error('Invalid ownership response');
+  if (result.alias === null) return null;
+  if (!result.alias || typeof result.alias !== 'object' || Array.isArray(result.alias) || Object.keys(result.alias).sort().join(',') !== 'canonicalContentId,owner' || typeof result.alias.owner !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(result.alias?.canonicalContentId || '') || result.alias.canonicalContentId.split(':',1)[0] !== result.alias.owner || !menuSourceHost(result.alias.canonicalContentId)) throw Error('Invalid ownership response');
+  return result.alias;
+}
+
 export function ScreenAutoplay({ routes, layout }) {
   const { push } = useMenuNavigationContext();
   const [initialLocation] = useState(() => ({ pathname: window.location.pathname, search: window.location.search }));
+  const [ownershipError,setOwnershipError]=useState(false);
+  const [ownershipRetry,setOwnershipRetry]=useState(0);
 
   useEffect(() => {
     const { pathname, search } = initialLocation;
     let timer;
+    let cancelled=false;
 
     // Path-based navigation: /screens/living-room/weekly-review or /screens/living-room/fhe
     const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
@@ -94,11 +108,15 @@ export function ScreenAutoplay({ routes, layout }) {
         // Route defined in screen config — use its content ID and props
         // Props like menuStyle go INSIDE the list object — MenuStack passes
         // props.list to TVMenu, dropping any sibling properties.
-        const { contentId, ...routeProps } = routes[subPath];
+        const { contentId, persistPath, participantSource: _participantSource, ...routeProps } = routes[subPath];
         logger.info('screen-autoplay.route', { subPath, contentId });
-        timer = setTimeout(() => {
-          push({ type: 'menu', props: { list: { contentId, ...routeProps } } });
-        }, 500);
+        screenOwnership(contentId).then(alias=>{
+          if (cancelled) return;
+          timer=setTimeout(()=>{
+            if (alias || menuSourceHost(contentId)) getActionBus().emit('menu:open', {menuId:alias?.canonicalContentId || contentId,focusUid:focusUidFromSearch(search)});
+            else push({ type:'menu', props:{list:{contentId,...routeProps}} });
+          },500);
+        }).catch(()=>{if (!cancelled) setOwnershipError(true);});
       } else {
         // Default: treat suffix as menu name
         timer = setTimeout(() => {
@@ -108,11 +126,11 @@ export function ScreenAutoplay({ routes, layout }) {
 
       // App deep links are durable: keep the canonical URL so a refresh opens
       // the same app/game. One-shot menu suffixes retain the legacy cleanup.
-      if (!appRoute?.appPath && subPath !== 'fhe') {
+      if (!appRoute?.appPath && routes?.[subPath]?.persistPath !== true) {
         const cleanPath = pathname.replace(/\/[^/]+$/, '');
         window.history.replaceState({}, '', cleanPath);
       }
-      return () => clearTimeout(timer);
+      return () => {cancelled=true;clearTimeout(timer);};
     }
 
     // Query-based autoplay: ?queue=plex:642120&shader=dark
@@ -130,21 +148,23 @@ export function ScreenAutoplay({ routes, layout }) {
     const focusUid = focusUidFromSearch(search);
     if (action?.event === 'menu:open' && autoplay.list && focusUid) action.payload.focusUid = focusUid;
     if (action) {
-      timer = setTimeout(() => {
-        bus.emit(action.event, action.payload);
-      }, 500);
+      const lookup=action.event === 'menu:open' && autoplay.list ? screenOwnership(action.payload.menuId) : Promise.resolve(null);
+      lookup.then(alias=>{
+        if (cancelled) return;
+        if (alias) {action.payload.menuId=alias.canonicalContentId;}
+        timer=setTimeout(()=>bus.emit(action.event,action.payload),500);
+        window.history.replaceState({}, '', pathname);
+      }).catch(()=>{if (!cancelled) setOwnershipError(true);});
     }
-
-    // Clean URL to prevent re-trigger
-    window.history.replaceState({}, '', pathname);
-    return () => clearTimeout(timer);
+    return () => {cancelled=true;clearTimeout(timer);};
   // Deliberately mount-once (see docblock): this parses the URL for a one-shot
   // autoplay action and then rewrites the URL specifically so it can't re-fire.
   // Adding layout/routes would let a later config reload re-trigger the very
   // autoplay this effect just cleaned up after.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [push]);
+  }, [push, ownershipRetry]);
 
+  if (ownershipError) return <div role="alert">Unable to check menu ownership. <button onClick={()=>{setOwnershipError(false);setOwnershipRetry(value=>value+1);}}>Retry</button><button onClick={()=>window.history.back()}>Back</button></div>;
   return null;
 }
 

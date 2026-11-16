@@ -5,7 +5,7 @@ import path from 'node:path';
 import { YamlAgendaRepository } from './YamlAgendaRepository.mjs';
 import { AgendaPlanningService } from '../application/AgendaPlanningService.mjs';
 
-const series = {schema:'agenda-series/v1',series_id:'family',household_id:'home',revision:0,title:'Together',calendar:{frequency:'weekly',timezone:'America/Los_Angeles',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{title:'Together',sections:[{uid:'s',items:[{uid:'i',title:'Song',play:'song'}]}]},activity_settings:{}}};
+const series = {schema:'agenda-series/v1',series_id:'family',household_id:'home',revision:0,title:'Together',calendar:{frequency:'weekly',timezone:'America/Los_Angeles',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{title:'Together',sections:[{uid:'s',items:[{uid:'i',title:'Song',play:{contentId:'files:song'}}]}]},activity_settings:{}}};
 let dir, repo, service, n;
 beforeEach(async () => { dir=mkdtempSync(path.join(tmpdir(),'agenda-')); n=0; repo=new YamlAgendaRepository({pathForHousehold:()=>dir}); service=new AgendaPlanningService({repository:repo,clock:()=>new Date('2026-11-16T20:00:00Z'),ids:Object.fromEntries(['plan','section','item','rosterEntry'].map(k=>[k,()=>`${k}_${++n}`])),resolveItemImage:async()=>null,validateActivities:async()=>({valid:true,errors:[]}),logger:{info(){}}}); await repo.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:null,mutate:()=>series}); });
 afterEach(()=>rmSync(dir,{recursive:true,force:true}));
@@ -29,3 +29,122 @@ it('recovers a pending losing request after archival without allocating another 
 it('lists validated series and pins copy request revision across retries',async()=>{const source=await create('source'); expect((await repo.listSeries({householdId:'home'})).map(x=>x.document.series_id)).toEqual(['family']); const input={householdId:'home',seriesId:'family',weekOf:'2026-11-23',requestId:'copy',sourcePlanId:source.document.plan_id,sourceRevision:source.document.revision}; const copy=await service.createPlan(input); await service.savePlan({householdId:'home',planId:source.document.plan_id,expectedEtag:source.etag,plan:{...source.document,title:'Changed'},viewer:{}}); expect((await service.createPlan(input)).document.plan_id).toBe(copy.document.plan_id); await expect(service.createPlan({...input,sourceRevision:1})).rejects.toMatchObject({code:'idempotency_conflict'}); await expect(service.createPlan({...input,weekOf:'2026-11-30',requestId:'new'})).rejects.toMatchObject({code:'revision_conflict'});});
 it('pins template revision for new weeks while retaining admitted retries',async()=>{const args={householdId:'home',seriesId:'family',weekOf:'2026-11-16',requestId:'template',sourceRevision:0};const created=await service.createPlan(args);const current=await service.readSeries({householdId:'home',seriesId:'family'});await service.saveSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,series:{...current.document,title:'Changed'}});expect((await service.createPlan(args)).document.plan_id).toBe(created.document.plan_id);await expect(service.createPlan({...args,requestId:'new',weekOf:'2026-11-23'})).rejects.toMatchObject({code:'revision_conflict'});await expect(service.createPlan({...args,sourceRevision:1})).rejects.toMatchObject({code:'idempotency_conflict'});});
 it('surfaces an invalid series document during enumeration',async()=>{const fs=await import('node:fs');const invalid=path.join(dir,'agendas','series','broken');fs.mkdirSync(invalid,{recursive:true});fs.writeFileSync(path.join(invalid,'series.yml'),'household_id: foreign\n');await expect(repo.listSeries({householdId:'home'})).rejects.toMatchObject({code:'invalid_document'});});
+
+it('rejects unsupported embedded list values before changing a persisted template', async () => {
+ const {EmbeddedListCodec:ListConfigCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:ListConfigCodec});
+ const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const bad=structuredClone(current.document);
+ bad.defaults.list.sections[0].items[0]={uid:'i',title:'Game',open:{app:'party-games/test'}};
+ await expect(strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>bad})).rejects.toMatchObject({code:'invalid_document'});
+ expect((await strict.readSeries({householdId:'home',seriesId:'family'})).etag).toBe(current.etag);
+});
+
+it('rejects unknown embedded item fields without changing plan data', async () => {
+ const {EmbeddedListCodec:ListConfigCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const p=await create('unknown');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:ListConfigCodec});
+ await expect(strict.mutatePlan({householdId:'home',planId:p.document.plan_id,expectedEtag:p.etag,mutate:plan=>{plan.list.sections[0].items[0].unsupported='lost';return plan;}})).rejects.toMatchObject({code:'invalid_document'});
+ expect((await strict.readPlan({householdId:'home',planId:p.document.plan_id})).etag).toBe(p.etag);
+});
+
+it('rejects unsupported list fields before creating a plan', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const existing=await create('source');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ await expect(strict.createPlan({householdId:'home',seriesId:'family',weekOf:'2026-11-23',requestId:'bad',make:({planId})=>({...existing.document,plan_id:planId,week_of:'2026-11-23',scheduled_on:'2026-11-23',list:{sections:[{uid:'s',items:[{uid:'i',open:{app:'bad'}}]}]}})})).rejects.toMatchObject({code:'invalid_document'});
+ expect((await strict.listPlans({householdId:'home',seriesId:'family'}))).toHaveLength(1);
+ const {readdirSync}=await import('node:fs');expect(readdirSync(path.join(dir,'agendas','series','family','requests'))).toHaveLength(1);
+});
+
+it('rejects action options the persistence codec would drop', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const bad=structuredClone(current.document);bad.defaults.list.sections[0].items[0].play={contentId:'files:song',extra:'lost'};
+ await expect(strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>bad})).rejects.toMatchObject({code:'invalid_document'});
+});
+
+it('persists template lists through the real codec and reads back canonical actions', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(current.document);next.defaults.list.sections[0].items[0]={uid:'i',title:'Song',label:'Opening song',image:'/art.jpg',active:false,play:{contentId:'files:song'},resume:true};
+ const saved=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>next});
+ const {readFileSync}=await import('node:fs');const yaml=(await import('js-yaml')).default;
+ const disk=yaml.load(readFileSync(path.join(dir,'agendas','series','family','series.yml'),'utf8'));
+ expect(disk.defaults.list.sections[0].items[0]).toMatchObject({uid:'i',input:'files:song'});
+ expect(saved.document.defaults.list.sections[0].items[0]).toMatchObject({uid:'i',title:'Song',label:'Opening song',image:'/art.jpg',active:false,play:{contentId:'files:song'},resume:true});
+});
+
+it('surfaces unknown embedded fields from disk instead of normalizing them away', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const file=path.join(dir,'agendas','series','family','series.yml');
+ const current=(await repo.readSeries({householdId:'home',seriesId:'family'})).document;
+ current.defaults.list.surprise='lost';writeFileSync(file,JSON.stringify(current));
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ await expect(strict.readSeries({householdId:'home',seriesId:'family'})).rejects.toMatchObject({code:'invalid_document'});
+});
+
+it('rejects malformed string content actions that the codec would discard', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const bad=structuredClone(current.document);bad.defaults.list.sections[0].items[0].play='song';
+ await expect(strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>bad})).rejects.toMatchObject({code:'invalid_document'});
+});
+
+it('preserves an intentionally empty template through codec persistence', async () => {
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});
+ const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(current.document);next.defaults.list.sections=[];
+ const saved=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>next});
+ expect(saved.document.defaults.list.sections).toEqual([]);
+});
+
+it('preserves an authored label even when it equals the title',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(current.document);next.defaults.list.sections[0].items[0]={uid:'i',title:'Song',label:'Song',play:{contentId:'files:song'}};
+ const saved=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>next});
+ expect(saved.document.defaults.list.sections[0].items[0]).toHaveProperty('label','Song');
+});
+
+it('rejects an unsupported legacy action before it can normalize to Play',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const bad=structuredClone(current.document);bad.defaults.list.sections[0].items[0]={uid:'i',label:'Song',input:'files:song',action:'Teleport'};
+ await expect(strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>bad})).rejects.toMatchObject({code:'invalid_document'});
+});
+
+it('retains supported legacy playback fields across the embedded codec',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(current.document);next.defaults.list.sections[0].items[0]={uid:'i',label:'Song',input:'files:song',action:'Play',priority:3,hold:true,resume:false,seconds:0,image:'/image.jpg',active:false};
+ const saved=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>next});
+ expect(saved.document.defaults.list.sections[0].items[0]).toMatchObject({uid:'i',label:'Song',priority:3,hold:true,resume:false,seconds:0,image:'/image.jpg',active:false,play:{contentId:'files:song'}});
+});
+
+it('rejects malformed empty legacy input instead of dropping it',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const bad=structuredClone(current.document);bad.defaults.list.sections[0].items[0]={uid:'i',label:'Song',input:'',action:'Play'};
+ await expect(strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>bad})).rejects.toMatchObject({code:'invalid_document'});
+});
+
+it('retains a supported Android legacy launch while rejecting malformed targets',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:EmbeddedListCodec});const current=await strict.readSeries({householdId:'home',seriesId:'family'});
+ const next=structuredClone(current.document);next.defaults.list.sections[0].items[0]={uid:'i',label:'App',input:'android:org.example/Main',action:'Android'};
+ const saved=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:current.etag,mutate:()=>next});expect(saved.document.defaults.list.sections[0].items[0].android).toEqual({package:'org.example',activity:'Main'});
+ const again=await strict.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:saved.etag,mutate:doc=>doc});expect(again.document.defaults.list.sections[0].items[0].android).toEqual({package:'org.example',activity:'Main'});
+});
+
+it('round trips plan list edits without passing roster or settings to the codec',async()=>{
+ const {EmbeddedListCodec}=await import('../../../../../__capabilities/content-catalog/server/list-codec.mjs');
+ const calls=[];const codec={...EmbeddedListCodec,validateEmbeddedList:list=>{calls.push(list);return EmbeddedListCodec.validateEmbeddedList(list);}};
+ const strict=new YamlAgendaRepository({pathForHousehold:()=>dir,listCodec:codec});const existing=await create('plan-codec');const before=await strict.readPlan({householdId:'home',planId:existing.document.plan_id});
+ const saved=await strict.mutatePlan({householdId:'home',planId:existing.document.plan_id,expectedEtag:before.etag,mutate:plan=>{plan.list.sections[0].items[0].resume=false;return plan;}});
+ expect(saved.document.list.sections[0].items[0]).toMatchObject({resume:false,play:{contentId:'files:song'}});
+ expect(saved.document.participants).toEqual(before.document.participants);expect(saved.document.activity_settings).toEqual(before.document.activity_settings);
+ expect(calls.length).toBeGreaterThan(0);expect(calls.every(value=>!Object.hasOwn(value,'participants') && !Object.hasOwn(value,'activity_settings'))).toBe(true);
+});

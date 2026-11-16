@@ -252,6 +252,7 @@ let providerWebhookAdapters = {};
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
     createSchoolLearnerDirectory: dependencies.createSchoolLearnerDirectory,
+    peopleDirectory: dependencies.peopleDirectory,
     fitnessServices,
     userService,
     userDataService,

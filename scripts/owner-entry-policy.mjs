@@ -1,5 +1,9 @@
 /** Reviewed build-time visibility and executable server layer; no discovery. */
 export const OWNER_ENTRY_POLICY = Object.freeze({
+  '__capabilities/content-catalog/server/list-artwork.mjs': 'adapters',
+  '__capabilities/screen-host/portable/appIds.mjs': null,
+  '__app_modules/household/agenda/server/agenda.mjs': 'composition',
+  '__app_modules/household/agenda/server/composition.mjs': 'composition',
   '__app_modules/household/supervision/browser/index.js': null,
   '__app_modules/games/arcade/server/supervision-runtime.mjs': 'composition',
   '__app_modules/wellness/fitness/server/supervision-runtime.mjs': 'composition',

@@ -123,3 +123,11 @@ it('requires an authored binding for registered targets and leaves ordinary medi
  const plan={household_id:'home',plan_id:'p',revision:1,participants:[],list:{sections:[{items:[{uid:'aware',play:'a'},{uid:'ordinary',play:'b'}]}]},activity_settings:{}};
  expect(await validate({plan,viewer:{}})).toMatchObject({valid:false,errors:[{field:'activity_settings.aware',code:'participant_setup_required'}]});expect(prepares).toBe(0);
 });
+
+it('validates ordinary list navigation without preparing participants',async()=>{
+ const {createAgendaActivityValidator}=await import('./AgendaParticipantContextProvider.mjs');
+ const seen=[];const provider={validateRoster:async()=>{},resolveTarget:async input=>{seen.push(input.action);return {kind:'content',source:'menu',capabilities:{listable:{action:'list'}}};}};
+ const registry={resolve:()=>null};const validate=createAgendaActivityValidator({provider,setupResolver:{registry,resolve:async()=>{throw Error('must not prepare');}}});
+ const result=await validate({plan:{list:{sections:[{items:[{uid:'nav',list:{contentId:'menu:songs'}}]}]},activity_settings:{}},viewer:{}});
+ expect(result.valid).toBe(true);expect(seen).toEqual(['list']);
+});

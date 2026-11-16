@@ -11,7 +11,7 @@ import yaml from 'js-yaml';
 import { deepMerge } from '../utils/deepMerge.mjs';
 import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../utils/householdDirs.mjs';
 import { resolveYamlPath } from '../utils/FileIO.mjs';
-import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
+import { HOUSEHOLD_APP_CONFIGS, COLOCATED_ONLY_HOUSEHOLD_APPS } from '#shared/contracts/householdConfig.mjs';
 
 /**
  * Load all config from the data directory.
@@ -155,6 +155,7 @@ export { listHouseholdDirs, parseHouseholdId, toFolderName };
 function loadHouseholdApps(dataDir, folderName) {
   const householdDir = path.join(dataDir, folderName);
   const appsFromLegacy = loadAppsFromDir(path.join(householdDir, 'apps'));
+  for (const appName of COLOCATED_ONLY_HOUSEHOLD_APPS) delete appsFromLegacy[appName];
 
   // Registry — the only location for a household app config.
   const appsFromRegistry = {};

@@ -1,3 +1,6 @@
+import {AgendaResourceAliases} from '../../__app_modules/household/agenda/server/composition.mjs';
+import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
+import {viewerFor} from './4_api/utils/participantHttp.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
@@ -1141,8 +1144,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const {playLedger,loadOriginHints}=await createMediaPlayLedger({configService,householdId,rootLogger});
 
+  const agendaResourceAliases=new AgendaResourceAliases();
   const { routers: contentRouters, services: contentServices } = createApiRouters({
+    resourceAliases:agendaResourceAliases,
     registry: contentRegistry,
+    viewerForRequest: req => { try { return req.user?.sub ? viewerFor(req,householdId) : null; } catch { return null; } },
     sequenceStore,
     menuMemoryRepository: new YamlMenuMemoryRepository({
       filePath: configService.getHouseholdPath('history/menu_memory', householdId),
@@ -1747,7 +1753,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
-  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter } = createPartyGamesCatalogRuntime({ contentPath, rootLogger });
+  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory } = createPartyGamesCatalogRuntime({ contentPath, rootLogger });
 
   const { gamingModule, gamingAssetCatalog } = createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath });
 
@@ -1758,6 +1764,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { gamingRouter } = createPartyGamesHttpRuntime({ gamingModule, gamingAssetCatalog, mediaBasePath, contentPath, rootLogger });
 
   v1Routers.gaming = gamingRouter;
+  const participantRuntime=installParticipantRuntime({enabled:configService.getHouseholdAppConfig(householdId,'agenda')?.enabled === true,configService,peopleDirectory,contentRegistry,contentServices,gaming:{gamingApplication:gamingModule.gamingApplication,definitions:gamingDefinitionStore,manifestStore:gamingManifestStore,clueHistory:gamingModule.clueHistory},logger:rootLogger.child({module:'agenda'}),resourceAliases:agendaResourceAliases});
+  v1Routers.participantLaunches=participantRuntime.participantRouter;
   const { GetPublicPresentationCatalog } = await import("./3_applications/presentation/GetPublicPresentationCatalog.mjs");
   v1Routers.presentation = createPresentationRouter({
     catalog: presentationCatalog,
@@ -2337,7 +2345,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let fitnessStateGatesProducer = null;
-  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention } = await createFitnessApiRuntime({ parentalSupervision:parentalSupervision.enabled?{service:parentalSupervision.service,garageDeviceId:parentalSupervision.configuration.garage_device_id,scopeId:parentalSupervision.configuration.scope_id,verifyScan:parentalSupervision.verifyScan}:null, createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
+  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention } = await createFitnessApiRuntime({ peopleDirectory, parentalSupervision:parentalSupervision.enabled?{service:parentalSupervision.service,garageDeviceId:parentalSupervision.configuration.garage_device_id,scopeId:parentalSupervision.configuration.scope_id,verifyScan:parentalSupervision.verifyScan}:null, createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
 
   supervisionIdentity=adminIntervention;
 
@@ -4236,6 +4244,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
+    resourceAliases:agendaResourceAliases,
+    agendaRouter:participantRuntime.agenda.adminRouter,
+    peopleRouter:participantRuntime.peopleRouter,
     householdContext,
     listManagementService,
     adminArtService,

@@ -48,13 +48,25 @@ export function createAdminContentRouter(config) {
     logger = console
   } = config;
 
-  const { listManagementService } = config;
+  const { listManagementService, resourceAliases } = config;
   if (!listManagementService) {
     throw new Error('createAdminContentRouter: listManagementService required');
   }
 
   const router = express.Router();
   const householdIdFrom = (req) => householdContext.resolve(req.query.household || null);
+  const checkOwnership = (req,res,next) => {
+    const kind=({menus:'menu',watchlists:'watchlist',programs:'program'})[req.params.type];
+    if (!kind) return next();
+    let alias;
+    try { alias=resourceAliases?.resolve({kind,id:req.params.name ?? req.body?.name}); }
+    catch (error) { if (error.code === 'ownership_unavailable') return res.status(503).json({code:'ownership_unavailable',message:'Resource ownership unavailable'}); return next(error); }
+    if (!alias) return next();
+    return res.status(409).json({code:'resource_moved',canonicalContentId:alias.canonicalContentId,adminUrl:alias.adminUrl});
+  };
+  router.use('/lists/:type/:name',checkOwnership);
+  router.post('/lists/:type',checkOwnership);
+
 
   // =============================================================================
   // Overview Endpoint

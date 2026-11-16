@@ -70,3 +70,22 @@ it('enforces view authorization during read-only inspection', async () => {
  await coordinator.createReserved({reservation,viewer});
  await expect(coordinator.inspect(reservation.sessionId,{role:'spectator',participant_id:'stranger'})).rejects.toMatchObject({code:'authorization_denied'});
 });
+
+it('inspects an actual durable journal with a missing snapshot without persistent writes',async()=>{
+ const {createGamingSessionRuntime}=await import('../../server/composition/session-runtime.mjs');
+ const {mkdtempSync,readdirSync,readFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const path=await import('node:path');
+ const dir=mkdtempSync(path.join(tmpdir(),'gaming-inspect-'));
+ try {
+  const pinned={hash:'a'.repeat(64),definition:{maximum:10},artifacts:{rules_definition:{id:'counter',hash:'b'.repeat(64)}}};
+  const definitions={getPinned:async()=>pinned.definition};
+  const runtime=createGamingSessionRuntime({definitions,snapshotsDir:path.join(dir,'snapshots'),journalsDir:path.join(dir,'journals'),rulesets:[rules],createIds:()=>({session:()=> 'ordinary',seed:()=>1}),clock:{now:()=>new Date('2026-01-01')}});
+  const reservation={sessionId:'reserved:1',seed:7,pinnedDefinition:pinned,ruleset:{id:'counter',version:1},experience:null,launch:null,participants:[{id:'p1'}],seats:[],setup:{value:3},creationKey:'private'};
+  const realPut=runtime.snapshots.put.bind(runtime.snapshots);runtime.snapshots.put=vi.fn().mockRejectedValueOnce(Error('interrupted')).mockImplementation(realPut);
+  await expect(runtime.coordinator.createReserved({reservation,viewer})).rejects.toThrow('interrupted');
+  const journalFiles=readdirSync(path.join(dir,'journals'));expect(journalFiles.length).toBeGreaterThan(0);
+  const before=journalFiles.map(file=>readFileSync(path.join(dir,'journals',file),'utf8'));runtime.snapshots.put.mockClear();
+  expect((await runtime.coordinator.inspect(reservation.sessionId,viewer)).state.value).toBe(3);
+  expect(runtime.snapshots.put).not.toHaveBeenCalled();expect(readdirSync(path.join(dir,'snapshots'))).toEqual([]);
+  expect(journalFiles.map(file=>readFileSync(path.join(dir,'journals',file),'utf8'))).toEqual(before);
+ } finally {rmSync(dir,{recursive:true,force:true});}
+});

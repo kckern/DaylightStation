@@ -58,7 +58,7 @@ export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
     print: (pdf, { sessionId }) => partyGamesPrinterAdapter.printPdf(pdf, { jobName: `Party Games host packet — ${sessionId}`, user: 'party-games', copies: 1 }),
   } : null;
 
-  return { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter };
+  return { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory };
 }
 
 export function createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath }) {

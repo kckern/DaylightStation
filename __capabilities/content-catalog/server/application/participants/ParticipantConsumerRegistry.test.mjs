@@ -55,3 +55,9 @@ it('finds a retained direct access factory only for the exact version and matche
  expect(registry.retainedDirectAccess({action:'play',target})).toBeNull();
  expect(registry.retainedDirectAccess({action:'open',target:{...target,appId:'forged'}})).toBeNull();
 });
+
+it('requires a direct store authority for a consumer providing direct defaults',()=>{
+ const defaulted=consumer({resolveDefaultContext:async()=>null});
+ expect(()=>new ParticipantConsumerRegistry().register({consumer:defaulted})).toThrow();
+ expect(()=>new ParticipantConsumerRegistry().register({consumer:defaulted,authorizeDirectAccess:async()=>({store:{},scope_key:'scope'})})).not.toThrow();
+});

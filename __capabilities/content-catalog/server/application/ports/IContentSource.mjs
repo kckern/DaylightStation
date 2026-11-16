@@ -1,4 +1,4 @@
-/** Registered sources implement identity and list reads. Playback and sibling methods are optional capabilities and must only exist when supported. A source may opt in to getList(ref, context) with acceptsListContext === true; otherwise only ref is passed. */
+/** Registered sources implement identity and list reads. Playback and sibling methods are optional capabilities and must only exist when supported. A source may opt in to getList(ref, context) with acceptsListContext === true; otherwise only ref is passed. A source may implement describeParticipantAction(item, action), returning null or {participantConsumer:{id,version}} for that exact item and action. */
 export class IContentSource {
   get source() { throw new Error('IContentSource.source not implemented'); }
   get prefixes() { throw new Error('IContentSource.prefixes not implemented'); }

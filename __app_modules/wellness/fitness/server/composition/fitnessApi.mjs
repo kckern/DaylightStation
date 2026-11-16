@@ -95,6 +95,7 @@ export function createFitnessApiRouter(config) {
   const {
     fitnessServices,
     userService,
+    peopleDirectory,
     createSchoolLearnerDirectory,
     configService,
     fitnessConfig,
@@ -336,7 +337,7 @@ export function createFitnessApiRouter(config) {
   const voiceMemoDebugStore = new FilesystemVoiceMemoDebugStore({ dataDir: configService.getDataDir() });
   const fitnessContentService = new FitnessContentService({
     fitnessConfigService,
-    userHydrator: new FitnessUserHydrator({ profileReader: userService, schoolLearnerDirectory, logger }),
+    userHydrator: createFitnessUserHydrator({ profileReader:userService, peopleDirectory, householdId, schoolLearnerDirectory, logger }),
     contentAccessAvailable: Boolean(contentRegistry),
     contentCatalog: fitnessContentCatalog,
     logger,
@@ -563,4 +564,10 @@ export function createFitnessPlayableModule({
 export function createFitnessSchoolCourseOperation({ attemptStore, sessionService, publications = null,
   clock = () => new Date(), logger = console }) {
   return new FitnessSchoolCourseService({ attemptStore, sessionService, publications, clock, logger });
+}
+
+/** Wire shared identity into the existing Fitness projection. */
+export function createFitnessUserHydrator({profileReader,peopleDirectory,householdId,schoolLearnerDirectory,logger}) {
+  const guestResolver=peopleDirectory ? id=>peopleDirectory.resolve({householdId,person:{kind:'guest',id}}) : null;
+  return new FitnessUserHydrator({profileReader,guestResolver,schoolLearnerDirectory,logger});
 }

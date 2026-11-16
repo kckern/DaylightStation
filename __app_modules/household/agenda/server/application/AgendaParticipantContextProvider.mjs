@@ -94,7 +94,7 @@ export function createAgendaActivityValidator({provider, setupResolver}) {
       return {valid:false,errors:[{field:error.field || 'participants',message:error.message,code:error.code}]};
     }
     for (const item of plan.list?.sections.flatMap(section=>section.items) ?? []) {
-      const action=itemAction(item);
+      const action=itemAction(item) || (item.list ? 'list' : null);
       if (!action || plan.activity_settings[item.uid]) continue;
       try {
         const target=await provider.resolveTarget({item,action,viewer});

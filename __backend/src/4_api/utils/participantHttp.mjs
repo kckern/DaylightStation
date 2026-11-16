@@ -4,6 +4,7 @@ export function httpError(code, message, errors) { return Object.assign(new Erro
 export function viewerFor(req, householdId, host = false) {
   if (!req.user?.sub) throw httpError('authentication_required', 'Authentication required');
   if (typeof householdId !== 'string' || !householdId) throw httpError('feature_unavailable', 'Household scope unavailable');
+  if ((req.user.hid && req.user.hid !== householdId) || (req.householdId && req.householdId !== householdId)) throw httpError('authorization_denied', 'Household scope mismatch');
   const roles = [...(req.roles || []), ...(req.user.roles || [])].map(String);
   const viewer = {role: roles.some(role => HOST_ROLES.has(role)) ? 'host' : 'participant', participant_id:String(req.user.sub), householdId};
   if (host && viewer.role !== 'host') throw httpError('authorization_denied', 'Host authority required');

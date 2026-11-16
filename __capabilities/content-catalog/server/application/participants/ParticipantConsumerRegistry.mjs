@@ -16,6 +16,7 @@ export class ParticipantConsumerRegistry {
     if (typeof retainedOnly !== 'boolean') fail('Invalid retained-only registration');
     if (!consumer || !validId(consumer.id) || !Number.isSafeInteger(consumer.version) || consumer.version < 1 || !Array.isArray(consumer.targets) || !consumer.targets.length || ['describe','prepareSetup','begin'].some(k => typeof consumer[k] !== 'function')) fail('Invalid consumer');
     if (authorizeDirectAccess !== undefined && typeof authorizeDirectAccess !== 'function') fail('Invalid direct authorization');
+    if (!retainedOnly && typeof consumer.resolveDefaultContext === 'function' && typeof authorizeDirectAccess !== 'function') fail('Direct defaults require store authority');
     if ((typeof consumer.findResumable === 'function') !== (typeof consumer.resume === 'function')) fail('Resume methods must be paired');
     for (const optional of ['findResumable','resume','retainPrepared','resolveDefaultContext','remapParticipantKeys']) if (consumer[optional] !== undefined && typeof consumer[optional] !== 'function') fail(`Invalid ${optional}`);
     const versionKey = JSON.stringify([consumer.id,consumer.version]);

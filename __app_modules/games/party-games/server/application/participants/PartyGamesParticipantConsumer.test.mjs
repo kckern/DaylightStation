@@ -133,13 +133,16 @@ it('passes frozen snapshot and retained source metadata to reserved creation',as
 it('threads retained source through service, real consumer and Gaming journal on creation recovery',async()=>{
  const {ParticipantLaunchService,ParticipantConsumerRegistry,hashValue}=await import('../../../../../../__capabilities/content-catalog/server/participant-launch.mjs');
  const {GameSessionCoordinator,GameRuntime,defineRuleModule,SessionActorAuthorization}=await import('../../../../../../__capabilities/gaming/portable/kernel/index.mjs');
- const {MemorySessionJournal,MemorySnapshotRepository}=await import('../../../../../../__capabilities/gaming/portable/testing/memoryPorts.mjs');
+ const {createGamingSessionRuntime}=await import('../../../../../../__capabilities/gaming/server/composition/session-runtime.mjs');
+ const {mkdtempSync,readdirSync,readFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const path=await import('node:path');
+ const dir=mkdtempSync(path.join(tmpdir(),'participant-inspect-'));
+ try {
  const {GamingApplication}=await import('../runtime/GamingApplication.mjs');
- const journal=new MemorySessionJournal(), snapshots=new MemorySnapshotRepository();
- const put=snapshots.put.bind(snapshots); snapshots.put=vi.fn().mockRejectedValueOnce(Error('snapshot interrupted')).mockImplementation(put);
  const rules=defineRuleModule({id:'activity-party',version:1,validateDefinition:()=>({valid:true,errors:[]}),createInitialState:(_d,{setup})=>({status:'active',saved:setup.charades_presentation}),handleCommand:()=>({error:{code:'invalid',message:'invalid'}}),project:state=>({state})});
  const definitions={getCurrent:vi.fn(async()=>structuredClone(loaded)),pin:vi.fn(async value=>value),getPinned:vi.fn(async()=>structuredClone(definition))};
- const coordinator=new GameSessionCoordinator({runtime:new GameRuntime({rulesets:[rules]}),snapshots,journal,definitions,ids:{session:()=>'',seed:()=>1},clock:{now:()=>new Date('2026-01-01')},authorization:new SessionActorAuthorization()});
+ const gamingRuntime=createGamingSessionRuntime({definitions,snapshotsDir:path.join(dir,'snapshots'),journalsDir:path.join(dir,'journals'),rulesets:[rules],createIds:()=>({session:()=>'',seed:()=>1}),clock:{now:()=>new Date('2026-01-01')}});
+ const {coordinator,journal,snapshots}=gamingRuntime;
+ const put=snapshots.put.bind(snapshots);snapshots.put=vi.fn().mockRejectedValueOnce(Error('snapshot interrupted')).mockImplementation(put);
  const app=new GamingApplication({coordinator,definitions,manifestStore:{get:()=>manifest}});
  const {createPartyGamesParticipantConsumer}=await import('../../participants.mjs');
  const consumer=createPartyGamesParticipantConsumer({definitions,manifestStore:{get:()=>structuredClone(manifest)},gamingApplication:app,clueHistory:{list:async()=>[]}});
@@ -152,12 +155,13 @@ it('threads retained source through service, real consumer and Gaming journal on
  const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'}, input={ref,action:'open',intent:'new',requestId:'same',viewer:{role:'host'}};
  const inspect=await service.inspect({...input});input.expectedSetupHash=inspect.setup_hash;
  await expect(service.begin(input)).rejects.toThrow('snapshot interrupted');
- const sessionId=[...journal.records.keys()][0];
+ const journalFile=readdirSync(path.join(dir,'journals'))[0];const before=readFileSync(path.join(dir,'journals',journalFile),'utf8');
+ const sessionId=journalFile.slice(0,-6);
  store.inspect=async(_scope,build)=>build([{launch_id:'launch',consumer:{id:'party-games',version:1},runtime_ref:{provider:'gaming',id:sessionId}}]);
  snapshots.put.mockClear();
  await service.inspect(input);
  expect(snapshots.put).not.toHaveBeenCalled();
- expect(await snapshots.get(sessionId)).toBeNull();
+ expect(await snapshots.get(sessionId)).toBeNull();expect(readdirSync(path.join(dir,'snapshots'))).toEqual([]);expect(readFileSync(path.join(dir,'journals',journalFile),'utf8')).toBe(before);
  live=false;
  const result=await service.begin(input); const saved=(await journal.read(result.runtime_ref.id))[0];
  expect(saved.header.launch.participant_launch).toMatchObject({launch_id:'launch',snapshot_hash:result.snapshot_hash,source_ref:ref,source_label:'Week of 2026-11-16',return_to:source.returnTo});
@@ -167,6 +171,7 @@ it('threads retained source through service, real consumer and Gaming journal on
  source.sourceLabel='Week of 2026-11-23';
  const [savedChoice]=await consumer.findResumable({receipts:[{launch_id:result.launch_id,runtime_ref:result.runtime_ref}],viewer:{role:'host'}});
  expect(savedChoice.label).toBe('Resume game — Week of 2026-11-16 — Guest, Visitor');
+ } finally {rmSync(dir,{recursive:true,force:true});}
 });
 it('labels a saved game with its saved roster',async()=>{
  const {consumer}=await fixture(); consumer.executionPort.inspect=async()=>({header:{status:'active',launch:{participant_launch:{source_label:'Week of 2026-11-16'}},participants:[{name:'Saved guest'},{name:'Saved player'}]}});

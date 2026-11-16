@@ -186,6 +186,10 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
   }
 
   capabilities(item, resolution) { return derivedCapabilities(item, this.#source(resolution)); }
+  async participantActionDescriptor(item, resolution, action) {
+    const source=this.#source(resolution);
+    return typeof source?.describeParticipantAction === 'function' ? source.describeParticipantAction(item,action) : null;
+  }
   supports(resolution, capability) { return typeof this.#source(resolution)?.[capability] === 'function'; }
 
   describeItem(item, resolution, session = null, quality = {}) {
