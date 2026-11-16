@@ -135,7 +135,7 @@ class YamlAgendaLaunchLedger {
       const target = record.provenance?.return_to;
       const [, seriesId, planId, itemUid] = scope(scopeKey);
       if (target && (target.kind !== "content" || target.content_id !== `agenda:${seriesId}/plans/${planId}` || target.item_uid !== itemUid || Object.keys(target).some((k) => !["kind", "content_id", "item_uid"].includes(k)))) fail("invalid_document", "Invalid return target");
-      return { snapshot: clone(record.snapshot), receipt: receipt(record), ...target ? { return_to: clone(target) } : {} };
+      return { snapshot: clone(record.snapshot), receipt: receipt(record), ...target ? { return_to: clone(target) } : {}, ...record.provenance?.execution_metadata ? {execution_metadata: clone(record.provenance.execution_metadata)} : {} };
     });
   }
 }

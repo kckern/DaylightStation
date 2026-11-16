@@ -65,7 +65,7 @@ export function ParticipantLaunchHost({ refValue, action, client = participantLa
       <p>Review activity</p>
       {options.participant_summary?.map(person => <p key={person.key}>{person.display?.name}</p>)}
       {options.consumer_summary?.data && <pre>{JSON.stringify(options.consumer_summary.data, null, 2)}</pre>}
-      {options.choices?.map(choice => <button key={choice.launch_id} onClick={() => execute('resume', {ref:refValue,action,launchId:choice.launch_id})}>Resume {choice.label}</button>)}
+      {options.choices?.map(choice => <button key={choice.launch_id} onClick={() => execute('resume', {ref:refValue,action,launchId:choice.launch_id})}>{/^(Resume|View)\b/.test(choice.label || '') ? choice.label : `Resume ${choice.label}`}</button>)}
       <button onClick={() => begin(options.choices?.length ? 'new' : 'open')}>{options.choices?.length ? 'New' : 'Start'}</button>
     </>}
     <button onClick={onClose}>Back</button>

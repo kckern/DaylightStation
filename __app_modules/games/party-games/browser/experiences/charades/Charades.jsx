@@ -16,6 +16,7 @@ import Timer from "../../../../../../__capabilities/gaming/browser/platform/ui/T
 import ImageDecoderDisplay from "../../../../../../__capabilities/gaming/browser/platform/ui/ImageDecoderDisplay.jsx";
 import FamilySelector from "../../../../../../__capabilities/household-identity/browser/public.mjs";
 import getLogger from '@/lib/logging/Logger.js';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import ShowHeader from "../../../../../../__capabilities/gaming/browser/platform/ui/ShowHeader.jsx";
 import GameButton from "../../../../../../__capabilities/gaming/browser/platform/ui/GameButton.jsx";
 import InstructionCard from "../../../../../../__capabilities/gaming/browser/platform/ui/InstructionCard.jsx";
@@ -67,7 +68,7 @@ export default function Charades({ seats = [], sessionId, onComplete, gamingServ
   // The wheel selects seats, but portraits belong to the people inside them.
   const wheelMembers = useMemo(() => seats.map(seat => ({
     ...seat,
-    avatar: seat.members?.[0]?.avatar,
+    avatar: seat.members?.[0]?.avatar?.kind === 'user-avatar' ? DaylightMediaPath(`/static/img/users/${encodeURIComponent(seat.members[0].avatar.userId)}`) : (typeof seat.members?.[0]?.avatar === 'string' ? seat.members[0].avatar : null),
   })), [seats]);
   const audio = gamingServices?.audio;
   const [state, setState] = useState(null);

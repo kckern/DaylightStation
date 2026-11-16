@@ -79,7 +79,7 @@ export class AgendaParticipantContextProvider {
     };
     return {sourceRevision:plan.revision, scope:{provider:'agenda', id:plan.plan_id, revision:plan.revision},
       roster, selector, action:binding.action, target, consumer:binding.consumer,
-      settings:binding.settings, returnTo, provenance};
+      settings:binding.settings, returnTo, sourceLabel:`Week of ${plan.week_of}`, provenance};
   }
 }
 

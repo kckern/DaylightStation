@@ -104,7 +104,7 @@ it('retains the declared returnTo of a contract-only non-Agenda provider for beg
  expect((await service.resume({ref,action:'open',launchId:'one',viewer:{}})).return_to).toEqual(expectedDestination);
  source.returnTo=expectedDestination;source.provenance={evidence:'owned',return_to:{kind:'content',content_id:'collection:other'}};
  const second=await service.begin({ref,action:'open',requestId:'two',intent:'new',viewer:{}});
- expect(saved.provenance).toEqual({evidence:'owned',return_to:expectedDestination});expect(second.return_to).toEqual(expectedDestination);
+ expect(saved.provenance).toEqual({evidence:'owned',return_to:expectedDestination,execution_metadata:{schema:'participant-execution-metadata/v1',source_ref:ref,return_to:expectedDestination}});expect(second.return_to).toEqual(expectedDestination);
 });
 
 it('rejects an unsafe provider returnTo before retention or admission',async()=>{

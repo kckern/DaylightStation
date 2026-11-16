@@ -56,6 +56,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/games/party-games/browser/widget.mjs': null,
   '__app_modules/games/party-games/browser/admin-games.mjs': null,
   '__app_modules/games/party-games/browser/participant-settings.mjs': null,
+  '__app_modules/games/party-games/browser/participants.mjs': null,
   '__app_modules/household/agenda/browser/admin.mjs': null,
   '__app_modules/household/agenda/browser/screen.mjs': null,
   '__app_modules/household/agenda/browser/launch-services.mjs': null,

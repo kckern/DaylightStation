@@ -66,6 +66,7 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
   router.post('/sessions', handle(async (req, res) => {
     const body = req.body || {};
     const viewer = requireViewer(req);
+    if (['sessionId','session_id','creationKey','creation_key','pinnedArtifacts','pinned_artifacts','participantEvidence','participant_evidence','executionMetadata','execution_metadata'].some(key => Object.hasOwn(body,key)) || Object.hasOwn(body.setup || {}, '_reserved_creation')) return res.status(400).json({error:'reserved_creation_fields'});
     if (typeof body.definition_id !== 'string') return res.status(400).json({ error: 'definition_id_required' });
     const participants = body.participants || [];
     if (viewer.role !== 'host' && (participants.length === 0

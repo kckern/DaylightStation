@@ -124,7 +124,11 @@ class ParticipantLaunchService {
       }
       const provenance = clone(providerProvenance);
       delete provenance.return_to;
+      delete provenance.execution_metadata;
       if (returnTo) provenance.return_to = returnTo;
+      const sourceLabel = value.source.sourceLabel;
+      if (sourceLabel !== undefined && (typeof sourceLabel !== 'string' || !sourceLabel.trim() || sourceLabel.length > 120 || /[\u0000-\u001f\u007f]/.test(sourceLabel))) fail('invalid_provenance','Invalid source label');
+      if (input.ref) provenance.execution_metadata = {schema:'participant-execution-metadata/v1',source_ref:clone(input.ref),...(returnTo ? {return_to:clone(returnTo)} : {}),...(sourceLabel !== undefined ? {source_label:sourceLabel} : {})};
       // Validate that provider evidence is serializable before retention.
       hashValue(provenance);
       const frozen = hashValue(value.prepared);
@@ -137,8 +141,17 @@ class ParticipantLaunchService {
     verifySnapshot(snapshot, input.action);
     const consumer = this.registry.get(snapshot.consumer);
     if (!consumer) fail("consumer_version_unavailable", "Retained consumer unavailable");
-    // Consumer execution is outside the source lock and uses only the frozen snapshot.
-    const result = reservation.result ?? await consumer.begin({ snapshot: clone(snapshot), executionKey: reservation.executionKey, viewer: input.viewer });
+    // Retrieve the original admitted metadata, including on pending reuse or retry.
+    const admitted = await store.readRetained({ scopeKey, launchId: snapshot.launch_id });
+    if (!admitted) fail("launch_not_found", "Launch unavailable");
+    const executionMetadata = admitted.execution_metadata;
+    if (executionMetadata) {
+      if (executionMetadata.schema !== 'participant-execution-metadata/v1' || Object.keys(executionMetadata).some(k => !['schema','source_ref','return_to','source_label'].includes(k))) fail('invalid_provenance','Invalid execution metadata');
+      validateParticipantLaunchRef(executionMetadata.source_ref);
+      if (executionMetadata.source_label !== undefined && (typeof executionMetadata.source_label !== 'string' || !executionMetadata.source_label.trim() || executionMetadata.source_label.length > 120 || /[\u0000-\u001f\u007f]/.test(executionMetadata.source_label))) fail('invalid_provenance','Invalid source label');
+      if (!same(safeReturn(executionMetadata.return_to) ?? null, safeReturn(admitted.return_to) ?? null) || executionMetadata.source_ref.provider !== snapshot.participant_context?.scope?.provider) fail('invalid_provenance','Execution metadata does not match retained launch');
+    }
+    const result = reservation.result ?? await consumer.begin({ snapshot: clone(snapshot), executionKey: reservation.executionKey, ...(executionMetadata ? {executionMetadata:clone(executionMetadata)} : {}), viewer: input.viewer });
     validateReady(result, snapshot);
     const saved = reservation.result ?? await store.complete({ scopeKey, launchId: snapshot.launch_id, executionKey: reservation.executionKey, snapshotHash: snapshot.snapshot_hash, result });
     const retained = await store.readRetained({ scopeKey, launchId: snapshot.launch_id });

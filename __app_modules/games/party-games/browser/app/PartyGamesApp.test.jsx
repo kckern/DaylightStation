@@ -16,8 +16,9 @@ vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:socket.connected}),useWebSocketSubscription:(_,fn)=>{socket.handler=fn;}}));
 vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
-vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction}) {
+vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction,seats}) {
  React.useEffect(()=>setId==='remote-navigation'?registerRemoteAction(()=>false):undefined,[setId,registerRemoteAction]);
+ if (sessionId === 'game:one') return <><span data-testid="attached-seats">{seats.map(seat=>seat.id).join(',')}</span><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button></>;
  return setId==='remote-navigation'?<><button>Decrease wager</button><button>Increase wager</button><button>Lock wager</button></>:<button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>;
 }}));
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
@@ -396,15 +397,63 @@ it('retries fresh creation after a reset without resurrecting the old session', 
  expect(createSession.mock.calls[1][0].seats).toEqual(seats);
  expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:null,sessionId:null});
 });
-it('replaces an explicit outdated configured roster with a fresh current-roster session', async()=>{
+it('resumes an explicit session despite an outdated configured roster', async()=>{
  window.history.replaceState({},'','/screens/living-room/party-games/charades:fhe?return_to=%2Fscreens%2Fliving-room%2Ffhe&session=old-game');
  const currentSet={...sets[0],id:'charades:fhe',definitionId:'charades:fhe',setId:'fhe',launch:{autostart:true,participants:['a','b','guest:visitor']}};
  const currentConfig={...config,named_guests:[{id:'guest:visitor',name:'Visitor',avatar:'/portrait'}]};
  fetchBoot.mockResolvedValueOnce({config:currentConfig,sets:[currentSet],attachedSession:{header:{session_id:'old-game',participants:[{id:'a'},{id:'b'}]},state:{charades_history_policy:'recorded'}}}).mockResolvedValue({config:currentConfig,sets:[currentSet]});
  render(<PartyGamesApp appPath="charades:fhe"/>);
- await screen.findByRole('button',{name:'Complete session-one'});
- expect(createSession).toHaveBeenCalledTimes(1);
- expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['a','b','guest:visitor']);
- expect(new URLSearchParams(window.location.search).get('session')).toBe('session-one');
+ await screen.findByRole('button',{name:'Complete old-game'});
+ expect(createSession).not.toHaveBeenCalled();
+ expect(new URLSearchParams(window.location.search).get('session')).toBe('old-game');
  expect(new URLSearchParams(window.location.search).get('return_to')).toBe('/screens/living-room/fhe');
+});
+
+it('attaches the frozen participant launch in StrictMode without creating or resolving household players', async()=>{
+ const participantLaunch={schema:'participant-launch-result/v1',kind:'ready',launch_id:'launch-one',snapshot_hash:'hash-one',consumer:{id:'party-games',version:1},participant_context:{schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'agenda',id:'plan',revision:1},participants:[{key:'one',participant_id:'guest-1',identity:{kind:'user',id:'guest-1'},display:{name:'Guest',avatar:null}}]},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}},runtime_ref:{provider:'gaming',id:'game:one'}};
+ window.history.replaceState({},'','/screens/living-room/fhe?participants=a');
+ window.localStorage.setItem('party-games:charades:family:active-session','stale');
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},experience:{id:'charades'},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch-one',snapshot_hash:'hash-one',consumer:{id:'party-games',version:1}}},seats:[{id:'guest-1',name:'Guest'}]},state:{competition:false}}});
+ render(<React.StrictMode><PartyGamesApp participantLaunch={participantLaunch}/></React.StrictMode>);
+ await screen.findByRole('button',{name:'Complete game:one'});
+ expect(screen.getByTestId('attached-seats')).toHaveTextContent('guest-1');
+ expect(createSession).not.toHaveBeenCalled();
+ expect(fetchBoot).toHaveBeenCalledWith({diagnosticSessionId:null,sessionId:'game:one'});
+});
+
+it('fails closed on mixed participant and explicit session links',async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=other');
+ const participantLaunch={schema:'participant-launch-result/v1',kind:'ready',launch_id:'launch',snapshot_hash:'hash',consumer:{id:'party-games',version:1},participant_context:{participants:[]},runtime_ref:{provider:'gaming',id:'game:one'},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}}};
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},participants:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch',snapshot_hash:'hash',consumer:{id:'party-games',version:1}}}},state:{}}});
+ render(<PartyGamesApp participantLaunch={participantLaunch}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('identity does not match');
+ expect(createSession).not.toHaveBeenCalled();
+});
+it('resumes a source session from its durable URL and keeps the dated return',async()=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/charades:family?session=game%3Aone&participants=a');
+ fetchBoot.mockResolvedValue({config,sets:[{...sets[0],launch:{autostart:true,participants:['a']}}],attachedSession:{header:{session_id:'game:one',experience:{id:'charades'},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},launch_id:'launch',snapshot_hash:'hash',consumer:{id:'party-games',version:1},return_to:{kind:'content',content_id:'agenda:s/plans/old',item_uid:'item'}}}},state:{competition:false}}});
+ render(<PartyGamesApp definitionId="charades:family"/>);
+ await screen.findByRole('button',{name:'Complete game:one'});
+ const query=new URLSearchParams(window.location.search);
+ expect(query.get('return_to')).toBe('/screens/living-room?list=agenda%3As%2Fplans%2Fold');
+ expect(query.has('participants')).toBe(false); expect(createSession).not.toHaveBeenCalled();
+});
+it('renders the registered production adapter and attaches its returned session',async()=>{
+ const {participantBrowserRegistry}=await import('../../../../../frontend/src/composition/participants/index.js');
+ const result={schema:'participant-launch-result/v1',kind:'ready',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},participant_context:{schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'agenda',id:'plan',revision:1},participants:[{key:'one',participant_id:'guest-1',identity:{kind:'user',id:'guest-1'},display:{name:'Guest',avatar:null}}]},runtime_ref:{provider:'gaming',id:'game:one'},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}}};
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',experience:{id:'charades'},artifacts:{rules_definition:{id:'charades:family'}},participants:[{id:'guest-1',name:'Guest',avatar:null,identity:{kind:'user',id:'guest-1'}}],seats:[{id:'guest-1'}],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},state:{competition:false}}});
+ const Adapter=participantBrowserRegistry.resolve(result);render(<Adapter participantLaunch={result} clear={()=>{}}/>);
+ await screen.findByRole('button',{name:'Complete game:one'});expect(screen.getByTestId('attached-seats')).toHaveTextContent('guest-1');expect(createSession).not.toHaveBeenCalled();
+});
+it('rejects a malformed registered result before booting any session',async()=>{
+ const {participantBrowserRegistry}=await import('../../../../../frontend/src/composition/participants/index.js');
+ const result={schema:'participant-launch-result/v1',kind:'ready',consumer:{id:'party-games',version:1},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one'}}};
+ const Adapter=participantBrowserRegistry.resolve(result);render(<Adapter participantLaunch={result} clear={()=>{}}/>);
+ expect(screen.getByRole('alert')).toHaveTextContent('launch unavailable');expect(fetchBoot).not.toHaveBeenCalled();expect(createSession).not.toHaveBeenCalled();
+});
+it('rejects a participant launch mixed with a different explicit definition',async()=>{
+ const result={schema:'participant-launch-result/v1',kind:'ready',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1},participant_context:{schema:'participant-context/v1',context_id:'pc_test',scope:{provider:'agenda',id:'plan',revision:1},participants:[]},runtime_ref:{provider:'gaming',id:'game:one'},output:{schema:'party-games-launch-result/v1',data:{session_id:'game:one',definition_id:'charades:family'}}};
+ fetchBoot.mockResolvedValue({config,sets,attachedSession:{header:{session_id:'game:one',artifacts:{rules_definition:{id:'charades:family'}},participants:[],launch:{participant_launch:{schema:'participant-session-attachment/v1',launch_id:'l',snapshot_hash:'h',consumer:{id:'party-games',version:1}}}},state:{}}});
+ render(<PartyGamesApp definitionId="charades:other" participantLaunch={result}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('different game definition');expect(createSession).not.toHaveBeenCalled();
 });

@@ -78,17 +78,17 @@ export class GamingApplication {
     this.#launchEffect('after-create', this.effects?.afterCreate({ session: result, definition: result.definition }), { sessionId: result.header.session_id });
     return result;
   }
-  async createReserved({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey, viewer }) {
+  async createReserved({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey, participantEvidence, viewer }) {
     authorizeGamingSessionCreation({ viewer, participants, seats });
     if (viewer?.role !== 'host') throw new GamingKernelError('authorization_denied', 'Host authority is required');
-    ({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey } = structuredClone({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey }));
+    ({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey, participantEvidence } = structuredClone({ sessionId, seed, pinnedArtifacts, participants, seats, setup, creationKey, participantEvidence }));
     const { hash, artifacts, manifest, surface } = pinnedArtifacts || {};
     const definition = await this.definitions.getPinned(hash);
     if (!definition || !manifest || !surface || definition.experience?.id !== manifest.id || definition.experience?.version !== manifest.version || !surface.authority_modes?.includes('remote') || !manifest.surfaces?.some(entry => JSON.stringify(entry) === JSON.stringify(surface))) throw new GamingKernelError('prepared_artifact_unavailable', 'Pinned creation artifacts are unavailable');
     const result = await this.coordinator.createReserved({ reservation: {
       sessionId, seed, pinnedDefinition: { hash, definition, artifacts, manifest, surface }, ruleset: definition.rule_module,
       experience: { id: manifest.id, version: manifest.version, manifest_hash: manifest.hash },
-      launch: { surface_id: surface.id, authority_mode: 'remote' }, participants, seats, setup, creationKey,
+      launch: { surface_id: surface.id, authority_mode: 'remote', ...(participantEvidence ? {participant_launch:{schema:'participant-session-attachment/v1',launch_id:participantEvidence.snapshot.launch_id,snapshot_hash:participantEvidence.snapshot.snapshot_hash,consumer:participantEvidence.snapshot.consumer,...(participantEvidence.metadata?.source_ref ? {source_ref:participantEvidence.metadata.source_ref} : {}),...(participantEvidence.metadata?.return_to ? {return_to:participantEvidence.metadata.return_to} : {}),...(participantEvidence.metadata?.source_label ? {source_label:participantEvidence.metadata.source_label} : {})}} : {}) }, participants, seats, setup, creationKey, ...(participantEvidence ? {participantEvidence} : {}),
     }, viewer });
     if (result.created) this.#launchEffect('after-create', this.effects?.afterCreate({ session: result.view, definition: result.view.definition }), { sessionId });
     return result;

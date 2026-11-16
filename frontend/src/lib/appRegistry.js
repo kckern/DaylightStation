@@ -24,7 +24,7 @@ export const APP_REGISTRY = {
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../__app_modules/personal/weekly-review/browser/widget.mjs") },
-  'party-games':      { label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
+  'party-games':      { participantLaunch:{consumer:{id:'party-games',version:1},outputSchema:'party-games-launch-result/v1'}, label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../__app_modules/learning/school/browser/kiosk.mjs") },
   'controllers':     { label: 'Controllers',      icon: null,               param: null, component: () => import("../../../__app_modules/games/emulator/browser/bluetooth.mjs").then((m) => ({ default: m.ControllersApp })) },
 };

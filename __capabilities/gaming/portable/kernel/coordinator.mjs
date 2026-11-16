@@ -30,7 +30,7 @@ export class GameSessionCoordinator {
 
   async createReserved({ reservation, viewer = {} }) {
     const frozen = clone(reservation);
-    const { sessionId, seed, pinnedDefinition, ruleset, experience = null, launch = null, participants = [], seats = [], setup = {}, creationKey } = frozen;
+    const { sessionId, seed, pinnedDefinition, ruleset, experience = null, launch = null, participants = [], seats = [], setup = {}, creationKey, participantEvidence = null } = frozen;
     if (typeof creationKey !== 'string' || !creationKey || !pinnedDefinition?.definition || !pinnedDefinition?.hash || Object.hasOwn(setup, '_reserved_creation')) throw new GamingKernelError('invalid_reservation', 'Invalid reserved creation');
     const digest = stableSha256({ schema: 'gaming-reserved-creation/v1', ...frozen });
     return this.#operation('createReserved', sessionId, async metric => {
@@ -46,7 +46,7 @@ export class GameSessionCoordinator {
       const session = this.runtime.create({ header, definition: pinnedDefinition.definition, setup });
       this.authorization.authorizeView({ session, viewer });
       const journalSetup = { ...setup, _reserved_creation: { schema: 'gaming-reserved-creation/v1', digest } };
-      const created = { header: clone(header), definition_id: pinnedDefinition.artifacts?.rules_definition?.id, setup: journalSetup };
+      const created = { header: clone(header), definition_id: pinnedDefinition.artifacts?.rules_definition?.id, setup: journalSetup, ...(participantEvidence ? {participant_evidence:clone(participantEvidence)} : {}) };
       const committed = await this.journal.create(sessionId, { ...created, checksum: stableHash(created) });
       const checkpoint = await this.snapshots.put(session, { expectedRevision: null });
       await this.#remember(sessionId, session, pinnedDefinition.definition, { journalVersion: committed?.version, snapshotVersion: checkpoint?.version });
@@ -170,7 +170,7 @@ export class GameSessionCoordinator {
       if (snapshot) throw new GamingKernelError('journal_corrupt', 'Gaming snapshot has no creation journal');
       throw new GamingKernelError('session_not_found', `Session ${sessionId} was not found`);
     }
-    const creation = { header: created.header, definition_id: created.definition_id, setup: created.setup || {} };
+    const creation = { header: created.header, definition_id: created.definition_id, setup: created.setup || {}, ...(created.participant_evidence ? {participant_evidence:created.participant_evidence} : {}) };
     if (!created.checksum || created.checksum !== stableHash(creation)) throw new GamingKernelError('journal_corrupt', 'Gaming session creation record checksum failed');
     if (created.header.session_id !== sessionId || (snapshot && snapshot.header.session_id !== sessionId)) throw new GamingKernelError('journal_corrupt', 'Gaming session identity does not match storage');
     const definition = await this.#timed(metric, 'loadMs', () => this.definitions.getPinned(created.header.ruleset.definition_hash));

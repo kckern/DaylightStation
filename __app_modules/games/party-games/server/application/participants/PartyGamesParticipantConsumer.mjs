@@ -60,13 +60,13 @@ export class PartyGamesParticipantConsumer {
   let pinned; try { pinned=await this.definitions.pin(loaded); } catch (error) { throw Object.assign(new Error('Inspected artifacts could not be retained', {cause:error}),{code:'prepared_artifact_unavailable'}); }
   if (pinned.hash!==expected.hash || JSON.stringify(pinned.artifacts)!==JSON.stringify(expected.artifacts)) fail('prepared_artifact_unavailable','Retained definition differs from inspected artifacts');
  }
- async begin({snapshot,executionKey,viewer}) {
+ async begin({snapshot,executionKey,executionMetadata,viewer}) {
   host(viewer); if (typeof executionKey!=='string' || !executionKey) fail('invalid_execution_key','Execution key required');
   const digest=async prefix=>new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(`${prefix}\0${executionKey}`)));
   const idHash=await digest('participant-game-id/v1'); const seedHash=await digest('participant-game-seed/v1');
   const sessionId='game:pl:'+Array.from(idHash, byte=>byte.toString(16).padStart(2,'0')).join(''); const seed=new DataView(seedHash.buffer,seedHash.byteOffset,seedHash.byteLength).getUint32(0);
   const {pinnedArtifacts,participants,seats,setup}=clone(snapshot.prepared.setup.data);
-  await this.executionPort.createReserved({sessionId,seed,pinnedArtifacts,participants,seats,setup,creationKey:executionKey,viewer});
+  await this.executionPort.createReserved({sessionId,seed,pinnedArtifacts,participants,seats,setup,creationKey:executionKey,participantEvidence:{schema:'participant-execution-evidence/v1',snapshot:clone(snapshot),metadata:executionMetadata ? clone(executionMetadata) : null},viewer});
   return ready(snapshot,sessionId);
  }
  async findResumable({receipts,viewer}) {
@@ -77,7 +77,10 @@ export class PartyGamesParticipantConsumer {
    try {
     const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
     if (runtime && ['active','suspended','complete'].includes(runtime.header?.status)) {
-     const label=runtime.header.status==='complete' ? 'View result' : 'Resume game';
+     const verb=runtime.header.status==='complete' ? 'View result' : 'Resume game';
+     const names=(runtime.header.participants || []).map(p=>p.name).filter(name=>typeof name==='string' && name.trim());
+     const details=[runtime.header.launch?.participant_launch?.source_label, names.join(', ')].filter(Boolean);
+     const label=details.length ? `${verb} — ${details.join(' — ')}` : verb;
      result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label});
     }
    } catch (error) {

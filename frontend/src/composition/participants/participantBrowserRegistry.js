@@ -1,3 +1,5 @@
+import {PartyGamesParticipantAdapter, PartyGamesParticipantPassthrough} from '../../../../__app_modules/games/party-games/browser/participants.mjs';
+
 /** Registered consumers alone may receive the explicit ready result. */
 export function createParticipantBrowserRegistry(entries = []) {
   const registrations = new Map();
@@ -23,4 +25,4 @@ export function createParticipantBrowserRegistry(entries = []) {
     return registrations.get(JSON.stringify([consumer?.id, consumer?.version, output?.schema])) || null;
   } };
 }
-export const participantBrowserRegistry = createParticipantBrowserRegistry();
+export const participantBrowserRegistry = createParticipantBrowserRegistry([{consumer:{id:'party-games',version:1},outputSchema:'party-games-launch-result/v1',render:PartyGamesParticipantAdapter,passthrough:PartyGamesParticipantPassthrough}]);

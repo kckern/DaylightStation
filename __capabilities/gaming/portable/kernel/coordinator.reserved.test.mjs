@@ -42,3 +42,11 @@ it('retries the same reserved creation after a failure before the journal write'
  const recovered=await coordinator.createReserved({reservation,viewer});
  expect(recovered.view.state.value).toBe(3);expect(await journal.read(reservation.sessionId)).toHaveLength(1);
 });
+it('journals frozen participant creation evidence and rejects changed evidence on retry',async()=>{
+ const {coordinator,journal,reservation}=fixture();
+ const evidence={schema:'participant-execution-evidence/v1',snapshot:{participant_context:{participants:[{key:'frozen'}]}},metadata:{schema:'participant-execution-metadata/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},return_to:{kind:'content',content_id:'agenda:family/plans/old',item_uid:'item'}}};
+ const frozen={...reservation,participantEvidence:evidence};
+ await coordinator.createReserved({reservation:frozen,viewer});
+ expect((await journal.read(reservation.sessionId))[0].participant_evidence).toEqual(evidence);
+ await expect(coordinator.createReserved({reservation:{...frozen,participantEvidence:{...evidence,metadata:{...evidence.metadata,return_to:{kind:'content',content_id:'agenda:family/plans/new'}}}},viewer})).rejects.toMatchObject({code:'creation_conflict'});
+});

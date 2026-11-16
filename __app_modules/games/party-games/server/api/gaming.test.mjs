@@ -210,7 +210,7 @@ it('does not accept reserved identity through public creation', async () => {
  const app={createSession:vi.fn(async()=>({header:{session_id:'server-allocated'}})),createReserved:vi.fn()};
  const router=createGamingRouter({gamingApplication:app});
  const response=await invoke(router,'post','/sessions',{roles:['gaming-host'],body:{definition_id:'charades:test',sessionId:'chosen',session_id:'chosen',creationKey:'secret',pinnedArtifacts:{}}});
- expect(response.body.header.session_id).toBe('server-allocated');
- expect(app.createSession).toHaveBeenCalledWith(expect.not.objectContaining({sessionId:expect.anything(),session_id:expect.anything(),creationKey:expect.anything(),pinnedArtifacts:expect.anything()}));
+ expect(response.statusCode).toBe(400);
+ expect(app.createSession).not.toHaveBeenCalled();
  expect(app.createReserved).not.toHaveBeenCalled();
 });

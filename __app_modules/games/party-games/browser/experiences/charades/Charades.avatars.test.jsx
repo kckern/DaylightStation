@@ -24,3 +24,8 @@ it('renders member avatars in the real wheel while retaining seat IDs for perfor
   ]);
   expect([...container.querySelectorAll('.segment-initials')].map(node => node.textContent)).toEqual(['G']);
 });
+it('uses the saved identity portrait key while selecting a distinct guest runtime ID', async()=>{
+ const {container}=render(<Charades sessionId="avatars" seats={[{id:'guest:visitor',name:'Visitor',members:[{id:'guest:visitor',avatar:{kind:'user-avatar',userId:'portrait-key'}}]}]}/>);
+ await waitFor(()=>expect(container.querySelector('.family-selector')).toHaveAttribute('data-selected-id','guest:visitor'));
+ expect(container.querySelector('image.segment-avatar').getAttribute('href')).toContain('/static/img/users/portrait-key');
+});

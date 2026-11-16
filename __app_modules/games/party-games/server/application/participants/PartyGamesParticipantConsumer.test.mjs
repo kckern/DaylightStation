@@ -122,3 +122,46 @@ it('rejects publication of a structurally valid draft with incomplete consumer s
  await expect(planning.publishPlan({householdId:'home',planId:'plan',expectedEtag:'"one"',viewer:{role:'host'}})).rejects.toMatchObject({code:'invalid_agenda',errors:[expect.objectContaining({code:'invalid_session_setup'})]});
  expect(stored.state).toBe('draft');
 });
+it('passes frozen snapshot and retained source metadata to reserved creation',async()=>{
+ const {consumer,context,executionPort}=await fixture();
+ const prepared=await consumer.prepareSetup({target,settings,participantContext:context,viewer:{role:'host'}});
+ const snapshot={launch_id:'launch',consumer:{id:'party-games',version:1},snapshot_hash:'hash',participant_context:context,target,prepared};
+ const executionMetadata={schema:'participant-execution-metadata/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},return_to:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'item'}};
+ await consumer.begin({snapshot,executionKey:'key',executionMetadata,viewer:{role:'host'}});
+ expect(executionPort.createReserved.mock.calls[0][0].participantEvidence).toEqual({schema:'participant-execution-evidence/v1',snapshot,metadata:executionMetadata});
+});
+it('threads retained source through service, real consumer and Gaming journal on creation recovery',async()=>{
+ const {ParticipantLaunchService,ParticipantConsumerRegistry,hashValue}=await import('../../../../../../__capabilities/content-catalog/server/participant-launch.mjs');
+ const {GameSessionCoordinator,GameRuntime,defineRuleModule,SessionActorAuthorization}=await import('../../../../../../__capabilities/gaming/portable/kernel/index.mjs');
+ const {MemorySessionJournal,MemorySnapshotRepository}=await import('../../../../../../__capabilities/gaming/portable/testing/memoryPorts.mjs');
+ const {GamingApplication}=await import('../runtime/GamingApplication.mjs');
+ const journal=new MemorySessionJournal(), snapshots=new MemorySnapshotRepository();
+ const put=snapshots.put.bind(snapshots); snapshots.put=vi.fn().mockRejectedValueOnce(Error('snapshot interrupted')).mockImplementation(put);
+ const rules=defineRuleModule({id:'activity-party',version:1,validateDefinition:()=>({valid:true,errors:[]}),createInitialState:(_d,{setup})=>({status:'active',saved:setup.charades_presentation}),handleCommand:()=>({error:{code:'invalid',message:'invalid'}}),project:state=>({state})});
+ const definitions={getCurrent:vi.fn(async()=>structuredClone(loaded)),pin:vi.fn(async value=>value),getPinned:vi.fn(async()=>structuredClone(definition))};
+ const coordinator=new GameSessionCoordinator({runtime:new GameRuntime({rulesets:[rules]}),snapshots,journal,definitions,ids:{session:()=>'',seed:()=>1},clock:{now:()=>new Date('2026-01-01')},authorization:new SessionActorAuthorization()});
+ const app=new GamingApplication({coordinator,definitions,manifestStore:{get:()=>manifest}});
+ const consumer=new PartyGamesParticipantConsumer({definitions,manifestStore:{get:()=>structuredClone(manifest)},executionPort:{createReserved:args=>app.createReserved(args),inspect:id=>coordinator.resume(id,{role:'host'})},clueHistory:{list:async()=>[]}});
+ const canonicalTarget={...target,kind:'app',appId:'party-games',participantConsumer:{id:'party-games',version:1}};
+ const source={scope:{provider:'agenda',id:'plan',revision:1},roster,selector:{schema:'participant-selector/v1',mode:'explicit',keys:['c','b']},action:'open',target:canonicalTarget,consumer:{id:'party-games',version:1},settings,sourceLabel:'Week of 2026-11-16',returnTo:{kind:'content',content_id:'agenda:s/plans/p',item_uid:'i'}};
+ let record, live=true;
+ const store={inspect:async(_scope,build)=>build([]),reserve:async(_request,build)=>{if(!record){const built=await build([]);const base={...built.snapshot,launch_id:'launch'};record={snapshot:{...base,snapshot_hash:hashValue(base)},provenance:built.provenance};}return {kind:'reserved',snapshot:record.snapshot,executionKey:'key'};},readRetained:async()=>({snapshot:record.snapshot,receipt:{launch_id:'launch',snapshot_hash:record.snapshot.snapshot_hash,result:record.result},return_to:record.provenance.return_to,execution_metadata:record.provenance.execution_metadata}),complete:async({result})=>(record.result=result)};
+ const registry=new ParticipantConsumerRegistry(); registry.register({consumer});
+ const service=new ParticipantLaunchService({registry,providers:[{id:'agenda',authorizeAccess:async()=>({store,scope_key:'scope'}),resolve:async()=>{if(!live)throw Error('source changed');return source;}}],resolveDirectTarget:async()=>canonicalTarget,logger:{info(){}}});
+ const ref={schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'}, input={ref,action:'open',intent:'new',requestId:'same',viewer:{role:'host'}};
+ const inspect=await service.inspect({...input});input.expectedSetupHash=inspect.setup_hash;
+ await expect(service.begin(input)).rejects.toThrow('snapshot interrupted');live=false;
+ const result=await service.begin(input); const saved=(await journal.read(result.runtime_ref.id))[0];
+ expect(saved.header.launch.participant_launch).toMatchObject({launch_id:'launch',snapshot_hash:result.snapshot_hash,source_ref:ref,source_label:'Week of 2026-11-16',return_to:source.returnTo});
+ expect(saved.participant_evidence.snapshot.participant_context.participants.map(p=>p.participant_id)).toEqual(['anon:plan:slot','guest:visitor']);
+ expect(saved.setup.charades_presentation.by_participant).toEqual({'anon:plan:slot':'image','guest:visitor':'reader'});
+ expect((await journal.read(result.runtime_ref.id))).toHaveLength(1);
+ source.sourceLabel='Week of 2026-11-23';
+ const [savedChoice]=await consumer.findResumable({receipts:[{launch_id:result.launch_id,runtime_ref:result.runtime_ref}],viewer:{role:'host'}});
+ expect(savedChoice.label).toBe('Resume game — Week of 2026-11-16 — Guest, Visitor');
+});
+it('labels a saved game with its saved roster',async()=>{
+ const {consumer}=await fixture(); consumer.executionPort.inspect=async()=>({header:{status:'active',launch:{participant_launch:{source_label:'Week of 2026-11-16'}},participants:[{name:'Saved guest'},{name:'Saved player'}]}});
+ const [choice]=await consumer.findResumable({receipts:[{launch_id:'l',runtime_ref:{provider:'gaming',id:'game:one'}}],viewer:{role:'host'}});
+ expect(choice.label).toBe('Resume game — Week of 2026-11-16 — Saved guest, Saved player');
+});

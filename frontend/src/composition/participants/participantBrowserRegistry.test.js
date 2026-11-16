@@ -13,3 +13,8 @@ it('resolves passthrough only through the inspected consumer registration',()=>{
  expect(registry.resolvePassthrough({id:'neutral',version:1})).toBe(pass);
  expect(registry.resolvePassthrough({id:'neutral',version:2})).toBeNull();
 });
+it('registers the Party Games adapter for the exact production result', async()=>{
+ const {participantBrowserRegistry}=await import('./participantBrowserRegistry.js');
+ expect(participantBrowserRegistry.resolve({consumer:{id:'party-games',version:1},output:{schema:'party-games-launch-result/v1'}})).toBeTypeOf('function');
+ expect(participantBrowserRegistry.resolvePassthrough({id:'party-games',version:1})).toBeTypeOf('function');
+});
