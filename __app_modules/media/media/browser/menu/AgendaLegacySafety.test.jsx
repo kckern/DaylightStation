@@ -40,3 +40,13 @@ it('blocks disabled rows from pointer and remote activation even if an action re
  expect(select).not.toHaveBeenCalled();
  expect(screen.getByText('Preview only')).toBeTruthy();
 });
+it('renders a safe local Admin link alongside unavailable-week guidance',async()=>{
+ const {TVMenu}=await import('./Menu.jsx');const select=vi.fn();
+ render(<TVMenu list={{title:'Week',notice:'No plan',adminUrl:'/admin/content/agendas/neutral',items:[{label:'Browse published weeks',list:{contentId:'agenda:neutral/weeks'}}]}} onSelect={select}/>);
+ const link=await screen.findByRole('link',{name:'Open Admin'});expect(link).toHaveAttribute('href','/admin/content/agendas/neutral');expect(screen.getByText('No plan')).toBeTruthy();
+ fireEvent.keyDown(window,{key:'ArrowUp'});expect(link).toHaveFocus();fireEvent.keyDown(window,{key:'ArrowDown'});expect(link).not.toHaveFocus();fireEvent.keyDown(window,{key:'ArrowUp'});expect(link).toHaveFocus();const click=vi.fn(event=>event.preventDefault());link.addEventListener('click',click);fireEvent.keyDown(window,{key:'Enter'});expect(click).toHaveBeenCalledTimes(1);expect(select).not.toHaveBeenCalled();
+});
+it.each(['https://example.com/admin','//example.com/admin','/\\\\example.com/admin','javascript:alert(1)'])('does not render unsafe Admin link %s',async adminUrl=>{
+ const {TVMenu}=await import('./Menu.jsx');render(<TVMenu list={{title:'Week',notice:'No plan',adminUrl,items:[]}} onSelect={()=>{}}/>);
+ await screen.findByText('No plan');expect(screen.queryByRole('link',{name:'Open Admin'})).toBeNull();
+});

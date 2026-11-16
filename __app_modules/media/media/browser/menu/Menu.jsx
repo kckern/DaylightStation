@@ -16,6 +16,12 @@ import { isFKBAvailable } from "../../../../../frontend/src/lib/fkb.js";
 import { isPlayerKeyboardActive } from "../../../../../__capabilities/playback/browser/player-support/playerKeyboardOwnership.js";
 import { useMenuPerfMonitor } from "./hooks/useMenuPerfMonitor.js";
 
+// Admin destinations are local routes, never arbitrary URLs supplied by content.
+function localAdminHref(value) {
+  if (typeof value !== 'string' || !/^\/admin(?:\/|$)/.test(value) || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
+  try {const url=new URL(value,window.location.origin);return url.origin===window.location.origin && (url.pathname==='/admin' || url.pathname.startsWith('/admin/')) ? value : null;} catch {return null;}
+}
+
 /**
  * Logs a menu selection to the server.
  */
@@ -167,6 +173,7 @@ export function TVMenu({
         image={menuMeta.image}
       />
       {menuMeta.notice && <p role="status">{menuMeta.notice}</p>}
+      {menuMeta.notice && localAdminHref(menuMeta.adminUrl) && <a className="menu-admin-link" href={localAdminHref(menuMeta.adminUrl)} data-menu-admin-link>Open Admin</a>}
       <MenuItems
         items={menuItems}
         columns={5}
@@ -880,7 +887,6 @@ function MenuItems({
 
     const handler = (e) => {
       const curItems = itemsRef.current;
-      if (!curItems.length) return;
 
       // A fullscreen video player is mounted over this menu and owns the
       // keyboard — stand down entirely so its bindings win (Space=play/pause,
@@ -891,6 +897,14 @@ function MenuItems({
       if (isPlayerKeyboardActive()) return;
 
       const key = e.key;
+      const menuAdminLink=containerRef?.current?.querySelector('[data-menu-admin-link]');
+      const adminLink=document.activeElement;
+      if (menuAdminLink && key==='ArrowUp' && adminLink!==menuAdminLink && activeIndexRef.current===0) {e.preventDefault();menuAdminLink.focus();return;}
+      if (menuAdminLink && adminLink===menuAdminLink && key==='ArrowDown') {e.preventDefault();menuAdminLink.blur();return;}
+      if (menuAdminLink && adminLink===menuAdminLink && ['Enter',' ','GamepadA','GamepadB','GamepadStart','MediaPlayPause'].includes(key)) {
+        e.preventDefault();if(!e.repeat) adminLink.click();return;
+      }
+      if (!curItems.length) return;
       const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"
         || key === "GamepadSelect" || e.keyCode === 4;  // Android KEYCODE_BACK = 4
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
