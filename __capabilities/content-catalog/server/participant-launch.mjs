@@ -22,3 +22,5 @@
 export { ParticipantConsumerRegistry } from './application/participants/ParticipantConsumerRegistry.mjs';
 export { ParticipantSetupResolver, hashValue } from './application/participants/ParticipantSetupResolver.mjs';
 export { ParticipantLaunchService } from './application/participants/ParticipantLaunchService.mjs';
+
+export { createParticipantLaunchesRouter } from './api/participantLaunches.mjs';

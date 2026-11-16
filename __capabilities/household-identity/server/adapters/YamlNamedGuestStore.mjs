@@ -15,7 +15,7 @@ export class YamlNamedGuestStore {
   }
   write(householdId, expectedRevision, guests) {
     const current = this.read(householdId);
-    if (!Number.isInteger(expectedRevision) || expectedRevision !== current.revision) throw new Error('Named guest revision conflict');
+    if (!Number.isInteger(expectedRevision) || expectedRevision !== current.revision) throw Object.assign(new Error('Named guest revision conflict'), {code:'revision_conflict'});
     const document = { schema: 'named-guests/v1', revision: current.revision + 1, guests };
     saveYamlToPathAtomic(this.pathForHousehold(householdId), document);
     return document;

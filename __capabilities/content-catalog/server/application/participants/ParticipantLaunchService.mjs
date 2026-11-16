@@ -81,6 +81,11 @@ class ParticipantLaunchService {
     }
     return choices;
   }
+  async describe({target, action, viewer}) {
+    if (!["open", "play", "queue", "display"].includes(action) || !target || typeof target !== "object" || Array.isArray(target)) fail("invalid_participant_launch", "Action and target required");
+    const resolved = await this.resolveDirectTarget({target, action, viewer});
+    return this.registry.describe({action, target:resolved});
+  }
   async inspect(input) {
     const access = await this.access(input);
     const build = async (receipts) => {

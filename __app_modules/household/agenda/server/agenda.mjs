@@ -4,3 +4,5 @@ export { AgendaParticipantContextProvider, createAgendaActivityValidator } from 
 export { AgendaLaunchRefCodec } from './adapters/AgendaLaunchRefCodec.mjs';
 export { YamlAgendaRepository } from './adapters/YamlAgendaRepository.mjs';
 export { YamlAgendaLaunchLedger } from './adapters/YamlAgendaLaunchLedger.mjs';
+
+export { createAdminAgendasRouter } from './api/adminAgendas.mjs';
