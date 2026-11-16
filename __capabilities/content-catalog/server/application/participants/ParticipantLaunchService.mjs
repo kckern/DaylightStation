@@ -18,7 +18,7 @@ function verifySnapshot(snapshot, action) {
 }
 function safeReturn(value) {
   if (value === void 0) return void 0;
-  if (!value || value.kind !== "content" || typeof value.content_id !== "string" || !/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_./:-]*$/.test(value.content_id) || value.item_uid !== void 0 && (typeof value.item_uid !== "string" || !value.item_uid) || Object.keys(value).some((k) => !["kind", "content_id", "item_uid"].includes(k))) fail("invalid_return_target", "Invalid return target");
+  if (!value || value.kind !== "content" || typeof value.content_id !== "string" || /^(?:https?|javascript|data|file|ftp|wss?):/i.test(value.content_id) || !/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9][A-Za-z0-9_./:-]*$/.test(value.content_id) || value.item_uid !== void 0 && (typeof value.item_uid !== "string" || !value.item_uid) || Object.keys(value).some((k) => !["kind", "content_id", "item_uid"].includes(k))) fail("invalid_return_target", "Invalid return target");
   return clone(value);
 }
 class ParticipantLaunchService {
@@ -100,6 +100,7 @@ class ParticipantLaunchService {
     }
     const { store, scope_key: scopeKey } = access.access;
     const requestDigest = hashValue({ ref: input.ref ?? null, target: input.target ?? null, action: input.action, intent: input.intent, expectedSetupHash: input.expectedSetupHash ?? null });
+    // Store lookup precedes the callback, so retries retain their original inputs.
     const reservation = await store.reserve({ scopeKey, requestId: input.requestId, requestDigest }, async (receipts) => {
       const value = await this.prepare(input, access);
       if (!value.participantContext) return { schema: "participant-launch-result/v1", kind: "passthrough", action: input.action, target: clone(value.source.target) };
@@ -120,6 +121,7 @@ class ParticipantLaunchService {
     verifySnapshot(snapshot, input.action);
     const consumer = this.registry.get(snapshot.consumer);
     if (!consumer) fail("consumer_version_unavailable", "Retained consumer unavailable");
+    // Consumer execution is outside the source lock and uses only the frozen snapshot.
     const result = reservation.result ?? await consumer.begin({ snapshot: clone(snapshot), executionKey: reservation.executionKey, viewer: input.viewer });
     validateReady(result, snapshot);
     const saved = reservation.result ?? await store.complete({ scopeKey, launchId: snapshot.launch_id, executionKey: reservation.executionKey, snapshotHash: snapshot.snapshot_hash, result });

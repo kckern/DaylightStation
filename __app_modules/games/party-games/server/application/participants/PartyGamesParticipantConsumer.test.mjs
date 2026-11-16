@@ -97,4 +97,6 @@ it('discovers resumable games only through a read-only port and fails closed whe
  executionPort.inspect=vi.fn(async()=>({header:{status:'active'}}));
  expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'Resume game'}]);
  expect(executionPort.inspect).toHaveBeenCalledOnce();expect(executionPort.resume).not.toHaveBeenCalled();
+ executionPort.inspect.mockResolvedValue({header:{status:'complete'}});
+ expect(await consumer.findResumable({receipts,viewer:{role:'host'}})).toEqual([{launch_id:'launch',runtime_ref:{provider:'gaming',id:'game:one'},label:'View result'}]);
 });

@@ -75,7 +75,10 @@ export class PartyGamesParticipantConsumer {
    if (typeof this.executionPort.inspect !== 'function') fail('participant_discovery_unavailable','Read-only game discovery is unavailable');
    try {
     const runtime=await this.executionPort.inspect(receipt.runtime_ref.id,viewer);
-    if (runtime && ['active','suspended'].includes(runtime.header?.status)) result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label:'Resume game'});
+    if (runtime && ['active','suspended','complete'].includes(runtime.header?.status)) {
+     const label=runtime.header.status==='complete' ? 'View result' : 'Resume game';
+     result.push({launch_id:receipt.launch_id,runtime_ref:clone(receipt.runtime_ref),label});
+    }
    } catch (error) {
     if (error.code !== 'runtime_unavailable' && error.code !== 'session_not_found') throw error;
    }

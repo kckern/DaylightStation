@@ -47,11 +47,13 @@ it('rejects a retained navigation target that is an external URL',async()=>{
  const {hashValue}=await import('./ParticipantSetupResolver.mjs'); const target={kind:'app',appId:'x',participantConsumer:{id:'x',version:1}};
  const base={schema:'participant-launch-snapshot/v1',launch_id:'a',consumer:{id:'x',version:1},action:'open',target,participant_context:null,prepared:{},setup_hash:'x'};const snapshot={...base,snapshot_hash:hashValue(base)};
  const ready={schema:'participant-launch-result/v1',kind:'ready',launch_id:'a',consumer:snapshot.consumer,snapshot_hash:snapshot.snapshot_hash,participant_context:null,output:{schema:'x/v1',data:{}}};
- const store={readRetained:async()=>({snapshot,receipt:{launch_id:'a',snapshot_hash:snapshot.snapshot_hash,result:ready},return_to:{kind:'content',content_id:'https://example.test'}})};
+ let destination='https://example.test'; const store={readRetained:async()=>({snapshot,receipt:{launch_id:'a',snapshot_hash:snapshot.snapshot_hash,result:ready},return_to:{kind:'content',content_id:destination}})};
  const consumer={id:'x',version:1,targets:[{action:'open',kind:'app',appId:'x'}],describe:()=>({}),prepareSetup:async()=>({}),begin:async()=>({}),findResumable:async()=>[],resume:async()=>ready};
  const registry=new ParticipantConsumerRegistry();registry.register({consumer,authorizeDirectAccess:async()=>({store,scope_key:'x'})});
  const service=new ParticipantLaunchService({registry,resolveDirectTarget:async()=>target,logger:{info(){}}});
  await expect(service.resume({target,action:'open',launchId:'a',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
+ destination='https:example.test';await expect(service.resume({target,action:'open',launchId:'a',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
+ destination='javascript:alert';await expect(service.resume({target,action:'open',launchId:'a',viewer:{}})).rejects.toMatchObject({code:'invalid_return_target'});
 });
 
 it('fails closed when the exact retained consumer version is unavailable',async()=>{

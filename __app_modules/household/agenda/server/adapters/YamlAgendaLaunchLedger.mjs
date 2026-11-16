@@ -26,6 +26,13 @@ function receipt(record) {
   const { snapshot, result } = record;
   return { launch_id: snapshot.launch_id, consumer: clone(snapshot.consumer), setup_hash: snapshot.setup_hash, snapshot_hash: snapshot.snapshot_hash, ...result ? { result: clone(result), ...result.runtime_ref ? { runtime_ref: clone(result.runtime_ref) } : {} } : {} };
 }
+function orderedReceipts(document) {
+  const records = Object.values(document.launches);
+  const preferred = document.preferred_launch_id;
+  if (preferred && !Object.hasOwn(document.launches, preferred)) fail("invalid_document", "Preferred launch is missing");
+  records.sort((a, b) => Number(b.snapshot.launch_id === preferred) - Number(a.snapshot.launch_id === preferred));
+  return records.map(receipt);
+}
 function verify(record, action) {
   const { snapshot, executionKey } = record ?? {};
   if (!snapshot || typeof executionKey !== "string" || snapshot.action !== action) fail("invalid_document", "Invalid launch record");
@@ -33,6 +40,7 @@ function verify(record, action) {
   if (hashValue(value) !== snapshot_hash) fail("invalid_document", "Launch snapshot corrupted");
   if (record.result && (record.result.launch_id !== snapshot.launch_id || record.result.snapshot_hash !== snapshot_hash || record.result.kind !== "ready" || hashValue(record.result.consumer) !== hashValue(snapshot.consumer) || hashValue(record.result.participant_context) !== hashValue(snapshot.participant_context))) fail("invalid_document", "Invalid launch result");
 }
+/** Atomic activity ledger for the single installed server authority. */
 class YamlAgendaLaunchLedger {
   constructor({ repository, pathForHousehold, save = saveYamlToPathAtomic }) {
     if (!repository || typeof pathForHousehold !== "function") throw Error("Repository and household path required");
@@ -61,6 +69,7 @@ class YamlAgendaLaunchLedger {
   write(key, doc) {
     this.save(this.file(key), doc, { durable: true });
   }
+  // All plan mutations use this same series lane; activity is always acquired second.
   async locked(key, fn) {
     const [householdId, seriesId] = scope(key);
     return this.repository.withSeriesLane(this.repository.laneKey(householdId, seriesId), () => activityLanes.withSeriesLane(key, fn));
@@ -68,7 +77,7 @@ class YamlAgendaLaunchLedger {
   async inspect(key, build) {
     return this.locked(key, async () => {
       const d = this.read(key);
-      return build(Object.values(d.launches).map(receipt));
+      return build(orderedReceipts(d));
     });
   }
   async reserve({ scopeKey, requestId, requestDigest }, build) {
@@ -76,6 +85,7 @@ class YamlAgendaLaunchLedger {
     return this.locked(scopeKey, async () => {
       const d = this.read(scopeKey);
       const k = token(requestId);
+      // Admitted requests are checked before any live policy or preparation callback.
       const existing = d.requests[k];
       if (existing) {
         if (existing.digest !== requestDigest) fail("idempotency_conflict", "Request reused");
@@ -83,11 +93,11 @@ class YamlAgendaLaunchLedger {
         if (!record2) fail("invalid_document", "Missing admitted launch");
         return { kind: "reserved", reused: true, snapshot: clone(record2.snapshot), executionKey: record2.executionKey, ...record2.result ? { result: clone(record2.result) } : {} };
       }
-      const built = await build(Object.values(d.launches).map(receipt));
+      const built = await build(orderedReceipts(d));
       if (built?.kind === "resume_available" || built?.kind === "passthrough") return built;
       let record;
       if (built?.reuse_launch_id) {
-        record = d.launches[built.reuse_launch_id];
+        record = Object.hasOwn(d.launches, built.reuse_launch_id) ? d.launches[built.reuse_launch_id] : null;
         if (!record || record.result || record.snapshot.setup_hash !== built.setup_hash) fail("invalid_reservation", "Pending launch unavailable");
       } else {
         const launchId = `al_${randomBytes(20).toString("hex")}`;
@@ -96,7 +106,9 @@ class YamlAgendaLaunchLedger {
         const snapshot = { ...value, snapshot_hash: hashValue(value) };
         record = { snapshot, executionKey: randomBytes(32).toString("hex"), provenance: clone(built.provenance) };
         d.launches[launchId] = record;
+        d.preferred_launch_id = launchId;
       }
+      // One durable replacement admits the snapshot, key, and request mapping together.
       d.requests[k] = { digest: requestDigest, launch_id: record.snapshot.launch_id };
       this.write(scopeKey, d);
       return { kind: "reserved", reused: !!built.reuse_launch_id, snapshot: clone(record.snapshot), executionKey: record.executionKey };
@@ -104,7 +116,7 @@ class YamlAgendaLaunchLedger {
   }
   async complete({ scopeKey, launchId, executionKey, snapshotHash, result }) {
     return this.locked(scopeKey, async () => {
-      const d = this.read(scopeKey), record = d.launches[launchId];
+      const d = this.read(scopeKey), record = Object.hasOwn(d.launches, launchId) ? d.launches[launchId] : null;
       if (!record || record.executionKey !== executionKey || record.snapshot.snapshot_hash !== snapshotHash) fail("invalid_reservation", "Reservation mismatch");
       const proposed = { ...record, result: clone(result) };
       verify(proposed, scope(scopeKey)[4]);
@@ -118,7 +130,7 @@ class YamlAgendaLaunchLedger {
   }
   async readRetained({ scopeKey, launchId }) {
     return this.locked(scopeKey, async () => {
-      const d = this.read(scopeKey), record = d.launches[launchId];
+      const d = this.read(scopeKey), record = Object.hasOwn(d.launches, launchId) ? d.launches[launchId] : null;
       if (!record) return null;
       const target = record.provenance?.return_to;
       const [, seriesId, planId, itemUid] = scope(scopeKey);

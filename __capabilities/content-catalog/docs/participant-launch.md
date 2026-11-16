@@ -11,3 +11,5 @@ The launch store checks an admitted request ID and digest before invoking its ca
 For Agenda composition, `server/agenda.mjs` exposes its provider, codec, ledger, repository, and Admin validation adapter. The injected authority must authorize household, series, plan, item, action, and viewer for retained access. The ledger serializes series then activity and assumes one installed writer. It is an execution receipt, not a game-state store.
 
 Party Games resumable discovery requires its injected `executionPort.inspect(sessionId, viewer)` to return an authorized, read-only runtime projection. It must never repair snapshots or write journals. If a Gaming receipt needs discovery and this port is unavailable, discovery fails with `participant_discovery_unavailable`; it never falls back to the potentially repairing `resume` operation. Explicit resume still uses `executionPort.resume` and may perform normal recovery.
+
+The Agenda ledger records the newest admitted launch as preferred and returns its receipt first for automatic discovery. Starting a new launch never deletes older receipts; explicit resume remains scoped to the selected launch.

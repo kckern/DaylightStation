@@ -129,3 +129,21 @@ it('reads inspection choices without creating a ledger file',async()=>{
   expect(await store.inspect(scopeKey,async receipts=>receipts)).toEqual([]);expect(existsSync(store.file(scopeKey))).toBe(false);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+it('prefers the newest explicitly admitted launch while preserving older receipts',async()=>{
+ const dir=mkdtempSync(path.join(tmpdir(),'agenda-preferred-'));try{
+  const repo=new YamlAgendaRepository({pathForHousehold:()=>dir});const store=new YamlAgendaLaunchLedger({repository:repo,pathForHousehold:()=>dir});const scopeKey=JSON.stringify(['home','family','plan','item','open']);
+  const snapshot={schema:'participant-launch-snapshot/v1',consumer:{id:'fake',version:1},action:'open',target:{kind:'app'},participant_context:null,prepared:{},setup_hash:'hash'};
+  const add=id=>store.reserve({scopeKey,requestId:id,requestDigest:id},async()=>({snapshot,provenance:{}}));
+  const old=await add('old'),recent=await add('new');const choices=await store.inspect(scopeKey,async receipts=>receipts);
+  expect(choices.map(choice=>choice.launch_id)).toEqual([recent.snapshot.launch_id,old.snapshot.launch_id]);
+  expect((await store.readRetained({scopeKey,launchId:old.snapshot.launch_id})).snapshot).toEqual(old.snapshot);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+it('does not treat inherited object properties as retained launch IDs',async()=>{
+ const dir=mkdtempSync(path.join(tmpdir(),'agenda-inherited-'));try{
+  const repo=new YamlAgendaRepository({pathForHousehold:()=>dir});const store=new YamlAgendaLaunchLedger({repository:repo,pathForHousehold:()=>dir});const scopeKey=JSON.stringify(['home','family','plan','item','open']);
+  expect(await store.readRetained({scopeKey,launchId:'__proto__'})).toBeNull();
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
