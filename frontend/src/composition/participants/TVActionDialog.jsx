@@ -7,16 +7,22 @@ export function TVActionDialog({children, label, onBack, focusKey, role='dialog'
   const root = useRef(null);
   const back = useRef(onBack);
   back.current = onBack;
-  useEffect(() => { root.current?.querySelector('button:not(:disabled)')?.focus(); }, [focusKey]);
+  useEffect(() => { root.current?.querySelector('[data-tv-scroll], button:not(:disabled)')?.focus(); }, [focusKey]);
   useEffect(() => {
     const perform = key => {
       if (['Escape','GoBack','BrowserBack'].includes(key)) { back.current?.(); return; }
-      const buttons = [...root.current.querySelectorAll('button:not(:disabled)')];
-      if (!buttons.length) return;
-      const current = buttons.indexOf(document.activeElement);
-      if (['Enter',' ','GamepadA','GamepadStart','MediaPlayPause'].includes(key)) { (buttons[current] || buttons[0]).click(); return; }
+      const controls = [...root.current.querySelectorAll('[data-tv-scroll], button:not(:disabled)')];
+      if (!controls.length) return;
+      const current = controls.indexOf(document.activeElement);
+      const focused = controls[current];
+      if (focused?.hasAttribute('data-tv-scroll') && ['ArrowUp','ArrowDown'].includes(key)) {
+        const max = Math.max(0, focused.scrollHeight - focused.clientHeight);
+        const next = Math.max(0, Math.min(max, focused.scrollTop + (key === 'ArrowDown' ? 1 : -1) * Math.max(1, focused.clientHeight * .8)));
+        if (next !== focused.scrollTop) { focused.scrollTop = next; return; }
+      }
+      if (['Enter',' ','GamepadA','GamepadStart','MediaPlayPause'].includes(key)) { if (focused?.tagName === 'BUTTON') focused.click(); return; }
       const step = ['ArrowUp','ArrowLeft'].includes(key) ? -1 : 1;
-      buttons[(current + step + buttons.length) % buttons.length].focus();
+      controls[(current + step + controls.length) % controls.length].focus();
     };
     const keys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter',' ','GamepadA','GamepadStart','MediaPlayPause','Escape','GoBack','BrowserBack'];
     const handle = event => {

@@ -24,6 +24,6 @@
   border-radius: .35rem;
   font-size: inherit;
 }
-.tv-action-dialog__panel button:focus-visible { outline: 3px solid #ffda6a; outline-offset: 3px; }
+.tv-action-dialog__panel button:focus-visible, .tv-action-dialog__panel [data-tv-scroll]:focus-visible { outline: 3px solid #ffda6a; outline-offset: 3px; }
 .tv-action-dialog__participants { list-style: none; padding: 0; max-height: min(45vh, 18rem); overflow: auto; }
 .tv-action-dialog__participants li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .4rem 0; overflow-wrap: anywhere; }

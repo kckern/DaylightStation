@@ -148,3 +148,18 @@ it('does not autostart an unrenderable preview without retained choices', async(
  render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'x'}} action="open" client={{inspect,begin}} onClose={()=>{}}/>);
  expect(await screen.findByRole('alert')).toBeVisible();expect(screen.queryByRole('button',{name:'Start'})).toBeNull();expect(begin).not.toHaveBeenCalled();
 });
+
+it('scrolls a long Party Games preview with captured remote input and returns focus to controls',async()=>{
+ const {participantBrowserRegistry}=await import('./participantBrowserRegistry.js');
+ const people=Array.from({length:20},(_,index)=>({name:`Person ${index+1}`,avatar:null,clue_mode:'text'}));
+ const inspect=vi.fn().mockResolvedValue({schema:'participant-launch-options/v1',ready:true,consumer:{id:'party-games',version:1},confirmation:'required',setup_hash:'hash',consumer_summary:{schema:'party-games-preview/v2',data:{participants:people}},choices:[]});
+ const close=vi.fn();render(<ParticipantLaunchHost refValue={{provider:'agenda',ref:'x'}} action="open" client={{inspect}} resolvePreview={participantBrowserRegistry.resolvePreview} onClose={close}/>);
+ const list=await screen.findByRole('list',{name:'Participants and clue modes'});
+ Object.defineProperties(list,{clientHeight:{value:100},scrollHeight:{value:400}});list.scrollTop=0;
+ await waitFor(()=>expect(list).toHaveFocus());const adapter=new GamepadAdapter(getActionBus());
+ for(let i=0;i<4;i++) adapter._emit({action:'navigate',key:'ArrowDown',payload:{direction:'down'}});
+ expect(list.scrollTop).toBe(300);expect(screen.getByText('Person 20')).toBeInTheDocument();
+ adapter._emit({action:'navigate',key:'ArrowDown',payload:{direction:'down'}});expect(screen.getByRole('button',{name:'Start'})).toHaveFocus();
+ fireEvent.keyDown(document.activeElement,{key:'ArrowDown'});expect(screen.getByRole('button',{name:'Back'})).toHaveFocus();
+ adapter._emit({action:'select',key:'Enter'});expect(close).toHaveBeenCalledTimes(1);
+});
