@@ -4,10 +4,11 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 3, versionName: "0.2-helpers" }
+shell: { versionCode: 4, versionName: "0.2-helpers" }
 capabilities:
   - debug-tools
   - accessibility
   - volume-keys
+  - hid-input
 defaults:
   debug.execEnabled: false
