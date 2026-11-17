@@ -1,3 +1,4 @@
+import {KnowledgeFollowUpAdapter} from './adapters/KnowledgeFollowUpAdapter.mjs';
 import { YamlJournalEntryRepository } from "./adapters/persistence/YamlJournalEntryRepository.mjs";
 import { YamlMessageQueueRepository } from "./adapters/persistence/YamlMessageQueueRepository.mjs";
 import { JournalistConfigProjection, DebriefRepository, LoggingAIGateway, DataServiceJournalistInteractionLogStore } from "./adapters/index.mjs";
@@ -42,8 +43,14 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
     logger
   });
 
+  const knowledge=config.knowledgeRuntime?.companion?new KnowledgeFollowUpAdapter({runtime:config.knowledgeRuntime,conversationStateStore,send:config.knowledgeSend,clock:config.clock??Date.now}):null;
+
   // Create journalist container with all dependencies
   const journalistContainer = new JournalistContainer(journalistConfig, {
+    knowledgeCompanion:knowledge,
+    followUpSource:knowledge,
+    clock:config.clock,
+    userTimezone:config.userTimezone,
     messagingGateway: telegramAdapter,
     aiGateway,
     journalEntryRepository,

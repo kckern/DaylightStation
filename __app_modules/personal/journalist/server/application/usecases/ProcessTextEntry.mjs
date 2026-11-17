@@ -38,11 +38,15 @@ export class ProcessTextEntry {
   #messageQueueRepository;
   #conversationStateStore;
   #logger;
+  #knowledgeCompanion;
+  #clock;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
 
+    this.#knowledgeCompanion=deps.knowledgeCompanion;
+    this.#clock=deps.clock??Date.now;
     this.#messagingGateway = deps.messagingGateway;
     this.#aiGateway = deps.aiGateway;
     this.#journalEntryRepository = deps.journalEntryRepository;
@@ -97,8 +101,24 @@ export class ProcessTextEntry {
         text,
       });
 
+      let savedMessage;
+      const source=this.#knowledgeCompanion?.sourceForEntry({principal:input.knowledgePrincipal,chatId,messageId,senderId});
+      const receipt=source?{messageId:userMessage.messageId,chatId:userMessage.chatId,text:userMessage.text,timestamp:userMessage.timestamp,senderId:userMessage.senderId,senderName:userMessage.senderName,role:'user',source}:userMessage;
       if (this.#journalEntryRepository) {
-        await this.#journalEntryRepository.saveMessage?.(userMessage);
+        savedMessage=await this.#journalEntryRepository.saveMessage?.(receipt);
+      }
+      if(source&&savedMessage){
+        let knowledge;
+        try{knowledge=await this.#knowledgeCompanion.onEntrySaved({principal:input.knowledgePrincipal,message:savedMessage,replyToMessageId:source.replyToMessageId,asOf:this.#clock()});}
+        catch{this.#logger.warn?.('journalist.knowledge.entry-unavailable');}
+        if(knowledge?.suppressFollowUp){
+          await status?.cancel?.();
+          return {success:true,knowledgeScheduled:!!knowledge.scheduled,suppressedFollowUp:true};
+        }
+      }
+      if(input.aiAvailable===false){
+        if(status)await status.finish('📝 Noted.');else await messaging.sendMessage('📝 Noted.',{});
+        return {success:true};
       }
 
       // 2. Load conversation history

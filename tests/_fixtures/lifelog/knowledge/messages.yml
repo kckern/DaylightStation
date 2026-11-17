@@ -1,0 +1,61 @@
+messages:
+- id: message-10
+  role: user
+  senderId: reviewer_a
+  content: I will submit the application Monday.
+  timestamp: '2026-11-02T18:00:00Z'
+  source:
+    platform: telegram
+    verified: true
+    senderId: reviewer_a
+    conversationId: telegram:sample_private
+    messageId: message-10
+    contentHash: 4531412e2bfd0b2c8e65b99ee540ec170de42800d75a965ea2259b6b3ef5a945
+- id: message-old
+  role: user
+  senderId: reviewer_a
+  content: That application is finished.
+  timestamp: '2026-10-01T18:00:00Z'
+  source:
+    platform: telegram
+    verified: true
+    senderId: reviewer_a
+    conversationId: telegram:sample_private
+    messageId: message-old
+    contentHash: 01e093f96123038edd225dca217df7218ee05785f979b9fd6a63bcd790bfce09
+- id: message-12
+  role: user
+  senderId: reviewer_a
+  content: I met Sample at the review.
+  timestamp: '2026-11-02T19:00:00Z'
+  source:
+    platform: telegram
+    verified: true
+    senderId: reviewer_a
+    conversationId: telegram:sample_private
+    messageId: message-12
+    contentHash: fe2d4d2cfc4d37da9d212fedb3a3e463d03315397872e8c91191ad9a7c58487d
+- id: message-bot
+  role: assistant
+  senderId: bot
+  content: I will schedule a fictional task.
+  timestamp: '2026-11-02T19:01:00Z'
+  source:
+    platform: telegram
+    verified: true
+    senderId: bot
+    conversationId: telegram:sample_private
+    messageId: message-bot
+    contentHash: 8e2f834ab49a4a144d2128fdf75d97f07ecddfd5e36ef3e62d809959626913a5
+- id: message-sensor
+  role: sensor
+  senderId: bot
+  content: A sensor guessed a task.
+  timestamp: '2026-11-02T19:02:00Z'
+  source:
+    platform: telegram
+    verified: true
+    senderId: bot
+    conversationId: telegram:sample_private
+    messageId: message-sensor
+    contentHash: d8fac3304160983aad83d4592cb522d445fa9f790dbd702be027da459c2cd171

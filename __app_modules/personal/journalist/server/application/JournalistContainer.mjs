@@ -214,11 +214,15 @@ export class JournalistContainer {
 
   // ==================== Use Case Getters ====================
 
+  getKnowledgeCompanion(){return this.#options.knowledgeCompanion??null;}
+
   getProcessTextEntry() {
     if (!this.#processTextEntry) {
       this.#processTextEntry = new ProcessTextEntry({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.#aiFor('text-entry'),
+        aiGateway: this.#aiGateway?this.#aiFor('text-entry'):{chat:async()=>{throw new Error('AI_UNAVAILABLE');}},
+        knowledgeCompanion:this.#options.knowledgeCompanion,
+        clock:this.#options.clock,
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         conversationStateStore: this.#conversationStateStore,
@@ -409,6 +413,9 @@ export class JournalistContainer {
         aiGateway: this.#aiFor('morning-debrief'),
         debriefRepository: this.getDebriefRepository(),
         journalEntryRepository: this.#journalEntryRepository,
+        followUpSource:this.#options.followUpSource,
+        clock:this.#options.clock,
+        userTimezone:this.#options.userTimezone,
         logger: this.#logger,
       });
     }
@@ -421,6 +428,9 @@ export class JournalistContainer {
         messagingGateway: this.getMessagingGateway(),
         conversationStateStore: this.#conversationStateStore,
         debriefRepository: this.getDebriefRepository(),
+        followUpSource:this.#options.followUpSource,
+        clock:this.#options.clock,
+        userTimezone:this.#options.userTimezone,
         logger: this.#logger,
       });
     }
