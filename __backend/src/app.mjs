@@ -214,6 +214,8 @@ import { ListConfigCodec } from "../../__capabilities/content-catalog/server/ada
 import { AdminImageFileStore } from '#adapters/admin/AdminImageFileStore.mjs';
 import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs';
 import { FullyKioskRemoteAdministrationAdapter } from '#adapters/devices/FullyKioskRemoteAdministrationAdapter.mjs';
+import { DaylightAndroidRemoteAdministrationAdapter } from '#adapters/devices/DaylightAndroidRemoteAdministrationAdapter.mjs';
+import { ProviderRoutedRemoteAdministrationGateway } from '#adapters/devices/ProviderRoutedRemoteAdministrationGateway.mjs';
 import { CameraEvents, LessonPositionReporter } from "#apps/events/RealtimePublications.mjs";
 
 import { createCameraRouter } from "../../__app_modules/household/camera/server/api/camera.mjs";
@@ -4151,11 +4153,25 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
   });
   const deviceRemoteAdministrationService = new DeviceRemoteAdministrationService({
-    gateway: new FullyKioskRemoteAdministrationAdapter({
+    // A fleet can hold both kiosk providers at once. Devices on the Android
+    // kiosk app go to its adapter; every other device id goes to the Fully
+    // adapter, which answers exactly as it did when it was the only gateway.
+    gateway: new ProviderRoutedRemoteAdministrationGateway({
       readDevices: () => adminConfigStore.readDevices(),
-      resolveAuth: authRef => configService.getHouseholdAuth(authRef),
-      httpClient: axios,
-      logger: adminApiLogger.child?.({ submodule: 'fully-kiosk-transport' }) || adminApiLogger,
+      gateways: {
+        'daylight-android': new DaylightAndroidRemoteAdministrationAdapter({
+          readDevices: () => adminConfigStore.readDevices(),
+          resolveAuth: authRef => configService.getHouseholdAuth(authRef),
+          httpClient: axios,
+          logger: adminApiLogger.child?.({ submodule: 'daylight-android-transport' }) || adminApiLogger,
+        }),
+      },
+      fallback: new FullyKioskRemoteAdministrationAdapter({
+        readDevices: () => adminConfigStore.readDevices(),
+        resolveAuth: authRef => configService.getHouseholdAuth(authRef),
+        httpClient: axios,
+        logger: adminApiLogger.child?.({ submodule: 'fully-kiosk-transport' }) || adminApiLogger,
+      }),
     }),
     logger: adminApiLogger.child?.({ submodule: 'device-remote' }) || adminApiLogger,
   });

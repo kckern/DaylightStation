@@ -191,6 +191,8 @@ import { ConfigDeviceBlueprintFactory } from '#composition/modules/ConfigDeviceB
 import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDeviceAdapter.mjs';
 import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
 import { FullyKioskVolumeAdapter } from '#adapters/devices/FullyKioskVolumeAdapter.mjs';
+import { DaylightAndroidContentAdapter } from '#adapters/devices/DaylightAndroidContentAdapter.mjs';
+import { DaylightAndroidVolumeAdapter } from '#adapters/devices/DaylightAndroidVolumeAdapter.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
@@ -1015,6 +1017,8 @@ export async function createDeviceServices(config) {
       adb: (adapterConfig, deps) => new AdbAdapter(adapterConfig, deps),
       fullyKiosk: (adapterConfig, deps) => new FullyKioskContentAdapter(adapterConfig, deps),
       fullyKioskVolume: (adapterConfig, deps) => new FullyKioskVolumeAdapter(adapterConfig, deps),
+      daylightAndroid: (adapterConfig, deps) => new DaylightAndroidContentAdapter(adapterConfig, deps),
+      daylightAndroidVolume: (adapterConfig, deps) => new DaylightAndroidVolumeAdapter(adapterConfig, deps),
       resilient: (adapterConfig, deps) => new ResilientContentAdapter(adapterConfig, deps),
       websocket: (adapterConfig, deps) => new WebSocketContentAdapter(adapterConfig, deps),
     },
