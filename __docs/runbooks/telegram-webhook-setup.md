@@ -49,8 +49,7 @@ If using Cloudflare, ensure Telegram IPs are allowed through firewall rules.
 
 **Example filter expression allowing Telegram:**
 ```
-(ip.src ne YOUR_IP and not ip.src in {136.226.0.0/16})
-and not ends_with(http.request.uri.path, "/pinhole")
+(ip.src ne YOUR_IP and not ip.src in {WORK_VPN_RANGE})
 and not ip.src in {91.108.0.0/16 149.154.0.0/16}
 ```
 

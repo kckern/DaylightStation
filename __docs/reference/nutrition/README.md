@@ -476,14 +476,15 @@ The capture use cases log what was typed or said by its length, the model's answ
 
 ## Direct-input routes
 
-Four older routes log food from a plain HTTP request, by any method, and can call paid models on the way (`/upc` classifies and estimates with a model, `/image` and `/pinhole` read the photo with one, `/text` parses with one):
+Three older routes log food from a plain HTTP request, by any method, and can call paid models on the way (`/upc` classifies and estimates with a model, `/image` reads the photo with one, `/text` parses with one):
 
 | Route | Takes | Runs |
 |---|---|---|
 | `/api/v1/nutribot/upc` | `upc` in the query or a JSON body; a bare 8 to 14 digit query key | `LogFoodFromUPC` |
 | `/api/v1/nutribot/image` | `img_url` | `LogFoodFromImage` |
-| `/api/v1/nutribot/pinhole` | `img_url`. The same handler as `/image`, on a path the perimeter leaves open to the internet | `LogFoodFromImage` |
 | `/api/v1/nutribot/text` (earlier shape) | `text`, optional `date` | `LogFoodFromText` |
+
+The IFTTT image route (`/api/v1/nutribot/pinhole`) was retired on 2026-11-17 and now answers 404. To send a photo by URL, use `/image` with an `X-Daylight-Device` header from a device bound for Nutribot.
 
 Each sits behind one guard (`api/handlers/directInputGuard.mjs`, rules in `application/services/NutribotDirectInput.mjs`). Answers to a request it lets through are unchanged: `{ok: true, result, durationMs}`.
 
@@ -522,20 +523,19 @@ All carry `ok: false` and a `message`. The handlers' own refusals (`Missing requ
 
 These routes count against the same per-user Nutribot day as the quick inputs (`quick_input.daily_inputs`, `daily_megabytes`, and the attempts cap), checked before the operation runs. Each request is one input.
 
-A caller that sends `X-Daylight-Input-Id` is processed once for that id on that route, and a repeat answers `{ok: true, duplicate: true}`. A caller that sends none (the barcode app, the webhook service) is not deduplicated: there is nothing to tell a repeat from a second scan.
+A caller that sends `X-Daylight-Input-Id` is processed once for that id on that route, and a repeat answers `{ok: true, duplicate: true}`. A caller that sends none (the barcode app) is not deduplicated: there is nothing to tell a repeat from a second scan.
 
 ### Opening a route to a caller that cannot send a header
 
-Two documented callers cannot name a device: the barcode scanning app (`GET /upc`, see `runbooks/binary-eye-nutribot-upc-scanning.md`) and the webhook service (`GET /pinhole`, see `runbooks/ifttt-nutribot-image-upload.md`). They keep working only where the household opens the route, in the nutribot app config:
+One documented caller cannot name a device: the barcode scanning app (`GET /upc`, see `runbooks/binary-eye-nutribot-upc-scanning.md`). It keeps working only where the household opens the route, in the nutribot app config:
 
 ```yaml
 direct_input:
   allow_unbound:
     upc: [<username>, ...]       # the barcode app
-    pinhole: [<username>]        # the webhook service
 ```
 
-Off unless set, per route; `image` and `text` can be opened the same way and have no known caller that needs it. An opened route takes a request from anything that can reach it, for the listed users only: on `/upc` that is any device on the household network or VPN, on `/pinhole` anything on the internet that knows the address. The cross-site refusals and the daily allowance still apply, so the exposure is bounded by the user's day (60 inputs, 240 attempts at the defaults). Closing it means a caller that can send `X-Daylight-Device`, or putting the route behind the phone app's quick inputs and leaving the setting out.
+Off unless set, per route; `image` and `text` can be opened the same way and have no known caller that needs it. An opened route takes a request from anything that can reach it, for the listed users only: on `/upc` that is any device on the household network or VPN. The cross-site refusals and the daily allowance still apply, so the exposure is bounded by the user's day (60 inputs, 240 attempts at the defaults). Closing it means a caller that can send `X-Daylight-Device`, or putting the route behind the phone app's quick inputs and leaving the setting out.
 
 ### What is logged
 
