@@ -1,8 +1,8 @@
 #!/usr/bin/env node
+import { reserveKnowledgeAttempt as reserveBudget, outsideKnowledgeDirectory as outsideUsageDirectory } from '../server/adapters/knowledge/KnowledgeAttemptBudget.mjs';
 import {KnowledgeMetrics} from '../server/application/knowledge/KnowledgeMetrics.mjs';
 /** Phase 0: local previews only. No writer, scheduler, delivery or activation door. */
 import path from 'node:path';
-import crypto from 'node:crypto';
 import moment from 'moment-timezone';
 import yaml from 'js-yaml';
 import * as FileIO from '#system/utils/FileIO.mjs';
@@ -53,24 +53,6 @@ function localDay(value, timezone) {
   const day = moment.tz(value, 'YYYY-MM-DD', true, timezone);
   if (!day.isValid()) throw new Error('Invalid local date');
   return day;
-}
-function outsideUsageDirectory(value, dataDir) {
-  const root = FileIO.resolveRealPath(dataDir), dir = FileIO.resolveRealPath(value);
-  if (!root || !dir || !FileIO.getFileStats(dir).isDirectory()) throw new Error('Usage directory must already exist outside the data tree');
-  const relative = path.relative(root,dir);
-  if (!relative || relative !== '..' && !relative.startsWith('..'+path.sep) && !path.isAbsolute(relative)) throw new Error('Usage directory must be outside the data tree');
-  return dir;
-}
-function reserveBudget({ dir, username, timezone, now }) {
-  const user = crypto.createHash('sha256').update(username).digest('hex').slice(0,24);
-  const date = moment.tz(now,timezone).format('YYYY-MM-DD');
-  for (let slot=1; slot<=4; slot++) {
-    try {
-      FileIO.writeFileExclusive(path.join(dir,`knowledge-budget-${user}-${date}-${slot}.json`),JSON.stringify({schema:'knowledge-preview-budget/v1',at:now,date,slot})+'\n');
-      return;
-    } catch (error) { if (error.code !== 'EEXIST') throw error; }
-  }
-  throw new Error('Knowledge preview daily budget exhausted');
 }
 
 export async function runKnowledgeCli({ argv, configService, store, evidence, extractorFactory,

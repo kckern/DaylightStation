@@ -240,3 +240,38 @@ unavailable. Missing cached facts are labeled as fallback; this is not a fresh
 roundup-model quality measurement. CLI stdout is JSON; routine progress logging is
 suppressed while framework warnings/errors remain diagnostic output. Extraction
 usage remains in its durable outside-data receipt/usage ledger.
+
+## Quiet historical imports
+
+An explicit operator job can import authored journal evidence from a frozen range
+of at most 90 elapsed days. It excludes older text before extraction, processes
+at most ten messages and 20,000 characters per chunk, and reports oversized
+entries as skipped. A result at the twenty-proposal limit is split or left
+incomplete. Incomplete jobs cannot apply. Private result caches and checksummed
+checkpoints support resuming; conflicting or torn artifacts fail closed.
+
+Extraction and preview share the existing four-attempt user-local daily budget,
+including failed calls. Keep the same outside-data usage directory across runs.
+Preview creates no KB files, task updates, deliveries, activation or sweep state.
+
+Apply uses a separate process-local operator receipt bound to the manifest,
+source hashes and exact artifact. It requires the configured actual Linux UID,
+hostname and deployment environment (`DAYLIGHT_ENV`, default `docker`), explicit
+import-write configuration, and the existing KB writer lease. Serialized approval
+flags grant no authority. Source changes invalidate the job; a revision change
+requires reading and reducing against current KB state again.
+
+New imported loops retain historical creation, evidence, touch and completion
+dates. Their ask policy is pinned to `user_initiated`; sensitive candidates retain
+the existing never-ask confirmation rules. Import time is recorded separately in
+the audit ledger. Existing edits, pins, retractions, asks and the live extraction
+cursor survive. Reapplying a completed job and overlapping unchanged evidence do
+not create another loop.
+
+Imported evidence retains `historical_import` provenance. Legacy journal rows
+never gain fabricated Telegram verification. A read adapter can resolve an
+import only through its durable authorization and a matching current source
+hash; changed or missing evidence is revoked. Imported evidence does not enter
+the live-message extraction stream. Optional purpose, resource references and
+work-domain context must appear verbatim in quoted evidence; referenced files
+are not fetched or ingested by this mechanism.

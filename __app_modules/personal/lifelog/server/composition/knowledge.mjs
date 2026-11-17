@@ -3,6 +3,8 @@ import {KnowledgeWriteAuthority} from '../adapters/knowledge/KnowledgeWriteAutho
 import {JsonlKnowledgeLedger} from '../adapters/knowledge/JsonlKnowledgeLedger.mjs';
 import {YamlKnowledgeStore} from '../adapters/knowledge/YamlKnowledgeStore.mjs';
 import {JournalKnowledgeEvidence,journalSourceId} from '../adapters/knowledge/JournalKnowledgeEvidence.mjs';
+import {HistoricalJournalEvidence} from '../adapters/knowledge/HistoricalJournalEvidence.mjs';
+import {AuthorizedJournalEvidence} from '../adapters/knowledge/AuthorizedJournalEvidence.mjs';
 import {GatewayKnowledgeExtractor} from '../adapters/knowledge/GatewayKnowledgeExtractor.mjs';
 import {assertUsername} from '../adapters/knowledge/knowledgeFiles.mjs';
 import {randomUUID} from 'node:crypto';
@@ -138,7 +140,8 @@ function productionDependencies(options,configuration){
  const authority=new KnowledgeWriteAuthority({configuration,environment,hostId,platform,logger});
  const ledger=new JsonlKnowledgeLedger({rootForUser,hostId,authority,logger});
  const store=new YamlKnowledgeStore({rootForUser,ledger,authority,clock,logger});
- const evidence=new JournalKnowledgeEvidence({loadJournal:async username=>{assertUsername(username);return dataService.user.read('lifelog/journalist/messages',username);},identityForUser,timezoneForUser:userTimezone,logger});
+ const journalOptions={loadJournal:async username=>{assertUsername(username);return dataService.user.read('lifelog/journalist/messages',username);},identityForUser,timezoneForUser:userTimezone,logger};
+ const evidence=new AuthorizedJournalEvidence({live:new JournalKnowledgeEvidence(journalOptions),historical:new HistoricalJournalEvidence(journalOptions),readAuthorizations:async({username})=>{const snapshot=await store.read({username});if(!snapshot.health.available)throw Error('KNOWLEDGE_UNAVAILABLE');return snapshot.state.importAuthorizations??{};}});
  const extractor=new GatewayKnowledgeExtractor({gateway,model:configuration.model,modelVersion:configuration.model??gateway?.model??'configured-gateway'});
  return {store,ledger,evidence,extractor,usernames,userTimezone,identityForUser,identityForSender};
 }

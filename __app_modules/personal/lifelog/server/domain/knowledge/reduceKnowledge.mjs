@@ -2,9 +2,10 @@
 import { KNOWLEDGE_SCHEMA, evidenceProblem, proposalProblem, normalizeQuote, newBatch, isPinned } from './contracts.mjs';
 import { addDays, localDateFor, resolveDueDate } from './calendar.mjs';
 
-export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone, mode = 'commit' }) {
+export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone, mode = 'commit', allowedImportRefs = [], importJobId }) {
   localDateFor(asOf, timezone);
-  if (!['commit','preview'].includes(mode)) throw new TypeError('Invalid reduction mode');
+  if (!['commit','preview','import'].includes(mode)) throw new TypeError('Invalid reduction mode');
+  if (mode === 'import' && (typeof importJobId !== 'string' || !importJobId)) throw new TypeError('Import job required');
   const batch = newBatch(mode === 'preview');
   const objects = structuredClone(snapshot.objects ?? {});
   const processed = new Set(snapshot.state?.processedProposalIds ?? []);
@@ -14,17 +15,18 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
     if (sources.has(source.ref) && JSON.stringify(sources.get(source.ref)) !== JSON.stringify(source)) ambiguous.add(source.ref);
     else sources.set(source.ref, source);
   }
-  const event = (p, type, extra = {}) => batch.events.push({ id: p.id + ':' + type, type, at: asOf, objectId: p.target, proposal: structuredClone(p), ...extra });
+  const event = (p, type, extra = {}) => batch.events.push({ id: p.id + ':' + type, type, at: asOf, objectId: p.target, proposal: structuredClone(p), ...(mode === 'import' ? { importJobId } : {}), ...extra });
   const queue = (p, reason) => { if (!reviews.some(r => r.id === p.id)) reviews.push({ id: p.id, reason, proposal: structuredClone(p), createdAt: asOf }); event(p, 'proposal.queued', { reason }); };
   for (const p of proposals ?? []) {
     if (processed.has(p?.id)) continue;
     const source = sources.get(p?.evidenceRef); const original = objects[p?.target]; const f = p?.fields ?? {};
-    let reason = proposalProblem(p) || (ambiguous.has(p.evidenceRef) ? 'ambiguous_evidence' : evidenceProblem(source, { mode, timezone, asOf }));
+    let reason = proposalProblem(p) || (ambiguous.has(p.evidenceRef) ? 'ambiguous_evidence' : evidenceProblem(source, { mode, timezone, asOf, allowedImportRefs }));
     if (!reason && !normalizeQuote(source.content).includes(normalizeQuote(p.quote))) reason = 'quote_not_found';
     if (!reason && ['touch','close_loop','alias_candidate'].includes(p.op) && !original) reason = 'unknown_target';
     if (!reason && original && (source.at < original.created.sourceAt || (p.op === 'close_loop' && source.at <= original.created.sourceAt))) reason = 'predates_loop';
     if (!reason && p.op === 'close_loop' && (original.kind !== 'loop' || isPinned(original, 'status') || isPinned(original, 'loop.answer'))) reason = original.kind !== 'loop' ? 'invalid_target' : 'pinned_field';
     if (!reason && p.op === 'open_loop' && f.dueText && !normalizeQuote(p.quote).includes(normalizeQuote(f.dueText))) reason = 'due_not_grounded';
+    if (!reason && f.context && [f.context.purpose, f.context.workDomain, ...(f.context.resourceRefs ?? [])].filter(Boolean).some(value => !normalizeQuote(p.quote).includes(normalizeQuote(value)))) reason = 'context_not_grounded';
     if (!reason && p.op === 'open_loop' && f.due && !normalizeQuote(p.quote).includes(f.due) && (!f.dueText || resolveDueDate({text:f.dueText,entryDate:source.localDate,timezone}) !== f.due)) reason = 'due_not_grounded';
     if (!reason && p.op === 'propose_entity' && original && ((f.role && f.role !== original.role && isPinned(original,'role')) || (!(original.names ?? []).includes(f.name) && isPinned(original,'names')) || isPinned(original,'status'))) reason = 'pinned_field';
     if (!reason && p.op === 'alias_candidate' && original && isPinned(original,'aliases')) reason = 'pinned_field';
@@ -41,9 +43,10 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
     }
     const ref = { ref: source.ref, date: source.localDate, at: source.at, quote: p.quote, source: 'user' };
     const base = { schema: KNOWLEDGE_SCHEMA, id: p.target, kind: p.target.split('.')[0], title: f.title ?? f.name,
-      created: { at: asOf, sourceAt: source.at, by: 'extractor@v1' }, touched: source.localDate, links: f.links ?? [], pinned: [], user_edits: [], sensitivity,
-      ask_policy: sensitivity === 'normal' ? (f.ask_policy ?? 'normal') : 'never', evidence: [] };
+      created: { at: mode === 'import' ? source.at : asOf, sourceAt: source.at, by: mode === 'import' ? 'import@v1' : 'extractor@v1' }, touched: source.localDate, links: f.links ?? [], pinned: mode === 'import' ? ['ask_policy'] : [], user_edits: [], sensitivity,
+      ask_policy: sensitivity === 'normal' ? (mode === 'import' ? 'user_initiated' : f.ask_policy ?? 'normal') : 'never', evidence: [] };
     const object = original ? structuredClone(original) : base;
+    if (!original && f.context) object.context = structuredClone(f.context);
     if (!object.evidence.some(e => e.ref === ref.ref && normalizeQuote(e.quote) === normalizeQuote(ref.quote))) object.evidence.push(ref);
     object.touched = [object.touched, source.localDate].sort().at(-1);
     if (p.op === 'open_loop') {
@@ -54,9 +57,9 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
       if (f.dueText && !due) queue(p, 'unsupported_due_text');
     } else if (p.op === 'close_loop') {
       object.status = f.status;
-      if(!isPinned(object,'closedOn'))object.closedOn=['answered','dropped'].includes(f.status)?localDateFor(asOf,timezone):null;
-      object.loop.answer = { at: asOf, by: 'text', result: f.answer && normalizeQuote(p.quote).includes(normalizeQuote(f.answer)) ? f.answer : p.quote, evidence: [ref] };
-    } else if (p.op === 'touch' && object.kind === 'loop' && object.status === 'stale' && !isPinned(object, 'status')) {
+      if(!isPinned(object,'closedOn'))object.closedOn=['answered','dropped'].includes(f.status)?(mode === 'import' ? source.localDate : localDateFor(asOf,timezone)):null;
+      object.loop.answer = { at: mode === 'import' ? source.at : asOf, by: 'text', result: f.answer && normalizeQuote(p.quote).includes(normalizeQuote(f.answer)) ? f.answer : p.quote, evidence: [ref] };
+    } else if (p.op === 'touch' && mode !== 'import' && object.kind === 'loop' && object.status === 'stale' && !isPinned(object, 'status')) {
       object.status = 'open';if(!isPinned(object,'closedOn'))object.closedOn=null;object.loop.ask.reopenedAt = asOf;
     } else if (p.op === 'propose_entity') {
       object.names = [...new Set([...(object.names ?? []), f.name])]; object.aliases ??= [];
