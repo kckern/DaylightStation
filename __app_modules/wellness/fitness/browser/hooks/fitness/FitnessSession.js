@@ -2128,17 +2128,20 @@ export class FitnessSession {
     const intervalMs = this.timeline.timebase.intervalMs || 5000;
     const gapTicks = Math.floor(gapMs / intervalMs);
 
-    if (gapTicks > 0) {
+    const savedTransportPause = sessionData.transportPause ?? sessionData.metadata?.transportPause ?? null;
+    // A paused reload is still silence, not a recovery receipt. Keep its
+    // observed-end cursor durable; padding now would make the next checkpoint
+    // look newer to server resume lookup. Align the gap once on real recovery.
+    if (gapTicks > 0 && !savedTransportPause) {
       this.timeline.padWithNulls(gapTicks);
     }
 
     this._sessionMetadata = { ...(sessionData.metadata || {}) };
-    this.transportPause = sessionData.transportPause ?? this._sessionMetadata.transportPause ?? null;
+    this.transportPause = savedTransportPause;
     this.transportGaps = sessionData.transportGaps ?? this._sessionMetadata.transportGaps ?? [];
     this.endReason = sessionData.endReason ?? this._sessionMetadata.endReason ?? null;
     if (this.transportPause) {
-      // The hydration pass above already added null slots through now.
-      this.timeline.timebase.lastTickTimestamp = now;
+      this.timeline.timebase.lastTickTimestamp = previousEndTime;
       const remaining = Math.max(0, this.transportPause.resumeUntil - now);
       this._transportResumeDeadline = performance.now() + remaining;
       this._transportGap = this.transportGaps.find(gap => gap.endedAt == null) || {

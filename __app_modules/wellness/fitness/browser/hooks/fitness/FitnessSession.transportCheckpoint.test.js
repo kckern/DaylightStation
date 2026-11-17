@@ -7,6 +7,7 @@ const { PersistenceManager } = await import('./PersistenceManager.js');
 const { SessionService } = await import('../../../server/application/services/SessionService.mjs');
 const { serializeSession, reconstituteSession } = await import('../../../server/application/sessionRecords.mjs');
 const { dehydrateSessionRecord } = await import('../../../server/adapters/persistence/YamlSessionDatastore.mjs');
+const { hydrateTimeline } = await import('../../../server/adapters/persistence/SessionTimelineCodec.mjs');
 
 let wall, mono;
 function fixture() {
@@ -127,7 +128,7 @@ describe('transport checkpoints', () => {
     expect(restored.summary.transportPause).toEqual(checkpoint.transportPause);
     const hydratedTicks = restored.timeline.timebase.tickCount;
     restored.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
-    expect(restored.timeline.timebase.tickCount).toBe(hydratedTicks);
+    expect(restored.timeline.timebase.tickCount).toBe(hydratedTicks + Math.floor((wall - checkpoint.endTime) / 5000));
     input.metadata = { ...input.metadata, endReason: 'transport_lost' };
     input.finalized = true;
     expect(pm.persistSession(input, { force: true })).toBe(true);
@@ -155,6 +156,65 @@ describe('transport checkpoints', () => {
     restored._hydrateFromSession(checkpoint);
     restored.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
     expect(restored.sessionId).toBeNull();
+  });
+
+  it('repeated paused reloads and saves preserve the original server resume expiry', async () => {
+    const { session, persist } = fixture();
+    const observedEnd = session.summary.endTime;
+    lose(session); await settle();
+    const checkpoint = persist.mock.calls.at(-1)[0];
+    let disk, indexEntry;
+    const readDisk = () => disk ? { ...disk, timeline: hydrateTimeline(disk.timeline) } : null;
+    const service = new SessionService({ defaultHouseholdId: 'test', sessionStore: {
+      findById: async () => readDisk(),
+      findByDate: async () => [indexEntry],
+      save: async entity => {
+        disk = JSON.parse(JSON.stringify(dehydrateSessionRecord(entity)));
+        // Index port returns the normalized entity times, as the real index does.
+        indexEntry = { sessionId: entity.sessionId.toString(), endTime: entity.endTime,
+          finalized: entity.finalized, contentId: 'plex:test' };
+      },
+    } });
+    const writer = () => new PersistenceManager({ persistApi: async (url, body) => {
+      if (url.endsWith('save_session')) return service.saveSession(body.sessionData);
+      return { granted: true };
+    } });
+    const initialWriter = writer();
+    expect(initialWriter.persistSession({ ...checkpoint, roster: [{ userId: 'alex' }], timeline: {
+      ...checkpoint.timeline, series: { 'user:alex:hr': Array(120).fill(120) },
+      timebase: { ...checkpoint.timeline.timebase, tickCount: 120 },
+    } }, { force: true })).toBe(true);
+    await initialWriter.whenLastSaveSettled();
+    let restored;
+    for (const reloadAfterMs of [8 * 60000, 5 * 60000]) {
+      wall += reloadAfterMs; mono += reloadAfterMs;
+      restored = new FitnessSession();
+      restored._hydrateFromSession(serializeSession(reconstituteSession(readDisk())));
+      Object.defineProperty(restored, 'roster', { get: () => [{ userId: 'alex' }] });
+      restored._persistenceManager = writer();
+      restored._checkpointTransportPause();
+      await settle();
+      await restored.whenFinalPersistSettled();
+      expect(restored._persistenceManager.successfulSaveRevision).toBe(1);
+    }
+    expect((await service.findResumable('plex:test', 'test')).resumable).toBe(true);
+    wall = checkpoint.transportPause.resumeUntil + 1000;
+    expect(await service.findResumable('plex:test', 'test')).toEqual({ resumable: false });
+    expect(indexEntry.endTime).toBe(observedEnd);
+    expect(disk.timeline.tick_count).toBe(120);
+    // No padding during paused reload/save; exactly one gap is aligned once
+    // a real recovery receipt arrives inside the original eligibility window.
+    wall = observedEnd + 16 * 60000;
+    restored.deviceManager.lastPacketAt = wall;
+    restored.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
+    expect(restored.timeline.timebase.tickCount).toBe(120 + 16 * 60 / 5);
+    const alignedGap = restored.timeline.series['user:alex:heart_rate'].slice(120);
+    expect(alignedGap).toHaveLength(16 * 60 / 5);
+    expect(alignedGap.every(v => v === null)).toBe(true);
+    const once = restored.timeline.timebase.tickCount;
+    restored.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
+    expect(restored.timeline.timebase.tickCount).toBe(once);
+    restored._stopAutosaveTimer();
   });
 
   it('keeps autosave available after a rejected checkpoint and retries without claiming durability', async () => {

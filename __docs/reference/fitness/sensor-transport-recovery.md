@@ -74,7 +74,10 @@ milliseconds; live hold and resume deadlines use a monotonic clock. The existing
 30-minute session consolidation window is reused, anchored to the last observed
 timeline end just like server resume lookup; checkpointing adds no extra minutes.
 On reload, its persisted wall
-expiry establishes the remaining monotonic deadline. Old records without these
+expiry establishes the remaining monotonic deadline. Paused reloads keep the
+last observed timeline cursor and defer null gap alignment until a real recovery
+packet; repeated paused saves therefore cannot extend server resume eligibility.
+Old records without these
 fields remain readable.
 
 Only a real accepted sensor packet can resume the same eligible session. Health
