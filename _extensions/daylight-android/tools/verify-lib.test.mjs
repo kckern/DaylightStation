@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, generatedComponents, HOME_ALIAS, homeAliasFailures, parseXmlTree,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -225,4 +225,60 @@ test('the build type line says what was verified', () => {
   assert.equal(buildTypeLine(BADGING, null), 'debug build (debuggable), signer not checked');
   assert.equal(buildTypeLine("package: name='x'", 'Signer #1 certificate DN: CN=Example Release'),
     'not debuggable, signed with a key that is not the Android debug key');
+});
+
+// ── the HOME alias ────────────────────────────────────────────────────────
+
+const NS = 'http://schemas.android.com/apk/res/android';
+const homeFilter = (pad) => [
+  `${pad}E: intent-filter (line=87)`,
+  `${pad}    E: action (line=88)`,
+  `${pad}      A: ${NS}:name(0x01010003)="android.intent.action.MAIN" (Raw: "android.intent.action.MAIN")`,
+  `${pad}    E: category (line=90)`,
+  `${pad}      A: ${NS}:name(0x01010003)="android.intent.category.HOME" (Raw: "android.intent.category.HOME")`,
+  `${pad}    E: category (line=91)`,
+  `${pad}      A: ${NS}:name(0x01010003)="android.intent.category.DEFAULT" (Raw: "android.intent.category.DEFAULT")`,
+];
+const KIOSK_ACTIVITY_LINES = [
+  '          E: activity (line=76)',
+  `            A: ${NS}:name(0x01010003)="net.kckern.daylight.cap.webviewhost.shell.KioskActivity" (Raw: "x")`,
+  `            A: ${NS}:exported(0x01010010)=true`,
+];
+const aliasLines = (enabled) => [
+  '          E: activity-alias (line=95)',
+  `            A: ${NS}:name(0x01010003)="${HOME_ALIAS}" (Raw: "${HOME_ALIAS}")`,
+  ...(enabled == null ? [] : [`            A: ${NS}:enabled(0x0101000e)=${enabled}`]),
+  `            A: ${NS}:exported(0x01010010)=true`,
+  `            A: ${NS}:targetActivity(0x01010202)="net.kckern.daylight.cap.webviewhost.shell.KioskActivity" (Raw: "x")`,
+  ...homeFilter('              '),
+];
+const tree = (...parts) => ['N: android=http://schemas.android.com/apk/res/android (line=2)', '  E: manifest (line=2)', '      E: application (line=60)', ...parts.flat()].join('\n');
+const KIOSK_CAPS = ['webview-host', 'accessibility', 'lockdown'];
+
+test('a build that lists lockdown expects the generated alias as a component', () => {
+  assert.deepEqual(generatedComponents(KIOSK_CAPS), [`activity-alias ${HOME_ALIAS}`]);
+  assert.deepEqual(generatedComponents(['webview-host', 'notifications']), []);
+  assert.deepEqual(parseApkComponents(tree(KIOSK_ACTIVITY_LINES, aliasLines('false'))).sort(),
+    [`activity net.kckern.daylight.cap.webviewhost.shell.KioskActivity`, `activity-alias ${HOME_ALIAS}`].sort());
+});
+
+test('the HOME filter on a disabled alias passes', () => {
+  assert.deepEqual(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, aliasLines('false')), KIOSK_CAPS), []);
+});
+
+test('a HOME filter on the kiosk activity itself fails: installing would add a home candidate', () => {
+  const failures = homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, homeFilter('              ')), KIOSK_CAPS);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /HOME filter is on activity net\.kckern\.daylight\.cap\.webviewhost\.shell\.KioskActivity/);
+});
+
+test('an alias that is enabled, or does not say, fails', () => {
+  assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, aliasLines('true')), KIOSK_CAPS)[0], /not declared disabled/);
+  assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, aliasLines(null)), KIOSK_CAPS)[0], /not declared disabled/);
+});
+
+test('a lockdown build with no alias fails, and a build without lockdown must have no HOME filter', () => {
+  assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES), KIOSK_CAPS)[0], /expected one HOME filter/);
+  assert.deepEqual(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES), ['webview-host']), []);
+  assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, aliasLines('false')), ['webview-host'])[0], /must have no HOME filter/);
 });

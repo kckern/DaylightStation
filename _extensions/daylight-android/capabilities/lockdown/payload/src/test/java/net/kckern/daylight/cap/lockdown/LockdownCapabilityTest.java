@@ -74,7 +74,9 @@ public class LockdownCapabilityTest {
     }
 
     /** A second runtime with an Android context and a kiosk window, started for real. */
-    private FakeSurface startForReal(FakeContext ctx, File dir) throws Exception {
+    private FakeSurface startForReal(FakeContext ctx, File dir) throws Exception { return startForReal(ctx, dir, null); }
+
+    private FakeSurface startForReal(FakeContext ctx, File dir, HomeAlias alias) throws Exception {
         cap.stop();
         core = TestCore.createWithContext(dir, ctx);
         FakeSurface surface = new FakeSurface();
@@ -82,8 +84,61 @@ public class LockdownCapabilityTest {
         cap = new LockdownCapability();
         core.add(cap);
         core.prepare(new JSONObject());
+        if (alias != null) cap.useHomeAliasForTest(alias);
         cap.start();
         return surface;
+    }
+
+    // ── the HOME alias ────────────────────────────────────────────────────────
+
+    /** The package manager's view of the alias: installed disabled. */
+    private static final class FakeAlias implements HomeAlias {
+        String state = DISABLED;
+        String failWith;
+        final java.util.List<Boolean> sets = new java.util.ArrayList<>();
+        @Override public String state() { return state; }
+        @Override public String set(boolean enabled) {
+            sets.add(enabled);
+            if (failWith != null) return failWith;
+            state = enabled ? ENABLED : DISABLED;
+            return null;
+        }
+    }
+
+    @Test public void theHomeAliasIsReportedDisabledUntilItIsEnabledByRequest() throws Exception {
+        FakeAlias alias = new FakeAlias();
+        startForReal(new FakeContext(tmp.newFolder()), tmp.newFolder(), alias);
+        assertEquals("installing changes nothing: the alias starts disabled", "disabled", call("GET", "/lockdown", null).getString("homeAlias"));
+        assertTrue("nothing enabled it by itself", alias.sets.isEmpty());
+
+        JSONObject on = call("POST", "/lockdown/home", "{\"enabled\":true}");
+        assertEquals(200, on.getInt("_status"));
+        assertEquals("enabled", on.getString("homeAlias"));
+        assertEquals("enabled", call("GET", "/lockdown", null).getString("homeAlias"));
+
+        JSONObject off = call("POST", "/lockdown/home", "{\"enabled\":false}");
+        assertEquals("disabled", off.getString("homeAlias"));
+        assertEquals("disabled", call("GET", "/lockdown", null).getString("homeAlias"));
+        assertEquals(java.util.Arrays.asList(true, false), alias.sets);
+    }
+
+    @Test public void theHomeRouteNeedsABooleanAndReportsAFailureAsAnError() throws Exception {
+        assertEquals(400, call("POST", "/lockdown/home", null).getInt("_status"));
+        assertEquals(400, call("POST", "/lockdown/home", "{\"enabled\":\"yes\"}").getInt("_status"));
+        assertEquals("not started: nothing to switch", 409, call("POST", "/lockdown/home", "{\"enabled\":true}").getInt("_status"));
+
+        FakeAlias alias = new FakeAlias();
+        alias.failWith = "SecurityException: refused";
+        cap.useHomeAliasForTest(alias);
+        JSONObject r = call("POST", "/lockdown/home", "{\"enabled\":true}");
+        assertEquals(500, r.getInt("_status"));
+        assertEquals("home_alias_failed", r.getString("error"));
+        assertEquals("disabled", r.getString("homeAlias"));
+    }
+
+    @Test public void theHomeRouteNeedsTheToken() {
+        Router.Response r = core.router().dispatch("POST", "/lockdown/home", "wrong", Collections.emptyMap(), "{\"enabled\":true}");
+        assertEquals(401, r.status);
     }
 
     // ── the plan's tests ──────────────────────────────────────────────────────
@@ -105,7 +160,8 @@ public class LockdownCapabilityTest {
     }
 
     @Test public void registersItsRoutesAndServices() {
-        for (String route : new String[] { "GET /lockdown", "POST /lockdown/lock", "POST /lockdown/unlock", "POST /lockdown/input" }) {
+        for (String route : new String[] { "GET /lockdown", "POST /lockdown/lock", "POST /lockdown/unlock", "POST /lockdown/input",
+                "POST /lockdown/home" }) {
             assertTrue("missing " + route, core.router().routes().contains(route));
         }
         assertNotNull(core.services().find(LockdownControl.class));

@@ -201,6 +201,13 @@ test('lockdown: status, lock, unlock in minutes sent as milliseconds', () => {
   assert.throws(() => parseArgs(['lockdown', 'open']), /usage: lockdown/);
 });
 
+test('lockdown home switches the HOME alias on and off', () => {
+  assert.deepEqual([req('lockdown', 'home', 'on').method, req('lockdown', 'home', 'on').url], ['POST', `${BASE}/lockdown/home`]);
+  assert.deepEqual(bodyOf('lockdown', 'home', 'on'), { enabled: true });
+  assert.deepEqual(bodyOf('lockdown', 'home', 'off'), { enabled: false });
+  for (const bad of [[], ['yes'], ['on', 'now']]) assert.throws(() => parseArgs(['lockdown', 'home', ...bad]), /usage: lockdown home on\|off/);
+});
+
 test('lockdown input sends the ordered lock and release commands', () => {
   const now = 1_700_000_000_000;
   const p = (...a) => parseArgs(['lockdown', 'input', ...a], { now });

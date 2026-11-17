@@ -4,7 +4,7 @@ package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 19, versionName: "0.3-kiosk" }
+shell: { versionCode: 20, versionName: "0.3-kiosk" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 # `accessibility`: the lockdown watcher reads what is in front through it, and it is this
@@ -34,6 +34,14 @@ defaults:
   # today. Anything else Fully allows is read from Fully at this device's cutover.
   launcher.allowed: "com.retroarch.aarch64"
   debug.execEnabled: false
+  # Coexistence switches. This app is installed beside the old helper app(s) before the
+  # device is switched over, and two apps cannot hold the same hardware. Each switch
+  # below is off, so installing takes nothing from the helper that runs the device
+  # today. They are turned on at this device's cutover (`settings set <key> true`, applied
+  # at once, reported in GET /status under "switches"), after the old helper is stopped,
+  # and turned off again in a rollback. See __docs/runbooks/android/kiosk-cutover.md.
+  mic.enabled: false           # the microphone stream (audio-bridge streams it)
+  lease.enabled: false         # the lease loop (supervision-guard runs it)
   heartbeat.enabled: true
   # Where heartbeats and log lines are shipped. Household-specific: resolved from
   # `placeholders:` in the private tokens file when this device's payload is built.

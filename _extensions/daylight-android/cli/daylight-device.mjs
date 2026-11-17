@@ -63,6 +63,7 @@ Lockdown
   lockdown unlock [minutes]        unlock; it always relocks by itself (alias: unlock)
   lockdown input lock [--revision n] [--for minutes]   stop the volume keys
   lockdown input release [--revision n]
+  lockdown home on|off             make this app a home candidate, or stop it being one
 
 Diagnostics
   shot [file]                      screenshot to a PNG file; prints the path
@@ -171,10 +172,15 @@ function parseSettings(sub, rest) {
 }
 
 function parseLockdown(sub, rest, now) {
-  const text = 'usage: lockdown [status | lock | unlock [minutes] | input lock|release …]';
+  const text = 'usage: lockdown [status | lock | unlock [minutes] | input lock|release … | home on|off]';
   if (!sub || sub === 'status') return get('/lockdown');
   if (sub === 'lock' && rest.length === 0) return post('/lockdown/lock');
   if (sub === 'unlock') return parseUnlock(rest);
+  if (sub === 'home') {
+    // The HOME alias is installed disabled. Enabling it is the cutover's switch step.
+    if (rest.length !== 1 || (rest[0] !== 'on' && rest[0] !== 'off')) throw new Error('usage: lockdown home on|off');
+    return post('/lockdown/home', { enabled: rest[0] === 'on' });
+  }
   if (sub === 'input') {
     const inputUsage = 'usage: lockdown input lock [--revision n] [--for minutes] | lockdown input release [--revision n]';
     const [action, ...more] = rest;

@@ -5,6 +5,7 @@ import android.os.SystemClock;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.LiveSwitch;
 import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.spi.PackageGate;
@@ -23,6 +24,9 @@ public final class LeaseGateCapability implements Capability {
     private final LeaseDeadline lease = new LeaseDeadline();
     private CoreContext core;
     private volatile LeaseLoop loop;
+    private volatile Context context;
+    /** lease.enabled: whether this app runs the lease loop. Off while supervision-guard still does. */
+    private LiveSwitch leaseSwitch;
     /** Test seam: the loop's platform. Null means the real one, built from the context. */
     private volatile LeaseLoop.Platform platformForTest;
     void usePlatformForTest(LeaseLoop.Platform p) { platformForTest = p; }
@@ -34,6 +38,10 @@ public final class LeaseGateCapability implements Capability {
         core.settings().declare("lease.endpoint", SettingsRegistry.Type.STRING, "");
         core.settings().declare("lease.packageName", SettingsRegistry.Type.STRING, "");
         core.settings().declareSecret("lease.credential");
+        leaseSwitch = LiveSwitch.declare(core, "lease.enabled", new LiveSwitch.Part() {
+            @Override public void acquire() { startLoop(); }
+            @Override public void release() { stopLoop(); }
+        });
         core.router().route("GET", "/lease", req -> {
             LeaseLoop l = loop;
             if (l != null) return Router.Response.json(200, l.status().put("ok", true));
@@ -49,13 +57,21 @@ public final class LeaseGateCapability implements Capability {
     }
 
     /**
-     * The endpoint, credential and package are read once here, as GuardService read its
-     * file once. Changing them takes a payload restart.
+     * The endpoint, credential and package are read once, when the loop starts, as
+     * GuardService read its file once. Changing them takes a payload restart, or
+     * lease.enabled off and on.
      */
     @Override public void start() {
         Context ctx = (Context) core.shell().context();
         // JVM tests boot every capability with no Android context: nothing to enforce.
         if (ctx == null) return;
+        context = ctx;
+        leaseSwitch.start();
+    }
+
+    private void startLoop() {
+        Context ctx = context;
+        if (ctx == null) throw new IllegalStateException("not started");
         LeaseOrder order = new LeaseOrder(new File(core.shell().payloadDir(), "state/lease-order.json"));
         LeaseLoop.Platform given = platformForTest;
         LeaseLoop l = given == null
@@ -67,13 +83,18 @@ public final class LeaseGateCapability implements Capability {
                         (String) core.settings().get("lease.endpoint"),
                         (String) core.settings().get("lease.credential"),
                         (String) core.settings().get("lease.packageName"), ctx.getPackageName(), true);
-        l.start();
         loop = l;
+        l.start();
     }
 
-    @Override public void stop() {
+    private void stopLoop() {
         LeaseLoop l = loop;
         loop = null;
         if (l != null) l.stop();
+    }
+
+    @Override public void stop() {
+        if (leaseSwitch != null) leaseSwitch.stop();
+        stopLoop();
     }
 }

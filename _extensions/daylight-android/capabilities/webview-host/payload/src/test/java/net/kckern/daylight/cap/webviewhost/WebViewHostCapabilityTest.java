@@ -204,7 +204,9 @@ public class WebViewHostCapabilityTest {
     private static final class FakeHost implements net.kckern.daylight.api.KioskHost {
         final java.util.List<Object> attached = new java.util.ArrayList<>();
         @Override public Object activity() { return null; }
+        final java.util.List<Object> detached = new java.util.ArrayList<>();
         @Override public void attach(net.kckern.daylight.api.KioskController controller) { attached.add(controller); }
+        @Override public void detach(net.kckern.daylight.api.KioskController expected) { detached.add(expected); }
         @Override public boolean resumed() { return false; }
     }
 
@@ -233,6 +235,11 @@ public class WebViewHostCapabilityTest {
 
         kiosk.stop();
         assertEquals("unsubscribed", 0, real.events().subscribers());
+        // A late stop must not take the next payload's window: it names its own session
+        // and leaves the comparison to the Activity. It never attaches null.
+        assertEquals("only ever attached its session", 1, activity.attached.size());
+        assertEquals(1, activity.detached.size());
+        assertSame(activity.attached.get(0), activity.detached.get(0));
         kiosk.stop();
         assertEquals(0, real.events().subscribers());
 

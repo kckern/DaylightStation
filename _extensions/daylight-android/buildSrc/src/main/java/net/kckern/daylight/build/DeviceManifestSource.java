@@ -4,9 +4,11 @@ package net.kckern.daylight.build;
 public final class DeviceManifestSource {
     /** The capability whose shell half declares the kiosk Activity. */
     static final String KIOSK_CAPABILITY = "webview-host";
-    /** The capability that makes the kiosk Activity a HOME candidate. It requires the kiosk capability. */
+    /** The capability that gives the build its (disabled) HOME alias. It requires the kiosk capability. */
     static final String LOCKDOWN_CAPABILITY = "lockdown";
     static final String KIOSK_ACTIVITY = "net.kckern.daylight.cap.webviewhost.shell.KioskActivity";
+    /** The disabled alias that carries the HOME filter. The lockdown payload enables it by this name. */
+    public static final String HOME_ALIAS = "net.kckern.daylight.cap.lockdown.shell.KioskHome";
 
     /** The capability whose shell half declares the link activity. */
     static final String LINK_CAPABILITY = "notifications";
@@ -62,18 +64,28 @@ public final class DeviceManifestSource {
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
                 s.append("        </activity>\n");
             }
-            // Only a build that lists lockdown is offered as a home app. The filter is added here,
-            // beside the launcher filter webview-host's shell half declares on the same Activity.
-            // Being a candidate is all this does: the device's home app is chosen on the device.
+            // A build that lists lockdown CAN be the home app, and installing it changes no
+            // device's home candidates. The HOME filter sits on an alias of the kiosk
+            // Activity that is declared disabled, so the system does not see it until
+            // POST /lockdown/home enables the alias on the device (the cutover's switch
+            // step). A HOME filter that was live at install would add a second candidate;
+            // on API 28 that can clear the current default home and put a chooser in
+            // front of an unattended kiosk at the next Home press.
+            // The Activity is restated first: an alias must follow its target in the
+            // merged manifest, and the merger keeps this file's order.
             if (kiosk && d.capabilities.contains(LOCKDOWN_CAPABILITY)) {
                 s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
-                s.append("            android:exported=\"true\" tools:node=\"merge\">\n");
+                s.append("            android:exported=\"true\" tools:node=\"merge\" />\n");
+                s.append("        <activity-alias android:name=\"").append(HOME_ALIAS).append("\"\n");
+                s.append("            android:targetActivity=\"").append(KIOSK_ACTIVITY).append("\"\n");
+                s.append("            android:enabled=\"false\"\n");
+                s.append("            android:exported=\"true\">\n");
                 s.append("            <intent-filter>\n");
                 s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");
                 s.append("                <category android:name=\"android.intent.category.HOME\" />\n");
                 s.append("                <category android:name=\"android.intent.category.DEFAULT\" />\n");
                 s.append("            </intent-filter>\n");
-                s.append("        </activity>\n");
+                s.append("        </activity-alias>\n");
             }
             // The household site's https links, for the one host the private file names. The
             // filter only makes the app a candidate for such a link; the payload still checks

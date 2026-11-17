@@ -85,6 +85,8 @@ public final class PayloadLoader {
     private volatile Payload active;
     private volatile String activeJar;
     private volatile String starting;
+    /** The payload whose start() is running. Cleared once it is active or was given up on. */
+    private volatile Payload startingPayload;
     private volatile String lastError;
     private volatile String lastFailed;
     private volatile int bootsThisPayload;
@@ -325,10 +327,22 @@ public final class PayloadLoader {
 
     // ── shell component forwarding (shell owns the component, payload owns the policy) ──
 
-    /** Forward a shell-owned component (bound or, with null, unbound) to the active payload. */
+    /**
+     * Forward a shell-owned component (bound or, with null, unbound) to the active
+     * payload and to one that is still inside start(). A payload reads the components
+     * that exist when it begins to watch them; one published after that and before the
+     * payload became active (the kiosk Activity with launch-on-boot, the accessibility
+     * service on a first install) used to reach nobody until the next restart.
+     */
     public void onShellComponent(String name, Object instance) {
-        Payload p = active;
-        if (p != null) try { p.onShellComponent(name, instance); } catch (Throwable t) { Log.w(TAG, "component forward threw: " + name, t); }
+        Payload a = active;
+        Payload s = startingPayload;
+        if (a != null) forward(a, name, instance);
+        if (s != null && s != a) forward(s, name, instance);
+    }
+
+    private static void forward(Payload p, String name, Object instance) {
+        try { p.onShellComponent(name, instance); } catch (Throwable t) { Log.w(TAG, "component forward threw: " + name, t); }
     }
 
     // ── internals ───────────────────────────────────────────────────────────
@@ -404,6 +418,7 @@ public final class PayloadLoader {
                 if (stop) stopSafely(p);
             }, "Daylight-payload-start");
             runner.setDaemon(true);
+            startingPayload = p;
             runner.start();
             String problem = null;
             Throwable cause = null;
@@ -420,6 +435,7 @@ public final class PayloadLoader {
             }
             if (problem == null && closed) problem = "loader shut down during start()";
             if (problem != null) {
+                startingPayload = null;
                 synchronized (abandoned) { abandoned[0] = true; }
                 runner.interrupt();
                 // Release what the payload holds so far (its port, its threads). stop() gets its
@@ -429,13 +445,17 @@ public final class PayloadLoader {
                 stopper.start();
                 return failed(jar, problem, cause);
             }
+            // active is set before startingPayload is cleared, so a component published
+            // at this moment finds the payload under one name or the other.
             active = p;
+            startingPayload = null;
             activeJar = jar;
             lastError = null;
             Log.i(TAG, "payload ACTIVE " + jar + " v=" + safeVersion());
             return true;
         } finally {
             starting = null;
+            startingPayload = null;
         }
     }
 

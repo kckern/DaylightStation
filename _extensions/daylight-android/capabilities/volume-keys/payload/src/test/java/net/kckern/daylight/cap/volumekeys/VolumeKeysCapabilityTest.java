@@ -94,4 +94,34 @@ public class VolumeKeysCapabilityTest {
             TestCore.releaseMainThread();
         }
     }
+
+    // ── volumeKeys.enabled: installed beside portal-keys, which filters the keys ─
+
+    @Test public void withTheSwitchOffNoKeyFilterIsAddedUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            VolumeKeysCapability keys = new VolumeKeysCapability();
+            core.add(keys);
+            core.prepare(new JSONObject("{\"volumeKeys.enabled\":false}"));
+
+            keys.start();
+            assertEquals(0, core.accessibility().keyFilterCount());
+            assertEquals("beep guard unavailable", TestCore.post(core, "/accessibility/silence-beep").getString("error"));
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("volumeKeys.enabled").getBoolean("active"));
+
+            core.settings().set("volumeKeys.enabled", true);
+            assertEquals(1, core.accessibility().keyFilterCount());
+            assertTrue(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("volumeKeys.enabled").getBoolean("active"));
+
+            core.settings().set("volumeKeys.enabled", false);
+            assertEquals(0, core.accessibility().keyFilterCount());
+
+            keys.stop();
+            assertEquals(0, core.accessibility().keyFilterCount());
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

@@ -320,6 +320,49 @@ public class PayloadLoaderTest {
         assertEquals(BAKED_V1, loader.store().current());
     }
 
+    // ── shell components ────────────────────────────────────────────────────
+
+    private FakePayload waitForOpened(String jar) throws Exception {
+        long deadline = System.currentTimeMillis() + WAIT_MS;
+        while (h.last(jar) == null && System.currentTimeMillis() < deadline) Thread.sleep(5);
+        FakePayload p = h.last(jar);
+        assertNotNull(jar + " was never opened", p);
+        assertTrue(p.entered.await(WAIT_MS, TimeUnit.MILLISECONDS));
+        return p;
+    }
+
+    @Test public void aComponentPublishedWhileAPayloadIsStartingReachesThatPayload() throws Exception {
+        // Launch-on-boot: the kiosk Activity is created while start() is still running.
+        h.jar("p-slow.jar", "slow");
+        existing("1", "p-slow.jar");
+        PayloadLoader loader = h.loader("1", WAIT_MS);
+        java.util.concurrent.Future<?> boot = loader.boot();
+        FakePayload starting = waitForOpened("p-slow.jar");
+        assertNull("still starting", loader.active());
+
+        loader.onShellComponent("kiosk-activity", "activity-1");
+
+        assertEquals(java.util.Arrays.asList("kiosk-activity=activity-1"), starting.components);
+        starting.release.countDown();
+        boot.get(WAIT_MS, TimeUnit.MILLISECONDS);
+        assertSame(starting, loader.active());
+        loader.onShellComponent("accessibility", "service-1");
+        assertEquals("once active it is told exactly once per change",
+                java.util.Arrays.asList("kiosk-activity=activity-1", "accessibility=service-1"), starting.components);
+    }
+
+    @Test public void aPayloadThatWasGivenUpOnIsNotToldAboutComponents() throws Exception {
+        h.jar("p-good.jar", "good:1");
+        h.jar("p-hang.jar", "hang");
+        existing("1", "p-good.jar", "p-hang.jar");
+        PayloadLoader loader = booted("1");
+        assertEquals("p-good.jar", loader.activeJar());
+        loader.onShellComponent("kiosk-activity", "activity-1");
+        assertTrue(h.last("p-hang.jar").components.isEmpty());
+        assertEquals(java.util.Arrays.asList("kiosk-activity=activity-1"), h.last("p-good.jar").components);
+        h.last("p-hang.jar").release.countDown();
+    }
+
     @Test public void aShutdownDuringStartDoesNotMoveThePointers() throws Exception {
         h.jar("p-good.jar", "good:1");
         h.jar("p-hang.jar", "hang");

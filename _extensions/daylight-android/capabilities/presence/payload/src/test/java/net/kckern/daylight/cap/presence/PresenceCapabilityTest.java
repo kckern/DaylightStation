@@ -162,4 +162,28 @@ public class PresenceCapabilityTest {
             TestCore.releaseMainThread();
         }
     }
+
+    // ── presence.enabled: installed beside portal-keys, which reports presence ─
+
+    @Test public void withTheSwitchOffNoReporterRunsUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            PresenceCapability presence = new PresenceCapability();
+            core.add(presence);
+            core.prepare(new JSONObject("{\"presence.enabled\":false}"));
+            presence.start();
+            assertEquals("not started", TestCore.get(core, "/presence").getString("error"));
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("presence.enabled").getBoolean("active"));
+
+            core.settings().set("presence.enabled", true);
+            assertTrue(TestCore.get(core, "/presence").getBoolean("ok"));
+            core.settings().set("presence.enabled", false);
+            assertEquals("not started", TestCore.get(core, "/presence").getString("error"));
+            presence.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

@@ -103,6 +103,37 @@ public class DeviceDefaultsTest {
     /** The devices that replace Fully. A new kiosk is added here; every other device is held to the phone's rules. */
     private static final java.util.Set<String> KIOSKS = new java.util.HashSet<>(java.util.Arrays.asList("piano", "portal", "shield"));
 
+    /** Each part of the old helper apps that this app can take over, behind a switch that is applied live. */
+    private static final String[] COEXISTENCE_SWITCHES = { "hid.enabled", "midi.enabled", "speaker.enabled", "mic.enabled",
+            "volumeKeys.enabled", "presence.enabled", "lease.enabled" };
+
+    /**
+     * A kiosk is installed beside the old helpers, so its device file says, for every
+     * switch its capabilities declare, whether this app holds that hardware. A switch
+     * left to its fallback (on) would claim the hardware at install.
+     */
+    @Test public void aKioskDeviceFileStatesEveryCoexistenceSwitchItHas() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
+            core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        }
+        JSONObject defaults = new JSONObject(DeviceConfig.DEFAULTS_JSON);
+        core.prepare(defaults);
+        if (!KIOSKS.contains(DeviceConfig.DEVICE_ID)) return;
+        JSONObject switches = TestCore.get(core, "/status").getJSONObject("switches");
+        int declared = 0;
+        for (String key : COEXISTENCE_SWITCHES) {
+            boolean has;
+            try { core.settings().get(key); has = true; } catch (net.kckern.daylight.core.SettingsRegistry.UnknownSettingException e) { has = false; }
+            if (!has) continue;
+            declared++;
+            assertTrue("devices/" + DeviceConfig.DEVICE_ID + ".yml must state " + key, defaults.has(key));
+            assertTrue(key + " is reported in /status", switches.has(key));
+            assertFalse("not started, so nothing is held", switches.getJSONObject(key).getBoolean("active"));
+        }
+        assertTrue("every kiosk has at least one helper part", declared > 0);
+    }
+
     /** The control API contract's routes: the core's, and each capability's kiosk table. */
     private static final String[] CORE_ROUTES = { "GET /status", "GET /capabilities", "GET /settings", "POST /settings",
             "DELETE /settings", "GET /payload", "POST /payload", "POST /payload/rollback", "POST /update", "GET /update" };

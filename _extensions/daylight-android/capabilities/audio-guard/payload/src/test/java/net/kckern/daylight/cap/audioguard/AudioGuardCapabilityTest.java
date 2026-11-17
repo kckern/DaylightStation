@@ -126,4 +126,52 @@ public class AudioGuardCapabilityTest {
             TestCore.releaseMainThread();
         }
     }
+
+    // ── speaker.enabled: installed beside piano-bridge, which drives the speaker ─
+
+    @Test public void withTheSwitchOffNeitherTheConnectorNorTheGuardExistsUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            AudioGuardCapability capability = new AudioGuardCapability();
+            core.add(capability);
+            core.prepare(new JSONObject("{\"speaker.enabled\":false}"));   // the piano's device file
+            capability.start();
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+            assertTrue("the guard's volume receiver is not registered", ctx.receivers.isEmpty());
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("speaker.enabled").getBoolean("active"));
+
+            core.settings().set("speaker.enabled", true);
+            assertTrue(core.services().find(BluetoothRole.class).present());
+            assertEquals(1, ctx.receivers.size());
+
+            core.settings().set("speaker.enabled", false);
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertTrue(ctx.receivers.isEmpty());
+            capability.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
+
+    @Test public void thePanelsDisconnectIsItsOwnSettingAndLeavesTheSwitchAlone() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.add(new AudioGuardCapability());
+        core.prepare(new JSONObject("{\"speaker.enabled\":false}"));
+        BluetoothRole role = core.services().find(BluetoothRole.class);
+        assertFalse("switch off: the role is not enabled", role.enabled());
+        role.assign("AA:BB:CC:DD:EE:FF", "Example speaker");
+        assertEquals("assigning a speaker in the panel does not turn the coexistence switch on",
+                Boolean.FALSE, core.settings().get("speaker.enabled"));
+        assertEquals(Boolean.TRUE, core.settings().get("speaker.connect"));
+
+        core.settings().set("speaker.enabled", true);
+        assertTrue(role.enabled());
+        role.disable();
+        assertEquals(Boolean.FALSE, core.settings().get("speaker.connect"));
+        assertEquals("the guard keeps its switch", Boolean.TRUE, core.settings().get("speaker.enabled"));
+        assertFalse(role.enabled());
+    }
 }

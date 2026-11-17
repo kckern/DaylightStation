@@ -649,8 +649,14 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             renderText();
             renderWeb();
         });
-        KioskHost h = host;
-        if (h != null) try { h.attach(null); } catch (Throwable ignored) { }
+        // Never attach(null): this stop() may land after the next payload's session has
+        // attached, and an unconditional detach would take that one's window away. The
+        // host compares on the main thread and detaches only this session. The Activity
+        // is asked for through the shell and not read from `host`, which only the main
+        // thread writes.
+        Object published = core.components().get(KioskHost.COMPONENT);
+        KioskHost h = published instanceof KioskHost ? (KioskHost) published : host;
+        if (h != null) try { h.detach(this); } catch (Throwable t) { note("detach failed: " + t); }
     }
 
     // ── the overlay layers (main thread) ──────────────────────────────────────

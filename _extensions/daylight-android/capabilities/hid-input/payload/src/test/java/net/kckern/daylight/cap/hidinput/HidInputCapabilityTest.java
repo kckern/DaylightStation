@@ -98,4 +98,38 @@ public class HidInputCapabilityTest {
             TestCore.releaseMainThread();
         }
     }
+
+    // ── hid.enabled: installed beside portal-keys, which holds the keyboard ───
+
+    @Test public void withTheSwitchOffTheUsbKeyboardIsNotClaimedUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            HidInputCapability hid = new HidInputCapability();
+            core.add(hid);
+            core.prepare(new JSONObject("{\"hid.enabled\":false}"));    // the Portal's device file
+
+            hid.start();
+            assertEquals("only the Bluetooth diagnostics' receiver: no USB attach or permission receiver", 1, ctx.receivers.size());
+            assertEquals("USB HID unavailable", TestCore.get(core, "/usb-hid").getString("error"));
+            JSONObject row = TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("hid.enabled");
+            assertFalse(row.getBoolean("setting"));
+            assertFalse(row.getBoolean("active"));
+
+            core.settings().set("hid.enabled", true);                   // the cutover, with no restart
+            assertEquals(2, ctx.receivers.size());
+            assertNotEquals("USB HID unavailable", TestCore.get(core, "/usb-hid").optString("error"));
+            assertTrue(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("hid.enabled").getBoolean("active"));
+
+            core.settings().set("hid.enabled", false);                  // the rollback
+            assertEquals("the USB receiver is given back", 1, ctx.receivers.size());
+            assertEquals("USB HID unavailable", TestCore.get(core, "/usb-hid").getString("error"));
+
+            hid.stop();
+            assertTrue(ctx.receivers.isEmpty());
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

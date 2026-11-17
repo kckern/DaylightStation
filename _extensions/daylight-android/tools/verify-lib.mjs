@@ -162,3 +162,64 @@ export function buildTypeLine(badging, signerText) {
     : /CN=Android Debug/.test(signerText) ? 'signed with the Android debug key' : 'signed with a key that is not the Android debug key';
   return `${debuggable ? 'debug build (debuggable)' : 'not debuggable'}, ${signer}`;
 }
+
+/** The alias the generated device manifest adds to a build that lists lockdown (DeviceManifestSource.HOME_ALIAS). */
+export const HOME_ALIAS = 'net.kckern.daylight.cap.lockdown.shell.KioskHome';
+
+/** Components that come from the generated device manifest and so are in no module's source manifest. */
+export function generatedComponents(capabilities) {
+  return capabilities.includes('lockdown') && capabilities.includes('webview-host') ? [`activity-alias ${HOME_ALIAS}`] : [];
+}
+
+/**
+ * The elements of `aapt2 dump xmltree`, each with its attributes and its ancestors'
+ * names. aapt2 indents two spaces per level and prints an element as "E: name (line=N)"
+ * and an attribute as "A: [namespace:]name(0x..)=value".
+ */
+export function parseXmlTree(xmltree) {
+  const out = [];
+  const stack = [];
+  for (const line of xmltree.split('\n')) {
+    const el = /^(\s*)E: ([A-Za-z0-9_.:-]+)/.exec(line);
+    if (el) {
+      const depth = el[1].length;
+      while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+      const node = { name: el[2], depth, attrs: {}, parent: stack.length ? stack[stack.length - 1] : null };
+      stack.push(node);
+      out.push(node);
+      continue;
+    }
+    const at = /^\s*A: (?:[^\s(]*:)?([A-Za-z0-9_]+)(?:\(0x[0-9a-f]+\))?=(.*)$/.exec(line);
+    if (at && stack.length) {
+      let value = at[2].trim();
+      const quoted = /^"(.*?)"/.exec(value);
+      if (quoted) value = quoted[1];
+      else if (/^(?:\(type 0x12\))?0xffffffff$/i.test(value) || value === 'true') value = 'true';
+      else if (/^(?:\(type 0x12\))?0x0$/i.test(value) || value === 'false') value = 'false';
+      stack[stack.length - 1].attrs[at[1]] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Installing a build must change no device's home candidate set. Every HOME category
+ * in the APK's manifest must sit in an intent filter of the one alias, and that alias
+ * must be declared disabled. A build without lockdown has no HOME category at all.
+ */
+export function homeAliasFailures(xmltree, capabilities) {
+  const failures = [];
+  const wantsAlias = generatedComponents(capabilities).length > 0;
+  const homes = parseXmlTree(xmltree).filter((n) => n.name === 'category' && n.attrs.name === 'android.intent.category.HOME');
+  for (const home of homes) {
+    const owner = home.parent?.parent;
+    if (!owner || owner.name !== 'activity-alias' || owner.attrs.name !== HOME_ALIAS) {
+      failures.push(`a HOME filter is on ${owner ? `${owner.name} ${owner.attrs.name}` : 'an unknown element'}: installing would add a home candidate`);
+    } else if (owner.attrs.enabled !== 'false') {
+      failures.push(`the HOME alias is not declared disabled (android:enabled=${owner.attrs.enabled ?? 'absent'}): installing would add a home candidate`);
+    }
+  }
+  if (wantsAlias && homes.length !== 1) failures.push(`expected one HOME filter on the disabled alias, found ${homes.length}`);
+  if (!wantsAlias && homes.length !== 0) failures.push(`a build without lockdown must have no HOME filter, found ${homes.length}`);
+  return failures;
+}

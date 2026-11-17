@@ -45,4 +45,25 @@ public class LeaseGateCapabilityTest {
         cap.stop();
         cap.stop();
     }
+
+    // ── lease.enabled: installed beside supervision-guard, which runs the loop ─
+
+    @Test public void withTheSwitchOffNoLeaseLoopRunsUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            LeaseGateCapability cap = new LeaseGateCapability();
+            core.add(cap);
+            core.prepare(new JSONObject("{\"lease.enabled\":false}"));
+            cap.start();
+            assertEquals("no loop: the answer is the one given before start", "unavailable", TestCore.get(core, "/lease").getString("enforcement"));
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("lease.enabled").getBoolean("active"));
+            assertEquals(Boolean.FALSE, core.settings().get("lease.enabled"));
+            cap.stop();
+            cap.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

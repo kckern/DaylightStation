@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 import net.kckern.daylight.api.KioskController;
 import net.kckern.daylight.api.KioskHost;
+import net.kckern.daylight.api.KioskSlot;
 import net.kckern.daylight.api.ShellComponents;
 
 /**
@@ -27,7 +28,8 @@ public class KioskActivity extends Activity implements KioskHost {
     /** By name: this module cannot reference the shell app module. */
     private static final String SHELL_SERVICE = "net.kckern.daylight.shell.ShellService";
 
-    private KioskController controller;
+    /** Main thread only. */
+    private final KioskSlot slot = new KioskSlot();
     private boolean visible;
     private volatile boolean resumed;
 
@@ -54,20 +56,34 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override
     public void attach(final KioskController next) {
         runOnUiThread(() -> {
-            KioskController old = controller;
-            controller = null;
+            // The same component can be reported twice; the attached controller stays as it is.
+            if (slot.holds(next)) return;
+            KioskController old = slot.replace(next);
             if (old != null) {
                 try { old.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
             }
             if (next == null || isFinishing() || isDestroyed()) {
+                slot.clear();
                 showFallback("Daylight is restarting…");
                 return;
             }
-            controller = next;
             guard("attach", () -> next.onHostAttached(this));
-            if (controller == next && visible) guard("visible", () -> next.onHostVisible(true));
-            if (controller == next && resumed) guard("resume", next::onHostResumed);
-            if (controller == next && hasWindowFocus()) guard("focus", () -> next.onHostWindowFocus(true));
+            if (slot.current() == next && visible) guard("visible", () -> next.onHostVisible(true));
+            if (slot.current() == next && resumed) guard("resume", next::onHostResumed);
+            if (slot.current() == next && hasWindowFocus()) guard("focus", () -> next.onHostWindowFocus(true));
+        });
+    }
+
+    /**
+     * Compare and clear, together, on the main thread. A payload that is stopping names
+     * its own controller; if another controller has attached since, nothing happens.
+     */
+    @Override
+    public void detach(final KioskController expected) {
+        runOnUiThread(() -> {
+            if (!slot.releaseIf(expected)) return;
+            try { expected.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
+            showFallback("Daylight is restarting…");
         });
     }
 
@@ -100,8 +116,7 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override protected void onDestroy() {
         // Only when this instance is still the published one: a newer Activity may have replaced it.
         if (ShellComponents.get(COMPONENT) == this) ShellComponents.publish(COMPONENT, null);
-        KioskController old = controller;
-        controller = null;
+        KioskController old = slot.clear();
         if (old != null) {
             try { old.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
         }
@@ -119,7 +134,7 @@ public class KioskActivity extends Activity implements KioskHost {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        KioskController c = controller;
+        KioskController c = slot.current();
         if (c != null) {
             try {
                 if (c.onHostKey(event)) return true;
@@ -135,7 +150,7 @@ public class KioskActivity extends Activity implements KioskHost {
     private interface Call { void on(KioskController c); }
 
     private void forward(String what, Call call) {
-        KioskController c = controller;
+        KioskController c = slot.current();
         if (c != null) guard(what, () -> call.on(c));
     }
 
@@ -146,8 +161,7 @@ public class KioskActivity extends Activity implements KioskHost {
     /** A payload fault must not take the shell's Activity down with it. */
     private void fail(String what, Throwable t) {
         Log.e(TAG, "controller failed in " + what, t);
-        KioskController broken = controller;
-        controller = null;
+        KioskController broken = slot.clear();
         // Let the payload drop its views before the fallback replaces them.
         if (broken != null) {
             try { broken.onHostDetached(); } catch (Throwable ignored) { }

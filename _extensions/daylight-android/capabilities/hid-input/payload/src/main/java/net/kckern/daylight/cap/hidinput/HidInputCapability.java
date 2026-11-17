@@ -4,6 +4,7 @@ import android.content.Context;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.LiveSwitch;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.StatusBoard;
@@ -24,6 +25,11 @@ public final class HidInputCapability implements Capability {
     private volatile UsbHidController usbHid;
     private volatile BluetoothController bluetooth;
     private volatile BtDiag btDiag;
+    /**
+     * hid.enabled: whether this app claims the USB keyboard. Off while portal-keys is
+     * still installed and holds the same device; turned on at the Portal's cutover.
+     */
+    private LiveSwitch usbSwitch;
 
     @Override public String name() { return "hid-input"; }
 
@@ -35,6 +41,10 @@ public final class HidInputCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
+        usbSwitch = LiveSwitch.declare(core, "hid.enabled", new LiveSwitch.Part() {
+            @Override public void acquire() { claimUsb(); }
+            @Override public void release() { releaseUsb(); }
+        });
         Router r = core.router();
         r.route("GET", "/input", req -> { Context c = context; return c == null ? unavailable("Input probe") : Replies.json(InputProbe.snapshot(c)); });
         r.route("GET", "/usb-hid", req -> { UsbHidController u = usbHid; return u == null ? unavailable("USB HID") : Replies.json(u.inventory()); });
@@ -84,18 +94,9 @@ public final class HidInputCapability implements Capability {
         if (shellContext == null) return;
         Context ctx = shellContext.getApplicationContext();
         context = ctx;
-        // Each part may fail alone, as in the portal-keys payload.
-        try {
-            HidEventStream s = new HidEventStream(core.socket());
-            // Handed over as a source, not as the service: the service may bind after this,
-            // and the USB permission dialog must still be confirmed then.
-            UsbHidController u = new UsbHidController(ctx, accessibilitySource(core), s);
-            u.start();
-            stream = s;
-            usbHid = u;
-        } catch (Throwable t) {
-            core.shell().note("PAYLOAD", "USB HID start failed " + t);
-        }
+        // Each part may fail alone, as in the portal-keys payload. The USB claim is
+        // behind hid.enabled; the switch notes a failure and reports it in /status.
+        usbSwitch.start();
         try {
             BluetoothController b = new BluetoothController(ctx);
             b.start();
@@ -115,10 +116,27 @@ public final class HidInputCapability implements Capability {
         return () -> core.accessibility().service();
     }
 
-    @Override public void stop() {
-        BluetoothController b = bluetooth; bluetooth = null; if (b != null) b.stop();
+    private void claimUsb() {
+        Context ctx = context;
+        if (ctx == null) throw new IllegalStateException("not started");
+        HidEventStream s = new HidEventStream(core.socket());
+        // Handed over as a source, not as the service: the service may bind after this,
+        // and the USB permission dialog must still be confirmed then.
+        UsbHidController u = new UsbHidController(ctx, accessibilitySource(core), s);
+        stream = s;
+        usbHid = u;
+        u.start();
+    }
+
+    private void releaseUsb() {
         UsbHidController u = usbHid; usbHid = null; if (u != null) u.stop();
         HidEventStream s = stream; stream = null; if (s != null) s.stop();
+    }
+
+    @Override public void stop() {
+        BluetoothController b = bluetooth; bluetooth = null; if (b != null) b.stop();
+        if (usbSwitch != null) usbSwitch.stop();
+        releaseUsb();
         btDiag = null;
         context = null;
     }

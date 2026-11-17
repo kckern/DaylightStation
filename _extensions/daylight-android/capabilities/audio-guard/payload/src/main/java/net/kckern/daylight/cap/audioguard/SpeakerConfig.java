@@ -13,11 +13,17 @@ final class SpeakerConfig {
     static void declare(SettingsRegistry s) {
         s.declare("speaker.mac", SettingsRegistry.Type.STRING, "");
         s.declare("speaker.name", SettingsRegistry.Type.STRING, "Speaker");
-        // An explicit disconnect survives watchdog ticks, setting changes and payload swaps.
+        // The coexistence switch: whether this app drives the speaker at all, the A2DP
+        // connector and the route guard both. Off while piano-bridge still does.
         s.declare("speaker.enabled", SettingsRegistry.Type.BOOLEAN, true);
+        // An explicit disconnect (the Bluetooth panel's) survives watchdog ticks, setting
+        // changes and payload swaps. The guard keeps running, so the tablet's own speaker
+        // stays clamped while the Bluetooth speaker is disconnected on purpose.
+        s.declare("speaker.connect", SettingsRegistry.Type.BOOLEAN, true);
     }
 
     String speakerMac() { return ((String) s.get("speaker.mac")).trim().toUpperCase(Locale.US); }
     String speakerName() { return (String) s.get("speaker.name"); }
-    boolean bluetoothAudioEnabled() { return (Boolean) s.get("speaker.enabled"); }
+    /** What the connector asks before it connects: the switch is on and nobody disconnected on purpose. */
+    boolean bluetoothAudioEnabled() { return (Boolean) s.get("speaker.enabled") && (Boolean) s.get("speaker.connect"); }
 }

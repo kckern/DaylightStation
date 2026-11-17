@@ -14,5 +14,13 @@ public interface KioskHost {
      */
     void attach(KioskController controller);
 
+    /**
+     * Detach {@code expected} if it is still the attached controller, and do nothing
+     * otherwise. Safe from any thread; the comparison and the detach happen together on
+     * the main thread. A payload that is stopping calls this, never attach(null): its
+     * stop() can land after the next payload's controller has attached.
+     */
+    void detach(KioskController expected);
+
     boolean resumed();
 }

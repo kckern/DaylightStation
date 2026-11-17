@@ -35,6 +35,10 @@ public final class MidiBridgeCapability implements Capability {
             if (!applying && l != null && key.startsWith("midi.") && !key.equals("midi.targetName")) l.reconnect();
         });
         core.services().provide(BluetoothRole.class, new MidiRole());
+        // midi.enabled is the coexistence switch for the BLE-MIDI link: the connector reads
+        // it at every scan and connect decision, and a change reconnects (above), so it is
+        // applied the moment it changes. Off while piano-bridge still holds the link.
+        net.kckern.daylight.core.LiveSwitch.report(core, "midi.enabled", () -> link != null && config.bluetoothMidiEnabled());
 
         Router r = core.router();
         r.route("POST", "/connect", req -> {

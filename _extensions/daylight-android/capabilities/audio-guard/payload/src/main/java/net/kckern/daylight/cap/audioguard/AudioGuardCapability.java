@@ -5,6 +5,7 @@ import android.content.Context;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.Diag;
+import net.kckern.daylight.core.LiveSwitch;
 import net.kckern.daylight.core.LogEvents;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
@@ -22,6 +23,9 @@ public final class AudioGuardCapability implements Capability {
     private volatile AudioGuardHost host;
     private volatile AdapterCycler adapterCycler;
     private volatile boolean applying;
+    private volatile Context context;
+    /** speaker.enabled: the connector and the guard together. See SpeakerConfig. */
+    private LiveSwitch speakerSwitch;
     /** The Bluetooth off-and-on cycle in flight, kept so stop() can end it. */
     private volatile Thread btCycle;
     static final long STOP_JOIN_MS = 3000;
@@ -40,7 +44,23 @@ public final class AudioGuardCapability implements Capability {
         config = new SpeakerConfig(core.settings());
         core.settings().onChange(key -> {
             AudioGuardHost h = host;
-            if (!applying && h != null && key.startsWith("speaker.") && !key.equals("speaker.name")) h.rebuild();
+            // speaker.enabled is the switch's business: it starts and stops the whole host.
+            if (!applying && h != null && key.startsWith("speaker.") && !key.equals("speaker.name")
+                    && !key.equals("speaker.enabled")) h.rebuild();
+        });
+        speakerSwitch = LiveSwitch.attach(core, "speaker.enabled", new LiveSwitch.Part() {
+            @Override public void acquire() {
+                Context ctx = context;
+                if (ctx == null) throw new IllegalStateException("not started");
+                AudioGuardHost h = new AudioGuardHost(ctx, config, core.services());
+                host = h;
+                h.start();
+            }
+            @Override public void release() {
+                AudioGuardHost h = host;
+                host = null;
+                if (h != null) h.stop();
+            }
         });
         core.services().provide(BluetoothRole.class, new AudioRole());
 
@@ -148,9 +168,8 @@ public final class AudioGuardCapability implements Capability {
         Context ctx = (Context) core.shell().context();
         if (ctx == null) return;
         adapterCycler = AdapterCycler.forDevice();
-        AudioGuardHost h = new AudioGuardHost(ctx, config, core.services());
-        h.start();
-        host = h;
+        context = ctx;
+        speakerSwitch.start();
     }
 
     @Override public void stop() {
@@ -163,6 +182,7 @@ public final class AudioGuardCapability implements Capability {
             t.interrupt();
             try { t.join(STOP_JOIN_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
+        if (speakerSwitch != null) speakerSwitch.stop();
         AudioGuardHost h = host;
         host = null;
         if (h != null) h.stop();
@@ -186,14 +206,16 @@ public final class AudioGuardCapability implements Capability {
                 java.util.Map<String, Object> values = new java.util.LinkedHashMap<>();
                 values.put("speaker.mac", address);
                 values.put("speaker.name", name);
-                values.put("speaker.enabled", true);
+                // Ends an explicit disconnect. The coexistence switch (speaker.enabled) is
+                // not this panel's to turn on.
+                values.put("speaker.connect", true);
                 core.settings().setAll(values);
             } finally { applying = false; }
             AudioGuardHost h = host;
             if (h != null) h.rebuild();
         }
         @Override public void rename(String name) { core.settings().set("speaker.name", name); }
-        @Override public void disable() { core.settings().set("speaker.enabled", false); }
+        @Override public void disable() { core.settings().set("speaker.connect", false); }
         @Override public boolean pauseDiscovery() { return true; }
         @Override public void resumeDiscovery() { }
     }

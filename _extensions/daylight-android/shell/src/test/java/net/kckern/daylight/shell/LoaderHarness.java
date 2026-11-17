@@ -46,6 +46,10 @@ final class LoaderHarness {
             }
             entered.countDown();
             if (behavior.equals("throw")) throw new IllegalStateException("cannot run");
+            if (behavior.equals("slow")) {
+                // A start() that takes a while and then succeeds; the test releases it.
+                try { release.await(); } catch (InterruptedException e) { throw new IllegalStateException(e); }
+            }
             if (behavior.equals("hang")) {
                 // Ignores interruption, like a payload stuck in a native call.
                 boolean waiting = true;
@@ -57,7 +61,9 @@ final class LoaderHarness {
 
         @Override public void stop() { stops.incrementAndGet(); }
         @Override public String version() { return behavior.startsWith("good:") ? behavior.substring(5) : behavior; }
-        @Override public void onShellComponent(String name, Object instance) { }
+        /** Every component this payload was told about, as "name=instance". */
+        final List<String> components = Collections.synchronizedList(new ArrayList<>());
+        @Override public void onShellComponent(String name, Object instance) { components.add(name + "=" + instance); }
     }
 
     static final class Shell implements ShellServices {
@@ -89,7 +95,9 @@ final class LoaderHarness {
 
     LoaderHarness(File dir) { this.dir = dir; shell.payloadDir = dir; }
 
-    PayloadLoader loader(String shellStamp) {
+    PayloadLoader loader(String shellStamp) { return loader(shellStamp, DEADLINE_MS); }
+
+    PayloadLoader loader(String shellStamp, long deadlineMs) {
         return new PayloadLoader(dir, shell,
                 jar -> {
                     FakePayload p = new FakePayload(jar.getName(), new String(Files.readAllBytes(jar.toPath()), StandardCharsets.UTF_8));
@@ -105,7 +113,7 @@ final class LoaderHarness {
                     if (body == null) throw new java.io.IOException("404 " + url);
                     Files.write(dst.toPath(), body.getBytes(StandardCharsets.UTF_8));
                 },
-                shellStamp, DEADLINE_MS);
+                shellStamp, deadlineMs);
     }
 
     /** Put a fake jar in the store directory. */

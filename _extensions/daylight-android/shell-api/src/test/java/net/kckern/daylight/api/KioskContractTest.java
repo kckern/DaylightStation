@@ -20,6 +20,11 @@ public class KioskContractTest {
             controller = next;
             if (next != null) next.onHostAttached(this);
         }
+        @Override public void detach(KioskController expected) {
+            if (controller != expected) return;
+            controller = null;
+            expected.onHostDetached();
+        }
         @Override public boolean resumed() { return false; }
     }
 
@@ -48,5 +53,17 @@ public class KioskContractTest {
         host.attach(controller);
         host.attach(null);
         assertEquals(java.util.Arrays.asList("attached activity", "detached"), controller.seen);
+    }
+
+    @Test public void detachTakesOutOnlyTheControllerItNames() {
+        Host host = new Host();
+        Controller old = new Controller(), next = new Controller();
+        host.attach(old);
+        host.attach(next);
+        host.detach(old);
+        assertSame("the next controller stays attached", next, host.controller);
+        host.detach(next);
+        assertNull(host.controller);
+        assertEquals(java.util.Arrays.asList("attached activity", "detached"), next.seen);
     }
 }

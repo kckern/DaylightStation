@@ -14,7 +14,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import {
-  bakedPayloadFailure, buildTypeLine, componentFailures, declaredComponents, expectedPermission, newestVersion,
+  bakedPayloadFailure, buildTypeLine, componentFailures, declaredComponents, expectedPermission, generatedComponents,
+  homeAliasFailures, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
 } from './verify-lib.mjs';
 
@@ -104,8 +105,11 @@ const componentsOf = (moduleDir) => {
 const expectedComponents = [...new Set([
   ...componentsOf(join(root, 'shell')),
   ...device.capabilities.flatMap((name) => componentsOf(join(root, 'capabilities', name, 'shell'))),
+  ...generatedComponents(device.capabilities),
 ])].sort();
 failures.push(...componentFailures(parseApkComponents(tree), expectedComponents));
+// Installing must add no home candidate: the HOME filter is on a disabled alias only.
+failures.push(...homeAliasFailures(tree, device.capabilities));
 
 // A capability with native code must ship a library for every ABI of the device.
 const entries = execFileSync('unzip', ['-Z1', apk], { encoding: 'utf8' }).split('\n');

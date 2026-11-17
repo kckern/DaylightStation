@@ -64,20 +64,36 @@ public class DeviceManifestSourceTest {
 
     private static final String KIOSK = "<activity android:name=\"net.kckern.daylight.cap.webviewhost.shell.KioskActivity\"";
 
-    @Test public void aBuildWithLockdownOffersTheKioskActivityAsAHomeApp() {
+    private static final String ALIAS = "<activity-alias android:name=\"net.kckern.daylight.cap.lockdown.shell.KioskHome\"";
+
+    @Test public void aBuildWithLockdownCarriesTheHomeFilterOnADisabledAliasOnly() {
         String xml = DeviceManifestSource.render(device(Collections.emptyList(), Collections.emptyList(),
                 Arrays.asList("webview-host", "accessibility", "lockdown")));
         assertEquals(1, count(xml, "<application>"));
+        assertEquals("the HOME category appears once", 1, count(xml, "android.intent.category.HOME"));
+        assertEquals(1, count(xml, ALIAS));
+        int at = xml.indexOf(ALIAS);
+        String alias = xml.substring(at, xml.indexOf("</activity-alias>", at));
+        assertTrue(alias.contains("android:targetActivity=\"net.kckern.daylight.cap.webviewhost.shell.KioskActivity\""));
+        assertTrue("installing must add no home candidate", alias.contains("android:enabled=\"false\""));
+        assertTrue(alias.contains("android:exported=\"true\""));
+        assertTrue(alias.contains("<action android:name=\"android.intent.action.MAIN\" />"));
+        assertTrue(alias.contains("<category android:name=\"android.intent.category.HOME\" />"));
+        assertTrue(alias.contains("<category android:name=\"android.intent.category.DEFAULT\" />"));
+        assertFalse(alias.contains("LAUNCHER"));
+    }
+
+    @Test public void theKioskActivityItselfHasNoHomeFilterAndComesBeforeItsAlias() {
+        String xml = DeviceManifestSource.render(device(Collections.emptyList(), Collections.emptyList(),
+                Arrays.asList("webview-host", "accessibility", "lockdown")));
         assertEquals(1, count(xml, KIOSK));
-        int at = xml.indexOf(KIOSK);
-        String activity = xml.substring(at, xml.indexOf("</activity>", at));
-        assertTrue(activity.contains("tools:node=\"merge\""));
-        assertTrue(activity.contains("<action android:name=\"android.intent.action.MAIN\" />"));
-        assertTrue(activity.contains("<category android:name=\"android.intent.category.HOME\" />"));
-        assertTrue(activity.contains("<category android:name=\"android.intent.category.DEFAULT\" />"));
-        // The launcher filter stays where webview-host declared it: nothing is removed here.
-        assertFalse(activity.contains("removeAll"));
-        assertFalse(activity.contains("LAUNCHER"));
+        int activity = xml.indexOf(KIOSK), alias = xml.indexOf(ALIAS);
+        // An alias whose target is declared after it is refused at install.
+        assertTrue("the target is restated before the alias", activity > 0 && activity < alias);
+        String restated = xml.substring(activity, alias);
+        assertTrue(restated.contains("tools:node=\"merge\""));
+        assertFalse("no filter of any kind is added to the Activity", restated.contains("intent-filter"));
+        assertFalse(restated.contains("removeAll"));
     }
 
     @Test public void aKioskBuildWithoutLockdownIsNeverAHomeCandidate() {
@@ -85,6 +101,7 @@ public class DeviceManifestSourceTest {
                 Arrays.asList("debug-tools", "webview-host")));
         assertFalse(xml.contains("category.HOME"));
         assertFalse(xml.contains("KioskActivity"));
+        assertFalse(xml.contains("activity-alias"));
     }
 
     // ── https links of the household site ─────────────────────────────────────

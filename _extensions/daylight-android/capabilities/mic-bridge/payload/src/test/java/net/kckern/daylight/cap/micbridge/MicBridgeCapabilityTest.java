@@ -184,4 +184,36 @@ public class MicBridgeCapabilityTest {
             TestCore.releaseMainThread();
         }
     }
+
+    // ── mic.enabled: installed beside audio-bridge, which streams the microphone ─
+
+    @Test(timeout = 20000) public void withTheSwitchOffNoStreamSocketIsBoundUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            MicBridgeCapability mic = new MicBridgeCapability();
+            core.add(mic);
+            int port = freePort();
+            core.prepare(new JSONObject("{\"mic.enabled\":false,\"mic.port\":" + port + "}"));   // the Shield's device file
+
+            mic.start();
+            assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
+            assertTrue("the port is left alone", portIsFree(port));
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("mic.enabled").getBoolean("active"));
+
+            core.settings().set("mic.enabled", true);
+            assertTrue(TestCore.get(core, "/mic/status").getBoolean("running"));
+            assertFalse(portIsFree(port));
+
+            core.settings().set("mic.enabled", false);
+            long deadline = System.currentTimeMillis() + 3000;
+            while (!portIsFree(port) && System.currentTimeMillis() < deadline) Thread.sleep(20);
+            assertTrue("turning it off gives the port back", portIsFree(port));
+            assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
+            mic.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

@@ -75,6 +75,29 @@ catalog.devices().each { d ->
     tasks.matching { it.name ==~ "process${d.id.capitalize()}(Debug|Release)(Main)?Manifest" }.all { it.dependsOn gen }
 }
 
+// The build-level check of what installing would do to a device: each device's MERGED
+// manifest (the one in its APK) is read back and held to MergedManifestCheck's rules.
+// Part of `check`, so `./gradlew build` fails on a manifest that adds a home candidate.
+def mergedManifestChecks = catalog.devices().collect { d ->
+    def cap = d.id.capitalize()
+    tasks.register("check${cap}MergedManifest") {
+        group = 'verification'
+        description = "Checks the merged manifest of the ${d.id} debug APK."
+        dependsOn "process${cap}DebugManifest"
+        def merged = new File(buildDir, "intermediates/merged_manifests/${d.id}Debug/AndroidManifest.xml")
+        inputs.file(merged)
+        outputs.upToDateWhen { false }
+        doLast {
+            if (!merged.isFile()) throw new GradleException("no merged manifest at ${merged}")
+            def failures = net.kckern.daylight.build.MergedManifestCheck.failures(merged.getText('UTF-8'), d)
+            if (!failures.isEmpty()) {
+                throw new GradleException("${d.id}: merged manifest check failed:\n  " + failures.join('\n  '))
+            }
+        }
+    }
+}
+tasks.named('check') { dependsOn mergedManifestChecks }
+
 // A device build without a control token would install an API nobody can reach.
 catalog.devices().each { d ->
     tasks.matching { it.name ==~ "pre${d.id.capitalize()}(Debug|Release)Build" }.all {

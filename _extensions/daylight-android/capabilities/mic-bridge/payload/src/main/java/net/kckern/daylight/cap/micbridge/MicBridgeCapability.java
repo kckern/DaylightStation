@@ -8,6 +8,7 @@ import net.kckern.daylight.cap.micbridge.shell.OverlayAnchor;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.Diag;
+import net.kckern.daylight.core.LiveSwitch;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.StatusBoard;
@@ -49,6 +50,11 @@ public final class MicBridgeCapability implements Capability {
     private volatile Overlay overlay = REAL_OVERLAY;
     /** Outlives a restart, so a restart cannot make a capture failure look cured. */
     private final CaptureState capture = new CaptureState();
+    /**
+     * mic.enabled: whether this app runs the microphone stream. Off while audio-bridge
+     * still streams the same microphone; turned on at the Shield's cutover.
+     */
+    private LiveSwitch micSwitch;
 
     /** Test seam: no window manager on the JVM. */
     void useOverlayForTest(Overlay o) { overlay = o; }
@@ -101,6 +107,10 @@ public final class MicBridgeCapability implements Capability {
         // A client that sends no Origin header is admitted from loopback while this is true.
         // True for as long as an app other than this one's kiosk hosts the page; see MicOriginRule.
         core.settings().declare("mic.allowNoOrigin", SettingsRegistry.Type.BOOLEAN, true);
+        micSwitch = LiveSwitch.declare(core, "mic.enabled", new LiveSwitch.Part() {
+            @Override public void acquire() { startStream(ctx); }
+            @Override public void release() { stopStream(); }
+        });
 
         core.router().route("GET", "/mic/status", req -> Replies.json(status().put("ok", true)));
         core.router().route("POST", "/mic/restart", req -> {
@@ -154,7 +164,8 @@ public final class MicBridgeCapability implements Capability {
         Context shellContext = (Context) core.shell().context();
         // JVM tests boot every capability with no Android context: no microphone to stream.
         if (shellContext == null) return;
-        startStream(shellContext.getApplicationContext());
+        ctx = shellContext.getApplicationContext();
+        micSwitch.start();
     }
 
     /** The context is null only in a JVM test, which also replaces the overlay. */
@@ -169,11 +180,20 @@ public final class MicBridgeCapability implements Capability {
         if (!s.running()) core.shell().note("PAYLOAD", "mic stream did not start: " + s.lastError());
     }
 
-    @Override public synchronized void stop() {
+    /**
+     * Not synchronized: the switch takes its own lock before this capability's, and a
+     * setting change does the same, so stop() must not hold this one first.
+     */
+    @Override public void stop() {
+        if (micSwitch != null) micSwitch.stop();
+        stopStream();
+        ctx = null;
+        // The anchor stays: it belongs to the process, and the next payload needs it.
+    }
+
+    private synchronized void stopStream() {
         MicStreamServer s = server;
         server = null;
         if (s != null) s.stop();
-        ctx = null;
-        // The anchor stays: it belongs to the process, and the next payload needs it.
     }
 }

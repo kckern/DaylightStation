@@ -4,7 +4,7 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 20, versionName: "0.3-kiosk" }
+shell: { versionCode: 21, versionName: "0.3-kiosk" }
 capabilities:
   - webview-host
   - debug-tools
@@ -38,6 +38,15 @@ defaults:
   lockdown.ownerRestrictions: true
   lockdown.ownerHidePackages: "org.chromium.chrome,com.android.chrome,com.facebook.alohaapps.controlcenter,com.android.systemui"
   debug.execEnabled: false
+  # Coexistence switches. This app is installed beside the old helper app(s) before the
+  # device is switched over, and two apps cannot hold the same hardware. Each switch
+  # below is off, so installing takes nothing from the helper that runs the device
+  # today. They are turned on at this device's cutover (`settings set <key> true`, applied
+  # at once, reported in GET /status under "switches"), after the old helper is stopped,
+  # and turned off again in a rollback. See __docs/runbooks/android/kiosk-cutover.md.
+  hid.enabled: false           # the USB keyboard claim (portal-keys holds it)
+  volumeKeys.enabled: false    # the volume-key filter and the beep guard (portal-keys)
+  presence.enabled: false      # Bluetooth presence reports (portal-keys sends them)
   heartbeat.enabled: true
   # Where heartbeats and log lines are shipped. Household-specific: resolved from
   # `placeholders:` in the private tokens file when this device's payload is built.

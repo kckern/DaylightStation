@@ -53,7 +53,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * front, or when it cannot tell what is. The mode (owner or app) is read at run time.
  */
 public final class LockdownCapability implements Capability, LockdownControl {
-    /** The Activity webview-host's shell half declares; the device manifest gives it the HOME filter. */
+    /** The Activity webview-host's shell half declares. The HOME filter is on its alias, {@link HomeAlias#NAME}. */
     static final String KIOSK_ACTIVITY = "net.kckern.daylight.cap.webviewhost.shell.KioskActivity";
     private static final long TICK_MS = 1_000L;
     /** No unlock outlasts this, whatever was asked for and whatever is stored. */
@@ -80,6 +80,10 @@ public final class LockdownCapability implements Capability, LockdownControl {
     private volatile ForegroundTrail trail;
     private volatile OwnerPolicy owner;
     private volatile StatusBarShield shield;
+    private volatile HomeAlias homeAlias;
+    /** Test seam: the JVM has no package manager. */
+    void useHomeAliasForTest(HomeAlias alias) { homeAlias = alias; }
+    private volatile String factHomeAlias = HomeAlias.DISABLED;
     private volatile File stateFile, inputFile;
     private Timer timer;
 
@@ -219,6 +223,27 @@ public final class LockdownCapability implements Capability, LockdownControl {
             if (relockAt > 0) o.put("relockAtMs", relockAt);
             return Router.Response.json(200, o);
         });
+        // Makes this app a home candidate, or stops it being one. The alias that carries the
+        // HOME filter is installed disabled; this is the only thing that enables it.
+        router.route("POST", "/lockdown/home", req -> {
+            JSONObject body = Requests.body(req);
+            if (!(body.opt("enabled") instanceof Boolean)) throw new IllegalArgumentException("body needs 'enabled', true or false");
+            boolean enabled = (Boolean) body.opt("enabled");
+            HomeAlias alias = homeAlias;
+            if (alias == null) return Router.Response.error(409, "not_ready", "message", "lockdown is not started");
+            String problem = alias.set(enabled);
+            factHomeAlias = alias.state();
+            observeHome();
+            note("home alias " + (enabled ? "enable" : "disable") + " requested: " + (problem == null ? "now " + factHomeAlias : "FAILED " + problem));
+            if (problem != null) {
+                return Router.Response.json(500, Replies.err("home_alias_failed").put("message", problem).put("homeAlias", factHomeAlias));
+            }
+            return Router.Response.json(200, Replies.ok().put("homeAlias", factHomeAlias).put("homeIsKiosk", home.homeIsKiosk)
+                    .put("home", home.home == null ? JSONObject.NULL : home.home)
+                    // Being a candidate is all this does: which app answers Home is chosen on the device.
+                    .put("note", enabled ? "this app is now a home candidate; the default home app is chosen on the device"
+                            : "this app is no longer a home candidate"));
+        });
         // Beyond the control API contract: the ordered stop and release portal-keys took on
         // PUT /lockdown. While it is active the volume keys do nothing (volume-keys asks).
         router.route("POST", "/lockdown/input", req -> {
@@ -258,6 +283,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         trail = new ForegroundTrail(ownPackage);
         owner = new OwnerPolicy(ctx);
         shield = new StatusBarShield(ctx);
+        if (homeAlias == null) homeAlias = new HomeAlias.Android(ctx);
         File stateDir = new File(core.shell().payloadDir(), "state");
         stateFile = new File(stateDir, "lockdown.json");
         inputFile = new File(stateDir, "input-lock.json");
@@ -392,6 +418,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         factLockTask = o.lockTaskActive();
         factAdminFeature = o.adminFeature();
         factOverlay = sh.granted();
+        HomeAlias alias = homeAlias;
+        if (alias != null) factHomeAlias = alias.state();
     }
 
     private void report(ForegroundTrail.Event e) {
@@ -456,7 +484,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
             query.addCategory(Intent.CATEGORY_HOME);
             ResolveInfo r = pm.resolveActivity(query, PackageManager.MATCH_DEFAULT_ONLY);
             String component = r == null || r.activityInfo == null ? null : r.activityInfo.packageName + "/" + r.activityInfo.name;
-            String event = home.observe(component, ownPackage, KIOSK_ACTIVITY);
+            // HOME resolves to the alias, by its own name; the Activity is accepted as well.
+            String event = home.observe(component, ownPackage, HomeAlias.NAME, KIOSK_ACTIVITY);
             if (event != null) note(event + " home=" + component + " incidents=" + home.incidents);
         } catch (Exception e) {
             note("could not read the home app: " + e.getMessage());
@@ -547,7 +576,10 @@ public final class LockdownCapability implements Capability, LockdownControl {
         packages.addAll(exemptions.packages(System.currentTimeMillis()));
         packages.removeAll(blocked);
         List<String> hide = OwnerHide.packages(str("lockdown.ownerHidePackages"), ownPackage, webViewPackage());
-        ownerError = o.apply(packages, new ComponentName(ownPackage, KIOSK_ACTIVITY), bool("lockdown.ownerRestrictions"), hide);
+        // The preferred home is the alias, and only once it was enabled on the device:
+        // a preference for a disabled component resolves to nothing.
+        ComponentName homeComponent = HomeAlias.ENABLED.equals(factHomeAlias) ? new ComponentName(ownPackage, HomeAlias.NAME) : null;
+        ownerError = o.apply(packages, homeComponent, bool("lockdown.ownerRestrictions"), hide);
     }
 
     private void applyLocked(boolean locked) {
@@ -664,6 +696,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
                 .put("mode", mode())
                 .put("watcher", running ? "running" : "stopped")
                 .put("homeIsKiosk", home.homeIsKiosk)
+                .put("homeAlias", factHomeAlias)
                 .put("home", home.home == null ? JSONObject.NULL : home.home)
                 .put("allowedApps", new JSONArray(AllowRules.parseOrEmpty(allowed).describe()))
                 .put("exemptions", new JSONArray(exemptions.describe(now)))
