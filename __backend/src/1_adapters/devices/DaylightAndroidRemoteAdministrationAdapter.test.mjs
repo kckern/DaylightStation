@@ -209,10 +209,20 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
 
       await expect(adapter.readTypedSettings('tablet')).resolves.toEqual([
         { key: 'webview.startUrl', type: 'string', value: 'https://daylight.test/piano' },
-        { key: 'webview.loadTimeoutSec', type: 'number', value: 20 },
+        { key: 'webview.loadTimeoutSec', type: 'integer', value: 20 },
         { key: 'debug.execEnabled', type: 'boolean', value: false },
         { key: 'update.channel', type: 'enum', value: 'stable' },
       ]);
+    });
+
+    it.each([
+      ['STRING', 'string'], ['BOOLEAN', 'boolean'], ['INTEGER', 'integer'],
+      ['String', 'string'], ['boolean', 'boolean'], ['integer', 'integer'],
+      ['bool', 'boolean'], ['int', 'integer'], ['long', 'integer'],
+      ['number', 'number'], ['float', 'number'], ['double', 'number'],
+    ])('readTypedSettings reads the type %s as %s', async (deviceType, type) => {
+      const { adapter } = build({ 'GET /settings': json({ settings: [{ key: 'k', type: deviceType, value: 1 }] }) });
+      await expect(adapter.readTypedSettings('tablet')).resolves.toEqual([{ key: 'k', type, value: 1 }]);
     });
 
     it('readSettings rejects a body without a settings list', async () => {

@@ -124,8 +124,18 @@ const TYPED_SETTING_NORMALIZERS = Object.freeze({
     if (typeof number !== 'number' || !Number.isFinite(number)) throw invalid('value must be a number', 'value');
     return number;
   },
+  // No range: what a sensible value is belongs to the device, which rejects
+  // one it does not accept.
+  integer: (value) => {
+    const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    if (!Number.isInteger(number)) throw invalid('value must be a whole number', 'value');
+    return number;
+  },
   string: value => limitedText(value, 'value', { allowEmpty: true, max: 2048 }),
 });
+
+/** The console has one numeric control; an integer setting is shown as a number. */
+const consoleType = type => (type === 'integer' ? 'number' : type);
 
 const SENSITIVE_SETTING_KEYS = new Set([
   'wifiKey',
@@ -250,7 +260,7 @@ export class DeviceRemoteAdministrationService {
           const editableType = Object.hasOwn(TYPED_SETTING_NORMALIZERS, type);
           return {
             key,
-            type: editableType ? type : displayType(value),
+            type: editableType ? consoleType(type) : displayType(value),
             value: sensitive ? null : value,
             editable: editableType && !sensitive,
             sensitive,
@@ -310,7 +320,7 @@ export class DeviceRemoteAdministrationService {
       if (!listed || !normalize || isSensitiveSetting(key)) {
         throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
       }
-      schema = { type: listed.type, normalize };
+      schema = { type: consoleType(listed.type), normalize };
     } else {
       schema = SETTING_SCHEMAS[key];
       if (!schema || isSensitiveSetting(key)) {

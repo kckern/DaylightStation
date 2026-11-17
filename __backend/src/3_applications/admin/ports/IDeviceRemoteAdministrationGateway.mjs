@@ -12,7 +12,7 @@ export class IDeviceRemoteAdministrationGateway {
   async writeSetting(_deviceId, _key, _value) { throw new Error('Not implemented'); }
   /**
    * Settings as the device itself describes them: `[{ key, type, value }]`
-   * with `type` one of `boolean`, `number`, `string`, or the device's own word
+   * with `type` one of `string`, `boolean`, `integer`, `number`, or the device's own word
    * for anything else. Null (the default) when the device's settings carry no
    * types, in which case the application layer applies its curated whitelist.
    */

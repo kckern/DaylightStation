@@ -42,10 +42,16 @@ const ACTION_ROUTES = Object.freeze({
 /** Admin actions this app has no equivalent for; the console hides them. */
 const UNSUPPORTED_ACTIONS = Object.freeze(['screensaver-start', 'screensaver-stop']);
 
+/**
+ * The app's setting types are exactly STRING, BOOLEAN and INTEGER. They are
+ * read case-insensitively, and a few aliases are tolerated so a build that
+ * spells one differently still gets an editable control.
+ */
 const SETTING_TYPES = Object.freeze({
-  boolean: 'boolean', bool: 'boolean',
-  number: 'number', int: 'number', integer: 'number', long: 'number', float: 'number', double: 'number',
   string: 'string',
+  boolean: 'boolean', bool: 'boolean',
+  integer: 'integer', int: 'integer', long: 'integer',
+  number: 'number', float: 'number', double: 'number',
 });
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -132,8 +138,8 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
   /**
    * The app declares a type for every setting, so the application layer can
    * offer each one for editing and check a value before sending it. Types are
-   * normalised to `boolean`, `number` and `string`; any other word the app
-   * uses is passed through as it is.
+   * normalised to `string`, `boolean`, `integer` and `number`; any other word
+   * the app uses is passed through as it is.
    * @returns {Promise<Array<{key: string, type: string, value: *}>>}
    */
   async readTypedSettings(deviceId) {
