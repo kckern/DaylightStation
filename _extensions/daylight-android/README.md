@@ -4,9 +4,13 @@ One Android codebase that builds a separate APK for each household device. A dev
 is described by one YAML file. The build reads that file and produces an app with
 that device's package name, SDK levels, ports and capabilities.
 
-**Phase 1 is the foundation only.** There is no kiosk, no WebView and no ported
-helper code. Fully Kiosk Browser still runs every device. The app built here starts
-a service, serves a small control API and can swap its own logic over the network.
+**State.** Phase 1 built the foundation: a service, a control API and a payload the
+app can swap over the network. Phase 2 ported the helper code of the old helper apps
+into capabilities, and the `piano`, `portal` and `shield` device files build with
+them. There is no kiosk and no WebView yet (phase 3). Fully Kiosk Browser and the
+old helpers still run every device. The only hardware fact: on 2026-11-16 the phase
+1 build was installed on the Portal beside the existing apps, its payload loaded
+and the control API answered. Nothing from phase 2 has run on a device.
 
 Operating a device (routes, error codes, settings, the lifeline, the CLI) is covered
 in `__docs/reference/android/README.md`. This file covers building.
@@ -24,8 +28,14 @@ shell-api/                the two interfaces shared by the shell and the payload
 core/                     settings registry, token auth, router, control server
 payload/                  the fixed entry class; wires a device's capabilities into the core
 shell/                    the installed app: service, payload loader, lifeline
+core-testing/             FakeShell and TestCore, for capability tests
 gradle/payload-dex.gradle dexes each device's payload and bakes it into its shell
-tools/verify-build.mjs    checks a built APK against its device file
+gradle/payload-lib.gradle applied by every module whose classes go into the payload
+gradle/shell-lib.gradle   applied by every capability's shell half
+tools/verify-build.mjs    checks a built APK against its device file (--legacy: and the old app's permissions)
+tools/legacy-permissions.yml  the permission ledger --legacy reads
+tools/port.sh             copies a file out of an old helper app and records it
+tools/port-check.mjs      checks the recorded copies against their sources
 cli/daylight-device.mjs   the fleet CLI (repo entry: cli/daylight-device.cli.mjs)
 ```
 
@@ -83,7 +93,7 @@ Outputs:
 Building the APK always dexes the payload again, writes its `.sha256` and bakes
 that jar, so the payload inside an APK is the one built from the current sources.
 
-The payload version defaults to `p1-foundation`. Override it with
+The payload version defaults to `p2-helpers`. Override it with
 `-PpayloadVersion=<name>`.
 
 `tools/verify-build.mjs` reads the built APK and fails with exit code 1 when the
@@ -94,7 +104,14 @@ most recently written one, when any exists) and fails when they differ, which
 means the APK holds a stale payload. Run it after building and before installing.
 It needs `ANDROID_HOME` and the repo's `node_modules`.
 
-Tests: `./gradlew build` runs the Java unit tests of every module. The Node tests
+Tests: `./gradlew build` runs the Java unit tests of every module. The payload
+module's tests run once per device, against that device's generated configuration:
+`./gradlew :payload:testPianoDebugUnitTest :payload:testPortalDebugUnitTest
+:payload:testShieldDebugUnitTest`. Each boots the device's real capabilities with
+a fake shell and applies the device file's `defaults:`, so a default for an
+undeclared setting, a default of the wrong type, a default for a secret, a route or
+WebSocket message type claimed twice, or an entry class that cannot be constructed
+fails the build instead of the first start on the device. The Node tests
 for the CLI and the verifier's helpers run with
 `node --test _extensions/daylight-android/cli/ _extensions/daylight-android/tools/`
 from the repo root.
@@ -125,14 +142,21 @@ the build runs no `git submodule update` there.
 
 `tools/verify-build.mjs` reads `lib/<abi>/libpianobridge.so` out of the APK for
 each ABI and fails unless it holds the JNI exports for
-`net.kckern.daylight.cap.synth.shell.PianoEngine`, strings that exist only in
-sfizz, and at least 1 MiB; `liboboe.so` and `libc++_shared.so` must be beside it.
+`net.kckern.daylight.cap.synth.shell.PianoEngine`, the log line that is compiled
+only with sfizz, a size between 512 KiB and 2 MiB, and no path under the build
+machine's home directory; `liboboe.so` and `libc++_shared.so` must be beside it.
 
-A debug APK carries the CMake `Debug` build of the library, as the piano-bridge
-APK did. The NDK version is set once, in the root `build.gradle`, for the synth
-module and for the shell: the shell needs it to strip the libraries when it
-packages the APK (about 2.4 MB and 4.2 MB for the two ABIs, instead of 25 MB each
-with symbols).
+Every variant is built optimized: `CMakeLists.txt` forces `RelWithDebInfo`
+(`-O2 -g -DNDEBUG`) whatever build type the Android plugin asks for, because the
+debug APK is the one that gets installed and the sampler renders in the audio
+callback on a slow tablet. Stripped, the library is about 0.9 MB (armeabi-v7a) and
+1.3 MB (arm64-v8a); CMake's `Debug` build was 2.4 MB and 4.2 MB, which the
+verifier's upper bound now refuses. The build maps the sfizz, project, NDK and
+Gradle home prefixes out of `__FILE__` strings and debug info
+(`-ffile-prefix-map`, `-fmacro-prefix-map`), so the shipped library names no
+directory of the machine that built it. The NDK version is set once, in the root
+`build.gradle`, for the synth module and for the shell: the shell needs it to
+strip the libraries when it packages the APK.
 
 ## The tokens file
 
@@ -198,16 +222,42 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
    `debug-tools`). The entry class needs a public no-argument constructor. In
    `register` it declares its settings and routes; `start` and `stop` do the work.
    A capability talks to the core only, never to another capability.
-3. If it needs manifest entries (a permission, a service, a receiver), add a
-   `capabilities/<name>/shell/` Android library module with its own manifest, and
-   list each permission under `permissions:` in `capability.yml` so the verifier
-   expects it.
+3. If it needs manifest entries (a permission, a service, a receiver, a provider),
+   resources, native code, a library, or a class Android creates by name, add a
+   `capabilities/<name>/shell/` Android library module: a `build.gradle` that starts
+   with `apply from: rootProject.file('gradle/shell-lib.gradle')` and sets its
+   `namespace` (`net.kckern.daylight.cap.<name>.shell`), and its own manifest. List
+   each permission under `permissions:` in `capability.yml` so the verifier expects
+   it. A shell half is part of the installed APK: it may use `shell-api` and nothing
+   from the core or a payload, and changing it means a new install (bump the
+   device's `shell.versionCode`).
+   - A component the payload must reach (a service, a receiver) hands itself over
+     with `ShellComponents.publish(<name>, this)` from `shell-api`; the payload gets
+     it through `core.shell().component(<name>)` and is told when it changes. The
+     accessibility service does this.
+   - A payload half that calls classes of its shell half declares
+     `compileOnly project(':capabilities:<name>:shell')` (and `testImplementation`
+     of the same), as `synth` and `mic-bridge` do. `compileOnly` keeps those classes
+     out of the payload jar; at run time they come from the APK.
+   - A payload cannot carry a library, since only its own classes are dexed. A
+     library goes in the shell half as an `api` dependency (`mic-bridge` ships
+     Java-WebSocket this way).
 4. List the capability under `capabilities:` in each device file that should have
    it. A device's APK and payload contain only the capabilities it lists.
 
-Two more `capability.yml` keys: `requires: [<name>, ...]` makes the build refuse a
-device that lists this capability without the named ones, and `native: true` makes
-it refuse a device with no `abis`.
+`capability.yml` keys:
+
+| Key | Meaning |
+|---|---|
+| `entry` | The payload half's `Capability` class |
+| `permissions` | Every Android permission the capability needs; an empty list when none. The verifier compares the APK's set with these lists |
+| `requires` | Capabilities a device must also list, or its build is refused |
+| `native` | `true` when the shell half ships native code; a device with no `abis` is refused |
+
+A setting that must stay off the device file (a token, a credential) is declared
+with `declareSecret`. A setting whose value is household-specific and not secret (an
+address, a URL) is a normal setting whose device default is a `{placeholder}`; a
+capability treats an empty value as "not configured" and says so once in the log.
 
 `start()` runs on a worker thread with no Looper and must return quickly; work that
 needs the main thread is posted to `new Handler(Looper.getMainLooper())`. `stop()`
@@ -224,7 +274,12 @@ copies one file, rewrites its package, applies class renames and records the pai
 in `tools/port-map.tsv`. `node tools/port-check.mjs` then compares every `move` row
 with its source (package, imports and added `public` aside) and lists the `adapt`
 rows. A move and a behavior change never share a commit; a file that is edited
-after its move has its row changed to `adapt`.
+after its move has its row changed to `adapt`. The script does not rewrite imports
+of nested classes from the old package; fix those by hand in the move commit.
+Before committing a move, search the copied files for addresses, device names and
+other household identifiers. One exception to the rule above: a file that holds
+such an identifier is moved and scrubbed in the same commit, with its row set to
+`adapt` and the commit message saying so, so the identifier never enters history.
 
 ## Rules
 

@@ -82,3 +82,31 @@ test('lifeline commands use the lifeline port', () => {
 test('an unknown command is an error', () => {
   assert.throws(() => parseArgs(['frobnicate']), /unknown command 'frobnicate'/);
 });
+
+test('get passes a path and query through to the control port', () => {
+  const r = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['get', '/midi/tap']));
+  assert.equal(r.method, 'GET');
+  assert.equal(r.url, 'http://192.0.2.10:8780/midi/tap');
+  const q = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['get', '/hid/bluetooth/radio/scan', 'ms=5000']));
+  assert.equal(q.url, 'http://192.0.2.10:8780/hid/bluetooth/radio/scan?ms=5000');
+  assert.equal(q.body, undefined);
+});
+
+test('post turns key=value arguments into a query string and a leading { into a JSON body', () => {
+  const q = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['post', '/speaker/bt-cycle', 'settleMs=5000']));
+  assert.equal(q.method, 'POST');
+  assert.equal(q.url, 'http://192.0.2.10:8780/speaker/bt-cycle?settleMs=5000');
+  const b = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['post', '/bluetooth/scan', '{"durationMs":5000}']));
+  assert.deepEqual(JSON.parse(b.body), { durationMs: 5000 });
+  const e = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['post', '/hid/bluetooth/bond', 'address=00:00:5E:00:53:01', 'transport=le']));
+  assert.equal(e.url, 'http://192.0.2.10:8780/hid/bluetooth/bond?address=00%3A00%3A5E%3A00%3A53%3A01&transport=le');
+});
+
+test('a raw path must start with a slash', () => {
+  assert.throws(() => parseArgs(['get', 'status']), /path must start with/);
+  assert.throws(() => parseArgs(['post']), /path must start with/);
+});
+
+test('a raw JSON body that does not parse is an error before anything is sent', () => {
+  assert.throws(() => parseArgs(['post', '/bluetooth/scan', '{durationMs']), /JSON body/);
+});

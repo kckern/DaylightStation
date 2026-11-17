@@ -5,25 +5,34 @@ file (`_extensions/daylight-android/devices/<id>.yml`). This page describes how 
 built app behaves and how to operate it. Building, adding a device and adding a
 capability are covered in `_extensions/daylight-android/README.md`.
 
-## Status: Phase 1, foundation only
+## Status: helpers ported, nothing switched
 
-**Phase 1 has no kiosk.** There is no WebView, no screen control and no ported
-helper code. Fully Kiosk Browser still runs every device, and the existing helper
-apps are unchanged. The Phase 1 app is a separate package that runs beside them. It
-starts a service, answers a control API and can replace its own logic over the
-network. On 2026-11-16 the phase 1 build was installed on the Portal beside the
-existing apps; the payload loaded and the control API answered; reboot survival was
-not tested. Everything added since then is covered by JVM tests only.
+**Nothing here runs a device yet.** Fully Kiosk Browser and the old helper apps
+still run all three devices. There is no kiosk, no WebView and no screen control in
+this app (phase 3).
 
-**Phase 2 is in progress and nothing of it has been installed.** It copies the
-working helper code out of the old helper apps into this codebase. So far the
-`piano`, `portal` and `shield` device files build, the core has gained the
-heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
-routes listed below, and the piano build carries `audio-guard` (speaker routes
-under `/speaker` and `/audio-guard`), `synth` (the native sfizz sampler) and
-`midi-bridge` (the BLE-MIDI link) and `bluetooth-controls` (the Bluetooth panel),
-the Shield build carries `bluetooth-controls` in gamepad mode, and the Portal
-build carries `volume-keys`; see "Capabilities". The old helper apps still run every device.
+**What has been on hardware.** On 2026-11-16 the phase 1 build (shell, payload
+loader, control API, lifeline) was installed on the Portal beside the existing
+apps; its payload loaded and the control API answered. Reboot survival was not
+tested. That is the only hardware fact.
+
+**Phase 2 is complete in the build and has never run on a device.** It copied the
+working helper code out of the old helper apps into capabilities, with behavior
+unchanged except where "Differences from the old helpers" says otherwise. Every
+Bluetooth, MIDI, audio, USB and microphone path is the old code under a new
+package, compiled and covered by JVM tests, and unproven in its new process. The
+three device builds are:
+
+| Device | Capabilities |
+|---|---|
+| `piano` | `debug-tools`, `accessibility`, `synth`, `midi-bridge`, `bluetooth-controls` (roles), `audio-guard` |
+| `portal` | `debug-tools`, `accessibility`, `volume-keys`, `hid-input`, `presence` |
+| `shield` | `debug-tools`, `bluetooth-controls` (gamepad), `mic-bridge`, `lease-gate` |
+
+The kiosk page cannot use these routes yet: the old helpers answered it on
+`localhost` with no token and with `Access-Control-Allow-Origin: *`; the control
+port needs the token and sends no CORS headers. How the page reaches the app is a
+phase 3 decision.
 
 ## Shell and payload
 
@@ -181,8 +190,69 @@ Errors have the shape `{"ok":false,"error":"<code>", ...}` with a `message` fiel
 | 500 | `internal` | A handler threw something unexpected |
 | 501 | `unsupported` | The capability cannot do this on this device |
 
-No Phase 1 route returns 501. The code is reserved for capabilities that run on some
+No route returns 501 today. The code is reserved for capabilities that run on some
 devices and not others.
+
+### WebSocket on the control port
+
+A WebSocket upgrade on any path of `control.port` joins the device's one socket
+hub. The upgrade needs the token, in the `X-Daylight-Token` header or as a `token`
+query parameter, and is refused with 401 before the connection is upgraded.
+Messages are JSON text frames keyed by `type`; one capability owns each inbound
+type, and a type registered twice stops the payload from starting.
+
+| Message | Direction | Owner |
+|---|---|---|
+| `ready` `{device}` on connect | out | core |
+| the text `ping`, answered with `{"type":"pong"}` | in, out | core |
+| a WebSocket ping every 3 seconds; a client that does not answer is dropped | out | core |
+| `status` every second, with each capability's fields | out | core; `synth` adds `engine`, `preset`, `cpu`, `xruns`; `audio-guard` adds `speakerOk`, `speakerReason` |
+| `error` `{code, msg}` | out | core, for the handler that failed |
+| `note.on`, `note.off` (live notes, with `t`) | out | `midi-bridge` |
+| `midi.raw` | in | `midi-bridge` |
+| `engine.start`, `engine.stop`, `preset.load`, `param.set`, `panic`, `note.on`, `note.off` | in | `synth` |
+| `key` | out | `volume-keys` |
+| `keyboard` | out | `hid-input` |
+
+### Routes by owner
+
+| Owner | Routes |
+|---|---|
+| core | `GET /status`, `GET /capabilities`, `GET /settings`, `POST /settings`, `DELETE /settings`, `GET /payload`, `POST /payload`, `POST /payload/rollback`, `POST /update`, `GET /update`, `GET /beat`, `POST /beat`, `GET /wifi`, `GET /log`, `GET /crashlog`, `GET /diagnostics`, `POST /accessibility/enable` |
+| `debug-tools` | `GET /debug/info` |
+| `synth` | `POST /panic` |
+| `midi-bridge` | `POST /connect`, `POST /forget`, `POST /scan`, `GET /midi/tap`, `GET /midi/send`, `POST /midi/send`, `POST /reset`, `GET /loopback`, `POST /loopback`, `POST /tone` |
+| `audio-guard` | `GET /speaker`, `POST /speaker`, `POST /speaker/reconnect`, `POST /speaker/bt-cycle`, `POST /audio-guard/bootstrap`, `POST /audio-guard/override`, `POST /audio-guard/volume-check` |
+| `bluetooth-controls` | `GET /bluetooth`, `POST /bluetooth/{scan, scan/stop, pair, unpair, connect, disconnect, pairing, power}` |
+| `volume-keys` | `POST /accessibility/silence-beep` |
+| `hid-input` | `GET /input`, `GET /usb-hid`, `POST /usb-hid/retry`, `POST /usb-hid/config`, `GET /hid/bluetooth`, `GET /hid/bluetooth/diag`, `POST /hid/bluetooth/{scan, bond, scan-direct, gatt-direct, gatt, gatt-disconnect, connect-hid}`, `GET /hid/bluetooth/radio`, `GET /hid/bluetooth/radio/scan` |
+| `presence` | `GET /presence` |
+| `mic-bridge` | `GET /mic/status`, `POST /mic/restart` |
+| `lease-gate` | `GET /lease` |
+
+A route exists only on a device whose build lists its owner; `GET /capabilities`
+lists what a device has. Routes ported from the old helpers keep their old bodies:
+most answer HTTP 200 with `{"ok":false,"error":"..."}` for a failure.
+
+### Interfaces between capabilities
+
+A capability never calls another capability. Where two must cooperate, one
+provides an interface from `core/spi` and the other asks the core for it; a
+missing provider is a normal state.
+
+| Interface | Provided by | Used by |
+|---|---|---|
+| `NoteListener` (on the note bus) | `synth` subscribes | `midi-bridge` publishes each live note |
+| `OutputGate` | `synth` | `audio-guard` closes it when sound would leave by the wrong speaker |
+| `BluetoothRole` | `midi-bridge` (`midi`), `audio-guard` (`audio`) | `bluetooth-controls`, role mode |
+| `PairingDialogExemption` | `bluetooth-controls` | `lockdown` (phase 3) |
+| `ScreenPower` | nobody until phase 3 (`screen-power`) | `volume-keys`, which logs `screen-toggle-unavailable` |
+| `InputLock` | nobody until phase 3 (`lockdown`) | `volume-keys`, which treats the lock as off |
+| `PackageGate` | nobody until phase 3 (`lockdown`, on a device that can have a device owner) | `lease-gate`, which keeps the gate closed |
+
+The accessibility service is the `accessibility` capability's shell half; the core
+holds the bound service and shares it (`volume-keys`, `hid-input`,
+`bluetooth-controls` in role mode, and the update confirmation use it).
 
 ## Settings
 
@@ -220,12 +290,33 @@ Settings the core declares on every device:
 `debug-tools` declares `debug.execEnabled` (boolean, default false); nothing reads
 it yet. `audio-guard` declares `speaker.mac`, `speaker.name` and `speaker.enabled`.
 
+**Secret settings.** `presence.token` and `lease.credential` are secrets. A secret
+is a string setting with an empty fallback that differs from the others in three
+ways: its value is never returned (`GET /settings`, and the answers to `POST` and
+`DELETE`, show `"(set)"` or an empty string); it cannot have a default in a device
+file (the payload refuses to start, because device files are public); and so it
+exists only as a runtime override, set on the device with `settings set`.
+
 A string default in a device file may hold a `{placeholder}`. It is replaced at
 build time from the `placeholders:` map of `{private-tokens-file}`, so addresses
 and device identities stay out of the repo. A placeholder with no value fails the
 build of that device and names the placeholder, never a value.
 
 ## Capabilities
+
+| Capability | Devices | What it does | Settings |
+|---|---|---|---|
+| `debug-tools` | all | `GET /debug/info` | `debug.execEnabled` |
+| `accessibility` | piano, portal | The app's one accessibility service, shared through the core | `accessibility.selfEnable` (core) |
+| `synth` | piano | Native sampler | none |
+| `midi-bridge` | piano | BLE-MIDI link to the instrument | `midi.*` |
+| `audio-guard` | piano | Keeps sound on the configured Bluetooth speaker | `speaker.mac`, `speaker.name`, `speaker.enabled` |
+| `bluetooth-controls` | piano, shield | Bluetooth panel for the page | `bluetooth.mode`, `bluetooth.systemPairingDialog` |
+| `volume-keys` | portal | Volume keys as page input | `keys.*` |
+| `hid-input` | portal | USB keyboards as page input, Bluetooth keyboard diagnostics | none (the USB allowlist is stored on the device) |
+| `presence` | portal | Reports connected Bluetooth devices to the backend | `presence.endpoint`, `presence.token` (secret), `presence.heartbeatMs` |
+| `mic-bridge` | shield | Microphone PCM over a loopback WebSocket | `mic.port` |
+| `lease-gate` | shield | Polls for a lease that decides whether one app may run | `lease.endpoint`, `lease.packageName`, `lease.credential` (secret) |
 
 What each ported capability adds to a device that lists it. HTTP routes need the
 token like every other route; WebSocket messages are JSON text frames on the
@@ -266,9 +357,9 @@ drops, and checks delivery by sending a probe note the instrument echoes back.
 | HTTP | `POST /scan?ms=` | Nearby BLE devices: `name`, `mac`, `rssi`, `isTarget`, `isBlocklisted` |
 | HTTP | `GET /midi/tap` | The last 64 raw chunks the read port delivered, with counters |
 | HTTP | `GET`, `POST /midi/send?hex=&repeat=&inMs=` | Write raw MIDI, SysEx included. `hex` may be the POST body. `inMs` sends that many ms from now on the device's clock |
-| HTTP | `POST /reset` | Reconnect, then bounce the Bluetooth radio if the echo still fails; answers `fixed`, `recoveredAt`, `steps` |
-| HTTP | `GET /loopback`, `POST /loopback` | The echo check's rolling state; `POST` probes now and waits for the echo |
-| HTTP | `POST /tone?note=&velocity=&ms=` | One audible note, then an echo probe |
+| HTTP | `POST /reset` | Reconnect, then bounce the Bluetooth radio if the echo still fails; answers `fixed`, `recoveredAt`, `steps`. With the write port still closed it answers `fixed: false` and `reason: write_port_closed` |
+| HTTP | `GET /loopback`, `POST /loopback` | The echo check's rolling state; `POST` probes now and waits for the echo. With no open write port it answers at once: `sent: false`, `echoed: false`, `reason: write_port_closed` |
+| HTTP | `POST /tone?note=&velocity=&ms=` | One audible note, then an echo probe. With no open write port: `ok: false`, `error: write_port_closed`, and no note |
 | WS out | `note.on` `{note, velocity, t}`, `note.off` `{note, t}` | Live notes; `t` is the key event's epoch ms |
 | WS in | `midi.raw` `{hex}` or `{bytes}`, optional `repeat` | Write raw MIDI to the instrument |
 | WS out | `error` `{code, msg}` | `bad_hex`, `no_bytes`, `write_failed` |
@@ -354,6 +445,127 @@ volume keys). The same pass runs at each start and whenever the list of enabled
 services changes. This app's own service is never removed. `/status` carries
 `keysSeen` and `displayOn`.
 
+### `audio-guard`
+
+Keeps the tablet's sound on the configured Bluetooth speaker: it connects the
+speaker's A2DP link, watches the audio route and the media volume, and closes the
+synth's output gate when sound would come out of the tablet's own speaker.
+
+| Method | Path | What it does |
+|---|---|---|
+| GET, POST | `/speaker` | The speaker link's and the guard's state; `POST` connects now |
+| POST | `/speaker/reconnect` | Drop and reconnect the speaker link |
+| POST | `/speaker/bt-cycle?settleMs=` | Turn the Bluetooth adapter off and on (default settle 5000 ms). Answers at once; the cycle runs afterwards. `busy` while one is running |
+| POST | `/audio-guard/bootstrap` | Disconnect the speaker, let the guard set the tablet speaker's volume to zero, reconnect |
+| POST | `/audio-guard/override?ms=` | Hold the guard off for that long (default 60 seconds, at most 10 minutes) |
+| POST | `/audio-guard/volume-check` | Check the speaker's volume now and raise it if it is too low (called by the page) |
+
+It offers the `audio` role to `bluetooth-controls`. `/status` carries `speaker`;
+the WebSocket `status` frame carries `speakerOk` and `speakerReason`.
+
+### `hid-input`
+
+Needs `accessibility`. A USB keyboard on the allowlist is read directly at its USB
+endpoint (the Portal does not route it to Android input), and each key is sent on
+the WebSocket as
+
+```json
+{"type":"keyboard","action":"down","key":"a","code":"KeyA","location":0,"ctrlKey":false,"shiftKey":false,"altKey":false,"metaKey":false,"repeat":false,"ts":1800000000123}
+```
+
+A held key repeats from the device: first after 450 ms, then every 50 ms, with
+`repeat: true`. The USB permission dialog is confirmed through the accessibility
+service, which is taken once when the capability starts.
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/input` | Android's input devices and the attached USB devices |
+| GET | `/usb-hid` | USB devices with `allowed` and `permission`, and the reader's state |
+| POST | `/usb-hid/retry` | Close the keyboard and scan again |
+| POST | `/usb-hid/config?vid=&pid=` | Add a vendor and product id to the allowlist |
+| GET | `/hid/bluetooth`, `/hid/bluetooth/diag` | Bluetooth keyboard state and diagnostics |
+| POST | `/hid/bluetooth/{scan, bond, scan-direct, gatt-direct, gatt, gatt-disconnect, connect-hid}` | The bonding and GATT experiments portal-keys carried, with `ms`, `address`, `transport` as query parameters |
+| GET | `/hid/bluetooth/radio`, `/hid/bluetooth/radio/scan?ms=` | What the radio supports, and an LE scan (1 to 60 seconds) |
+
+`/status` carries `usbHid` and `hidEvents`.
+
+### `presence`
+
+Reports every bonded Bluetooth device and whether it is connected, with how long
+that state has held, to `presence.endpoint`: on each connection change and every
+`presence.heartbeatMs` (used within 5 seconds to 10 minutes). It applies no rules
+and no grace period; the backend does. The request carries `presence.token` in
+the `X-Presence-Token` header when one is set. With `presence.endpoint` empty it
+sends nothing, and `GET /log` shows `presence-not-configured` once per start.
+`GET /presence` answers `lastResult`, `endpoint` and the last report.
+
+### `mic-bridge`
+
+For a page whose WebView cannot open the device's microphone. A WebSocket server
+on `mic.port`, **bound to loopback only and with no authentication**, serves one
+client at a time: a text frame `{"sampleRate":48000,"channels":1,"format":"pcm_s16le"}`,
+then binary frames of 10 ms of PCM. Capture runs only while a client is connected.
+
+| Method | Path | Answer |
+|---|---|---|
+| GET | `/mic/status` | `running` (listening), `streaming` (frames are being sent), `clients`, `heldByOther`, `lastError`, `port` |
+| POST | `/mic/restart` | Rebuilds the stream server and the overlay window; `ok` and `running` are true once it is listening again |
+
+`heldByOther` is true when capture would not start although the permission is
+granted. That is the nearest thing the app can observe to another process holding
+the microphone; whether a held microphone shows up that way on the Shield has not
+been checked on hardware. A restart closes the connected client; `streaming`
+turns true again when the page reconnects.
+
+Android 11 gives the microphone only to a service started while the app is
+visible. The capability's shell half adds a 1x1 untouchable overlay window when
+the process starts, which needs `SYSTEM_ALERT_WINDOW`, granted once with
+`appops set <package> SYSTEM_ALERT_WINDOW allow`. The device file must list
+`microphone` under `foregroundServiceTypes`.
+
+### `lease-gate`
+
+Polls `lease.endpoint` once a second (HTTPS only, bearer `lease.credential`) for
+a lease on `lease.packageName` and expires it locally every 100 ms, so a lost
+network closes the gate. The three settings are read when the payload starts.
+Enforcement is hiding the package, which goes through `PackageGate`; nothing
+provides one in this phase, so the gate stays closed. `GET /lease` answers
+`configured`, `ready`, `blocked`, `leaseBlocked`, `epoch`, `revision`,
+`enforcement` (`unavailable` or `package-gate`), `packageHiding` (`supported` or
+`unsupported`) and `packageHidingReason`. A device without the
+`android.software.device_admin` feature can never have a device owner, so
+package hiding is reported unsupported there with that reason; such a device
+needs the block-and-recall mode that arrives with `lockdown` in phase 3.
+
+## Differences from the old helpers
+
+Behavior that changed in the port, for whoever switches a device over.
+
+| Area | Old | New |
+|---|---|---|
+| Every route | No token (piano, audio-bridge) or `X-Portal-Token` (portal ops port); `Access-Control-Allow-Origin: *` | `X-Daylight-Token` on every request; no CORS headers |
+| Ports | One port per helper | One control port per device, plus the lifeline |
+| Methods | Most routes answered any method | Each route has its methods; another method is `405` |
+| `GET /update` | Started an install (piano-bridge) | Reports the install's state; `POST /update` starts one |
+| `/config` | One file of keys | `GET`, `POST`, `DELETE /settings`, typed, with new key names |
+| A setting change | Rebuilt MIDI and the speaker together | Rebuilds only the link the setting belongs to |
+| `POST /loopback`, `/tone`, `/reset` with the MIDI write port closed | `echoed: true`, and so "delivery verified" and `fixed: true` | `echoed: false` with `reason: write_port_closed`; `/tone` answers `ok: false` and plays nothing; `/reset` answers `fixed: false` |
+| Synth library in a debug APK | CMake's unoptimized `Debug` build | Optimized (`RelWithDebInfo`) in every variant |
+| Portal Bluetooth diagnostics | `/bluetooth*` on the ops port, `/btdiag`, `/btscan` on the control port | `/hid/bluetooth*`, `/hid/bluetooth/radio`, `/hid/bluetooth/radio/scan` |
+| Portal key events | WebSocket on the old control port | `key` messages on the control port's WebSocket |
+| Portal keyboard events | Loopback WebSocket on its own port, no token | `keyboard` messages on the control port's WebSocket, which needs the token |
+| `GET /input` field `external` | Always a boolean | `null` on a system where the call is missing |
+| Presence report field `version` | portal-keys' version name | This app's version name |
+| Presence with no endpoint | Not logged | Logged once per start |
+| Shield `/bluetooth` | No token; `Content-Type` checked | Token needed; `Content-Type` not checked |
+| Shield microphone socket | Every interface, port 8765 | Loopback only; port `mic.port` (8782 while both apps are installed) |
+| Shield microphone health | Read from the system log over ADB | `GET /mic/status` |
+| Shield lease loop | Its own app, device-protected storage, started before unlock | Inside this app, started with the payload; ordering kept under the payload directory |
+
+The backend's arcade Bluetooth adapter calls the Shield's `/bluetooth` API without
+a token today. It must send the device's token before the Shield can switch; that
+change belongs to the backend.
+
 ## Lifeline
 
 Served by the shell on `control.lifelinePort`.
@@ -410,7 +622,15 @@ node cli/daylight-device.cli.mjs <device> lifeline status
 node cli/daylight-device.cli.mjs <device> lifeline rollback
 node cli/daylight-device.cli.mjs <device> lifeline restart
 node cli/daylight-device.cli.mjs <device> lifeline log
+node cli/daylight-device.cli.mjs <device> get <path> [key=value ...]
+node cli/daylight-device.cli.mjs <device> post <path> [key=value ...] ['{json}']
 ```
+
+`get` and `post` reach every route on the control port, for the routes that have
+no named command yet. Each `key=value` becomes a query parameter, and an argument
+that starts with `{` is sent as the JSON body. For example
+`post /speaker/bt-cycle settleMs=5000`, `post /bluetooth/scan '{"durationMs":5000}'`
+and `get /mic/status`.
 
 `settings set` sends the value as the text that was typed. The device coerces it
 to the setting's declared type, so `true` sets a boolean setting to true and sets a
@@ -432,20 +652,32 @@ different payload than the one just built. It also checks that the shell
 service's foreground service types are exactly the device file's, and that a
 capability with native code ships a library for every ABI of the device. For a
 device that lists `synth` it reads the synth library out of the APK for each ABI
-and fails unless it holds the JNI exports of the APK's engine class and sfizz
-itself. It exits 1 on any difference.
+and fails unless it holds the JNI exports of the APK's engine class, was built
+with sfizz, has the size of an optimized, stripped build, and names no path on
+the build machine. It exits 1 on any difference.
 
 With `--legacy` it also compares the APK's permissions with what the old helper
 app for that device declared, using
 `_extensions/daylight-android/tools/legacy-permissions.yml`: every addition and
-removal must be recorded there with its reason. Until phase 2 is complete this
-fails for every device, listing the permissions still to come.
+removal must be recorded there with its reason. That file is the permission
+ledger: per device, the old app's list, `added` (permission and reason) and
+`dropped`. The check is new = old + added - dropped, and it passes for all three
+devices: `piano` has the old set exactly, `portal` adds two and `shield` adds
+eight, all of them shared core features.
 
 ## Known limits
 
-- No kiosk, WebView or helper features. Fully Kiosk Browser still runs every device.
+- No kiosk or WebView. Fully Kiosk Browser and the old helpers still run every device.
+- Nothing from phase 2 has run on a device.
+- Old state does not move by itself: on-device overrides, the presence token, the
+  USB allowlist, the crash log and the instrument files stay with the old apps
+  until each device's switch copies what matters.
+- Unchecked on hardware: whether the overlay window is up early enough for the
+  Shield to grant the microphone at boot, what a held microphone looks like to the
+  app, and which page code consumed the Portal's old keyboard socket.
 - The token is compiled into the shell, so rotation needs a new install.
-- Device defaults are validated when the payload starts, not at build time.
+- Device defaults are validated when the payload starts, and by a JVM test per
+  device in the build (`:payload:test<Device>DebugUnitTest`).
 - A force-stopped app stays stopped until it is opened or the device reboots.
 - Loading the payload with `DexClassLoader` can only be proven on a device, and
   that check is not part of the automated build.
