@@ -30,17 +30,29 @@ export class ProviderRoutedRemoteAdministrationGateway extends IDeviceRemoteAdmi
     this.#fallback = fallback;
   }
 
-  readStatus(deviceId) { return this.#for(deviceId).readStatus(deviceId); }
+  /** The status, stamped with the device's provider so a console can word itself. */
+  async readStatus(deviceId) {
+    const status = await this.#for(deviceId).readStatus(deviceId);
+    const provider = this.#source(deviceId)?.content_control?.provider ?? null;
+    return status && typeof status === 'object' ? { provider, ...status } : status;
+  }
   captureScreenshot(deviceId) { return this.#for(deviceId).captureScreenshot(deviceId); }
   readSettings(deviceId) { return this.#for(deviceId).readSettings(deviceId); }
   executeAction(deviceId, action, params) { return this.#for(deviceId).executeAction(deviceId, action, params); }
   writeSetting(deviceId, key, value) { return this.#for(deviceId).writeSetting(deviceId, key, value); }
+  async readTypedSettings(deviceId) {
+    const gateway = this.#for(deviceId);
+    return typeof gateway.readTypedSettings === 'function' ? gateway.readTypedSettings(deviceId) : null;
+  }
+
+  #source(deviceId) {
+    if (typeof deviceId !== 'string') return null;
+    const devices = this.#readDevices();
+    return devices && Object.hasOwn(devices, deviceId) ? devices[deviceId] : null;
+  }
 
   #for(deviceId) {
-    if (typeof deviceId !== 'string') return this.#fallback;
-    const devices = this.#readDevices();
-    const source = devices && Object.hasOwn(devices, deviceId) ? devices[deviceId] : null;
-    return this.#gateways.get(source?.content_control?.provider) ?? this.#fallback;
+    return this.#gateways.get(this.#source(deviceId)?.content_control?.provider) ?? this.#fallback;
   }
 }
 

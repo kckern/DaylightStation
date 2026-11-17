@@ -39,6 +39,15 @@ const ACTION_ROUTES = Object.freeze({
   reboot: ['/device/reboot'],
 });
 
+/** Admin actions this app has no equivalent for; the console hides them. */
+const UNSUPPORTED_ACTIONS = Object.freeze(['screensaver-start', 'screensaver-stop']);
+
+const SETTING_TYPES = Object.freeze({
+  boolean: 'boolean', bool: 'boolean',
+  number: 'number', int: 'number', integer: 'number', long: 'number', float: 'number', double: 'number',
+  string: 'string',
+});
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function fail(message, code) {
@@ -92,10 +101,12 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
       ...kioskRest,
     });
     return {
+      provider: DAYLIGHT_ANDROID_PROVIDER,
       device: target.device,
       summary: normalizeSummary(details),
       details,
       companionApps: [],
+      unsupportedActions: [...UNSUPPORTED_ACTIONS],
     };
   }
 
@@ -115,14 +126,31 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
    *   adapter returns, built from the app's list of setting descriptors.
    */
   async readSettings(deviceId) {
+    return Object.fromEntries((await this.#settings(deviceId)).map(setting => [setting.key, setting.value]));
+  }
+
+  /**
+   * The app declares a type for every setting, so the application layer can
+   * offer each one for editing and check a value before sending it. Types are
+   * normalised to `boolean`, `number` and `string`; any other word the app
+   * uses is passed through as it is.
+   * @returns {Promise<Array<{key: string, type: string, value: *}>>}
+   */
+  async readTypedSettings(deviceId) {
+    return (await this.#settings(deviceId)).map(setting => ({
+      key: setting.key,
+      type: SETTING_TYPES[String(setting.type).toLowerCase()] ?? String(setting.type),
+      value: setting.value,
+    }));
+  }
+
+  async #settings(deviceId) {
     const target = this.#target(deviceId);
     const data = this.#data(await target.client.get('/settings'));
     if (!Array.isArray(data?.settings)) {
       fail('Device returned invalid settings data', 'INVALID_RESPONSE');
     }
-    return Object.fromEntries(data.settings
-      .filter(setting => setting && typeof setting.key === 'string')
-      .map(setting => [setting.key, setting.value]));
+    return data.settings.filter(setting => setting && typeof setting.key === 'string');
   }
 
   async executeAction(deviceId, action, params = {}) {

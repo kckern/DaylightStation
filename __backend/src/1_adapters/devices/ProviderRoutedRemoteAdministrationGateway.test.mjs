@@ -40,7 +40,8 @@ describe('ProviderRoutedRemoteAdministrationGateway', () => {
   it('sends each port method for a daylight-android device to its gateway', async () => {
     const { gateway, fully, daylight } = build();
 
-    await expect(gateway.readStatus('tablet')).resolves.toBe('daylight:status:tablet');
+    daylight.readStatus.mockResolvedValueOnce({ device: { id: 'tablet' } });
+    await expect(gateway.readStatus('tablet')).resolves.toMatchObject({ device: { id: 'tablet' } });
     await expect(gateway.captureScreenshot('tablet')).resolves.toBe('daylight:shot:tablet');
     await expect(gateway.readSettings('tablet')).resolves.toBe('daylight:settings:tablet');
     await expect(gateway.executeAction('tablet', 'set-volume', { level: 4 }))
@@ -52,10 +53,28 @@ describe('ProviderRoutedRemoteAdministrationGateway', () => {
     expect(daylight.readStatus).toHaveBeenCalledTimes(1);
   });
 
+  it('stamps the status with the device provider, whichever gateway answered', async () => {
+    const { gateway, fully, daylight } = build();
+    fully.readStatus.mockResolvedValue({ device: { id: 'shield' }, summary: {} });
+    daylight.readStatus.mockResolvedValue({ device: { id: 'tablet' }, summary: {} });
+
+    await expect(gateway.readStatus('shield')).resolves.toEqual({ provider: 'fully-kiosk', device: { id: 'shield' }, summary: {} });
+    await expect(gateway.readStatus('tablet')).resolves.toEqual({ provider: 'daylight-android', device: { id: 'tablet' }, summary: {} });
+  });
+
+  it('asks only a gateway that describes its settings for typed settings', async () => {
+    const { gateway, daylight } = build();
+    daylight.readTypedSettings = vi.fn(async () => [{ key: 'k', type: 'boolean', value: true }]);
+
+    await expect(gateway.readTypedSettings('tablet')).resolves.toEqual([{ key: 'k', type: 'boolean', value: true }]);
+    await expect(gateway.readTypedSettings('shield')).resolves.toBeNull();
+  });
+
   it('sends a fully-kiosk device to the fallback gateway', async () => {
     const { gateway, fully, daylight } = build();
 
-    await expect(gateway.readStatus('shield')).resolves.toBe('fully:status:shield');
+    fully.readStatus.mockResolvedValueOnce({ device: { id: 'shield' } });
+    await expect(gateway.readStatus('shield')).resolves.toMatchObject({ device: { id: 'shield' } });
     await expect(gateway.executeAction('shield', 'reboot', {}))
       .resolves.toEqual({ name: 'fully', id: 'shield', action: 'reboot', params: {} });
 

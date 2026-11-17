@@ -113,6 +113,20 @@ const SETTING_SCHEMAS = Object.freeze({
   }])),
 });
 
+/**
+ * Value checks for a setting whose type the device declares. They only make
+ * the value the declared type; what the value means is the device's to judge.
+ */
+const TYPED_SETTING_NORMALIZERS = Object.freeze({
+  boolean: value => boolean(value, 'value'),
+  number: (value) => {
+    const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    if (typeof number !== 'number' || !Number.isFinite(number)) throw invalid('value must be a number', 'value');
+    return number;
+  },
+  string: value => limitedText(value, 'value', { allowEmpty: true, max: 2048 }),
+});
+
 const SENSITIVE_SETTING_KEYS = new Set([
   'wifiKey',
   'sebConfigKey',
@@ -196,11 +210,14 @@ export class DeviceRemoteAdministrationService {
   }
 
   async getStatus(deviceId) {
-    const result = await this.#gateway.readStatus(deviceId);
+    // `provider` rides through in the result so the console can word itself;
+    // `unsupportedActions` is the gateway saying which of the shared action
+    // names this kind of device has no equivalent for.
+    const { unsupportedActions = [], ...result } = (await this.#gateway.readStatus(deviceId)) ?? {};
     return {
       ok: true,
       ...result,
-      capabilities: { actions: Object.keys(ACTIONS) },
+      capabilities: { actions: Object.keys(ACTIONS).filter(action => !unsupportedActions.includes(action)) },
       fetchedAt: new Date().toISOString(),
     };
   }
@@ -209,7 +226,39 @@ export class DeviceRemoteAdministrationService {
     return this.#gateway.captureScreenshot(deviceId);
   }
 
+  /**
+   * Settings the device describes itself (key, type, value), or null when it
+   * does not, in which case the curated whitelist above decides what is
+   * editable.
+   */
+  async #typedSettings(deviceId) {
+    const typed = await this.#gateway.readTypedSettings?.(deviceId);
+    return Array.isArray(typed) ? typed : null;
+  }
+
   async getSettings(deviceId) {
+    const typed = await this.#typedSettings(deviceId);
+    if (typed) {
+      // A device that types its own settings rejects unknown keys and wrong
+      // types itself, so every setting it lists may be edited, except
+      // credential-like keys and types this console has no control for.
+      const settings = typed
+        .slice()
+        .sort((left, right) => left.key.localeCompare(right.key))
+        .map(({ key, type, value }) => {
+          const sensitive = isSensitiveSetting(key);
+          const editableType = Object.hasOwn(TYPED_SETTING_NORMALIZERS, type);
+          return {
+            key,
+            type: editableType ? type : displayType(value),
+            value: sensitive ? null : value,
+            editable: editableType && !sensitive,
+            sensitive,
+          };
+        });
+      return { ok: true, settings, fetchedAt: new Date().toISOString() };
+    }
+
     const raw = await this.#gateway.readSettings(deviceId);
     const settings = Object.entries(raw || {})
       .sort(([left], [right]) => left.localeCompare(right))
@@ -253,9 +302,20 @@ export class DeviceRemoteAdministrationService {
   }
 
   async updateSetting(deviceId, key, value) {
-    const schema = SETTING_SCHEMAS[key];
-    if (!schema || isSensitiveSetting(key)) {
-      throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+    const typed = await this.#typedSettings(deviceId);
+    let schema;
+    if (typed) {
+      const listed = typed.find(setting => setting.key === key);
+      const normalize = listed ? TYPED_SETTING_NORMALIZERS[listed.type] : null;
+      if (!listed || !normalize || isSensitiveSetting(key)) {
+        throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+      }
+      schema = { type: listed.type, normalize };
+    } else {
+      schema = SETTING_SCHEMAS[key];
+      if (!schema || isSensitiveSetting(key)) {
+        throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+      }
     }
     const normalized = schema.normalize(value);
     const startedAt = Date.now();

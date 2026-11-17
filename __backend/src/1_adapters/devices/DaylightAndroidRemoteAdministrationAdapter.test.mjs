@@ -194,6 +194,27 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
       expect(calls[0]).toMatchObject({ method: 'GET', route: '/settings' });
     });
 
+    it('readTypedSettings returns the device descriptors with normalised types', async () => {
+      const { adapter } = build({
+        'GET /settings': json({
+          settings: [
+            { key: 'webview.startUrl', type: 'string', value: 'https://daylight.test/piano', default: '', overridden: true },
+            { key: 'webview.loadTimeoutSec', type: 'int', value: 20 },
+            { key: 'debug.execEnabled', type: 'bool', value: false },
+            { key: 'update.channel', type: 'enum', value: 'stable' },
+            { type: 'string', value: 'no key' },
+          ],
+        }),
+      });
+
+      await expect(adapter.readTypedSettings('tablet')).resolves.toEqual([
+        { key: 'webview.startUrl', type: 'string', value: 'https://daylight.test/piano' },
+        { key: 'webview.loadTimeoutSec', type: 'number', value: 20 },
+        { key: 'debug.execEnabled', type: 'boolean', value: false },
+        { key: 'update.channel', type: 'enum', value: 'stable' },
+      ]);
+    });
+
     it('readSettings rejects a body without a settings list', async () => {
       const { adapter } = build({ 'GET /settings': json({ settings: 'nope' }) });
       await expect(adapter.readSettings('tablet')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
@@ -272,6 +293,8 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
 
       expect(status.device).toEqual({ id: 'tablet', name: 'Piano tablet', type: 'tablet', address: 'kiosk.test:8780' });
       expect(status.companionApps).toEqual([]);
+      expect(status.provider).toBe('daylight-android');
+      expect(status.unsupportedActions).toEqual(['screensaver-start', 'screensaver-stop']);
       expect(status.summary).toMatchObject({
         deviceName: 'piano-tablet',
         model: 'SM-T590',
