@@ -150,8 +150,10 @@ Registry: `data/system/testdata.yml`
    that answers early can leave the uploading client with EPIPE or ECONNRESET,
    depending on the OS's socket buffers (it failed every run on macOS). The
    helper stops writing once the response arrives and records, server side,
-   whether the body was read or parsed when the response went out; assert
-   `refusedStatus` and `refusal: {bodyComplete: false, bodyParsed: false}`.
+   whether the body was read, complete or parsed when the response went out;
+   assert `refusedStatus` and
+   `refusal: {bodyRead: false, bodyComplete: false, bodyParsed: false}`. It
+   refuses bodies under 8 MB, which can arrive whole before any read.
 
 ## Isolated Fitness styled acceptance
 

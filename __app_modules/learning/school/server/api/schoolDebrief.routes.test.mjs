@@ -83,7 +83,7 @@ describe('school debrief router', () => {
     const { a, service } = app();
     const r = await postRefusedUpload(a, { path: '/debrief/test-learner/day/2026-10-21/take', headers: { 'X-School-Debrief-Grant': 'bad', 'Content-Type': 'audio/webm' }, size: 20 * 1024 * 1024 });
     expect(r.refusedStatus).toBe(403);
-    expect(r.refusal).toMatchObject({ status: 403, bodyComplete: false, bodyParsed: false });
+    expect(r.refusal).toMatchObject({ status: 403, bodyComplete: false, bodyParsed: false, bodyRead: false });
     expect(service.take).not.toHaveBeenCalled();
   });
   it('answers malformed JSON with a JSON 400, and an oversize take with a JSON 413', async () => {

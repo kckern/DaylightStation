@@ -14,13 +14,19 @@ import express from 'express';
 import http from 'node:http';
 import { once } from 'node:events';
 
+// Below this a body can arrive whole in the first packets, so `req.complete`
+// would read true even for a route that never touched it.
+const MIN_SIZE = 8 * 1024 * 1024;
+
 export async function postRefusedUpload(app, { path, headers = {}, size }) {
+  if (!Number.isSafeInteger(size) || size < MIN_SIZE) throw new TypeError(`postRefusedUpload needs a body of at least 8 MB to tell an early refusal from a full read (got ${size})`);
   let refusal = null;
   const outer = express();
   outer.use((req, res, next) => {
     const end = res.end;
     res.end = function spyEnd(...args) {
-      if (!refusal) refusal = { status: res.statusCode, bodyComplete: req.complete, bodyParsed: Buffer.isBuffer(req.body) || (req.body != null && typeof req.body === 'object' && Object.keys(req.body).length > 0) };
+      // readableFlowing stays null until something attaches a reader or resumes the stream.
+      if (!refusal) refusal = { status: res.statusCode, bodyRead: req.readableFlowing !== null, bodyComplete: req.complete, bodyParsed: Buffer.isBuffer(req.body) || (req.body != null && typeof req.body === 'object' && Object.keys(req.body).length > 0) };
       return end.apply(this, args);
     };
     next();
@@ -37,6 +43,9 @@ export async function postRefusedUpload(app, { path, headers = {}, size }) {
         status = res.statusCode; res.setEncoding('utf8');
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => { settle({ status, body, uploadError: null }); req.destroy(); });
+        // The server closing mid-response is the same broken connection as EPIPE on the upload.
+        res.on('error', () => settle({ status, body, uploadError: 'ECONNRESET' }));
+        res.on('aborted', () => settle({ status, body, uploadError: 'ECONNRESET' }));
       });
       req.on('error', (error) => {
         if (error.code === 'EPIPE' || error.code === 'ECONNRESET') settle({ status, body, uploadError: error.code });

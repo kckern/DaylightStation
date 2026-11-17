@@ -25,7 +25,7 @@ it.each([
   const app = express(); app.use('/gratitude', createSchoolGratitudeRouter({ service: { assertCanTake, take }, grants: { verify: (token) => ({ ok: token === 'good' }) }, teacherGate: { assert() {} } }));
   const r = await postRefusedUpload(app, { path: '/gratitude/child/day/2026-11-16/take', headers: { 'X-School-Gratitude-Grant': grant, 'Content-Type': 'audio/webm' }, size: 20 * 1024 * 1024 });
   expect(r.refusedStatus).toBe(status);
-  expect(r.refusal).toMatchObject({ status, bodyComplete: false, bodyParsed: false });
+  expect(r.refusal).toMatchObject({ status, bodyComplete: false, bodyParsed: false, bodyRead: false });
   expect(take).not.toHaveBeenCalled();
   expect(assertCanTake).toHaveBeenCalledTimes(grant === 'good' ? 1 : 0);
 });
