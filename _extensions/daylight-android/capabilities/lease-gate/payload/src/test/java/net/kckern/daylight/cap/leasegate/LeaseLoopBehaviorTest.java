@@ -83,6 +83,9 @@ public class LeaseLoopBehaviorTest {
 
     private static final class FakeGate implements PackageGate {
         boolean ready = true, hidden;
+        /** Non-null for a gate that keeps a package from the front and cannot hide it. */
+        String cannotHide;
+        @Override public String hidingUnsupportedReason() { return cannotHide; }
         int changes;
         @Override public boolean ready() { return ready; }
         @Override public boolean isHidden(String packageName) { return hidden; }
@@ -279,5 +282,25 @@ public class LeaseLoopBehaviorTest {
         } finally {
             net.kckern.daylight.core.testing.TestCore.releaseMainThread();
         }
+    }
+
+    // ── a gate that blocks and recalls (a device that cannot have a device owner) ──
+
+    @Test public void aGateThatCannotHideStillEnforcesTheLeaseAndSaysHow() throws Exception {
+        gate.cannotHide = "no device owner is possible here: a closed package is kept from the front";
+        LeaseLoop l = loop();
+        l.start();
+        assertTrue("closed at once", gate.hidden);
+        JSONObject status = l.status();
+        assertEquals("block-and-recall", status.getString("enforcement"));
+        assertEquals("unsupported", status.getString("packageHiding"));
+        assertEquals(gate.cannotHide, status.getString("packageHidingReason"));
+        platform.advance(0);
+        platform.answer = grant(1, 1, 5000);
+        platform.completeRequest();
+        assertFalse("the lease opens this gate like any other", gate.hidden);
+        assertTrue(l.status().getBoolean("ready"));
+        l.stop();
+        assertTrue(gate.hidden);
     }
 }

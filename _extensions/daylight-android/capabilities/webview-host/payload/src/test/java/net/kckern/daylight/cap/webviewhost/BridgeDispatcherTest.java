@@ -81,4 +81,18 @@ public class BridgeDispatcherTest {
         assertEquals("", b.call(TOKEN, "capabilities", ""));
         assertEquals("", b.call(TOKEN, "launch", "{}"));
     }
+
+    @Test public void thePageCannotUnlockTheKioskOrReachAnythingElse() {
+        // Unlocking is POST /lockdown/unlock, behind the control token. The bridge has no way to it.
+        for (String method : new String[] { "unlock", "lock", "lockdown", "lockdown.unlock", "lockdown/unlock",
+                "allowFor", "allowWhileInFront", "settings", "exec", "eval", "input" }) {
+            assertEquals(method, "", bridge.call(TOKEN, method, "{\"forMs\":60000}"));
+        }
+        assertTrue(calls.isEmpty());
+        java.util.Set<String> actions = new java.util.TreeSet<>();
+        for (java.lang.reflect.Method m : BridgeDispatcher.Actions.class.getDeclaredMethods()) actions.add(m.getName());
+        assertEquals("the bridge does exactly what the contract lists",
+                new java.util.TreeSet<>(java.util.Arrays.asList("capabilitiesJson", "launch", "screen", "restartApp",
+                        "reboot", "setBackMode", "volumeJson")), actions);
+    }
 }

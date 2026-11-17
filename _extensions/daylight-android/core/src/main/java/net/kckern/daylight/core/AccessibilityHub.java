@@ -92,6 +92,9 @@ public final class AccessibilityHub implements AccessibilityDelegate {
 
     public void removeEventListener(EventListener listener) { listeners.remove(listener); }
 
+    /** How many event listeners are registered. */
+    public int eventListenerCount() { return listeners.size(); }
+
     /** eventTypes: AccessibilityEvent.TYPE_* bits to add to the declared typeWindowStateChanged. */
     public void addEventListener(int eventTypes, EventListener listener) {
         extraEventTypes |= eventTypes;

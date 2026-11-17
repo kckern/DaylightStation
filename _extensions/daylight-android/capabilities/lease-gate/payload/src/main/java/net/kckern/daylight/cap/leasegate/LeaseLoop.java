@@ -135,6 +135,10 @@ final class LeaseLoop {
     JSONObject status() throws Exception {
         PackageGate g = gate.get();
         String reason = hidingUnsupportedReason(g != null, g != null && g.ready(), deviceAdminFeature);
+        // A gate can be ready and still not hide: where this app cannot be device owner the
+        // gate keeps the package from the front instead, and says so.
+        String gateReason = g == null ? null : g.hidingUnsupportedReason();
+        if (reason == null) reason = gateReason;
         return new JSONObject()
                 .put("configured", target != null)
                 .put("ready", ready)
@@ -142,7 +146,7 @@ final class LeaseLoop {
                 .put("leaseBlocked", lease.blocked(platform.nowMs()))
                 .put("epoch", lease.epoch())
                 .put("revision", lease.revision())
-                .put("enforcement", g == null ? "unavailable" : "package-gate")
+                .put("enforcement", g == null ? "unavailable" : gateReason == null ? "package-gate" : "block-and-recall")
                 .put("packageHiding", reason == null ? "supported" : "unsupported")
                 .put("packageHidingReason", reason == null ? JSONObject.NULL : reason);
     }
