@@ -12,7 +12,7 @@ import {GratitudeJudge} from '../server/application/gratitude/GratitudeJudge.mjs
 export async function calibrateGratitude({judge,cases}){
   const results=[];
   for(let start=0;start<cases.length;start+=3){
-    results.push(...await Promise.all(cases.slice(start,start+3).map(async item=>({id:item.id,expected:item.expected,...await judge.assess({text:item.text,history:item.history??[]})}))));
+    results.push(...await Promise.all(cases.slice(start,start+3).map(async item=>({id:item.id,expected:item.expected,...await judge.assess({text:item.text,history:item.history??[],allowFollowUp:item.allowFollowUp===true})}))));
   }
   const penalties=new Set(['nonsense','repetition']);
   const falsePenalties=results.filter(r=>!penalties.has(r.expected)&&penalties.has(r.verdict)).length;

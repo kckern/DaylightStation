@@ -248,5 +248,75 @@
       }
     ],
     "expected": "eligible"
+  },
+  {
+    "id": "follow-up-general-01",
+    "text": "my mom",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-general-02",
+    "text": "my family",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-general-03",
+    "text": "food",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-general-04",
+    "text": "school",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-general-05",
+    "text": "엄마",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-specific-01",
+    "text": "Mom made me pancakes",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "eligible"
+  },
+  {
+    "id": "follow-up-specific-02",
+    "text": "playing soccer with my friend",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "eligible"
+  },
+  {
+    "id": "follow-up-specific-03",
+    "text": "my new red bike",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "eligible"
+  },
+  {
+    "id": "follow-up-specific-04",
+    "text": "엄마가 책을 읽어 주셨어요",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "eligible"
+  },
+  {
+    "id": "follow-up-nonsense-01",
+    "text": "lalala stinky",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "nonsense"
   }
 ]
