@@ -1,0 +1,12 @@
+# The fullscreen WebView, the window.daylight page bridge, page-load recovery.
+# The kiosk Activity is declared in shell/; everything it does is in payload/.
+entry: net.kckern.daylight.cap.webviewhost.WebViewHostCapability
+permissions:
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_WIFI_STATE
+  # Page microphone and camera, given to the page only for the configured origin.
+  - android.permission.RECORD_AUDIO
+  - android.permission.CAMERA
+  - android.permission.MODIFY_AUDIO_SETTINGS
+  # POST /kiosk/overlay draws above a launched app.
+  - android.permission.SYSTEM_ALERT_WINDOW
