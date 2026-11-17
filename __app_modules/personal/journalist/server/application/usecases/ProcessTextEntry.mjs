@@ -208,7 +208,8 @@ export class ProcessTextEntry {
       // Parse JSON response - extract from markdown code blocks if needed
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        this.#logger.warn?.('textEntry.conversational.noJsonFound', { response });
+        // The reply can quote the entry back, so only its size is logged.
+        this.#logger.warn?.('textEntry.conversational.noJsonFound', { responseLength: String(response ?? '').length });
         return null;
       }
 

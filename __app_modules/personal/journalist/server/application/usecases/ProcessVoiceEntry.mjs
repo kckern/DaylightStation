@@ -17,6 +17,20 @@ import { splitTranscription } from "../../domain/services/MessageSplitter.mjs";
  */
 
 /**
+ * What a log event may say about the voice input. A Telegram file id is a
+ * short string and is logged as it is. A memo arrives as `{ buffer, mimeType }`
+ * and is logged as its size and type: the audio itself never goes to the log.
+ * @param {string|{buffer?: Buffer, mimeType?: string}|null|undefined} voiceFileId
+ */
+export function describeVoice(voiceFileId) {
+  if (typeof voiceFileId === 'string') return voiceFileId;
+  if (voiceFileId && typeof voiceFileId === 'object') {
+    return { bytes: voiceFileId.buffer?.length ?? null, mimeType: voiceFileId.mimeType ?? null };
+  }
+  return null;
+}
+
+/**
  * Process voice entry use case
  */
 export class ProcessVoiceEntry {
@@ -66,7 +80,7 @@ export class ProcessVoiceEntry {
   async execute(input) {
     const { chatId, voiceFileId, messageId, senderId, senderName, responseContext } = input;
 
-    this.#logger.debug?.('voiceEntry.process.start', { chatId, voiceFileId, hasResponseContext: !!responseContext });
+    this.#logger.debug?.('voiceEntry.process.start', { chatId, voice: describeVoice(voiceFileId), hasResponseContext: !!responseContext });
 
     const messaging = this.#getMessaging(responseContext, chatId);
 
