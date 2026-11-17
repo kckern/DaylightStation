@@ -95,7 +95,7 @@ Outputs:
 Building the APK always dexes the payload again, writes its `.sha256` and bakes
 that jar, so the payload inside an APK is the one built from the current sources.
 
-The payload version defaults to `p2-helpers`. Override it with
+The payload version defaults to `p3-kiosk`. Override it with
 `-PpayloadVersion=<name>`.
 
 `tools/verify-build.mjs` reads the built APK and fails with exit code 1 when the

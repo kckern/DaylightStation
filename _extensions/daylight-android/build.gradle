@@ -12,8 +12,8 @@ ext.catalog = net.kckern.daylight.build.DeviceCatalog.load(rootDir)
 // Addresses and device identities resolve from the private file, never from the repo.
 def privatePath = project.findProperty('controlTokens') ?: System.getenv('DAYLIGHT_ANDROID_TOKENS')
 ext.placeholders = net.kckern.daylight.build.Placeholders.load(privatePath ? new File(privatePath.toString()) : null)
-// Also returned by the payload's version(). Override with -PpayloadVersion=p2-...
-ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p2-helpers'
+// Also returned by the payload's version(). Override with -PpayloadVersion=p3-...
+ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p3-kiosk'
 // The NDK that builds native capability code and strips its libraries when the APK is packaged.
 ext.ndkVersion = '26.1.10909125'
 apply from: 'gradle/payload-dex.gradle'

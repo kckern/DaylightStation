@@ -99,4 +99,43 @@ public class DeviceDefaultsTest {
             assertEquals(501, TestCore.call(core, "POST", "/debug/exec", null, "{\"cmd\":\"id\"}").getInt("_status"));
         }
     }
+
+    /** The control API contract's routes: the core's, and each capability's kiosk table. */
+    private static final String[] CORE_ROUTES = { "GET /status", "GET /capabilities", "GET /settings", "POST /settings",
+            "DELETE /settings", "GET /payload", "POST /payload", "POST /payload/rollback", "POST /update", "GET /update" };
+    private static final String[][] CAPABILITY_ROUTES = {
+            { "webviewhost.WebViewHostCapability", "GET /kiosk/status", "POST /kiosk/load", "POST /kiosk/load-start", "POST /kiosk/reload",
+                    "POST /kiosk/foreground", "POST /kiosk/renderer/reset", "POST /kiosk/restart", "POST /kiosk/overlay" },
+            { "screenpower.ScreenPowerCapability", "POST /screen", "POST /screen/brightness", "POST /device/reboot" },
+            { "volume.VolumeCapability", "GET /volume", "POST /volume" },
+            { "applauncher.AppLauncherCapability", "POST /launch" },
+            { "lockdown.LockdownCapability", "GET /lockdown", "POST /lockdown/lock", "POST /lockdown/unlock" },
+            { "debugtools.DebugToolsCapability", "GET /debug/info", "GET /debug/screenshot", "POST /debug/eval", "GET /debug/html",
+                    "GET /debug/fps", "POST /debug/exec", "GET /debug/logcat", "POST /speak", "POST /sound" },
+            { "micbridge.MicBridgeCapability", "GET /mic/status", "POST /mic/restart" },
+    };
+
+    /**
+     * A kiosk device serves every route of the contract's kiosk tables: the backend and the
+     * page are built against that list, and a device missing one would fail at its cutover.
+     */
+    @Test public void thisDeviceServesEveryContractRouteOfTheCapabilitiesItLists() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
+        for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+        java.util.List<String> routes = core.router().routes();
+        for (String route : CORE_ROUTES) assertTrue("missing " + route, routes.contains(route));
+        for (String[] row : CAPABILITY_ROUTES) {
+            if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
+            for (int i = 1; i < row.length; i++) assertTrue("missing " + row[i], routes.contains(row[i]));
+        }
+        if (entries.contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability")) {
+            // A kiosk replaces Fully only with all six kiosk capabilities.
+            for (String needed : new String[] { "lockdown.LockdownCapability", "screenpower.ScreenPowerCapability",
+                    "volume.VolumeCapability", "applauncher.AppLauncherCapability", "debugtools.DebugToolsCapability" }) {
+                assertTrue("a kiosk device must list " + needed, entries.contains("net.kckern.daylight.cap." + needed));
+            }
+        }
+    }
 }
