@@ -471,3 +471,38 @@ qualification. See the [Portal release gate and device probe](../../../_extensio
 No recovery path may replay act/print/grade POSTs. URL/domain-backed state can be
 resumed only through existing read paths; unsaved drafts require route-specific
 qualification before enabling renderer restarts.
+
+### Local interaction replay and physical acceptance
+
+Run the isolated replay without starting a household backend:
+
+```bash
+npm run test:file -- tests/isolated/e2e/school/incident-2026-11-16.test.jsx
+```
+
+It exercises the real School shell, quiz text inputs, Home keyboard handler,
+fetch client, grading/quota services and temporary YAML attempt/sitting/print
+records. Its synthetic vocabulary quiz completes before a science answer; ordinary
+text spaces, held Space, repeated Space and an Enter/Check burst are delivered to
+those real controls. Fake fetch can lose a response after the grade or print has
+committed. The assertions require one science grade, one printer dispatch, visible
+failure feedback, a usable Home and no unhandled errors or replayed writes.
+Catalogue data, WebSocket subscription, diagnostic transport, PDF rendering and
+physical printer output are fakes. DOM events do not establish Android key delivery,
+native button activation, HTTPS loopback transport or physical device responsiveness.
+
+The reload case reopens actual YAML stores and preserves the saved sitting ID,
+finished answer and print record. It explicitly does **not** restore the unfinished
+text draft or reconstruct a learner program from its URL. A saved sitting is domain
+evidence, not a restored runner or grant. Do not use `/go` or replay `/act` to disguise
+that limitation; keep `PAGE_RECOVERY_VERIFIED=false` until a reviewed resume design
+qualifies the selected activity and its draft.
+
+For **each** outage window, keep a private acceptance record with offset-aware times,
+device/build/payload identity, retained crash/power/network history (or explicitly
+unavailable history), the observed failure boundary, and artifact/rollback identities.
+After authorized candidate rollout, require the real Fully HTTPS transport probe and
+an on-device interaction replay, deliberate renderer termination with a saved draft,
+bounded recovery or alert, sleep immunity and parent Stop. Record actual physical
+readback and delivery, not merely accepted commands or heartbeats. If these cannot
+be collected, retain unresolved incident status and pending physical acceptance.

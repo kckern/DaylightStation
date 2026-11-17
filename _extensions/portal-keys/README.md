@@ -778,3 +778,18 @@ Fully's retained-head retry acknowledgement survives unrelated admissions. Home
 reconciles its committed observation before observing current Home again; policy
 commits its state marker with the outbox event. Neither recomputing producer retains
 a name-only receipt. Page failures use their durable incident marker.
+
+The local [School incident replay](../../tests/isolated/e2e/school/incident-2026-11-16.test.jsx)
+checks real browser controls and grading/printing services with fake fetch/device
+transport and temporary YAML records. Lost responses and Space bursts must not
+replay work; a remounted page preserves recorded evidence and returns an unsupported
+learner-program route to School. An unfinished text draft is deliberately shown
+as **not restored**. This is characterization of current authority boundaries,
+not qualification of active-runner recovery; `PAGE_RECOVERY_VERIFIED=false` remains.
+
+Before changing that gate, retain private results for both outage windows and qualify
+the chosen runner/draft without persisting grants or replaying `/act`. The actual
+Fully HTTPS probe, native crash/power/network diagnosis, saved-draft renderer-kill
+drill, bounded recovery/alert, sleep immunity and parent Stop all require separately
+authorized device acceptance. No local replay or compiled artifact satisfies them.
+See the [School replay and acceptance procedure](../../__docs/runbooks/school/logs-and-tracing.md#local-interaction-replay-and-physical-acceptance).
