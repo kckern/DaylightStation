@@ -72,7 +72,7 @@ import java.util.concurrent.TimeUnit;
  * route handlers and the bridge reach in through ui.post / MainThread.call. Fields
  * read from other threads are volatile.
  */
-final class KioskSession implements KioskController, KioskSurface {
+final class KioskSession implements KioskController, KioskSurface, net.kckern.daylight.core.spi.PageOpener {
     static final String KIOSK_ACTIVITY = "net.kckern.daylight.cap.webviewhost.shell.KioskActivity";
     static final String DEFAULT_BACK_MODE = "reload";
     static final String NOT_CONFIGURED = "webview.startUrl is not set";
@@ -165,7 +165,9 @@ final class KioskSession implements KioskController, KioskSurface {
         backMode = KeyRouter.validBackMode(mode) ? mode : DEFAULT_BACK_MODE;
         buildWebView();
         applyWindowFlags();
-        String start = startUrl();
+        // A link that arrived with no window up is why this Activity was opened: show it.
+        String linked = pendingOpen.take(System.currentTimeMillis());
+        String start = linked != null ? linked : startUrl();
         if (start.isEmpty()) showNotConfigured(); else load(start);
         // A layer that was drawn inside the previous Activity's window is drawn again in this one.
         renderText();
@@ -832,6 +834,26 @@ final class KioskSession implements KioskController, KioskSurface {
     private boolean ensureAttached() {
         if (attached()) return true;
         return bringToFront() && MainThread.waitFor(this::attached, 5000);
+    }
+
+    private final PendingOpen pendingOpen = new PendingOpen();
+
+    /**
+     * PageOpener. Never starts the Activity: from the background Android would refuse,
+     * and the caller (the link activity, which is in front) brings the window forward.
+     */
+    @Override public String open(final String url) {
+        requireHttp(url);
+        if (attached()) {
+            final String loadId = loads.newLoadId();
+            ui.post(() -> {
+                if (web != null) load(url, loadId);
+                else pendingOpen.set(url, System.currentTimeMillis());
+            });
+            return "loading";
+        }
+        pendingOpen.set(url, System.currentTimeMillis());
+        return "pending";
     }
 
     LoadTracker.Result loadAndWait(final String url) throws Exception {

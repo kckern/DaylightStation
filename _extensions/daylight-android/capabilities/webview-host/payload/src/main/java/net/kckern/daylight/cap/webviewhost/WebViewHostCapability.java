@@ -64,6 +64,7 @@ public final class WebViewHostCapability implements Capability {
         core.settings().declare("recovery.rendererUnresponsiveSec", Type.INTEGER, 30, SettingsRegistry.range(0, 3600));
 
         core.services().provide(KioskSurface.class, session);
+        core.services().provide(net.kckern.daylight.core.spi.PageOpener.class, session);
 
         Router router = core.router();
         router.route("GET", "/kiosk/status", req -> Router.Response.json(200, session.status()));

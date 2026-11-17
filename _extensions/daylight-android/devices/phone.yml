@@ -19,6 +19,7 @@ capabilities:
   - volume
   - debug-tools
   - notifications
+  - bookmarks
 defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
@@ -26,6 +27,11 @@ defaults:
   # Back steps through the page history and then leaves the app, as in any phone app.
   webview.backButton: "history"
   debug.execEnabled: false
+  # The pages the site's own web manifest offers as shortcuts (frontend/public/manifest.json).
+  # Each is "id|label|icon|path"; a path is a page of the site, never an API route.
+  bookmarks.1: "feed|Feed|open|/feed"
+  bookmarks.2: "media|Media|play|/media"
+  bookmarks.3: "call|Call|open|/call"
   # A web link opens in the app only on the backend's own origin or one listed here.
   # This is the host the link activity is offered for (appLinks above).
   links.origins: "https://{phone_link_host}"

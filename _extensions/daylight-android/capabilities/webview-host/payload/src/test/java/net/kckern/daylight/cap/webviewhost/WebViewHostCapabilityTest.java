@@ -242,4 +242,19 @@ public class WebViewHostCapabilityTest {
         assertTrue(late.attached.isEmpty());
         assertEquals(0, real.events().subscribers());
     }
+
+    // ── PageOpener: what a link or a bookmark uses ────────────────────────────
+
+    @Test public void offersToOpenAPageAndKeepsItForTheNextWindowWhenNoneIsUp() {
+        net.kckern.daylight.core.spi.PageOpener opener = core.services().find(net.kckern.daylight.core.spi.PageOpener.class);
+        assertNotNull(opener);
+        assertEquals("no kiosk Activity in a JVM test", "pending", opener.open("https://kiosk.example/media"));
+    }
+
+    @Test public void openRefusesAnythingThatIsNotHttp() {
+        net.kckern.daylight.core.spi.PageOpener opener = core.services().find(net.kckern.daylight.core.spi.PageOpener.class);
+        for (String bad : new String[] { null, "", "javascript:alert(1)", "file:///sdcard/x", "content://x", "intent://x#Intent;end", "/media" }) {
+            try { opener.open(bad); fail("accepted " + bad); } catch (IllegalArgumentException expected) { }
+        }
+    }
 }
