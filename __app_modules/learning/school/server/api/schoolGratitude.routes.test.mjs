@@ -13,3 +13,12 @@ it('refuses other-purpose grants before processing input and enforces persisted 
   const r=await request(app).post('/gratitude/child/day/2026-11-16/take').set('X-School-Gratitude-Grant','good').set('Content-Type','audio/webm').send(Buffer.alloc(1024));
   expect(r.status).toBe(429);expect(r.body.retryAt).toBe('2026-11-16T18:30:00Z');expect(capture).not.toHaveBeenCalled();
 });
+it('passes a follow-up answer through to the service and returns its 409 message',async()=>{
+  const submit=vi.fn(async(id,day,body)=>{if(body.followUpOf!=='a1'){const e=new Error('Please answer the follow-up question.');e.status=409;throw e;}return {phase:'completed'};});
+  const app=express();app.use('/gratitude',createSchoolGratitudeRouter({service:{submit},grants:{verify:()=>({ok:true})},teacherGate:{assert(){}}}));
+  const answer={attemptId:'a2',followUpOf:'a1',text:'She made me pancakes',via:'typed',audioRef:null,edited:false};
+  const ok=await request(app).post('/gratitude/child/day/2026-11-16/submit').set('X-School-Gratitude-Grant','good').send(answer);
+  expect(ok.status).toBe(200);expect(submit.mock.calls[0]).toEqual(['child','2026-11-16',answer]);
+  const refused=await request(app).post('/gratitude/child/day/2026-11-16/submit').set('X-School-Gratitude-Grant','good').send({...answer,followUpOf:undefined});
+  expect(refused.status).toBe(409);expect(refused.body.error).toBe('Please answer the follow-up question.');
+});

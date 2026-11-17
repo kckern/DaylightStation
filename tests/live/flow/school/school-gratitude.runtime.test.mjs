@@ -2,13 +2,13 @@ import {test,expect} from '@playwright/test';
 import path from 'node:path';
 const BASE=process.env.SCHOOL_GRATITUDE_BASE??process.env.BASE_URL;
 const TODAY='2026-11-16',LEARNER='test-learner';
-async function world(page,{refusal=null}={}){
+async function world(page,{refusal=null,followUp=false}={}){
   const state={phase:'draft',learnerId:LEARNER,studyDay:TODAY,today:TODAY,serverNow:'2026-11-16T18:00:00Z',prompt:{id:'gratitude',text:'What are you grateful for today?',required:true},draft:null,attemptId:null,retryAt:null};
   const submissions=[];
   await page.route('**/api/**',async route=>{
     const req=route.request(),url=new URL(req.url());
     const json=value=>route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
-    // This fixture models the ordinary household with supervision disabled.
+    // The ordinary household with supervision disabled; without this the screen waits on "Checking access…".
     if(url.pathname==='/api/v1/supervision/bootstrap')return json({enabled:false});
     if(url.pathname.endsWith('/roster'))return json([{id:LEARNER,name:'Test Learner',birthyear:2016}]);
     if(url.pathname.endsWith('/materials'))return json({materials:[]});
@@ -19,7 +19,8 @@ async function world(page,{refusal=null}={}){
       expect(req.headers()['x-school-gratitude-grant']).toBe('test-grant');
       if(url.pathname.endsWith('/submit')){
         const body=req.postDataJSON();submissions.push(body);
-        Object.assign(state,refusal?{phase:'cooldown',reason:refusal,retryAt:'2026-11-16T18:30:00Z'}:{phase:'completed',subject:'Toys'});
+        if(followUp&&submissions.length===1)Object.assign(state,{phase:'follow-up',attemptId:body.attemptId,followUp:{question:'What about your mom are you grateful for today?',firstText:body.text}});
+        else Object.assign(state,refusal?{phase:'cooldown',reason:refusal,retryAt:'2026-11-16T18:30:00Z'}:{phase:'completed',subject:followUp?'Mom making pancakes':'Toys',followUp:null});
       }
       return json(state);
     }
@@ -52,4 +53,18 @@ for(const reason of ['nonsense','repetition'])test(`gratitude ${reason} cooldown
   await page.screenshot({path:path.join('test-results/school-gratitude',`${reason}.png`)});
   await page.getByRole('button',{name:'Close'}).click();
   await expect(page.getByText('Take a little break')).toHaveCount(0);
+});
+test('a general gratitude gets one follow-up and both answers finish the day',async({page})=>{
+  const {submissions}=await world(page,{followUp:true});
+  await page.getByRole('textbox').fill("I'm grateful for my mom");
+  await page.getByRole('button',{name:/Submit/}).click();
+  await expect(page.getByText('What about your mom are you grateful for today?')).toBeVisible();
+  await expect(page.getByText(/You said: .I'm grateful for my mom/)).toBeVisible();
+  const field=page.getByRole('textbox');await expect(field).toHaveValue('');
+  await field.fill('She made me pancakes');
+  await page.getByRole('button',{name:/Submit/}).click();
+  await expect(page.getByText('Mom making pancakes',{exact:true})).toBeVisible();
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toMatchObject({text:'She made me pancakes',followUpOf:submissions[0].attemptId});
+  await page.screenshot({path:path.join('test-results/school-gratitude','follow-up.png')});
 });

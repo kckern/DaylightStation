@@ -1,4 +1,4 @@
-import { it,expect } from 'vitest';
+import { it,expect,vi } from 'vitest';
 import { GratitudeTopicExtractor } from './GratitudeTopicExtractor.mjs';
 it('extracts a bounded subject through the provider port and refuses malformed output',async()=>{
   const make=value=>new GratitudeTopicExtractor({aiGateway:{chatStructured:async()=>value},config:{model:'cheap',timeoutMs:100},logger:{}});
@@ -27,4 +27,10 @@ it('sends those instructions and normalizes what the model returns', async () =>
   expect(await extractor.extract({ text: 'I am grateful for eating cookies.' })).toEqual({ subject: 'Eating cookies', model: 'cheap' });
   expect(sent[0]).toEqual({ role: 'system', content: GRATITUDE_SUBJECT_INSTRUCTIONS });
   expect(JSON.parse(sent[1].content)).toEqual({ text: 'I am grateful for eating cookies.' });
+});
+it('logs an extraction failure by error name and code, never the gateway text',async()=>{
+  const warn=vi.fn();const failure=Object.assign(new TypeError('model said: my mom'),{code:'E_PARSE'});
+  const extractor=new GratitudeTopicExtractor({aiGateway:{chatStructured:async()=>{throw failure;}},config:{model:'cheap',timeoutMs:100},logger:{warn}});
+  expect(await extractor.extract({text:'my mom'})).toBeNull();
+  expect(warn).toHaveBeenCalledWith('school.gratitude.extract-unavailable',{error:'TypeError',code:'E_PARSE'});
 });
