@@ -164,6 +164,16 @@ final class LoadTracker {
         return settle(new Result(loadId, url, false, "timeout", nowMs, nowMs - startedAt), true);
     }
 
+    /**
+     * The load in progress was stopped by the kiosk itself, for the reason given. It
+     * settles as a failure and counts as one, so the usual retry with backoff follows.
+     * Null when no load was in progress.
+     */
+    synchronized Result stopped(String reason, long nowMs) {
+        if (state != State.LOADING) return null;
+        return settle(new Result(loadId, url, false, reason, nowMs, nowMs - startedAt), true);
+    }
+
     /** The renderer died. Null when no load was in progress. */
     synchronized Result rendererGone(long nowMs) {
         if (state != State.LOADING) return null;

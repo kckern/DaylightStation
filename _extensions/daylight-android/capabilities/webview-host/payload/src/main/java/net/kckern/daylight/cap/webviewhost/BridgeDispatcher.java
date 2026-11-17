@@ -35,10 +35,13 @@ final class BridgeDispatcher {
 
     /**
      * A document opens its session: the key the shim carries buys a token of its own.
-     * Refused ("") with a wrong key, or while the main frame is not on an allowed origin.
+     * Refused ("") with a wrong key. The main frame's origin is not asked here: the
+     * record of it is written by the main thread when a navigation starts, and a new
+     * document's first call can arrive before that. It is asked at every call instead,
+     * so a token opened by an allowed-origin frame inside a page of another origin
+     * does nothing while that page is the main frame.
      */
     String open(String presentedKey) {
-        if (!origins.allows(mainFrameUrl.get())) return "";
         return tokens.open(presentedKey);
     }
 

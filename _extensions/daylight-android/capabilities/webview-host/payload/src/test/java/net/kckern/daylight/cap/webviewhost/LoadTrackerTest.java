@@ -263,4 +263,17 @@ public class LoadTrackerTest {
         t.started("https://a.test/");
         assertNotNull(t.finished(500, "https://a.test/"));
     }
+
+    @Test public void aLoadTheKioskStoppedItselfSettlesAsAFailureThatIsRetried() {
+        LoadTracker t = new LoadTracker();
+        long gen = t.begin("https://a.test/", 0);
+        t.started("https://a.test/");
+        Result r = t.stopped("this page leads to https://sso.test, which is not in webview.allowedOrigins", 40);
+        assertFalse(r.ok);
+        assertEquals(LoadTracker.State.FAILED, t.state());
+        assertEquals("it counts, so the retry delay grows", 1, t.failures());
+        assertTrue(t.waiter(gen).isDone());
+        assertNull("nothing is in progress any more", t.stopped("again", 50));
+        assertNull(t.finished(60, "https://a.test/"));
+    }
 }

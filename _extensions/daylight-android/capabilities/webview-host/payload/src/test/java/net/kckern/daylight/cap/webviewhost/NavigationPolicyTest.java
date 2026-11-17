@@ -48,4 +48,28 @@ public class NavigationPolicyTest {
         assertEquals("https://www.example.org", NavigationPolicy.originForLog("https://www.example.org/reset?token=secret"));
         assertEquals("(no http origin)", NavigationPolicy.originForLog("intent://x"));
     }
+
+    @Test public void aStartPageThatKeepsLeadingAwayIsNotReloadedForEver() {
+        NavigationPolicy.BounceGuard guard = new NavigationPolicy.BounceGuard();
+        long now = 1_000;
+        for (int i = 0; i < NavigationPolicy.BounceGuard.MAX; i++) {
+            assertFalse("stop " + (i + 1) + ": go back to the start page", guard.stoppedAndGiveUp(now += 200));
+        }
+        assertTrue("the start page leads away every time: stop reloading it", guard.stoppedAndGiveUp(now += 200));
+        assertTrue(guard.stoppedAndGiveUp(now += 200));
+    }
+
+    @Test public void aPageThatLoadedOrAMinuteWithoutOneStartsTheCountAgain() {
+        NavigationPolicy.BounceGuard guard = new NavigationPolicy.BounceGuard();
+        for (int i = 0; i < NavigationPolicy.BounceGuard.MAX; i++) guard.stoppedAndGiveUp(1_000 + i);
+        guard.settled();                                    // the start page loaded in between
+        assertFalse(guard.stoppedAndGiveUp(2_000));
+
+        NavigationPolicy.BounceGuard spaced = new NavigationPolicy.BounceGuard();
+        long now = 0;
+        for (int i = 0; i < 10; i++) {
+            assertFalse("one stray link a minute is not a loop", spaced.stoppedAndGiveUp(now));
+            now += NavigationPolicy.BounceGuard.WINDOW_MS + 1;
+        }
+    }
 }

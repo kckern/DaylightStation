@@ -18,6 +18,8 @@ import java.net.URL;
 
 public class MainTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    private static final String BIND = net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND;
+    private static final boolean LISTENS = net.kckern.daylight.api.ControlBind.listens(BIND);
 
     private static boolean heartbeatRunning() {
         for (Thread t : Thread.getAllStackTraces().keySet()) {
@@ -30,15 +32,16 @@ public class MainTest {
         try (ServerSocket s = new ServerSocket(0)) { return s.getLocalPort(); }
     }
 
-    private static final String BIND = net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND;
-    private static final boolean LISTENS = net.kckern.daylight.api.ControlBind.listens(BIND);
-
-    @Test public void startsAndServesTheControlApi() throws Exception {
-        org.junit.Assume.assumeTrue("a device with control.bind none serves nothing; see the test below", LISTENS);
+    @Test public void startsAndServesTheControlApiWhereTheDeviceHasOne() throws Exception {
         Main main = new Main();
         int port = freePort();
         main.start(new FakeShell(tmp.newFolder()), port, 3);
         try {
+            if (!LISTENS) {
+                // control.bind none: started, and there is no server to ask.
+                assertEquals(null, main.boundAddress());
+                return;
+            }
             HttpURLConnection c = (HttpURLConnection) new URL("http://127.0.0.1:" + port + "/status").openConnection();
             c.setRequestProperty("X-Daylight-Token", FakeShell.TOKEN);
             assertEquals(200, c.getResponseCode());
@@ -48,13 +51,18 @@ public class MainTest {
     }
 
     @Test public void aControlPortThatCannotBeBoundFailsThePayloadAndStopsWhatStarted() throws Exception {
-        org.junit.Assume.assumeTrue("a device with control.bind none binds no port", LISTENS);
         Main main = new Main();
         // Held on the address this device binds. On a loopback device a socket held on
         // every interface would not be the one in the way.
-        java.net.InetAddress where = "loopback".equals(net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND)
-                ? java.net.InetAddress.getByName("127.0.0.1") : null;
+        java.net.InetAddress where = "lan".equals(BIND) ? null : java.net.InetAddress.getByName("127.0.0.1");
         try (ServerSocket held = new ServerSocket(0, 50, where)) {
+            if (!LISTENS) {
+                // A device that binds nothing is not stopped by a port somebody else holds.
+                main.start(new FakeShell(tmp.newFolder()), held.getLocalPort(), 2);
+                assertEquals(null, main.boundAddress());
+                main.stop();
+                return;
+            }
             try {
                 main.start(new FakeShell(tmp.newFolder()), held.getLocalPort(), 2);
                 fail("a payload with a dead control port must not report a clean start");
@@ -115,13 +123,13 @@ public class MainTest {
     }
 
     /** With no control server the payload still starts, registers its routes and stops cleanly. */
-    @Test public void aDeviceThatListensNowhereStillStartsItsCapabilities() throws Exception {
-        org.junit.Assume.assumeTrue(!LISTENS);
+    @Test public void theCoreStartsWhetherOrNotAnythingListens() throws Exception {
         FakeShell shell = new FakeShell(tmp.newFolder());
         Main main = new Main();
         main.start(shell, freePort(), 3);
         try {
-            assertTrue(shell.notes.toString(), shell.notes.toString().contains("no control server"));
+            assertEquals("only a device that listens nowhere says so: " + shell.notes,
+                    !LISTENS, shell.notes.toString().contains("no control server"));
             assertTrue("the core started", shell.notes.toString().contains("CORE started"));
         } finally {
             main.stop();

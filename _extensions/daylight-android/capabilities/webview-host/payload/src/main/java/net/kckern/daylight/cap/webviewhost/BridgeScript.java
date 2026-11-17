@@ -19,9 +19,10 @@ final class BridgeScript {
         return "(function(){"
                 + "if(window.daylight)return;"
                 + "var n=window." + NATIVE_NAME + ";if(!n)return;"
-                + "var T=\"\";try{T=n.open(" + JSONObject.quote(sessionKey) + ")||\"\";}catch(e){}"
-                + "if(!T)return;"
-                + "function c(m,a){try{return n.call(T,m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
+                // The token is asked for at the first call and kept. Asking at document start
+                // would make one refused answer last for the document's whole life.
+                + "var T=\"\";function t(){if(!T){try{T=n.open(" + JSONObject.quote(sessionKey) + ")||\"\";}catch(e){}}return T;}"
+                + "function c(m,a){try{return n.call(t(),m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
                 + "window.daylight=Object.freeze({"
                 + "version:" + JSONObject.quote(version) + ","
                 + "deviceId:" + JSONObject.quote(deviceId) + ","

@@ -541,28 +541,30 @@ public class LockdownCapabilityTest {
     @Test public void thePinLockoutIsLoggedAsAWarningOnceAndNeverWithThePin() throws Exception {
         File dir = tmp.newFolder();
         FakeSurface surface = startForReal(new FakeContext(dir), dir);
-        core.settings().set("lockdown.exitPin", "2468");
+        core.settings().set("lockdown.exitPin", "2468135791");
         final java.util.List<JSONObject> warnings = new java.util.ArrayList<>();
         core.events().subscribe((topic, detail) -> {
             if ("lockdown".equals(topic) && "warn".equals(detail.optString("level"))) warnings.add(detail);
         });
         sevenTaps(surface);
-        for (int i = 0; i < ExitGesture.MAX_WRONG - 1; i++) surface.prompt.onPin("0000");
+        for (int i = 0; i < ExitGesture.MAX_WRONG - 1; i++) surface.prompt.onPin("0000111122");
         assertTrue("four wrong PINs are not a lockout", warnings.isEmpty());
-        surface.prompt.onPin("0000");
+        surface.prompt.onPin("0000111122");
         assertEquals(1, warnings.size());
         assertEquals("lockdown.pin.lockout", warnings.get(0).getString("event"));
         JSONObject data = warnings.get(0).getJSONObject("data");
         assertEquals(ExitGesture.MAX_WRONG, data.getInt("wrongAttempts"));
         assertTrue(data.getLong("untilMs") > System.currentTimeMillis());
-        surface.prompt.onPin("2468");           // refused: locked out
-        surface.prompt.onPin("0000");
+        surface.prompt.onPin("2468135791");           // refused: locked out
+        surface.prompt.onPin("0000111122");
         assertEquals("attempts during the lockout add no second warning", 1, warnings.size());
 
         String events = call("GET", "/log", null).getJSONArray("events").toString();
         assertTrue("the lockout is in the event log", events.contains("lockdown.pin.lockout"));
+        // Ten digits each: the log holds clock times in milliseconds, and a four-digit
+        // PIN turns up inside one of those by chance about once in a few hundred runs.
         String everything = events + warnings + ((FakeShell) core.shell()).notes;
-        assertFalse("neither the PIN nor what was typed is logged", everything.contains("2468") || everything.contains("0000"));
+        assertFalse("neither the PIN nor what was typed is logged", everything.contains("2468135791") || everything.contains("0000111122"));
     }
 
     // ── the package gate (lease-gate) ─────────────────────────────────────────
@@ -807,12 +809,13 @@ public class LockdownCapabilityTest {
         assertEquals(Boolean.TRUE, surface.immersive);
 
         // Setting the PIN is applied at once.
-        core.settings().set("lockdown.exitPin", "4711");
+        // Ten digits, so a clock time in an answer cannot contain it by chance.
+        core.settings().set("lockdown.exitPin", "4711047110");
         assertTrue(policy.statusBarDisabled);
         assertEquals(1, surface.lockTaskOn);
         assertFalse(call("GET", "/lockdown", null).has("ownerRefused"));
-        assertFalse("the PIN is never in an answer or a log line", call("GET", "/lockdown", null).toString().contains("4711"));
-        assertFalse(((FakeShell) core.shell()).notes.toString().contains("4711"));
+        assertFalse("the PIN is never in an answer or a log line", call("GET", "/lockdown", null).toString().contains("4711047110"));
+        assertFalse(((FakeShell) core.shell()).notes.toString().contains("4711047110"));
     }
 
     // ── releasing and transferring device ownership ──────────────────────────

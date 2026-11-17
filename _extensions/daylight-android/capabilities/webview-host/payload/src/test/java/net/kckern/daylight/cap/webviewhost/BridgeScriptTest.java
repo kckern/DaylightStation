@@ -12,7 +12,8 @@ public class BridgeScriptTest {
             assertTrue("missing " + member, js.contains(member));
         }
         assertTrue("the key is spent on a token of this document's own", js.contains("n.open(\"tok-123\")"));
-        assertTrue("with no token there is no window.daylight", js.contains("if(!T)return;"));
+        assertTrue("asked for at the first call, then kept", js.contains("function t(){if(!T){"));
+        assertTrue("every call presents the token, never the key", js.contains("n.call(t(),m,"));
         assertEquals("the key appears once: it is never passed with a call", 1, js.split("tok-123", -1).length - 1);
         assertTrue(js.contains("\"p3-kiosk\""));
         assertTrue(js.contains("\"piano\""));

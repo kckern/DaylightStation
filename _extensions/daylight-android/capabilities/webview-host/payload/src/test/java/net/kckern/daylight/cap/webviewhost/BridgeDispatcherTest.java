@@ -135,10 +135,26 @@ public class BridgeDispatcherTest {
         assertTrue(calls.isEmpty());
     }
 
-    @Test public void noSessionIsOpenedWhileTheMainFrameIsOnADisallowedPage() {
+    @Test public void aTokenOpenedInsideAPageOfAnotherOriginDoesNothingThere() {
         // A frame of the allowed origin embedded in a hostile page holds the key (the shim
-        // is injected by origin) and still gets nothing.
+        // is injected by origin). It can open a session; every call is refused while the
+        // main frame is that page.
         url = "https://elsewhere.test/";
-        assertEquals("", bridge.open(KEY));
+        String framed = bridge.open(KEY);
+        assertFalse(framed.isEmpty());
+        assertEquals("", bridge.call(framed, "restartApp", ""));
+        assertEquals("", bridge.call(framed, "launch", "{\"package\":\"ok\"}"));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test public void aDocumentsFirstCallWorksBeforeTheMainThreadHasRecordedItsUrl() {
+        // The first load: the bridge thread hears from the page before the main thread
+        // has written down where the main frame is. Opening must not depend on that.
+        url = "";
+        String early = bridge.open(KEY);
+        assertFalse("a refused open would leave the page with no bridge", early.isEmpty());
+        url = "https://app.example.test/piano";            // the navigation callback arrives
+        tokens.navigated();
+        assertEquals("true", bridge.call(early, "screen", "true"));
     }
 }

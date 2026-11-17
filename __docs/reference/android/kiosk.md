@@ -109,6 +109,14 @@ adds the origins in its `links.origins`. Sub-resources and iframes are not held 
 this rule: the page embeds media and frames from other origins, and those load as
 before. Schemes other than http and https never load in any frame.
 
+A main-frame load that reaches another origin all the same (a redirect the first
+check did not see) is stopped when it starts, and the kiosk loads its start page.
+If the start page itself leads away, as one that redirects to a sign-in host not
+on the list would, that would repeat at the speed of the network; after three
+such stops inside a minute the load is settled as failed, the local error page
+names the origin, and the start page is tried again on the usual doubling delay.
+Adding the origin to `webview.allowedOrigins` is the fix.
+
 Routes, beyond what the control API contract lists:
 
 - Every load has a `loadId`. The waiting answer, the `wait:false` acknowledgement
@@ -150,8 +158,8 @@ remedy.
 
 The native object behind the bridge is visible to every frame (an Android rule),
 so it answers only to a token. The shim carries a session key, with which each
-document asks for a token of its own; every call presents that token, and the key
-is never sent with a call. A token is tied to the document it was issued to: each
+document asks for a token of its own at its first call; every call presents that
+token, and the key is never sent with a call. A token is tied to the document it was issued to: each
 main-frame navigation starts a new generation, and a token is refused once the
 document it was issued to has been replaced. Because the navigation callback and a
 new document's first call can arrive in either order, a token is honored in the

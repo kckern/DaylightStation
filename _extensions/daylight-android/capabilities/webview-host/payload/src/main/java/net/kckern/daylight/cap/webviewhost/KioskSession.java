@@ -90,6 +90,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final String sessionKey = newToken();
     private final BridgeTokens tokens = new BridgeTokens(sessionKey);
     private final RendererLossPolicy rendererLosses = new RendererLossPolicy();
+    private final NavigationPolicy.BounceGuard bounces = new NavigationPolicy.BounceGuard();
     /** Said once per payload: a WebView that cannot inject at document start gets no bridge. */
     private boolean bridgeUnavailableNoted;
     private final ExecutorService bridgeExec = Executors.newSingleThreadExecutor(r -> {
@@ -496,6 +497,22 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 note("stopped a main-frame load outside the allowed origins: " + NavigationPolicy.originForLog(url));
                 view.stopLoading();
                 String start = startUrl();
+                if (bounces.stoppedAndGiveUp(System.currentTimeMillis())) {
+                    // The start page itself keeps leading away. Reloading it at once would
+                    // loop at the speed of the network. The load is settled as failed, so
+                    // the local error page shows and the usual retry, with its doubling
+                    // delay, is all that follows.
+                    String why = "this page leads to " + NavigationPolicy.originForLog(url)
+                            + ", which is not in webview.allowedOrigins";
+                    note("the start page keeps leading outside the allowed origins; slowing down. "
+                            + "Add the origin to webview.allowedOrigins if it is meant to be reached");
+                    cancelDeadline();
+                    intendedUrl = start;
+                    LoadTracker.Result failed = loads.stopped(why, System.currentTimeMillis());
+                    if (failed != null) afterSettle(failed);
+                    else showErrorPage(start, why, -1);
+                    return;
+                }
                 if (!start.isEmpty() && navigation.allows(start)) load(start);
                 return;
             }
@@ -517,6 +534,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             // was superseded must not settle the one that replaced it.
             LoadTracker.Result r = loads.finished(System.currentTimeMillis(), url);
             if (r == null) return;
+            if (r.ok) bounces.settled();
             cancelDeadline();
             afterSettle(r);
         }

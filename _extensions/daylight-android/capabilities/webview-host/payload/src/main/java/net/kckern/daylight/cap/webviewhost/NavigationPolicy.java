@@ -47,4 +47,31 @@ final class NavigationPolicy {
     }
 
     Set<String> origins() { return origins; }
+
+    /**
+     * Counts main-frame loads that were stopped for leaving the allowed origins. The
+     * kiosk answers such a load by loading its start page. If the start page itself
+     * leads away (a redirect to a sign-in host that is not on the list), that answer
+     * would repeat at the speed of the network, for ever. After MAX stops inside the
+     * window the load is settled as failed: the local error page shows, and the start
+     * page is tried again only on the usual retry delay, which doubles.
+     */
+    static final class BounceGuard {
+        static final int MAX = 3;
+        static final long WINDOW_MS = 60_000L;
+
+        private int stops;
+        private long lastAtMs;
+
+        /** A load was stopped. True when the kiosk should stop reloading its start page at once. */
+        synchronized boolean stoppedAndGiveUp(long nowMs) {
+            if (nowMs - lastAtMs > WINDOW_MS) stops = 0;
+            stops++;
+            lastAtMs = nowMs;
+            return stops > MAX;
+        }
+
+        /** A page on an allowed origin finished loading: the run is over. */
+        synchronized void settled() { stops = 0; }
+    }
 }
