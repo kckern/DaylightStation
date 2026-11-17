@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSnoozed, shouldPrompt } from './jankRebootLogic.js';
+import { isSnoozed, shouldPrompt, recoveryVerified } from './jankRebootLogic.js';
 
 describe('isSnoozed', () => {
   it('is true only while the snooze is in the future', () => {
@@ -32,5 +32,26 @@ describe('shouldPrompt', () => {
 
   it('stays open once open regardless of snooze/threshold', () => {
     expect(shouldPrompt({ ...base, sustainedLowSec: 0, alreadyOpen: true })).toBe(true);
+  });
+});
+
+
+describe('recovery evidence', () => {
+  const request = { deviceId: 'test-device', bootCount: 9, bootIdentitySource: 'settings.global.boot_count', requestedAtMs: 1000 };
+  const fresh = { deviceId: 'test-device', payload: 'candidate', bootCount: 10, bootIdentitySource: 'settings.global.boot_count', lastBeatAgoMs: 100, beatCount: 1, lastVisibility: 'visible', liveness: 'alive', responsiveness: 'healthy', nativeRecoveryAllowed: true };
+  it('requires current same-device boot and healthy beat evidence', () => {
+    expect(recoveryVerified(request, fresh, 2000)).toBe(true);
+    for (const patch of [
+      { deviceId: 'other-device' }, { bootCount: 9 }, { bootCount: null }, { bootCount: 8 },
+      { bootIdentitySource: 'process-id' }, { payload: '' }, { lastBeatAgoMs: 5001 },
+      { lastBeatAgoMs: null }, { lastBeatAgoMs: -1 }, { beatCount: 0 },
+      { lastVisibility: 'hidden' }, { liveness: 'dead' }, { responsiveness: 'degraded' },
+      { nativeRecoveryAllowed: false }, { beatCount: '1' },
+    ]) expect(recoveryVerified(request, { ...fresh, ...patch }, 2000), JSON.stringify(patch)).toBe(false);
+    expect(recoveryVerified(request, fresh, 700000)).toBe(false);
+    expect(recoveryVerified(request, fresh, 999)).toBe(false);
+    expect(recoveryVerified(null, fresh, 2000)).toBe(false);
+    expect(recoveryVerified({ ...request, requestedAtMs: null }, fresh, 2000)).toBe(false);
+    expect(recoveryVerified({ ...request, requestedAtMs: '1000' }, fresh, 2000)).toBe(false);
   });
 });

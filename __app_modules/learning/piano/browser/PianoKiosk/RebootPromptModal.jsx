@@ -1,11 +1,7 @@
-/**
- * RebootPromptModal — shown only when rendering has been durably degraded (the
- * SM-T590 GPU/renderer latch). Replaces the watchdog's old silent reboot: the
- * user decides. "Reboot now" clears the latch (~90s); "Not now" defers for an
- * hour, then the prompt re-arms. Rarely seen, so it is self-styled (no new SCSS
- * dependency) and deliberately calm — not an error, just an offer to fix.
+/** User-requested restart, visible failure/retry, and independently checked recovery.
+ * Neither command acknowledgement nor this prompt claims physical containment.
  */
-export default function RebootPromptModal({ open, onReboot, onDismiss }) {
+export default function RebootPromptModal({ open, onReboot, onDismiss, onCheckRecovery, recovery = { status: 'idle' } }) {
   if (!open) return null;
   return (
     <div
@@ -34,20 +30,24 @@ export default function RebootPromptModal({ open, onReboot, onDismiss }) {
           The display is running slowly
         </h2>
         <p style={{ margin: '0 0 1.5rem', color: '#b9bcce' }}>
-          A quick reboot (about a minute and a half) will make it smooth again.
-          Your progress is saved.
+          {recovery.status === 'failed' ? 'Could not restart. Restart is unavailable, was rejected, or is blocked by current safety settings. You can retry.'
+            : recovery.status === 'requested' || recovery.status === 'unverified' ? 'Restart requested. Recovery has not been verified. Check again after the device restarts.'
+              : recovery.status === 'verified' ? 'A new device boot and fresh healthy page heartbeat were observed.'
+                : recovery.status === 'checking' ? 'Checking current safety settings before requesting restart…'
+                  : 'A restart may help the display recover. It usually takes about a minute and a half.'}
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={onReboot}
+            onClick={['requested', 'unverified'].includes(recovery.status) ? onCheckRecovery : onReboot}
+            disabled={recovery.status === 'checking'}
             style={{
               padding: '0.75rem 1.5rem', borderRadius: '0.6rem', border: 'none',
               background: '#4f7cff', color: '#fff', font: '600 1rem system-ui, sans-serif',
               cursor: 'pointer', minWidth: '9rem',
             }}
           >
-            Reboot now
+            {['requested', 'unverified'].includes(recovery.status) ? 'Check recovery' : recovery.status === 'failed' ? 'Retry reboot' : 'Reboot now'}
           </button>
           <button
             type="button"
@@ -58,7 +58,7 @@ export default function RebootPromptModal({ open, onReboot, onDismiss }) {
               font: '500 1rem system-ui, sans-serif', cursor: 'pointer', minWidth: '9rem',
             }}
           >
-            Not now
+            {recovery.status === 'verified' ? 'Close' : 'Not now'}
           </button>
         </div>
       </div>

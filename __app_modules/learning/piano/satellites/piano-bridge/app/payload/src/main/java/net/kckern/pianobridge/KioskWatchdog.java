@@ -279,21 +279,13 @@ public final class KioskWatchdog {
         decide("ladder-start", "trigger=" + trigger + " fps=" + lastFps
                 + " beatAgeMs=" + (SystemClock.elapsedRealtime() - lastBeatAtRt)
                 + " activeGame=" + (gameAtTrigger == null ? "none" : gameAtTrigger));
-        // Two independent safety gates on the DISRUPTIVE rungs (L2 reload / L3 restart
-        // / L4 reboot): the daily quiet window, AND FKB's authoritative screen state.
-        // screenOn guards the common "screen off at night, rAF throttled to ~1fps" case
-        // that visibilityState alone doesn't catch — without it a decayed night reading
-        // could escalate to a 3am reboot. Fail-safe OPEN: if FKB can't tell us (unknown/
-        // unreachable), assume on and allow recovery (a latched-but-lit kiosk MUST heal;
-        // and if FKB REST is truly down, the disruptive rungs — which need it — no-op anyway).
-        boolean quiet = inQuietWindow(c);
-        boolean screenOn = fkbScreenOn(c);
-        boolean disruptiveOk = !quiet && screenOn;
+        // Every disruptive rung re-reads current screen/quiet/game/native safety.
+        // Unknown screen readback never grants a disruptive action.
 
         // L1 — invisible synthetic-touch burst (the common un-throttle). Always safe.
         long t1 = SystemClock.elapsedRealtime();
-        act("L1 touch-burst", burstCount);
         if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
+        act("L1 touch-burst", burstCount);
         TouchPulser.burst(c, 6);
         sleep(3000);
         if (recovered(t1, c)) { finish("recovered@L1-touch"); return; }
@@ -317,24 +309,18 @@ public final class KioskWatchdog {
             return;
         }
 
-        if (!disruptiveOk) {
-            finish("L1 only — " + (quiet ? "quiet window" : "screen off")
-                    + "; disruptive rungs (reload/restart/reboot) suppressed");
-            return;
-        }
-
         // L2 — reload the SPA.
         long t2 = SystemClock.elapsedRealtime();
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L2 loadStartUrl", reloadCount);
-        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         FkbRest.command(c, "loadStartUrl");
         sleep(6500);
         if (recovered(t2, c)) { finish("recovered@L2-reload"); return; }
 
         // L3 — respawn the renderer.
         long t3 = SystemClock.elapsedRealtime();
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L3 restartApp", restartCount);
-        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         FkbRest.command(c, "restartApp");
         sleep(8000);
         if (recovered(t3, c)) { finish("recovered@L3-restartApp"); return; }
@@ -347,8 +333,8 @@ public final class KioskWatchdog {
                     + "s ago < " + (c.watchdogRebootMinGapMs() / 1000) + "s) — NEEDS HUMAN");
             return;
         }
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L4 rebootDevice", rebootCount);
-        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         CrashLog.recordReboot();           // persist BEFORE the reboot so the cap survives it
         CrashLog.note("RECOVERY", "issuing FKB rebootDevice — hard latch unrecoverable by soft ladder");
         int rc = FkbRest.command(c, "rebootDevice");
@@ -369,15 +355,15 @@ public final class KioskWatchdog {
             finish("UNRECOVERED — FKB REST down AND a11y service not bound; no lever — NEEDS HUMAN");
             return;
         }
-        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         if (!A11y.powerDialog()) {
             finish("UNRECOVERED — a11y powerDialog refused — NEEDS HUMAN");
             return;
         }
         sleep(1500); // let the dialog inflate
-        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         boolean clicked = A11y.clickText("restart");
-        if (!clicked) clicked = A11y.clickText("reboot");
+        if (!clicked && disruptiveAllowed(c)) clicked = A11y.clickText("reboot");
         finish(clicked ? "issued L5 a11y restart" : "UNRECOVERED — power dialog up but no Restart control found — NEEDS HUMAN");
     }
 
@@ -444,17 +430,27 @@ public final class KioskWatchdog {
      * Keep nulls explicit: unknown screen state is not affirmative readback. */
     static void appendHealthStatus(JSONObject source, JSONObject target) throws org.json.JSONException {
         for (String key : new String[]{"liveness", "responsiveness", "decisionId", "decisionAt",
-                "screenOn", "quiet", "activeGame", "recoveryStage"}) {
+                "screenOn", "quiet", "activeGame", "recoveryStage",
+                "deviceId", "payload", "bootCount", "bootIdentitySource", "lastBeatAgoMs",
+                "beatCount", "lastVisibility", "nativeRecoveryAllowed"}) {
             target.put(key, source.has(key) ? source.get(key) : JSONObject.NULL);
         }
     }
 
     /** True once a beat NEWER than the action shows healthy fps (reload remounts → fresh beats). */
     private boolean recovered(long actionAtRt, DeviceConfig c) {
-        return lastBeatAtRt > actionAtRt && lastFps >= c.watchdogMinFps();
+        long age = SystemClock.elapsedRealtime() - lastBeatAtRt;
+        return lastBeatAtRt > actionAtRt && age >= 0 && age <= c.watchdogBeatTimeoutMs()
+                && "visible".equals(lastVisibility) && lastFps >= c.watchdogMinFps();
     }
 
-    /** FKB's authoritative screen state; fail-safe OPEN (true) when it can't be read. */
+    /** Re-evaluate the current gates at each disruptive boundary, including after sleeps. */
+    private boolean disruptiveAllowed(DeviceConfig c) {
+        return service != null && service.recoveryAllowed() && activeGameId == null
+                && !inQuietWindow(c) && fkbScreenOn(c) && service.recoveryAllowed();
+    }
+
+    /** FKB's authoritative screen state; unknown cannot authorize disruption. */
     private boolean fkbScreenOn(DeviceConfig c) {
         try {
             JSONObject fkb = FkbRest.deviceInfo(c);
@@ -464,7 +460,7 @@ public final class KioskWatchdog {
             screenOn = null;
         }
         screenReadAtRt = SystemClock.elapsedRealtime();
-        return !Boolean.FALSE.equals(screenOn); // preserve the existing fail-open ladder gate
+        return Boolean.TRUE.equals(screenOn);
     }
 
     private boolean inQuietWindow(DeviceConfig c) {
@@ -494,12 +490,27 @@ public final class KioskWatchdog {
 
     // --- introspection (GET /kiosk, embedded in /diagnostics) ---------------
 
+    private Integer bootCount() {
+        try {
+            if (service == null || service.getContext() == null) return null;
+            int count = android.provider.Settings.Global.getInt(service.getContext().getContentResolver(),
+                    android.provider.Settings.Global.BOOT_COUNT, -1);
+            return count >= 0 ? count : null;
+        } catch (RuntimeException e) { return null; }
+    }
+
     public JSONObject snapshot() {
         JSONObject o = new JSONObject();
         try {
             DeviceConfig c = cfg;
             long now = SystemClock.elapsedRealtime();
             boolean sawAny = lastBeatAtRt != 0;
+            Integer boot = bootCount();
+            o.put("deviceId", c.heartbeatDeviceId());
+            o.put("payload", ControlServer.BUILT_BY);
+            o.put("bootCount", boot == null ? JSONObject.NULL : boot);
+            o.put("bootIdentitySource", boot == null ? JSONObject.NULL : "settings.global.boot_count");
+            o.put("nativeRecoveryAllowed", service != null && service.recoveryAllowed());
             o.put("enabled", c.watchdogEnabled());
             o.put("recoverEnabled", c.watchdogRecoverEnabled());
             o.put("rebootEnabled", c.watchdogRebootEnabled());

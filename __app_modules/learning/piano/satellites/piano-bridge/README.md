@@ -1077,3 +1077,37 @@ _extensions/piano-bridge/
                 ├── DexedEngine.h/.cpp         (#ifdef HAVE_DEXED, else silence)
                 └── native-lib.cpp             (JNI bindings)
 ```
+
+### Requested display recovery (undeployed p38 candidate, 2026-11-16)
+
+A visible page below 12 FPS for 60 seconds offers a user restart; ordinary renders
+cannot reset that observation. Hidden time resets degradation. “Not now” snoozes
+for one hour, with monotonic live deadlines and a persisted wall deadline for reload.
+`SELF_HEAL_RESTART` remains false. Slow-but-alive pages never get automatic
+reload/restart/reboot; genuine dead-page recovery retains its existing reboot caps.
+Each disruptive native rung rechecks screen-on, quiet time, game and native
+Stop/maintenance permission. Unknown screen or native authority suppresses it.
+
+The existing read-only `GET /kiosk`, compact `/status.watchdog`, and outbound
+heartbeat projection expose `deviceId`, `payload`, nullable `bootCount` and
+`bootIdentitySource`, native `lastBeatAgoMs`, `beatCount`, `lastVisibility` and
+`nativeRecoveryAllowed`. `bootCount` comes from Android `Settings.Global.BOOT_COUNT`;
+a denied/missing read yields null, never a process identity. These fields are
+observations and cannot grant permission. No browser credential is distributed.
+
+The prompt reads the existing local bridge endpoint before the existing Fully JS
+reboot call. Native unknown/Stop or unavailable readback gives a visible failure
+and retry; false/throwing/missing reboot also fails visibly. A non-throwing call is
+only **requested**. A local correlation record survives page death and contains
+only device/boot identity and request time. On remount one read checks recovery;
+subsequent checks require a user tap, with no automatic command retries. Verification
+requires the same device, a larger known OS boot count, and a visible healthy native
+page beat no older than five seconds, within ten minutes of the request. A changed
+payload/process or old “recovered” outcome cannot substitute. Failed/CORS-blocked
+readback stays unverified. Learner/game persistence remains with its existing owners;
+the prompt never resumes content, resets work, or promises unsaved work was saved.
+
+This is source/build evidence only. Native safety remains intentionally UNKNOWN
+until reviewed authority integration exists; no recovery permission is provisioned.
+Physical Stop durability, device ownership, escape containment, reboot effectiveness,
+WebView identity and signing lineage still require the runbook acceptance drill.

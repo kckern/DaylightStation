@@ -464,7 +464,7 @@ export default function PianoApp() {
   return (
     <PianoConfigProvider>
       <PianoRoutes />
-      <RebootPromptModal open={jankReboot.open} onReboot={jankReboot.onReboot} onDismiss={jankReboot.onDismiss} />
+      <RebootPromptModal {...jankReboot} />
     </PianoConfigProvider>
   );
 }

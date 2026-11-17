@@ -107,7 +107,12 @@ public class KioskWatchdogTest {
         // Same production allowlist called by ControlServer /status and Heartbeat.buildBody.
         JSONObject projected = new JSONObject();
         KioskWatchdog.appendHealthStatus(status, projected);
-        assertEquals(8, projected.length());
+        assertEquals(16, projected.length());
+        assertTrue("no process identity substitutes for OS boot evidence", projected.isNull("bootCount"));
+        assertTrue(projected.isNull("bootIdentitySource"));
+        assertEquals("p38-managed-candidate", projected.getString("payload"));
+        assertFalse(projected.getBoolean("nativeRecoveryAllowed"));
+        assertEquals(1_000L, projected.getLong("lastBeatAgoMs"));
         assertEquals("alive", projected.getString("liveness"));
         assertEquals("degraded", projected.getString("responsiveness"));
         assertEquals("chess", projected.getString("activeGame"));
@@ -215,6 +220,20 @@ public class KioskWatchdogTest {
         assertTrue(events.contains("beatAgeMs=1000"));
         assertTrue(events.contains("nativeRecoveryAllowed=false"));
         assertTrue(events.contains("payload=p38-managed-candidate"));
+    }
+
+
+    @Test public void recoveryRequiresFreshVisibleHealthyPage() throws Exception {
+        KioskWatchdog watchdog = fixture(60, "hidden", 1_000L);
+        Method recovered = KioskWatchdog.class.getDeclaredMethod("recovered", long.class, DeviceConfig.class);
+        recovered.setAccessible(true);
+        Field config = KioskWatchdog.class.getDeclaredField("cfg");
+        config.setAccessible(true);
+        assertFalse("hidden page is not measured recovery", (Boolean) recovered.invoke(watchdog, -2_000L, config.get(watchdog)));
+        set(watchdog, "lastVisibility", "visible");
+        assertTrue((Boolean) recovered.invoke(watchdog, -2_000L, config.get(watchdog)));
+        set(watchdog, "lastBeatAtRt", -13_000L);
+        assertFalse("a newer but stale beat is not recovered", (Boolean) recovered.invoke(watchdog, -14_000L, config.get(watchdog)));
     }
 
     // classify(enabled, sinceStartMs, sawAnyBeat, beatAgeMs, fps, visibility,

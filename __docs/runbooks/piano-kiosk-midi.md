@@ -629,3 +629,49 @@ soak with frame distributions, handler/media-instance counts, native CPU and
 thermal evidence, browser/build identity and native responsiveness/liveness
 edges. If sustained slowdown still reproduces, keep the repair unaccepted and
 prepare a measured WebView/runtime or hardware remediation candidate.
+
+## Requested display recovery and physical acceptance (2026-11-16 candidate)
+
+A slow alive page asks after 60 seconds of visible degradation; “Not now” defers
+for one hour. Failed or unavailable restart remains visible with retry. The existing
+Fully reboot request is held when current native Stop/maintenance authority is
+unavailable. `SELF_HEAL_RESTART=false` remains unchanged. A requested restart is
+not a verified recovery. The source candidate uses a read-only local `/kiosk` check
+before requesting, then one read on remount and explicit “Check recovery” taps.
+
+Read `deviceId`, `payload`, `bootCount`, `bootIdentitySource`, `lastBeatAgoMs`,
+`beatCount`, `lastVisibility`, `liveness`, `responsiveness` and
+`nativeRecoveryAllowed` together. OS boot evidence must be known both before and
+after, with a larger `settings.global.boot_count` on the same device and a fresh
+visible healthy page beat. Unknown/old/wrong-device evidence stays unverified;
+process uptime, an accepted command, and historical outcome text do not prove it.
+The prompt’s observation is narrower than device certification: no readback can
+prove the physical controls worked or the learner’s unsaved work survived.
+
+Before release, record actual model, Android/WebView versions, installed shell and
+payload identity/digest, signing lineage, owner/lock-task readback and rollback
+artifact in the private incident record. No device was contacted for this change.
+Native authority remains UNKNOWN and the full APK still requires trusted sfizz
+vendor input. Those are blocked acceptance items, not passing tests.
+
+After candidate review and explicitly authorized provisioning/deployment:
+
+1. Verify learner/workout evidence, recording/game saves and durable parent Stop
+   revision before and after every reboot and rollback. Stop must dominate a game,
+   pending reboot and maintenance; a lost Stop ledger fails acceptance.
+2. Physically try keyboard shortcuts, Home, recents, notification shade and edge
+   swipes, then pairing and bounded maintenance entry/expiry. A foreground recall
+   alone fails containment acceptance. Record each actual outcome.
+3. Reproduce low FPS on an aged page without a reload, defer for the snooze window,
+   request restart and capture before/after OS boot counts plus fresh page beats.
+   Check actual touch response and MIDI/game behavior. Log rejected/unavailable
+   command and readback paths separately from successful repair.
+4. Apply parent Stop during the game and during requested restart. After reboot,
+   confirm stopped content does not launch and the durable Stop revision remains.
+5. If only physical reboot measurably recovers the display, state that result and
+   leave hardware/WebView remediation open. Unit tests or command acknowledgement
+   cannot close the reproduced user-visible incident.
+
+Rollback must preserve durable Stop and learner/workout evidence. The p38 payload
+remains an undeployed candidate under the shell32 loader gate; regenerated digest
+and earlier rollback artifacts belong in the private rollout record.
