@@ -3,7 +3,7 @@ import {PortalKeysLockdownAdapter} from '#adapters/devices/PortalKeysLockdownAda
 import {createArcadeSupervisionConsumers} from '../../../../__app_modules/games/arcade/server/supervision-runtime.mjs';
 import {createTrustedParentalScanner} from '../../../../__app_modules/wellness/fitness/server/supervision-runtime.mjs';
 import {randomUUID} from 'node:crypto';
-import {createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
+import {EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
 /** Explicit configured registry; persisted authority survives config removal. */
 export async function createSupervisionRuntime(options){
   const {configService,householdId,clock={now:()=>Date.now()},logger,makeId=randomUUID}=options;
@@ -65,6 +65,9 @@ export async function createSupervisionRuntime(options){
   for(const consumer of nativeLeases)if(typeof credentials?.native_devices?.[consumer.deviceId]?.credential!=='string' || credentials.native_devices[consumer.deviceId].credential.length<32 || !credentials.native_devices[consumer.deviceId].packages?.includes(consumer.packageName))errors.push('NATIVE_LEASE_CREDENTIAL_REQUIRED');
   let nativeLeaseAuthority;
   const coverage=validateConsumerManifest({devices,consumers});
+  // Keep absent required consumers visible; no placeholder can acknowledge.
+  for(const missing of coverage.missing)if(!consumers.some(consumer=>consumer.deviceId===missing.deviceId && consumer.capability===missing.capability))consumers.push({...missing});
+  const incidentReporter=options.incidentReporter??new EnforcementIncidentReporter({repository,logger,monotonicNow:options.monotonicNow,notifyIncident:options.notifyIncident??createEnforcementIncidentNotifier({notificationService:options.notificationService,recipientId:configuration.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService?.getHeadOfHousehold?.()})});
   let runtime;
   const authenticateKiosk=async req=>{if(!kiosk)throw new AccessDenied('KIOSK_CONFIGURATION_REQUIRED');return kiosk.authenticate(req);};
   const cookie=(req,name,value,maxAge)=>`${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${req.secure?'; Secure':''}`;
@@ -74,12 +77,12 @@ export async function createSupervisionRuntime(options){
     if(recent.length>=10)throw new AccessDenied('PARENT_AUTH_RATE_LIMITED');attempts.set(key,[...recent,now]);
     return options.verifyParentCredentials?.(input,req);
   };
-  const health=async()=>({...coverage,errors:[...errors],activationAllowed:errors.length===0 && coverage.activationAllowed && (await Promise.all(devices.map(device=>runtime.reconciler.isReady({deviceId:device.id})))).every(Boolean),consumers:runtime.reconciler.health()});
-  runtime=await createSupervisionModule({...options,repository,stateGates,clock,makeId,legacy:options.legacy??(configService?readLegacyStops({configService,householdId}):{}),scopes:configuration.scopes,scopeId:configuration.scope_id??'child-public',consumers,
+  const health=async()=>({...coverage,errors:[...errors],activationAllowed:errors.length===0 && coverage.activationAllowed && (await Promise.all(devices.map(device=>runtime.reconciler.isReady({deviceId:device.id})))).every(Boolean),consumers:runtime.reconciler.health().map(row=>({...row,deviceLabel:configuration.devices.find(device=>device.id===row.deviceId)?.label??row.deviceId})),incidents:Object.values((await repository.read()).enforcementIncidents??{})});
+  runtime=await createSupervisionModule({...options,repository,stateGates,clock,makeId,legacy:options.legacy??(configService?readLegacyStops({configService,householdId}):{}),incidentReporter,scopes:configuration.scopes,scopeId:configuration.scope_id??'child-public',consumers,
     enforcementReady:({deviceId})=>!coverage.missing.some(item=>item.deviceId===deviceId),
     verifyParentCredentials,authenticateKiosk,
     authenticateParent:options.authenticateParent??(async()=>{throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');}),
-    getHealth:async()=>({activationAllowed:(await health()).activationAllowed,consumers:runtime.reconciler.health()}),
+    getHealth:health,
     getCatalog:context=>catalog.list(context),
     renewNativeLease:input=>nativeLeaseAuthority.renew({...nativeCredentials.authenticate(input),ack:input.ack}),
     createWorkflow:({service})=>new ApprovalWorkflow({repository,service,clock,makeId,...createApprovalTokenPrimitives(),recipientId:modeConfiguration.recipientId,notifier,resolveActivity:context=>catalog.resolve(context),baselineEligibility:eligibility.port(),logger}),
@@ -127,5 +130,21 @@ export function createDoNowSupervisionAuthority(runtime){
     if(record.approvalId){const status=await runtime.service.status({deviceId});if(!Number.isSafeInteger(record.accessContext?.admittedEpoch) || record.accessContext.admittedEpoch!==status.epoch)throw new AccessDenied('SUPERVISION_EPOCH_REVOKED');}
     const activityId=record.activityId??runtime.configuration.surface_activities?.[record.surface]??record.surface;
     return runtime.guard.runAuthorized({...record.accessContext,deviceId,activityId,learnerId:record.learnerId},effect);
+  };
+}
+
+/** Required push transport, with acceptance explicitly distinct from phone receipt. */
+export function createEnforcementIncidentNotifier({notificationService,recipientId,resolveRecipient}={}){
+  return async event=>{
+    const recipient=recipientId??resolveRecipient?.();
+    if(!recipient || !notificationService?.send)return {accepted:false,delivered:false,error:'PARENT_NOTIFICATION_UNCONFIGURED'};
+    const results=await notificationService.send({
+      category:'system',urgency:'high',title:event.type==='enforcement-restored'?'Kiosk enforcement restored':'Kiosk Stop unverified',
+      body:`${event.deviceId} — ${event.capability}: ${event.type==='enforcement-restored'?'fresh matching acknowledgement received':'required Stop acknowledgement missing'}.`,
+      dedupeKey:`${event.incidentId}:${event.type}`,createdAt:event.at,
+      metadata:{username:recipient,deliveryRequired:'push',incidentId:event.incidentId,type:event.type,deviceId:event.deviceId,capability:event.capability,commandRevision:event.commandRevision,pushData:{tag:`${event.incidentId}:${event.type}`,alert_once:true}},
+    });
+    const push=results?.find(result=>result.channel==='push' && !result.suppressed);
+    return {accepted:push?.accepted===true || push?.delivered===true,delivered:push?.delivered===true?true:push?.accepted===true?null:false,error:push?.error??(push?.accepted || push?.delivered?null:'PARENT_NOTIFICATION_UNDELIVERED')};
   };
 }

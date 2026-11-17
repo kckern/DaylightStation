@@ -148,8 +148,8 @@ import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/c
 import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import {randomUUID as supervisionCommandId} from 'node:crypto';
-import {createSupervisionRuntime,createDoNowSupervisionAuthority} from '#composition/modules/supervision.mjs';
-import {AccessDenied} from '../../__app_modules/household/supervision/server/index.mjs';
+import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier} from '#composition/modules/supervision.mjs';
+import {AccessDenied,EnforcementIncidentReporter} from '../../__app_modules/household/supervision/server/index.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
@@ -1489,7 +1489,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     if(!profile || (profile.household_id??householdId)!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
     return {id:userId,roles:[...(profile.roles??[]),...(profile.type==='owner'?['owner']:[]),...((profile.roles??[]).includes('parent')?['guardian']:[])],authenticatedBy:'household-auth'};
   };
-  const parentalSupervision=await createSupervisionRuntime({configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
+  const parentalSupervision=await createSupervisionRuntime({notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
     clock:{now:()=>Date.now()},logger:rootLogger.child({module:'supervision'}),getHaGateway:()=>supervisionHaGateway,getIdentity:()=>supervisionIdentity,
     gamesCatalog:dataService.household.read('gaming/retroarch/catalog'),
     getLearners:()=> (configService.getHouseholdUsers(householdId)??[]).map(value=>typeof value==='string'?value:value.username??value.userId??value.id).filter(Boolean).map(id=>({id,label:userService.getProfile(id)?.display_name??userService.getProfile(id)?.name??id})),
@@ -2977,13 +2977,17 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       });
     },
   } : null;
+  const shutdownDatastore=new YamlShutdownDatastore({configService});
+  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
+  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.()})}):null;
   const shutdownService = new ShutdownService({
+    incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
     supervision:parentalSupervision.enabled?{
       activate:async({readerId,tagUid})=>parentalSupervision.service.stop({actor:{id:`nfc:${readerId??'configured-reader'}`,roles:['guardian'],authenticatedBy:'configured-nfc-trigger'},scopeId:parentalSupervision.configuration.scope_id??'child-public',source:'nfc',idempotencyKey:supervisionCommandId()}),
       status:async target=>{const deviceId=parentalSupervision.configuration.legacy_targets?.[target]??target.split(':').at(-1);const state=await parentalSupervision.service.status({deviceId});return {locked:state.active,lockedUntil:null,persistent:true,epoch:state.epoch};},
       reconcile:()=>parentalSupervision.service.reconcile(),
     }:null,
-    repo: new YamlShutdownDatastore({ configService }),
+    repo: shutdownDatastore,
     notifier: { publishState: (payload) => eventBus.broadcast('shutdown.state', payload) },
     getPolicy: getShutdownPolicy,
     cue: shutdownCue,
@@ -2997,7 +3001,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'shutdown' }),
   });
   shutdownService.start();
-  server?.once?.('close', () => shutdownService.dispose());
+  server?.once?.('close', () => {shutdownService.dispose();void shutdownIncidentRepository?.close().catch(error=>rootLogger.warn('shutdown.incidents.close_failed',{error:error.message}));});
   v1Routers.shutdown = createShutdownRouter({ shutdownService });
 
   // Weekly measures — the school board's ring figure. One registry, one

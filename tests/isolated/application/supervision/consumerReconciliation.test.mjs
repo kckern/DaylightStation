@@ -82,3 +82,27 @@ it('normal-mode native readiness requires a reachable installed package, not an 
  const missing=new KioskArcadeGameTerminator({packageName:'org.retroarch',adbByDevice:new Map([['garage',{shell:async()=>({ok:true,output:''})}]]),logger:{warn(){}}});
  await expect(missing.release({deviceId:'garage'})).rejects.toThrow();
 });
+
+it('rejects obsolete revision acknowledgements',async()=>{
+ const h=await stopped();const reconciler=new StopReconciler({...h,consumers:[{deviceId:'portal',capability:'portal-keys',stop:async()=>({blocked:true,commandRevision:1})}]});
+ await reconciler.reconcile();expect(await reconciler.isReady({deviceId:'portal'})).toBe(false);
+});
+it('observes pending commands while a consumer is still awaiting a response',async()=>{
+ const h=await stopped();const observations=[];let finish;
+ const reconciler=new StopReconciler({...h,incidentReporter:{observe:async value=>observations.push(value)},consumers:[{deviceId:'portal',capability:'portal-keys',stop:()=>new Promise(resolve=>{finish=resolve;})}]});
+ const pending=reconciler.reconcile();await new Promise(resolve=>setTimeout(resolve,0));
+ expect(reconciler.health()[0]).toMatchObject({deviceId:'portal',acknowledged:false,desiredBlocked:true,commandRevision:2});
+ expect(observations.length).toBeGreaterThan(0);finish({blocked:true});await pending;
+});
+it('incident persistence failure cannot withhold a native Stop',async()=>{
+ const h=await stopped();let stops=0;
+ const reconciler=new StopReconciler({...h,logger:{warn(){}},incidentReporter:{observe:async()=>{throw Error('disk failure');}},consumers:[{deviceId:'portal',capability:'portal-keys',stop:async()=>{stops++;return {blocked:true};}}]});
+ await expect(reconciler.reconcile()).resolves.toBeTruthy();expect(stops).toBe(1);expect(reconciler.health()[0]).toMatchObject({commandRevision:2,desiredBlocked:true,acknowledged:true,incidentReportingError:'INCIDENT_REPORTING_UNAVAILABLE'});
+});
+it('records the first pending command before a hung consumer can finish',async()=>{
+ const h=await stopped();const observations=[];let finish;
+ const reconciler=new StopReconciler({...h,incidentReporter:{observe:async value=>observations.push(value)},consumers:[{deviceId:'portal',capability:'portal-keys',stop:()=>new Promise(resolve=>{finish=resolve;})}]});
+ const pending=reconciler.reconcile();await new Promise(resolve=>setTimeout(resolve,0));
+ expect(observations.some(value=>value.health.some(row=>row.commandRevision===2 && row.desiredBlocked && !row.acknowledged))).toBe(true);
+ finish({blocked:true});await pending;
+});

@@ -107,3 +107,25 @@ test('a resolved skipped Portal command cannot advance the reconciliation signat
  await service.activate({readerId:'reader',tagUid:'ABCD',now:1000});await service.reconcile(1001);
  assert.equal(calls,2);
 });
+
+test('legacy status exposes unavailable Portal enforcement without extending its finite lock window',async()=>{
+ const f=fakes(),observations=[];const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async()=>({ok:false,skipped:true})},incidentReporter:{observe:async value=>observations.push(value)},logger:{warn(){}}});
+ const state=await service.activate({now:1000});await service.reconcile(6000);
+ const status=await service.status('school:portal',6000);
+ assert.equal(status.lockedUntil,state.lockedUntil);assert.equal(status.locked,true);
+ assert.equal(status.enforcement.consumers[0].acknowledged,false);assert.equal(status.enforcement.consumers[0].error,'CAPABILITY_UNAVAILABLE');
+ assert.ok(observations.some(value=>value.health[0].desiredBlocked===true));
+ assert.equal((await service.status('school:portal',1801001)).locked,false);
+});
+test('legacy refreshes current native evidence and exposes matching ACK without physical verification',async()=>{
+ const f=fakes();const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async({locked})=>({ok:true,blocked:locked})}});
+ await service.activate({now:1000});await service.reconcile(6000);
+ assert.equal((await service.status('school:portal',6000)).enforcement.consumers[0].lastContactAt,6000);
+ assert.equal((await service.status('school:portal',6000)).enforcement.consumers[0].acknowledged,true);
+});
+test('legacy incident persistence failure does not prevent the Portal command',async()=>{
+ const f=fakes();let stops=0;
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async({locked})=>{stops++;return {ok:true,blocked:locked};}},incidentReporter:{observe:async()=>{throw Error('disk failure');}},logger:{warn(){}}});
+ await service.activate({now:1000});assert.equal(stops,1);
+ assert.equal((await service.status('school:portal',1000)).enforcement.incidentReportingError,'INCIDENT_REPORTING_UNAVAILABLE');
+});

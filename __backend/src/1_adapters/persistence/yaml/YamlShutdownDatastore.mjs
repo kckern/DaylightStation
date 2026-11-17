@@ -1,3 +1,4 @@
+import {JsonSupervisionRepository} from '../../../../../__app_modules/household/supervision/server/index.mjs';
 import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { ShutdownState } from '#domains/shutdown/ShutdownState.mjs';
 
@@ -8,6 +9,7 @@ export class YamlShutdownDatastore {
     if (!configService?.getHouseholdPath) throw new Error('YamlShutdownDatastore: configService required');
     this.#config = configService; this.#load = load; this.#save = save;
   }
+  incidentRepository(){return new JsonSupervisionRepository({path:`${this.#config.getHouseholdPath('shutdown')}/enforcement-incidents.json`});}
   path() { return `${this.#config.getHouseholdPath('shutdown')}/lockdown.yml`; }
   async read() {
     try {

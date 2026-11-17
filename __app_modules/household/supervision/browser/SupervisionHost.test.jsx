@@ -46,8 +46,8 @@ it('acknowledges Stop only after child lifecycle teardown has committed',async()
  await waitFor(()=>expect(acks).toHaveLength(1));expect(acks[0]).toMatchObject({mounted:false,body:{protocol:2,blocked:true,commandRevision:2}});
 });
 it('parent controls expose physical power uncertainty while keeping child content stopped',async()=>{
- const api=async path=>path.endsWith('/bootstrap')?{enabled:true,deviceId:'portal'}:path.endsWith('/status')?{consumers:[{capability:'ha-stop',acknowledged:true,blocked:true,detail:{verified:false}}]}:{allowed:false,reason:'SUPERVISION_BLOCKED',epoch:1};
- render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Reward</p></SupervisionHost>);fireEvent.click(screen.getByRole('button',{name:'Parent controls'}));await waitFor(()=>expect(screen.getByText('Garage power: power off unverified')).toBeTruthy());expect(screen.queryByText('Reward')).toBeNull();
+ const api=async path=>path.endsWith('/bootstrap')?{enabled:true,deviceId:'portal'}:path.endsWith('/status')?{consumers:[{deviceId:'garage',capability:'ha-stop',acknowledged:true,blocked:true,lastContactAt:Date.now(),detail:{verified:false}}]}:{allowed:false,reason:'SUPERVISION_BLOCKED',epoch:1};
+ render(<SupervisionHost api={api} subscribe={()=>()=>{}}><p>Reward</p></SupervisionHost>);fireEvent.click(screen.getByRole('button',{name:'Parent controls'}));await waitFor(()=>expect(screen.getByText(/garage.*Power: unverified.*power off unverified/i)).toBeTruthy());expect(screen.queryByText('Reward')).toBeNull();
 });
 it('parent diagnostics require a fresh password command and are cleared when controls close',async()=>{
  const api=vi.fn(async(path)=>path.endsWith('/bootstrap')?{enabled:true,deviceId:'portal'}:path.endsWith('/parent-diagnostics')?{mode:{required:true,known:false},requests:[{id:'private-request',status:'pending'}],enforcement:{errors:['NATIVE_LEASE_CREDENTIAL_REQUIRED']}}:{allowed:false,reason:'SUPERVISION_BLOCKED',epoch:1});

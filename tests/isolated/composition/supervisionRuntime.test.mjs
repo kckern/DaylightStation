@@ -116,3 +116,14 @@ it('configured and legacy auth refs reach their own consumers',async()=>{
   expect(JSON.parse(requests.at(-1).body)).toEqual({locked:false,lockedUntil:null});
  }finally{runtime?.dispose();vi.unstubAllGlobals();}
 });
+it('reports and alerts for every absent required consumer using the configured parent recipient',async()=>{
+ let now=100000;const intents=[];
+ const h=await setup({clock:{now:()=>now},monotonicNow:()=>now,consumers:[],configuration:{...configuration,enforcement_alerts:{recipient_id:'configured-parent'}},notificationService:{send:async intent=>{intents.push(intent);return [{channel:'push',accepted:true,delivered:null}];}}});
+ try{
+  await h.runtime.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'missing'});await h.runtime.reconciler.reconcile();
+  expect((await h.runtime.health()).consumers).toContainEqual(expect.objectContaining({deviceId:'portal',capability:'portal-keys',acknowledged:false,error:'CAPABILITY_UNAVAILABLE'}));
+  now+=5000;await h.runtime.reconciler.reconcile();
+  expect(intents).toContainEqual(expect.objectContaining({metadata:expect.objectContaining({username:'configured-parent',deviceId:'portal',capability:'portal-keys',deliveryRequired:'push'})}));
+  expect((await h.runtime.health()).incidents.some(incident=>incident.alert.status==='accepted')).toBe(true);
+ }finally{h.runtime.dispose();}
+});

@@ -83,3 +83,52 @@ the HA latch. Do not remove auth records or reset native state. If restoring the
 old config removes a required native capability, acceptance fails and the kiosk
 must retain required enforcement or locked maintenance until repaired. Neither
 config rollback nor a successful probe authorizes releasing an active Stop.
+
+
+Parent controls refresh enforcement evidence every 2,000 ms. Each row names its
+registered device and capability and reports `requested`, `acknowledged`,
+`unverified`, or `verified`. A native acknowledgement is current for at most
+5,000 ms; only independent physical evidence produces `verified`. Missing
+configuration, a missing consumer, obsolete revision, network failure, or stale
+contact remains unverified. A native ACK alone displays “acknowledged (stopped)”
+and does not establish that power, video, audio or input physically ceased.
+
+After 5,000 ms of missing enforcement, the same Stop owner records an incident
+per device, capability and command revision. The configured runtime keeps this
+metadata in `enforcementIncidents` in its existing ledger, outside the assertion
+outbox. Legacy shutdown uses `shutdown/enforcement-incidents.json`, a separate
+kernel-locked diagnostic sidecar exposed by its existing datastore; the finite
+`shutdown/lockdown.yml` window remains the only legacy Stop authority. Legacy
+status adds `enforcement.consumers` and `enforcement.incidents`; it does not enable
+supervision or turn a timed shutdown into a persistent Stop. Native evidence is
+refreshed on the existing legacy reconcile schedule.
+
+Both configurations may optionally set:
+
+```yaml
+enforcement_alerts:
+  recipient_id: <configured-parent-username>
+```
+
+When omitted, the established ConfigService head-of-household resolver supplies
+the recipient. An absent recipient or mobile push target leaves delivery visibly
+pending. The alert adapter calls the existing NotificationService with an
+explicit required push channel and a stable incident/type dedupe key. Failed or
+suppressed sends remain pending and retry that key; in-app delivery cannot count
+as parent push acceptance. Incident storage or notification failures never
+withhold an actuator Stop and are surfaced as `INCIDENT_REPORTING_UNAVAILABLE`
+when persistence fails.
+
+Notification records distinguish `pending`, `failed`, `accepted` and `confirmed`.
+A successful Home Assistant call means transport **accepted**, with phone delivery
+unknown; it stops automatic retries but is not phone confirmation. An explicit
+HA rejection remains failed. `confirmed` requires independent delivery evidence
+from the injected port; the current HA adapter cannot provide that evidence.
+Recovery is a separate event after a fresh, matching blocked acknowledgement;
+a release or a newer revision cannot claim recovery for an older incident.
+Pending alerts and recoveries survive backend restart. As with other external
+side effects, a crash between transport acceptance and durable recording can
+require retrying the same dedupe key; the push tag also stays stable.
+
+The native/device and phone acceptance drill remains required. Unit tests, a
+stored accepted notification, or an HTTP success cannot close that gate.

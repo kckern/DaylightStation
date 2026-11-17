@@ -22,3 +22,5 @@ export {NativeLeaseAuthority} from './application/NativeLeaseAuthority.mjs';
 export {NativeLeaseConsumer} from './adapters/NativeLeaseConsumer.mjs';
 export {NativeLeaseCredentials} from './adapters/NativeLeaseCredentials.mjs';
 export {EligibilitySnapshot} from './application/EligibilitySnapshot.mjs';
+
+export {EnforcementIncidentReporter} from './application/EnforcementIncidentReporter.mjs';

@@ -12,7 +12,7 @@ export function requireAccessContext(context) {
   return context;
 }
 export function emptySupervisionState() {
-  return {schema:'daylight.supervision/v1',epoch:0,devices:{},revisions:{},outbox:[],audit:[],idempotency:{},requests:{},grants:{}};
+  return {schema:'daylight.supervision/v1',epoch:0,devices:{},revisions:{},outbox:[],audit:[],idempotency:{},requests:{},grants:{},enforcementIncidents:{}};
 }
 export function validateSupervisionState(state) {
   if (state?.schema!=='daylight.supervision/v1' || !Number.isSafeInteger(state.epoch) || state.epoch<0 || !state.devices || !state.revisions || !Array.isArray(state.outbox) || !Array.isArray(state.audit) || !state.idempotency || !state.requests || !state.grants) throw new Error('Invalid supervision state');
@@ -26,6 +26,13 @@ export function validateSupervisionState(state) {
   for(const [id,grant] of Object.entries(state.grants)){
     const request=state.requests[id];
     if(!request || request.status!=='approved' || !Number.isFinite(request.decidedAt) || grant.expiresAt<=request.decidedAt || grant.requestId!==id || grant.epoch!==request.epoch || !['learnerId','deviceId','activityId','clientSessionId'].every(key=>grant[key]===request[key]) || !Number.isFinite(grant.expiresAt) || grant.expiresAt>request.period.endsAt || grant.expiresAt>request.decidedAt+600000 || !['pending','acknowledged','expired'].includes(grant.publication) || !(grant.sessionId===null || text(grant.sessionId)) || !(grant.revokedAt===null || Number.isFinite(grant.revokedAt)))throw new Error('Invalid supervision grant');
+  }
+  state.enforcementIncidents??={};
+  if(typeof state.enforcementIncidents!=='object' || Array.isArray(state.enforcementIncidents))throw new Error('Invalid enforcement incidents');
+  for(const [id,incident] of Object.entries(state.enforcementIncidents)){
+    if(!incident || incident.incidentId!==id || !text(incident.deviceId) || !text(incident.capability) || !Number.isSafeInteger(incident.commandRevision) || incident.commandRevision<0 || !Number.isFinite(incident.firstMissingAt) || !['watching','delivery-pending','delivered','accepted','recovery-pending','recovered'].includes(incident.status))throw new Error('Invalid enforcement incident');
+    for(const delivery of [incident.alert,incident.recovery])if(!delivery || !['pending','failed','accepted','confirmed'].includes(delivery.status))throw new Error('Invalid enforcement delivery');
+    for(const at of [incident.at,incident.recoveredAt,incident.alert.attemptedAt,incident.recovery.attemptedAt])if(at!=null && (typeof at!=='string' || !Number.isFinite(Date.parse(at)) || !/(Z|[+-]\d{2}:\d{2})$/.test(at)))throw new Error('Invalid enforcement timestamp');
   }
   return state;
 }
