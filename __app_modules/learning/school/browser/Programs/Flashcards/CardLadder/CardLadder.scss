@@ -1,9 +1,9 @@
 // Card ladder v3 (spec §6). Colours and motion only via --ds-* (school pack,
-// set by CardLadderStage's AppThemeProvider). Sizes are relative to the fixed
+// inherited from SchoolSurfaceProvider). Sizes are relative to the fixed
 // stage, which is the target screen's resolution scaled to fit — never the viewport.
 // Buttons are the design-system TouchButton; no button CSS lives here.
 
-.wl-stage-frame { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-background); overflow: hidden; }
+.wl-stage-frame { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; background: var(--ds-background); overflow: hidden; }
 .wl-stage { flex: none; transform-origin: center center; background: var(--ds-background); color: var(--ds-text-high); overflow: hidden; }
 
 .wl { position: relative; display: grid; grid-template-rows: auto auto 1fr; width: 100%; height: 100%; outline: none; }

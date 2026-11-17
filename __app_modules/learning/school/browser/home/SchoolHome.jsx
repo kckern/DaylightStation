@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { SUBJECTS, subjectHasContent } from "./subjects.js";
 import StudentPanel from "./StudentPanel.jsx";
 import Icon from "./icons/Icon.jsx";
@@ -24,7 +25,7 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
           const shelf = grouped.bySubject[s.id];
           const has = subjectHasContent(shelf);
           return (
-            <button
+            <SchoolButton variant="plain"
               key={s.id}
               type="button"
               className={`school-home2__subject${has ? '' : ' is-empty'}`}
@@ -34,31 +35,31 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
               <Icon name={s.id} className="school-home2__subject-icon" />
               <h3 className="school-home2__subject-label">{s.label}</h3>
               <p className="school-home2__subject-hint">{has ? s.hint : 'Nothing here yet'}</p>
-            </button>
+            </SchoolButton>
           );
         })}
       </div>
       <aside className="school-home2__rail">
         <StudentPanel onOpen={onOpen} bankTitles={bankTitles} />
-        <button type="button" className="school-home2__library" onClick={() => onOpen('catalog')}>
+        <SchoolButton variant="plain" type="button" className="school-home2__library" onClick={() => onOpen('catalog')}>
           <h3 className="school-home2__subject-label">Catalog</h3>
           <p className="school-home2__subject-hint">Courses, units, and lessons</p>
-        </button>
-        <button type="button" className="school-home2__library" onClick={() => onOpen('library')}>
+        </SchoolButton>
+        <SchoolButton variant="plain" type="button" className="school-home2__library" onClick={() => onOpen('library')}>
           <h3 className="school-home2__subject-label">Library</h3>
           <p className="school-home2__subject-hint">
             Reference and browsing{libraryCount ? ` · ${libraryCount}` : ''}
           </p>
-        </button>
-        <button type="button" className="school-home2__library" onClick={() => onOpen('banks')}>
+        </SchoolButton>
+        <SchoolButton variant="plain" type="button" className="school-home2__library" onClick={() => onOpen('banks')}>
           <h3 className="school-home2__subject-label"><Icon name="kind-deck" className="school-home2__library-icon" /> Practice</h3>
           <p className="school-home2__subject-hint">Quizzes and flashcards</p>
-        </button>
-        <button type="button" className="school-home2__library" onClick={() => onOpen('print')}>
+        </SchoolButton>
+        <SchoolButton variant="plain" type="button" className="school-home2__library" onClick={() => onOpen('print')}>
           {/* Inline SVG, never emoji (kiosk icon rule — WebView tofu). */}
           <h3 className="school-home2__subject-label"><Icon name="print" className="school-home2__library-icon" /> Print</h3>
           <p className="school-home2__subject-hint">Worksheets you can print</p>
-        </button>
+        </SchoolButton>
       </aside>
     </div>
   );

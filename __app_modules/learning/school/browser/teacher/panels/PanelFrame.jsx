@@ -1,3 +1,5 @@
+import { StateMessage, LoadingState } from "#frontend/lib/ui/states.jsx";
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * The one panel wrapper (spec §4.3): renders usePanelFetch's five states the
  * same way everywhere. `unavailableCopy` is the quiet per-panel notice for a
@@ -23,16 +25,15 @@ export default function PanelFrame({
   return (
     <section className="teacher-panel" data-state={state}>
       <h2 className="teacher-panel__title">{title}</h2>
-      {state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
+      {state === 'loading' && <LoadingState label={title} className="teacher-panel__skeleton" />}
       {state === 'error' && (
-        <p className="teacher-panel__error">
-          {errorCopy ?? <>Couldn&rsquo;t load {title}.</>}
-          {retry && <button type="button" className="teacher-panel__retry" onClick={retry}>Retry</button>}
-        </p>
+        <StateMessage state="error" role="alert" className="teacher-panel__error" title={errorCopy ?? <>Couldn&rsquo;t load {title}.</>}>
+          {retry && <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={retry}>Retry</SchoolButton>}
+        </StateMessage>
       )}
-      {state === 'empty' && !alwaysRender && <p className="teacher-panel__empty">{emptyCopy}</p>}
+      {state === 'empty' && !alwaysRender && <StateMessage className="teacher-panel__empty" title={emptyCopy} />}
       {state === 'unavailable' && !suppressUnavailable && (
-        <p className="teacher-panel__empty">{unavailableCopy}</p>
+        <StateMessage state="unavailable" className="teacher-panel__empty" title={unavailableCopy} />
       )}
       {(state === 'ok' || (alwaysRender && state !== 'loading' && state !== 'unavailable')) && children}
     </section>

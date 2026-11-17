@@ -1,6 +1,10 @@
 import { sha256Bytes } from '#system/utils/sha256.mjs';
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 
+const STAGE_ORDER = ['flashcards', 'listen', 'cloze', 'watch', 'comprehension', 'speaking'];
+const authoredItems = (reel, type) => reel.authoring?.[type] ?? reel[type] ?? [];
+const authoredId = (item, type, index) => String(item.id ?? (type === 'cloze' ? item.lineId : index));
+
 /**
  * Owns one reel's immutable session snapshot. The content loader intentionally
  * reads only approved reels; imported drafts stay safely author-visible only.
@@ -88,18 +92,38 @@ export class LanguageReelService {
       program: 'language-reels', programInstance: String(reelId), cadence: 'daily', status: 'available',
       timingPriority: 3, timingRank: 0, reelCategory: category };
   }
-  markStage({ userId, reelId, stage }) {
+  #activeSession(userId, reelId) {
     if (!this.#repository.sessionExists(userId, reelId)) throw new ValidationError('open the reel first');
-    const session = this.#repository.readSession(userId, reelId); if (!(stage in session.stages)) throw new ValidationError('unknown reel stage');
+    const session = this.#repository.readSession(userId, reelId);
+    const { reel, revision } = this.getReel(reelId);
+    if (session.revision !== revision) throw new ValidationError('This reel changed. Open it again from your assignment.');
+    return { session, reel };
+  }
+  markStage({ userId, reelId, stage }) {
+    const { session, reel } = this.#activeSession(userId, reelId);
+    if (!STAGE_ORDER.includes(stage)) throw new ValidationError('unknown reel stage');
+    if (session.stages[stage]) return session;
+    if (STAGE_ORDER.find((name) => !session.stages[name]) !== stage) throw new ValidationError('complete reel stages in order');
+    if (['cloze', 'comprehension'].includes(stage)) {
+      const items = authoredItems(reel, stage);
+      if (!items.every((item, index) => session.attempts?.some((attempt) => attempt.type === stage && attempt.itemId === authoredId(item, stage, index) && attempt.correct === true))) {
+        throw new ValidationError('save a correct attempt for every authored item first');
+      }
+    }
     session.stages[stage] = true; session.updatedAt = this.#clock().toISOString();
-    if (Object.values(session.stages).every(Boolean) && !session.completedAt) session.completedAt = session.updatedAt;
+    if (STAGE_ORDER.every((name) => session.stages[name]) && !session.completedAt) session.completedAt = session.updatedAt;
     this.#repository.writeSession(userId, reelId, session); return session;
   }
-  recordAttempt({ userId, reelId, type, itemId, answer, correct }) {
-    if (!this.#repository.sessionExists(userId, reelId)) throw new ValidationError('open the reel first');
-    if (!['cloze', 'comprehension'].includes(type) || !itemId || typeof correct !== 'boolean') throw new ValidationError('invalid reel attempt');
-    const session = this.#repository.readSession(userId, reelId);
-    session.attempts = [...(session.attempts ?? []), { type, itemId: String(itemId), answer: answer ?? null, correct, at: this.#clock().toISOString() }];
+  recordAttempt({ userId, reelId, type, itemId, answer }) {
+    const { session, reel } = this.#activeSession(userId, reelId);
+    if (!['cloze', 'comprehension'].includes(type) || itemId == null) throw new ValidationError('invalid reel attempt');
+    const item = authoredItems(reel, type).find((value, index) => authoredId(value, type, index) === String(itemId));
+    if (!item) throw new ValidationError('unknown authored reel item');
+    if (STAGE_ORDER.find((name) => !session.stages[name]) !== type) throw new ValidationError('complete reel stages in order');
+    const correctAnswer = item.answer ?? item.correctAnswer;
+    const choices = type === 'cloze' ? [item.answer, ...(item.decoys ?? [])] : (item.choices ?? item.options ?? []);
+    if (typeof answer !== 'string' || !choices.includes(answer) || !choices.includes(correctAnswer)) throw new ValidationError('invalid authored reel answer');
+    session.attempts = [...(session.attempts ?? []), { type, itemId: String(itemId), answer, correct: answer === correctAnswer, at: this.#clock().toISOString() }];
     session.updatedAt = this.#clock().toISOString(); this.#repository.writeSession(userId, reelId, session); return session;
   }
   mediaResource(reelId) { return this.#repository.resolveMediaResource(this.getReel(reelId).reel); }

@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * SchoolPlayerChrome — the transport control bar for the School player. One
  * component, one layout for both media: progress numbers centered above a
@@ -52,25 +53,25 @@ export default function SchoolPlayerChrome({
 
   const transport = (
     <>
-      <button type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Restart, or previous chapter"><Icon name="prev" /></button>
-      <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(-15))} aria-label="Back 15 seconds"><Icon name="rewind" /></button>
-      <button type="button" className="school-chrome__btn school-chrome__btn--play" onClick={act(onToggle)} aria-label={isPlaying ? 'Pause' : 'Play'}>
+      <SchoolButton variant="plain" type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Restart, or previous chapter"><Icon name="prev" /></SchoolButton>
+      <SchoolButton variant="plain" type="button" className="school-chrome__btn" onClick={act(() => onSkip(-15))} aria-label="Back 15 seconds"><Icon name="rewind" /></SchoolButton>
+      <SchoolButton variant="plain" type="button" className="school-chrome__btn school-chrome__btn--play" onClick={act(onToggle)} aria-label={isPlaying ? 'Pause' : 'Play'}>
         <Icon name={isPlaying ? 'pause' : 'play'} />
-      </button>
-      <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(15))} aria-label="Forward 15 seconds"><Icon name="forward" /></button>
-      <button type="button" className="school-chrome__btn" onClick={act(onNext)} disabled={!hasNext} aria-label="Next chapter"><Icon name="next" /></button>
+      </SchoolButton>
+      <SchoolButton variant="plain" type="button" className="school-chrome__btn" onClick={act(() => onSkip(15))} aria-label="Forward 15 seconds"><Icon name="forward" /></SchoolButton>
+      <SchoolButton variant="plain" type="button" className="school-chrome__btn" onClick={act(onNext)} disabled={!hasNext} aria-label="Next chapter"><Icon name="next" /></SchoolButton>
     </>
   );
 
   const volumeControl = (
     <div className="school-chrome__volume">
-      <button type="button" className={`school-chrome__btn${volOpen ? ' is-on' : ''}`} onClick={act(() => setVolOpen((o) => !o))} aria-label="Volume">
+      <SchoolButton variant="plain" type="button" className={`school-chrome__btn${volOpen ? ' is-on' : ''}`} onClick={act(() => setVolOpen((o) => !o))} aria-label="Volume">
         <Icon name={volume === 0 ? 'volume-mute' : 'volume'} />
-      </button>
+      </SchoolButton>
       {volOpen && (
         <div className="school-chrome__volume-pop" onPointerDown={(e) => e.stopPropagation()}>
           {[0, 0.25, 0.5, 0.75, 1].map((v) => (
-            <button
+            <SchoolButton variant="plain"
               key={v}
               type="button"
               className={`school-chrome__vol-step${Math.abs(volume - v) < 0.13 ? ' is-active' : ''}`}
@@ -78,7 +79,7 @@ export default function SchoolPlayerChrome({
               aria-label={`Volume ${Math.round(v * 100)} percent`}
             >
               {Math.round(v * 100)}
-            </button>
+            </SchoolButton>
           ))}
         </div>
       )}
@@ -100,7 +101,7 @@ export default function SchoolPlayerChrome({
         <div className="school-chrome__spacer" />
         {transport}
         <div className="school-chrome__spacer" />
-        <button type="button" className="school-chrome__btn school-chrome__btn--exit" onClick={act(onExit)} aria-label="Exit"><Icon name="close" /></button>
+        <SchoolButton variant="plain" type="button" className="school-chrome__btn school-chrome__btn--exit" onClick={act(onExit)} aria-label="Exit"><Icon name="close" /></SchoolButton>
       </div>
     </div>
   );

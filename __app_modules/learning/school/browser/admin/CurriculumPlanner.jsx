@@ -1,3 +1,5 @@
+import { useSchoolAdminApi } from '../runtime/useSchoolFeatureApi.js';
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 /**
  * CurriculumPlanner — what a learner is expected to work through.
  *
@@ -29,7 +31,7 @@ import {
 } from '@mantine/core';
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { schoolAdminApi } from "./schoolAdminApi.js";
+
 import { useRoster } from "./useRoster.js";
 import { useGrader } from "./useGrader.js";
 import GraderBar from "./GraderBar.jsx";
@@ -154,6 +156,7 @@ function EntryList({
 }
 
 export default function CurriculumPlanner() {
+  const schoolAdminApi = useSchoolAdminApi();
   const logger = useMemo(() => getLogger().child({ component: 'school-planner' }), []);
 
   const { roster, error: rosterError } = useRoster();
@@ -164,7 +167,7 @@ export default function CurriculumPlanner() {
       .then((t) => { if (alive) setTeachersRead(t); })
       .catch(() => { if (alive) setTeachersRead({ configured: false, teachers: [] }); });
     return () => { alive = false; };
-  }, []);
+  }, [schoolAdminApi]);
   const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster, teachersRead);
 
   const [records, setRecords] = useState([]);
@@ -200,7 +203,7 @@ export default function CurriculumPlanner() {
     } finally {
       setLoading(false);
     }
-  }, [logger]);
+  }, [logger, schoolAdminApi]);
 
   useEffect(() => {
     logger.info('mounted', {});
@@ -291,7 +294,7 @@ export default function CurriculumPlanner() {
     } finally {
       setSaving(false);
     }
-  }, [learnerId, grader, graderId, courses, units, programs, records, logger, loadAssignments]);
+  }, [learnerId, grader, graderId, courses, units, programs, records, logger, loadAssignments, schoolAdminApi]);
 
   const learnerOptions = useMemo(() => {
     const ids = new Set(roster.map((u) => u.id));
@@ -305,7 +308,7 @@ export default function CurriculumPlanner() {
   }, [roster, records]);
 
   return (
-    <Stack gap="md" p="md" className="school-admin">
+    <SchoolSurfaceProvider surfaceId="admin-curriculum" density="compact"><Stack gap="md" p="md" className="school-admin">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <Stack gap={2}>
           <Title order={3}>What each learner is working through</Title>
@@ -431,6 +434,6 @@ export default function CurriculumPlanner() {
           </Group>
         </>
       )}
-    </Stack>
+    </Stack></SchoolSurfaceProvider>
   );
 }

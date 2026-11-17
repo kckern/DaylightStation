@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * DebriefsPanel — a learner's after-school debriefs, newest first, with
  * Excuse / Reject / Re-score behind the teacher gate. Every teacher call
@@ -5,7 +7,7 @@
  * so an actor-less call is a 403.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
@@ -20,6 +22,7 @@ const audioSrc = (audioRef, actorId) => {
 };
 
 function Loaded({ learnerId, learnerName, actorId }) {
+  const schoolApi = useSchoolApi();
   const [reason, setReason] = useState('');
   const record = usePanelFetch(() => schoolApi.teacherDebriefs(learnerId, actorId), {
     deps: [learnerId, actorId], panel: PANEL, notFoundAs: 'unavailable',
@@ -57,12 +60,12 @@ function Loaded({ learnerId, learnerName, actorId }) {
             })}</ol>}
             {d.summary?.quiz && <p>{d.summary.quiz.right} of {d.summary.quiz.graded} right</p>}
             <div className="teacher-debrief__actions">
-              <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'excuse')}>Excuse</button>
-              <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'reject')}>Reject</button>
+              <SchoolButton variant="plain" type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'excuse')}>Excuse</SchoolButton>
+              <SchoolButton variant="plain" type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'reject')}>Reject</SchoolButton>
               {d.discussedAt
                 ? <span className="teacher-debrief__talked">Talked about ✓</span>
-                : d.phase === 'completed' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'discussed')}>We talked about it</button>}
-              {d.questioner === 'fallback' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'rescore')}>Re-score</button>}
+                : d.phase === 'completed' && <SchoolButton variant="plain" type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'discussed')}>We talked about it</SchoolButton>}
+              {d.questioner === 'fallback' && <SchoolButton variant="plain" type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'rescore')}>Re-score</SchoolButton>}
               {['excuse', 'reject', 'rescore', 'discussed'].map((a) => errors?.[`${d.studyDay}:${a}`]
                 && <span key={a} role="alert" className="teacher-panel__error">{errors[`${d.studyDay}:${a}`]}</span>)}
             </div>

@@ -1,3 +1,6 @@
+import { useSchoolSurface } from '../portal/SchoolSurface.jsx';
+import { useSchoolCommands } from '../portal/useSchoolCommands.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import CoinIcon from '../../../../../frontend/src/lib/icons/CoinIcon.jsx';
@@ -15,6 +18,7 @@ import './RewardsModal.scss';
 const weekLabel = week => week ? new Date(`${week}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : null;
 
 export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = null, idleMs = 45_000 }) {
+  const { overlayRoot } = useSchoolSurface();
   // Lock the whole prepared opening, even when a caller receives newer memory.
   const opening = useRef(null);
   if (opening.current?.learnerId !== learner.id) opening.current = {
@@ -26,6 +30,7 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
   const dialogRef = useRef(null);
   const gridBox = useRef(null);
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  useSchoolCommands({ escape: event => { event.stopPropagation(); closeRef.current?.(); } }, { enabled: Boolean(overlayRoot), priority: 100, allowInInput: true });
   const [fit, setFit] = useState({ columns: Math.max(1, Math.ceil(Math.sqrt(view.gems.length))), fontPx: 16 });
   const timer = useRef(null);
   const lastActivityLog = useRef(null);
@@ -42,7 +47,8 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
     const trigger = document.activeElement;
-    dialog.showModal();
+    if (overlayRoot) { dialog.setAttribute('open', ''); dialog.querySelector('[autofocus]')?.focus(); }
+    else dialog.showModal();
     const measure = () => {
       const box = gridBox.current?.getBoundingClientRect();
       if (box?.width > 0 && box?.height > 0) setFit(rewardsGridFit(view.gems.length, box.width, box.height));
@@ -55,20 +61,21 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
       observer?.disconnect(); window.removeEventListener('resize', measure);
       dialog.close(); if (trigger?.isConnected) trigger.focus?.();
     };
-  }, [view]);
+  }, [view, overlayRoot]);
   useEffect(() => { noteActivity(); return () => clearTimeout(timer.current); }, [idleMs, learner.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (overlayRoot) return undefined;
     const onKey = event => {
       if (event.key !== 'Escape') return;
       event.preventDefault(); event.stopPropagation(); closeRef.current?.();
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+  }, [overlayRoot]);
 
   const groups = (view.groups ?? []).filter(group => view.gems.some(row => row.group === group.id));
   return createPortal(
-    <dialog ref={dialogRef} className="school-rewards-modal" aria-labelledby={titleId}
+    <dialog ref={dialogRef} className="school-rewards-modal" aria-labelledby={titleId} aria-modal="true" data-scoped={Boolean(overlayRoot)}
       style={{ '--rewards-fit-size': `${fit.fontPx * 3.8}px` }}
       onCancel={event => { event.preventDefault(); closeRef.current?.(); }}
       onMouseDown={event => {
@@ -76,14 +83,21 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
         const box = event.currentTarget.getBoundingClientRect();
         if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeRef.current?.();
       }}
-      onPointerDownCapture={noteActivity} onKeyDownCapture={noteActivity}>
+      onPointerDownCapture={noteActivity} onKeyDownCapture={event => {
+        noteActivity();
+        if (!overlayRoot || event.key !== 'Tab') return;
+        const controls = [...event.currentTarget.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')];
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}>
       <header className="school-rewards-modal__header">
         <ProfileAvatar id={learner.id} name={learner.name} size={192} />
         <h2 id={titleId}>{learner.name}'s rewards</h2>
         {view.week && <span className="school-rewards-modal__week">Week of {weekLabel(view.week)}</span>}
-        <button type="button" className="school-rewards-modal__close" aria-label="Close rewards" onClick={() => closeRef.current?.()} autoFocus>
+        <SchoolButton variant="plain" type="button" className="school-rewards-modal__close" aria-label="Close rewards" onClick={() => closeRef.current?.()} autoFocus>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-        </button>
+        </SchoolButton>
       </header>
       <div className="school-rewards-modal__totals">
         <div aria-label="Silver earned this week"><CoinIcon metal="silver" /><strong>{view.mode === 'live' && Number.isFinite(view.silver) ? coinFigure(view.silver) : '—'}</strong><span>Silver</span></div>
@@ -106,10 +120,10 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
         ) : <p className="school-rewards-modal__empty">{view.mode === 'off' || view.mode === 'dry-run' ? 'Rewards start soon.' : view.mode === 'unknown' ? 'Rewards are unavailable.' : 'No gems to show yet.'}</p>}
       </div>
       <footer className="school-rewards-modal__footer">
-        {onOpenBank && <button type="button" className="school-rewards-modal__bank" {...pressDown(() => {
+        {onOpenBank && <SchoolButton variant="plain" type="button" className="school-rewards-modal__bank" {...pressDown(() => {
           dialogRef.current.close(); onOpenBank(learner.id);
-        })}>Bank log <span aria-hidden="true">›</span></button>}
+        })}>Bank log <span aria-hidden="true">›</span></SchoolButton>}
       </footer>
-    </dialog>, document.body,
+    </dialog>, overlayRoot ?? document.body,
   );
 }

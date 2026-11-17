@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** ISBN entry, then one cover/action view; progress and alternate dates open focused tasks. */
 import { useCallback, useState } from 'react';
 import NumberPad from "./NumberPad.jsx";
@@ -75,11 +76,11 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
           {doors && (
             <div className="school-books-add__doors school-books-found__doors">
               {DOORS.map(({ where, icon, label }) => (
-                <button key={where} type="button" className="school-books-add__door" data-where={where} disabled={busy}
+                <SchoolButton variant="plain" key={where} type="button" className="school-books-add__door" data-where={where} disabled={busy}
                   {...press(() => where === 'finished' ? actions.choose(where, today) : actions.choose(where))}>
                   <Icon name={icon} className="school-books-add__door-icon" />
                   <span className="school-books-add__door-label">{label}</span>
-                </button>
+                </SchoolButton>
               ))}
             </div>
           )}
@@ -91,9 +92,9 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
           {prior && <FinishContext item={prior} />}
           {duplicate ? <>
             <p className="school-books-add__prompt">You&apos;ve already got this one</p>
-            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</button>
+            <SchoolButton variant="plain" type="button" className="school-books-add__yes" disabled={busy} {...press(() => actions.openDuplicate())}>Open it</SchoolButton>
           </> : prior && !rereading && !add.rereading ? (
-            <button type="button" className="school-books-add__yes" disabled={busy} {...press(() => setRereading(true))}>Read again</button>
+            <SchoolButton variant="plain" type="button" className="school-books-add__yes" disabled={busy} {...press(() => setRereading(true))}>Read again</SchoolButton>
           ) : null}
           {presentation.description && (
             <div className="school-books-found__blurb">
@@ -101,7 +102,7 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
             </div>
           )}
           {doors && (
-            <button type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.choose('finished'))}>Finished on another day</button>
+            <SchoolButton variant="plain" type="button" className="school-books-update__quiet" disabled={busy} {...press(() => actions.choose('finished'))}>Finished on another day</SchoolButton>
           )}
           <Fault message={message} />
         </div>
@@ -167,9 +168,9 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
           onSubmit={() => actions.lookup()}
         />
         {add?.canRetry && (
-          <button type="button" className="school-books__retry school-books-add__retry" {...press(() => actions.retryLookup())}>
+          <SchoolButton variant="plain" type="button" className="school-books__retry school-books-add__retry" {...press(() => actions.retryLookup())}>
             Try again
-          </button>
+          </SchoolButton>
         )}
         {/* The only button this pad ever shows, and only for the one entry the
             machine cannot settle by itself: ten digits the catalog does not
@@ -178,10 +179,10 @@ export default function AddBook({ step, add, today, earliestDay = null, error = 
             missing from the catalog, which is also the case that would
             otherwise have no way forward at all. */}
         {add?.unconfirmed && !add?.canRetry && (
-          <button type="button" className="school-books-update__quiet school-books-add__use-number"
+          <SchoolButton variant="plain" type="button" className="school-books-update__quiet school-books-add__use-number"
             disabled={busy} {...press(() => actions.lookup())}>
             Use this number
-          </button>
+          </SchoolButton>
         )}
       </div>
     );

@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /** Asset (flag) choice item. Prompt may carry a flag image; choices are text
  *  and/or flag images. Submits the chosen `value` once. Choice order is
  *  shuffled STABLY per item.id (memoized) so a verdict re-render never
@@ -41,11 +42,11 @@ export default function AssetChoiceItem({ item, onSubmit, verdict }) {
             else cls.push('school-item__choice--dim');
           }
           return (
-            <button key={c.value} type="button" className={cls.join(' ')} disabled={!!verdict}
+            <SchoolButton variant="plain" key={c.value} type="button" className={cls.join(' ')} disabled={!!verdict}
               aria-label={c.label || c.value} onClick={() => submit(c.value)}>
               {flagImg(c.image, c.label || c.value)}
               {c.label && <span className="school-choice__label">{c.label}</span>}
-            </button>
+            </SchoolButton>
           );
         })}
       </div>

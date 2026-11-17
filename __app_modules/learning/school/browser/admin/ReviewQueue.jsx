@@ -1,3 +1,5 @@
+import { useSchoolAdminApi } from '../runtime/useSchoolFeatureApi.js';
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 /**
  * ReviewQueue — the screen the whole paper loop was waiting for.
  *
@@ -36,7 +38,7 @@ import {
   Stack, Text, Textarea, Title, Tooltip,
 } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { schoolAdminApi } from "./schoolAdminApi.js";
+
 import { useRoster } from "./useRoster.js";
 import { useGrader } from "./useGrader.js";
 import GraderBar from "./GraderBar.jsx";
@@ -79,6 +81,7 @@ function SubmittedAnswer({ given }) {
 }
 
 export default function ReviewQueue() {
+  const schoolAdminApi = useSchoolAdminApi();
   const logger = useMemo(() => getLogger().child({ component: 'school-review' }), []);
 
   const { roster, error: rosterError, nameFor } = useRoster();
@@ -89,7 +92,7 @@ export default function ReviewQueue() {
       .then((t) => { if (alive) setTeachersRead(t); })
       .catch(() => { if (alive) setTeachersRead({ configured: false, teachers: [] }); });
     return () => { alive = false; };
-  }, []);
+  }, [schoolAdminApi]);
   const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster, teachersRead);
 
   const [items, setItems] = useState([]);
@@ -125,7 +128,7 @@ export default function ReviewQueue() {
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [logger]);
+  }, [logger, schoolAdminApi]);
 
   // The catalog changes on the timescale of a parent editing YAML, so it is
   // read ONCE per mount rather than on every poll.
@@ -143,7 +146,7 @@ export default function ReviewQueue() {
         if (live) logger.warn('curriculum-failed', { error: err.message, status: err.status });
       });
     return () => { live = false; };
-  }, [logger]);
+  }, [logger, schoolAdminApi]);
 
   useEffect(() => {
     logger.info('mounted', {});
@@ -215,12 +218,12 @@ export default function ReviewQueue() {
     } finally {
       setBusyKey(null);
     }
-  }, [verdicts, notes, grader, graderId, logger, refresh]);
+  }, [verdicts, notes, grader, graderId, logger, refresh, schoolAdminApi]);
 
   const ordered = useMemo(() => newestFirst(items), [items]);
 
   return (
-    <Stack gap="md" p="md" className="school-admin">
+    <SchoolSurfaceProvider surfaceId="admin-review" density="compact"><Stack gap="md" p="md" className="school-admin">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <Stack gap={2}>
           <Title order={3}>Work waiting for a grown-up</Title>
@@ -395,6 +398,6 @@ export default function ReviewQueue() {
           );
         })}
       </Stack>
-    </Stack>
+    </Stack></SchoolSurfaceProvider>
   );
 }

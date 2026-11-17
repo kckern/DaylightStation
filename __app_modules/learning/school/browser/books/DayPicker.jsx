@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * DayPicker — the reading shelf's "when did you finish it?" control.
  *
@@ -102,7 +103,7 @@ export default function DayPicker({
     <section className="school-books-days" data-testid="daypicker">
       <p className="school-books-days__summary" aria-live="polite">{summary}</p>
 
-      {!compact && <button
+      {!compact && <SchoolButton variant="plain"
         type="button"
         className="school-books-days__toggle"
         aria-expanded={open}
@@ -110,25 +111,25 @@ export default function DayPicker({
         {...tap(() => { if (!busy) setOpen((o) => !o); })}
       >
         {open ? 'close' : 'pick a day ›'}
-      </button>}
+      </SchoolButton>}
 
       {open && (
         <>
           <div className="school-books-days__nav">
-            <button
+            <SchoolButton variant="plain"
               type="button"
               disabled={busy || pagedOut || offsetDays >= MAX_WINDOW_OFFSET_DAYS}
               {...tap(() => { if (!busy && !pagedOut) setOffsetDays((days) => Math.min(MAX_WINDOW_OFFSET_DAYS, days + WINDOW_STEP_DAYS)); })}
             >
               ‹ earlier dates
-            </button>
-            <button
+            </SchoolButton>
+            <SchoolButton variant="plain"
               type="button"
               disabled={busy || offsetDays === 0}
               {...tap(() => { if (!busy) setOffsetDays((days) => Math.max(0, days - WINDOW_STEP_DAYS)); })}
             >
               later dates ›
-            </button>
+            </SchoolButton>
           </div>
           <div className="school-books-days__grid" role="grid" aria-label="Pick the day you finished">
             <div className="school-books-days__row" role="row">
@@ -153,7 +154,7 @@ export default function DayPicker({
                     isSelected ? 'is-selected' : '',
                   ].filter(Boolean).join(' ');
                   return (
-                    <button
+                    <SchoolButton variant="plain"
                       key={cell.key}
                       type="button"
                       role="gridcell"
@@ -165,7 +166,7 @@ export default function DayPicker({
                     >
                       {showMonth && <span className="school-books-days__month">{monthLabel(cell.key)}</span>}
                       <span className="school-books-days__day">{cell.day}</span>
-                    </button>
+                    </SchoolButton>
                   );
                 })}
               </div>
@@ -174,9 +175,9 @@ export default function DayPicker({
         </>
       )}
 
-      <button type="button" className="school-books-days__confirm" disabled={busy} {...tap(confirm)}>
+      <SchoolButton variant="plain" type="button" className="school-books-days__confirm" disabled={busy} {...tap(confirm)}>
         Save finish · {dayLabel(selected)}
-      </button>
+      </SchoolButton>
     </section>
   );
 }

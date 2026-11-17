@@ -1,3 +1,7 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { useSchoolResource } from '../runtime/useSchoolResource.js';
+import { useSchoolSurface } from '../portal/SchoolSurface.jsx';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * PrintCenter — a child finds a worksheet and prints it on the kitchen laser
  * printer, gated by the rolling page quota. Under budget prints straight away;
@@ -10,7 +14,7 @@
  * print action tells them to sign in (the server also rejects a guest print).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 import EmptyState, { LoadingState } from "../home/EmptyState.jsx";
@@ -23,9 +27,19 @@ function useAdult(currentUser) {
 }
 
 export default function PrintCenter() {
+  const schoolApi = useSchoolApi();
   const { currentUser, roster, openPicker } = useSchoolProfile();
   const isAdult = useAdult(currentUser);
-  const [printables, setPrintables] = useState(null);
+  const { surfaceId, deviceId, resourceStore } = useSchoolSurface();
+  const catalogue = useSchoolResource({
+    key: [surfaceId, deviceId, currentUser?.id ?? null, 'printables'], store: resourceStore,
+    load: async () => {
+      const result = await schoolApi.printables();
+      return result?.ok && !Array.isArray(result.data)
+        ? { ...result, ok: false, error: { kind: 'invalid-data' } } : result;
+    },
+  });
+  const printables = catalogue.data;
   const [quota, setQuota] = useState(null);
   const [pending, setPending] = useState([]);
   const [myAsks, setMyAsks] = useState([]);
@@ -37,11 +51,11 @@ export default function PrintCenter() {
   const refreshQuota = useCallback(() => {
     if (!currentUser?.id) { setQuota(null); return; }
     schoolApi.printQuota(currentUser.id).then(({ ok, data }) => { if (ok) setQuota(data); });
-  }, [currentUser?.id]);
+  }, [currentUser?.id, schoolApi]);
 
   const refreshPending = useCallback(() => {
     schoolApi.printPending().then(({ ok, data }) => { if (ok && Array.isArray(data)) setPending(data); });
-  }, []);
+  }, [schoolApi]);
 
   // The child's own asks and their outcomes (advocacy: an answered request
   // must never just vanish — "still waiting" and "not this time" are both
@@ -51,13 +65,8 @@ export default function PrintCenter() {
     schoolApi.printRequests(currentUser.id).then(({ ok, data }) => {
       if (ok && Array.isArray(data)) setMyAsks(data);
     });
-  }, [currentUser?.id]);
+  }, [currentUser?.id, schoolApi]);
 
-  useEffect(() => {
-    let alive = true;
-    schoolApi.printables().then(({ ok, data }) => { if (alive) setPrintables(ok && Array.isArray(data) ? data : []); });
-    return () => { alive = false; };
-  }, []);
   useEffect(refreshQuota, [refreshQuota]);
   useEffect(() => { if (isAdult) refreshPending(); }, [isAdult, refreshPending]);
   useEffect(() => { if (!isAdult) refreshMyAsks(); }, [isAdult, refreshMyAsks]);
@@ -75,7 +84,7 @@ export default function PrintCenter() {
     else setFlash({ kind: 'error', text: data.reason || 'That can\'t be printed right now.' });
     refreshQuota();
     if (isAdult) refreshPending(); else refreshMyAsks();
-  }, [currentUser?.id, openPicker, refreshQuota, isAdult, refreshPending, refreshMyAsks]);
+  }, [currentUser?.id, openPicker, refreshQuota, isAdult, refreshPending, refreshMyAsks, schoolApi]);
 
   const onApprove = useCallback(async (req, approve) => {
     if (!currentUser?.id) return;
@@ -84,7 +93,7 @@ export default function PrintCenter() {
     const { ok } = await fn(req.id, currentUser.id);
     setBusyId(null);
     if (ok) { schoolLog.print(approve ? 'approve' : 'deny', { requestId: req.id }); refreshPending(); }
-  }, [currentUser?.id, refreshPending]);
+  }, [currentUser?.id, refreshPending, schoolApi]);
 
   return (
     <div className="school-print">
@@ -96,8 +105,9 @@ export default function PrintCenter() {
       )}
       {flash && <div className={`school-print__flash school-print__flash--${flash.kind}`}>{flash.text}</div>}
 
-      {printables === null && <LoadingState label="Loading printables…" />}
-      {printables !== null && printables.length === 0 && (
+      {catalogue.state === 'loading' && <LoadingState label="Loading printables…" />}
+      {catalogue.error && <div><p role="alert">Couldn’t load printables.</p><SchoolButton onClick={catalogue.retry}>Try again</SchoolButton></div>}
+      {catalogue.state === 'empty' && (
         <EmptyState
           icon="print"
           title="Nothing to print yet."
@@ -108,7 +118,7 @@ export default function PrintCenter() {
         <ul className="school-print__grid">
           {printables.map((p) => (
             <li key={p.id}>
-              <button
+              <SchoolButton variant="plain"
                 type="button"
                 className="school-print__card"
                 onClick={() => onPrint(p)}
@@ -122,7 +132,7 @@ export default function PrintCenter() {
                   </span>
                 </span>
                 <span className="school-print__card-action">{busyId === p.id ? '…' : 'Print'}</span>
-              </button>
+              </SchoolButton>
             </li>
           ))}
         </ul>
@@ -162,8 +172,8 @@ export default function PrintCenter() {
                   >
                     Preview
                   </a>
-                  <button type="button" className="school-print__approve" disabled={busyId === req.id} onClick={() => onApprove(req, true)}>Allow</button>
-                  <button type="button" className="school-print__deny" disabled={busyId === req.id} onClick={() => onApprove(req, false)}>No</button>
+                  <SchoolButton variant="plain" type="button" className="school-print__approve" disabled={busyId === req.id} onClick={() => onApprove(req, true)}>Allow</SchoolButton>
+                  <SchoolButton variant="plain" type="button" className="school-print__deny" disabled={busyId === req.id} onClick={() => onApprove(req, false)}>No</SchoolButton>
                 </span>
               </li>
             ))}

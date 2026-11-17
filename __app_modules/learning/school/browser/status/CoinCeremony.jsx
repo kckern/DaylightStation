@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * CoinCeremony: "+N silver" for one child, over the status board when they are
  * paid (minted earning entries). A self-dismissing toast, the shape of the fitness ring
@@ -53,7 +54,7 @@ export default function CoinCeremony({ toast, durationMs = 3500, onDone }) {
       <div className="school-coin-ceremony__live" role="status" aria-live="polite">
         {`${kid.name} earned ${gained} silver. ${total} silver in the bank.`}
       </div>
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className={`school-coin-ceremony__card${exiting ? ' is-exiting' : ''}`}
         aria-label={`Dismiss: ${kid.name} earned ${gained} silver`}
@@ -66,7 +67,7 @@ export default function CoinCeremony({ toast, durationMs = 3500, onDone }) {
           <ProfileAvatar id={kid.id} name={kid.name} size={192} />
           <span className="school-coin-ceremony__name">{kid.name}</span>
         </span>
-      </button>
+      </SchoolButton>
     </div>
   );
 }

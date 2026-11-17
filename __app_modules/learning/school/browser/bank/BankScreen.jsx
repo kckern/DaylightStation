@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * BankScreen — one kid's coin bank on the Portal (school economy slice 1, C3).
  * Opened from the board's coin cell (SchoolApp's bank door), which checks the
@@ -35,7 +36,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { useSchoolSurface } from '../portal/SchoolSurface.jsx';
+import { useSchoolResource } from '../runtime/useSchoolResource.js';
+import { useSchoolInvalidation } from '../runtime/useSchoolInvalidation.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { StatCard } from "../../../../../frontend/src/lib/ui/index.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
@@ -43,8 +47,6 @@ import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js"
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
-import { schoolApi } from "../schoolApi.js";
-import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
 import { NAPPING, earnItems, goldCountdown, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
 import { LedgerTable } from "./BankLedger.jsx";
 import './BankScreen.scss';
@@ -78,59 +80,30 @@ const coinLabel = (icon, text) => (
 export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, now = null }) {
   const learnerId = learner?.id ?? null;
   const log = useMemo(() => getLogger().child({ component: 'school-bank-screen' }), []);
-  // { status: 'loading'|'ok'|'unavailable', data }
-  const [bank, setBank] = useState({ status: 'loading', data: null });
-  const [agenda, setAgenda] = useState(null);
-  const [next, setNext] = useState(null);
-  const [tab, setTab] = useState('history');
-  const tabRefs = useRef({});
-  const aliveRef = useRef(true);
-  const seqRef = useRef(0);
-
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => { aliveRef.current = false; };
-  }, []);
-
-  useEffect(() => {
-    if (learnerId) log.info('economy.bank.opened', { learnerId });
-  }, [learnerId, log]);
-
-  const load = useCallback(() => {
-    if (!learnerId) return;
-    const n = ++seqRef.current;
-    const latest = () => aliveRef.current && seqRef.current === n;
-    Promise.resolve().then(() => schoolApi.economyBank(learnerId))
-      .then((res) => {
-        if (!latest()) return;
-        if (res?.ok && Number.isFinite(res.data?.balances?.silver)) { setBank({ status: 'ok', data: res.data }); return; }
-        log.warn('economy.bank.unavailable', { learnerId, status: res?.status ?? null });
-        setBank({ status: 'unavailable', data: null });
-      })
-      .catch((error) => {
-        if (!latest()) return;
-        log.warn('economy.bank.unavailable', { learnerId, error: error?.message ?? String(error) });
-        setBank({ status: 'unavailable', data: null });
-      });
-    Promise.resolve().then(() => schoolApi.agendaPreview(learnerId))
-      .then((res) => { if (latest()) setAgenda(res?.ok ? (res.data ?? null) : null); })
-      .catch(() => { if (latest()) setAgenda(null); });
-    Promise.resolve().then(() => schoolApi.nextItem(learnerId))
-      .then((res) => { if (latest()) setNext(res?.ok ? (res.data ?? null) : null); })
-      .catch(() => { if (latest()) setNext(null); });
-  }, [learnerId, log]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  const burst = useMemo(() => coalescer(() => { if (aliveRef.current) loadRef.current(); }), []);
-  useEffect(() => () => burst.cancel(), [burst]);
-  const onSchool = useCallback((payload) => {
-    if (!SCHOOL_REFRESH_EVENTS.has(payload?.event) || payload?.learnerId !== learnerId) return;
-    burst.poke();
-  }, [burst, learnerId]);
-  useWebSocketSubscription('school', onSchool, [onSchool]);
+  const api = useSchoolApi(); const { surfaceId, deviceId } = useSchoolSurface();
+  const enabled = Boolean(learnerId);
+  const bankResource = useSchoolResource({
+    key: [surfaceId, deviceId, learnerId, 'bank'], enabled, policy: 'replace',
+    load: async (options) => {
+      const response = typeof api.request === 'function' ? await api.request(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/bank`, options) : await api.economyBank(learnerId);
+      return response?.ok && !Number.isFinite(response.data?.balances?.silver) ? { ok: false, status: response.status, data: null, error: { kind: 'invalid-data' } } : response;
+    },
+  });
+  const agendaResource = useSchoolResource({
+    key: [surfaceId, deviceId, learnerId, 'agenda-preview'], enabled, policy: 'replace',
+    load: (options) => typeof api.request === 'function' ? api.request(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?format=json`, options) : api.agendaPreview(learnerId),
+  });
+  const nextResource = useSchoolResource({
+    key: [surfaceId, deviceId, learnerId, 'next-item'], enabled, policy: 'replace',
+    load: (options) => typeof api.request === 'function' ? api.request(`/self-service/learners/${encodeURIComponent(learnerId)}/next`, options) : api.nextItem(learnerId),
+  });
+  const bank = { status: bankResource.state === 'ready' ? 'ok' : bankResource.state === 'loading' ? 'loading' : 'unavailable', data: bankResource.data };
+  const agenda = agendaResource.data; const next = nextResource.data;
+  const [tab, setTab] = useState('history'); const tabRefs = useRef({});
+  useEffect(() => { if (learnerId) log.info('economy.bank.opened', { learnerId }); }, [learnerId, log]);
+  useEffect(() => { if (bankResource.error) log.warn('economy.bank.unavailable', { learnerId, status: bankResource.error.status }); }, [bankResource.error, learnerId, log]);
+  const load = useCallback(() => { bankResource.retry(); agendaResource.retry(); nextResource.retry(); }, [bankResource.retry, agendaResource.retry, nextResource.retry]);
+  useSchoolInvalidation({ refresh: load, learnerId, enabled, topics: ['school', 'state-gates'] });
 
   // A screen left up on a shared panel goes back to the board on its own.
   const idleRef = useRef(null);
@@ -191,7 +164,7 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
       />
       <div className="school-bank-screen__tabs" role="tablist" aria-label="Bank" data-testid="bank-tabs">
         {TABS.map((t, i) => (
-          <button
+          <SchoolButton variant="plain"
             key={t.id}
             ref={(el) => { tabRefs.current[t.id] = el; }}
             type="button"
@@ -204,7 +177,7 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
             data-testid={`bank-tab-${t.id}`}
             onClick={() => selectTab(t.id)}
             onKeyDown={(event) => onTabKeyDown(event, i)}
-          >{t.label}</button>
+          >{t.label}</SchoolButton>
         ))}
       </div>
       <div

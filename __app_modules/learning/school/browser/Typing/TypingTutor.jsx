@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../portal/useSchoolCommands.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * TypingTutor — the barebones Drill (typing-tutor spec, Mode 1 only). Shows a
  * target line; the child types it with live per-character correctness and a
@@ -58,19 +60,17 @@ export default function TypingTutor() {
 
   // Keystroke capture. Prevent default on printable keys and Backspace so the
   // line doesn't scroll / the browser doesn't navigate back on Backspace.
-  useEffect(() => {
-    if (finished) return undefined;
-    const onKey = (e) => {
+  useSchoolCommandListener((e) => {
+if (finished) return undefined;
+
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const isPrintable = e.key.length === 1;
       if (!isPrintable && e.key !== 'Backspace') return;
       e.preventDefault();
       if (!startedAt && isPrintable) { const t = Date.now(); setStartedAt(t); setNow(t); }
       setTyped((prev) => applyKey(prev, e.key, target));
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [finished, startedAt, target]);
+
+});
 
   // On line completion, log the result once (fires when `done` flips true).
   useEffect(() => {
@@ -85,7 +85,7 @@ export default function TypingTutor() {
       <div className="school-typing school-typing--done">
         <h2 className="school-typing__done-title">Nice work!</h2>
         <p className="school-typing__done-sub">You finished every line.</p>
-        <button type="button" className="school-typing__button" onClick={restart}>Start over</button>
+        <SchoolButton variant="plain" type="button" className="school-typing__button" onClick={restart}>Start over</SchoolButton>
       </div>
     );
   }
@@ -120,10 +120,10 @@ export default function TypingTutor() {
         <div className="school-typing__linedone">
           <span>{stats.wpm} wpm · {stats.accuracy}% — {statuses.filter((s) => s === 'incorrect').length} slip{statuses.filter((s) => s === 'incorrect').length === 1 ? '' : 's'}</span>
           <div className="school-typing__linedone-actions">
-            <button type="button" className="school-typing__button" onClick={resetLine}>Retry</button>
-            <button type="button" className="school-typing__button school-typing__button--primary" onClick={advance}>
+            <SchoolButton variant="plain" type="button" className="school-typing__button" onClick={resetLine}>Retry</SchoolButton>
+            <SchoolButton variant="plain" type="button" className="school-typing__button school-typing__button--primary" onClick={advance}>
               {lessonIndex + 1 < LESSONS.length ? 'Next line' : 'Finish'}
-            </button>
+            </SchoolButton>
           </div>
         </div>
       ) : (

@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 // Deck tile (quizzes/flashcards): a card-stack motif (offset borders behind
 // the card, static — no animation), title, "N items" meta (plus best-accuracy
 // when known), and two 64px action buttons. The card body itself does NOT
@@ -30,8 +31,8 @@ export default function DeckTile({ item, onOpen }) {
           <h3 className="school-tile__title">{item.title}</h3>
           <p className="school-tile__meta">{meta}</p>
           <div className="school-tile__deck-actions">
-            <button type="button" onClick={() => launch('quiz')}>Quiz</button>
-            <button type="button" onClick={() => launch('flashcard')}>Cards</button>
+            <SchoolButton variant="plain" type="button" onClick={() => launch('quiz')}>Quiz</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={() => launch('flashcard')}>Cards</SchoolButton>
           </div>
         </div>
       </div>

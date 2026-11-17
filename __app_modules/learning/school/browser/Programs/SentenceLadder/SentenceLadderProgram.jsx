@@ -1,5 +1,8 @@
+import { useSchoolCommandListener } from '../../portal/useSchoolCommands.js';
+import { useLanguageApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { languageApi } from "./languageApi.js";
+
 import { languageLog } from "./languageLog.js";
 import { useCapabilities } from "./useCapabilities.js";
 import { useRungStall } from "./useRungStall.js";
@@ -172,6 +175,7 @@ export default function SentenceLadderProgram({
    */
   languages: courseLanguages = null,
 }) {
+  const languageApi = useLanguageApi();
   // ONE ID FOR THE WHOLE RUN, minted during RENDER rather than in an effect.
   //
   // Every `languageLog` event and every outbound request carries it, so a
@@ -264,7 +268,7 @@ export default function SentenceLadderProgram({
       blocked: data.missingCreditRungs ?? [],
       ms: Date.now() - startedAt,
     });
-  }, [userId, corpusId, capabilities, studyGrant, preview]);
+  }, [userId, corpusId, capabilities, studyGrant, preview, languageApi]);
 
   useEffect(() => {
     languageLog.program('mounted', { corpus: corpusId, userId });
@@ -419,7 +423,7 @@ export default function SentenceLadderProgram({
 
   const audioUrl = useCallback(
     (seq, lang) => languageApi.audioUrl(corpusId, seq, lang),
-    [corpusId],
+    [corpusId, languageApi],
   );
 
   // Every tab change goes through here so the move is recorded once, with what
@@ -483,7 +487,7 @@ export default function SentenceLadderProgram({
     languageLog.attempt('saved', { corpus: corpusId, seq, rung, ...(revealed ? { revealed: true } : {}) });
     await load();
     return result;
-  }, [userId, corpusId, capabilities, studyGrant, load, preview]);
+  }, [userId, corpusId, capabilities, studyGrant, load, preview, languageApi]);
 
   /**
    * A SPOKEN ANSWER to a typing rung. Audio up, a transcript back, and nothing
@@ -504,7 +508,7 @@ export default function SentenceLadderProgram({
     );
     if (!ok) return { ok: false, status };
     return { ok: true, transcript: data?.transcript ?? '', empty: data?.empty === true };
-  }, [userId, corpusId, capabilities, studyGrant, entry]);
+  }, [userId, corpusId, capabilities, studyGrant, entry, languageApi]);
 
   const onRoll = useCallback(async () => {
     const { ok, data } = await languageApi.roll(userId, corpusId, capabilities, studyGrant);
@@ -526,7 +530,7 @@ export default function SentenceLadderProgram({
             : 'That didn’t go through — try again.',
       );
     }
-  }, [userId, corpusId, capabilities, studyGrant, load]);
+  }, [userId, corpusId, capabilities, studyGrant, load, languageApi]);
 
   // The one pacing knob. `PacingControl` itself stays presentational and logs
   // nothing: a change is only real once the server has taken it, and only this
@@ -542,7 +546,7 @@ export default function SentenceLadderProgram({
       return;
     }
     languageLog.pacingWarn('change-failed', { corpus: corpusId, dailyLimit, from, status });
-  }, [userId, corpusId, studyGrant, load, day?.dailyLimit]);
+  }, [userId, corpusId, studyGrant, load, day?.dailyLimit, languageApi]);
 
   // The shell's own keys, so the ladder can be climbed without touching the
   // glass: the up and down arrows walk the rungs (and the Review shelf below
@@ -567,8 +571,9 @@ export default function SentenceLadderProgram({
   // → on the complete panel is always "another round", on the kiosk too, where
   // Enter is Done. Nothing else is on screen then, so the arrow is free.
   const nextDayAction = keySummary.total > 0 && keySettled && !preview ? onRoll : null;
-  useEffect(() => {
-    const onKey = (e) => {
+  useSchoolCommandListener((e) => {
+
+
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.target?.closest?.('button, input, select, textarea, a[href], [contenteditable="true"]')) return;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -593,10 +598,8 @@ export default function SentenceLadderProgram({
         e.preventDefault();
         finishAction();
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [stops, tab, activeRung, selectTab, finishAction, nextDayAction]);
+
+});
 
 
   // A guest is stopped, but never stranded: the picker lives one level up and
@@ -611,9 +614,9 @@ export default function SentenceLadderProgram({
             : 'Sign in to study — a guest\'s work isn\'t saved.'}
         </p>
         {onSignIn && (
-          <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>
+          <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>
             {locked ? 'Type your code again' : 'Sign in'}
-          </button>
+          </SchoolButton>
         )}
       </div>
     );
@@ -623,7 +626,7 @@ export default function SentenceLadderProgram({
     return (
       <div className="lang-program lang-program--error">
         <p>Could not load today&apos;s set.</p>
-        <button type="button" className="lang-btn" onClick={load}>Try again</button>
+        <SchoolButton variant="plain" type="button" className="lang-btn" onClick={load}>Try again</SchoolButton>
       </div>
     );
   }
@@ -677,12 +680,12 @@ export default function SentenceLadderProgram({
               that credit nothing (2026-09-14). The complete panel carries its
               own copy, so this one steps aside there. */}
           {!preview && summary.done > 0 && !allDone && (
-            <button type="button" className="lang-btn lang-btn--quiet" onClick={onRoll}>
+            <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--quiet" onClick={onRoll}>
               Start the next day
-            </button>
+            </SchoolButton>
           )}
           {locked && onExit && !sessionFinished && (
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className="lang-btn lang-btn--quiet"
               data-testid="selfservice-section-exit"
@@ -694,7 +697,7 @@ export default function SentenceLadderProgram({
                   beside it are still the accessible name. */}
               <Icon name="back" className="lang-btn__glyph" />
               <span>Leave for now</span>
-            </button>
+            </SchoolButton>
           )}
         </div>
       </header>
@@ -752,7 +755,7 @@ export default function SentenceLadderProgram({
               const active = g.rung === activeRung && tab === 'study';
               return (
                 <li key={rung} className="lang-ladder__rung">
-                  <button
+                  <SchoolButton variant="plain"
                     type="button"
                     className={`lang-ladder__step${active ? ' is-active' : ''}${done === g.items.length ? ' is-done' : ''}`}
                     aria-pressed={active}
@@ -784,20 +787,20 @@ export default function SentenceLadderProgram({
                       moving={false}
                       maxPips={LADDER_MAX_PIPS}
                     />
-                  </button>
+                  </SchoolButton>
                 </li>
               );
             })}
           </ol>
           {!preview && (
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className={`lang-ladder__review${tab === 'review' ? ' is-active' : ''}`}
               aria-pressed={tab === 'review'}
               onClick={() => selectTab('review')}
             >
               Review
-            </button>
+            </SchoolButton>
           )}
         </nav>
 
@@ -820,14 +823,14 @@ export default function SentenceLadderProgram({
               </p>
             )}
             {sessionFinished && locked && exitHandler && (
-              <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
+              <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</SchoolButton>
             )}
             {/* On the locked kiosk too, and on a device that cannot climb a rung.
                 Hidden in either place, a child had no way on to the next day,
                 and "complete" became a wall. Done stays the primary on the
                 kiosk, so Enter still leaves. */}
             {allDone && !preview && (
-              <button type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</button>
+              <SchoolButton variant="plain" type="button" className={locked ? 'lang-btn' : 'lang-btn lang-btn--primary'} onClick={onRoll}>Start the next day</SchoolButton>
             )}
             {allDone && !preview && hasHardwareKeyboard && (
               <p className="lang-program__keys" aria-hidden="true">

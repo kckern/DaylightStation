@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * FlashcardReviewsPanel — a grown-up's read of a learner's ordinary (not
  * card-ladder) flashcard decks: each study session, and in it every card the
@@ -10,7 +12,7 @@
  * enrolled in, and for any other deck they have reviewed.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
@@ -38,14 +40,14 @@ function Session({ session, onOpen }) {
   const tally = session.reviews.reduce((counts, review) => ({ ...counts, [review.rating]: (counts[review.rating] ?? 0) + 1 }), {});
   return (
     <li className={`teacher-ladder-day${open ? ' is-open' : ''}`}>
-      <button type="button" className="teacher-ladder-day__head" aria-expanded={open} onClick={() => { if (!open) onOpen?.(session.sessionId); setOpen((value) => !value); }}>
+      <SchoolButton variant="plain" type="button" className="teacher-ladder-day__head" aria-expanded={open} onClick={() => { if (!open) onOpen?.(session.sessionId); setOpen((value) => !value); }}>
         <span className="teacher-ladder-day__date">{humanDateTime(session.startedAt) ?? 'Unknown time'}</span>
         <span className="teacher-ladder-day__facts">
           {session.reviews.length} card{session.reviews.length === 1 ? '' : 's'}{minutes ? ` · ${minutes}` : ''}
           {' · '}{Object.keys(RATING_LABEL).filter((key) => tally[key]).map((key) => `${tally[key]} ${RATING_LABEL[key]}`).join(', ')}
         </span>
         <span className="teacher-ladder-day__chevron" aria-hidden>{open ? '▾' : '▸'}</span>
-      </button>
+      </SchoolButton>
       {open && (
         <ol className="teacher-ladder-day__answers">
           {session.reviews.map((review, index) => {
@@ -74,6 +76,7 @@ function Session({ session, onOpen }) {
  *   enrollments; each is listed even before its first review
  */
 export default function FlashcardReviewsPanel({ learnerId, learnerName = null, enrolledDeckIds = [] }) {
+  const schoolApi = useSchoolApi();
   const profile = useTeacherProfileOptional();
   const actorId = profile?.currentTeacher?.id ?? null;
   const enrolled = new Set(enrolledDeckIds);

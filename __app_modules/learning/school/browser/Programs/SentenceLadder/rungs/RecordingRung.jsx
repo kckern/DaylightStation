@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../../../portal/useSchoolCommands.js';
+import { SchoolButton } from '../../../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from "../useSentenceAudio.js";
 import { languageLog } from "../languageLog.js";
@@ -1026,8 +1028,9 @@ export default function RecordingRung({
    * focused control that owns it (a tabbed-to button's Enter, a field's
    * Backspace).
    */
-  useEffect(() => {
-    const onKey = (e) => {
+  useSchoolCommandListener((e) => {
+
+
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -1070,10 +1073,8 @@ export default function RecordingRung({
       if (current === 'joining') return;
       e.preventDefault();
       dispatch(via, forward);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [again, cut, dispatch, done, forward, hear, replaySentence, sourceLang, startOver, targetLang]);
+
+}, { allowInInput: true });
 
   const getPlayhead = useCallback(() => {
     const el = playbackRef.current;
@@ -1139,13 +1140,13 @@ export default function RecordingRung({
           unless asked for. Both lines can be tapped to hear them; Tab never
           lands on them, because Tab is "hear it again". */}
       {sourceLang && entry.text?.[sourceLang] && (
-        <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={tapToHear(sourceLang)}>
+        <SchoolButton variant="plain" type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={tapToHear(sourceLang)}>
           {entry.text[sourceLang]}
-        </button>
+        </SchoolButton>
       )}
-      <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={tapToHear(targetLang)}>
+      <SchoolButton variant="plain" type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={tapToHear(targetLang)}>
         {entry.text?.[targetLang]}
-      </button>
+      </SchoolButton>
       {showShortcuts && inPieces && (
         <p className="lang-rung__keys" aria-hidden="true">Shift+Tab: whole sentence</p>
       )}
@@ -1177,9 +1178,9 @@ export default function RecordingRung({
               DEVICE-level one, so a broken panel stops asking while a child
               stuck on one sentence still has to say it. */}
           {refusals >= 3 && onDisableMicrophone && (
-            <button type="button" className="lang-btn" onClick={onDisableMicrophone}>
+            <SchoolButton variant="plain" type="button" className="lang-btn" onClick={onDisableMicrophone}>
               Skip recording on this device
-            </button>
+            </SchoolButton>
           )}
         </div>
       )}
@@ -1190,9 +1191,9 @@ export default function RecordingRung({
         <div className="lang-rung__notice" role="alert">
           <p>{error}</p>
           {onDisableMicrophone && (
-            <button type="button" className="lang-btn" onClick={onDisableMicrophone}>
+            <SchoolButton variant="plain" type="button" className="lang-btn" onClick={onDisableMicrophone}>
               Skip recording on this device
-            </button>
+            </SchoolButton>
           )}
         </div>
       )}
@@ -1201,7 +1202,7 @@ export default function RecordingRung({
         {segments.map(({
           j, grow, filled, current,
         }) => (
-          <button
+          <SchoolButton variant="plain"
             key={j}
             type="button"
             tabIndex={-1}
@@ -1218,21 +1219,21 @@ export default function RecordingRung({
       )}
       <div className="lang-rung__controls">
         {phase === 'idle' && (
-          <button type="button" className="lang-tile lang-tile--primary" onClick={onTap(begin)} aria-label="Listen, then record">
+          <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--primary" onClick={onTap(begin)} aria-label="Listen, then record">
             <Icon name="record" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Play</span>
             {key('Space')}
-          </button>
+          </SchoolButton>
         )}
         {/* THE FORWARD TILE while the sentence sounds: "Pause here" — stop it
             there and say that much. Only while a cuttable part of the sentence
             is sounding; during the ding or a bounded span it is a status. */}
         {cutOffered && (
-          <button type="button" className="lang-tile lang-tile--primary" onClick={tapToCut} aria-label="Pause here">
+          <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--primary" onClick={tapToCut} aria-label="Pause here">
             <Icon name="pause" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Pause here</span>
             {key('Space')}
-          </button>
+          </SchoolButton>
         )}
         {((phase === 'prompting' && !cutOffered) || phase === 'playback') && (
           <span className="lang-tile lang-tile--status" role="status" aria-label={phase === 'prompting' ? 'Listen' : 'Playing your recording'}>
@@ -1247,18 +1248,18 @@ export default function RecordingRung({
           </span>
         )}
         {phase === 'recording' && (
-          <button type="button" className="lang-tile lang-tile--live" onClick={onTap(stopRecording)} aria-label="Stop">
+          <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--live" onClick={onTap(stopRecording)} aria-label="Stop">
             <Icon name="stop" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Stop</span>
             {key('Space')}
-          </button>
+          </SchoolButton>
         )}
         {phase === 'review' && inPieces && (
           <>
             {/* A CHUNK, not the take: Again redoes this chunk only, and the
                 primary tile goes on with the sentence — or, once every chunk
                 is said, joins them. A refused chunk goes nowhere. */}
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
               onClick={onTap(redoPiece)}
@@ -1267,8 +1268,8 @@ export default function RecordingRung({
               <Icon name="record-again" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">Redo</span>
               {key('⌫')}
-            </button>
-            <button
+            </SchoolButton>
+            <SchoolButton variant="plain"
               type="button"
               className={`lang-tile${takeVerdict ? '' : ' lang-tile--primary'}`}
               onClick={onTap(nextPiece)}
@@ -1278,7 +1279,7 @@ export default function RecordingRung({
               <Icon name={lastPiece ? 'keep' : 'next'} className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">{lastPiece ? 'Join' : 'Next'}</span>
               {key('Space')}
-            </button>
+            </SchoolButton>
           </>
         )}
         {phase === 'review' && !inPieces && (
@@ -1287,7 +1288,7 @@ export default function RecordingRung({
                 only thing to do is go again, so Again leads and Keep is
                 disabled outright. The way past a dead mic is the device-level
                 escape in the notice above, not a quiet take. */}
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className={`lang-tile${takeVerdict ? ' lang-tile--primary' : ''}`}
               onClick={onTap(recordAgain)}
@@ -1296,8 +1297,8 @@ export default function RecordingRung({
               <Icon name="record-again" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">Again</span>
               {key('⌫')}
-            </button>
-            <button
+            </SchoolButton>
+            <SchoolButton variant="plain"
               type="button"
               className={`lang-tile${takeVerdict ? '' : ' lang-tile--primary'}`}
               onClick={onTap(accept)}
@@ -1307,26 +1308,26 @@ export default function RecordingRung({
               <Icon name="keep" className="lang-tile__glyph" />
               <span className="lang-tile__word" aria-hidden="true">{saving ? 'Saving…' : 'Keep'}</span>
               {key('Space')}
-            </button>
+            </SchoolButton>
           </>
         )}
         {/* The secondary keys, as tiles: hear it again, start over, done. */}
         {phase !== 'joining' && (
-          <button type="button" className="lang-tile lang-tile--minor" onClick={onTap(replaySentence)} aria-label="Hear it again">
+          <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--minor" onClick={onTap(replaySentence)} aria-label="Hear it again">
             <Icon name="volume" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Hear it</span>
             {key('Tab')}
-          </button>
+          </SchoolButton>
         )}
         {(inPieces || joinedRef.current) && phase !== 'joining' && (
-          <button type="button" className="lang-tile lang-tile--minor" onClick={onTap(startOver)} aria-label="Start over">
+          <SchoolButton variant="plain" type="button" className="lang-tile lang-tile--minor" onClick={onTap(startOver)} aria-label="Start over">
             <Icon name="restart" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Start over</span>
             {key('←')}
-          </button>
+          </SchoolButton>
         )}
         {inPieces && said > 0 && phase !== 'joining' && !(phase === 'review' && lastPiece) && (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="lang-tile lang-tile--minor"
             onClick={onTap(done)}
@@ -1336,7 +1337,7 @@ export default function RecordingRung({
             <Icon name="keep" className="lang-tile__glyph" />
             <span className="lang-tile__word" aria-hidden="true">Done</span>
             {key('Enter')}
-          </button>
+          </SchoolButton>
         )}
       </div>
     </div>

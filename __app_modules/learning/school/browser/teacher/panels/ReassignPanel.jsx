@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * ReassignPanel — attribution repair (wave 5, spec D1): pick a day, see the
  * mis-credited learner's work, move it to the right sibling.
@@ -20,7 +23,7 @@
  * blind, which is the defect the picker exists to have fixed.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { curriculumTitles } from "../curriculumTitles.js";
@@ -30,6 +33,7 @@ import { presentSessionState } from "../sessionPresentation.js";
 const RECENT_DAYS = 14;
 
 export default function ReassignPanel({ learnerId, learnerName, kids = [], initialDay = null }) {
+  const schoolApi = useSchoolApi();
   const [day, setDay] = useState(initialDay ?? '');
   // Recent days WITH recorded work (advocacy B18) — no more typing dates blind.
   const recentDays = usePanelFetch(() => schoolApi.attemptDays(learnerId), {
@@ -128,17 +132,17 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
       {days.length > 0 && (
         <div className="teacher-reassign__days">
           {days.map((d) => (
-            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{humanDate(d) ?? d}</button>
+            <SchoolButton variant="plain" key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{humanDate(d) ?? d}</SchoolButton>
           ))}
         </div>
       )}
       <div className="teacher-reassign__controls">
         <input aria-label="Day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
-        <button type="button" disabled={!day} onClick={() => load()}>Load that day</button>
-        <select aria-label="Move to" value={target} onChange={(e) => setTarget(e.target.value)}>
+        <SchoolButton variant="plain" type="button" disabled={!day} onClick={() => load()}>Load that day</SchoolButton>
+        <SchoolSelect aria-label="Move to" value={target} onChange={(e) => setTarget(e.target.value)}>
           <option value="">Move to…</option>
           {siblings.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
-        </select>
+        </SchoolSelect>
       </div>
       {loadError && <p className="teacher-panel__error">{loadError}</p>}
       {assessments && assessments.length === 0 && sessions.length === 0 && (
@@ -150,7 +154,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
             <li key={a.assessmentId} className="teacher-quizreq__row">
               <span>{a.title ?? a.bankTitle ?? 'Recorded work with no published title'}</span>
               <span className="teacher-quizreq__meta">{a.count} answer{a.count === 1 ? '' : 's'}</span>
-              <button type="button" disabled={!target || busy === a.assessmentId} onClick={() => move(a)}>Reassign</button>
+              <SchoolButton variant="plain" type="button" disabled={!target || busy === a.assessmentId} onClick={() => move(a)}>Reassign</SchoolButton>
               {errors[a.assessmentId] && <p className="teacher-panel__error">{errors[a.assessmentId]}</p>}
             </li>
           ))}
@@ -178,13 +182,13 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
               <li key={s.sessionId} className="teacher-quizreq__row">
                 <span>{labelFor(s)}</span>
                 <span className="teacher-quizreq__meta">{s.state ? presentSessionState(s).label : 'Not started'}</span>
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   disabled={!target || !reason.trim() || busy === `session:${s.sessionId}`}
                   onClick={() => moveSession(s)}
                 >
                   Re-credit
-                </button>
+                </SchoolButton>
                 {errors[`session:${s.sessionId}`] && <p className="teacher-panel__error">{errors[`session:${s.sessionId}`]}</p>}
               </li>
             ))}

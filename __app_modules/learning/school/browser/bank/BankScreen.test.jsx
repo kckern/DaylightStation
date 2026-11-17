@@ -7,9 +7,13 @@ vi.mock("../schoolApi.js", () => ({
   schoolApi: { economyBank: vi.fn(), agendaPreview: vi.fn(), nextItem: vi.fn(), earningsRoster: vi.fn() },
 }));
 const wsHandlers = [];
-vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
-  useWebSocketSubscription: (topic, cb) => { wsHandlers.push({ topic, cb }); },
-}));
+const statusHandlers = new Set();
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', () => ({ wsService: {
+  subscribe: (topics, cb) => { for (const topic of (typeof topics === 'string' ? [topics] : topics)) wsHandlers.push({ topic, cb }); return () => {}; },
+  getStatus: () => ({ connected: true }),
+  onStatusChange: callback => { statusHandlers.add(callback); return () => statusHandlers.delete(callback); },
+} }));
+
 const logged = [];
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
   const child = (ctx) => ({
@@ -506,4 +510,21 @@ describe('BankScreen coins', () => {
     expect(balances.querySelectorAll('svg.coin-icon[data-metal="gold"]')).toHaveLength(1);
     expect(balances.querySelectorAll('svg.gem-icon')).toHaveLength(1);
   });
+});
+
+it('repairs a missed bank update after reconnect without trusting old balances on failure', async () => {
+  const view = await renderScreen();
+  expect(screen.getByTestId('bank-screen')).toHaveTextContent('7');
+  schoolApi.economyBank.mockResolvedValue({ ok: false, status: 503, data: null });
+  act(() => { statusHandlers.forEach(callback => callback({ connected: false })); statusHandlers.forEach(callback => callback({ connected: true })); });
+  expect(await screen.findByTestId('bank-napping')).toBeInTheDocument();
+  expect(screen.queryByTestId('bank-balances')).toBeNull();
+  view.unmount();
+});
+it('does not show a prior learner balance while the next learner bank is pending', async () => {
+  const view = await renderScreen();
+  schoolApi.economyBank.mockReturnValue(new Promise(() => {}));
+  view.rerender(<BankScreen learner={{ id: 'sibling', name: 'Sibling' }} onExit={vi.fn()} now={NOW} />);
+  expect(screen.getByText('Opening your bank…')).toBeInTheDocument();
+  expect(screen.queryByTestId('bank-balances')).toBeNull();
 });

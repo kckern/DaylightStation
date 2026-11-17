@@ -68,47 +68,175 @@ describe('Sentence Ladder route authority', () => {
     }
   });
 });
-vi.mock("./schoolApi.js", () => ({
+vi.mock("./schoolApi.js", () => {const endpoints = {
   schoolApi: {
-    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
-    wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
+    bookScans: {
+      pending: vi.fn(async () => ({
+        ok: true,
+        data: {
+          intent: null
+        }
+      })),
+      claim: vi.fn(),
+      dismiss: vi.fn()
+    },
+    roster: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: [{
+        id: 'kid1',
+        name: 'Alpha',
+        birthyear: 2016
+      }, {
+        id: 'dad1',
+        name: 'Papa',
+        birthyear: 1984
+      }]
+    })),
+    wallet: vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      data: null
+    })),
     banks: (...a) => banksMock(...a),
-    bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
-    openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
-    answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
-    remediationOffer: vi.fn(async () => ({ ok: true, status: 201, data: { status: 'offered', offer: { sessionId: 'REM_1' } } })),
-    remediationSession: vi.fn(async () => ({ ok: true, status: 200, data: { session: {
-      sessionId: 'REM_1', status: 'offered', masteryPercent: 0, targetPercent: 80,
-      learnerControls: ['stop'], turns: [], cursor: { nextClientSequence: 0, latestServerSequence: 0 },
-    } } })),
+    bank: vi.fn(async id => ({
+      ok: true,
+      status: 200,
+      data: {
+        id,
+        title: 'Caps',
+        audience: 'assigned',
+        items: [{
+          id: 'q1',
+          type: 'multiple_choice',
+          prompt: 'WA?',
+          answer: 'Olympia',
+          choices: ['Seattle', 'Olympia']
+        }]
+      }
+    })),
+    openSession: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sessionId: 'ses_1'
+      }
+    })),
+    answer: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        correct: true,
+        expected: 'Olympia',
+        attemptId: 'att_1'
+      }
+    })),
+    remediationOffer: vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      data: {
+        status: 'offered',
+        offer: {
+          sessionId: 'REM_1'
+        }
+      }
+    })),
+    remediationSession: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        session: {
+          sessionId: 'REM_1',
+          status: 'offered',
+          masteryPercent: 0,
+          targetPercent: 80,
+          learnerControls: ['stop'],
+          turns: [],
+          cursor: {
+            nextClientSequence: 0,
+            latestServerSequence: 0
+          }
+        }
+      }
+    })),
     remediationAction: vi.fn(),
     materials: (...a) => materialsMock(...a),
     learningCatalogs: (...a) => learningCatalogsMock(...a),
     learningLesson: (...a) => learningLessonMock(...a),
-    recordProbeInteraction: vi.fn(async () => ({ ok: true, status: 201, data: {} })),
+    recordProbeInteraction: vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      data: {}
+    })),
     materialUnits: (...a) => materialUnitsMock(...a),
     unitProgress: (...a) => unitProgressMock(...a),
-    quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
-    report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
-    results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    quizRequests: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    requestQuiz: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        requested: true,
+        duplicate: false
+      }
+    })),
+    report: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: [{
+          id: 'kid1',
+          name: 'Alpha',
+          reports: []
+        }]
+      }
+    })),
+    results: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    materialProgress: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     surfaceProfile: (...a) => surfaceProfileMock(...a),
     certification: (...a) => certificationMock(...a),
     // Feedback delivery + kid-visible standing (Task 9) — the student panel
     // fetches these unconditionally once a learner is claimed.
-    periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
-    reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    periods: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    reportCard: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: null
+    })),
+    reviewLearner: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Today's dry-run plan (debt W7a) — the student panel fetches this
     // unconditionally once a learner is claimed.
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
-  },
-}));
+    agendaPreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sections: []
+      }
+    }))
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 
 const coursesMock = vi.fn();
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => { const endpoints = {
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: vi.fn(async () => ({ ok: true, status: 200, data: null })),
@@ -116,7 +244,7 @@ vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },
-}));
+}; return {...endpoints, createLanguageApi: () => endpoints.languageApi}; });
 
 // SchoolMaterialPlayer wraps the real, heavy shared Player (lazy-imported) —
 // stub it the same way MediaApp.test.jsx does, so materials-flow tests never

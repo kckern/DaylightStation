@@ -1,3 +1,5 @@
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * Dispatch today's agenda for one child — the one console path that drives a
  * physical printer.
@@ -8,7 +10,7 @@
  * cost a teacher a six-step drill-down into a per-day panel to rescue.
  */
 import { useState } from 'react';
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
@@ -41,6 +43,7 @@ const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.ran
  * key that already looks used — the next prepare mints a fresh one.
  */
 function AgendaDispatchInner({ learnerId, learnerName, studyDay = null, label = 'Print the day\u2019s agenda\u2026' }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'agenda-dispatch' });
@@ -73,9 +76,9 @@ function AgendaDispatchInner({ learnerId, learnerName, studyDay = null, label = 
   return (
     <section className="teacher-agenda-dispatch" aria-label="Dispatch today's agenda">
       {!preview && (
-        <button type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={prepare}>
+        <SchoolButton variant="plain" type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={prepare}>
           {label}
-        </button>
+        </SchoolButton>
       )}
       {blocked && (
         <div className="teacher-agenda-dispatch__blocked">
@@ -86,17 +89,17 @@ function AgendaDispatchInner({ learnerId, learnerName, studyDay = null, label = 
               <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
             ))}
           </ul>
-          <button type="button" className="teacher-btn teacher-btn--quiet" onClick={cancel}>Cancel</button>
+          <SchoolButton variant="plain" type="button" className="teacher-btn teacher-btn--quiet" onClick={cancel}>Cancel</SchoolButton>
         </div>
       )}
       {preview && !blocked && (
         <div className="teacher-agenda-dispatch__ready">
           <p>{subjectCount} subject{subjectCount === 1 ? '' : 's'} will print for {learnerName ?? 'this learner'}.</p>
           <div className="teacher-action-row">
-            <button type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={dispatch}>
+            <SchoolButton variant="plain" type="button" className="teacher-btn teacher-btn--primary" disabled={busy === key} onClick={dispatch}>
               Print it now
-            </button>
-            <button type="button" className="teacher-btn" onClick={cancel}>Cancel</button>
+            </SchoolButton>
+            <SchoolButton variant="plain" type="button" className="teacher-btn" onClick={cancel}>Cancel</SchoolButton>
           </div>
         </div>
       )}

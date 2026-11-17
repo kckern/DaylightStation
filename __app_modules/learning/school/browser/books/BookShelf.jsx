@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** Learner reading workspace: bounded collections, focused editors, and inline save results. */
 import { useCallback, useEffect, useRef } from 'react';
 import { useBookShelf } from "./useBookShelf.js";
@@ -71,7 +72,7 @@ function AddTile({ first, onSelect, disabled = false, manualEntry = true }) {
     // a plus in it, the words under it. It used to be that slot inside a
     // dashed card — a box in a box — which read as chrome rather than as the
     // empty place on the shelf where the next book goes.
-    <button
+    <SchoolButton variant="plain"
       type="button"
       className="school-books-tile school-books-tile--add"
       disabled={disabled}
@@ -86,7 +87,7 @@ function AddTile({ first, onSelect, disabled = false, manualEntry = true }) {
         <span className="school-books-tile__title">{first ? 'Add your first book' : 'Add a book'}</span>
         <span className="school-books-tile__caption">{manualEntry ? 'Tap to type the number' : 'Scan the barcode'}</span>
       </span>
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -95,7 +96,7 @@ function Fault({ error, onRetry, needsRefresh = false, busy = false }) {
   return (
     <div className="school-books__fault" role="alert">
       <p className="school-books__fault-text">{error.message}</p>
-      <button type="button" className="school-books__retry" disabled={busy} onClick={onRetry}>{needsRefresh ? 'Retry shelf' : 'Try again'}</button>
+      <SchoolButton variant="plain" type="button" className="school-books__retry" disabled={busy} onClick={onRetry}>{needsRefresh ? 'Retry shelf' : 'Try again'}</SchoolButton>
     </div>
   );
 }

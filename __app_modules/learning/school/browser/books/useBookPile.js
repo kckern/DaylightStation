@@ -1,7 +1,8 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
 import { wsService } from "../../../../../frontend/src/services/WebSocketService.js";
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { isPanelSurface } from "../schoolPathModel.js";
 
@@ -20,6 +21,7 @@ const FILEABLE = new Set(['ready', 'not-found']);
  * The server is idempotent per card; the in-flight lock only saves requests.
  */
 export function useBookPile({ screenId, scopeLearnerId = null }) {
+  const schoolApi = useSchoolApi();
   const enabled = isPanelSurface(screenId);
   const [pile, setPile] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +57,7 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
     if (!result?.ok) { schoolLog.bookShelfError?.('book-pile.read-failed', { status: result?.status ?? null }); return; }
     setPile(result.data?.pile ?? null);
     setReadScope(scope);
-  }, [enabled, screenId]);
+  }, [enabled, screenId, schoolApi]);
 
   useWebSocketSubscription('school', (msg) => {
     if (msg?.type === 'school.book-scan' && msg.screenId === screenId) void refresh();
@@ -124,9 +126,9 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
       alreadyToday: filed.alreadyToday ?? 0, failed: filed.failed ?? 0, pile: size });
   }, [screenId]);
 
-  const file = useCallback((learnerId) => run('filed', () => schoolApi.bookScans.filePile({ screenId, learnerId })), [run, screenId]);
-  const move = useCallback((cardId, learnerId) => run('card-moved', () => schoolApi.bookScans.moveCard(cardId, { screenId, learnerId })), [run, screenId]);
-  const remove = useCallback((cardId) => run('card-removed', () => schoolApi.bookScans.removeCard(cardId, { screenId })), [run, screenId]);
+  const file = useCallback((learnerId) => run('filed', () => schoolApi.bookScans.filePile({ screenId, learnerId })), [run, screenId, schoolApi]);
+  const move = useCallback((cardId, learnerId) => run('card-moved', () => schoolApi.bookScans.moveCard(cardId, { screenId, learnerId })), [run, screenId, schoolApi]);
+  const remove = useCallback((cardId) => run('card-removed', () => schoolApi.bookScans.removeCard(cardId, { screenId })), [run, screenId, schoolApi]);
 
   // The confirmation belongs to the filing it reports. A newer scan, or the
   // session ending, retires it — otherwise the next child's pile opened under

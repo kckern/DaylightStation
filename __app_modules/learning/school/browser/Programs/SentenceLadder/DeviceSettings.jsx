@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import Popover from "./Popover.jsx";
 import { languageName } from "./languageNames.js";
 
@@ -61,7 +62,7 @@ export default function DeviceSettings({ languages, capabilities, onToggleLangua
       <div className="lang-settings" role="none">
         <p className="lang-settings__title">What this device can do</p>
         {rows.map((row) => (
-          <button
+          <SchoolButton variant="plain"
             key={row.key}
             type="button"
             role="menuitemcheckbox"
@@ -74,7 +75,7 @@ export default function DeviceSettings({ languages, capabilities, onToggleLangua
               <span className="lang-settings__label">{row.label}</span>
               <span className="lang-settings__hint">{row.hint}</span>
             </span>
-          </button>
+          </SchoolButton>
         ))}
         {/* Turning one off removes its rung from the ladder; sentences graduate
             across the gap rather than stalling. Saying so here is what makes

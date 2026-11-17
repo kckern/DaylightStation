@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * "What is waiting on a grown-up" — counted ONCE, for the rail badge, the
  * phone tab bar and the dashboard strip alike. They used to count three
@@ -6,7 +7,7 @@
  * itself teacher-gated, so a console with nobody picked cannot know it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { teacherLog } from "./teacherLog.js";
 
 const countOf = (response, pick) => (response.ok ? pick(response.data) : null);
@@ -15,6 +16,7 @@ const broken = (response) => !response.ok && response.status !== 404;
 const STALE_AFTER_MS = 2_000;
 
 export function useBacklog({ pollMs = 60_000 } = {}) {
+  const schoolApi = useSchoolApi();
   const [counts, setCounts] = useState({ review: null, prints: null, quizzes: null, total: 0, failed: false });
   const alive = useRef(true);
   // The 60s poll and an onChanged refresh can overlap; only the latest read
@@ -51,7 +53,7 @@ export function useBacklog({ pollMs = 60_000 } = {}) {
     const failed = [review, prints, quizzes].some(broken);
     if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status, quizStatus: quizzes.status });
     setCounts({ ...next, total: (next.review ?? 0) + (next.prints ?? 0) + (next.quizzes ?? 0), failed });
-  }, []);
+  }, [schoolApi]);
 
   useEffect(() => {
     alive.current = true;

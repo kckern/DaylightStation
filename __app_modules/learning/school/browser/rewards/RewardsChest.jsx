@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useRef, useState } from 'react';
 import chestSheet from './treasure-chests.svg?url';
 import { pressDown } from '../shared/pressDown.js';
@@ -40,9 +41,9 @@ export default function RewardsChest({ name, onOpen, onBeginOpening = null, disa
   };
 
   return (
-    <button type="button" className={`school-rewards-door${opening ? ' is-opening' : ''}`}
+    <SchoolButton variant="plain" type="button" className={`school-rewards-door${opening ? ' is-opening' : ''}`}
       aria-label={`Open ${name}'s rewards`} aria-haspopup="dialog" disabled={disabled} aria-disabled={opening || undefined} {...pressDown(open)}>
       <TreasureChest />
-    </button>
+    </SchoolButton>
   );
 }

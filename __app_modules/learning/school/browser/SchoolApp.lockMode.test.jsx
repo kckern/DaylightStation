@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
-vi.mock("./schoolApi.js", () => ({ schoolApi: { screenSchoolConfig: vi.fn() } }));
+vi.mock("./schoolApi.js", () => {const endpoints = {
+  schoolApi: {
+    screenSchoolConfig: vi.fn()
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 // The same module-load mocks SchoolApp.lockSplit.test.jsx carries.
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => { const endpoints = {
   languageApi: { courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })) },
-}));
+}; return {...endpoints, createLanguageApi: () => endpoints.languageApi}; });
 vi.mock("./useSchoolLaunch.js", () => ({ useSchoolLaunch: vi.fn() }));
 vi.mock("../../../../frontend/src/hooks/useShutdownLock.js", () => ({
   useShutdownLock: () => ({ locked: false }),

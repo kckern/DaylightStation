@@ -1,3 +1,4 @@
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * PeriodSelect — pick the period the Records tab reads; defaults to the
  * current period (startsAt <= now < endsAt). Unlike the student panel's
@@ -8,7 +9,7 @@
 export default function PeriodSelect({ periods, value, onChange }) {
   if (!periods.length) return null;
   return (
-    <select
+    <SchoolSelect
       className="teacher-period-select"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
@@ -17,7 +18,7 @@ export default function PeriodSelect({ periods, value, onChange }) {
       {periods.map((p) => (
         <option key={p.periodId} value={p.periodId}>{p.label ?? p.periodId}</option>
       ))}
-    </select>
+    </SchoolSelect>
   );
 }
 

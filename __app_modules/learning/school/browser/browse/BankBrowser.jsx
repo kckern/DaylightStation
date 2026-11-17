@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Grid of banks. Each card offers Quiz and Cards. Guests get generic only.
  *
@@ -11,7 +13,7 @@
  * untagged-only Library filter told children a full room was empty.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { subjectLabel } from "../home/subjects.js";
 import EmptyState, { LoadingState } from "../home/EmptyState.jsx";
 
@@ -25,8 +27,8 @@ function BankCard({ bank, launch }) {
         {bank.itemCount} questions{bank.audience === 'generic' ? ' · for everyone' : ''}
       </p>
       <div className="school-browse__actions">
-        <button type="button" onClick={() => launch(bank, 'quiz')}>Quiz</button>
-        <button type="button" onClick={() => launch(bank, 'flashcard')}>Cards</button>
+        <SchoolButton variant="plain" type="button" onClick={() => launch(bank, 'quiz')}>Quiz</SchoolButton>
+        <SchoolButton variant="plain" type="button" onClick={() => launch(bank, 'flashcard')}>Cards</SchoolButton>
       </div>
     </div>
   );
@@ -45,15 +47,16 @@ function SubjectGroup({ subject, banks, launch }) {
         {visible.map((b) => <BankCard key={b.id} bank={b} launch={launch} />)}
       </div>
       {banks.length > GROUP_CAP && (
-        <button type="button" className="school-browse__more" onClick={() => setShowAll((v) => !v)}>
+        <SchoolButton variant="plain" type="button" className="school-browse__more" onClick={() => setShowAll((v) => !v)}>
           {showAll ? 'Show fewer' : `Show all ${banks.length}`}
-        </button>
+        </SchoolButton>
       )}
     </section>
   );
 }
 
 export default function BankBrowser({ guestOnly, onLaunch, notice, subjectFilter, grouped = false }) {
+  const schoolApi = useSchoolApi();
   const [banks, setBanks] = useState(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -67,7 +70,7 @@ export default function BankBrowser({ guestOnly, onLaunch, notice, subjectFilter
       setBanks(data);
     });
     return () => { alive = false; };
-  }, [guestOnly]);
+  }, [guestOnly, schoolApi]);
 
   // Guards against a double-tap firing onLaunch twice before the parent's
   // start() (which does the actual schoolApi.bank() GET) resolves. A ref

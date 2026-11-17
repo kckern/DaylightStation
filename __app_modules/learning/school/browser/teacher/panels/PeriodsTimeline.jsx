@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * PeriodsTimeline — the academic calendar, now EDITABLE (wave 3,
  * teacher.periods.edit over the config→data promotion): whole-list edit
@@ -9,7 +12,7 @@
  * period boundary by hours.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -25,6 +28,7 @@ const withOriginalTime = (date, original) => (
 );
 
 export default function PeriodsTimeline() {
+  const schoolApi = useSchoolApi();
   const periods = usePanelFetch(() => schoolApi.periods(), { panel: 'periods' });
   const { run, busy, errors } = useTeacherWrite({ panel: 'periods' });
   const [editing, setEditing] = useState(false);
@@ -103,7 +107,7 @@ export default function PeriodsTimeline() {
               })}
             </ol>
           )}
-          <button type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit periods</button>
+          <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit periods</SchoolButton>
         </>
       )}
       {editing && (
@@ -129,28 +133,28 @@ export default function PeriodsTimeline() {
                 onChange={(e) => setDraft((d) => d.map((r, idx) => (idx === i ? { ...r, periodId: e.target.value, idTouched: true } : r)))}
                 placeholder="period-id"
               />
-              <select aria-label={`Kind ${i}`} value={row.kind} onChange={(e) => patch(i, 'kind', e.target.value)}>
+              <SchoolSelect aria-label={`Kind ${i}`} value={row.kind} onChange={(e) => patch(i, 'kind', e.target.value)}>
                 {[...new Set([...KINDS, row.kind].filter(Boolean))].map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
-              <select aria-label={`Parent ${i}`} value={row.parentPeriodId ?? ''} onChange={(e) => patch(i, 'parentPeriodId', e.target.value || undefined)}>
+              </SchoolSelect>
+              <SchoolSelect aria-label={`Parent ${i}`} value={row.parentPeriodId ?? ''} onChange={(e) => patch(i, 'parentPeriodId', e.target.value || undefined)}>
                 <option value="">no parent</option>
                 {draft.filter((_, idx) => idx !== i).map((r) => r.periodId).filter(Boolean).map((id) => <option key={id} value={id}>{id}</option>)}
-              </select>
+              </SchoolSelect>
               <input aria-label={`Starts ${i}`} type="date" value={row.startsAt} onChange={(e) => patch(i, 'startsAt', e.target.value)} />
               <input aria-label={`Ends ${i}`} type="date" value={row.endsAt} onChange={(e) => patch(i, 'endsAt', e.target.value)} />
               {removeArm === i ? (
                 <span className="teacher-close-period__confirm">
                   <span>Remove? Frozen report cards keyed to this period will no longer resolve.</span>
-                  <button type="button" onClick={() => { setDraft((d) => d.filter((_, idx) => idx !== i)); setRemoveArm(null); }}>Confirm</button>
-                  <button type="button" onClick={() => setRemoveArm(null)}>Keep</button>
+                  <SchoolButton variant="plain" type="button" onClick={() => { setDraft((d) => d.filter((_, idx) => idx !== i)); setRemoveArm(null); }}>Confirm</SchoolButton>
+                  <SchoolButton variant="plain" type="button" onClick={() => setRemoveArm(null)}>Keep</SchoolButton>
                 </span>
               ) : (
-                <button type="button" onClick={() => setRemoveArm(i)}>Remove</button>
+                <SchoolButton variant="plain" type="button" onClick={() => setRemoveArm(i)}>Remove</SchoolButton>
               )}
             </div>
           ))}
-          <button type="button" onClick={() => setDraft((d) => [...d, { periodId: '', kind: 'term', label: '', startsAt: '', endsAt: '' }])}>Add period</button>
-          <button
+          <SchoolButton variant="plain" type="button" onClick={() => setDraft((d) => [...d, { periodId: '', kind: 'term', label: '', startsAt: '', endsAt: '' }])}>Add period</SchoolButton>
+          <SchoolButton variant="plain"
             type="button"
             onClick={() => setDraft((d) => [
               ...d,
@@ -186,10 +190,10 @@ export default function PeriodsTimeline() {
             ])}
           >
             Clone forward a year
-          </button>
+          </SchoolButton>
           <div className="teacher-assignments__actions">
-            <button type="button" disabled={busy === 'save'} onClick={save}>Save</button>
-            <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+            <SchoolButton variant="plain" type="button" disabled={busy === 'save'} onClick={save}>Save</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={() => setEditing(false)}>Cancel</SchoolButton>
           </div>
           {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
         </div>

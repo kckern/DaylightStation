@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * Today — roster-scoped daily loop (spec §4.2): the digest strip, per-learner
  * drill-ins, the pending review queue, print approvals, and the quiz-request
@@ -7,7 +9,7 @@
  * kids roster — when wired it always answers one row per roster learner.
  */
 import { useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch, allUnavailable } from "../usePanelFetch.js";
 import PanelFrame from "../panels/PanelFrame.jsx";
 import RosterStrip from "../panels/RosterStrip.jsx";
@@ -30,9 +32,9 @@ function BacklogStrip({ backlog, onOpenQueue }) {
   // emptiest possible state shouting for attention (UX audit IA5).
   if (!parts.length || backlog.total === 0) return null;
   return (
-    <button type="button" className="teacher-backlog-strip" data-testid="backlog-strip" onClick={onOpenQueue}>
+    <SchoolButton variant="plain" type="button" className="teacher-backlog-strip" data-testid="backlog-strip" onClick={onOpenQueue}>
       {parts.join(' · ')} →
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -85,6 +87,7 @@ function GrownUpStrip({ count, items = [], unknown = 0 }) {
 }
 
 export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null }) {
+  const schoolApi = useSchoolApi();
   // The v2 day projection is the board contract: it preserves the actual
   // session/taxonomy/artifact context rather than flattening rows into the
   // legacy digest's title-only compatibility shape.

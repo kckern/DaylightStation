@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
 /**
  * ActiveOverrides — the complete override surface in ONE place (admin
  * advocacy #13): what is overridden right now, by whom, since when. Before
@@ -5,7 +6,7 @@
  * CurriculumBrowser and attestations lived on a per-learner Repair panel —
  * "what is overridden" meant expanding every unit for every kid.
  */
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
@@ -14,6 +15,7 @@ import { useActorName } from "../useActorName.js";
 import { labelize } from "../labelize.js";
 
 export default function ActiveOverrides({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   // Learners by the roster's kid names, grown-ups by the teacher roster's.
   const actorName = useActorName();

@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * BookScanEntry — what the panel does when a book's barcode arrives.
  *
@@ -51,11 +52,11 @@ function ScanOffer({ book, confirmExit, onOpen, onDismiss }) {
           </p>
         )}
         <div className="school-book-scan__notice-actions">
-          <button type="button" className="school-book-scan__open"
+          <SchoolButton variant="plain" type="button" className="school-book-scan__open"
             onClick={() => (confirmExit ? trigger() : onOpen())}>
             {armed ? 'Yes, open it' : 'Open it'}
-          </button>
-          <button type="button" className="school-books__back" onClick={onDismiss}>Dismiss</button>
+          </SchoolButton>
+          <SchoolButton variant="plain" type="button" className="school-books__back" onClick={onDismiss}>Dismiss</SchoolButton>
         </div>
       </div>
     </aside>
@@ -114,7 +115,7 @@ export default function BookScanEntry({ screenId, safe, roster, onLaunch, onOpen
             <p>Who&apos;s reading this?</p>
             <LearnerChoice roster={roster} busy={claiming} onChoose={claim} />
           </>}
-          <button type="button" className="school-books__back" onClick={dismiss}>Dismiss</button>
+          <SchoolButton variant="plain" type="button" className="school-books__back" onClick={dismiss}>Dismiss</SchoolButton>
         </div>
       </div>
     </div>

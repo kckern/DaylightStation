@@ -295,15 +295,19 @@ motion opens immediately. The accessible name is "Open <name>'s rewards".
 
 **Preloaded memory.** `rewards/useRewardsCache.js` starts while School loads,
 using one roster earnings preview, one shared gem read, weekly ring gates and
-one wallet per learner. It polls each minute while visible, coalesces relevant
-school and state-gate events, and refreshes on visibility. Reads have a 15-second
-deadline. Chests become available after their first preload batch settles.
+one wallet per learner. The board and rewards share the surface-scoped
+authoritative ring-gate resource. Common invalidation coalesces relevant school
+and state-gate events, and repairs missed updates on visibility and reconnect.
+Reads have a 15-second deadline. Chests become available after their first preload batch settles.
 Failed reads retain good memory; unknown values stay unknown, and a new week's
 silver is never combined with an old gem board or a failed old ring total.
-This is memory for the page lifetime, not browser-persisted reward balances.
+Each field exposes its last successful verification time, stale flag, and error;
+a failed refresh never restamps retained values as freshly verified. The complete
+snapshot timestamp advances only when every field is verified. This is memory
+owned by the surface, not browser-persisted reward balances.
 
 **One prepared view.** Opening performs no data requests. The modal receives
-and locks a personal snapshot: background polling can update memory without
+and locks a personal snapshot: background refreshes can update memory without
 changing its numbers, categories or size. A later opening sees newer memory.
 The header features the selected child's existing profile avatar, reusing the
 same portrait URL as the day board. Empty gem slots and labels are omitted:

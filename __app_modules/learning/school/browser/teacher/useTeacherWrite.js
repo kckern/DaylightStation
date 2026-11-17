@@ -18,24 +18,39 @@ export function useTeacherWrite({ panel }) {
   const [busy, setBusy] = useState(null);
   const [errors, setErrors] = useState({});
   const pendingClaimRef = useRef(null);
+  const writingRef = useRef(false);
+  const liveRef = useRef(true);
+  const actorRef = useRef(currentTeacher?.id); actorRef.current = currentTeacher?.id;
+  useEffect(() => { liveRef.current = true; return () => { liveRef.current = false; }; }, []);
 
-  const attempt = useCallback(async (key, call, onSuccess) => {
+  const attempt = useCallback(async (key, call, onSuccess, source = 'request') => {
     const actorId = currentTeacher?.id;
-    if (!actorId) return false;
-    setBusy(key);
-    setErrors((value) => ({ ...value, [key]: null }));
-    const { ok, status, data } = await call({ actorId });
-    setBusy(null);
+    if (!actorId || writingRef.current) return false;
+    writingRef.current = true;
+    setBusy(key); setErrors(value => ({...value,[key]:null}));
+    let response;
+    try { response = await call({actorId}); }
+    catch {
+      if (liveRef.current && actorRef.current === actorId) {
+        setErrors(value => ({...value,[key]:'That did not save — try again.'}));
+        teacherLog.writeRefused(`${source}-failed`, {panel,key,actorId,errorKind:'exception'});
+      }
+      return false;
+    } finally {
+      writingRef.current = false;
+      if (liveRef.current) setBusy(null);
+    }
+    if (!liveRef.current || actorRef.current !== actorId) return false;
+    const {ok,status,data}=response ?? {};
     if (ok) {
-      teacherLog.write('saved', { panel, key, actorId });
-      onSuccess?.(data);
+      teacherLog.write('saved',{panel,key,actorId});
+      try { onSuccess?.(data); } catch { teacherLog.writeRefused('callback-failed',{panel,key,actorId}); }
       return true;
     }
-    setErrors((value) => ({ ...value, [key]: responseMessage(data,
-      status === 403 ? 'That teacher isn’t allowed to make this change.' : 'That didn’t save — try again.') }));
-    teacherLog.writeRefused('refused', { panel, key, status, actorId });
+    setErrors(value=>({...value,[key]:responseMessage(data,status===403?'That teacher isn’t allowed to make this change.':'That didn’t save — try again.')}));
+    teacherLog.writeRefused('refused',{panel,key,status,actorId});
     return false;
-  }, [currentTeacher, panel]);
+  }, [currentTeacher,panel]);
 
   // `awaitClaim: true` makes a run blocked on the picker resolve only once
   // its replay has finished (or the stash is dropped, with false), so a
@@ -65,7 +80,7 @@ export function useTeacherWrite({ panel }) {
     if (!pending) return;
     if (currentTeacher) {
       pendingClaimRef.current = null;
-      attempt(pending.key, pending.call, pending.onSuccess)
+      attempt(pending.key, pending.call, pending.onSuccess, 'replay')
         .then((result) => pending.settle?.(result), (error) => {
           setBusy(null);
           teacherLog.writeRefused('replay-failed', { panel, key: pending.key, error: error?.message ?? String(error) });

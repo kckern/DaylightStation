@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * EnrichmentPanel — the enrichment log (wave 3, teacher.enrichment.log):
  * record out-of-band learning (educational travel, museums, projects) as
@@ -6,7 +8,7 @@
  * (wave 4) turns them into credit and pacing excusal.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -16,6 +18,7 @@ import { teacherDateRange } from "../teacherDates.js";
 const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [], kind: 'enrichment' };
 
 export default function EnrichmentPanel({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((kid) => kid.id === id)?.name ?? id;
   const entries = usePanelFetch(() => schoolApi.enrichment(), {
     panel: 'enrichment',
@@ -56,13 +59,13 @@ export default function EnrichmentPanel({ kids = [] }) {
                     {(e.learnerIds ?? []).map(nameFor).join(', ')}{(e.subjectIds ?? []).length ? ` · ${(e.subjectIds ?? []).map(subjectLabel).join(', ')}` : ''}
                   </span>
                   {e.note && <span className="teacher-enrichment__note">{e.note}</span>}
-                  <button type="button" disabled={busy === `retract:${e.id}`} onClick={() => retract(e)}>Retract</button>
+                  <SchoolButton variant="plain" type="button" disabled={busy === `retract:${e.id}`} onClick={() => retract(e)}>Retract</SchoolButton>
                   {errors[`retract:${e.id}`] && <p className="teacher-panel__error">{errors[`retract:${e.id}`]}</p>}
                 </li>
               ))}
             </ul>
           )}
-          {!open && <button type="button" className="teacher-assignments__edit" onClick={() => setOpen(true)}>Record enrichment</button>}
+          {!open && <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={() => setOpen(true)}>Record enrichment</SchoolButton>}
           {open && (
             <div className="teacher-enrichment__form">
               <div className="teacher-enrichment__picks">
@@ -98,8 +101,8 @@ export default function EnrichmentPanel({ kids = [] }) {
               </div>
               <textarea aria-label="Note" placeholder="What made it school?" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
               <div className="teacher-assignments__actions">
-                <button type="button" disabled={busy === 'save'} onClick={save}>Save</button>
-                <button type="button" onClick={() => { setOpen(false); setForm(EMPTY_FORM); }}>Cancel</button>
+                <SchoolButton variant="plain" type="button" disabled={busy === 'save'} onClick={save}>Save</SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => { setOpen(false); setForm(EMPTY_FORM); }}>Cancel</SchoolButton>
               </div>
               {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
             </div>

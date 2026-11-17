@@ -1,3 +1,6 @@
+import { useCardLadderAdminApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * CardLadderWordsPanel — a grown-up's word-by-word controls for one word-
  * ladder deck (task-5-brief.md; `__docs/reference/school/card-ladder.md`
@@ -24,7 +27,7 @@ import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
 import PanelFrame from "./PanelFrame.jsx";
-import { cardLadderAdminApi } from "../cardLadderAdminApi.js";
+
 import { humanDate } from "../teacherDates.js";
 import { labelize } from "../labelize.js";
 import { isCardLadderPolicy } from "../../Programs/Flashcards/CardLadder/cardLadderMode.js";
@@ -61,7 +64,7 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
   const dontKnow = answer.judge === 'dont-know' || !String(answer.typed ?? '').trim();
   return (
     <li className="teacher-card-ladder__typed">
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="teacher-card-ladder__typed-toggle"
         aria-expanded={open}
@@ -69,7 +72,7 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
         title={`${answer.score != null ? `score ${answer.score}` : 'unscored'} · ${answer.reason ?? ''}`}
       >
         {answer.day} · {dontKnow ? 'Don\u2019t know' : `“${answer.typed}”`}{answer.regraded ? ' (re-graded)' : ''}
-      </button>
+      </SchoolButton>
       {open && (
         <div className="teacher-card-ladder__typed-detail">
           <p>
@@ -77,8 +80,8 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
             {answer.reason ? ` — ${answer.reason}` : ''}
           </p>
           {!dontKnow && <div className="teacher-action-row">
-            <button type="button" aria-label={`Pass ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</button>
-            <button type="button" aria-label={`Fail ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</button>
+            <SchoolButton variant="plain" type="button" aria-label={`Pass ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</SchoolButton>
+            <SchoolButton variant="plain" type="button" aria-label={`Fail ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</SchoolButton>
           </div>}
           {error && <p className="teacher-panel__error">{error}</p>}
         </div>
@@ -120,6 +123,7 @@ function DictationSummary({ dictation, words }) {
 }
 
 function WordRow({ word, learnerId, deckId, run, busy, errors }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   const [stagePick, setStagePick] = useState(String(word.stage ?? 0));
   // Every write re-reads the table, and a refetch can change this word's
   // stage out from under a picker nobody has touched yet (a Reset from a
@@ -198,26 +202,26 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
         <div className="teacher-action-row">
           {resetArmed ? (
             <>
-              <button type="button" aria-label={`Confirm reset ${term}`} disabled={busy === resetKey} onClick={reset}>Confirm reset</button>
-              <button type="button" aria-label={`Cancel reset ${term}`} onClick={() => setResetArmed(false)}>Cancel</button>
+              <SchoolButton variant="plain" type="button" aria-label={`Confirm reset ${term}`} disabled={busy === resetKey} onClick={reset}>Confirm reset</SchoolButton>
+              <SchoolButton variant="plain" type="button" aria-label={`Cancel reset ${term}`} onClick={() => setResetArmed(false)}>Cancel</SchoolButton>
             </>
           ) : (
-            <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={() => setResetArmed(true)}>Reset</button>
+            <SchoolButton variant="plain" type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={() => setResetArmed(true)}>Reset</SchoolButton>
           )}
           <label className="teacher-card-ladder__stage-pick">
             Mastered stage
-            <select
+            <SchoolSelect
               aria-label={`Mastered stage for ${term}`}
               value={stagePick}
               onChange={(event) => setStagePick(event.target.value)}
             >
               {STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
-            </select>
+            </SchoolSelect>
           </label>
-          <button type="button" aria-label={`Mark ${term} mastered`} disabled={busy === masteredKey} onClick={markMastered}>Mark mastered</button>
-          <button type="button" aria-label={`${word.excluded ? 'Include' : 'Exclude'} ${term}`} disabled={busy === excludeKey} onClick={toggleExclude}>
+          <SchoolButton variant="plain" type="button" aria-label={`Mark ${term} mastered`} disabled={busy === masteredKey} onClick={markMastered}>Mark mastered</SchoolButton>
+          <SchoolButton variant="plain" type="button" aria-label={`${word.excluded ? 'Include' : 'Exclude'} ${term}`} disabled={busy === excludeKey} onClick={toggleExclude}>
             {word.excluded ? 'Include' : 'Exclude'}
-          </button>
+          </SchoolButton>
         </div>
         {rowError && <p className="teacher-panel__error">{rowError}</p>}
       </td>
@@ -234,6 +238,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
  * they can't be dropped, not silently hidden.
  */
 function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, deckLabel, run, busy, errors }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   if (!decksSeen?.length) return null;
   const droppable = new Set(droppableDecks ?? []);
   const key = (id) => `drop-deck:${id}`;
@@ -248,7 +253,7 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, deckLabel, run
           <li key={id}>
             <span>{deckLabel(id)}</span>
             {droppable.has(id) ? (
-              <button type="button" aria-label={`Drop ${deckLabel(id)} from pool`} disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</button>
+              <SchoolButton variant="plain" type="button" aria-label={`Drop ${deckLabel(id)} from pool`} disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</SchoolButton>
             ) : (
               <span className="teacher-muted">{id === deckId ? 'current' : 'assigned'}</span>
             )}
@@ -276,7 +281,7 @@ function AppliedChange({ change, day, onUndo, busy, error, nameOf }) {
       {change.undone ? (
         <span className="teacher-muted"> · undone {humanDate(change.undone.day) ?? change.undone.day} by {nameOf(change.undone.actorId)}</span>
       ) : change.undoable ? (
-        <button type="button" aria-label={`Undo ${what} on ${humanDate(day) ?? day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</button>
+        <SchoolButton variant="plain" type="button" aria-label={`Undo ${what} on ${humanDate(day) ?? day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</SchoolButton>
       ) : null}
       {error && <p className="teacher-panel__error">{error}</p>}
     </li>
@@ -290,6 +295,7 @@ function AppliedChange({ change, day, onUndo, busy, error, nameOf }) {
  * Its own fetch: a tuning read that fails must not take the word table with it.
  */
 function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameOf }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   const record = usePanelFetch(() => cardLadderAdminApi.tuning(learnerId, deckId, actorId), {
     deps: [learnerId, deckId, actorId],
     panel: `${PANEL}:tuning`,
@@ -383,6 +389,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
  *   learner's other card-ladder enrollments, so the new-word pool names them.
  */
 export default function CardLadderWordsPanel({ learnerId, deckId, title = null, deckTitles = {} }) {
+  const cardLadderAdminApi = useCardLadderAdminApi();
   // The GET is teacher-gated: TeacherGate.assert checks isAdult(userId), so
   // an actorId-less read is refused with a 403. `useTeacherProfileOptional`
   // (not the throwing `useTeacherProfile`) because a fetch, unlike a write,

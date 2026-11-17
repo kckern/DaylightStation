@@ -1,3 +1,4 @@
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 /**
  * ReadingSessionScreen — the `school-reading` widget on the living-room TV.
  *
@@ -174,7 +175,7 @@ export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCo
   );
 
   return (
-    <SurroundFrame
+    <SchoolSurfaceProvider surfaceId="reading" density="touch"><SurroundFrame
       active
       data={data}
       contentId={contentId}
@@ -199,7 +200,7 @@ export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCo
            can see that it is inside a frame. */
         forceShader="focused"
       />
-    </SurroundFrame>
+    </SurroundFrame></SchoolSurfaceProvider>
   );
 }
 
@@ -769,9 +770,9 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   if (view === 'idle') {
     if (!notice) return null;
     return (
-      <div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
+      <SchoolSurfaceProvider surfaceId="reading" density="touch"><div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
         <Notice notice={notice} compact />
-      </div>
+      </div></SchoolSurfaceProvider>
     );
   }
   if (view === 'playing') return null;
@@ -782,7 +783,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     : 0;
 
   return (
-    <div className={`reading-session reading-session--${view}`} data-testid="reading-session" data-view={view}>
+    <SchoolSurfaceProvider surfaceId="reading" density="touch"><div className={`reading-session reading-session--${view}`} data-testid="reading-session" data-view={view}>
       <Notice notice={notice} />
 
       {view === 'picking' && pick ? (
@@ -877,7 +878,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
           <h1 className="reading-session__ask">Finishing up…</h1>
         </div>
       ) : null}
-    </div>
+    </div></SchoolSurfaceProvider>
   );
 }
 

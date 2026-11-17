@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * QuizRequestBacklog — units children flagged as quiz-gated with no bank,
  * plus kid-filed retake asks (kind:'retake') and flags. The backlog shrinks two ways
@@ -10,12 +12,13 @@
  * left are legacy and clear like any other.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
 
 export default function QuizRequestBacklog({ kids, onChanged }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests', notFoundAs: 'unavailable' });
   // A degraded/older endpoint must leave this auxiliary panel empty, never
@@ -66,15 +69,15 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
                     onChange={(e) => setReason(e.target.value)}
                     maxLength={240}
                   />
-                  <button type="button" disabled={busy === key || !reason.trim()} onClick={() => dismiss(r, key)}>
+                  <SchoolButton variant="plain" type="button" disabled={busy === key || !reason.trim()} onClick={() => dismiss(r, key)}>
                     Dismiss &amp; tell them
-                  </button>
-                  <button type="button" onClick={() => { setAsking(null); setReason(''); }}>Cancel</button>
+                  </SchoolButton>
+                  <SchoolButton variant="plain" type="button" onClick={() => { setAsking(null); setReason(''); }}>Cancel</SchoolButton>
                 </span>
               ) : (
-                <button type="button" disabled={busy === key} onClick={() => { setAsking(key); setReason(''); }}>
+                <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={() => { setAsking(key); setReason(''); }}>
                   Dismiss…
-                </button>
+                </SchoolButton>
               )}
               {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
             </li>

@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * StaleSessions — sessions that never came back (admin advocacy A5): the
  * roster-wide `GET /lifecycle/sessions/stale` read, with a gated one-tap
@@ -20,7 +22,7 @@
  * review read finds unmarked items — the honest reason it is still open.
  */
 import { useEffect, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherLog } from "../teacherLog.js";
@@ -37,6 +39,7 @@ import { teacherSessionPath, teacherSectionPath } from "../teacherUrl.js";
  * settle link), never a second error state competing with the row's own.
  */
 function PendingReviewCount({ sessionId }) {
+  const schoolApi = useSchoolApi();
   const [waiting, setWaiting] = useState(null);
 
   useEffect(() => {
@@ -56,7 +59,7 @@ function PendingReviewCount({ sessionId }) {
       teacherLog.fetchError('session-review-threw', { sessionId, error: err?.message });
     });
     return () => { alive = false; };
-  }, [sessionId]);
+  }, [sessionId, schoolApi]);
 
   if (!waiting) return null;
   return (
@@ -72,6 +75,7 @@ function PendingReviewCount({ sessionId }) {
 const STALE_AFTER_DAYS = 3;
 
 export default function StaleSessions({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const stale = usePanelFetch(() => schoolApi.staleSessions(STALE_AFTER_DAYS), {
     panel: 'stale-sessions',
@@ -115,15 +119,15 @@ export default function StaleSessions({ kids = [] }) {
                   onChange={(e) => setReason(e.target.value)}
                   maxLength={240}
                 />
-                <button type="button" disabled={busy === row.sessionId || !reason.trim()} onClick={() => abandon(row)}>
+                <SchoolButton variant="plain" type="button" disabled={busy === row.sessionId || !reason.trim()} onClick={() => abandon(row)}>
                   Close it out
-                </button>
-                <button type="button" onClick={() => { setAsking(null); setReason(''); }}>Cancel</button>
+                </SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => { setAsking(null); setReason(''); }}>Cancel</SchoolButton>
               </span>
             ) : row.abandonable ? (
-              <button type="button" disabled={busy === row.sessionId} onClick={() => { setAsking(row.sessionId); setReason(''); }}>
+              <SchoolButton variant="plain" type="button" disabled={busy === row.sessionId} onClick={() => { setAsking(row.sessionId); setReason(''); }}>
                 Abandon…
-              </button>
+              </SchoolButton>
             ) : (
               // Not abandonable: the state machine settles this through
               // grading or close, not abandonment (`MarkSessionAbandoned`

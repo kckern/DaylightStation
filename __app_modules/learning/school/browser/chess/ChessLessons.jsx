@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { describeGame, createGame, legalDestinations, playMove } from "../../../../../__capabilities/gaming/portable/rulesets/chess/index.mjs";
 import { chooseMove } from "../../../../../__capabilities/gaming/portable/rulesets/chess/opponent.mjs";
@@ -32,13 +33,13 @@ function UnitList({ onOpen }) {
       <ol className="chess-lessons__unit-grid">
         {CHESS_UNITS.map((unit, index) => (
           <li key={unit.id}>
-            <button type="button" className="chess-lessons__unit" onClick={() => onOpen(unit.id)}>
+            <SchoolButton variant="plain" type="button" className="chess-lessons__unit" onClick={() => onOpen(unit.id)}>
               {/* The units are a sequence — each one assumes the one before it. */}
               <span className="chess-lessons__unit-index">{String(index + 1).padStart(2, '0')}</span>
               <span className="chess-lessons__unit-title">{unit.title}</span>
               <span className="chess-lessons__unit-summary">{unit.summary}</span>
               <span className="chess-lessons__unit-count">{unit.lessons.length} lessons</span>
-            </button>
+            </SchoolButton>
           </li>
         ))}
       </ol>
@@ -49,13 +50,13 @@ function UnitList({ onOpen }) {
 function LessonList({ unit, onOpen, onBack }) {
   return (
     <div className="chess-lessons__lessons">
-      <button type="button" className="chess-lessons__back" onClick={onBack}>← All units</button>
+      <SchoolButton variant="plain" type="button" className="chess-lessons__back" onClick={onBack}>← All units</SchoolButton>
       <h1 className="chess-lessons__title">{unit.title}</h1>
       <p className="chess-lessons__blurb">{unit.summary}</p>
       <ul className="chess-lessons__lesson-list">
         {unit.lessons.map((lesson) => (
           <li key={lesson.id}>
-            <button type="button" className="chess-lessons__lesson" onClick={() => onOpen(lesson.id)}>
+            <SchoolButton variant="plain" type="button" className="chess-lessons__lesson" onClick={() => onOpen(lesson.id)}>
               <span className={`chess-lessons__kind chess-lessons__kind--${lesson.kind}`}>
                 {LESSON_KINDS[lesson.kind]?.label ?? lesson.kind}
               </span>
@@ -64,7 +65,7 @@ function LessonList({ unit, onOpen, onBack }) {
               {lessonStatus(lesson) === 'outline' && (
                 <span className="chess-lessons__outline-flag">Outline</span>
               )}
-            </button>
+            </SchoolButton>
           </li>
         ))}
       </ul>
@@ -120,7 +121,7 @@ function LessonBoard({ lesson, onBack }) {
   return (
     <div className="chess-lessons__lesson-view">
       <div className="chess-lessons__lesson-head">
-        <button type="button" className="chess-lessons__back" onClick={onBack}>← {lesson.unitTitle}</button>
+        <SchoolButton variant="plain" type="button" className="chess-lessons__back" onClick={onBack}>← {lesson.unitTitle}</SchoolButton>
         <h1 className="chess-lessons__title">{lesson.title}</h1>
         <p className="chess-lessons__blurb">{lesson.summary}</p>
         {lessonStatus(lesson) === 'outline' && (
@@ -134,13 +135,13 @@ function LessonBoard({ lesson, onBack }) {
           <div><dt>Selected</dt><dd>{selected ?? '—'}</dd></div>
           <div><dt>Moves played</dt><dd>{game.moves.length}</dd></div>
         </dl>
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className="chess-lessons__reset"
           onClick={() => { setGame(createGame({ fen: lesson.fen })); setSelected(null); }}
         >
           Start over
-        </button>
+        </SchoolButton>
       </div>
       <ChessBoard
         fen={game.fen}

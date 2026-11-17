@@ -28,3 +28,11 @@ it('renders unavailable decks greyed and non-interactive', async () => {
   fireEvent.click(coming);
   expect(onLaunch).not.toHaveBeenCalled();
 });
+
+it('shows a retryable failure instead of an empty geography grid', async () => {
+  schoolApi.geoDecks.mockResolvedValueOnce({ ok: false, status: 503, data: null });
+  render(<GeographyGrid onLaunch={() => {}} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.t load/i);
+  fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+  expect(await screen.findByRole('button', { name: /US State Locations/i })).toBeInTheDocument();
+});

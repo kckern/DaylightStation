@@ -1,0 +1,85 @@
+import { test, expect } from '@playwright/test';
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 1024, height: 600 }, { width: 390, height: 844 }]) {
+  test(`real Portal layout, focus and commands at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.setViewportSize(viewport);
+    await page.route('**/api/**', route => new URL(route.request().url()).pathname.startsWith('/api/') ? route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }) : route.continue());
+    await page.goto('/tests/_fixtures/school/portal-design-system/');
+    await expect(page.getByRole('heading', { name: 'School studio' })).toBeVisible().catch(error => { throw new Error(`${errors.join('\n')}\n${error.message}`); });
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Saving' })).toBeDisabled();
+    const main = page.locator('[data-school-surface="main"]');
+    const panel = page.locator('[data-school-surface="panel"]');
+    for (const layout of ['workspace', 'focus', 'split', 'media', 'board']) {
+      await page.getByLabel('Layout', { exact: true }).selectOption(layout);
+      await expect(main.locator('.school-activity').first()).toHaveAttribute('data-layout', layout);
+      await expect.poll(async () => page.evaluate(() => {
+        const root = document.documentElement;
+        return root.scrollWidth <= innerWidth && root.scrollHeight <= innerHeight;
+      })).toBe(true);
+      const cell = await panel.boundingBox();
+      expect(cell.width).toBeLessThanOrEqual(320);
+      expect(cell.height).toBeLessThanOrEqual(240);
+      await page.screenshot({ path: testInfo.outputPath(`${viewport.width}x${viewport.height}-${layout}.png`), fullPage: true });
+    }
+    await page.getByLabel('Layout', { exact: true }).selectOption('workspace');
+    await main.getByRole('button', { name: 'Done', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    const focused = await page.evaluate(() => ({ tag: document.activeElement.tagName, outline: getComputedStyle(document.activeElement).outlineStyle }));
+    expect(['INPUT', 'BUTTON', 'SELECT']).toContain(focused.tag);
+    expect(focused.outline).not.toBe('none');
+    await page.getByLabel('Answer', { exact: true }).pressSequentially('sample');
+    await expect(page.getByLabel('Answer', { exact: true })).toHaveValue('sample');
+    await expect(main.locator('.school-typing__char.is-correct')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Submit', exact: true }).click();
+    await expect(page.getByLabel('Submissions', { exact: true })).toHaveText('1');
+    await main.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(page.getByLabel('Exits', { exact: true })).toHaveText('1');
+    await page.keyboard.press('F8');
+    await expect(page.getByLabel('Main commands', { exact: true })).toHaveText('1');
+    await main.getByRole('button', { name: 'Rewards', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(panel.getByRole('button', { name: 'Activate panel' })).toBeFocused();
+    expect(await panel.getByRole('button', { name: 'Activate panel' }).evaluate(element => getComputedStyle(element).outlineStyle)).toBe('solid');
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}x${viewport.height}-keyboard-focus.png`), fullPage: true });
+    await panel.getByRole('button', { name: 'Activate panel' }).click();
+    await page.keyboard.press('F8');
+    await expect(page.getByLabel('Panel commands', { exact: true })).toHaveText('1');
+    await expect(page.getByLabel('Main commands', { exact: true })).toHaveText('1');
+    await main.getByRole('button', { name: 'Rewards', exact: true }).click();
+    const dialog = main.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const hostRect = await main.boundingBox(), dialogRect = await dialog.boundingBox();
+    expect(dialogRect.x).toBeGreaterThanOrEqual(hostRect.x - 1);
+    expect(dialogRect.y).toBeGreaterThanOrEqual(hostRect.y - 1);
+    expect(dialogRect.width).toBeLessThanOrEqual(hostRect.width + 1);
+    expect(dialogRect.height).toBeLessThanOrEqual(hostRect.height + 1);
+    await page.keyboard.press('F8');
+    await expect(page.getByLabel('Main commands', { exact: true })).toHaveText('1');
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}x${viewport.height}-scoped-rewards.png`), fullPage: true });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Rewards', exact: true })).toBeFocused();
+    await main.getByRole('button', { name: 'Done', exact: true }).focus();
+    await page.keyboard.type('asd');
+    await expect(main.locator('.school-typing__char.is-correct')).toHaveCount(3);
+    await page.getByLabel('Activity', { exact: true }).selectOption('board');
+    const board = main.locator('.wl-stage');
+    await expect(board).toBeVisible();
+    const stageRect = await board.boundingBox();
+    const stageFrameRect = await main.locator('.wl-stage-frame').boundingBox();
+    expect(stageRect.width).toBeLessThanOrEqual(stageFrameRect.width + 1);
+    expect(stageRect.height).toBeLessThanOrEqual(stageFrameRect.height + 1);
+    expect(stageRect.y).toBeGreaterThanOrEqual(stageFrameRect.y - 1);
+    expect(stageRect.y + stageRect.height).toBeLessThanOrEqual(stageFrameRect.y + stageFrameRect.height + 1);
+    const clip = await main.locator('.school-activity__content').boundingBox();
+    const firstTile = await main.locator('.fixture-board > span').first().boundingBox();
+    const lastTile = await main.locator('.fixture-board > span').last().boundingBox();
+    expect(firstTile.y).toBeGreaterThanOrEqual(clip.y - 1);
+    expect(lastTile.y + lastTile.height).toBeLessThanOrEqual(clip.y + clip.height + 1);
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}x${viewport.height}-fixed-stage.png`), fullPage: true });
+    expect(errors).toEqual([]);
+  });
+}

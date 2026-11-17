@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../portal/useSchoolCommands.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Keypad — the locked panel's idle screen (design §3).
  *
@@ -391,8 +393,9 @@ export default function Keypad({
   // SchoolApp, so typing can never leak into a runner or an open School page.
   // Preventing default on Enter also avoids activating whichever touch button
   // happened to retain focus after the child last used the screen.
-  useEffect(() => {
-    const onKeyDown = (event) => {
+  useSchoolCommandListener((event) => {
+
+
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
@@ -411,10 +414,8 @@ export default function Keypad({
         noteActivity();
         submit();
       }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [backspace, noteActivity, press, submit]);
+
+});
 
   // `submit` is recreated on every keystroke (it closes over `entry`), so
   // routing the auto-submit timer through a ref — rather than depending on
@@ -524,7 +525,7 @@ export default function Keypad({
 
       <div className="school-selfservice__pad">
         {DIGITS.map((digit) => (
-          <button
+          <SchoolButton variant="plain"
             key={digit}
             type="button"
             className="school-selfservice__key"
@@ -532,17 +533,17 @@ export default function Keypad({
             {...tap(() => press(digit))}
           >
             {digit}
-          </button>
+          </SchoolButton>
         ))}
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className="school-selfservice__key school-selfservice__key--clear"
           disabled={busy}
           {...tap(clearEntry)}
         >
           Clear
-        </button>
-        <button
+        </SchoolButton>
+        <SchoolButton variant="plain"
           key="0"
           type="button"
           className="school-selfservice__key"
@@ -550,8 +551,8 @@ export default function Keypad({
           {...tap(() => press('0'))}
         >
           0
-        </button>
-        <button
+        </SchoolButton>
+        <SchoolButton variant="plain"
           type="button"
           className="school-selfservice__key school-selfservice__key--back"
           disabled={busy}
@@ -559,7 +560,7 @@ export default function Keypad({
           {...tap(backspace)}
         >
           ⌫
-        </button>
+        </SchoolButton>
       </div>
 
       {/* The outage band sits UNDER the keys and is sized to its content, so
@@ -590,18 +591,18 @@ export default function Keypad({
           </p>
         )}
         {degraded && onRetry && (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-selfservice__retry"
             disabled={busy}
             {...tap(handleRetry)}
           >
             Try again
-          </button>
+          </SchoolButton>
         )}
       </div>
 
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className={`school-selfservice__screen-off${screenOffArmed ? ' is-armed' : ''}`}
         aria-live="polite"
@@ -615,7 +616,7 @@ export default function Keypad({
       >
         <Icon name="power" className="school-selfservice__screen-off-icon" />
         <span>{screenOffArmed ? 'Tap again' : 'Turn off screen'}</span>
-      </button>
+      </SchoolButton>
       <p className="school-selfservice__screen-off-status" role="status">
         {screenOffFailure ?? ''}
       </p>

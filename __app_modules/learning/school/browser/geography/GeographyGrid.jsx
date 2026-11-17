@@ -1,8 +1,11 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** Topic grid for the geography section. Tiles come from GET /geography/decks;
  *  available tiles launch a drill via onLaunch (which enforces identity —
  *  never open a session directly here). Unavailable tiles are greyed. */
-import { useEffect, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+import { useSchoolResource } from '../runtime/useSchoolResource.js';
+import { useSchoolSurface } from '../portal/SchoolSurface.jsx';
+
 import Icon from "../home/icons/Icon.jsx";
 
 const iconFor = (deckId) => {
@@ -14,24 +17,29 @@ const iconFor = (deckId) => {
 };
 
 export default function GeographyGrid({ onLaunch }) {
-  const [decks, setDecks] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    schoolApi.geoDecks().then(({ ok, data }) => {
-      if (alive) setDecks(ok && Array.isArray(data?.decks) ? data.decks : []);
-    });
-    return () => { alive = false; };
-  }, []);
+  const schoolApi = useSchoolApi();
+  const { surfaceId, deviceId, resourceStore } = useSchoolSurface();
+  const resource = useSchoolResource({
+    key: [surfaceId, deviceId, 'geography', 'decks'], store: resourceStore,
+    load: async () => {
+      const result = await schoolApi.geoDecks();
+      return result?.ok && !Array.isArray(result.data?.decks)
+        ? { ...result, ok: false, error: { kind: 'invalid-data' } } : result;
+    },
+    isEmpty: data => !data.decks.length,
+  });
+  const decks = resource.data?.decks ?? [];
+  if (resource.state === 'loading') return <div className="school-geo-grid" data-testid="geo-grid-loading">Loading…</div>;
+  if (resource.error) return <div className="school-geo-grid"><p role="alert">Couldn’t load geography decks.</p><SchoolButton onClick={resource.retry}>Try again</SchoolButton></div>;
 
-  if (decks === null) return <div className="school-geo-grid" data-testid="geo-grid-loading">Loading…</div>;
   return (
     <div className="school-geo-grid">
       {decks.map((d) => (d.available ? (
-        <button key={d.deckId} type="button" className="school-geo-tile"
+        <SchoolButton variant="plain" key={d.deckId} type="button" className="school-geo-tile"
           onClick={() => onLaunch({ id: d.bankId, title: d.title, audience: 'generic' }, 'drill')}>
           <Icon name={iconFor(d.deckId)} className="school-geo-tile__icon" />
           <span className="school-geo-tile__label">{d.title}</span>
-        </button>
+        </SchoolButton>
       ) : (
         <div key={d.deckId} className="school-geo-tile school-geo-tile--soon" aria-disabled="true">
           <Icon name={iconFor(d.deckId)} className="school-geo-tile__icon" />

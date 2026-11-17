@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Materials catalog grid (spec §2b/§3). Pure presentation: one tile per
  * material -- poster (or a text placeholder when no poster ships), title,
@@ -44,7 +45,7 @@ export default function MaterialGrid({ materials, onSelect }) {
           const meta = formatMeta(m);
           const square = m.kind === 'collection';
           return (
-            <button
+            <SchoolButton variant="plain"
               key={m.id}
               type="button"
               className={`school-materials__tile${square ? ' school-materials__tile--square' : ''}`}
@@ -65,7 +66,7 @@ export default function MaterialGrid({ materials, onSelect }) {
               )}
               <h3 className="school-materials__title">{m.title}</h3>
               {meta && <p className="school-materials__meta">{meta}</p>}
-            </button>
+            </SchoolButton>
           );
         })}
       </div>

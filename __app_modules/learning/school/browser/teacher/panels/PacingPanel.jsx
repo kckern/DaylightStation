@@ -1,16 +1,18 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
 /**
  * PacingPanel — the on-screen progress report (wave 4, spec C2/C5): paced
  * milestones where enrichment days EXCUSE lateness (never delinquency), the
  * period's enrichment entries as their own credit section, and the printable
  * PDF link rendering the same read model.
  */
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate, teacherDateRange } from "../teacherDates.js";
 
 export default function PacingPanel({ learnerId, periodId }) {
+  const schoolApi = useSchoolApi();
   const report = usePanelFetch(() => schoolApi.progressReport({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'progress-report',

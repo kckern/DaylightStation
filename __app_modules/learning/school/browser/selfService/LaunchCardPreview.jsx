@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * LaunchCardPreview — a grown-up opening a launch card from a link.
  *
@@ -22,12 +23,13 @@
  */
 import { useEffect, useState } from 'react';
 import LaunchCard from "./LaunchCard.jsx";
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 
 const UNREACHABLE = 'The school computer is not answering the preview. Try again in a minute.';
 
 export default function LaunchCardPreview({ link, onExit }) {
+  const schoolApi = useSchoolApi();
   const [state, setState] = useState({ status: 'loading', card: null, sentence: null });
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export default function LaunchCardPreview({ link, onExit }) {
       });
     })();
     return () => { live = false; };
-  }, [link]);
+  }, [link, schoolApi]);
 
   if (state.status === 'loading') {
     return (

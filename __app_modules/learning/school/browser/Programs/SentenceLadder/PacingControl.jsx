@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import Popover from "./Popover.jsx";
 
 /**
@@ -20,7 +21,7 @@ export default function PacingControl({ value, onChange }) {
         <ul className="lang-menu" role="none">
           {STEPS.map((step) => (
             <li key={step} role="none">
-              <button
+              <SchoolButton variant="plain"
                 type="button"
                 role="menuitemradio"
                 aria-checked={step === value}
@@ -28,7 +29,7 @@ export default function PacingControl({ value, onChange }) {
                 onClick={() => { close(); if (step !== value) onChange(step); }}
               >
                 {step}
-              </button>
+              </SchoolButton>
             </li>
           ))}
         </ul>

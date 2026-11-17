@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * MilestonesPanel — expected-progress targets for the selected learner
  * (wave 3, teacher.milestones): status chips derived server-side (met /
@@ -5,7 +8,7 @@
  * learner-scoped; siblings' milestones are untouched).
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -13,6 +16,7 @@ import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate } from "../teacherDates.js";
 
 export default function MilestonesPanel({ learnerId }) {
+  const schoolApi = useSchoolApi();
   const statuses = usePanelFetch(() => schoolApi.milestones(learnerId), {
     deps: [learnerId],
     panel: 'milestones',
@@ -73,7 +77,7 @@ export default function MilestonesPanel({ learnerId }) {
             </ul>
           )}
           {catalog.state === 'ok' && (
-            <button type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit milestones</button>
+            <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit milestones</SchoolButton>
           )}
         </>
       )}
@@ -81,17 +85,17 @@ export default function MilestonesPanel({ learnerId }) {
         <div className="teacher-milestones__editor">
           {draft.map((row, i) => (
             <div key={row.id} className="teacher-periods__editrow">
-              <select aria-label={`Unit ${i}`} value={row.unitId} onChange={(e) => patch(i, 'unitId', e.target.value)}>
+              <SchoolSelect aria-label={`Unit ${i}`} value={row.unitId} onChange={(e) => patch(i, 'unitId', e.target.value)}>
                 {units.map((u) => <option key={u.unitId} value={u.unitId}>{titles.lesson(u.unitId)}</option>)}
-              </select>
+              </SchoolSelect>
               <input aria-label={`Due ${i}`} type="date" value={row.dueBy} onChange={(e) => patch(i, 'dueBy', e.target.value)} />
-              <button type="button" onClick={() => setDraft((d) => d.filter((_, idx) => idx !== i))}>Remove</button>
+              <SchoolButton variant="plain" type="button" onClick={() => setDraft((d) => d.filter((_, idx) => idx !== i))}>Remove</SchoolButton>
             </div>
           ))}
-          <button type="button" onClick={addRow}>Add milestone</button>
+          <SchoolButton variant="plain" type="button" onClick={addRow}>Add milestone</SchoolButton>
           <div className="teacher-assignments__actions">
-            <button type="button" disabled={busy === 'save'} onClick={save}>Save</button>
-            <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+            <SchoolButton variant="plain" type="button" disabled={busy === 'save'} onClick={save}>Save</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={() => setEditing(false)}>Cancel</SchoolButton>
           </div>
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
         </div>

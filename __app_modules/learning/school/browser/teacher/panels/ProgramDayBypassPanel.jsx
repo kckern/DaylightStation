@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * ProgramDayBypassPanel — "today's piano lesson shouldn't be required": a
  * grown-up excusing ONE learner's program obligation for ONE study day.
@@ -15,7 +17,7 @@
  * `useTeacherWrite` like every other console mutation.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -32,6 +34,7 @@ function statusLine(gate) {
 }
 
 export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
+  const schoolApi = useSchoolApi();
   const log = usePanelFetch(() => schoolApi.programDayBypasses(learnerId), {
     deps: [learnerId], panel: 'program-day-bypass', notFoundAs: 'unavailable',
   });
@@ -83,13 +86,13 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
               value={retractReason}
               onChange={(e) => setRetractReason(e.target.value)}
             />
-            <button
+            <SchoolButton variant="plain"
               type="button"
               disabled={busy === 'retract' || !retractReason.trim()}
               onClick={retract}
             >
               Retract
-            </button>
+            </SchoolButton>
             {errors.retract && <p className="teacher-panel__error">{errors.retract}</p>}
           </li>
         </ul>
@@ -102,13 +105,13 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
             onChange={(e) => setReason(e.target.value)}
           />
           <div className="teacher-assignments__actions">
-            <button
+            <SchoolButton variant="plain"
               type="button"
               disabled={busy === 'grant' || !reason.trim()}
               onClick={grant}
             >
               Excuse today&rsquo;s piano lesson
-            </button>
+            </SchoolButton>
           </div>
           {errors.grant && <p className="teacher-panel__error">{errors.grant}</p>}
         </div>

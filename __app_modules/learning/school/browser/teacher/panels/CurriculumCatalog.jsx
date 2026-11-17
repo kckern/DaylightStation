@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { useLanguageApi } from '../../runtime/useSchoolFeatureApi.js';
 /**
  * CurriculumCatalog — the curriculum page's landing state: one card per
  * course, not one row per lesson. Lessons (and per-lesson pass overrides)
@@ -5,8 +7,8 @@
  * kills the tens-of-thousands-of-pixels flat render and its army of
  * identical Set forms (UX audit C10).
  */
-import { schoolApi } from "../../schoolApi.js";
-import { languageApi } from "../../Programs/SentenceLadder/languageApi.js";
+
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import SafeImg from "./SafeImg.jsx";
@@ -14,6 +16,8 @@ import { teacherBaseFor } from "../teacherUrl.js";
 import { passSummary } from "./curriculumPassSummary.js";
 
 export default function CurriculumCatalog() {
+  const schoolApi = useSchoolApi();
+  const languageApi = useLanguageApi();
   const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
     panel: 'curriculum-catalog',

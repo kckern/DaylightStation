@@ -1,3 +1,5 @@
+import { createSchoolEndpointClient } from '../runtime/schoolEndpointClient.js';
+
 /**
  * HTTP client for the parent-facing School admin surfaces.
  *
@@ -25,38 +27,25 @@ const enc = encodeURIComponent;
  * @returns {Promise<any>} parsed JSON body (null for 204)
  * @throws {Error & {status: number}} on any non-2xx or unparseable reply
  */
-async function call(url, { method = 'GET', body } = {}) {
-  let res;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch (cause) {
-    // Network-level failure: no status to report, but it is still not silent.
-    const err = new Error(cause?.message || 'Could not reach the server');
-    err.status = 0;
-    throw err;
+export function createSchoolAdminApi(options = {}) {
+  const client = createSchoolEndpointClient({ ...options, base: '' });
+  async function call(url, requestOptions = {}) {
+    const result = await client.request(url, { ...requestOptions, responseType: 'text' });
+    let parsed = null;
+    let valid = result.status === 204 || result.status === 205;
+    if (typeof result.data === 'string' && result.data.length) {
+      try { parsed = JSON.parse(result.data); valid = true; } catch { /* Refused below with its actual status. */ }
+    }
+    if (!result.ok || !valid) {
+      const detail = typeof parsed?.error === 'string' ? parsed.error : parsed?.error?.message;
+      const error = new Error(parsed?.message || detail || (!result.status ? 'Could not reach the server' : result.ok ? 'Invalid server response' : `HTTP ${result.status}`));
+      error.status = result.status;
+      throw error;
+    }
+    return parsed;
   }
 
-  const text = await res.text().catch(() => '');
-  let parsed = null;
-  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
-
-  if (!res.ok) {
-    // Two handler shapes exist: {error: string} (school router wrap) and
-    // {error: {type, message}} (app-level object shape) — never let an
-    // object reach Error's message ("[object Object]").
-    const detail = typeof parsed?.error === 'string' ? parsed.error : parsed?.error?.message;
-    const err = new Error(parsed?.message || detail || `HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
-  return parsed;
-}
-
-export const schoolAdminApi = {
+  return {
   /** Household roster: `[{ id, name, group_label, birthyear }]`. */
   roster: () => call(`${SCHOOL}/roster`),
 
@@ -124,4 +113,6 @@ export const schoolAdminApi = {
   ),
 };
 
+}
+export const schoolAdminApi = createSchoolAdminApi();
 export default schoolAdminApi;

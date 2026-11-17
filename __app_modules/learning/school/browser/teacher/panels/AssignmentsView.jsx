@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * AssignmentsView — what this learner is enrolled in, now EDITABLE (wave 3,
  * teacher.assignments.edit): courses and standalone units picked from the
@@ -7,7 +9,7 @@
  * hence PanelFrame's `alwaysRender`: the editable body survives empty/error.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -29,6 +31,7 @@ import {
  * one screen: a change there re-reads here, a save here is reported there.
  */
 export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0, onSaved }) {
+  const schoolApi = useSchoolApi();
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
     deps: [learnerId, refreshKey],
     panel: 'assignments',
@@ -146,7 +149,7 @@ export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0
           {/* Reading-program repair must not depend on the curriculum catalog.
               Existing course/unit ids remain visible as stale entries if that
               separate read is unavailable, and are preserved unless unchecked. */}
-          <button type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit assignments</button>
+          <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={startEditing}>Edit assignments</SchoolButton>
         </>
       )}
       {editing && (
@@ -228,8 +231,8 @@ export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0
             )}
           </fieldset>
           <div className="teacher-assignments__actions">
-            <button type="button" disabled={busy === 'save' || readingConflict} onClick={save}>Save</button>
-            <button type="button" onClick={() => setEditing(false)}>Cancel</button>
+            <SchoolButton variant="plain" type="button" disabled={busy === 'save' || readingConflict} onClick={save}>Save</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={() => setEditing(false)}>Cancel</SchoolButton>
           </div>
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
         </div>

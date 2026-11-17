@@ -29,16 +29,6 @@
 }
 
 .school-app {
-  --school-bg: #16161b;
-  --school-surface: #1f1f26;
-  --school-surface-2: #2a2a33;
-  --school-border: #34343f;
-  --school-fg: #f1f1f4;
-  --school-muted: #9a9aa6;
-  --school-accent: #2ec46f;
-  --school-accent-ink: #07210f;
-  --school-danger: #e05a4f;
-  --school-warn: #e0a83a;
   // The locked Portal's Today board is a wall fixture in its own warm palette
   // (cream on dark), not app chrome — so it gets named tokens rather than
   // reusing --school-accent, which is the interactive green and would make a
@@ -1605,16 +1595,16 @@
 
 .school-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center; min-height: 40vh;
+  gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center; min-height: min(20rem, 100%);
 }
 .school-empty__icon { font-size: 3rem; opacity: 0.5; }
-.school-empty__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
-.school-empty__hint { margin: 0; color: var(--school-muted); max-width: 34rem; }
+.school-empty__title, .school-empty .ds-state__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.school-empty__hint, .school-empty .ds-state__detail { margin: 0; color: var(--school-muted); max-width: 34rem; }
 .school-empty__action {
   margin-top: 0.6rem; min-height: 52px; padding: 0 1.4rem; border: none; border-radius: 12px;
   background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; cursor: pointer;
 }
-.school-empty--loading .school-empty__title { color: var(--school-muted); font-weight: 700; }
+.school-empty--loading .school-empty__title, .school-empty--loading .ds-state__title { color: var(--school-muted); font-weight: 700; }
 
 .school-home2__library-icon { margin-right: 0.4rem; vertical-align: -0.12em; }
 
@@ -1667,10 +1657,6 @@
 // slots and keys still sit ON something rather than glowing off a black field.
 // Scoped to the modifier: the browsable app keeps its own softer dark theme.
 .school-app--locked {
-  --school-bg: #000;
-  --school-surface: #0a0a0d;
-  --school-surface-2: #16161c;
-  --school-border: #2a2a33;
   background: #000;
 }
 .school-app--locked .school-app__body {

@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * SchoolMatrix — the bird's-eye view (admin advocacy A4): every learner ×
  * every published course on ONE grid, composed client-side from three reads
@@ -21,7 +23,7 @@
  * `refreshKey` / `onChanged` keep it in step with that tab's Assignments panel.
  */
 import { useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import EnrollmentDrawer from "./EnrollmentDrawer.jsx";
@@ -30,6 +32,7 @@ import { labelize } from "../labelize.js";
 import { deriveMatrix } from "./schoolMatrixModel.js";
 
 export default function SchoolMatrix({ kids, title = 'The whole school', learnerId = null, refreshKey = 0, onChanged }) {
+  const schoolApi = useSchoolApi();
   const assignments = usePanelFetch(() => schoolApi.allAssignments(), { deps: [refreshKey], panel: 'matrix-assignments' });
   const units = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'matrix-units', notFoundAs: 'unavailable' });
   const syllabi = usePanelFetch(() => schoolApi.syllabi(), { panel: 'matrix-syllabi', nullAs: 'empty' });
@@ -70,7 +73,7 @@ export default function SchoolMatrix({ kids, title = 'The whole school', learner
                   const cell = row.cells[id];
                   return (
                     <td key={row.learnerId} className={cell ? 'is-assigned' : ''}>
-                      <button
+                      <SchoolButton variant="plain"
                         type="button"
                         className="teacher-matrix__cell"
                         onClick={() => setOpen({ learnerId: row.learnerId, courseId: id })}
@@ -79,7 +82,7 @@ export default function SchoolMatrix({ kids, title = 'The whole school', learner
                         {cell
                           ? `${cell.syllabusTitle ?? 'Enrolled'}${cell.profile ? ` · ${cell.profile}` : ''}${(cell.hasEnrollment && !cell.managed) ? ' ⚑' : ''}`
                           : '—'}
-                      </button>
+                      </SchoolButton>
                     </td>
                   );
                 })}

@@ -1,5 +1,7 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { sectionForReport } from "../programs.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
@@ -64,6 +66,7 @@ function relativeDay(iso) {
 }
 
 export default function StudentPanel({ onOpen, bankTitles }) {
+  const schoolApi = useSchoolApi();
   const { currentUser, openPicker, roster, claim } = useSchoolProfile();
   const [reports, setReports] = useState(null);
   const [results, setResults] = useState(null);
@@ -100,7 +103,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
       setTodaySections(sections.length ? sections : null);
     });
     return () => { alive = false; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, schoolApi]);
 
   const model = useMemo(() => derivePanelModel(reports), [reports]);
   const score = useMemo(() => deriveLatestScore(results, bankTitles), [results, bankTitles]);
@@ -126,7 +129,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         {kids.length ? (
           <div className="school-rail__faces">
             {kids.map((u) => (
-              <button
+              <SchoolButton variant="plain"
                 key={u.id}
                 type="button"
                 className="school-rail__face"
@@ -134,13 +137,13 @@ export default function StudentPanel({ onOpen, bankTitles }) {
               >
                 <ProfileAvatar id={u.id} name={u.name} />
                 <span>{String(u.name).split(' ')[0]}</span>
-              </button>
+              </SchoolButton>
             ))}
           </div>
         ) : (
-          <button type="button" className="school-rail__claim" onClick={openPicker}>
+          <SchoolButton variant="plain" type="button" className="school-rail__claim" onClick={openPicker}>
             Choose your face
-          </button>
+          </SchoolButton>
         )}
       </section>
     );
@@ -151,7 +154,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
 
   return (
     <section className="school-rail__student">
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="school-rail__identity"
         onClick={() => onOpen('progress')}
@@ -160,10 +163,10 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         <ProfileAvatar id={currentUser.id} name={currentUser.name} />
         <span className="school-rail__name">{String(currentUser.name).split(' ')[0]}</span>
         <span className="school-rail__more">My progress ›</span>
-      </button>
+      </SchoolButton>
 
       {model.primary && (
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className={`school-rail__next${blocked ? ' is-blocked' : ''}`}
           onClick={primarySection ? () => onOpen(primarySection) : undefined}
@@ -181,7 +184,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
               {model.today.value} of {model.today.total} today
             </span>
           )}
-        </button>
+        </SchoolButton>
       )}
 
       {model.allDone && (

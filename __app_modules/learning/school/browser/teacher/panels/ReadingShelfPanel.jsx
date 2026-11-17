@@ -1,3 +1,5 @@
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * ReadingShelfPanel — a grown-up's view of one child's reading shelf
  * (teacher reading admin design §2 and §6).
@@ -24,7 +26,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useBookFacts } from "../useBookFacts.js";
@@ -84,6 +86,7 @@ const mintKey = () => `teacher-add-${Date.now()}-${Math.random().toString(36).sl
  * uses, so a malformed ISBN never costs a round trip.
  */
 function AddBookForLearner({ learnerId, items = [], onAdded }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const [open, setOpen] = useState(false);
   const [isbn, setIsbn] = useState('');
@@ -150,9 +153,9 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
   if (!open) {
     return (
       <div className="teacher-reading__add">
-        <button type="button" className="teacher-reading__add-open" onClick={() => setOpen(true)}>
+        <SchoolButton variant="plain" type="button" className="teacher-reading__add-open" onClick={() => setOpen(true)}>
           Add a book
-        </button>
+        </SchoolButton>
       </div>
     );
   }
@@ -182,20 +185,20 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
 
       <div className="teacher-reading__add-mode" role="group" aria-label="Tracking">
         <span>Tracking:</span>
-        <button type="button" aria-pressed={mode === 'check'} onClick={() => setModeChoice('check')}>Check-ins</button>
-        <button type="button" aria-pressed={mode === 'page'} onClick={() => setModeChoice('page')}>Pages</button>
+        <SchoolButton variant="plain" type="button" aria-pressed={mode === 'check'} onClick={() => setModeChoice('check')}>Check-ins</SchoolButton>
+        <SchoolButton variant="plain" type="button" aria-pressed={mode === 'page'} onClick={() => setModeChoice('page')}>Pages</SchoolButton>
       </div>
 
       <div className="teacher-reading__add-doors" role="group" aria-label="Where they are with it">
         {DOORS.filter((candidate) => candidate.where !== 'partway' || mode === 'page').map((candidate) => (
-          <button
+          <SchoolButton variant="plain"
             key={candidate.where}
             type="button"
             aria-pressed={shownWhere === candidate.where}
             onClick={() => setWhere(candidate.where)}
           >
             {candidate.label}
-          </button>
+          </SchoolButton>
         ))}
       </div>
 
@@ -224,8 +227,8 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
       )}
 
       <div className="teacher-reading__add-field">
-        <button type="button" disabled={!ready || busy === 'add-book'} onClick={submit}>Add this book</button>
-        <button type="button" onClick={close}>Cancel</button>
+        <SchoolButton variant="plain" type="button" disabled={!ready || busy === 'add-book'} onClick={submit}>Add this book</SchoolButton>
+        <SchoolButton variant="plain" type="button" onClick={close}>Cancel</SchoolButton>
       </div>
       {errors['add-book'] && <p className="teacher-panel__error">{errors['add-book']}</p>}
     </div>
@@ -322,14 +325,14 @@ function Reading({ item, onOpen }) {
       </div>
       <p className="teacher-reading__row-progress">{progressLabel(item)}</p>
       {onOpen && (
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className="teacher-reading__row-open"
           aria-label={`Open ${presentation.title}`}
           onClick={() => onOpen(item.itemId)}
         >
           ⋯
-        </button>
+        </SchoolButton>
       )}
     </li>
   );
@@ -380,6 +383,7 @@ const isShelf = (data) => Boolean(data) && typeof data === 'object' && Array.isA
 export default function ReadingShelfPanel({
   learnerId, refreshToken = 0, onOpenReading = null, onShelf = null, onAdded = null,
 }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   // usePanelFetch reports the STATE, not the server's words; the sentence a
   // refusal came with is kept here so the error can name what happened
   // instead of saying only that something did.
@@ -402,7 +406,7 @@ export default function ReadingShelfPanel({
     }
     faultRef.current = null;
     return response;
-  }, [learnerId, actorId]);
+  }, [learnerId, actorId, teacherWorkspaceApi]);
 
   const { state, data, retry } = usePanelFetch(fetcher, {
     deps: [learnerId, refreshToken, actorId],

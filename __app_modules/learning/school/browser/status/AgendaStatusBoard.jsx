@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * AgendaStatusBoard — a read-only, at-a-glance board of every student's school
  * day: WHICH subjects are on the plan and which of them are done. The
@@ -70,7 +71,9 @@ import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvata
 import RingIcon from "../../../../../frontend/src/lib/icons/RingIcon.jsx";
 import Icon from "../home/icons/Icon.jsx";
 import { hasIcon } from "../home/icons/iconRegistry.js";
-import { schoolApi } from "../schoolApi.js";
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { useSchoolInvalidation } from '../runtime/useSchoolInvalidation.js';
+import { useSchoolRingGates } from './useSchoolRingGates.js';
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
@@ -178,14 +181,14 @@ function Disc({ segment, onOpen }) {
   const icon = <Icon name={iconFor(segment.subject, segment.icon)} label={labelForSegment(segment)} />;
   if (!onOpen) return icon;
   return (
-    <button
+    <SchoolButton variant="plain"
       type="button"
       className="school-status-board__pill-door"
       aria-label={`Open ${segment.label}`}
       onClick={() => onOpen(segment)}
     >
       {icon}
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -396,7 +399,7 @@ function GemDoor({ name, figure, studyDay, onOpen }) {
   const week = figureInWeek(figure, studyDay);
   const gems = week?.gems ?? 0;
   return (
-    <button
+    <SchoolButton variant="plain"
       type="button"
       className={`school-status-board__gems-door${gems > 0 ? '' : ' is-zero'}`}
       data-testid="board-gems-door"
@@ -405,7 +408,7 @@ function GemDoor({ name, figure, studyDay, onOpen }) {
     >
       <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
       {gems > 0 && <span className="school-status-board__figure school-status-board__figure--gem">{gems}</span>}
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -414,7 +417,9 @@ const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} si
 // School passes onOpenRewards: identical chest doors replace the legacy
 // coin/gem figures and public coin ceremony. Other consumers can retain the
 // explicit onOpenBank/onOpenGems controls described above.
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, onOpenRewards = null, rewardsReady = null, coinCeremony = null }) {
+const NO_KIDS = Object.freeze([]);
+export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, onOpenRewards = null, rewardsReady = null, coinCeremony = null }) {
+  const schoolApi = useSchoolApi(); const readGates = useSchoolRingGates();
   const [openingRewardsFor, setOpeningRewardsFor] = useState(null);
   useEffect(() => {
     if (openingRewardsFor && !kids.some(kid => kid.id === openingRewardsFor)) setOpeningRewardsFor(null);
@@ -530,7 +535,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     // Fired alongside the plans, never awaited by them. A failed or slow
     // State Gates read costs the ring numbers and nothing else — and a failed
     // RE-read keeps the numbers already on the card.
-    schoolApi.stateGates({ gateId: 'fitness.weekly-rings', periodKind: 'interval' })
+    readGates({ fresh: true })
       .then((res) => {
         if (!aliveRef.current) return;
         if (res?.ok) setRings(ringProgressByLearner(res.data));
@@ -538,7 +543,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       .catch((error) => {
         schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
       });
-  }, []);
+  }, [schoolApi, readGates]);
 
   // Earnings reads overlap (scans, school events, gate events and the coins
   // burst all fire one), so they can land out of order. Each is numbered and a
@@ -616,7 +621,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
         });
     }
-  }, [day, kids, onOpenRewards]);
+  }, [day, kids, onOpenRewards, schoolApi]);
 
   /**
    * Re-read the given learners (all of them when `learnerIds` is omitted).
@@ -717,7 +722,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       }
       shownDayRef.current = effectiveDay;
     });
-  }, [kids, day]);
+  }, [kids, day, schoolApi]);
 
   // First read, and again whenever the roster or the pinned day changes.
   useEffect(() => {
@@ -863,6 +868,10 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     refresh(learnerId ? [learnerId] : null);
   }, [rosterIds, refreshRings, refreshCoins, refresh, lookForGems]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
+  // Date-scoped event handling above stays local; shared repair covers missed
+  // notifications when the existing connection or the surface returns.
+  useSchoolInvalidation({ topics: [], events: [], refresh: () => { refresh(); refreshRings(); refreshCoins(); } });
+
 
   const visible = useMemo(() => rows ?? [], [rows]);
   // Once EVERY card has settled with nothing to show, the board is not a
@@ -968,7 +977,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 // The coin cell is the door to this kid's bank screen: a real
                 // button, so keyboard/OK reach it. Opening the bank starts no
                 // tracked work; the bank screen's Back returns to the keypad.
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   className="school-status-board__coins-door"
                   data-testid="board-coins-door"
@@ -976,7 +985,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   onClick={() => openBank(kid.id)}
                 >
                   <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
-                </button>
+                </SchoolButton>
               ) : (
                 <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
               )}
@@ -992,14 +1001,14 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               {terms[kid.id]?.today ? (
                 // THE ONE DOOR ON A PANEL BOARD: it opens the read-only term
                 // popup and starts no work, so it is safe on the Portal.
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   className="school-status-board__days-door"
                   aria-label={`Show ${kid.name}'s term`}
                   onClick={() => openTerm(kid.id)}
                 >
                   <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
-                </button>
+                </SchoolButton>
               ) : (
                 <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
               )}

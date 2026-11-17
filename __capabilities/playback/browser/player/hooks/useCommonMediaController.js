@@ -803,7 +803,12 @@ export function useCommonMediaController({
           mcLog().warn('playback.at-duration-stuck',
             buildAtDurationStuckPayload({ assetId, mediaEl }));
         }
-        s.hasEnded = true;
+        // Stand down for the tail of the track, and claim nothing. `hasEnded`
+        // belongs to finishTerminal, which refuses a terminal once it is set:
+        // setting it here, up to half a second before the element's own
+        // `ended`, got that event refused and the track never finished
+        // (2026-11-17, a read-along parked at 244.6s of 245.1s). A later arm
+        // lands back in this branch and stands down again.
         clearTimers();
         return;
       }

@@ -23,3 +23,18 @@
     background: var(--ds-surface-alt); color: var(--ds-text-mid);
   }
 }
+
+// Native controls share density, focus and disabled behavior across apps.
+.ds-touch {
+  &--plain { background: transparent; border-color: transparent; min-width: 0; }
+  &[data-density='compact'] { min-height: 36px; min-width: 0; padding: 0.4rem 0.75rem; font-size: 0.9rem; border-radius: 9px; }
+  &[aria-busy='true'] { cursor: progress; }
+}
+.ds-select {
+  box-sizing: border-box; max-width: 100%; min-height: 64px;
+  padding: 0.75rem 1rem; border: 2px solid var(--ds-border); border-radius: 14px;
+  background: var(--ds-surface); color: var(--ds-text-high); font: inherit; font-size: 1.25rem;
+  &:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 3px; }
+  &:disabled { opacity: 0.45; cursor: default; }
+  &[data-density='compact'] { min-height: 36px; padding: 0.4rem 0.75rem; font-size: 0.9rem; border-radius: 9px; }
+}

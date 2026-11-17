@@ -1,5 +1,8 @@
+import { useSchoolCommandListener } from '../portal/useSchoolCommands.js';
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 
 const HEARTBEAT_MS = 15_000;
 const RETRY_MS = 3_000;
@@ -12,6 +15,7 @@ const TURN_CONTROLS = new Set(['skip', 'explain', 'challenge']);
  * here. A retry always replays the exact retained payload.
  */
 export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
+  const schoolApi = useSchoolApi();
   const [session, setSession] = useState(null);
   const [connection, setConnection] = useState('connecting');
   const [pending, setPending] = useState(null);
@@ -121,8 +125,9 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
     send(payload);
   }, [busy, currentTurn, learnerId, send, session]);
 
-  useEffect(() => {
-    const onKey = (event) => {
+  useSchoolCommandListener((event) => {
+
+
       if (!currentTurn || busy || event.altKey || event.ctrlKey || event.metaKey) return;
       const match = event.key.match(/^F([1-5])$/i) ?? event.key.match(/^([a-e])$/i);
       if (!match) return;
@@ -133,10 +138,8 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
       if (!choice) return;
       event.preventDefault();
       act('choice', choice.id);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [act, busy, currentTurn]);
+
+});
 
   const controls = new Set(session?.learnerControls ?? []);
   const terminal = TERMINAL.has(session?.status);
@@ -148,7 +151,7 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
           <span className="school-tutor__eyebrow">Guided follow-up</span>
           <h2>Adaptive tutor</h2>
         </div>
-        <button type="button" className="school-tutor__back" onClick={onExit}>Back to progress</button>
+        <SchoolButton variant="plain" type="button" className="school-tutor__back" onClick={onExit}>Back to progress</SchoolButton>
       </header>
 
       <div className={`school-tutor__connection is-${connection}`} role="status" aria-live="polite">
@@ -170,7 +173,7 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
       {!session && (
         <div className="school-tutor__empty">
           <p>{connection === 'connecting' ? 'Loading your saved place…' : 'Your saved tutor session is still on the server.'}</p>
-          {connection !== 'connecting' && <button type="button" onClick={() => refresh()}>Reconnect</button>}
+          {connection !== 'connecting' && <SchoolButton variant="plain" type="button" onClick={() => refresh()}>Reconnect</SchoolButton>}
         </div>
       )}
 
@@ -178,9 +181,9 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
         <article className="school-tutor__turn">
           <h3>Work through the concepts that need another look?</h3>
           <p>This is optional. Your quiz score stays unchanged, and you can pause at any time.</p>
-          <button type="button" className="school-tutor__primary" disabled={busy} onClick={() => act('start')}>
+          <SchoolButton variant="plain" type="button" className="school-tutor__primary" disabled={busy} onClick={() => act('start')}>
             Start tutoring
-          </button>
+          </SchoolButton>
         </article>
       )}
 
@@ -197,33 +200,33 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
           <h3>{currentTurn.prompt}</h3>
           <div className="school-tutor__choices" aria-label="Tutor choices">
             {currentTurn.choices.map((choice) => (
-              <button
+              <SchoolButton variant="plain"
                 key={choice.id}
                 type="button"
                 disabled={busy}
                 onClick={() => act('choice', choice.id)}
               >
                 <span>{choice.id}. {choice.label}</span>
-              </button>
+              </SchoolButton>
             ))}
           </div>
           <div className="school-tutor__controls" aria-label="Tutor controls">
-            {controls.has('explain') && <button type="button" disabled={busy} onClick={() => act('explain')}>Explain another way</button>}
-            {controls.has('skip') && <button type="button" disabled={busy} onClick={() => act('skip')}>Skip this check</button>}
-            {controls.has('challenge') && <button type="button" disabled={busy} onClick={() => act('challenge')}>I know this</button>}
-            {controls.has('stop') && <button type="button" className="is-stop" disabled={busy} onClick={() => act('cancel')}>Stop tutoring</button>}
+            {controls.has('explain') && <SchoolButton variant="plain" type="button" disabled={busy} onClick={() => act('explain')}>Explain another way</SchoolButton>}
+            {controls.has('skip') && <SchoolButton variant="plain" type="button" disabled={busy} onClick={() => act('skip')}>Skip this check</SchoolButton>}
+            {controls.has('challenge') && <SchoolButton variant="plain" type="button" disabled={busy} onClick={() => act('challenge')}>I know this</SchoolButton>}
+            {controls.has('stop') && <SchoolButton variant="plain" type="button" className="is-stop" disabled={busy} onClick={() => act('cancel')}>Stop tutoring</SchoolButton>}
           </div>
         </article>
       )}
 
       {session?.status === 'active' && !currentTurn && !pending && (
-        <div className="school-tutor__empty"><p>Waiting for the next saved turn.</p><button type="button" onClick={() => refresh()}>Reconnect</button></div>
+        <div className="school-tutor__empty"><p>Waiting for the next saved turn.</p><SchoolButton variant="plain" type="button" onClick={() => refresh()}>Reconnect</SchoolButton></div>
       )}
 
       {pending && (
         <div className="school-tutor__pending">
           <span>The current action is retained until the server acknowledges it.</span>
-          <button type="button" disabled={connection === 'sending'} onClick={() => send(pending)}>Retry now</button>
+          <SchoolButton variant="plain" type="button" disabled={connection === 'sending'} onClick={() => send(pending)}>Retry now</SchoolButton>
         </div>
       )}
 

@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../../../portal/useSchoolCommands.js';
+import { SchoolButton } from '../../../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from "../useSentenceAudio.js";
 import { languageLog } from "../languageLog.js";
@@ -157,8 +159,9 @@ export default function RepetitionRung({
   // Next. The first day on the Portal had none of this — Space did nothing on
   // this rung, and a child with a keyboard in their lap had to reach for the
   // glass at every sentence.
-  useEffect(() => {
-    const onKey = (e) => {
+  useSchoolCommandListener((e) => {
+
+
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       // Tab hears the sentence, Shift+Tab its meaning, whatever holds focus.
       if (e.key === 'Tab') {
@@ -181,10 +184,8 @@ export default function RepetitionRung({
       }
       if (again && (current === 'done' || current === 'idle')) { e.preventDefault(); start(); return; }
       if (next && current === 'done' && !saving) { e.preventDefault(); advance(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [start, stop, advance, saving, hear, sourceLang, targetLang]);
+
+}, { allowInInput: true });
 
   // A tapped line hands the keys back to the stage, so Space is still the rung's.
   const tapToHear = (language) => () => {
@@ -194,22 +195,22 @@ export default function RepetitionRung({
 
   return (
     <div ref={rootRef} tabIndex={-1} className="lang-rung lang-rung--repetition">
-      <button
+      <SchoolButton variant="plain"
         type="button"
         tabIndex={-1}
         className={`lang-rung__say lang-rung__source${highlight === sourceLang ? ' is-sounding' : ''}`}
         onClick={tapToHear(sourceLang)}
       >
         {entry.text?.[sourceLang]}
-      </button>
-      <button
+      </SchoolButton>
+      <SchoolButton variant="plain"
         type="button"
         tabIndex={-1}
         className={`lang-rung__say lang-rung__target${highlight === targetLang ? ' is-sounding' : ''}`}
         onClick={tapToHear(targetLang)}
       >
         {entry.text?.[targetLang]}
-      </button>
+      </SchoolButton>
 
       {blocked && (
         <p className="lang-rung__notice" role="alert">
@@ -219,20 +220,20 @@ export default function RepetitionRung({
 
       <div className="lang-rung__controls">
         {phase === 'idle' && (
-          <button type="button" className="lang-btn lang-btn--disc" onClick={start}>
+          <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--disc" onClick={start}>
             <Icon name="play" className="lang-btn__glyph" />
             <span className="lang-btn__word">Play</span>
-          </button>
+          </SchoolButton>
         )}
         {phase === 'playing' && (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="lang-btn lang-btn--disc lang-btn--disc-quiet"
             onClick={() => { stop(); setPhase('idle'); }}
           >
             <Icon name="pause" className="lang-btn__glyph" />
             <span className="lang-btn__word">Stop</span>
-          </button>
+          </SchoolButton>
         )}
         {/* The choice. Repeating is the quiet disc beside Play's, because it is
             the same act; moving on is the deliberate one, so it carries the
@@ -241,17 +242,17 @@ export default function RepetitionRung({
         {phase === 'done' && saving && <span className="lang-rung__saved">Saving…</span>}
         {phase === 'done' && !saving && (
           <>
-            <button type="button" className="lang-btn lang-btn--disc lang-btn--disc-quiet" onClick={start}>
+            <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--disc lang-btn--disc-quiet" onClick={start}>
               <Icon name="restart" className="lang-btn__glyph" />
               <span className="lang-btn__word">Play again</span>
-            </button>
-            <button
+            </SchoolButton>
+            <SchoolButton variant="plain"
               type="button"
               className="lang-btn lang-btn--primary"
               onClick={advance}
             >
               Next
-            </button>
+            </SchoolButton>
           </>
         )}
       </div>

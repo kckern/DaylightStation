@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * A material's unit browser (spec §2b/§5/§6), laid out like the household's
  * other show browsers (FitnessShow, Piano Videos): poster + context on the
@@ -19,7 +21,7 @@
  * explanation but no button (nothing to attribute a request to).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { sizedPlexImage, ART_BOX } from "../plexImage.js";
 
@@ -87,6 +89,7 @@ export function DetailSkeleton({ audio = false }) {
 }
 
 export default function MaterialDetail({ material, userId, onBack: _onBack, onPlay, notice, sectionLabel: _sectionLabel, initialUnitId = null }) {
+  const schoolApi = useSchoolApi();
   const [units, setUnits] = useState(null);
   const [loadError, setLoadError] = useState(false); // units fetch failed/timed out (vs genuinely empty)
   const [reloadKey, setReloadKey] = useState(0);
@@ -123,7 +126,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
       setRequestedUnitIds(new Set(data.map((r) => r.unitId)));
     });
     return () => { alive = false; clearTimeout(deadline); };
-  }, [material.id, userId, reloadKey]);
+  }, [material.id, userId, reloadKey, schoolApi]);
 
   const groups = units ? groupUnits(units) : [];
   const current = units?.find((u) => u.current) ?? null;
@@ -195,7 +198,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
       setRequestedUnitIds((prev) => new Set(prev).add(unit.id));
       schoolLog.materials('quiz-requested', { materialId: material.id, unitId: unit.id, userId });
     }
-  }, [userId, requesting, material.id, material.title]);
+  }, [userId, requesting, material.id, material.title, schoolApi]);
 
   // Only offer the quiz request AFTER the current unit has actually been
   // played — requesting a quiz for something you haven't watched/listened to
@@ -278,14 +281,14 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
                 “{current.title}” doesn&apos;t have a quiz yet — one is needed to move on.
               </p>
               {userId ? (
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   className="school-material-detail__quiz-request-button"
                   onClick={() => requestQuiz(current)}
                   disabled={currentRequested || requesting}
                 >
                   {currentRequested ? 'Quiz requested ✓' : 'Request a quiz'}
-                </button>
+                </SchoolButton>
               ) : (
                 <p className="school-material-detail__quiz-request-hint">Sign in to request one.</p>
               )}
@@ -296,13 +299,13 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
           {units.length === 0 && loadError && (
             <div className="school-material-detail__empty">
               <p>Couldn’t load the chapters — the media server was slow to respond.</p>
-              <button
+              <SchoolButton variant="plain"
                 type="button"
                 className="school-material-detail__retry"
                 onClick={() => setReloadKey((k) => k + 1)}
               >
                 Try again
-              </button>
+              </SchoolButton>
             </div>
           )}
           {units.length === 0 && !loadError && (
@@ -324,7 +327,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
                 ].filter(Boolean).join(' ');
                 return (
                   <li key={u.id}>
-                    <button type="button" className={cls} disabled={u.locked} onClick={() => { if (!u.locked) onPlay(u); }}>
+                    <SchoolButton variant="plain" type="button" className={cls} disabled={u.locked} onClick={() => { if (!u.locked) onPlay(u); }}>
                       <span className="school-material-detail__chapter-index">{u.index}</span>
                       <span className="school-material-detail__chapter-body">
                         <span className="school-material-detail__chapter-title">{u.title}</span>
@@ -337,7 +340,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
                       <span className="school-material-detail__chapter-status">
                         {u.locked ? <LockGlyph /> : u.completed ? <CheckGlyph /> : (minutes || null)}
                       </span>
-                    </button>
+                    </SchoolButton>
                   </li>
                 );
               })}
@@ -358,7 +361,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
                   ].filter(Boolean).join(' ');
                   return (
                     <li key={u.id}>
-                      <button
+                      <SchoolButton variant="plain"
                         type="button"
                         className={classes}
                         disabled={u.locked}
@@ -387,7 +390,7 @@ export default function MaterialDetail({ material, userId, onBack: _onBack, onPl
                           <span className="school-material-detail__unit-index">{u.index}</span>
                           {u.title}
                         </span>
-                      </button>
+                      </SchoolButton>
                     </li>
                   );
                 })}
