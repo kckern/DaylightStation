@@ -363,4 +363,41 @@ public class QuickInputCapabilityTest {
         assertEquals(1, queue.getInt("waiting"));
         assertEquals("No voice memos to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
     }
+    // ── destinations ─────────────────────────────────────────────────────────
+
+    @Test public void theDestinationsAreSettingsWithTheContractsDefaults() throws Exception {
+        for (int i = 0; i < Destinations.DEFAULTS.length; i++) {
+            assertEquals(Destinations.DEFAULTS[i], core.settings().get("input.dest." + (i + 1)));
+        }
+        assertEquals("", core.settings().get("input.dest." + Destinations.SLOTS));
+        org.json.JSONArray listed = TestCore.get(core, "/memo/queue").getJSONArray("destinations");
+        assertEquals(5, listed.length());
+        assertEquals("journal", listed.getJSONObject(0).getString("id"));
+        assertEquals("voice", listed.getJSONObject(0).getString("kind"));
+        assertEquals("Journal", listed.getJSONObject(0).getString("label"));
+    }
+
+    @Test public void aMalformedDestinationIsRefusedWhenItIsSet() throws Exception {
+        for (String bad : new String[] { "walk|Walk|voice|https://elsewhere.example/api/v1/x", "walk|Walk|voice|/feed",
+                "walk|Walk|video|/api/v1/x", "walk|Walk|voice|/api/v1/x?user=other" }) {
+            try {
+                core.settings().set("input.dest.6", bad);
+                fail("accepted " + bad);
+            } catch (net.kckern.daylight.core.SettingsRegistry.InvalidSettingException expected) {
+                assertFalse("the value is not repeated", expected.getMessage().contains("elsewhere"));
+            }
+        }
+        assertEquals("", core.settings().get("input.dest.6"));
+        core.settings().set("input.dest.6", "walk|Walk|text|/api/v1/example/text");
+        assertEquals(6, TestCore.get(core, "/memo/queue").getJSONArray("destinations").length());
+    }
+
+    @Test public void aDestinationIdUsedTwiceIsAProblemAndNeverStopsAStart() throws Exception {
+        core.settings().set("input.dest.6", "journal|Second journal|text|/api/v1/journalist/text");
+        JSONObject queue = TestCore.get(core, "/memo/queue");
+        assertEquals("input.dest.6: id 'journal' is used twice", queue.getJSONArray("problems").getString(0));
+        assertEquals("the first line of that id stands", 5, queue.getJSONArray("destinations").length());
+        cap.start();
+        cap.stop();
+    }
 }

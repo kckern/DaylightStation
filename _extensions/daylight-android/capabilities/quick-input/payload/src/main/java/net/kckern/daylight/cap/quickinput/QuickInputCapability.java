@@ -13,6 +13,7 @@ import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.LinkEffect;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
+import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.BackendHttp;
 import net.kckern.daylight.core.backend.Http;
@@ -47,6 +48,8 @@ public final class QuickInputCapability implements Capability {
     /** The PayloadPort the recorder tells of a finished recording. The shell half spells the same name (MemoFiles.PORT). */
     static final String PORT = "memos";
     static final String WORKER = "Daylight-memo-upload";
+    /** input.dest.1 to input.dest.8: one destination a line (Destinations). */
+    static final String DEST = "input.dest.";
     private static final String RECORD_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.RecordActivity";
     /** With nothing due, look again this often anyway (a recording made while no payload was loaded). */
     private static final long IDLE_MS = 15 * 60_000L;
@@ -116,6 +119,13 @@ public final class QuickInputCapability implements Capability {
         this.backend = Backend.from(core);
         if (http == null) http = new BackendHttp(backend::deviceHeader);
         if (clock == null) clock = System::currentTimeMillis;
+        // Where an input goes. The first slots default to the intake contract's table; a
+        // line that names anything but a plain path under /api/v1/ is refused when set.
+        for (int i = 1; i <= Destinations.SLOTS; i++) {
+            core.settings().declare(DEST + i, SettingsRegistry.Type.STRING,
+                    i <= Destinations.DEFAULTS.length ? Destinations.DEFAULTS[i - 1] : "",
+                    value -> Destinations.problem((String) value));
+        }
 
         core.services().provide(LinkHandler.class, new LinkHandler() {
             @Override public String kind() { return "memo"; }
@@ -135,6 +145,7 @@ public final class QuickInputCapability implements Capability {
                     : q.describe();
             return Router.Response.json(200, body.put("blocked", blocked).put("notAllowed", notAllowed)
                     .put("cutOffKept", cutOffDir == null ? 0 : InputInbox.cutOffKept(cutOffDir))
+                    .put("destinations", describeDestinations())
                     .put("problems", new JSONArray(problems())));
         });
         core.router().route("POST", "/memo/recorded", req -> Router.Response.json(200, Replies.ok().put("waiting", recorded())));
@@ -399,8 +410,25 @@ public final class QuickInputCapability implements Capability {
         return recorder;
     }
 
+    /** The configured destinations. A line that cannot be used is left out and reported, never thrown. */
+    Destinations destinations(List<String> problems) {
+        List<String> lines = new ArrayList<>();
+        for (int i = 1; i <= Destinations.SLOTS; i++) lines.add((String) core.settings().get(DEST + i));
+        return Destinations.usable(lines, problems);
+    }
+
+    /** Ids, labels and kinds. No route: where the backend is reached is not for a status answer. */
+    private JSONArray describeDestinations() throws org.json.JSONException {
+        JSONArray out = new JSONArray();
+        for (Destinations.Destination d : destinations(null).all()) {
+            out.put(new JSONObject().put("id", d.id).put("label", d.label).put("kind", d.kind.word));
+        }
+        return out;
+    }
+
     private List<String> problems() {
         List<String> out = new ArrayList<>();
+        destinations(out);
         if (backend.user().isEmpty()) out.add("identity.user is not set: voice memos cannot be sent");
         else if (InputUploader.blocked(backend) != null) out.add("identity.device is not fleet:<key>: voice memos cannot be sent");
         if (!backend.configured()) out.add(InputUploader.SITE_NOT_SET);
