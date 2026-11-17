@@ -282,6 +282,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
 | Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
+| DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API, fleet CLI) | `__docs/reference/android/README.md` |
 
 ---
 
