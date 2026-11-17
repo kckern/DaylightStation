@@ -44,14 +44,46 @@ final class MicStreamServer {
     /** How long start() waits to learn whether the socket bound. */
     private static final long BIND_WAIT_MS = 2000;
 
+    /** Decides at each handshake whether a client may have the stream. See {@link MicOriginRule}. */
+    interface Admission { boolean admits(String origin, boolean peerLoopback); }
+
+    /** Only this device's own clients that send no Origin: what a server gets when it is given no rule. */
+    private static final Admission LOOPBACK_WITHOUT_ORIGIN = (origin, loopback) -> MicOriginRule.admits(origin, null, loopback, true);
+
+    static final String BIND_FAILED = "bind_failed";
+
+    /** Opens the microphone. A seam: on the JVM android.jar's AudioRecord never initializes. */
+    interface RecordFactory { AudioRecord open(int bufferSize); }
+
+    private static final RecordFactory MICROPHONE = bufferSize ->
+            // MIC source for USB mic on Shield TV (no telephony subsystem,
+            // so VOICE_COMMUNICATION fails to initialize). AEC/NS are applied
+            // explicitly after init via AcousticEchoCanceler/NoiseSuppressor.
+            new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, bufferSize);
+
+    private volatile RecordFactory records = MICROPHONE;
+    void useRecordFactoryForTest(RecordFactory f) { records = f; }
+
+    /** Set by stop(), before anything is torn down. Capture that is still being set up sees it and lets go. */
+    private volatile boolean shutDown;
+
     private final Context ctx;
+    private final CaptureState capture;
+    private final Admission admission;
     private AudioBridgeServer wsServer;
     private volatile int port;
-    private volatile String lastError;
-    /** True while the last attempt to open or start AudioRecord failed with the permission granted. */
-    private volatile boolean captureDenied;
+    /** Why the socket is not listening. Capture failures are in {@link #capture}. */
+    private volatile String bindError;
+    /** Handshakes turned away by the admission rule. */
+    private final java.util.concurrent.atomic.AtomicInteger refused = new java.util.concurrent.atomic.AtomicInteger();
 
-    MicStreamServer(Context ctx) { this.ctx = ctx; }
+    MicStreamServer(Context ctx) { this(ctx, new CaptureState(), LOOPBACK_WITHOUT_ORIGIN); }
+
+    MicStreamServer(Context ctx, CaptureState capture, Admission admission) {
+        this.ctx = ctx;
+        this.capture = capture;
+        this.admission = admission;
+    }
 
     /**
      * Binds to loopback: the page that consumes the stream runs on this device, and the
@@ -64,7 +96,7 @@ final class MicStreamServer {
         wsServer = new AudioBridgeServer(new InetSocketAddress(InetAddress.getLoopbackAddress(), port));
         wsServer.start();
         try {
-            if (!wsServer.settled.await(BIND_WAIT_MS, TimeUnit.MILLISECONDS)) lastError = "the stream socket did not start within " + BIND_WAIT_MS + "ms";
+            if (!wsServer.settled.await(BIND_WAIT_MS, TimeUnit.MILLISECONDS)) bindError = "the stream socket did not start within " + BIND_WAIT_MS + "ms";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -72,6 +104,7 @@ final class MicStreamServer {
     }
 
     synchronized void stop() {
+        shutDown = true;
         if (wsServer == null) return;
         try { wsServer.stop(); } catch (InterruptedException e) { Log.w(TAG, "Interrupted while stopping WebSocket server", e); }
         // A client that was cut off by stop() may not get its close callback: release the microphone here.
@@ -83,8 +116,13 @@ final class MicStreamServer {
     synchronized boolean running() { return wsServer != null && wsServer.listening; }
     int port() { return port; }
     synchronized InetSocketAddress boundAddress() { return wsServer == null ? null : wsServer.getAddress(); }
-    String lastError() { return lastError; }
-    boolean captureDenied() { return captureDenied; }
+    /** The text of the last failure: the socket's when it is not listening, otherwise capture's. */
+    String lastError() { String b = bindError; return b != null ? b : capture.detail(); }
+    /** A stable code for the same failure, or null: bind_failed, capture_denied or permission_missing. */
+    String errorCode() { return bindError != null ? BIND_FAILED : capture.code(); }
+    /** True while the last attempt to open or start AudioRecord failed with the permission granted. */
+    boolean captureDenied() { return capture.denied(); }
+    int refusedHandshakes() { return refused.get(); }
     /** Frames are being read from the microphone and sent to a client. */
     boolean streaming() { AudioBridgeServer s = wsServer; return s != null && s.delivering; }
     int clients() { AudioBridgeServer s = wsServer; return s == null ? 0 : s.getConnections().size(); }
@@ -110,6 +148,23 @@ final class MicStreamServer {
         public AudioBridgeServer(InetSocketAddress address) {
             super(address);
             setReuseAddr(true);
+        }
+
+        /** Runs before the handshake is answered: a client the rule turns away never gets a socket. */
+        @Override
+        public org.java_websocket.handshake.ServerHandshakeBuilder onWebsocketHandshakeReceivedAsServer(
+                WebSocket conn, org.java_websocket.drafts.Draft draft, ClientHandshake request)
+                throws org.java_websocket.exceptions.InvalidDataException {
+            String origin = request.getFieldValue("Origin");
+            InetSocketAddress peer = conn.getRemoteSocketAddress();
+            boolean loopback = peer != null && peer.getAddress() != null && peer.getAddress().isLoopbackAddress();
+            if (!admission.admits(origin == null || origin.isEmpty() ? null : origin, loopback)) {
+                refused.incrementAndGet();
+                Log.w(TAG, "Refusing a stream client: origin not allowed");
+                throw new org.java_websocket.exceptions.InvalidDataException(
+                        org.java_websocket.framing.CloseFrame.POLICY_VALIDATION, "origin not allowed");
+            }
+            return super.onWebsocketHandshakeReceivedAsServer(conn, draft, request);
         }
 
         @Override
@@ -158,7 +213,7 @@ final class MicStreamServer {
             if (conn == null) {
                 // A server-level failure, a bind that was refused for one.
                 listening = false;
-                lastError = "stream socket: " + ex;
+                bindError = "stream socket: " + ex;
                 settled.countDown();
             }
             if (conn != null && conn == activeClient) {
@@ -198,20 +253,11 @@ final class MicStreamServer {
                 }
 
                 try {
-                    // MIC source for USB mic on Shield TV (no telephony subsystem,
-                    // so VOICE_COMMUNICATION fails to initialize). AEC/NS are applied
-                    // explicitly after init via AcousticEchoCanceler/NoiseSuppressor.
-                    audioRecord = new AudioRecord(
-                            MediaRecorder.AudioSource.MIC,
-                            SAMPLE_RATE,
-                            CHANNEL_CONFIG,
-                            AUDIO_FORMAT,
-                            bufferSize
-                    );
+                    audioRecord = records.open(bufferSize);
                 } catch (SecurityException e) {
                     Log.e(TAG, "RECORD_AUDIO permission not granted", e);
-                    // A missing grant, not another holder: captureDenied stays as it was.
-                    lastError = "RECORD_AUDIO permission not granted";
+                    // A missing grant, not another holder.
+                    capture.failed(CaptureState.PERMISSION_MISSING, "RECORD_AUDIO permission not granted");
                     client.send("{\"error\":\"RECORD_AUDIO permission not granted\"}");
                     client.close(1011, "Permission denied");
                     activeClient = null;
@@ -231,8 +277,7 @@ final class MicStreamServer {
 
                 if (attempt == INIT_MAX_RETRIES) {
                     Log.e(TAG, "AudioRecord failed to initialize after all retries");
-                    lastError = "AudioRecord failed to initialize";
-                    captureDenied = true;
+                    capture.failed(CaptureState.CAPTURE_DENIED, "AudioRecord failed to initialize");
                     client.send("{\"error\":\"AudioRecord failed to initialize\"}");
                     client.close(1011, "AudioRecord init failed");
                     activeClient = null;
@@ -242,12 +287,30 @@ final class MicStreamServer {
 
             if (audioRecord == null) {
                 Log.e(TAG, "audioRecord is null after retry loop");
-                lastError = "AudioRecord init failed";
-                captureDenied = true;
+                capture.failed(CaptureState.CAPTURE_DENIED, "AudioRecord init failed");
                 client.close(1011, "AudioRecord init failed");
                 activeClient = null;
                 return;
             }
+
+            // Opening the microphone can take seconds (the retries above), and stop() may
+            // have run meanwhile. It found no record to release then, so the one just
+            // opened is released here; the same lock makes stop() wait for a capture that
+            // is past this check, and then stop it.
+            synchronized (captureLock) {
+                if (shutDown) {
+                    Log.i(TAG, "Stopped while the microphone was being opened; releasing it");
+                    audioRecord.release();
+                    audioRecord = null;
+                    activeClient = null;
+                    return;
+                }
+                beginCapture(client, bufferSize, minBufSize);
+            }
+        }
+
+        /** Holds captureLock. */
+        private void beginCapture(final WebSocket client, int bufferSize, int minBufSize) {
 
             // Enable echo cancellation and noise suppression if hardware supports it.
             // Belt-and-suspenders with VOICE_COMMUNICATION source which also applies AEC.
@@ -274,14 +337,12 @@ final class MicStreamServer {
             capturing = true;
             audioRecord.startRecording();
             if (audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
-                captureDenied = false;
-                lastError = null;
+                capture.recording();
                 delivering = true;
             } else {
                 // The permission is granted and the record initialized, yet it will not record.
                 Log.e(TAG, "AudioRecord did not start recording");
-                lastError = "AudioRecord did not start recording";
-                captureDenied = true;
+                capture.failed(CaptureState.CAPTURE_DENIED, "AudioRecord did not start recording");
             }
             Log.i(TAG, "AudioRecord started: source=MIC rate=" + SAMPLE_RATE
                     + " bufferSize=" + bufferSize + " minBufSize=" + minBufSize
@@ -318,7 +379,19 @@ final class MicStreamServer {
             captureThread.start();
         }
 
-        private synchronized void stopCapture() {
+        /**
+         * Not the server's own monitor: WebSocketServer.stop() holds that while it waits
+         * for the selector thread, and the selector thread comes here when a client
+         * closes. With one lock for both, a client leaving during stop() blocked stop()
+         * for good.
+         */
+        private final Object captureLock = new Object();
+
+        private void stopCapture() {
+            synchronized (captureLock) { stopCaptureLocked(); }
+        }
+
+        private void stopCaptureLocked() {
             capturing = false;
             delivering = false;
 

@@ -2,6 +2,10 @@
 # speaker: clamps the built-in speaker, holds the A2DP volume floor, keeps the
 # speaker connected, closes the synth's output gate when the route is wrong.
 entry: net.kckern.daylight.cap.audioguard.AudioGuardCapability
+# The guard asserts the synth's output gate when it starts. A device that lists both
+# must list synth first, or the first assertion finds no gate; the build refuses the
+# other order.
+startsAfter: [synth]
 permissions:
   - android.permission.BLUETOOTH
   - android.permission.BLUETOOTH_ADMIN

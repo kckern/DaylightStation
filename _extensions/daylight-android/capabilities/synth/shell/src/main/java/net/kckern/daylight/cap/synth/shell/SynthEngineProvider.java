@@ -15,18 +15,28 @@ import net.kckern.daylight.api.ShellComponents;
  */
 public final class SynthEngineProvider extends ContentProvider {
     public static final String COMPONENT = "synth-engine";
+    /**
+     * Published instead of, or beside, the engine when it could not be set up: the
+     * class name of what was thrown, or "init_failed". The payload reports it in
+     * GET /status, so a missing native library does not look like an idle synth.
+     */
+    public static final String ERROR_COMPONENT = "synth-engine-error";
     private static final String TAG = "PianoBridge";
 
     @Override
     public boolean onCreate() {
         try {
             PianoEngine engine = new PianoEngine();
-            if (!engine.init()) Log.e(TAG, "PianoEngine.init failed");
+            if (!engine.init()) {
+                Log.e(TAG, "PianoEngine.init failed");
+                ShellComponents.publish(ERROR_COMPONENT, "init_failed");
+            }
             // Published either way, as before: every engine method is a no-op without a handle.
             ShellComponents.publish(COMPONENT, engine);
         } catch (Throwable t) {
             // Includes UnsatisfiedLinkError. A missing library must not stop the shell.
             Log.e(TAG, "synth engine unavailable", t);
+            ShellComponents.publish(ERROR_COMPONENT, t.getClass().getName());
         }
         return true;
     }

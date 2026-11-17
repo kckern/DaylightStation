@@ -78,13 +78,19 @@ public final class DeviceCatalog {
                 }
                 caps.put(name, new CapabilitySpec(name, (String) entry, hasPayload, hasShell,
                         Collections.unmodifiableList(strings(doc.get("requires"), "capability '" + name + "' requires")),
-                        Boolean.TRUE.equals(doc.get("native"))));
+                        Boolean.TRUE.equals(doc.get("native")),
+                        Collections.unmodifiableList(strings(doc.get("startsAfter"), "capability '" + name + "' startsAfter"))));
             }
         }
         for (CapabilitySpec c : caps.values()) {
             for (String needed : c.requires) {
                 if (!caps.containsKey(needed)) {
                     throw new CatalogException("capability '" + c.name + "' requires unknown capability '" + needed + "'");
+                }
+            }
+            for (String earlier : c.startsAfter) {
+                if (!caps.containsKey(earlier)) {
+                    throw new CatalogException("capability '" + c.name + "' startsAfter unknown capability '" + earlier + "'");
                 }
             }
         }
@@ -157,6 +163,14 @@ public final class DeviceCatalog {
             for (String needed : spec.requires) {
                 if (!capabilities.contains(needed)) {
                     throw new CatalogException(where + ": capability '" + c + "' requires '" + needed + "'");
+                }
+            }
+            // Capabilities start in the order listed. One that names another in startsAfter
+            // uses at start what that one provides, so the device file must list it later.
+            for (String earlier : spec.startsAfter) {
+                int at = capabilities.indexOf(earlier);
+                if (at > capabilities.indexOf(c)) {
+                    throw new CatalogException(where + ": capability '" + earlier + "' must be listed before '" + c + "'");
                 }
             }
             if (spec.nativeCode && abis.isEmpty()) {

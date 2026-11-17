@@ -193,4 +193,45 @@ public class DeviceCatalogTest {
               "entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability\nextra: !!java.io.File /nonexistent\n");
         assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'debug-tools': not valid YAML"));
     }
+
+    private File rootWithSynthAndGuard() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/synth/capability.yml"), "entry: a.b.Synth\n");
+        write(new File(root, "capabilities/synth/payload/build.gradle"), "");
+        write(new File(root, "capabilities/audio-guard/capability.yml"), "entry: a.b.AudioGuard\nstartsAfter: [synth]\n");
+        write(new File(root, "capabilities/audio-guard/payload/build.gradle"), "");
+        return root;
+    }
+
+    @Test public void rejectsADeviceThatListsACapabilityBeforeTheOneItStartsAfter() throws Exception {
+        File root = rootWithSynthAndGuard();
+        write(new File(root, "devices/portal.yml"),
+              PORTAL.replace("capabilities: [debug-tools]", "capabilities: [debug-tools, audio-guard, synth]"));
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'synth' must be listed before 'audio-guard'"));
+    }
+
+    @Test public void acceptsTheRightOrderAndADeviceWithoutTheEarlierCapability() throws Exception {
+        File root = rootWithSynthAndGuard();
+        write(new File(root, "devices/portal.yml"),
+              PORTAL.replace("capabilities: [debug-tools]", "capabilities: [synth, debug-tools, audio-guard]"));
+        assertEquals(java.util.Arrays.asList("synth", "debug-tools", "audio-guard"), DeviceCatalog.load(root).device("portal").capabilities);
+        // startsAfter orders, it does not require: a device may guard its audio with no synth at all.
+        write(new File(root, "devices/portal.yml"),
+              PORTAL.replace("capabilities: [debug-tools]", "capabilities: [audio-guard, debug-tools]"));
+        assertEquals(2, DeviceCatalog.load(root).device("portal").capabilities.size());
+    }
+
+    @Test public void rejectsStartsAfterNamingAnUnknownCapability() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/audio-guard/capability.yml"), "entry: a.b.AudioGuard\nstartsAfter: [synthh]\n");
+        write(new File(root, "capabilities/audio-guard/payload/build.gradle"), "");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("startsAfter unknown capability 'synthh'"));
+    }
+
+    /** The real tree: the piano lists synth ahead of audio-guard, and the build would refuse the reverse. */
+    @Test public void theRealAudioGuardDeclaresThatItStartsAfterTheSynth() throws Exception {
+        File da = new File("..").getCanonicalFile();
+        org.junit.Assume.assumeTrue(new File(da, "capabilities/audio-guard/capability.yml").isFile());
+        assertEquals(java.util.Collections.singletonList("synth"), DeviceCatalog.load(da).capability("audio-guard").startsAfter);
+    }
 }

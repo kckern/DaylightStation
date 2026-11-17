@@ -27,15 +27,39 @@ public final class MicBridgeCapability implements Capability {
     /** How long a route or start() waits for the main thread to add or remove the overlay. */
     private static final long MAIN_WAIT_MS = 2000;
 
+    /** The overlay window that keeps the microphone available to a background process. */
+    interface Overlay {
+        void ensure(Context c);
+        /** Remove and add again, then wait for the window to settle. */
+        void rebuild(Context c) throws InterruptedException;
+    }
+
+    private static final Overlay REAL_OVERLAY = new Overlay() {
+        @Override public void ensure(final Context c) { onMain(() -> OverlayAnchor.ensure(c)); }
+        @Override public void rebuild(final Context c) throws InterruptedException {
+            onMain(() -> { OverlayAnchor.remove(c); OverlayAnchor.ensure(c); });
+            Thread.sleep(OverlayAnchor.SETTLE_MS);
+        }
+    };
+
     private CoreContext core;
     private volatile Context ctx;
+    /** Read and replaced only while holding this capability's lock. Read without it for status. */
     private volatile MicStreamServer server;
+    private volatile Overlay overlay = REAL_OVERLAY;
+    /** Outlives a restart, so a restart cannot make a capture failure look cured. */
+    private final CaptureState capture = new CaptureState();
+
+    /** Test seam: no window manager on the JVM. */
+    void useOverlayForTest(Overlay o) { overlay = o; }
+    CaptureState captureForTest() { return capture; }
 
     @Override public String name() { return "mic-bridge"; }
 
     private JSONObject status() throws Exception {
         MicStreamServer s = server;
-        String err = s == null ? null : s.lastError();
+        String code = s == null ? null : s.errorCode();
+        String detail = s == null ? null : s.lastError();
         return new JSONObject()
                 .put("running", s != null && s.running())
                 .put("streaming", s != null && s.streaming())
@@ -43,7 +67,10 @@ public final class MicBridgeCapability implements Capability {
                 // Capture would not start although the permission is granted: the nearest
                 // thing this process can observe to another process holding the microphone.
                 .put("heldByOther", s != null && s.captureDenied())
-                .put("lastError", err == null ? JSONObject.NULL : err)
+                // A stable code: bind_failed, capture_denied or permission_missing. capture_denied
+                // stays until a capture really starts; POST /mic/restart does not clear it.
+                .put("lastError", code == null ? JSONObject.NULL : code)
+                .put("lastErrorDetail", detail == null ? JSONObject.NULL : detail)
                 .put("port", s == null ? (Integer) core.settings().get("mic.port") : s.port());
     }
 
@@ -71,22 +98,15 @@ public final class MicBridgeCapability implements Capability {
         this.core = core;
         // audio-bridge's port. A device that still runs audio-bridge beside this app sets another.
         core.settings().declare("mic.port", SettingsRegistry.Type.INTEGER, 8765, SettingsRegistry.range(1024, 65535));
+        // A client that sends no Origin header is admitted from loopback while this is true.
+        // True for as long as an app other than this one's kiosk hosts the page; see MicOriginRule.
+        core.settings().declare("mic.allowNoOrigin", SettingsRegistry.Type.BOOLEAN, true);
 
         core.router().route("GET", "/mic/status", req -> Replies.json(status().put("ok", true)));
         core.router().route("POST", "/mic/restart", req -> {
             // Replaces the backend's force-stop and relaunch of the companion app.
-            final Context c = ctx;
-            MicStreamServer old = server;
-            if (c == null || old == null) return Replies.json(status().put("ok", false).put("error", "not_ready"));
             Diag.log(TAG, "/mic/restart from " + req.remote);
-            synchronized (this) {
-                old.stop();
-                onMain(() -> { OverlayAnchor.remove(c); OverlayAnchor.ensure(c); });
-                Thread.sleep(OverlayAnchor.SETTLE_MS);
-                MicStreamServer fresh = new MicStreamServer(c);
-                fresh.start((Integer) core.settings().get("mic.port"));
-                server = fresh;
-            }
+            if (!restart()) return Replies.json(status().put("ok", false).put("error", "not_ready"));
             // "running" means the stream is listening again. Capture starts per client, so
             // "streaming" turns true when the page reconnects.
             JSONObject after = status();
@@ -95,16 +115,55 @@ public final class MicBridgeCapability implements Capability {
         core.status().add(StatusBoard.Surface.STATUS, name(), o -> o.put("mic", status()));
     }
 
+    /**
+     * Stop the stream server, rebuild the overlay, start a new server. The whole swap
+     * holds the lock, and the server is read inside it: two overlapping calls then run
+     * one after the other, each stopping the server the one before it started. Read
+     * outside the lock, both would stop the same old server and start one each on the
+     * same port; the loser would replace the winner in `server`, and the winner would
+     * keep the port with nothing left to stop it.
+     * False when the stream was never started.
+     */
+    synchronized boolean restart() throws InterruptedException {
+        MicStreamServer old = server;
+        if (old == null) return false;
+        Context c = ctx;
+        old.stop();
+        overlay.rebuild(c);
+        MicStreamServer fresh = newServer(c);
+        fresh.start((Integer) core.settings().get("mic.port"));
+        server = fresh;
+        return true;
+    }
+
+    private MicStreamServer newServer(Context c) {
+        return new MicStreamServer(c, capture, (origin, loopback) ->
+                MicOriginRule.admits(origin, startUrl(), loopback, (Boolean) core.settings().get("mic.allowNoOrigin")));
+    }
+
+    /** The kiosk's start URL, read at each handshake. Null on a device without webview-host. */
+    private String startUrl() {
+        try {
+            return (String) core.settings().get("webview.startUrl");
+        } catch (SettingsRegistry.UnknownSettingException noKiosk) {
+            return null;
+        }
+    }
+
     @Override public void start() {
         Context shellContext = (Context) core.shell().context();
         // JVM tests boot every capability with no Android context: no microphone to stream.
         if (shellContext == null) return;
-        final Context c = shellContext.getApplicationContext();
+        startStream(shellContext.getApplicationContext());
+    }
+
+    /** The context is null only in a JVM test, which also replaces the overlay. */
+    synchronized void startStream(Context c) {
         ctx = c;
         // The shell half put the anchor up at process start; this covers a process in
         // which that failed (the overlay permission was granted after it started).
-        onMain(() -> OverlayAnchor.ensure(c));
-        MicStreamServer s = new MicStreamServer(c);
+        overlay.ensure(c);
+        MicStreamServer s = newServer(c);
         s.start((Integer) core.settings().get("mic.port"));
         server = s;
         if (!s.running()) core.shell().note("PAYLOAD", "mic stream did not start: " + s.lastError());

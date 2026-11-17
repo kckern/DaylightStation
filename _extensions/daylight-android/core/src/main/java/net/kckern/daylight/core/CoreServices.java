@@ -35,6 +35,37 @@ final class CoreServices {
         wifiLink.start();
     }
 
+    /** The Android side of POST /update. */
+    UpdateFlow.Device updateDevice() {
+        return new UpdateFlow.Device() {
+            @Override public UpdateFlow.ApkInfo inspect(java.io.File apk) {
+                try {
+                    android.content.pm.PackageInfo info = ctx.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+                    return info == null ? null : new UpdateFlow.ApkInfo(info.packageName, versionCode(info));
+                } catch (Throwable t) {
+                    return null;
+                }
+            }
+            @Override public String ownPackage() { return ctx.getPackageName(); }
+            @Override public long installedVersionCode() {
+                try {
+                    return versionCode(ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0));
+                } catch (Throwable t) {
+                    // Unknown: refuse nothing on version grounds; the platform still refuses a downgrade.
+                    return 0;
+                }
+            }
+            @Override public int commit(java.io.File apk) throws Exception { return Updater.install(ctx, apk); }
+            @Override public boolean autoConfirmSetting() { return cfg.updateAutoConfirm(); }
+            @Override public void confirm(int sessionId) { updateConfirmation.begin(sessionId); }
+        };
+    }
+
+    @SuppressWarnings("deprecation")
+    private static long versionCode(android.content.pm.PackageInfo info) {
+        return android.os.Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+    }
+
     void stop() {
         updateConfirmation.finish();
         wifiLink.stop();

@@ -44,14 +44,19 @@ public final class CoreRuntime implements CoreContext {
     /** idle, downloading, awaiting_confirmation or failed. */
     private volatile String updateState = "idle";
     private volatile String updateError;
+    /** When the install session behind awaiting_confirmation was committed. */
+    private volatile long updateCommittedAtMs;
+    /** Test seam for the confirmation window. */
+    private volatile java.util.function.LongSupplier updateClock = System::currentTimeMillis;
+    void useUpdateClockForTest(java.util.function.LongSupplier clock) { updateClock = clock; }
     private volatile long lastUpdateRequestAtMs;
     /** True from the moment POST /update is accepted until its download and commit return. */
     private final java.util.concurrent.atomic.AtomicBoolean updateInFlight = new java.util.concurrent.atomic.AtomicBoolean();
     /** Downloads and commits a self-update. Null whenever there is no Android context. */
     private volatile UpdateInstaller updateInstaller;
 
-    /** The download and install behind POST /update. Returns the APK's byte count. */
-    interface UpdateInstaller { long fetchAndInstall(String url) throws Exception; }
+    /** The download and install behind POST /update. sha256 is null when the caller gave none. */
+    interface UpdateInstaller { UpdateFlow.Result fetchAndInstall(String url, String sha256) throws Exception; }
 
     /** Test seam: POST /update needs an Android context otherwise. */
     void useUpdateInstallerForTest(UpdateInstaller installer) { updateInstaller = installer; }
@@ -127,14 +132,8 @@ public final class CoreRuntime implements CoreContext {
         if (shell.context() != null) {
             CoreServices d = new CoreServices(this, config);
             device = d;
-            updateInstaller = url -> {
-                File staged = new File(d.ctx.getCacheDir(), "update.apk");
-                long bytes = Downloads.to(url, staged, Downloads.MAX_UPDATE_BYTES, "apk");
-                int sessionId = Updater.install(d.ctx, staged);
-                // After the commit, so the confirmation knows which session it is waiting on.
-                if (config.updateAutoConfirm()) d.updateConfirmation.begin(sessionId);
-                return bytes;
-            };
+            updateInstaller = (url, sha256) -> UpdateFlow.run(url, sha256, new File(d.ctx.getCacheDir(), "update.apk"),
+                    (from, dest) -> Downloads.to(from, dest, Downloads.MAX_UPDATE_BYTES, "apk"), d.updateDevice());
             d.start();
             // stop() ran while the services were starting and may not have seen them.
             if (stopped) { try { d.stop(); } catch (Throwable ignored) { } }
@@ -214,11 +213,24 @@ public final class CoreRuntime implements CoreContext {
         // control API contract; ?url= and a bare-URL body are still accepted, as pbctl sends them.
         router.route("POST", "/update", req -> {
             String url = Replies.strParam(req, "url", null);
-            if (url == null && req.body != null && !req.body.trim().isEmpty()) {
+            String sha = Replies.strParam(req, "sha256", null);
+            if (req.body != null && !req.body.trim().isEmpty()) {
                 String b = req.body.trim();
-                url = b.startsWith("{") ? textOrNull(new JSONObject(b), "url") : b;
+                if (b.startsWith("{")) {
+                    JSONObject body = new JSONObject(b);
+                    if (url == null) url = textOrNull(body, "url");
+                    if (sha == null) sha = textOrNull(body, "sha256");
+                } else if (url == null) {
+                    url = b;
+                }
             }
             if (url == null || url.trim().isEmpty()) return Replies.json(Replies.err("missing url"));
+            // Optional. When present it must be a sha256: a mistyped one would otherwise be
+            // found out only after the whole download.
+            if (sha != null) {
+                sha = sha.trim();
+                if (!UpdatePolicy.wellFormedSha256(sha)) throw new IllegalArgumentException("'sha256' must be 64 hex characters");
+            }
             UpdateInstaller installer = updateInstaller;
             if (installer == null) return Replies.json(Replies.err("not_ready"));
             url = url.trim();
@@ -231,12 +243,21 @@ public final class CoreRuntime implements CoreContext {
                 Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
                 updateError = null;
                 updateState = "downloading";
-                long bytes = installer.fetchAndInstall(url);
+                UpdateFlow.Result result = installer.fetchAndInstall(url, sha);
                 // The session is committed. Without device owner Android now shows a confirm
                 // dialog; the result lands in the shell log (lifeline GET /log), not here.
+                updateCommittedAtMs = updateClock.getAsLong();
                 updateState = "awaiting_confirmation";
-                return Replies.json(Replies.ok().put("action", "update").put("state", updateState).put("bytes", bytes)
-                        .put("note", config.updateAutoConfirm() ? "confirming on the device" : "tap Update on the device to confirm"));
+                String note = result.confirming ? "confirming on the device"
+                        : config.updateAutoConfirm() && sha == null
+                                ? "tap Update on the device to confirm (update.autoConfirm applies only to a request that carries sha256)"
+                                : "tap Update on the device to confirm";
+                return Replies.json(Replies.ok().put("action", "update").put("state", updateState).put("bytes", result.bytes)
+                        .put("sha256Verified", sha != null).put("confirming", result.confirming).put("note", note));
+            } catch (UpdateFlow.Refused e) {
+                updateState = "failed";
+                updateError = e.getMessage();
+                return Replies.json(Replies.err(updateError).put("state", updateState));
             } catch (Exception e) {
                 updateState = "failed";
                 updateError = e.getClass().getSimpleName() + ": " + e.getMessage();
@@ -245,9 +266,12 @@ public final class CoreRuntime implements CoreContext {
                 updateInFlight.set(false);
             }
         });
-        router.route("GET", "/update", req -> Replies.json(Replies.ok()
-                .put("state", updateState)
-                .put("lastError", updateError == null ? JSONObject.NULL : updateError)));
+        router.route("GET", "/update", req -> {
+            settleUpdateState();
+            return Replies.json(Replies.ok()
+                    .put("state", updateState)
+                    .put("lastError", updateError == null ? JSONObject.NULL : updateError));
+        });
         router.route("POST", "/accessibility/enable", req -> {
             CoreServices d = device;
             if (d == null) return Replies.json(Replies.err("not_ready"));
@@ -302,6 +326,25 @@ public final class CoreRuntime implements CoreContext {
             settings.reset(key);
             return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.shown(key)));
         });
+    }
+
+    /**
+     * An install that was confirmed replaces this process. One that is still awaiting
+     * its confirmation after the window was dismissed or failed, so the state moves
+     * to failed with the reason, and the confirmation stops looking for the dialog.
+     */
+    private void settleUpdateState() {
+        if (!"awaiting_confirmation".equals(updateState)) return;
+        if (!UpdatePolicy.confirmationExpired(updateCommittedAtMs, updateClock.getAsLong())) return;
+        updateError = "not_confirmed: the install was not confirmed within "
+                + (UpdatePolicy.CONFIRM_WINDOW_MS / 1000) + " s (dismissed or failed; see the lifeline GET /log)";
+        updateState = "failed";
+        CoreServices d = device;
+        if (d != null) {
+            try { d.updateConfirmation.finish(); } catch (Throwable ignored) { }
+            // The flow deletes the staged file itself; this covers one left by an older payload.
+            try { new File(d.ctx.getCacheDir(), "update.apk").delete(); } catch (Throwable ignored) { }
+        }
     }
 
     /** A string field of a JSON body, or null when it is absent, null or not a string. */

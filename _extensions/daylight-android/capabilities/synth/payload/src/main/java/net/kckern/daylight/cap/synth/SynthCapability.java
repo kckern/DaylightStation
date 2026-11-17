@@ -15,6 +15,8 @@ import org.json.JSONObject;
 public final class SynthCapability implements Capability {
     /** Published by the shell half's SynthEngineProvider. */
     private static final String COMPONENT = "synth-engine";
+    /** Published by the same provider when the engine could not be set up: what went wrong. */
+    private static final String ERROR_COMPONENT = "synth-engine-error";
 
     private CoreContext core;
     private volatile SynthHost host;
@@ -71,11 +73,28 @@ public final class SynthCapability implements Capability {
         });
         StatusBoard.Contributor engineState = o -> {
             SynthHost h = host;
-            o.put("engine", h != null && h.isEngineRunning() ? "running" : "stopped");
+            Object error = core.components().get(ERROR_COMPONENT);
+            String state = engineState(h != null, h != null && h.engine() != null, h != null && h.isEngineRunning(),
+                    error == null ? null : String.valueOf(error));
+            o.put("engine", state);
+            if (LOAD_FAILED.equals(state)) o.put("engineError", error == null ? "no_engine_component" : String.valueOf(error));
             o.put("preset", h == null || h.presetId() == null ? JSONObject.NULL : h.presetId());
         };
         board.add(StatusBoard.Surface.STATUS, name(), engineState);
         board.add(StatusBoard.Surface.DIAGNOSTICS, name(), engineState);
+    }
+
+    static final String LOAD_FAILED = "load_failed";
+
+    /**
+     * What GET /status says of the engine. "stopped" is an engine that could play and
+     * is idle. "load_failed" is one that never will in this process: the shell
+     * reported an error while setting it up, or the capability started and found no
+     * engine at all (the native library did not load).
+     */
+    static String engineState(boolean started, boolean engineBound, boolean running, String loadError) {
+        if (loadError != null || (started && !engineBound)) return LOAD_FAILED;
+        return running ? "running" : "stopped";
     }
 
     @Override public void start() {

@@ -132,7 +132,7 @@ Served by the payload on `control.port`. All responses are JSON.
 | GET | `/payload` | The shell's payload status, as on the lifeline |
 | POST | `/payload` | JSON body `{"url": ..., "sha256": ...}` (or the same two as query parameters); answers `{result}`. The swap runs afterwards |
 | POST | `/payload/rollback` | Answers `{result}` |
-| POST | `/update` | JSON body `{"url": ...}`; downloads the APK and hands it to the system installer; answers `{state}` |
+| POST | `/update` | JSON body `{"url": ..., "sha256": ...}` (`sha256` optional); downloads the APK, checks it, and hands it to the system installer; answers `{state, bytes, sha256Verified, confirming}` |
 | GET | `/update` | `state` (`idle`, `downloading`, `awaiting_confirmation`, `failed`) and `lastError` |
 | GET, POST | `/beat` | The heartbeat's state; `POST` sends one now and returns its body |
 | GET | `/wifi` | The Wi-Fi link: current sample, recent samples, thresholds. `?fresh=1` samples first |
@@ -149,12 +149,36 @@ in both `error` and `result`. A pushed payload larger than 64 MiB is abandoned.
 
 `POST /update` waits for the download. One update runs at a time: a second call
 while one is in flight answers `409` with `error: update_in_progress`. An APK
-larger than 256 MiB is abandoned. The install itself needs a tap on the
-device's confirmation dialog unless the app is device owner; with
-`update.autoConfirm` on, the app taps its own dialog through its accessibility
-service. The outcome is written to the shell log (lifeline `GET /log`).
+larger than 256 MiB is abandoned.
 
-The automatic tap happens only when all of these hold: an update this app started
+The APK comes over plain HTTP from an address the caller names, so it is checked
+before anything is installed. In this order, and a failed check answers
+`ok: false` with the reason in `error`, leaves `state: failed`, and deletes the
+download:
+
+1. `sha256`, when the request carries one (body field or query parameter, 64 hex
+   characters; anything else is `400` before the download starts). The download
+   must hash to it: `sha256_mismatch`.
+2. The file must be an APK of this app's own package (`not_an_apk`,
+   `wrong_package`), with a `versionCode` at or above the installed one
+   (`older_version`).
+
+The install itself needs a tap on the device's confirmation dialog unless the app
+is device owner. With `update.autoConfirm` on, the app taps its own dialog through
+its accessibility service, **and only for a request that carried a `sha256` which
+matched**. A request without one still reaches the dialog, and a person has to
+tap it; the answer's `confirming` says which happened. The outcome is written to
+the shell log (lifeline `GET /log`).
+
+A confirmed install replaces the running app, so `GET /update` starts again at
+`idle` afterwards. An install nobody confirmed (the dialog was dismissed, or the
+system refused the APK) does not stay `awaiting_confirmation`: 90 seconds after
+the commit `GET /update` reads `state: failed` with `lastError` starting
+`not_confirmed`. The downloaded file is deleted as soon as it has been handed to
+the installer or refused.
+
+The automatic tap happens only when all of these hold: the request carried a
+matching `sha256`; an update this app started
 is waiting for confirmation; the window on screen belongs to the system's package
 installer (one of its known package names, and a system app); the install session
 this app committed still exists, was created by this package and installs this
@@ -366,7 +390,7 @@ build of that device and names the placeholder, never a value.
 | `volume-keys` | portal | Volume keys as page input | `keys.*` |
 | `hid-input` | portal | USB keyboards as page input, Bluetooth keyboard diagnostics | none (the USB allowlist is stored on the device) |
 | `presence` | portal | Reports connected Bluetooth devices to the backend | `presence.endpoint`, `presence.token` (secret), `presence.heartbeatMs` |
-| `mic-bridge` | shield | Microphone PCM over a loopback WebSocket | `mic.port` |
+| `mic-bridge` | shield | Microphone PCM over a loopback WebSocket | `mic.port`, `mic.allowNoOrigin` |
 | `lease-gate` | shield | Polls for a lease that decides whether one app may run | `lease.endpoint`, `lease.packageName`, `lease.credential` (secret) |
 
 What each ported capability adds to a device that lists it. HTTP routes need the
@@ -451,7 +475,12 @@ device file so a key press reaches the sampler before anything else.
 | WS out | `status` every second | `engine` (`running` or `stopped`), `preset`, `cpu`, `xruns` |
 | WS out | `error` `{code, msg}` | `no_spec`, `no_engine`, `bad_asset`, `preset_failed`, `no_path` |
 
-`/status` and `/diagnostics` carry `engine` and `preset`. The synth provides the
+`/status` and `/diagnostics` carry `engine` and `preset`. There `engine` has a
+third value, `load_failed`, with `engineError` beside it: the native engine could
+not be set up in this process (the class of what was thrown, for example
+`java.lang.UnsatisfiedLinkError`, or `init_failed`, or `no_engine_component`).
+`stopped` means an engine that could play and is idle. The WebSocket `status`
+frame keeps its two values. The synth provides the
 output gate `audio-guard` closes when sound would leave by the wrong speaker; when
 the gate opens again, the stream is reopened only if the page had asked for sound.
 
@@ -571,6 +600,10 @@ synth's output gate when sound would come out of the tablet's own speaker.
 | POST | `/audio-guard/override?ms=` | Hold the guard off for that long (default 60 seconds, at most 10 minutes) |
 | POST | `/audio-guard/volume-check` | Check the speaker's volume now and raise it if it is too low (called by the page) |
 
+A device that lists both `synth` and `audio-guard` must list `synth` first: the
+guard asserts the synth's output gate when it starts. `audio-guard` declares
+`startsAfter: [synth]` and the build refuses a device file with the other order.
+
 It offers the `audio` role to `bluetooth-controls`. `/status` carries `speaker`;
 the WebSocket `status` frame carries `speakerOk` and `speakerReason`.
 
@@ -586,7 +619,10 @@ the WebSocket as
 
 A held key repeats from the device: first after 450 ms, then every 50 ms, with
 `repeat: true`. The USB permission dialog is confirmed through the accessibility
-service, which is taken once when the capability starts.
+service, which is looked up each time a dialog is expected, so a service that
+binds after the payload started is used. The dialog is confirmed only when its
+window belongs to `com.android.systemui`, names this app's label (read from the
+installed app) as a whole word, and mentions a USB device.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -613,20 +649,43 @@ sends nothing, and `GET /log` shows `presence-not-configured` once per start.
 ### `mic-bridge`
 
 For a page whose WebView cannot open the device's microphone. A WebSocket server
-on `mic.port`, **bound to loopback only and with no authentication**, serves one
+on `mic.port`, **bound to loopback only and with no token**, serves one
 client at a time: a text frame `{"sampleRate":48000,"channels":1,"format":"pcm_s16le"}`,
 then binary frames of 10 ms of PCM. Capture runs only while a client is connected.
 
+Because there is no token, the WebSocket handshake is checked against the page
+that is asking. A client is admitted when either holds:
+
+- its `Origin` header has the same origin (scheme, host and port) as the device's
+  `webview.startUrl`, which must be set; or
+- it sends no `Origin` header, connects from loopback, and `mic.allowNoOrigin` is
+  true.
+
+Any other client is refused before it gets a socket. `mic.allowNoOrigin` defaults
+to true while an app other than this one's kiosk hosts the page, for a host that
+sends no `Origin`. Set it to false once the page runs in this app's kiosk. A page
+that does send an `Origin` is admitted only by the first rule, so on a device
+whose `webview.startUrl` is empty no web page can open the stream.
+
 | Method | Path | Answer |
 |---|---|---|
-| GET | `/mic/status` | `running` (listening), `streaming` (frames are being sent), `clients`, `heldByOther`, `lastError`, `port` |
+| GET | `/mic/status` | `running` (listening), `streaming` (frames are being sent), `clients`, `heldByOther`, `lastError`, `lastErrorDetail`, `port` |
 | POST | `/mic/restart` | Rebuilds the stream server and the overlay window; `ok` and `running` are true once it is listening again |
 
-`heldByOther` is true when capture would not start although the permission is
-granted. That is the nearest thing the app can observe to another process holding
-the microphone; whether a held microphone shows up that way on the Shield has not
-been checked on hardware. A restart closes the connected client; `streaming`
-turns true again when the page reconnects.
+`lastError` is null or one of three codes, with the text in `lastErrorDetail`:
+
+| `lastError` | Meaning | Does `POST /mic/restart` help |
+|---|---|---|
+| `bind_failed` | The socket is not listening (the port is taken) | Only once the port is free |
+| `capture_denied` | The permission is granted and capture would still not start; `heldByOther` is true | No. It stays through a restart and clears only when a capture starts |
+| `permission_missing` | `RECORD_AUDIO` is not granted | No |
+
+`capture_denied` is the nearest thing the app can observe to another process
+holding the microphone, or to Android withholding it from a process it considers
+in the background; whether a held microphone shows up that way on the Shield has
+not been checked on hardware. A restart closes the connected client; `streaming`
+turns true again when the page reconnects. Overlapping restarts run one after the
+other.
 
 Android 11 gives the microphone only to a service started while the app is
 visible. The capability's shell half adds a 1x1 untouchable overlay window when

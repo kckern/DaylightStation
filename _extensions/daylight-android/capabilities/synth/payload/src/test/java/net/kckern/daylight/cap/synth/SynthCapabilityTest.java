@@ -68,4 +68,34 @@ public class SynthCapabilityTest {
         synth.stop();
         synth.stop();
     }
+
+    @Test public void aFailedEngineLoadIsToldApartFromAnIdleEngine() {
+        assertEquals("stopped", SynthCapability.engineState(false, false, false, null));
+        assertEquals("stopped", SynthCapability.engineState(true, true, false, null));
+        assertEquals("running", SynthCapability.engineState(true, true, true, null));
+        assertEquals("the capability started and the shell has no engine", "load_failed", SynthCapability.engineState(true, false, false, null));
+        assertEquals("load_failed", SynthCapability.engineState(true, true, false, "init_failed"));
+        assertEquals("load_failed", SynthCapability.engineState(false, false, false, "java.lang.UnsatisfiedLinkError"));
+    }
+
+    @Test public void statusCarriesTheErrorClassTheShellReported() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeShell shell = new net.kckern.daylight.core.testing.FakeShell(dir);
+        CoreRuntime core = new CoreRuntime(shell, "test", "p-test", new java.io.File(dir, "state"));
+        new SynthCapability().register(core);
+
+        JSONObject idle = core.status().collect(StatusBoard.Surface.STATUS, new JSONObject());
+        assertEquals("stopped", idle.getString("engine"));
+        assertFalse(idle.has("engineError"));
+
+        shell.components.put("synth-engine-error", "java.lang.UnsatisfiedLinkError");
+        for (StatusBoard.Surface surface : new StatusBoard.Surface[] { StatusBoard.Surface.STATUS, StatusBoard.Surface.DIAGNOSTICS }) {
+            JSONObject failed = core.status().collect(surface, new JSONObject());
+            if (surface == StatusBoard.Surface.DIAGNOSTICS) failed = failed.getJSONObject("synth");
+            assertEquals("load_failed", failed.getString("engine"));
+            assertEquals("java.lang.UnsatisfiedLinkError", failed.getString("engineError"));
+        }
+        // The page's status frame keeps its two values: the page only asks whether sound is running.
+        assertEquals("stopped", core.status().collect(StatusBoard.Surface.FRAME, new JSONObject()).getString("engine"));
+    }
 }

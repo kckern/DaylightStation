@@ -262,6 +262,7 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 | `permissions` | Every Android permission the capability needs; an empty list when none. The verifier compares the APK's set with these lists |
 | `requires` | Capabilities a device must also list, or its build is refused |
 | `native` | `true` when the shell half ships native code; a device with no `abis` is refused |
+| `startsAfter` | Capabilities that must come earlier in a device's list when the device lists them too (capabilities start in list order); the other order is refused. `audio-guard` names `synth` |
 
 A setting that must stay off the device file (a token, a credential) is declared
 with `declareSecret`. A setting whose value is household-specific and not secret (an

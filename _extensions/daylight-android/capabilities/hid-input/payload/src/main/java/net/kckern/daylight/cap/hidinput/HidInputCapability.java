@@ -87,9 +87,9 @@ public final class HidInputCapability implements Capability {
         // Each part may fail alone, as in the portal-keys payload.
         try {
             HidEventStream s = new HidEventStream(core.socket());
-            // The accessibility service is taken once, here, as portal-keys did: if it binds
-            // after this, the USB permission dialog is not confirmed for this run.
-            UsbHidController u = new UsbHidController(ctx, core.accessibility().service(), s);
+            // Handed over as a source, not as the service: the service may bind after this,
+            // and the USB permission dialog must still be confirmed then.
+            UsbHidController u = new UsbHidController(ctx, accessibilitySource(core), s);
             u.start();
             stream = s;
             usbHid = u;
@@ -108,6 +108,11 @@ public final class HidInputCapability implements Capability {
         } catch (Throwable t) {
             core.shell().note("PAYLOAD", "Bluetooth radio diagnostics start failed " + t);
         }
+    }
+
+    /** The accessibility service as it is at the moment of asking, through the core's hub. */
+    static UsbPermissionAutomator.ServiceSource accessibilitySource(final CoreContext core) {
+        return () -> core.accessibility().service();
     }
 
     @Override public void stop() {
