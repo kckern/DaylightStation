@@ -37,9 +37,15 @@ const MIC_CAPABILITY = 'mic-bridge';
  */
 const LOAD_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_LOAD_ATTEMPTS = 3;
-/** Async verification: poll `lastLoad` for a little longer than the device waits. */
+/**
+ * Async verification: poll `lastLoad` for a little longer than the device
+ * waits for a page, by the wall clock. A status read is capped well below the
+ * client's default timeout, so a device that stops answering cannot stretch
+ * one verification far past the bound.
+ */
 const VERIFY_POLL_MS = 500;
-const VERIFY_MAX_POLLS = 50;
+const VERIFY_TOTAL_MS = 30_000;
+const VERIFY_READ_TIMEOUT_MS = 5000;
 const MAX_CAMERA_ATTEMPTS = 3;
 const CAMERA_RETRY_MS = 2000;
 
@@ -52,6 +58,11 @@ export class DaylightAndroidContentAdapter extends IContentControl {
   #metrics;
   #adbAdapter;
   #sleep;
+  #now;
+  #injectedSleep;
+  /** Bumped by every load and by dispose(); a verification poller stops when it no longer holds the current value. */
+  #loadGeneration = 0;
+  #verifyTimers = new Set();
 
   /**
    * @param {Object} config
@@ -65,6 +76,7 @@ export class DaylightAndroidContentAdapter extends IContentControl {
    * @param {Object} [deps.logger]
    * @param {Object} [deps.adbAdapter] - Optional AdbAdapter: camera probe, reboot fallback
    * @param {Function} [deps.sleep] - Delay function (tests)
+   * @param {Function} [deps.now] - Clock in ms (tests)
    */
   constructor(config = {}, deps = {}) {
     super();
@@ -88,7 +100,9 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       logger: this.#logger,
     });
     this.#adbAdapter = deps.adbAdapter || null;
+    this.#injectedSleep = deps.sleep || null;
     this.#sleep = deps.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    this.#now = deps.now || (() => Date.now());
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -188,7 +202,8 @@ export class DaylightAndroidContentAdapter extends IContentControl {
 
   /**
    * Reboot the device. The app can only do this as device owner; when it says
-   * it cannot (or does not answer) and ADB is configured, ADB does it.
+   * it cannot, or the request never reached it, and ADB is configured, ADB
+   * does it.
    * @returns {Promise<Object>}
    */
   async reboot() {
@@ -196,6 +211,15 @@ export class DaylightAndroidContentAdapter extends IContentControl {
     const result = await this.#post('/device/reboot');
     if (result.ok) {
       return { ok: true, data: result.data, hint: 'Device is rebooting. Allow ~60s before reconnecting.' };
+    }
+
+    // The app answers and then reboots, but the connection can go first. A
+    // drop or timeout once the request has gone out is the reboot happening;
+    // rebooting again over ADB would only race it. A connection that was
+    // never made is different: the app did not hear the request.
+    if (['TIMEOUT', 'UNREACHABLE'].includes(result.code) && !result.neverSent) {
+      this.#logger.info?.('daylightandroid.reboot.dropped-as-expected', { host: this.#host, code: result.code, error: result.error });
+      return { ok: true, hint: 'Reboot sent (device dropped the connection as it reboots). Allow ~60s.' };
     }
 
     if (this.#adbAdapter) {
@@ -234,6 +258,8 @@ export class DaylightAndroidContentAdapter extends IContentControl {
   async load(path, query = {}, { verifyAsync = false } = {}) {
     const startTime = Date.now();
     this.#metrics.loads++;
+    // Any load, waiting or not, makes an earlier load's verification moot.
+    const generation = ++this.#loadGeneration;
 
     const queryString = new URLSearchParams(query).toString();
     const fullUrl = `${this.#daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
@@ -258,8 +284,13 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         // (an app build that predates load ids) the URL is all there is.
         const loadId = typeof result.data?.loadId === 'string' && result.data.loadId ? result.data.loadId : null;
         if (!loadId) this.#logger.warn?.('daylightandroid.load.async-verify-url-fallback', { fullUrl });
-        this.#verifyLastLoad(fullUrl, loadId).then(
+        this.#verifyLastLoad(fullUrl, loadId, generation).then(
           (verification) => {
+            if (verification?.superseded) {
+              // Not a problem with this load: something newer replaced it.
+              this.#logger.debug?.('daylightandroid.load.async-superseded', { fullUrl, by: verification.superseded });
+              return;
+            }
             const isVerified = verification?.verified === true;
             this.#logger[isVerified ? 'info' : 'warn']?.(
               isVerified ? 'daylightandroid.load.async-verified' : 'daylightandroid.load.async-unverified',
@@ -436,9 +467,12 @@ export class DaylightAndroidContentAdapter extends IContentControl {
    * @param {string} expectedUrl - URL passed to /kiosk/load
    * @param {string|null} loadId - the id from the acknowledgement; when null,
    *   `lastLoad` is matched on the URL instead
-   * @returns {Promise<{verified: boolean, currentUrl?: string, reason?: string}>}
+   * @param {number|null} generation - this load's generation; the poller
+   *   stops once the adapter has moved past it
+   * @returns {Promise<{verified?: boolean, currentUrl?: string, reason?: string, superseded?: 'newer-load'|'lastLoad'}>}
+   *   `superseded` instead of a verdict when a newer load replaced this one
    */
-  async #verifyLastLoad(expectedUrl, loadId = null) {
+  async #verifyLastLoad(expectedUrl, loadId = null, generation = null) {
     const normalize = (url) => {
       if (typeof url !== 'string') return null;
       let normalized = url.trim();
@@ -451,10 +485,19 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       return normalized.replace(/\/$/, '').toLowerCase();
     };
     const target = normalize(expectedUrl);
+    const deadline = this.#now() + VERIFY_TOTAL_MS;
+    const current = () => generation === null || generation === this.#loadGeneration;
     let currentUrl;
+    // The id `lastLoad` carried when polling began: the load that was showing
+    // before this one. Ids are opaque, so this is how "the one before" is told
+    // from "one that came after".
+    let previousLoadId;
 
-    for (let poll = 1; poll <= VERIFY_MAX_POLLS; poll++) {
-      const status = await this.#get('/kiosk/status');
+    while (current()) {
+      const remaining = deadline - this.#now();
+      if (remaining <= 0) break;
+      const status = await this.#get('/kiosk/status', { timeout: Math.min(VERIFY_READ_TIMEOUT_MS, remaining) });
+      if (!current()) break;
       if (status.ok) {
         currentUrl = status.data?.currentUrl;
         const lastLoad = status.data?.lastLoad;
@@ -464,14 +507,52 @@ export class DaylightAndroidContentAdapter extends IContentControl {
             ? { verified: true, currentUrl }
             : { verified: false, currentUrl, reason: lastLoad.error || 'load failed' };
         }
+        if (loadId && typeof lastLoad?.loadId === 'string' && lastLoad.loadId) {
+          if (previousLoadId === undefined) previousLoadId = lastLoad.loadId;
+          else if (lastLoad.loadId !== previousLoadId) return { superseded: 'lastLoad' };
+        }
       }
-      if (poll < VERIFY_MAX_POLLS) await this.#sleep(VERIFY_POLL_MS);
+      const left = deadline - this.#now();
+      if (left <= 0) break;
+      await this.#verifySleep(Math.min(VERIFY_POLL_MS, left));
     }
+    if (!current()) return { superseded: 'newer-load' };
     return {
       verified: false,
       currentUrl,
       reason: loadId ? 'lastLoad never reported this load' : 'lastLoad never reported this URL',
     };
+  }
+
+  /**
+   * The pause between verification polls. The timer is unref'd, so a poller
+   * never keeps the process alive, and it is tracked so dispose() can cancel it.
+   * @private
+   */
+  #verifySleep(ms) {
+    if (this.#injectedSleep) return this.#injectedSleep(ms);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.#verifyTimers.delete(entry);
+        resolve();
+      }, ms);
+      timer.unref?.();
+      const entry = { timer, resolve };
+      this.#verifyTimers.add(entry);
+    });
+  }
+
+  /**
+   * Stop background work: any verification poller ends at its next step and
+   * its pending timer is cancelled. The adapter stays usable.
+   */
+  dispose() {
+    this.#loadGeneration++;
+    for (const { timer, resolve } of this.#verifyTimers) {
+      clearTimeout(timer);
+      resolve();
+    }
+    this.#verifyTimers.clear();
   }
 
   /**

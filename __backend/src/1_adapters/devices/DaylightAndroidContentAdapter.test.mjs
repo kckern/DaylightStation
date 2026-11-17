@@ -30,12 +30,15 @@ const routes = rest => rest.calls.map(call => `${call.method} ${call.route}`);
 
 function makeAdapter(table = {}, { adbAdapter, config = {}, logger = makeLogger() } = {}) {
   const rest = makeRest(table);
-  const sleep = vi.fn(async () => {});
+  // A clock the test owns: sleeping moves it, and a table entry may move it
+  // too (`clock.advance`) to stand in for a slow request.
+  const clock = { t: 1_000_000, advance(ms) { this.t += ms; } };
+  const sleep = vi.fn(async (ms) => { clock.advance(ms); });
   const adapter = new DaylightAndroidContentAdapter(
     { host: 'kiosk.test', port: 8780, token: 'tok', daylightHost: 'https://daylight.test', ...config },
-    { restClient: rest, logger, adbAdapter, sleep },
+    { restClient: rest, logger, adbAdapter, sleep, now: () => clock.t },
   );
-  return { adapter, rest, logger, sleep };
+  return { adapter, rest, logger, sleep, clock };
 }
 
 describe('DaylightAndroidContentAdapter', () => {
@@ -174,7 +177,8 @@ describe('DaylightAndroidContentAdapter', () => {
           currentUrl: 'https://daylight.test/old',
           reason: 'lastLoad never reported this URL',
         }));
-        expect(polls).toBe(50);
+        // 30 s of wall clock at one poll per 500 ms.
+        expect(polls).toBe(60);
       });
 
       it('keeps polling through a status read that fails', async () => {
@@ -249,6 +253,118 @@ describe('DaylightAndroidContentAdapter', () => {
           await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
             fullUrl: URL_, verified: false, currentUrl: URL_, reason: 'lastLoad never reported this load',
           }));
+        });
+      });
+
+      describe('bounded and superseded', () => {
+        const ack = id => ({ body }) => ok({ accepted: true, url: body.url, loadId: id });
+        const flush = () => new Promise(resolve => setTimeout(resolve, 20));
+
+        it('stops at 30 s of wall clock, however slow each status read is', async () => {
+          let polls = 0;
+          const timeouts = [];
+          const { adapter, logger, clock } = makeAdapter({
+            'POST /kiosk/load': ack('L2'),
+            // Every status read hangs for as long as it is allowed to.
+            'GET /kiosk/status': ({ options }) => { polls++; timeouts.push(options.timeout); clock.advance(options.timeout); return fail('TIMEOUT', 'timeout'); },
+          });
+
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.objectContaining({
+            reason: 'lastLoad never reported this load',
+          })));
+          expect(Math.max(...timeouts)).toBeLessThanOrEqual(5000);
+          // 5 s per read plus the 500 ms pause: six reads fit in 30 s, never fifty.
+          expect(polls).toBeLessThanOrEqual(6);
+          expect(timeouts.reduce((sum, t) => sum + t, 0)).toBeLessThanOrEqual(30_000);
+        });
+
+        it('a newer load stops the poller of the one before it, without a warning', async () => {
+          let next = 0;
+          let live = null;
+          const { adapter, logger, rest } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => { live = `L${++next}`; return ok({ accepted: true, url: body.url, loadId: live }); },
+            // The device only ever reports the newest load.
+            'GET /kiosk/status': () => ok({ currentUrl: 'https://daylight.test/b', lastLoad: live === 'L2' ? { loadId: 'L2', url: 'https://daylight.test/b', ok: true } : { loadId: 'L0', url: 'x', ok: true } }),
+          });
+
+          await adapter.load('/a', {}, { verifyAsync: true });
+          await adapter.load('/b', {}, { verifyAsync: true });
+          await flush();
+
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ fullUrl: 'https://daylight.test/b' }));
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/a', by: 'newer-load' });
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+          expect(logger.info).not.toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ fullUrl: 'https://daylight.test/a' }));
+          // The first poller did not keep reading for 30 s.
+          expect(rest.calls.filter(call => call.route === '/kiosk/status').length).toBeLessThan(10);
+        });
+
+        it('a waiting load supersedes an asynchronous one too', async () => {
+          const { adapter, logger } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => (body.wait === false ? ok({ accepted: true, loadId: 'L1' }) : ok({ loaded: true, loadId: 'L2' })),
+            'GET /kiosk/status': ok({ lastLoad: { loadId: 'L0', url: 'x', ok: true } }),
+          });
+          await adapter.load('/a', {}, { verifyAsync: true });
+          await adapter.load('/b');
+          await flush();
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/a', by: 'newer-load' });
+        });
+
+        it('stops when lastLoad moves on to a load that is neither this one nor the one before it', async () => {
+          let polls = 0;
+          const { adapter, logger } = makeAdapter({
+            'POST /kiosk/load': ack('L2'),
+            // L1 was showing before; L3 is someone else's load that replaced ours.
+            'GET /kiosk/status': () => ok({ currentUrl: 'u', lastLoad: { loadId: ++polls < 3 ? 'L1' : 'L3', url: 'u', ok: true } }),
+          });
+
+          await adapter.load('/piano', {}, { verifyAsync: true });
+          await flush();
+
+          expect(polls).toBe(3);
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/piano', by: 'lastLoad' });
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+        });
+
+        it('dispose stops a poller, and its timers never hold the process open', async () => {
+          vi.useFakeTimers();
+          const timers = [];
+          const realSetTimeout = globalThis.setTimeout;
+          const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+            const timer = realSetTimeout(fn, ms, ...args);
+            timers.push({ timer, unref: vi.spyOn(timer, 'unref') });
+            return timer;
+          });
+          try {
+            const rest = makeRest({
+              'POST /kiosk/load': ack('L2'),
+              'GET /kiosk/status': ok({ lastLoad: { loadId: 'L1', url: 'u', ok: true } }),
+            });
+            const logger = makeLogger();
+            const adapter = new DaylightAndroidContentAdapter(
+              { host: 'kiosk.test', token: 'tok', daylightHost: 'https://daylight.test' },
+              { restClient: rest, logger },
+            );
+
+            await adapter.load('/piano', {}, { verifyAsync: true });
+            await vi.advanceTimersByTimeAsync(1200);
+            const pollsBefore = rest.calls.filter(call => call.route === '/kiosk/status').length;
+            expect(pollsBefore).toBeGreaterThan(1);
+            expect(timers.length).toBeGreaterThan(0);
+            for (const { unref } of timers) expect(unref).toHaveBeenCalled();
+
+            adapter.dispose();
+            await vi.advanceTimersByTimeAsync(60_000);
+
+            expect(rest.calls.filter(call => call.route === '/kiosk/status').length).toBe(pollsBefore);
+            expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+            expect(vi.getTimerCount()).toBe(0);
+          } finally {
+            spy.mockRestore();
+            vi.useRealTimers();
+          }
         });
       });
 
@@ -602,6 +718,37 @@ describe('DaylightAndroidContentAdapter', () => {
 
       expect(adbAdapter.reboot).toHaveBeenCalledTimes(1);
       expect(result.ok).toBe(true);
+    });
+
+    it.each([
+      ['a dropped connection', { ok: false, code: 'UNREACHABLE', error: 'socket hang up' }],
+      ['a timeout', { ok: false, code: 'TIMEOUT', error: 'timeout of 10000ms exceeded' }],
+    ])('takes %s after the request went out as the reboot, and does not reboot again over ADB', async (_label, failure) => {
+      const adbAdapter = { reboot: vi.fn(async () => ({ ok: true })) };
+      const { adapter, logger } = makeAdapter({ 'POST /device/reboot': failure }, { adbAdapter });
+
+      const result = await adapter.reboot();
+
+      expect(result.ok).toBe(true);
+      expect(result.hint).toMatch(/dropped the connection/i);
+      expect(adbAdapter.reboot).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('daylightandroid.reboot.dropped-as-expected', expect.any(Object));
+    });
+
+    it('uses ADB when the request never reached the app', async () => {
+      const adbAdapter = { reboot: vi.fn(async () => ({ ok: true })) };
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNREACHABLE', error: 'connect ECONNREFUSED', neverSent: true },
+      }, { adbAdapter });
+      await expect(adapter.reboot()).resolves.toMatchObject({ ok: true });
+      expect(adbAdapter.reboot).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails when the request never reached the app and there is no ADB', async () => {
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNREACHABLE', error: 'connect ECONNREFUSED', neverSent: true },
+      });
+      await expect(adapter.reboot()).resolves.toEqual({ ok: false, error: 'connect ECONNREFUSED' });
     });
 
     it('reports the refusal when there is no ADB fallback', async () => {
