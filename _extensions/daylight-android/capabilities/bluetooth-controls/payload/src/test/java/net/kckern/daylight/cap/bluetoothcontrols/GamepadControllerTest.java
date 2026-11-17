@@ -30,6 +30,7 @@ public class GamepadControllerTest {
         public boolean disconnect(String mac, String role) { action="disconnect"; address=mac; profile=role; return accepted; }
         public boolean setEnabled(boolean value) { action="power"; enabled=value; return accepted; }
         public boolean reply(String mac, boolean accept, String code) { action="reply"; address=mac; pin=code; return accepted; }
+        public BluetoothController.Policy policy() { return BluetoothController.Policy.GAMEPAD; }
     }
 
     @Test public void acceptedPairingDoesNotInventBondedOrConnectedState() throws Exception {

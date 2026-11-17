@@ -11,10 +11,10 @@ public class PairingSessionTest {
   session.clear();assertFalse(session.owns("AA:BB:CC:DD:EE:FF",2000));
  }
  @Test public void missingPermissionOrHidProxyIsUnknownRatherThanDisconnected() {
-  assertNull(BluetoothControls.observedConnection(false,false,false,false));
-  assertNull(BluetoothControls.observedConnection(true,true,false,false));
-  assertEquals(Boolean.FALSE,BluetoothControls.observedConnection(true,true,true,false));
-  assertEquals(Boolean.TRUE,BluetoothControls.observedConnection(true,true,true,true));
-  assertEquals(Boolean.FALSE,BluetoothControls.observedConnection(true,false,false,false));
+  assertNull(GamepadBluetoothPort.observedConnection(false,false,false,false));
+  assertNull(GamepadBluetoothPort.observedConnection(true,true,false,false));
+  assertEquals(Boolean.FALSE,GamepadBluetoothPort.observedConnection(true,true,true,false));
+  assertEquals(Boolean.TRUE,GamepadBluetoothPort.observedConnection(true,true,true,true));
+  assertEquals(Boolean.FALSE,GamepadBluetoothPort.observedConnection(true,false,false,false));
  }
 }

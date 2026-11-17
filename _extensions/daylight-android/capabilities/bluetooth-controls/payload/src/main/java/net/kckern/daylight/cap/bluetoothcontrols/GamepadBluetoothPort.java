@@ -24,6 +24,8 @@ public final class GamepadBluetoothPort implements BluetoothController.Port {
     private final Runnable stopDiscovery = () -> stopScan();
     private final Runnable expirePairing = () -> { synchronized (GamepadBluetoothPort.this) { clearPairing(true); } };
 
+    @Override public BluetoothController.Policy policy() { return BluetoothController.Policy.GAMEPAD; }
+
     public GamepadBluetoothPort(Context ctx) {
         this.ctx = ctx.getApplicationContext();
         adapter = BluetoothAdapter.getDefaultAdapter();
@@ -108,7 +110,8 @@ public final class GamepadBluetoothPort implements BluetoothController.Port {
         if (!ready()) return false;
         if (!canScan()) return fail("Bluetooth discovery permission is required during bridge setup");
         LocationManager location = (LocationManager)ctx.getSystemService(Context.LOCATION_SERVICE);
-        if (Build.VERSION.SDK_INT <= 30 && !location.isLocationEnabled()) return fail("Location services must be enabled during bridge setup for discovery");
+        // isLocationEnabled() arrived in API 28; the check itself only applies up to Android 11.
+        if (Build.VERSION.SDK_INT >= 28 && Build.VERSION.SDK_INT <= 30 && !location.isLocationEnabled()) return fail("Location services must be enabled during bridge setup for discovery");
         stopScan();
         if (!adapter.startDiscovery()) return fail("Bluetooth discovery was not accepted");
         // Only a scan that actually started replaces the unpaired list: a refused one

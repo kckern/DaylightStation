@@ -21,8 +21,9 @@ working helper code out of the old helper apps into this codebase. So far the
 heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
 routes listed below, and the piano build carries `audio-guard` (speaker routes
 under `/speaker` and `/audio-guard`), `synth` (the native sfizz sampler) and
-`midi-bridge` (the BLE-MIDI link) and `bluetooth-controls` (the Bluetooth panel);
-see "Capabilities". The old helper apps still run every device.
+`midi-bridge` (the BLE-MIDI link) and `bluetooth-controls` (the Bluetooth panel),
+and the Shield build carries `bluetooth-controls` in gamepad mode; see
+"Capabilities". The old helper apps still run every device.
 
 ## Shell and payload
 
@@ -314,6 +315,15 @@ HTTP 200 with the result in the body. While a pairing the page started waits on
 Android's own pairing dialog, the capability tells the lockdown (phase 3) not to
 recall the kiosk over that dialog; `bluetooth.systemPairingDialog` (default false)
 allows that route.
+
+`bluetooth.mode: gamepad` (the Shield) manages HID game controllers: the one
+profile is `input`, there is no `power` action, and `pair`, `unpair`, `connect`
+and `disconnect` are refused with `unsupported_device` for any address that is not
+a discovered gamepad or joystick. The HTTP status carries the result, as the old
+audio-bridge API did: `200` for state, `202` for an accepted action, `400` for an
+invalid request, `409` for a refused one. The backend's arcade Bluetooth adapter
+reads both the status (`409`) and the body's `ok` and `code`. Unlike audio-bridge,
+the request's `Content-Type` is not checked.
 
 ## Lifeline
 

@@ -17,6 +17,7 @@ public final class BluetoothControlsCapability implements Capability {
     private CoreContext core;
     private volatile BluetoothController controller;
     private volatile RoleBluetoothPort roles;
+    private volatile boolean gamepad;
     private Runnable closer;
 
     @Override public String name() { return "bluetooth-controls"; }
@@ -45,7 +46,17 @@ public final class BluetoothControlsCapability implements Capability {
 
     /** Role mode answers 200 with ok true or false in the body, as the piano bridge did. */
     private Router.Response respond(JSONObject result, boolean action) {
-        return Replies.json(result);
+        if (!gamepad) return Replies.json(result);
+        // The audio-bridge API: 200 state, 202 accepted, 400 invalid, 409 refused.
+        int status = result.optBoolean("ok") ? (action ? 202 : 200)
+                : "invalid_request".equals(result.optString("code")) ? 400 : 409;
+        return Router.Response.json(status, result);
+    }
+
+    /** Test seam: a controller over a fake port. */
+    void useForTest(BluetoothController controller, boolean gamepad) {
+        this.controller = controller;
+        this.gamepad = gamepad;
     }
 
     @Override public void start() {
@@ -59,14 +70,21 @@ public final class BluetoothControlsCapability implements Capability {
             roles = port;
             closer = port::close;
             controller = port.controller();
+        } else if ("gamepad".equals(mode)) {
+            GamepadBluetoothPort port = new GamepadBluetoothPort(ctx);
+            port.start();
+            closer = port::close;
+            gamepad = true;
+            controller = new BluetoothController(port, System::currentTimeMillis);
         } else {
-            throw new IllegalArgumentException("bluetooth.mode must be 'roles' (got '" + mode + "')");
+            throw new IllegalArgumentException("bluetooth.mode must be 'roles' or 'gamepad' (got '" + mode + "')");
         }
     }
 
     @Override public void stop() {
         controller = null;
         roles = null;
+        gamepad = false;
         if (closer != null) { try { closer.run(); } catch (Throwable ignored) { } closer = null; }
     }
 }

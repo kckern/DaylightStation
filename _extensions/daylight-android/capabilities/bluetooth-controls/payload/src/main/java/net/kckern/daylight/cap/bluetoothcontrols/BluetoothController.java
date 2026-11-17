@@ -16,8 +16,32 @@ public final class BluetoothController {
         boolean unpair(String address) throws Exception;
         boolean connect(String address, String profile) throws Exception;
         boolean disconnect(String address, String profile) throws Exception;
-        boolean setEnabled(boolean enabled) throws Exception;
+        /** The adapter's power switch. A port whose policy has no `power` action never sees this call. */
+        default boolean setEnabled(boolean enabled) throws Exception { return false; }
+        default Policy policy() { return Policy.ROLES; }
         boolean reply(String address, boolean accept, String pin) throws Exception;
+    }
+
+    /** The three places where the instrument-and-speaker panel and the gamepad panel differ. */
+    public static final class Policy {
+        public static final Policy ROLES = new Policy(
+                java.util.Arrays.asList("audio", "midi"), "profile must be audio or midi", false, true);
+        public static final Policy GAMEPAD = new Policy(
+                java.util.Collections.singletonList("input"), "profile must be input", true, false);
+
+        final java.util.List<String> profiles;
+        final String profileError;
+        /** Refuse any address the port does not list as a manageable device. */
+        final boolean manageableOnly;
+        /** Whether the `power` action exists. */
+        final boolean power;
+
+        private Policy(java.util.List<String> profiles, String profileError, boolean manageableOnly, boolean power) {
+            this.profiles = profiles;
+            this.profileError = profileError;
+            this.manageableOnly = manageableOnly;
+            this.power = power;
+        }
     }
 
     private final Port port;
@@ -66,6 +90,7 @@ public final class BluetoothController {
                 }
                 case "scan/stop": accepted = port.stopScan(); break;
                 case "power":
+                    if (!port.policy().power) return invalid("Unknown Bluetooth action");
                     if (!(body.opt("enabled") instanceof Boolean)) return invalid("enabled must be a boolean");
                     accepted = port.setEnabled(body.getBoolean("enabled"));
                     break;
@@ -75,6 +100,8 @@ public final class BluetoothController {
                             || !((String) rawAddress).matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}"))
                         return invalid("A valid Bluetooth address is required");
                     String address = ((String) rawAddress).toUpperCase(Locale.US);
+                    if (port.policy().manageableOnly && !manageable(address))
+                        return error("unsupported_device", "Select a discovered game controller");
                     if ("pair".equals(action)) accepted = port.pair(address);
                     else if ("unpair".equals(action)) accepted = port.unpair(address);
                     else if ("pairing".equals(action)) {
@@ -97,8 +124,7 @@ public final class BluetoothController {
                         accepted = port.reply(address, accept, pin);
                     } else {
                         String profile = body.optString("profile", "");
-                        if (!"audio".equals(profile) && !"midi".equals(profile))
-                            return invalid("profile must be audio or midi");
+                        if (!port.policy().profiles.contains(profile)) return invalid(port.policy().profileError);
                         accepted = "connect".equals(action) ? port.connect(address, profile) : port.disconnect(address, profile);
                     }
                     break;
@@ -111,6 +137,16 @@ public final class BluetoothController {
             // Android/reflective exceptions can include arguments. Never echo them (especially a PIN).
             return error("action_failed", "Bluetooth action could not be completed");
         }
+    }
+
+    /** Is this address one the port lists as manageable? The loop audio-bridge had inline. */
+    private boolean manageable(String address) throws Exception {
+        org.json.JSONArray devices = port.snapshot().optJSONArray("devices");
+        if (devices != null) for (int i = 0; i < devices.length(); i++) {
+            JSONObject device = devices.getJSONObject(i);
+            if (address.equals(device.optString("address")) && device.optBoolean("manageable")) return true;
+        }
+        return false;
     }
 
     private static JSONObject invalid(String message) { return error("invalid_request", message); }
