@@ -312,7 +312,7 @@ public class ControlServer extends NanoWSD {
         }
         Map<String, String> files = new java.util.HashMap<>();
         session.parseBody(files);
-        String body = files.get("postData");
+        String body = RequestBody.of(files);
         LockdownCommand command;
         try { command=LockdownCommand.parse(body,System.currentTimeMillis()); }
         catch (IllegalArgumentException invalid) { return json(Response.Status.BAD_REQUEST,"{\"error\":\"invalid lockdown command\"}"); }

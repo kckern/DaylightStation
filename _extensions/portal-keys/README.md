@@ -622,6 +622,15 @@ store the same value in the household auth entry named by
 node _extensions/portal-keys/pkctl.mjs lockdown-token '<server-only-secret>'
 ```
 
+**Shell 35 is the first that can actually lock.** Through shell 34,
+`handleLockdown` read the body from NanoHTTPD's `postData`, which 2.3.1 fills only
+for POST; a PUT body goes to a temp file named in `content`. Every authenticated
+`PUT /lockdown` arrived empty, so a Stop was treated as a release and
+`lockdownActive` stayed false (measured on the live Portal, 2026-11-17).
+`RequestBody.of` reads both. Verify a lock after any shell change with a short
+deadline: `PUT /lockdown {"locked":true,"lockedUntil":<now+15s>}` must answer
+`lockdownActive: true`, then read false after the deadline.
+
 The complete, tracked YAML template is
 [`__docs/configuration/public-kiosk-shutdown.yml`](../../__docs/configuration/public-kiosk-shutdown.yml).
 
