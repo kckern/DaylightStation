@@ -28,18 +28,17 @@ public final class SystemDiagnostics {
 
     private SystemDiagnostics() { }
 
-    public static JSONObject snapshot(BridgeCore service) {
+    public static JSONObject snapshot(android.content.Context ctx, StatusBoard board) {
         JSONObject o = new JSONObject();
-        DeviceConfig cfg = service.getConfig();
         try {
             o.put("ok", true);
             o.put("time", time());
             o.put("cpu", safe(() -> ProcStats.sample(500)));
-            o.put("device", safe(() -> DeviceProbe.info(service.getContext())));
+            o.put("device", safe(() -> DeviceProbe.info(ctx)));
             o.put("thermal", safe(SystemDiagnostics::thermal));
-            o.put("bridge", safe(() -> bridge(service)));
-            o.put("kiosk", safe(() -> kiosk(service, cfg)));
             o.put("crash", safe(CrashLog::read));
+            // One section per capability, named after it.
+            board.collect(StatusBoard.Surface.DIAGNOSTICS, o);
         } catch (Exception e) {
             try { o.put("ok", false).put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }
@@ -94,35 +93,6 @@ public final class SystemDiagnostics {
         o.put("zones", zones);
         o.put("readableZones", readable);
         if (readable == 0) o.put("note", "no thermal_zone readable (SELinux-denied on this build); see device.battery.temperatureC");
-        return o;
-    }
-
-    private static JSONObject bridge(BridgeCore service) throws Exception {
-        JSONObject o = new JSONObject();
-        BleMidiConnector ble = service.getBleConnector();
-        A2dpConnector spk = service.getA2dpConnector();
-        AudioRouteGuard guard = service.getAudioGuard();
-        o.put("engine", service.isEngineRunning() ? "running" : "stopped");
-        o.put("midiIn", service.midiInStatus()); // note-read path health (portOpen/attempts/lastError)
-        o.put("ble", ble != null ? ble.status() : JSONObject.NULL);
-        o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
-        o.put("guard", guard != null ? guard.status() : JSONObject.NULL);
-        o.put("uptimeMs", SystemClock.elapsedRealtime());
-        return o;
-    }
-
-    private static JSONObject kiosk(BridgeCore service, DeviceConfig cfg) throws Exception {
-        JSONObject o = new JSONObject();
-        KioskWatchdog wd = service.getKioskWatchdog();
-        KioskSettingsGuard sg = service.getKioskSettingsGuard();
-        o.put("webview", wd != null ? wd.snapshot() : JSONObject.NULL); // is the WebView presenting frames?
-        o.put("fkbApp", FkbRest.deviceInfo(cfg));                        // is FKB itself alive + its own view
-        // Third view: is FKB still CONFIGURED as a kiosk? A tablet can be presenting
-        // frames from a healthy FKB and still be sitting unlocked with kioskMode=false.
-        o.put("settings", sg != null ? sg.snapshot() : JSONObject.NULL);
-        // Fourth view: which app is actually in front, from our own a11y service.
-        ForegroundWatch fw = service.getForegroundWatch();
-        o.put("foreground", fw != null ? fw.snapshot() : JSONObject.NULL);
         return o;
     }
 

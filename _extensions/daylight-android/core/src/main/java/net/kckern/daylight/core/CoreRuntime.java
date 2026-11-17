@@ -124,6 +124,14 @@ public final class CoreRuntime implements CoreContext {
     }
 
     private void registerCoreRoutes() {
+        router.route("GET", "/log", req -> Replies.json(Replies.ok()
+                .put("log", Diag.recent())
+                .put("events", new JSONArray(log.toJsonArray()))));
+        router.route("GET", "/crashlog", req -> Replies.json(CrashLog.read()));
+        router.route("GET", "/diagnostics", req -> {
+            CoreServices d = device;
+            return Replies.json(d == null ? Replies.err("not_ready") : SystemDiagnostics.snapshot(d.ctx, status));
+        });
         router.route("GET", "/wifi", req -> {
             CoreServices d = device;
             return Replies.json(d == null ? Replies.err("not_ready")
@@ -177,9 +185,15 @@ public final class CoreRuntime implements CoreContext {
         // The shell's payload status is extra detail. If it is not JSON, /status still answers.
         Object payload = JSONObject.NULL;
         try { payload = new JSONObject(shell.payloadStatusJson()); } catch (Exception notJson) { }
-        return status.collect(StatusBoard.Surface.STATUS, new JSONObject()
+        // Identity first, so two devices' answers cannot be confused.
+        JSONObject body = new JSONObject()
                 .put("ok", true)
                 .put("device", deviceId)
+                .put("model", String.valueOf(android.os.Build.MODEL))
+                .put("android", String.valueOf(android.os.Build.VERSION.RELEASE));
+        CoreServices d = device;
+        if (d != null) body.put("package", d.ctx.getPackageName());
+        return status.collect(StatusBoard.Surface.STATUS, body
                 .put("payloadVersion", payloadVersion)
                 .put("shellVersionCode", shell.shellVersionCode())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)

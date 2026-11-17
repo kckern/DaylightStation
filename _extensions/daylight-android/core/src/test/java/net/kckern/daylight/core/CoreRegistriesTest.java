@@ -96,4 +96,14 @@ public class CoreRegistriesTest {
         assertEquals(java.util.Arrays.asList("register"), events);
         assertEquals(4, core.settings().get("sample.level"));
     }
+
+    @Test public void logCrashlogAndDiagnosticsAnswerWithoutAnAndroidContext() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.log().add("hello");
+        core.start(new JSONObject("{}"));
+        JSONObject log = TestCore.get(core, "/log");
+        assertTrue(log.getBoolean("ok"));
+        assertTrue(log.getJSONArray("events").getString(0).endsWith(" hello"));
+        assertEquals("not_ready", TestCore.get(core, "/diagnostics").getString("error"));
+    }
 }
