@@ -2,6 +2,12 @@
 
 The `gratitude` School program asks “What are you grateful for today?” Voice is the usual input; typing earns identical credit. “I'm grateful for my toys” is valid and stores “Toys” in the existing Gratitude collection. Length, eloquence, and explanation are not requirements.
 
+## What the child sees
+
+A close X at the top right (`aria-label="Close"`; Arrow Left does the same), the question, an answer box, Record (secondary) and Submit (the one primary action). The box does not take focus, so no on-screen keyboard appears unless the child taps it to type. While a recording is being uploaded and written down, the screen says "Writing down what you said…". When the words arrive they fill the box and the screen says "Check your words, then tap Submit."; the box still does not take focus. A saved recording with no words keeps "Your recording is saved. Please type your answer or try recording again." From a physical keyboard, Enter submits and Space records while the box is empty. Once an answer is submitted or the day is complete, no draft is saved again, including from the answer box losing focus as the screen changes.
+
+These come from opt-in props on the shared `ReflectionResponse` (`focusOnOpen`, `focusAfterTake`, `transcribingLabel`, `afterTakeHint`). Their defaults keep the earlier behavior, which School Debrief still uses. The screen logs `school.gratitude.ui.transcribing` when the writing-down line appears and `school.gratitude.ui.closed` (with the phase) when the close control or Arrow Left is used; neither carries the child's words.
+
 ## Enrollment
 
 Add one entry to a learner's `programs` list through the normal assignment service:
@@ -21,7 +27,7 @@ The shelf is Scripture & Gospel; the unit is `gratitude:daily`. One accepted sub
 
 `IDecisionGateway` (Jev) assesses meaningful effort and semantic novelty using the learner's recent accepted statements and subjects. All learner words are untrusted data. The rubric accepts ordinary subjects, short noun phrases, Korean or English, imperfect spelling, and playful but coherent gratitude. It assesses observable content rather than claiming to know sincerity.
 
-Each topic can earn credit once every seven study-day dates: Monday becomes eligible again the following Monday. Weekends and holidays count; there is no calendar-week reset. Histories are per learner. Synonyms, trivial qualifiers, cosmetic rewording, and splitting a broad topic into small subtopics repeat. Genuinely distinct concrete experiences about the same person may qualify.
+Each topic can earn credit once every seven study-day dates: Monday becomes eligible again the following Monday. Weekends and holidays count; there is no calendar-week reset. Histories are per learner. Synonyms, trivial qualifiers, cosmetic rewording, and splitting a broad topic into small subtopics repeat. Distinct concrete experiences about the same person may qualify.
 
 A confident nonsense/abuse or recent-repetition verdict awards no credit and saves an absolute `retryAt` 30 minutes later. The server enforces it across devices, input methods, refreshes, grants, restarts, and day rollover. Blocked requests do not extend it. A fresh refusal after expiry starts another delay. Other School activities remain available.
 
@@ -29,7 +35,7 @@ Uncertainty requests a clearer answer without a penalty. Microphone denial, spee
 
 ## Publication and recovery
 
-After acceptance, a cheap configured `IAIGateway.chatStructured` model extracts one concise faithful subject, preserving specific reasons/events. Multiple things become one combined subject and still earn at most one credit. School preserves a publication intent before invoking the Gratitude owner's idempotent `publishSchoolGratitude` callback. Completion follows confirmed storage. Stable selection identity prevents duplicates after crashes and lost responses. Normal Gratitude bootstrap, history, and printing consume the existing selection shape.
+After acceptance, a cheap configured `IAIGateway.chatStructured` model extracts one concise faithful subject: it drops only the framing ("I am grateful for") and keeps the action or activity and any specific person, place or event ("I am grateful for eating cookies" becomes "Eating cookies"). `normalizeGratitudeSubject` (`GratitudeSubject.mjs`) then applies the household list's sentence case (capital first letter, the rest as the model returned it so names keep their capitals), strips a leftover framing phrase, wrapping quotes and trailing punctuation, and refuses an empty or over-160-character subject, so casing never depends on the model. Code never rebuilds a phrase the model shortened; the prompt's examples carry that rule, and a test pins the activity example. Multiple things become one combined subject and still earn at most one credit. School preserves a publication intent before invoking the Gratitude owner's idempotent `publishSchoolGratitude` callback. Completion follows confirmed storage. Stable selection identity prevents duplicates after crashes and lost responses. Normal Gratitude bootstrap, history, and printing consume the existing selection shape.
 
 Server-persisted WebSocket updates carry `topic: gratitude`, `action: item_added`, `source: school`, and `persisted: true`. Displays merge stable IDs and do not POST them again.
 

@@ -31,6 +31,7 @@ async function world(page,{refusal=null}={}){
 test('gratitude typing saves the subject and finishes one daily obligation',async({page})=>{
   const {submissions}=await world(page);
   const field=page.getByRole('textbox');await expect(field).toBeVisible();
+  await expect(field).not.toBeFocused();
   await field.press('Space');await expect(field).toHaveValue(' ');
   await field.fill("I'm grateful for my toys");await field.press('Enter');
   await expect(page.getByText('Toys',{exact:true})).toBeVisible();
@@ -45,6 +46,6 @@ for(const reason of ['nonsense','repetition'])test(`gratitude ${reason} cooldown
   await page.reload();await expect(page.getByText('Take a little break')).toBeVisible();
   await expect(page.getByRole('textbox')).toHaveCount(0);
   await page.screenshot({path:path.join('test-results/school-gratitude',`${reason}.png`)});
-  await page.getByRole('button',{name:'Back to School'}).click();
+  await page.getByRole('button',{name:'Close'}).click();
   await expect(page.getByText('Take a little break')).toHaveCount(0);
 });
