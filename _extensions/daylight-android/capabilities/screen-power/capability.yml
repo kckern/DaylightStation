@@ -1,0 +1,7 @@
+# Screen on and off, brightness, keep-awake locks, reboot under device owner.
+# Screen off is picked at run time: the device admin lockdown declares when it is
+# active, else the accessibility service's lock-screen action, else unsupported.
+entry: net.kckern.daylight.cap.screenpower.ScreenPowerCapability
+permissions:
+  # System brightness. Granted once: appops set <package> WRITE_SETTINGS allow
+  - android.permission.WRITE_SETTINGS

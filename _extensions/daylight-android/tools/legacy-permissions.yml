@@ -29,6 +29,7 @@ piano:   # piano-bridge
   added:
     android.permission.RECORD_AUDIO: page microphone for the kiosk WebView (webview-host), granted over ADB or inert
     android.permission.CAMERA: page camera for the kiosk WebView (webview-host), granted over ADB or inert
+    android.permission.WRITE_SETTINGS: system brightness (screen-power), granted over ADB with appops or inert
   dropped: {}
 portal:  # portal-keys
   legacy:
@@ -53,6 +54,7 @@ portal:  # portal-keys
     android.permission.MODIFY_AUDIO_SETTINGS: WebRTC audio for the kiosk WebView (webview-host)
     android.permission.SYSTEM_ALERT_WINDOW: the overlay message and web overlay above a launched app (webview-host), granted over ADB or inert
     android.permission.QUERY_ALL_PACKAGES: lockdown names the activity in front and app-launcher resolves what it starts; inert below API 30
+    android.permission.WRITE_SETTINGS: system brightness (screen-power), granted over ADB with appops or inert
   dropped: {}
 shield:  # audio-bridge and supervision-guard together
   legacy:
@@ -79,4 +81,5 @@ shield:  # audio-bridge and supervision-guard together
     android.permission.CAMERA: page camera for the kiosk WebView (webview-host), granted over ADB or inert
     android.permission.MODIFY_AUDIO_SETTINGS: WebRTC audio for the kiosk WebView (webview-host)
     android.permission.QUERY_ALL_PACKAGES: at target 30 other packages are invisible without it; lockdown names the activity in front and app-launcher resolves what it starts
+    android.permission.WRITE_SETTINGS: system brightness (screen-power), granted over ADB with appops or inert
   dropped: {}

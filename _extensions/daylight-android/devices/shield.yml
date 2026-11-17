@@ -1,10 +1,10 @@
-# NVIDIA Shield TV (Android 11). Helpers, the kiosk window and lockdown (built in, off until the home app is switched).
+# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched) and screen power.
 id: shield
 package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 9, versionName: "0.3-kiosk" }
+shell: { versionCode: 10, versionName: "0.3-kiosk" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 # `accessibility`: the lockdown watcher reads what is in front through it, and it is this
@@ -15,6 +15,7 @@ capabilities:
   - debug-tools
   - accessibility
   - lockdown
+  - screen-power
   - bluetooth-controls
   - mic-bridge
   - lease-gate
