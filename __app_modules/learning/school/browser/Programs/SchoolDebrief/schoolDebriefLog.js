@@ -21,6 +21,7 @@ export const schoolDebriefLog = {
   stepEnter: (d) => emit('step.enter', d, 'debug'),
   takeStart: (d) => emit('take.start', d, 'debug'),
   takeKept: (d) => emit('take.kept', d),
+  transcribing: (d) => emit('take.transcribing', d),
   takeRefused: (d) => emit('take.refused', d, 'warn'),
   submit: (d) => emit('submit', d),
   chips: (d) => emit('chips', d),
