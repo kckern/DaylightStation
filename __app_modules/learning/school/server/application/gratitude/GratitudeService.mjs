@@ -1,7 +1,7 @@
 import { GRATITUDE_PROMPT, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
 import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
-import { GRATITUDE_FOLLOW_UP_FALLBACK, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
+import { followUpFallbackFor, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
 
 export class GratitudeError extends Error {
   constructor(message, status = 400, retryAt = null) { super(message); this.name = 'GratitudeError'; this.status = status; this.retryAt = retryAt; }
@@ -159,7 +159,7 @@ export class GratitudeService {
         let written=null;
         try{written=await this.#followUpWriter?.write({text:state.assessText});}catch{written=null;}
         const question=normalizeFollowUpQuestion(written?.question);
-        if(!question || !['model','fallback'].includes(written?.writer))written={question:GRATITUDE_FOLLOW_UP_FALLBACK,writer:'fallback'};
+        if(!question || !['model','fallback'].includes(written?.writer))written={question:followUpFallbackFor(state.assessText),writer:'fallback'};
         else written={question,writer:written.writer};
         await this.#append(id,day,{type:'follow-up-asked',attemptId:attempt.attemptId,question:written.question,writer:written.writer});
         this.#logger.info?.('school.gratitude.follow-up',{learnerId:id,day,attemptId:attempt.attemptId,writer:written.writer});return;
