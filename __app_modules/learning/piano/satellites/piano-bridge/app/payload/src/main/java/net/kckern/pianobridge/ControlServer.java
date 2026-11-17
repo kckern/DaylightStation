@@ -259,6 +259,7 @@ public class ControlServer extends NanoWSD {
                         compact.put("lastFps", s.opt("lastFps"));
                         compact.put("lastBeatAgoMs", s.opt("lastBeatAgoMs"));
                         compact.put("recovering", s.opt("recovering"));
+                        KioskWatchdog.appendHealthStatus(s, compact);
                         o.put("watchdog", compact);
                     }
                     return json(o);

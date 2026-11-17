@@ -547,3 +547,37 @@ On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=
 - Path OUT: browser →HTTP→ APK →BLE→ JamCorder →USB/DIN→ piano
 - FKB sets `mdmDisableADB: true`, so ADB is refused until flipped via `setBooleanSetting`
 - Prior investigation: `ops:docs/_wip/bugs/2026-08-22-piano-midi-one-way-outage.md`
+
+
+## Read page health separately from recovery history
+
+`GET /kiosk` keeps its legacy `verdict`, FPS aliases, counters, `lastAction`,
+`lastOutcome` and `lastDecision` fields. Read the additive independent observations
+alongside them: `liveness` is `alive`, `dead` or `unknown`; `responsiveness` is
+`healthy`, `degraded`, `screen-off` or `unknown`. A fresh visible 3–6 FPS beat is
+alive and degraded. Native recovery still requires sustained low FPS; the defaults
+remain 12 FPS, 5 seconds sustained and 12 seconds of beat silence. Startup grace,
+disabled recovery or an old successful action do not make current low FPS healthy.
+A hidden page with fresh beats is screen-off; beat silence is dead even if its last
+FPS sample was high. Without a beat or fresh presentation measurement, health is
+unknown. `screenOn` is nullable cached FKB readback, expiring after the beat timeout;
+unknown readback is reported explicitly without changing the existing ladder gate.
+
+The same additive allowlist reaches `/status.watchdog` and the outbound heartbeat:
+`liveness`, `responsiveness`, `decisionId`, `decisionAt`, `screenOn`, `quiet`,
+`activeGame` and `recoveryStage`. `decisionAt` is UTC with a `Z` suffix. A new ID and
+time identify an actual changed policy choice or recovery step; reading status or
+repeating an unchanged evaluation does not refresh them. Legacy outcome/action
+text is historical, including when it remains beside a newer decision. Native
+edge events include measured FPS, visibility, beat age, thresholds and recovery
+gates, device identity and candidate payload identity; they do not log per frame.
+
+To diagnose a report of low FPS with a healthy legacy label, compare the installed
+build/payload identity and effective `/kiosk` thresholds against the raw
+`/kiosk/beat` FPS/visibility and both serialized health fields. Source regressions
+exercise that boundary but cannot establish an unavailable installed build or
+configuration's historical cause. Physical recovery and containment require
+device acceptance independently of these diagnostics. Automatic recovery remains
+blocked by unknown/stopped native safety or maintenance, protects active games
+from disruptive rungs, and preserves parent Stop. Browser self restart remains
+disabled (`SELF_HEAL_RESTART=false`).

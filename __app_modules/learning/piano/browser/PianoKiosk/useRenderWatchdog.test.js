@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tickWatchdog, buildBeat, DEFAULT_BEAT_URL } from './useRenderWatchdog.js';
+import { tickWatchdog, buildBeat, DEFAULT_BEAT_URL, SELF_HEAL_RESTART, WATCHDOG_DEFAULTS } from './useRenderWatchdog.js';
 
 const OPTS = { minFps: 12, sustainSeconds: 4 };
 const fresh = { jankSeconds: 0, fired: false };
@@ -40,6 +40,16 @@ describe('tickWatchdog', () => {
 });
 
 describe('buildBeat', () => {
+  it('preserves the visible three-fps wire sample without declaring it healthy', () => {
+    expect(JSON.parse(JSON.stringify(buildBeat(3, {
+      visibility: 'visible', url: 'https://example.test/piano', sinceLoadMs: 60000,
+      ts: 1720033000000, activity: { type: 'game', id: 'chess' },
+    })))).toEqual({ fps: 3, visibility: 'visible', url: 'https://example.test/piano',
+      sinceLoadMs: 60000, ts: 1720033000000, activity: { type: 'game', id: 'chess' } });
+    expect(SELF_HEAL_RESTART).toBe(false);
+    expect(WATCHDOG_DEFAULTS).toEqual({ minFps: 12, sustainSeconds: 4, graceMs: 8000 });
+  });
+
   it('rounds fps and carries liveness fields for the bridge', () => {
     const beat = buildBeat(58.6, {
       visibility: 'visible', url: 'https://x/piano', sinceLoadMs: 12345.9, ts: 1720033000000,

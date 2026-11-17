@@ -72,6 +72,7 @@ public final class KioskWatchdog {
     private final long startedAtRt = SystemClock.elapsedRealtime();
     private long lowMs = 0;                       // accumulated ms of visible-low-fps
     private volatile Verdict lastVerdict = Verdict.GRACE;
+    private String lastHealth = "";
     private volatile long cooldownUntilRt = 0;
 
     // --- recovery bookkeeping (surfaced over /kiosk and /diagnostics) ---
@@ -85,6 +86,20 @@ public final class KioskWatchdog {
     private volatile String lastOutcome = null;
     private volatile String lastDecision = null;
     private volatile long lastDecisionWallTs = 0;
+
+    // Current policy choices have their own immutable identity. Legacy outcome and
+    // action text remain historical; serializing them never creates a new choice.
+    private static final class Decision {
+        final String key, id, at, stage;
+        Decision(String key, String id, String at, String stage) {
+            this.key = key; this.id = id; this.at = at; this.stage = stage;
+        }
+    }
+    private final String decisionSession = java.util.UUID.randomUUID().toString();
+    private long decisionSequence;
+    private volatile Decision currentDecision;
+    private volatile Boolean screenOn;
+    private volatile long screenReadAtRt;
 
     private final ExecutorService recoveryExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "kiosk-recovery"); t.setDaemon(true); return t;
@@ -188,9 +203,18 @@ public final class KioskWatchdog {
                 lastFps, lastVisibility, lowMs,
                 c.watchdogMinFps(), c.watchdogSustainSec(), c.watchdogBeatTimeoutMs(), c.watchdogGraceMs());
 
+        String live = liveness(c, now);
+        String responsive = responsiveness(c, now);
+        String health = live + ":" + responsive;
+        if (!health.equals(lastHealth)) {
+            CrashLog.note("WATCHDOG", "health-edge at=" + Heartbeat.iso(System.currentTimeMillis())
+                    + " liveness=" + live + " responsiveness=" + responsive + " " + measuredGates(c, beatAge));
+            lastHealth = health;
+        }
+
         if (v != lastVerdict) {
             CrashLog.note("WATCHDOG", "verdict " + lastVerdict + " → " + v
-                    + " (fps=" + lastFps + " beatAgeMs=" + beatAge + " vis=" + lastVisibility + ")");
+                    + " " + measuredGates(c, beatAge));
             lastVerdict = v;
         }
 
@@ -199,7 +223,14 @@ public final class KioskWatchdog {
         // invisible touch-burst, DEAD gets the full disruptive ladder. Escalating a
         // DECAYED page past L1 is the 2026-07-15 outage — see escalatesPastL1.
         boolean actionable = (v == Verdict.DEAD || v == Verdict.DECAYED);
-        if (actionable && c.watchdogRecoverEnabled() && now >= cooldownUntilRt
+        boolean allowed = c.watchdogRecoverEnabled() && service != null && service.recoveryAllowed();
+        if (!recovering.get()) {
+            String reason = !actionable ? "observe" : !c.watchdogRecoverEnabled() ? "recovery-disabled"
+                    : !allowed ? "native-safety-or-maintenance" : now < cooldownUntilRt ? "cooldown" : "eligible";
+            recordDecision("watch:" + v + ":" + reason,
+                    actionable ? ("eligible".equals(reason) ? "eligible" : "suppressed") : "observing", reason);
+        }
+        if (actionable && allowed && now >= cooldownUntilRt
                 && recovering.compareAndSet(false, true)) {
             final Verdict trigger = v;
             recoveryExec.execute(() -> {
@@ -354,6 +385,7 @@ public final class KioskWatchdog {
         counter.incrementAndGet();
         lastAction = action;
         lastActionWallTs = System.currentTimeMillis();
+        recordDecision("action:" + action + ":" + counter.get(), action, action);
         CrashLog.note("RECOVERY", "→ " + action);
     }
 
@@ -361,12 +393,60 @@ public final class KioskWatchdog {
     private void decide(String decision, String reason) {
         lastDecision = decision + " — " + reason;
         lastDecisionWallTs = System.currentTimeMillis();
+        recordDecision("ladder:" + decision + ":" + lastDecisionWallTs, decision, reason);
         CrashLog.note("RECOVERY", "DECISION " + lastDecision);
     }
 
     private void finish(String outcome) {
         lastOutcome = outcome;
+        recordDecision("finish:" + outcome, "finished", outcome);
         CrashLog.note("RECOVERY", "LADDER end: " + outcome);
+    }
+
+    private synchronized void recordDecision(String key, String stage, String reason) {
+        if (currentDecision != null && currentDecision.key.equals(key)) return;
+        currentDecision = new Decision(key, decisionSession + ":" + (++decisionSequence),
+                Heartbeat.iso(System.currentTimeMillis()), stage);
+        long age = lastBeatAtRt == 0 ? -1 : SystemClock.elapsedRealtime() - lastBeatAtRt;
+        CrashLog.note("RECOVERY", "decisionId=" + currentDecision.id + " decisionAt=" + currentDecision.at
+                + " stage=" + stage + " reason=" + reason + " " + measuredGates(cfg, age));
+    }
+
+    private String measuredGates(DeviceConfig c, long age) {
+        return "deviceId=" + c.heartbeatDeviceId() + " payload=" + ControlServer.BUILT_BY
+                + " fps=" + lastFps + " beatAgeMs=" + age + " visibility=" + lastVisibility
+                + " minFps=" + c.watchdogMinFps() + " sustainSec=" + c.watchdogSustainSec()
+                + " beatTimeoutMs=" + c.watchdogBeatTimeoutMs() + " quiet=" + inQuietWindow(c)
+                + " screenOn=" + knownScreenOn(c) + " activeGame=" + (activeGameId != null)
+                + " recoverEnabled=" + c.watchdogRecoverEnabled()
+                + " nativeRecoveryAllowed=" + (service != null && service.recoveryAllowed());
+    }
+
+    private Boolean knownScreenOn(DeviceConfig c) {
+        return SystemClock.elapsedRealtime() - screenReadAtRt <= c.watchdogBeatTimeoutMs() ? screenOn : null;
+    }
+
+    /** Independent observations: freshness is liveness; raw presentation is responsiveness.
+     * Sustain/grace/enable gates affect recovery policy, never turn 3 fps into healthy. */
+    private String liveness(DeviceConfig c, long now) {
+        if (lastBeatAtRt == 0) return "unknown";
+        return now - lastBeatAtRt > c.watchdogBeatTimeoutMs() ? "dead" : "alive";
+    }
+
+    private String responsiveness(DeviceConfig c, long now) {
+        if (!"alive".equals(liveness(c, now))) return "unknown";
+        if ("hidden".equals(lastVisibility) || Boolean.FALSE.equals(knownScreenOn(c))) return "screen-off";
+        if (!("visible".equals(lastVisibility) || "unknown".equals(lastVisibility)) || lastFps < 0) return "unknown";
+        return lastFps >= c.watchdogMinFps() ? "healthy" : "degraded";
+    }
+
+    /** Additive status allowlist shared by /status and the outbound heartbeat.
+     * Keep nulls explicit: unknown screen state is not affirmative readback. */
+    static void appendHealthStatus(JSONObject source, JSONObject target) throws org.json.JSONException {
+        for (String key : new String[]{"liveness", "responsiveness", "decisionId", "decisionAt",
+                "screenOn", "quiet", "activeGame", "recoveryStage"}) {
+            target.put(key, source.has(key) ? source.get(key) : JSONObject.NULL);
+        }
     }
 
     /** True once a beat NEWER than the action shows healthy fps (reload remounts → fresh beats). */
@@ -378,13 +458,13 @@ public final class KioskWatchdog {
     private boolean fkbScreenOn(DeviceConfig c) {
         try {
             JSONObject fkb = FkbRest.deviceInfo(c);
-            if (!fkb.optBoolean("reachable", false)) return true; // FKB down → assume on
-            Object s = fkb.opt("screenOn");
-            if (s instanceof Boolean) return (Boolean) s;
-            return true; // field absent/unknown → assume on
+            Object s = fkb.optBoolean("reachable", false) ? fkb.opt("screenOn") : null;
+            screenOn = s instanceof Boolean ? (Boolean) s : null;
         } catch (Exception e) {
-            return true;
+            screenOn = null;
         }
+        screenReadAtRt = SystemClock.elapsedRealtime();
+        return !Boolean.FALSE.equals(screenOn); // preserve the existing fail-open ladder gate
     }
 
     private boolean inQuietWindow(DeviceConfig c) {
@@ -424,6 +504,15 @@ public final class KioskWatchdog {
             o.put("recoverEnabled", c.watchdogRecoverEnabled());
             o.put("rebootEnabled", c.watchdogRebootEnabled());
             o.put("verdict", lastVerdict.name());
+            o.put("liveness", liveness(c, now));
+            o.put("responsiveness", responsiveness(c, now));
+            Decision decision = currentDecision;
+            o.put("decisionId", decision == null ? JSONObject.NULL : decision.id);
+            o.put("decisionAt", decision == null ? JSONObject.NULL : decision.at);
+            o.put("recoveryStage", decision == null ? "idle" : decision.stage);
+            Boolean screen = knownScreenOn(c);
+            o.put("screenOn", screen == null ? JSONObject.NULL : screen);
+            o.put("quiet", inQuietWindow(c));
             // The one number people read as "how janky is the screen": rAF frames the
             // kiosk PAGE presented in its last ~1s window, self-reported in its beat
             // (useRenderWatchdog.js). NOT an Android/GPU counter, NOT smoothed by the
