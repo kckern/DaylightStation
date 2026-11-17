@@ -93,6 +93,47 @@ whichever control started it. Each record is one attempt at one screen, keyed
   only their own buttons take taps, so the handle's controls stay reachable.
 - Screen readers hear the newest outcome through one polite live region.
 
+## Pinning to the home screen on the phone app
+
+Inside the household's Android phone app, Now Playing shows one more secondary
+button beside Quality…: **Add to home screen** (`shell/AddToHomeScreenButton.jsx`).
+Everywhere else (ordinary browsers, kiosks, a frame) it is not drawn: it
+appears only while `canPinMedia()` from `frontend/src/lib/fkb.js` answers
+`true`, asked when Now Playing mounts and again whenever the item changes.
+
+**What it pins** (`shell/homeScreenPin.js` `pinTarget`). The playlist, album
+or show the item was played from, so one tap on the home screen plays the
+whole thing: a container expanded into the queue gives each child its
+`containerContentId` next to `containerTitle`, and Now Playing pins that id
+under that title. A nested season pins the show that was played, not the
+season. An item played on its own (nothing contains it) pins the item. The id
+is always one the app already uses (`source:localId`). An id that is a URL,
+has a URL-scheme source, an empty, `.` or `..` segment, a backslash, a bar, a
+control character or a modifier segment (`shuffle`, `playable`, `launchable`,
+`recent_on_top`, `expand`) is never sent: the container falls back to the item,
+and with neither the button is not drawn.
+
+**The label** is the title with control, format, bidi, zero-width,
+separator and private-use characters removed (control characters and
+separators become a space), whitespace collapsed, trimmed, and cut to 40 code
+points without splitting a grapheme. A raw id is never used as a label.
+
+**The outcome** goes through the one outcome tray, with no Retry:
+
+| Phone's answer | Row |
+|---|---|
+| `accepted: true` (Android's own dialog is showing) | "Confirm on your phone's dialog" (a brief row; it never says "Added", because the phone does not report whether the owner confirmed) |
+| `rate_limited` | "One moment, then try again" |
+| `launcher_cannot_pin` | "This phone's home screen can't add shortcuts" |
+| any other reason | "Couldn't add to home screen" |
+
+A refusal stays until dismissed, like every problem row. The button is
+disabled for five seconds after a tap, the same window in which the phone
+refuses a second request. The log carries the kind (`container` or `item`)
+and the outcome (`media` events `home-screen-pin.shown`,
+`home-screen-pin.requested`, and `fkb.pinMedia.result`), never the content id
+or the label.
+
 ## Keeping your place
 
 A reload or crash restores what was playing, its spot, its queue, repeat and

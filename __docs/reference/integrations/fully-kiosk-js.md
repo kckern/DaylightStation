@@ -182,6 +182,27 @@ two does not qualify. `daylight` qualifies if it has one of `launch`,
 bridge itself passes `{ onError }`; the piano jank prompt does, and logs
 `piano.jank-reboot.reboot-failed` as it always has.
 
+### Pinning media on the phone app
+
+The phone build of the Android app adds two members to `window.daylight`:
+`canPinMedia()` and `pinMedia(request)` (contract: `__docs/reference/android/phone.md`,
+"Page bridge on the phone: pinning media"). Kiosks, Fully and ordinary
+browsers never have them. The phone's bridge carries none of the kiosk members
+above, so these two read `window.daylight` directly instead of through the
+"what counts as a bridge" check.
+
+| `fkb.js` export | Answer |
+|---|---|
+| `canPinMedia()` | `true` only when `daylight.pinMedia` is a function and `daylight.canPinMedia()` returns exactly `true`. `false` when either member is missing, when it throws, or for any other answer. Does not log |
+| `pinMedia({contentId, label})` | Sends `{"contentId","label"}` as JSON text and answers `{accepted: true}` or `{accepted: false, reason}`. A missing member answers `reason: 'not_available'`; a throw, unparseable text or an answer of another shape answers `reason: 'failed'`. A JSON-text answer is parsed. A refusal without a one-word lower-case reason reads `failed`, and any other field the native side sends is dropped |
+
+`accepted: true` means Android's own pin dialog is showing; whether the owner
+confirmed is never reported. Each call logs `fkb.pinMedia.result` with
+`accepted` and `reason` only, never the content id or the label (a thrown
+error's text is not logged either, since it could repeat them). Media's Now
+Playing is the one caller; see "Pinning to the home screen on the phone app" in
+`__docs/reference/media/media-app.md`.
+
 ---
 
 ## Notes
