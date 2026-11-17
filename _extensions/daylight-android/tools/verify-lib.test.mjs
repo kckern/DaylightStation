@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bakedPayloadFailure, byVersion, newestVersion, sha256Hex } from './verify-lib.mjs';
+import { bakedPayloadFailure, byVersion, newestVersion, sha256Hex, synthLibraryFailure } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
   assert.ok(byVersion('9.0.0', '33.0.2') < 0);
@@ -41,4 +41,34 @@ test('no .sha256 file means nothing to compare', () => {
 
 test('a .sha256 file without a digest is a failure, not a pass', () => {
   assert.match(bakedPayloadFailure(Buffer.from('x'), 'not a hash\n'), /does not hold a sha256/);
+});
+
+const synthLibrary = (parts, size = 2 * 1024 * 1024) => {
+  const body = Buffer.alloc(size);
+  let at = 64;
+  for (const part of parts) { body.write(part, at, 'latin1'); at += part.length + 8; }
+  return body;
+};
+const JNI = 'Java_net_kckern_daylight_cap_synth_shell_PianoEngine_nativeLoadPreset';
+
+test('a synth library with the JNI exports and sfizz linked in passes', () => {
+  assert.equal(synthLibraryFailure(synthLibrary([JNI, '[sfizz] Loading failed'])), null);
+});
+
+test('a synth library built without sfizz is refused', () => {
+  assert.match(synthLibraryFailure(synthLibrary([JNI])), /sfizz is not linked/);
+});
+
+test('a synth library whose JNI names belong to another package is refused', () => {
+  const old = 'Java_net_kckern_pianobridge_PianoEngine_nativeLoadPreset';
+  assert.match(synthLibraryFailure(synthLibrary([old, '[sfizz] Loading failed'])), /JNI exports/);
+});
+
+test('a synth library too small to hold a sampler is refused', () => {
+  assert.match(synthLibraryFailure(synthLibrary([JNI, '[sfizz] Loading failed'], 200 * 1024)), /too small/);
+});
+
+test('a missing synth library is refused', () => {
+  assert.match(synthLibraryFailure(null), /missing/);
+  assert.match(synthLibraryFailure(Buffer.alloc(0)), /missing/);
 });

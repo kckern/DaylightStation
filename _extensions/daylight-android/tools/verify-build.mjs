@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
-import { bakedPayloadFailure, newestVersion, sha256Hex } from './verify-lib.mjs';
+import { bakedPayloadFailure, newestVersion, sha256Hex, synthLibraryFailure } from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const id = process.argv[2];
@@ -87,6 +87,22 @@ for (const name of device.capabilities) {
   if (!capabilities[name]?.native) continue;
   for (const abi of device.abis || []) {
     check(entries.some((e) => e.startsWith(`lib/${abi}/`) && e.endsWith('.so')), `capability '${name}' has no native library for ${abi}`);
+  }
+}
+
+// A device that lists the synth must carry the real engine for each of its ABIs: the
+// library is read out of the APK and inspected, since a build without the sampler
+// loads and answers every call and makes no sound. There is no flag to skip this.
+if (device.capabilities.includes('synth')) {
+  check((device.abis || []).length > 0, "capability 'synth' needs at least one ABI in the device file");
+  for (const abi of device.abis || []) {
+    let lib = null;
+    try { lib = execFileSync('unzip', ['-p', apk, `lib/${abi}/libpianobridge.so`], { maxBuffer: 512 * 1024 * 1024 }); } catch { /* reported below */ }
+    const failure = synthLibraryFailure(lib);
+    if (failure) failures.push(`${abi}: ${failure}`);
+    for (const dep of ['liboboe.so', 'libc++_shared.so']) {
+      check(entries.includes(`lib/${abi}/${dep}`), `${abi}: the synth needs ${dep} in the APK`);
+    }
   }
 }
 

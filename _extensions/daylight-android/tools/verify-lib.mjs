@@ -35,3 +35,20 @@ export function bakedPayloadFailure(bakedJarBytes, shaFileText) {
   if (actual === expected) return null;
   return `baked payload sha256 is ${actual}, but the built payload is ${expected}: the APK holds a stale payload`;
 }
+
+/**
+ * Is this libpianobridge.so the real synth? Three things a library built without
+ * the sampler cannot show: the JNI exports under the class name the APK's
+ * PianoEngine has, strings that exist only in sfizz's own code, and a size no
+ * engine-less build reaches (that one is a few tens of kilobytes).
+ * Returns null when it is, otherwise the failure message.
+ */
+export function synthLibraryFailure(bytes) {
+  if (!bytes || bytes.length === 0) return 'the synth library is missing';
+  if (!bytes.includes('Java_net_kckern_daylight_cap_synth_shell_PianoEngine_nativeLoadPreset')) {
+    return 'the synth library has no JNI exports for net.kckern.daylight.cap.synth.shell.PianoEngine';
+  }
+  if (!bytes.includes('[sfizz]')) return 'sfizz is not linked into the synth library: it would make no sound';
+  if (bytes.length < 1024 * 1024) return `the synth library is too small to hold the sampler (${bytes.length} bytes)`;
+  return null;
+}

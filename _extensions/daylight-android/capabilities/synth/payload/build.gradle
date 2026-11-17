@@ -1,0 +1,12 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.synth'
+}
+
+dependencies {
+    implementation project(':core')
+    // PianoEngine is loaded by the shell's class loader. Compile against it; never dex it.
+    compileOnly project(':capabilities:synth:shell')
+    testImplementation project(':capabilities:synth:shell')
+}

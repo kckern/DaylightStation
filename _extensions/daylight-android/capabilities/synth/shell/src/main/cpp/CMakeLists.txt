@@ -1,10 +1,8 @@
-# CMakeLists.txt — native synth host for Piano Bridge.
+# CMakeLists.txt: native synth host (sfizz through Oboe), built as libpianobridge.so.
 #
-# STATUS: UNBUILT SCAFFOLD. There is NO Android NDK / cmake on the authoring
-# machine, so this has NOT been configured or compiled. It is written to be
-# internally consistent: it links WITHOUT sfizz/dexed (the engines fall back to
-# silence via #ifdef guards). Enable real DSP by vendoring those libs and
-# uncommenting the marked blocks below.
+# Shipped since the piano-bridge shell v30. sfizz is required: Gradle passes
+# SFIZZ_DIR (sfizz.dir in local.properties), and configuration stops without it.
+# The Dexed engine is compiled out; its block below is kept for when it is vendored.
 
 cmake_minimum_required(VERSION 3.22.1)
 project(pianobridge LANGUAGES CXX)
@@ -32,7 +30,16 @@ target_link_libraries(pianobridge
 # ---------------------------------------------------------------------------
 # Real DSP engines.
 #
-# --- sfizz (SFZ sampler) — ENABLED (vendored under third_party/sfizz) ---
+# --- sfizz (SFZ sampler) ---
+# The vendored tree lives outside git. A library built without it would load and
+# make no sound, so a missing tree is an error here, not a fallback.
+if(NOT SFIZZ_DIR OR NOT EXISTS "${SFIZZ_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "sfizz not found at '${SFIZZ_DIR}': set sfizz.dir in local.properties to the vendored sfizz tree")
+endif()
+# sfizz's own configure step otherwise runs `git submodule update --init` inside the
+# vendored tree whenever a submodule has no CMakeLists.txt, which rewrites files there.
+# The tree is used as it is; a missing submodule shows up as a compile error.
+set(SFIZZ_GIT_SUBMODULE_CHECK OFF CACHE BOOL "" FORCE)
 set(SFIZZ_JACK       OFF CACHE BOOL "" FORCE)
 set(SFIZZ_RENDER     OFF CACHE BOOL "" FORCE)
 set(SFIZZ_SHARED     OFF CACHE BOOL "" FORCE)
@@ -41,9 +48,9 @@ set(SFIZZ_DEMOS      OFF CACHE BOOL "" FORCE)
 set(SFIZZ_DEVTOOLS   OFF CACHE BOOL "" FORCE)
 set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_USE_SNDFILE OFF CACHE BOOL "" FORCE)   # use bundled st_audiofile/dr_libs (WAV)
-add_subdirectory(third_party/sfizz EXCLUDE_FROM_ALL)
+add_subdirectory(${SFIZZ_DIR} ${CMAKE_BINARY_DIR}/sfizz EXCLUDE_FROM_ALL)
 target_link_libraries(pianobridge sfizz::sfizz)
-target_include_directories(pianobridge PRIVATE third_party/sfizz/src)
+target_include_directories(pianobridge PRIVATE ${SFIZZ_DIR}/src)
 target_compile_definitions(pianobridge PRIVATE HAVE_SFIZZ)
 #
 # --- dexed / MSFA (DX7 FM core) --- still disabled (vendor later) ---

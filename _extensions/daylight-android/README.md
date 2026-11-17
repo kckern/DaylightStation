@@ -54,6 +54,8 @@ baked one.
 ## Build
 
 Requirements: JDK 11 and the Android SDK (platform 33 and a build-tools release).
+A device that lists `synth` also needs NDK 26.1.10909125, CMake 3.22.1 and the
+vendored sfizz tree (see "The synth's native build").
 
 ```bash
 export JAVA_HOME={jdk-11-home}
@@ -96,6 +98,38 @@ Tests: `./gradlew build` runs the Java unit tests of every module. The Node test
 for the CLI and the verifier's helpers run with
 `node --test _extensions/daylight-android/cli/ _extensions/daylight-android/tools/`
 from the repo root.
+
+## The synth's native build
+
+`capabilities/synth/shell/` holds the JNI class `PianoEngine`, the C++ sources and
+the CMake build of `libpianobridge.so` (sfizz through Oboe). The library is part
+of the installed APK; a payload swap cannot change it.
+
+sfizz is not in git. Point the build at the vendored tree with one line in
+`local.properties` (untracked):
+
+```
+sfizz.dir={path-to-vendored-sfizz}
+```
+
+or with `DAYLIGHT_SFIZZ_DIR`. Use the revision the instrument was tuned with
+(`f5c6e29`); another revision is a change to the instrument's sound. Any task that
+builds the synth module stops with a message naming the setting when `sfizz.dir`
+is unset or has no `CMakeLists.txt`. There is no build without sfizz: such a
+library would load, answer every call and make no sound.
+
+The first build compiles sfizz for each ABI of the devices that list `synth`.
+sfizz's own configure step writes `Doxyfile` and `src/sfizz/Config.h` into its
+source tree when their content differs. Its git submodule check is turned off, so
+the build runs no `git submodule update` there.
+
+`tools/verify-build.mjs` reads `lib/<abi>/libpianobridge.so` out of the APK for
+each ABI and fails unless it holds the JNI exports for
+`net.kckern.daylight.cap.synth.shell.PianoEngine`, strings that exist only in
+sfizz, and at least 1 MiB; `liboboe.so` and `libc++_shared.so` must be beside it.
+
+A debug APK carries the CMake `Debug` build of the library, as the piano-bridge
+APK did.
 
 ## The tokens file
 

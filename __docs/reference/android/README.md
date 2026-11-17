@@ -20,7 +20,8 @@ working helper code out of the old helper apps into this codebase. So far the
 `piano`, `portal` and `shield` device files build, the core has gained the
 heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
 routes listed below, and the piano build carries `audio-guard` (speaker routes
-under `/speaker` and `/audio-guard`). The old helper apps still run every device.
+under `/speaker` and `/audio-guard`) and `synth` (the native sfizz sampler; see
+"Capabilities"). The old helper apps still run every device.
 
 ## Shell and payload
 
@@ -222,6 +223,34 @@ build time from the `placeholders:` map of `{private-tokens-file}`, so addresses
 and device identities stay out of the repo. A placeholder with no value fails the
 build of that device and names the placeholder, never a value.
 
+## Capabilities
+
+What each ported capability adds to a device that lists it. HTTP routes need the
+token like every other route; WebSocket messages are JSON text frames on the
+control port, keyed by `type`.
+
+### `synth`
+
+The native sampler (sfizz through Oboe). Its library and the JNI class are in the
+installed APK; the engine is created when the app process starts and lives until
+the process ends, across payload swaps. List `synth` before `midi-bridge` in a
+device file so a key press reaches the sampler before anything else.
+
+| Kind | Name | What it does |
+|---|---|---|
+| HTTP | `POST /panic` | All notes off; answers `{action: "panic"}` |
+| WS in | `engine.start`, `engine.stop` | Open or close the audio stream, and record that the page wants sound |
+| WS in | `preset.load` `{spec}` | Load a voice. `spec`: `id`, `engine`, `asset` (a path under the app's `piano-instruments` directory), `patch`, `gain_db`, `transpose`, `tune`, `velocity_curve`, `reverb.mix` |
+| WS in | `param.set` `{path, value}` | Set one engine parameter |
+| WS in | `panic` | All notes off |
+| WS in | `note.on` `{note, velocity}`, `note.off` `{note}` | Play a note the page read itself |
+| WS out | `status` every second | `engine` (`running` or `stopped`), `preset`, `cpu`, `xruns` |
+| WS out | `error` `{code, msg}` | `no_spec`, `no_engine`, `bad_asset`, `preset_failed`, `no_path` |
+
+`/status` and `/diagnostics` carry `engine` and `preset`. The synth provides the
+output gate `audio-guard` closes when sound would leave by the wrong speaker; when
+the gate opens again, the stream is reopened only if the page had asked for sound.
+
 ## Lifeline
 
 Served by the shell on `control.lifelinePort`.
@@ -298,8 +327,10 @@ and no others. It also compares the sha256 of the payload baked into the APK wit
 the `.sha256` file the payload build wrote, and fails when the APK holds a
 different payload than the one just built. It also checks that the shell
 service's foreground service types are exactly the device file's, and that a
-capability with native code ships a library for every ABI of the device. It exits
-1 on any difference.
+capability with native code ships a library for every ABI of the device. For a
+device that lists `synth` it reads the synth library out of the APK for each ABI
+and fails unless it holds the JNI exports of the APK's engine class and sfizz
+itself. It exits 1 on any difference.
 
 With `--legacy` it also compares the APK's permissions with what the old helper
 app for that device declared, using
