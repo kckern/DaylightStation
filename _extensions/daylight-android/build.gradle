@@ -14,4 +14,6 @@ def privatePath = project.findProperty('controlTokens') ?: System.getenv('DAYLIG
 ext.placeholders = net.kckern.daylight.build.Placeholders.load(privatePath ? new File(privatePath.toString()) : null)
 // Also returned by the payload's version(). Override with -PpayloadVersion=p2-...
 ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p1-foundation'
+// The NDK that builds native capability code and strips its libraries when the APK is packaged.
+ext.ndkVersion = '26.1.10909125'
 apply from: 'gradle/payload-dex.gradle'

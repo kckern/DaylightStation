@@ -129,7 +129,10 @@ each ABI and fails unless it holds the JNI exports for
 sfizz, and at least 1 MiB; `liboboe.so` and `libc++_shared.so` must be beside it.
 
 A debug APK carries the CMake `Debug` build of the library, as the piano-bridge
-APK did.
+APK did. The NDK version is set once, in the root `build.gradle`, for the synth
+module and for the shell: the shell needs it to strip the libraries when it
+packages the APK (about 2.4 MB and 4.2 MB for the two ABIs, instead of 25 MB each
+with symbols).
 
 ## The tokens file
 

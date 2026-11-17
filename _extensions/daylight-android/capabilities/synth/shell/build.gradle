@@ -17,7 +17,7 @@ def haveSfizz = !sfizzDir.isEmpty() && new File(sfizzDir, 'CMakeLists.txt').exis
 android {
     namespace 'net.kckern.daylight.cap.synth.shell'
     // Must be installed under $ANDROID_HOME/ndk/.
-    ndkVersion '26.1.10909125'
+    ndkVersion rootProject.ext.ndkVersion
 
     // Lets CMake's find_package(oboe CONFIG) resolve the Oboe AAR's prefab package.
     buildFeatures { prefab true }

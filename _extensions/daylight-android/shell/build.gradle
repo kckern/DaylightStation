@@ -9,6 +9,9 @@ def tokens = net.kckern.daylight.build.ControlTokens.load(tokensPath ? new File(
 android {
     namespace 'net.kckern.daylight.shell'
     compileSdk 33
+    // Without an NDK the packaging step cannot strip a capability's native libraries and
+    // ships them with debug symbols, several times their size. Only used when a device has ABIs.
+    ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig { minSdk 26 }
 
