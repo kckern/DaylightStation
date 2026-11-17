@@ -61,7 +61,7 @@ function categoryOf(provider, row, native) {
   if (!type && ['done', 'complete', 'completed', 'closed'].includes(status)) return 'done';
   return 'unknown';
 }
-function normalizeItem({
+export function normalizeItem({
   row,
   provider,
   accountId,
@@ -125,7 +125,7 @@ function normalizeItem({
   return validateWorkItem({
     ...source,
     observedAt,
-    version: hash(source)
+    version: hash({...source,...(provider==='todoist'?{completedCount:row.completed_count??null,deleted:row.is_deleted??false,priority:row.priority??null,labels:row.labels??[]}: {})})
   });
 }
 function normalizeEvents({

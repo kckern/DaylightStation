@@ -10,7 +10,7 @@ All features start disabled and read-only. Each participating username needs an 
 
 Per-user scalar settings override household defaults. If a user supplies providers or domains, that map replaces the entire base map; hidden inherited destinations must not survive. Invalid routing/configuration disables Work participation. Invalid attention settings disable only proactive attention and retain valid manual read access. Empty review windows and opted-in domain lists schedule no housekeeping.
 
-Configured provider operations are necessary permission, not proof a live adapter supports them. Command execution will separately check actual capability, current destination/account/version and authorized writer role. No external command path is active in the initial model/configuration increment.
+Configured provider operations are necessary permission, not proof a live adapter supports them. Command execution will separately check actual capability, current destination/account/version and authorized writer role. Todoist command support is implemented behind a trusted dispatch-authority callback; source capability does not activate writes.
 
 ## Source identity and dates
 
@@ -31,7 +31,7 @@ Account aliases must agree on credential scope as well as account identity. A kn
 
 Collectors retain latest per-user/account attempt health separately at `current/{provider}-health.yml`. A failed refresh preserves the last complete task file but makes Work coverage unavailable, including after reader restart. A current snapshot is not proof that a later refresh succeeded.
 
-Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. No read adapter exposes command capability in this increment.
+Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. Todoist exposes only implemented operations intersected with current configuration; ClickUp remains a read adapter until its command increment.
 
 ## Runtime and private operator jobs
 
@@ -75,3 +75,27 @@ Work keeps canonical transactions in `work/events.jsonl` under each user, with a
 A durable envelope is replayed exactly once after a projection failure. Authorized recovery preserves incomplete tail bytes before repairing; a complete valid envelope missing only its newline is retained. Complete corrupt records and missing canonical history block writes. Edited generated projections are backed up and rebuilt from the canonical log; user-editable KB files are not touched by this recovery.
 
 Read context joins explicitly scoped provider facts, stable links and the local relevance overlay. Refresh does not reactivate paused/retired work. Missing or old sources can supply clearly unavailable prior context, but cannot authorize an automatic action. Observations newer than an explicit as-of are excluded. Links require a verified authored principal and bind the canonical provider reference; a repeated confirmation is idempotent and cannot silently replace its relation to a broader outcome.
+
+## Todoist command adapter
+
+The v1 adapter supports complete/reopen, create/update/delete task and
+create/rename/archive project. It does not treat archiving a task as completing
+it and does not expose a generic status transition. IDs remain opaque strings.
+Task creation is restricted to the domain container. Project creation additionally
+requires an explicit `creationParentId`; this grants creation below that parent,
+not permission to rename or archive the parent itself.
+
+Each command refetches its target and checks the captured version, current
+account, destination, operation permission, assignee restrictions and trusted
+dispatch authority before sending. Reopen, create, update, delete and project
+changes require a bound confirmation supplied by the command owner. The adapter
+alone cannot validate a Telegram confirmation or acquire a writer lease; its
+injected authority callback defaults to deny.
+
+Mutation success requires independent readback. A timeout is uncertain and is
+never retried inside the adapter. Rate limiting returns a retry time without an
+automatic retry. A recurring close requires the native completion counter to
+advance; advancing the due date alone proves nothing. Exact provider history
+supplies completion occurrences separately, so a next occurrence is never
+fabricated as an accomplishment. Unknown creates/deletes require explicit
+resolution rather than title matching or another blind write.
