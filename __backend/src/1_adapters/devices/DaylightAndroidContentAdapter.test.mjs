@@ -404,6 +404,101 @@ describe('DaylightAndroidContentAdapter', () => {
       expect(adapter.getMetrics().errors).toBe(1);
     });
 
+    describe('when the kiosk window is not up', () => {
+      const conflict = deviceCode => ({ ok: false, code: 'CONFLICT', status: 409, deviceCode, error: `HTTP 409: ${deviceCode}` });
+      const flush = () => new Promise(resolve => setTimeout(resolve, 20));
+
+      it.each(['no_kiosk_activity', 'not_in_foreground'])(
+        'on %s it resends with wait:false, takes the queued acknowledgement, and verifies by loadId',
+        async (deviceCode) => {
+          const { adapter, rest, logger } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => (body.wait === false
+              ? ok({ accepted: true, queued: true, loadId: 'Q1' })
+              : conflict(deviceCode)),
+            'GET /kiosk/status': ok({ currentUrl: 'https://daylight.test/piano', lastLoad: { loadId: 'Q1', url: 'https://daylight.test/piano', ok: true } }),
+          });
+
+          const result = await adapter.load('/piano');
+
+          const loads = rest.calls.filter(call => call.route === '/kiosk/load');
+          expect(loads.map(call => call.body)).toEqual([
+            { url: 'https://daylight.test/piano' },
+            { url: 'https://daylight.test/piano', wait: false },
+          ]);
+          expect(result).toMatchObject({ ok: true, url: 'https://daylight.test/piano', verified: 'async', queued: true });
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.queued', expect.objectContaining({
+            fullUrl: 'https://daylight.test/piano', reason: deviceCode, loadId: 'Q1',
+          }));
+          await flush();
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true }));
+          expect(adapter.getMetrics().errors).toBe(0);
+        },
+      );
+
+      it('fails when the queued resend is refused too', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': conflict('no_kiosk_activity') });
+        const result = await adapter.load('/piano');
+        expect(rest.calls).toHaveLength(2);
+        expect(result).toMatchObject({ ok: false, error: 'HTTP 409: no_kiosk_activity' });
+      });
+
+      it('does not resend for any other conflict', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': conflict('update_in_progress') });
+        const result = await adapter.load('/piano');
+        expect(rest.calls).toHaveLength(1);
+        expect(result).toMatchObject({ ok: false, error: 'HTTP 409: update_in_progress', attempts: 1 });
+      });
+
+      it('says so when a verifyAsync load was queued', async () => {
+        const { adapter, logger } = makeAdapter({
+          'POST /kiosk/load': ok({ accepted: true, queued: true, loadId: 'Q2' }),
+          'GET /kiosk/status': ok({ lastLoad: { loadId: 'Q2', url: 'https://daylight.test/piano', ok: true } }),
+        });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).toMatchObject({ ok: true, verified: 'async', queued: true });
+        expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.queued', expect.objectContaining({ loadId: 'Q2' }));
+      });
+
+      it('an ordinary verifyAsync acknowledgement is not marked queued', async () => {
+        const { adapter, logger } = makeAdapter({
+          'POST /kiosk/load': ok({ accepted: true, loadId: 'L1' }),
+          'GET /kiosk/status': ok({ lastLoad: { loadId: 'L1', url: 'x', ok: true } }),
+        });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).not.toHaveProperty('queued');
+        expect(logger.info).not.toHaveBeenCalledWith('daylightandroid.load.queued', expect.anything());
+      });
+    });
+
+    describe('when the device does not allow the origin', () => {
+      const PRIVATE = '/screen/private-room';
+      it.each([
+        ['in `error`', { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'origin_not_allowed', deviceError: 'origin_not_allowed: https://daylight.test/screen/private-room?pin=42', error: 'HTTP 400: origin_not_allowed' }],
+        ['in `message`', { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'bad_request', deviceMessage: 'origin_not_allowed: https://daylight.test/screen/private-room?pin=42', error: 'HTTP 400: bad_request' }],
+      ])('fails once, names the origin only, and warns once (%s)', async (_label, refusal) => {
+        const { adapter, rest, logger, sleep } = makeAdapter({ 'POST /kiosk/load': refusal });
+
+        const result = await adapter.load(PRIVATE, { pin: '42' });
+
+        expect(rest.calls).toHaveLength(1);
+        expect(sleep).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ ok: false, code: 'ORIGIN_NOT_ALLOWED', attempts: 1 });
+        expect(result.error).toContain('https://daylight.test');
+        expect(result.error).not.toMatch(/private-room|pin=42/);
+        const warns = logger.warn.mock.calls;
+        expect(warns).toEqual([['daylightandroid.load.originNotAllowed', { origin: 'https://daylight.test', host: 'kiosk.test' }]]);
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(adapter.getMetrics().errors).toBe(1);
+      });
+
+      it('is the same for a verifyAsync load', async () => {
+        const { adapter } = makeAdapter({
+          'POST /kiosk/load': { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'origin_not_allowed', error: 'HTTP 400: origin_not_allowed' },
+        });
+        await expect(adapter.load('/piano', {}, { verifyAsync: true })).resolves.toMatchObject({ ok: false, code: 'ORIGIN_NOT_ALLOWED' });
+      });
+    });
+
     it('retries an unreachable device with backoff and succeeds when it returns', async () => {
       let attempt = 0;
       const { adapter, rest, sleep } = makeAdapter({
@@ -488,6 +583,20 @@ describe('DaylightAndroidContentAdapter', () => {
       await expect(adapter.getStatus()).resolves.toMatchObject({ appVersion: '1.4.0' });
     });
 
+    it('reports whether the page bridge is available and how often the renderer was lost', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true, screenOn: true, bridge: 'unavailable', bridgeReason: 'document-start injection unsupported', rendererLosses: 2 }),
+        'GET /status': ok({ appVersion: '2.1.0' }),
+      });
+      await expect(adapter.getStatus()).resolves.toMatchObject({
+        ready: true,
+        provider: 'daylight-android',
+        bridge: 'unavailable',
+        bridgeReason: 'document-start injection unsupported',
+        rendererLosses: 2,
+      });
+    });
+
     it('still reports status when the version read fails', async () => {
       const { adapter } = makeAdapter({
         'GET /kiosk/status': ok({ ready: true, currentUrl: 'u', screenOn: false }),
@@ -558,6 +667,85 @@ describe('DaylightAndroidContentAdapter', () => {
       const result = await adapter.prepareForContent();
       expect(result.step).toBe('toForeground');
       expect(result.error).toMatch(/rejected credentials/i);
+    });
+
+    describe('when the kiosk window is not up', () => {
+      const notInFront = { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'not_in_foreground', error: 'HTTP 409: not_in_foreground' };
+
+      it('goes on, so the load that follows can be queued, and says the window is not up', async () => {
+        const { adapter, rest, logger } = makeAdapter({ ...screenUp, 'POST /kiosk/foreground': notInFront });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(routes(rest)).toContain('GET /capabilities');
+        expect(result).toMatchObject({ ok: true, kioskWindowUp: false, coldRestart: false });
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.kioskWindowNotUp', { reason: 'not_in_foreground' });
+      });
+
+      it('is the same on the broadcast profile, without claiming the foreground was verified', async () => {
+        const { adapter } = makeAdapter({ ...screenUp, 'POST /kiosk/foreground': notInFront });
+        await expect(adapter.prepareForContent({ profile: 'broadcast' })).resolves.toMatchObject({
+          ok: true, profile: 'broadcast', kioskWindowUp: false, foregroundVerified: false,
+        });
+      });
+
+      it('a normal prepare says the window is up', async () => {
+        const { adapter } = makeAdapter(screenUp);
+        await expect(adapter.prepareForContent({ skipCameraCheck: true })).resolves.toMatchObject({ ok: true, kioskWindowUp: true });
+      });
+
+      it('any other conflict at the foreground step still fails the prepare', async () => {
+        const { adapter } = makeAdapter({
+          ...screenUp,
+          'POST /kiosk/foreground': { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'update_in_progress', error: 'HTTP 409: update_in_progress' },
+        });
+        await expect(adapter.prepareForContent()).resolves.toMatchObject({ ok: false, step: 'toForeground' });
+      });
+    });
+
+    describe('mic bridge restart answers', () => {
+      const held = {
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true }),
+      };
+      const notReady = { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'not_ready', error: 'HTTP 409: not_ready' };
+
+      it('retries once, shortly, when the bridge is not ready', async () => {
+        let posts = 0;
+        const { adapter, sleep, rest } = makeAdapter({ ...screenUp, ...held, 'POST /mic/restart': () => (++posts === 1 ? notReady : ok({ running: true })) });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(result).toMatchObject({ ok: true, micRestarted: true });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(2);
+        expect(sleep).toHaveBeenCalledWith(1500);
+      });
+
+      it('gives up after that one retry', async () => {
+        const { adapter, rest, logger } = makeAdapter({ ...screenUp, ...held, 'POST /mic/restart': notReady });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(result).toMatchObject({ ok: true, micRestarted: false });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(2);
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.micRestart.failed', expect.objectContaining({ code: 'CONFLICT' }));
+      });
+
+      it('does not retry when the capture did not come back (500)', async () => {
+        const { adapter, rest, sleep } = makeAdapter({ ...held, 'POST /mic/restart': fail('HTTP_ERROR', 'HTTP 500: internal') });
+
+        const result = await adapter.healAudioBridge();
+
+        expect(result).toMatchObject({ ok: false, micRestarted: false, error: 'HTTP 500: internal' });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(1);
+        expect(sleep).not.toHaveBeenCalled();
+      });
+
+      it('healAudioBridge retries a not-ready bridge once too', async () => {
+        let posts = 0;
+        const { adapter } = makeAdapter({ ...held, 'POST /mic/restart': () => (++posts === 1 ? notReady : ok({ running: true })) });
+        await expect(adapter.healAudioBridge()).resolves.toMatchObject({ ok: true, micRestarted: true });
+      });
     });
 
     it('broadcast profile wakes and foregrounds, and does nothing else', async () => {

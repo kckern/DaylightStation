@@ -46,6 +46,10 @@ const MAX_LOAD_ATTEMPTS = 3;
 const VERIFY_POLL_MS = 500;
 const VERIFY_TOTAL_MS = 30_000;
 const VERIFY_READ_TIMEOUT_MS = 5000;
+/** The device's words for "there is no kiosk window to act on". */
+const KIOSK_WINDOW_NOT_UP = new Set(['no_kiosk_activity', 'not_in_foreground']);
+/** One short pause before asking a mic bridge that was not ready again. */
+const MIC_RETRY_MS = 1500;
 const MAX_CAMERA_ATTEMPTS = 3;
 const CAMERA_RETRY_MS = 2000;
 
@@ -144,7 +148,13 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       // The route answers after the app has verified it is in front, so one
       // request replaces the Fully adapter's foreground-and-poll loop.
       const foreground = await this.#post('/kiosk/foreground');
-      if (!foreground.ok) {
+      // 409 with one of these words is not a refusal: the kiosk window is not
+      // up. The prepare goes on, because the load that follows is queued by
+      // the device and shown when the window attaches.
+      const kioskWindowUp = !(!foreground.ok && foreground.code === 'CONFLICT' && KIOSK_WINDOW_NOT_UP.has(foreground.deviceCode));
+      if (!kioskWindowUp) {
+        this.#logger.warn?.('daylightandroid.prepareForContent.kioskWindowNotUp', { reason: foreground.deviceCode });
+      } else if (!foreground.ok) {
         const error = foreground.code === 'AUTH_REJECTED'
           ? `Kiosk app rejected credentials: ${foreground.error}`
           : foreground.error;
@@ -161,7 +171,8 @@ export class DaylightAndroidContentAdapter extends IContentControl {
           coldRestart: false,
           cameraAvailable: null,
           cameraSkipped: true,
-          foregroundVerified: true,
+          foregroundVerified: kioskWindowUp,
+          kioskWindowUp,
           elapsedMs,
         };
       }
@@ -191,6 +202,7 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         cameraAvailable,
         cameraSkipped,
         micRestarted: mic.restarted,
+        kioskWindowUp,
         elapsedMs: Date.now() - startTime,
       };
     } catch (error) {
@@ -269,44 +281,23 @@ export class DaylightAndroidContentAdapter extends IContentControl {
     let attempts = 0;
     for (let attempt = 1; attempt <= MAX_LOAD_ATTEMPTS; attempt++) {
       attempts = attempt;
-      const result = verifyAsync
+      let result = verifyAsync
         ? await this.#post('/kiosk/load', { url: fullUrl, wait: false })
         : await this.#post('/kiosk/load', { url: fullUrl }, { timeout: LOAD_REQUEST_TIMEOUT_MS });
-      if (result.ok && verifyAsync) {
-        this.#logger.info?.('daylightandroid.load.acknowledged', {
-          fullUrl, attempt, loadTimeMs: Date.now() - startTime,
-        });
-        // Fire-and-forget: the outcome is logged, never returned. Flat shape so
-        // dashboards can filter on verified/currentUrl; unverified is a warn so
-        // a kiosk that keeps failing its loads stays visible.
-        // The device names every load. Verification follows that name, so an
-        // earlier load of the same URL cannot pass for this one. Without it
-        // (an app build that predates load ids) the URL is all there is.
-        const loadId = typeof result.data?.loadId === 'string' && result.data.loadId ? result.data.loadId : null;
-        if (!loadId) this.#logger.warn?.('daylightandroid.load.async-verify-url-fallback', { fullUrl });
-        this.#verifyLastLoad(fullUrl, loadId, generation).then(
-          (verification) => {
-            if (verification?.superseded) {
-              // Not a problem with this load: something newer replaced it.
-              this.#logger.debug?.('daylightandroid.load.async-superseded', { fullUrl, by: verification.superseded });
-              return;
-            }
-            const isVerified = verification?.verified === true;
-            this.#logger[isVerified ? 'info' : 'warn']?.(
-              isVerified ? 'daylightandroid.load.async-verified' : 'daylightandroid.load.async-unverified',
-              {
-                fullUrl,
-                verified: isVerified,
-                currentUrl: verification?.currentUrl,
-                reason: verification?.reason,
-              },
-            );
-          },
-          (err) => {
-            this.#logger.warn?.('daylightandroid.load.async-verify-failed', { fullUrl, error: err?.message });
-          },
-        );
-        return { ok: true, url: fullUrl, attempt, verified: 'async', loadTimeMs: Date.now() - startTime };
+
+      // The kiosk window is not up, so there is no page to wait on. Sent
+      // again with `wait:false`, the device queues the URL and loads it when
+      // the window comes back; that acknowledgement is taken as the load's.
+      let acknowledged = verifyAsync;
+      if (!result.ok && !verifyAsync && result.code === 'CONFLICT' && KIOSK_WINDOW_NOT_UP.has(result.deviceCode)) {
+        const reason = result.deviceCode;
+        result = await this.#post('/kiosk/load', { url: fullUrl, wait: false });
+        acknowledged = true;
+        if (result.ok) result = { ...result, queuedBecause: reason };
+      }
+
+      if (result.ok && acknowledged) {
+        return this.#acknowledged(fullUrl, result, { generation, attempt, startTime });
       }
       if (result.ok) {
         const loadTimeMs = Date.now() - startTime;
@@ -316,9 +307,26 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         return { ok: true, url: fullUrl, attempt, verified: true, loadTimeMs };
       }
 
+      // A page outside the device's allowed origins is configuration, and
+      // will be refused the same way every time. One warning, naming the
+      // origin only: the path and query of a content URL are not for an
+      // operator message.
+      if (isOriginNotAllowed(result)) {
+        const origin = originOf(fullUrl);
+        this.#metrics.errors++;
+        this.#logger.warn?.('daylightandroid.load.originNotAllowed', { origin, host: this.#host });
+        return {
+          ok: false,
+          url: fullUrl,
+          code: 'ORIGIN_NOT_ALLOWED',
+          error: `The kiosk does not allow pages from ${origin}. Add that origin to webview.allowedOrigins on the device.`,
+          attempts,
+        };
+      }
+
       lastError = result.error;
       this.#logger.warn?.('daylightandroid.load.attemptFailed', {
-        fullUrl, attempt, maxAttempts: MAX_LOAD_ATTEMPTS, code: result.code, error: result.error,
+        fullUrl, attempt, maxAttempts: MAX_LOAD_ATTEMPTS, code: result.code, deviceCode: result.deviceCode, error: result.error,
       });
       if (result.code !== 'UNREACHABLE' || attempt === MAX_LOAD_ATTEMPTS) break;
 
@@ -332,6 +340,66 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       fullUrl, error: lastError, attempts, loadTimeMs: Date.now() - startTime,
     });
     return { ok: false, url: fullUrl, error: lastError, attempts };
+  }
+
+  /**
+   * A `wait:false` load the device acknowledged: return at once and check the
+   * outcome in the background, where it is only logged.
+   * @private
+   */
+  #acknowledged(fullUrl, result, { generation, attempt, startTime }) {
+    this.#logger.info?.('daylightandroid.load.acknowledged', {
+      fullUrl, attempt, loadTimeMs: Date.now() - startTime,
+    });
+    // The device names every load. Verification follows that name, so an
+    // earlier load of the same URL cannot pass for this one. Without it
+    // (an app build that predates load ids) the URL is all there is.
+    const loadId = typeof result.data?.loadId === 'string' && result.data.loadId ? result.data.loadId : null;
+    if (!loadId) this.#logger.warn?.('daylightandroid.load.async-verify-url-fallback', { fullUrl });
+
+    // Queued: there is no kiosk window yet, and the URL loads when one
+    // attaches. Verification still runs; it reports unverified if the window
+    // does not come back within its bound.
+    const queued = result.data?.queued === true;
+    if (queued) {
+      this.#logger.info?.('daylightandroid.load.queued', {
+        fullUrl, loadId, reason: result.queuedBecause ?? 'no kiosk window',
+      });
+    }
+
+    // Fire-and-forget. Flat shape so dashboards can filter on
+    // verified/currentUrl; unverified is a warn so a kiosk that keeps failing
+    // its loads stays visible.
+    this.#verifyLastLoad(fullUrl, loadId, generation).then(
+      (verification) => {
+        if (verification?.superseded) {
+          // Not a problem with this load: something newer replaced it.
+          this.#logger.debug?.('daylightandroid.load.async-superseded', { fullUrl, by: verification.superseded });
+          return;
+        }
+        const isVerified = verification?.verified === true;
+        this.#logger[isVerified ? 'info' : 'warn']?.(
+          isVerified ? 'daylightandroid.load.async-verified' : 'daylightandroid.load.async-unverified',
+          {
+            fullUrl,
+            verified: isVerified,
+            currentUrl: verification?.currentUrl,
+            reason: verification?.reason,
+          },
+        );
+      },
+      (err) => {
+        this.#logger.warn?.('daylightandroid.load.async-verify-failed', { fullUrl, error: err?.message });
+      },
+    );
+    return {
+      ok: true,
+      url: fullUrl,
+      attempt,
+      verified: 'async',
+      ...(queued ? { queued: true } : {}),
+      loadTimeMs: Date.now() - startTime,
+    };
   }
 
   /**
@@ -395,6 +463,12 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         provider: PROVIDER,
         currentUrl: kiosk.data?.currentUrl,
         screenOn: kiosk.data?.screenOn,
+        // Whether the page has its `window.daylight` bridge. 'unavailable'
+        // means the device's WebView cannot inject it, and the page runs as
+        // if in an ordinary browser.
+        bridge: kiosk.data?.bridge,
+        bridgeReason: kiosk.data?.bridgeReason,
+        rendererLosses: kiosk.data?.rendererLosses,
         appVersion: core.ok ? (core.data?.appVersion ?? core.data?.payloadVersion) : undefined,
       };
     } catch (error) {
@@ -598,7 +672,14 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       return { supported: true, restarted: false };
     }
 
-    const restart = await this.#post('/mic/restart');
+    let restart = await this.#post('/mic/restart');
+    // `not_ready` is the bridge still starting: ask once more, shortly. Any
+    // other failure, a capture that did not come back (500) included, stands.
+    if (!restart.ok && restart.code === 'CONFLICT' && restart.deviceCode === 'not_ready') {
+      this.#logger.info?.(`${event}.micRestart.notReady`, { retryInMs: MIC_RETRY_MS });
+      await this.#sleep(MIC_RETRY_MS);
+      restart = await this.#post('/mic/restart');
+    }
     if (!restart.ok) {
       this.#logger.warn?.(`${event}.micRestart.failed`, { code: restart.code, error: restart.error });
       return { supported: true, restarted: false, error: restart.error };
@@ -632,6 +713,18 @@ export class DaylightAndroidContentAdapter extends IContentControl {
     }
     return false;
   }
+}
+
+/** The device refused the URL as outside its allowed origins (HTTP 400). */
+function isOriginNotAllowed(result) {
+  if (result?.ok !== false) return false;
+  return result.deviceCode === 'origin_not_allowed'
+    || [result.deviceError, result.deviceMessage, result.reason]
+      .some(text => typeof text === 'string' && text.startsWith('origin_not_allowed'));
+}
+
+function originOf(url) {
+  try { return new URL(url).origin; } catch { return 'that origin'; }
 }
 
 export default DaylightAndroidContentAdapter;
