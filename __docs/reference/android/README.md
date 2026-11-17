@@ -39,7 +39,10 @@ under JVM tests and what the built APKs declare. The three device builds are:
 
 Lockdown is built in and switched off (`lockdown.enabled: false` in all three
 device files) until a device's home app is switched, because the app is installed
-beside Fully until then.
+beside Fully until then. For the same reason installing adds no home candidate
+(the HOME filter is on an alias that is installed disabled) and every coexistence
+switch is compiled off, so the old helper apps keep the hardware they hold. Both
+are described in `kiosk.md`.
 
 Switching a device from Fully to this app is a per-device procedure with its own
 checks: `__docs/runbooks/android/kiosk-cutover.md`. The backend adapters and the
@@ -117,10 +120,13 @@ payload can still be rolled back or restarted remotely.
 Both are plain HTTP on the local network.
 
 `control.bind` in the device file says where both listen: `lan` (the default, every
-interface, what the kiosks do) or `loopback` (the device's own loopback address
-only). The phone uses `loopback`, because a phone joins networks outside the house;
-its control API is then reached through `adb forward`. See
-`__docs/reference/android/phone.md`.
+interface, what the kiosks do), `loopback` (the device's own loopback address
+only), or `none`. With `none` neither a control server nor a lifeline is started,
+and no control token is compiled into the APK. The routes are still registered, so
+a capability has one code path, and nothing listens. The phone uses `none`: every
+app installed on a phone can reach its loopback address and read another app's
+APK, and the phone's installed components talk to the payload in-process. A value
+the app does not know is treated as `none`. See `__docs/reference/android/phone.md`.
 
 ## Authentication
 
@@ -152,7 +158,7 @@ Served by the payload on `control.port`. Responses are JSON, except
 | POST | `/payload` | JSON body `{"url": ..., "sha256": ...}` (or the same two as query parameters); answers `{result}`. The swap runs afterwards |
 | POST | `/payload/rollback` | Answers `{result}` |
 | POST | `/update` | JSON body `{"url": ..., "sha256": ...}` (`sha256` optional); downloads the APK, checks it, and hands it to the system installer; answers `{state, bytes, sha256Verified, confirming}` |
-| GET | `/update` | `state` (`idle`, `downloading`, `awaiting_confirmation`, `failed`) and `lastError` |
+| GET | `/update` | `state` (`idle`, `downloading`, `awaiting_confirmation`, `failed`), `lastError`, `sha256Verified` (the last update handed to the installer had its hash checked) and `confirming` (its confirmation is being tapped for the user right now) |
 | GET, POST | `/beat` | The heartbeat's state; `POST` sends one now and returns its body. The body's `logEventsDropped` counts one-off log events the device gave up on because the log store was not taking them (at most 200 wait at a time; the oldest goes first) |
 | GET | `/wifi` | The Wi-Fi link: current sample, recent samples, thresholds. `?fresh=1` samples first |
 | GET | `/log` | Recent in-memory events |
@@ -161,10 +167,25 @@ Served by the payload on `control.port`. Responses are JSON, except
 | POST | `/accessibility/enable` | Enables the app's accessibility service through secure settings |
 
 `/status` also carries `model`, `android`, `package`, `batteryOptExempt`,
-`wsClients`, `a11yBound` and whatever each capability contributes.
+`wsClients`, `a11yBound`, `settingsProblem` (null, or what was wrong with the
+stored settings when they were read; never a value), `switches` (each coexistence
+switch as `{setting, active}`; see `kiosk.md`) and whatever each capability
+contributes.
 
 A swap or rollback the shell refuses answers `409` with `ok: false` and the reason
-in both `error` and `result`. A pushed payload larger than 64 MiB is abandoned.
+in both `error` and `result`. `POST /payload` without `url` or `sha256` answers
+`400`. A pushed payload larger than 64 MiB is abandoned.
+
+A failure of `POST /update` answers with a status the backend can map and the same
+body as before: `400` for a missing `url`, `409` when there is no installer in
+this state (`not_ready`), when another update is in flight, or when the APK was
+refused (hash mismatch, another package, a lower version), `502` when the
+download failed, `504` when it timed out, `500` for anything else. The complete
+list of statuses that changed is in `kiosk.md` under "Response statuses that
+changed".
+
+A capability whose `start()` throws has `stop()` called on it before the payload
+fails, so what it took before it threw is given back.
 
 `POST /update` waits for the download. One update runs at a time: a second call
 while one is in flight answers `409` with `error: update_in_progress`. An APK
@@ -383,7 +404,7 @@ breaks a rule fails the build's tests. Settings with a rule today:
 | `presence.heartbeatMs` | 5000 to 600000 |
 | `midi.scanTimeoutMs` | 1000 to 120000 |
 | `midi.reconnectDelayMs` | 250 to 600000 |
-| `mic.port` | 1024 to 65535 |
+| `mic.port` | 1024 to 65535, and never this device's control or lifeline port |
 | `lockdown.mode` | `auto`, `app` or `owner` |
 | `lockdown.maxUnlockMin`, `lockdown.pinUnlockMin` | 1 to 60 |
 | `lockdown.recallGraceMs` | 0 to 60000 |
@@ -404,8 +425,24 @@ corrected.
 
 If a stored setting does stop the payload from starting, the control port is down
 and every payload in the store reads the same overrides. Use the lifeline's
-`POST /settings/reset` (below): it deletes all stored overrides and starts the
-payload on its compiled defaults.
+`POST /settings/reset` (below): it deletes all stored overrides, and their backup,
+and starts the payload on its compiled defaults.
+
+**How overrides are stored.** One JSON file beside the payload's state. A write
+goes to a temporary file, is forced to disk, and then replaces the file; the state
+being replaced is kept as `settings-overrides.json.bak`. When the file cannot be
+read (or is missing while a backup exists, which is what an interrupted write
+leaves) the backup is used. Either way it is said: once in the device log and the
+shell log, and in `GET /status` as `settingsProblem`. No value is ever part of
+that message.
+
+**Settings only the device file decides.** A setting declared as compiled
+(`lockdown.required` is the one today) takes its value from the device file
+alone. `POST /settings` and `DELETE /settings` answer `400 invalid_setting` for
+it, and a stored override for it is ignored. A capability can also guard a
+setting, refusing some values with a reason: `lockdown.enabled` cannot be set
+false while `lockdown.required` is true, and `mic.port` cannot be set to the
+control or lifeline port.
 
 Settings the core declares on every device:
 
@@ -446,6 +483,7 @@ declare none.
 | core | `update.autoConfirm` | BOOLEAN | false |  |
 | `webview-host` | `webview.startUrl` | STRING | empty | a device file's value must be https |
 | `webview-host` | `webview.bridgeOrigins` | STRING | empty |  |
+| `webview-host` | `webview.allowedOrigins` | STRING | empty | origins the main frame may navigate to beyond the start URL's |
 | `webview-host` | `webview.backButton` | STRING | `reload` | `page`, `reload`, `ignore` |
 | `webview-host` | `webview.interceptKeys` | STRING | empty |  |
 | `webview-host` | `webview.loadTimeoutSec` | INTEGER | 20 | 1 to 600 |
@@ -471,6 +509,8 @@ declare none.
 | `lockdown` | `lockdown.ownerRestrictions` | BOOLEAN | false |  |
 | `lockdown` | `lockdown.ownerHidePackages` | STRING | empty |  |
 | `lockdown` | `lockdown.dismissControlCenter` | BOOLEAN | false |  |
+| `lockdown` | `lockdown.required` | BOOLEAN | false | compiled only: cannot be set or reset on the device |
+| `lockdown` | `lockdown.ownerTransferTarget` | STRING | empty | `<package>/<receiver>`; empty refuses every ownership transfer |
 | `screen-power` | `power.keepScreenOn` | BOOLEAN | true |  |
 | `screen-power` | `power.wifiLock` | BOOLEAN | true |  |
 | `screen-power` | `power.preventSleepWhileScreenOff` | BOOLEAN | true |  |
@@ -493,7 +533,8 @@ declare none.
 | `midi-bridge` | `midi.reconnectDelayMs` | INTEGER | 3000 | 250 to 600000 |
 | `audio-guard` | `speaker.mac` | STRING | empty |  |
 | `audio-guard` | `speaker.name` | STRING | `Speaker` |  |
-| `audio-guard` | `speaker.enabled` | BOOLEAN | true |  |
+| `audio-guard` | `speaker.enabled` | BOOLEAN | true | coexistence switch: the connector and the guard together |
+| `audio-guard` | `speaker.connect` | BOOLEAN | true | false after the Bluetooth panel disconnected the speaker on purpose |
 | `bluetooth-controls` | `bluetooth.mode` | STRING | `roles` | `roles`, `gamepad` |
 | `bluetooth-controls` | `bluetooth.systemPairingDialog` | BOOLEAN | false |  |
 | `volume-keys` | `keys.consumeVolume` | BOOLEAN | true |  |
@@ -504,6 +545,11 @@ declare none.
 | `presence` | `presence.heartbeatMs` | INTEGER | 60000 | 5000 to 600000 |
 | `mic-bridge` | `mic.port` | INTEGER | 8765 | 1024 to 65535 |
 | `mic-bridge` | `mic.allowNoOrigin` | BOOLEAN | true |  |
+| `mic-bridge` | `mic.enabled` | BOOLEAN | true | coexistence switch |
+| `hid-input` | `hid.enabled` | BOOLEAN | true | coexistence switch |
+| `volume-keys` | `volumeKeys.enabled` | BOOLEAN | true | coexistence switch |
+| `presence` | `presence.enabled` | BOOLEAN | true | coexistence switch |
+| `lease-gate` | `lease.enabled` | BOOLEAN | true | coexistence switch |
 | `lease-gate` | `lease.endpoint` | STRING | empty |  |
 | `lease-gate` | `lease.packageName` | STRING | empty |  |
 | `lease-gate` | `lease.credential` | STRING, secret | empty | no compiled default |
@@ -711,6 +757,12 @@ guard asserts the synth's output gate when it starts. `audio-guard` declares
 It offers the `audio` role to `bluetooth-controls`. `/status` carries `speaker`;
 the WebSocket `status` frame carries `speakerOk` and `speakerReason`.
 
+`speaker.enabled` is this capability's coexistence switch (see `kiosk.md`,
+"Coexistence switches"): false, neither the connector nor the guard exists and the
+routes answer `no_a2dp`. The Bluetooth panel's disconnect and assign write
+`speaker.connect` and leave the switch alone; with `speaker.connect` false the
+guard still runs and the tablet's own speaker stays clamped.
+
 ### `hid-input`
 
 Needs `accessibility`. A USB keyboard on the allowlist is read directly at its USB
@@ -887,7 +939,8 @@ Served by the shell on `control.lifelinePort`.
 | POST | `/payload?url=<jar-url>&sha256=<64 hex>` | Fetch the jar, verify it, activate it; falls back if it fails to start |
 | POST | `/payload/rollback` | Go back to the previous payload |
 | POST | `/restart` | Stop and start the current payload in place |
-| POST | `/settings/reset` | Stop the payload, delete every stored settings override, start the payload again (the baked one when none is current) |
+| POST | `/settings/reset` | Stop the payload, delete every stored settings override and its backup, start the payload again (the baked one when none is current) |
+| POST | `/owner/release` | Where this app is device owner: set the owner hold, clear the persistent home preference and the lock-task packages, enable the status bar and the keyguard, and ask the kiosk Activity to leave lock task. Needs no payload. `409 not_device_owner` elsewhere; `500 release_incomplete` with what failed |
 | GET | `/log` | The tail of the shell's log, as plain text |
 
 Swap, rollback, restart and settings reset are accepted and then run in the background. An
@@ -908,7 +961,7 @@ Lifeline errors are `{"ok":false,"error":"<text>"}`:
 | 400 | A swap without both `url` and `sha256` |
 | 401 | Missing or wrong token |
 | 404 | Unknown path |
-| 405 | Rollback, restart or settings reset with a method other than POST |
+| 405 | Rollback, restart, settings reset or owner release with a method other than POST |
 | 409 | The loader refused the action; `error` holds the reason |
 | 500 | The route threw |
 | 503 | The payload loader is not ready yet |
@@ -917,7 +970,17 @@ The lifeline has no route that runs commands. It is kept small on purpose.
 
 `POST /settings/reset` is the way out when a stored setting keeps the payload from
 starting. It removes all overrides, secrets included (`presence.token`,
-`lease.credential`), so those have to be set again afterwards. The shell does not
+`lease.credential`, `lockdown.exitPin`), so those have to be set again afterwards,
+and every coexistence switch goes back to the device file's value. It does not
+switch lockdown off on a device built with `lockdown.required: true`, and it does
+not remove an owner hold.
+
+A device with `control.bind: none` (the phone) has no lifeline.
+
+A shell component that Android binds or creates while a payload is still inside
+`start()` (the kiosk Activity with launch-on-boot, the accessibility service on a
+first install) is forwarded to that payload as well as to the active one, so it is
+not lost until the next restart. The shell does not
 read settings; it deletes one file, whose path it shares with the payload through
 `PayloadState` in `shell-api`. A payload built from this revision therefore needs
 a shell built from this revision or later.
@@ -938,7 +1001,7 @@ for `node cli/daylight-device.cli.mjs <device>`.
 | `dd settings`, `dd settings get <key>`, `dd settings set <key> <value>`, `dd settings reset <key>` | `GET`, `POST`, `DELETE /settings` |
 | `dd payload`, `dd payload push <url> <sha256>`, `dd payload rollback` | `GET /payload`, `POST /payload`, `POST /payload/rollback` |
 | `dd update`, `dd update <apk-url> [sha256]` | `GET /update`, `POST /update` |
-| `dd lifeline [status\|rollback\|restart\|reset-settings\|log]` | The lifeline port |
+| `dd lifeline [status\|rollback\|restart\|reset-settings\|owner-release\|log]` | The lifeline port |
 | `dd kiosk` | `GET /kiosk/status` |
 | `dd load <url> [--no-wait]` (alias `url`), `dd load-start`, `dd reload` | `POST /kiosk/load`, `/kiosk/load-start`, `/kiosk/reload` |
 | `dd foreground`, `dd renderer-reset`, `dd restart` | `POST /kiosk/foreground`, `/kiosk/renderer/reset`, `/kiosk/restart` |
@@ -949,6 +1012,8 @@ for `node cli/daylight-device.cli.mjs <device>`.
 | `dd launch <package> [activity]`, `dd launch --intent <uri>` | `POST /launch` |
 | `dd lockdown`, `dd lockdown lock`, `dd lockdown unlock [minutes]` (aliases `lock`, `unlock`) | `GET /lockdown`, `POST /lockdown/lock`, `/lockdown/unlock` |
 | `dd lockdown input lock [--revision n] [--for minutes]`, `dd lockdown input release [--revision n]` | `POST /lockdown/input` |
+| `dd lockdown home on\|off` | `POST /lockdown/home` |
+| `dd lockdown owner release`, `dd lockdown owner resume`, `dd lockdown owner transfer <package/receiver>` | `POST /lockdown/owner/release`, `/lockdown/owner/resume`, `/lockdown/owner/transfer` |
 | `dd shot [file]` | `GET /debug/screenshot`; writes the PNG and prints its path |
 | `dd eval [--timeout ms] <js>`, `dd eval-file <path>` | `POST /debug/eval`; prints the result |
 | `dd html [file]` | `GET /debug/html` |
@@ -1007,8 +1072,12 @@ What the CLI cannot do: OS-level globals that only ADB's shell user may change
 APK with its device file: package, SDK levels, version code, the exact permission
 set (a permission declared as `uses-permission-sdk-23` or with a `maxSdkVersion`
 must be stated that way in the capability's file), the declared activities,
-services, receivers and providers (exactly those of the base shell and of the
-listed capabilities' shell halves), and that the baked payload holds the entry
+aliases, services, receivers and providers (exactly those of the base shell, of
+the listed capabilities' shell halves, and the HOME alias the generated manifest
+adds to a build that lists `lockdown`), each component's `exported` flag and the
+permission that guards it against a table in `tools/verify-lib.mjs`, that the
+HOME filter exists only on the disabled alias, that a lockdown build's kiosk
+Activity is not resizable, and that the baked payload holds the entry
 classes of the listed capabilities and no others. It also compares the sha256 of
 the payload baked into the APK with the `.sha256` file the payload build wrote,
 and fails when the APK holds a different payload than the one just built, or when
@@ -1019,6 +1088,16 @@ device that lists `synth` it reads the synth library out of the APK for each ABI
 and fails unless it holds the JNI exports of the APK's engine class, was built
 with sfizz, has the size of an optimized, stripped build, and names no path on
 the build machine. It exits 1 on any difference.
+
+Two base permissions are expected only of a kiosk (a device that lists `lockdown`,
+or `webview-host` with a control bind other than `none`):
+`REQUEST_INSTALL_PACKAGES` and `WRITE_SECURE_SETTINGS`. They come from the
+generated device manifest of such a build and are absent from the phone's APK;
+the verifier fails a phone APK that has either.
+
+`./gradlew build` also reads each device's merged manifest back
+(`:shell:check<Device>MergedManifest`) and fails when a HOME filter sits anywhere
+but on a disabled alias declared after its target.
 
 With `--legacy` it also compares the APK's permissions with what the old helper
 app for that device declared, using
@@ -1080,6 +1159,33 @@ one. They are the on-device acceptance list:
   the log scope with and without `READ_LOGS`, and exec as the app's uid.
 - The fleet CLI against a device: its request building and answer handling are
   tested with a fake `fetch`; no command has been sent to hardware.
+
+What the JVM tests of the review fixes do not show, and a device has to:
+
+- `PackageManager.setComponentEnabledSetting` on the HOME alias, and that a
+  disabled alias is not offered as a home app on each device's Android version.
+  The build and the verifier check the manifest; the device's own answer is the
+  runbook's check.
+- Every `DevicePolicyManager` call. The owner policy, its release and the
+  transfer are tested against a recording stand-in. `transferOwnership` has not
+  run on the Portal's firmware in either direction.
+- The lifeline's owner release: its order and reporting are tested; the calls it
+  makes are not.
+- Which devices' WebViews report document-start injection, and so which get the
+  page bridge at all.
+- The order in which a WebView reports a navigation's start and a new document's
+  first bridge call. The token rule tolerates either order by design; that the
+  page's own token keeps working through a navigation is a device check.
+- That `shouldOverrideUrlLoading` and `onPageStarted` are called for every
+  main-frame navigation a page can cause (a form post, a server redirect, a
+  script). The policy is tested; the callbacks are Android's.
+- The kiosk Activity's retry of a controller that threw. Its delays are tested;
+  the Activity is not.
+- The fixed-delay watcher timer, the keyguard read, and what the accessibility
+  window list holds in split screen. The decision is tested with window lists
+  written by hand.
+- The coexistence switches against the real hardware and the real old helpers:
+  that a part released here can be taken there, and the reverse.
 
 ## Known limits
 

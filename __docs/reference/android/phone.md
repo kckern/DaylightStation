@@ -2,7 +2,8 @@
 
 `devices/phone.yml` builds the owner's own phone app from the same codebase as the
 kiosks. This page covers what is different on the phone and the capabilities that
-exist only for it. Building, the control API, settings and the fleet CLI are in
+exist only for it. The phone has no control API and no lifeline. Building, the
+routes (which the phone registers and serves to nobody), settings and the fleet CLI are in
 `__docs/reference/android/README.md`; the web view and its page bridge are in
 `__docs/reference/android/kiosk.md`.
 
@@ -20,8 +21,11 @@ recording and upload, local notifications.
 | | Kiosk (`piano`, `portal`, `shield`) | `phone` |
 |---|---|---|
 | `lockdown` | Listed | Not listed. The per-device payload test fails a device that is not a kiosk and lists it |
-| Home app | Offered as one (the HOME filter comes with `lockdown`) | Never offered: no HOME filter in the manifest |
-| Control API and lifeline | Listen on every interface (`control.bind: lan`) | Listen on the loopback address only (`control.bind: loopback`) |
+| Home app | Can be made one: a disabled HOME alias comes with `lockdown` and is enabled at the cutover | Never offered: no HOME filter of any kind in the manifest |
+| Control API and lifeline | Listen on every interface (`control.bind: lan`) | Neither exists (`control.bind: none`). No port is opened and no control token is in the APK |
+| `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
+| Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
+| Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
 | Back button | `reload` | `history`: back through the page history, then out of the app |
 | Other apps on the device | None | Any. Every component another app can reach is described under "Exported components" |
 
@@ -29,31 +33,36 @@ The phone reaches the backend over an always-on VPN at the address the kiosks us
 The app holds no credential for it: the backend trusts that address. That is why
 the links the app accepts are checked as strictly as they are (see "Links").
 
-### The control API on loopback
+### No control API
 
-`control.bind: loopback` reaches the payload's control server through the generated
-`DeviceConfig.CONTROL_BIND` and the shell's lifeline through `BuildConfig`. Both
-bind `127.0.0.1`. A value the build does not know would be treated as loopback, the
-narrower of the two, and the build accepts only `lan` and `loopback`.
+`control.bind: none`. The shell starts no lifeline and the payload starts no
+control server; a per-device test starts the payload and asserts that no socket is
+bound. The routes are still registered inside the payload, so a capability has one
+code path, and nothing can call them from outside the process.
 
-To operate the phone from a workstation, forward both ports over USB and use
-`127.0.0.1` as the phone's `host:` in the private tokens file:
+Why not loopback: a loopback socket can be opened by every app installed on the
+phone, the token that would guard it is compiled into the APK, and an APK is
+readable by other apps on the same phone. An app that read the token could then
+have run scripts in the page, launched apps and read the screen. The phone does
+not need remote control: its installed components (the link activity, the tiles,
+the widget) reach the payload in-process, through a `PayloadPort`, or read what
+the payload last wrote.
 
-```bash
-adb forward tcp:8780 tcp:8780     # control API
-adb forward tcp:8781 tcp:8781     # lifeline
-node cli/daylight-device.cli.mjs phone status
-```
+A `none` build has no control token compiled in, and needs no token entry in the
+private file. The payload's router is handed a random token made up for that
+process, which nothing can present. A value of `control.bind` the app does not
+know is treated as `none`; the build accepts only `lan`, `loopback` and `none`.
 
-Any app on the phone can open a loopback socket, so the device token is still what
-protects the API there. The token is compiled into the APK, and an APK is readable
-by other apps on the same phone. That is a known limit of this design: an app that
-extracts the token can use the control API on loopback. The install key (below)
-does not defend against that; it defends the link activity, which needs no token.
+**Debugging a phone build is over adb.** `adb logcat` for the app's log lines
+(tags starting `Daylight`), and, because every build is debuggable,
+`adb shell run-as net.kckern.daylight.phone` for its files: the shell log is
+`files/shell.log`, the payload's state is under `files/payloads/state`. The fleet
+CLI cannot reach the phone. Settings on the phone are the ones compiled from
+`devices/phone.yml`; changing one means a rebuild and an install.
 
-Heartbeats are on, as on every device, and go to the household log store over the
-VPN. With the control API on loopback they are the only view of the app from
-outside it.
+No heartbeats are sent and nothing is shipped to the household log store:
+`heartbeat.enabled` is false and `heartbeat.logStoreUrl` is not set. A phone is
+somebody's own device, and it is not watched.
 
 ## Private values a phone build needs
 
@@ -61,14 +70,13 @@ None of these is in the repo. All go in the private tokens file.
 
 | Where | Name | What |
 |---|---|---|
-| top level | `phone: { host: 127.0.0.1, token: "<secret>" }` | The control token (32 or more characters), and the address the CLI uses, which is loopback through `adb forward` |
 | `placeholders:` | `phone_start_url` | The household site's full https URL as the phone reaches it. `webview.startUrl`; the backend's origin is taken from it |
 | `placeholders:` | `phone_link_host` | The site's host name only (lower case, no scheme, port or path). Used for the https link filter (`appLinks.host`) and for `links.origins` |
 | `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. Nothing sends it yet; the memo upload will |
-| `placeholders:` | `log_store_insert_url` | Already there for the kiosks. `heartbeat.logStoreUrl` |
 
-Two more settings exist with defaults that normally fit, and are set on the phone
-with `settings set` only when they do not: `identity.device` (sent as
+The phone needs no top-level entry and no control token in that file. Two more
+settings exist with defaults that normally fit, and are set under `defaults:` in
+`devices/phone.yml` only when they do not: `identity.device` (sent as
 `X-Daylight-Device`; default `fleet:phone`) and `backend.baseUrl` (the backend's
 origin; default: the origin of the start URL). Giving the phone its own progress
 spot on the backend also needs a `phone` entry in the household's `devices.yml`,
@@ -91,8 +99,13 @@ Two forms are links:
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>?k=<key>` | Run a one-tap action | yes |
 | `daylight://memo/new?k=<key>` | Start a voice memo (no handler yet: "Not available on this device") | yes |
-| `daylight://media/play?id=<contentId>` | Play natively (no handler yet) | no |
+| `daylight://media/play?id=<contentId>&k=<key>` | Play natively (no handler yet) | yes |
 | `https://<the site>/<path>` | The same as `daylight://open` for that path | no |
+
+The rule: a link kind needs the install key unless all it does is show a page of
+the site. `open`, `bookmark` and an https link show a page; `action`, `memo` and
+`media` do something else (run an action, record, start playback) and are refused
+with `403` without the key. A test fails a kind that is in neither list.
 
 A link is untrusted input. The link activity is exported and browsable so that a
 pushed notification or a web page can open a view, which means any app or page on
@@ -192,7 +205,8 @@ characters.
 An action exists only as a settings line. Running one takes its id and nothing
 else: no part of a link, an intent or a request body reaches an `api:` action's
 method, path or body. The page bridge has no call that writes a setting, so a page
-cannot add or change an action either. Changing one needs the control token.
+cannot add or change an action either. With no control API on the phone, changing
+one means changing `devices/phone.yml` and installing the new build.
 
 An `api:` action is not queued. With the VPN down it answers "no connection" and
 nothing is sent later. A backend that takes more than eight seconds gets "sent, no
@@ -257,7 +271,7 @@ What another app on the phone can reach, and what stands in the way.
 | `ActionTileService$Tile1` to `$Tile4` | The system binds tiles | `BIND_QUICK_SETTINGS_TILE`: only the system can bind. They take no input from the caller |
 | `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it |
 | `MainActivity` (shell) | The setup activity, startable by name | It reads nothing from the intent |
-| `BootReceiver` (shell) | Boot and package-replaced broadcasts | It acts only on those two system actions |
+| `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
@@ -273,6 +287,7 @@ What another app on the phone can reach, and what stands in the way.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.
-- The loopback bind on a phone. The tests show the server sockets are bound to the
-  loopback address; they do not show what a second network interface on a real
-  phone can reach.
+- That nothing listens on a real phone. The tests start the payload for the phone's
+  configuration and show no control socket is bound and the port stays free; the
+  shell's decision not to start a lifeline is one line that reads the same value
+  and is not exercised on the JVM.

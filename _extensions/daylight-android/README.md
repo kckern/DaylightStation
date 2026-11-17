@@ -10,9 +10,10 @@ app can swap over the network. Phase 2 ported the helper code of the old helper 
 into capabilities. Phase 3 added the kiosk: the WebView window and its page bridge,
 lockdown, screen power, volume, the app launcher and the remote diagnostics
 (`debug-tools`). The `piano`, `portal` and `shield` device files list all of it,
-with lockdown switched off, and each build serves every route of the control API
-contract. A build that lists `lockdown` gets a HOME filter on the kiosk Activity
-from its generated device manifest. Fully Kiosk Browser and the old helpers still
+with lockdown switched off and every coexistence switch off, and each build serves
+every route of the control API contract. A build that lists `lockdown` gets a HOME
+filter on a disabled activity-alias of the kiosk Activity from its generated
+device manifest, so installing it adds no home candidate. Fully Kiosk Browser and the old helpers still
 run every device. The only hardware fact: on 2026-11-16 the phase 1 build was
 installed on the Portal beside the existing apps, its payload loaded and the
 control API answered. Nothing from phase 2 or phase 3 has run on a device.
@@ -108,7 +109,12 @@ The payload version defaults to `p3-kiosk`. Override it with
 
 `tools/verify-build.mjs` reads the built APK and fails with exit code 1 when the
 package, SDK levels, version code, permission set or the capability classes in the
-baked payload differ from the device file. A permission is compared in the form it
+baked payload differ from the device file. It also fails when a component's
+`exported` flag or guarding permission differs from the table in
+`tools/verify-lib.mjs`, when a HOME filter is anywhere but on the disabled alias,
+when a lockdown build's kiosk Activity can be resized, and when a device that is
+not a kiosk (the phone) asks for `REQUEST_INSTALL_PACKAGES` or
+`WRITE_SECURE_SETTINGS`. A permission is compared in the form it
 is declared: `uses-permission-sdk-23` and a `maxSdkVersion` are part of it, and a
 `capability.yml` that needs one states the permission as
 `{name: ..., sdk23: true}` or `{name: ..., maxSdkVersion: 30}`. The APK's
@@ -140,7 +146,9 @@ JavaScript it generates for the page in Node, against a stand-in window, so Node
 must be on the path for the Java tests as it is for the port check. The payload
 module's tests run once per device, against that device's generated configuration:
 `./gradlew :payload:testPianoDebugUnitTest :payload:testPortalDebugUnitTest
-:payload:testShieldDebugUnitTest`. Each boots the device's real capabilities with
+:payload:testShieldDebugUnitTest :payload:testPhoneDebugUnitTest`. `./gradlew build`
+also reads each device's merged manifest back (`:shell:check<Device>MergedManifest`)
+and fails on a HOME filter that is not on a disabled alias. Each boots the device's real capabilities with
 a fake shell and applies the device file's `defaults:`, so a default for an
 undeclared setting, a default of the wrong type, a default for a secret, a route or
 WebSocket message type claimed twice, an entry class that cannot be constructed, a
@@ -221,7 +229,8 @@ placeholders:
 ```
 
 The token is compiled into the shell APK. A device build with no token fails, since
-it would install an API nobody could reach. Rotating a token means installing a new
+it would install an API nobody could reach. The exception is a device with
+`control.bind: none`: it has no API, gets no token compiled in, and needs none. Rotating a token means installing a new
 shell. Never print the file, and never put a token in a command line, a doc or a
 commit.
 
@@ -244,13 +253,18 @@ commit.
    ahead of time, because a payload update cannot add one), and
    `foregroundServiceTypes:` sets the shell service's types (`mediaPlayback`,
    `microphone`, `location`, and the other Android names).
-   Two more optional keys, both used by the phone: `control.bind: loopback` makes
-   the control API and the lifeline listen on the loopback address only (the
-   default, `lan`, is every interface), and `appLinks: { host: "{placeholder}" }`
+   Two more optional keys, both used by the phone: `control.bind` says where the
+   control API and the lifeline listen (`lan`, the default, is every interface;
+   `loopback` is the device's own address only; `none`, the phone's value, starts
+   neither and compiles no control token into the APK), and `appLinks: { host: "{placeholder}" }`
    offers the app for https links to that one host (the device must list
    `notifications`; the host is private, so it is a placeholder).
 5. Add the device's entry to the private tokens file, with any placeholders its
-   defaults use.
+   defaults use. A device with `control.bind: none` needs no token entry.
+   A kiosk device file also states every coexistence switch its capabilities
+   declare (`hid.enabled`, `midi.enabled`, `speaker.enabled`, `mic.enabled`,
+   `volumeKeys.enabled`, `presence.enabled`, `lease.enabled`): false until that
+   device's cutover. The per-device payload test fails a kiosk that leaves one out.
 6. Build with `./gradlew :shell:assemble<Device>Debug` and run the verifier.
 
 Bump `shell.versionCode` each time a new shell is installed on the device.
@@ -304,6 +318,13 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
      stated fallback for `NotReadyException`. The link activity does this, after
      starting the shell service with `ShellStart.ensure`. Requests and answers are
      JSON text, so a payload swap cannot break an installed component.
+   - Base permissions only a kiosk needs (`REQUEST_INSTALL_PACKAGES`,
+     `WRITE_SECURE_SETTINGS`) are not in the shell's manifest. The generated device
+     manifest adds them to a build that lists `lockdown`, or `webview-host` with a
+     control bind other than `none`.
+   - A part of a capability that takes hardware an old helper app also uses goes
+     behind a `LiveSwitch` (core): a BOOLEAN setting applied when it changes and
+     reported in `/status`.
    - A device that lists `webview-host` has one launcher icon, the kiosk Activity:
      the generated device manifest takes the launcher filter off the shell's setup
      Activity.
