@@ -199,6 +199,69 @@ describe('DaylightAndroidContentAdapter', () => {
         }));
       });
 
+      describe('with a loadId in the acknowledgement', () => {
+        const withId = { 'POST /kiosk/load': ({ body }) => ok({ accepted: true, url: body.url, loadId: 'L2' }) };
+
+        it('does not accept an earlier load of the same URL', async () => {
+          let polls = 0;
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': () => (++polls < 3
+              ? ok({ currentUrl: URL_, lastLoad: { loadId: 'L1', url: URL_, ok: true, atMs: 1 } })
+              : ok({ currentUrl: URL_, lastLoad: { loadId: 'L2', url: URL_, ok: true, atMs: 9 } })),
+          });
+
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+          await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', {
+            fullUrl: URL_, verified: true, currentUrl: URL_, reason: undefined,
+          }));
+          expect(polls).toBe(3);
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-verify-url-fallback', expect.anything());
+        });
+
+        it('matches on the id even when the device reports the URL differently', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: 'https://daylight.test/redirected', lastLoad: { loadId: 'L2', url: 'https://daylight.test/redirected', ok: true } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true })));
+        });
+
+        it('reports the failure of that load', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: 'about:blank', lastLoad: { loadId: 'L2', url: URL_, ok: false, error: 'net::ERR_TIMED_OUT' } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+            fullUrl: URL_, verified: false, currentUrl: 'about:blank', reason: 'net::ERR_TIMED_OUT',
+          }));
+        });
+
+        it('is unverified when lastLoad never carries the id, even though the URL matches', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: URL_, lastLoad: { loadId: 'L1', url: URL_, ok: true } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+            fullUrl: URL_, verified: false, currentUrl: URL_, reason: 'lastLoad never reported this load',
+          }));
+        });
+      });
+
+      it('falls back to matching the URL, and says so, when the acknowledgement has no loadId', async () => {
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ currentUrl: URL_, lastLoad: { loadId: 'L7', url: URL_, ok: true } }),
+        });
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-verify-url-fallback', { fullUrl: URL_ });
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true })));
+      });
+
       it('a refused acknowledgement fails the load and starts no verification', async () => {
         const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': fail('COMMAND_REJECTED', 'Command was rejected: bad_request') });
         const result = await adapter.load('/piano', {}, { verifyAsync: true });

@@ -253,7 +253,12 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         // Fire-and-forget: the outcome is logged, never returned. Flat shape so
         // dashboards can filter on verified/currentUrl; unverified is a warn so
         // a kiosk that keeps failing its loads stays visible.
-        this.#verifyLastLoad(fullUrl).then(
+        // The device names every load. Verification follows that name, so an
+        // earlier load of the same URL cannot pass for this one. Without it
+        // (an app build that predates load ids) the URL is all there is.
+        const loadId = typeof result.data?.loadId === 'string' && result.data.loadId ? result.data.loadId : null;
+        if (!loadId) this.#logger.warn?.('daylightandroid.load.async-verify-url-fallback', { fullUrl });
+        this.#verifyLastLoad(fullUrl, loadId).then(
           (verification) => {
             const isVerified = verification?.verified === true;
             this.#logger[isVerified ? 'info' : 'warn']?.(
@@ -429,9 +434,11 @@ export class DaylightAndroidContentAdapter extends IContentControl {
    *
    * @private
    * @param {string} expectedUrl - URL passed to /kiosk/load
+   * @param {string|null} loadId - the id from the acknowledgement; when null,
+   *   `lastLoad` is matched on the URL instead
    * @returns {Promise<{verified: boolean, currentUrl?: string, reason?: string}>}
    */
-  async #verifyLastLoad(expectedUrl) {
+  async #verifyLastLoad(expectedUrl, loadId = null) {
     const normalize = (url) => {
       if (typeof url !== 'string') return null;
       let normalized = url.trim();
@@ -451,7 +458,8 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       if (status.ok) {
         currentUrl = status.data?.currentUrl;
         const lastLoad = status.data?.lastLoad;
-        if (lastLoad && typeof lastLoad.ok === 'boolean' && normalize(lastLoad.url) === target) {
+        const isThisLoad = loadId ? lastLoad?.loadId === loadId : normalize(lastLoad?.url) === target;
+        if (lastLoad && typeof lastLoad.ok === 'boolean' && isThisLoad) {
           return lastLoad.ok
             ? { verified: true, currentUrl }
             : { verified: false, currentUrl, reason: lastLoad.error || 'load failed' };
@@ -459,7 +467,11 @@ export class DaylightAndroidContentAdapter extends IContentControl {
       }
       if (poll < VERIFY_MAX_POLLS) await this.#sleep(VERIFY_POLL_MS);
     }
-    return { verified: false, currentUrl, reason: 'lastLoad never reported this URL' };
+    return {
+      verified: false,
+      currentUrl,
+      reason: loadId ? 'lastLoad never reported this load' : 'lastLoad never reported this URL',
+    };
   }
 
   /**
