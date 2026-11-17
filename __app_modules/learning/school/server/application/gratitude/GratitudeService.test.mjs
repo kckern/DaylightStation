@@ -114,4 +114,21 @@ describe('School gratitude workflow',()=>{
     await h.service.submit('child','2026-11-16',body);
     expect(h.judgeCalls()[0].allowFollowUp).toBe(false);
   });
+  it('accepts a second general verdict as eligible instead of asking again',async()=>{
+    const h=harness({verdicts:['general','general']});
+    await h.service.submit('child','2026-11-16',body);
+    const done=await h.service.submit('child','2026-11-16',{...body,attemptId:'attempt-2',followUpOf:'attempt-1',text:'She is nice'});
+    expect(done.phase).toBe('completed');
+    expect(h.days.get('2026-11-16').filter(e=>e.type==='follow-up-asked')).toHaveLength(1);
+  });
+  it('accepts a general verdict as eligible when follow-ups are off',async()=>{
+    const h=harness({verdicts:['general'],followUpEnabled:false});
+    expect((await h.service.submit('child','2026-11-16',body)).phase).toBe('completed');
+    expect(h.days.get('2026-11-16').some(e=>e.type==='follow-up-asked')).toBe(false);
+  });
+  it('treats a null followUpOf as absent and refuses one that is not an id string',async()=>{
+    expect((await harness().service.submit('child','2026-11-16',{...body,followUpOf:null})).phase).toBe('completed');
+    for(const followUpOf of [7,{id:'a'},'bad id!'])
+      await expect(harness().service.submit('child','2026-11-16',{...body,followUpOf})).rejects.toMatchObject({status:400});
+  });
 });

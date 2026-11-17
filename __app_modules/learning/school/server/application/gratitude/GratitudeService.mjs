@@ -92,8 +92,8 @@ export class GratitudeService {
     if(typeof body?.text!=='string' || body.text.length>4000 || (required && !body.text.trim()))throw new GratitudeError('Please say or type something you are grateful for.');
     if(!['voice','typed'].includes(body.via))throw new GratitudeError('Invalid input method.');
     if(required && !/^[a-zA-Z0-9_-]{1,100}$/.test(body.attemptId??''))throw new GratitudeError('A valid attempt is required.');
-    const followUpOf=required?body.followUpOf:undefined;
-    if(followUpOf!==undefined && !/^[a-zA-Z0-9_-]{1,100}$/.test(followUpOf))throw new GratitudeError('A valid follow-up is required.');
+    const followUpOf=required && body.followUpOf!==null ? body.followUpOf : undefined;
+    if(followUpOf!==undefined && (typeof followUpOf!=='string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(followUpOf)))throw new GratitudeError('A valid follow-up is required.');
     return {text:body.text.trim(),via:body.via,audioRef:body.audioRef??null,edited:body.edited===true,...(required?{attemptId:body.attemptId}:{}),...(followUpOf!==undefined?{followUpOf}:{})};
   }
   async #audio(id,day,ref,records) {
