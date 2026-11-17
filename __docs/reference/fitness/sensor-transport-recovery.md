@@ -69,7 +69,9 @@ The canonical durable fields are additive session metadata:
 The browser summary mirrors these fields at its root. Existing server session
 normalization and YAML projections preserve the metadata. Times are wall-clock
 milliseconds; live hold and resume deadlines use a monotonic clock. The existing
-30-minute session consolidation window is reused. On reload, its persisted wall
+30-minute session consolidation window is reused, anchored to the last observed
+timeline end just like server resume lookup; checkpointing adds no extra minutes.
+On reload, its persisted wall
 expiry establishes the remaining monotonic deadline. Old records without these
 fields remain readable.
 

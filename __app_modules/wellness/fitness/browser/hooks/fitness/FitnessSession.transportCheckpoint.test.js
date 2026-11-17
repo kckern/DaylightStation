@@ -135,6 +135,28 @@ describe('transport checkpoints', () => {
     expect(serializeSession(reconstituteSession(saved))).toMatchObject({ finalized: true, metadata: { endReason: 'transport_lost' } });
   });
 
+  it('expires live and hydrated recovery at the server end-based resume boundary', async () => {
+    const { session, persist } = fixture();
+    const lastObservedEnd = session.summary.endTime;
+    lose(session); await settle();
+    const checkpoint = persist.mock.calls.at(-1)[0];
+    expect(checkpoint.transportPause.resumeUntil).toBe(lastObservedEnd + 30 * 60 * 1000);
+    const remaining = checkpoint.transportPause.resumeUntil - wall;
+    expect(remaining).toBeLessThan(30 * 60 * 1000);
+    wall += remaining; mono += remaining;
+    const service = new SessionService({ sessionStore: {
+      findByDate: async () => [{ ...checkpoint, contentId: 'plex:test' }],
+    } });
+    expect(await service.findResumable('plex:test', 'test')).toEqual({ resumable: false });
+    session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
+    expect(session.sessionId).toBeNull();
+    const restored = new FitnessSession();
+    vi.spyOn(restored, '_persistSession').mockReturnValue(true);
+    restored._hydrateFromSession(checkpoint);
+    restored.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });
+    expect(restored.sessionId).toBeNull();
+  });
+
   it('keeps autosave available after a rejected checkpoint and retries without claiming durability', async () => {
     const { session, persist } = fixture();
     persist.mockImplementation(() => true); // accepted locally, never committed

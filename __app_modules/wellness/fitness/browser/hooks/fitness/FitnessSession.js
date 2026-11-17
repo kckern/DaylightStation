@@ -695,8 +695,12 @@ export class FitnessSession {
     }
     const holdMs = this._getTimeouts().emptySessionTransportHold ?? 180000;
     if (state === 'lost' && mono - this._transportSilenceSince >= holdMs && !this.transportPause) {
-      this.transportPause = { startedAt: at, incidentId, resumeUntil: at + SESSION_RESUME_MERGE_WINDOW_MS };
-      this._transportResumeDeadline = mono + SESSION_RESUME_MERGE_WINDOW_MS;
+      // Match server lookup eligibility: the hold must not add minutes to
+      // the window measured from the last observed/saved timeline end.
+      const observedEnd = this.summary?.endTime ?? at;
+      const resumeUntil = Math.min(at, observedEnd) + SESSION_RESUME_MERGE_WINDOW_MS;
+      this.transportPause = { startedAt: at, incidentId, resumeUntil };
+      this._transportResumeDeadline = mono + Math.max(0, resumeUntil - at);
       this.logEvent('transport_paused', { ...this.transportPause }, at);
       // Defer snapshot capture until the watchdog's synchronous lost-event
       // callback has run, and serialize behind any save already in flight.
