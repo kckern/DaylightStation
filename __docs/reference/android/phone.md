@@ -737,7 +737,7 @@ side says something like "Confirm on the dialog", never "Added".
 |---|---|
 | `refused` | No answer from the native side: the token is not this document's (an old document, a guessed token), the main frame is on another origin, or the bridge is gone. Built by the shim |
 | `not_top_frame` | The calling document is a frame, not the top frame |
-| `rate_limited` | A second request from the same document within five seconds of its last request that was let through (counted: `pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process); or a fourth accepted request within a minute in the app's process, whatever document or reload asks |
+| `rate_limited` | A second request from the same document within five seconds of its last request that was let through (counted: `pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process); or a fourth accepted request within a minute in the app's process, whatever document or reload asks; or a fourth request while three dialogs are still open (asked, neither confirmed nor ten minutes old) |
 | `limit_reached` | 24 pinned media actions are kept already, counting the requests whose dialog is still open. No pin is pushed out for a new one; the owner removes a pinned media shortcut from the home screen first, which frees its slot. The web side shows "Too many home screen shortcuts; remove one first" |
 | `bad_request` | Not a JSON object, or `contentId` or `label` missing or not a string |
 | `invalid_content_id` | Fails the media service's content id rule: a URL, a source named like a URL scheme (`http`, `javascript`, `intent`, ...), an empty, `.` or `..` segment, a backslash, a bar or a control character, a modifier segment (`shuffle`, `playable`, `launchable`, `recent_on_top`, `expand`), or longer than 400 characters |
@@ -780,7 +780,11 @@ must be one lower-case word; whatever else the native side holds is dropped.
    again from the Media page" and plays nothing: only a hash of the content is in its
    id. It holds no slot in the list.
 7. At most 24 are kept, and each open dialog holds a slot until it is confirmed or
-   its ten minutes run out, so a confirmation is never refused for a full list. A new
+   its ten minutes run out, so a confirmation is never refused for a full list. At
+   most three dialogs are open at once (a dismissed dialog sends nothing back, so it
+   stays open until it expires); a fourth request is refused with `rate_limited`
+   until one is confirmed or expires. A page asking while nobody answers therefore
+   holds at most three slots, and the rest stay free for real pins. A new
    pin when the kept and held slots reach 24 is refused before the dialog
    (`limit_reached`); nothing is pushed out and no shortcut is disabled for it.
    Pinning the same content again renames it and makes it the newest. At every

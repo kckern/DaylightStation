@@ -222,6 +222,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     static final long PIN_CONFIRM_MS = 10 * 60_000L;
     /** Accepted pin requests a minute, in this process, whatever document asks. */
     static final int PINS_PER_MINUTE = 3;
+    /** Pin requests whose dialog is open (asked, not confirmed, not expired) at most at once. */
+    static final int MAX_OPEN_PINS = 3;
     static final String LIMIT_REACHED = "limit_reached";
     static final String RATE_LIMITED = "rate_limited";
     /** What a tap on a pinned media shortcut the app never recorded answers. */
@@ -295,6 +297,10 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             if (p.find(a.id) == null && p.all().size() + reservedSlots(p, a.id) >= PinnedMedia.MAX) return refusal(LIMIT_REACHED);
             while (!acceptedAt.isEmpty() && now - acceptedAt.peekFirst() >= 60_000) acceptedAt.pollFirst();
             if (acceptedAt.size() >= PINS_PER_MINUTE) return refusal(RATE_LIMITED);
+            // A dismissed dialog sends nothing back and holds its slot until it expires,
+            // so at most MAX_OPEN_PINS dialogs are open at once: a page asking while nobody
+            // answers can hold no more slots than that.
+            if (pendingPins.size() >= MAX_OPEN_PINS) return refusal(RATE_LIMITED);
             token = newToken();
             pendingPins.put(token, new PendingPin(contentId, label, now));
         }

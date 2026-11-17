@@ -289,10 +289,38 @@ public class SurfaceRoutesTest {
         assertTrue(pinner().pinMedia("plex:e", "E").getBoolean("accepted"));
     }
 
+    /**
+     * At most three dialogs are open at once: a page that keeps asking while nobody
+     * answers holds at most three slots, and every other slot stays free for real pins.
+     */
+    @Test public void atMostThreeOpenRequestsHoldSlots() throws Exception {
+        assertEquals(3, OneTapActionsCapability.MAX_OPEN_PINS);
+        cap.start();
+        String[] tokens = new String[3];
+        for (int i = 0; i < 3; i++) {
+            assertTrue(pinner().pinMedia("plex:open" + i, "L").getBoolean("accepted"));
+            tokens[i] = sink.token;
+            now += 61_000;
+        }
+        JSONObject r = pinner().pinMedia("plex:fourth", "L");
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("rate_limited", r.getString("reason"));
+        confirm(tokens[0]);
+        assertTrue("a confirmed one frees its place", pinner().pinMedia("plex:fourth", "L").getBoolean("accepted"));
+        now += 61_000;
+        assertFalse(pinner().pinMedia("plex:fifth", "L").getBoolean("accepted"));
+        now += OneTapActionsCapability.PIN_CONFIRM_MS;
+        assertTrue("expired ones free theirs", pinner().pinMedia("plex:fifth", "L").getBoolean("accepted"));
+    }
+
     /** Across documents: three accepted requests a minute in the whole process, whatever reloads the page. */
     @Test public void atMostThreeRequestsAMinuteAreAcceptedInTheProcess() throws Exception {
         cap.start();
-        for (int i = 0; i < 3; i++) assertTrue(pinner().pinMedia("plex:" + i, "L").getBoolean("accepted"));
+        for (int i = 0; i < 3; i++) {
+            assertTrue(pinner().pinMedia("plex:" + i, "L").getBoolean("accepted"));
+            // Confirmed at once, so the open-dialog cap is not what refuses the fourth.
+            confirm(sink.token);
+        }
         JSONObject r = pinner().pinMedia("plex:9", "L");
         assertFalse(r.getBoolean("accepted"));
         assertEquals("rate_limited", r.getString("reason"));
