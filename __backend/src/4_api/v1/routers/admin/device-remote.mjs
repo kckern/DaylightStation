@@ -21,6 +21,11 @@ const STATUS_BY_CODE = Object.freeze({
   DAYLIGHT_ANDROID_AUTH_REJECTED: 502,
   DAYLIGHT_ANDROID_COMMAND_REJECTED: 502,
   DAYLIGHT_ANDROID_INVALID_RESPONSE: 502,
+  // The device is in a state where the command cannot run; its message is
+  // plain words for the operator and is passed through (status below 500).
+  DAYLIGHT_ANDROID_CONFLICT: 409,
+  DAYLIGHT_ANDROID_DEPENDENCY_FAILED: 502,
+  DAYLIGHT_ANDROID_DEVICE_TIMEOUT: 504,
 });
 
 const SAFE_MESSAGE_BY_CODE = Object.freeze({
@@ -37,6 +42,8 @@ const SAFE_MESSAGE_BY_CODE = Object.freeze({
   DAYLIGHT_ANDROID_AUTH_REJECTED: 'The kiosk app rejected the configured token.',
   DAYLIGHT_ANDROID_COMMAND_REJECTED: 'The kiosk app rejected the command.',
   DAYLIGHT_ANDROID_INVALID_RESPONSE: 'The kiosk app returned an unexpected response.',
+  DAYLIGHT_ANDROID_DEPENDENCY_FAILED: 'The kiosk answered, and something it depends on (a page or a download) failed.',
+  DAYLIGHT_ANDROID_DEVICE_TIMEOUT: 'The kiosk answered, and gave up waiting on a page or a download.',
 });
 
 export function createAdminDeviceRemoteRouter({ service, logger = console } = {}) {

@@ -24,6 +24,8 @@ describe('admin device remote router: daylight-android gateway errors', () => {
     ['DAYLIGHT_ANDROID_AUTH_REJECTED', 502],
     ['DAYLIGHT_ANDROID_COMMAND_REJECTED', 502],
     ['DAYLIGHT_ANDROID_INVALID_RESPONSE', 502],
+    ['DAYLIGHT_ANDROID_DEPENDENCY_FAILED', 502],
+    ['DAYLIGHT_ANDROID_DEVICE_TIMEOUT', 504],
   ])('maps %s to HTTP %i with a message of its own', async (code, status) => {
     const error = Object.assign(new Error('private upstream details'), { code });
     const response = await request(build(error))
@@ -61,5 +63,22 @@ describe('admin device remote router: daylight-android gateway errors', () => {
     const error = Object.assign(new Error('x'), { code: 'FKB_UNREACHABLE', reason: 'device owner required' });
     const response = await request(build(error)).get('/devices/tablet/fully-kiosk/status').expect(502);
     expect(response.body.error).toBe('The Fully Kiosk device is unreachable.');
+  });
+
+  it('answers 409 for a conflict and shows the operator the plain-word message', async () => {
+    const error = Object.assign(new Error('The kiosk cannot do that right now: the kiosk window is not open'), { code: 'DAYLIGHT_ANDROID_CONFLICT' });
+    const response = await request(build(error)).get('/devices/tablet/fully-kiosk/status').expect(409);
+    expect(response.body).toEqual({
+      ok: false, code: 'DAYLIGHT_ANDROID_CONFLICT', error: 'The kiosk cannot do that right now: the kiosk window is not open',
+    });
+  });
+
+  it('gives the two device-side failures messages of their own', async () => {
+    const messages = [];
+    for (const code of ['DAYLIGHT_ANDROID_DEPENDENCY_FAILED', 'DAYLIGHT_ANDROID_DEVICE_TIMEOUT', 'DAYLIGHT_ANDROID_UNREACHABLE', 'DAYLIGHT_ANDROID_TIMEOUT']) {
+      const response = await request(build(Object.assign(new Error('x'), { code }))).get('/devices/tablet/fully-kiosk/status');
+      messages.push(response.body.error);
+    }
+    expect(new Set(messages).size).toBe(4);
   });
 });

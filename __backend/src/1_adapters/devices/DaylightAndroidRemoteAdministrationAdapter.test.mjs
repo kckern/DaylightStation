@@ -166,6 +166,42 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
       await expect(adapter.executeAction('tablet', 'refresh')).rejects.toMatchObject({ code });
     });
 
+    it.each([
+      ['no_kiosk_activity', 'the kiosk window is not open'],
+      ['not_in_foreground', 'the kiosk is not in front'],
+      ['update_in_progress', 'an update is already running'],
+      ['not_ready', 'the device is not ready yet'],
+    ])('says in plain words why the device could not act on a 409 %s', async (word, words) => {
+      const { adapter } = build({ 'POST /kiosk/renderer/reset': { status: 409, data: { ok: false, error: word } } });
+      const error = await adapter.executeAction('tablet', 'reset-webview').catch(e => e);
+      expect(error.code).toBe('DAYLIGHT_ANDROID_CONFLICT');
+      expect(error.message).toBe(`The kiosk cannot do that right now: ${words}`);
+    });
+
+    it('names an unfamiliar 409 word as the device gave it, and never a sentence', async () => {
+      const word = build({ 'POST /kiosk/renderer/reset': { status: 409, data: { ok: false, error: 'apk_refused' } } });
+      await expect(word.adapter.executeAction('tablet', 'reset-webview')).rejects.toMatchObject({
+        code: 'DAYLIGHT_ANDROID_CONFLICT', message: 'The kiosk cannot do that right now: apk_refused',
+      });
+      const sentence = build({ 'POST /kiosk/renderer/reset': { status: 409, data: { ok: false, error: 'page https://private.test/x is busy' } } });
+      const error = await sentence.adapter.executeAction('tablet', 'reset-webview').catch(e => e);
+      expect(error.message).toBe('The kiosk cannot do that right now');
+    });
+
+    it.each([
+      [502, 'DAYLIGHT_ANDROID_DEPENDENCY_FAILED'],
+      [504, 'DAYLIGHT_ANDROID_DEVICE_TIMEOUT'],
+    ])('maps a device HTTP %i to %s', async (status, code) => {
+      const { adapter } = build({ 'POST /kiosk/renderer/reset': { status, data: { ok: false, error: 'page_failed' } } });
+      await expect(adapter.executeAction('tablet', 'reset-webview')).rejects.toMatchObject({ code });
+    });
+
+    it('refuses home-alias: changing the home app is left to the CLI', async () => {
+      const { adapter, calls } = build();
+      await expect(adapter.executeAction('tablet', 'home-alias', { enabled: true })).rejects.toMatchObject({ code: 'INVALID_ACTION' });
+      expect(calls).toHaveLength(0);
+    });
+
     it('carries the device reason for an unsupported action in the message and on the error', async () => {
       const { adapter } = build({ 'POST /device/reboot': { status: 501, data: { ok: false, error: 'unsupported', reason: 'device owner required' } } });
       const error = await adapter.executeAction('tablet', 'reboot').catch(e => e);

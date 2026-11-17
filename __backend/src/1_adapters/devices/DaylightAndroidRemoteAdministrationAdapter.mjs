@@ -54,6 +54,14 @@ const SETTING_TYPES = Object.freeze({
   number: 'number', float: 'number', double: 'number',
 });
 
+/** The device's 409 words, as an operator would say them. */
+const CONFLICT_WORDS = Object.freeze({
+  no_kiosk_activity: 'the kiosk window is not open',
+  not_in_foreground: 'the kiosk is not in front',
+  update_in_progress: 'an update is already running',
+  not_ready: 'the device is not ready yet',
+});
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function fail(message, code, extra) {
@@ -230,6 +238,11 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
       UNREACHABLE: 'DAYLIGHT_ANDROID_UNREACHABLE',
       AUTH_REJECTED: 'DAYLIGHT_ANDROID_AUTH_REJECTED',
       UNSUPPORTED: 'DAYLIGHT_ANDROID_UNSUPPORTED',
+      // The device is in a state where the command cannot run.
+      CONFLICT: 'DAYLIGHT_ANDROID_CONFLICT',
+      // The device answered; something it depends on failed or took too long.
+      DEVICE_DEPENDENCY_FAILED: 'DAYLIGHT_ANDROID_DEPENDENCY_FAILED',
+      DEVICE_TIMEOUT: 'DAYLIGHT_ANDROID_DEVICE_TIMEOUT',
       COMMAND_REJECTED: 'DAYLIGHT_ANDROID_COMMAND_REJECTED',
       INVALID_RESPONSE: 'DAYLIGHT_ANDROID_INVALID_RESPONSE',
       // The device answered and its handler failed: a failed command, not an
@@ -243,12 +256,23 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
       DAYLIGHT_ANDROID_UNSUPPORTED: 'This device cannot do that',
       DAYLIGHT_ANDROID_INVALID_RESPONSE: 'Kiosk app returned an invalid response',
       DAYLIGHT_ANDROID_COMMAND_REJECTED: 'Kiosk app rejected the command',
+      DAYLIGHT_ANDROID_CONFLICT: 'The kiosk cannot do that right now',
+      DAYLIGHT_ANDROID_DEPENDENCY_FAILED: 'Something the kiosk depends on failed',
+      DAYLIGHT_ANDROID_DEVICE_TIMEOUT: 'The kiosk gave up waiting on the page or download',
     })[code];
-    // `reason` and `deviceError` are the device's own short words
-    // ("device owner required", "not_installed"); they hold no credentials.
-    // The reason of an unsupported action also rides on the error, so the API
-    // layer can tell the operator why the device cannot do it.
-    const detail = response?.reason || response?.deviceError;
+    // A conflict is shown to the operator as it is (HTTP 409), so it is put
+    // in plain words. `deviceCode` is the device's fixed word; a word with no
+    // translation is shown as the device gave it, a sentence never is.
+    if (code === 'DAYLIGHT_ANDROID_CONFLICT') {
+      const why = CONFLICT_WORDS[response?.deviceCode] ?? response?.deviceCode;
+      fail(why ? `${message}: ${why}` : message, code);
+    }
+    // `reason` and `deviceCode` are the device's own short words
+    // ("device owner required", "not_installed"); they hold no credentials
+    // and no page data. The reason of an unsupported action also rides on the
+    // error, so the API layer can tell the operator why the device cannot do it.
+    const reason = typeof response?.reason === 'string' && !response.reason.includes('://') ? response.reason : null;
+    const detail = reason || response?.deviceCode;
     fail(
       detail ? `${message}: ${detail}` : message,
       code,

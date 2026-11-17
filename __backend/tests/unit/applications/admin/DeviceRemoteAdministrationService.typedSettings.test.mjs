@@ -9,6 +9,7 @@ const typed = () => [
   { key: 'webview.bridgeOrigins', type: 'string', value: 'https://daylight.test' },
   { key: 'control.port', type: 'integer', value: 8780 },
   { key: 'lockdown.allowedApps', type: 'string', value: 'org.example.player' },
+  { key: 'lockdown.required', type: 'BOOLEAN'.toLowerCase(), value: true },
   { key: 'webview.zoom', type: 'integer', value: 100 },
   { key: 'screen.brightness', type: 'integer', value: 120 },
   { key: 'pairing.token', type: 'string', value: 'do-not-show' },
@@ -64,6 +65,7 @@ describe('DeviceRemoteAdministrationService on a device that describes its own s
       { key: 'control.port', type: 'number', value: 8780, editable: false, sensitive: false },
       { key: 'debug.execEnabled', type: 'boolean', value: false, editable: false, sensitive: false },
       { key: 'lockdown.allowedApps', type: 'string', value: 'org.example.player', editable: false, sensitive: false },
+      { key: 'lockdown.required', type: 'boolean', value: true, editable: false, sensitive: false },
       { key: 'pairing.token', type: 'string', value: null, editable: false, sensitive: true },
       // An integer is shown and edited as a number; the whole-number check is on write.
       { key: 'screen.brightness', type: 'number', value: 120, editable: true, sensitive: false },
@@ -102,6 +104,7 @@ describe('DeviceRemoteAdministrationService on a device that describes its own s
     ['the start URL', 'webview.startUrl', 'https://evil.test/'],
     ['a control setting', 'control.port', 9999],
     ['a lockdown setting', 'lockdown.allowedApps', 'com.android.settings'],
+    ['lockdown.required', 'lockdown.required', false],
     ['a non-number for a number', 'webview.loadTimeoutSec', 'soon'],
     ['a fraction for an integer', 'screen.brightness', 12.5],
     ['a non-number for an integer', 'screen.brightness', 'bright'],
