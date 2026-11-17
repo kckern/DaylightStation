@@ -1,6 +1,11 @@
 // frontend/src/lib/fkb.js
-// Standalone FKB (Fully Kiosk Browser) integration.
-// No React dependency. No-ops when FKB is not present.
+// Standalone kiosk-bridge integration: the page's one door to the kiosk app
+// that hosts it. Two bridges are supported and the page does not choose:
+//   - `window.daylight`, injected by the DaylightStation Android kiosk app;
+//   - `window.fully`, injected by Fully Kiosk Browser (FKB).
+// When both are present, `daylight` wins. The exports keep their FKB-era names
+// and signatures so no importer changes when a device moves between the two.
+// No React dependency. No-ops when neither bridge is present.
 
 import getLogger from './logging/Logger.js';
 
@@ -66,8 +71,93 @@ function encodeIntentPart(part) {
  */
 const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind'];
 
+/**
+ * The `window.daylight` members this module calls. As with Fully, a name on
+ * `window` is not a capability: the object must carry at least one of these.
+ */
+const DAYLIGHT_METHODS = ['launch', 'screen', 'setBackMode'];
+const DAYLIGHT_ADAPTER = Symbol('daylight-bridge-adapter');
+
+/**
+ * `window.daylight` behind Fully's method names, or null when it is not there.
+ *
+ * The exports below were written against Fully's bridge. Giving the daylight
+ * bridge the same method names keeps each of them a single code path:
+ *
+ *   startApplication(pkg, activity?) -> daylight.launch('{"package","activity"}')
+ *   startIntent(uri)                 -> daylight.launch('{"intent"}')
+ *   turnScreenOff() / turnScreenOn() -> daylight.screen(false / true)
+ *   bind('onResume', fn)             -> 'daylight:resume' CustomEvent on window
+ *   bind('onBackButton', fn)         -> daylight.setBackMode('page') + 'daylight:back'
+ *
+ * Two differences from Fully are kept, because they are improvements the
+ * daylight bridge makes possible:
+ *   - its calls answer `false` when the app did not accept the request, and
+ *     that `false` is passed back (Fully's calls answer nothing);
+ *   - the second argument of startApplication is the activity class. Fully
+ *     reads that argument as an intent action.
+ *
+ * A method whose underlying daylight member is missing is left off, so
+ * `bridgeMethod(name)` answers null and the caller logs `...unavailable`.
+ * A daylight call that throws is contained here and reads as `false`.
+ */
+function daylightAdapter() {
+  let raw;
+  let has;
+  try {
+    raw = globalThis.daylight;
+    if (!raw) return null;
+    has = Object.fromEntries(DAYLIGHT_METHODS.map((name) => [name, typeof raw[name] === 'function']));
+  } catch {
+    return null; // A bridge object may throw on property access.
+  }
+  if (!Object.values(has).some(Boolean)) return null;
+
+  const call = (name, ...args) => {
+    try {
+      return raw[name](...args);
+    } catch (error) {
+      logger().warn('fkb.bridge.failed', {
+        bridge: 'daylight', method: name, error: error?.message ?? String(error),
+      });
+      return false;
+    }
+  };
+
+  const adapter = { [DAYLIGHT_ADAPTER]: true };
+  if (has.launch) {
+    adapter.startApplication = (pkg, activity) => call(
+      'launch',
+      JSON.stringify(activity ? { package: pkg, activity } : { package: pkg }),
+    );
+    adapter.startIntent = (uri) => call('launch', JSON.stringify({ intent: uri }));
+  }
+  if (has.screen) {
+    adapter.turnScreenOff = () => call('screen', false);
+    adapter.turnScreenOn = () => call('screen', true);
+  }
+  // Returns false when the event cannot be bound on this bridge.
+  adapter.bind = (event, handler) => {
+    if (event === 'onResume') {
+      window.addEventListener('daylight:resume', (e) => handler(e?.detail));
+      return true;
+    }
+    if (event === 'onBackButton') {
+      // 'page' mode is what makes the app send daylight:back at all; without
+      // it the app handles the button itself and the listener would be dead.
+      if (!has.setBackMode || call('setBackMode', 'page') === false) return false;
+      window.addEventListener('daylight:back', () => handler());
+      return true;
+    }
+    return false;
+  };
+  return adapter;
+}
+
 function bridge() {
   if (typeof globalThis === 'undefined') return null;
+  const daylight = daylightAdapter();
+  if (daylight) return daylight;
   for (const candidate of [globalThis.fully, globalThis.FullyKiosk]) {
     if (!candidate) continue;
     try {
@@ -97,6 +187,15 @@ function bridgeMethod(name) {
 }
 
 /**
+ * Which bridge is active, for log lines: 'daylight', 'fully' or 'absent'.
+ */
+function bridgeName() {
+  const target = bridge();
+  if (!target) return 'absent';
+  return target[DAYLIGHT_ADAPTER] ? 'daylight' : 'fully';
+}
+
+/**
  * True when a real kiosk-control interface is present — see `bridge()`.
  *
  * Still not a promise about any PARTICULAR method: a bridge can carry
@@ -117,13 +216,16 @@ export function isFKBAvailable() {
 export function launchApp(packageName) {
   const startApplication = bridgeMethod('startApplication');
   if (!startApplication) {
-    logger().warn('fkb.launch.unavailable', { packageName, bridge: bridge() ? 'present' : 'absent' });
+    logger().warn('fkb.launch.unavailable', { packageName, bridge: bridgeName() });
     return false;
   }
   logger().info('fkb.launch.attempt', { packageName });
   // Always use 1-arg form — FKB's 3-arg form (package, action, activity)
   // doesn't work reliably. Android resolves the default launcher activity.
-  startApplication(packageName);
+  if (startApplication(packageName) === false) {
+    logger().warn('fkb.launch.rejected', { packageName, bridge: bridgeName() });
+    return false;
+  }
   return true;
 }
 
@@ -142,13 +244,16 @@ export function startApplication(packageName, activityName) {
   const startApp = bridgeMethod('startApplication');
   if (!startApp) {
     logger().warn('fkb.startApplication.unavailable', {
-      packageName, activityName, bridge: bridge() ? 'present' : 'absent',
+      packageName, activityName, bridge: bridgeName(),
     });
     return false;
   }
   logger().info('fkb.startApplication.attempt', { packageName, activityName });
-  if (activityName) startApp(packageName, activityName);
-  else startApp(packageName);
+  const accepted = activityName ? startApp(packageName, activityName) : startApp(packageName);
+  if (accepted === false) {
+    logger().warn('fkb.startApplication.rejected', { packageName, activityName, bridge: bridgeName() });
+    return false;
+  }
   return true;
 }
 
@@ -172,7 +277,7 @@ export function launchAndroidTarget(target = {}) {
   const startIntent = bridgeMethod('startIntent');
   if (!startIntent) {
     logger().warn('fkb.launchTarget.unavailable', {
-      action, pkg, activity, bridge: bridge() ? 'present' : 'absent',
+      action, pkg, activity, bridge: bridgeName(),
     });
     return false;
   }
@@ -199,17 +304,23 @@ export function launchAndroidTarget(target = {}) {
     logger().info('fkb.launchTarget.app', { pkg });
     const startApp = bridgeMethod('startApplication');
     if (!startApp) {
-      logger().warn('fkb.launchTarget.unavailable', { pkg, method: 'startApplication' });
+      logger().warn('fkb.launchTarget.unavailable', { pkg, method: 'startApplication', bridge: bridgeName() });
       return false;
     }
-    startApp(pkg);
+    if (startApp(pkg) === false) {
+      logger().warn('fkb.launchTarget.rejected', { pkg, bridge: bridgeName() });
+      return false;
+    }
     return true;
   } else {
     logger().warn('fkb.launchTarget.empty', { target });
     return false;
   }
   logger().info('fkb.launchTarget.intent', { action, pkg, activity, uri });
-  startIntent(uri);
+  if (startIntent(uri) === false) {
+    logger().warn('fkb.launchTarget.rejected', { action, pkg, activity, bridge: bridgeName() });
+    return false;
+  }
   return true;
 }
 
@@ -275,7 +386,7 @@ export function buildIntentUri(packageName, activityName, extras = {}) {
 export function launchIntent(packageName, activityName, extras = {}) {
   const startIntent = bridgeMethod('startIntent');
   if (!startIntent) {
-    logger().warn('fkb.intent.unavailable', { packageName, bridge: bridge() ? 'present' : 'absent' });
+    logger().warn('fkb.intent.unavailable', { packageName, bridge: bridgeName() });
     return false;
   }
 
@@ -288,7 +399,10 @@ export function launchIntent(packageName, activityName, extras = {}) {
   }
 
   logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras), uri });
-  startIntent(uri);
+  if (startIntent(uri) === false) {
+    logger().warn('fkb.intent.rejected', { packageName, activityName, bridge: bridgeName() });
+    return false;
+  }
   return true;
 }
 
@@ -302,12 +416,15 @@ export function launchIntent(packageName, activityName, extras = {}) {
 export function screenOff() {
   const turnScreenOff = bridgeMethod('turnScreenOff');
   if (!turnScreenOff) {
-    logger().warn('fkb.screenOff.unavailable', { bridge: bridge() ? 'present' : 'absent' });
+    logger().warn('fkb.screenOff.unavailable', { bridge: bridgeName() });
     return false;
   }
   logger().info('fkb.screenOff', {});
   try {
-    turnScreenOff();
+    if (turnScreenOff() === false) {
+      logger().warn('fkb.screenOff.rejected', { bridge: bridgeName() });
+      return false;
+    }
     return true;
   } catch (error) {
     logger().warn('fkb.screenOff.failed', { error: error?.message ?? String(error) });
@@ -324,12 +441,15 @@ export function screenOff() {
 export function screenOn() {
   const turnScreenOn = bridgeMethod('turnScreenOn');
   if (!turnScreenOn) {
-    logger().warn('fkb.screenOn.unavailable', { bridge: bridge() ? 'present' : 'absent' });
+    logger().warn('fkb.screenOn.unavailable', { bridge: bridgeName() });
     return false;
   }
   logger().info('fkb.screenOn', {});
   try {
-    turnScreenOn();
+    if (turnScreenOn() === false) {
+      logger().warn('fkb.screenOn.rejected', { bridge: bridgeName() });
+      return false;
+    }
     return true;
   } catch (error) {
     logger().warn('fkb.screenOn.failed', { error: error?.message ?? String(error) });
@@ -371,22 +491,31 @@ export function onResume(callback) {
   // `FullyKiosk` object has every direct method and none of the event wiring,
   // and this runs at app startup — calling it blind is what blanked the
   // Portal.
+  // On the daylight bridge the same `bind` listens for the `daylight:resume`
+  // CustomEvent instead, whose detail ({ awayMs, from }) goes into the log.
   const bind = bridgeMethod('bind');
   if (!bind) {
-    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onResume' });
+    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onResume', bridge: bridgeName() });
     return;
   }
-  bind('onResume', () => {
-    logger().info('fkb.resume');
+  const onDaylight = bridgeName() === 'daylight';
+  const bound = bind('onResume', (detail) => {
+    if (onDaylight && detail) logger().info('fkb.resume', detail);
+    else logger().info('fkb.resume');
     if (_onResumeCallback) _onResumeCallback();
   });
+  if (bound === false) {
+    logger().warn('fkb.bind.unavailable', { event: 'onResume', bridge: bridgeName() });
+    return;
+  }
   _bound = true;
 }
 
 /**
- * Bind FKB's hardware back button to trigger a browser history back.
+ * Bind the kiosk's hardware back button to trigger a browser history back.
  * Without this, FKB intercepts the back button and opens its own sidebar
- * instead of passing it to the WebView.
+ * instead of passing it to the WebView, and the Android kiosk app keeps the
+ * button to itself (back mode 'reload' or 'ignore').
  *
  * Uses history.back() so the popstate trap in MenuNavigationContext handles
  * navigation — including pop guards (e.g. recording-in-progress confirmation).
@@ -399,15 +528,21 @@ let _backBound = false;
 export function bindBackButton() {
   if (_backBound) return;
   // See `onResume` — event binding is alias-only, and this is a startup call.
+  // On the daylight bridge `bind` switches the app to back mode 'page' and
+  // listens for the `daylight:back` CustomEvent.
   const bind = bridgeMethod('bind');
   if (!bind) {
-    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onBackButton' });
+    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridge: bridgeName() });
     return;
   }
-  bind('onBackButton', () => {
+  const bound = bind('onBackButton', () => {
     logger().info('fkb.backButton');
     window.history.back();
   });
+  if (bound === false) {
+    logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridge: bridgeName() });
+    return;
+  }
   _backBound = true;
 }
 
