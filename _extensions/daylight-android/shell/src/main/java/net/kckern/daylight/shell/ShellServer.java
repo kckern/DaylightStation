@@ -78,7 +78,28 @@ public final class ShellServer extends NanoHTTPD {
     private final String token;
 
     public ShellServer(Host host, int port, String token) {
-        super(port);
+        this(host, null, port, token);
+    }
+
+    private volatile java.net.ServerSocket listening;
+
+    /** The address the lifeline is listening on, or null when it is not listening. */
+    java.net.InetAddress boundAddress() {
+        java.net.ServerSocket socket = listening;
+        return socket == null || !socket.isBound() || socket.isClosed() ? null : socket.getInetAddress();
+    }
+
+    /**
+     * @param bindHost the address to listen on, or null for every interface. A device
+     *                 whose file says `control.bind: loopback` passes the loopback address.
+     */
+    public ShellServer(Host host, String bindHost, int port, String token) {
+        super(bindHost, port);
+        setServerSocketFactory(() -> {
+            java.net.ServerSocket socket = new java.net.ServerSocket();
+            listening = socket;
+            return socket;
+        });
         this.host = host;
         this.port = port;
         this.token = token;

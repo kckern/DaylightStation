@@ -39,6 +39,7 @@ public final class DeviceConfigSource {
         s.append("    public static final String DEVICE_ID = ").append(javaString(device.id)).append(";\n");
         s.append("    public static final String PAYLOAD_VERSION = ").append(javaString(payloadVersion)).append(";\n");
         s.append("    public static final int CONTROL_PORT = ").append(device.controlPort).append(";\n");
+        s.append("    public static final String CONTROL_BIND = ").append(javaString(device.controlBind)).append(";\n");
         s.append("    public static final String[] CAPABILITY_ENTRIES = {\n");
         for (String e : entries) s.append("        ").append(javaString(e)).append(",\n");
         s.append("    };\n");

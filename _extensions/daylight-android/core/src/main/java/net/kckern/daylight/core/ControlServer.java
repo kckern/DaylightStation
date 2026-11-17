@@ -34,10 +34,33 @@ public final class ControlServer extends NanoWSD {
     public ControlServer(int port, Router router) { this(port, router, null, null); }
 
     public ControlServer(int port, Router router, Auth auth, SocketHub hub) {
-        super(port);
+        this(null, port, router, auth, hub);
+    }
+
+    /**
+     * @param host the address to listen on, or null for every interface. A device whose
+     *             file says `control.bind: loopback` passes the loopback address (see
+     *             net.kckern.daylight.api.ControlBind), so nothing off the device can connect.
+     */
+    public ControlServer(String host, int port, Router router, Auth auth, SocketHub hub) {
+        super(host, port);
         this.router = router;
         this.auth = auth;
         this.hub = hub;
+        // Keeps hold of the listening socket so boundAddress() can report where it listens.
+        setServerSocketFactory(() -> {
+            java.net.ServerSocket socket = new java.net.ServerSocket();
+            listening = socket;
+            return socket;
+        });
+    }
+
+    private volatile java.net.ServerSocket listening;
+
+    /** The address the server is listening on, or null when it is not listening. */
+    public java.net.InetAddress boundAddress() {
+        java.net.ServerSocket socket = listening;
+        return socket == null || !socket.isBound() || socket.isClosed() ? null : socket.getInetAddress();
     }
 
     /**

@@ -20,11 +20,29 @@ public final class DeviceSpec {
     public final List<String> extraPermissions;
     /** The shell service's foregroundServiceType values; empty for none. */
     public final List<String> foregroundServiceTypes;
+    /** Where the control API and the lifeline listen: "lan" (every interface) or "loopback". */
+    public final String controlBind;
+    /**
+     * The host whose https links the app offers to open, as written in the device file
+     * (it may be a {placeholder}); empty for none.
+     */
+    public final String appLinksHost;
 
     DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
                int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
                List<String> capabilities, Map<String, Object> defaults,
                List<String> extraPermissions, List<String> foregroundServiceTypes) {
+        this(id, packageName, minSdk, targetSdk, abis, controlPort, lifelinePort, shellVersionCode, shellVersionName,
+                capabilities, defaults, extraPermissions, foregroundServiceTypes, "lan", "");
+    }
+
+    DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
+               int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
+               List<String> capabilities, Map<String, Object> defaults,
+               List<String> extraPermissions, List<String> foregroundServiceTypes,
+               String controlBind, String appLinksHost) {
+        this.controlBind = controlBind;
+        this.appLinksHost = appLinksHost;
         this.id = id;
         this.packageName = packageName;
         this.minSdk = minSdk;

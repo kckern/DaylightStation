@@ -45,7 +45,11 @@ public class MainTest {
 
     @Test public void aControlPortThatCannotBeBoundFailsThePayloadAndStopsWhatStarted() throws Exception {
         Main main = new Main();
-        try (ServerSocket held = new ServerSocket(0)) {
+        // Held on the address this device binds. On a loopback device a socket held on
+        // every interface would not be the one in the way.
+        java.net.InetAddress where = "loopback".equals(net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND)
+                ? java.net.InetAddress.getByName("127.0.0.1") : null;
+        try (ServerSocket held = new ServerSocket(0, 50, where)) {
             try {
                 main.start(new FakeShell(tmp.newFolder()), held.getLocalPort(), 2);
                 fail("a payload with a dead control port must not report a clean start");
@@ -76,5 +80,20 @@ public class MainTest {
         while (heartbeatRunning() && System.currentTimeMillis() < deadline) Thread.sleep(20);
         assertFalse("the core was left running", heartbeatRunning());
         try (ServerSocket free = new ServerSocket(port)) { assertTrue(free.isBound()); }
+    }
+
+    /** Runs once per device: a device file that says loopback must not listen on the network. */
+    @Test public void theControlApiListensWhereTheDeviceFileSays() throws Exception {
+        Main main = new Main();
+        main.start(new FakeShell(tmp.newFolder()), freePort(), 3);
+        try {
+            java.net.InetAddress bound = main.boundAddress();
+            String bind = net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND;
+            assertTrue("unexpected control.bind " + bind, "loopback".equals(bind) || "lan".equals(bind));
+            assertEquals(bind + " bound " + bound, "loopback".equals(bind), bound.isLoopbackAddress());
+            assertEquals(bind + " bound " + bound, "lan".equals(bind), bound.isAnyLocalAddress());
+        } finally {
+            main.stop();
+        }
     }
 }

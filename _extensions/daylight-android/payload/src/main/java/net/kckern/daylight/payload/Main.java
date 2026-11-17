@@ -40,7 +40,9 @@ public final class Main implements Payload {
                 c.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
             }
             c.start(new JSONObject(DeviceConfig.DEFAULTS_JSON));
-            server = ControlServer.startWithRetry(() -> new ControlServer(port, c.router(), c.auth(), c.socket()), bindAttempts);
+            // lan: every interface. loopback: this device only (a phone joins other networks).
+            final String host = net.kckern.daylight.api.ControlBind.host(DeviceConfig.CONTROL_BIND);
+            server = ControlServer.startWithRetry(() -> new ControlServer(host, port, c.router(), c.auth(), c.socket()), bindAttempts);
             if (server == null) {
                 // A payload without its control port cannot be operated. Failing here makes the
                 // shell go back to the previous payload, which may still be able to bind.
@@ -66,6 +68,12 @@ public final class Main implements Payload {
         CoreRuntime c = core;
         core = null;
         if (c != null) { try { c.stop(); } catch (Throwable ignored) { } }
+    }
+
+    /** Where the control server listens, or null when it is not up. For tests. */
+    java.net.InetAddress boundAddress() {
+        ControlServer s = server;
+        return s == null ? null : s.boundAddress();
     }
 
     @Override public String version() { return DeviceConfig.PAYLOAD_VERSION; }

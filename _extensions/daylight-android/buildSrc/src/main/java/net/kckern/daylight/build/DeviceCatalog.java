@@ -35,6 +35,8 @@ public final class DeviceCatalog {
     private static final Set<String> SERVICE_TYPES = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
             "dataSync", "mediaPlayback", "phoneCall", "location", "connectedDevice", "mediaProjection", "camera", "microphone")));
 
+    static final Set<String> CONTROL_BINDS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList("lan", "loopback")));
+
     private final Map<String, CapabilitySpec> capabilities;
     private final Map<String, DeviceSpec> devices;
 
@@ -140,6 +142,13 @@ public final class DeviceCatalog {
             if (p < 1024 || p > 65535) throw new CatalogException(where + ": port " + p + " is outside 1024-65535");
         }
         if (port == lifeline) throw new CatalogException(where + ": control.port and control.lifelinePort must differ");
+        // A device that leaves the house (a phone) must not offer its control API to
+        // whatever network it joins. Absent means "lan", which is what every kiosk does.
+        Object rawBind = control.get("bind");
+        String bind = rawBind == null ? "lan" : String.valueOf(rawBind);
+        if (!(rawBind == null || rawBind instanceof String) || !CONTROL_BINDS.contains(bind)) {
+            throw new CatalogException(where + ": control.bind must be 'lan' or 'loopback'");
+        }
 
         Map<String, Object> shell = asMap(required(doc, "shell", where), where + " shell");
         int versionCode = integer(shell, "versionCode", where);
@@ -200,7 +209,8 @@ public final class DeviceCatalog {
 
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
                 Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults),
-                Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes));
+                Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes),
+                bind, "");
     }
 
     /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */

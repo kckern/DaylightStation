@@ -285,4 +285,25 @@ public class ControlServerTest {
             assertEquals("200", http("GET", base + "/status", TOKEN, null)[0]);
         }
     }
+
+    // ── where it listens ──────────────────────────────────────────────────────
+
+    @Test public void aLoopbackServerListensOnTheLoopbackAddressOnly() throws Exception {
+        ControlServer loopback = new ControlServer("127.0.0.1", 0, new Router(new Auth(TOKEN)), null, null);
+        loopback.start(0, true);
+        try {
+            assertTrue(String.valueOf(loopback.boundAddress()), loopback.boundAddress().isLoopbackAddress());
+            assertFalse(loopback.boundAddress().isAnyLocalAddress());
+        } finally {
+            loopback.stop();
+        }
+    }
+
+    @Test public void aServerWithNoHostListensOnEveryInterfaceAsTheKiosksDo() {
+        assertTrue(String.valueOf(server.boundAddress()), server.boundAddress().isAnyLocalAddress());
+    }
+
+    @Test public void aServerThatHasNotStartedHasNoAddress() {
+        assertNull(new ControlServer(0, new Router(new Auth(TOKEN))).boundAddress());
+    }
 }

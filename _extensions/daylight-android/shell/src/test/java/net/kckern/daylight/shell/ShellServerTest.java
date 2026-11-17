@@ -187,4 +187,26 @@ public class ShellServerTest {
         assertFalse(f.exists());
         assertEquals("p0-baked-v3.jar", body(server().handle("GET", "/status", TOKEN, null, null)).getJSONObject("payload").getString("active"));
     }
+
+    // ── where it listens ──────────────────────────────────────────────────────
+
+    @Test public void theLifelineOfALoopbackDeviceListensOnLoopbackOnly() throws Exception {
+        ShellServer loopback = new ShellServer(host, "127.0.0.1", 0, TOKEN);
+        loopback.start(0, true);
+        try {
+            assertTrue(String.valueOf(loopback.boundAddress()), loopback.boundAddress().isLoopbackAddress());
+        } finally {
+            loopback.stop();
+        }
+    }
+
+    @Test public void theLifelineOfAKioskListensOnEveryInterface() throws Exception {
+        ShellServer lan = server();
+        lan.start(0, true);
+        try {
+            assertTrue(String.valueOf(lan.boundAddress()), lan.boundAddress().isAnyLocalAddress());
+        } finally {
+            lan.stop();
+        }
+    }
 }

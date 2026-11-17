@@ -27,6 +27,9 @@ android {
                 versionName d.shellVersionName
                 buildConfigField 'String', 'DEVICE_ID', "\"${d.id}\""
                 buildConfigField 'int', 'LIFELINE_PORT', "${d.lifelinePort}"
+                // lan or loopback: where the lifeline listens. The payload reads the same
+                // value from its generated DeviceConfig for the control server.
+                buildConfigField 'String', 'CONTROL_BIND', "\"${d.controlBind}\""
                 buildConfigField 'String', 'CONTROL_TOKEN', "\"${tokens.tokenFor(d.id)}\""
                 if (!d.abis.isEmpty()) ndk { abiFilters(*d.abis) }
             }

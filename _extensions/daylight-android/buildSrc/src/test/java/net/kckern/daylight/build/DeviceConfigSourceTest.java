@@ -27,6 +27,15 @@ public class DeviceConfigSourceTest {
         assertTrue(src.contains("DEFAULTS_JSON = \"{}\";"));
     }
 
+    @Test public void rendersWhereTheControlApiListens() {
+        java.util.List<String> none = Collections.emptyList();
+        assertTrue(DeviceConfigSource.render(device(Collections.emptyMap()), none, "p").contains("CONTROL_BIND = \"lan\";"));
+        DeviceSpec phone = new DeviceSpec("phone", "net.kckern.daylight.phone", 26, 33, Collections.emptyList(),
+                8780, 8781, 1, "0.1", Arrays.asList("debug-tools"), Collections.emptyMap(),
+                Collections.emptyList(), Collections.emptyList(), "loopback", "");
+        assertTrue(DeviceConfigSource.render(phone, none, "p").contains("CONTROL_BIND = \"loopback\";"));
+    }
+
     @Test public void rendersDefaultsAsEscapedJson() {
         Map<String, Object> defaults = new LinkedHashMap<>();
         defaults.put("a.flag", true);

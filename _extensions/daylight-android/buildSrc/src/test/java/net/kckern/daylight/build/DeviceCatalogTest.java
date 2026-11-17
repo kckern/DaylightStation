@@ -181,6 +181,26 @@ public class DeviceCatalogTest {
         assertEquals(java.util.Arrays.asList("microphone", "location"), d.foregroundServiceTypes);
     }
 
+    // ── control.bind ──────────────────────────────────────────────────────────
+
+    @Test public void aDeviceListensOnTheLanUnlessItsFileSaysLoopback() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL);
+        assertEquals("lan", DeviceCatalog.load(root).device("portal").controlBind);
+        write(new File(root, "devices/portal.yml"),
+                PORTAL.replace("lifelinePort: 8781 }", "lifelinePort: 8781, bind: loopback }"));
+        assertEquals("loopback", DeviceCatalog.load(root).device("portal").controlBind);
+    }
+
+    @Test public void rejectsAControlBindThatIsNotLanOrLoopback() throws Exception {
+        File root = root();
+        for (String bad : new String[] { "bind: everywhere", "bind: 0.0.0.0", "bind: 7", "bind: \"\"" }) {
+            write(new File(root, "devices/portal.yml"),
+                    PORTAL.replace("lifelinePort: 8781 }", "lifelinePort: 8781, " + bad + " }"));
+            assertTrue(bad, message(() -> DeviceCatalog.load(root)).contains("control.bind must be 'lan' or 'loopback'"));
+        }
+    }
+
     @Test public void rejectsAnUnknownForegroundServiceType() throws Exception {
         File root = root();
         write(new File(root, "devices/portal.yml"), PORTAL + "foregroundServiceTypes: [telepathy]\n");

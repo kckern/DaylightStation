@@ -85,11 +85,13 @@ public class ShellService extends Service implements ShellServer.Host {
         // The lifeline comes up before the payload, so a payload that hangs on
         // start still leaves rollback reachable.
         if (lifeline == null) {
-            ShellServer server = new ShellServer(this, BuildConfig.LIFELINE_PORT, BuildConfig.CONTROL_TOKEN);
+            ShellServer server = new ShellServer(this,
+                    net.kckern.daylight.api.ControlBind.host(BuildConfig.CONTROL_BIND),
+                    BuildConfig.LIFELINE_PORT, BuildConfig.CONTROL_TOKEN);
             try {
                 server.start(LIFELINE_READ_TIMEOUT_MS, true);
                 lifeline = server;
-                ShellLog.note("SHELL", "lifeline on :" + BuildConfig.LIFELINE_PORT);
+                ShellLog.note("SHELL", "lifeline on :" + BuildConfig.LIFELINE_PORT + " (" + BuildConfig.CONTROL_BIND + ")");
             } catch (Exception e) {
                 // lifeline stays null, so the next onStartCommand (the keep-alive alarm) tries again.
                 Log.e(TAG, "lifeline failed to start", e);
