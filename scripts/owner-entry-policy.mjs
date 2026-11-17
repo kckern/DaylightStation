@@ -125,6 +125,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/personal/calendar/server/composition/calendarApi.mjs': 'composition',
   '__capabilities/lifelog/server/composition/lifelogApi.mjs': 'composition',
   '__app_modules/personal/lifelog/server/composition/archive.mjs': 'composition',
+  '__app_modules/personal/lifelog/server/knowledge-runtime.mjs': 'composition',
   '__app_modules/wellness/health/server/composition/lifelog-weight.mjs': 'composition',
   '__app_modules/media/feed/server/api/feed.mjs': 'api',
   '__app_modules/money/finance/server/api/finance.mjs': 'api',

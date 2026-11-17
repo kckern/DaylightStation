@@ -1,0 +1,16 @@
+# Household path: lifelog/config.yml. No participation until explicitly commissioned.
+knowledge:
+  enabled: false
+  write: false
+  writer_env: null
+  writer_host: null
+  timezone: null
+  max_runs_per_day: 4
+  post_entry_minutes: 15
+  min_entry_chars: 200
+  echo_enabled: true
+  echo_min_chars: 600
+  sweep_at: '03:30'
+  quiz_max: 5
+  quiz_expiry_days: 7
+  ab_days: 14

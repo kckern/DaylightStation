@@ -24,3 +24,9 @@ it('suppresses a duplicate send when preparation returns an existing reservation
 it('quarantines an acknowledged transport whose receipt persistence failed',async()=>{
  const d=setup({failAck:true});await expect(run(d)).rejects.toThrow('ack failed');expect(d.send).toHaveBeenCalledTimes(1);expect(d.source.recordDeliveryFailure).toHaveBeenCalledWith({username:'sample',deliveryId:'delivery-1',uncertain:true,asOf});
 });
+it('records control-day questions against the acknowledged legacy message without adding KB buttons',async()=>{
+ const d=setup();delete d.debrief.knowledgeSelection;d.debrief.knowledgeControl={mode:'legacy',reason:'control',selectionId:'control-1',askDate:'2026-11-03'};
+ d.source.prepareDelivery.mockResolvedValue({deliveryId:'control-delivery',sendAllowed:true,questions:[],choices:[]});
+ await run(d);expect(d.source.prepareDelivery.mock.calls[0][0]).toMatchObject({selectionId:'control-1',questionIds:['legacy.0','legacy.1']});
+ expect(d.source.recordDelivery).toHaveBeenCalledWith({username:'sample',deliveryId:'control-delivery',botMessageId:'99',asOf});expect(d.send.mock.calls[0][2].choices.flat().some(b=>b.callback_data.startsWith('kb1:'))).toBe(false);
+});

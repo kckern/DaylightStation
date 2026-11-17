@@ -5,6 +5,7 @@ const { HOUSEHOLD_APP_CONFIGS, appConfigRelPath, allAppNames } = registry;
 describe('householdConfig registry', () => {
   it('maps an app to its grouped path under the household folder', () => {
     expect(appConfigRelPath('scales')).toBe('hardware/scales');
+    expect(appConfigRelPath('lifelog')).toBe('lifelog/config');
     expect(appConfigRelPath('vehicles')).toBe('automotive/vehicles');
     expect(appConfigRelPath('concierge')).toBe('agents/concierge');
   });

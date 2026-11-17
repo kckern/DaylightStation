@@ -28,3 +28,8 @@ describe('KB morning generation',()=>{
   expect(result.knowledgeSelection).toEqual(selection);expect(result.headline).toBeNull();expect(result.summary.match(/\?/g)).toHaveLength(1);expect(d.ai.chat).not.toHaveBeenCalled();
  });
 });
+it('carries control-day measurement identity while preserving legacy questions and hooks',async()=>{
+ const control={mode:'legacy',reason:'control',selectionId:'control-1',askDate:'2026-11-03',questions:[],queuedCount:0};
+ const d=setup({selected:control,raw:'HOOK: How was it?\nWhat happened at the meeting?'}),result=await run(d);
+ expect(result.headline).toBe('How was it?');expect(result.summary).toBe('What happened at the meeting?');expect(result.knowledgeControl).toEqual(control);
+});

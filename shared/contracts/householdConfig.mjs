@@ -64,6 +64,7 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   gratitude:        'gratitude/config',
   harvest:          'harvest/config',
   livestream:       'livestream/config',
+  lifelog:          'lifelog/config',
   // `media` is the DOMAIN (plex host, protocol, infinity board ids) and
   // `media-app` is the MediaApp SURFACE (browse menu, searchScopes). The files
   // on disk were named the other way round before this migration.

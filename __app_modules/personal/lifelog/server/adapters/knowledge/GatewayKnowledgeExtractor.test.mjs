@@ -61,3 +61,8 @@ describe('bounded knowledge proposal gateway',()=>{
   expect(scoped.chatStructured).toHaveBeenCalledTimes(1);
  });
 });
+it('uses an explicitly configured model for the real structured call, not just its version label',async()=>{
+ const calls=[],gateway={scoped:()=>({chatStructured:async(_messages,options)=>{calls.push(options);return {proposals:[]};}})};
+ const extractor=new GatewayKnowledgeExtractor({gateway,modelVersion:'fixture-model',model:'fixture-model'});
+ await extractor.extract(query());expect(calls[0].model).toBe('fixture-model');
+});

@@ -263,6 +263,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `__docs/reference/core/configuration.md` (AI usage ledger) |
 | AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `__docs/reference/core/ai-structured-wire-layer.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
+| Lifelog knowledge (verified loops, private reviews, question queue, default-off runtime) | `__docs/reference/lifelog/knowledge.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
 | Teacher flows (what a grown-up can do, from which state) | `__docs/reference/school/teacher.md` |

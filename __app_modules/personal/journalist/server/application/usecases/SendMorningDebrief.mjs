@@ -135,6 +135,14 @@ export class SendMorningDebrief {
         }
       }
 
+      if(debrief.knowledgeControl?.selectionId&&this.#followUpSource){
+        const count=((debrief.summary??'')+' '+(debrief.headline??'')).match(/[?？]/g)?.length??0;
+        try{
+          knowledgeDelivery=await this.#followUpSource.prepareDelivery({username,conversationId,selectionId:debrief.knowledgeControl.selectionId,askDate:debrief.askDate,channel:'morning',questionIds:Array.from({length:count},(_,i)=>'legacy.'+i),asOf:this.#clock()});
+          if(!knowledgeDelivery.sendAllowed)return {success:true,suppressed:true,reason:'already_prepared'};
+        }catch{this.#logger.warn?.('debrief.knowledge.control-prepare-failed');}
+      }
+
       // Build full message: an engaging headline (provocative question or teaser)
       // over a subordinate date line, then the styled summary.
       const dateObj = new Date(debrief.date + 'T00:00:00');
@@ -186,6 +194,7 @@ export class SendMorningDebrief {
           debrief: {
             date: debrief.date,
             ...(debrief.knowledgeSelection?{knowledgeSelection:debrief.knowledgeSelection,askDate:debrief.askDate,username}:{}),
+            ...(debrief.knowledgeControl?{knowledgeControl:debrief.knowledgeControl,askDate:debrief.askDate,username}:{}),
             summary: debrief.summary,
             questions: debrief.questions,
             categories: debrief.categories,

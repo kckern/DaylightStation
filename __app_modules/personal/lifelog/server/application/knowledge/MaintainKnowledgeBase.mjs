@@ -16,6 +16,7 @@ export class MaintainKnowledgeBase {
     if (!this.#enabled) return {status:'disabled'};
     localDateFor(asOf,this.#timezone(username));
     await this.#store.recover({username});
+    if(!this.#enabled)return {status:'disabled'};
     await mutateKnowledge({store:this.#store,username,runId:this.#id(),build:snapshot=>snapshot.state.cursor?null:stateBatch({cursor:{since:asOf,seen:[]},activationAt:asOf})});
     return {status:'ready'};
   }
@@ -89,6 +90,7 @@ export class MaintainKnowledgeBase {
       this.#logger?.info?.('lifelog.knowledge.run-completed',{runId,proposals:extraction.proposals.length,accepted:acceptedIds.length,rejected:reduction.rejected.length});
       return {status:'completed',runId,acceptedIds,rejected:reduction.rejected,echo};
     } catch(error) {
+      if(!this.#enabled)return {status:'failed',reason:'KNOWLEDGE_STOPPED',runId};
       const reason=error.code??'extraction_failed';
       try {await this.#deferFailed({username,generation:capturedGeneration,runId,asOf,reason});}catch{/* An unavailable store stays unavailable; never fabricate a cursor. */}
       this.#logger?.warn?.('lifelog.knowledge.run-failed',{runId,reason});

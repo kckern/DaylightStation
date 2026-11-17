@@ -1,6 +1,6 @@
 # Lifelog knowledge
 
-The knowledge subsystem records user-stated open loops with quoted journal evidence. It is separate from the read-only lifelog archive. The domain, recoverable persistence, read-only preview CLI and bounded maintenance are implemented in source. Runtime integration and production activation remain separate steps. No existing debrief uses the foundation until composition explicitly supplies the knowledge ports.
+The knowledge subsystem records user-stated open loops with quoted journal evidence. It is separate from the read-only lifelog archive. Journalist consumes its optional runtime ports for bounded questions, private reviews and entry echoes. Production participation defaults off and requires explicit commissioning after read-only precision review.
 
 Only verified user messages can authorize committed proposals. Historical user rows can be inspected in a preview that cannot be committed. Quotes match their cited message after Unicode NFC and whitespace normalization; paraphrases are not evidence. The proposal vocabulary permits opening, touching and closing loops, candidate people and candidate aliases. It cannot delete, merge, confirm itself or loosen user pins. Sensitive proposals wait for review and default to never asking.
 
@@ -116,3 +116,65 @@ Echoes contain at most three validated normal loop titles and a generic private
 review notice. Their Looks right token confirms the echo only; it cannot approve
 pending people, aliases or sensitive proposals. Runtime and Journalist wiring
 remain separate from these delivery services; production participation stays off.
+
+
+## Runtime configuration and lifecycle
+
+Copy the [configuration example](../../configuration/lifelog.example.yml) to the
+household's `lifelog/config.yml` only when commissioning is approved. The registry
+resolves `lifelog` to `lifelog/config`; no flat config fallback exists. Defaults
+perform no journal scan, model call, timer registration, directory creation or
+writer lease acquisition. Invalid enabled configuration disables participation
+with a structured reason, leaving the ordinary debrief available.
+
+Both `enabled` and `write` must be true. `writer_env` must match the runtime's
+actual environment and `writer_host` its actual OS hostname; container deployments
+need a stable explicit hostname before commissioning. A production flag or synced
+configuration alone grants no authority. Linux's kernel lease prevents concurrent
+writers. Losing authority, a conflicting hand edit, failed recovery or sweep age
+above thirty-six hours makes question selection fall back to the ordinary path.
+
+Timezone resolves from the user profile, then household configuration. `timezone`
+is an optional fallback for injected runtimes. Schedules use local calendar
+arithmetic through the application scheduler: the next 03:30 sweep and Monday
+05:00 private review remain local across daylight-saving transitions. Startup
+recovers before exposing healthy ports, catches up one missed sweep and restores
+unfinished verified entry jobs. It initializes a live cursor, never a historical
+backfill. Repeated startup does not duplicate timers or acknowledged asks.
+
+The extraction daily cap may be lowered from four; post-entry delay and entry
+thresholds are validated. Quiz size five, seven-day queue expiry and fourteen-day
+A/B policy are fixed Phase 1 constraints: incompatible overrides disable the KB
+rather than being silently ignored. An optional `model` selects the extraction
+model and is attributed through `app: lifelog, feature: knowledge-extract`.
+Shutdown cancels timers, stops accepting principal capabilities, waits up to five
+seconds for work and closes the lease. Late model or recovery results cannot
+commit after shutdown.
+
+## Rollback, previews and observations
+
+Set `knowledge.enabled: false` and restart the app to return to ordinary debriefs.
+Do not delete the knowledge tree or ledger. Before repairing a conflict, stop the
+writer and preserve both the canonical files and immutable ledger; resolve the
+conflicting hand edit, then let startup recover. Never erase or overwrite a third
+file image merely to make replay succeed. A second writer must remain stopped.
+
+The CLI is read-only and cannot apply a review, enable writing or send a message.
+Extraction previews require an existing usage directory outside the data tree;
+use the same directory across retries. Every attempt, including failed model
+calls, consumes one of four per user-local day. Keep real preview output private.
+Human precision review and an explicit production config approval precede
+activation. The ten-date generation fixture checks report/ask-date separation,
+question caps and empty selections without real model calls or data mutation.
+
+```sh
+node cli/knowledge.cli.mjs metrics --username sample --since 2026-11-01 --until 2026-11-03 --as-of 2026-11-21T15:00:00Z
+```
+
+The first fourteen activated days alternate odd local ask dates (KB) and even
+local dates (ordinary questions). Control-day messages retain their ordinary text
+and keyboard while recording acknowledged exposure for metrics. Unknown rates
+stay null; skips do not count as answers. No deployment, activation, human
+precision acceptance or reply-rate improvement is implied by passing source tests.
+Digests, sensor feeders, lookup resolution and historical writing backfills remain
+deferred.

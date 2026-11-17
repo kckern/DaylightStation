@@ -1,3 +1,5 @@
+import {hostname} from 'node:os';
+import {createKnowledgeRuntime} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
@@ -3333,7 +3335,25 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'journalist-state' })
   });
 
+  const knowledgeSend=({username,text,choices,parseMode})=>journalistTelegramAdapter.sendMessage(
+    telegramIdentityAdapter.resolve('journalist',{username}).conversationIdString,text,
+    {choices,inline:true,...(parseMode?{parseMode}:{})},
+  );
+  const knowledgeTimezone=username=>configService.getUserProfile(username)?.timezone
+    ??configService.getHouseholdTimezone(configService.getUserHouseholdId(username));
+  const knowledgeRuntime=createKnowledgeRuntime({
+    configuration:configService.getHouseholdAppConfig(householdId,'lifelog')??{},
+    environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),
+    configService,dataService,userIdentityService,telegramIdentityAdapter,gateway:sharedAiGateway,
+    webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
+    scheduler:new NodeApplicationScheduler(),clock:Date.now,send:knowledgeSend,
+    logger:rootLogger.child({app:'lifelog',module:'knowledge'}),
+  });
+  await knowledgeRuntime.start();
+  process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
+
   const journalistServices = createJournalistServices({
+    knowledgeRuntime,knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,
     dataService,
     configService,
     telegramAdapter: journalistTelegramAdapter,

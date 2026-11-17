@@ -167,3 +167,11 @@ describe('durable knowledge questions',()=>{
   expect((await other.service.attributeEntry({principal:other.principal('',{type:'text',messageId:'120'}),sourceId:'source-new',length:20,asOf:AS_OF+1000})).attribution).toBe('none');
  });
 });
+
+it('rechecks due-date and morning ask-policy edits made after selection before preparing tokens',async()=>{
+ for(const edit of [object=>{object.loop.due='2026-11-10';},object=>{object.ask_policy='user_initiated';}]){
+  const d=setup(),selection=await select(d);edit(d.store.users.get('sample').objects['loop.application-reply']);
+  const delivery=await d.service.prepareDelivery({username:'sample',conversationId:'telegram:b42_c101',selectionId:selection.selectionId,askDate:'2026-11-03',channel:'morning',questionIds:selection.questions.map(q=>q.id),asOf:AS_OF});
+  expect(delivery.questions).toEqual([]);expect(delivery.choices).toEqual([]);
+ }
+});

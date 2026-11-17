@@ -122,7 +122,8 @@ export class KnowledgeQuestions {
           if(q.scope&&q.scope!=='loop')return q;
           const object=snapshot.objects[q.objectId];
           if(!object||!['open','waiting','stale'].includes(object.status)||!['normal','user_initiated'].includes(object.ask_policy))return null;
-          const fresh=buildQuestion({object});return fresh?.id===q.id?fresh:null;
+          const eligible=selectQuestions({snapshot:{...snapshot,objects:{[object.id]:object}},askDate,asOf,timezone:this.#timezone(username),max:channel==='morning'?1:0});
+          const fresh=(channel==='morning'?eligible.questions:eligible.quizCandidates).find(candidate=>candidate.id===q.id);return fresh??null;
         }).filter(Boolean);
         if(channel==='morning'){
           const used=snapshot.asks.filter(a=>a.channel==='morning'&&a.arm==='knowledge'&&a.askDate===askDate&&a.botMessageId&&Number.isFinite(a.deliveredAt)).length;

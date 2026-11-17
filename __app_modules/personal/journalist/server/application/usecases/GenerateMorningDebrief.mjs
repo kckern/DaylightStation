@@ -70,13 +70,14 @@ export class GenerateMorningDebrief {
       // Step 1: Aggregate lifelog data
       const lifelog = await this.#lifelogAggregator.aggregate(username, date);
 
-      let knowledgeSelection;
+      let knowledgeSelection,knowledgeControl;
       const asOf=input.asOf??this.#clock();
       const askDate=input.askDate??moment.tz(asOf,this.#timezone(username)).format('YYYY-MM-DD');
       if(this.#followUpSource){
         try{
           const selected=await this.#followUpSource.selectForMorning({username,askDate,asOf,max:2});
           if(selected?.mode==='knowledge')knowledgeSelection=selected;
+          else if(selected?.mode==='legacy'&&selected.reason==='control'&&selected.selectionId)knowledgeControl=selected;
         }catch{this.#logger.warn?.('debrief.knowledge.unavailable');}
       }
       // Step 1.5: Check if debrief already exists for this date
@@ -93,6 +94,7 @@ export class GenerateMorningDebrief {
             date: existingDebrief.date,
             ...this.#presentKnowledge({summary:existingDebrief.summary,headline:existingDebrief.headline||null},lifelog,knowledgeSelection),
             ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
+            ...(knowledgeControl?{knowledgeControl,askDate,username}:{}),
             lifelog: {
               _meta: {
                 date: existingDebrief.date,
@@ -154,6 +156,7 @@ export class GenerateMorningDebrief {
         date: lifelog._meta.date,
         ...this.#presentKnowledge({summary,headline},lifelog,knowledgeSelection,conversationContext),
         ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
+            ...(knowledgeControl?{knowledgeControl,askDate,username}:{}),
         lifelog, // Include for reference
       };
     } catch (error) {

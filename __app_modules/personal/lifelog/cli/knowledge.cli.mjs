@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {KnowledgeMetrics} from '../server/application/knowledge/KnowledgeMetrics.mjs';
 /** Phase 0: local previews only. No writer, scheduler, delivery or activation door. */
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -13,12 +14,13 @@ const HELP = `knowledge — read-only Lifelog previews
   extract --dry-run --username USER --since DATE --until DATE --as-of ISO --usage-dir OUTSIDE_DATA
   show --username USER
   questions --username USER --ask-date DATE --as-of ISO
+  metrics --username USER --since DATE --until DATE --as-of ISO
 Usage directory must already exist outside the data tree. Keep the same receipts directory across previews; failed calls consume the daily four-call budget.
 `;
 function parse(argv) {
   const [command,...rest] = argv;
   if (!command || ['--help','-h','help'].includes(command)) return { command: 'help' };
-  const allowed = { extract: ['--username','--since','--until','--as-of','--usage-dir','--dry-run'], show: ['--username'], questions: ['--username','--ask-date','--as-of'] }[command];
+  const allowed = { extract: ['--username','--since','--until','--as-of','--usage-dir','--dry-run'], show: ['--username'], metrics:['--username','--since','--until','--as-of'], questions: ['--username','--ask-date','--as-of'] }[command];
   if (!allowed) throw new Error('Unknown knowledge command; no write/apply/send mode exists');
   const options = {};
   for (let i=0; i<rest.length; i++) {
@@ -72,7 +74,7 @@ function reserveBudget({ dir, username, timezone, now }) {
 }
 
 export async function runKnowledgeCli({ argv, configService, store, evidence, extractorFactory,
-  usageLedgerFactory = createAiUsageLedger, clock = () => Date.now(), logger, stdout = process.stdout }) {
+  metrics, usageLedgerFactory = createAiUsageLedger, clock = () => Date.now(), logger, stdout = process.stdout }) {
   const { command, options } = parse(argv);
   if (command === 'help') { stdout.write(HELP); return 0; }
   const username = options['--username'];
@@ -80,6 +82,11 @@ export async function runKnowledgeCli({ argv, configService, store, evidence, ex
   const output = value => stdout.write(JSON.stringify(value,null,2)+'\n');
   if (command === 'show') { output(await store.read({username})); return 0; }
   const asOf = explicitInstant(options['--as-of']);
+  if(command==='metrics'){
+    if(!metrics?.report)throw new Error('Read-only metrics service unavailable');
+    output(await metrics.report({username,from:localDay(options['--since'],timezone).valueOf(),to:localDay(options['--until'],timezone).add(1,'day').valueOf(),asOf}));
+    return 0;
+  }
   if (command === 'questions') {
     localDay(options['--ask-date'],timezone);
     output(selectQuestions({snapshot:await store.read({username}),askDate:options['--ask-date'],asOf,timezone,max:2}));
@@ -131,7 +138,7 @@ async function defaultDependencies() {
     identityForUser:async username=>({senderId:identityService.resolvePlatformId('telegram',username),conversationId:identities.resolve('journalist',{username}).conversationIdString}),
     timezoneForUser:username=>timezoneFor(configService,username),
   });
-  return {configService,store,evidence,logger,extractorFactory:async({usageLedger})=>{
+  return {configService,store,evidence,metrics:new KnowledgeMetrics({store,ledger}),logger,extractorFactory:async({usageLedger})=>{
     const apiKey = configService.getSystemAuth('openai','api_key');
     if (!apiKey) throw new Error('No configured AI gateway credentials');
     const configuredModel = configService.getHouseholdAppConfig(null,'lifelog')?.knowledge?.model;

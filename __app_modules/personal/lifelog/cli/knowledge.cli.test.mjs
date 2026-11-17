@@ -75,3 +75,10 @@ describe('read-only knowledge CLI',()=>{
   expect(d.extractorFactory).not.toHaveBeenCalled();expect(d.usageLedgerFactory).not.toHaveBeenCalled();expect(fs.readdirSync(usage)).toEqual([]);
  });
 });
+it('reports bounded read-only metrics without constructing an extraction gateway or writer',async()=>{
+ const output=[],metrics={report:vi.fn(async()=>({available:true,replyRate12h:{knowledge:{eligible:0,replied:0,rate:null}}}))};
+ const d=deps({metrics,stdout:{write:text=>output.push(text)}});
+ await runKnowledgeCli({...d,argv:['metrics','--username','sample','--since','2026-11-01','--until','2026-11-03','--as-of','2026-11-21T15:00:00Z']});
+ expect(JSON.parse(output.join('')).replyRate12h.knowledge.rate).toBeNull();expect(authority.assertWriter).not.toHaveBeenCalled();
+ expect(metrics.report).toHaveBeenCalledWith({username:'sample',from:Date.parse('2026-11-01T07:00Z'),to:Date.parse('2026-11-04T08:00Z'),asOf:Date.parse('2026-11-21T15:00Z')});
+});
