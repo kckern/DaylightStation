@@ -18,6 +18,7 @@ export function gratitudeConfigOf(config = {}) {
   return { spacingDays: 7, cooldownMs: 30 * 60_000,
     judge: { model: value.judge?.model, minConfidence: Math.min(1, positive(value.judge?.min_confidence, 0.8)), timeoutMs: positive(value.judge?.timeout_ms, 8000) },
     extractor: { model: value.extractor?.model ?? config.debrief?.judge?.model ?? 'gpt-5-nano', timeoutMs: positive(value.extractor?.timeout_ms, 8000) },
+    followUp: { enabled: value.follow_up?.enabled !== false, model: value.follow_up?.model ?? value.extractor?.model ?? config.debrief?.judge?.model ?? 'gpt-5-nano', timeoutMs: positive(value.follow_up?.timeout_ms, 8000) },
   };
 }
 export const gratitudePublicationId = (learnerId, day) => `school-gratitude:${learnerId}:${day}`;

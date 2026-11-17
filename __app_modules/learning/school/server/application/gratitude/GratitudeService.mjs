@@ -1,18 +1,19 @@
 import { GRATITUDE_PROMPT, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
 import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
+import { GRATITUDE_FOLLOW_UP_FALLBACK, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
 
 export class GratitudeError extends Error {
   constructor(message, status = 400, retryAt = null) { super(message); this.name = 'GratitudeError'; this.status = status; this.retryAt = retryAt; }
 }
 const pending = state => Boolean(state.submitted) && ['assessing','pending'].includes(state.phase);
-const sameAnswer = (a,b) => ['text','via','audioRef','edited'].every(key => (a[key] ?? (key === 'edited' ? false : null)) === (b[key] ?? (key === 'edited' ? false : null)));
+const sameAnswer = (a,b) => ['text','via','audioRef','edited','followUpOf'].every(key => (a[key] ?? (key === 'edited' ? false : null)) === (b[key] ?? (key === 'edited' ? false : null)));
 
 /** Gratitude policy and durable recovery. All mutations for a learner share one queue. */
 export class GratitudeService {
-  #store; #assignments; #capture; #judge; #extractor; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #householdSchedule;
-  constructor({ store, assignments, captureTake = null, judge, extractor, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null }) {
-    this.#store=store; this.#assignments=assignments; this.#capture=captureTake; this.#judge=judge; this.#extractor=extractor; this.#publish=publish;
+  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #householdSchedule;
+  constructor({ store, assignments, captureTake = null, judge, extractor, followUpWriter = null, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null }) {
+    this.#store=store; this.#assignments=assignments; this.#capture=captureTake; this.#judge=judge; this.#extractor=extractor; this.#followUpWriter=followUpWriter; this.#publish=publish;
     this.#clock=clock; this.#timezone=timezone; this.#config=config; this.#logger=logger; this.#householdSchedule=householdSchedule;
   }
   today() { return studyDayForInstant(this.#clock().getTime(), { timezone:this.#timezone }); }
@@ -35,6 +36,7 @@ export class GratitudeService {
     const phase=pending(state) ? 'pending' : state.phase;
     return {learnerId:id,studyDay:day,today:this.today(),serverNow:this.#now(),phase,prompt:GRATITUDE_PROMPT,
       attemptId:state.attemptId,draft:state.draft,retryAt:state.retryAt,reason:state.reason ?? (phase==='pending'?'service':null),
+      followUp:phase==='follow-up'?{question:state.followUp.question,firstText:state.followUp.firstText}:null,
       subject:state.subject,selectionId:state.selectionId,next:{kind:phase==='completed'?'exit':phase==='cooldown'?'wait':phase==='pending'?'retry':'respond'}};
   }
   async #append(id,day,event) { const stamped={...event,at:this.#now()};await this.#store.append(id,day,stamped);return stamped; }
@@ -90,7 +92,9 @@ export class GratitudeService {
     if(typeof body?.text!=='string' || body.text.length>4000 || (required && !body.text.trim()))throw new GratitudeError('Please say or type something you are grateful for.');
     if(!['voice','typed'].includes(body.via))throw new GratitudeError('Invalid input method.');
     if(required && !/^[a-zA-Z0-9_-]{1,100}$/.test(body.attemptId??''))throw new GratitudeError('A valid attempt is required.');
-    return {text:body.text.trim(),via:body.via,audioRef:body.audioRef??null,edited:body.edited===true,...(required?{attemptId:body.attemptId}:{})};
+    const followUpOf=required?body.followUpOf:undefined;
+    if(followUpOf!==undefined && !/^[a-zA-Z0-9_-]{1,100}$/.test(followUpOf))throw new GratitudeError('A valid follow-up is required.');
+    return {text:body.text.trim(),via:body.via,audioRef:body.audioRef??null,edited:body.edited===true,...(required?{attemptId:body.attemptId}:{}),...(followUpOf!==undefined?{followUpOf}:{})};
   }
   async #audio(id,day,ref,records) {
     if(ref===null)return;
@@ -117,6 +121,10 @@ export class GratitudeService {
       const prior=record?.events.find(e=>e.type==='submitted' && e.attemptId===answer.attemptId);
       if(prior){if(!sameAnswer(prior,answer))throw new GratitudeError('Please start a new attempt for a changed answer.',409);if(pending(this.#state(record)))await this.#resume(id,day,records);return this.day(id,day);}
       await this.#fresh(id,day,records);await this.#audio(id,day,answer.audioRef,records);
+      // While a follow-up is open the answer must name it; otherwise none may.
+      const current=this.#state(record);
+      if(current.phase==='follow-up' ? answer.followUpOf!==current.followUp.attemptId : answer.followUpOf!==undefined)
+        throw new GratitudeError(current.phase==='follow-up'?'Please answer the follow-up question.':'There is no follow-up question to answer.',409);
       await this.#append(id,day,{type:'submitted',...answer});
       this.#logger.info?.('school.gratitude.submitted',{learnerId:id,day,attemptId:answer.attemptId,via:answer.via});
       await this.#resume(id,day,await this.#records(id));return this.day(id,day);
@@ -139,10 +147,22 @@ export class GratitudeService {
       let decision=state.assessment;
       if(!decision){
         const history=recentGratitudeFacts(records,{learnerId:id,studyDay:day,spacingDays:this.#config.spacingDays});
-        decision=await this.#judge.assess({text:attempt.text,history});
+        // One follow-up a day: after it, any good-faith answer is accepted as is.
+        const allowFollowUp=this.#config.followUp?.enabled!==false && !state.followUpAsked;
+        decision=await this.#judge.assess({text:state.assessText,history,allowFollowUp});
         if(decision.verdict==='unavailable')return;
+        if(decision.verdict==='general' && !allowFollowUp)decision={...decision,verdict:'eligible'};
         if(decision.verdict==='repetition' && !history.some(h=>h.id===decision.matchedId))decision={...decision,verdict:'uncertain'};
         decision=await this.#append(id,day,{type:'assessed',attemptId:attempt.attemptId,...decision});
+      }
+      if(decision.verdict==='general'){
+        let written=null;
+        try{written=await this.#followUpWriter?.write({text:state.assessText});}catch{written=null;}
+        const question=normalizeFollowUpQuestion(written?.question);
+        if(!question || !['model','fallback'].includes(written?.writer))written={question:GRATITUDE_FOLLOW_UP_FALLBACK,writer:'fallback'};
+        else written={question,writer:written.writer};
+        await this.#append(id,day,{type:'follow-up-asked',attemptId:attempt.attemptId,question:written.question,writer:written.writer});
+        this.#logger.info?.('school.gratitude.follow-up',{learnerId:id,day,attemptId:attempt.attemptId,writer:written.writer});return;
       }
       if(['nonsense','repetition'].includes(decision.verdict)){
         const retryAt=new Date(Date.parse(decision.at)+this.#config.cooldownMs).toISOString();
@@ -152,8 +172,8 @@ export class GratitudeService {
       if(decision.verdict!=='eligible')return;
       let publication=state.publication;
       if(!publication){
-        const extracted=await this.#extractor.extract({text:attempt.text});if(!extracted)return;
-        publication={type:'publication-pending',attemptId:attempt.attemptId,text:attempt.text,subject:extracted.subject,selectionId:gratitudePublicationId(id,day),timestamp:this.#now(),extractorModel:extracted.model};
+        const extracted=await this.#extractor.extract({text:state.assessText});if(!extracted)return;
+        publication={type:'publication-pending',attemptId:attempt.attemptId,text:state.assessText,subject:extracted.subject,selectionId:gratitudePublicationId(id,day),timestamp:this.#now(),extractorModel:extracted.model};
         await this.#append(id,day,publication);
       }
       const result=await this.#publish({learnerId:id,studyDay:day,subject:publication.subject,selectionId:publication.selectionId,timestamp:publication.timestamp});
