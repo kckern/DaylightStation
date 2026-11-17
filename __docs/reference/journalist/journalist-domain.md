@@ -74,6 +74,54 @@ Starting an interview preserves the delivered debrief, its message IDs and categ
 
 ---
 
+## Voice memo intake
+
+A voice memo recorded away from the chat (the phone app) enters the journal over HTTP and then takes the same path as a Telegram voice message: `SubmitVoiceMemo` hands the audio bytes to `ProcessVoiceEntry`, which transcribes them, echoes the transcript to the user's Journalist conversation, saves the entry and sends the follow-up question. The reply goes to that conversation in Telegram; the HTTP answer only says what happened to the memo.
+
+```
+POST {app_host}/api/v1/journalist/memo?user=<username>
+Content-Type: audio/mp4
+X-Daylight-Memo-Id: <id>
+X-Daylight-Recorded-At: <epoch ms>     (optional)
+
+<raw audio bytes>
+```
+
+| Part | Rule |
+|------|------|
+| `user` | Required. A household username that has a Journalist conversation. There is no fallback to another user: a memo is personal. |
+| `Content-Type` | One of `audio/mp4`, `audio/m4a`, `audio/mpeg`, `audio/mp3`, `audio/ogg`, `audio/webm`, `audio/wav`, `audio/x-wav`. Parameters after `;` are ignored. |
+| `X-Daylight-Memo-Id` | Required. 1 to 64 characters of `A-Z a-z 0-9 _ -`. The client's id for the recording; the same id from the same user is one memo. |
+| `X-Daylight-Recorded-At` | Optional. Logged only. The journal entry is stamped with the time the memo was processed, as every entry is. |
+| Body | The audio, not empty, at most 25 MB (the transcriber's upload ceiling). |
+
+The request is answered when processing has finished, as the Telegram webhook is. A long recording takes as long as its transcription, so the client needs a generous read timeout.
+
+| Answer | Body | Meaning | A client should |
+|--------|------|---------|-----------------|
+| `200` | `{ok: true, memoId, duplicate: false, transcriptionLength}` | Transcribed and journaled | Drop the recording |
+| `200` | `{ok: true, memoId, duplicate: true}` | This memo is already in the journal | Drop the recording |
+| `400` | `{ok: false, error: "user_required", message}` | No `user` | Fix its config; not retry as is |
+| `400` | `{ok: false, error: "invalid_memo_id", message}` | Memo id missing or malformed | Not retry |
+| `400` | `{ok: false, error: "empty_body", message}` | No audio bytes | Not retry |
+| `400` | `{ok: false, error: "unreadable_body", message}` | The body could not be read | Not retry |
+| `404` | `{ok: false, error: "unknown_user", message}` | The user has no Journalist conversation | Keep the recording until the user is set up |
+| `413` | `{ok: false, error: "too_large", message, maxBytes}` | Over the size limit | Not retry |
+| `415` | `{ok: false, error: "unsupported_media_type", message}` | Not one of the audio types above | Not retry |
+| `422` | `{ok: false, error: "empty_transcription", memoId}` | Nothing intelligible in the audio | Not retry |
+| `500` | `{ok: false, error: "processing_failed", memoId}` | Transcription, the journal or the reply failed | Retry with backoff |
+| `503` | `{ok: false, error: "unavailable", message}` | No AI gateway or no journal on this backend | Retry with backoff |
+
+The user, memo id, content type and declared length are checked before the body is read, so a refused request is not buffered.
+
+**One memo, one entry.** The memo's journal entry is saved under the id `memo:<memo id>`. Before processing, the journal is asked for that id; if it is there the answer is `duplicate: true` and nothing else happens. The journal is the record, so this holds across a backend restart and for a memo whose entry was saved but whose reply then failed (the retry answers `duplicate: true`; the follow-up question for that memo is not sent again). Two uploads of one memo that overlap share one run.
+
+**Failure after partial work.** A `500` means the memo may be retried. If the failure came after the transcript echo and before the entry was saved, the retry sends the echo to the conversation a second time. Nothing is stored outside the journal: the backend does not keep the audio, so a client must hold the recording until it has a `200`.
+
+**Log events** (module `journalist-api`): `journalist.memo.received`, `.accepted`, `.duplicate`, `.rejected` (with `reason` and `status`), `.failed`, and `journalist.memo.identityResolutionFailed`. They carry the memo id, username, byte count, transcript length and duration. The audio and the transcript text are never logged by this route.
+
+---
+
 ## Boundary
 
 The domain does not:
@@ -81,17 +129,18 @@ The domain does not:
 - Talk to Telegram, the AI provider, or the YAML store directly — those are adapters, invoked from the application layer.
 - Read clocks or generate timestamps on its own — all time values are passed in as arguments from the application layer, so the domain stays deterministic and testable.
 - Know about user identity, authentication, or device routing — it works in terms of opaque chat IDs.
-- Decide *when* to initiate a session or *whom* to send to — scheduling and dispatch live in `3_applications/journalist/` (use cases, jobs, container).
+- Decide *when* to initiate a session or *whom* to send to — scheduling and dispatch live in the module's `application/` folder (use cases, container) and `__backend/src/3_applications/journalist/` (jobs).
 
 ---
 
 ## Where it lives
 
-`__backend/src/2_domains/journalist/` — entities, value objects, and pure domain services.
+`__app_modules/personal/journalist/server/domain/` — entities, value objects, and pure domain services.
 
 Adjacent layers that depend on this domain:
 
-- **Use cases & orchestration:** `__backend/src/3_applications/journalist/`
-- **Persistence:** `__backend/src/1_adapters/persistence/yaml/` (journal entries, message queues, quiz state)
+- **Use cases & orchestration:** `__app_modules/personal/journalist/server/application/`
+- **Persistence:** `__app_modules/personal/journalist/server/adapters/persistence/` (journal entries, message queues)
 - **Messaging & AI gateways:** `__backend/src/1_adapters/messaging/`, `__backend/src/1_adapters/ai/`
-- **HTTP surface:** `__backend/src/4_api/v1/routers/journalist.mjs` and handlers under `__backend/src/4_api/v1/handlers/journalist/`
+- **HTTP surface:** `__app_modules/personal/journalist/server/api/journalist.mjs` and handlers under `api/handlers/`
+- **Wiring:** `__app_modules/personal/journalist/server/composition/journalistApi.mjs`
