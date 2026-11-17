@@ -8,7 +8,8 @@ import org.json.JSONObject;
 final class HomeWatchdogStorage {
     private final SharedPreferences prefs;
     private java.util.function.BooleanSupplier pendingAlertCommit;
-    private String pendingEvent,pendingIncident,retriedEvent,retriedIncident;
+    private String pendingReceipt;
+    private final java.util.Set<String> retryReceipts=new java.util.HashSet<>();
     HomeWatchdogStorage(SharedPreferences prefs) { this.prefs=prefs; }
     void restoreBudget(PageWatchState page,long now,int boot) {
         try {
@@ -31,18 +32,24 @@ final class HomeWatchdogStorage {
         if(pendingAlertCommit==null)return;
         if(!pendingAlertCommit.getAsBoolean())throw new IllegalStateException("alert-storage-failed");
         pendingAlertCommit=null;
-        retriedEvent=pendingEvent;retriedIncident=pendingIncident;
+        if(pendingReceipt!=null)retryReceipts.add(pendingReceipt);
     }
     JSONArray outbox() throws Exception {
         // Android commit(false) can leave memory ahead of disk. Never deliver that view.
         if(pendingAlertCommit!=null)throw new IllegalStateException("alert-storage-pending");
         return new JSONArray(prefs.getString("outbox","[]"));
     }
+    private static String receiptKey(String event) {
+        // Page failures already have a durable incident marker. Retain only the
+        // finite native transition names here, independent of changing page identity.
+        return event.equals("page-failed")?null:event;
+    }
     boolean enqueue(String event,String home,HomeWatchState state,String pageIncident) throws Exception {
         retryAlert();
-        boolean retryAcknowledged=event.equals(retriedEvent) && pageIncident.equals(retriedIncident);
-        retriedEvent=null;retriedIncident=null;
-        if(retryAcknowledged)return false;
+        String receipt=receiptKey(event);
+        // An unrelated Home/policy admission must neither consume nor overwrite
+        // the acknowledgement still owed to Fully's retained writer head.
+        if(retryReceipts.remove(receipt))return false;
         if(event.equals("page-failed") && pageIncident.equals(prefs.getString("pageFailureIncident","")))return false;
         JSONArray queue=outbox();
         String oldQueue=queue.toString(),oldFailure=prefs.getString("pageFailureIncident","");
@@ -60,7 +67,7 @@ final class HomeWatchdogStorage {
         boolean secure=event.startsWith("fkb-")?event.equals("fkb-restored"):prefs.getBoolean("fkbSecure",true);
         // Capture a whole transaction, not just the marker. Retry even if preference memory
         // already contains it; only successful commit acknowledges durable admission.
-        pendingEvent=event;pendingIncident=pageIncident;
+        pendingReceipt=receipt;
         pendingAlertCommit=() -> {
             boolean saved=prefs.edit().putLong("sequence",sequence).putString("outbox",encoded)
                     .putBoolean("initialized",true).putBoolean("correct",correct).putLong("incidents",incidents)
@@ -76,7 +83,7 @@ final class HomeWatchdogStorage {
         };
         retryAlert();
         // This caller received the successful admission. Only a later retry needs a receipt.
-        retriedEvent=null;retriedIncident=null;
+        retryReceipts.remove(receipt);
         return true;
     }
 }

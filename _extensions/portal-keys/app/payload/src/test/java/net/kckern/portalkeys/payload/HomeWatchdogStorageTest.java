@@ -74,6 +74,33 @@ public class HomeWatchdogStorageTest {
   assertTrue(fully.ready());assertEquals(1,storage.outbox().length());
   fully.observe(true);fully.deliver(event->storage.enqueue(event,null,home,""));assertEquals(2,storage.outbox().length());
  }
+ @Test public void interveningHomeAdmissionDoesNotConsumeFullyWriterReceipt() throws Exception {
+  Disk disk=new Disk();HomeWatchdogStorage storage=new HomeWatchdogStorage(disk.open());HomeWatchState home=new HomeWatchState();
+  FkbAlertState fully=new FkbAlertState(true);fully.observe(false);disk.succeeds=false;
+  fully.deliver(event->storage.enqueue(event,null,home,"page-before"));assertFalse(fully.ready());
+  disk.succeeds=true;storage.retryAlert();
+  storage.enqueue("home-lost",null,home,"page-after");
+  fully.deliver(event->storage.enqueue(event,null,home,"page-after"));
+  assertTrue(fully.ready());assertEquals(2,storage.outbox().length());
+  assertEquals("fkb-lost",storage.outbox().getJSONObject(0).getString("event"));
+  assertEquals("home-lost",storage.outbox().getJSONObject(1).getString("event"));
+  fully.observe(true);fully.deliver(event->storage.enqueue(event,null,home,"page-after"));
+  fully.observe(false);fully.deliver(event->storage.enqueue(event,null,home,"page-after"));
+  assertEquals(4,storage.outbox().length());
+  assertEquals("fkb-restored",storage.outbox().getJSONObject(2).getString("event"));
+  assertEquals("fkb-lost",storage.outbox().getJSONObject(3).getString("event"));
+ }
+ @Test public void interveningFailedHomeAdmissionDoesNotOverwriteFullyWriterReceipt() throws Exception {
+  Disk disk=new Disk();HomeWatchdogStorage storage=new HomeWatchdogStorage(disk.open());HomeWatchState home=new HomeWatchState();
+  FkbAlertState fully=new FkbAlertState(true);fully.observe(false);disk.succeeds=false;
+  fully.deliver(event->storage.enqueue(event,null,home,""));
+  disk.succeeds=true;storage.retryAlert();disk.succeeds=false;
+  try{storage.enqueue("home-lost",null,home,"");fail();}catch(IllegalStateException expected){}
+  disk.succeeds=true;storage.retryAlert();
+  fully.deliver(event->storage.enqueue(event,null,home,""));assertTrue(fully.ready());
+  assertFalse(storage.enqueue("home-lost",null,home,""));assertEquals(2,storage.outbox().length());
+  fully.observe(true);fully.deliver(event->storage.enqueue(event,null,home,""));assertEquals(3,storage.outbox().length());
+ }
  @Test public void serviceRestartCannotMistakeFailedPreferenceMemoryForDurableAdmission() throws Exception {
   Disk disk=new Disk();SharedPreferences sameProcess=disk.open();disk.succeeds=false;HomeWatchState state=new HomeWatchState();
   try{new HomeWatchdogStorage(sameProcess).enqueue("page-failed",null,state,"incident-1");fail();}catch(IllegalStateException expected){}
