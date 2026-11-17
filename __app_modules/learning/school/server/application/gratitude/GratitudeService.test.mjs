@@ -1,9 +1,9 @@
-import { describe,it,expect } from 'vitest';
+import { describe,it,expect,vi } from 'vitest';
 import { GratitudeService } from './GratitudeService.mjs';
 import { GRATITUDE_FOLLOW_UP_FALLBACK } from './GratitudeFollowUpWriter.mjs';
 import { gratitudeConfigOf } from '../../domain/gratitude.mjs';
 
-function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true }={}) {
+function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={} }={}) {
   const days=new Map(), selections=new Map(); let now=new Date('2026-11-16T18:00:00Z'); let fail=publishFailure; let assessment=verdict; let calls=0;
   const queue=verdicts?[...verdicts]:[]; const judgeCalls=[]; const extracted=[];
   const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){days.set(day,[...(days.get(day)??[]),structuredClone(event)]);},async listDays(){return [...days.keys()].sort();} };
@@ -11,7 +11,7 @@ function harness({ verdict='eligible', publishFailure=false, verdicts=null, writ
     config:gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
     judge:{assess:async args=>{calls++;judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?'school-gratitude:child:2026-11-16':null};}},
     followUpWriter:{write:async()=>writerFails?{question:GRATITUDE_FOLLOW_UP_FALLBACK,writer:'fallback'}:{question:'What about your mom are you grateful for today?',writer:'model'}},
-    extractor:{extract:async({text})=>{extracted.push(text);return {subject:'Toys',model:'cheap'};}},publish:async body=>{selections.set(body.selectionId,body);if(fail)throw new Error('lost response');return {selectionId:body.selectionId,subject:body.subject};},logger:{}};
+    extractor:{extract:async({text})=>{extracted.push(text);return {subject:'Toys',model:'cheap'};}},publish:async body=>{selections.set(body.selectionId,body);if(fail)throw new Error('lost response');return {selectionId:body.selectionId,subject:body.subject};},logger};
   return {service:new GratitudeService(deps),restart:()=>new GratitudeService(deps),days,selections,setNow:value=>{now=new Date(value);},setVerdict:value=>{assessment=value;},restore:()=>{fail=false;},calls:()=>calls,judgeCalls:()=>judgeCalls,extracted:()=>extracted};
 }
 const body={attemptId:'attempt-1',text:"I'm grateful for my toys",via:'typed',audioRef:null,edited:false};
@@ -130,5 +130,11 @@ describe('School gratitude workflow',()=>{
     expect((await harness().service.submit('child','2026-11-16',{...body,followUpOf:null})).phase).toBe('completed');
     for(const followUpOf of [7,{id:'a'},'bad id!'])
       await expect(harness().service.submit('child','2026-11-16',{...body,followUpOf})).rejects.toMatchObject({status:400});
+  });
+  it('logs a pending failure by error name and code, never its message',async()=>{
+    const warn=vi.fn();const h=harness({publishFailure:true,logger:{warn,info(){}}});
+    await h.service.submit('child','2026-11-16',body);
+    expect(warn).toHaveBeenCalledWith('school.gratitude.pending',{learnerId:'child',day:'2026-11-16',error:'Error',code:null});
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('lost response');
   });
 });

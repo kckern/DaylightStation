@@ -36,6 +36,6 @@ export class GratitudeJudge {
       if (novelty.choice === 'distinct') return resultOf('eligible', meta);
       if (history.some(row => row.id === novelty.choice)) return resultOf('repetition', { ...meta, matchedId: novelty.choice });
       return resultOf('uncertain', meta);
-    } catch (error) { this.#logger.warn?.('school.gratitude.judge-unavailable', { error: error.message }); return resultOf('unavailable'); }
+    } catch (error) { this.#logger.warn?.('school.gratitude.judge-unavailable', { error: error?.name ?? 'Error', code: error?.code ?? null }); return resultOf('unavailable'); }
   }
 }

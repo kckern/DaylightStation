@@ -1,4 +1,4 @@
-import { describe,it,expect } from 'vitest';
+import { describe,it,expect,vi } from 'vitest';
 import { GratitudeJudge } from './GratitudeJudge.mjs';
 const answer=(choice,confidence=.98)=>({type:'choice',choice,confidence,probabilities:{[choice]:confidence}});
 const effort=probability=>({type:'yesNo',probability});
@@ -45,5 +45,10 @@ describe('gratitude Jev policy',()=>{
   it('nonsense still wins over general, and general skips the repetition check',async()=>{
     expect((await judge({effort:effort(.02),specific:effort(.01)}).assess({text:'lalala',history:[],allowFollowUp:true})).verdict).toBe('nonsense');
     expect((await judge({effort:effort(.98),specific:effort(.02),novelty:answer('toys-day')}).assess({text:'toys',history,allowFollowUp:true})).verdict).toBe('general');
+  });
+  it('logs a judge failure by error name and code, never the gateway text',async()=>{
+    const warn=vi.fn();
+    await new GratitudeJudge({decisionGateway:{evaluate:async()=>{throw new Error('echo: my mom');}},logger:{warn}}).assess({text:'my mom',history:[]});
+    expect(warn).toHaveBeenCalledWith('school.gratitude.judge-unavailable',{error:'Error',code:null});
   });
 });

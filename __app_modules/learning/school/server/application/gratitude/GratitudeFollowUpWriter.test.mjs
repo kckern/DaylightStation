@@ -22,4 +22,9 @@ describe('gratitude follow-up writer',()=>{
     expect(normalizeFollowUpQuestion('  What about   your mom?  ')).toBe('What about your mom?');
     expect(normalizeFollowUpQuestion('엄마의 어떤 점이 감사해요?')).toBe('엄마의 어떤 점이 감사해요?');
   });
+  it('logs a writer failure by error name and code, never the gateway text',async()=>{
+    const warn=vi.fn();
+    await new GratitudeFollowUpWriter({aiGateway:{chatStructured:async()=>{throw new Error('echo: my mom');}},logger:{warn}}).write({text:'my mom'});
+    expect(warn).toHaveBeenCalledWith('school.gratitude.follow-up-writer-unavailable',{error:'Error',code:null});
+  });
 });

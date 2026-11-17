@@ -35,6 +35,6 @@ export class GratitudeFollowUpWriter {
       const result = await (this.#scheduler ? this.#scheduler.withDeadline(work, { milliseconds: this.#config.timeoutMs, errorFactory: () => new Error('Follow-up question timed out') }) : work);
       const question = normalizeFollowUpQuestion(result?.question);
       return question ? { question, writer: 'model' } : fallback;
-    } catch (error) { this.#logger.warn?.('school.gratitude.follow-up-writer-unavailable', { error: error.message }); return fallback; }
+    } catch (error) { this.#logger.warn?.('school.gratitude.follow-up-writer-unavailable', { error: error?.name ?? 'Error', code: error?.code ?? null }); return fallback; }
   }
 }

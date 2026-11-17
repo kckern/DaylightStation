@@ -180,6 +180,6 @@ export class GratitudeService {
       if(result?.selectionId!==publication.selectionId)throw new Error('Publication was not confirmed');
       await this.#append(id,day,{type:'completed',attemptId:attempt.attemptId,selectionId:publication.selectionId});
       this.#logger.info?.('school.gratitude.completed',{learnerId:id,day,selectionId:publication.selectionId});
-    } catch(error) {this.#logger.warn?.('school.gratitude.pending',{learnerId:id,day,error:error.message});}
+    } catch(error) {this.#logger.warn?.('school.gratitude.pending',{learnerId:id,day,error:error?.name??'Error',code:error?.code??null});}
   }
 }

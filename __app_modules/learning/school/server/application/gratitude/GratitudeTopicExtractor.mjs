@@ -32,6 +32,6 @@ export class GratitudeTopicExtractor {
       const subject = normalizeGratitudeSubject(result?.subject);
       if (!subject) return null;
       return { subject, model: this.#config.model ?? null };
-    } catch (error) { this.#logger.warn?.('school.gratitude.extract-unavailable', { error: error.message }); return null; }
+    } catch (error) { this.#logger.warn?.('school.gratitude.extract-unavailable', { error: error?.name ?? 'Error', code: error?.code ?? null }); return null; }
   }
 }
