@@ -266,7 +266,30 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4': { exported: true, permission: BIND_TILE },
+  // Exported with no permission: a car (Android Auto), the system's media controls and
+  // Bluetooth reach it by binding it, and no permission exists that only they hold. Who is
+  // accepted is decided per connection (ControllerPolicy), and a controller hands over
+  // media ids only; what an id plays is the payload's answer from the backend.
+  'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService': { exported: true, permission: null, foregroundServiceType: ['mediaPlayback'] },
+  // Started by this app only, when the payload has accepted a keyed media link.
+  'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity': { exported: false, permission: null },
 };
+
+/** The bits of android:foregroundServiceType, as aapt2 prints the attribute's mask. */
+export const FOREGROUND_TYPE_BITS = { dataSync: 1, mediaPlayback: 2, phoneCall: 4, location: 8, connectedDevice: 16, mediaProjection: 32, camera: 64, microphone: 128 };
+
+/** The shell's own service: its foreground types come from the device file, and verify-build checks them. */
+export const SHELL_SERVICE = 'net.kckern.daylight.shell.ShellService';
+
+const typeMaskOf = (node) => {
+  const m = /(0x[0-9a-f]+|\d+)$/i.exec(node?.attrs.foregroundServiceType ?? '');
+  return m ? Number(m[1]) : 0;
+};
+
+/** The foregroundServiceType mask of one named service; 0 when it has none or is absent. */
+export function foregroundTypeMask(xmltree, serviceName) {
+  return typeMaskOf(parseXmlTree(xmltree).find((n) => n.name === 'service' && n.attrs.name === serviceName));
+}
 
 /**
  * Holds each component in the APK to the table: its `exported` flag and the permission
@@ -287,6 +310,16 @@ export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS)
     const permission = n.attrs.permission ?? null;
     if (permission !== want.permission) {
       failures.push(`${key} is guarded by ${permission ?? 'no permission'}, expected ${want.permission ?? 'no permission'}`);
+    }
+    // A foreground type is what lets a service hold the microphone or keep playing with
+    // the app out of sight: each service has exactly the types its row gives it.
+    if (n.name === 'service' && n.attrs.name !== SHELL_SERVICE) {
+      const types = want.foregroundServiceType || [];
+      const wanted = types.reduce((mask, t) => mask | FOREGROUND_TYPE_BITS[t], 0);
+      const built = typeMaskOf(n);
+      if (built !== wanted) {
+        failures.push(`${key} has foregroundServiceType mask ${built}, expected ${wanted} (${types.join('|') || 'none'})`);
+      }
     }
   }
   return failures;

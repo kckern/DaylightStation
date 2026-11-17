@@ -1,0 +1,63 @@
+package net.kckern.daylight.cap.mediaservice.shell;
+
+import net.kckern.daylight.api.PayloadPort;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.List;
+
+/**
+ * The installed media service's three questions to the payload, over the "media"
+ * PayloadPort: in process, as JSON text. No Android types, and no media knowledge:
+ * what a level holds, what an id plays and when progress is reported are the
+ * payload's answers.
+ */
+final class PayloadMedia {
+    /** The payload's media-service capability attaches to a port of this name. */
+    static final String PORT = "media";
+
+    private final PayloadPort port = PayloadPort.named(PORT);
+
+    /** @throws PayloadPort.NotReadyException when no payload attached within the wait */
+    String browse(String parent, int page, int pageSize, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "browse").put("parent", parent).put("page", page)
+                .put("pageSize", pageSize).toString(), waitMs);
+    }
+
+    String resolve(List<String> mediaIds, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds)).toString(), waitMs);
+    }
+
+    /**
+     * The player's position. Progress is advisory: with no payload, or one that throws,
+     * the event is dropped and the next carries a later position.
+     *
+     * @return whether a payload took it
+     */
+    boolean event(String id, String title, String listId, long positionMs, long durationMs, String state) {
+        try {
+            port.call(new JSONObject().put("op", "event").put("id", id).put("title", title).put("listId", listId)
+                    .put("positionMs", positionMs).put("durationMs", durationMs).put("state", state).toString(), 0);
+            return true;
+        } catch (Throwable dropped) {
+            return false;
+        }
+    }
+
+    /** Waits for a payload to attach. True as soon as one has. */
+    boolean awaitReady(long waitMs) {
+        long deadline = System.currentTimeMillis() + waitMs;
+        while (!port.ready()) {
+            long left = deadline - System.currentTimeMillis();
+            if (left <= 0) return false;
+            try {
+                Thread.sleep(Math.min(left, 250));
+            } catch (InterruptedException stopping) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+}

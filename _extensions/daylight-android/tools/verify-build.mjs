@@ -17,6 +17,7 @@ import {
   bakedPayloadFailure, buildTypeLine, componentAttributeFailures, componentFailures, declaredComponents, expectedPermission, generatedComponents,
   homeAliasFailures, kioskBasePermissions, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
+  foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE,
 } from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -88,12 +89,12 @@ failures.push(...permissionFailures(apkPermissions, [...expectedByName.values()]
 // aapt2 prints the flags attribute as a hex mask, for example
 //   A: http://schemas.android.com/apk/res/android:foregroundServiceType(0x01010599)=0x00000088
 // and prints no such line when the service has no type.
-const TYPE_BITS = { dataSync: 1, mediaPlayback: 2, phoneCall: 4, location: 8, connectedDevice: 16, mediaProjection: 32, camera: 64, microphone: 128 };
 const tree = execFileSync(join(sdk, 'build-tools', buildTools, 'aapt2'), ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk], { encoding: 'utf8' });
-const typeMatch = /foregroundServiceType\(0x[0-9a-f]+\)=(?:\(type 0x[0-9a-f]+\))?(0x[0-9a-f]+|\d+)/i.exec(tree);
-const builtTypes = typeMatch ? Number(typeMatch[1]) : 0;
-const wantedTypes = (device.foregroundServiceTypes || []).reduce((mask, t) => mask | TYPE_BITS[t], 0);
-check(builtTypes === wantedTypes, `foregroundServiceType mask is ${builtTypes}, expected ${wantedTypes}`);
+// Read for the shell service by name: a capability's own service (the media library
+// service, the recorder) has a type of its own, held to the component table below.
+const builtTypes = foregroundTypeMask(tree, SHELL_SERVICE);
+const wantedTypes = (device.foregroundServiceTypes || []).reduce((mask, t) => mask | FOREGROUND_TYPE_BITS[t], 0);
+check(builtTypes === wantedTypes, `the shell service's foregroundServiceType mask is ${builtTypes}, expected ${wantedTypes}`);
 
 // The APK's activities, services, receivers and providers must be exactly those of
 // the base shell and of the listed capabilities' shell halves.

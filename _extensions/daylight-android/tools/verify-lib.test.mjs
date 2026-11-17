@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -346,4 +346,47 @@ test('a phone APK that still asks to install packages fails the permission check
     { name: 'android.permission.REQUEST_INSTALL_PACKAGES', sdk23: false, maxSdkVersion: null }];
   const expected = [{ name: 'android.permission.INTERNET', sdk23: false, maxSdkVersion: null }];
   assert.deepEqual(permissionFailuresAgain(apk, expected), ['unexpected permission: uses-permission android.permission.REQUEST_INSTALL_PACKAGES']);
+});
+
+// ── foreground service types ──────────────────────────────────────────────
+
+const MEDIA_SERVICE = 'net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService';
+const typed = (kind, name, exported, permission, type) => [
+  ...component(kind, name, exported, permission),
+  ...(type == null ? [] : [`            A: ${NS}:foregroundServiceType(0x01010599)=${type}`]),
+];
+
+test('a service\'s foreground type is read for that service and not for the first one in the manifest', () => {
+  const apk = tree(
+    typed('service', MEDIA_SERVICE, 'true', null, '0x00000002'),
+    typed('service', 'net.kckern.daylight.shell.ShellService', 'false', null, '(type 0x11)0x88'),
+    typed('service', 'net.example.Plain', 'false', null, null));
+  assert.equal(foregroundTypeMask(apk, MEDIA_SERVICE), 2);
+  assert.equal(foregroundTypeMask(apk, 'net.kckern.daylight.shell.ShellService'), 0x88);
+  assert.equal(foregroundTypeMask(apk, 'net.example.Plain'), 0);
+  assert.equal(foregroundTypeMask(apk, 'net.example.Absent'), 0);
+  assert.equal(FOREGROUND_TYPE_BITS.mediaPlayback, 2);
+  assert.equal(FOREGROUND_TYPE_BITS.microphone, 128);
+});
+
+test('the media service is exported with no permission and runs as a media playback foreground service', () => {
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', MEDIA_SERVICE, 'true', null, '0x00000002'))), []);
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', MEDIA_SERVICE, 'true', null, null))),
+    [`service ${MEDIA_SERVICE} has foregroundServiceType mask 0, expected 2 (mediaPlayback)`]);
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', MEDIA_SERVICE, 'true', null, '0x00000082'))),
+    [`service ${MEDIA_SERVICE} has foregroundServiceType mask 130, expected 2 (mediaPlayback)`]);
+});
+
+test('a service the table gives no foreground type must not have one; the shell service\'s is the device file\'s', () => {
+  const TILE = 'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1';
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', TILE, 'true', 'android.permission.BIND_QUICK_SETTINGS_TILE', '0x00000080'))),
+    [`service ${TILE} has foregroundServiceType mask 128, expected 0 (none)`]);
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', 'net.kckern.daylight.shell.ShellService', 'false', null, '0x00000088'))), []);
+});
+
+test('the play screen is not exported', () => {
+  const PLAY = 'net.kckern.daylight.cap.mediaservice.shell.PlayActivity';
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', PLAY, 'false', null))), []);
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', PLAY, 'true', null))),
+    [`activity ${PLAY} is exported=true, expected exported=false`]);
 });

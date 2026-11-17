@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Needed for a media foreground service from target 34; declared now so a later
+         target bump is a config change. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <application>
+        <!-- Exported: a car (Android Auto), the system's media controls and Bluetooth reach
+             it by binding it, and no permission exists that only they hold. So any app can
+             try: who is accepted is decided per connection (ControllerPolicy: this app, the
+             system, and a fixed list of car and assistant apps). A controller hands over
+             media ids only; what an id plays is the payload's answer from the backend.
+             The second action is the platform browser interface those clients use. -->
+        <service
+            android:name="net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- Not exported: started by this app only, when the payload has accepted a keyed
+             media link. No window of its own. -->
+        <activity
+            android:name="net.kckern.daylight.cap.mediaservice.shell.PlayActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>
