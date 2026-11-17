@@ -25,6 +25,8 @@ import { resolveOverlayConfig } from "../domain/value-objects/OverlaySessionFiel
 import { FleetArcadeGameSessionAnnouncer } from "../adapters/eventbus/FleetArcadeGameSessionAnnouncer.mjs";
 import { CompositeArcadeGameSessionAnnouncer } from "../adapters/eventbus/CompositeArcadeGameSessionAnnouncer.mjs";
 import { FullyKioskArcadeGameOverlay } from "../adapters/devices/FullyKioskArcadeGameOverlay.mjs";
+import { DaylightAndroidArcadeGameOverlay } from "../adapters/devices/DaylightAndroidArcadeGameOverlay.mjs";
+import { DeviceRoutedArcadeGameOverlay } from "../adapters/devices/DeviceRoutedArcadeGameOverlay.mjs";
 import { OverlayArcadeGameSessionAnnouncer } from "../application/runtime/OverlayArcadeGameSessionAnnouncer.mjs";
 import { KioskArcadeGameTerminator } from "../adapters/devices/KioskArcadeGameTerminator.mjs";
 import { KioskArcadeGameSpeaker } from "../adapters/devices/KioskArcadeGameSpeaker.mjs";
@@ -173,25 +175,21 @@ export function createArcadeGameSessionTracking(config) {
   // get a client here, so no code path can put a film on a screen that did not
   // ask for one.
   //
-  // The film is a web page the kiosk renders over other apps. Fully has that
-  // (its web overlay); the Android kiosk app has a text overlay only, so a
-  // device on it is metered without a countdown, and startup says so.
-  const overlayDeclared = polledDevices.filter(([, d]) => d?.arcade_session_overlay === true);
-  for (const [deviceId, device] of overlayDeclared) {
-    if (kioskByDevice.get(deviceId)?.supportsWebOverlay === false) {
-      logger.warn?.('arcade.overlay.unsupported_provider', {
-        deviceId, provider: device.content_control?.provider ?? null,
-      });
-    }
-  }
-  const overlayDevices = overlayDeclared
-    .filter(([id]) => kioskByDevice.get(id)?.supportsWebOverlay !== false)
-    .map(([id]) => id);
+  // The film is a web page the kiosk renders over other apps: Fully's web
+  // overlay setting, or the Android kiosk app's web overlay route. Each device
+  // gets the driver for its own kiosk client.
+  const overlayDevices = polledDevices.filter(([, d]) => d?.arcade_session_overlay === true).map(([id]) => id);
+  const overlayClients = (wanted) => new Map(overlayDevices
+    .filter((id) => (kioskByDevice.get(id)?.provider === 'daylight-android') === wanted)
+    .map((id) => [id, kioskByDevice.get(id)]));
+  const fullyOverlay = new FullyKioskArcadeGameOverlay({ clientsByDevice: overlayClients(false), httpClient, logger });
+  const daylightOverlay = new DaylightAndroidArcadeGameOverlay({ clientsByDevice: overlayClients(true), httpClient, logger });
   const overlayAnnouncer = (overlayDevices.length && daylightHost)
     ? new OverlayArcadeGameSessionAnnouncer({
-      overlay: new FullyKioskArcadeGameOverlay({
-        clientsByDevice: new Map(overlayDevices.map((id) => [id, kioskByDevice.get(id)])),
-        httpClient, logger,
+      overlay: new DeviceRoutedArcadeGameOverlay({
+        overlayByDevice: new Map(overlayDevices.map((id) => [
+          id, kioskByDevice.get(id)?.provider === 'daylight-android' ? daylightOverlay : fullyOverlay,
+        ])),
       }),
       buildUrl: (deviceId) => `${daylightHost}${overlayPath}?device=${encodeURIComponent(deviceId)}`,
       logger,

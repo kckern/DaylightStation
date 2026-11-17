@@ -61,8 +61,14 @@ describe('DaylightAndroidArcadeKioskClient', () => {
     },
   );
 
-  it('says it has no web overlay', () => {
-    expect(build().client.supportsWebOverlay).toBe(false);
+  it('shows and clears a web overlay through POST /kiosk/overlay', async () => {
+    const { client, post } = build({ post: vi.fn(async () => ok({ shown: true, kind: 'web' })) });
+    await client.showWebOverlay('https://x.test/film.html', 'top');
+    await client.clearOverlay();
+    expect(post.mock.calls).toEqual([
+      ['/kiosk/overlay', { url: 'https://x.test/film.html', gravity: 'top' }],
+      ['/kiosk/overlay', { text: '' }],
+    ]);
   });
 
   it('drives the arcade speaker', async () => {

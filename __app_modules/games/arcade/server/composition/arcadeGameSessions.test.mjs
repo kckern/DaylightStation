@@ -310,19 +310,31 @@ describe('devices on the Android kiosk app', () => {
     r.stop();
   });
 
-  it('meters without a countdown overlay, and says why', async () => {
+  it('arms the countdown on a daylight-android device through its web overlay, beside a Fully one', async () => {
+    const posts = [];
+    const gets = [];
+    const recording = {
+      get: async (url) => { gets.push(url); return { status: 200, data: { ok: true } }; },
+      post: async (url, body) => { posts.push([url, body]); return { status: 200, data: { ok: true, shown: Boolean(body?.url), kind: body?.url ? 'web' : 'none' } }; },
+      delete: async () => ({ status: 200, data: { ok: true } }),
+    };
     const warn = [];
     const logger = { ...quiet, warn: (event, data) => warn.push([event, data]) };
     const r = build(
-      { 'livingroom-tv': { ...daylightMetered, arcade_session_overlay: true } },
-      { httpClient: fullHttp, configService: daylightAuth, daylightHost: 'https://host', logger },
+      {
+        'livingroom-tv': { ...daylightMetered, arcade_session_overlay: true },
+        'den-tv': { ...metered, arcade_session_overlay: true },
+      },
+      { httpClient: recording, configService: daylightAuth, daylightHost: 'https://host', logger },
     );
 
-    expect(r.trackers).toHaveLength(1);
-    expect(warn).toContainEqual(['arcade.overlay.unsupported_provider', {
-      deviceId: 'livingroom-tv', provider: 'daylight-android',
-    }]);
-    await expect(r.start()).resolves.not.toThrow();
+    expect(r.trackers).toHaveLength(2);
+    expect(warn.map(([event]) => event)).not.toContain('arcade.overlay.unsupported_provider');
+    // Startup clears any overlay left on a device with no open session: the
+    // daylight device through its overlay route, the Fully one through its setting.
+    await r.start();
     r.stop();
+    expect(posts).toContainEqual(['http://kiosk.test:8780/kiosk/overlay', { text: '' }]);
+    expect(gets.some(url => url.startsWith('http://10.0.0.9:2323/') && url.includes('webOverlayUrl'))).toBe(true);
   });
 });

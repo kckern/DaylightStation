@@ -12,9 +12,9 @@
  *   textToSpeech  -> POST /speak
  *
  * Every other command answers UNSUPPORTED without a request. That includes the
- * settings the Fully overlay driver writes (`webOverlayUrl`): the app has a
- * text overlay only, so there is no web-page overlay to arm and
- * `supportsWebOverlay` is false.
+ * settings the Fully overlay driver writes (`webOverlayUrl`): on this app the
+ * countdown film goes through `showWebOverlay` / `clearOverlay` below
+ * (`POST /kiosk/overlay`), driven by DaylightAndroidArcadeGameOverlay.
  *
  * Contract: ops:docs/superpowers/specs/2026-11-16-daylight-android-control-api.md
  * ("Arcade overlay and supervision").
@@ -30,7 +30,18 @@ export class DaylightAndroidArcadeKioskClient {
     this.#rest = restClient;
   }
 
-  get supportsWebOverlay() { return false; }
+  /** Marks the client for the composition, which picks the overlay driver by it. */
+  get provider() { return 'daylight-android'; }
+
+  /** Draw `url` as the non-interactive web overlay; `gravity` is `top` or `bottom`. */
+  showWebOverlay(url, gravity) {
+    return this.#rest.post('/kiosk/overlay', { url, ...(gravity ? { gravity } : {}) });
+  }
+
+  /** Clear the overlay. Safe when none is showing. */
+  clearOverlay() {
+    return this.#rest.post('/kiosk/overlay', { text: '' });
+  }
 
   async command(name, params = {}) {
     if (name === 'deviceInfo' || name === 'getDeviceInfo') {
