@@ -1,0 +1,2 @@
+# Remote diagnostics. Phase 1: device info. Phase 3 adds screenshot, eval, fps, exec, logcat.
+entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability

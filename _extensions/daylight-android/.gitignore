@@ -5,3 +5,6 @@ build/
 !**/src/**/build/
 local.properties
 *.apk
+# The repo root ignores *.yml. Device files and capability manifests are source.
+!devices/*.yml
+!capabilities/*/capability.yml
