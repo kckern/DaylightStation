@@ -59,4 +59,31 @@ public class DeviceManifestSourceTest {
         assertFalse(xml.contains("uses-permission"));
         assertFalse(xml.contains("<application>"));
     }
+
+    // ── the HOME filter ───────────────────────────────────────────────────────
+
+    private static final String KIOSK = "<activity android:name=\"net.kckern.daylight.cap.webviewhost.shell.KioskActivity\"";
+
+    @Test public void aBuildWithLockdownOffersTheKioskActivityAsAHomeApp() {
+        String xml = DeviceManifestSource.render(device(Collections.emptyList(), Collections.emptyList(),
+                Arrays.asList("webview-host", "accessibility", "lockdown")));
+        assertEquals(1, count(xml, "<application>"));
+        assertEquals(1, count(xml, KIOSK));
+        int at = xml.indexOf(KIOSK);
+        String activity = xml.substring(at, xml.indexOf("</activity>", at));
+        assertTrue(activity.contains("tools:node=\"merge\""));
+        assertTrue(activity.contains("<action android:name=\"android.intent.action.MAIN\" />"));
+        assertTrue(activity.contains("<category android:name=\"android.intent.category.HOME\" />"));
+        assertTrue(activity.contains("<category android:name=\"android.intent.category.DEFAULT\" />"));
+        // The launcher filter stays where webview-host declared it: nothing is removed here.
+        assertFalse(activity.contains("removeAll"));
+        assertFalse(activity.contains("LAUNCHER"));
+    }
+
+    @Test public void aKioskBuildWithoutLockdownIsNeverAHomeCandidate() {
+        String xml = DeviceManifestSource.render(device(Collections.emptyList(), Collections.emptyList(),
+                Arrays.asList("debug-tools", "webview-host")));
+        assertFalse(xml.contains("category.HOME"));
+        assertFalse(xml.contains("KioskActivity"));
+    }
 }

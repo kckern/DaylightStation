@@ -4,6 +4,9 @@ package net.kckern.daylight.build;
 public final class DeviceManifestSource {
     /** The capability whose shell half declares the kiosk Activity. */
     static final String KIOSK_CAPABILITY = "webview-host";
+    /** The capability that makes the kiosk Activity a HOME candidate. It requires the kiosk capability. */
+    static final String LOCKDOWN_CAPABILITY = "lockdown";
+    static final String KIOSK_ACTIVITY = "net.kckern.daylight.cap.webviewhost.shell.KioskActivity";
 
     private DeviceManifestSource() { }
 
@@ -32,6 +35,18 @@ public final class DeviceManifestSource {
             if (kiosk) {
                 s.append("        <activity android:name=\"net.kckern.daylight.shell.MainActivity\" tools:node=\"merge\">\n");
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
+                s.append("        </activity>\n");
+            }
+            // Only a build that lists lockdown is offered as a home app. The filter is added here,
+            // beside the launcher filter webview-host's shell half declares on the same Activity.
+            // Being a candidate is all this does: the device's home app is chosen on the device.
+            if (kiosk && d.capabilities.contains(LOCKDOWN_CAPABILITY)) {
+                s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\" tools:node=\"merge\">\n");
+                s.append("            <intent-filter>\n");
+                s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");
+                s.append("                <category android:name=\"android.intent.category.HOME\" />\n");
+                s.append("                <category android:name=\"android.intent.category.DEFAULT\" />\n");
+                s.append("            </intent-filter>\n");
                 s.append("        </activity>\n");
             }
             s.append("    </application>\n");
