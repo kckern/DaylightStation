@@ -18,7 +18,7 @@ import java.util.List;
  */
 public class ForegroundTrailTest {
 
-    private static final String FKB = KioskSettingsGuard.FKB_PACKAGE;
+    private static final String FKB = "net.kckern.daylight.test";
 
     private static ForegroundTrail.Win app(String pkg, String title) {
         return new ForegroundTrail.Win(ForegroundTrail.TYPE_APPLICATION, pkg, title, true);
@@ -32,7 +32,7 @@ public class ForegroundTrailTest {
 
     @Test
     public void firstSample_setsTheBaseline_withoutAnEscapeEvent() {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         List<ForegroundTrail.Event> ev = t.sample(1_000L, wins(app(FKB, "Piano")));
         assertTrue(ev.isEmpty());
         assertEquals(FKB, t.front());
@@ -40,7 +40,7 @@ public class ForegroundTrailTest {
 
     @Test
     public void leavingFkb_isAWarnNamingTheNewApp_andCarriesTheTrail() throws Exception {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(1_000L, wins(app(FKB, "Piano")));
         // Something appears over the kiosk first (an assistant panel, the shade, …).
         List<ForegroundTrail.Event> o = t.sample(2_000L, wins(app(FKB, "Piano"),
@@ -62,9 +62,9 @@ public class ForegroundTrailTest {
 
     @Test
     public void hoppingWhileAway_isAWarn_andReturning_reportsTimeAwayAndPath() throws Exception {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(0L, wins(app(FKB, "Piano")));
-        t.sample(1_000L, wins(app(KioskSettingsGuard.SETTINGS_PACKAGE, "Bluetooth")));
+        t.sample(1_000L, wins(app("com.android.settings", "Bluetooth")));
         List<ForegroundTrail.Event> hop = t.sample(5_000L, wins(app("com.android.chrome", "Google")));
         assertEquals("kiosk.foreground.changed", hop.get(0).msg);
         assertEquals("warn", hop.get(0).level);
@@ -82,7 +82,7 @@ public class ForegroundTrailTest {
     public void noApplicationWindow_isNotAChange() {
         // The keyguard or a screen-off state has no app window; that alone must not
         // invent an escape. The keyguard still lands in the trail as an overlay.
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(0L, wins(app(FKB, "Piano")));
         List<ForegroundTrail.Event> ev = t.sample(1_000L,
                 wins(overlay(ForegroundTrail.TYPE_SYSTEM, "com.android.systemui", "Keyguard")));
@@ -93,7 +93,7 @@ public class ForegroundTrailTest {
 
     @Test
     public void steadyState_emitsNothing() {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(0L, wins(app(FKB, "Piano")));
         for (long now = 1_000L; now < 60_000L; now += 1_000L) {
             assertTrue(t.sample(now, wins(app(FKB, "Piano"))).isEmpty());
@@ -102,16 +102,16 @@ public class ForegroundTrailTest {
 
     @Test
     public void keyboardAndOurOwnOverlays_areIgnored() {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(0L, wins(app(FKB, "Piano")));
         assertTrue(t.sample(1_000L, wins(app(FKB, "Piano"),
                 overlay(ForegroundTrail.TYPE_INPUT_METHOD, "com.samsung.android.honeyboard", "Keyboard"),
-                overlay(ForegroundTrail.TYPE_ACCESSIBILITY_OVERLAY, "net.kckern.pianobridge", ""))).isEmpty());
+                overlay(ForegroundTrail.TYPE_ACCESSIBILITY_OVERLAY, FKB, ""))).isEmpty());
     }
 
     @Test
     public void overlayEvents_areCappedPerMinute() {
-        ForegroundTrail t = new ForegroundTrail();
+        ForegroundTrail t = new ForegroundTrail(FKB);
         t.sample(0L, wins(app(FKB, "Piano")));
         int n = 0;
         for (int i = 0; i < 200; i++) {
@@ -123,6 +123,17 @@ public class ForegroundTrailTest {
 
     @Test
     public void unknownFront_beforeAnySample_isNull() {
-        assertNull(new ForegroundTrail().front());
+        assertNull(new ForegroundTrail(FKB).front());
+    }
+
+    @Test
+    public void lastAway_namesTheLastAppThatWasNotTheKiosk() {
+        ForegroundTrail t = new ForegroundTrail(FKB);
+        assertNull(t.lastAway());
+        t.sample(0L, wins(app(FKB, "Piano")));
+        t.sample(1_000L, wins(app("com.android.settings", "Bluetooth")));
+        t.sample(2_000L, wins(app("com.android.chrome", "Google")));
+        t.sample(3_000L, wins(app(FKB, "Piano")));
+        assertEquals("com.android.chrome", t.lastAway());
     }
 }

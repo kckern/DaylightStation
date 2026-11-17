@@ -16,17 +16,18 @@ import java.util.Set;
  * ForegroundTrail — turns 1 Hz window samples into "what took the kiosk" events.
  *
  * Why it exists: on 2026-10-14 a child got from the kiosk to the Play Store and
- * nothing recorded how. The page only logged that it went hidden, the foreground
- * guard polled FKB every 10 s (through a password that had gone stale), and logcat
- * had rolled over within minutes. This class is pure (no Android, no network) so the
- * rules are tested offline; {@link ForegroundWatch} feeds it from the accessibility
+ * nothing recorded how. The page only logged that it went hidden, and logcat had
+ * rolled over within minutes. The first version of this class sat beside Fully and
+ * learned what was in front from Fully's REST API through a password that had gone
+ * stale. This class is pure (no Android, no network) so the rules are tested
+ * offline; the lockdown watcher feeds it from the accessibility
  * service and ships what it returns to the log store.
  *
  * Events:
- *   kiosk.foreground.left      warn  FKB → another app. Carries the trail: the windows
+ *   kiosk.foreground.left      warn  kiosk → another app. Carries the trail: the windows
  *                                    that appeared over the kiosk in the seconds before.
- *   kiosk.foreground.changed   warn  one non-FKB app → another, while away.
- *   kiosk.foreground.returned  info  back to FKB, with time away and the path taken.
+ *   kiosk.foreground.changed   warn  one other app → another, while away.
+ *   kiosk.foreground.returned  info  back to the kiosk, with time away and the path taken.
  *   kiosk.window.overlay       info  a non-app window appeared (shade, assistant,
  *                                    keyguard, dialog). Capped per minute.
  */
@@ -80,6 +81,15 @@ final class ForegroundTrail {
     private long overlayWindowStartMs = 0;
     private int overlayEventsInWindow = 0;
 
+    private final String kioskPackage;
+    private String lastAway;
+
+    /** kioskPackage: the app whose loss of the foreground is an escape. */
+    ForegroundTrail(String kioskPackage) { this.kioskPackage = kioskPackage; }
+
+    /** The last app seen in front other than the kiosk, or null. */
+    synchronized String lastAway() { return lastAway; }
+
     /** The app last seen in front, or null before the first usable sample. */
     synchronized String front() { return front; }
 
@@ -110,20 +120,22 @@ final class ForegroundTrail {
         if (front == null) {                               // baseline
             front = app.pkg;
             frontTitle = app.title;
+            if (!kioskPackage.equals(app.pkg)) lastAway = app.pkg;
             remember(now, "front " + app.key());
             return out;
         }
         if (app.pkg.equals(front)) { frontTitle = app.title; return out; }
 
         String from = front;
-        boolean leaving = KioskSettingsGuard.FKB_PACKAGE.equals(from);
-        boolean returning = KioskSettingsGuard.FKB_PACKAGE.equals(app.pkg);
+        boolean leaving = kioskPackage.equals(from);
+        boolean returning = kioskPackage.equals(app.pkg);
         remember(now, "front " + app.key());
 
         if (leaving) {
             awaySinceMs = now;
             path.clear();
             path.add(app.pkg);
+            lastAway = app.pkg;
             JSONObject d = obj("from", from, "to", app.pkg, "toTitle", app.title);
             put(d, "trail", new JSONArray(trail));
             put(d, "windows", keys(wins));
@@ -137,6 +149,7 @@ final class ForegroundTrail {
             path.clear();
         } else {
             path.add(app.pkg);
+            lastAway = app.pkg;
             JSONObject d = obj("from", from, "to", app.pkg, "toTitle", app.title);
             put(d, "awayMs", awaySinceMs == 0 ? -1 : now - awaySinceMs);
             put(d, "windows", keys(wins));
