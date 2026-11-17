@@ -7,9 +7,8 @@ import android.content.Intent;
 import android.os.SystemClock;
 
 /**
- * ShellKeepAlive — alarms that bring the bridge service back without a human.
+ * ShellKeepAlive holds the alarms that bring the shell service back without a human.
  *
- * Why (2026-09-30): the bridge died on 2026-09-27 and stayed dead for two days.
  * START_STICKY only restarts a service Android chose to kill, and its restart
  * backoff grows after repeated deaths. Two alarms close that gap:
  *
@@ -19,10 +18,9 @@ import android.os.SystemClock;
  *    handler before the process dies.
  *
  * Alarms survive process death. They do NOT survive a force-stop: that clears
- * every alarm and blocks broadcasts until the app is launched explicitly. The
- * off-tablet supervisor service (DS backend) covers that case by
- * relaunching through Fully Kiosk, and the battery-optimization exemption
- * requested by MainActivity keeps Samsung's app sleeping from force-stopping it.
+ * every alarm and blocks broadcasts until the app is launched explicitly. Nothing
+ * in this phase covers a force-stop, and nothing here asks for a battery
+ * optimization exemption.
  */
 final class ShellKeepAlive {
 
@@ -50,13 +48,22 @@ final class ShellKeepAlive {
         try {
             AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
             if (am == null) return;
-            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    SystemClock.elapsedRealtime() + delayMs, pending(ctx, REQ_SOON));
+            long at = SystemClock.elapsedRealtime() + delayMs;
+            PendingIntent pi = pending(ctx, REQ_SOON);
+            try {
+                am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            } catch (SecurityException e) {
+                // Targeting SDK 31+ without SCHEDULE_EXACT_ALARM: an exact alarm is refused.
+                // A slightly late restart is better than none.
+                am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+            }
         } catch (Throwable ignored) { }
     }
 
     private static PendingIntent pending(Context ctx, int req) {
         Intent i = new Intent(ctx, BootReceiver.class).setAction(ACTION);
-        return PendingIntent.getBroadcast(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT);
+        // A mutability flag is required when targeting SDK 31+. FLAG_IMMUTABLE exists from API 23.
+        return PendingIntent.getBroadcast(ctx, req, i,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 }

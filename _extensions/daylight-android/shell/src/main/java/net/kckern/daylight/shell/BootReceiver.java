@@ -6,23 +6,17 @@ import android.content.Intent;
 import android.util.Log;
 
 /**
- * BootReceiver — relaunch the bridge service after device boot OR after the app
- * self-updates.
+ * BootReceiver starts the shell service after device boot, after the package is
+ * replaced, and on the keep-alive alarm.
  *
- * MY_PACKAGE_REPLACED matters as much as BOOT_COMPLETED here. PackageInstaller kills
- * the old process when it swaps the APK and starts nothing in its place, so without
- * this the ADB-free self-update leaves the tablet with no bridge at all — no MIDI, no
- * screen-wake, no kiosk watchdog — until somebody physically taps the icon. That
- * defeats the entire "never needs USB/ADB again" premise, and it bit us installing
- * v26 on 2026-08-22.
+ * MY_PACKAGE_REPLACED matters as much as BOOT_COMPLETED. PackageInstaller kills the
+ * old process when it swaps the APK and starts nothing in its place, so without it
+ * an update leaves the device with no service until someone opens the app by hand.
  *
- * MUST use startForegroundService(), not startService(): a BOOT_COMPLETED receiver
- * runs in a background context, and on Android 8+ startService() from the background
- * throws IllegalStateException — which is exactly why the bridge was dead after a
- * reboot until something hand-launched it. startForegroundService() is the allowed
- * background-start path; ShellService.onStartCommand() then calls
- * startForeground() within the 5s window (it has no mic, so the Android-11
- * foreground-service restriction does not apply).
+ * It uses startForegroundService(), not startService(): a receiver runs in a
+ * background context, and on Android 8+ startService() from the background throws
+ * IllegalStateException. ShellService.onStartCommand() then calls startForeground()
+ * within the 5s window.
  */
 public class BootReceiver extends BroadcastReceiver {
 
@@ -31,28 +25,40 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         final String action = intent == null ? null : intent.getAction();
-        // Open the durable log first. Before v31 this receiver noted BOOT before any
-        // service had called install(), so the note went to logcat only and shell.log
-        // never recorded a single boot, which made "did the boot receiver fire?"
-        // unanswerable after the fact.
+        // Open the durable log first, so the notes below reach shell.log even when
+        // no service has called install() yet in this process.
         ShellLog.install(context);
         if (ShellKeepAlive.ACTION.equals(action)) {
             // Keep-alive alarm: start only when the service is not already up, and
             // record it, because a revival is the event worth knowing about.
             if (!ShellService.isRunning()) {
-                ShellLog.note("KEEPALIVE", "service not running — starting it");
-                context.startForegroundService(new Intent(context, ShellService.class));
+                ShellLog.note("KEEPALIVE", "service not running, starting it");
+                start(context, "KEEPALIVE");
             }
             return;
         }
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
-            Log.i(TAG, action + " — starting ShellService (foreground)");
-            // Durable, because this is the record you want when the tablet comes back
-            // from an update looking dead. Same reason the boot path is noted.
-            ShellLog.note("BOOT", action + " — relaunching bridge service");
-            Intent serviceIntent = new Intent(context, ShellService.class);
-            context.startForegroundService(serviceIntent);
+            Log.i(TAG, action + ": starting ShellService (foreground)");
+            // Durable, because this is the record you want when a device comes back
+            // from an update looking dead.
+            ShellLog.note("BOOT", action + ": starting the shell service");
+            start(context, "BOOT");
+        }
+    }
+
+    /**
+     * When targeting SDK 31+, Android refuses a foreground-service start from the
+     * background except for a short list of exemptions. Boot and package-replaced
+     * are exempt; the inexact keep-alive alarm is not. An uncaught refusal would
+     * crash the process, so record it and let the next exempt trigger try again.
+     */
+    private static void start(Context context, String kind) {
+        try {
+            context.startForegroundService(new Intent(context, ShellService.class));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "service start refused", e);
+            ShellLog.note(kind, "service start refused: " + e);
         }
     }
 }

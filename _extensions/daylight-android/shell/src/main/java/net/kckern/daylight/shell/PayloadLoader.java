@@ -209,7 +209,7 @@ public final class PayloadLoader {
         return o;
     }
 
-    // ── a11y forwarding (shell owns the service, payload owns the policy) ──
+    // ── shell component forwarding (shell owns the component, payload owns the policy) ──
 
     /** Forward a shell-owned component (bound or, with null, unbound) to the active payload. */
     public void onShellComponent(String name, Object instance) {

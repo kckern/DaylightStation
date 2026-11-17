@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- One shell runs on tablets and on TV boxes, so neither feature is required. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
     <!-- usesCleartextTraffic: the control API and the app server are plain HTTP on the LAN. -->
     <application
         android:label="Daylight"

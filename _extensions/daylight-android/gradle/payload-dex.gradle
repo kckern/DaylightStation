@@ -18,7 +18,16 @@ def sdkDir = {
 }()
 
 def buildToolsDir = {
-    def versions = new File(sdkDir, 'build-tools').listFiles()?.findAll { it.isDirectory() }?.collect { it.name }?.sort()
+    // Order by numeric components, so 9.0.0 sorts below 33.0.2. A plain string sort gets that wrong.
+    def parts = { String name -> name.split(/[^0-9]+/).findAll { it }.collect { it as Integer } }
+    def versions = new File(sdkDir, 'build-tools').listFiles()?.findAll { it.isDirectory() }?.collect { it.name }?.sort { a, b ->
+        def x = parts(a), y = parts(b)
+        for (int i = 0; i < Math.max(x.size(), y.size()); i++) {
+            def c = (x[i] ?: 0) <=> (y[i] ?: 0)
+            if (c != 0) return c
+        }
+        a <=> b
+    }
     if (!versions) throw new GradleException("no build-tools under ${sdkDir}")
     new File(sdkDir, "build-tools/${versions.last()}")
 }()

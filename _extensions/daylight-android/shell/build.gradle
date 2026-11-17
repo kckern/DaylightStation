@@ -44,6 +44,9 @@ android {
     }
 
     testOptions { unitTests.returnDefaultValues = true }
+
+    // A real TV banner arrives with the Shield build in a later phase.
+    lint { disable 'MissingTvBanner' }
 }
 
 // A device build without a control token would install an API nobody can reach.

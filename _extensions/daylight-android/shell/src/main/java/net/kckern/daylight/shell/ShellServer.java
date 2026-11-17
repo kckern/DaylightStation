@@ -12,27 +12,31 @@ import java.util.Map;
 import fi.iki.elonen.NanoHTTPD;
 
 /**
- * ShellServer — the lifeline. A minimal HTTP server owned by the SHELL, on its own
- * port ({@link #PORT}), that stays up regardless of what the payload does.
+ * ShellServer is the lifeline: a minimal HTTP server owned by the shell, on the
+ * device's lifeline port (passed to the constructor), that stays up regardless of
+ * what the payload does.
  *
- * Why it must exist: the payload's ControlServer on :8770 is the normal control
- * plane, including {@code /payload}. But that means a payload that STARTS cleanly
- * and then fails to serve — wrong port, bind exception swallowed, a route that
- * wedges — leaves the process alive (so the crash counter never trips), :8770 dead,
- * and {@code /payload/rollback} unreachable. That is the one failure the hot-swap
- * design cannot recover from remotely, and it would put a human back at the tablet.
+ * Why it must exist: the payload's control API is the normal control plane. A
+ * payload that starts cleanly and then fails to serve (wrong port, a swallowed
+ * bind exception, a route that wedges) leaves the process alive, so the crash
+ * counter never trips, while the control API is dead. Without a second door that
+ * payload could not be rolled back remotely and someone would have to go to the
+ * device.
  *
- * So the shell keeps a second door open. It knows nothing about MIDI or kiosks —
- * only the payload store. Routes:
- *   GET  /                 shell status (versionCode, payload status, a11y bound)
- *   GET  /payload          same as the payload's route, served by the shell
- *   POST /payload?url=&sha256=
+ * The shell knows nothing about what the payload does, only the payload store.
+ * Routes:
+ *   GET  /  or  /status    shell status (port, versionCode, device, payload status)
+ *   GET  /payload          payload status
+ *   POST /payload?url=&sha256=   fetch, verify and activate a payload
  *   POST /payload/rollback
  *   GET  /log              tail of shell.log
- *   POST /restart          stop + restart the current payload in place
+ *   POST /restart          stop and restart the current payload in place
  *
- * Every request needs the device token. Deliberately no /exec: the lifeline
- * must have the smallest possible surface that can't itself break.
+ * Every request needs the device token (401 otherwise). Refusals carry a real
+ * status, decided by {@link LifelineGate}: 503 while the loader is not ready, 405
+ * for a non-POST on a POST-only route, 400 for a swap without url and sha256, 404
+ * for an unknown route. There is no /exec on purpose: the lifeline keeps the
+ * smallest surface that can still recover a device.
  */
 public final class ShellServer extends NanoHTTPD {
 
@@ -58,6 +62,10 @@ public final class ShellServer extends NanoHTTPD {
         Method method = session.getMethod();
         try {
             Map<String, java.util.List<String>> p = session.getParameters();
+            String url = first(p, "url"), sha = first(p, "sha256");
+            LifelineGate.Refusal refusal = LifelineGate.check(uri, service.loaderOrNull() != null,
+                    method.name(), url != null, sha != null);
+            if (refusal != null) return json(Response.Status.lookup(refusal.status), err(refusal.error));
             switch (uri) {
                 case "/":
                 case "/status": {
@@ -73,25 +81,16 @@ public final class ShellServer extends NanoHTTPD {
                 }
                 case "/payload": {
                     PayloadLoader l = service.loaderOrNull();
-                    if (l == null) return json(err("loader not ready"));
                     if (method == Method.POST) {
-                        String url = first(p, "url"), sha = first(p, "sha256");
-                        if (url == null || sha == null) return json(err("url and sha256 required"));
                         return json(new JSONObject().put("ok", true).put("result", l.requestSwap(url, sha)));
                     }
                     return json(l.status());
                 }
                 case "/payload/rollback": {
-                    PayloadLoader l = service.loaderOrNull();
-                    if (l == null) return json(err("loader not ready"));
-                    if (method != Method.POST) return json(err("POST only"));
-                    return json(new JSONObject().put("ok", true).put("result", l.requestRollback()));
+                    return json(new JSONObject().put("ok", true).put("result", service.loaderOrNull().requestRollback()));
                 }
                 case "/restart": {
-                    PayloadLoader l = service.loaderOrNull();
-                    if (l == null) return json(err("loader not ready"));
-                    if (method != Method.POST) return json(err("POST only"));
-                    return json(new JSONObject().put("ok", true).put("result", l.requestRestart()));
+                    return json(new JSONObject().put("ok", true).put("result", service.loaderOrNull().requestRestart()));
                 }
                 case "/log": {
                     File f = ShellLog.file();
