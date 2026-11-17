@@ -12,7 +12,8 @@
  */
 
 /** A session may still be resumed/merged for this long after it ends (30 min). */
-export const SESSION_RESUME_MERGE_WINDOW_MS = 30 * 60 * 1000;
+import { SESSION_RESUME_MERGE_WINDOW_MS } from '../../shared/sessionResumePolicy.mjs';
+export { SESSION_RESUME_MERGE_WINDOW_MS };
 
 /**
  * Has a session settled enough to safely render its recap (and clean up frames)?

@@ -775,10 +775,10 @@ export class PersistenceManager {
     if (sessionId) this._hasSuccessfulSave[sessionId] = true;
   }
 
-  /**
-   * Timestamp of last successful save (unix-ms), or 0 if none.
-   * @returns {number}
-   */
+  /** Acknowledged saves, including multiple commits in the same millisecond. */
+  get successfulSaveRevision() { return this._successfulSaveRevision || 0; }
+
+  /** Timestamp of the last successful save (unix-ms), or 0 if none. */
   get lastSuccessfulSaveAt() {
     return this._lastSuccessfulSaveAt;
   }
@@ -1383,6 +1383,7 @@ export class PersistenceManager {
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
       .then(_resp => {
         this.markSaveSucceeded(sessionData.sessionId);
+        this._successfulSaveRevision = (this._successfulSaveRevision || 0) + 1;
         this._lastSuccessfulSaveAt = Date.now();
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {

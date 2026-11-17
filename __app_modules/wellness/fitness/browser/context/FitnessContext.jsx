@@ -1601,10 +1601,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         onEscalate: reportTransportIncident,
       });
       transportRecoveryRef.current = recovery;
-      const tickRecovery = () => recovery.tick({
-        active: !!fitnessSessionRef.current?.sessionId,
-        stopped: transportStoppedRef.current,
-      });
+      const tickRecovery = () => {
+        const snapshot = recovery.tick({
+          active: !!fitnessSessionRef.current?.sessionId,
+          stopped: transportStoppedRef.current,
+        });
+        // A healthy snapshot can be several seconds old. Only observeSample's
+        // accepted-packet path below may release collection or a checkpoint.
+        const session = fitnessSessionRef.current;
+        const pause = session?.transportPause;
+        if (snapshot.state !== 'healthy') session?.setTransportState({ ...snapshot, at: Date.now() });
+        if (pause !== session?.transportPause) batchedForceUpdate();
+      };
       tickRecovery();
       recoveryTimer = setInterval(tickRecovery, 1000);
 
@@ -1694,6 +1702,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           const delivered = session.ingestData(data);
           if (delivered || session.deviceManager.lastPacketAt !== beforePacketAt) {
             recovery.observeSample(sample);
+            // A real accepted packet is the only recovery authority. Health or
+            // socket OPEN cannot release the workout pause.
+            session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: Date.now() });
             if (session.sessionId && !session._finalized) transportStoppedRef.current = false;
           }
           // Most sensor packets repeat the last reading (4 Hz broadcast, two
@@ -3273,6 +3284,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     fitnessSession: session?.summary,
     fitnessSessionInstance: session,
     transportRecovery,
+    transportStopped: transportStoppedRef.current,
+    transportPause: session.transportPause || null,
     requestEndSession,
     isSessionActive: session?.isActive,
     fitnessPlayQueue,

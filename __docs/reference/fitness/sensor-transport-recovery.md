@@ -41,3 +41,55 @@ After `FitnessSessionOperations.save` passes the existing session-write policy a
 `YamlSessionDatastore` stores server-owned delivery metadata in `fitness/log/_transport/incidents.yml`, using durable atomic replacement. The directory is excluded from the date-based session index. Browser resaves cannot overwrite this sidecar, and queue writes do not rewrite workout evidence. Accepted incident IDs deduplicate subsequent saves and process restarts. A crash between provider acceptance and persisting its result may retry the same notification tag; phone delivery is not claimed.
 
 The existing production agents Scheduler registers `fitness:transport-incident-retry` every minute. It drains only previously committed work for the configured household, including after restart with no new browser save. Failed requests remain explicit and retry after 60 seconds, then 120 seconds, then a capped 300 seconds until accepted; in-process deadlines are monotonic. Missing targets and provider failure remain `failed`, while only an explicit gateway `{ok: true}` result becomes `accepted` with `delivered: unknown`. A resolved `{ok: false}` response remains failed and retryable, just like a thrown provider error. Accepted records stop retrying. A recovered incident cancels its outstanding alert. Scheduler lifecycle shutdown owns retry disposal; no additional process or interval is created.
+
+## Workout checkpoints
+
+The 1,200 ms global stall detector still marks retained cadence stale. Collection
+and earnings stop during silence; a held value is display evidence only. Timed
+cycle races continue their existing wall-clock deadline with zero transport-gap
+cadence. The flight game retains its existing sensor pause, and Invaders refuses
+a boost from stalled cadence. The player uses its existing playback gate during
+recovery; recovery cannot override an explicit End or parent Stop.
+
+A diagnosed global loss lasting 180,000 ms checkpoints the current session instead
+of ending it as an empty room. The session keeps its identity and continues
+observing real packets. The checkpoint includes the transport incident event and
+waits behind any earlier save. Autosave suspends only after a successful checkpoint;
+a failed save stays visible in structured logs and remains retryable. The server's
+existing notification outbox continues independently after collection pauses.
+
+The canonical durable fields are additive session metadata:
+
+- `metadata.transportPause`: `{ startedAt, incidentId, resumeUntil }` or `null`.
+- `metadata.transportGaps`: intervals `{ startedAt, endedAt, incidentId }`, with
+  `endedAt: null` while the gap remains open.
+- `metadata.endReason`: `transport_lost` on resume-window expiration, or the
+  ordinary explicit end reason.
+
+The browser summary mirrors these fields at its root. Existing server session
+normalization and YAML projections preserve the metadata. Times are wall-clock
+milliseconds; live hold and resume deadlines use a monotonic clock. The existing
+30-minute session consolidation window is reused. On reload, its persisted wall
+expiry establishes the remaining monotonic deadline. Old records without these
+fields remain readable.
+
+Only a real accepted sensor packet can resume the same eligible session. Health
+messages, socket OPEN, and a retained healthy watchdog snapshot cannot. Missing
+timeline slots are nulls with explicit gap intervals; recovery never backfills
+biometric observations or awards the silent interval. Manual End, parent Stop,
+and expiration finalize the prior session and prevent its automatic continuation.
+Healthy transport with an empty roster keeps the ordinary timeout.
+
+## Physical acceptance (release gate)
+
+After candidate/device approval, record the deployed browser payload and bridge
+service/build identities. Inspect the actual receiver service journal without
+assuming a radio, receiver, network, or browser root cause. Follow the observed
+Glider → Invaders → video navigation with a real rider; interrupt only the approved
+data path once. Verify source receipts alongside browser receipts, the 180-second
+checkpoint, committed incident/outbox, zero gap credit, explicit reconnect copy,
+and a single session ID after real packet recovery. Repeat Stop during the outage
+and verify recovery never restarts media. Exercise expiry separately. Verify the
+Mac write denial remains HTTP 403. Unit tests and socket OPEN do not satisfy this
+gate; failed hardware/service recovery remains blocked acceptance with its cause
+explicitly unknown until demonstrated.

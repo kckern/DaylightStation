@@ -49,6 +49,7 @@ describe('DeviceManager — a stalled pipeline holds cadence instead of zeroing 
     mgr.pruneStaleDevices(timeouts);
     expect(mgr.isTransportStalled(timeouts.transportStallMs)).toBe(true);
     expect(mgr.getDevice('bike-1').cadence).toBe(80);
+    expect(mgr.getDevice('bike-1').transportStalled).toBe(true);
     expect(mgr.getDevice('bike-2').cadence).toBe(55);
   });
 
@@ -90,6 +91,7 @@ describe('DeviceManager — a stalled pipeline holds cadence instead of zeroing 
     mgr.updateDevice('bike-2', 'CAD', { CalculatedCadence: 57 });
     mgr.pruneStaleDevices(timeouts);
     expect(mgr.getDevice('bike-1').cadence).toBe(0);   // genuinely silent now
+    expect(mgr.getDevice('bike-1').transportStalled).toBe(false);
     expect(mgr.getDevice('bike-2').cadence).toBe(57);
   });
 });
@@ -130,12 +132,18 @@ it('Stop cancels recovery and no diagnostic packet updates sensor time', async (
     await act(async () => { globalThis.fitnessTransportMessage({ topic: 'fitness', type: 'ant', deviceId: 'bike-1', profile: 'CAD', data: { CalculatedCadence: 80 }, bootId: 'a', sourceSeq: 1 }); });
     expect(session.deviceManager.getDevice('bike-1').cadence).toBe(80);
     const beforeHealthPacket = session.deviceManager.lastPacketAt;
+    // The watchdog retains a healthy snapshot for five seconds. A timer tick
+    // must not treat that old snapshot as a newly delivered sensor packet.
+    const setTransport = vi.spyOn(session, 'setTransportState');
+    setTransport.mockClear();
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(setTransport.mock.calls.some(([state]) => state.state === 'healthy')).toBe(false);
     await act(async () => {
       globalThis.fitnessTransportMessage({ topic: 'fitness.transport.health', protocol: 1, bootId: 'a', sourceSeq: 1, receivedCount: 1, sentCount: 1, lastSourceAgeMs: 0 });
     });
     const lastPacketAt = session.deviceManager.lastPacketAt;
     expect(lastPacketAt).toBe(beforeHealthPacket);
-    await act(async () => { vi.advanceTimersByTime(30000); });
+    await act(async () => { vi.advanceTimersByTime(28000); });
     expect(wsService.requestRecovery).toHaveBeenCalledTimes(1);
     expect(pendingRecovery.size).toBe(1);
     // Avoid persistence in this browser fixture; the Stop entry point is real.

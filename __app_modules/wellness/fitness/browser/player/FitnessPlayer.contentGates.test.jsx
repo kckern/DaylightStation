@@ -112,6 +112,21 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('FitnessPlayer live content gates', () => {
+  it('sensor loss blocks playback and recovery cannot release a parent Stop', async () => {
+    fixture.context.governanceState = UNLOCKED;
+    fixture.context.transportRecovery = { state: 'lost' };
+    const view = renderPlayer();
+    await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false'));
+    fireEvent.click(screen.getByRole('button', { name: 'Playback progress' }));
+    expect(fixture.context.setVideoPlayerPaused).toHaveBeenCalledWith(true);
+    fixture.context = { ...fixture.context, transportRecovery: { state: 'healthy' }, transportStopped: true };
+    view.rerender(playerNode());
+    expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false');
+    fixture.context = { ...fixture.context, transportStopped: false };
+    view.rerender(playerNode());
+    expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'true');
+  });
+
   it('holds KidsFun content only for pending exercise governance without requesting a fingerprint', async () => {
     renderPlayer();
     await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false'));

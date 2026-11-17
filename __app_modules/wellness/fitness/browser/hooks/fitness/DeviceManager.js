@@ -402,6 +402,10 @@ export class DeviceManager {
     }
 
     for (const [id, device] of this.devices) {
+      if (device.transportStalled !== transportStalled) {
+        device.transportStalled = transportStalled;
+        mutated = true;
+      }
       // Determine effective last activity time
       // For cadence devices, we use lastSignificantActivity to handle 0 RPM coasting
       // For others, we use lastSeen (which updates on every packet)
