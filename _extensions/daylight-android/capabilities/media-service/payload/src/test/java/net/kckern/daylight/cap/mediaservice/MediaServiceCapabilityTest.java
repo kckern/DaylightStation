@@ -145,6 +145,40 @@ public class MediaServiceCapabilityTest {
         assertEquals(2, launched.size());
     }
 
+    // ── a tap with no window: the play service asks for an action ─────────────
+
+    private void provideActions(final Map<String, String> media) {
+        core.services().provide(net.kckern.daylight.core.spi.ActionList.class, new net.kckern.daylight.core.spi.ActionList() {
+            @Override public org.json.JSONArray actions() { return new org.json.JSONArray(); }
+            @Override public String mediaContentId(String actionId) { return media.get(actionId); }
+        });
+    }
+
+    /** The service hands over an action id; the answer is the media id of that action's configured content. */
+    @Test public void thePlayServiceGetsTheMediaIdOfAConfiguredMediaActionByItsId() throws Exception {
+        Map<String, String> media = new HashMap<>();
+        media.put("radio", "plex:12345");
+        provideActions(media);
+        JSONObject r = cap.call(new JSONObject().put("op", "action").put("action", "radio")).body;
+        assertTrue(r.toString(), r.getBoolean("ok"));
+        assertEquals("p:plex:12345", r.getString("mediaId"));
+    }
+
+    @Test public void anActionThatIsNotAMediaActionOrIsUnknownPlaysNothing() throws Exception {
+        Map<String, String> media = new HashMap<>();
+        media.put("bad", "https://evil.example/x.mp3");
+        provideActions(media);
+        assertEquals(404, cap.call(new JSONObject().put("op", "action").put("action", "feed")).status);
+        assertEquals("content that is not a content id is refused", 404,
+                cap.call(new JSONObject().put("op", "action").put("action", "bad")).status);
+        assertEquals(400, cap.call(new JSONObject().put("op", "action").put("action", "plex:12345")).status);
+        assertEquals(400, cap.call(new JSONObject().put("op", "action")).status);
+    }
+
+    @Test public void withNoActionsInTheBuildAnActionPlaysNothing() throws Exception {
+        assertEquals(404, cap.call(new JSONObject().put("op", "action").put("action", "radio")).status);
+    }
+
     @Test public void resolveAnswersWithTracksAndWhereToStart() throws Exception {
         api.responses.put("queue plex:10", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"One\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/11\",\"duration\":100}]}");
         JSONObject r = post("/media/resolve", "{\"ids\":[\"c:plex:10\"]}");

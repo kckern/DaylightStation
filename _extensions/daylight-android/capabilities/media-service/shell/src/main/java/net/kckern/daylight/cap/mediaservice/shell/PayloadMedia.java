@@ -30,6 +30,14 @@ final class PayloadMedia {
     }
 
     /**
+     * A tap on a widget or a tile handed the play service an action id. The payload
+     * answers with the media id of that action's content, or refuses.
+     */
+    String action(String actionId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "action").put("action", actionId).toString(), waitMs);
+    }
+
+    /**
      * The player's position. Progress is advisory: with no payload, or one that throws,
      * the event is dropped and the next carries a later position.
      *

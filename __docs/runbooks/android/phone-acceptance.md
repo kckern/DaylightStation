@@ -164,6 +164,36 @@ Pick the content id of a music track and of an album from the Media page.
     not, the same log names the system UI's package with a reason: record it. A
     system UI that is not platform-signed is pinned as in E3.
 
+## D2. Playing with no window
+
+The phone's device file has no `media:` action (content ids are household data).
+For this section either pin one from the Media page (section D3), or add a line
+such as `actions.8: "radio|Radio|play|media:<a playlist's content id>"` to a local,
+uncommitted copy of `devices/phone.yml`, bump `shell.versionCode`, build and
+install.
+
+1. Put the action on a "Daylight button" widget. Tap it with the app in the
+   background: audio starts, the app's window does not come to the front, a
+   "Starting playback" notice shows briefly and the media notification stays.
+   `adb logcat -s Daylight-Media` has `play action <id>` and no content id.
+2. The same from a cold process (`adb shell am force-stop net.kckern.daylight.phone`
+   first). Record the time from the tap to sound, or "Could not start playback".
+3. The same with the phone locked, from a widget on the lock screen if the launcher
+   has one; record what happens.
+4. Put the action on a tile and tap it. On Android 12 and later record whether it
+   played with no window or went through the invisible play screen (`adb logcat -s
+   Daylight-Tile` has "slot <n> plays through the link" when Android refused the
+   start).
+5. A launcher shortcut of the same action goes through the invisible play screen,
+   as before.
+6. Look for `ForegroundServiceStartNotAllowedException` and "Android refused the
+   media service's foreground start" in logcat after each step, and record them.
+   With the second line present, audio must still play, and the "Starting
+   playback" notice stays until it stops.
+7. The play service cannot be reached from outside:
+   `adb shell am startservice -n net.kckern.daylight.phone/net.kckern.daylight.cap.mediaservice.shell.PlayActionService --es action radio`
+   is refused (not exported).
+
 ## E. Android Auto, on the Desktop Head Unit
 
 1. On the phone: Android Auto's settings, tap "Version and permission info" ten

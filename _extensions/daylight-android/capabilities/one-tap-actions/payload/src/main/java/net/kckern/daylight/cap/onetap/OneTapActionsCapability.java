@@ -168,12 +168,19 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         JSONArray out = new JSONArray();
         try {
             for (Action a : catalog(null).all()) {
-                out.put(new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon).put("uri", uri(a)));
+                out.put(new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon).put("uri", uri(a))
+                        .put("direct", a.kind == Kind.MEDIA ? a.id : ""));
             }
         } catch (Exception e) {
             // An empty list: the widget then shows its "open the app" button.
         }
         return out;
+    }
+
+    @Override public String mediaContentId(String actionId) {
+        if (actionId == null) return null;
+        Action a = catalog(null).find(actionId);
+        return a != null && a.kind == Kind.MEDIA ? a.value : null;
     }
 
     // ── the list and its links ────────────────────────────────────────────────

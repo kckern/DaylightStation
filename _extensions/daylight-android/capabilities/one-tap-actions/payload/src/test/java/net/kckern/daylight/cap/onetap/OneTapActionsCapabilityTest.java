@@ -113,6 +113,23 @@ public class OneTapActionsCapabilityTest {
         assertEquals("daylight://action/feed#k=" + KEY, first.getString("uri"));
     }
 
+    /** The play service is given an action id; only the payload turns it into content, for a media action alone. */
+    @Test public void aMediaActionIsPlayableDirectlyByItsIdAndNoOtherActionIs() throws Exception {
+        core.settings().set("actions.3", "radio|Radio|play|media:plex:12345");
+        ActionList list = core.services().find(ActionList.class);
+        assertEquals("plex:12345", list.mediaContentId("radio"));
+        assertNull("an open action has no content", list.mediaContentId("feed"));
+        assertNull("an api action has no content", list.mediaContentId("lights"));
+        assertNull(list.mediaContentId("nope"));
+        assertNull(list.mediaContentId(null));
+        org.json.JSONArray actions = list.actions();
+        for (int i = 0; i < actions.length(); i++) {
+            JSONObject a = actions.getJSONObject(i);
+            assertEquals(a.getString("id"), "radio".equals(a.getString("id")) ? "radio" : "", a.getString("direct"));
+            assertFalse("no content id reaches a surface", a.toString().contains("12345"));
+        }
+    }
+
     @Test public void anOpenActionIsHandedToTheCapabilityThatOpensViews() throws Exception {
         JSONObject r = actionLink().handle("feed", NO_QUERY);
         assertEquals("front", r.getString("effect"));

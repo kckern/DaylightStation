@@ -51,6 +51,7 @@ final class WidgetModel {
             cache.put(SurfaceKeys.widget(slot, SurfaceKeys.LABEL), a == null ? "" : a.optString("label", ""));
             cache.put(SurfaceKeys.widget(slot, SurfaceKeys.ICON), a == null ? "" : a.optString("icon", ""));
             cache.put(SurfaceKeys.widget(slot, SurfaceKeys.URI), a == null ? "" : a.optString("uri", ""));
+            cache.put(SurfaceKeys.widget(slot, SurfaceKeys.DIRECT), direct(a));
         }
         return cache;
     }
@@ -78,11 +79,12 @@ final class WidgetModel {
             cache.put(SurfaceKeys.action(id, SurfaceKeys.LABEL), a.optString("label", ""));
             cache.put(SurfaceKeys.action(id, SurfaceKeys.ICON), a.optString("icon", ""));
             cache.put(SurfaceKeys.action(id, SurfaceKeys.URI), a.optString("uri", ""));
+            cache.put(SurfaceKeys.action(id, SurfaceKeys.DIRECT), direct(a));
         }
         for (String raw : (previousIdsCsv == null ? "" : previousIdsCsv).split(",")) {
             String gone = raw.trim();
             if (!SurfaceKeys.actionId(gone) || ids.contains(gone)) continue;
-            for (String field : new String[] { SurfaceKeys.LABEL, SurfaceKeys.ICON, SurfaceKeys.URI }) {
+            for (String field : new String[] { SurfaceKeys.LABEL, SurfaceKeys.ICON, SurfaceKeys.URI, SurfaceKeys.DIRECT }) {
                 cache.put(SurfaceKeys.action(gone, field), "");
             }
         }
@@ -90,6 +92,19 @@ final class WidgetModel {
         for (String id : ids) csv.append(csv.length() == 0 ? "" : ",").append(id);
         cache.put(SurfaceKeys.ACTION_IDS, csv.toString());
         return cache;
+    }
+
+    /**
+     * The action's own id when it may be played with no window, else "". Only the id
+     * the action already has is ever written: an entry whose direct field names content
+     * or another action gets nothing, so the play service is only ever handed the id of
+     * the button that was tapped.
+     */
+    static String direct(JSONObject a) {
+        if (a == null) return "";
+        String id = a.optString("id", "");
+        String direct = a.optString("direct", "");
+        return SurfaceKeys.actionId(id) && id.equals(direct) ? id : "";
     }
 
     /** The actions that fill the slots, in order, at most SLOTS. */

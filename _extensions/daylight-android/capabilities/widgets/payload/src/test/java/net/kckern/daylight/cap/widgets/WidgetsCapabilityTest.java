@@ -66,7 +66,7 @@ public class WidgetsCapabilityTest {
     @Test public void withoutTheActionsCapabilityTheWidgetIsEmpty() throws Exception {
         cap.start();
         assertEquals("", applied.get("widget.1.uri"));
-        assertEquals(12, applied.size());
+        assertEquals(16, applied.size());
     }
 
     @Test public void theWidgetIsRedrawnWhenTheActionsArePublishedAgain() throws Exception {

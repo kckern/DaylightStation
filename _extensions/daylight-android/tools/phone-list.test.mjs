@@ -116,3 +116,17 @@ test('the memo button is called Journal and is a voice input for the journal', (
   assert.equal(phone.defaults['actions.1'], 'journal|Journal|mic|input:voice:journal');
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
+
+test('playing with no window adds one service of media-service, not exported, and no permission', () => {
+  assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService']);
+  assert.deepEqual(capabilities['media-service'].permissions, ['android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+    'android.permission.ACCESS_NETWORK_STATE']);
+  const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.mediaservice.'));
+  assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity exported=false permission=null',
+    'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService exported=true permission=null',
+    'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService exported=false permission=null',
+  ]);
+  assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.PlayActionService'].foregroundServiceType,
+    ['mediaPlayback']);
+});

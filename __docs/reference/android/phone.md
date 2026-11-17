@@ -359,10 +359,11 @@ as the action's id and its outcome.
 | Home-screen widgets (four buttons; one-action buttons) | See `widgets` | Draw from the cache |
 
 A tile on a locked phone asks for the unlock before it launches its action. The
-tiles and the widget never call the payload and never start a service: they read
-the surface cache (a private preferences file the payload writes) and launch a
-link. A cached value that is not a `daylight://` link is treated as an unassigned
-slot.
+tiles and the widgets never call the payload: they read the surface cache (a
+private preferences file the payload writes) and launch a link. A cached value that
+is not a `daylight://` link is treated as an unassigned slot. The one exception is a
+`media:` action, which a widget button and a tile start through the play service
+with no window (see "Playing with no window" under `media-service`).
 
 Unproven on a phone: whether `requestPinShortcut` works with no activity in
 front, the tile's launch on Android 14 and later (the code uses the
@@ -383,7 +384,9 @@ calls the payload.
 (`ButtonWidgetConfigActivity`) that lists every action by its label; a tap on one
 binds the button to that action. The button shows the action's label and icon,
 and a tap launches the action's keyed link, the same link every other surface
-launches.
+launches. A `media:` action is the exception on both widgets: its button starts the
+play service with the action's id and plays with no window (see "Playing with no
+window").
 
 - The widget remembers an action id and nothing else, in a private preferences
   file of the installed app (`daylight_buttons`, key `button.<widget id>.action`).
@@ -443,9 +446,11 @@ natively and answers "Could not start playback"; it plays in the web view.
 |---|---|---|---|
 | `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
 | `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s; with no payload it says "Could not start playback" |
 
 The installed service asks the payload through the `media` `PayloadPort`, in
-process, as JSON: `browse`, `resolve`, `event`. It hands back media ids and nothing
+process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
+`action`. It hands back media ids and nothing
 else. The same three are routes (`GET /media/browse`, `POST /media/resolve`,
 `POST /media/event`) and `GET /media/status` gives `{lastReportAtMs, lastError,
 reports, problems}`; on the phone nothing serves them to anyone.
@@ -467,6 +472,64 @@ for every device.
   when it is on the backend's origin. A controller's own URI on an item is dropped.
 - A `media` link carries a content id and this install's key. Nothing else in the
   link is read.
+
+### Playing with no window
+
+A `media:<contentId>` action tapped on a widget button (either widget) or a tile
+starts native playback without bringing the app to the front. Which path a tap
+takes is decided in one pure class, `DirectPlay` (`shell-api`), and tested:
+
+| Surface | Android 8 to 11 (API 26 to 30) | Android 12 and later (API 31 and up) |
+|---|---|---|
+| Widget button | Play service, no window | Play service, no window |
+| Quick-settings tile | Play service, no window | Play service; when Android refuses the start, the keyed link (the link activity, then the invisible play screen) |
+| Launcher shortcut, pinned shortcut | Keyed link and the invisible play screen | The same |
+| Any non-media action, or a build without `media-service` | Keyed link | Keyed link |
+
+How it is kept closed:
+
+- The play service (`PlayActionService`) is not exported, so only this app's own
+  immutable `PendingIntent`s and tiles reach it. Its intent carries one extra, an
+  action id, and that is the only thing it reads. A string that is not the shape
+  of an action id (`plex:1`, a URL, a link) is dropped.
+- The service hands the action id to the payload (`media` port, op `action`). The
+  payload looks the id up among the configured actions (and the pinned ones, see
+  "Page bridge on the phone: pinning media") and answers with the media id of that
+  action's content, after the content id rule; any other id answers 404 and nothing
+  plays. The media service then resolves that id through the backend as it does for
+  any controller. So a tap cannot name content, and nothing plays that the owner
+  did not set up and the backend did not answer for.
+- No key is involved: nothing outside the app can start the service. The surface
+  cache holds, per slot and per action, a `direct` field that is the action's own
+  id when it is a media action and empty otherwise; it never holds content.
+- Only the action id is written to the log (`play action <id>`).
+
+The service enters the foreground at once (Android stops a service started as a
+foreground service that does not), with a low-importance "Starting playback"
+notice. When the player starts, Media3 moves the media service itself into the
+foreground; once it has, the play service stops. If Android refuses the media
+service that start, Media3 1.1.1 catches the refusal itself and tells the
+service's listener; the play service then keeps its own foreground state for as
+long as the audio plays (`PlayStart`, tested). With no payload within eight
+seconds, or a refused action, or a player error, it says "Could not start
+playback" and stops; it gives up after fifteen seconds in all.
+
+What each platform statement rests on:
+
+| Statement | Source |
+|---|---|
+| From Android 12 an app that targets API 31 or higher cannot start a foreground service from the background except in listed cases, and gets `ForegroundServiceStartNotAllowedException` | Verified: Android's "Restrictions on starting a foreground service from the background" page, read 2026-11-17 |
+| "The user performs an action on a UI element related to your app ... a bubble, notification, widget, or activity" is one of those cases | Verified: the same page |
+| A quick-settings tile is not named among the cases | Verified: the same page (it lists none). Whether a tile tap gets the exemption anyway is unknown, hence the try and the fallback |
+| Before Android 12 a foreground-service start from the background is allowed (`startForegroundService` was added in Android 8 for that) | From memory, not re-read |
+| A launcher shortcut's intent starts an activity, never a service | From memory (`ShortcutInfo` takes activity intents) |
+| A service started as a foreground service must call `startForeground` within a few seconds | From memory |
+| Media3 1.1.1 catches the refusal of its own foreground start and calls `MediaSessionService.Listener.onForegroundServiceStartNotAllowedException` | Verified from the 1.1.1 bytecode on the build's classpath (`MediaSessionService.onUpdateNotificationInternal`) |
+| Starting the shell service and Media3's own foreground start, made while the play service is already in the foreground, are allowed | Unverified. If not, a cold tap can find no payload (it says so), and a warm tap plays with the play service holding the foreground state |
+
+Unproven on a phone: all of it, including whether the launcher sends a widget's
+`getForegroundService` intent the way the documentation describes. The
+acceptance runbook has the checks (D2).
 
 ### Who may connect
 
@@ -1083,6 +1146,7 @@ What another app on the phone can reach, and what stands in the way.
 | `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
 | `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
+| `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
@@ -1092,7 +1156,9 @@ services (which the system alone can bind), `DaylightMediaService`,
 longer exported, fails the build. The quick inputs added three components (two
 activities and a provider) and none of them is exported. The one-action button
 added two: its provider, which is not exported, and its chooser, which is. It
-added no permission.
+added no permission. Playing with no window added one, the play service, which is
+not exported, and no permission (it is a `mediaPlayback` foreground service, and
+`FOREGROUND_SERVICE_MEDIA_PLAYBACK` was already declared).
 
 ## Not covered by JVM tests
 
@@ -1108,10 +1174,11 @@ added no permission.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.
-- `DaylightMediaService`, `LibraryCallback`, `PlaybackEvents`, `PlayActivity`: the
-  Media3 player and session, audio focus, the media notification, a car. Their
-  decisions are in pure classes that are tested (`ControllerPolicy`, `BrowseAnswer`,
-  `TrackAnswer`, `PayloadMedia`).
+- `DaylightMediaService`, `LibraryCallback`, `PlaybackEvents`, `PlayActivity`,
+  `PlayActionService`: the Media3 player and session, audio focus, the media
+  notification, the foreground states, a car. Their decisions are in pure classes
+  that are tested (`ControllerPolicy`, `BrowseAnswer`, `TrackAnswer`,
+  `PayloadMedia`, `PlayStart`, `DirectPlay`).
 - `TextInputActivity`: the window, the keyboard, the field's filter as Android
   calls it, what the recents screen shows. Its decisions are in `TextDraft` and
   `CaptureFiles`, which are tested.

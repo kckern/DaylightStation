@@ -8,14 +8,17 @@ import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
 import android.util.Log;
 
+import net.kckern.daylight.api.DirectPlay;
 import net.kckern.daylight.api.SurfaceKeys;
+import net.kckern.daylight.shellkit.DirectPlayIntents;
 import net.kckern.daylight.shellkit.SurfaceCache;
 
 /**
  * One quick-settings slot. Android creates this by class name, possibly in a process
- * with no payload, so it reads only the surface cache and never calls the payload or
- * starts a service. A tap launches the slot's daylight:// link through the link
- * activity, which is where the shell is started and the payload is waited for.
+ * with no payload, so it reads only the surface cache and never calls the payload. A
+ * tap launches the slot's daylight:// link through the link activity, which is where
+ * the shell is started and the payload is waited for; a tap on a media action first
+ * tries the play service (DirectPlay), which plays it with no window.
  *
  * Which action a slot shows is the payload's decision (the setting actions.tiles).
  * A slot with no action is shown unavailable.
@@ -50,8 +53,23 @@ public abstract class ActionTileService extends TileService {
         final TileFace face = face();
         if (!face.available) return;
         // An action changes something, so a locked phone asks for the unlock first.
-        if (isLocked()) unlockAndRun(() -> launch(face.link));
-        else launch(face.link);
+        if (isLocked()) unlockAndRun(() -> tap(face.link));
+        else tap(face.link);
+    }
+
+    /**
+     * A media action plays with no window where Android lets a tile start the play
+     * service (DirectPlay): always below Android 12, and from 12 when Android does not
+     * refuse the start. A refused start launches the keyed link, as every other action does.
+     */
+    private void tap(String link) {
+        int slot = slot();
+        String direct = SurfaceCache.get(this, SurfaceKeys.tile(slot, SurfaceKeys.DIRECT));
+        DirectPlay.Path path = DirectPlay.path(DirectPlay.Surface.TILE, Build.VERSION.SDK_INT, direct,
+                DirectPlayIntents.installed(this));
+        if (path != DirectPlay.Path.LINK && DirectPlayIntents.start(this, direct)) return;
+        if (path == DirectPlay.Path.SERVICE_ELSE_LINK) Log.i(TAG, "slot " + slot + " plays through the link");
+        launch(link);
     }
 
     private void launch(String link) {

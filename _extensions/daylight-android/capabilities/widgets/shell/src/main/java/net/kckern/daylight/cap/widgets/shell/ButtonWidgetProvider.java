@@ -6,9 +6,12 @@ import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.widget.RemoteViews;
 
+import net.kckern.daylight.api.DirectPlay;
 import net.kckern.daylight.api.SurfaceKeys;
+import net.kckern.daylight.shellkit.DirectPlayIntents;
 import net.kckern.daylight.shellkit.SurfaceCache;
 
 /**
@@ -18,8 +21,9 @@ import net.kckern.daylight.shellkit.SurfaceCache;
  *
  * Like the four-button widget it runs in a broadcast, often in a cold process: it
  * reads the surface cache and its own choice, and nothing else. It never calls the
- * payload and never starts a service. A tap launches the action's keyed link through
- * the link activity; the payload writes that link again, under the key in force, at
+ * payload and never starts a service while drawing. A tap launches the action's keyed
+ * link through the link activity, or, for a media action, starts the play service
+ * with the action's id (DirectPlay), which plays it with no window; the payload writes that link again, under the key in force, at
  * each start and each time the actions are published, and asks for a redraw.
  */
 public class ButtonWidgetProvider extends AppWidgetProvider {
@@ -65,15 +69,25 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
         views.setImageViewResource(R.id.button_icon, icon != 0 ? icon : R.drawable.ic_widget_button_unset);
 
         // Immutable, and one per widget: the request code is the widget's id.
-        Intent tap = face.set
-                ? SurfaceCache.viewIntent(context, face.link)
-                // Not set: this app's own chooser, for this widget. Nothing else is in the intent.
-                : new Intent(context, ButtonWidgetConfigActivity.class)
-                        .setAction(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
-                        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        views.setOnClickPendingIntent(R.id.button_root, PendingIntent.getActivity(context, widgetId, tap,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        PendingIntent onTap;
+        String direct = face.set ? SurfaceCache.get(context, SurfaceKeys.action(actionId, SurfaceKeys.DIRECT)) : "";
+        if (face.set && actionId.equals(direct) && DirectPlay.path(DirectPlay.Surface.WIDGET, Build.VERSION.SDK_INT, direct,
+                DirectPlayIntents.installed(context)) == DirectPlay.Path.SERVICE) {
+            // A media action: the play service, with this action's id and nothing else,
+            // plays it with no window. A widget tap may start a foreground service.
+            onTap = DirectPlayIntents.forWidget(context, widgetId, actionId);
+        } else {
+            Intent tap = face.set
+                    ? SurfaceCache.viewIntent(context, face.link)
+                    // Not set: this app's own chooser, for this widget. Nothing else is in the intent.
+                    : new Intent(context, ButtonWidgetConfigActivity.class)
+                            .setAction(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+                            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            onTap = PendingIntent.getActivity(context, widgetId, tap,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        }
+        views.setOnClickPendingIntent(R.id.button_root, onTap);
         return views;
     }
 }

@@ -293,6 +293,9 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService': { exported: true, permission: null, foregroundServiceType: ['mediaPlayback'] },
   // Started by this app only, when the payload has accepted a keyed media link.
   'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity': { exported: false, permission: null },
+  // Started by this app only: a widget button's immutable PendingIntent and a tile, with
+  // one action id that the payload resolves against the configured and pinned actions.
+  'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService': { exported: false, permission: null, foregroundServiceType: ['mediaPlayback'] },
   // Opening the record screen starts a recording, so only this app can: the payload on a
   // keyed memo link, and the recording's own notification.
   'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity': { exported: false, permission: null },

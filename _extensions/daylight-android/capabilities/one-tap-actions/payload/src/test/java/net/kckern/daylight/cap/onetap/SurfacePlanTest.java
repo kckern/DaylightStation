@@ -48,7 +48,7 @@ public class SurfacePlanTest {
         assertEquals("an unassigned slot is cleared, not left stale", "", cache.get("tile.2.uri"));
         assertEquals("Lights off", cache.get("tile.3.label"));
         assertEquals("", cache.get("tile.4.uri"));
-        assertEquals(12, cache.size());
+        assertEquals(16, cache.size());
     }
 
     @Test public void namesAnUnknownActionOrTooManyTiles() {
@@ -64,7 +64,7 @@ public class SurfacePlanTest {
         assertEquals("[memo, feed]", ids(p));
         assertEquals("", p.tileCache.get("tile.1.uri"));
         assertEquals("Lights off", p.tileCache.get("tile.2.label"));
-        assertEquals(12, p.tileCache.size());
+        assertEquals(16, p.tileCache.size());
         assertEquals(3, problems.size());
     }
 
@@ -100,5 +100,15 @@ public class SurfacePlanTest {
         assertEquals("pinned from the long-press menu, under the action's own id", known, pins.update.get(known).id);
         assertEquals(java.util.Arrays.asList("pin-gone", "gone", "someone-elses"), pins.disable);
         assertTrue(SurfacePlan.pins(CATALOG, java.util.Collections.<String>emptyList()).update.isEmpty());
+    }
+
+    /** A tile whose action plays household media names that action for the play service; no other tile does. */
+    @Test public void aTileOfAMediaActionIsMarkedForDirectPlay() {
+        ActionCatalog withMedia = ActionCatalog.parse(Arrays.asList("memo|New memo|mic|memo:new", "radio|Radio|play|media:plex:12345"));
+        SurfacePlan p = SurfacePlan.of(withMedia, "", "memo,radio", 4, a -> "daylight://action/" + a.id + "#k=KEY");
+        assertEquals("", p.tileCache.get("tile.1.direct"));
+        assertEquals("radio", p.tileCache.get("tile.2.direct"));
+        assertEquals("", p.tileCache.get("tile.3.direct"));
+        assertFalse("the content id is never in the cache", p.tileCache.values().toString().contains("12345"));
     }
 }

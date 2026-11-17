@@ -17,7 +17,7 @@ final class SurfacePlan {
     final List<Action> shortcuts;
     /** The action id of each tile slot, "" for an unassigned one. */
     final List<String> tiles;
-    /** tile.<n>.label, tile.<n>.icon, tile.<n>.uri for every slot; empty strings for an unassigned slot. */
+    /** tile.<n>.label, .icon, .uri and .direct for every slot; empty strings for an unassigned slot. */
     final Map<String, String> tileCache;
 
     private SurfacePlan(List<Action> shortcuts, List<String> tiles, Map<String, String> tileCache) {
@@ -76,6 +76,8 @@ final class SurfacePlan {
             cache.put(SurfaceKeys.tile(slot, SurfaceKeys.LABEL), a == null ? "" : a.label);
             cache.put(SurfaceKeys.tile(slot, SurfaceKeys.ICON), a == null ? "" : a.icon);
             cache.put(SurfaceKeys.tile(slot, SurfaceKeys.URI), a == null ? "" : linker.uri(a));
+            // The tile may start the play service with this id and no window (DirectPlay).
+            cache.put(SurfaceKeys.tile(slot, SurfaceKeys.DIRECT), a != null && a.kind == ActionCatalog.Kind.MEDIA ? a.id : "");
         }
         return new SurfacePlan(shortcuts, tiles, cache);
     }

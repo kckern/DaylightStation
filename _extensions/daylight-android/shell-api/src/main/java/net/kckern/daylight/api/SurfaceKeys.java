@@ -9,7 +9,8 @@ package net.kckern.daylight.api;
  *   tile.<1..4>.label | tile.<1..4>.icon | tile.<1..4>.uri
  *   widget.<1..4>.label | widget.<1..4>.icon | widget.<1..4>.uri
  *
- * An empty uri means the slot is unassigned.
+ * An empty uri means the slot is unassigned. Each slot and each action also has a
+ * `direct` field (see DIRECT).
  *
  * Every action is also written under its own id, for the one-action button widgets:
  * a widget remembers an action id, and its chooser lists the ids in order.
@@ -26,6 +27,12 @@ public final class SurfaceKeys {
     public static final String LABEL = "label";
     public static final String ICON = "icon";
     public static final String URI = "uri";
+    /**
+     * The action id again when the action plays household media and may be started
+     * with no window (DirectPlay); empty otherwise. Written beside label, icon and uri
+     * for a tile slot, a widget slot and every action.
+     */
+    public static final String DIRECT = "direct";
     private static final String LINK_PREFIX = "daylight://";
 
     private SurfaceKeys() { }

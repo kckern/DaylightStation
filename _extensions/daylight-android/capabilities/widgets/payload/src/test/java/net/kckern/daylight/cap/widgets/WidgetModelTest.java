@@ -25,7 +25,7 @@ public class WidgetModelTest {
         assertEquals("New memo", cache.get("widget.2.label"));
         assertEquals("", cache.get("widget.3.uri"));
         assertEquals("", cache.get("widget.4.label"));
-        assertEquals(12, cache.size());
+        assertEquals(16, cache.size());
     }
 
     @Test public void withNoListItTakesTheFirstFour() throws Exception {
@@ -50,7 +50,7 @@ public class WidgetModelTest {
         Map<String, String> cache = WidgetModel.usable(actions(), "nope,feed,a3,a4,a5,memo", problems);
         assertEquals("Feed", cache.get("widget.1.label"));
         assertEquals("Five", cache.get("widget.4.label"));
-        assertEquals(12, cache.size());
+        assertEquals(16, cache.size());
         assertEquals(2, problems.size());
     }
 
@@ -70,7 +70,7 @@ public class WidgetModelTest {
         assertEquals("mic", cache.get("action.memo.icon"));
         assertEquals("daylight://action/memo#k=K", cache.get("action.memo.uri"));
         assertEquals("", cache.get("action.a3.icon"));
-        assertEquals(1 + 5 * 3, cache.size());
+        assertEquals(1 + 5 * 4, cache.size());
     }
 
     @Test public void anActionThatIsGoneHasItsFieldsClearedSoAButtonBoundToItReadsNotSet() throws Exception {
@@ -99,6 +99,41 @@ public class WidgetModelTest {
         JSONArray many = new JSONArray();
         for (int i = 0; i < 100; i++) many.put(new org.json.JSONObject().put("id", "a" + i).put("label", "L").put("uri", "daylight://action/a" + i));
         assertEquals(WidgetModel.MAX_ACTIONS, WidgetModel.actionCache(many, "").get("action.ids").split(",").length);
+    }
+
+    // ── playing a media action with no window ────────────────────────────────
+
+    private static JSONArray withMedia() throws Exception {
+        return new JSONArray("[{\"id\":\"memo\",\"label\":\"Memo\",\"uri\":\"daylight://action/memo#k=K\"},"
+                + "{\"id\":\"radio\",\"label\":\"Radio\",\"icon\":\"play\",\"uri\":\"daylight://action/radio#k=K\",\"direct\":\"radio\"},"
+                + "{\"id\":\"odd\",\"label\":\"Odd\",\"uri\":\"daylight://action/odd#k=K\",\"direct\":\"plex:123\"},"
+                + "{\"id\":\"other\",\"label\":\"Other\",\"uri\":\"daylight://action/other#k=K\",\"direct\":\"radio\"}]");
+    }
+
+    /** The cache names the action again when it plays directly: the widget then starts the play service with that id. */
+    @Test public void aMediaActionIsMarkedForDirectPlayInItsSlotAndUnderItsId() throws Exception {
+        Map<String, String> slots = WidgetModel.cache(withMedia(), "memo,radio");
+        assertEquals("", slots.get("widget.1.direct"));
+        assertEquals("radio", slots.get("widget.2.direct"));
+        assertEquals("", slots.get("widget.3.direct"));
+        Map<String, String> byId = WidgetModel.actionCache(withMedia(), "");
+        assertEquals("radio", byId.get("action.radio.direct"));
+        assertEquals("", byId.get("action.memo.direct"));
+    }
+
+    /** Only the action's own id is ever written as direct: never content, never another action's id. */
+    @Test public void aDirectFieldThatIsNotTheActionsOwnIdIsNotWritten() throws Exception {
+        Map<String, String> byId = WidgetModel.actionCache(withMedia(), "");
+        assertEquals("", byId.get("action.odd.direct"));
+        assertEquals("", byId.get("action.other.direct"));
+        Map<String, String> slots = WidgetModel.cache(withMedia(), "odd,other");
+        assertEquals("", slots.get("widget.1.direct"));
+        assertEquals("", slots.get("widget.2.direct"));
+    }
+
+    @Test public void anActionThatIsGoneLosesItsDirectFieldToo() throws Exception {
+        Map<String, String> cache = WidgetModel.actionCache(new JSONArray("[]"), "radio");
+        assertEquals("", cache.get("action.radio.direct"));
     }
 
     @Test public void theSettingIsCheckedForShapeWhenItIsSet() {

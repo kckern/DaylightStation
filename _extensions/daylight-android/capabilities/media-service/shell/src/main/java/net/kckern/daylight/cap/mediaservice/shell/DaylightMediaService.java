@@ -72,9 +72,35 @@ public class DaylightMediaService extends MediaLibraryService {
         }
         session = builder.build();
 
+        setListener(new Listener() {
+            @Override public void onForegroundServiceStartNotAllowedException() {
+                foreground = false;
+                Log.w(TAG, "Android refused the media service's foreground start");
+            }
+        });
+
         events = new PlaybackEvents(player, media, io);
         events.attach();
         Log.i(TAG, "media service created");
+    }
+
+    /** Whether the media service holds the foreground state now. Read by PlayActionService, in process. */
+    private static volatile boolean foreground;
+
+    static boolean inForeground() { return foreground; }
+
+    /**
+     * Media3 1.1.1 moves this service into the foreground when the player starts, by
+     * calling startForegroundService on itself. From Android 12 that start can be refused
+     * while the app is in the background. Media3 catches the refusal itself (read from its
+     * bytecode: MediaSessionService.onUpdateNotificationInternal) and tells the Listener
+     * set in onCreate, which clears the flag. A play service started by a tap keeps its
+     * own foreground state while the audio plays when the flag is false (PlayStart).
+     */
+    @Override
+    public void onUpdateNotification(MediaSession session, boolean startInForegroundRequired) {
+        super.onUpdateNotification(session, startInForegroundRequired);
+        foreground = startInForegroundRequired;
     }
 
     @Override
@@ -91,10 +117,12 @@ public class DaylightMediaService extends MediaLibraryService {
 
     @Override
     public void onDestroy() {
+        clearListener();
         if (events != null) { events.detach(); events = null; }
         if (session != null) { session.release(); session = null; }
         if (player != null) { player.release(); player = null; }
         if (io != null) { io.shutdown(); io = null; }
+        foreground = false;
         Log.i(TAG, "media service destroyed");
         super.onDestroy();
     }

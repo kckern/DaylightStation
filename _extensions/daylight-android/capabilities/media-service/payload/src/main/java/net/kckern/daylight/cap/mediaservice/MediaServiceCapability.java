@@ -13,6 +13,7 @@ import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.BackendHttp;
+import net.kckern.daylight.core.spi.ActionList;
 import net.kckern.daylight.core.spi.LinkHandler;
 
 import org.json.JSONArray;
@@ -192,6 +193,7 @@ public final class MediaServiceCapability implements Capability {
             if ("browse".equals(op)) return browse(request);
             if ("resolve".equals(op)) return resolve(request);
             if ("event".equals(op)) return event(request);
+            if ("action".equals(op)) return action(request);
             return failure(400, "bad_request");
         } catch (IllegalArgumentException refused) {
             return failure(400, "bad_request");
@@ -256,6 +258,20 @@ public final class MediaServiceCapability implements Capability {
         for (Track t : r.tracks) tracks.put(t.toJson());
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
                 .put("startPositionMs", r.startPositionMs));
+    }
+
+    /**
+     * The installed play service was started by a tap on a widget or a tile and holds an
+     * action id, nothing else. The answer is the media id of the content that action is
+     * configured (or pinned) to play, or 404. Content never arrives from the tap.
+     */
+    private Outcome action(JSONObject request) throws Exception {
+        String id = Json.str(request, "action");
+        if (!net.kckern.daylight.api.SurfaceKeys.actionId(id)) throw new IllegalArgumentException("action needs an action id");
+        ActionList actions = core.services().find(ActionList.class);
+        String contentId = actions == null ? null : actions.mediaContentId(id);
+        if (!ContentId.valid(contentId)) return failure(404, "unknown_action");
+        return new Outcome(200, Replies.ok().put("mediaId", MediaId.leaf(contentId, null)));
     }
 
     private Outcome event(JSONObject e) throws Exception {

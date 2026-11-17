@@ -11,6 +11,17 @@ public interface ActionList {
     /** The event topic published after the surfaces were (re)built. */
     String PUBLISHED = "actions.published";
 
-    /** [{id, label, icon, uri}] in configured order. */
+    /**
+     * [{id, label, icon, uri, direct}] in configured order. `direct` is the action's own
+     * id when the action plays household media (a surface may then start the play
+     * service with that id and no window), and "" otherwise. No entry carries content.
+     */
     JSONArray actions();
+
+    /**
+     * The content id a media action plays, or null for any other action or an id that
+     * is not an action. The play service hands an action id to the payload, and this is
+     * where the payload, and only the payload, turns it into content.
+     */
+    default String mediaContentId(String actionId) { return null; }
 }

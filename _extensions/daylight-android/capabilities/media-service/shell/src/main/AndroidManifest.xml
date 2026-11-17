@@ -22,6 +22,14 @@
             </intent-filter>
         </service>
 
+        <!-- Not exported: started only by this app's own widget buttons (an immutable
+             PendingIntent.getForegroundService) and tiles, with one action id. It plays a
+             configured or pinned media action with no window. -->
+        <service
+            android:name="net.kckern.daylight.cap.mediaservice.shell.PlayActionService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
              media link. No window of its own. -->
         <activity
