@@ -134,6 +134,21 @@ const TYPED_SETTING_NORMALIZERS = Object.freeze({
   string: value => limitedText(value, 'value', { allowEmpty: true, max: 2048 }),
 });
 
+/**
+ * Settings of a self-describing device that are listed and never editable
+ * from the Admin console, whatever their type. Each one widens what the device
+ * will do or who may drive it: the debug switches (remote exec among them),
+ * the origins and start URL that receive the page bridge, the control API's
+ * own settings, and the lockdown policy. They are changed on the device.
+ */
+const PROTECTED_TYPED_SETTING_PREFIXES = Object.freeze(['debug.', 'control.', 'lockdown.']);
+const PROTECTED_TYPED_SETTING_KEYS = new Set(['webview.bridgeOrigins', 'webview.startUrl']);
+
+function isProtectedTypedSetting(key) {
+  return PROTECTED_TYPED_SETTING_KEYS.has(key)
+    || PROTECTED_TYPED_SETTING_PREFIXES.some(prefix => key.startsWith(prefix));
+}
+
 /** The console has one numeric control; an integer setting is shown as a number. */
 const consoleType = type => (type === 'integer' ? 'number' : type);
 
@@ -262,7 +277,7 @@ export class DeviceRemoteAdministrationService {
             key,
             type: editableType ? consoleType(type) : displayType(value),
             value: sensitive ? null : value,
-            editable: editableType && !sensitive,
+            editable: editableType && !sensitive && !isProtectedTypedSetting(key),
             sensitive,
           };
         });
@@ -312,22 +327,35 @@ export class DeviceRemoteAdministrationService {
   }
 
   async updateSetting(deviceId, key, value) {
-    const typed = await this.#typedSettings(deviceId);
-    let schema;
+    const notEditable = () => invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+    if (isSensitiveSetting(key)) throw notEditable();
+
+    // The curated checks come first and touch nothing but their arguments, as
+    // they always have: a bad key or value for a Fully device is refused
+    // before anything that reads the device list can fail.
+    let schema = SETTING_SCHEMAS[key] ?? null;
+    let normalized = schema ? schema.normalize(value) : undefined;
+
+    // Only then is the device asked whether it describes its own settings.
+    // For a key off the curated list, a failure that is not the gateway's own
+    // (an unreadable device list, say) leaves the answer the curated list
+    // already gave.
+    let typed;
+    try {
+      typed = await this.#typedSettings(deviceId);
+    } catch (error) {
+      if (schema || error?.name === 'DeviceRemoteGatewayError') throw error;
+      throw notEditable();
+    }
     if (typed) {
       const listed = typed.find(setting => setting.key === key);
       const normalize = listed ? TYPED_SETTING_NORMALIZERS[listed.type] : null;
-      if (!listed || !normalize || isSensitiveSetting(key)) {
-        throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
-      }
+      if (!listed || !normalize || isProtectedTypedSetting(key)) throw notEditable();
       schema = { type: consoleType(listed.type), normalize };
-    } else {
-      schema = SETTING_SCHEMAS[key];
-      if (!schema || isSensitiveSetting(key)) {
-        throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
-      }
+      normalized = normalize(value);
+    } else if (!schema) {
+      throw notEditable();
     }
-    const normalized = schema.normalize(value);
     const startedAt = Date.now();
     try {
       await this.#gateway.writeSetting(deviceId, key, normalized);
