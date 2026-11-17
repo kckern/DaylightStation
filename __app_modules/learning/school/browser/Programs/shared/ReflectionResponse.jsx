@@ -9,7 +9,7 @@ import { useSchoolCommands } from '../../portal/useSchoolCommands.js';
 import './ReflectionResponse.scss';
 
 const NO_EVENTS = Object.freeze({});
-export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusOnOpen = true, focusAfterTake = true, transcribingLabel = null, afterTakeHint = null }) {
+export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusOnOpen = true, focusAfterTake = true, transcribingLabel = null, afterTakeHint = null, describedBy = undefined }) {
   const [text, setText] = useState(initial);
   const [audioRef, setAudioRef] = useState(initialAudioRef);
   const [via, setVia] = useState(initialVia ?? (initial ? 'typed' : null));
@@ -78,7 +78,7 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
   useProgramKeys({ ...(recorder.unavailable ? {} : { ' ': () => { if (!text || recording) record(); } }), enter: submit, tab: () => speak(prompt.text), ...(onBack ? { arrowleft: onBack } : {}) });
   return <section className="reflection-response" aria-label="Tell me">
     <h2 className="reflection-response__prompt">{prompt.text}</h2>
-    <textarea ref={field} className="reflection-response__field" value={text} rows={4} autoFocus={focusOnOpen} aria-label={prompt.text}
+    <textarea ref={field} className="reflection-response__field" value={text} rows={4} autoFocus={focusOnOpen} aria-label={prompt.text} aria-describedby={describedBy}
       onBlur={()=>{if(!capturing&&!busy)onDraft?.({text,via:via??'typed',audioRef,edited});}}
       onChange={e => { setText(e.target.value); if (!e.target.value) setHint(null); if (via === 'voice') setEdited(true); else setVia('typed'); }}
       onKeyDown={e => {

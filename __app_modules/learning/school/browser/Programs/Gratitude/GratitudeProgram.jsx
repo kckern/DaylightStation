@@ -45,10 +45,16 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
     if(sending.current)return;sending.current=true;setBusy(true);
     const signature=JSON.stringify(answer);
     if(lastBody.current?.signature!==signature)lastBody.current={signature,body:{...answer,attemptId:crypto.randomUUID()}};
-    try{const result=await api.submit(view.studyDay,lastBody.current.body);if(apply(result)&&result.data.phase!=='pending')lastBody.current=null;if(result.status===429)apply(await api.day(view.studyDay));}
+    try{
+      const result=await api.submit(view.studyDay,lastBody.current.body);
+      if(apply(result)&&result.data.phase!=='pending')lastBody.current=null;
+      if(result.status===429)apply(await api.day(view.studyDay));
+      // A stale tab (e.g. a follow-up asked in another tab) moves to the current phase, then says why.
+      if(result.status===409){lastBody.current=null;const message=result.data?.error??null;if(apply(await api.day(view.studyDay))&&message&&live.current)setError(message);}
+    }
     finally{sending.current=false;if(live.current)setBusy(false);}
   };
-  const retry=async()=>{if(sending.current)return;sending.current=true;setBusy(true);try{const result=await api.retry(view.studyDay,{attemptId:view.attemptId});if(apply(result)&&result.data.phase==='completed'&&view.studyDay!==today)await open();}finally{sending.current=false;if(live.current)setBusy(false);}};
+  const retry=async()=>{if(sending.current)return;sending.current=true;setBusy(true);try{const result=await api.retry(view.studyDay,{attemptId:view.attemptId});if(apply(result)&&result.data.phase!=='pending')lastBody.current=null;if(result.ok&&result.data.phase==='completed'&&view.studyDay!==today)await open();}finally{sending.current=false;if(live.current)setBusy(false);}};
   const saveDraft=async body=>{if(sending.current||!ANSWER_PHASES.has(phaseRef.current))return;await api.draft(view.studyDay,body);};
   const close=()=>{gratitudeLog.closed({phase:view?.phase??null});onExit?.();};
   useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})});
@@ -62,8 +68,8 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
       <ReflectionResponse key={`${view.studyDay}:${view.attemptId??'new'}`} prompt={view.prompt} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={submit} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
     </>}
     {view?.phase==='follow-up'&&view.followUp&&<>
-      <p className="gratitude-program__first">You said: “{view.followUp.firstText}”</p>
-      <ReflectionResponse key={`${view.studyDay}:follow-up:${view.attemptId}`} prompt={{id:'gratitude-follow-up',text:view.followUp.question,required:true}} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={answer=>submit({...answer,followUpOf:view.attemptId})} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
+      <p className="gratitude-program__first" id={`gratitude-first-${view.attemptId}`}>You said: “{view.followUp.firstText}”</p>
+      <ReflectionResponse key={`${view.studyDay}:follow-up:${view.attemptId}`} prompt={{id:'gratitude-follow-up',text:view.followUp.question,required:true}} describedBy={`gratitude-first-${view.attemptId}`} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={answer=>submit({...answer,followUpOf:view.attemptId})} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
     </>}
     {view?.phase==='cooldown'&&<div className="gratitude-program__message" role="status"><h2>Take a little break</h2><p>{view.reason==='repetition'?'You already used that gratitude topic recently. Think of something different.':'Please take some time to think of something you are grateful for.'}</p><p>Try again in {Math.max(1,Math.ceil(remaining/60000))} minutes.</p></div>}
     {['pending','assessing'].includes(view?.phase)&&<div className="gratitude-program__message"><p role="status">Your answer is saved and waiting to be processed.</p><TouchButton disabled={busy} onClick={retry}>Try saved answer again</TouchButton></div>}

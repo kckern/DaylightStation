@@ -174,3 +174,9 @@ describe('shared reflection response', () => {
     recorder.verdict = null;
   });
 });
+it('adds aria-describedby only when a description id is given',()=>{
+  const {unmount}=render(<ReflectionResponse prompt={{id:'p',text:'Q?'}} onSubmit={()=>{}} onTake={async()=>({})}/>);
+  expect(screen.getByRole('textbox')).not.toHaveAttribute('aria-describedby');unmount();
+  render(<ReflectionResponse prompt={{id:'p',text:'Q?'}} describedBy="said" onSubmit={()=>{}} onTake={async()=>({})}/>);
+  expect(screen.getByRole('textbox')).toHaveAttribute('aria-describedby','said');
+});
