@@ -538,6 +538,99 @@ export function reboot(options) {
 }
 
 /**
+ * A member of `window.daylight` read directly, or null.
+ *
+ * The phone app's bridge carries the pin members and none of the kiosk members
+ * `daylightAdapter()` qualifies on, so the pin calls cannot go through
+ * `bridge()`. Fully never has them.
+ */
+function daylightMember(name) {
+  try {
+    const raw = globalThis.daylight;
+    if (!raw) return null;
+    const fn = raw[name];
+    return typeof fn === 'function' ? fn.bind(raw) : null;
+  } catch {
+    return null; // A bridge object may throw on property access.
+  }
+}
+
+/** A refusal reason is one lower-case word (phone.md); anything else reads as failed. */
+const PIN_REASON_PATTERN = /^[a-z_]{1,40}$/;
+
+function normalizePinAnswer(answer) {
+  let value = answer;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return { accepted: false, reason: 'failed' };
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.accepted !== 'boolean') {
+    return { accepted: false, reason: 'failed' };
+  }
+  if (value.accepted) return { accepted: true };
+  const reason = typeof value.reason === 'string' && PIN_REASON_PATTERN.test(value.reason)
+    ? value.reason
+    : 'failed';
+  return { accepted: false, reason };
+}
+
+/**
+ * True when this page can ask the phone app to pin media to the home screen:
+ * the phone build's bridge is here, this document holds its token, it is the
+ * top frame on an allowed origin, and the launcher can pin. False everywhere
+ * else (kiosks, Fully, ordinary browsers, frames) and when the call throws.
+ * Not rate limited; does not log.
+ *
+ * @returns {boolean}
+ */
+export function canPinMedia() {
+  if (!daylightMember('pinMedia')) return false;
+  const can = daylightMember('canPinMedia');
+  if (!can) return false;
+  try {
+    return can() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ask the phone app to pin one media item to the home screen.
+ *
+ * `accepted: true` means Android's own pin dialog is showing; whether the owner
+ * confirms it is never reported. The answer holds `accepted` and, on a refusal,
+ * one `reason` word (`refused`, `not_top_frame`, `rate_limited`, `bad_request`,
+ * `invalid_content_id`, `invalid_label`, `not_available`, `launcher_cannot_pin`,
+ * `launcher_refused`, `failed`). A missing member reads `not_available`; a throw,
+ * an unparseable answer or an answer of another shape reads `failed`. Never
+ * throws. The log line carries the outcome only, never the content id or label.
+ *
+ * @param {{contentId: string, label: string}} request
+ * @returns {{accepted: boolean, reason?: string}}
+ */
+export function pinMedia({ contentId, label } = {}) {
+  const pin = daylightMember('pinMedia');
+  let result;
+  if (!pin) {
+    result = { accepted: false, reason: 'not_available' };
+  } else {
+    try {
+      result = normalizePinAnswer(pin(JSON.stringify({ contentId, label })));
+    } catch {
+      // The error text could name the request, so it is not logged.
+      result = { accepted: false, reason: 'failed' };
+    }
+  }
+  logger().info('fkb.pinMedia.result', result.accepted
+    ? { accepted: true, reason: null }
+    : { accepted: false, reason: result.reason });
+  return result;
+}
+
+/**
  * Schedule dismiss after an FKB app launch.
  * Auto-dismisses after a delay + registers onResume as backup.
  * Call this AFTER the launch succeeds.
