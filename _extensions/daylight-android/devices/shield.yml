@@ -1,0 +1,13 @@
+# NVIDIA Shield TV (Android 11). Helpers only; the kiosk arrives in phase 3.
+id: shield
+package: net.kckern.daylight.shield
+android: { minSdk: 30, targetSdk: 33 }
+abis: []
+control: { port: 8780, lifelinePort: 8781 }
+shell: { versionCode: 1, versionName: "0.2-helpers" }
+# microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
+foregroundServiceTypes: [microphone, location]
+capabilities:
+  - debug-tools
+defaults:
+  debug.execEnabled: false

@@ -1,0 +1,22 @@
+# Piano tablet (Samsung SM-T590, Android 10). Helpers only; the kiosk arrives in phase 3.
+id: piano
+package: net.kckern.daylight.piano
+android: { minSdk: 29, targetSdk: 29 }
+# armeabi-v7a is the tablet. arm64-v8a is for an emulator or a replacement tablet.
+abis: [armeabi-v7a, arm64-v8a]
+control: { port: 8780, lifelinePort: 8781 }
+shell: { versionCode: 1, versionName: "0.2-helpers" }
+foregroundServiceTypes: [mediaPlayback]
+# Declared now, as the piano-bridge shell did, because a payload update cannot add a
+# permission: that takes an install and a tap on the tablet.
+permissions:
+  - android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
+  - android.permission.CHANGE_WIFI_STATE
+  - android.permission.VIBRATE
+  - android.permission.SYSTEM_ALERT_WINDOW
+  - android.permission.QUERY_ALL_PACKAGES
+capabilities:
+  - debug-tools
+  - accessibility
+defaults:
+  debug.execEnabled: false

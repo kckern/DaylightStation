@@ -12,15 +12,21 @@ android {
         }
     }
 
-    // Each device variant compiles a DeviceConfig generated from its YAML.
+    // Each device variant compiles a DeviceConfig generated from its YAML. It is rendered
+    // when the task runs, so a missing placeholder fails the build of that one device
+    // and not every Gradle command.
     libraryVariants.all { variant ->
         def device = catalog.device(variant.flavorName)
-        def source = net.kckern.daylight.build.DeviceConfigSource.render(device, catalog, rootProject.ext.payloadVersion)
         def outDir = new File(buildDir, "generated/daylight/${variant.name}")
         def gen = tasks.create("generate${variant.name.capitalize()}DeviceConfig") {
-            inputs.property('source', source)
+            inputs.file rootProject.file("devices/${device.id}.yml")
+            inputs.property('payloadVersion', rootProject.ext.payloadVersion)
             outputs.dir outDir
+            // Placeholder values live outside the project, so Gradle cannot track them.
+            outputs.upToDateWhen { false }
             doLast {
+                def source = net.kckern.daylight.build.DeviceConfigSource.render(
+                        device, catalog, rootProject.ext.payloadVersion, rootProject.ext.placeholders)
                 def f = new File(outDir, 'net/kckern/daylight/generated/DeviceConfig.java')
                 f.parentFile.mkdirs()
                 f.setText(source, 'UTF-8')

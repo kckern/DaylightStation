@@ -30,6 +30,10 @@ public final class DeviceCatalog {
     static final Set<String> RESERVED_IDS = Collections.unmodifiableSet(
             new LinkedHashSet<>(Arrays.asList("debug", "release", "main", "test", "androidTest")));
     private static final int LOWEST_SDK = 26;
+    /** Written into a generated manifest, so it may hold nothing but a dotted name. */
+    private static final Pattern PERMISSION = Pattern.compile("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");
+    private static final Set<String> SERVICE_TYPES = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+            "dataSync", "mediaPlayback", "phoneCall", "location", "connectedDevice", "mediaProjection", "camera", "microphone")));
 
     private final Map<String, CapabilitySpec> capabilities;
     private final Map<String, DeviceSpec> devices;
@@ -64,14 +68,24 @@ public final class DeviceCatalog {
                 String name = dir.getName();
                 boolean hasPayload = new File(dir, "payload/build.gradle").isFile();
                 boolean hasShell = new File(dir, "shell/build.gradle").isFile();
-                Object entry = asMap(parseYaml(read(meta), "capability '" + name + "'"), "capability '" + name + "'").get("entry");
+                Map<String, Object> doc = asMap(parseYaml(read(meta), "capability '" + name + "'"), "capability '" + name + "'");
+                Object entry = doc.get("entry");
                 if (entry != null && !(entry instanceof String)) {
                     throw new CatalogException("capability '" + name + "': 'entry' must be a string");
                 }
                 if (hasPayload && entry == null) {
                     throw new CatalogException("capability '" + name + "' has a payload but no 'entry'");
                 }
-                caps.put(name, new CapabilitySpec(name, (String) entry, hasPayload, hasShell));
+                caps.put(name, new CapabilitySpec(name, (String) entry, hasPayload, hasShell,
+                        Collections.unmodifiableList(strings(doc.get("requires"), "capability '" + name + "' requires")),
+                        Boolean.TRUE.equals(doc.get("native"))));
+            }
+        }
+        for (CapabilitySpec c : caps.values()) {
+            for (String needed : c.requires) {
+                if (!caps.containsKey(needed)) {
+                    throw new CatalogException("capability '" + c.name + "' requires unknown capability '" + needed + "'");
+                }
             }
         }
         Map<String, DeviceSpec> devices = new TreeMap<>();
@@ -138,6 +152,25 @@ public final class DeviceCatalog {
         for (String c : capabilities) {
             if (!caps.containsKey(c)) throw new CatalogException(where + ": unknown capability '" + c + "'");
         }
+        for (String c : capabilities) {
+            CapabilitySpec spec = caps.get(c);
+            for (String needed : spec.requires) {
+                if (!capabilities.contains(needed)) {
+                    throw new CatalogException(where + ": capability '" + c + "' requires '" + needed + "'");
+                }
+            }
+            if (spec.nativeCode && abis.isEmpty()) {
+                throw new CatalogException(where + ": capability '" + c + "' has native code; 'abis' must not be empty");
+            }
+        }
+        List<String> extraPermissions = strings(doc.get("permissions"), where + " permissions");
+        for (String p : extraPermissions) {
+            if (!PERMISSION.matcher(p).matches()) throw new CatalogException(where + ": '" + p + "' is not a permission name");
+        }
+        List<String> serviceTypes = strings(doc.get("foregroundServiceTypes"), where + " foregroundServiceTypes");
+        for (String t : serviceTypes) {
+            if (!SERVICE_TYPES.contains(t)) throw new CatalogException(where + ": unknown foregroundServiceType '" + t + "'");
+        }
 
         Map<String, Object> defaults = new LinkedHashMap<>();
         Object rawDefaults = doc.get("defaults");
@@ -152,7 +185,8 @@ public final class DeviceCatalog {
         }
 
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
-                Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults));
+                Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults),
+                Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes));
     }
 
     /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */

@@ -12,7 +12,8 @@ import java.util.Map;
 public class DeviceConfigSourceTest {
     private static DeviceSpec device(Map<String, Object> defaults) {
         return new DeviceSpec("portal", "net.kckern.daylight.portal", 26, 28, Collections.emptyList(),
-                8780, 8781, 1, "0.1", Arrays.asList("debug-tools"), defaults);
+                8780, 8781, 1, "0.1", Arrays.asList("debug-tools"), defaults,
+                Collections.emptyList(), Collections.emptyList());
     }
 
     @Test public void rendersIdentityPortAndEntries() {

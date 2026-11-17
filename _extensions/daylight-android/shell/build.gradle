@@ -49,6 +49,23 @@ android {
     lint { disable 'MissingTvBanner' }
 }
 
+// Each device's extra permissions and foreground service types, as a manifest
+// fragment in that flavor's source set.
+catalog.devices().each { d ->
+    def dir = new File(buildDir, "generated/manifests/${d.id}")
+    def xml = net.kckern.daylight.build.DeviceManifestSource.render(d)
+    def gen = tasks.create("generate${d.id.capitalize()}Manifest") {
+        inputs.property('xml', xml)
+        outputs.dir dir
+        doLast {
+            dir.mkdirs()
+            new File(dir, 'AndroidManifest.xml').setText(xml, 'UTF-8')
+        }
+    }
+    android.sourceSets.getByName(d.id).manifest.srcFile new File(dir, 'AndroidManifest.xml')
+    tasks.matching { it.name ==~ "process${d.id.capitalize()}(Debug|Release)(Main)?Manifest" }.all { it.dependsOn gen }
+}
+
 // A device build without a control token would install an API nobody can reach.
 catalog.devices().each { d ->
     tasks.matching { it.name ==~ "pre${d.id.capitalize()}(Debug|Release)Build" }.all {

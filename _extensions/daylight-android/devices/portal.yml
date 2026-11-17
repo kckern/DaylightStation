@@ -1,11 +1,12 @@
-# Facebook Portal panel (Android 9). Phase 1 build: foundation only.
+# Facebook Portal panel (Android 9). Helpers only; the kiosk arrives in phase 3.
 id: portal
 package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 1, versionName: "0.1-foundation" }
+shell: { versionCode: 1, versionName: "0.2-helpers" }
 capabilities:
   - debug-tools
+  - accessibility
 defaults:
   debug.execEnabled: false

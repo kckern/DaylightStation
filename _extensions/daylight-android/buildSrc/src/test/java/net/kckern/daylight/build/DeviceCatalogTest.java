@@ -154,6 +154,39 @@ public class DeviceCatalogTest {
         assertTrue(message(() -> DeviceCatalog.load(root)).contains("portal.yml: not valid YAML"));
     }
 
+    @Test public void rejectsACapabilityWhoseRequirementIsNotListed() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/volume-keys/capability.yml"),
+              "entry: a.b.VolumeKeys\nrequires: [accessibility]\n");
+        write(new File(root, "capabilities/volume-keys/payload/build.gradle"), "");
+        write(new File(root, "capabilities/accessibility/capability.yml"), "permissions: []\n");
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("[debug-tools]", "[debug-tools, volume-keys]"));
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'volume-keys' requires 'accessibility'"));
+    }
+
+    @Test public void rejectsANativeCapabilityOnADeviceWithoutAbis() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/synth/capability.yml"), "entry: a.b.Synth\nnative: true\n");
+        write(new File(root, "capabilities/synth/payload/build.gradle"), "");
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("[debug-tools]", "[debug-tools, synth]"));
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'synth' has native code; 'abis' must not be empty"));
+    }
+
+    @Test public void readsExtraPermissionsAndForegroundServiceTypes() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL
+                + "permissions: [android.permission.VIBRATE]\nforegroundServiceTypes: [microphone, location]\n");
+        DeviceSpec d = DeviceCatalog.load(root).device("portal");
+        assertEquals(java.util.Arrays.asList("android.permission.VIBRATE"), d.extraPermissions);
+        assertEquals(java.util.Arrays.asList("microphone", "location"), d.foregroundServiceTypes);
+    }
+
+    @Test public void rejectsAnUnknownForegroundServiceType() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL + "foregroundServiceTypes: [telepathy]\n");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("unknown foregroundServiceType 'telepathy'"));
+    }
+
     @Test public void aCapabilityFileCannotInstantiateArbitraryJavaTypes() throws Exception {
         File root = root();
         write(new File(root, "capabilities/debug-tools/capability.yml"),

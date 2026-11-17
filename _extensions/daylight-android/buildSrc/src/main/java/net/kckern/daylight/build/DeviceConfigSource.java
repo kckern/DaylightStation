@@ -16,7 +16,21 @@ public final class DeviceConfigSource {
         return render(device, entries, payloadVersion);
     }
 
+    /** As above, with every {placeholder} in a string default resolved from the private file. */
+    public static String render(DeviceSpec device, DeviceCatalog catalog, String payloadVersion, Placeholders placeholders) {
+        List<String> entries = new java.util.ArrayList<>();
+        for (String name : device.capabilities) {
+            CapabilitySpec c = catalog.capability(name);
+            if (c.hasPayload) entries.add(c.entry);
+        }
+        return render(device, entries, payloadVersion, placeholders.resolveAll(device.defaults, device.id + ".yml"));
+    }
+
     static String render(DeviceSpec device, List<String> entries, String payloadVersion) {
+        return render(device, entries, payloadVersion, device.defaults);
+    }
+
+    private static String render(DeviceSpec device, List<String> entries, String payloadVersion, Map<String, Object> defaults) {
         StringBuilder s = new StringBuilder();
         s.append("// Generated from devices/").append(device.id).append(".yml. Do not edit.\n");
         s.append("package net.kckern.daylight.generated;\n\n");
@@ -28,7 +42,7 @@ public final class DeviceConfigSource {
         s.append("    public static final String[] CAPABILITY_ENTRIES = {\n");
         for (String e : entries) s.append("        ").append(javaString(e)).append(",\n");
         s.append("    };\n");
-        s.append("    public static final String DEFAULTS_JSON = ").append(javaString(defaultsJson(device.defaults))).append(";\n");
+        s.append("    public static final String DEFAULTS_JSON = ").append(javaString(defaultsJson(defaults))).append(";\n");
         s.append("}\n");
         return s.toString();
     }

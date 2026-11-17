@@ -1,2 +1,7 @@
 # Remote diagnostics. Phase 1: device info. Phase 3 adds screenshot, eval, fps, exec, logcat.
 entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability
+# For the /logcat and /exec routes phase 3 adds. Declared now because a payload
+# update cannot add a permission.
+permissions:
+  - android.permission.READ_LOGS
+  - android.permission.DUMP

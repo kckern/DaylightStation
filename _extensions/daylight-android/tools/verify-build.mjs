@@ -4,6 +4,7 @@
 // .sha256 file (when that file exists), and exactly the listed capabilities.
 //
 //   node tools/verify-build.mjs portal
+//   node tools/verify-build.mjs piano --legacy   (also compare with tools/legacy-permissions.yml)
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -57,11 +58,47 @@ check(versionCode === device.shell.versionCode, `versionCode is ${versionCode}, 
 const expectedPermissions = [...new Set([
   ...BASE_PERMISSIONS,
   ...device.capabilities.flatMap((name) => capabilities[name]?.permissions || []),
+  ...(device.permissions || []),
 ])].sort();
 const extra = permissions.filter((p) => !expectedPermissions.includes(p));
 const missing = expectedPermissions.filter((p) => !permissions.includes(p));
 check(extra.length === 0, `unexpected permissions: ${extra.join(', ')}`);
 check(missing.length === 0, `missing permissions: ${missing.join(', ')}`);
+
+// The shell service's foreground types must be exactly the device file's.
+// aapt2 prints the flags attribute as a hex mask, for example
+//   A: http://schemas.android.com/apk/res/android:foregroundServiceType(0x01010599)=0x00000088
+// and prints no such line when the service has no type.
+const TYPE_BITS = { dataSync: 1, mediaPlayback: 2, phoneCall: 4, location: 8, connectedDevice: 16, mediaProjection: 32, camera: 64, microphone: 128 };
+const tree = execFileSync(join(sdk, 'build-tools', buildTools, 'aapt2'), ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk], { encoding: 'utf8' });
+const typeMatch = /foregroundServiceType\(0x[0-9a-f]+\)=(?:\(type 0x[0-9a-f]+\))?(0x[0-9a-f]+|\d+)/i.exec(tree);
+const builtTypes = typeMatch ? Number(typeMatch[1]) : 0;
+const wantedTypes = (device.foregroundServiceTypes || []).reduce((mask, t) => mask | TYPE_BITS[t], 0);
+check(builtTypes === wantedTypes, `foregroundServiceType mask is ${builtTypes}, expected ${wantedTypes}`);
+
+// A capability with native code must ship a library for every ABI of the device.
+const entries = execFileSync('unzip', ['-Z1', apk], { encoding: 'utf8' }).split('\n');
+for (const name of device.capabilities) {
+  if (!capabilities[name]?.native) continue;
+  for (const abi of device.abis || []) {
+    check(entries.some((e) => e.startsWith(`lib/${abi}/`) && e.endsWith('.so')), `capability '${name}' has no native library for ${abi}`);
+  }
+}
+
+// --legacy: the APK's permissions must equal the old helper APKs' for this device,
+// plus the additions and minus the removals recorded with a reason.
+if (process.argv.includes('--legacy')) {
+  const ledger = parse(readFileSync(join(root, 'tools/legacy-permissions.yml'), 'utf8'))[id];
+  check(Boolean(ledger), `no entry for '${id}' in tools/legacy-permissions.yml`);
+  if (ledger) {
+    const wanted = [...new Set([...ledger.legacy, ...Object.keys(ledger.added || {})])]
+      .filter((p) => !Object.keys(ledger.dropped || {}).includes(p)).sort();
+    const notYet = wanted.filter((p) => !permissions.includes(p));
+    const unexplained = permissions.filter((p) => !wanted.includes(p));
+    check(notYet.length === 0, `legacy permissions not in the APK: ${notYet.join(', ')}`);
+    check(unexplained.length === 0, `permissions with no legacy entry or recorded reason: ${unexplained.join(', ')}`);
+  }
+}
 
 // The baked payload must define exactly the listed capabilities' entry classes.
 let dex = Buffer.alloc(0);

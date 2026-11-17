@@ -9,6 +9,9 @@ allprojects {
 
 // Parsed and validated by buildSrc. Every module reads devices from here.
 ext.catalog = net.kckern.daylight.build.DeviceCatalog.load(rootDir)
+// Addresses and device identities resolve from the private file, never from the repo.
+def privatePath = project.findProperty('controlTokens') ?: System.getenv('DAYLIGHT_ANDROID_TOKENS')
+ext.placeholders = net.kckern.daylight.build.Placeholders.load(privatePath ? new File(privatePath.toString()) : null)
 // Also returned by the payload's version(). Override with -PpayloadVersion=p2-...
 ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p1-foundation'
 apply from: 'gradle/payload-dex.gradle'

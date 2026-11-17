@@ -1,0 +1,72 @@
+# What each old helper APK declared, and every difference in the new APK with its reason.
+# verify-build.mjs --legacy enforces: new = legacy + added - dropped.
+piano:   # piano-bridge
+  legacy:
+    - android.permission.FOREGROUND_SERVICE
+    - android.permission.POST_NOTIFICATIONS
+    - android.permission.RECEIVE_BOOT_COMPLETED
+    - android.permission.INTERNET
+    - android.permission.READ_EXTERNAL_STORAGE
+    - android.permission.REQUEST_INSTALL_PACKAGES
+    - android.permission.READ_LOGS
+    - android.permission.DUMP
+    - android.permission.WRITE_SECURE_SETTINGS
+    - android.permission.BLUETOOTH
+    - android.permission.BLUETOOTH_ADMIN
+    - android.permission.ACCESS_FINE_LOCATION
+    - android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+    - android.permission.WAKE_LOCK
+    - android.permission.MODIFY_AUDIO_SETTINGS
+    - android.permission.ACCESS_WIFI_STATE
+    - android.permission.CHANGE_WIFI_STATE
+    - android.permission.ACCESS_NETWORK_STATE
+    - android.permission.VIBRATE
+    - android.permission.SYSTEM_ALERT_WINDOW
+    - android.permission.QUERY_ALL_PACKAGES
+    - android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
+    - android.permission.BLUETOOTH_SCAN
+    - android.permission.BLUETOOTH_CONNECT
+  added: {}
+  dropped: {}
+portal:  # portal-keys
+  legacy:
+    - android.permission.INTERNET
+    - android.permission.BLUETOOTH
+    - android.permission.BLUETOOTH_ADMIN
+    - android.permission.ACCESS_COARSE_LOCATION
+    - android.permission.REQUEST_INSTALL_PACKAGES
+    - android.permission.READ_LOGS
+    - android.permission.DUMP
+    - android.permission.WRITE_SECURE_SETTINGS
+    - android.permission.RECEIVE_BOOT_COMPLETED
+    - android.permission.FOREGROUND_SERVICE
+    - android.permission.WAKE_LOCK
+    - android.permission.ACCESS_WIFI_STATE
+    - android.permission.ACCESS_NETWORK_STATE
+  added:
+    android.permission.POST_NOTIFICATIONS: base set of every device since phase 1
+    android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: core battery exemption, shared by all devices
+  dropped: {}
+shield:  # audio-bridge and supervision-guard together
+  legacy:
+    - android.permission.RECORD_AUDIO
+    - android.permission.FOREGROUND_SERVICE
+    - android.permission.RECEIVE_BOOT_COMPLETED
+    - android.permission.INTERNET
+    - android.permission.SYSTEM_ALERT_WINDOW
+    - android.permission.BLUETOOTH
+    - android.permission.BLUETOOTH_ADMIN
+    - android.permission.ACCESS_FINE_LOCATION
+    - android.permission.BLUETOOTH_SCAN
+    - android.permission.BLUETOOTH_CONNECT
+    - android.permission.WAKE_LOCK
+  added:
+    android.permission.POST_NOTIFICATIONS: base set of every device since phase 1
+    android.permission.REQUEST_INSTALL_PACKAGES: core self-update, shared by all devices
+    android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: core battery exemption, shared by all devices
+    android.permission.ACCESS_WIFI_STATE: core wifi link telemetry
+    android.permission.ACCESS_NETWORK_STATE: core wifi link telemetry
+    android.permission.WRITE_SECURE_SETTINGS: core settings control (accessibility self-enable)
+    android.permission.READ_LOGS: debug-tools, granted over ADB or inert
+    android.permission.DUMP: debug-tools, granted over ADB or inert
+  dropped: {}
