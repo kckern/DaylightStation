@@ -5,7 +5,7 @@ android: { minSdk: 29, targetSdk: 29 }
 # armeabi-v7a is the tablet. arm64-v8a is for an emulator or a replacement tablet.
 abis: [armeabi-v7a, arm64-v8a]
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 19, versionName: "0.3-kiosk" }
+shell: { versionCode: 20, versionName: "0.3-kiosk" }
 foregroundServiceTypes: [mediaPlayback]
 # Declared now, as the piano-bridge shell did, because a payload update cannot add a
 # permission: that takes an install and a tap on the tablet.

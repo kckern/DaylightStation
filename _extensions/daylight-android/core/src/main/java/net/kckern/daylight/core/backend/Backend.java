@@ -97,6 +97,46 @@ public final class Backend {
         return path;
     }
 
+    /** Path segments of unreserved characters only: no escapes, so nothing can hide a segment. */
+    private static final Pattern PAGE_PATH = Pattern.compile("/|(/[A-Za-z0-9._~-]+)+/?");
+    private static final Pattern PAGE_TAIL = Pattern.compile("[A-Za-z0-9._~%&=+:,@/!*()$;?#-]*");
+    private static final int PAGE_MAX = 2000;
+
+    /**
+     * A path of the household site that a link may open in the page, or
+     * IllegalArgumentException. Stricter than {@link #checkedPath}, because a link can
+     * come from any app or web page on the device:
+     *
+     *  - segments hold letters, digits, '.', '_', '~' and '-' only (no percent escapes,
+     *    no empty, "." or ".." segment), so what is checked is what the server sees;
+     *  - the first segment is never "api" in any case: opening a page must not be a way
+     *    to send a request to an API route from a device the backend trusts;
+     *  - an optional query and fragment of URL characters, with no quotes, angle
+     *    brackets, spaces or control characters.
+     */
+    public static String pagePath(String raw) {
+        if (raw == null || raw.length() > PAGE_MAX) throw new IllegalArgumentException("not a page path");
+        int cut = raw.length();
+        for (char stop : new char[] { '?', '#' }) {
+            int i = raw.indexOf(stop);
+            if (i >= 0 && i < cut) cut = i;
+        }
+        String path = raw.substring(0, cut);
+        String tail = raw.substring(cut);
+        if (!PAGE_PATH.matcher(path).matches() || !PAGE_TAIL.matcher(tail).matches()) {
+            throw new IllegalArgumentException("not a page path");
+        }
+        for (String segment : path.split("/")) {
+            if (segment.equals(".") || segment.equals("..")) throw new IllegalArgumentException("not a page path");
+        }
+        String first = path.length() > 1 ? path.substring(1).split("/")[0] : "";
+        if (first.equalsIgnoreCase("api")) throw new IllegalArgumentException("a link cannot open an API route");
+        return raw;
+    }
+
+    /** The absolute URL of a page path on the backend's origin. */
+    public String pageUrl(String path) { return baseUrl() + pagePath(path); }
+
     /** A media or image reference made absolute, or null when it points anywhere but the backend. */
     public String absolute(String ref) {
         if (ref == null || ref.isEmpty()) return null;

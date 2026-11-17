@@ -1,0 +1,6 @@
+# Deep links: the daylight:// scheme and https links of the household site, received by
+# one link activity in shell/ and decided here. Household pushes keep arriving through
+# the Home Assistant relay; this capability carries no push transport. The app's own
+# local notifications come with a later task.
+entry: net.kckern.daylight.cap.notifications.NotificationsCapability
+permissions: []

@@ -195,6 +195,22 @@ public final class DeviceCatalog {
             if (!SERVICE_TYPES.contains(t)) throw new CatalogException(where + ": unknown foregroundServiceType '" + t + "'");
         }
 
+        // The host whose https links the link activity is offered for. It is private, so
+        // the file holds a {placeholder}; the generated manifest resolves and checks it.
+        String appLinksHost = "";
+        if (doc.containsKey("appLinks")) {
+            Object rawLinks = doc.get("appLinks");
+            if (!(rawLinks instanceof Map)) throw new CatalogException(where + ": appLinks must be a mapping with 'host'");
+            Object host = ((Map<?, ?>) rawLinks).get("host");
+            if (!(host instanceof String) || ((String) host).trim().isEmpty()) {
+                throw new CatalogException(where + ": appLinks.host must be a non-empty string");
+            }
+            if (!capabilities.contains(DeviceManifestSource.LINK_CAPABILITY)) {
+                throw new CatalogException(where + ": appLinks needs the '" + DeviceManifestSource.LINK_CAPABILITY + "' capability");
+            }
+            appLinksHost = ((String) host).trim();
+        }
+
         Map<String, Object> defaults = new LinkedHashMap<>();
         Object rawDefaults = doc.get("defaults");
         if (rawDefaults != null) {
@@ -210,7 +226,7 @@ public final class DeviceCatalog {
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
                 Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults),
                 Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes),
-                bind, "");
+                bind, appLinksHost);
     }
 
     /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */

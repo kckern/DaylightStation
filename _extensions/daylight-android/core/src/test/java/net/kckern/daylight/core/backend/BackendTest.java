@@ -106,4 +106,30 @@ public class BackendTest {
             assertTrue(bad, message(() -> settings.set(Backend.USER, bad)).contains("identity.user"));
         }
     }
+
+    // ── pages a link may open ─────────────────────────────────────────────────
+
+    @Test public void aPagePathIsAPlainPathWithAnOptionalQueryAndFragment() {
+        for (String ok : new String[] { "/", "/feed", "/media/channels", "/media?tab=recent&x=a%20b", "/call#room", "/a.b/c_d-e~f/" }) {
+            assertEquals(ok, Backend.pagePath(ok));
+        }
+    }
+
+    @Test public void aPagePathNeverReachesTheApi() {
+        // A daylight://open link can be fired by any web page or app on the phone, and the
+        // backend trusts the phone by its address. A link must not be a way to make the
+        // app send a request to an API route.
+        for (String bad : new String[] { "/api", "/api/", "/api/v1/home/scenes/all-off", "/API/v1/x", "/Api/x",
+                "/%61pi/v1/x", "/./api/v1/x", "/x/../api/v1/x", "/x/%2e%2e/api/v1/x", "/api?x=1", "/api#x", "/;/api/v1" }) {
+            try { Backend.pagePath(bad); fail("accepted " + bad); } catch (IllegalArgumentException expected) { }
+        }
+    }
+
+    @Test public void aPagePathIsNeverAnotherHostOrAnotherScheme() {
+        for (String bad : new String[] { null, "", "feed", "//evil.example/", "/\\evil.example", "https://evil.example/",
+                "javascript:alert(1)", "intent://x#Intent;end", "file:///etc/hosts", "content://x", "/a b", "/a\nb",
+                "/a/../b", "/a/./b", "/a//b", "/feed?x=<script>", "/feed?x=\"", "/" + "x".repeat(2100) }) {
+            try { Backend.pagePath(bad); fail("accepted " + bad); } catch (IllegalArgumentException expected) { }
+        }
+    }
 }

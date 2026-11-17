@@ -201,6 +201,39 @@ public class DeviceCatalogTest {
         }
     }
 
+    // ── appLinks ──────────────────────────────────────────────────────────────
+
+    private File rootWithNotifications() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/notifications/capability.yml"), "entry: x.Y\n");
+        write(new File(root, "capabilities/notifications/payload/build.gradle"), "");
+        return root;
+    }
+
+    @Test public void readsTheAppLinksHostAsWritten() throws Exception {
+        File root = rootWithNotifications();
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("[debug-tools]", "[debug-tools, notifications]")
+                + "appLinks: { host: \"{portal_link_host}\" }\n");
+        assertEquals("{portal_link_host}", DeviceCatalog.load(root).device("portal").appLinksHost);
+        write(new File(root, "devices/portal.yml"), PORTAL);
+        assertEquals("", DeviceCatalog.load(root).device("portal").appLinksHost);
+    }
+
+    @Test public void appLinksNeedTheCapabilityThatReceivesThem() throws Exception {
+        File root = rootWithNotifications();
+        write(new File(root, "devices/portal.yml"), PORTAL + "appLinks: { host: \"{portal_link_host}\" }\n");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("appLinks needs the 'notifications' capability"));
+    }
+
+    @Test public void rejectsAnAppLinksHostThatIsNotAString() throws Exception {
+        File root = rootWithNotifications();
+        for (String bad : new String[] { "appLinks: { host: 7 }\n", "appLinks: { }\n", "appLinks: { host: \"\" }\n", "appLinks: [x]\n" }) {
+            write(new File(root, "devices/portal.yml"), PORTAL.replace("[debug-tools]", "[debug-tools, notifications]") + bad);
+            String m = message(() -> DeviceCatalog.load(root));
+            assertTrue(bad + " -> " + m, m.contains("appLinks"));
+        }
+    }
+
     @Test public void rejectsAnUnknownForegroundServiceType() throws Exception {
         File root = root();
         write(new File(root, "devices/portal.yml"), PORTAL + "foregroundServiceTypes: [telepathy]\n");

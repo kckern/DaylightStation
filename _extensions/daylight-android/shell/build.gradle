@@ -59,13 +59,16 @@ android {
 // fragment in that flavor's source set.
 catalog.devices().each { d ->
     def dir = new File(buildDir, "generated/manifests/${d.id}")
-    def xml = net.kckern.daylight.build.DeviceManifestSource.render(d)
+    // Rendered when the task runs, not when the build is configured: a device with
+    // appLinks resolves its host from the private file, and building another device
+    // must not need that value.
+    def xml = { net.kckern.daylight.build.DeviceManifestSource.render(d, rootProject.ext.placeholders) }
     def gen = tasks.create("generate${d.id.capitalize()}Manifest") {
-        inputs.property('xml', xml)
+        inputs.property('xml', providers.provider(xml))
         outputs.dir dir
         doLast {
             dir.mkdirs()
-            new File(dir, 'AndroidManifest.xml').setText(xml, 'UTF-8')
+            new File(dir, 'AndroidManifest.xml').setText(xml(), 'UTF-8')
         }
     }
     android.sourceSets.getByName(d.id).manifest.srcFile new File(dir, 'AndroidManifest.xml')
