@@ -18,10 +18,20 @@ Removing configuration retains saved coverage and Stop intent. Corrupt storage a
 
 A never-configured installation with no supervision ledger stays in legacy mode
 through a read-only bootstrap check, without creating directories or acquiring a
-Linux writer lock. Enabled configuration or any existing ledger still requires
+writer lock. Enabled configuration or any existing ledger still requires
 the kernel-backed single-writer lock; an unavailable lock or unreadable ledger
 aborts initialization. Persisted configuration remains authoritative even before
 the first device state has been written.
+
+The lock is `#system/utils/exclusiveFileLock.mjs`, a `flock(2)` lock on
+`<ledger>.lock` that the kernel drops when its holder dies. On Linux it is held
+by a `flock(1)` child; on macOS, which ships no `flock(1)`, by an `O_EXLOCK`
+descriptor the backend keeps open. Another holder fails with
+`SUPERVISION_WRITER_CONFLICT`; no usable lock (for example `flock(1)` missing on
+Linux, or an unsupported platform) fails with `SUPERVISION_WRITER_LOCK_FAILED`.
+Neither ever falls back to writing unlocked. The legacy shutdown incident
+ledger (`YamlShutdownDatastore.incidentRepository()`) uses the same repository
+and lock.
 
 See `__docs/configuration/supervision.yml` for the configuration template. The actual inventory includes Garage (`garage-tv`), school Portal (`portal`), piano tablet (`yellow-room-tablet`) and arcade/media Shield (`livingroom-tv`). This is reviewed inventory, not a claim that every consumer has passed live acceptance. Deploy only through the activity-aware rollout gate and record the parent-operated drill, including per-device ACKs and real actuator observations. A persistent idle latch alone is not an active human; recent verified parent intervention/release still protects against deployment.
 
