@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p37-fkb-volume-lock";
+    private static final String VERSION = "p38-managed-candidate";
 
     private BridgeCore core;
 
@@ -24,6 +24,7 @@ public final class Main implements Payload {
 
     @Override
     public void start(ShellServices shell) {
+        if (shell.shellVersionCode()<32) throw new IllegalStateException("p38 requires the full shell v32 candidate");
         // A hot swap happens while the a11y service is ALREADY bound, so the shell's
         // onAccessibilityConnected forward never fires for this payload. Adopt the
         // live instance now; the forward still covers a bind that happens later.

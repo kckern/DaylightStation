@@ -217,6 +217,7 @@ public final class KioskWatchdog {
     // --- the ladder ---------------------------------------------------------
 
     private void runLadder(Verdict trigger) {
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         DeviceConfig c = cfg;
         final String gameAtTrigger = activeGameId;
 
@@ -261,6 +262,7 @@ public final class KioskWatchdog {
         // L1 — invisible synthetic-touch burst (the common un-throttle). Always safe.
         long t1 = SystemClock.elapsedRealtime();
         act("L1 touch-burst", burstCount);
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         TouchPulser.burst(c, 6);
         sleep(3000);
         if (recovered(t1, c)) { finish("recovered@L1-touch"); return; }
@@ -293,6 +295,7 @@ public final class KioskWatchdog {
         // L2 — reload the SPA.
         long t2 = SystemClock.elapsedRealtime();
         act("L2 loadStartUrl", reloadCount);
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         FkbRest.command(c, "loadStartUrl");
         sleep(6500);
         if (recovered(t2, c)) { finish("recovered@L2-reload"); return; }
@@ -300,6 +303,7 @@ public final class KioskWatchdog {
         // L3 — respawn the renderer.
         long t3 = SystemClock.elapsedRealtime();
         act("L3 restartApp", restartCount);
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         FkbRest.command(c, "restartApp");
         sleep(8000);
         if (recovered(t3, c)) { finish("recovered@L3-restartApp"); return; }
@@ -313,6 +317,7 @@ public final class KioskWatchdog {
             return;
         }
         act("L4 rebootDevice", rebootCount);
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         CrashLog.recordReboot();           // persist BEFORE the reboot so the cap survives it
         CrashLog.note("RECOVERY", "issuing FKB rebootDevice — hard latch unrecoverable by soft ladder");
         int rc = FkbRest.command(c, "rebootDevice");
@@ -333,11 +338,13 @@ public final class KioskWatchdog {
             finish("UNRECOVERED — FKB REST down AND a11y service not bound; no lever — NEEDS HUMAN");
             return;
         }
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         if (!A11y.powerDialog()) {
             finish("UNRECOVERED — a11y powerDialog refused — NEEDS HUMAN");
             return;
         }
         sleep(1500); // let the dialog inflate
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         boolean clicked = A11y.clickText("restart");
         if (!clicked) clicked = A11y.clickText("reboot");
         finish(clicked ? "issued L5 a11y restart" : "UNRECOVERED — power dialog up but no Restart control found — NEEDS HUMAN");

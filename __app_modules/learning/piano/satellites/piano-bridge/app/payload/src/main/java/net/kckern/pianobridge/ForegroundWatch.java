@@ -76,7 +76,17 @@ final class ForegroundWatch {
         return o;
     }
 
+    private boolean maintenanceWasAllowed;
+    private long nextPolicyCheckElapsed;
     private void tick() {
+        if (!core.nativeRunAllowed() && core.isEngineRunning()) core.engineStop();
+        boolean maintenance=core.getKioskPolicy().maintenance().allowed;
+        long elapsed=android.os.SystemClock.elapsedRealtime();
+        if (!maintenance && (maintenanceWasAllowed || elapsed>=nextPolicyCheckElapsed)) {
+            core.getKioskPolicy().enforce();
+            nextPolicyCheckElapsed=elapsed+30000L;
+        }
+        maintenanceWasAllowed=maintenance;
         List<ForegroundTrail.Win> wins = A11y.windows();
         if (wins == null) return;                       // a11y not bound: say nothing, guess nothing
         long now = System.currentTimeMillis();
@@ -95,7 +105,7 @@ final class ForegroundWatch {
         // A pairing exception expires or ends as soon as the active dialog no longer matches.
         if (away || KioskSettingsGuard.SETTINGS_PACKAGE.equals(front)) {
             KioskSettingsGuard g = core.getKioskSettingsGuard();
-            if (g != null && recallInFlight.compareAndSet(false, true)) {
+            if (core.recoveryAllowed() && g != null && recallInFlight.compareAndSet(false, true)) {
                 // Off the sampling thread: a recall can take a second.
                 new Thread(() -> {
                     try { g.foregroundTick(); } catch (Throwable t) { Log.w(TAG, "immediate recall failed", t); }

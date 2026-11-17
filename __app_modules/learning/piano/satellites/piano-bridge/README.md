@@ -1,5 +1,120 @@
 # Piano Bridge (APK)
 
+
+## Managed containment candidate (shell 32 / p38)
+
+This candidate is **not deployable or physically accepted**. Version 32 increments
+tracked source 31; the installed version and signing lineage have not been read.
+A full APK is required for `PianoAdminReceiver`; a payload swap cannot add it.
+`p38-managed-candidate` refuses shells older than 32. The shell rejects legacy or
+unknown payload identities before `start`, including persisted current/rollback
+candidates. Boot selects a compatible previous or distinct baked p38 asset without
+rewriting current/previous pointers or deleting old data. Explicit updates still
+require SHA-256 verification. The exact p38 identity is a compatibility declaration,
+**not authenticity of arbitrary bytes**; extending the reviewed allowlist for a
+future payload requires another shell build. An incompatible explicit rollback
+preserves the running candidate and both pointers. The local full build also
+requires the provenance-matched vendored `app/src/main/cpp/third_party/sfizz` tree;
+do not substitute a silent DSP build when it is absent.
+
+`GET /kiosk/policy` reports actual resolved HOME, device-owner status, lock-task
+mode (LOCKED, never screen pinning), exact Fully-only package allowance, and
+`LOCK_TASK_FEATURE_NONE`. Android 10's public API has no getter for persistent
+preferred HOME or status-bar restriction: these fields are `null`, with
+`readback-unavailable`, and `enforced` remains false even after successful setters.
+An absent owner reports `containment-unavailable`. A future narrow, trusted
+privileged evidence adapter must supply fresh platform readback for the missing
+properties; saved desired settings, setter return values and HTTP 200 are not evidence.
+No SystemUI hiding or broad Settings allowlist is added. Existing IME selection
+and the specifically delegated Bluetooth pairing dialog remain available.
+
+`ShellServices.nativeSafety()` is a read-only integration seam. Its default is
+UNKNOWN; the candidate shell deliberately does not implement a second persistent
+Stop ledger. Unknown, stopped, invalid-revision or expired snapshots do not grant
+recall, wake, synth start, WebSocket play, policy application, administrative
+mutation, payload recreation, or recovery. Recovery rechecks before each rung and
+after sleeps; delayed accessibility/wake actions recheck current authority. Active
+games and maintenance cannot grant permission over native Stop. The existing
+household `NativeLeaseAuthority` and `_extensions/supervision-guard` need a reviewed
+integration before this candidate can run. The standalone guard is an alternative
+DPC owner: it and Piano Bridge cannot both be device owner. A device-local admin
+token is **not** household run authority.
+
+### Control API migration
+
+The app-private `files/admin.token` is generated atomically in the installed shell.
+Retrieve it only through an approved local administrative channel; never place it
+in browser JavaScript, a URL, public status, logs, or shared configuration. HTTP
+clients must send `X-Admin-Token` on administrative requests. Missing/wrong tokens
+return 403; unavailable/stopped native authority returns 409 for mutations. No token
+retrieval HTTP endpoint is provided. Legacy `pbctl` and backend clients require a
+separate reviewed credential-storage/header migration before rollout.
+
+| Surface | Candidate contract |
+| --- | --- |
+| Read-only GET `/`, `/help`, `/status`, `/diagnostics`, `/kiosk`, `/kiosk/foreground`, `/kiosk/policy`, `/kiosk/settings`, `/midi/tap`, `/wifi`, `/beat`, `/speaker`, `/bluetooth`, `/payload` | No admin credential; status only |
+| POST `/beat`, `/kiosk/beat`; OPTIONS | Telemetry/preflight only; cannot grant native authority |
+| GET `/config`, `/log`, `/crashlog`, `/cpu`, `/ps`, `/info`, `/a11y/screen` | Admin token required; available while stopped |
+| All other payload HTTP routes/methods, including legacy GET `/exec`, `/connect`, `/forget`, `/scan`, `/panic`, `/setsetting`, `/update`, `/midi/send`, `/props`, `/logcat`, Bluetooth actions and all config/payload mutations | Admin token and current native run authority required |
+| Shell lifeline POST `/payload`, `/payload/rollback`, `/restart` | Same token and current native run authority required |
+| WebSocket synth/MIDI | Existing browser protocol; all active operations require native authority, while stop/panic/note-off/status remain available. This is not authenticated per-user MIDI authorization |
+
+With both owner and native authority provisioned, authenticated
+`POST /kiosk/policy` applies Fully persistent HOME, a Fully-only lock-task list,
+no lock-task features, and status-bar disable. It returns measured state, not a
+success claim. Authenticated `POST /kiosk/maintenance?durationMs=900000` releases
+this owner's lock-task list and status-bar restriction for at most 15 minutes;
+`durationMs=0` revokes it and reapplies policy. The maintenance deadline is committed
+in app-private preferences against elapsed realtime and boot count: it survives
+process recreation on the same boot and expires on reboot. In-process deadlines
+also use elapsed realtime. Expiry is reconciled by the foreground monitor, which
+checks policy at startup and every 30 seconds. Legacy disarm/rearm aliases use the
+same managed window and a 15-minute cap. JVM tests exercise escape, expiration,
+readback and refusal, but this candidate cannot conduct a physical escape drill
+until the authority and missing evidence integrations exist.
+
+### Read-only inventory and separately approved provisioning proposal
+
+Do not run account removal, reset, uninstall, owner reassignment or enrollment as
+part of inventory. From an already approved device connection, collect privately:
+
+```sh
+adb shell dumpsys device_policy
+adb shell dumpsys package net.kckern.pianobridge
+adb shell dumpsys package de.ozerov.fully
+adb shell pm list users
+adb shell dumpsys account
+adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
+adb shell dumpsys activity activities
+adb shell settings get secure default_input_method
+adb shell settings get global boot_count
+adb shell pm path net.kckern.pianobridge
+```
+
+The account dump contains private inventory: do not publish it. Pull only the exact
+APK path returned by `pm path` to a private evidence directory, then use
+`apksigner verify --print-certs` to compare installed certificate/lineage with the
+candidate. Record installed versionCode, active admins/DPC, users, Fully HOME
+capability, grant state, IME and pairing behavior. None is established by source
+comments or local tests. If no approved connection is available, leave these
+fields explicitly unverified.
+
+Before proposing enrollment, inventory and verify recoverable copies of bridge
+config/instruments, recordings, learner evidence, assignments, game saves, Fully
+configuration/license and the existing household Stop revision/state. Check actual
+restore paths and encryption/account dependencies, including app-private data:
+`allowBackup=false` means generic Android backup is not a complete bridge backup.
+Prepare an explicit owner choice and native-authority integration design, an exact
+backup manifest with hashes, a restore rehearsal, account reauthentication plan,
+rollback/build-signature checks and a parent-approved maintenance window. Existing
+Google-account enrollment may prevent device-owner setup. Account removal or reset
+requires a separate explicit approval after those prerequisites; never attempt a
+silent ownership takeover. Keep recovery credentials private and available before
+tightening policy. Finally drill HOME/Recents/notifications, IME, delegated pairing,
+maintenance expiry, Stop during a game, process recreation, reboot, and restoration
+on the physical device. Record platform readback and observed behavior separately.
+
+
 > **Payload p37 (`p37-fkb-volume-lock`, 2026-11-13)** also holds FKB `disableVolumeButtons`
 > off: its revert-to-remembered-volume put the piano at 0/15 and fought the floor.
 >

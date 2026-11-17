@@ -54,6 +54,16 @@ public class BridgeCore {
     public Context getContext() { return ctx; }
 
     public ShellServices getShell() { return shell; }
+    public boolean nativeRunAllowed() {
+        try { return shell.nativeSafety().allowsRun(android.os.SystemClock.elapsedRealtime()); }
+        catch (RuntimeException | LinkageError e) { return false; }
+    }
+    private PianoKioskPolicy kioskPolicy;
+    public synchronized PianoKioskPolicy getKioskPolicy() {
+        if (kioskPolicy==null) kioskPolicy=AndroidPianoKioskPolicy.create(this);
+        return kioskPolicy;
+    }
+    public boolean recoveryAllowed() { return nativeRunAllowed() && !getKioskPolicy().maintenance().allowed; }
 
     /** Subdir (under the app's external files dir) where instrument assets live. */
     public static final String INSTRUMENTS_SUBDIR = "piano-instruments";
@@ -143,13 +153,14 @@ public class BridgeCore {
      *  native stream is actually open, which an A2DP drop can change under us. */
     private volatile boolean engineDesired = false;
 
-    public boolean isEngineDesired() { return engineDesired; }
+    public boolean isEngineDesired() { return engineDesired && nativeRunAllowed(); }
 
     /** Build everything: durable crash log first, then control plane, BLE-MIDI, watchdogs. */
     public void start() {
         // FIRST: arm durable crash/lifecycle logging so we capture WHY the bridge
         // dies (Diag is in-memory and dies with the process). Detects an unclean
         // previous death (the 2026-07-03 outage was unrecoverable after the fact).
+        A11y.setRunAllowed(this::nativeRunAllowed);
         CrashLog.install(ctx);
         Log.i(TAG, "BridgeCore starting");
 
@@ -249,6 +260,7 @@ public class BridgeCore {
 
     /** Tear down cleanly (before a payload swap or shell shutdown). */
     public void stop() {
+        A11y.setRunAllowed(() -> false);
         Log.i(TAG, "BridgeCore stopping");
         if (bluetoothControls != null) { bluetoothControls.close(); bluetoothControls = null; }
         if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
@@ -293,6 +305,7 @@ public class BridgeCore {
     public File getInstrumentsDir() { return new File(ctx.getExternalFilesDir(null), INSTRUMENTS_SUBDIR); }
 
     public synchronized void engineStart() {
+        if (!nativeRunAllowed()) return;
         engineDesired = true;
         if (engine == null) { Log.w(TAG, "engineStart: no engine"); return; }
         if (engine.isStreamRunning()) return;
@@ -322,7 +335,7 @@ public class BridgeCore {
         // (Re)build the FKB screen-waker from the current config (fkbPassword etc.
         // may have changed via a pbctl /config edit → reloadConfigAndReconnect).
         if (screenWaker != null) screenWaker.shutdown();
-        screenWaker = new ScreenWaker(config);
+        screenWaker = new ScreenWaker(config, this::nativeRunAllowed);
 
         // (Re)build the synthetic-touch un-throttler and SELF-ENABLE its
         // AccessibilityService over the LAN (WRITE_SECURE_SETTINGS) — no USB, no
@@ -926,12 +939,12 @@ public class BridgeCore {
                     if (vel == 0) {
                         handleNoteOff(note, t);
                     } else {
-                        if (engine != null) engine.noteOn(note, vel);
+                        if (nativeRunAllowed() && engine != null) engine.noteOn(note, vel);
                         if (controlServer != null) controlServer.fanOutNoteOn(note, vel, t);
                         // Wake the tablet's FKB backlight if it's dark (debounced).
                         if (screenWaker != null) screenWaker.poke();
                         // Keep the WebView frame clock un-throttled while playing.
-                        if (touchPulser != null) touchPulser.poke();
+                        if (nativeRunAllowed() && touchPulser != null) touchPulser.poke();
                     }
                     i = d + 2;
                 } else if (type == 0x80 && d + 1 < end) { // note off

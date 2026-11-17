@@ -121,7 +121,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p37-fkb-volume-lock";
+    public static final String BUILT_BY = "p38-managed-candidate";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -133,14 +133,33 @@ public class ControlServer extends NanoWSD {
     //
     // NanoWSD routes non-WebSocket requests here. Same :8770 socket; NanoHTTPD
     // binds all interfaces, so this is reachable on the LAN (10.0.0.245:8770)
-    // for the external pbctl CLI as well as localhost for the kiosk. No auth —
-    // LAN kiosk, same trust model as the Fully REST endpoint.
+    // for the external pbctl CLI as well as localhost for the kiosk. Administrative
+    // routes require the device-local token plus current native run authority.
+
+    static boolean requiresAdmin(String uri, String method) {
+        if ("OPTIONS".equals(method)) return false;
+        if ("POST".equals(method) && ("/kiosk/beat".equals(uri) || "/beat".equals(uri))) return false;
+        if (!"GET".equals(method)) return true;
+        return !java.util.Arrays.asList("/", "/help", "/status", "/diagnostics", "/kiosk", "/kiosk/foreground",
+                "/kiosk/policy", "/kiosk/settings", "/midi/tap", "/wifi", "/beat", "/speaker", "/bluetooth", "/payload").contains(uri);
+    }
+    private static boolean safeAdminRead(String uri, String method) {
+        return "GET".equals(method) && java.util.Arrays.asList("/config", "/log", "/crashlog", "/cpu", "/ps", "/info", "/a11y/screen").contains(uri);
+    }
 
     @Override
     protected NanoHTTPD.Response serveHttp(IHTTPSession session) {
         String uri = session.getUri();
         NanoHTTPD.Method method = session.getMethod();
         try {
+            if (method==NanoHTTPD.Method.OPTIONS) return json(ok());
+            if (requiresAdmin(uri, method.name())) {
+                if (!net.kckern.pianobridge.api.AdminAccess.accepts(service.getShell().adminToken(),
+                        session.getHeaders().get("x-admin-token")))
+                    return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.FORBIDDEN, "application/json", "{\"ok\":false,\"error\":\"admin_auth_required\"}");
+                if (!service.nativeRunAllowed() && !safeAdminRead(uri, method.name()))
+                    return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.CONFLICT, "application/json", "{\"ok\":false,\"error\":\"native_safety_unavailable_or_stopped\"}");
+            }
             if ("/bluetooth".equals(uri) || uri.startsWith("/bluetooth/")) {
                 if (method == NanoHTTPD.Method.OPTIONS) return json(ok());
                 BluetoothControls controls = service.getBluetoothControls();
@@ -192,7 +211,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /kiosk/settings         (FKB kiosk-settings drift guard: verdict, repairs, disarm)")
                             .put("GET /a11y/screen | POST /a11y/click?text=&exact=1 | POST /a11y/scroll?back=0 | POST /a11y/back  (operate a system screen remotely)")
                             .put("POST /kiosk/settings/check   (force one drift pass NOW, bypassing the install hold)")
-                            .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift + foreground recall while fiddling; max 1h)")
+                            .put("POST /kiosk/settings/disarm?minutes=15  (authenticated maintenance; max 15 min)")
                             .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
@@ -253,6 +272,26 @@ public class ControlServer extends NanoWSD {
                     ForegroundWatch fw = service.getForegroundWatch();
                     return json(fw != null ? fw.snapshot().put("ok", true) : err("no_foreground_watch"));
                 }
+                case "/kiosk/policy": {
+                    PianoKioskPolicy policy=service.getKioskPolicy();
+                    PianoKioskPolicy.Snapshot s=method==NanoHTTPD.Method.POST ? policy.enforce() : policy.probe();
+                    PianoKioskPolicy.Readback r=s.readback;
+                    return json(new JSONObject().put("owner", r.owner==null ? JSONObject.NULL:r.owner)
+                            .put("homeCorrect", r.homeCorrect==null ? JSONObject.NULL:r.homeCorrect)
+                            .put("persistentHomeCorrect", r.persistentHomeCorrect==null ? JSONObject.NULL:r.persistentHomeCorrect)
+                            .put("lockTaskLocked", r.lockTaskLocked==null ? JSONObject.NULL:r.lockTaskLocked)
+                            .put("lockTaskPackagesCorrect", r.lockTaskPackagesCorrect==null ? JSONObject.NULL:r.lockTaskPackagesCorrect)
+                            .put("lockTaskFeaturesNone", r.lockTaskFeaturesNone==null ? JSONObject.NULL:r.lockTaskFeaturesNone)
+                            .put("statusBarDisabled", r.statusBarDisabled==null ? JSONObject.NULL:r.statusBarDisabled)
+                            .put("enforced", s.enforced).put("reason", s.reason)
+                            .put("maintenanceAllowed", policy.maintenance().allowed));
+                }
+                case "/kiosk/maintenance": {
+                    if (method!=NanoHTTPD.Method.POST) return json(err("POST only"));
+                    long duration=Math.max(0, Math.min(900000, parseIntParam(session, "durationMs", 0)));
+                    service.getKioskPolicy().setMaintenanceUntil(duration==0 ? 0 : System.currentTimeMillis()+duration);
+                    return json(ok().put("allowed", service.getKioskPolicy().maintenance().allowed));
+                }
                 case "/kiosk": {
                     KioskWatchdog wd = service.getKioskWatchdog();
                     return json(wd != null ? wd.snapshot() : err("no_watchdog"));
@@ -285,10 +324,11 @@ public class ControlServer extends NanoWSD {
                     // someone is deliberately fiddling with FKB's settings.
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     if (g == null) return json(err("no_settings_guard"));
-                    int minutes = parseIntParam(session, "minutes", 60);
-                    // Clamp to 1h: while disarmed nothing pulls a child back out of
+                    int minutes = parseIntParam(session, "minutes", 15);
+                    // Clamp to 15 minutes: while disarmed nothing pulls a child back out of
                     // another app, so no disarm may outlast KioskSettingsGuard.MAX_STAND_DOWN_MS.
-                    minutes = Math.max(1, Math.min(60, minutes));
+                    minutes = Math.max(1, Math.min(15, minutes));
+                    service.getKioskPolicy().setMaintenanceUntil(System.currentTimeMillis()+minutes*60000L);
                     JSONObject r = g.disarmForMinutes(minutes);
                     return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
                 }
@@ -414,6 +454,7 @@ public class ControlServer extends NanoWSD {
                     return json(o);
                 }
                 case "/kiosk/settings/rearm": {
+                    service.getKioskPolicy().setMaintenanceUntil(0);
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     if (g == null) return json(err("no_settings_guard"));
                     // Clears BOTH halves; reports ok:false if the persisted half failed,
@@ -959,6 +1000,10 @@ public class ControlServer extends NanoWSD {
         }
 
         private void dispatch(String type, JSONObject msg) {
+            if (!service.nativeRunAllowed() && !"engine.stop".equals(type) && !"panic".equals(type)
+                    && !"note.off".equals(type) && !"status".equals(type)) {
+                sendError("native_safety_unavailable_or_stopped", "Native run authority is required"); return;
+            }
             PianoEngine engine = service.getEngine();
             switch (type) {
                 case "engine.start":
