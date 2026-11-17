@@ -22,6 +22,11 @@ const BASE_PERMISSIONS = [
   'android.permission.RECEIVE_BOOT_COMPLETED',
   'android.permission.WAKE_LOCK',
   'android.permission.POST_NOTIFICATIONS',
+  'android.permission.REQUEST_INSTALL_PACKAGES',             // core self-update (POST /update)
+  'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', // core battery exemption request
+  'android.permission.ACCESS_WIFI_STATE',                    // core wifi link telemetry
+  'android.permission.ACCESS_NETWORK_STATE',                 // core wifi link telemetry
+  'android.permission.WRITE_SECURE_SETTINGS',                // core settings control (accessibility self-enable)
 ];
 
 const device = parse(readFileSync(join(root, 'devices', `${id}.yml`), 'utf8'));

@@ -14,6 +14,9 @@ public final class FakeShell implements ShellServices {
     public final List<String> notes = new ArrayList<>();
     public final Map<String, Object> components = new HashMap<>();
     public String payloadStatus = "{\"current\":\"test.jar\"}";
+    /** What the shell answers to a swap and to a rollback. The real shell answers "accepted: ..." or "refused: ...". */
+    public String swapResult = "queued";
+    public String rollbackResult = "queued";
 
     public FakeShell(File dir) { this.dir = dir; }
 
@@ -24,8 +27,8 @@ public final class FakeShell implements ShellServices {
     @Override public File payloadDir() { return dir; }
     @Override public Object component(String name) { return components.get(name); }
     @Override public void updateNotification(String text) { }
-    @Override public String requestPayloadSwap(String url, String sha256) { return "queued"; }
-    @Override public String requestPayloadRollback() { return "queued"; }
+    @Override public String requestPayloadSwap(String url, String sha256) { return swapResult; }
+    @Override public String requestPayloadRollback() { return rollbackResult; }
     @Override public String payloadStatusJson() { return payloadStatus; }
     @Override public void note(String kind, String message) { notes.add(kind + " " + message); }
 }

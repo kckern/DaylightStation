@@ -9,20 +9,29 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Approves only Portal Keys' own Package Installer confirmation after /update. */
+/**
+ * Approves only this app's own Package Installer confirmation after POST /update,
+ * and only when the device sets update.autoConfirm. The dialog is recognized by the
+ * installer's package and by this app's label in its text.
+ */
 final class OwnUpdateConfirmation {
-    private final AccessibilityService service;
+    private final AccessibilityHub accessibility;
     private final EventLog eventLog;
+    /** This app's label, lower case, as the installer dialog shows it. */
+    private final String appLabel;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean pending;
     private long deadline;
 
-    OwnUpdateConfirmation(AccessibilityService service, EventLog eventLog) {
-        this.service = service;
+    OwnUpdateConfirmation(AccessibilityHub accessibility, EventLog eventLog, String appLabel) {
+        this.accessibility = accessibility;
         this.eventLog = eventLog;
+        this.appLabel = appLabel == null ? "" : appLabel.trim().toLowerCase(Locale.US);
     }
 
     void begin() {
+        // Without the accessibility service, or without a label to match, there is nothing to tap.
+        if (accessibility.service() == null || appLabel.isEmpty()) return;
         pending = true;
         deadline = System.currentTimeMillis() + 90_000;
         handler.removeCallbacks(poll);
@@ -40,8 +49,13 @@ final class OwnUpdateConfirmation {
                 pending = false;
                 return;
             }
+            AccessibilityService service = accessibility.service();
+            if (service == null) {
+                pending = false;
+                return;
+            }
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
-            if (isOwnInstallDialog(root) && clickInstall(root)) {
+            if (isOwnInstallDialog(root, appLabel) && clickInstall(root)) {
                 pending = false;
                 eventLog.add("self-update confirmation-approved");
                 return;
@@ -50,7 +64,7 @@ final class OwnUpdateConfirmation {
         }
     };
 
-    private static boolean isOwnInstallDialog(AccessibilityNodeInfo root) {
+    private static boolean isOwnInstallDialog(AccessibilityNodeInfo root, String appLabel) {
         if (root == null) return false;
         CharSequence packageValue = root.getPackageName();
         String packageName = packageValue == null ? "" : packageValue.toString();
@@ -59,7 +73,7 @@ final class OwnUpdateConfirmation {
         StringBuilder text = new StringBuilder();
         collectText(root, text);
         String normalized = text.toString().toLowerCase(Locale.US);
-        return normalized.contains("portal keys")
+        return normalized.contains(appLabel)
                 && !normalized.contains("uninstall")
                 && (normalized.contains("install") || normalized.contains("update"));
     }

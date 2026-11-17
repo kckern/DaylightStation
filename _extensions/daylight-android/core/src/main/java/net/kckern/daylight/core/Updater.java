@@ -23,15 +23,15 @@ import java.io.OutputStream;
  * the other grants, survives same-signature updates). The new APK must have a
  * versionCode >= the installed one and be signed with the same key (debug keystore).
  */
-final class Updater {
+public final class Updater {
 
     private static final String TAG = "PianoBridge-Update";
-    static final String INSTALL_ACTION = "net.kckern.pianobridge.INSTALL_RESULT";
+    static final String INSTALL_ACTION = "net.kckern.daylight.INSTALL_RESULT";
 
     private Updater() {}
 
     /** Stream a staged APK file into a PackageInstaller session and commit it. */
-    static void install(Context ctx, File apk) throws Exception {
+    public static void install(Context ctx, File apk) throws Exception {
         if (apk == null || !apk.exists() || apk.length() == 0) {
             throw new IllegalStateException("staged apk missing/empty");
         }
@@ -42,7 +42,7 @@ final class Updater {
         Diag.log(TAG, "install session " + sessionId + " apk=" + apk.getName() + " bytes=" + apk.length());
         PackageInstaller.Session session = pi.openSession(sessionId);
         try (InputStream in = new FileInputStream(apk);
-             OutputStream out = session.openWrite("pianobridge.apk", 0, apk.length())) {
+             OutputStream out = session.openWrite("daylight.apk", 0, apk.length())) {
             byte[] buf = new byte[65536];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
@@ -51,11 +51,13 @@ final class Updater {
         // EXPLICIT component: InstallReceiver has no <intent-filter>, so an action-only
         // (setPackage) broadcast would never match it and STATUS_PENDING_USER_ACTION
         // would be dropped → the confirm dialog would never launch. Target the class.
-        Intent intent = new Intent().setClassName(ctx, "net.kckern.pianobridge.InstallReceiver").setAction(INSTALL_ACTION);
+        Intent intent = new Intent().setClassName(ctx, "net.kckern.daylight.shell.InstallReceiver").setAction(INSTALL_ACTION);
         // Pre-S PendingIntents are mutable by default; FLAG_UPDATE_CURRENT is enough
         // for the framework to fill in the confirm Intent extra we forward.
-        PendingIntent pending = PendingIntent.getBroadcast(
-                ctx, sessionId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        // From Android 12 the flag must be stated, and this one has to stay mutable for that fill-in.
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (android.os.Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+        PendingIntent pending = PendingIntent.getBroadcast(ctx, sessionId, intent, flags);
         session.commit(pending.getIntentSender());
         session.close();
         Diag.log(TAG, "install committed session " + sessionId + " — awaiting one-tap confirm on device");

@@ -173,4 +173,23 @@ public class ControlServerTest {
             assertTrue(next, next.contains(" 200 "));
         }
     }
+
+    @Test public void aConnectionThatSendsNothingIsClosedAfterTheReadTimeout() throws Exception {
+        assertEquals(5000, ControlServer.SOCKET_READ_TIMEOUT_MS);
+        Auth auth = new Auth(TOKEN);
+        ControlServer started = ControlServer.startWithRetry(() -> new ControlServer(0, new Router(auth)), 1);
+        assertNotNull(started);
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", started.getListeningPort())) {
+            // Longer than the server's timeout: a server with none would leave this read waiting.
+            s.setSoTimeout(9000);
+            s.getOutputStream().write("GET /status HT".getBytes(StandardCharsets.US_ASCII));
+            s.getOutputStream().flush();
+            long began = System.currentTimeMillis();
+            // The server gives up on the half-sent request: it answers or closes, either way the read returns.
+            s.getInputStream().read();
+            assertTrue(System.currentTimeMillis() - began < 8500);
+        } finally {
+            started.stop();
+        }
+    }
 }

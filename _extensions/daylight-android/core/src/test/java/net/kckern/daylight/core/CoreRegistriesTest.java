@@ -106,4 +106,37 @@ public class CoreRegistriesTest {
         assertTrue(log.getJSONArray("events").getString(0).endsWith(" hello"));
         assertEquals("not_ready", TestCore.get(core, "/diagnostics").getString("error"));
     }
+
+    @Test public void payloadRoutesForwardToTheShell() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.start(new JSONObject("{}"));
+        assertEquals("test.jar", TestCore.get(core, "/payload").getString("current"));
+        java.util.Map<String, String> q = new java.util.HashMap<>();
+        q.put("url", "http://example/p.jar");
+        assertEquals("missing sha256", TestCore.call(core, "POST", "/payload", q, null).getString("error"));
+        q.put("sha256", "abc");
+        assertEquals("queued", TestCore.call(core, "POST", "/payload", q, null).getString("result"));
+        assertEquals("queued", TestCore.post(core, "/payload/rollback").getString("result"));
+        assertEquals("queued", TestCore.call(core, "POST", "/payload", null,
+                "{\"url\":\"http://example/p.jar\",\"sha256\":\"abc\"}").getString("result"));
+        assertEquals("missing url", TestCore.post(core, "/update").getString("error"));
+        assertEquals("not_ready", TestCore.call(core, "POST", "/update", null, "{\"url\":\"http://example/a.apk\"}").getString("error"));
+        JSONObject state = TestCore.get(core, "/update");
+        assertEquals("idle", state.getString("state"));
+        assertTrue(state.isNull("lastError"));
+    }
+
+    @Test public void aSwapOrRollbackTheShellRefusesIsNotReportedAsOk() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        ((FakeShell) core.shell()).swapResult = "refused: sha256 must be 64 hex characters";
+        ((FakeShell) core.shell()).rollbackResult = "refused: no previous payload";
+        core.start(new JSONObject("{}"));
+        JSONObject swap = TestCore.call(core, "POST", "/payload", null, "{\"url\":\"http://example/p.jar\",\"sha256\":\"abc\"}");
+        assertEquals(409, swap.getInt("_status"));
+        assertFalse(swap.getBoolean("ok"));
+        assertEquals("refused: sha256 must be 64 hex characters", swap.getString("result"));
+        JSONObject back = TestCore.post(core, "/payload/rollback");
+        assertEquals(409, back.getInt("_status"));
+        assertEquals("refused: no previous payload", back.getString("error"));
+    }
 }

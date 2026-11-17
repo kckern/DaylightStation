@@ -19,6 +19,13 @@ public final class ControlServer extends NanoWSD {
     /** A refused request's body up to this size is discarded so the connection stays usable; above it the connection closes. */
     private static final int DISCARD_LIMIT = 64 * 1024;
 
+    /**
+     * How long a connection may sit without sending before the server drops it. With no
+     * timeout, a client that opens a connection and goes away holds a thread for good.
+     * A WebSocket client stays inside it by answering SocketHub's 3 s keepalive ping.
+     */
+    public static final int SOCKET_READ_TIMEOUT_MS = 5000;
+
     private final Router router;
     private final Auth auth;
     private final SocketHub hub;
@@ -44,7 +51,7 @@ public final class ControlServer extends NanoWSD {
         for (int attempt = 1; attempt <= attempts; attempt++) {
             ControlServer server = factory.get();
             try {
-                server.start(0, true);   // 0 = no socket read timeout; daemon thread
+                server.start(SOCKET_READ_TIMEOUT_MS, true);   // daemon thread
                 Thread.sleep(150L);
                 if (server.wasStarted() && server.isAlive()) return server;
             } catch (IOException e) {

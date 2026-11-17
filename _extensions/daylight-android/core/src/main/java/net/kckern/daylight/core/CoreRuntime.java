@@ -31,6 +31,10 @@ public final class CoreRuntime implements CoreContext {
     /** The context-bound services. Null in JVM tests and whenever the payload is not started. */
     private volatile CoreServices device;
     private boolean prepared;
+    /** idle, downloading, awaiting_confirmation or failed. */
+    private volatile String updateState = "idle";
+    private volatile String updateError;
+    private volatile long lastUpdateRequestAtMs;
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
         this.shell = shell;
@@ -57,6 +61,8 @@ public final class CoreRuntime implements CoreContext {
     @Override public AccessibilityHub accessibility() { return accessibility; }
     public Auth auth() { return auth; }
     public CoreConfig config() { return config; }
+    /** When POST /update was last asked for. Phase 3's watchdog stands down during an install. */
+    public long lastUpdateRequestAtMs() { return lastUpdateRequestAtMs; }
 
     /** Called by the payload entry class when the shell binds or unbinds a component. */
     public void onShellComponent(String name, Object instance) { components.dispatch(name, instance); }
@@ -124,6 +130,66 @@ public final class CoreRuntime implements CoreContext {
     }
 
     private void registerCoreRoutes() {
+        router.route("GET", "/payload", req -> Replies.json(new JSONObject(shell.payloadStatusJson())));
+        router.route("POST", "/payload", req -> {
+            // Body {"url","sha256"} per the control API contract; query parameters as pbctl sends them.
+            String url = Replies.strParam(req, "url", null);
+            String sha = Replies.strParam(req, "sha256", null);
+            if (req.body != null && req.body.trim().startsWith("{")) {
+                JSONObject body = new JSONObject(req.body);
+                if (url == null) url = textOrNull(body, "url");
+                if (sha == null) sha = textOrNull(body, "sha256");
+            }
+            if (url == null) return Replies.json(Replies.err("missing url"));
+            if (sha == null) return Replies.json(Replies.err("missing sha256"));
+            Diag.log("Daylight-Core", "/payload swap from " + req.remote + " url=" + url.trim());
+            return requested("payload.swap", shell.requestPayloadSwap(url.trim(), sha.trim()));
+        });
+        router.route("POST", "/payload/rollback", req -> {
+            Diag.log("Daylight-Core", "/payload/rollback from " + req.remote);
+            return requested("payload.rollback", shell.requestPayloadRollback());
+        });
+        // POST starts an install; GET reports how far it got. Body {"url": "..."} per the
+        // control API contract; ?url= and a bare-URL body are still accepted, as pbctl sends them.
+        router.route("POST", "/update", req -> {
+            String url = Replies.strParam(req, "url", null);
+            if (url == null && req.body != null && !req.body.trim().isEmpty()) {
+                String b = req.body.trim();
+                url = b.startsWith("{") ? textOrNull(new JSONObject(b), "url") : b;
+            }
+            if (url == null || url.trim().isEmpty()) return Replies.json(Replies.err("missing url"));
+            CoreServices d = device;
+            if (d == null) return Replies.json(Replies.err("not_ready"));
+            url = url.trim();
+            lastUpdateRequestAtMs = System.currentTimeMillis();
+            Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
+            updateError = null;
+            updateState = "downloading";
+            try {
+                File staged = new File(d.ctx.getCacheDir(), "update.apk");
+                long bytes = Downloads.to(url, staged);
+                if (config.updateAutoConfirm()) d.updateConfirmation.begin();
+                Updater.install(d.ctx, staged);
+                // The session is committed. Without device owner Android now shows a confirm
+                // dialog; the result lands in the shell log (lifeline GET /log), not here.
+                updateState = "awaiting_confirmation";
+                return Replies.json(Replies.ok().put("action", "update").put("state", updateState).put("bytes", bytes)
+                        .put("note", config.updateAutoConfirm() ? "confirming on the device" : "tap Update on the device to confirm"));
+            } catch (Exception e) {
+                updateState = "failed";
+                updateError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                return Replies.json(Replies.err(updateError).put("state", updateState));
+            }
+        });
+        router.route("GET", "/update", req -> Replies.json(Replies.ok()
+                .put("state", updateState)
+                .put("lastError", updateError == null ? JSONObject.NULL : updateError)));
+        router.route("POST", "/accessibility/enable", req -> {
+            CoreServices d = device;
+            if (d == null) return Replies.json(Replies.err("not_ready"));
+            String component = new android.content.ComponentName(d.ctx, AccessibilityHub.SERVICE_CLASS).flattenToString();
+            return Replies.json(SettingsControl.enableAccessibilityService(d.ctx, component).put("component", component));
+        });
         router.route("GET", "/log", req -> Replies.json(Replies.ok()
                 .put("log", Diag.recent())
                 .put("events", new JSONArray(log.toJsonArray()))));
@@ -174,6 +240,29 @@ public final class CoreRuntime implements CoreContext {
         });
     }
 
+    /** A string field of a JSON body, or null when it is absent, null or not a string. */
+    private static String textOrNull(JSONObject body, String key) {
+        Object v = body.opt(key);
+        return v instanceof String ? (String) v : null;
+    }
+
+    /** The shell's answer to a swap or rollback: 200 when it took the request, 409 with the reason when it refused. */
+    private static Router.Response requested(String action, String result) throws Exception {
+        if (result == null || result.startsWith("refused")) {
+            return Router.Response.json(409, Replies.err(String.valueOf(result)).put("action", action).put("result", String.valueOf(result)));
+        }
+        return Replies.json(Replies.ok().put("action", action).put("result", result));
+    }
+
+    private boolean batteryOptExempt(CoreServices d) {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) d.ctx.getSystemService(android.content.Context.POWER_SERVICE);
+            return pm != null && pm.isIgnoringBatteryOptimizations(d.ctx.getPackageName());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private JSONArray names() {
         JSONArray a = new JSONArray();
         for (Capability c : capabilities) a.put(c.name());
@@ -192,7 +281,10 @@ public final class CoreRuntime implements CoreContext {
                 .put("model", String.valueOf(android.os.Build.MODEL))
                 .put("android", String.valueOf(android.os.Build.VERSION.RELEASE));
         CoreServices d = device;
-        if (d != null) body.put("package", d.ctx.getPackageName());
+        if (d != null) {
+            body.put("package", d.ctx.getPackageName());
+            body.put("batteryOptExempt", batteryOptExempt(d));
+        }
         return status.collect(StatusBoard.Surface.STATUS, body
                 .put("payloadVersion", payloadVersion)
                 .put("shellVersionCode", shell.shellVersionCode())

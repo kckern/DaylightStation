@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- The base set every device gets. A capability adds its own in its shell/ half. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -7,6 +8,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Core additions shared by every device. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <!-- One shell runs on tablets and on TV boxes, so neither feature is required. -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -28,6 +36,9 @@
         </activity>
 
         <service android:name=".ShellService" android:exported="false" />
+
+        <!-- Explicitly targeted by the payload's Updater. No intent filter on purpose. -->
+        <receiver android:name=".InstallReceiver" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

@@ -58,6 +58,8 @@ public final class PayloadLoader {
     static final String ENTRY_CLASS = "net.kckern.daylight.payload.Main";
     static final String BAKED_ASSET = "payload-baked.jar";
     static final long START_DEADLINE_MS = 20_000L;
+    /** The largest pushed payload the shell will download. A payload jar is a few megabytes. */
+    static final long MAX_PAYLOAD_BYTES = 64L * 1024 * 1024;
     private static final Pattern SHA256 = Pattern.compile("[0-9a-fA-F]{64}");
 
     /** Turns a payload jar into a Payload instance. The device uses a dex class loader; tests supply fakes. */
@@ -486,12 +488,29 @@ public final class PayloadLoader {
         c.setConnectTimeout(15000);
         c.setReadTimeout(60000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(dst)) {
-            byte[] buf = new byte[65536];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            checkDeclaredLength(c.getContentLengthLong(), MAX_PAYLOAD_BYTES);
+            copyCapped(in, out, MAX_PAYLOAD_BYTES);
         } finally {
             c.disconnect();
         }
+    }
+
+    /** Refuse a download whose declared length is over the limit. A length of -1 means none was declared. */
+    static void checkDeclaredLength(long declared, long limit) throws java.io.IOException {
+        if (declared > limit) throw new java.io.IOException("payload is larger than " + limit + " bytes");
+    }
+
+    /** Copy until the stream ends, giving up once more than the limit has arrived. Returns the byte count. */
+    static long copyCapped(InputStream in, java.io.OutputStream out, long limit) throws java.io.IOException {
+        byte[] buf = new byte[65536];
+        long total = 0;
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            total += n;
+            if (total > limit) throw new java.io.IOException("payload is larger than " + limit + " bytes");
+            out.write(buf, 0, n);
+        }
+        return total;
     }
 
     private String safeVersion() {
