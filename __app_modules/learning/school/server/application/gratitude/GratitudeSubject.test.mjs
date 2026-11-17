@@ -26,3 +26,19 @@ it('refuses empty, non-string and over-long subjects', () => {
   expect(normalizeGratitudeSubject('a'.repeat(161))).toBeNull();
   expect(normalizeGratitudeSubject('a'.repeat(160))).toBe('A' + 'a'.repeat(159));
 });
+
+it('returns null when only the framing phrase is left', () => {
+  expect(normalizeGratitudeSubject("I'm grateful for")).toBeNull();
+  expect(normalizeGratitudeSubject('I am grateful for.')).toBeNull();
+});
+
+it('drops quotes that sit inside a framing phrase', () => {
+  expect(normalizeGratitudeSubject('I am grateful for "cookies".')).toBe('Cookies');
+});
+
+it('capitalizes only when the first letter-or-digit is a letter, and leaves mixed-case words alone', () => {
+  expect(normalizeGratitudeSubject('3 new friends')).toBe('3 new friends');
+  expect(normalizeGratitudeSubject("'90s music")).toBe('90s music');
+  expect(normalizeGratitudeSubject('iPad time')).toBe('iPad time');
+  expect(normalizeGratitudeSubject('엄마랑 쿠키 먹기')).toBe('엄마랑 쿠키 먹기');
+});
