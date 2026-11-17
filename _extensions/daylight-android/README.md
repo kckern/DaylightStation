@@ -242,6 +242,15 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
    - A payload cannot carry a library, since only its own classes are dexed. A
      library goes in the shell half as an `api` dependency (`mic-bridge` ships
      Java-WebSocket this way).
+   - A capability that works in a window (the kiosk) declares its Activity in the
+     shell half and drives it from the payload through `KioskHost` /
+     `KioskController` in `shell-api`, as `webview-host` does. A payload's `start()`
+     runs on a worker thread with no Looper: views, windows and the WebView are
+     created and touched on the main thread (`MainThread` in core), and `start()`
+     must not wait for it.
+   - A device that lists `webview-host` has one launcher icon, the kiosk Activity:
+     the generated device manifest takes the launcher filter off the shell's setup
+     Activity.
 4. List the capability under `capabilities:` in each device file that should have
    it. A device's APK and payload contain only the capabilities it lists.
 

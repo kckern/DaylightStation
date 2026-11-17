@@ -38,6 +38,9 @@ android {
 
 dependencies {
     implementation project(':core')
+    // The shell ships androidx.webkit for webview-host. The device tests load that
+    // capability's classes, and a compileOnly dependency of a module is not passed on.
+    testImplementation 'androidx.webkit:webkit:1.6.1'
     catalog.devices().each { d ->
         d.capabilities.each { name ->
             if (catalog.capability(name).hasPayload) {

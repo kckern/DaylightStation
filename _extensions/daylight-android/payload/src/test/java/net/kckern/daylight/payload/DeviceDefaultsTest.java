@@ -54,4 +54,21 @@ public class DeviceDefaultsTest {
         assertEquals(Boolean.TRUE, core.settings().get("heartbeat.enabled"));
         assertFalse("heartbeat.logStoreUrl is empty", ((String) core.settings().get("heartbeat.logStoreUrl")).isEmpty());
     }
+
+    /**
+     * A page gets getUserMedia only in a secure context, and the household site is served
+     * over https. A start URL is empty (not configured) or https; plain http would load
+     * and then leave the page without a microphone or camera.
+     */
+    @Test public void aConfiguredStartUrlIsHttps() throws Exception {
+        JSONObject defaults = new JSONObject(DeviceConfig.DEFAULTS_JSON);
+        if (!java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES)
+                .contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability")) {
+            assertFalse("a start URL with no kiosk to show it", defaults.has("webview.startUrl"));
+            return;
+        }
+        assertTrue("a kiosk device says what its start URL is, even when that is empty", defaults.has("webview.startUrl"));
+        String start = defaults.getString("webview.startUrl");
+        assertTrue("webview.startUrl must be empty or https", start.isEmpty() || start.startsWith("https://"));
+    }
 }

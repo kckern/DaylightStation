@@ -26,7 +26,9 @@ piano:   # piano-bridge
     - android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
     - android.permission.BLUETOOTH_SCAN
     - android.permission.BLUETOOTH_CONNECT
-  added: {}
+  added:
+    android.permission.RECORD_AUDIO: page microphone for the kiosk WebView (webview-host), granted over ADB or inert
+    android.permission.CAMERA: page camera for the kiosk WebView (webview-host), granted over ADB or inert
   dropped: {}
 portal:  # portal-keys
   legacy:
@@ -46,6 +48,10 @@ portal:  # portal-keys
   added:
     android.permission.POST_NOTIFICATIONS: base set of every device since phase 1
     android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: core battery exemption, shared by all devices
+    android.permission.RECORD_AUDIO: page microphone for the kiosk WebView (webview-host), granted over ADB or inert
+    android.permission.CAMERA: page camera for the kiosk WebView (webview-host), granted over ADB or inert
+    android.permission.MODIFY_AUDIO_SETTINGS: WebRTC audio for the kiosk WebView (webview-host)
+    android.permission.SYSTEM_ALERT_WINDOW: the overlay message and web overlay above a launched app (webview-host), granted over ADB or inert
   dropped: {}
 shield:  # audio-bridge and supervision-guard together
   legacy:
@@ -69,4 +75,6 @@ shield:  # audio-bridge and supervision-guard together
     android.permission.WRITE_SECURE_SETTINGS: core settings control (accessibility self-enable)
     android.permission.READ_LOGS: debug-tools, granted over ADB or inert
     android.permission.DUMP: debug-tools, granted over ADB or inert
+    android.permission.CAMERA: page camera for the kiosk WebView (webview-host), granted over ADB or inert
+    android.permission.MODIFY_AUDIO_SETTINGS: WebRTC audio for the kiosk WebView (webview-host)
   dropped: {}

@@ -25,11 +25,16 @@ three device builds are:
 
 | Device | Capabilities |
 |---|---|
-| `piano` | `debug-tools`, `accessibility`, `synth`, `midi-bridge`, `bluetooth-controls` (roles), `audio-guard` |
-| `portal` | `debug-tools`, `accessibility`, `volume-keys`, `hid-input`, `presence` |
-| `shield` | `debug-tools`, `bluetooth-controls` (gamepad), `mic-bridge`, `lease-gate` |
+| `piano` | `webview-host`, `debug-tools`, `accessibility`, `synth`, `midi-bridge`, `bluetooth-controls` (roles), `audio-guard` |
+| `portal` | `webview-host`, `debug-tools`, `accessibility`, `volume-keys`, `hid-input`, `presence` |
+| `shield` | `webview-host`, `debug-tools`, `bluetooth-controls` (gamepad), `mic-bridge`, `lease-gate` |
 
-The kiosk page cannot use these routes yet: the old helpers answered it on
+Phase 3 has begun: every device also lists `webview-host`, the kiosk window. The
+other kiosk capabilities (`lockdown`, `screen-power`, `volume`, `app-launcher`, the
+rest of `debug-tools`) are not built yet, so a device has no lockdown, no screen
+control and no immersive mode from this app, and no start URL is compiled in.
+
+The kiosk page cannot use the helper routes yet: the old helpers answered it on
 `localhost` with no token and with `Access-Control-Allow-Origin: *`; the control
 port needs the token and sends no CORS headers. How the page reaches the app is a
 phase 3 decision.
@@ -220,6 +225,7 @@ type, and a type registered twice stops the payload from starting.
 |---|---|
 | core | `GET /status`, `GET /capabilities`, `GET /settings`, `POST /settings`, `DELETE /settings`, `GET /payload`, `POST /payload`, `POST /payload/rollback`, `POST /update`, `GET /update`, `GET /beat`, `POST /beat`, `GET /wifi`, `GET /log`, `GET /crashlog`, `GET /diagnostics`, `POST /accessibility/enable` |
 | `debug-tools` | `GET /debug/info` |
+| `webview-host` | `GET /kiosk/status`, `POST /kiosk/load`, `POST /kiosk/load-start`, `POST /kiosk/reload`, `POST /kiosk/foreground`, `POST /kiosk/renderer/reset`, `POST /kiosk/restart`, `POST /kiosk/overlay` |
 | `synth` | `POST /panic` |
 | `midi-bridge` | `POST /connect`, `POST /forget`, `POST /scan`, `GET /midi/tap`, `GET /midi/send`, `POST /midi/send`, `POST /reset`, `GET /loopback`, `POST /loopback`, `POST /tone` |
 | `audio-guard` | `GET /speaker`, `POST /speaker`, `POST /speaker/reconnect`, `POST /speaker/bt-cycle`, `POST /audio-guard/bootstrap`, `POST /audio-guard/override`, `POST /audio-guard/volume-check` |
@@ -249,6 +255,16 @@ missing provider is a normal state.
 | `ScreenPower` | nobody until phase 3 (`screen-power`) | `volume-keys`, which logs `screen-toggle-unavailable` |
 | `InputLock` | nobody until phase 3 (`lockdown`) | `volume-keys`, which treats the lock as off |
 | `PackageGate` | nobody until phase 3 (`lockdown`, on a device that can have a device owner) | `lease-gate`, which keeps the gate closed |
+| `KioskSurface` | `webview-host` | `lockdown`, `screen-power`, `app-launcher`, `debug-tools` (the rest of phase 3): the kiosk window, its page, evaluate and capture |
+| `LockdownControl`, `DeviceAdminAccess` | nobody yet (`lockdown`) | `webview-host`: what is in front, recall, reboot support |
+| `ScreenControl` | nobody yet (`screen-power`) | `webview-host` for `daylight.screen()`; without it the bridge call answers `false` |
+| `VolumeControl` | nobody yet (`volume`) | `webview-host` for `daylight.volume()`; without it the answer is `{}` |
+| `AppLaunch` | nobody yet (`app-launcher`) | `webview-host` for `daylight.launch()`; without it the answer is `false` |
+
+Notifications that are not instrument notes go over the core event bus
+(`core.events()`), by topic: `screen` `{on}`, `network` `{connected}`, `key`
+`{code, action}` and `kiosk-focus` `{focused}`. `webview-host` forwards `screen`,
+`network` and `key` to the page as `daylight:` events.
 
 The accessibility service is the `accessibility` capability's shell half; the core
 holds the bound service and shares it (`volume-keys`, `hid-input`,
@@ -307,6 +323,7 @@ build of that device and names the placeholder, never a value.
 | Capability | Devices | What it does | Settings |
 |---|---|---|---|
 | `debug-tools` | all | `GET /debug/info` | `debug.execEnabled` |
+| `webview-host` | all | The kiosk: a fullscreen WebView, the `window.daylight` page bridge, page-load recovery, the overlay layers | `webview.*`, `recovery.*` |
 | `accessibility` | piano, portal | The app's one accessibility service, shared through the core | `accessibility.selfEnable` (core) |
 | `synth` | piano | Native sampler | none |
 | `midi-bridge` | piano | BLE-MIDI link to the instrument | `midi.*` |
@@ -321,6 +338,66 @@ build of that device and names the placeholder, never a value.
 What each ported capability adds to a device that lists it. HTTP routes need the
 token like every other route; WebSocket messages are JSON text frames on the
 control port, keyed by `type`.
+
+### `webview-host`
+
+The kiosk window. The shell half declares `KioskActivity` (the app's one launcher
+entry: a build that lists `webview-host` takes the launcher filter off the shell's
+setup Activity) and ships `androidx.webkit`. The Activity decides nothing; it hands
+itself to the payload, which builds the WebView in it on the main thread. A payload
+swap or restart detaches and re-attaches without the Activity going away, and with
+no payload the Activity shows one line of grey text on black.
+
+`webview.startUrl` is the start page. Empty means not configured: the screen says
+so, and `GET /kiosk/status` answers `ready:false` with `reason`. The three device
+files leave it empty until the household value is supplied (see the comment in each).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `webview.startUrl` | empty | Start page, https |
+| `webview.bridgeOrigins` | empty | Comma-separated origins given the bridge, the microphone and the camera. Empty means the origin of the start URL |
+| `webview.backButton` | `reload` | `reload`, `page` (the page gets `daylight:back`) or `ignore` |
+| `webview.interceptKeys` | empty | Key names sent to the page as `daylight:key` and kept from the system, for example `VolumeUp,VolumeDown` |
+| `webview.loadTimeoutSec` | 20 | A load not finished by then is stopped and counted as failed |
+| `webview.allowMic`, `webview.allowCamera` | true | Grant a page request from an allowed origin, when the app holds the Android permission |
+| `webview.allowMixedContent` | false | |
+| `webview.debugging` | false | Remote WebView inspection |
+| `webview.launchOnBoot` | false | Start the kiosk Activity when the payload starts and none exists |
+| `recovery.reloadOnPageFailureSec` | 30 | First retry of a failed page; doubles up to `recovery.maxRetrySec` (300). 0 disables |
+| `recovery.reloadOnNetworkReturn` | true | Reload when the network returns, only for a page in a failed state |
+| `recovery.rendererUnresponsiveSec` | 30 | End a renderer unresponsive this long; 0 disables |
+
+Origin, bridge, mixed-content and debugging settings are read when the WebView is
+built; `POST /kiosk/renderer/reset` applies a change.
+
+Routes, beyond what the control API contract lists:
+
+- Every load has a `loadId`. The waiting answer, the `wait:false` acknowledgement
+  and `lastLoad` carry it. `GET /kiosk/status` also has `loading`, `loadingUrl` and
+  `loadingId` for a load that has not settled, `errorPage`, and `reason` (null when
+  ready).
+- A load asked for while no kiosk Activity exists is refused with
+  `error:"no_kiosk_activity"`; it is not queued. The app tries to start the
+  Activity, which then loads the start URL.
+- `POST /kiosk/overlay` has two layers. `{text}` sets the message, `{url, gravity?}`
+  the web overlay, an empty value clears that layer, `{}` clears both. Each layer is
+  drawn above other apps when `SYSTEM_ALERT_WINDOW` is granted
+  (`appops set <package> SYSTEM_ALERT_WINDOW allow`) and inside the kiosk window
+  otherwise; the answer says which with `overOtherApps`. A layer that was asked for
+  and has nowhere to draw answers `ok:false`, `error:"overlay_not_shown"`. The web
+  overlay fills the screen, takes no touch or focus and has no page bridge. Both
+  layers are cleared when the payload stops.
+- `POST /kiosk/restart` answers and then restarts the payload in place; the kiosk
+  Activity stays up and shows "Daylight is restarting…" in between.
+
+The page bridge `window.daylight` is given only to frames of an allowed origin. The
+native object behind it is visible to every frame (an Android rule), so it answers
+only to a per-WebView token that the allowed frames hold, and only while the main
+frame is on an allowed origin.
+
+Not proven until it runs on a device: every WebView behavior above, which
+`androidx.webkit` features each device's WebView reports, the overlay windows over
+another app, and the vector TV banner on the Shield's home row.
 
 ### `synth`
 

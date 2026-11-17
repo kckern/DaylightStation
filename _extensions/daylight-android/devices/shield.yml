@@ -1,20 +1,28 @@
-# NVIDIA Shield TV (Android 11). Helpers only; the kiosk arrives in phase 3.
+# NVIDIA Shield TV (Android 11). Helpers and the kiosk window; lockdown, screen power and the rest of the kiosk follow.
 id: shield
 package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 5, versionName: "0.2-helpers" }
+shell: { versionCode: 6, versionName: "0.2-helpers" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 # No `accessibility`: nothing listed here uses the accessibility service (gamepad
 # pairing, the mic stream and the lease loop do not), and update.autoConfirm stays off.
 capabilities:
+  - webview-host
   - debug-tools
   - bluetooth-controls
   - mic-bridge
   - lease-gate
 defaults:
+  # The kiosk's start page. Household-specific, so it is not in this file. Empty means
+  # not configured: the kiosk shows a setup screen and GET /kiosk/status answers
+  # ready:false with the reason. To compile it in, add `app_host` under `placeholders:`
+  # in the private tokens file and set this to "https://{app_host}/<this device's page>";
+  # or set it on the device with `settings set webview.startUrl`. https only: a page
+  # gets the microphone and camera in a secure context alone.
+  webview.startUrl: ""
   debug.execEnabled: false
   heartbeat.enabled: true
   # Where heartbeats and log lines are shipped. Household-specific: resolved from
