@@ -46,6 +46,24 @@ describe('excursion probes by provider', () => {
     expect(config.headers['X-Daylight-Token']).toBe(TOKEN);
   });
 
+  it('ignores an inline token and warns with the device id only', async () => {
+    const warn = vi.fn();
+    const http = { get: vi.fn(async () => ({ status: 200, data: { ok: true, kioskInForeground: true } })), post: vi.fn(), delete: vi.fn() };
+    const probeFor = createExcursionProbes({
+      configService: {
+        getDeviceConfig: () => ({ content_control: { provider: 'daylight-android', host: 'kiosk.test', auth_ref: 'daylight-android', token: 'inline-token' } }),
+        getHouseholdAuth: () => ({ tablet: { token: TOKEN } }),
+      },
+      httpClient: http, logger: { warn, debug() {} },
+    });
+
+    await probeFor('tablet').foreground();
+
+    expect(http.get.mock.calls[0][1].headers['X-Daylight-Token']).toBe(TOKEN);
+    expect(warn).toHaveBeenCalledWith('device.excursion.inline_token_ignored', { deviceId: 'tablet' });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('inline-token');
+  });
+
   it('gives a daylight-android device no probe when there is no http client', () => {
     expect(build({ httpClient: null }).probeFor('tablet')).toBeNull();
   });

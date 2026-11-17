@@ -208,10 +208,13 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
   /**
    * The Android kiosk app's token for one device. The household auth file
    * named by `auth_ref` holds an entry per device id:
-   * `{ <deviceId>: { host, token } }`.
+   * `{ <deviceId>: { host, token } }`. That file is the only source.
    */
-  #daylightAndroidToken(deviceId, config) {
-    if (config.token) return config.token;
+  #daylightAndroidToken(deviceId, config, block = 'content_control') {
+    // The token lives in the auth file only. devices.yml is ordinary config
+    // (edited from the Admin console, shown in editors); a token written
+    // there is ignored, and the warning names the device, never the value.
+    if (config.token) this.#logger.warn?.('deviceFactory.inlineTokenIgnored', { deviceId, block });
     if (!config.auth_ref || !this.#configService) return '';
     const token = this.#configService.getHouseholdAuth?.(config.auth_ref)?.[deviceId]?.token;
     if (!token) this.#logger.warn?.('deviceFactory.noAuthToken', { auth_ref: config.auth_ref, deviceId });
@@ -235,9 +238,9 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       host: config.host || content.host,
       port: config.port || content.port,
       token: this.#daylightAndroidToken(deviceId, {
-        token: config.token || content.token,
+        token: config.token,
         auth_ref: config.auth_ref || content.auth_ref,
-      }),
+      }, 'volume'),
       stream: config.stream,
     }, { httpClient: this.#httpClient, logger: this.#logger }) ?? null;
   }

@@ -21,8 +21,10 @@ export function createArcadeKioskClient({ deviceId, control = {}, configService,
       logger.warn?.('arcade.kiosk.unconfigured', { deviceId, provider: control.provider });
       return null;
     }
-    const token = control.token
-      || (control.auth_ref ? configService?.getHouseholdAuth?.(control.auth_ref)?.[deviceId]?.token : null);
+    // The token comes from the household auth file only; one written into
+    // devices.yml is ignored.
+    if (control.token) logger.warn?.('arcade.kiosk.inline_token_ignored', { deviceId });
+    const token = control.auth_ref ? configService?.getHouseholdAuth?.(control.auth_ref)?.[deviceId]?.token : null;
     return new DaylightAndroidArcadeKioskClient({
       restClient: new DaylightAndroidRestClient(
         { host: control.host, port: control.port, token: token || '' },

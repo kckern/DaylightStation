@@ -54,6 +54,22 @@ describe('createArcadeKioskClient', () => {
     expect(config.headers['X-Daylight-Token']).toBe(TOKEN);
   });
 
+  it('ignores an inline token and warns with the device id only', async () => {
+    const httpClient = http();
+    quiet.warn.mockClear();
+    const client = createArcadeKioskClient({
+      deviceId: 'livingroom-tv',
+      control: { provider: 'daylight-android', host: 'kiosk.test', auth_ref: 'daylight-android', token: 'inline-token' },
+      configService, httpClient, logger: quiet,
+    });
+
+    await client.command('deviceInfo');
+
+    expect(httpClient.get.mock.calls[0][1].headers['X-Daylight-Token']).toBe(TOKEN);
+    expect(quiet.warn).toHaveBeenCalledWith('arcade.kiosk.inline_token_ignored', { deviceId: 'livingroom-tv' });
+    expect(JSON.stringify(quiet.warn.mock.calls)).not.toContain('inline-token');
+  });
+
   it('returns null for a daylight-android device that cannot be reached by config', () => {
     expect(createArcadeKioskClient({
       deviceId: 'livingroom-tv',

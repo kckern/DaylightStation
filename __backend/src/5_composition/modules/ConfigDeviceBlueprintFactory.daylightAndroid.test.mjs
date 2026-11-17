@@ -67,6 +67,27 @@ describe('ConfigDeviceBlueprintFactory daylight-android provider', () => {
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(TOKEN);
   });
 
+  it('ignores an inline token and says which device carries one, never its value', async () => {
+    const { factory, factories, logger } = build();
+
+    await factory.createBlueprint('piano-tablet', {
+      content_control: { ...content, token: 'inline-content-token' },
+      volume: { provider: 'daylight-android', token: 'inline-volume-token' },
+    });
+
+    expect(factories.daylightAndroid.mock.calls[0][0].token).toBe(TOKEN);
+    expect(factories.daylightAndroidVolume.mock.calls[0][0].token).toBe(TOKEN);
+    expect(logger.warn).toHaveBeenCalledWith('deviceFactory.inlineTokenIgnored', { deviceId: 'piano-tablet', block: 'content_control' });
+    expect(logger.warn).toHaveBeenCalledWith('deviceFactory.inlineTokenIgnored', { deviceId: 'piano-tablet', block: 'volume' });
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/inline-(content|volume)-token/);
+  });
+
+  it('an inline token does not stand in for a missing auth entry', async () => {
+    const { factory, factories } = build({ auth: {} });
+    await factory.createBlueprint('piano-tablet', { content_control: { ...content, token: 'inline-content-token' } });
+    expect(factories.daylightAndroid.mock.calls[0][0].token).toBe('');
+  });
+
   it('hands an ADB fallback to the adapter for the camera probe, without the resilient wrapper', async () => {
     const { factory, factories } = build();
 

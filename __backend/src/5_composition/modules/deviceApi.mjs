@@ -47,8 +47,10 @@ export function createExcursionProbes({ configService, httpClient = null, kioskP
     const control = configService?.getDeviceConfig?.(deviceId)?.content_control;
     if (control?.provider === 'daylight-android') {
       if (!control.host || !httpClient) return null;
-      const token = control.token
-        || (control.auth_ref ? configService?.getHouseholdAuth?.(control.auth_ref)?.[deviceId]?.token : null);
+      // The token comes from the household auth file only; one written into
+      // devices.yml is ignored.
+      if (control.token) logger?.warn?.('device.excursion.inline_token_ignored', { deviceId });
+      const token = control.auth_ref ? configService?.getHouseholdAuth?.(control.auth_ref)?.[deviceId]?.token : null;
       return new DaylightAndroidForegroundProbe({
         restClient: new DaylightAndroidRestClient(
           { host: control.host, port: control.port, token: token || '' },
