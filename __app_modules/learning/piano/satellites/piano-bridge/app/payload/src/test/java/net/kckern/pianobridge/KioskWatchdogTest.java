@@ -236,6 +236,101 @@ public class KioskWatchdogTest {
         assertFalse("a newer but stale beat is not recovered", (Boolean) recovered.invoke(watchdog, -14_000L, config.get(watchdog)));
     }
 
+
+    private static final class BlockingRecoveryIo extends KioskWatchdog.RecoveryIo {
+        long clock = 10_000L;
+        int minute = 12 * 60;
+        int probeCount;
+        Runnable duringProbe = () -> { };
+        final java.util.List<String> commands = new java.util.ArrayList<>();
+        @Override long elapsed() { return clock; }
+        @Override int minuteOfDay() { return minute; }
+        @Override void pause(long ms) { clock += ms; }
+        @Override void burst(DeviceConfig c) { }
+        @Override JSONObject screen(DeviceConfig c) throws Exception {
+            // Model the synchronous network wait: another thread can ingest a beat
+            // or the quiet boundary can pass before this read returns.
+            probeCount++;
+            clock += 1_000L;
+            duringProbe.run();
+            clock += 1_000L;
+            return new JSONObject().put("reachable", true).put("screenOn", true);
+        }
+        @Override int command(DeviceConfig c, String command) { commands.add(command); return 200; }
+    }
+
+    @SuppressWarnings("unchecked")
+    private KioskWatchdog ladderFixture(BlockingRecoveryIo io) throws Exception {
+        java.lang.reflect.Constructor<DeviceConfig> ctor = DeviceConfig.class.getDeclaredConstructor();
+        ctor.setAccessible(true);
+        DeviceConfig config = ctor.newInstance();
+        Field values = DeviceConfig.class.getDeclaredField("values");
+        values.setAccessible(true);
+        Map<String, String> settings = (Map<String, String>) values.get(config);
+        settings.put("fkbWakeQuietStart", "22:00");
+        settings.put("fkbWakeQuietEnd", "06:00");
+        settings.put("watchdogRebootEnabled", "false");
+        net.kckern.pianobridge.api.ShellServices shell =
+                (net.kckern.pianobridge.api.ShellServices) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class[]{net.kckern.pianobridge.api.ShellServices.class},
+                (proxy, method, args) -> null);
+        BridgeCore service = new BridgeCore(shell) {
+            @Override public boolean recoveryAllowed() { return true; }
+        };
+        return new KioskWatchdog(service, config, io);
+    }
+
+    private void runDeadLadder(KioskWatchdog watchdog) throws Exception {
+        Method ladder = KioskWatchdog.class.getDeclaredMethod("runLadder", Verdict.class);
+        ladder.setAccessible(true);
+        ladder.invoke(watchdog, Verdict.DEAD);
+    }
+
+    @Test public void gameStartingDuringBlockingProbeSuppressesTheCommand() throws Exception {
+        BlockingRecoveryIo io = new BlockingRecoveryIo();
+        KioskWatchdog watchdog = ladderFixture(io);
+        JSONObject gameBeat = new JSONObject().put("fps", 3).put("visibility", "visible")
+                .put("activity", new JSONObject().put("type", "game").put("id", "chess"));
+        io.duringProbe = () -> watchdog.onBeat(gameBeat);
+        runDeadLadder(watchdog);
+        assertTrue("a game began before readback returned; no command may issue", io.commands.isEmpty());
+    }
+
+    @Test public void quietStartingDuringBlockingProbeSuppressesTheCommand() throws Exception {
+        BlockingRecoveryIo io = new BlockingRecoveryIo();
+        KioskWatchdog watchdog = ladderFixture(io);
+        io.duringProbe = () -> io.minute = 22 * 60;
+        runDeadLadder(watchdog);
+        assertTrue("quiet began before readback returned; no command may issue", io.commands.isEmpty());
+    }
+
+    @Test public void healthyBeatDuringProbeCannotVerifyTheLaterCommand() throws Exception {
+        BlockingRecoveryIo io = new BlockingRecoveryIo();
+        KioskWatchdog watchdog = ladderFixture(io);
+        JSONObject healthyBeat = new JSONObject().put("fps", 60).put("visibility", "visible");
+        io.duringProbe = () -> {
+            watchdog.onBeat(healthyBeat);
+            io.duringProbe = () -> { };
+        };
+        runDeadLadder(watchdog);
+        assertEquals("the pre-command beat must not end the ladder as recovered",
+                java.util.Arrays.asList("loadStartUrl", "restartApp"), io.commands);
+        assertEquals("UNRECOVERED — reboot disabled (watchdogRebootEnabled=false)",
+                watchdog.snapshot().getString("lastOutcome"));
+    }
+
+    @Test public void healthyBeatDuringSecondProbeCannotVerifyRestartApp() throws Exception {
+        BlockingRecoveryIo io = new BlockingRecoveryIo();
+        KioskWatchdog watchdog = ladderFixture(io);
+        JSONObject healthyBeat = new JSONObject().put("fps", 60).put("visibility", "visible");
+        io.duringProbe = () -> { if (io.probeCount == 2) watchdog.onBeat(healthyBeat); };
+        runDeadLadder(watchdog);
+        assertEquals(java.util.Arrays.asList("loadStartUrl", "restartApp"), io.commands);
+        assertEquals("a beat during the second screen probe predates restartApp too",
+                "UNRECOVERED — reboot disabled (watchdogRebootEnabled=false)",
+                watchdog.snapshot().getString("lastOutcome"));
+    }
+
     // classify(enabled, sinceStartMs, sawAnyBeat, beatAgeMs, fps, visibility,
     //          lowMsAccum, minFps, sustainSec, beatTimeoutMs, graceMs)
 
