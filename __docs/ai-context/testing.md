@@ -154,6 +154,16 @@ Registry: `data/system/testdata.yml`
    assert `refusedStatus` and
    `refusal: {bodyRead: false, bodyComplete: false, bodyParsed: false}`. It
    refuses bodies under 8 MB, which can arrive whole before any read.
+6. **supertest must be 7.3 or later.** supertest 6 listened on the dual-stack
+   wildcard (`app.listen(0)`, bound to `::`) and then connected to
+   `127.0.0.1:<port>`. macOS lets another socket bind `127.0.0.1` on that same
+   port and routes the request to it, so with parallel suites a test could
+   occasionally get another server's answer (seen as `expected 404 to be 200`).
+   7.3 listens on `127.0.0.1` itself, so the second bind is refused. This holds
+   for every runner (vitest, jest, node:test) because it lives in the package,
+   not a setup file. `tests/unit/tooling/supertestLoopback.test.mjs` forces the
+   collision with a worker-thread imposter and fails, naming the fix, if an
+   older supertest is installed: run `npm install` at the repo root.
 
 ## Isolated Fitness styled acceptance
 
