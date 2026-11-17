@@ -1,0 +1,9 @@
+# BLE-MIDI link to an instrument: note stream out on the control WebSocket, raw MIDI
+# and SysEx in, delivery checked by the instrument's echo.
+entry: net.kckern.daylight.cap.midibridge.MidiBridgeCapability
+permissions:
+  - android.permission.BLUETOOTH
+  - android.permission.BLUETOOTH_ADMIN
+  - android.permission.ACCESS_FINE_LOCATION
+  - android.permission.BLUETOOTH_SCAN
+  - android.permission.BLUETOOTH_CONNECT
