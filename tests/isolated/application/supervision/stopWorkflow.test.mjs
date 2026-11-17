@@ -17,7 +17,7 @@ async function fixture(){
  const gates={publishStop:async payload=>{publications.push(structuredClone(payload));if(fail)throw Error('offline');return {projectionRevision:publications.length};}};
  const options={scopes:{'child-public':['garage','portal']},clock:{now:()=>100000},stateGates:gates};
  let service=new SupervisionService({...options,repository});
- return {path,publications,get repository(){return repository;},get service(){return service;},setFailure(value){fail=value;},async restart(){await repository.close();repository=new JsonSupervisionRepository({path});service=new SupervisionService({...options,repository});return service;}};
+ return {path,publications,get repository(){return repository;},get service(){return service;},setFailure(value){fail=value;},async restart(scopes=options.scopes){await repository.close();repository=new JsonSupervisionRepository({path});service=new SupervisionService({...options,scopes,repository});return service;}};
 }
 describe('durable parent stop',()=>{
  it('persists_stop_before_publication_and_keeps_it_after_restart',async()=>{
@@ -63,4 +63,14 @@ it('lease reconciliation does not replace unchanged durable state, while mutatio
  const h=await fixture();await h.service.initialize();const before=await stat(h.path);
  await h.repository.transaction(()=>undefined);expect((await stat(h.path)).ino).toBe(before.ino);
  await h.repository.transaction(state=>{state.epoch++;});expect((await stat(h.path)).ino).not.toBe(before.ino);expect(JSON.parse(await readFile(h.path,'utf8')).epoch).toBe(1);
+});
+
+// Configuration removal cannot erase coverage already retained by the durable owner.
+it('restart and configuration removal retain the active Stop',async()=>{
+ const h=await fixture();await h.service.initialize();await h.service.stop({actor,scopeId:'child-public',idempotencyKey:'persistent'});
+ const revision=(await h.service.status({deviceId:'portal'})).commandRevisions.portal;
+ const restartedService=await h.restart({'remaining':['garage']});await restartedService.initialize();
+ expect((await restartedService.status({deviceId:'portal'})).active).toBe(true);
+ expect((await restartedService.status({deviceId:'portal'})).commandRevisions.portal).toBe(revision);
+ expect(JSON.parse(await readFile(h.path,'utf8')).devices.portal.active).toBe(true);
 });

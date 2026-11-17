@@ -1,4 +1,5 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
+import {HaStopActuator} from '../../../../__app_modules/household/supervision/server/adapters/HaStopActuator.mjs';
 import {SupervisionAccessGuard} from '../../../../__app_modules/household/supervision/server/application/SupervisionAccessGuard.mjs';
 import {StopReconciler} from '../../../../__app_modules/household/supervision/server/application/StopReconciler.mjs';
 import {PortalKeysLockdownAdapter} from '../../../../__backend/src/1_adapters/devices/PortalKeysLockdownAdapter.mjs';
@@ -105,4 +106,31 @@ it('records the first pending command before a hung consumer can finish',async()
  const pending=reconciler.reconcile();await new Promise(resolve=>setTimeout(resolve,0));
  expect(observations.some(value=>value.health.some(row=>row.commandRevision===2 && row.desiredBlocked && !row.acknowledged))).toBe(true);
  finish({blocked:true});await pending;
+});
+
+it('release does not restart content',async()=>{
+ const h=await stopped(),contentLaunch=vi.fn(),powerOn=vi.fn();let latch='on',revision=2;
+ const gateway={callService:async(_domain,service,data)=>{
+  if(service==='daylight_parental_stop'){latch=data.active?'on':'off';revision=data.command_revision;}
+  else if(service.includes('play') || service.includes('load'))contentLaunch();
+  else powerOn();return {ok:true};
+ },getState:async id=>({state:id==='input_boolean.daylight_parental_stop'?latch:`${revision}:${latch}`})};
+ const actuator=new HaStopActuator({gateway,clock:h.clock,sleep:async()=>{},entities:['switch.fixture']});
+ const reconciler=new StopReconciler({...h,consumers:[{deviceId:'garage',capability:'ha-stop',release:command=>actuator.release(command)}]});
+ await h.service.release({actor:parent,scopeId:'child-public',idempotencyKey:'release-no-resume'});await reconciler.reconcile();
+ expect(await h.service.status({deviceId:'garage'})).toMatchObject({active:false});
+ expect(await reconciler.isReady({deviceId:'garage'})).toBe(true);expect(latch).toBe('off');
+ expect(contentLaunch).not.toHaveBeenCalled();expect(powerOn).not.toHaveBeenCalled();
+});
+it('offline consumer prevents an all-enforced result',async()=>{
+ const h=await supervisionFixture();
+ // The durable scope and registered consumer cover the piano as well as the online Portal.
+ const {SupervisionService}=await import('../../../../__app_modules/household/supervision/server/application/SupervisionService.mjs');
+ const service=new SupervisionService({...h,scopes:{'child-public':['portal','yellow-room-tablet']}});await service.initialize();
+ await service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'partial-offline'});
+ const reconciler=new StopReconciler({...h,consumers:[{deviceId:'portal',capability:'portal-keys',stop:async()=>({blocked:true})},{deviceId:'yellow-room-tablet',capability:'browser',stop:async()=>{throw Error('offline');}}]});
+ await reconciler.reconcile();expect(await reconciler.isReady({deviceId:'portal'})).toBe(true);
+ expect(await reconciler.isReady({deviceId:'yellow-room-tablet'})).toBe(false);
+ expect((await Promise.all(['portal','yellow-room-tablet'].map(deviceId=>reconciler.isReady({deviceId})))).every(Boolean)).toBe(false);
+ expect(await service.status({deviceId:'yellow-room-tablet'})).toMatchObject({active:true});
 });

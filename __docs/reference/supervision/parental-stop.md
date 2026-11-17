@@ -148,3 +148,101 @@ Legacy ACK contact and recovery timestamps are sampled when the native response
 completes, rather than when the request began. Fallback notification recipients
 are resolved with the runtime household ID; a household without a configured head
 leaves its notification pending instead of using another household's parent.
+
+
+The runtime drill in `tests/live/flow/supervision/parental-stop.runtime.test.mjs`
+is a device-operation acceptance test. Preparing or listing it grants no permission
+to deploy, enroll, release, scan, restart a backend, disconnect a device, or send
+notifications. Its execution requires a separately approved parent arrangement,
+`SUPERVISION_SAFE_DRILL=yes`, parent credentials, and both `BASE_URL` and
+`SUPERVISION_DRILL_BASE_URL` selecting the same single managed stack. Always set
+`BASE_URL`, including for `--list`, so Playwright cannot start its default backend.
+Never run `npm test` or its port-cleaning pretest to validate this preparation.
+
+`SUPERVISION_DRILL_VIEWS` is a JSON array with `label`, `deviceId`, `path`,
+`childSelector`, and `requiredCapabilities`. Required labels are `garage`, `bank`,
+`reward`, `code`, `piano`, and `arcade`. Multiple school views share the Portal's
+registered ID and one enrolled browser context; enrollment must not rotate that
+device's credentials once per view. The inventory must include every device from
+bootstrap and every capability in the actual enforcement rows, so omissions fail
+the drill. Extra test-browser views are browser evidence only.
+
+Set `SUPERVISION_DRILL_EVIDENCE` to a private JSON file updated by the observing
+parent during the drill. Before any command, it must contain this structure:
+
+```json
+{
+  "runId": "<unique-approved-drill-id>",
+  "offlineDeviceId": "<registered-device-to-disconnect>",
+  "artifacts": {
+    "frontend": "<candidate-build-sha>",
+    "backend": "<candidate-build-sha>",
+    "devices": {
+      "<registered-device>": {
+        "installedVersion": "<observed-installed-version>",
+        "candidateId": "<reviewed-native-or-shell-artifact-sha>",
+        "signingLineageVerified": true,
+        "pairingPrepared": true
+      }
+    }
+  },
+  "rollback": {
+    "artifactId": "<exact-tested-previous-build-and-config-artifact>",
+    "testedAt": "<offset-aware-wall-timestamp>",
+    "ledgerPreserved": true
+  },
+  "observations": []
+}
+```
+
+Record truthful native package/version/signature comparisons against the installed
+artifact; do not uninstall or reassign device ownership to bypass incompatibility.
+Prepare additive configuration and pairing/migration candidates separately. Keep
+legacy restrictions until coverage and paired consumers acknowledge adoption; if
+migration is blocked, keep the installation closed. A missing artifact, untested
+rollback or unavailable signing/version evidence is pending acceptance.
+
+Each independent physical observation has `runId`, `deviceId`, `commandRevision`,
+`phase`, `check`, `passed: true`, `observedAt` (with UTC offset or Z), `observer`, and
+`artifactId` matching that device's reviewed `candidateId` and identifying the actual installed
+artifact observed. The run ID and artifact identities remain fixed during the drill. Record only these
+facts, never passwords, scanner payloads, tokens, typed answers, or key sequences.
+Use the current native revision from that device's bootstrap/enforcement status;
+an older command, earlier drill, missing observer or future timestamp cannot pass.
+The harness reads this file while polling and attaches per-device revisions,
+current ACKs, missing capabilities and physical check results to its private test
+output. Preserve that output with the private acceptance record, outside Git.
+
+The `active` phase requires `<label>-physically-active` for every view: real school
+input, piano video/MIDI, garage audio/game and the actual native arcade foreground.
+Only the actual normal-context administrator scanner event can trigger the Stop.
+For `stopped`, every device requires `renderer-restart-retained`,
+`backend-restart-retained`, and `disconnect-retained`. Additionally record:
+
+| View | Independent stopped checks |
+| --- | --- |
+| School bank/reward/code | `input-ceased` |
+| Piano | `video-ceased`, `midi-ceased`, `other-app-retained` |
+| Garage | `audio-ceased`, `game-ceased` |
+| Arcade | `native-foreground-terminated`, `other-app-retained` |
+
+The observer performs approved restarts/disconnects/foreground changes on the
+actual devices, restores connectivity, and checks that the current native ACKs
+return at the same Stop revision. Browser reload, overlay visibility and child
+unmounting cannot substitute. Required HA evidence must still contain exactly two
+distinct fresh off samples at least 2,000 ms apart within the 30,000 ms command
+window. A latch ACK cannot substitute for those samples. The harness retains the initial
+command's HA report pair before scheduled reconciliation replaces its detail;
+current ACK freshness is checked separately throughout the later restart checks.
+
+The `released` phase requires current false ACKs and `no-content-resume` plus
+`no-power-on` on every device. The final `offline` phase requires another real scan
+at a newer revision while the selected consumer is unreachable. Record
+`consumer-unreachable`, `parent-sees-unverified`, and `phone-delivered` for that
+device. The current health must show that consumer unacknowledged and activation
+false; the resulting acceptance record must remain all-enforced false. A recorded
+transport acceptance is insufficient for `phone-delivered`: the parent must
+observe the incident on the actual phone. Pending or unknown phone delivery blocks
+that check. The final negative drill leaves Stop active; release remains a
+deliberate parent operation. Failure closes browser contexts without an automatic
+release. Syntax checks, isolated tests and `--list` do not certify any device.
