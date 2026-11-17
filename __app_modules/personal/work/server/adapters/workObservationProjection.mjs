@@ -125,7 +125,7 @@ export function normalizeItem({
   return validateWorkItem({
     ...source,
     observedAt,
-    version: hash({...source,...(provider==='todoist'?{completedCount:row.completed_count??null,deleted:row.is_deleted??false,priority:row.priority??null,labels:row.labels??[]}: {})})
+    version: hash({...source,...(provider==='todoist'?{completedCount:row.completed_count??null,deleted:row.is_deleted??false,priority:row.priority??null,labels:row.labels??[]}:{archived:row.archived??false,priority:row.priority??null,customFields:row.custom_fields??[],parent:row.parent??null})})
   });
 }
 function normalizeEvents({

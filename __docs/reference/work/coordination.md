@@ -31,7 +31,7 @@ Account aliases must agree on credential scope as well as account identity. A kn
 
 Collectors retain latest per-user/account attempt health separately at `current/{provider}-health.yml`. A failed refresh preserves the last complete task file but makes Work coverage unavailable, including after reader restart. A current snapshot is not proof that a later refresh succeeded.
 
-Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. Todoist exposes only implemented operations intersected with current configuration; ClickUp remains a read adapter until its command increment.
+Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. Todoist exposes only implemented operations intersected with current configuration; ClickUp commands use live List status definitions and configured semantic transitions.
 
 ## Runtime and private operator jobs
 
@@ -99,3 +99,24 @@ advance; advancing the due date alone proves nothing. Exact provider history
 supplies completion occurrences separately, so a next occurrence is never
 fabricated as an accomplishment. Unknown creates/deletes require explicit
 resolution rather than title matching or another blind write.
+
+## ClickUp workflow adapter
+
+ClickUp supports confirmed task create/update, native workflow transitions,
+archive and delete, plus List creation under `creationParentId` and List rename.
+List archiving is not advertised: the current documented List update API does
+not expose an archive operation. Space and Folder creation are outside this
+adapter. The configured credential record must identify the workspace; task
+workspace and List/Folder space membership are checked on live reads.
+
+`transitions` maps semantic actions such as `code_checked_in`, `complete` and
+`reopen` to exact native List statuses. The adapter refetches List definitions
+and rejects unavailable or invalid mappings. `complete` requires a done/closed
+native status; `reopen` requires another status. Check-in never implies acceptance
+without an explicit configured mapping and confirmation. Custom-field updates
+are unsupported; task creation enforces native required custom fields.
+
+Readback checks requested fields and detects changes in other represented task
+fields. This is best effort concurrency detection, not an atomic conditional
+write. An updated timestamp without a native completion timestamp remains
+unknown completion time and creates no attributed completion event.
