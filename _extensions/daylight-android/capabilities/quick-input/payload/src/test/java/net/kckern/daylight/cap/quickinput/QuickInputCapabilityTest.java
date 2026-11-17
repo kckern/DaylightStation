@@ -42,13 +42,17 @@ public class QuickInputCapabilityTest {
     private int recordScreens;
     private final List<String> notices = new ArrayList<>();
     private final List<String> uploads = Collections.synchronizedList(new ArrayList<String>());
+    private final List<String> urls = Collections.synchronizedList(new ArrayList<String>());
+    private final List<String> types = Collections.synchronizedList(new ArrayList<String>());
 
     private final Http http = new Http() {
         @Override public Reply get(String url) { throw new AssertionError(); }
         @Override public Reply postJson(String url, String json) { throw new AssertionError(); }
         @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) throws IOException {
             if (down) throw new IOException("no route to host");
-            uploads.add(headers.get("X-Daylight-Memo-Id"));
+            uploads.add(headers.get("X-Daylight-Input-Id"));
+            urls.add(url);
+            types.add(contentType);
             if (answer != null) return new Reply(status, answer);
             return new Reply(status, status == 200 ? "{\"ok\":true,\"duplicate\":false}" : "{\"ok\":false,\"error\":\"processing_failed\"}");
         }
@@ -85,10 +89,10 @@ public class QuickInputCapabilityTest {
 
     @Test public void aRecordingIsUploadedAndItsFileRemoved() throws Exception {
         File memo = record("1700000000000-ab12cd34");
-        assertEquals(1, TestCore.call(core, "POST", "/memo/recorded", null, "{}").getInt("waiting"));
+        assertEquals(1, TestCore.call(core, "POST", "/input/recorded", null, "{}").getInt("waiting"));
         cap.pumpOnce();
         assertFalse(memo.exists());
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals(1, queue.getInt("uploaded"));
         assertEquals(0, queue.getInt("waiting"));
         assertEquals(Collections.singletonList("1700000000000-ab12cd34"), uploads);
@@ -99,16 +103,16 @@ public class QuickInputCapabilityTest {
         down = true;
         record("1700000000000-ab12cd34");
         cap.pumpOnce();
-        assertEquals(1, TestCore.get(core, "/memo/queue").getInt("waiting"));
-        assertEquals("memo-queue uploads Voice memos: 1 voice memo waiting to upload daylight://memo/queue", notices.get(0));
+        assertEquals(1, TestCore.get(core, "/input/queue").getInt("waiting"));
+        assertEquals("input-queue uploads Quick inputs: 1 input waiting to upload (Journal 1) daylight://memo/queue", notices.get(0));
         cap.pumpOnce();
         assertEquals("an unchanged state is not announced again", 1, notices.size());
 
         down = false;
-        assertEquals(200, TestCore.call(core, "POST", "/memo/retry", null, "{}").getInt("_status"));
+        assertEquals(200, TestCore.call(core, "POST", "/input/retry", null, "{}").getInt("_status"));
         cap.pumpOnce();
-        assertEquals(0, TestCore.get(core, "/memo/queue").getInt("waiting"));
-        assertEquals("cancel memo-queue", notices.get(1));
+        assertEquals(0, TestCore.get(core, "/input/queue").getInt("waiting"));
+        assertEquals("cancel input-queue", notices.get(1));
     }
 
     @Test public void withNoNetworkNothingIsSentAndTheMemoWaits() throws Exception {
@@ -116,7 +120,7 @@ public class QuickInputCapabilityTest {
         record("1700000000000-ab12cd34");
         cap.pumpOnce();
         assertTrue(uploads.isEmpty());
-        assertEquals("1 voice memo waiting to upload", notices.get(0).replaceAll(".*: (.*) daylight.*", "$1"));
+        assertEquals("1 input waiting to upload (Journal 1)", notices.get(0).replaceAll(".*: (.*) daylight.*", "$1"));
     }
 
     @Test public void aMemoTheBackendKeepsFailingIsParkedAndSaidSo() throws Exception {
@@ -126,27 +130,27 @@ public class QuickInputCapabilityTest {
             cap.pumpOnce();
             now += 3_700_000;
         }
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals(1, queue.getInt("parked"));
         assertEquals(20, uploads.size());
         assertTrue("the audio is kept", memo.exists());
-        assertTrue(notices.get(notices.size() - 1).contains("1 voice memo could not be sent. Tap to try again."));
+        assertTrue(notices.get(notices.size() - 1).contains("1 input could not be sent (Journal 1). Tap to try again."));
 
         // A tap on that notice is the keyed link daylight://memo/queue.
         status = 200;
         JSONObject r = memoLink().handle("queue", NO_QUERY);
         assertEquals("toast", r.getString("effect"));
-        assertEquals("Trying again: 1 voice memo", r.getString("message"));
+        assertEquals("Trying again: 1 input", r.getString("message"));
         cap.pumpOnce();
         assertFalse(memo.exists());
-        assertEquals("cancel memo-queue", notices.get(notices.size() - 1));
+        assertEquals("cancel input-queue", notices.get(notices.size() - 1));
     }
 
     @Test public void withNoIdentityNothingIsRecordedNothingIsSentAndItIsSaid() throws Exception {
         core.settings().set(Backend.USER, "");
         JSONObject r = memoLink().handle("new", NO_QUERY);
         assertEquals("toast", r.getString("effect"));
-        assertEquals("Voice memos are not set up on this phone: identity not configured", r.getString("message"));
+        assertEquals("Quick inputs are not set up on this phone: identity not configured", r.getString("message"));
         assertEquals("the recorder is not opened", 0, recordScreens);
 
         // A recording made before the identity was lost is kept, not sent, and not retried in a loop.
@@ -156,11 +160,11 @@ public class QuickInputCapabilityTest {
         assertTrue(uploads.isEmpty());
         assertTrue(memo.exists());
         assertEquals(1, notices.size());
-        assertEquals("memo-queue uploads Voice memos are not set up: identity not configured. 1 voice memo is kept on this phone. daylight://memo/queue",
+        assertEquals("input-queue uploads Quick inputs are not set up: identity not configured. 1 input is kept on this phone (Journal 1). daylight://memo/queue",
                 notices.get(0));
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals("identity not configured", queue.getString("blocked"));
-        assertEquals("identity.user is not set: voice memos cannot be sent", queue.getJSONArray("problems").getString(0));
+        assertEquals("identity.user is not set: quick inputs cannot be sent", queue.getJSONArray("problems").getString(0));
         assertEquals("with nothing to send, the queue is not looked at again until something changes", -1, cap.nextWakeAtMs());
     }
 
@@ -176,7 +180,7 @@ public class QuickInputCapabilityTest {
     }
 
     @Test public void theQueueLinkSaysWhatIsThere() throws Exception {
-        assertEquals("No voice memos are waiting", memoLink().handle("queue", NO_QUERY).getString("message"));
+        assertEquals("No inputs are waiting", memoLink().handle("queue", NO_QUERY).getString("message"));
     }
 
     @Test public void theRecorderTellsThePayloadOverThePort() throws Exception {
@@ -219,7 +223,7 @@ public class QuickInputCapabilityTest {
         bare.prepare(new JSONObject());
         plain.start();
         assertEquals(0, FakeContext.liveThreads(QuickInputCapability.WORKER));
-        JSONObject queue = TestCore.get(bare, "/memo/queue");
+        JSONObject queue = TestCore.get(bare, "/input/queue");
         assertEquals(200, queue.getInt("_status"));
         assertEquals(0, queue.getInt("waiting"));
         assertEquals("with no identity and no site, both are problems", 2, queue.getJSONArray("problems").length());
@@ -234,7 +238,7 @@ public class QuickInputCapabilityTest {
         cap.pumpOnce();
         net.kckern.daylight.core.testing.FakeShell shell = (net.kckern.daylight.core.testing.FakeShell) core.shell();
         assertEquals(1, shell.notes.size());
-        assertEquals("MEMO uploaded 1700000000000-ab12cd34 32 bytes", shell.notes.get(0));
+        assertEquals("INPUT uploaded 1700000000000-ab12cd34 voice journal 32 bytes", shell.notes.get(0));
     }
 
     // ── the intake's device binding and daily allowance ──────────────────────
@@ -247,20 +251,20 @@ public class QuickInputCapabilityTest {
             cap.pumpOnce();
             now += 3_700_000;
         }
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals("thirty refusals later it is still waiting, not parked", 1, queue.getInt("waiting"));
         assertEquals(0, queue.getInt("parked"));
-        assertTrue(queue.getBoolean("notAllowed"));
+        assertEquals("[\"journal\"]", queue.getJSONArray("notAllowed").toString());
         assertTrue(memo.exists());
         assertEquals("said once", 1, notices.size());
-        assertTrue(notices.get(0), notices.get(0).contains("This phone is not allowed to send memos yet."));
+        assertTrue(notices.get(0), notices.get(0).contains("This phone is not allowed to send to Journal yet."));
 
         status = 200;
         answer = null;
         cap.pumpOnce();
         assertFalse(memo.exists());
-        assertEquals("cancel memo-queue", notices.get(notices.size() - 1));
-        assertFalse(TestCore.get(core, "/memo/queue").getBoolean("notAllowed"));
+        assertEquals("cancel input-queue", notices.get(notices.size() - 1));
+        assertEquals(0, TestCore.get(core, "/input/queue").getJSONArray("notAllowed").length());
     }
 
     @Test public void theDailyAllowanceStopsSendingUntilTheBackendsTimeAndSaysWhen() throws Exception {
@@ -271,7 +275,7 @@ public class QuickInputCapabilityTest {
         cap.pumpOnce();
         assertEquals(1, uploads.size());
         assertEquals(now + 3_600_000L, cap.nextWakeAtMs());
-        assertTrue(notices.get(0), notices.get(0).contains("The daily allowance for voice memos is used up. Sending resumes at about "
+        assertTrue(notices.get(0), notices.get(0).contains("The daily allowance for Journal is used up. Sending resumes at about "
                 + QueueNotice.clock(now + 3_600_000L)));
         // The owner taps the notice: nothing is sent early, and the answer says why.
         JSONObject r = memoLink().handle("queue", NO_QUERY);
@@ -284,19 +288,19 @@ public class QuickInputCapabilityTest {
         now += 1_000;
         cap.pumpOnce();
         assertEquals(3, uploads.size());
-        assertEquals(0, TestCore.get(core, "/memo/queue").getInt("waiting"));
+        assertEquals(0, TestCore.get(core, "/input/queue").getInt("waiting"));
     }
 
     @Test public void withADeviceIdentityTheIntakeCannotBindNothingIsRecordedOrSent() throws Exception {
         core.settings().set(Backend.DEVICE, "browser:example-tablet");
         JSONObject r = memoLink().handle("new", NO_QUERY);
-        assertEquals("Voice memos are not set up on this phone: device identity not configured", r.getString("message"));
+        assertEquals("Quick inputs are not set up on this phone: device identity not configured", r.getString("message"));
         assertEquals(0, recordScreens);
         record("1700000000000-ab12cd34");
         cap.pumpOnce();
         assertTrue(uploads.isEmpty());
-        assertTrue(notices.get(0), notices.get(0).contains("device identity not configured. 1 voice memo is kept on this phone."));
-        assertEquals("device identity not configured", TestCore.get(core, "/memo/queue").getString("blocked"));
+        assertTrue(notices.get(0), notices.get(0).contains("device identity not configured. 1 input is kept on this phone (Journal 1)."));
+        assertEquals("device identity not configured", TestCore.get(core, "/input/queue").getString("blocked"));
     }
 
     // ── a recording that was cut off ─────────────────────────────────────────
@@ -314,7 +318,7 @@ public class QuickInputCapabilityTest {
         };
         cap.pumpOnce();
         assertEquals("the recovered memo was sent", Collections.singletonList("1700000000000-ab12cd34"), uploads);
-        assertEquals(1, TestCore.get(core, "/memo/queue").getInt("cutOffKept"));
+        assertEquals(1, TestCore.get(core, "/input/queue").getInt("cutOffKept"));
         assertEquals(1, notices.size());
         assertEquals("memo-cutoff uploads Voice memos: 1 recording was cut off and cannot be played. It is kept on this phone and not sent. ",
                 notices.get(0));
@@ -342,26 +346,26 @@ public class QuickInputCapabilityTest {
         answer = "{\"ok\":false,\"error\":\"empty_transcription\"}";
         File refused = record("1700000000000-ab12cd34");
         cap.pumpOnce();
-        assertEquals(1, TestCore.get(core, "/memo/queue").getInt("parked"));
+        assertEquals(1, TestCore.get(core, "/input/queue").getInt("parked"));
         assertTrue("the notice carries the action", notices.get(notices.size() - 1).contains("could not be sent"));
         down = true;
         File waiting = record("1700000005000-ab12cd34");
         cap.pumpOnce();
 
         JSONObject first = memoLink().handle("discard", NO_QUERY);
-        assertEquals("Tap Discard again to delete 1 voice memo that could not be sent. This cannot be undone.", first.getString("message"));
+        assertEquals("Tap Discard again to delete 1 input that could not be sent. This cannot be undone.", first.getString("message"));
         assertTrue("nothing is deleted by the first tap", refused.exists());
         now += QuickInputCapability.DISCARD_CONFIRM_MS + 1;
         assertTrue("too late: it asks again", memoLink().handle("discard", NO_QUERY).getString("message").startsWith("Tap Discard again"));
         assertTrue(refused.exists());
         now += 2_000;
-        assertEquals("Discarded 1 voice memo", memoLink().handle("discard", NO_QUERY).getString("message"));
+        assertEquals("Discarded 1 input", memoLink().handle("discard", NO_QUERY).getString("message"));
         assertFalse(refused.exists());
         assertTrue("a memo that is only waiting is kept", waiting.exists());
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals(0, queue.getInt("parked"));
         assertEquals(1, queue.getInt("waiting"));
-        assertEquals("No voice memos to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
+        assertEquals("No inputs to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
     }
     // ── destinations ─────────────────────────────────────────────────────────
 
@@ -370,7 +374,7 @@ public class QuickInputCapabilityTest {
             assertEquals(Destinations.DEFAULTS[i], core.settings().get("input.dest." + (i + 1)));
         }
         assertEquals("", core.settings().get("input.dest." + Destinations.SLOTS));
-        org.json.JSONArray listed = TestCore.get(core, "/memo/queue").getJSONArray("destinations");
+        org.json.JSONArray listed = TestCore.get(core, "/input/queue").getJSONArray("destinations");
         assertEquals(5, listed.length());
         assertEquals("journal", listed.getJSONObject(0).getString("id"));
         assertEquals("voice", listed.getJSONObject(0).getString("kind"));
@@ -389,15 +393,97 @@ public class QuickInputCapabilityTest {
         }
         assertEquals("", core.settings().get("input.dest.6"));
         core.settings().set("input.dest.6", "walk|Walk|text|/api/v1/example/text");
-        assertEquals(6, TestCore.get(core, "/memo/queue").getJSONArray("destinations").length());
+        assertEquals(6, TestCore.get(core, "/input/queue").getJSONArray("destinations").length());
     }
 
     @Test public void aDestinationIdUsedTwiceIsAProblemAndNeverStopsAStart() throws Exception {
         core.settings().set("input.dest.6", "journal|Second journal|text|/api/v1/journalist/text");
-        JSONObject queue = TestCore.get(core, "/memo/queue");
+        JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals("input.dest.6: id 'journal' is used twice", queue.getJSONArray("problems").getString(0));
         assertEquals("the first line of that id stands", 5, queue.getJSONArray("destinations").length());
         cap.start();
         cap.stop();
+    }
+    // ── one queue for every kind and destination ─────────────────────────────
+
+    private File input(String name, int bytes) throws Exception {
+        File f = new File(cap.inputsInbox, name);
+        Files.write(f.toPath(), new byte[bytes]);
+        return f;
+    }
+
+    @Test public void textAndAPhotoGoThroughTheSameQueueToTheirOwnRoutes() throws Exception {
+        TestCore.get(core, "/input/queue");                 // makes the inboxes
+        File note = input("1700000000000-ab12cd34.meal-note.txt", 12);
+        File photo = input("1700000001000-ab12cd34.meal-photo.jpg", 300);
+        File memo = new File(inbox, "1700000002000-ab12cd34.meal.ogg");
+        Files.write(memo.toPath(), new byte[40]);
+        assertEquals(3, TestCore.call(core, "POST", "/input/recorded", null, "{}").getInt("waiting"));
+        cap.pumpOnce();
+        assertFalse(note.exists() || photo.exists() || memo.exists());
+        assertEquals(java.util.Arrays.asList("https://kiosk.example/api/v1/nutribot/text?user=example-user",
+                "https://kiosk.example/api/v1/nutribot/photo?user=example-user",
+                "https://kiosk.example/api/v1/nutribot/voice?user=example-user"), urls);
+        assertEquals(java.util.Arrays.asList("text/plain; charset=utf-8", "image/jpeg", "audio/ogg"), types);
+        net.kckern.daylight.core.testing.FakeShell shell = (net.kckern.daylight.core.testing.FakeShell) core.shell();
+        assertEquals("ids, kinds, destinations and sizes, and nothing of what was typed or photographed",
+                java.util.Arrays.asList("INPUT uploaded 1700000000000-ab12cd34 text meal-note 12 bytes",
+                        "INPUT uploaded 1700000001000-ab12cd34 photo meal-photo 300 bytes",
+                        "INPUT uploaded 1700000002000-ab12cd34 voice meal 40 bytes"), shell.notes);
+    }
+
+    @Test public void aDailyLimitOnOneDestinationDoesNotHoldTheOthersAndTheNoticeNamesIt() throws Exception {
+        TestCore.get(core, "/input/queue");
+        record("1700000000000-ab12cd34");                      // the journal's
+        input("1700000001000-ab12cd34.meal-photo.jpg", 300);
+        status = 429;
+        answer = "{\"ok\":false,\"error\":\"daily_limit\",\"limit\":60,\"retryAfterSeconds\":3600}";
+        cap.pumpOnce();
+        assertEquals("each destination was asked once and each is held on its own", 2, uploads.size());
+        String said = notices.get(notices.size() - 1);
+        assertTrue(said, said.contains("The daily allowance for Journal is used up."));
+        assertTrue(said, said.contains("The daily allowance for Meal photo is used up."));
+        // Only the journal's allowance comes back.
+        JSONObject held = TestCore.get(core, "/input/queue").getJSONObject("holds");
+        assertEquals(now + 3_600_000L, held.getLong("journal"));
+        assertEquals(now + 3_600_000L, held.getLong("meal-photo"));
+        status = 200;
+        answer = null;
+        now += 3_600_000L;
+        cap.pumpOnce();
+        assertEquals(0, TestCore.get(core, "/input/queue").getInt("waiting"));
+    }
+
+    @Test public void aDestinationThatWasRemovedParksItsInputsAndSaysSoByItsId() throws Exception {
+        TestCore.get(core, "/input/queue");
+        File photo = input("1700000001000-ab12cd34.meal-photo.jpg", 300);
+        core.settings().set("input.dest.5", "");
+        cap.pumpOnce();
+        assertTrue(uploads.isEmpty());
+        assertTrue("kept until it is sent or discarded", photo.exists());
+        JSONObject entry = TestCore.get(core, "/input/queue").getJSONArray("inputs").getJSONObject(0);
+        assertEquals("PARKED", entry.getString("state"));
+        assertEquals("unknown destination", entry.getString("lastError"));
+        assertTrue(notices.get(0), notices.get(0).contains("1 input could not be sent (meal-photo 1). Tap to try again."));
+    }
+
+    @Test public void theQueueOfTheBuildBeforeDestinationsIsCarriedOver() throws Exception {
+        File stateDir = new File(tmp.newFolder(), "state");
+        stateDir.mkdirs();
+        File kept = record("1600000000000-ab12cd34");
+        Files.write(new File(stateDir, QuickInputCapability.OLD_STATE_FILE).toPath(), ("{\"uploaded\":7,\"memos\":[{\"id\":\"1600000000000-ab12cd34\","
+                + "\"file\":\"" + kept.getPath().replace("\\", "\\\\") + "\",\"recordedAtMs\":1600000000000,\"state\":\"PARKED\",\"attempts\":20}]}")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        CoreRuntime other = TestCore.create(tmp.newFolder());
+        QuickInputCapability carried = new QuickInputCapability(http, stateDir, inbox, () -> now, () -> linkUp, () -> { });
+        other.add(carried);
+        other.prepare(new JSONObject());
+        JSONObject queue = TestCore.get(other, "/input/queue");
+        assertEquals(7, queue.getInt("uploaded"));
+        assertEquals(1, queue.getInt("parked"));
+        assertEquals("journal", queue.getJSONArray("inputs").getJSONObject(0).getString("dest"));
+        assertTrue(new File(stateDir, QuickInputCapability.STATE_FILE).isFile());
+        assertFalse(new File(stateDir, QuickInputCapability.OLD_STATE_FILE).exists());
+        carried.stop();
     }
 }

@@ -1,5 +1,6 @@
 package net.kckern.daylight.cap.quickinput;
 
+import net.kckern.daylight.cap.quickinput.Destinations.Kind;
 import net.kckern.daylight.core.backend.Backoff;
 
 import org.json.JSONArray;
@@ -11,10 +12,17 @@ import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Recordings waiting to be uploaded. Every change is written to disk before the
+ * Quick inputs (recordings, typed text, photos) waiting to be uploaded. One queue for
+ * every kind: an entry remembers where it goes, what it is, what it is sent as, when it
+ * was captured and the file that holds it. Every change is written to disk before the
  * method returns, so the queue survives the process being killed and the phone being
  * restarted. No Android types.
  *
@@ -28,8 +36,9 @@ import java.util.List;
  * One memo is out at a time. A memo found UPLOADING at start was interrupted and is
  * queued again: the backend answers a repeat of the same id as a duplicate.
  *
- * The whole queue can be held until a time (the backend's daily allowance is used up):
- * nothing is claimed before it, whatever asks.
+ * A destination can be held until a time (the backend's daily allowance for it is used
+ * up): nothing for that destination is claimed before it, whatever asks. The other
+ * destinations go on: a limit on one bot does not hold the other.
  *
  * A change that cannot be written is undone in memory before the failure is reported,
  * so a full disk never leaves a memo marked as out with nothing sending it.
@@ -42,10 +51,16 @@ final class InputQueue {
 
     enum State { QUEUED, UPLOADING, PARKED }
 
-    static final class Memo {
+    static final class Entry {
         final String id;
         final String file;
+        /** When it was captured: sent as X-Daylight-Recorded-At. */
         final long recordedAtMs;
+        /** The destination's id. Its route is looked up when the entry is sent. */
+        final String dest;
+        final Kind kind;
+        /** What the intake is told the body is. */
+        final String contentType;
         State state = State.QUEUED;
         /** Attempts that count toward MAX_ATTEMPTS. */
         int attempts;
@@ -54,10 +69,20 @@ final class InputQueue {
         long nextAttemptAtMs;
         String lastError = "";
 
-        Memo(String id, String file, long recordedAtMs) {
+        /** A recording with no destination of its own: a voice memo for the journal. */
+        Entry(String id, String file, long recordedAtMs) { this(id, file, recordedAtMs, Destinations.MEMO_DESTINATION, Kind.VOICE); }
+
+        Entry(String id, String file, long recordedAtMs, String dest, Kind kind) {
+            this(id, file, recordedAtMs, dest, kind, null);
+        }
+
+        Entry(String id, String file, long recordedAtMs, String dest, Kind kind, String contentType) {
             this.id = id;
             this.file = file;
             this.recordedAtMs = recordedAtMs;
+            this.dest = dest == null || dest.isEmpty() ? Destinations.MEMO_DESTINATION : dest;
+            this.kind = kind == null ? Kind.VOICE : kind;
+            this.contentType = contentType == null || contentType.isEmpty() ? this.kind.contentType(file) : contentType;
         }
     }
 
@@ -66,11 +91,12 @@ final class InputQueue {
 
     private final File stateFile;
     private final Store store;
-    private final List<Memo> memos = new ArrayList<>();
+    private final List<Entry> memos = new ArrayList<>();
     private int uploaded;
     private int lost;
     private int discarded;
-    private long holdUntilMs;
+    /** Destination id to the time before which nothing is sent to it. */
+    private final Map<String, Long> holds = new LinkedHashMap<>();
     private boolean closed;
 
     InputQueue(File stateFile) { this(stateFile, null); }
@@ -81,21 +107,33 @@ final class InputQueue {
         load();
     }
 
-    /** @return false when a memo with this id is already known. */
+    /** A recording with no destination of its own: a voice memo for the journal. */
     synchronized boolean add(String id, String file, long recordedAtMs) {
+        return add(id, file, recordedAtMs, Destinations.MEMO_DESTINATION, Kind.VOICE);
+    }
+
+    /** @return false when an input with this id is already known. */
+    synchronized boolean add(String id, String file, long recordedAtMs, String dest, Kind kind) {
         if (closed || find(id) != null) return false;
-        memos.add(new Memo(id, file, recordedAtMs));
+        memos.add(new Entry(id, file, recordedAtMs, dest, kind));
         persist();
         return true;
     }
 
-    /** The oldest memo that is due, now marked UPLOADING; null when none is due or one is already out. */
-    synchronized Memo claim(long nowMs) {
-        if (closed || nowMs < holdUntilMs) return null;
-        Memo oldest = null;
-        for (Memo m : memos) {
+    /** The oldest input that is due, now marked UPLOADING; null when none is due or one is already out. */
+    synchronized Entry claim(long nowMs) { return claim(nowMs, Collections.<String>emptySet()); }
+
+    /**
+     * @param skip destinations to leave alone: ones that already answered, in this pass,
+     *             in a way every other input for them would be answered too
+     */
+    synchronized Entry claim(long nowMs, Set<String> skip) {
+        if (closed) return null;
+        Entry oldest = null;
+        for (Entry m : memos) {
             if (m.state == State.UPLOADING) return null;
             if (m.state != State.QUEUED || m.nextAttemptAtMs > nowMs) continue;
+            if (held(m.dest) > nowMs || skip.contains(m.dest)) continue;
             if (oldest == null || m.recordedAtMs < oldest.recordedAtMs) oldest = m;
         }
         if (oldest == null) return null;
@@ -106,7 +144,7 @@ final class InputQueue {
 
     /** The backend accepted it. */
     synchronized void uploaded(String id) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return;
         memos.remove(m);
         uploaded++;
@@ -115,7 +153,7 @@ final class InputQueue {
 
     /** Its recording is no longer on the phone: there is nothing to send. */
     synchronized void lost(String id) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return;
         memos.remove(m);
         lost++;
@@ -124,7 +162,7 @@ final class InputQueue {
 
     /** It was not tried (no identity, no site): due at once, and no attempt is counted. */
     synchronized void release(String id) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return;
         m.state = State.QUEUED;
         persist();
@@ -138,7 +176,7 @@ final class InputQueue {
      * @return true when this was the last attempt and the memo is now parked
      */
     synchronized boolean retryLater(String id, String error, boolean counted, long nowMs) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return false;
         m.failures++;
         if (counted) m.attempts++;
@@ -155,21 +193,38 @@ final class InputQueue {
     }
 
     /**
-     * The backend said when it will take memos again (its daily allowance). The memo
-     * goes back to the queue with no attempt counted, and nothing is claimed before
-     * that time: not by the timer, and not by the owner asking to try again.
+     * The backend said when it will take inputs for this entry's destination again (its
+     * daily allowance). The entry goes back to the queue with no attempt counted, and
+     * nothing for that destination is claimed before that time: not by the timer, and
+     * not by the owner asking to try again. Other destinations are not held.
      */
     synchronized void holdUntil(String id, String error, long untilMs) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return;
         m.state = State.QUEUED;
         m.lastError = error == null ? "" : error;
-        holdUntilMs = Math.max(holdUntilMs, untilMs);
+        holds.put(m.dest, Math.max(held(m.dest), untilMs));
         persist();
     }
 
-    /** The time before which nothing is sent; 0 when there is none or it has passed. */
-    synchronized long holdUntilMs(long nowMs) { return holdUntilMs > nowMs ? holdUntilMs : 0; }
+    private long held(String dest) {
+        Long until = holds.get(dest);
+        return until == null ? 0 : until;
+    }
+
+    /** The latest time before which some destination is held; 0 when none is. */
+    synchronized long holdUntilMs(long nowMs) {
+        long latest = 0;
+        for (long until : holds.values()) if (until > nowMs) latest = Math.max(latest, until);
+        return latest;
+    }
+
+    /** The destinations held now, each with the time sending to it resumes. */
+    synchronized Map<String, Long> holds(long nowMs) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> h : holds.entrySet()) if (h.getValue() > nowMs) out.put(h.getKey(), h.getValue());
+        return out;
+    }
 
     /**
      * The owner threw away what could not be sent. Parked memos leave the queue; the
@@ -180,8 +235,8 @@ final class InputQueue {
     synchronized List<String> discardParked() {
         List<String> files = new ArrayList<>();
         if (closed) return files;
-        for (java.util.Iterator<Memo> it = memos.iterator(); it.hasNext(); ) {
-            Memo m = it.next();
+        for (java.util.Iterator<Entry> it = memos.iterator(); it.hasNext(); ) {
+            Entry m = it.next();
             if (m.state != State.PARKED) continue;
             files.add(m.file);
             it.remove();
@@ -193,7 +248,7 @@ final class InputQueue {
 
     /** The backend refused it for good. The audio is kept. */
     synchronized void park(String id, String error) {
-        Memo m = find(id);
+        Entry m = find(id);
         if (closed || m == null) return;
         m.attempts++;
         m.lastError = error == null ? "" : error;
@@ -204,7 +259,7 @@ final class InputQueue {
     /** Waiting and parked memos are all due now, each with a fresh count. */
     synchronized void retryAll(long nowMs) {
         if (closed) return;
-        for (Memo m : memos) {
+        for (Entry m : memos) {
             if (m.state == State.UPLOADING) continue;
             m.state = State.QUEUED;
             m.attempts = 0;
@@ -214,44 +269,63 @@ final class InputQueue {
         persist();
     }
 
-    /** When the next queued memo is due, or -1 when nothing is queued. */
+    /** When the next queued input is due, its destination's hold included; -1 when nothing is queued. */
     synchronized long nextAttemptAtMs() {
         long next = -1;
-        for (Memo m : memos) {
-            if (m.state == State.QUEUED && (next < 0 || m.nextAttemptAtMs < next)) next = m.nextAttemptAtMs;
+        for (Entry m : memos) {
+            if (m.state != State.QUEUED) continue;
+            long due = Math.max(m.nextAttemptAtMs, held(m.dest));
+            if (next < 0 || due < next) next = due;
         }
-        return next < 0 ? next : Math.max(next, holdUntilMs);
+        return next;
+    }
+
+    /** Destination id to how many inputs for it are queued or being sent. */
+    synchronized Map<String, Integer> waitingByDest() { return byDest(false); }
+
+    /** Destination id to how many inputs for it are parked. */
+    synchronized Map<String, Integer> parkedByDest() { return byDest(true); }
+
+    private Map<String, Integer> byDest(boolean parked) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (Entry m : memos) {
+            if ((m.state == State.PARKED) != parked) continue;
+            Integer n = out.get(m.dest);
+            out.put(m.dest, n == null ? 1 : n + 1);
+        }
+        return out;
     }
 
     synchronized int waiting() {
         int n = 0;
-        for (Memo m : memos) if (m.state != State.PARKED) n++;
+        for (Entry m : memos) if (m.state != State.PARKED) n++;
         return n;
     }
 
     synchronized int parked() {
         int n = 0;
-        for (Memo m : memos) if (m.state == State.PARKED) n++;
+        for (Entry m : memos) if (m.state == State.PARKED) n++;
         return n;
     }
 
     /** After this the queue writes nothing: the state file belongs to a successor. */
     synchronized void close() { closed = true; }
 
-    /** Ids, states and counts. No path: a file's name is its memo id. */
+    /** Ids, kinds, destinations, states and counts. No path, and nothing of what an input holds. */
     synchronized JSONObject describe() throws JSONException {
         JSONArray list = new JSONArray();
-        for (Memo m : memos) {
-            list.put(new JSONObject().put("id", m.id).put("recordedAtMs", m.recordedAtMs).put("state", m.state.name())
+        for (Entry m : memos) {
+            list.put(new JSONObject().put("id", m.id).put("kind", m.kind.word).put("dest", m.dest)
+                    .put("recordedAtMs", m.recordedAtMs).put("state", m.state.name())
                     .put("attempts", m.attempts).put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
         }
         return new JSONObject().put("ok", true).put("waiting", waiting()).put("parked", parked())
                 .put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                .put("holdUntilMs", holdUntilMs).put("memos", list);
+                .put("holds", new JSONObject(holds)).put("inputs", list);
     }
 
-    private Memo find(String id) {
-        for (Memo m : memos) if (m.id.equals(id)) return m;
+    private Entry find(String id) {
+        for (Entry m : memos) if (m.id.equals(id)) return m;
         return null;
     }
 
@@ -262,12 +336,12 @@ final class InputQueue {
             uploaded = doc.optInt("uploaded", 0);
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
-            holdUntilMs = doc.optLong("holdUntilMs", 0);
-            JSONArray list = doc.optJSONArray("memos");
+            readHolds(doc);
+            JSONArray list = entriesOf(doc);
             for (int i = 0; list != null && i < list.length(); i++) {
                 try {
+                    Entry m = entryOf(list.getJSONObject(i));
                     JSONObject o = list.getJSONObject(i);
-                    Memo m = new Memo(o.getString("id"), o.getString("file"), o.optLong("recordedAtMs", 0));
                     State stored = State.valueOf(o.optString("state", "QUEUED"));
                     // The process ended mid-upload. The backend answers a repeated id as a duplicate.
                     m.state = stored == State.UPLOADING ? State.QUEUED : stored;
@@ -288,9 +362,36 @@ final class InputQueue {
             uploaded = 0;
             lost = 0;
             discarded = 0;
-            holdUntilMs = 0;
+            holds.clear();
         }
         lastWritten = snapshot();
+    }
+
+    /** "inputs"; "memos" in a file written before there were destinations. */
+    private static JSONArray entriesOf(JSONObject doc) {
+        JSONArray list = doc.optJSONArray("inputs");
+        return list != null ? list : doc.optJSONArray("memos");
+    }
+
+    /** An entry written before there were destinations has neither: it is a voice memo for the journal. */
+    private static Entry entryOf(JSONObject o) throws JSONException {
+        return new Entry(o.getString("id"), o.getString("file"), o.optLong("recordedAtMs", 0),
+                o.optString("dest", ""), Kind.of(o.optString("kind", Kind.VOICE.word)), o.optString("contentType", ""));
+    }
+
+    /** "holds" by destination; the one "holdUntilMs" of an earlier file was the journal's. */
+    private void readHolds(JSONObject doc) {
+        holds.clear();
+        JSONObject stored = doc.optJSONObject("holds");
+        if (stored != null) {
+            for (Iterator<String> it = stored.keys(); it.hasNext(); ) {
+                String dest = it.next();
+                long until = stored.optLong(dest, 0);
+                if (until > 0) holds.put(dest, until);
+            }
+        }
+        long old = doc.optLong("holdUntilMs", 0);
+        if (old > 0) holds.put(Destinations.MEMO_DESTINATION, Math.max(old, held(Destinations.MEMO_DESTINATION)));
     }
 
     /** The state as it is on disk: what a change that cannot be written is undone to. */
@@ -299,13 +400,14 @@ final class InputQueue {
     private String snapshot() {
         try {
             JSONArray list = new JSONArray();
-            for (Memo m : memos) {
+            for (Entry m : memos) {
                 list.put(new JSONObject().put("id", m.id).put("file", m.file).put("recordedAtMs", m.recordedAtMs)
+                        .put("dest", m.dest).put("kind", m.kind.word).put("contentType", m.contentType)
                         .put("state", m.state.name()).put("attempts", m.attempts).put("failures", m.failures)
                         .put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
             }
             return new JSONObject().put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                    .put("holdUntilMs", holdUntilMs).put("memos", list).toString();
+                    .put("holds", new JSONObject(holds)).put("inputs", list).toString();
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -319,11 +421,11 @@ final class InputQueue {
             uploaded = doc.optInt("uploaded", 0);
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
-            holdUntilMs = doc.optLong("holdUntilMs", 0);
-            JSONArray list = doc.optJSONArray("memos");
+            readHolds(doc);
+            JSONArray list = entriesOf(doc);
             for (int i = 0; list != null && i < list.length(); i++) {
                 JSONObject o = list.getJSONObject(i);
-                Memo m = new Memo(o.getString("id"), o.getString("file"), o.optLong("recordedAtMs", 0));
+                Entry m = entryOf(o);
                 m.state = State.valueOf(o.optString("state", "QUEUED"));
                 m.attempts = o.optInt("attempts", 0);
                 m.failures = o.optInt("failures", 0);
@@ -348,7 +450,7 @@ final class InputQueue {
             lastWritten = next;
         } catch (Exception e) {
             restore(lastWritten);
-            throw new IllegalStateException("cannot persist the memo queue: " + e.getClass().getSimpleName(), e);
+            throw new IllegalStateException("cannot persist the input queue: " + e.getClass().getSimpleName(), e);
         }
     }
 

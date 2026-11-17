@@ -75,7 +75,7 @@ public class UploadPumpTest {
         UploadPump.Pass pass = pump(q).drain(5000);
         assertTrue(pass.offline);
         assertEquals(0, sent.size());
-        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertEquals(0, q.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
         assertTrue("due at once when the network returns", q.nextAttemptAtMs() <= 5000);
     }
 
@@ -85,7 +85,7 @@ public class UploadPumpTest {
         assertEquals("identity not configured", pass.blocked);
         assertEquals(1, sent.size());
         assertEquals(2, q.waiting());
-        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertEquals(0, q.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
         assertTrue(audio("1000-a").exists());
     }
 
@@ -128,8 +128,8 @@ public class UploadPumpTest {
         InputQueue q = queueWith("1000-a");
         UploadPump broken = new UploadPump(q, memo -> { throw new IllegalStateException("broke"); }, () -> true);
         assertEquals(0, broken.drain(5000).uploaded);
-        assertEquals(1, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
-        assertEquals("QUEUED", q.describe().getJSONArray("memos").getJSONObject(0).getString("state"));
+        assertEquals(1, q.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
+        assertEquals("QUEUED", q.describe().getJSONArray("inputs").getJSONObject(0).getString("state"));
         assertEquals(1, pump(q, ok()).drain(q.nextAttemptAtMs()).uploaded);
     }
 
@@ -162,7 +162,7 @@ public class UploadPumpTest {
         }
         assertEquals(0, q.parked());
         assertEquals(1, q.waiting());
-        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertEquals(0, q.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
         assertTrue(audio("100-a").exists());
     }
 
@@ -171,8 +171,8 @@ public class UploadPumpTest {
         UploadPump.Pass pass = pump(q, new Result(Outcome.NOT_ALLOWED, "HTTP 403 device_not_allowed")).drain(1000);
         assertTrue(pass.notAllowed);
         assertEquals("the next memo would be answered the same way", 1, sent.size());
-        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
-        assertEquals(1000 + InputQueue.BASE_DELAY_MS, q.describe().getJSONArray("memos").getJSONObject(0).getLong("nextAttemptAtMs"));
+        assertEquals(0, q.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
+        assertEquals(1000 + InputQueue.BASE_DELAY_MS, q.describe().getJSONArray("inputs").getJSONObject(0).getLong("nextAttemptAtMs"));
     }
 
     @Test public void theDailyAllowanceHoldsTheWholeQueueUntilTheBackendsTime() throws Exception {
@@ -198,5 +198,48 @@ public class UploadPumpTest {
         assertTrue(sent.isEmpty());
         full[0] = false;
         assertEquals(1, pump.drain(2000).uploaded);
+    }
+    // ── more than one destination ────────────────────────────────────────────
+
+    private InputQueue mixed(String... idAndDest) throws Exception {
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        for (String pair : idAndDest) {
+            String id = pair.substring(0, pair.indexOf('>'));
+            Files.write(audio(id).toPath(), new byte[8]);
+            q.add(id, audio(id).getPath(), Long.parseLong(id.substring(0, id.indexOf('-'))), pair.substring(pair.indexOf('>') + 1),
+                    Destinations.Kind.VOICE);
+        }
+        return q;
+    }
+
+    /** A daily limit on one bot must not hold the other. */
+    @Test public void aDailyAllowanceHoldsItsOwnDestinationAndTheOthersAreSentInTheSamePass() throws Exception {
+        InputQueue q = mixed("100-a>journal", "200-b>meal", "300-c>journal", "400-d>meal");
+        UploadPump pump = pump(q, new Result(Outcome.WAIT, "HTTP 429 daily_limit", 3_600_000L), ok(), ok(), ok(), ok());
+        UploadPump.Pass pass = pump.drain(1000);
+        assertEquals(Arrays.asList("100-a", "200-b", "400-d"), sent);
+        assertEquals(2, pass.uploaded);
+        assertEquals(java.util.Collections.singletonMap("journal", 1000 + 3_600_000L), pass.limits);
+        assertEquals(1000 + 3_600_000L, pass.limitUntilMs);
+        assertEquals(2, q.waiting());
+        assertEquals(0, pump.drain(1000 + 3_599_999L).uploaded);
+        assertEquals(2, pump.drain(1000 + 3_600_000L).uploaded);
+    }
+
+    @Test public void aDestinationThisPhoneIsNotAllowedForDoesNotStopTheOthers() throws Exception {
+        InputQueue q = mixed("100-a>meal", "200-b>journal", "300-c>meal");
+        UploadPump.Pass pass = pump(q, new Result(Outcome.NOT_ALLOWED, "HTTP 403 device_not_allowed"), ok()).drain(1000);
+        assertEquals("the second meal input would be answered the same way and is not tried", Arrays.asList("100-a", "200-b"), sent);
+        assertTrue(pass.notAllowed);
+        assertEquals(java.util.Collections.singleton("meal"), pass.notAllowedDests);
+        assertEquals(java.util.Collections.singleton("journal"), pass.uploadedDests);
+        assertEquals(1, pass.uploaded);
+        assertEquals(2, q.waiting());
+    }
+
+    @Test public void aFailureOfTheLinkStillEndsThePassForEveryDestination() throws Exception {
+        InputQueue q = mixed("100-a>meal", "200-b>journal");
+        pump(q, new Result(Outcome.NO_CONNECTION, "no connection")).drain(1000);
+        assertEquals("with no connection the journal would fail the same way", 1, sent.size());
     }
 }

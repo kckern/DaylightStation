@@ -276,8 +276,9 @@ public class DeviceDefaultsTest {
         core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
         String[][] lists = { { "bookmarks.BookmarksCapability", "/bookmarks" }, { "onetap.OneTapActionsCapability", "/actions" },
                 { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" },
-                // A device that records memos is built with the user they are sent for.
-                { "voicememo.QuickInputCapability", "/memo/queue" } };
+                // A device that takes quick inputs is built with the user they are sent for, and its
+                // destinations are well formed.
+                { "voicememo.QuickInputCapability", "/input/queue" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);

@@ -15,7 +15,7 @@ public class MemoFilesTest {
     /** The payload's quick-input capability reads this directory and serves this port (InputInbox.DIR, QuickInputCapability.PORT). */
     @Test public void theInboxAndThePortAreTheOnesThePayloadUses() {
         assertEquals("memos/inbox", MemoFiles.INBOX);
-        assertEquals("memos", MemoFiles.PORT);
+        assertEquals("inputs", MemoFiles.PORT);
         assertEquals("{\"op\":\"recorded\"}", MemoFiles.RECORDED);
     }
 

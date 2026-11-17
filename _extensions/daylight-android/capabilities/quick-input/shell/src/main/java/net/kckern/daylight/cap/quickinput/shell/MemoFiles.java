@@ -14,14 +14,14 @@ import java.util.Locale;
  *   <id>-<nn>@<start ms>.m4a    one segment of a recording made on Android 8 or 9: a
  *                               memo of its own, <id>-<nn>, with its own start time
  *
- * The payload is told of a new one over the "memos" PayloadPort; when no payload is
+ * The payload is told of a new one over the "inputs" PayloadPort; when no payload is
  * loaded it finds the file at its next scan.
  */
 final class MemoFiles {
     /** Under the app's files directory (InputInbox.DIR in the payload). */
     static final String INBOX = "memos/inbox";
     /** The PayloadPort the payload's capability serves (QuickInputCapability.PORT). */
-    static final String PORT = "memos";
+    static final String PORT = "inputs";
     /** The one request that port takes from the recorder. */
     static final String RECORDED = "{\"op\":\"recorded\"}";
     /** Recordings that were cut off and cannot be played are kept here (InputInbox.CUT_OFF_DIR in the payload). */

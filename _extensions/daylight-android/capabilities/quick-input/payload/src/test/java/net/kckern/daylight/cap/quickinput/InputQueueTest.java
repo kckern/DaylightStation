@@ -2,7 +2,8 @@ package net.kckern.daylight.cap.quickinput;
 
 import static org.junit.Assert.*;
 
-import net.kckern.daylight.cap.quickinput.InputQueue.Memo;
+import net.kckern.daylight.cap.quickinput.Destinations.Kind;
+import net.kckern.daylight.cap.quickinput.InputQueue.Entry;
 import net.kckern.daylight.cap.quickinput.InputQueue.State;
 
 import org.json.JSONObject;
@@ -32,7 +33,7 @@ public class InputQueueTest {
         InputQueue q = new InputQueue(state);
         q.add("2000-a", "/inbox/2000-a.m4a", 2000);
         q.add("1000-a", "/inbox/1000-a.m4a", 1000);
-        Memo first = q.claim(5000);
+        Entry first = q.claim(5000);
         assertEquals("1000-a", first.id);
         assertEquals(State.UPLOADING, first.state);
         assertNull("one upload at a time: nothing else is claimed while one is out", q.claim(5000));
@@ -77,7 +78,7 @@ public class InputQueueTest {
         assertEquals(1, q.parked());
         assertEquals(0, q.waiting());
         assertNull(q.claim(Long.MAX_VALUE));
-        JSONObject memo = q.describe().getJSONArray("memos").getJSONObject(0);
+        JSONObject memo = q.describe().getJSONArray("inputs").getJSONObject(0);
         assertEquals("PARKED", memo.getString("state"));
         assertEquals(20, memo.getInt("attempts"));
         assertEquals("HTTP 500", memo.getString("lastError"));
@@ -93,7 +94,7 @@ public class InputQueueTest {
         assertEquals(1, q.parked());
         assertNull(q.claim(999_999_999));
         assertEquals(-1, q.nextAttemptAtMs());
-        assertEquals("HTTP 422 empty_transcription", q.describe().getJSONArray("memos").getJSONObject(0).getString("lastError"));
+        assertEquals("HTTP 422 empty_transcription", q.describe().getJSONArray("inputs").getJSONObject(0).getString("lastError"));
     }
 
     @Test public void retryAllMakesWaitingAndParkedMemosDueNowWithAFreshCount() throws Exception {
@@ -105,7 +106,7 @@ public class InputQueueTest {
         q.retryAll(6000);
         assertEquals(2, q.waiting());
         assertEquals(0, q.parked());
-        Memo again = q.claim(6000);
+        Entry again = q.claim(6000);
         assertEquals("1000-a", again.id);
         assertEquals(0, again.attempts);
         q.uploaded("1000-a");
@@ -117,7 +118,7 @@ public class InputQueueTest {
         q.add("1000-a", "/inbox/1000-a.m4a", 1000);
         q.claim(5000);
         q.release("1000-a");
-        Memo again = q.claim(5000);
+        Entry again = q.claim(5000);
         assertEquals(0, again.attempts);
         assertEquals(State.UPLOADING, again.state);
     }
@@ -205,7 +206,7 @@ public class InputQueueTest {
         // Before: the memo stayed UPLOADING in memory and every later claim answered null.
         failing(() -> q.claim(2000));
         disk.full = false;
-        Memo m = q.claim(3000);
+        Entry m = q.claim(3000);
         assertNotNull("the queue is not stuck", m);
         assertEquals("100-a", m.id);
         assertEquals(State.UPLOADING, m.state);
@@ -220,7 +221,7 @@ public class InputQueueTest {
         failing(() -> q.retryLater("100-a", "HTTP 500 processing_failed", true, 1000));
         disk.full = false;
         assertFalse(q.retryLater("100-a", "HTTP 500 processing_failed", true, 1000));
-        Memo m = q.claim(1000 + InputQueue.BASE_DELAY_MS);
+        Entry m = q.claim(1000 + InputQueue.BASE_DELAY_MS);
         assertEquals("one failure was written, so one is counted", 1, m.attempts);
     }
 
@@ -236,7 +237,7 @@ public class InputQueueTest {
         disk.full = false;
         q.park("100-a", "HTTP 422 empty_transcription");
         assertEquals(1, q.parked());
-        assertEquals("PARKED", q.describe().getJSONArray("memos").getJSONObject(0).getString("state"));
+        assertEquals("PARKED", q.describe().getJSONArray("inputs").getJSONObject(0).getString("state"));
     }
 
     // ── the daily allowance holds the whole queue ────────────────────────────
@@ -253,7 +254,7 @@ public class InputQueueTest {
         assertEquals(1000 + 7_200_000L, q.nextAttemptAtMs());
         assertEquals(1000 + 7_200_000L, q.holdUntilMs(4000));
         assertEquals(0, q.holdUntilMs(1000 + 7_200_000L));
-        Memo m = q.claim(1000 + 7_200_000L);
+        Entry m = q.claim(1000 + 7_200_000L);
         assertEquals("100-a", m.id);
         assertEquals("waiting for the allowance is not an attempt", 0, m.attempts);
         // And it survives a restart.
@@ -276,5 +277,101 @@ public class InputQueueTest {
         assertEquals(1, q.describe().getInt("discarded"));
         assertTrue(q.discardParked().isEmpty());
         assertEquals(1, new InputQueue(state).describe().getInt("discarded"));
+    }
+    // ── kind and destination ─────────────────────────────────────────────────
+
+    @Test public void anEntryRemembersItsDestinationKindContentTypeTimeAndFileAcrossARestart() {
+        InputQueue q = new InputQueue(state);
+        assertTrue(q.add("1000-a", "/in/1000-a.meal-photo.jpg", 1000, "meal-photo", Kind.PHOTO));
+        assertTrue(q.add("2000-a", "/in/2000-a.journal-note.txt", 2000, "journal-note", Kind.TEXT));
+        Entry photo = new InputQueue(state).claim(5000);
+        assertEquals("1000-a", photo.id);
+        assertEquals("meal-photo", photo.dest);
+        assertEquals(Kind.PHOTO, photo.kind);
+        assertEquals("image/jpeg", photo.contentType);
+        assertEquals(1000, photo.recordedAtMs);
+        assertEquals("/in/1000-a.meal-photo.jpg", photo.file);
+        InputQueue again = new InputQueue(state);
+        again.uploaded("1000-a");
+        Entry text = again.claim(5000);
+        assertEquals(Kind.TEXT, text.kind);
+        assertEquals("text/plain; charset=utf-8", text.contentType);
+        assertEquals("journal-note", text.dest);
+    }
+
+    @Test public void anEntryAddedWithoutADestinationIsAVoiceMemoForTheJournal() {
+        InputQueue q = new InputQueue(state);
+        q.add("1000-a", "/inbox/1000-a.ogg", 1000);
+        Entry e = q.claim(5000);
+        assertEquals("journal", e.dest);
+        assertEquals(Kind.VOICE, e.kind);
+        assertEquals("audio/ogg", e.contentType);
+    }
+
+    /** What the build before destinations wrote: no kind, no destination, one hold for everything. */
+    @Test public void aStateFileFromBeforeDestinationsLoadsAsVoiceForTheJournal() throws Exception {
+        Files.write(state.toPath(), ("{\"uploaded\":2,\"lost\":1,\"discarded\":0,\"holdUntilMs\":9000,\"memos\":["
+                + "{\"id\":\"1000-a\",\"file\":\"/inbox/1000-a.m4a\",\"recordedAtMs\":1000,\"state\":\"PARKED\",\"attempts\":3,"
+                + "\"failures\":4,\"nextAttemptAtMs\":0,\"lastError\":\"HTTP 422 empty_transcription\"},"
+                + "{\"id\":\"2000-a\",\"file\":\"/inbox/2000-a.ogg\",\"recordedAtMs\":2000,\"state\":\"QUEUED\"}]}").getBytes(StandardCharsets.UTF_8));
+        InputQueue q = new InputQueue(state);
+        assertEquals(1, q.parked());
+        assertEquals(1, q.waiting());
+        assertEquals(2, q.describe().getInt("uploaded"));
+        assertNull("the old hold is the journal's", q.claim(8999));
+        assertEquals(9000, q.holds(5000).get("journal").longValue());
+        Entry e = q.claim(9000);
+        assertEquals("2000-a", e.id);
+        assertEquals("journal", e.dest);
+        assertEquals(Kind.VOICE, e.kind);
+        assertEquals("audio/ogg", e.contentType);
+        JSONObject parked = q.describe().getJSONArray("inputs").getJSONObject(0);
+        assertEquals("voice", parked.getString("kind"));
+        assertEquals("journal", parked.getString("dest"));
+        assertEquals(3, parked.getInt("attempts"));
+    }
+
+    @Test public void aHoldOnOneDestinationLeavesTheOthersGoing() {
+        InputQueue q = new InputQueue(state);
+        q.add("100-a", "/x/100-a.journal.ogg", 100, "journal", Kind.VOICE);
+        q.add("200-b", "/x/200-b.meal.ogg", 200, "meal", Kind.VOICE);
+        q.add("300-c", "/x/300-c.journal.ogg", 300, "journal", Kind.VOICE);
+        assertEquals("100-a", q.claim(1000).id);
+        q.holdUntil("100-a", "HTTP 429 daily_limit", 10_000);
+        assertEquals("a daily limit on one bot does not hold the other", "200-b", q.claim(2000).id);
+        q.uploaded("200-b");
+        assertNull("both that are left are the journal's", q.claim(2000));
+        assertEquals(10_000, q.nextAttemptAtMs());
+        assertEquals(java.util.Collections.singletonMap("journal", 10_000L), q.holds(2000));
+        assertTrue(q.holds(10_000).isEmpty());
+        assertEquals("100-a", q.claim(10_000).id);
+        // Each destination's hold survives a restart on its own.
+        InputQueue held = new InputQueue(state);
+        held.add("400-d", "/x/400-d.meal.ogg", 400, "meal", Kind.VOICE);
+        held.holdUntil("100-a", "HTTP 429 daily_limit", 50_000);
+        InputQueue restarted = new InputQueue(state);
+        assertEquals(java.util.Collections.singletonMap("journal", 50_000L), restarted.holds(20_000));
+        assertEquals("400-d", restarted.claim(20_000).id);
+    }
+
+    @Test public void aClaimCanLeaveOutDestinationsAlreadyAnsweredInThisPass() {
+        InputQueue q = new InputQueue(state);
+        q.add("100-a", "/x/100-a.journal.ogg", 100, "journal", Kind.VOICE);
+        q.add("200-b", "/x/200-b.meal.ogg", 200, "meal", Kind.VOICE);
+        assertEquals("200-b", q.claim(1000, java.util.Collections.singleton("journal")).id);
+        q.release("200-b");
+        assertNull(q.claim(1000, new java.util.HashSet<>(java.util.Arrays.asList("journal", "meal"))));
+        assertEquals("100-a", q.claim(1000, java.util.Collections.<String>emptySet()).id);
+    }
+
+    @Test public void countsAreKeptForEachDestination() {
+        InputQueue q = new InputQueue(state);
+        q.add("100-a", "/x/100-a.journal.ogg", 100, "journal", Kind.VOICE);
+        q.add("200-b", "/x/200-b.meal-photo.jpg", 200, "meal-photo", Kind.PHOTO);
+        q.add("300-c", "/x/300-c.journal.ogg", 300, "journal", Kind.VOICE);
+        q.claim(1000);
+        q.park("100-a", "HTTP 422 empty_transcription");
+        assertEquals("{meal-photo=1, journal=1}", q.waitingByDest().toString());
+        assertEquals("{journal=1}", q.parkedByDest().toString());
     }
 }

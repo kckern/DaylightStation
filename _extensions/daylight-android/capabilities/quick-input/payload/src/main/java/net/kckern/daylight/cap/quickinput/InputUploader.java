@@ -17,12 +17,18 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Sends one memo and says what the queue should do next.
+ * Sends one quick input and says what the queue should do next. The request is the
+ * intake contract's, the same for every kind and destination:
  *
- *   POST /api/v1/journalist/memo?user=<user>     Content-Type: audio/ogg or audio/mp4
+ *   POST <the destination's route>?user=<user>
+ *   Content-Type: audio/ogg or audio/mp4 | text/plain; charset=utf-8 | image/jpeg
  *   X-Daylight-Device: fleet:<key>               (added to every request by BackendHttp)
- *   X-Daylight-Memo-Id: <id>
- *   X-Daylight-Recorded-At: <epoch ms the recording STARTED>
+ *   X-Daylight-Input-Id: <id>
+ *   X-Daylight-Recorded-At: <epoch ms the input was captured; for a recording, when it STARTED>
+ *   <the file, as it is>
+ *
+ * The route is the destination's, looked up when the input is sent: a path under
+ * /api/v1/ on the configured backend (Destinations), never an address.
  *
  *   200 with {duplicate: true|false}        accepted: the audio may be deleted
  *   400, 413, 415, 422                      refused for good: park
@@ -52,13 +58,13 @@ final class InputUploader implements UploadPump.Sender {
     static final String IDENTITY_NOT_CONFIGURED = "identity not configured";
     static final String DEVICE_NOT_CONFIGURED = "device identity not configured";
     static final String SITE_NOT_SET = "the household site is not set";
-    /** The intake refuses a larger body with 413. */
-    static final long MAX_BYTES = 26_214_400L;
+    /** The intake refuses a larger recording with 413. Each kind has its own limit (Destinations.Kind). */
+    static final long MAX_BYTES = Destinations.Kind.VOICE.maxBytes;
     /** What the intake takes as X-Daylight-Device from this app. */
     private static final Pattern DEVICE = Pattern.compile("fleet:[A-Za-z0-9._-]{1,96}");
     /** The error codes the intake answers with. A body with one of them, and ok:false, is the intake's own. */
     private static final Set<String> INTAKE_ERRORS = new HashSet<>(Arrays.asList(
-            "user_required", "invalid_memo_id", "empty_body", "unreadable_body", "unknown_user", "too_large",
+            "user_required", "invalid_input_id", "invalid_memo_id", "unusable_input", "empty_body", "unreadable_body", "unknown_user", "too_large",
             "unsupported_media_type", "empty_transcription", "processing_failed", "unavailable",
             "device_not_allowed", "cross_origin", "daily_limit"));
     private static final Pattern ERROR_CODE = Pattern.compile("[a-z_]{1,40}");
@@ -102,12 +108,22 @@ final class InputUploader implements UploadPump.Sender {
         }
     }
 
+    /** The destinations as configured now. Asked at every send, so a route that changed is the one used. */
+    interface Routes { Destinations now(); }
+
     private final Backend backend;
     private final Http http;
+    private final Routes routes;
 
+    /** With the contract's default destinations. */
     InputUploader(Backend backend, Http http) {
+        this(backend, http, () -> Destinations.usable(Arrays.asList(Destinations.DEFAULTS), null));
+    }
+
+    InputUploader(Backend backend, Http http, Routes routes) {
         this.backend = backend;
         this.http = http;
+        this.routes = routes;
     }
 
     /** Why this install cannot send at all, or null. Checked before a memo is recorded, too. */
@@ -120,30 +136,33 @@ final class InputUploader implements UploadPump.Sender {
     }
 
     /** The intake takes audio/ogg and audio/mp4; a recording says which it is by its name. */
-    static String contentType(String fileName) {
-        return fileName.endsWith(".ogg") ? "audio/ogg" : "audio/mp4";
-    }
+    static String contentType(String fileName) { return Destinations.Kind.VOICE.contentType(fileName); }
 
-    @Override public Result upload(InputQueue.Memo memo) {
+    @Override public Result upload(InputQueue.Entry memo) {
         String why = blocked(backend);
         if (why != null) return new Result(Outcome.BLOCKED, why);
+        // Where it goes is looked up now, by the id the entry remembers: no address is ever
+        // kept in the queue, and a destination that is gone receives nothing.
+        Destinations.Destination dest = routes.now().find(memo.dest);
+        if (dest == null) return new Result(Outcome.REJECTED, "unknown destination");
+        if (dest.kind != memo.kind) return new Result(Outcome.REJECTED, "destination does not take " + memo.kind.word);
         String url;
         try {
-            url = backend.url("/api/v1/journalist/memo?user=" + URLEncoder.encode(backend.user(), "UTF-8").replace("+", "%20"));
-        } catch (IllegalStateException | java.io.UnsupportedEncodingException notConfigured) {
+            url = backend.url(dest.route + "?user=" + URLEncoder.encode(backend.user(), "UTF-8").replace("+", "%20"));
+        } catch (IllegalStateException | IllegalArgumentException | java.io.UnsupportedEncodingException notConfigured) {
             return new Result(Outcome.BLOCKED, SITE_NOT_SET);
         }
         File file = new File(memo.file);
         if (!file.isFile()) return new Result(Outcome.LOST, "the recording is gone");
-        if (file.length() > MAX_BYTES) return new Result(Outcome.REJECTED, "too large to send");
+        if (file.length() > memo.kind.maxBytes) return new Result(Outcome.REJECTED, "too large to send");
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-Daylight-Memo-Id", memo.id);
+        headers.put("X-Daylight-Input-Id", memo.id);
         // When the recording started, as kept in the queue entry: the backend files the
         // journal entry under it, however much later the upload is.
         headers.put("X-Daylight-Recorded-At", String.valueOf(memo.recordedAtMs));
         Http.Reply reply;
         try {
-            reply = http.postFile(url, contentType(file.getName()), file, headers);
+            reply = http.postFile(url, memo.contentType, file, headers);
         } catch (Http.NotSentException notSent) {
             return new Result(Outcome.NO_CONNECTION, "no connection");
         } catch (SocketTimeoutException sentAndNotAnswered) {

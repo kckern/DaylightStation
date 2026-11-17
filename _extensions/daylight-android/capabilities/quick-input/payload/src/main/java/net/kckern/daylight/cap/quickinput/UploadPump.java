@@ -12,7 +12,7 @@ import java.io.File;
  * The audio of a memo is deleted in one place, here, after the backend accepted it.
  */
 final class UploadPump {
-    interface Sender { Result upload(InputQueue.Memo memo); }
+    interface Sender { Result upload(InputQueue.Entry memo); }
 
     /** Whether a network is up. With none, nothing is tried and no attempt is counted. */
     interface Link { boolean up(); }
@@ -26,10 +26,16 @@ final class UploadPump {
         boolean offline;
         /** Why nothing can be sent at all ("identity not configured"), or "". */
         String blocked = "";
-        /** The backend does not take memos from this phone for this user yet. */
+        /** The backend does not take inputs from this phone for this user yet, for at least one destination. */
         boolean notAllowed;
-        /** The backend's daily allowance is used up: nothing is sent before this time. 0 when not so. */
+        /** The destinations that answered so in this pass. */
+        final java.util.Set<String> notAllowedDests = new java.util.LinkedHashSet<>();
+        /** The destinations something was accepted for in this pass. */
+        final java.util.Set<String> uploadedDests = new java.util.LinkedHashSet<>();
+        /** The latest of the times in limits; 0 when no allowance was used up in this pass. */
         long limitUntilMs;
+        /** Destination id to the time its daily allowance is back, for each that answered so in this pass. */
+        final java.util.Map<String, Long> limits = new java.util.LinkedHashMap<>();
         /** The ids uploaded, for the log. */
         final java.util.List<String> uploadedIds = new java.util.ArrayList<>();
         final java.util.List<Long> sizes = new java.util.ArrayList<>();
@@ -63,8 +69,11 @@ final class UploadPump {
             pass.offline = true;
             return pass;
         }
-        InputQueue.Memo memo;
-        while (!stopped && (memo = queue.claim(nowMs)) != null) {
+        InputQueue.Entry memo;
+        // Destinations that answered, in this pass, in a way every other input for them would
+        // be answered too (not allowed yet). The rest of the queue goes on without them.
+        java.util.Set<String> skip = new java.util.HashSet<>();
+        while (!stopped && (memo = queue.claim(nowMs, skip)) != null) {
             File file = new File(memo.file);
             long bytes = file.length();
             Result result;
@@ -81,7 +90,8 @@ final class UploadPump {
                     file.delete();
                     pass.uploaded++;
                     pass.uploadedBytes += bytes;
-                    pass.uploadedIds.add(memo.id);
+                    pass.uploadedDests.add(memo.dest);
+                    pass.uploadedIds.add(memo.id + " " + memo.kind.word + " " + memo.dest);
                     pass.sizes.add(bytes);
                     break;
                 case REJECTED:
@@ -96,13 +106,24 @@ final class UploadPump {
                     queue.release(memo.id);
                     pass.blocked = result.detail;
                     return pass;
-                case WAIT:
-                    // The backend said when. The whole queue waits: every memo would get the same answer.
-                    pass.limitUntilMs = nowMs + result.waitMs;
-                    queue.holdUntil(memo.id, result.detail, pass.limitUntilMs);
-                    return pass;
+                case WAIT: {
+                    // The backend said when, for this destination: every input for it would get the
+                    // same answer, so it is held. A limit on one bot does not hold the other.
+                    long until = nowMs + result.waitMs;
+                    pass.limits.put(memo.dest, until);
+                    pass.limitUntilMs = Math.max(pass.limitUntilMs, until);
+                    queue.holdUntil(memo.id, result.detail, until);
+                    break;
+                }
+                case NOT_ALLOWED:
+                    // This phone is not bound to the user for this destination's bot yet. It
+                    // waits, uncounted; another destination may well be allowed.
+                    pass.notAllowed = true;
+                    pass.notAllowedDests.add(memo.dest);
+                    skip.add(memo.dest);
+                    queue.retryLater(memo.id, result.detail, false, nowMs);
+                    break;
                 default:
-                    if (result.outcome == Outcome.NOT_ALLOWED) pass.notAllowed = true;
                     // Only what the intake itself answered, or may have received, counts toward parking.
                     if (queue.retryLater(memo.id, result.detail, result.outcome == Outcome.RETRY, nowMs)) pass.parked++;
                     // The link is down or the backend is unwell: the next memo would fail the

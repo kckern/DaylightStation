@@ -51,10 +51,10 @@ public class InputUploaderTest {
         core.settings().set(Backend.USER, "example-user");
     }
 
-    private InputQueue.Memo memo() throws Exception {
+    private InputQueue.Entry memo() throws Exception {
         File f = tmp.newFile();
         Files.write(f.toPath(), new byte[64]);
-        return new InputQueue.Memo("1700000000000-ab12cd34", f.getPath(), 1700000000000L);
+        return new InputQueue.Entry("1700000000000-ab12cd34", f.getPath(), 1700000000000L);
     }
 
     private Result upload() throws Exception { return new InputUploader(backend, http).upload(memo()); }
@@ -62,11 +62,12 @@ public class InputUploaderTest {
     @Test public void uploadsTheFileForTheConfiguredUserWithItsId() throws Exception {
         Result r = upload();
         assertEquals(Outcome.UPLOADED, r.outcome);
-        assertEquals("https://kiosk.example/api/v1/journalist/memo?user=example-user", seenUrl);
+        assertEquals("https://kiosk.example/api/v1/journalist/voice?user=example-user", seenUrl);
         assertEquals("audio/mp4", seenType);
-        assertEquals("1700000000000-ab12cd34", seenHeaders.get("X-Daylight-Memo-Id"));
+        assertEquals("1700000000000-ab12cd34", seenHeaders.get("X-Daylight-Input-Id"));
         assertEquals("1700000000000", seenHeaders.get("X-Daylight-Recorded-At"));
         assertEquals(2, seenHeaders.size());
+        assertNull("the earlier header name is not sent beside the new one", seenHeaders.get("X-Daylight-Memo-Id"));
     }
 
     @Test public void aDuplicateAnswerIsAsGoodAsTheFirst() throws Exception {
@@ -79,6 +80,7 @@ public class InputUploaderTest {
         Object[][] table = {
                 { 400, "{\"ok\":false,\"error\":\"user_required\"}", Outcome.REJECTED, "HTTP 400 user_required" },
                 { 400, "{\"ok\":false,\"error\":\"invalid_memo_id\"}", Outcome.REJECTED, "HTTP 400 invalid_memo_id" },
+                { 400, "{\"ok\":false,\"error\":\"invalid_input_id\"}", Outcome.REJECTED, "HTTP 400 invalid_input_id" },
                 { 400, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.REJECTED, "HTTP 400 empty_body" },
                 { 400, "{\"ok\":false,\"error\":\"unreadable_body\"}", Outcome.REJECTED, "HTTP 400 unreadable_body" },
                 { 413, "{\"ok\":false,\"error\":\"too_large\"}", Outcome.REJECTED, "HTTP 413 too_large" },
@@ -86,6 +88,7 @@ public class InputUploaderTest {
                 { 415, "{\"ok\":false,\"error\":\"unsupported_media_type\"}", Outcome.REJECTED, "HTTP 415 unsupported_media_type" },
                 // Answered again on a retry, without transcribing: it never changes.
                 { 422, "{\"ok\":false,\"error\":\"empty_transcription\"}", Outcome.REJECTED, "HTTP 422 empty_transcription" },
+                { 422, "{\"ok\":false,\"error\":\"unusable_input\"}", Outcome.REJECTED, "HTTP 422 unusable_input" },
                 // The intake's own word, so each of these counts toward the limit of twenty.
                 { 404, "{\"ok\":false,\"error\":\"unknown_user\"}", Outcome.RETRY, "HTTP 404 unknown_user" },
                 { 403, "{\"ok\":false,\"error\":\"cross_origin\"}", Outcome.RETRY, "HTTP 403 cross_origin" },
@@ -149,7 +152,7 @@ public class InputUploaderTest {
         File f = tmp.newFile("1700000000000-ab12cd34.ogg");
         Files.write(f.toPath(), new byte[64]);
         // Queued long ago, uploaded now: the header is neither the file's time nor the clock's.
-        InputQueue.Memo recovered = new InputQueue.Memo("1700000000000-ab12cd34", f.getPath(), 1700000000000L);
+        InputQueue.Entry recovered = new InputQueue.Entry("1700000000000-ab12cd34", f.getPath(), 1700000000000L);
         assertEquals(Outcome.UPLOADED, new InputUploader(backend, http).upload(recovered).outcome);
         assertEquals("1700000000000", seenHeaders.get("X-Daylight-Recorded-At"));
         assertEquals("an Ogg recording is sent as what it is", "audio/ogg", seenType);
@@ -220,7 +223,7 @@ public class InputUploaderTest {
     }
 
     @Test public void aRecordingThatVanishedIsLostWithoutACall() throws Exception {
-        InputQueue.Memo m = memo();
+        InputQueue.Entry m = memo();
         assertTrue(new File(m.file).delete());
         Result r = new InputUploader(backend, http).upload(m);
         assertEquals(Outcome.LOST, r.outcome);
@@ -230,9 +233,110 @@ public class InputUploaderTest {
     @Test public void aRecordingTooLargeForTheIntakeIsRefusedWithoutACall() throws Exception {
         File f = tmp.newFile();
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "rw")) { raf.setLength(InputUploader.MAX_BYTES + 1); }
-        Result r = new InputUploader(backend, http).upload(new InputQueue.Memo("1-a", f.getPath(), 1));
+        Result r = new InputUploader(backend, http).upload(new InputQueue.Entry("1-a", f.getPath(), 1));
         assertEquals(Outcome.REJECTED, r.outcome);
         assertEquals("too large to send", r.detail);
         assertEquals(0, calls);
+    }
+    // ── kinds and destinations ───────────────────────────────────────────────
+
+    private InputQueue.Entry entry(String dest, Destinations.Kind kind, String suffix, int bytes) throws Exception {
+        File f = new File(tmp.newFolder(), "1700000000000-ab12cd34." + dest + suffix);
+        Files.write(f.toPath(), new byte[bytes]);
+        return new InputQueue.Entry("1700000000000-ab12cd34", f.getPath(), 1700000000000L, dest, kind);
+    }
+
+    @Test public void eachKindGoesToItsDestinationsRouteAsWhatItIs() throws Exception {
+        Object[][] table = {
+                { "journal", Destinations.Kind.VOICE, ".ogg", "/api/v1/journalist/voice", "audio/ogg" },
+                { "journal", Destinations.Kind.VOICE, ".m4a", "/api/v1/journalist/voice", "audio/mp4" },
+                { "journal-note", Destinations.Kind.TEXT, ".txt", "/api/v1/journalist/text", "text/plain; charset=utf-8" },
+                { "meal", Destinations.Kind.VOICE, ".ogg", "/api/v1/nutribot/voice", "audio/ogg" },
+                { "meal-note", Destinations.Kind.TEXT, ".txt", "/api/v1/nutribot/text", "text/plain; charset=utf-8" },
+                { "meal-photo", Destinations.Kind.PHOTO, ".jpg", "/api/v1/nutribot/photo", "image/jpeg" },
+        };
+        for (Object[] row : table) {
+            Result r = new InputUploader(backend, http).upload(entry((String) row[0], (Destinations.Kind) row[1], (String) row[2], 64));
+            assertEquals(row[0] + "", Outcome.UPLOADED, r.outcome);
+            assertEquals("https://kiosk.example" + row[3] + "?user=example-user", seenUrl);
+            assertEquals(row[4], seenType);
+            assertEquals("1700000000000-ab12cd34", seenHeaders.get("X-Daylight-Input-Id"));
+            assertEquals("1700000000000", seenHeaders.get("X-Daylight-Recorded-At"));
+            assertEquals(2, seenHeaders.size());
+        }
+    }
+
+    /** The whole answer table of the contract, for every kind: the queue's action does not depend on what was captured. */
+    @Test public void theAnswerTableIsTheSameForEveryKind() throws Exception {
+        Object[][] answers = {
+                { 200, "{\"ok\":true,\"inputId\":\"x\",\"duplicate\":false}", Outcome.UPLOADED },
+                { 200, "{\"ok\":true,\"inputId\":\"x\",\"duplicate\":true}", Outcome.UPLOADED },
+                { 200, "{\"ok\":true,\"inputId\":\"x\"}", Outcome.RETRY_UNCOUNTED },
+                { 400, "{\"ok\":false,\"error\":\"invalid_input_id\"}", Outcome.REJECTED },
+                { 400, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.REJECTED },
+                { 413, "{\"ok\":false,\"error\":\"too_large\",\"maxBytes\":16384}", Outcome.REJECTED },
+                { 415, "{\"ok\":false,\"error\":\"unsupported_media_type\"}", Outcome.REJECTED },
+                { 422, "{\"ok\":false,\"error\":\"unusable_input\",\"inputId\":\"x\"}", Outcome.REJECTED },
+                { 422, "{\"ok\":false,\"error\":\"empty_transcription\",\"inputId\":\"x\"}", Outcome.REJECTED },
+                { 403, "{\"ok\":false,\"error\":\"device_not_allowed\"}", Outcome.NOT_ALLOWED },
+                { 403, "{\"ok\":false,\"error\":\"cross_origin\"}", Outcome.RETRY },
+                { 404, "{\"ok\":false,\"error\":\"unknown_user\"}", Outcome.RETRY },
+                { 429, "{\"ok\":false,\"error\":\"daily_limit\",\"limit\":60,\"retryAfterSeconds\":600}", Outcome.WAIT },
+                { 500, "{\"ok\":false,\"error\":\"processing_failed\",\"inputId\":\"x\"}", Outcome.RETRY },
+                { 503, "{\"ok\":false,\"error\":\"unavailable\"}", Outcome.RETRY },
+                { 502, "<html>Bad Gateway</html>", Outcome.RETRY_UNCOUNTED },
+                { 500, "", Outcome.RETRY_UNCOUNTED },
+                { 403, "", Outcome.RETRY_UNCOUNTED },
+                { 404, "<html>Not Found</html>", Outcome.RETRY_UNCOUNTED },
+        };
+        Object[][] kinds = { { "journal", Destinations.Kind.VOICE, ".ogg" }, { "meal-note", Destinations.Kind.TEXT, ".txt" },
+                { "meal-photo", Destinations.Kind.PHOTO, ".jpg" } };
+        for (Object[] kind : kinds) {
+            for (Object[] row : answers) {
+                status = (Integer) row[0];
+                body = (String) row[1];
+                Result r = new InputUploader(backend, http).upload(entry((String) kind[0], (Destinations.Kind) kind[1], (String) kind[2], 64));
+                assertEquals(kind[0] + " " + row[0] + " " + row[1], row[2], r.outcome);
+            }
+        }
+    }
+
+    @Test public void anInputForADestinationThatIsNotConfiguredAnyMoreIsRefusedWithoutACall() throws Exception {
+        Result r = new InputUploader(backend, http).upload(entry("walk", Destinations.Kind.VOICE, ".ogg", 64));
+        assertEquals(Outcome.REJECTED, r.outcome);
+        assertEquals("unknown destination", r.detail);
+        assertEquals(0, calls);
+    }
+
+    @Test public void anInputOfAKindItsDestinationDoesNotTakeIsRefusedWithoutACall() throws Exception {
+        Result r = new InputUploader(backend, http).upload(entry("journal", Destinations.Kind.TEXT, ".txt", 64));
+        assertEquals(Outcome.REJECTED, r.outcome);
+        assertEquals("destination does not take text", r.detail);
+        assertEquals(0, calls);
+    }
+
+    @Test public void theRouteIsTheOneConfiguredWhenTheInputIsSent() throws Exception {
+        final java.util.List<String> lines = new java.util.ArrayList<>(java.util.Arrays.asList(Destinations.DEFAULTS));
+        InputUploader uploader = new InputUploader(backend, http, () -> Destinations.usable(lines, null));
+        InputQueue.Entry queued = entry("meal", Destinations.Kind.VOICE, ".ogg", 64);
+        lines.set(2, "meal|Meal|voice|/api/v1/nutribot/spoken");
+        assertEquals(Outcome.UPLOADED, uploader.upload(queued).outcome);
+        assertEquals("https://kiosk.example/api/v1/nutribot/spoken?user=example-user", seenUrl);
+    }
+
+    @Test public void eachKindHasItsOwnSizeLimitAndNothingLargerIsSent() throws Exception {
+        Object[][] table = { { "journal", Destinations.Kind.VOICE, ".ogg", 26_214_400L }, { "journal-note", Destinations.Kind.TEXT, ".txt", 16_384L },
+                { "meal-photo", Destinations.Kind.PHOTO, ".jpg", 15_728_640L } };
+        for (Object[] row : table) {
+            InputQueue.Entry e = entry((String) row[0], (Destinations.Kind) row[1], (String) row[2], 1);
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(e.file, "rw")) { raf.setLength((Long) row[3]); }
+            assertEquals("at the limit it goes", Outcome.UPLOADED, new InputUploader(backend, http).upload(e).outcome);
+            int before = calls;
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(e.file, "rw")) { raf.setLength((Long) row[3] + 1); }
+            Result r = new InputUploader(backend, http).upload(e);
+            assertEquals(Outcome.REJECTED, r.outcome);
+            assertEquals("too large to send", r.detail);
+            assertEquals(before, calls);
+        }
     }
 }

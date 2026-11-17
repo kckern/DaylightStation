@@ -33,7 +33,7 @@ public class InputInboxTest {
         InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
         assertEquals(1, InputInbox.scan(inbox, q));
         assertEquals(0, InputInbox.scan(inbox, q));
-        InputQueue.Memo m = q.claim(Long.MAX_VALUE);
+        InputQueue.Entry m = q.claim(Long.MAX_VALUE);
         assertEquals("1700000000000-ab12cd34", m.id);
         assertEquals(1700000000000L, m.recordedAtMs);
         assertEquals(done.getPath(), m.file);
@@ -43,7 +43,8 @@ public class InputInboxTest {
     @Test public void aFileWhoseNameIsNotAMemoIdIsLeftAlone() throws Exception {
         File inbox = tmp.newFolder("inbox");
         file(inbox, "my memo.m4a", 10);
-        file(inbox, "a.b.m4a", 10);
+        file(inbox, "a.B.m4a", 10);
+        file(inbox, "a.b.c.m4a", 10);
         StringBuilder longName = new StringBuilder();
         for (int i = 0; i < 65; i++) longName.append('a');
         file(inbox, longName + ".m4a", 10);
@@ -80,7 +81,7 @@ public class InputInboxTest {
         File ogg = file(inbox, "1700000000000-ab12cd34.ogg", 10);
         InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
         assertEquals(1, InputInbox.scan(inbox, q));
-        InputQueue.Memo m = q.claim(Long.MAX_VALUE);
+        InputQueue.Entry m = q.claim(Long.MAX_VALUE);
         assertEquals("1700000000000-ab12cd34", m.id);
         assertEquals("when the recording started, not when the file was found", 1700000000000L, m.recordedAtMs);
         assertEquals(ogg.getPath(), m.file);
@@ -93,11 +94,11 @@ public class InputInboxTest {
         file(inbox, "1700000000000-ab12cd34-01@1700000300500.m4a", 10);
         InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
         assertEquals(2, InputInbox.scan(inbox, q));
-        InputQueue.Memo first = q.claim(Long.MAX_VALUE);
+        InputQueue.Entry first = q.claim(Long.MAX_VALUE);
         assertEquals("1700000000000-ab12cd34-00", first.id);
         assertEquals(1700000000000L, first.recordedAtMs);
         q.uploaded(first.id);
-        InputQueue.Memo second = q.claim(Long.MAX_VALUE);
+        InputQueue.Entry second = q.claim(Long.MAX_VALUE);
         assertEquals("1700000000000-ab12cd34-01", second.id);
         assertEquals("the segment's own start, so the journal orders them", 1700000300500L, second.recordedAtMs);
         assertTrue(second.id.matches(InputInbox.ID.pattern()));
@@ -116,5 +117,78 @@ public class InputInboxTest {
         File cutOff = tmp.newFolder("cutoff");
         file(cutOff, "1700000000000-ab12cd34-02.m4a", 10);
         assertEquals(1, InputInbox.cutOffKept(cutOff));
+    }
+    // ── kind and destination, from the name ──────────────────────────────────
+
+    @Test public void theOtherInboxIsWhereTextAndPhotosAreWritten() {
+        assertEquals("inputs/inbox", InputInbox.INPUTS_DIR);
+    }
+
+    @Test public void aRecordingNamedForADestinationIsQueuedForIt() throws Exception {
+        File inbox = tmp.newFolder("inbox");
+        file(inbox, "1700000000000-ab12cd34.meal.ogg", 10);
+        file(inbox, "1700000001000-ab12cd34-00.meal@1700000001500.m4a", 10);
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(2, InputInbox.scan(inbox, q));
+        InputQueue.Entry whole = q.claim(Long.MAX_VALUE);
+        assertEquals("1700000000000-ab12cd34", whole.id);
+        assertEquals("meal", whole.dest);
+        assertEquals(Destinations.Kind.VOICE, whole.kind);
+        assertEquals("audio/ogg", whole.contentType);
+        q.uploaded(whole.id);
+        InputQueue.Entry segment = q.claim(Long.MAX_VALUE);
+        assertEquals("1700000001000-ab12cd34-00", segment.id);
+        assertEquals("meal", segment.dest);
+        assertEquals(1700000001500L, segment.recordedAtMs);
+        assertEquals("audio/mp4", segment.contentType);
+    }
+
+    @Test public void aRecordingWithNoDestinationInItsNameIsTheJournals() throws Exception {
+        File inbox = tmp.newFolder("inbox");
+        file(inbox, "1700000000000-ab12cd34.ogg", 10);
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        InputInbox.scan(inbox, q);
+        assertEquals("journal", q.claim(Long.MAX_VALUE).dest);
+    }
+
+    @Test public void textAndPhotosAreQueuedByTheirNames() throws Exception {
+        File inbox = tmp.newFolder("inputs");
+        File note = file(inbox, "1700000000000-ab12cd34.journal-note.txt", 12);
+        File photo = file(inbox, "1700000002000-ab12cd34.meal-photo.jpg", 400);
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(2, InputInbox.scan(inbox, q));
+        InputQueue.Entry first = q.claim(Long.MAX_VALUE);
+        assertEquals(Destinations.Kind.TEXT, first.kind);
+        assertEquals("journal-note", first.dest);
+        assertEquals("text/plain; charset=utf-8", first.contentType);
+        assertEquals(1700000000000L, first.recordedAtMs);
+        assertEquals(note.getPath(), first.file);
+        q.uploaded(first.id);
+        InputQueue.Entry second = q.claim(Long.MAX_VALUE);
+        assertEquals(Destinations.Kind.PHOTO, second.kind);
+        assertEquals("meal-photo", second.dest);
+        assertEquals("image/jpeg", second.contentType);
+        assertEquals(photo.getPath(), second.file);
+    }
+
+    /** Only a recording can do without a destination: that is what a memo from an earlier build looks like. */
+    @Test public void textOrAPhotoWithNoDestinationInItsNameIsLeftAlone() throws Exception {
+        File inbox = tmp.newFolder("inputs");
+        File a = file(inbox, "1700000000000-ab12cd34.txt", 12);
+        File b = file(inbox, "1700000000000-ab12cd35.jpg", 12);
+        File c = file(inbox, "1700000000000-ab12cd36.Meal.jpg", 12);
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(0, InputInbox.scan(inbox, q));
+        assertTrue(a.exists() && b.exists() && c.exists());
+    }
+
+    @Test public void whatIsStillBeingWrittenOrCapturedIsNotQueued() throws Exception {
+        File inbox = tmp.newFolder("inputs");
+        file(inbox, "1700000000000-ab12cd34.journal-note.txt.part", 12);
+        file(inbox, "1700000000000-ab12cd35.meal-photo.jpg.part", 12);
+        file(inbox, "1700000000000-ab12cd36.meal-photo.raw.part", 12);
+        InputQueue q = new InputQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(0, InputInbox.scan(inbox, q));
+        assertEquals(3, inbox.listFiles().length);
     }
 }

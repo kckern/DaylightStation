@@ -30,14 +30,15 @@ import java.util.Map;
 import java.util.function.LongSupplier;
 
 /**
- * Voice memos for the Journalist: the queue and the upload. Recording is installed
- * code (the shell half), so a memo can be captured while the payload is being
- * swapped; a finished recording is a file in the inbox, which this capability finds,
- * queues on disk and uploads, one at a time, when a network is up.
+ * Quick inputs: a recording, typed text or a photo, captured on the phone and sent to
+ * one of the configured destinations (the Journalist, Nutribot). This is the queue and
+ * the upload. Capturing is installed code (the shell half), so an input can be made
+ * while the payload is being swapped; a finished input is a file in an inbox, which
+ * this capability finds, queues on disk and uploads, one at a time, when a network is up.
  *
- * The audio of a memo leaves the phone in one request to the backend and is deleted
- * only after the backend answered 200 for it. Nothing here reads the audio, and no
- * log line or notice holds more than a memo's id, its size and its state.
+ * What was captured leaves the phone in one request to the backend and is deleted only
+ * after the backend answered 200 for it. Nothing here reads it, and no log line or
+ * notice holds more than an input's id, its kind, its destination, its size and its state.
  *
  * A memo recording starts from one place: the keyed link daylight://memo/new, which
  * only this app's own surfaces (a tile, the widget, a shortcut) can build. A page of
@@ -46,7 +47,11 @@ import java.util.function.LongSupplier;
  */
 public final class QuickInputCapability implements Capability {
     /** The PayloadPort the recorder tells of a finished recording. The shell half spells the same name (MemoFiles.PORT). */
-    static final String PORT = "memos";
+    static final String PORT = "inputs";
+    /** The queue's state, under the payload's state directory. */
+    static final String STATE_FILE = "input-queue.json";
+    /** What the same file was called before there were destinations. It is carried over once. */
+    static final String OLD_STATE_FILE = "memo-queue.json";
     static final String WORKER = "Daylight-memo-upload";
     /** input.dest.1 to input.dest.8: one destination a line (Destinations). */
     static final String DEST = "input.dest.";
@@ -65,6 +70,7 @@ public final class QuickInputCapability implements Capability {
     interface Recovery { int[] recover(); }
 
     static final String CUT_OFF_NOTICE = "memo-cutoff";
+    static final String NOT_SET_UP = "Quick inputs are not set up on this phone: ";
     /** A second tap on Discard within this long deletes; the first only asks. */
     static final long DISCARD_CONFIRM_MS = 20_000L;
 
@@ -83,8 +89,10 @@ public final class QuickInputCapability implements Capability {
     private final Object wake = new Object();
     private boolean woken;
     private volatile String blocked = "";
-    /** The backend answered that this phone may not send memos for the user yet. Cleared by the first success. */
-    private volatile boolean notAllowed;
+    /** Destinations the backend answered this phone may not send to for the user yet. Each is cleared by its first success. */
+    private final java.util.Set<String> notAllowed = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<String>());
+    /** Where the text and photo screens leave what they captured. */
+    File inputsInbox;
     private String lastAnnounced = "";
     private int cutOffAnnounced;
     private File cutOffDir;
@@ -138,18 +146,20 @@ public final class QuickInputCapability implements Capability {
             }
         });
 
-        core.router().route("GET", "/memo/queue", req -> {
+        core.router().route("GET", "/input/queue", req -> {
             InputQueue q = queueOrNull();
             JSONObject body = q == null
-                    ? Replies.ok().put("waiting", 0).put("parked", 0).put("uploaded", 0).put("lost", 0).put("memos", new JSONArray())
+                    ? Replies.ok().put("waiting", 0).put("parked", 0).put("uploaded", 0).put("lost", 0).put("inputs", new JSONArray())
                     : q.describe();
-            return Router.Response.json(200, body.put("blocked", blocked).put("notAllowed", notAllowed)
+            JSONArray refused;
+            synchronized (notAllowed) { refused = new JSONArray(notAllowed); }
+            return Router.Response.json(200, body.put("blocked", blocked).put("notAllowed", refused)
                     .put("cutOffKept", cutOffDir == null ? 0 : InputInbox.cutOffKept(cutOffDir))
                     .put("destinations", describeDestinations())
                     .put("problems", new JSONArray(problems())));
         });
-        core.router().route("POST", "/memo/recorded", req -> Router.Response.json(200, Replies.ok().put("waiting", recorded())));
-        core.router().route("POST", "/memo/retry", req -> {
+        core.router().route("POST", "/input/recorded", req -> Router.Response.json(200, Replies.ok().put("waiting", recorded())));
+        core.router().route("POST", "/input/retry", req -> {
             InputQueue q = requireQueue();
             q.retryAll(clock.getAsLong());
             wake();
@@ -164,7 +174,7 @@ public final class QuickInputCapability implements Capability {
      */
     @Override public void start() {
         if (queueOrNull() == null) return;
-        for (String problem : problems()) core.shell().note("MEMO", problem);
+        for (String problem : problems()) core.shell().note("INPUT", problem);
         Thread t = new Thread(this::run, WORKER);
         t.setDaemon(true);
         loop = t;
@@ -197,6 +207,7 @@ public final class QuickInputCapability implements Capability {
             if (context == null) return null;
             final File filesDir = ((Context) context).getFilesDir();
             if (inbox == null) inbox = new File(filesDir, InputInbox.DIR);
+            if (inputsInbox == null) inputsInbox = new File(filesDir, InputInbox.INPUTS_DIR);
             if (stateDir == null) stateDir = PayloadState.dir(core.shell().payloadDir());
             if (cutOffDir == null) cutOffDir = new File(filesDir, InputInbox.CUT_OFF_DIR);
             if (recovery == null) {
@@ -208,26 +219,38 @@ public final class QuickInputCapability implements Capability {
             }
         }
         if (cutOffDir == null) cutOffDir = new File(inbox.getParentFile(), "cutoff");
+        if (inputsInbox == null) inputsInbox = new File(inbox.getParentFile(), "inputs-inbox");
         inbox.mkdirs();
+        inputsInbox.mkdirs();
         if (link == null) link = this::networkUp;
-        InputQueue q = new InputQueue(new File(stateDir, "memo-queue.json"));
-        pump = new UploadPump(q, new InputUploader(backend, http), link);
+        File state = new File(stateDir, STATE_FILE);
+        File before = new File(stateDir, OLD_STATE_FILE);
+        // The queue of the build before destinations: the same entries, read as voice memos for the journal.
+        if (!state.exists() && before.isFile() && !before.renameTo(state)) state = before;
+        InputQueue q = new InputQueue(state);
+        pump = new UploadPump(q, new InputUploader(backend, http, () -> destinations(null)), link);
         queue = q;
         return q;
     }
 
     private InputQueue requireQueue() {
         InputQueue q = queueOrNull();
-        if (q == null) throw new net.kckern.daylight.core.UnsupportedException("voice memos need a running app");
+        if (q == null) throw new net.kckern.daylight.core.UnsupportedException("quick inputs need a running app");
         return q;
     }
 
     File inbox() { queueOrNull(); return inbox; }
 
-    /** The recorder finished a file: queue it and send it now. */
+    /** Both inboxes: the recorder's, and the one the text and photo screens write to. */
+    private void scan(InputQueue q) {
+        InputInbox.scan(inbox, q);
+        InputInbox.scan(inputsInbox, q);
+    }
+
+    /** A capture finished a file: queue it and send it now. */
     private int recorded() {
         InputQueue q = requireQueue();
-        InputInbox.scan(inbox, q);
+        scan(q);
         wake();
         return q.waiting();
     }
@@ -237,18 +260,20 @@ public final class QuickInputCapability implements Capability {
         InputQueue q = requireQueue();
         long now = clock.getAsLong();
         recoverCutOff();
-        InputInbox.scan(inbox, q);
+        scan(q);
         UploadPump.Pass pass = pump.drain(now);
         blocked = pass.blocked;
-        if (pass.uploaded > 0) notAllowed = false;
-        if (pass.notAllowed) notAllowed = true;
-        if (pass.limitUntilMs > 0) core.shell().note("MEMO", "the daily allowance is used up; nothing is sent for "
-                + ((pass.limitUntilMs - now) / 60_000) + " min");
-        for (int i = 0; i < pass.uploadedIds.size(); i++) {
-            core.shell().note("MEMO", "uploaded " + pass.uploadedIds.get(i) + " " + pass.sizes.get(i) + " bytes");
+        notAllowed.removeAll(pass.uploadedDests);
+        notAllowed.addAll(pass.notAllowedDests);
+        for (java.util.Map.Entry<String, Long> limit : pass.limits.entrySet()) {
+            core.shell().note("INPUT", "the daily allowance for " + limit.getKey() + " is used up; nothing is sent to it for "
+                    + ((limit.getValue() - now) / 60_000) + " min");
         }
-        if (pass.parked > 0) core.shell().note("MEMO", "parked " + pass.parked + ", " + q.parked() + " in all");
-        if (pass.lost > 0) core.shell().note("MEMO", pass.lost + " recording(s) were gone before they could be sent");
+        for (int i = 0; i < pass.uploadedIds.size(); i++) {
+            core.shell().note("INPUT", "uploaded " + pass.uploadedIds.get(i) + " " + pass.sizes.get(i) + " bytes");
+        }
+        if (pass.parked > 0) core.shell().note("INPUT", "parked " + pass.parked + ", " + q.parked() + " in all");
+        if (pass.lost > 0) core.shell().note("INPUT", pass.lost + " input(s) were gone before they could be sent");
         announce(q);
     }
 
@@ -264,11 +289,11 @@ public final class QuickInputCapability implements Capability {
             try {
                 int[] found = r.recover();
                 if (found[0] + found[1] > 0) {
-                    core.shell().note("MEMO", "cut-off recordings: " + found[0] + " recovered, " + found[1] + " kept aside as unplayable");
+                    core.shell().note("INPUT", "cut-off recordings: " + found[0] + " recovered, " + found[1] + " kept aside as unplayable");
                 }
             } catch (RuntimeException | LinkageError olderShellOrBroken) {
                 // An installed shell from before recovery existed: nothing is recovered and nothing is removed.
-                core.shell().note("MEMO", "cut-off recordings were not looked for: " + olderShellOrBroken.getClass().getSimpleName());
+                core.shell().note("INPUT", "cut-off recordings were not looked for: " + olderShellOrBroken.getClass().getSimpleName());
                 recovery = null;
             }
         }
@@ -283,7 +308,7 @@ public final class QuickInputCapability implements Capability {
                             + (kept == 1 ? "It is" : "They are") + " kept on this phone and not sent.", "");
             cutOffAnnounced = kept;
         } catch (RuntimeException e) {
-            core.shell().note("MEMO", "could not show the cut-off notice: " + e.getClass().getSimpleName());
+            core.shell().note("INPUT", "could not show the cut-off notice: " + e.getClass().getSimpleName());
         }
     }
 
@@ -308,7 +333,7 @@ public final class QuickInputCapability implements Capability {
             } catch (InterruptedException stopping) {
                 return;
             } catch (RuntimeException e) {
-                core.shell().note("MEMO", "upload pass failed: " + e.getClass().getSimpleName());
+                core.shell().note("INPUT", "upload pass failed: " + e.getClass().getSimpleName());
                 try { Thread.sleep(5000); } catch (InterruptedException stopping) { return; }
             }
         }
@@ -323,7 +348,17 @@ public final class QuickInputCapability implements Capability {
 
     /** A local notice through the notifications capability; nothing when it is absent. Said once per state. */
     private synchronized void announce(InputQueue q) {
-        QueueNotice notice = QueueNotice.of(q.waiting(), q.parked(), blocked, notAllowed, q.holdUntilMs(clock.getAsLong()));
+        Destinations dests = destinations(null);
+        // A notice names a destination by its label, and never holds anything of an input.
+        List<String> refused = new ArrayList<>();
+        synchronized (notAllowed) {
+            for (String id : notAllowed) if (q.waitingByDest().containsKey(id)) refused.add(dests.label(id));
+        }
+        java.util.Map<String, Long> limits = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, Long> hold : q.holds(clock.getAsLong()).entrySet()) {
+            if (q.waitingByDest().containsKey(hold.getKey())) limits.put(dests.label(hold.getKey()), hold.getValue());
+        }
+        QueueNotice notice = QueueNotice.of(labelled(q.waitingByDest(), dests), labelled(q.parkedByDest(), dests), blocked, refused, limits);
         String key = notice == null ? "" : notice.key();
         if (key.equals(lastAnnounced)) return;
         LocalNotices notices = core.services().find(LocalNotices.class);
@@ -334,8 +369,19 @@ public final class QuickInputCapability implements Capability {
                     notice.actionLabel, notice.actionLink);
             lastAnnounced = key;
         } catch (RuntimeException e) {
-            core.shell().note("MEMO", "could not show the queue's notice: " + e.getClass().getSimpleName());
+            core.shell().note("INPUT", "could not show the queue's notice: " + e.getClass().getSimpleName());
         }
+    }
+
+    /** Counts by destination id, as counts by the destination's label. */
+    private static java.util.Map<String, Integer> labelled(java.util.Map<String, Integer> byDest, Destinations dests) {
+        java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, Integer> e : byDest.entrySet()) {
+            String label = dests.label(e.getKey());
+            Integer n = out.get(label);
+            out.put(label, (n == null ? 0 : n) + e.getValue());
+        }
+        return out;
     }
 
     // ── links ─────────────────────────────────────────────────────────────────
@@ -343,11 +389,11 @@ public final class QuickInputCapability implements Capability {
     private JSONObject startRecording() throws Exception {
         // A memo that could never be sent is not recorded in the first place.
         String why = InputUploader.blocked(backend);
-        if (why != null) return LinkEffect.toast("Voice memos are not set up on this phone: " + why);
+        if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
         Recorder r = recorder();
         if (r == null) return LinkEffect.toast("Not available on this device");
         r.open();
-        core.shell().note("MEMO", "record screen opened");
+        core.shell().note("INPUT", "record screen opened");
         return LinkEffect.none();
     }
 
@@ -355,18 +401,22 @@ public final class QuickInputCapability implements Capability {
         InputQueue q = queueOrNull();
         if (q == null) return LinkEffect.toast("Not available on this device");
         int kept = q.waiting() + q.parked();
-        if (kept == 0) return LinkEffect.toast("No voice memos are waiting");
+        if (kept == 0) return LinkEffect.toast("No inputs are waiting");
         String why = InputUploader.blocked(backend);
-        if (why != null) return LinkEffect.toast("Voice memos are not set up on this phone: " + why);
+        if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
         long now = clock.getAsLong();
         q.retryAll(now);
         wake();
-        long held = q.holdUntilMs(now);
-        if (held > 0) {
-            return LinkEffect.toast("The daily allowance is used up. " + QueueNotice.memos(kept) + " will be sent after about "
-                    + QueueNotice.clock(held));
+        // A destination whose daily allowance is used up stays held: the backend said when.
+        java.util.Map<String, Long> holds = q.holds(now);
+        int heldBack = 0;
+        for (java.util.Map.Entry<String, Integer> w : q.waitingByDest().entrySet()) if (holds.containsKey(w.getKey())) heldBack += w.getValue();
+        if (heldBack == kept) {
+            return LinkEffect.toast("The daily allowance is used up. " + QueueNotice.inputs(kept) + " will be sent after about "
+                    + QueueNotice.clock(q.holdUntilMs(now)));
         }
-        return LinkEffect.toast("Trying again: " + QueueNotice.memos(kept));
+        return LinkEffect.toast("Trying again: " + QueueNotice.inputs(kept - heldBack)
+                + (heldBack > 0 ? ". " + heldBack + " more wait for a daily allowance" : ""));
     }
 
     /**
@@ -380,19 +430,19 @@ public final class QuickInputCapability implements Capability {
         int parked = q.parked();
         if (parked == 0) {
             discardArmedAtMs = 0;
-            return LinkEffect.toast("No voice memos to discard");
+            return LinkEffect.toast("No inputs to discard");
         }
         long now = clock.getAsLong();
         if (discardArmedAtMs == 0 || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
             discardArmedAtMs = now;
-            return LinkEffect.toast("Tap Discard again to delete " + QueueNotice.memos(parked) + " that could not be sent. This cannot be undone.");
+            return LinkEffect.toast("Tap Discard again to delete " + QueueNotice.inputs(parked) + " that could not be sent. This cannot be undone.");
         }
         discardArmedAtMs = 0;
         List<String> files = q.discardParked();
         for (String path : files) new File(path).delete();
-        core.shell().note("MEMO", "discarded " + files.size() + " parked memo(s) at the owner's request");
+        core.shell().note("INPUT", "discarded " + files.size() + " parked input(s) at the owner's request");
         announce(q);
-        return LinkEffect.toast("Discarded " + QueueNotice.memos(files.size()));
+        return LinkEffect.toast("Discarded " + QueueNotice.inputs(files.size()));
     }
 
     private Recorder recorder() {
@@ -429,8 +479,8 @@ public final class QuickInputCapability implements Capability {
     private List<String> problems() {
         List<String> out = new ArrayList<>();
         destinations(out);
-        if (backend.user().isEmpty()) out.add("identity.user is not set: voice memos cannot be sent");
-        else if (InputUploader.blocked(backend) != null) out.add("identity.device is not fleet:<key>: voice memos cannot be sent");
+        if (backend.user().isEmpty()) out.add("identity.user is not set: quick inputs cannot be sent");
+        else if (InputUploader.blocked(backend) != null) out.add("identity.device is not fleet:<key>: quick inputs cannot be sent");
         if (!backend.configured()) out.add(InputUploader.SITE_NOT_SET);
         return out;
     }
@@ -466,7 +516,7 @@ public final class QuickInputCapability implements Capability {
             cm.registerDefaultNetworkCallback(callback);
             networkCallback = callback;
         } catch (RuntimeException e) {
-            core.shell().note("MEMO", "no network callback, relying on the timer: " + e.getClass().getSimpleName());
+            core.shell().note("INPUT", "no network callback, relying on the timer: " + e.getClass().getSimpleName());
         }
     }
 
