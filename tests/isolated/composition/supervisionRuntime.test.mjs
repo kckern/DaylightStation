@@ -127,3 +127,13 @@ it('reports and alerts for every absent required consumer using the configured p
   expect((await h.runtime.health()).incidents.some(incident=>incident.alert.status==='accepted')).toBe(true);
  }finally{h.runtime.dispose();}
 });
+it.each(['selected-parent',null])('scopes fallback incident recipients to the runtime household (selected head: %s)',async selectedHead=>{
+ let now=100000;const intents=[],lookups=[];
+ const h=await setup({householdId:'selected-house',legacy:{},clock:{now:()=>now},monotonicNow:()=>now,consumers:[],configService:{getHeadOfHousehold:id=>{lookups.push(id);return id==='selected-house'?selectedHead:'default-parent';}},notificationService:{send:async intent=>{intents.push(intent);return [{channel:'push',accepted:true,delivered:null}];}}});
+ try{
+  await h.runtime.service.stop({actor:parent,scopeId:'child-public',idempotencyKey:'scoped-recipient'});await h.runtime.reconciler.reconcile();now+=5000;await h.runtime.reconciler.reconcile();
+  expect(lookups.length).toBeGreaterThan(0);expect(lookups.every(id=>id==='selected-house')).toBe(true);
+  if(selectedHead){expect(intents.length).toBeGreaterThan(0);expect(intents.every(intent=>intent.metadata.username===selectedHead)).toBe(true);}
+  else{expect(intents).toHaveLength(0);expect((await h.runtime.health()).incidents.some(incident=>incident.alert.status==='failed')).toBe(true);}
+ }finally{h.runtime.dispose();}
+});

@@ -132,3 +132,19 @@ require retrying the same dedupe key; the push tag also stays stable.
 
 The native/device and phone acceptance drill remains required. Unit tests, a
 stored accepted notification, or an HTTP success cannot close that gate.
+
+
+Legacy installations expose the same read-only enforcement rows in **Admin →
+Household → Devices → Kiosk Stop enforcement**. The existing admin authentication
+and permission gate protects `/api/v1/admin/household/shutdown/status`; the route
+requires the resolved household to match its registered diagnostics provider and
+rejects unsupported household selection. The panel displays top-level incident
+reporting failures as well as per-consumer evidence, and refreshes freshness every
+2,000 ms. It adds no Stop/release action or password flow. School and piano retain
+their existing blackout behavior and finite shutdown-window cache; enforcement
+metadata is never used to clear or extend that window.
+
+Legacy ACK contact and recovery timestamps are sampled when the native response
+completes, rather than when the request began. Fallback notification recipients
+are resolved with the runtime household ID; a household without a configured head
+leaves its notification pending instead of using another household's parent.

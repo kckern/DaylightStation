@@ -21,3 +21,8 @@ it('keeps undelivered and accepted-but-unconfirmed parent alerts visible',async(
  expect(screen.getByText(/portal.*alert.*failed.*retry pending/i)).toBeTruthy();
  expect(screen.getByText(/garage.*alert.*accepted.*phone delivery unknown/i)).toBeTruthy();
 });
+it('shows a top-level incident reporting failure even when no consumer row has an error',async()=>{
+ const api=async()=>({enforcement:{incidentReportingError:'INCIDENT_REPORTING_UNAVAILABLE',consumers:[],incidents:[]}});
+ render(<ParentControls api={api}/>);await act(async()=>fireEvent.click(screen.getByText('Parent controls')));
+ expect(screen.getByText('Incident reporting unavailable')).toBeTruthy();
+});

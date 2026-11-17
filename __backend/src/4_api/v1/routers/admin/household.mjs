@@ -34,11 +34,18 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  * @returns {express.Router}
  */
 export function createAdminHouseholdRouter(config) {
-  const { householdAdminService: service, logger = console } = config;
+  const { householdAdminService: service, shutdownDiagnostics, logger = console } = config;
   if (!service) {
     throw new Error('createAdminHouseholdRouter requires an injected householdAdminService');
   }
   const router = express.Router();
+
+  // Registered provider only; household identity is resolved by existing middleware.
+  router.get('/shutdown/status', asyncHandler(async(req,res)=>{
+    if(!shutdownDiagnostics?.read)return res.status(503).json({error:'SHUTDOWN_DIAGNOSTICS_UNAVAILABLE'});
+    if(req.householdId!==shutdownDiagnostics.householdId || (req.query.householdId!=null && req.query.householdId!==shutdownDiagnostics.householdId))return res.status(404).json({error:'SHUTDOWN_HOUSEHOLD_UNAVAILABLE'});
+    res.set('Cache-Control','no-store').json(await shutdownDiagnostics.read());
+  }));
 
   // GET / - Read household config + all member profiles
   router.get('/', asyncHandler((req, res) => {

@@ -4,3 +4,4 @@ export {useSupervisionAccess} from './useSupervisionAccess.js';
 export {publishLocalStop} from './localStop.js';
 export {useActivityStop} from './activityLifecycle.js';
 export {SupervisedActivity,useActivityScope} from './ActivityScope.jsx';
+export {EnforcementStatus} from './EnforcementStatus.jsx';

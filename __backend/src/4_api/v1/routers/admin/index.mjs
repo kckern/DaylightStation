@@ -55,6 +55,7 @@ export function createAdminRouter(config) {
     adminMediaService,
     eventBusAdministration,
     householdAdminService,
+    shutdownDiagnostics,
     yamlConfigFileService,
     appsConfigService,
     schedulerAdminService,
@@ -108,6 +109,7 @@ export function createAdminRouter(config) {
   // Mount household router (persistence + rules live in the injected HouseholdAdminService)
   const householdRouter = createAdminHouseholdRouter({
     householdAdminService,
+    shutdownDiagnostics,
     logger: logger.child?.({ submodule: 'household' }) || logger
   });
   router.use('/household', householdRouter);

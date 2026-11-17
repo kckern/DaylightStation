@@ -17,7 +17,7 @@ export function useShutdownLock(target, { onLock = null } = {}) {
       if (!alive) return;
       const locked = !!next?.locked;
       const value = { locked, lockedUntil: next?.lockedUntil ?? null };
-      setState(value);
+      setState({...value,enforcement:next?.enforcement??null});
       try { locked ? localStorage.setItem(cacheKey(target), JSON.stringify(value)) : localStorage.removeItem(cacheKey(target)); } catch { /* noop */ }
     };
     const refresh = async () => {

@@ -67,7 +67,7 @@ export async function createSupervisionRuntime(options){
   const coverage=validateConsumerManifest({devices,consumers});
   // Keep absent required consumers visible; no placeholder can acknowledge.
   for(const missing of coverage.missing)if(!consumers.some(consumer=>consumer.deviceId===missing.deviceId && consumer.capability===missing.capability))consumers.push({...missing});
-  const incidentReporter=options.incidentReporter??new EnforcementIncidentReporter({repository,logger,monotonicNow:options.monotonicNow,notifyIncident:options.notifyIncident??createEnforcementIncidentNotifier({notificationService:options.notificationService,recipientId:configuration.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService?.getHeadOfHousehold?.()})});
+  const incidentReporter=options.incidentReporter??new EnforcementIncidentReporter({repository,logger,monotonicNow:options.monotonicNow,notifyIncident:options.notifyIncident??createEnforcementIncidentNotifier({notificationService:options.notificationService,recipientId:configuration.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService?.getHeadOfHousehold?.(householdId)})});
   let runtime;
   const authenticateKiosk=async req=>{if(!kiosk)throw new AccessDenied('KIOSK_CONFIGURATION_REQUIRED');return kiosk.authenticate(req);};
   const cookie=(req,name,value,maxAge)=>`${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${req.secure?'; Secure':''}`;

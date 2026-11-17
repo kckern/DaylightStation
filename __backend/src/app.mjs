@@ -2979,13 +2979,14 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   } : null;
   const shutdownDatastore=new YamlShutdownDatastore({configService});
   const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
-  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.()})}):null;
+  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})}):null;
   const shutdownService = new ShutdownService({
     incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
     supervision:parentalSupervision.enabled?{
       activate:async({readerId,tagUid})=>parentalSupervision.service.stop({actor:{id:`nfc:${readerId??'configured-reader'}`,roles:['guardian'],authenticatedBy:'configured-nfc-trigger'},scopeId:parentalSupervision.configuration.scope_id??'child-public',source:'nfc',idempotencyKey:supervisionCommandId()}),
       status:async target=>{const deviceId=parentalSupervision.configuration.legacy_targets?.[target]??target.split(':').at(-1);const state=await parentalSupervision.service.status({deviceId});return {locked:state.active,lockedUntil:null,persistent:true,epoch:state.epoch};},
       reconcile:()=>parentalSupervision.service.reconcile(),
+      diagnostics:async()=>({mode:'configured',enforcement:await parentalSupervision.health()}),
     }:null,
     repo: shutdownDatastore,
     notifier: { publishState: (payload) => eventBus.broadcast('shutdown.state', payload) },
@@ -4251,6 +4252,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
+    shutdownDiagnostics:{householdId,read:()=>shutdownService.diagnostics()},
     resourceAliases:agendaResourceAliases,
     agendaRouter:participantRuntime.agenda.adminRouter,
     peopleRouter:participantRuntime.peopleRouter,
