@@ -69,9 +69,10 @@ function encodeIntentPart(part) {
  * `bridgeMethod(name)` answers the only question a caller has — "can I call
  * this?". Every call site goes through the second one.
  */
-const CONTROL_METHODS = [
-  'turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind', 'restartApp', 'reboot',
-];
+// What qualifies an object as Fully's control interface. `restartApp` and
+// `reboot` are deliberately not on it: they are called on whichever object
+// this list selects, and an object carrying only those does not qualify.
+const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind'];
 
 /**
  * The `window.daylight` members this module calls. As with Fully, a name on
@@ -139,8 +140,10 @@ function daylightAdapter() {
     adapter.turnScreenOff = () => call('screen', false);
     adapter.turnScreenOn = () => call('screen', true);
   }
-  if (has.restartApp) adapter.restartApp = () => call('restartApp');
-  if (has.reboot) adapter.reboot = () => call('reboot');
+  // Not wrapped in `call`: restartApp()/reboot() below contain a throw
+  // themselves and hand it to the caller's onError, as they do for Fully.
+  if (has.restartApp) adapter.restartApp = () => raw.restartApp();
+  if (has.reboot) adapter.reboot = () => raw.reboot();
   // Returns false when the event cannot be bound on this bridge.
   adapter.bind = (event, handler) => {
     if (event === 'onResume') {
@@ -192,12 +195,22 @@ function bridgeMethod(name) {
 }
 
 /**
- * Which bridge is active, for log lines: 'daylight', 'fully' or 'absent'.
+ * Which bridge is active: 'daylight', 'fully', or null when there is none.
  */
-function bridgeName() {
+function bridgeKind() {
   const target = bridge();
-  if (!target) return 'absent';
+  if (!target) return null;
   return target[DAYLIGHT_ADAPTER] ? 'daylight' : 'fully';
+}
+
+/**
+ * The two bridge fields a log line carries. `bridge` is 'present' or 'absent',
+ * the values it has always had, so existing log-store queries keep matching.
+ * `bridgeKind` says which bridge it is.
+ */
+function bridgeFields() {
+  const kind = bridgeKind();
+  return { bridge: kind ? 'present' : 'absent', bridgeKind: kind };
 }
 
 /**
@@ -221,14 +234,14 @@ export function isFKBAvailable() {
 export function launchApp(packageName) {
   const startApplication = bridgeMethod('startApplication');
   if (!startApplication) {
-    logger().warn('fkb.launch.unavailable', { packageName, bridge: bridgeName() });
+    logger().warn('fkb.launch.unavailable', { packageName, ...bridgeFields() });
     return false;
   }
   logger().info('fkb.launch.attempt', { packageName });
   // Always use 1-arg form — FKB's 3-arg form (package, action, activity)
   // doesn't work reliably. Android resolves the default launcher activity.
   if (startApplication(packageName) === false) {
-    logger().warn('fkb.launch.rejected', { packageName, bridge: bridgeName() });
+    logger().warn('fkb.launch.rejected', { packageName, ...bridgeFields() });
     return false;
   }
   return true;
@@ -249,14 +262,14 @@ export function startApplication(packageName, activityName) {
   const startApp = bridgeMethod('startApplication');
   if (!startApp) {
     logger().warn('fkb.startApplication.unavailable', {
-      packageName, activityName, bridge: bridgeName(),
+      packageName, activityName, ...bridgeFields(),
     });
     return false;
   }
   logger().info('fkb.startApplication.attempt', { packageName, activityName });
   const accepted = activityName ? startApp(packageName, activityName) : startApp(packageName);
   if (accepted === false) {
-    logger().warn('fkb.startApplication.rejected', { packageName, activityName, bridge: bridgeName() });
+    logger().warn('fkb.startApplication.rejected', { packageName, activityName, ...bridgeFields() });
     return false;
   }
   return true;
@@ -282,7 +295,7 @@ export function launchAndroidTarget(target = {}) {
   const startIntent = bridgeMethod('startIntent');
   if (!startIntent) {
     logger().warn('fkb.launchTarget.unavailable', {
-      action, pkg, activity, bridge: bridgeName(),
+      action, pkg, activity, ...bridgeFields(),
     });
     return false;
   }
@@ -309,11 +322,11 @@ export function launchAndroidTarget(target = {}) {
     logger().info('fkb.launchTarget.app', { pkg });
     const startApp = bridgeMethod('startApplication');
     if (!startApp) {
-      logger().warn('fkb.launchTarget.unavailable', { pkg, method: 'startApplication', bridge: bridgeName() });
+      logger().warn('fkb.launchTarget.unavailable', { pkg, method: 'startApplication', bridgeKind: bridgeKind() });
       return false;
     }
     if (startApp(pkg) === false) {
-      logger().warn('fkb.launchTarget.rejected', { pkg, bridge: bridgeName() });
+      logger().warn('fkb.launchTarget.rejected', { pkg, ...bridgeFields() });
       return false;
     }
     return true;
@@ -323,7 +336,7 @@ export function launchAndroidTarget(target = {}) {
   }
   logger().info('fkb.launchTarget.intent', { action, pkg, activity, uri });
   if (startIntent(uri) === false) {
-    logger().warn('fkb.launchTarget.rejected', { action, pkg, activity, bridge: bridgeName() });
+    logger().warn('fkb.launchTarget.rejected', { action, pkg, activity, ...bridgeFields() });
     return false;
   }
   return true;
@@ -391,7 +404,7 @@ export function buildIntentUri(packageName, activityName, extras = {}) {
 export function launchIntent(packageName, activityName, extras = {}) {
   const startIntent = bridgeMethod('startIntent');
   if (!startIntent) {
-    logger().warn('fkb.intent.unavailable', { packageName, bridge: bridgeName() });
+    logger().warn('fkb.intent.unavailable', { packageName, ...bridgeFields() });
     return false;
   }
 
@@ -405,7 +418,7 @@ export function launchIntent(packageName, activityName, extras = {}) {
 
   logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras), uri });
   if (startIntent(uri) === false) {
-    logger().warn('fkb.intent.rejected', { packageName, activityName, bridge: bridgeName() });
+    logger().warn('fkb.intent.rejected', { packageName, activityName, ...bridgeFields() });
     return false;
   }
   return true;
@@ -421,13 +434,13 @@ export function launchIntent(packageName, activityName, extras = {}) {
 export function screenOff() {
   const turnScreenOff = bridgeMethod('turnScreenOff');
   if (!turnScreenOff) {
-    logger().warn('fkb.screenOff.unavailable', { bridge: bridgeName() });
+    logger().warn('fkb.screenOff.unavailable', { ...bridgeFields() });
     return false;
   }
   logger().info('fkb.screenOff', {});
   try {
     if (turnScreenOff() === false) {
-      logger().warn('fkb.screenOff.rejected', { bridge: bridgeName() });
+      logger().warn('fkb.screenOff.rejected', { ...bridgeFields() });
       return false;
     }
     return true;
@@ -446,13 +459,13 @@ export function screenOff() {
 export function screenOn() {
   const turnScreenOn = bridgeMethod('turnScreenOn');
   if (!turnScreenOn) {
-    logger().warn('fkb.screenOn.unavailable', { bridge: bridgeName() });
+    logger().warn('fkb.screenOn.unavailable', { ...bridgeFields() });
     return false;
   }
   logger().info('fkb.screenOn', {});
   try {
     if (turnScreenOn() === false) {
-      logger().warn('fkb.screenOn.rejected', { bridge: bridgeName() });
+      logger().warn('fkb.screenOn.rejected', { ...bridgeFields() });
       return false;
     }
     return true;
@@ -467,21 +480,22 @@ export function screenOn() {
  * `call` is the method name on the bridge and the middle of the log events:
  * `fkb.<call>`, `fkb.<call>.unavailable`, `.rejected`, `.failed`.
  */
-function simpleBridgeCall(call) {
+function simpleBridgeCall(call, { onError } = {}) {
   const method = bridgeMethod(call);
   if (!method) {
-    logger().warn(`fkb.${call}.unavailable`, { bridge: bridgeName() });
+    logger().warn(`fkb.${call}.unavailable`, { ...bridgeFields() });
     return false;
   }
-  logger().info(`fkb.${call}`, { bridge: bridgeName() });
+  logger().info(`fkb.${call}`, { ...bridgeFields() });
   try {
     if (method() === false) {
-      logger().warn(`fkb.${call}.rejected`, { bridge: bridgeName() });
+      logger().warn(`fkb.${call}.rejected`, { ...bridgeFields() });
       return false;
     }
     return true;
   } catch (error) {
-    logger().warn(`fkb.${call}.failed`, { bridge: bridgeName(), error: error?.message ?? String(error) });
+    logger().warn(`fkb.${call}.failed`, { ...bridgeFields(), error: error?.message ?? String(error) });
+    try { onError?.(error); } catch { /* a caller's handler must not make this throw */ }
     return false;
   }
 }
@@ -502,10 +516,12 @@ export function canRestartApp() {
  * reload does not do that. `fully.restartApp()` on Fully,
  * `daylight.restartApp()` on the Android kiosk app. Never throws.
  *
+ * @param {{onError?: (error: Error) => void}} [options] - called with the
+ *   error when the bridge call throws, for a caller that reports it itself
  * @returns {boolean} true if the active bridge took the request
  */
-export function restartApp() {
-  return simpleBridgeCall('restartApp');
+export function restartApp(options) {
+  return simpleBridgeCall('restartApp', options);
 }
 
 /**
@@ -513,10 +529,12 @@ export function restartApp() {
  * `daylight.reboot()` on the Android kiosk app, which answers false when the
  * device cannot do it (it needs device owner). Never throws.
  *
+ * @param {{onError?: (error: Error) => void}} [options] - called with the
+ *   error when the bridge call throws, for a caller that reports it itself
  * @returns {boolean} true if the active bridge took the request
  */
-export function reboot() {
-  return simpleBridgeCall('reboot');
+export function reboot(options) {
+  return simpleBridgeCall('reboot', options);
 }
 
 /**
@@ -557,17 +575,17 @@ export function onResume(callback) {
   // CustomEvent instead, whose detail ({ awayMs, from }) goes into the log.
   const bind = bridgeMethod('bind');
   if (!bind) {
-    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onResume', bridge: bridgeName() });
+    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onResume', bridgeKind: bridgeKind() });
     return;
   }
-  const onDaylight = bridgeName() === 'daylight';
+  const onDaylight = bridgeKind() === 'daylight';
   const bound = bind('onResume', (detail) => {
     if (onDaylight && detail) logger().info('fkb.resume', detail);
     else logger().info('fkb.resume');
     if (_onResumeCallback) _onResumeCallback();
   });
   if (bound === false) {
-    logger().warn('fkb.bind.unavailable', { event: 'onResume', bridge: bridgeName() });
+    logger().warn('fkb.bind.unavailable', { event: 'onResume', bridgeKind: bridgeKind() });
     return;
   }
   _bound = true;
@@ -594,7 +612,7 @@ export function bindBackButton() {
   // listens for the `daylight:back` CustomEvent.
   const bind = bridgeMethod('bind');
   if (!bind) {
-    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridge: bridgeName() });
+    if (isFKBAvailable()) logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridgeKind: bridgeKind() });
     return;
   }
   const bound = bind('onBackButton', () => {
@@ -602,7 +620,7 @@ export function bindBackButton() {
     window.history.back();
   });
   if (bound === false) {
-    logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridge: bridgeName() });
+    logger().warn('fkb.bind.unavailable', { event: 'onBackButton', bridgeKind: bridgeKind() });
     return;
   }
   _backBound = true;

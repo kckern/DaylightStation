@@ -143,8 +143,8 @@ describe('fkb on the Fully bridge (unchanged)', () => {
     expect(fkb.launchIntent(PKG, ACT)).toBe(false);
     expect(fkb.screenOff()).toBe(false);
 
-    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'fully' }]);
-    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'fully' }]);
+    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'present', bridgeKind: 'fully' }]);
+    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'present', bridgeKind: 'fully' }]);
   });
 });
 
@@ -208,7 +208,7 @@ describe('fkb on the daylight bridge', () => {
     expect(fkb.launchAndroidTarget({ action: 'x' })).toBe(false);
     expect(fkb.launchAndroidTarget({ package: 'org.example.app' })).toBe(false);
 
-    expect(warned('fkb.launch.rejected')).toEqual([{ packageName: 'org.example.app', bridge: 'daylight' }]);
+    expect(warned('fkb.launch.rejected')).toEqual([{ packageName: 'org.example.app', bridge: 'present', bridgeKind: 'daylight' }]);
     expect(warned('fkb.intent.rejected')).toHaveLength(1);
   });
 
@@ -282,7 +282,7 @@ describe('fkb on the daylight bridge', () => {
     mockDaylight({ setBackMode: undefined });
     expect(() => fkb.bindBackButton()).not.toThrow();
     expect(listeners.filter(([type]) => type === 'daylight:back')).toHaveLength(0);
-    expect(warned('fkb.bind.unavailable')).toEqual([{ event: 'onBackButton', bridge: 'daylight' }]);
+    expect(warned('fkb.bind.unavailable')).toEqual([{ event: 'onBackButton', bridgeKind: 'daylight' }]);
   });
 
   it('names the daylight bridge when it lacks the method a call needs', () => {
@@ -295,19 +295,19 @@ describe('fkb on the daylight bridge', () => {
     expect(fkb.launchIntent(PKG, ACT)).toBe(false);
     expect(fkb.screenOff()).toBe(true);
 
-    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'daylight' }]);
+    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'present', bridgeKind: 'daylight' }]);
     expect(warned('fkb.startApplication.unavailable')).toEqual([
-      { packageName: 'org.example.app', activityName: '.Main', bridge: 'daylight' },
+      { packageName: 'org.example.app', activityName: '.Main', bridge: 'present', bridgeKind: 'daylight' },
     ]);
-    expect(warned('fkb.launchTarget.unavailable')[0]).toMatchObject({ action: 'x', bridge: 'daylight' });
-    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'daylight' }]);
+    expect(warned('fkb.launchTarget.unavailable')[0]).toMatchObject({ action: 'x', bridge: 'present', bridgeKind: 'daylight' });
+    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'present', bridgeKind: 'daylight' }]);
   });
 
   it('does not accept an object named daylight that has no control method', () => {
     global.daylight = { version: '1.4.0', deviceId: 'x' };
     expect(fkb.isFKBAvailable()).toBe(false);
     expect(fkb.screenOff()).toBe(false);
-    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'absent' }]);
+    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
   });
 
   it('survives a daylight object whose property access throws', () => {
@@ -319,6 +319,23 @@ describe('fkb on the daylight bridge', () => {
 });
 
 describe('fkb restartApp and reboot', () => {
+  it('unavailable logs keep the bridge field they always had and add bridgeKind', () => {
+    // Existing log-store queries match on bridge:'present' / bridge:'absent'.
+    global.fully = { turnScreenOn: vi.fn() };
+    fkb.launchApp('org.example.app');
+    fkb.launchIntent(PKG, ACT);
+    fkb.screenOff();
+    fkb.bindBackButton();
+    fkb.onResume(() => {});
+    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'present', bridgeKind: 'fully' }]);
+    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'present', bridgeKind: 'fully' }]);
+    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'present', bridgeKind: 'fully' }]);
+    expect(warned('fkb.bind.unavailable')).toEqual([
+      { event: 'onBackButton', bridgeKind: 'fully' },
+      { event: 'onResume', bridgeKind: 'fully' },
+    ]);
+  });
+
   it('on Fully calls fully.restartApp and fully.reboot', () => {
     const fully = mockFully({ restartApp: vi.fn(), reboot: vi.fn() });
 
@@ -331,12 +348,47 @@ describe('fkb restartApp and reboot', () => {
     expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it('works on a Fully object that carries nothing but restartApp or reboot', () => {
-    global.fully = { reboot: vi.fn() };
+  it('an object carrying nothing but restartApp or reboot does not qualify as a Fully bridge', () => {
+    global.fully = { reboot: vi.fn(), restartApp: vi.fn() };
+    expect(fkb.isFKBAvailable()).toBe(false);
+    expect(fkb.canRestartApp()).toBe(false);
+    expect(fkb.reboot()).toBe(false);
+    expect(fkb.restartApp()).toBe(false);
+    expect(global.fully.reboot).not.toHaveBeenCalled();
+    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
+  });
+
+  it('works on a Fully bridge that qualifies by a control method and lacks one of the two calls', () => {
+    global.fully = { turnScreenOff: vi.fn(), reboot: vi.fn() };
     expect(fkb.reboot()).toBe(true);
     expect(fkb.canRestartApp()).toBe(false);
     expect(fkb.restartApp()).toBe(false);
-    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'fully' }]);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'present', bridgeKind: 'fully' }]);
+  });
+
+  it('reboots through window.FullyKiosk on a page that has no window.fully', () => {
+    const reboot = vi.fn();
+    const restartApp = vi.fn();
+    global.FullyKiosk = { turnScreenOff: vi.fn(), reboot, restartApp };
+    expect(typeof global.fully).toBe('undefined');
+
+    expect(fkb.reboot()).toBe(true);
+    expect(fkb.restartApp()).toBe(true);
+
+    expect(reboot).toHaveBeenCalledTimes(1);
+    expect(restartApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands a thrown error to onError, on either bridge, and still returns false', () => {
+    const onError = vi.fn();
+    mockFully({ reboot: vi.fn(() => { throw new Error('fully down'); }) });
+    expect(fkb.reboot({ onError })).toBe(false);
+    expect(onError.mock.calls[0][0].message).toBe('fully down');
+
+    delete global.fully;
+    mockDaylight({ reboot: vi.fn(() => { throw new Error('daylight down'); }) });
+    expect(fkb.reboot({ onError })).toBe(false);
+    expect(onError.mock.calls[1][0].message).toBe('daylight down');
   });
 
   it('on daylight calls daylight.restartApp and daylight.reboot', () => {
@@ -356,7 +408,7 @@ describe('fkb restartApp and reboot', () => {
   it('reports a reboot the device cannot do', () => {
     mockDaylight({ reboot: vi.fn(() => false) });
     expect(fkb.reboot()).toBe(false);
-    expect(warned('fkb.reboot.rejected')).toEqual([{ bridge: 'daylight' }]);
+    expect(warned('fkb.reboot.rejected')).toEqual([{ bridge: 'present', bridgeKind: 'daylight' }]);
   });
 
   it('names the bridge that lacks the call', () => {
@@ -364,8 +416,8 @@ describe('fkb restartApp and reboot', () => {
     expect(fkb.canRestartApp()).toBe(false);
     expect(fkb.restartApp()).toBe(false);
     expect(fkb.reboot()).toBe(false);
-    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'daylight' }]);
-    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'daylight' }]);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'present', bridgeKind: 'daylight' }]);
+    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'present', bridgeKind: 'daylight' }]);
   });
 
   it('is unavailable with no bridge, and canRestartApp does not warn', () => {
@@ -373,8 +425,8 @@ describe('fkb restartApp and reboot', () => {
     expect(log.warn).not.toHaveBeenCalled();
     expect(fkb.restartApp()).toBe(false);
     expect(fkb.reboot()).toBe(false);
-    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'absent' }]);
-    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'absent' }]);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
+    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
   });
 
   it('contains a bridge that throws', () => {
@@ -382,7 +434,18 @@ describe('fkb restartApp and reboot', () => {
     expect(() => fkb.restartApp()).not.toThrow();
     expect(fkb.restartApp()).toBe(false);
     expect(fkb.reboot()).toBe(false);
-    expect(warned('fkb.reboot.failed')).toEqual([{ bridge: 'fully', error: 'bridge down' }]);
+    expect(warned('fkb.reboot.failed')).toEqual([{ bridge: 'present', bridgeKind: 'fully', error: 'bridge down' }]);
+  });
+
+  it('the Fully qualifying list is the original one', () => {
+    for (const name of ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind']) {
+      global.fully = { [name]: vi.fn() };
+      expect(fkb.isFKBAvailable()).toBe(true);
+    }
+    for (const name of ['restartApp', 'reboot', 'getDeviceId', 'print']) {
+      global.fully = { [name]: vi.fn() };
+      expect(fkb.isFKBAvailable()).toBe(false);
+    }
   });
 });
 
@@ -398,14 +461,14 @@ describe('fkb with no bridge', () => {
     expect(() => fkb.onResume(() => {})).not.toThrow();
     expect(() => fkb.bindBackButton()).not.toThrow();
 
-    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'absent' }]);
+    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'absent', bridgeKind: null }]);
     expect(warned('fkb.startApplication.unavailable')).toEqual([
-      { packageName: 'org.example.app', activityName: '.Main', bridge: 'absent' },
+      { packageName: 'org.example.app', activityName: '.Main', bridge: 'absent', bridgeKind: null },
     ]);
-    expect(warned('fkb.launchTarget.unavailable')[0]).toMatchObject({ bridge: 'absent' });
-    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'absent' }]);
-    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'absent' }]);
-    expect(warned('fkb.screenOn.unavailable')).toEqual([{ bridge: 'absent' }]);
+    expect(warned('fkb.launchTarget.unavailable')[0]).toMatchObject({ bridge: 'absent', bridgeKind: null });
+    expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'absent', bridgeKind: null }]);
+    expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
+    expect(warned('fkb.screenOn.unavailable')).toEqual([{ bridge: 'absent', bridgeKind: null }]);
     // Event binding logs nothing off-kiosk, as before: an ordinary browser has
     // no bridge and startup must not warn about that on every page load.
     expect(warned('fkb.bind.unavailable')).toEqual([]);
@@ -450,6 +513,6 @@ describe('fkb with both bridges present', () => {
 
     expect(fkb.launchApp('org.example.app')).toBe(false);
     expect(fully.startApplication).not.toHaveBeenCalled();
-    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'daylight' }]);
+    expect(warned('fkb.launch.unavailable')).toEqual([{ packageName: 'org.example.app', bridge: 'present', bridgeKind: 'daylight' }]);
   });
 });

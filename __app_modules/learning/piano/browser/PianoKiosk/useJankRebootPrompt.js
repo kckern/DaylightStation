@@ -77,8 +77,13 @@ export function useJankRebootPrompt({
     log.warn('piano.jank-reboot.reboot', {});
     try {
       if (reboot) { reboot(); return; }
-      // lib/fkb.js picks the bridge: fully.reboot() or daylight.reboot().
-      if (!kioskReboot()) {
+      // lib/fkb.js picks the bridge: fully.reboot() or daylight.reboot(). It
+      // never throws; a throw from the bridge comes back through onError and
+      // is rethrown here so it is reported below as it always was.
+      let thrown = null;
+      const sent = kioskReboot({ onError: (error) => { thrown = error; } });
+      if (thrown) throw thrown;
+      if (!sent) {
         log.error('piano.jank-reboot.no-fully', {}); // not in kiosk / no device-admin — can't self-reboot
       }
     } catch (e) {
