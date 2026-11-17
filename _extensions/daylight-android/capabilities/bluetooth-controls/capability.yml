@@ -1,0 +1,10 @@
+# Bluetooth settings from the kiosk: adapter state, scan, pair, connect, disconnect.
+# bluetooth.mode "roles": the configured links of other capabilities (instrument, speaker).
+# bluetooth.mode "gamepad": HID game controllers.
+entry: net.kckern.daylight.cap.bluetoothcontrols.BluetoothControlsCapability
+permissions:
+  - android.permission.BLUETOOTH
+  - android.permission.BLUETOOTH_ADMIN
+  - android.permission.ACCESS_FINE_LOCATION
+  - android.permission.BLUETOOTH_SCAN
+  - android.permission.BLUETOOTH_CONNECT
