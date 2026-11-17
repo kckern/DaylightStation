@@ -1,5 +1,5 @@
 rootProject.name = 'DaylightAndroid'
-include ':shell-api', ':core', ':payload', ':shell'
+include ':shell-api', ':core', ':core-testing', ':payload', ':shell'
 
 // A directory under capabilities/ with a capability.yml is a capability.
 // Its payload/ (logic) and shell/ (Android declarations) halves are optional modules.

@@ -3,6 +3,7 @@ package net.kckern.daylight.core;
 import static org.junit.Assert.*;
 
 import net.kckern.daylight.core.SettingsRegistry.Type;
+import net.kckern.daylight.core.testing.FakeShell;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

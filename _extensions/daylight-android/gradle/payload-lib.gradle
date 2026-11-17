@@ -27,4 +27,6 @@ dependencies {
     // Real org.json for JVM tests. android.jar ships stubs that return defaults,
     // so JSON logic would pass against a no-op without this.
     testImplementation 'org.json:json:20231013'
+    // FakeShell and TestCore. core-testing depends on core, so core itself is excluded.
+    if (project.path != ':core-testing') testImplementation project(':core-testing')
 }
