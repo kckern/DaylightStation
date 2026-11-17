@@ -18,12 +18,15 @@ public final class Router {
         public final Map<String, String> query;
         /** Request body for POST and PUT, otherwise null. */
         public final String body;
+        /** The caller's address as the transport reports it. Null when dispatched without one. */
+        public final String remote;
 
-        Request(String method, String path, Map<String, String> query, String body) {
+        Request(String method, String path, Map<String, String> query, String body, String remote) {
             this.method = method;
             this.path = path;
             this.query = query;
             this.body = body;
+            this.remote = remote;
         }
     }
 
@@ -66,6 +69,10 @@ public final class Router {
     public synchronized List<String> routes() { return new ArrayList<>(handlers.keySet()); }
 
     public Response dispatch(String method, String path, String token, Map<String, String> query, String body) {
+        return dispatch(method, path, token, query, body, null);
+    }
+
+    public Response dispatch(String method, String path, String token, Map<String, String> query, String body, String remote) {
         if (!auth.accepts(token)) return Response.error(401, "unauthorized", "message", null);
         Handler handler;
         boolean pathKnown = false;
@@ -83,7 +90,7 @@ public final class Router {
                     : Response.error(404, "unknown_route", "message", method + " " + path);
         }
         try {
-            return handler.handle(new Request(method, path, query, body));
+            return handler.handle(new Request(method, path, query, body, remote));
         } catch (UnsupportedException e) {
             return Response.error(501, "unsupported", "reason", e.getMessage());
         } catch (SettingsRegistry.UnknownSettingException e) {

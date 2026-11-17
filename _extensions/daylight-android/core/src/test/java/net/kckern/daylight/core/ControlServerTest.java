@@ -19,11 +19,12 @@ public class ControlServerTest {
     private String base;
 
     @Before public void setUp() throws Exception {
-        Router router = new Router(new Auth(TOKEN));
+        Auth auth = new Auth(TOKEN);
+        Router router = new Router(auth);
         router.route("GET", "/status", req -> Router.Response.json(200, new JSONObject().put("ok", true).put("q", req.query.get("q"))));
         router.route("POST", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
-        server = new ControlServer(0, router);
-        server.start(5000, false);
+        server = new ControlServer(0, router, auth, new SocketHub("test", new StatusBoard()));
+        server.start(0, true);
         base = "http://127.0.0.1:" + server.getListeningPort();
     }
 
@@ -63,5 +64,23 @@ public class ControlServerTest {
 
     @Test public void answers404ForAnUnknownRoute() throws Exception {
         assertEquals("404", http("GET", base + "/nope", TOKEN, null)[0]);
+    }
+
+    private String handshake(String path, String tokenHeader) throws Exception {
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", server.getListeningPort())) {
+            s.setSoTimeout(3000);
+            String req = "GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+                    + (tokenHeader == null ? "" : "X-Daylight-Token: " + tokenHeader + "\r\n") + "\r\n";
+            s.getOutputStream().write(req.getBytes(StandardCharsets.US_ASCII));
+            return new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream(), StandardCharsets.US_ASCII)).readLine();
+        }
+    }
+
+    @Test public void aWebSocketHandshakeNeedsTheTokenInTheHeaderOrTheQuery() throws Exception {
+        assertTrue(handshake("/?token=" + TOKEN, null).contains(" 101 "));
+        assertTrue(handshake("/", TOKEN).contains(" 101 "));
+        assertTrue(handshake("/", null).contains(" 401 "));
+        assertTrue(handshake("/?token=wrong", null).contains(" 401 "));
     }
 }

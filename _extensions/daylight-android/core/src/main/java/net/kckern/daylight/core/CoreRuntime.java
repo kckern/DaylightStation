@@ -25,6 +25,7 @@ public final class CoreRuntime implements CoreContext {
     private final NoteBus notes = new NoteBus();
     private final EventLog log = new EventLog();
     private final Auth auth;
+    private final SocketHub socket;
     private boolean prepared;
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
@@ -34,6 +35,7 @@ public final class CoreRuntime implements CoreContext {
         this.auth = new Auth(shell.controlToken());
         this.router = new Router(auth);
         this.components = new Components(shell);
+        this.socket = new SocketHub(deviceId, status);
         this.settings = new SettingsRegistry(new File(stateDir, "settings-overrides.json"));
     }
 
@@ -46,6 +48,7 @@ public final class CoreRuntime implements CoreContext {
     @Override public StatusBoard status() { return status; }
     @Override public NoteBus notes() { return notes; }
     @Override public EventLog log() { return log; }
+    @Override public SocketHub socket() { return socket; }
     public Auth auth() { return auth; }
 
     /** Called by the payload entry class when the shell binds or unbinds a component. */
@@ -76,6 +79,7 @@ public final class CoreRuntime implements CoreContext {
                 throw new IllegalStateException("capability '" + c.name() + "' cannot start: " + e.getMessage(), e);
             }
         }
+        socket.start();
         shell.note("CORE", "started " + payloadVersion + " with " + capabilities.size() + " capabilities");
     }
 
@@ -84,6 +88,7 @@ public final class CoreRuntime implements CoreContext {
             try { started.get(i).stop(); } catch (Throwable ignored) { }
         }
         started.clear();
+        socket.stop();
     }
 
     private void registerCoreRoutes() {
@@ -132,6 +137,7 @@ public final class CoreRuntime implements CoreContext {
                 .put("shellVersionCode", shell.shellVersionCode())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
                 .put("capabilities", names())
+                .put("wsClients", socket.clients())
                 .put("payload", payload));
     }
 }

@@ -21,4 +21,7 @@ public interface CoreContext {
 
     /** A short ring of recent events, returned by GET /log. */
     EventLog log();
+
+    /** The WebSocket channel on the control port. */
+    SocketHub socket();
 }

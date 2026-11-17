@@ -13,7 +13,6 @@ import java.io.File;
 
 /** The fixed entry class the shell loads. Wires the device's capabilities into the core. */
 public final class Main implements Payload {
-    private static final int SOCKET_READ_TIMEOUT_MS = 5000;
     private CoreRuntime core;
     private ControlServer server;
 
@@ -25,8 +24,14 @@ public final class Main implements Payload {
                 core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
             }
             core.start(new JSONObject(DeviceConfig.DEFAULTS_JSON));
-            server = new ControlServer(DeviceConfig.CONTROL_PORT, core.router());
-            server.start(SOCKET_READ_TIMEOUT_MS, false);
+            final CoreRuntime c = core;
+            server = ControlServer.startWithRetry(
+                    () -> new ControlServer(DeviceConfig.CONTROL_PORT, c.router(), c.auth(), c.socket()), 15);
+            if (server == null) {
+                // As the piano bridge did: keep running without the control port and say so.
+                // The lifeline is in the shell and still answers.
+                shell.note("CONTROL", "control server failed to bind :" + DeviceConfig.CONTROL_PORT);
+            }
             shell.updateNotification(DeviceConfig.DEVICE_ID + " " + DeviceConfig.PAYLOAD_VERSION);
         } catch (Exception e) {
             stop();
