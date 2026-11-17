@@ -1,5 +1,15 @@
 import { describe,it,expect,vi } from 'vitest';
 import { GratitudeJudge } from './GratitudeJudge.mjs';
+import { GRATITUDE_NOVELTY } from '../../domain/gratitudeRubric.mjs';
+it('tells novelty that a reason added to a bare earlier name is new substance',()=>{
+  // Calibration 2026-11-17: without this rule, "my mom\nShe made me pancakes"
+  // against an earlier "I'm grateful for my mom" came back distinct but below
+  // the confidence bar, so a follow-up answer was sent back as unclear.
+  expect(GRATITUDE_NOVELTY).toContain('names only a person, group, place or category');
+  expect(GRATITUDE_NOVELTY).toContain('"My mom / She made me pancakes" is distinct from "Mom"');
+  // The same calibration showed the first wording let a bare compliment count as new.
+  expect(GRATITUDE_NOVELTY).toContain('"My mother is nice" repeats "My mother"');
+});
 const answer=(choice,confidence=.98)=>({type:'choice',choice,confidence,probabilities:{[choice]:confidence}});
 const effort=probability=>({type:'yesNo',probability});
 const history=[{id:'toys-day',studyDay:'2026-11-16',text:'My toys',subject:'Toys'}];

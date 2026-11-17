@@ -397,5 +397,31 @@
     "history": [],
     "allowFollowUp": true,
     "expected": "eligible"
+  },
+  {
+    "id": "combined-06",
+    "text": "my mom\nShe made me pancakes",
+    "history": [
+      {
+        "id": "mom",
+        "studyDay": "2026-11-16",
+        "text": "I'm grateful for my mom",
+        "subject": "My mom"
+      }
+    ],
+    "expected": "eligible"
+  },
+  {
+    "id": "combined-07",
+    "text": "my family\nWe went to the beach together",
+    "history": [
+      {
+        "id": "mom",
+        "studyDay": "2026-11-16",
+        "text": "My family",
+        "subject": "Family"
+      }
+    ],
+    "expected": "eligible"
   }
 ]

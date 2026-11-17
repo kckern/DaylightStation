@@ -28,7 +28,9 @@ it('keeps second-round cases: combined answers, combined history and the bare an
   for(const c of combined){expect(c.text).toContain('\n');expect(c.allowFollowUp).not.toBe(true);}
   expect(byId['combined-01']).toMatchObject({text:'my mom\nShe read me a book',history:[],expected:'eligible'});
   expect(byId['combined-05']).toMatchObject({text:'my mom\nidk',expected:'eligible'});
-  expect(combined.map(c=>c.expected).sort()).toEqual(['eligible','eligible','eligible','eligible','repetition']);
+  expect(combined.map(c=>c.expected).sort()).toEqual(['eligible','eligible','eligible','eligible','eligible','eligible','repetition']);
+  // A reason added to an earlier bare name is new substance (calibration 2026-11-17).
+  for(const id of ['combined-04','combined-06','combined-07'])expect(byId[id]).toMatchObject({expected:'eligible',history:[expect.objectContaining({text:expect.stringMatching(/^(I'm grateful for my mom|My family)$/)})]});
   const bare=cases.filter(c=>c.id.startsWith('follow-up-ordinary-'));
   expect(bare.map(c=>[c.text,c.expected])).toEqual([['Toys','general'],['Family','general'],["I'm grateful for my toys",'general'],['My puppy sneezes in a funny way and makes me laugh','eligible']]);
 });
