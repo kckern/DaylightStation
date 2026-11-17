@@ -75,12 +75,12 @@ answer `guarded: false, reason: no-policy` and start nothing.
 
 **Devices on the Android kiosk app** (`content_control.provider:
 daylight-android`) are probed through the app instead
-(`DaylightAndroidForegroundProbe`): `GET /kiosk/status` says what is in front
-and whether that is the kiosk, and `POST /kiosk/foreground` brings the kiosk
-back. No ADB fallback is needed. The app reports the package in front and not
-the activity, so a policy that allows only some screens of a package matches
-nothing on these devices: the guard sends the device home as soon as it sees
-the excursion leave the kiosk.
+(`DaylightAndroidForegroundProbe`): `GET /lockdown` gives the package and
+activity in front and says whether that is the kiosk, and
+`POST /kiosk/foreground` brings the kiosk back. No ADB fallback is needed, and
+the same policies apply, down to the allowed screens. When the app does not
+know the activity in front, that poll counts as a failed probe, as an
+unreadable ADB answer does; the guard does not act on it.
 
 **Limit:** on a Fully device the guard needs ADB. ADB-over-WiFi does not survive a Shield
 reboot, so until ADB is reconnected the Settings gap during pairing is open

@@ -90,10 +90,11 @@ What differs for these devices:
 - **Status.** The summary uses the same field names. Fields the app does not
   report (storage, orientation, licence, screensaver state) are empty.
 - **Settings.** The list shows the app's own setting keys, which are dotted
-  (for example `webview.startUrl`). The app declares a type for each one and
-  rejects unknown keys and wrong types itself, so every listed setting of type
-  boolean, number or string is editable; the backend checks only that the key
-  is listed and the value has the declared type. Credential-like keys stay
+  (for example `webview.startUrl`). The app declares a type for each one
+  (`STRING`, `BOOLEAN` or `INTEGER`) and rejects unknown keys and wrong types
+  itself, so every listed setting is editable; the backend checks only that
+  the key is listed and the value has the declared type. An integer is edited
+  as a number with no range limit. Credential-like keys stay
   masked and read-only. The curated whitelist above still applies to Fully
   devices, whose settings carry no types.
 - **Errors.** Gateway failures carry `DAYLIGHT_ANDROID_*` codes
