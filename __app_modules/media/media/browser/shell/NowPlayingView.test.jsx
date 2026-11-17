@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
@@ -88,6 +88,55 @@ beforeEach(() => {
   state.snapshot = makeSnapshot();
   state.mediaElement = null;
   state.controller = null;
+});
+
+describe('NowPlayingView: Add to home screen (phone app only)', () => {
+  const pinButton = () => screen.queryByRole('button', { name: /add to home screen/i });
+  const withPlaylist = () => {
+    const snap = makeSnapshot({ containerTitle: 'Primary Songs' });
+    snap.queue.items = snap.queue.items.map((entry) => ({ ...entry, containerContentId: 'singalong:primary' }));
+    return snap;
+  };
+  afterEach(() => { delete globalThis.daylight; });
+
+  it('is absent in an ordinary browser', () => {
+    state.snapshot = withPlaylist();
+    renderNowPlaying();
+    expect(pinButton()).toBeNull();
+  });
+
+  it('is absent on a kiosk bridge that cannot pin', () => {
+    globalThis.daylight = { launch: vi.fn(), screen: vi.fn() };
+    state.snapshot = withPlaylist();
+    renderNowPlaying();
+    expect(pinButton()).toBeNull();
+  });
+
+  it('is absent when the phone says it cannot pin', () => {
+    globalThis.daylight = { canPinMedia: vi.fn(() => false), pinMedia: vi.fn() };
+    state.snapshot = withPlaylist();
+    renderNowPlaying();
+    expect(pinButton()).toBeNull();
+  });
+
+  it('pins the playlist the item was played from', () => {
+    const pinMedia = vi.fn(() => ({ accepted: true }));
+    globalThis.daylight = { canPinMedia: vi.fn(() => true), pinMedia };
+    state.snapshot = withPlaylist();
+    renderNowPlaying();
+    fireEvent.click(pinButton());
+    const sent = JSON.parse(pinMedia.mock.calls[0][0]);
+    expect(sent).toEqual({ contentId: 'singalong:primary', label: 'Primary Songs' });
+  });
+
+  it('pins the item itself when nothing contains it', () => {
+    const pinMedia = vi.fn(() => ({ accepted: true }));
+    globalThis.daylight = { canPinMedia: vi.fn(() => true), pinMedia };
+    state.snapshot = makeSnapshot({ containerTitle: null });
+    renderNowPlaying();
+    fireEvent.click(pinButton());
+    expect(JSON.parse(pinMedia.mock.calls[0][0])).toEqual({ contentId: 'singalong:primary/5', label: 'Primary Song 5' });
+  });
 });
 
 describe('NowPlayingView', () => {
