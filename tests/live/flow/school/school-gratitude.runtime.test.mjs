@@ -8,6 +8,8 @@ async function world(page,{refusal=null}={}){
   await page.route('**/api/**',async route=>{
     const req=route.request(),url=new URL(req.url());
     const json=value=>route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
+    // This fixture models the ordinary household with supervision disabled.
+    if(url.pathname==='/api/v1/supervision/bootstrap')return json({enabled:false});
     if(url.pathname.endsWith('/roster'))return json([{id:LEARNER,name:'Test Learner',birthyear:2016}]);
     if(url.pathname.endsWith('/materials'))return json({materials:[]});
     if(url.pathname.endsWith('/banks')||url.pathname.endsWith('/sentence-ladder/courses'))return json([]);
