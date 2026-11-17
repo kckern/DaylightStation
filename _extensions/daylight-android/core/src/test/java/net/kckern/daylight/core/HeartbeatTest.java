@@ -14,6 +14,14 @@ import org.junit.Test;
  */
 public class HeartbeatTest {
 
+    // The line's context.app is the setting logstore.app now. These tests pin the
+    // identity the piano keeps until its cutover.
+    @org.junit.Before public void configureApp() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("hb").toFile();
+        CoreRuntime core = net.kckern.daylight.core.testing.TestCore.create(dir);
+        core.prepare(new org.json.JSONObject("{\"logstore.app\":\"piano-bridge\"}"));
+    }
+
     @Test public void logStoreLineCarriesTheStandardEnvelope() throws Exception {
         JSONObject body = new JSONObject()
                 .put("deviceId", "yellow-room-tablet")

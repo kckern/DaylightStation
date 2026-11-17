@@ -27,6 +27,9 @@ public final class CoreRuntime implements CoreContext {
     private final Auth auth;
     private final SocketHub socket;
     private final AccessibilityHub accessibility = new AccessibilityHub();
+    private final CoreConfig config;
+    /** The context-bound services. Null in JVM tests and whenever the payload is not started. */
+    private volatile CoreServices device;
     private boolean prepared;
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
@@ -38,6 +41,7 @@ public final class CoreRuntime implements CoreContext {
         this.components = new Components(shell);
         this.socket = new SocketHub(deviceId, status);
         this.settings = new SettingsRegistry(new File(stateDir, "settings-overrides.json"));
+        this.config = new CoreConfig(settings, deviceId);
     }
 
     @Override public ShellServices shell() { return shell; }
@@ -52,6 +56,7 @@ public final class CoreRuntime implements CoreContext {
     @Override public SocketHub socket() { return socket; }
     @Override public AccessibilityHub accessibility() { return accessibility; }
     public Auth auth() { return auth; }
+    public CoreConfig config() { return config; }
 
     /** Called by the payload entry class when the shell binds or unbinds a component. */
     public void onShellComponent(String name, Object instance) { components.dispatch(name, instance); }
@@ -61,6 +66,8 @@ public final class CoreRuntime implements CoreContext {
     /** Register every capability and apply the device defaults. Touches no hardware. */
     public synchronized void prepare(JSONObject defaults) {
         if (prepared) return;
+        CoreConfig.declare(settings);
+        LogEvents.configure(config);
         registerCoreRoutes();
         for (Capability c : capabilities) c.register(this);
         settings.applyDefaults(defaults);
@@ -71,6 +78,11 @@ public final class CoreRuntime implements CoreContext {
     /** Register everything, apply device defaults, then start. Throws when the payload cannot run. */
     public void start(JSONObject defaults) {
         prepare(defaults);
+        if (shell.context() != null) {
+            CoreServices d = new CoreServices(this, config);
+            device = d;
+            d.start();
+        }
         for (Capability c : capabilities) {
             try {
                 c.start();
@@ -92,10 +104,23 @@ public final class CoreRuntime implements CoreContext {
             try { started.get(i).stop(); } catch (Throwable ignored) { }
         }
         started.clear();
+        CoreServices d = device;
+        device = null;
+        if (d != null) { try { d.stop(); } catch (Throwable ignored) { } }
         socket.stop();
     }
 
     private void registerCoreRoutes() {
+        router.route("GET", "/beat", req -> {
+            CoreServices d = device;
+            return Replies.json(d == null ? Replies.err("not_ready") : Replies.ok().put("heartbeat", d.heartbeat.snapshot()));
+        });
+        router.route("POST", "/beat", req -> {
+            CoreServices d = device;
+            if (d == null) return Replies.json(Replies.err("not_ready"));
+            JSONObject sent = d.heartbeat.beat();
+            return Replies.json(Replies.ok().put("sent", sent).put("state", d.heartbeat.snapshot()));
+        });
         router.route("GET", "/status", req -> Router.Response.json(200, statusBody()));
         router.route("GET", "/capabilities", req -> Router.Response.json(200, new JSONObject()
                 .put("ok", true)

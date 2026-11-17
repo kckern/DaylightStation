@@ -18,6 +18,14 @@ import org.junit.Test;
  */
 public class WifiLinkPolicyTest {
 
+    // The line's context.app is the setting logstore.app now. These tests pin the
+    // identity the piano keeps until its cutover.
+    @org.junit.Before public void configureApp() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("hb").toFile();
+        CoreRuntime core = net.kckern.daylight.core.testing.TestCore.create(dir);
+        core.prepare(new org.json.JSONObject("{\"logstore.app\":\"piano-bridge\"}"));
+    }
+
     private static final WifiLinkPolicy.Thresholds T = new WifiLinkPolicy.Thresholds(-75, 20);
 
     private static WifiLinkPolicy.Reading reading(long elapsedMs, int rssi, int link, int freq,

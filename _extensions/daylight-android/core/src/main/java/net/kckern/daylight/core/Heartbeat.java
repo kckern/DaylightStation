@@ -88,8 +88,7 @@ public final class Heartbeat {
         // Fire a loopback probe FIRST so this beat carries a fresh OUT verdict — the
         // piano's own echo, not an upstream counter. ~1.5s window; the body is built
         // after so outVerified reflects this probe, not the last one.
-        Loopback lb = core.getLoopback();
-        if (lb != null) { try { lb.probeAndWait(); } catch (Throwable t) { Log.w(TAG, "loopback probe failed", t); } }
+        core.status().runBeforeHeartbeat();
         JSONObject body = buildBody();
         CoreConfig c = cfg;
         boolean okLog = false, okBackend = false;
@@ -116,21 +115,14 @@ public final class Heartbeat {
             o.put("seq", seq.incrementAndGet());
             o.put("epochMs", System.currentTimeMillis());
             o.put("uptimeMs", android.os.SystemClock.elapsedRealtime());
-            o.put("shellVersionCode", core.getShell().shellVersionCode());
+            o.put("shellVersionCode", core.shell().shellVersionCode());
             try {
-                JSONObject p = new JSONObject(core.getShell().payloadStatusJson());
+                JSONObject p = new JSONObject(core.shell().payloadStatusJson());
                 o.put("payload", p.optString("activeVersion", null));
                 o.put("payloadJar", p.optString("active", null));
             } catch (Exception ignored) { }
 
-            BleMidiConnector ble = core.getBleConnector();
-            JSONObject b = ble == null ? null : ble.status();
-            o.put("ble", b == null ? "none" : b.optString("state", "?"));
-            o.put("bleUptimeS", b == null ? 0 : b.optLong("connectedSeconds", 0));
-            o.put("bleReconnects", b == null ? 0 : b.optInt("reconnects", 0));
-            o.put("midiWriteOpen", core.isMidiWriteOpen());
-            o.put("midiInOpen", core.isMidiPortOpen());
-            o.put("a11yBound", A11y.isConnected());
+            o.put("a11yBound", core.accessibility().isBound());
 
             // OS power/thermal verdicts per beat — the jank episodes are episodic, so
             // these need HISTORY next to pageRafFps, not just a point read via /info.
@@ -138,7 +130,7 @@ public final class Heartbeat {
             // from MODERATE up) — see DeviceProbe.info for the named mapping.
             try {
                 android.os.PowerManager pm = (android.os.PowerManager)
-                        core.getContext().getSystemService(android.content.Context.POWER_SERVICE);
+                        ((android.content.Context) core.shell().context()).getSystemService(android.content.Context.POWER_SERVICE);
                 if (pm != null) {
                     o.put("powerSaveMode", pm.isPowerSaveMode());
                     if (android.os.Build.VERSION.SDK_INT >= 29)
@@ -180,7 +172,7 @@ public final class Heartbeat {
             // (observed 2026-08-23 after an unclean reboot). We hold WRITE_SECURE_SETTINGS,
             // so pin it back to "0,0" each beat and report when a repair happened.
             try {
-                android.content.Context cx = core.getContext();
+                android.content.Context cx = ((android.content.Context) core.shell().context());
                 String rdp = android.provider.Settings.Global.getString(
                         cx.getContentResolver(), "restricted_device_performance");
                 if (rdp != null && !"0,0".equals(rdp)) {
@@ -191,63 +183,8 @@ public final class Heartbeat {
                     o.put("perfClampRepaired", rdp);
                 }
             } catch (Throwable ignored) { }
-            Loopback lb2 = core.getLoopback();
-            boolean outVerified = false;
-            if (lb2 != null) {
-                JSONObject l = lb2.snapshot();
-                outVerified = l.optBoolean("outVerified");
-                o.put("outVerified", outVerified);                   // the piano echoed our last probe
-                o.put("loopRttMs", l.optLong("lastRttMs", -1));
-                o.put("loopMisses", l.optInt("consecutiveMisses"));
-            }
-            // THE verdict. "ble CONNECTED" and "portOpen" are GATT/handle state and were
-            // true through an entire evening of zero bytes flowing (2026-08-23: a
-            // JamCorder reboot left a zombie BLE link that Android called CONNECTED).
-            // Only evidence of DATA counts:
-            //   VERIFIED  — the piano echoed a probe within the window
-            //   ZOMBIE    — link says connected, probes sent, nothing ever comes back
-            //   DOWN      — no BLE link at all
-            String bleState = b == null ? "none" : b.optString("state", "?");
-            String verdict = !"CONNECTED".equals(bleState) ? "DOWN" : (outVerified ? "VERIFIED" : "ZOMBIE");
-            o.put("linkVerdict", verdict);
-            o.put("fkbReachable", FkbRest.reachable(c));
-            // Reachable is not usable: FKB answers a stale fkbPassword with HTTP 200 and
-            // a login refusal, which blinded both guards and the recovery ladder for an
-            // evening (2026-10-14) while every heartbeat looked fine.
-            o.put("fkbAuthOk", !FkbRest.authFailing());
-            KioskSettingsGuard sg = core.getKioskSettingsGuard();
-            if (sg != null) {
-                JSONObject fg = sg.snapshot().optJSONObject("foreground");
-                if (fg != null) o.put("kioskForeground", fg.optString("verdict", "?"));
-            }
-
-            KioskWatchdog wd = core.getKioskWatchdog();
-            if (wd != null) {
-                JSONObject s = wd.snapshot();
-                o.put("kiosk", s.optString("verdict", "?"));
-                // pageRafFps: rAF frames/s the kiosk page presented, self-reported in
-                // its beat. `fps` is the deprecated alias (kept for old log queries).
-                o.put("pageRafFps", s.optInt("pageRafFps", s.optInt("lastFps", -1)));
-                o.put("fps", s.optInt("lastFps", -1));
-                o.put("beatAgoMs", s.optLong("lastBeatAgoMs", -1));
-                // These make a recovery decision queryable in VictoriaLogs, not
-                // just retrievable from the tablet's finite local crash-log ring.
-                o.put("kioskGame", s.optString("activeGame", ""));
-                o.put("kioskGameProtected", s.optBoolean("midGameRecoveryProtected", false));
-                o.put("kioskRecoveryDecision", s.optString("lastDecision", ""));
-                o.put("kioskRecoveryOutcome", s.optString("lastOutcome", ""));
-            }
-            KioskSettingsGuard g = core.getKioskSettingsGuard();
-            if (g != null) o.put("guard", g.snapshot().optString("verdict", "?"));
-
-            A2dpConnector spk = core.getA2dpConnector();
-            if (spk != null) o.put("speaker", spk.status().optBoolean("connected", false));
-
-            // Compact Wi-Fi link (p34): the per-minute view beside everything above. The
-            // 10 s detail is its own bridge.wifi event; this is for reading one beat.
-            WifiLink wl = core.getWifiLink();
-            JSONObject w = wl == null ? null : wl.compact();
-            if (w != null) o.put("wifi", w);
+            // What the capabilities have to say, under the field names they always used.
+            core.status().collect(StatusBoard.Surface.HEARTBEAT, o);
 
             o.put("beatFailures", new JSONObject()
                     .put("logStore", logStoreFailures.get())
@@ -282,8 +219,8 @@ public final class Heartbeat {
             line.put("_msg", msg);
             line.put("_time", iso(epochMs));
             line.put("level", level);
-            line.put("context.source", "piano-bridge");
-            line.put("context.app", "piano-bridge");
+            line.put("context.source", LogEvents.app());
+            line.put("context.app", LogEvents.app());
             line.put("context.device", deviceId == null || deviceId.isEmpty() ? "piano-tablet" : deviceId);
             java.util.Iterator<String> it = body.keys();
             while (it.hasNext()) {

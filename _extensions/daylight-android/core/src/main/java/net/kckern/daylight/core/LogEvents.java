@@ -19,7 +19,7 @@ import java.util.concurrent.Executors;
  * {@link Heartbeat#toLogStoreLine}, so {@code context.app:piano-bridge} finds both.
  * Posts on one background thread; a failed post is logged and dropped, never retried.
  */
-final class LogEvents {
+public final class LogEvents {
 
     private static final String TAG = "PianoBridge-Events";
     private static final ExecutorService POOL = Executors.newSingleThreadExecutor(r -> {
@@ -30,11 +30,23 @@ final class LogEvents {
 
     private LogEvents() { }
 
-    static void emit(CoreConfig cfg, String msg, String level, JSONObject data) {
-        if (cfg == null) return;
-        final String url = cfg.heartbeatLogStoreUrl();
+    private static volatile CoreConfig cfg;
+
+    /** Called once by core when a payload starts. */
+    static void configure(CoreConfig config) { cfg = config; }
+
+    /** The context.app of every line this device ships. */
+    public static String app() {
+        CoreConfig c = cfg;
+        return c == null ? "daylight" : c.logStoreApp();
+    }
+
+    public static void emit(String msg, String level, JSONObject data) {
+        CoreConfig c = cfg;
+        if (c == null) return;
+        final String url = c.heartbeatLogStoreUrl();
         if (url == null || url.isEmpty()) return;
-        final String line = Heartbeat.toLogStoreLine(msg, level, cfg.heartbeatDeviceId(), data);
+        final String line = Heartbeat.toLogStoreLine(msg, level, c.heartbeatDeviceId(), data);
         Log.i(TAG, msg + " " + data);
         POOL.execute(() -> post(url, line));
     }
