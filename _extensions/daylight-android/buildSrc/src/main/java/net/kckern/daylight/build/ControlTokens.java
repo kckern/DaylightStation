@@ -47,7 +47,8 @@ public final class ControlTokens {
             Object token = ((Map<?, ?>) e.getValue()).get("token");
             if (token == null) continue;
             String id = String.valueOf(e.getKey());
-            String value = String.valueOf(token);
+            if (!(token instanceof String)) throw new CatalogException("token for '" + id + "' must be a quoted string");
+            String value = (String) token;
             if (value.length() < 32) throw new CatalogException("token for '" + id + "' must be at least 32 characters");
             if (!SAFE.matcher(value).matches()) {
                 throw new CatalogException("token for '" + id + "' may only contain letters, digits, '_' and '-'");

@@ -105,6 +105,12 @@ public class DeviceCatalogTest {
         assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'debug-tools' has a payload but no 'entry'"));
     }
 
+    @Test public void rejectsANonStringEntryEvenWithoutAPayload() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/overlay/capability.yml"), "entry: 5\n");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'overlay': 'entry' must be a string"));
+    }
+
     @Test public void rejectsANonScalarDefault() throws Exception {
         File root = root();
         write(new File(root, "devices/portal.yml"), PORTAL.replace("debug.execEnabled: false", "debug.execEnabled: [1]"));

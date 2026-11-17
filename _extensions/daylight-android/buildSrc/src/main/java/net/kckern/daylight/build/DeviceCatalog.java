@@ -56,7 +56,10 @@ public final class DeviceCatalog {
                 boolean hasPayload = new File(dir, "payload/build.gradle").isFile();
                 boolean hasShell = new File(dir, "shell/build.gradle").isFile();
                 Object entry = asMap(new Yaml().load(read(meta)), "capability '" + name + "'").get("entry");
-                if (hasPayload && !(entry instanceof String)) {
+                if (entry != null && !(entry instanceof String)) {
+                    throw new CatalogException("capability '" + name + "': 'entry' must be a string");
+                }
+                if (hasPayload && entry == null) {
                     throw new CatalogException("capability '" + name + "' has a payload but no 'entry'");
                 }
                 caps.put(name, new CapabilitySpec(name, (String) entry, hasPayload, hasShell));

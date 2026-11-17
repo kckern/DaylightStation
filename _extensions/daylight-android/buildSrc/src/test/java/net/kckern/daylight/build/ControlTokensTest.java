@@ -41,6 +41,16 @@ public class ControlTokensTest {
         }
     }
 
+    @Test public void rejectsATokenThatYamlReadsAsANumber() throws Exception {
+        String digits = "1234567890123456789012345678901234567890";
+        File f = file("portal:\n  token: " + digits + "\n");
+        try { ControlTokens.load(f); fail("expected CatalogException"); }
+        catch (CatalogException e) {
+            assertTrue(e.getMessage().contains("token for 'portal' must be a quoted string"));
+            assertFalse("the message must not contain the token", e.getMessage().contains(digits));
+        }
+    }
+
     @Test public void rejectsCharactersThatWouldBreakAJavaString() throws Exception {
         File f = file("portal:\n  token: \"" + GOOD.substring(1) + "\\\"\"\n");
         try { ControlTokens.load(f); fail("expected CatalogException"); }
