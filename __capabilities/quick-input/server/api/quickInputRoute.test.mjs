@@ -161,7 +161,10 @@ test('a body over the kind\'s limit is refused, declared or not', async () => {
   assert.equal(res.status, 413);
   assert.deepEqual(res.body, { ok: false, error: 'too_large', message: res.body.message, maxBytes: 16384 });
 
-  const chunked = await new Promise((resolve, reject) => {
+  // The server answers before it has read the whole body, and may close the
+  // connection while the client is still sending; an attempt that loses that
+  // race gets no answer at all and is sent again.
+  const upload = () => new Promise((resolve, reject) => {
     const call = request(app).post('/in').query({ user: 'user_1' })
       .set('X-Daylight-Input-Id', 'i2').set('Content-Type', 'text/plain').set('Transfer-Encoding', 'chunked')
       .set('X-Daylight-Device', 'fleet:phone');
@@ -169,6 +172,7 @@ test('a body over the kind\'s limit is refused, declared or not', async () => {
     call.write('x'.repeat(9000));
     call.end((err, answer) => ((answer || err?.response) ? resolve(answer || err.response) : reject(err)));
   });
+  const chunked = await upload().catch(upload).catch(upload);
   assert.equal(chunked.status, 413);
   assert.equal(seen.commands.length, 0);
 });

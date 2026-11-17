@@ -139,7 +139,10 @@ test('a body over the limit is refused, declared or not', async () => {
   assert.equal(declared.body.maxBytes, 64);
 
   // Chunked: no Content-Length for the gate to read, so the body reader stops it.
-  const chunked = await new Promise((resolve, reject) => {
+  // The server answers before it has read the whole body, and may close the
+  // connection while the client is still sending; an attempt that loses that
+  // race gets no answer at all and is sent again.
+  const upload = () => new Promise((resolve, reject) => {
     const call = request(app).post('/memo').query({ user: 'user_1' })
       .set('X-Daylight-Memo-Id', 'm2').set('Content-Type', 'audio/mp4').set('Transfer-Encoding', 'chunked')
       .set('X-Daylight-Device', 'fleet:phone');
@@ -150,10 +153,11 @@ test('a body over the limit is refused, declared or not', async () => {
       return answer ? resolve(answer) : reject(err);
     });
   });
+  const chunked = await upload().catch(upload).catch(upload);
   assert.equal(chunked.status, 413);
   assert.equal(chunked.body.error, 'too_large');
   assert.equal(seen.commands.length, 0);
-  assert.equal(events(seen, 'journalist.memo.rejected').length, 2);
+  assert.ok(events(seen, 'journalist.memo.rejected').length >= 2);
 });
 
 test('the default limit is 25 MB', () => {
