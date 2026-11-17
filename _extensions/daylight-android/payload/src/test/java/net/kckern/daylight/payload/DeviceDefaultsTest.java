@@ -226,7 +226,7 @@ public class DeviceDefaultsTest {
         for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
         core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
         String[][] lists = { { "bookmarks.BookmarksCapability", "/bookmarks" }, { "onetap.OneTapActionsCapability", "/actions" },
-                { "widgets.WidgetsCapability", "/widgets" } };
+                { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);

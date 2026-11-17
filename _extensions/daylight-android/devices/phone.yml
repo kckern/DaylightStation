@@ -21,6 +21,7 @@ capabilities:
   - bookmarks
   - one-tap-actions
   - widgets
+  - media-service
 defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
@@ -50,6 +51,9 @@ defaults:
   actions.tiles: "memo"
   # The four buttons of the "Daylight actions" home-screen widget, in order.
   widgets.actions: "memo,media,feed,call"
+  # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
+  # target being recent, catalog or a container's content id.
+  media.roots: "Recent=recent;Browse=catalog"
   # A web link opens in the app only on the backend's own origin or one listed here.
   # This is the host the link activity is offered for (appLinks above).
   links.origins: "https://{phone_link_host}"

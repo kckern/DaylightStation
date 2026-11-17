@@ -1,0 +1,12 @@
+# Native audio playback of household media from the backend's content API. The payload
+# owns the browse tree, which stream a media id resolves to, and the progress reports;
+# the shell half hosts the Media3 player and library session (lock screen, headset and
+# Android Auto controls come with the session). Owns the link kind daylight://media/play.
+entry: net.kckern.daylight.cap.mediaservice.MediaServiceCapability
+permissions:
+  - android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
+  # Merged in by media3-common and media3-exoplayer; the base shell asks for it too.
+  - android.permission.ACCESS_NETWORK_STATE
+# A media link is keyed and arrives through the link activity.
+requires:
+  - notifications

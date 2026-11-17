@@ -1,0 +1,283 @@
+package net.kckern.daylight.cap.mediaservice;
+
+import android.content.Context;
+import android.content.Intent;
+
+import net.kckern.daylight.api.PayloadPort;
+import net.kckern.daylight.core.Capability;
+import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.LinkEffect;
+import net.kckern.daylight.core.Replies;
+import net.kckern.daylight.core.Requests;
+import net.kckern.daylight.core.Router;
+import net.kckern.daylight.core.SettingsRegistry;
+import net.kckern.daylight.core.backend.Backend;
+import net.kckern.daylight.core.backend.BackendHttp;
+import net.kckern.daylight.core.spi.LinkHandler;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.LongSupplier;
+
+/**
+ * Every decision about native playback: what the browse tree holds, which stream a
+ * media id resolves to, and when progress is reported. The player and the library
+ * session are installed code (the shell half); they ask here through the "media"
+ * PayloadPort, in process, and hand back nothing but media ids.
+ *
+ * What can be played is household media and nothing else: an id is asked of the
+ * backend's own routes and a stream is the URL in the backend's answer, on the
+ * backend's origin. No link, intent or browse request carries a URL that is played.
+ *
+ * Nothing about what is played is written to a log: the status holds a time, a count
+ * and a route's status code.
+ */
+public final class MediaServiceCapability implements Capability {
+    /** The PayloadPort the installed media service calls. The shell half spells the same name (PayloadMedia.PORT). */
+    static final String PORT = "media";
+    static final String WORKER = "Daylight-media";
+    private static final String PLAY_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
+    private static final String ROOTS = "media.roots";
+    private static final String RECENT_LIMIT = "media.recentLimit";
+    private static final String PAGE_SIZE = "media.pageSize";
+    /** A level is asked for again after this long; until then it is served from memory. */
+    private static final long FRESH_MS = 60_000;
+
+    /** Starts the installed play screen for one media id. */
+    interface Launcher { void play(String mediaId); }
+
+    /** An answer for the port and for a route: the body, and the status a route gives it. */
+    static final class Outcome {
+        final int status;
+        final JSONObject body;
+        Outcome(int status, JSONObject body) { this.status = status; this.body = body; }
+    }
+
+    private CoreContext core;
+    private Backend backend;
+    private MediaApi api;
+    private LongSupplier clock;
+    private Launcher launcher;
+    private volatile ExecutorService worker;
+    private final ProgressReporter reporter = new ProgressReporter();
+    private final BrowseCache cache = new BrowseCache(64, FRESH_MS);
+    private final PayloadPort port = PayloadPort.named(PORT);
+    private final PayloadPort.Handler onCall = request -> {
+        JSONObject parsed;
+        try { parsed = new JSONObject(request); }
+        catch (Exception notJson) { return failure(400, "bad_request").body.toString(); }
+        return call(parsed).body.toString();
+    };
+    private volatile long lastReportAtMs;
+    private volatile String lastError = "";
+    private volatile int reportsSent;
+
+    public MediaServiceCapability() { }
+
+    MediaServiceCapability(MediaApi api, LongSupplier clock, Launcher launcher) {
+        this.api = api;
+        this.clock = clock;
+        this.launcher = launcher;
+    }
+
+    @Override public String name() { return "media-service"; }
+
+    @Override public void register(final CoreContext core) {
+        this.core = core;
+        this.backend = Backend.from(core);
+        if (api == null) api = new BackendMediaApi(backend, new BackendHttp(backend::deviceHeader));
+        if (clock == null) clock = System::currentTimeMillis;
+        // The tabs a car shows: "Label=target;Label=target", a target being recent,
+        // catalog or a container's content id.
+        core.settings().declare(ROOTS, SettingsRegistry.Type.STRING, "Recent=recent;Browse=catalog",
+                value -> BrowseTree.rootsProblem((String) value));
+        core.settings().declare(RECENT_LIMIT, SettingsRegistry.Type.INTEGER, 30, SettingsRegistry.range(1, 100));
+        // How many entries one browse level holds. A car limits what it shows per level.
+        core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
+
+        core.services().provide(LinkHandler.class, new LinkHandler() {
+            @Override public String kind() { return "media"; }
+            @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
+                // Only the id is read, and only as a content id: never a URL, never a media id
+                // of the tree. The link reached here carrying this install's key.
+                String id = query.get("id");
+                if (!"play".equals(arg) || !ContentId.valid(id)) throw new IllegalArgumentException("expected media/play?id=<content id>");
+                Launcher l = launcher();
+                if (l == null) return LinkEffect.toast("Not available on this device");
+                if (!backend.configured()) return LinkEffect.refused("not_configured", "The address of the household site is not set");
+                l.play(MediaId.leaf(id, null));
+                return LinkEffect.none();
+            }
+        });
+
+        core.router().route("GET", "/media/browse", req -> respond(call(new JSONObject().put("op", "browse")
+                .put("parent", Replies.strParam(req, "parent", MediaId.ROOT))
+                .put("page", Requests.intQuery(req, "page", 0, 0, Integer.MAX_VALUE)))));
+        core.router().route("POST", "/media/resolve", req -> respond(call(Requests.body(req).put("op", "resolve"))));
+        core.router().route("POST", "/media/event", req -> respond(call(Requests.body(req).put("op", "event"))));
+        core.router().route("GET", "/media/status", req -> Router.Response.json(200, Replies.ok()
+                .put("lastReportAtMs", lastReportAtMs).put("lastError", lastError).put("reports", reportsSent)
+                .put("problems", new JSONArray(problems()))));
+    }
+
+    /**
+     * Never throws on a setting: what is wrong is in GET /media/status and noted once.
+     * The port needs no Android context, so it is attached in a JVM test of the whole
+     * payload too.
+     */
+    @Override public void start() {
+        worker = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, WORKER);
+            t.setDaemon(true);
+            return t;
+        });
+        for (String problem : problems()) core.shell().note("MEDIA", problem);
+        port.attach(onCall);
+    }
+
+    /** May be called twice. Detaches only this payload's handler: a successor may already be attached. */
+    @Override public void stop() {
+        port.detach(onCall);
+        ExecutorService w = worker;
+        worker = null;
+        if (w != null) w.shutdownNow();
+    }
+
+    // ── the one entry for the port and the routes ─────────────────────────────
+
+    Outcome call(JSONObject request) {
+        try {
+            String op = Json.str(request, "op");
+            if ("browse".equals(op)) return browse(request);
+            if ("resolve".equals(op)) return resolve(request);
+            if ("event".equals(op)) return event(request);
+            return failure(400, "bad_request");
+        } catch (IllegalArgumentException refused) {
+            return failure(400, "bad_request");
+        } catch (MediaApi.Refused answered) {
+            return answered.status == 404 ? failure(404, "not_found") : failure(502, "backend_refused");
+        } catch (IllegalStateException notConfigured) {
+            return failure(503, "not_configured");
+        } catch (Exception unreachable) {
+            return failure(502, "unreachable");
+        }
+    }
+
+    private static Outcome failure(int status, String code) {
+        return new Outcome(status, Replies.err(code));
+    }
+
+    private static Router.Response respond(Outcome o) { return Router.Response.json(o.status, o.body); }
+
+    private Outcome browse(JSONObject request) throws Exception {
+        final String parent = Json.first(Json.str(request, "parent"), MediaId.ROOT);
+        final MediaId id = MediaId.parse(parent);
+        if (id.kind == MediaId.Kind.LEAF) throw new IllegalArgumentException("unknown media id");
+        final int pageSize = (Integer) core.settings().get(PAGE_SIZE);
+        List<MediaNode> nodes;
+        // A level is one page and, in a long container, an entry that leads to the next.
+        // A browser's own paging has nothing further to show.
+        if (request.optInt("page", 0) > 0) {
+            nodes = new ArrayList<>();
+        } else if (id.kind == MediaId.Kind.ROOT) {
+            nodes = BrowseTree.roots((String) core.settings().get(ROOTS));
+        } else {
+            nodes = cache.get(parent, clock.getAsLong(), () -> load(id, pageSize));
+        }
+        JSONArray items = new JSONArray();
+        for (MediaNode n : nodes) items.put(n.toJson());
+        return new Outcome(200, Replies.ok().put("parent", parent).put("items", items));
+    }
+
+    private List<MediaNode> load(MediaId id, int pageSize) throws Exception {
+        List<MediaNode> nodes;
+        if (id.kind == MediaId.Kind.RECENT) {
+            nodes = BrowseTree.fromRecent(api.recent((Integer) core.settings().get(RECENT_LIMIT)), backend);
+        } else if (id.kind == MediaId.Kind.CATALOG) {
+            nodes = BrowseTree.fromList(api.rootList(), null, backend).nodes;
+        } else {
+            return BrowseTree.paged(BrowseTree.fromList(api.list(id.contentId, pageSize, id.skip), id.contentId, backend),
+                    id.contentId, id.skip, pageSize);
+        }
+        return nodes.size() > pageSize ? new ArrayList<>(nodes.subList(0, pageSize)) : nodes;
+    }
+
+    private Outcome resolve(JSONObject request) throws Exception {
+        JSONArray ids = request.optJSONArray("ids");
+        if (ids == null || ids.length() == 0) throw new IllegalArgumentException("body needs 'ids'");
+        List<String> mediaIds = new ArrayList<>();
+        for (int i = 0; i < ids.length(); i++) {
+            Object id = ids.opt(i);
+            mediaIds.add(id instanceof String ? (String) id : null);
+        }
+        Resolver.Resolved r = Resolver.resolve(mediaIds, api, backend, "daylight-" + core.deviceId());
+        JSONArray tracks = new JSONArray();
+        for (Track t : r.tracks) tracks.put(t.toJson());
+        return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
+                .put("startPositionMs", r.startPositionMs));
+    }
+
+    private Outcome event(JSONObject e) throws Exception {
+        String id = Json.str(e, "id");
+        if (!ContentId.valid(id)) throw new IllegalArgumentException("event needs 'id'");
+        List<ProgressReporter.Report> reports = reporter.onEvent(id, Json.str(e, "title"), Json.str(e, "listId"),
+                e.optLong("positionMs", 0), e.optLong("durationMs", 0), Json.str(e, "state"), clock.getAsLong());
+        for (ProgressReporter.Report report : reports) send(report);
+        return new Outcome(200, Replies.ok().put("reports", reports.size()));
+    }
+
+    /**
+     * Off the caller's thread once started. A report that fails is noted in the status
+     * and dropped: the next one carries a later position.
+     */
+    private void send(final ProgressReporter.Report report) {
+        Runnable job = () -> {
+            try {
+                api.log(report.toBody());
+                lastReportAtMs = clock.getAsLong();
+                lastError = "";
+                reportsSent++;
+            } catch (MediaApi.Refused answered) {
+                lastError = answered.getMessage();          // a route and a status code
+            } catch (IllegalStateException notConfigured) {
+                lastError = "the household site is not set";
+            } catch (Exception unreachable) {
+                lastError = "no connection";
+            }
+        };
+        ExecutorService w = worker;
+        if (w == null) { job.run(); return; }
+        try { w.execute(job); } catch (RuntimeException stopping) { /* the payload is stopping */ }
+    }
+
+    private List<String> problems() {
+        List<String> out = new ArrayList<>();
+        if (!backend.configured()) out.add("the household site is not set");
+        String roots = BrowseTree.rootsProblem((String) core.settings().get(ROOTS));
+        if (roots != null) out.add(ROOTS + " " + roots);
+        return out;
+    }
+
+    private Launcher launcher() {
+        if (launcher == null) {
+            final Object context = core.shell().context();
+            // A JVM test of the whole payload has no Android context: there is no player.
+            if (context == null) return null;
+            launcher = mediaId -> {
+                Context c = (Context) context;
+                // By name: the play screen is installed code in this capability's shell half.
+                // It is not exported, so only this app can start it. Started while the link
+                // activity is on screen, which is what lets a service context start one.
+                c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            };
+        }
+        return launcher;
+    }
+}
