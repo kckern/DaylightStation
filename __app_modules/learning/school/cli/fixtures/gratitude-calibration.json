@@ -318,5 +318,84 @@
     "history": [],
     "allowFollowUp": true,
     "expected": "nonsense"
+  },
+  {
+    "id": "combined-01",
+    "text": "my mom\nShe read me a book",
+    "history": [],
+    "expected": "eligible"
+  },
+  {
+    "id": "combined-02",
+    "text": "my mom\nShe took me to the park",
+    "history": [
+      {
+        "id": "mom-book",
+        "studyDay": "2026-11-16",
+        "text": "my mom\nShe read me a book",
+        "subject": "Mom reading me a book"
+      }
+    ],
+    "expected": "eligible"
+  },
+  {
+    "id": "combined-03",
+    "text": "my mom\nShe read a book to me",
+    "history": [
+      {
+        "id": "mom-book",
+        "studyDay": "2026-11-16",
+        "text": "my mom\nShe read me a book",
+        "subject": "Mom reading me a book"
+      }
+    ],
+    "expected": "repetition"
+  },
+  {
+    "id": "combined-04",
+    "text": "my mom\nShe helped me fix my bike",
+    "history": [
+      {
+        "id": "mom",
+        "studyDay": "2026-11-16",
+        "text": "I'm grateful for my mom",
+        "subject": "My mom"
+      }
+    ],
+    "expected": "eligible"
+  },
+  {
+    "id": "combined-05",
+    "text": "my mom\nidk",
+    "history": [],
+    "expected": "eligible"
+  },
+  {
+    "id": "follow-up-ordinary-01",
+    "text": "Toys",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-ordinary-02",
+    "text": "Family",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-ordinary-03",
+    "text": "I'm grateful for my toys",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "general"
+  },
+  {
+    "id": "follow-up-ordinary-04",
+    "text": "My puppy sneezes in a funny way and makes me laugh",
+    "history": [],
+    "allowFollowUp": true,
+    "expected": "eligible"
   }
 ]
