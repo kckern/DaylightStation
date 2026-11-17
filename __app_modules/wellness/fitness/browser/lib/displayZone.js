@@ -5,7 +5,7 @@ import { deriveZoneProgressSnapshot } from "../hooks/fitness/types.js";
 // with each other.
 //
 // The ZONE is the committed one — the zone ZoneProfileStore settled on with its
-// anti-flap rules (upward confirmation, Fire held 5s, exit margin, cooldown).
+// anti-flap rules (upward confirmation, Fire reached not touched, exit margin, cooldown).
 // The garage LEDs, governance and the Fire ceremony follow the same commit, so
 // the ring turns red exactly when the room does, and a rider hovering on a line
 // does not flip colour (and lap the ring) on every packet. Owner, 2026-11-17:

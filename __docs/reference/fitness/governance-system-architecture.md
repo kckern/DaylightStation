@@ -386,7 +386,7 @@ one answers a different question; none is redundant with another (see
 | # | Mechanism | Where | Value | Source | What it stops |
 |---|-----------|-------|-------|--------|---------------|
 | 0 | Slew gate | `hrPlausibility.js` (DeviceManager) | ≥25 BPM jump within 2s is held for one packet | code (`HR_SLEW_MAX_DELTA_BPM`, `HR_SLEW_WINDOW_MS`) | single corrupt packets (e.g. 204 BPM) |
-| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s; **Fire: 3 spanning ≥5s** | code (`UPWARD_CONFIRM_SAMPLES`, `UPWARD_CONFIRM_MS`, `FIRE_UPWARD_CONFIRM_SAMPLES`, `FIRE_UPWARD_CONFIRM_MS`) | one packet claiming a higher zone; touching the Fire floor for a moment |
+| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s; **Fire: 2 spanning ≥2s with one reading above the floor, or 3 spanning ≥5s** | code (`UPWARD_CONFIRM_*`, `FIRE_QUICK_CONFIRM_*`, `FIRE_UPWARD_CONFIRM_*`) | one packet claiming a higher zone; touching the Fire floor for a moment |
 | 1b | **Exit margin** (Schmitt trigger) | `ZoneProfileStore#applyHysteresis` | stay in the committed zone until HR < zone floor − **5 BPM** | code (`EXIT_MARGIN_BPM`) — not configurable | HR drifting ±1–3 BPM around a floor |
 | 1c | Commit cooldown | `ZoneProfileStore#applyHysteresis` | a change within **5s** of the last commit… | code (`HYSTERESIS_COOLDOWN_MS`) | rapid back-and-forth toggling |
 | 1d | Stability hold | `ZoneProfileStore#applyHysteresis` | …must hold steady **3s** before it commits | code (`HYSTERESIS_STABILITY_MS`) | (with 1c) noisy toggling |
@@ -408,10 +408,14 @@ Things to know when reading the table:
   from the floor of the zone the rider is *committed to*: Hot → Warm, Warm →
   Active and Active → Cool all need HR 5 BPM under the floor being left. A drop
   past that line still goes through the cooldown/stability rules (1c/1d).
-  Entering a zone has no margin: the floor itself counts, after 1a. Fire alone
-  must be **held** 5s at or above its floor (owner, 2026-11-17: a rider sat at
-  exactly 160 on a 160 floor for under 4s and got the full ceremony; his real
-  Fire that day held the line ~13s). The replay is pinned in
+  Entering a zone has no margin: the floor itself counts, after 1a. Fire must
+  be **reached**, not touched (owner, 2026-11-17: a rider sat at exactly 160 on
+  a 160 floor for ~3s and got the full ceremony; his real Fire that day went
+  161, 162, 162...). It commits after 2s at or above the floor with a reading
+  above it (~3s to red with the LED debounce), or after 5s at or above it
+  regardless (someone parked on the line). A pure hold could not separate the
+  two stints without ~6s to red, which the owner ruled too long; the peak can.
+  The transition log carries `rawPeakHr`. The replay is pinned in
   `ZoneProfileStore.fireHold.test.js`. A rider resuming after a strap dropout
   lands on the current reading's zone at once, except Fire when the evidence
   was below it: they start from the evidence zone and Fire earns its hold
@@ -510,7 +514,8 @@ For each HR update:
       → suppress (exit margin, Schmitt trigger)
   2b. If rawZone is an UPGRADE → wait until it has held for 2 separate
       samples spanning >= 1000ms (UPWARD_CONFIRM_SAMPLES / _MS); into Fire,
-      3 samples spanning >= 5000ms (FIRE_UPWARD_CONFIRM_SAMPLES / _MS)
+      2 samples spanning >= 2000ms with a reading above the Fire floor
+      (FIRE_QUICK_CONFIRM_*), or 3 spanning >= 5000ms (FIRE_UPWARD_CONFIRM_*)
   3. If timeSinceLastCommit > 5000ms → commit (confirmed climb, or a drop at once)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
   5. Else → suppress change, keep showing committedZoneId
@@ -665,8 +670,9 @@ never is. Three stages, each able only to say no:
    the rider **climbed** in from the zone just below Fire (`path: 'climb'`) —
    so the ceremony lands with the garage lights going red, which wait the same
    1s (zone-LED debounce) after the same commit (owner ruling 2026-11-13; it
-   was 5s and read as late). The commit itself now needs Fire held 5s (1a), so
-   a touch of the line lights neither the room nor the ceremony. A crossing that **jumped** in from further down
+   was 5s and read as late). The commit itself now needs Fire reached (1a: 2s
+   with a reading above the line, or 5s on it), so a touch of the line lights
+   neither the room nor the ceremony. A crossing that **jumped** in from further down
    keeps `FIRE_CEREMONY_JUMP_SUSTAIN_MS` (5s) and `_JUMP_MIN_SAMPLES` (3)
    (`path: 'jump'`): every false ceremony on record was a corrupt 204 packet on
    a rider in Warm or Cool. Readings are distinct

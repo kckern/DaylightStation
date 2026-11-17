@@ -3,15 +3,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const logger = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(), sampled: vi.fn() }));
 vi.mock("../../../../../../frontend/src/lib/logging/Logger.js", () => ({ default: () => logger }));
 
-const { ZoneProfileStore, FIRE_UPWARD_CONFIRM_MS } = await import('./ZoneProfileStore.js');
+const { ZoneProfileStore, FIRE_QUICK_CONFIRM_MS, FIRE_UPWARD_CONFIRM_MS } = await import('./ZoneProfileStore.js');
 const { nextFireToasts, createFireZoneTracker } = await import('../../player/overlays/fireZoneTracker.js');
 
 /**
  * 2026-11-17, one rider, one strap, readings as the garage sensor logged them
  * (one per line, timestamped to the second). The first stint touched the 160
  * floor at exactly 160 for under 4s; the 1s confirm committed Fire, the garage
- * went red and the ceremony played. The second held 160-162 for ~13s and was
- * real. Fire must be held FIRE_UPWARD_CONFIRM_MS.
+ * went red and the ceremony played. The second went 161, 162, 162... and was
+ * real. Fire commits once held FIRE_QUICK_CONFIRM_MS with a reading above the
+ * floor, or held FIRE_UPWARD_CONFIRM_MS at all.
  */
 const LADDER = [
   { id: 'cool', name: 'Cool', min: 0 },
@@ -28,7 +29,7 @@ const HELD = [[0, 154], [1, 154], [2, 154], [3, 154], [5, 155], [6, 157], [7, 15
   [12, 162], [13, 162], [14, 161], [16, 161], [17, 161], [18, 161], [19, 160], [21, 160], [22, 159], [23, 159],
   [24, 159], [25, 159], [27, 159], [28, 159], [29, 159], [30, 158]];
 
-describe('ZoneProfileStore — Fire must be held, not touched', () => {
+describe('ZoneProfileStore — Fire must be reached, not touched', () => {
   let store;
   let tracker;
   let toasts;
@@ -67,13 +68,20 @@ describe('ZoneProfileStore — Fire must be held, not touched', () => {
     expect(toasts).toEqual([]);
   });
 
-  it('the 22:04 stint (160-162 for ~13s) commits Fire once held, with its ceremony', () => {
+  it('the 22:04 stint (161, 162, 162...) commits Fire 2s in, with its ceremony', () => {
     const zones = play(HELD);
     const first = zones.indexOf('fire');
-    // Fire from 22:03:59 (offset 9); committed on the first reading 5s on.
-    expect(HELD[first][0] - 9).toBeGreaterThanOrEqual(FIRE_UPWARD_CONFIRM_MS / 1000);
-    expect(HELD[first][0]).toBe(14);
+    // Fire from 22:03:59 (offset 9, 161 — above the line); committed 2s on.
+    expect(HELD[first][0] - 9).toBe(FIRE_QUICK_CONFIRM_MS / 1000);
+    expect(HELD[first][0]).toBe(11);
     expect(toasts).toEqual([expect.objectContaining({ userId: 'rider', path: 'climb' })]);
+  });
+
+  it('someone parked exactly on the line gets Fire once held 5s', () => {
+    const parked = [0, 1, 2, 3, 4, 5, 6].map((sec) => [sec, 160]);
+    const zones = play(parked);
+    expect(zones.slice(0, 5)).not.toContain('fire');
+    expect(parked[zones.indexOf('fire')][0]).toBe(FIRE_UPWARD_CONFIRM_MS / 1000);
   });
 
   it('the other zones still confirm in 1s', () => {
@@ -102,13 +110,21 @@ describe('ZoneProfileStore — Fire must be held, not touched', () => {
       for (const h of [110, 120, 130, 140, 145, 150, 150, 150, hr, hr, hr, hr, hr, hr, hr]) tickTo(h);
     };
 
-    it('evidence below Fire: returning at 161 is Hot until Fire is held 5s', () => {
+    it('evidence below Fire: returning at 161 is Hot until Fire is confirmed like any climb', () => {
       settleAt(150);
       expect(store.getProfile('rider').currentZoneId).toBe('hot');
       loseStrap();
       expect(syncAt(161)).toMatchObject({ zoneTrusted: true, currentZoneId: 'hot' });
-      expect([tickTo(161), tickTo(162), tickTo(161), tickTo(161)].map((p) => p.currentZoneId)).toEqual(['hot', 'hot', 'hot', 'hot']);
-      expect(tickTo(161).currentZoneId).toBe('fire');
+      expect(tickTo(161).currentZoneId).toBe('hot');
+      expect(tickTo(162).currentZoneId).toBe('fire');
+    });
+
+    it('evidence below Fire: returning at exactly 160 needs the full 5s', () => {
+      settleAt(150);
+      loseStrap();
+      expect(syncAt(160).currentZoneId).toBe('hot');
+      expect([1, 2, 3, 4].map(() => tickTo(160).currentZoneId)).toEqual(['hot', 'hot', 'hot', 'hot']);
+      expect(tickTo(160).currentZoneId).toBe('fire');
     });
 
     it('evidence in Fire: resumes Fire at once, as before, with no new ceremony', () => {

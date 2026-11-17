@@ -73,8 +73,8 @@ describe('FitnessSession — Fire ceremonies only for a rider actually in Fire',
     feed('strap-a1', 'rider-a', [90, 90, 90, 90]);
     feed('strap-a1', 'rider-a', [150, 160, 165, 170, 175, 180, 184, 186, 188, 188, 188, 188]);
     feed('strap-a1', 'rider-a', [190, 191, 192, 193, 193, 193, 193, 193, 193, 193]);
-    // Fire commits once held 5s: on the 193 at 190+5s.
-    expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 193, fireThreshold: 190, deviceId: 'strap-a1' })]);
+    // Past the line (191), Fire commits 2s after 190: on the 192.
+    expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 192, fireThreshold: 190, deviceId: 'strap-a1' })]);
   });
 
   it('spike alternation 204/real after a radio gap never reaches Fire or celebrates', () => {

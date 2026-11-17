@@ -82,10 +82,10 @@ describe('ZoneProfileStore — an upward zone change needs confirmation', () => 
     baseline('rider-a');
     replay([170, 175, 180, 183, 186, 186, 186], 1000, 'rider-a');
     expect(store.getProfile('rider-a').currentZoneId).toBe('hot');
-    // Fire is held FIRE_UPWARD_CONFIRM_MS (5s), not touched.
-    const held = replay([190, 191, 191, 191, 191, 191], 1000, 'rider-a');
-    expect(held.slice(0, 5).map((p) => p.currentZoneId)).toEqual(['hot', 'hot', 'hot', 'hot', 'hot']);
-    const atCommit = held[5];
+    // Fire past the line (191 > 190) commits once held FIRE_QUICK_CONFIRM_MS (2s).
+    const held = replay([190, 191, 191], 1000, 'rider-a');
+    expect(held.slice(0, 2).map((p) => p.currentZoneId)).toEqual(['hot', 'hot']);
+    const atCommit = held[2];
     expect(atCommit.currentZoneId).toBe('fire');
     expect(atCommit.zoneEntry).toMatchObject({ zoneId: 'fire', heartRate: 191, threshold: 190 });
     // A climb from Hot is held FIRE_CEREMONY_SUSTAIN_MS (1s, with the garage
@@ -97,7 +97,7 @@ describe('ZoneProfileStore — an upward zone change needs confirmation', () => 
     replay([193, 193, 193, 193], 1000, 'rider-a');
     expect(toasts).toHaveLength(1);
     const commit = logger.info.mock.calls.find(([event, data]) => event === 'fitness.zone_state.transition' && data.committedZoneId === 'fire');
-    expect(commit[1]).toMatchObject({ commitPath: 'confirmed-upward', rawSamples: 6 });
+    expect(commit[1]).toMatchObject({ commitPath: 'confirmed-upward', rawSamples: 3, rawPeakHr: 191 });
   });
 
   it('two samples inside one second are not yet a confirmation', () => {
