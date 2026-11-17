@@ -94,6 +94,7 @@ public class PayloadLoaderTest {
         ShellServer lifeline = new ShellServer(new ShellServer.Host() {
             @Override public PayloadLoader loaderOrNull() { return loader; }
             @Override public int versionCode() { return 1; }
+            @Override public OwnerRelease.Device ownerDevice() { return null; }
         }, 0, ShellServerTest.TOKEN);
         assertEquals(200, lifeline.handle("GET", "/payload", ShellServerTest.TOKEN, null, null).status);
         assertEquals(200, lifeline.handle("POST", "/restart", ShellServerTest.TOKEN, null, null).status);

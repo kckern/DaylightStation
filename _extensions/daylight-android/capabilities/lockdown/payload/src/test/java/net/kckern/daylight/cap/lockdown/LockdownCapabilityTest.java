@@ -814,4 +814,156 @@ public class LockdownCapabilityTest {
         assertFalse("the PIN is never in an answer or a log line", call("GET", "/lockdown", null).toString().contains("4711"));
         assertFalse(((FakeShell) core.shell()).notes.toString().contains("4711"));
     }
+
+    // ── releasing and transferring device ownership ──────────────────────────
+
+    private static final String OLD_OWNER = "net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver";
+
+    /** Owner mode, locked, with an exit PIN, the HOME alias enabled and the Portal's hide list. */
+    private FakeDevicePolicy lockedAsOwner(File dir) throws Exception {
+        FakeDevicePolicy policy = new FakeDevicePolicy();
+        realPolicy = policy;
+        realOverrides.put("lockdown.exitPin", "4711");
+        realDefaults = new JSONObject("{\"lockdown.ownerRestrictions\":true,\"lockdown.ownerHidePackages\":\"com.android.chrome,com.android.systemui\"}");
+        FakeAlias alias = new FakeAlias();
+        alias.state = HomeAlias.ENABLED;
+        startForReal(new FakeContext(dir), dir, alias);
+        return policy;
+    }
+
+    @Test public void ownerReleaseUndoesEveryPolicyAndStaysReleased() throws Exception {
+        File dir = tmp.newFolder();
+        String untouched = new FakeDevicePolicy().state();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        assertFalse("the device is under owner policy", untouched.equals(policy.state()));
+        assertEquals(1, policy.preferredHome.size());
+
+        JSONObject r = call("POST", "/lockdown/owner/release", null);
+        assertEquals(200, r.getInt("_status"));
+        assertTrue(r.getBoolean("released"));
+        assertEquals("the device is as it was before this app held it", untouched, policy.state());
+        assertTrue(policy.calls.contains("clearPersistentPreferredActivities " + OWN));
+
+        // The watcher re-applies owner policy every five seconds. Not while it is released.
+        for (int i = 1; i <= 12; i++) cap.tick(1_000_000 + i * 1_000L);
+        assertEquals(untouched, policy.state());
+        JSONObject status = call("GET", "/lockdown", null);
+        assertEquals("app", status.getString("mode"));
+        assertEquals("released by request", status.getString("ownerHold"));
+        assertTrue("it is still the owner; it has stopped acting as one", status.getBoolean("deviceOwner"));
+        assertTrue("and lockdown itself still holds, in app mode's way", status.getBoolean("locked"));
+    }
+
+    @Test public void aReleaseSurvivesAPayloadRestartAndResumeAppliesPolicyAgain() throws Exception {
+        File dir = tmp.newFolder();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        call("POST", "/lockdown/owner/release", null);
+        String released = policy.state();
+
+        // The next payload over the same state directory.
+        FakeDevicePolicy next = lockedAsOwner(dir);
+        assertEquals("the hold is on disk: the new payload applies nothing", released, next.state());
+        assertEquals("app", call("GET", "/lockdown", null).getString("mode"));
+
+        JSONObject resumed = call("POST", "/lockdown/owner/resume", null);
+        assertEquals(200, resumed.getInt("_status"));
+        assertEquals("owner", resumed.getString("mode"));
+        assertTrue(next.statusBarDisabled);
+        assertEquals(1, next.preferredHome.size());
+        assertTrue(call("GET", "/lockdown", null).isNull("ownerHold"));
+    }
+
+    @Test public void ownerReleaseIsRefusedWhenThereIsNothingToRelease() throws Exception {
+        assertEquals("not started", 409, call("POST", "/lockdown/owner/release", null).getInt("_status"));
+        FakeDevicePolicy policy = new FakeDevicePolicy();
+        policy.owner = false;
+        realPolicy = policy;
+        File dir = tmp.newFolder();
+        startForReal(new FakeContext(dir), dir);
+        JSONObject r = call("POST", "/lockdown/owner/release", null);
+        assertEquals(409, r.getInt("_status"));
+        assertEquals("not_device_owner", r.getString("error"));
+        assertTrue(policy.calls.isEmpty());
+        assertEquals(401, core.router().dispatch("POST", "/lockdown/owner/release", "wrong", Collections.emptyMap(), null).status);
+    }
+
+    @Test public void transferIsRefusedUnlessTheTargetIsTheOneThisDeviceNames() throws Exception {
+        File dir = tmp.newFolder();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        String applied = policy.state();
+        // The default: no target is configured, so nothing may be transferred anywhere.
+        JSONObject unset = call("POST", "/lockdown/owner/transfer", "{\"to\":\"" + OLD_OWNER + "\"}");
+        assertEquals(409, unset.getInt("_status"));
+        assertEquals("transfer_not_configured", unset.getString("error"));
+
+        core.settings().set("lockdown.ownerTransferTarget", OLD_OWNER);
+        JSONObject other = call("POST", "/lockdown/owner/transfer", "{\"to\":\"com.example.game/com.example.game.Admin\"}");
+        assertEquals(409, other.getInt("_status"));
+        assertEquals("target_not_allowed", other.getString("error"));
+        assertEquals(400, call("POST", "/lockdown/owner/transfer", "{}").getInt("_status"));
+        assertEquals(400, call("POST", "/lockdown/owner/transfer", "{\"to\":\"not a component\"}").getInt("_status"));
+        assertEquals(401, core.router().dispatch("POST", "/lockdown/owner/transfer", "wrong", Collections.emptyMap(), "{}").status);
+
+        assertNull("nothing was transferred", policy.transferredTo);
+        assertEquals("and no policy was touched by a refused request", applied, policy.state());
+    }
+
+    @Test public void transferReleasesThisAppsPolicyFirstAndThenHandsOwnershipOver() throws Exception {
+        File dir = tmp.newFolder();
+        String untouched = new FakeDevicePolicy().state();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        core.settings().set("lockdown.ownerTransferTarget", OLD_OWNER);
+        policy.calls.clear();
+
+        JSONObject r = call("POST", "/lockdown/owner/transfer", "{\"to\":\"net.kckern.portalkeys/.PortalAdminReceiver\"}");
+        assertEquals(200, r.getInt("_status"));
+        assertTrue(r.getBoolean("transferred"));
+        assertEquals(OLD_OWNER, r.getString("to"));
+        assertFalse(r.getBoolean("deviceOwner"));
+        assertEquals(OLD_OWNER, policy.transferredTo);
+        assertEquals("the receiving app starts from a clean device", untouched, policy.state());
+        int transfer = policy.calls.indexOf("transferOwnership " + OLD_OWNER);
+        assertEquals("the transfer is the last call, after the whole release", policy.calls.size() - 1, transfer);
+        assertTrue(policy.calls.indexOf("clearPersistentPreferredActivities " + OWN) < transfer);
+    }
+
+    @Test public void aTransferTheSystemRefusesIsReportedAndThePolicyStaysReleased() throws Exception {
+        File dir = tmp.newFolder();
+        String untouched = new FakeDevicePolicy().state();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        core.settings().set("lockdown.ownerTransferTarget", OLD_OWNER);
+        policy.transferFails = new IllegalArgumentException("Provided new admin does not support transfer");
+
+        JSONObject r = call("POST", "/lockdown/owner/transfer", "{\"to\":\"" + OLD_OWNER + "\"}");
+        assertEquals(500, r.getInt("_status"));
+        assertEquals("transfer_failed", r.getString("error"));
+        assertEquals("IllegalArgumentException", r.getString("exception"));
+        assertFalse(r.getBoolean("transferred"));
+        assertTrue(r.getBoolean("policyReleased"));
+        assertTrue("still the owner", policy.owner);
+        for (int i = 1; i <= 6; i++) cap.tick(2_000_000 + i * 1_000L);
+        assertEquals("the policy is not put back behind the operator's back", untouched, policy.state());
+    }
+
+    @Test public void onAnOlderAndroidTransferIsUnsupportedAndNothingIsReleased() throws Exception {
+        File dir = tmp.newFolder();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        policy.sdk = 27;
+        String applied = policy.state();
+        core.settings().set("lockdown.ownerTransferTarget", OLD_OWNER);
+        JSONObject r = call("POST", "/lockdown/owner/transfer", "{\"to\":\"" + OLD_OWNER + "\"}");
+        assertEquals(501, r.getInt("_status"));
+        assertEquals(applied, policy.state());
+    }
+
+    @Test public void ownershipThatArrivesWithAHoldAppliesNothingUntilResume() throws Exception {
+        // What the admin receiver does when ownership is transferred to this app.
+        File dir = tmp.newFolder();
+        net.kckern.daylight.api.OwnerHold.set(dir, "device ownership was transferred to this app");
+        String untouched = new FakeDevicePolicy().state();
+        FakeDevicePolicy policy = lockedAsOwner(dir);
+        for (int i = 1; i <= 6; i++) cap.tick(3_000_000 + i * 1_000L);
+        assertEquals(untouched, policy.state());
+        assertEquals("app", call("GET", "/lockdown", null).getString("mode"));
+    }
 }

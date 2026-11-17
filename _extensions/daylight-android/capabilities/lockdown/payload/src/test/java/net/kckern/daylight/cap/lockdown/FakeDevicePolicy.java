@@ -11,7 +11,7 @@ import java.util.TreeSet;
  * record of every call. {@link #state()} is the whole of it as text, so "apply then
  * release leaves the device as it was" is one comparison.
  */
-final class FakeDevicePolicy implements DevicePolicy {
+class FakeDevicePolicy implements DevicePolicy {
     boolean owner = true, admin = true, adminFeature = true, lockTask;
     int sdk = 28;
     /** Makes transferOwnership throw, as the system does for a target it refuses. */
@@ -22,13 +22,14 @@ final class FakeDevicePolicy implements DevicePolicy {
     final Set<String> lockTaskPackages = new TreeSet<>();
     final Set<String> restrictions = new TreeSet<>();
     final Set<String> hidden = new TreeSet<>();
-    Integer lockTaskFeatures;
+    /** A device no owner has touched: LOCK_TASK_FEATURE_GLOBAL_ACTIONS. */
+    int lockTaskFeatures = 16;
     boolean keyguardDisabled, statusBarDisabled;
     String transferredTo;
 
     FakeDevicePolicy() { }
 
-    /** A device as portal-keys leaves it after its own release: one restriction that predates this app. */
+    /** The whole policy state as text. */
     String state() {
         return "home=" + preferredHome + " lockTask=" + lockTaskPackages + " features=" + lockTaskFeatures
                 + " keyguardDisabled=" + keyguardDisabled + " statusBarDisabled=" + statusBarDisabled

@@ -208,6 +208,22 @@ test('lockdown home switches the HOME alias on and off', () => {
   for (const bad of [[], ['yes'], ['on', 'now']]) assert.throws(() => parseArgs(['lockdown', 'home', ...bad]), /usage: lockdown home on\|off/);
 });
 
+test('lockdown owner releases, resumes and transfers device ownership', () => {
+  assert.deepEqual([req('lockdown', 'owner', 'release').method, req('lockdown', 'owner', 'release').url], ['POST', `${BASE}/lockdown/owner/release`]);
+  assert.equal(req('lockdown', 'owner', 'resume').url, `${BASE}/lockdown/owner/resume`);
+  const target = 'net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver';
+  assert.equal(req('lockdown', 'owner', 'transfer', target).url, `${BASE}/lockdown/owner/transfer`);
+  assert.deepEqual(bodyOf('lockdown', 'owner', 'transfer', target), { to: target });
+  for (const bad of [[], ['transfer'], ['transfer', 'not a component'], ['transfer', 'a/b', 'c'], ['release', 'now'], ['take']]) {
+    assert.throws(() => parseArgs(['lockdown', 'owner', ...bad]), /usage: lockdown owner/);
+  }
+});
+
+test('lifeline owner-release posts to the lifeline port, for a device whose payload is broken', () => {
+  const r = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['lifeline', 'owner-release']));
+  assert.deepEqual([r.method, r.url], ['POST', 'http://192.0.2.10:8781/owner/release']);
+});
+
 test('lockdown input sends the ordered lock and release commands', () => {
   const now = 1_700_000_000_000;
   const p = (...a) => parseArgs(['lockdown', 'input', ...a], { now });

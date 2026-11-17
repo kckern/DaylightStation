@@ -281,6 +281,71 @@ public final class LockdownCapability implements Capability, LockdownControl {
                     .put("note", enabled ? "this app is now a home candidate; the default home app is chosen on the device"
                             : "this app is no longer a home candidate"));
         });
+        // Undo every owner policy this app applied and stop acting as owner until resume.
+        router.route("POST", "/lockdown/owner/release", req -> {
+            OwnerPolicy o = owner;
+            if (o == null) return Router.Response.error(409, "not_ready", "message", "lockdown is not started");
+            if (!o.isOwner()) return Router.Response.error(409, "not_device_owner", "message", "this app is not device owner; there is no owner policy to release");
+            String failed = releaseOwner("released by request");
+            if (failed != null) {
+                return Router.Response.json(500, Replies.err("release_incomplete").put("message", failed).put("ownerHold", String.valueOf(ownerHold)));
+            }
+            return Router.Response.json(200, Replies.ok().put("released", true).put("mode", mode()).put("ownerHold", String.valueOf(ownerHold))
+                    .put("note", "owner policy is released and stays released until POST /lockdown/owner/resume"));
+        });
+        router.route("POST", "/lockdown/owner/resume", req -> {
+            if (owner == null) return Router.Response.error(409, "not_ready", "message", "lockdown is not started");
+            if (!net.kckern.daylight.api.OwnerHold.clear(core.shell().payloadDir())) {
+                return Router.Response.error(500, "internal", "message", "the owner hold could not be removed");
+            }
+            readOwnerHold();
+            refreshFacts();
+            applyLocked(locked());
+            note("owner hold cleared by request; mode=" + mode());
+            return Router.Response.json(200, Replies.ok().put("mode", mode()).put("locked", locked()));
+        });
+        // Hand device ownership to another admin. Only to the one this device names in
+        // lockdown.ownerTransferTarget; with that setting empty every transfer is refused.
+        router.route("POST", "/lockdown/owner/transfer", req -> {
+            JSONObject body = Requests.body(req);
+            if (!(body.opt("to") instanceof String)) throw new IllegalArgumentException("body needs 'to': \"<package>/<receiver>\"");
+            String[] to = component((String) body.opt("to"));
+            if (to == null) throw new IllegalArgumentException("'to' must be <package>/<receiver>");
+            String[] allowed = component(str("lockdown.ownerTransferTarget"));
+            if (allowed == null) {
+                return Router.Response.error(409, "transfer_not_configured", "message",
+                        "lockdown.ownerTransferTarget is empty: no transfer is allowed from this device");
+            }
+            if (!allowed[0].equals(to[0]) || !allowed[1].equals(to[1])) {
+                return Router.Response.error(409, "target_not_allowed", "message",
+                        "the target is not the one lockdown.ownerTransferTarget names");
+            }
+            OwnerPolicy o = owner;
+            if (o == null) return Router.Response.error(409, "not_ready", "message", "lockdown is not started");
+            if (!o.isOwner()) return Router.Response.error(409, "not_device_owner", "message", "this app is not device owner");
+            String cannot = o.transferRefusal();
+            if (cannot != null) throw new UnsupportedException(cannot);
+            // Released first: a transfer carries the owner's policies to the new owner,
+            // and the receiving app is to start from a clean device.
+            String failed = releaseOwner("ownership transfer to " + to[0]);
+            if (failed != null) {
+                return Router.Response.json(500, Replies.err("release_incomplete").put("message", failed)
+                        .put("transferred", false).put("policyReleased", false));
+            }
+            String target = to[0] + "/" + to[1];
+            try {
+                o.transferOwnership(to[0], to[1]);
+            } catch (Throwable t) {
+                note("ownership transfer to " + target + " FAILED: " + t);
+                return Router.Response.json(500, Replies.err("transfer_failed").put("exception", t.getClass().getSimpleName())
+                        .put("message", String.valueOf(t.getMessage())).put("transferred", false).put("policyReleased", true)
+                        .put("note", "this app is still device owner; its policy was released and is not re-applied. "
+                                + "POST /lockdown/owner/resume to apply it again"));
+            }
+            refreshFacts();
+            note("device ownership transferred to " + target);
+            return Router.Response.json(200, Replies.ok().put("transferred", true).put("to", target).put("deviceOwner", factOwner));
+        });
         // Beyond the control API contract: the ordered stop and release portal-keys took on
         // PUT /lockdown. While it is active the volume keys do nothing (volume-keys asks).
         router.route("POST", "/lockdown/input", req -> {
@@ -509,6 +574,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         factLockTask = o.lockTaskActive();
         factAdminFeature = o.adminFeature();
         factOverlay = sh.granted();
+        readOwnerHold();
         HomeAlias alias = homeAlias;
         if (alias != null) factHomeAlias = alias.state();
     }
@@ -647,9 +713,49 @@ public final class LockdownCapability implements Capability, LockdownControl {
 
     // ── locking ───────────────────────────────────────────────────────────────
 
-    private boolean ownerMode() { return "owner".equals(LockMode.resolve(str("lockdown.mode"), factOwner)); }
+    /**
+     * Owner policy was released on purpose, or ownership has just arrived by transfer:
+     * this app may be the owner and is not to act as one until somebody says so
+     * (POST /lockdown/owner/resume). Read from the marker every five seconds and after
+     * each route that changes it, so GET /lockdown never touches a file.
+     */
+    private volatile String ownerHold;
 
-    private String mode() { return LockMode.resolve(str("lockdown.mode"), factOwner); }
+    private void readOwnerHold() {
+        try { ownerHold = net.kckern.daylight.api.OwnerHold.reason(core.shell().payloadDir()); } catch (Throwable ignored) { }
+    }
+
+    private boolean ownerMode() { return ownerHold == null && "owner".equals(LockMode.resolve(str("lockdown.mode"), factOwner)); }
+
+    private String mode() { return ownerHold != null ? "app" : LockMode.resolve(str("lockdown.mode"), factOwner); }
+
+    /** "package/receiver" with a short class name resolved, or null when it is not one. */
+    static String[] component(String text) {
+        if (text == null) return null;
+        String[] parts = text.trim().split("/", -1);
+        if (parts.length != 2 || parts[0].isEmpty() || parts[1].isEmpty()) return null;
+        String cls = parts[1].startsWith(".") ? parts[0] + parts[1] : parts[1];
+        if (!parts[0].matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+") || !cls.matches("[A-Za-z_$][A-Za-z0-9_$.]*")) return null;
+        return new String[] { parts[0], cls };
+    }
+
+    private List<String> hideList() {
+        return OwnerHide.packages(str("lockdown.ownerHidePackages"), ownPackage, webViewPackage());
+    }
+
+    /** Set the hold, undo every owner policy and leave lock task. Null when all of it was done. */
+    private String releaseOwner(String why) {
+        OwnerPolicy o = owner;
+        if (o == null) return "lockdown is not started";
+        if (!net.kckern.daylight.api.OwnerHold.set(core.shell().payloadDir(), why)) return "the owner hold could not be stored";
+        readOwnerHold();
+        KioskSurface surface = surface();
+        if (surface != null) surface.setLockTask(false);
+        String failed = o.release(hideList());
+        ownerError = failed;
+        note("owner policy released (" + why + ")" + (failed == null ? "" : ": " + failed));
+        return failed;
+    }
 
     private String hidingUnsupportedReason() {
         if (ownerMode()) return null;
@@ -696,7 +802,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         packages.addAll(AllowRules.parseOrEmpty(str("lockdown.allowedApps")).exactPackages());
         packages.addAll(exemptions.packages(System.currentTimeMillis()));
         packages.removeAll(blocked);
-        List<String> hide = OwnerHide.packages(str("lockdown.ownerHidePackages"), ownPackage, webViewPackage());
+        List<String> hide = hideList();
         // The preferred home is the alias, and only once it was enabled on the device:
         // a preference for a disabled component resolves to nothing.
         String homeClass = HomeAlias.ENABLED.equals(factHomeAlias) ? HomeAlias.NAME : null;
@@ -709,13 +815,16 @@ public final class LockdownCapability implements Capability, LockdownControl {
         OwnerPolicy o = owner;
         if (o != null) {
             factOwner = o.isOwner();
+            // Ownership that has just arrived by transfer comes with a hold: read it
+            // together with the fact, so the two are never out of step.
+            readOwnerHold();
             if (ownerMode()) {
                 if (locked && ownerMayLock()) {
                     enforceOwner();
                     if (surface != null) surface.setLockTask(true);
                 } else {
                     if (surface != null) surface.setLockTask(false);
-                    ownerError = o.release();
+                    ownerError = o.relax();
                 }
             }
         }
@@ -848,6 +957,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         if (ownerErr != null) o.put("ownerError", ownerErr);
         String refused = ownerRefused;
         if (refused != null) o.put("ownerRefused", refused);
+        String hold = ownerHold;
+        o.put("ownerHold", hold == null ? JSONObject.NULL : hold);
         String modeError = LockMode.error(str("lockdown.mode"), factOwner);
         if (modeError != null) o.put("modeError", modeError);
         return o;

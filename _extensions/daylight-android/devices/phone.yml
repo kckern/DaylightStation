@@ -9,7 +9,7 @@ abis: []
 # lifeline listen on the loopback address only. The fleet CLI reaches it through
 # `adb forward tcp:8780 tcp:8780` (and 8781 for the lifeline) with host 127.0.0.1.
 control: { port: 8780, lifelinePort: 8781, bind: loopback }
-shell: { versionCode: 3, versionName: "0.1-phone" }
+shell: { versionCode: 4, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }

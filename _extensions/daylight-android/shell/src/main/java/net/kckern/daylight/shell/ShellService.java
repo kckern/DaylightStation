@@ -124,6 +124,43 @@ public class ShellService extends Service implements ShellServer.Host {
 
     @Override public PayloadLoader loaderOrNull() { return loader; }
 
+    /** By name: the admin receiver is declared by the lockdown capability's shell half, which this module cannot see. */
+    private static final String ADMIN_CLASS = "net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver";
+
+    /**
+     * The device-owner calls behind the lifeline's POST /owner/release. Null on a device
+     * with no device-policy service. A build without the lockdown capability has no
+     * admin receiver; isOwner() is then false and nothing else is called.
+     */
+    @Override public OwnerRelease.Device ownerDevice() {
+        final android.app.admin.DevicePolicyManager dpm =
+                (android.app.admin.DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+        if (dpm == null) return null;
+        final android.content.ComponentName admin = new android.content.ComponentName(getPackageName(), ADMIN_CLASS);
+        return new OwnerRelease.Device() {
+            @Override public boolean isOwner() {
+                try { return dpm.isDeviceOwnerApp(getPackageName()); } catch (Exception e) { return false; }
+            }
+            @Override public boolean setHold(String why) {
+                return net.kckern.daylight.api.OwnerHold.set(net.kckern.daylight.api.OwnerHold.payloadDir(getFilesDir()), why);
+            }
+            @Override public void clearPreferredHome() { dpm.clearPackagePersistentPreferredActivities(admin, getPackageName()); }
+            @Override public void clearLockTaskPackages() { dpm.setLockTaskPackages(admin, new String[0]); }
+            @Override public void enableStatusBar() { dpm.setStatusBarDisabled(admin, false); }
+            @Override public void enableKeyguard() { dpm.setKeyguardDisabled(admin, false); }
+            @Override public void stopLockTask() {
+                // The kiosk Activity, when one exists, is the task that is locked.
+                final Object host = ShellComponents.get(net.kckern.daylight.api.KioskHost.COMPONENT);
+                if (!(host instanceof net.kckern.daylight.api.KioskHost)) return;
+                final Object activity = ((net.kckern.daylight.api.KioskHost) host).activity();
+                if (!(activity instanceof android.app.Activity)) return;
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    try { ((android.app.Activity) activity).stopLockTask(); } catch (Throwable ignored) { }
+                });
+            }
+        };
+    }
+
     @Override public int versionCode() {
         try {
             android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);

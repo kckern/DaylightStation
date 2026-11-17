@@ -31,6 +31,7 @@ import fi.iki.elonen.NanoHTTPD;
  *   GET  /log              tail of shell.log
  *   POST /restart          stop and restart the current payload in place
  *   POST /settings/reset   delete the payload's stored settings overrides, then start the payload
+ *   POST /owner/release    where this app is device owner: clear the home preference and leave lock task
  *
  * The last one is for a stored setting that stops the payload from starting. The
  * control port, where settings are normally changed, is then down, and every payload
@@ -59,6 +60,8 @@ public final class ShellServer extends NanoHTTPD {
     interface Host {
         PayloadLoader loaderOrNull();
         int versionCode();
+        /** What device-owner calls the shell makes itself. Null where the device has no device-policy service. */
+        OwnerRelease.Device ownerDevice();
     }
 
     static final class Reply {
@@ -142,6 +145,12 @@ public final class ShellServer extends NanoHTTPD {
                     return requested(loader.requestRestart());
                 case "/settings/reset":
                     return requested(loader.requestSettingsReset());
+                case "/owner/release": {
+                    // Works with no payload at all: this is for the payload being broken.
+                    OwnerRelease.Device device = host.ownerDevice();
+                    if (device == null) return error(409, "not_device_owner: this device has no device-policy service");
+                    return OwnerRelease.run(device);
+                }
                 case "/log": {
                     File f = ShellLog.file();
                     if (f == null || !f.isFile()) return new Reply(200, "text/plain", "(no shell.log)");
@@ -149,7 +158,7 @@ public final class ShellServer extends NanoHTTPD {
                     return new Reply(200, "text/plain", s.length() > LOG_TAIL_CHARS ? s.substring(s.length() - LOG_TAIL_CHARS) : s);
                 }
                 default:
-                    return error(404, "not_found: " + uri + " (shell routes: / /payload /payload/rollback /restart /settings/reset /log)");
+                    return error(404, "not_found: " + uri + " (shell routes: / /payload /payload/rollback /restart /settings/reset /owner/release /log)");
             }
         } catch (Exception e) {
             Log.w(TAG, "shell route " + uri + " failed", e);

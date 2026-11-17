@@ -21,6 +21,7 @@ public class ShellServerTest {
         { "GET", "/" }, { "GET", "/status" }, { "GET", "/payload" }, { "POST", "/payload" },
         { "POST", "/payload/rollback" }, { "POST", "/restart" }, { "GET", "/log" }, { "GET", "/nope" },
         { "DELETE", "/payload" }, { "GET", "/restart" }, { "POST", "/settings/reset" }, { "GET", "/settings/reset" },
+        { "POST", "/owner/release" }, { "GET", "/owner/release" },
     };
 
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
@@ -30,7 +31,11 @@ public class ShellServerTest {
     private final ShellServer.Host host = new ShellServer.Host() {
         @Override public PayloadLoader loaderOrNull() { return loader; }
         @Override public int versionCode() { return 3; }
+        @Override public OwnerRelease.Device ownerDevice() { return ownerDevice; }
     };
+
+    /** What the service would hand the lifeline. Null: a device with no device-policy service. */
+    private OwnerRelease.Device ownerDevice;
 
     @Before public void setUp() throws Exception {
         h = new LoaderHarness(tmp.newFolder("payloads"));
@@ -208,5 +213,34 @@ public class ShellServerTest {
         } finally {
             lan.stop();
         }
+    }
+
+    // ── POST /owner/release ─────────────────────────────────────────────────
+
+    @Test public void ownerReleaseWorksWithNoPayloadLoaderAtAll() throws Exception {
+        final java.util.List<String> calls = new java.util.ArrayList<>();
+        ownerDevice = new OwnerRelease.Device() {
+            @Override public boolean isOwner() { return true; }
+            @Override public boolean setHold(String why) { calls.add("hold"); return true; }
+            @Override public void clearPreferredHome() { calls.add("home"); }
+            @Override public void clearLockTaskPackages() { calls.add("lockTaskPackages"); }
+            @Override public void enableStatusBar() { calls.add("statusBar"); }
+            @Override public void enableKeyguard() { calls.add("keyguard"); }
+            @Override public void stopLockTask() { calls.add("stopLockTask"); }
+        };
+        loader = null;                                   // the payload is what is broken
+        ShellServer.Reply r = server().handle("POST", "/owner/release", TOKEN, null, null);
+        assertEquals(200, r.status);
+        assertTrue(body(r).getBoolean("released"));
+        assertTrue(calls.contains("home"));
+        assertTrue(calls.contains("stopLockTask"));
+    }
+
+    @Test public void ownerReleaseIsPostOnlyNeedsTheTokenAndSaysWhenThereIsNothingToRelease() throws Exception {
+        assertEquals(405, server().handle("GET", "/owner/release", TOKEN, null, null).status);
+        assertEquals(401, server().handle("POST", "/owner/release", "wrong", null, null).status);
+        ShellServer.Reply none = server().handle("POST", "/owner/release", TOKEN, null, null);
+        assertEquals("no device-policy service on this device", 409, none.status);
+        assertFalse(body(none).getBoolean("ok"));
     }
 }

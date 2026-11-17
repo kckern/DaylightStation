@@ -69,7 +69,11 @@ final class HomeWatchdog {
                     prefs.edit().putBoolean("policySecured", secured).commit();
                 }
                 if (owner && !prefs.getBoolean("policyRequired", false)) prefs.edit().putBoolean("policyRequired", true).commit();
-                if (!state.homeCorrect) {
+                if (policy.held()) {
+                    // Policy was released for an ownership transfer; another app may own
+                    // Home now, so this watchdog must not pull Fully back to the front.
+                    repair = "held-for-owner-transfer"; lastRepair = 0;
+                } else if (!state.homeCorrect) {
                     // The current APK cannot acquire SET_PREFERRED_APPLICATIONS by ADB grant.
                     // Report that limitation; never present foreground recovery as Home repair.
                     boolean authority = context.checkSelfPermission(SET_HOME) == PackageManager.PERMISSION_GRANTED;
@@ -130,6 +134,19 @@ final class HomeWatchdog {
     JSONObject status() throws Exception { return new JSONObject(snapshot); }
     JSONObject configureShellUi(boolean hidden) throws Exception {
         JSONObject result = policy.configureShellUi(hidden); handler.post(check); return result;
+    }
+    OwnerTransfer.Result transferOwner(String to) {
+        shell.note("OWNER", "transfer requested to=" + to);
+        OwnerTransfer.Result r = policy.transferOwner(to);
+        shell.note("OWNER", "transfer ok=" + r.ok + " error=" + r.error + " policyReleased=" + r.policyReleased
+                + " transferred=" + r.transferred + " released=" + r.released + " releaseFailures=" + r.releaseFailures
+                + (r.exception == null ? "" : " exception=" + r.exception + ": " + r.message));
+        handler.post(check);
+        return r;
+    }
+    JSONObject resumePolicy() throws Exception {
+        JSONObject result = policy.resume(); shell.note("OWNER", "policy enforcement resumed by request");
+        handler.post(check); return result;
     }
     JSONObject configureWebhook(String value) throws Exception {
         URL u;

@@ -31,7 +31,7 @@ Device and payload
   payload push <url> <sha256>      download and swap the payload
   payload rollback                 back to the previous payload
   update [<apk-url> [sha256]]      install a new shell APK; with no URL, how the last one went
-  lifeline [status|rollback|restart|reset-settings|log]   the shell's own port, for when the payload is down
+  lifeline [status|rollback|restart|reset-settings|owner-release|log]   the shell's own port, for when the payload is down
 
 Kiosk page
   kiosk                            page, screen, foreground, battery, memory, WiFi
@@ -64,6 +64,9 @@ Lockdown
   lockdown input lock [--revision n] [--for minutes]   stop the volume keys
   lockdown input release [--revision n]
   lockdown home on|off             make this app a home candidate, or stop it being one
+  lockdown owner release           undo every owner policy; stays released until resume
+  lockdown owner resume            act as device owner again
+  lockdown owner transfer <package/receiver>   hand device ownership to that admin
 
 Diagnostics
   shot [file]                      screenshot to a PNG file; prints the path
@@ -99,6 +102,8 @@ const LIFELINE = {
   restart: { method: 'POST', path: '/restart' },
   // For a stored setting that keeps the payload from starting: the control port is down then.
   'reset-settings': { method: 'POST', path: '/settings/reset' },
+  // Where this app is device owner and the payload is broken: clears the home preference and leaves lock task.
+  'owner-release': { method: 'POST', path: '/owner/release' },
   log: { method: 'GET', path: '/log' },
 };
 
@@ -172,7 +177,7 @@ function parseSettings(sub, rest) {
 }
 
 function parseLockdown(sub, rest, now) {
-  const text = 'usage: lockdown [status | lock | unlock [minutes] | input lock|release … | home on|off]';
+  const text = 'usage: lockdown [status | lock | unlock [minutes] | input lock|release … | home on|off | owner release|resume|transfer …]';
   if (!sub || sub === 'status') return get('/lockdown');
   if (sub === 'lock' && rest.length === 0) return post('/lockdown/lock');
   if (sub === 'unlock') return parseUnlock(rest);
@@ -180,6 +185,16 @@ function parseLockdown(sub, rest, now) {
     // The HOME alias is installed disabled. Enabling it is the cutover's switch step.
     if (rest.length !== 1 || (rest[0] !== 'on' && rest[0] !== 'off')) throw new Error('usage: lockdown home on|off');
     return post('/lockdown/home', { enabled: rest[0] === 'on' });
+  }
+  if (sub === 'owner') {
+    const ownerUsage = 'usage: lockdown owner release | lockdown owner resume | lockdown owner transfer <package/receiver>';
+    const [action, ...more] = rest;
+    if ((action === 'release' || action === 'resume') && more.length === 0) return post(`/lockdown/owner/${action}`);
+    // The device checks the target against lockdown.ownerTransferTarget; this only checks its shape.
+    if (action === 'transfer' && more.length === 1 && /^[A-Za-z][\w.]*\/[\w.$]+$/.test(more[0])) {
+      return post('/lockdown/owner/transfer', { to: more[0] });
+    }
+    throw new Error(ownerUsage);
   }
   if (sub === 'input') {
     const inputUsage = 'usage: lockdown input lock [--revision n] [--for minutes] | lockdown input release [--revision n]';

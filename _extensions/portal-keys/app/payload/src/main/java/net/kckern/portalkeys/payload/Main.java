@@ -5,7 +5,7 @@ import net.kckern.portalkeys.api.Payload;
 import net.kckern.portalkeys.api.ShellServices;
 
 public final class Main implements Payload {
-    static final String VERSION = "p8-kiosk-alert-durability";
+    static final String VERSION = "p9-owner-transfer";
     private OpsServer ops;
     private HidBridgeServer hidBridge;
     private UsbHidController usbHid;

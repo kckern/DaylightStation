@@ -65,8 +65,12 @@ final class OwnerPolicy {
         }
     }
 
-    /** Leave lock task available to nothing and give the status bar back. Restrictions and hidden packages stay. */
-    String release() {
+    /**
+     * For an unlock window: leave lock task available to nothing and give the status bar
+     * back, so the device can be worked on. Restrictions, hidden packages and the home
+     * preference stay; the relock puts lock task and the status bar policy back.
+     */
+    String relax() {
         if (!isOwner()) return null;
         try {
             dpm.setLockTaskPackages(new String[0]);
@@ -75,6 +79,56 @@ final class OwnerPolicy {
         } catch (Exception e) {
             return e.getClass().getSimpleName() + ": " + e.getMessage();
         }
+    }
+
+    /** DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS: what a device has before any owner sets features. */
+    static final int LOCK_TASK_FEATURES_DEFAULT = 16;
+
+    /**
+     * Undo everything apply() sets, so the device is as it was before this app held
+     * it: the persistent preferred HOME (without this the device would keep resolving
+     * Home to this app whatever was chosen later, and after an uninstall to nothing),
+     * the lock-task packages and features, the keyguard and status-bar policies, the
+     * four user restrictions and every hidden package. Each step is tried even when
+     * one before it failed. Returns null when all of them were done, else what failed.
+     *
+     * @param hidePackages the packages apply() hides on this device (lockdown.ownerHidePackages)
+     */
+    String release(List<String> hidePackages) {
+        if (!isOwner()) return "not device owner";
+        StringBuilder failed = new StringBuilder();
+        step(failed, "clear the home preference", () -> dpm.clearPersistentPreferredActivities(ownPackage));
+        step(failed, "clear the lock-task packages", () -> dpm.setLockTaskPackages(new String[0]));
+        if (dpm.sdk() >= 28) step(failed, "reset the lock-task features", () -> dpm.setLockTaskFeatures(LOCK_TASK_FEATURES_DEFAULT));
+        step(failed, "enable the keyguard", () -> dpm.setKeyguardDisabled(false));
+        step(failed, "enable the status bar", () -> dpm.setStatusBarDisabled(false));
+        for (final String r : RESTRICTIONS) step(failed, "clear " + r, () -> dpm.clearUserRestriction(r));
+        for (final String p : hidePackages) step(failed, "show " + p, () -> dpm.setApplicationHidden(p, false));
+        return failed.length() == 0 ? null : failed.toString();
+    }
+
+    private static void step(StringBuilder failed, String what, Runnable call) {
+        try {
+            call.run();
+        } catch (Exception e) {
+            if (failed.length() > 0) failed.append("; ");
+            failed.append("could not ").append(what).append(" (").append(e.getClass().getSimpleName()).append(")");
+        }
+    }
+
+    /** Why a transfer cannot even be tried on this device, or null. Asked before anything is released. */
+    String transferRefusal() {
+        return dpm.sdk() < 28 ? "transferOwnership needs Android 9 (API 28); this device is API " + dpm.sdk() : null;
+    }
+
+    /**
+     * Hand device ownership to another admin component (DevicePolicyManager.transferOwnership,
+     * API 28). Throws what the system throws; the caller reports it.
+     */
+    void transferOwnership(String packageName, String className) {
+        if (!isOwner()) throw new UnsupportedException("device owner required");
+        if (dpm.sdk() < 28) throw new UnsupportedException("transferOwnership needs Android 9 (API 28)");
+        dpm.transferOwnership(packageName, className);
     }
 
     /** Hide or show one package. Device owner only; false when it could not be done. */

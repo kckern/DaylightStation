@@ -1,5 +1,5 @@
 // Builds the swappable payload as a dex jar and bakes a recovery copy into the APK.
-ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p8-kiosk-alert-durability'
+ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p9-owner-transfer'
 
 def sdkProps = new Properties()
 def localProps = new File(rootDir, 'local.properties')

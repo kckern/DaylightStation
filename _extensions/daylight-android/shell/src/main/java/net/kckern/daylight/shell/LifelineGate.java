@@ -50,6 +50,10 @@ final class LifelineGate {
                 if (!loaderReady) return new Refusal(503, "loader not ready");
                 if (!post) return new Refusal(405, "POST only");
                 return null;
+            case "/owner/release":
+                // Needs no loader: it is for a device whose payload cannot be started.
+                if (!post) return new Refusal(405, "POST only");
+                return null;
             default:
                 return null;
         }
