@@ -625,10 +625,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
     const request = beginLocalMount();
     if (!request.isCurrent()) return request.promise;
-    try {
-      const accepted = await preparePortalLaunch(target, launchedLearnerId, request);
-      if (accepted !== true) request.refuse();
-    } catch { request.refuse(); }
+    // Preparation may be waiting on a transport that never answers. The
+    // coordinator's cancellation/deadline must resolve independently of it.
+    void preparePortalLaunch(target, launchedLearnerId, request)
+      .then(accepted => { if (accepted !== true) request.refuse(); }, () => request.refuse());
     return request.promise;
   }, [beginLocalMount, preparePortalLaunch]);
 

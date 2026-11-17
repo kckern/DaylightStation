@@ -1004,7 +1004,7 @@ describe('SchoolApp — Gratitude authorization from the real keypad hook', () =
       await openFromKeypad(signedGrant);
       expect(await screen.findByText('What are you grateful for today?')).toBeInTheDocument();
       expect(service.open).toHaveBeenCalledExactlyOnceWith('kid1', today);
-      await waitFor(() => expect(schoolApi.selfServiceMountAck).toHaveBeenCalledExactlyOnceWith({ receipt: 'test-opaque-receipt', mounted: true }));
+      await waitFor(() => expect(schoolApi.selfServiceMountAck).toHaveBeenCalledExactlyOnceWith({ receipt: 'test-opaque-receipt', mounted: true }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
       expect(transport).toHaveBeenCalledWith(`/api/v1/school/gratitude/kid1/day/${today}/open`, expect.objectContaining({ headers: expect.objectContaining({ 'X-School-Gratitude-Grant': signedGrant }) }));
       expect(selfServiceErrorMock).not.toHaveBeenCalledWith('mount.refused', expect.anything());
     } finally { transport.mockRestore(); }
@@ -1050,3 +1050,23 @@ it('does not confirm a bank launch that resolves after SchoolApp unmounts', asyn
   await act(async () => { finish({ ok: true, data: { id: 'caps', items: [] } }); mounted = await launch; });
   expect(await mounted).toBe(false);
 });
+
+for (const stop of ['unmount', 'deadline']) {
+  it(`resolves a pending bank launch false on ${stop} without waiting for its fetch`, async () => {
+    const view = render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization'); await openLibraryAndWaitForBanks();
+    let finish;
+    schoolApi.bank.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const resolved = vi.fn(); const opensBefore = schoolApi.openSession.mock.calls.length;
+    vi.useFakeTimers();
+    try {
+      await act(async () => { launchHook.claim('kid1'); void launchHook.onLaunch({ kind: 'bank', bankId: 'caps' }, 'kid1').then(resolved); });
+      expect(typeof finish).toBe('function');
+      await act(async () => { if (stop === 'unmount') view.unmount(); else await vi.advanceTimersByTimeAsync(120000); });
+      expect(resolved).toHaveBeenCalledExactlyOnceWith(false);
+      await act(async () => { finish({ ok: true, data: { id: 'caps', items: [] } }); });
+      expect(schoolApi.openSession).toHaveBeenCalledTimes(opensBefore);
+      expect(resolved).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+}

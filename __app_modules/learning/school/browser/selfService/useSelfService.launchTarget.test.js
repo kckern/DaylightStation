@@ -230,7 +230,7 @@ describe('mount acknowledgement protocol', () => {
     expect(h.ack).not.toHaveBeenCalled();
     unmount();
     await act(async () => { finish(true); await run; });
-    expect(h.ack).toHaveBeenCalledWith({ receipt: 'opaque-receipt', mounted: true });
+    expect(h.ack).toHaveBeenCalledWith({ receipt: 'opaque-receipt', mounted: true }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
 it('exit cancels an uncommitted launch and releases its reservation', async () => {
@@ -247,5 +247,5 @@ it('exit cancels an uncommitted launch and releases its reservation', async () =
   await act(async () => { result.current.exit(); });
   expect(onCancelLaunch).toHaveBeenCalled();
   await act(async () => { await run; });
-  expect(h.ack).toHaveBeenCalledWith({ receipt: 'exit-receipt', mounted: false });
+  expect(h.ack).toHaveBeenCalledWith({ receipt: 'exit-receipt', mounted: false }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
 });

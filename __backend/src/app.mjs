@@ -51,7 +51,7 @@ import { createSchoolLearningRuntime } from "../../__app_modules/learning/school
 import { createSchoolCatalogRuntime } from "../../__app_modules/learning/school/server/catalog-runtime.mjs";
 import { createSchoolLanguageRuntime } from "../../__app_modules/learning/school/server/language-runtime.mjs";
 import { createSchoolLessonHookRuntime } from "../../__app_modules/learning/school/server/lesson-hook-runtime.mjs";
-import { createSchoolLifecycleRuntime } from "../../__app_modules/learning/school/server/lifecycle-runtime.mjs";
+import { createSchoolLifecycleRuntime, createSchoolLifecycleLogger } from "../../__app_modules/learning/school/server/lifecycle-runtime.mjs";
 import { createFitnessServicesRuntime } from "../../__app_modules/wellness/fitness/server/services-runtime.mjs";
 import { createFitnessReceiptRuntime } from "../../__app_modules/wellness/fitness/server/receipt-runtime.mjs";
 import { createFitnessApiRuntime } from "../../__app_modules/wellness/fitness/server/api-runtime.mjs";
@@ -2655,7 +2655,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // now takes the real `donow` service as a dependency, and `donow` itself
   // needed the seams just above to exist first.
   // ==========================================================================
-  const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
+  const schoolLifecycleLogger = createSchoolLifecycleLogger({ rootLogger, buildMetadataSource: new BuildMetadataSource({ checkoutDirectory: __dirname }) });
   // The parsed NFC reader locations, for the school reachability check. Set
   // when the trigger API is composed further down; read only from inside a
   // thunk, long after that has happened.

@@ -98,6 +98,13 @@ profile's declared `capabilities:` against the bank's item types.
 A successful `/act` response with `outcome: mount` prepares a local launch.
 `school.selfservice.program.mount-prepared` records that preparation, with
 `mountProtocol`, authenticated device/session identity and an offset-aware time.
+Both preparation and confirmation also inherit `context.buildIdentity` from the
+existing build metadata source: `baked-build-metadata`, `development-checkout`,
+or `unavailable`. Available metadata carries a SHA-256 fingerprint and a valid
+40-character commit declaration when present, explicitly marked
+`declared-unverified`. Metadata input is bounded to 8 KiB; raw file contents and
+paths are never logged. `mountProtocol: 1` identifies the payload protocol.
+Matching declared metadata to the actual deployed artifact remains a release gate.
 `school.selfservice.program.mount-confirmed` is emitted only after a signed
 browser ACK commits the reserved code use. The browser waits for the matching
 local runner shell to commit in React; a queued navigation, suspended target,
@@ -122,7 +129,14 @@ no settlement authority. Never log receipts, access codes or program grants.
 
 The browser retains at most eight pending opaque receipts in session storage,
 retries transport failures every three seconds until expiry, and settles after
-awaiting the launch promise even if navigation unmounts the keypad. Reload
+awaiting the launch promise even if navigation unmounts the keypad. Each ACK
+attempt is bounded to five seconds (or the remaining receipt lifetime), aborts
+its fetch on timeout, and allows later receipts to progress; late responses
+cannot mutate the queue. In-process expiry uses a monotonic deadline derived
+once when accepting the receipt. Epoch expiry is retained only for reloads;
+wall-clock corrections cannot shorten or extend active retries. Cancellation
+and the 120-second launch deadline resolve independently of a hung bank/deck
+fetch, whose eventual stale result cannot mount. Reload
 replays a known mount result; an interrupted result that never reached the
 commit boundary is released conservatively. Lost ACK responses replay safely.
 
