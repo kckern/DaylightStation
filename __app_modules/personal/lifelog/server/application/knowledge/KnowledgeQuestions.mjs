@@ -182,8 +182,10 @@ export class KnowledgeQuestions {
   #callback(snapshot,principal,nonce,action,botMessageId,receiptId,asOf) {
     if(principal.kind!=='callback'||principal.messageId!==String(botMessageId)||principal.receiptId!==receiptId)fail('KNOWLEDGE_CALLBACK_BINDING');
     const decoded=this.#tokens.decode(principal.callbackData);
-    if(!decoded||decoded.nonce!==nonce||decoded.action!==action)fail('KNOWLEDGE_CALLBACK_BINDING');
     const token=snapshot.state.callbackTokens?.[nonce];
+    const controlAction=({'journal:skip':'skip','journal:change':'skip','journal:done':'done'})[principal.callbackData];
+    const legacyControl=controlAction===action&&token?.channel==='quiz'&&((action==='skip'&&token.scope==='loop')||(action==='done'&&token.scope==='control'));
+    if((!decoded||decoded.nonce!==nonce||decoded.action!==action)&&!legacyControl)fail('KNOWLEDGE_CALLBACK_BINDING');
     if(!token||token.username!==principal.username||token.conversationId!==principal.conversationId||!token.allowedActions.includes(action))fail('KNOWLEDGE_TOKEN_SCOPE');
     if(asOf>=token.expiresAt)fail('KNOWLEDGE_TOKEN_EXPIRED');
     if(token.botMessageId!==String(botMessageId)||!['delivered','consumed'].includes(token.status))fail('KNOWLEDGE_DELIVERY_NOT_ACKNOWLEDGED');
@@ -247,8 +249,23 @@ export class KnowledgeQuestions {
     if(selection.empty)return {questions:[],choices:[],sendAllowed:false,status:'empty'};
     return this.prepareDelivery({username:p.username,conversationId:p.conversationId,selectionId:selection.selectionId,askDate,channel:'quiz',questionIds:selection.questions.map(q=>q.id),asOf});
   }
-  async done({principal,asOf}) {
-    const p=this.#principal(principal),decoded=this.#tokens.decode(p.callbackData);this.#date(p.username,asOf);
+  async hasActiveQuiz({principal}){
+    const p=this.#principal(principal),snapshot=await this.#store.read({username:p.username});
+    const active=snapshot.state.quizSession&&snapshot.state.deliveries?.[snapshot.state.quizSession.deliveryId];
+    return !!(active?.status==='delivered'&&active.conversationId===p.conversationId&&active.botMessageId===p.messageId);
+  }
+  async quizControl({principal,asOf}){
+    const p=this.#principal(principal),action=({'journal:skip':'skip','journal:change':'skip','journal:done':'done'})[p.callbackData];
+    if(p.kind!=='callback'||!action)fail('KNOWLEDGE_CONTROL_ACTION_REQUIRED');
+    const snapshot=await this.#store.read({username:p.username});
+    const active=snapshot.state.quizSession&&snapshot.state.deliveries?.[snapshot.state.quizSession.deliveryId];
+    if(active?.status!=='delivered'||active.botMessageId!==p.messageId||active.conversationId!==p.conversationId)fail('KNOWLEDGE_QUIZ_NOT_ACTIVE');
+    const nonce=active.nonces.find(n=>snapshot.state.callbackTokens[n]?.allowedActions.includes(action));
+    if(!nonce)fail('KNOWLEDGE_TOKEN_SCOPE');
+    return action==='done'?this.done({principal:p,token:nonce,asOf}):this.reply({principal:p,token:nonce,action,botMessageId:p.messageId,receiptId:p.receiptId,asOf});
+  }
+  async done({principal,token:nonce,asOf}) {
+    const p=this.#principal(principal),decoded=this.#tokens.decode(p.callbackData)??(p.callbackData==='journal:done'?{nonce,action:'done'}:null);this.#date(p.username,asOf);
     if(!decoded||decoded.action!=='done')fail('KNOWLEDGE_CONTROL_ACTION_REQUIRED');let result;
     await mutateKnowledge({store:this.#store,username:p.username,runId:this.#id(),build:snapshot=>{
       const token=this.#callback(snapshot,p,decoded.nonce,'done',p.messageId,p.receiptId,asOf);

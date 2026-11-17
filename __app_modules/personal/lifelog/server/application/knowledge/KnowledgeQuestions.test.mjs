@@ -129,6 +129,16 @@ describe('durable knowledge questions',()=>{
   expect((await d.store.read({username:'sample'})).objects[person.id].status).toBe('active');
   expect((await d.store.read({username:'sample'})).asks).toEqual([]);
  });
+ it('binds existing quiz controls to the active acknowledged quiz message',async()=>{
+  const objects=Object.fromEntries(Array.from({length:4},(_,i)=>{const item=loop({id:'loop.control-'+i});return[item.id,item];})),d=setup({objects});await delivered(d);
+  const quiz=await d.service.nextQuiz({principal:d.principal('debrief:ask'),asOf:AS_OF});
+  await d.service.recordDelivery({username:'sample',deliveryId:quiz.deliveryId,botMessageId:'100',asOf:AS_OF});
+  await expect(d.service.quizControl({principal:d.principal('journal:skip',{messageId:'99'}),asOf:AS_OF+1000})).rejects.toThrow();
+  const principal=d.principal('journal:skip',{messageId:'100',callbackId:'skip-control'});
+  expect((await d.service.quizControl({principal,asOf:AS_OF+1000})).action).toBe('skip');
+  const updated=(await d.store.read({username:'sample'})).objects[quiz.questions[0].objectId];expect(updated.loop.ask.deferred_until).toBe('2026-11-06');
+  expect(await d.service.hasActiveQuiz({principal})).toBe(false);
+ });
  it('expires a seven-day quiz backlog without refreshing its original age',async()=>{
   const objects=Object.fromEntries(Array.from({length:4},(_,i)=>{const item=loop({id:'loop.aged-'+i});return[item.id,item];}));
   const d=setup({objects});await delivered(d);const initial=(await d.store.read({username:'sample'})).quiz;

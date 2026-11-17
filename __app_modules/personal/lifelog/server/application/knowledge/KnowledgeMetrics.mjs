@@ -1,7 +1,7 @@
 const HOUR=3600000,DAY=24*HOUR;
 const instant=value=>typeof value==='number'?value:Date.parse(value);
 const rate=(part,total)=>total?part/total:null;
-const attributed=response=>response&&Number.isFinite(response.at)&&['reply_to','window'].includes(response.attribution);
+const attributed=response=>response&&response.action!=='skip'&&Number.isFinite(response.at)&&['reply_to','window'].includes(response.attribution);
 const acknowledged=ask=>!ask.previewOnly&&ask.botMessageId&&Number.isFinite(ask.deliveredAt)&&['knowledge','legacy'].includes(ask.arm);
 function immutableView(snapshot,transactions,asOf) {
   const latest=transactions.filter(t=>t.complete&&t.complete.at<=asOf&&t.prepare?.after?.files).sort((a,b)=>a.complete.at-b.complete.at).at(-1);

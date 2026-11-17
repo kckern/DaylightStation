@@ -1,0 +1,26 @@
+import {it,expect,vi} from 'vitest';
+import {SendMorningDebrief} from './SendMorningDebrief.mjs';
+const asOf=Date.parse('2026-11-03T15:00Z');
+function setup({failPrepare=false,sendAllowed=true,failAck=false}={}){
+ const order=[],selection={mode:'knowledge',selectionId:'selection-1',askDate:'2026-11-03',queuedCount:3,questions:[{id:'q1',text:'Did you finish: Sample reply?'},{id:'q2',text:'Did you finish: Another reply?'}]};
+ const source={prepareDelivery:vi.fn(async()=>{order.push('prepare');if(failPrepare)throw Error('write failed');return {deliveryId:'delivery-1',sendAllowed,questions:selection.questions,choices:[[{text:'1. Yes',callback_data:'kb1:sample:y'}],[{text:'2. Yes',callback_data:'kb1:other:y'}]]};}),recordDelivery:vi.fn(async()=>{order.push('ack');if(failAck)throw Error('ack failed');}),recordDeliveryFailure:vi.fn(async()=>{})};
+ const send=vi.fn(async()=>{order.push('send');return {messageId:'99'};}),state={set:vi.fn(async()=>{})};
+ const service=new SendMorningDebrief({messagingGateway:{sendMessage:send},conversationStateStore:state,followUpSource:source,clock:()=>asOf,logger:{info(){},warn(){},error(){}}});
+ const debrief={success:true,date:'2026-11-02',username:'sample',askDate:'2026-11-03',summary:'Meeting.\n\n• Did you finish: Sample reply?\n• Did you finish: Another reply?',knowledgeFacts:'Meeting.',headline:null,knowledgeSelection:selection,lifelog:{_meta:{sources:['calendar']},summaries:[]}};
+ return {service,source,send,state,debrief,order};
+}
+const run=d=>d.service.execute({conversationId:'private-sample',debrief:d.debrief});
+it('prepares both question tokens before transport and binds them to the one acknowledged message',async()=>{
+ const d=setup();await run(d);expect(d.order).toEqual(['prepare','send','ack']);expect(d.source.recordDelivery).toHaveBeenCalledWith({username:'sample',deliveryId:'delivery-1',botMessageId:'99',asOf});
+ const options=d.send.mock.calls[0][2];expect(options.inline).toBe(true);expect(options.choices.flat().filter(b=>b.callback_data.startsWith('kb1:'))).toHaveLength(2);expect(options.choices.flat()).toContainEqual({text:'💬 3 more',callback_data:'debrief:ask'});
+ expect(d.state.set.mock.calls[0][1].debrief).toMatchObject({askDate:'2026-11-03',knowledgeSelection:d.debrief.knowledgeSelection});
+});
+it('sends facts only when preparation cannot durably reserve the questions',async()=>{
+ const d=setup({failPrepare:true});await run(d);expect(d.send.mock.calls[0][1]).not.toContain('?');expect(d.source.recordDelivery).not.toHaveBeenCalled();
+});
+it('suppresses a duplicate send when preparation returns an existing reservation',async()=>{
+ const d=setup({sendAllowed:false});expect((await run(d)).suppressed).toBe(true);expect(d.send).not.toHaveBeenCalled();
+});
+it('quarantines an acknowledged transport whose receipt persistence failed',async()=>{
+ const d=setup({failAck:true});await expect(run(d)).rejects.toThrow('ack failed');expect(d.send).toHaveBeenCalledTimes(1);expect(d.source.recordDeliveryFailure).toHaveBeenCalledWith({username:'sample',deliveryId:'delivery-1',uncertain:true,asOf});
+});

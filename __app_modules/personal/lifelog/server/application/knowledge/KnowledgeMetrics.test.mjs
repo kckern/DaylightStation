@@ -48,3 +48,8 @@ it('uses the last completed immutable image at as-of for historical metrics',asy
  d.ledger.read.mockResolvedValue({transactions:[{prepare:{at:start,batch:{events:[]},after:{files:{'loops/application-reply.yml':loop(),'asks/2026-11-01.yml':{items:[ask('one')]}}}},complete:{at:start}}]});
  expect((await d.metrics.report(range)).resolutionWithin14Days.resolved).toBe(0);
 });
+it('does not inflate reply or tap rates with a skipped quiz question',async()=>{
+ const row=ask('skipped',{channel:'quiz',response:{at:start+1000,action:'skip',by:'tap',length:0,attribution:'reply_to'}});
+ const result=await setup([row]).metrics.report(range);
+ expect(result.tapShare).toEqual({taps:0,replies:0,rate:null});
+});

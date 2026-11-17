@@ -10,6 +10,7 @@
  */
 
 import moment from 'moment-timezone';
+import {presentKnowledgeQuestions,knowledgeQuestionPrompt} from '../../domain/services/KnowledgeQuestionPresentation.mjs';
 
 // Hedging/speculation words banned from the headline — a deduction must commit.
 // Stateless (no /g flag) so .test() is safe to reuse.
@@ -25,6 +26,9 @@ export class GenerateMorningDebrief {
   #debriefRepository;
   #journalEntryRepository;
   #logger;
+  #followUpSource;
+  #clock;
+  #timezone;
 
   /**
    * @param {Object} deps
@@ -38,6 +42,9 @@ export class GenerateMorningDebrief {
     if (!deps.lifelogAggregator) throw new Error('lifelogAggregator is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
 
+    this.#followUpSource = deps.followUpSource;
+    this.#clock = deps.clock ?? Date.now;
+    this.#timezone = deps.userTimezone ?? (()=>'UTC');
     this.#lifelogAggregator = deps.lifelogAggregator;
     this.#aiGateway = deps.aiGateway;
     this.#debriefRepository = deps.debriefRepository;
@@ -63,6 +70,15 @@ export class GenerateMorningDebrief {
       // Step 1: Aggregate lifelog data
       const lifelog = await this.#lifelogAggregator.aggregate(username, date);
 
+      let knowledgeSelection;
+      const asOf=input.asOf??this.#clock();
+      const askDate=input.askDate??moment.tz(asOf,this.#timezone(username)).format('YYYY-MM-DD');
+      if(this.#followUpSource){
+        try{
+          const selected=await this.#followUpSource.selectForMorning({username,askDate,asOf,max:2});
+          if(selected?.mode==='knowledge')knowledgeSelection=selected;
+        }catch{this.#logger.warn?.('debrief.knowledge.unavailable');}
+      }
       // Step 1.5: Check if debrief already exists for this date
       if (this.#debriefRepository) {
         const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date);
@@ -75,8 +91,8 @@ export class GenerateMorningDebrief {
           return {
             success: true,
             date: existingDebrief.date,
-            summary: existingDebrief.summary,
-            headline: existingDebrief.headline || null,
+            ...this.#presentKnowledge({summary:existingDebrief.summary,headline:existingDebrief.headline||null},lifelog,knowledgeSelection),
+            ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
             lifelog: {
               _meta: {
                 date: existingDebrief.date,
@@ -90,6 +106,9 @@ export class GenerateMorningDebrief {
       }
 
       // Step 2: Check if we have enough data
+      if (!lifelog._meta.hasEnoughData && knowledgeSelection) {
+        return {success:true,date:lifelog._meta.date,lifelog,knowledgeSelection,askDate,username,...this.#presentKnowledge({summary:'',headline:null},lifelog,knowledgeSelection)};
+      }
       if (!lifelog._meta.hasEnoughData) {
         this.#logger.info?.('debrief.insufficient-data', {
           username,
@@ -118,6 +137,7 @@ export class GenerateMorningDebrief {
         username,
         conversationContext,
         recentOutput,
+        knowledgeSelection,
       );
 
       const duration = Date.now() - startTime;
@@ -132,8 +152,8 @@ export class GenerateMorningDebrief {
       return {
         success: true,
         date: lifelog._meta.date,
-        summary,
-        headline,
+        ...this.#presentKnowledge({summary,headline},lifelog,knowledgeSelection,conversationContext),
+        ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
         lifelog, // Include for reference
       };
     } catch (error) {
@@ -152,6 +172,12 @@ export class GenerateMorningDebrief {
         fallbackPrompt: 'Good morning! How was yesterday? Anything interesting happen?',
       };
     }
+  }
+
+  #presentKnowledge(parsed,lifelog,selection,context=[]){
+    if(!selection)return parsed;
+    const fallback=this.#generateFallbackSummary(lifelog);
+    return presentKnowledgeQuestions({...parsed,selection,fallbackFacts:fallback.includes('?')?'Recorded sources: '+(lifelog._meta.sources??[]).join(', ')+'.':fallback,grounding:this.#buildDataPrompt(lifelog)+'\n'+context.map(row=>row.content).join('\n')});
   }
 
   /**
@@ -217,7 +243,7 @@ export class GenerateMorningDebrief {
   /**
    * Generate natural language summary using AI
    */
-  async #generateSummary(lifelog, username, conversationContext = [], recentOutput = { headlines: [], questions: [] }) {
+  async #generateSummary(lifelog, username, conversationContext = [], recentOutput = { headlines: [], questions: [] }, knowledgeSelection) {
     const systemPrompt = `You produce a compact morning data roundup from yesterday's logged data. Telegram message — no markdown headers.
 
 FORMAT — a one-line hook, then three sections, separated by blank lines:
@@ -321,7 +347,7 @@ You may receive the hooks and questions you sent on recent days. They are what t
     try {
       const response = await this.#aiGateway.chat(
         [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemPrompt+knowledgeQuestionPrompt(knowledgeSelection) },
           {
             role: 'user',
             content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}${contextSection}\n\nProduce the morning roundup: HOOK line first, then facts, commentary, questions.`,
@@ -344,7 +370,8 @@ You may receive the hooks and questions you sent on recent days. They are what t
       // Hedge guard: a deduction must commit. If the model slipped a hedge word
       // into the headline, attempt one focused rewrite; if that still hedges,
       // drop the headline so the send layer falls back to the date header.
-      if (parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) {
+      if (knowledgeSelection?.mode==='knowledge' && parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) parsed.headline=null;
+      if (!knowledgeSelection && parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) {
         parsed.headline = await this.#deHedgeHeadline(parsed.headline);
       }
 

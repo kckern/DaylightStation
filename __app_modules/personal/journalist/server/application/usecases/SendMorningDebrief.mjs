@@ -45,6 +45,8 @@ export class SendMorningDebrief {
   #debriefRepository;
   #journalEntryRepository;
   #logger;
+  #followUpSource;
+  #clock;
 
   /**
    * @param {Object} deps
@@ -54,6 +56,8 @@ export class SendMorningDebrief {
    * @param {Object} deps.logger - Logger instance
    */
   constructor(deps) {
+    this.#followUpSource = deps.followUpSource;
+    this.#clock = deps.clock ?? Date.now;
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
     this.#debriefRepository = deps.debriefRepository;
@@ -84,7 +88,10 @@ export class SendMorningDebrief {
    * @returns {Object} Result with message ID
    */
   async execute(input) {
-    const { conversationId, debrief, responseContext } = input;
+    const { conversationId, responseContext } = input;
+    let debrief={...input.debrief};
+    let knowledgeDelivery=null;
+    const username=input.username??debrief.username;
 
     this.#logger.info?.('debrief.send.start', {
       conversationId,
@@ -114,6 +121,20 @@ export class SendMorningDebrief {
         };
       }
 
+      if(debrief.knowledgeSelection?.mode==='knowledge'){
+        const selection=debrief.knowledgeSelection;
+        const facts=debrief.knowledgeFacts??'Recorded daily activity.';
+        try{
+          if(!this.#followUpSource)throw Error('Knowledge delivery unavailable');
+          knowledgeDelivery=await this.#followUpSource.prepareDelivery({username,conversationId,selectionId:selection.selectionId,askDate:debrief.askDate??selection.askDate,channel:'morning',questionIds:selection.questions.map(q=>q.id),asOf:this.#clock()});
+          if(!knowledgeDelivery.sendAllowed)return {success:true,suppressed:true,reason:'already_prepared'};
+          debrief.summary=[facts,knowledgeDelivery.questions.map(q=>'• '+q.text).join('\n')].filter(Boolean).join('\n\n');
+        }catch{
+          this.#logger.warn?.('debrief.knowledge.prepare-failed');
+          debrief={...debrief,summary:facts,knowledgeSelection:null};
+        }
+      }
+
       // Build full message: an engaging headline (provocative question or teaser)
       // over a subordinate date line, then the styled summary.
       const dateObj = new Date(debrief.date + 'T00:00:00');
@@ -122,6 +143,10 @@ export class SendMorningDebrief {
 
       // Build main 3-button keyboard
       const keyboard = this.#buildMainKeyboard();
+      if(debrief.knowledgeSelection?.mode==='knowledge'){
+        for(const button of keyboard.inline_keyboard.flat())if(button.callback_data==='debrief:ask')button.text='💬 '+Math.min(5,Math.max(0,debrief.knowledgeSelection.queuedCount??0))+' more';
+        keyboard.inline_keyboard.unshift(...knowledgeDelivery.choices);
+      }
 
       // Send message with keyboard
       // Note: TelegramAdapter expects camelCase 'parseMode' and 'choices'/'inline' for keyboards
@@ -134,6 +159,10 @@ export class SendMorningDebrief {
       // Validate result before proceeding
       if (!result || !result.messageId) {
         throw new Error('Failed to send message - no message ID returned');
+      }
+
+      if(knowledgeDelivery){
+        await this.#followUpSource.recordDelivery({username,deliveryId:knowledgeDelivery.deliveryId,botMessageId:result.messageId,asOf:this.#clock()});
       }
 
       // Save to journal history
@@ -156,6 +185,7 @@ export class SendMorningDebrief {
           activeFlow: 'morning_debrief',
           debrief: {
             date: debrief.date,
+            ...(debrief.knowledgeSelection?{knowledgeSelection:debrief.knowledgeSelection,askDate:debrief.askDate,username}:{}),
             summary: debrief.summary,
             questions: debrief.questions,
             categories: debrief.categories,
@@ -200,6 +230,9 @@ export class SendMorningDebrief {
         fallback: false,
       };
     } catch (error) {
+      if(knowledgeDelivery){
+        try{await this.#followUpSource.recordDeliveryFailure({username,deliveryId:knowledgeDelivery.deliveryId,uncertain:true,asOf:this.#clock()});}catch{this.#logger.warn?.('debrief.knowledge.quarantine-failed');}
+      }
       this.#logger.error?.('debrief.send.failed', {
         conversationId,
         error: error.message,

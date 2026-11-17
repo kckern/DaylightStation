@@ -21,10 +21,8 @@ export class JournalistInputRouter {
   #userResolver;
   #userIdentityService;
   #aiGatewayAvailable;
-  /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
-  #currentEvent;
-  /** @type {import('#apps/common/ports/IResponseContext.mjs').IResponseContext|null} */
-  #responseContext;
+  #knowledgeCompanion;
+
 
   /**
    * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
@@ -43,17 +41,16 @@ export class JournalistInputRouter {
     this.#userResolver = options.userResolver;
     this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
     this.#logger = options.logger || console;
-    this.#currentEvent = null;
-    this.#responseContext = null;
+    this.#knowledgeCompanion=options.knowledgeCompanion??null;
   }
 
   /**
    * Get messaging interface (prefers responseContext for DDD compliance)
    * @private
    */
-  #getMessaging(conversationId) {
-    if (this.#responseContext) {
-      return this.#responseContext;
+  #getMessaging(conversationId,context={}) {
+    if (context.responseContext) {
+      return context.responseContext;
     }
     // Fallback to container gateway with conversationId
     const gateway = this.#container.getMessagingGateway?.();
@@ -72,12 +69,10 @@ export class JournalistInputRouter {
    * @param {import('#apps/common/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<any>}
    */
-  async route(event, responseContext = null) {
+  async route(event, responseContext = null, requestContext = {}) {
     const { type, conversationId, messageId, payload, metadata } = event;
 
-    // Store event and responseContext for handlers that need them
-    this.#currentEvent = event;
-    this.#responseContext = responseContext;
+    const context=Object.freeze({responseContext,userId:this.#resolveUserId(event),knowledgePrincipal:requestContext.knowledgePrincipal??null});
 
     this.#logger.debug?.('router.event', { type, conversationId, messageId });
 
@@ -99,16 +94,16 @@ export class JournalistInputRouter {
     try {
       switch (type) {
         case InputEventType.TEXT:
-          return this.#handleText(conversationId, payload.text, messageId, enrichedMetadata);
+          return this.#handleText(conversationId, payload.text, messageId, enrichedMetadata, context);
 
         case InputEventType.VOICE:
-          return this.#handleVoice(conversationId, normalizedPayload, messageId, enrichedMetadata);
+          return this.#handleVoice(conversationId, normalizedPayload, messageId, enrichedMetadata, context);
 
         case InputEventType.COMMAND:
-          return this.#handleCommand(conversationId, payload.command, payload.text, messageId, enrichedMetadata);
+          return this.#handleCommand(conversationId, payload.command, payload.text, messageId, enrichedMetadata, context);
 
         case InputEventType.CALLBACK:
-          return this.#handleCallback(conversationId, normalizedPayload, messageId, enrichedMetadata);
+          return this.#handleCallback(conversationId, normalizedPayload, messageId, enrichedMetadata, context);
 
         default:
           this.#logger.warn?.('router.unknownEventType', { type });
@@ -131,7 +126,7 @@ export class JournalistInputRouter {
    * Handle text input
    * @private
    */
-  async #handleText(conversationId, text, messageId, metadata) {
+  async #handleText(conversationId, text, messageId, metadata, context) {
     this.#logger.debug?.('router.text', { conversationId, textLength: text?.length });
 
     // Check for special starts (🎲, ❌)
@@ -139,16 +134,16 @@ export class JournalistInputRouter {
       // 🎲 starts a new AI-generated prompt; ❌ only clears state and remains
       // available while the model is offline.
       if (!this.#aiGatewayAvailable && (text.includes('🎲') || text.toLowerCase().includes('change'))) {
-        return this.#unavailable(conversationId, 'special-start');
+        return this.#unavailable(conversationId, 'special-start', context);
       }
       const useCase = this.#container.getHandleSpecialStart?.();
       if (useCase) {
         return useCase.execute({
           chatId: conversationId,
-          userId: this.#resolveUserId(),
+          userId: context.userId,
           messageId,
           text,
-          responseContext: this.#responseContext,
+          responseContext: context.responseContext,
         });
       }
     }
@@ -158,9 +153,9 @@ export class JournalistInputRouter {
     if (debriefResponseHandler && this.#isDebriefButton(text)) {
       const result = await debriefResponseHandler.execute({
         conversationId,
-        userId: this.#resolveUserId(),
+        userId: context.userId,
         text,
-        responseContext: this.#responseContext,
+        responseContext: context.responseContext,
       });
       if (result?.handled) {
         return result;
@@ -172,9 +167,9 @@ export class JournalistInputRouter {
     if (sourceSelectionHandler && this.#isSourcePickerButton(text)) {
       const result = await sourceSelectionHandler.execute({
         conversationId,
-        userId: this.#resolveUserId(),
+        userId: context.userId,
         text,
-        responseContext: this.#responseContext,
+        responseContext: context.responseContext,
       });
       if (result?.handled) {
         return result;
@@ -186,9 +181,9 @@ export class JournalistInputRouter {
     if (categoryHandler) {
       const result = await categoryHandler.execute({
         conversationId,
-        userId: this.#resolveUserId(),
+        userId: context.userId,
         messageText: text,
-        responseContext: this.#responseContext,
+        responseContext: context.responseContext,
       });
 
       // If it was handled as a category selection, we're done
@@ -198,16 +193,18 @@ export class JournalistInputRouter {
     }
 
     // Regular text entry - route to ProcessTextEntry
-    if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'text');
+    if (!this.#aiGatewayAvailable && !context.knowledgePrincipal) return this.#unavailable(conversationId, 'text', context);
     const useCase = this.#container.getProcessTextEntry();
     return useCase.execute({
       chatId: conversationId,
-      userId: this.#resolveUserId(),
+      userId: context.userId,
       text,
       messageId,
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
-      responseContext: this.#responseContext,
+      knowledgePrincipal:context.knowledgePrincipal,
+      aiAvailable:this.#aiGatewayAvailable,
+      responseContext: context.responseContext,
     });
   }
 
@@ -246,19 +243,21 @@ export class JournalistInputRouter {
    * Handle voice input
    * @private
    */
-  async #handleVoice(conversationId, payload, messageId, metadata) {
+  async #handleVoice(conversationId, payload, messageId, metadata, context) {
     this.#logger.debug?.('router.voice', { conversationId, hasFileId: !!payload.fileId });
 
-    if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'voice');
+    if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'voice', context);
     const useCase = this.#container.getProcessVoiceEntry();
     return useCase.execute({
       chatId: conversationId,
-      userId: this.#resolveUserId(),
+      userId: context.userId,
       voiceFileId: payload.fileId,
       messageId,
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
-      responseContext: this.#responseContext,
+      knowledgePrincipal:context.knowledgePrincipal,
+      aiAvailable:this.#aiGatewayAvailable,
+      responseContext: context.responseContext,
     });
   }
 
@@ -266,12 +265,12 @@ export class JournalistInputRouter {
    * Handle slash command
    * @private
    */
-  async #handleCommand(conversationId, command, args, messageId, metadata) {
+  async #handleCommand(conversationId, command, args, messageId, metadata, context) {
     this.#logger.debug?.('router.command', { conversationId, command });
 
     // Delete the slash command message to keep chat clean
     try {
-      const messaging = this.#getMessaging(conversationId);
+      const messaging = this.#getMessaging(conversationId,context);
       if (messageId) {
         await messaging.deleteMessage(messageId);
       }
@@ -281,7 +280,7 @@ export class JournalistInputRouter {
 
     const aiCommands = new Set(['prompt', 'start', 'yesterday', 'counsel', 'therapist', 'analyze']);
     if (!this.#aiGatewayAvailable && aiCommands.has(String(command || '').toLowerCase())) {
-      return this.#unavailable(conversationId, 'command');
+      return this.#unavailable(conversationId, 'command', context);
     }
 
     const useCase = this.#container.getHandleSlashCommand?.();
@@ -291,8 +290,8 @@ export class JournalistInputRouter {
       return useCase.execute({
         chatId: conversationId,
         command: fullCommand,
-        userId: this.#resolveUserId(),
-        responseContext: this.#responseContext,
+        userId: context.userId,
+        responseContext: context.responseContext,
       });
     }
 
@@ -304,19 +303,24 @@ export class JournalistInputRouter {
    * Handle callback (button press)
    * @private
    */
-  async #handleCallback(conversationId, payload, messageId, metadata) {
-    this.#logger.debug?.('router.callback', { conversationId, data: payload.data });
+  async #handleCallback(conversationId, payload, messageId, metadata, context) {
+    this.#logger.debug?.('router.callback', { conversationId, kind:payload.data?.startsWith('kb1:')?'knowledge':'legacy' });
+    if(payload.data?.startsWith('kb1:')||payload.data==='debrief:ask'||['journal:change','journal:skip','journal:done'].includes(payload.data)){
+      const result=await this.#knowledgeCompanion?.handleCallback({principal:context.knowledgePrincipal,callbackData:payload.data,conversationId,botMessageId:messageId,responseContext:context.responseContext});
+      if(result?.handled)return result;
+      if(payload.data?.startsWith('kb1:'))return {handled:true,status:'rejected'};
+    }
 
     // Handle debrief-specific callbacks
     if (payload.data?.startsWith('debrief:')) {
-      return this.#handleDebriefCallback(conversationId, payload, messageId, metadata);
+      return this.#handleDebriefCallback(conversationId, payload, messageId, metadata, context);
     }
 
     // Handle other callbacks (quiz, journal, etc.)
     const useCase = this.#container.getHandleCallbackResponse();
     return useCase.execute({
       chatId: conversationId,
-      userId: this.#resolveUserId(),
+      userId: context.userId,
       messageId: payload.sourceMessageId,
       callbackData: payload.data,
       options: {
@@ -324,7 +328,7 @@ export class JournalistInputRouter {
         senderName: this.#extractSenderName(metadata),
         foreignKey: null,
       },
-      responseContext: this.#responseContext,
+      responseContext: context.responseContext,
     });
   }
 
@@ -332,14 +336,14 @@ export class JournalistInputRouter {
    * Handle debrief-specific callbacks
    * @private
    */
-  async #handleDebriefCallback(conversationId, payload, messageId, metadata) {
+  async #handleDebriefCallback(conversationId, payload, messageId, metadata, context) {
     const action = payload.data.replace('debrief:', '');
-    const messaging = this.#getMessaging(conversationId);
+    const messaging = this.#getMessaging(conversationId,context);
 
     // Handle source selection (e.g., "source:events")
     if (action.startsWith('source:')) {
       const sourceName = action.replace('source:', '');
-      const userId = this.#resolveUserId();
+      const userId = context.userId;
 
       // Get state to find the debrief date
       const stateStore = this.#container.getConversationStateStore();
@@ -397,13 +401,14 @@ export class JournalistInputRouter {
             conversationId,
             text: '📊 Details',
             messageId: payload.sourceMessageId,
+            responseContext:context.responseContext,
           });
         }
         break;
       }
 
       case 'ask': {
-        if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'debrief');
+        if (!this.#aiGatewayAvailable) return this.#unavailable(conversationId, 'debrief', context);
         // Start interview flow (generate questions on-demand)
         const stateStore = this.#container.getConversationStateStore();
         const state = await stateStore.get(conversationId);
@@ -413,8 +418,9 @@ export class JournalistInputRouter {
         if (interviewUseCase) {
           return interviewUseCase.execute({
             conversationId,
-            userId: this.#resolveUserId(),
+            userId: context.userId,
             debriefDate,
+            responseContext:context.responseContext,
           });
         }
 
@@ -455,10 +461,10 @@ export class JournalistInputRouter {
 
   // ==================== Helpers ====================
 
-  async #unavailable(conversationId, type) {
+  async #unavailable(conversationId, type, context) {
     const message = 'Journal prompts and analysis are temporarily unavailable. Please try again shortly.';
     this.#logger.warn?.('journalist.ai.unavailable', { conversationId, type });
-    await this.#getMessaging(conversationId).sendMessage(message, {});
+    await this.#getMessaging(conversationId,context).sendMessage(message, {});
     return { ok: false, code: 'AI_UNAVAILABLE', error: message };
   }
 
@@ -468,8 +474,7 @@ export class JournalistInputRouter {
    * @private
    * @returns {string|null}
    */
-  #resolveUserId() {
-    const event = this.#currentEvent;
+  #resolveUserId(event) {
 
     // Prefer domain identity service
     if (this.#userIdentityService && event?.platform && event?.platformUserId) {

@@ -8,6 +8,7 @@
  */
 
 import path from 'path';
+import {createHash} from 'node:crypto';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -123,6 +124,7 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
     const result = this.#dataService.user.write(relativePath, data, username);
     if (!result) {
       this.#logger.error?.('journal.save.failed', { username, relativePath });
+      throw new InfrastructureError('Journal write failed',{code:'JOURNAL_WRITE_FAILED'});
     }
     return result;
   }
@@ -183,6 +185,17 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
       senderName: entry.senderName,
       timestamp: entry.timestamp || nowTs24()
     };
+
+    if(entry.source?.verified===true){
+      const source=entry.source;
+      if(message.role!=='user'||source.platform!=='telegram'||source.conversationId!==chatId||String(source.messageId)!==String(message.id)||String(source.senderId)!==String(message.senderId))throw new InfrastructureError('Invalid journal source',{code:'JOURNAL_SOURCE_INVALID'});
+      const previous=data.messages.find(row=>row.source?.verified===true&&row.source.conversationId===chatId&&String(row.id)===String(message.id));
+      if(previous){
+        if(previous.content!==message.content||String(previous.senderId)!==String(message.senderId)||(previous.source.replyToMessageId??null)!==(source.replyToMessageId??null))throw new InfrastructureError('Conflicting journal source',{code:'JOURNAL_SOURCE_CONFLICT'});
+        return previous;
+      }
+      message.source={platform:'telegram',conversationId:chatId,messageId:String(message.id),senderId:String(message.senderId),replyToMessageId:source.replyToMessageId??null,verified:true,contentHash:createHash('sha256').update(JSON.stringify([String(message.id),String(message.senderId),chatId,message.content,message.timestamp])).digest('hex')};
+    }
 
     // Add message
     data.messages.push(message);
@@ -425,7 +438,8 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
       content: message.text || message.content,
       senderId: message.senderId || this.#extractUserId(conversationId),
       senderName: message.senderName,
-      timestamp: localTimestamp
+      timestamp: localTimestamp,
+      ...(message.source?{source:message.source}:{})
     };
 
     return this.save(messageData, conversationId);

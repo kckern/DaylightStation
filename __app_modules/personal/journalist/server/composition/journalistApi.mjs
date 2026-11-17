@@ -41,19 +41,25 @@ export function createJournalistApiRouter(config) {
     userResolver,
     userIdentityService,
     aiGatewayAvailable,
+    knowledgeCompanion:journalistServices.journalistContainer.getKnowledgeCompanion?.(),
     logger,
   });
 
   // Build webhook handler (adapter layer concern, not API layer)
   const webhookHandler = (webhookParser && inputRouter)
-    ? createBotWebhookHandler({
+    ? (req,res)=>createBotWebhookHandler({
         botName: 'journalist',
         botId,
         parser: webhookParser,
-        inputRouter,
+        inputRouter:{route(event,responseContext){
+          const companion=journalistServices.journalistContainer.getKnowledgeCompanion?.();
+          const message=req.body?.message??req.body?.callback_query?.message;
+          const knowledgePrincipal=companion?.capturePrincipal({event,webhookSecret:req.get?.('X-Telegram-Bot-Api-Secret-Token')??req.headers?.['x-telegram-bot-api-secret-token'],forwarded:!!(message?.forward_origin||message?.forward_from||message?.forward_date)});
+          return inputRouter.route(event,responseContext,{knowledgePrincipal});
+        }},
         gateway,
         logger,
-      })
+      })(req,res)
     : null;
 
   const unavailableAiOperation = {

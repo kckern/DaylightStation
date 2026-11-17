@@ -87,11 +87,42 @@ The domain does not:
 
 ## Where it lives
 
-`__backend/src/2_domains/journalist/` — entities, value objects, and pure domain services.
+`__app_modules/personal/journalist/server/domain/` — entities, value objects, and pure domain services.
 
 Adjacent layers that depend on this domain:
 
-- **Use cases & orchestration:** `__backend/src/3_applications/journalist/`
-- **Persistence:** `__backend/src/1_adapters/persistence/yaml/` (journal entries, message queues, quiz state)
+- **Use cases & orchestration:** `__app_modules/personal/journalist/server/application/`
+- **Persistence:** `__app_modules/personal/journalist/server/adapters/persistence/` (journal entries, message queues, quiz state)
 - **Messaging & AI gateways:** `__backend/src/1_adapters/messaging/`, `__backend/src/1_adapters/ai/`
-- **HTTP surface:** `__backend/src/4_api/v1/routers/journalist.mjs` and handlers under `__backend/src/4_api/v1/handlers/journalist/`
+- **HTTP surface:** `__app_modules/personal/journalist/server/api/journalist.mjs` and its adjacent handlers
+
+
+## Optional knowledge follow-ups
+
+Journalist consumes Lifelog through injected `IFollowUpSource` and
+`IKnowledgeCompanion` ports. The implementation is optional and remains off until
+runtime commissioning. Missing or unhealthy KB selection preserves the ordinary
+debrief. A healthy KB day uses only selected deterministic questions, with a
+maximum of two and no invented replacement for an empty selection. Generation
+uses today's user-local `askDate` separately from yesterday's report date.
+
+Model output places its question block inside `KB_QUESTIONS_BEGIN/END`. The
+presentation seam removes that block and appends the selected templates. Extra
+questions, ungrounded names or malformed blocks fall back to deterministic facts.
+Question-shaped hooks are removed; KB days do not spend another model call
+rewriting them. Delivery reserves tokens before sending and binds them only after
+a Telegram message acknowledgement. Preparation failure sends facts only.
+
+Every webhook carries its own immutable identity and response context. New
+verified private text/voice receipts retain original Telegram IDs and reply links,
+with a hash over final persisted fields. Repeated source receipts are idempotent;
+conflicting duplicates fail before maintenance. Unverified historical messages
+remain available for ordinary journaling and read-only preview, without becoming
+trusted KB mutation evidence.
+
+KB callbacks route before legacy quiz callbacks, even when conversational AI is
+offline. Ask uses the stored debrief's knowledge selection, and existing quiz
+controls apply only to the active acknowledged KB quiz. Long verified entries can
+suppress immediate conversational questions and schedule a validated delayed echo
+after the journal save. See [Lifelog knowledge](../lifelog/knowledge.md) for
+storage, authority, maintenance and rollout constraints.
