@@ -3,7 +3,9 @@ package net.kckern.daylight.cap.voicememo.shell;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,10 +32,14 @@ import android.widget.Toast;
 public class RecordActivity extends Activity {
     /** Set by the recording's notification: show the screen, do not treat the open as a tap. */
     static final String EXTRA_SHOW = "show";
-    private static final int REQUEST_MIC = 1;
+    private static final int REQUEST_PERMISSIONS = 1;
+    private static final String PREFS = "daylight_memo";
+    private static final String ASKED_NOTIFICATIONS = "asked_notifications";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private TextView status;
+    private TextView hint;
+    private boolean micWasGranted;
     private Chronometer clock;
     private Button stop;
     private boolean sawRecording;
@@ -78,20 +84,39 @@ public class RecordActivity extends Activity {
                 main.post(watch);
                 break;
             default:
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    begin();
-                } else {
-                    status.setText("Daylight needs the microphone to record a memo");
-                    requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_MIC);
-                }
+                start();
                 break;
         }
     }
 
+    /**
+     * Asks for what is missing, then records. Notifications are asked for here, once,
+     * in the app: never at install. Recording does not wait for that answer when the
+     * microphone is already allowed.
+     */
+    private void start() {
+        micWasGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        boolean notificationsGranted = Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(PermissionAsk.NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String[] ask = PermissionAsk.toRequest(Build.VERSION.SDK_INT, micWasGranted, notificationsGranted,
+                prefs.getBoolean(ASKED_NOTIFICATIONS, false));
+        if (micWasGranted) begin();
+        if (ask.length == 0) return;
+        if (PermissionAsk.asksForNotifications(ask)) {
+            prefs.edit().putBoolean(ASKED_NOTIFICATIONS, true).apply();
+            hint.setText("Notifications are how Daylight tells you that a memo is waiting to upload or could not be sent.");
+        }
+        if (!micWasGranted) status.setText("Daylight needs the microphone to record a memo");
+        requestPermissions(ask, REQUEST_PERMISSIONS);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode != REQUEST_MIC) return;
-        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode != REQUEST_PERMISSIONS) return;
+        hint.setText("");
+        if (micWasGranted) return;                  // already recording; only notifications were asked for
+        if (PermissionAsk.micGranted(permissions, grantResults, false)) {
             begin();
         } else {
             Toast.makeText(getApplicationContext(), "No microphone permission: nothing was recorded", Toast.LENGTH_LONG).show();
@@ -152,6 +177,11 @@ public class RecordActivity extends Activity {
         clock.setTextSize(32);
         clock.setPadding(0, pad / 2, 0, pad);
         layout.addView(clock);
+
+        hint = new TextView(this);
+        hint.setTextSize(14);
+        hint.setPadding(0, 0, 0, pad / 2);
+        layout.addView(hint);
 
         stop = new Button(this);
         stop.setText("Stop and save");
