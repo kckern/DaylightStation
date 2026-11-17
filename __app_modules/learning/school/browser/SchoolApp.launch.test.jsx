@@ -1217,6 +1217,26 @@ describe('SchoolApp — Gratitude authorization from the real keypad hook', () =
       expect(service.open).not.toHaveBeenCalled();
     } finally { transport.mockRestore(); window.history.replaceState({}, '', oldUrl); }
   });
+
+  // A failed roster fetch leaves no claimed learner, so the restored launch
+  // ends like a lapsed claim does. The claim itself is kept for the next load.
+  it('a reload whose roster fetch fails ends the saved launch but keeps the claim', async () => {
+    const roster = schoolApi.roster.getMockImplementation();
+    schoolApi.roster.mockResolvedValue({ ok: false, status: 503, data: null });
+    const service = { open: vi.fn() };
+    const transport = serveGratitude(service);
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/screens/portal/gratitude');
+    localStorage.setItem('school:user', 'kid1');
+    sessionStorage.setItem('school:gratitude-launch:/screens/portal', JSON.stringify({ mountRequestId: 'before-reload', learnerId: 'kid1', gratitudeGrant: signedGrant, today }));
+    try {
+      render(<SchoolApp mode="locked" />);
+      expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+      await waitFor(() => expect(sessionStorage.getItem('school:gratitude-launch:/screens/portal')).toBeNull());
+      expect(localStorage.getItem('school:user')).toBe('kid1');
+      expect(service.open).not.toHaveBeenCalled();
+    } finally { transport.mockRestore(); schoolApi.roster.mockImplementation(roster); window.history.replaceState({}, '', oldUrl); }
+  });
 });
 
 it('does not confirm a bank launch that resolves after SchoolApp unmounts', async () => {
