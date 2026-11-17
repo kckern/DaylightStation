@@ -9,11 +9,16 @@
  * - getActivity(activityId) - Fetch single activity detail
  * - updateActivity(activityId, updates) - Update activity name/description
  *
+ * Every response is parsed with stravaJsonReviver: an id above 2^53 (issued
+ * from 2027-06-01) arrives as its exact digits in a string, never a rounded
+ * number. Ids that fit stay numbers.
+ *
  * @module adapters/fitness/StravaClientAdapter
  */
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { IActivityGateway } from "../application/ports/IActivityGateway.mjs";
+import { stravaJsonReviver } from './strava/stravaJson.mjs';
 
 const STRAVA_BASE_URL = 'https://www.strava.com';
 
@@ -78,7 +83,7 @@ export class StravaClientAdapter extends IActivityGateway {
         client_id: clientId,
         client_secret: clientSecret,
       }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, jsonReviver: stravaJsonReviver }
     );
 
     // Store for subsequent API calls
@@ -110,6 +115,7 @@ export class StravaClientAdapter extends IActivityGateway {
       {
         params: { before, after, page, per_page: perPage },
         headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
+        jsonReviver: stravaJsonReviver,
       }
     );
 
@@ -118,7 +124,7 @@ export class StravaClientAdapter extends IActivityGateway {
 
   /**
    * Get activity streams (heart rate, etc.)
-   * @param {number} activityId - Activity ID
+   * @param {number|string} activityId - Activity ID
    * @param {Array<string>} keys - Stream keys to fetch
    * @returns {Promise<Object>} Stream data
    */
@@ -135,6 +141,7 @@ export class StravaClientAdapter extends IActivityGateway {
       {
         params: { keys: keys.join(','), key_by_type: true },
         headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
+        jsonReviver: stravaJsonReviver,
       }
     );
 
@@ -160,6 +167,7 @@ export class StravaClientAdapter extends IActivityGateway {
       `${STRAVA_BASE_URL}/api/v3/activities/${activityId}`,
       {
         headers: { Authorization: `Bearer ${this.#currentAccessToken}` },
+        jsonReviver: stravaJsonReviver,
       }
     );
 
@@ -202,6 +210,7 @@ export class StravaClientAdapter extends IActivityGateway {
           Authorization: `Bearer ${this.#currentAccessToken}`,
           'Content-Type': 'application/json',
         },
+        jsonReviver: stravaJsonReviver,
       }
     );
 

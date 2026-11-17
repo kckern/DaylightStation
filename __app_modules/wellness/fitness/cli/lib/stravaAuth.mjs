@@ -15,6 +15,7 @@
 
 import path from 'path';
 import { CliError } from "./context.mjs";
+import { parseStravaJson } from "../../server/adapters/strava/stravaJson.mjs";
 
 export const STRAVA_BASE = 'https://www.strava.com';
 
@@ -136,7 +137,9 @@ export async function stravaApi(ctx, endpoint, opts = {}) {
   if (res.status === 204) return null;
 
   const ct = res.headers.get('content-type') || '';
-  const body = ct.includes('application/json') ? await res.json() : await res.text();
+  // parseStravaJson, not res.json(): ids above 2^53 must keep their digits.
+  const text = await res.text();
+  const body = ct.includes('application/json') ? parseStravaJson(text) : text;
 
   if (!res.ok) {
     const detail = typeof body === 'string' ? body : JSON.stringify(body, null, 2);

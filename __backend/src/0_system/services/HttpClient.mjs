@@ -135,7 +135,7 @@ export class HttpClient extends IHttpClient {
     }
 
     const response = await this.#fetchWithTimeout(url, fetchOptions);
-    return this.#parseResponse(response);
+    return this.#parseResponse(response, options.jsonReviver);
   }
 
   async #fetchWithTimeout(url, options) {
@@ -170,12 +170,19 @@ export class HttpClient extends IHttpClient {
     }
   }
 
-  async #parseResponse(response) {
+  /**
+   * @param {Response} response
+   * @param {Function} [jsonReviver] - JSON.parse reviver (get/post/put/delete
+   *   `options.jsonReviver`), e.g. to keep 64-bit ids exact
+   */
+  async #parseResponse(response, jsonReviver) {
     const contentType = response.headers.get('content-type') || '';
     let data;
 
     if (contentType.includes('application/json')) {
-      data = await response.json().catch(() => null);
+      data = jsonReviver
+        ? await response.text().then((text) => JSON.parse(text, jsonReviver)).catch(() => null)
+        : await response.json().catch(() => null);
     } else {
       data = await response.text();
     }

@@ -38,6 +38,18 @@ function hydrateStoredTimeline(data) {
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
+// Strava ids above 2^53 (issued from 2027-06-01) arrive as digit strings —
+// see stravaJson.mjs — and Number() would round two of them to one value.
+function compareActivityIds(a, b) {
+  try {
+    const x = BigInt(a);
+    const y = BigInt(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  } catch {
+    return String(a).localeCompare(String(b));
+  }
+}
+
 /**
  * Strava activity harvester
  * @implements {IHarvester}
@@ -935,7 +947,7 @@ export class StravaHarvester extends IHarvester {
       const held = sessionWinner.get(match.sessionId);
       const better = !held
         || (match.overlapMs ?? 0) > (held.overlapMs ?? 0)
-        || ((match.overlapMs ?? 0) === (held.overlapMs ?? 0) && Number(match.activityId) < Number(held.activityId));
+        || ((match.overlapMs ?? 0) === (held.overlapMs ?? 0) && compareActivityIds(match.activityId, held.activityId) < 0);
       if (better) sessionWinner.set(match.sessionId, match);
     }
 

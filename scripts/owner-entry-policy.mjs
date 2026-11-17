@@ -605,6 +605,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/wellness/fitness/server/domain-services-activity-session-match.mjs': 'domain',
   '__app_modules/wellness/fitness/server/domain-services-select-primary-media.mjs': 'domain',
   '__app_modules/wellness/fitness/server/domain-services-session-integrity.mjs': 'domain',
+  '__app_modules/wellness/fitness/server/strava-json.mjs': 'adapters',
   '__app_modules/learning/school/browser/admin-curriculum.mjs': null,
   '__app_modules/learning/school/browser/admin-review.mjs': null,
   '__app_modules/learning/school/browser/admin-history.mjs': null,

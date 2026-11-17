@@ -143,6 +143,7 @@ import { createLifelogApiRouter } from "../../__capabilities/lifelog/server/comp
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
 import { createVendorApiRouter } from '#composition/modules/vendorApi.mjs';
 import { equipmentImageMap } from "../../__app_modules/wellness/fitness/server/application-equipment-images.mjs";
+import { stravaJsonReviver } from "../../__app_modules/wellness/fitness/server/strava-json.mjs";
 import { createCalendarApiRouter } from "../../__app_modules/personal/calendar/server/composition/calendarApi.mjs";
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '../../__app_modules/learning/piano/server/composition/screen-power-sync.mjs';
@@ -548,6 +549,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     next();
   });
   app.use(cors());
+  // Strava webhooks carry 64-bit ids (object_id, owner_id) from 2027-06-01;
+  // plain JSON.parse would round them to a different activity. Parsed here,
+  // ahead of the general parser, which then skips the already-read body.
+  app.use('/api/v1/fitness/provider/webhook', express.json({ reviver: stravaJsonReviver }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
   // AI usage origin (`http:METHOD /path`) for every ledger row a request
