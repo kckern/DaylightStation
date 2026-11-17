@@ -14,7 +14,7 @@
  * @module 5_composition/modules/arcadeGameSessions
  */
 
-import { FullyKioskRestClient } from '#adapters/devices/FullyKioskRestClient.mjs';
+import { createArcadeKioskClient } from './kioskClients.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchArcadeGameObservationSource } from "../adapters/RetroArchArcadeGameObservationSource.mjs";
 import { RetroArchSessionLogReader } from "../adapters/RetroArchSessionLogReader.mjs";
@@ -162,20 +162,31 @@ export function createArcadeGameSessionTracking(config) {
   // source and the overlay driver.
   const kioskByDevice = new Map();
   for (const [deviceId, device] of polledDevices) {
-    const content = device.content_control || {};
-    const password = content.password
-      || (content.auth_ref ? configService?.getHouseholdAuth?.(content.auth_ref)?.password : null);
-    kioskByDevice.set(deviceId, new FullyKioskRestClient(
-      { host: content.host, port: content.port, password: password || '' },
-      { httpClient, logger },
-    ));
+    // Fully's REST client, or the Android kiosk app's, by the device's provider.
+    kioskByDevice.set(deviceId, createArcadeKioskClient({
+      deviceId, control: device.content_control || {}, configService, httpClient, logger,
+    }));
   }
 
   // The overlay is a SEPARATE declaration from observation: a device may be
   // metered without ever carrying a countdown. Only `arcade_session_overlay: true` devices
   // get a client here, so no code path can put a film on a screen that did not
   // ask for one.
-  const overlayDevices = polledDevices.filter(([, d]) => d?.arcade_session_overlay === true).map(([id]) => id);
+  //
+  // The film is a web page the kiosk renders over other apps. Fully has that
+  // (its web overlay); the Android kiosk app has a text overlay only, so a
+  // device on it is metered without a countdown, and startup says so.
+  const overlayDeclared = polledDevices.filter(([, d]) => d?.arcade_session_overlay === true);
+  for (const [deviceId, device] of overlayDeclared) {
+    if (kioskByDevice.get(deviceId)?.supportsWebOverlay === false) {
+      logger.warn?.('arcade.overlay.unsupported_provider', {
+        deviceId, provider: device.content_control?.provider ?? null,
+      });
+    }
+  }
+  const overlayDevices = overlayDeclared
+    .filter(([id]) => kioskByDevice.get(id)?.supportsWebOverlay !== false)
+    .map(([id]) => id);
   const overlayAnnouncer = (overlayDevices.length && daylightHost)
     ? new OverlayArcadeGameSessionAnnouncer({
       overlay: new FullyKioskArcadeGameOverlay({

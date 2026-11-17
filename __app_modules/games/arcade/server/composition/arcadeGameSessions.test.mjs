@@ -285,3 +285,44 @@ describe('bezel table', () => {
     expect(buildBezelTable({ consoles: {} }).size).toBe(0);
   });
 });
+
+describe('devices on the Android kiosk app', () => {
+  const fullHttp = { get: async () => ({ status: 200, data: { ok: true } }), post: async () => ({ status: 200, data: { ok: true } }), delete: async () => ({ status: 200, data: { ok: true } }) };
+  const daylightAuth = {
+    ...configService,
+    getHouseholdAuth: (ref) => (ref === 'daylight-android' ? { 'livingroom-tv': { token: 't' } } : configService.getHouseholdAuth(ref)),
+  };
+  const daylightMetered = {
+    arcade_session_observation: true,
+    content_control: {
+      provider: 'daylight-android', host: 'kiosk.test', port: 8780, auth_ref: 'daylight-android',
+      fallback: { provider: 'adb', host: 'kiosk.test', port: 5555 },
+    },
+  };
+
+  it('meters a daylight-android device beside a Fully one', async () => {
+    const r = build(
+      { 'livingroom-tv': daylightMetered, 'den-tv': metered },
+      { httpClient: fullHttp, configService: daylightAuth },
+    );
+    expect(r.trackers).toHaveLength(2);
+    await expect(r.start()).resolves.not.toThrow();
+    r.stop();
+  });
+
+  it('meters without a countdown overlay, and says why', async () => {
+    const warn = [];
+    const logger = { ...quiet, warn: (event, data) => warn.push([event, data]) };
+    const r = build(
+      { 'livingroom-tv': { ...daylightMetered, arcade_session_overlay: true } },
+      { httpClient: fullHttp, configService: daylightAuth, daylightHost: 'https://host', logger },
+    );
+
+    expect(r.trackers).toHaveLength(1);
+    expect(warn).toContainEqual(['arcade.overlay.unsupported_provider', {
+      deviceId: 'livingroom-tv', provider: 'daylight-android',
+    }]);
+    await expect(r.start()).resolves.not.toThrow();
+    r.stop();
+  });
+});
