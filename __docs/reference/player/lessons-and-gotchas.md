@@ -308,6 +308,18 @@ A recovery reload resets `totalVideoFrames` to 0 while `lastFpsCheck` keeps the 
 - **Emit telemetry when a watchdog bails.** The near-end stall exemption silently
   did nothing; `playback.at-duration-stuck` (+ a seek stack trace) makes the
   stuck-at-duration class diagnosable. *(commits 79d532424, 49321969c)*
+- **A watchdog that stands down must not write a flag another path reads as a
+  verdict.** The stall check's near-end exemption set `hasEnded`, and
+  `finishTerminal` refuses a terminal once `hasEnded` is set. A check landing in
+  the last half second (it runs every 400ms, so most track ends) claimed the end
+  before the element reached it, and the element's own `ended` was refused: no
+  `playback.ended`, no `onEnd`, no queue advance, no read credit. Only renderers
+  without a terminal gate take that branch, so it hit `AudioPlayer`. The
+  signature in the log store is `playback.at-duration-stuck` with **no**
+  `playback.ended` within a second of it for the same asset; a healthy track end
+  shows both. The exemption now only clears its timers. *(2026-11-17, regression
+  from the 2026-11-15 terminal-ownership merge; test
+  `useCommonMediaController.nearEndTerminal.test.jsx`)*
 - The renderer's `dash.*` events (fragment bytes, buffer level, error codes) plus
   `playback.*` are the first thing to read on any stall — see the README's
   diagnostics table.
