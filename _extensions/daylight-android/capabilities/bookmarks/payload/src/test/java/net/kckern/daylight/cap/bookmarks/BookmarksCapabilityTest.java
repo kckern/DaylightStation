@@ -28,7 +28,11 @@ public class BookmarksCapabilityTest {
     private CoreRuntime core;
     private BookmarksCapability cap;
     private final List<String> loaded = new ArrayList<>();
-    private final PageOpener opener = url -> { loaded.add(url); return "loading"; };
+    private final List<String> outside = new ArrayList<>();
+    private final PageOpener opener = new PageOpener() {
+        @Override public String open(String url) { loaded.add(url); return "loading"; }
+        @Override public String openFromOutside(String url) { outside.add(url); return "loading"; }
+    };
 
     @Before public void setUp() throws Exception {
         core = TestCore.create(tmp.newFolder());
@@ -66,6 +70,42 @@ public class BookmarksCapabilityTest {
         assertTrue(r.getBoolean("ok"));
         assertEquals("front", r.getString("effect"));
         assertEquals("[https://kiosk.example:3111/media/channels?tab=recent]", loaded.toString());
+    }
+
+    // ── a link without the install key: any app or web page can send one ─────
+
+    @Test public void anUnkeyedOpenLinkOpensOnlyAConfiguredBookmarksPath() throws Exception {
+        JSONObject r = handler("open").handle("", path("/feed"), false);
+        assertEquals("front", r.getString("effect"));
+        assertEquals("told to the page as a load from outside the app", "[https://kiosk.example:3111/feed]", outside.toString());
+        assertTrue(loaded.isEmpty());
+        for (String other : new String[] { "/media", "/feed?tab=1", "/feed#x", "/feed/", "/Feed", "/feed/more", "/" }) {
+            try { handler("open").handle("", path(other), false); fail("opened " + other + " without the key"); }
+            catch (IllegalArgumentException expected) { }
+        }
+        assertEquals(1, outside.size());
+        assertTrue(loaded.isEmpty());
+    }
+
+    @Test public void aKeyedOpenLinkOpensAnyPageOfTheSite() throws Exception {
+        handler("open").handle("", path("/media/channels?tab=recent"), true);
+        assertEquals("[https://kiosk.example:3111/media/channels?tab=recent]", loaded.toString());
+        assertTrue(outside.isEmpty());
+    }
+
+    @Test public void anUnkeyedBookmarkLinkIsALoadFromOutsideAndAKeyedOneIsNot() throws Exception {
+        handler("bookmark").handle("feed", Collections.<String, String>emptyMap(), false);
+        assertEquals("[https://kiosk.example:3111/feed]", outside.toString());
+        handler("bookmark").handle("feed", Collections.<String, String>emptyMap(), true);
+        assertEquals("[https://kiosk.example:3111/feed]", loaded.toString());
+    }
+
+    @Test public void aCallFromInsideTheAppIsNotALinkFromOutside() throws Exception {
+        // What a one-tap action does once its own keyed link was accepted.
+        handler("bookmark").handle("feed", Collections.<String, String>emptyMap());
+        handler("open").handle("", path("/media"));
+        assertEquals(2, loaded.size());
+        assertTrue(outside.isEmpty());
     }
 
     @Test public void aPathThatLeavesTheSiteOrReachesTheApiIsRefused() throws Exception {

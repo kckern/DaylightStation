@@ -16,4 +16,12 @@ public interface PageOpener {
      * @throws IllegalArgumentException when the URL is not http or https
      */
     String open(String url);
+
+    /**
+     * The same, for a URL that came from a link without the install key: any app or web
+     * page on the device can send one. The page host marks the document it opens, and a
+     * document so marked is never given the microphone or the camera. A provider that
+     * does not tell the two apart treats it as {@link #open}.
+     */
+    default String openFromOutside(String url) { return open(url); }
 }

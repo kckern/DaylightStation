@@ -33,7 +33,10 @@ public final class DeepLink {
      * Kinds that do something other than open a page of the site. They are honoured only
      * with this install's key: the link activity is exported, so without the key any web
      * page or app on the phone could run an action, start a memo or start playback.
-     * "open" and "bookmark" only show a page of the site, and stay unkeyed.
+     * "open" and "bookmark" only show a page of the site and are accepted without the
+     * key, but their handler is told whether it was there (see LinkHandler): without
+     * it, "open" shows a configured bookmark's page and nothing else, and the page that
+     * opens is given no microphone or camera.
      */
     private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo", "media"));
     /** Kinds whose whole effect is to show a page of the site. Every other kind must be in KEYED. */
@@ -113,7 +116,14 @@ public final class DeepLink {
     public boolean needsKey() { return KEYED.contains(kind); }
 
     public boolean authorized(String installKey) {
-        if (!needsKey()) return true;
+        return !needsKey() || presentsKey(installKey);
+    }
+
+    /**
+     * Whether the link carries this install's key, whatever its kind. A page-only link
+     * that does is one of the app's own; one that does not can come from anywhere.
+     */
+    public boolean presentsKey(String installKey) {
         String presented = query.get(KEY_PARAM);
         if (installKey == null || installKey.length() < 32 || presented == null) return false;
         return MessageDigest.isEqual(installKey.getBytes(StandardCharsets.UTF_8), presented.getBytes(StandardCharsets.UTF_8));

@@ -5,7 +5,7 @@ android: { minSdk: 29, targetSdk: 29 }
 # armeabi-v7a is the tablet. arm64-v8a is for an emulator or a replacement tablet.
 abis: [armeabi-v7a, arm64-v8a]
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 28, versionName: "0.3-kiosk" }
+shell: { versionCode: 29, versionName: "0.3-kiosk" }
 foregroundServiceTypes: [mediaPlayback]
 # Declared now, as the piano-bridge shell did, because a payload update cannot add a
 # permission: that takes an install and a tap on the tablet.
@@ -32,6 +32,12 @@ defaults:
   # resolved from `placeholders:` in the private tokens file when the payload is built.
   # https only: a page gets the microphone and camera in a secure context alone.
   webview.startUrl: "{piano_start_url}"
+  # A household screen: it shows over a swipe keyguard after a wake, and its page may be
+  # given the microphone and the camera (each also needs the Android permission, granted
+  # once over ADB). All three are off unless a device file turns them on.
+  webview.showWhenLocked: true
+  webview.allowMic: true
+  webview.allowCamera: true
   # Lockdown is built in and off. Until this device's home app is switched (phases 4 to
   # 6) the app is installed beside Fully, and an armed watcher would recall itself over
   # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.

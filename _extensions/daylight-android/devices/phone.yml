@@ -10,7 +10,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 13, versionName: "0.1-phone" }
+shell: { versionCode: 14, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -28,6 +28,12 @@ defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
   webview.startUrl: "{phone_start_url}"
+  # Somebody's own phone: the site (admin, finance, health) stays behind the lock screen,
+  # and no page is given the microphone or the camera. Calling from the phone is not
+  # in scope yet; voice memos record through the app's own recorder, not through a page.
+  webview.showWhenLocked: false
+  webview.allowMic: false
+  webview.allowCamera: false
   # The household user this phone acts for, where a backend route takes one (the memo
   # upload does, and sends nothing without it). A name from the private file, never
   # written here.

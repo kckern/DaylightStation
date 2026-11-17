@@ -4,7 +4,7 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 26, versionName: "0.3-kiosk" }
+shell: { versionCode: 27, versionName: "0.3-kiosk" }
 capabilities:
   - webview-host
   - debug-tools
@@ -21,6 +21,12 @@ defaults:
   # resolved from `placeholders:` in the private tokens file when the payload is built.
   # https only: a page gets the microphone and camera in a secure context alone.
   webview.startUrl: "{portal_start_url}"
+  # A household screen: it shows over a swipe keyguard after a wake, and its page may be
+  # given the microphone and the camera (each also needs the Android permission, granted
+  # once over ADB). All three are off unless a device file turns them on.
+  webview.showWhenLocked: true
+  webview.allowMic: true
+  webview.allowCamera: true
   # Lockdown is built in and off. Until this device's home app is switched (phases 4 to
   # 6) the app is installed beside Fully, and an armed watcher would recall itself over
   # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.

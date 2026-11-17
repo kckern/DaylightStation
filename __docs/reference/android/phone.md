@@ -67,6 +67,43 @@ No heartbeats are sent and nothing is shipped to the household log store:
 `heartbeat.enabled` is false and `heartbeat.logStoreUrl` is not set. A phone is
 somebody's own device, and it is not watched.
 
+### The lock screen, the microphone and the camera
+
+Three settings of `webview-host` are off in the code and on only where a device
+file says so. The kiosks set all three to true; `devices/phone.yml` sets all three
+to false, and a per-device test fails a device that is not a kiosk with any of them
+on, or a device file that leaves one unstated.
+
+| Setting | Phone | What it decides |
+|---|---|---|
+| `webview.showWhenLocked` | false | Whether the web view's window shows over the lock screen. The installed Activity does not show there until the payload tells it to. On the phone the site (admin, finance, health) is behind the lock |
+| `webview.allowMic` | false | Whether a page's `getUserMedia` audio request can be granted |
+| `webview.allowCamera` | false | The same for video |
+
+Keep-screen-on, immersive mode and lock task are asked for only by `screen-power`
+and `lockdown`, which the phone does not list (the same test fails a phone build
+that lists either). The Activity never turns the screen on and never dismisses the
+keyguard.
+
+When a build does allow capture, a request is granted only when all of these hold:
+
+1. The asking origin is the start URL's or one in `webview.bridgeOrigins`.
+2. The setting for that resource is true.
+3. The app holds the Android permission (`RECORD_AUDIO`, `CAMERA`). On the phone
+   the app holds `RECORD_AUDIO` after the first voice memo, so this condition alone
+   protects nothing there.
+4. The document was not opened by a link without the install key. The app
+   remembers how the document in the page got there. A link from another app or a
+   web page (`daylight://bookmark/call`, say) marks it; the mark stays through a
+   retry, a reload and a redirect the page makes by script, and is cleared by a
+   load the app started (the start page, a keyed link) or by a navigation the owner
+   started with a tap inside the page. A kiosk has no link activity and never sets
+   the mark.
+
+So with capture allowed, a page can start the microphone when the owner opened it
+from inside the app or from one of the app's own keyed surfaces, and cannot when
+another app or a web link opened it. With the phone's settings no page can.
+
 ## Private values a phone build needs
 
 None of these is in the repo. All go in the private tokens file.
@@ -98,18 +135,31 @@ Two forms are links:
 
 | Link | Meaning | Needs the install key |
 |---|---|---|
-| `daylight://open?path=/media` | Open that page of the site in the app | no |
+| `daylight://open?path=/media` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>?k=<key>` | Run a one-tap action | yes |
 | `daylight://memo/new?k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
 | `daylight://memo/queue?k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
 | `daylight://media/play?id=<contentId>&k=<key>` | Play that household item natively | yes |
-| `https://<the site>/<path>` | The same as `daylight://open` for that path | no |
+| `https://<the site>/<path>` | The same as `daylight://open` for that path, without a key | no key can be given; only a bookmarked path opens |
 
 The rule: a link kind needs the install key unless all it does is show a page of
 the site. `open`, `bookmark` and an https link show a page; `action`, `memo` and
 `media` do something else (run an action, record, start playback) and are refused
 with `403` without the key. A test fails a kind that is in neither list.
+
+A page link without the key is held to less than one with it, because any app or
+web page can send it:
+
+- It opens only a page that is configured as a bookmark: the path must be exactly a
+  bookmark's path, with no query or fragment of the sender's. Any other path is
+  refused with `400`. That holds for an https link of the site too, so a relayed
+  push can open the bookmarked pages and no others.
+- The page it opens is given no microphone and no camera (see "The lock screen,
+  the microphone and the camera").
+
+The app's own surfaces send keyed links, and a one-tap action that opens a page
+runs inside the app, so neither limit applies to them.
 
 A link is untrusted input. The link activity is exported and browsable so that a
 pushed notification or a web page can open a view, which means any app or page on
@@ -404,9 +454,15 @@ uploads, which can be hours later.
 | `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `memo/new` link, after checking that `identity.user` is set | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
 | `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records to `<files>/memos/inbox/<id>.m4a.part` and renames it to `<id>.m4a` when whole | Told over the `memos` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
 
-- Recording starts only from a tap on this phone: a tile, the widget, a launcher
-  shortcut (each a keyed link). A page of the site cannot start the microphone: it
-  has no way to build a keyed link, and the record screen is not exported.
+- A memo recording starts only from a tap on this phone: a tile, the widget, a
+  launcher shortcut (each a keyed link). A page of the site cannot start the memo
+  recorder: it has no way to build a keyed link, and the record screen is not
+  exported.
+- A page's own use of the microphone or camera (`getUserMedia`, which the site's
+  call page asks for when it loads) is a separate path, through the web view. On
+  the phone it is off: `webview.allowMic` and `webview.allowCamera` are false in
+  `devices/phone.yml`, so every such request is denied. See "The lock screen, the
+  microphone and the camera" for the rule that holds when a build turns them on.
 - A notification is up for as long as it records, with a Stop action. The record
   screen's button, the notification's Stop, and the memo tile or widget button
   tapped again all stop and save. A second tap within 1.5 seconds of the start is

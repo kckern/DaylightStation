@@ -116,4 +116,12 @@ public class DeepLinkTest {
         }
         assertTrue("a kind added later must be put in one list or the other", DeepLink.everyKindIsDecided());
     }
+
+    @Test public void anOpenLinkMayCarryTheKeyAndIsThenKnownToBeTheAppsOwn() {
+        assertFalse(parse("daylight://open?path=/feed").presentsKey(KEY));
+        assertFalse(parse("daylight://open?path=/feed&k=wrong").presentsKey(KEY));
+        assertTrue(parse("daylight://open?path=/feed&k=" + KEY).presentsKey(KEY));
+        assertFalse("no key on this install", parse("daylight://open?path=/feed&k=").presentsKey(""));
+        assertFalse("a web link never carries it", parse("https://kiosk.example/feed?k=" + KEY).presentsKey(KEY));
+    }
 }

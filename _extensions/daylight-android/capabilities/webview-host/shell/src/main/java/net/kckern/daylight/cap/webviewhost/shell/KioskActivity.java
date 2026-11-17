@@ -50,8 +50,8 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // A device with a swipe keyguard still shows the kiosk after a wake.
-        if (Build.VERSION.SDK_INT >= 27) setShowWhenLocked(true);
+        // Nothing is shown over a lock screen here. Whether this device does is its
+        // device file's decision, which the controller passes on (showWhenLocked below).
         showFallback("Daylight is starting…");
         try {
             startForegroundService(new Intent().setClassName(this, SHELL_SERVICE));
@@ -66,6 +66,14 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override public Object activity() { return this; }
 
     @Override public boolean resumed() { return resumed; }
+
+    /** The value stays through a payload swap; a new Activity starts at "no" again. Below API 27 it is always "no". */
+    @Override
+    public void showWhenLocked(final boolean on) {
+        runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT >= 27) setShowWhenLocked(on);
+        });
+    }
 
     @Override
     public void attach(final KioskController next) {

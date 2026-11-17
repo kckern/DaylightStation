@@ -23,4 +23,11 @@ public interface KioskHost {
     void detach(KioskController expected);
 
     boolean resumed();
+
+    /**
+     * Whether the window shows over the device's lock screen. The Activity does not
+     * until a controller says so; the controller says what the device file decided
+     * (webview.showWhenLocked). Safe from any thread.
+     */
+    void showWhenLocked(boolean on);
 }

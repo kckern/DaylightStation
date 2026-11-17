@@ -26,6 +26,8 @@ public class KioskContractTest {
             expected.onHostDetached();
         }
         @Override public boolean resumed() { return false; }
+        Boolean lockScreen;
+        @Override public void showWhenLocked(boolean on) { lockScreen = on; }
     }
 
     private static final class Controller implements KioskController {
@@ -65,5 +67,12 @@ public class KioskContractTest {
         host.detach(next);
         assertNull(host.controller);
         assertEquals(java.util.Arrays.asList("attached activity", "detached"), next.seen);
+    }
+
+    @Test public void theHostShowsOverTheLockScreenOnlyWhenTold() {
+        Host host = new Host();
+        assertNull("nothing is asked of a host until a controller decides", host.lockScreen);
+        host.showWhenLocked(false);
+        assertEquals(Boolean.FALSE, host.lockScreen);
     }
 }

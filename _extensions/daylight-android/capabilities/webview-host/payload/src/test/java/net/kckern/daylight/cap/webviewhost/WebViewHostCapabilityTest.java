@@ -37,8 +37,9 @@ public class WebViewHostCapabilityTest {
         assertEquals("the script Fully injects today reloads on Back", "reload", core.settings().get("webview.backButton"));
         assertEquals("", core.settings().get("webview.interceptKeys"));
         assertEquals(20, core.settings().get("webview.loadTimeoutSec"));
-        assertEquals(Boolean.TRUE, core.settings().get("webview.allowMic"));
-        assertEquals(Boolean.TRUE, core.settings().get("webview.allowCamera"));
+        assertEquals("a new device gives no page the microphone", Boolean.FALSE, core.settings().get("webview.allowMic"));
+        assertEquals("or the camera", Boolean.FALSE, core.settings().get("webview.allowCamera"));
+        assertEquals("a new device shows nothing over its lock screen", Boolean.FALSE, core.settings().get("webview.showWhenLocked"));
         assertEquals(Boolean.FALSE, core.settings().get("webview.allowMixedContent"));
         assertEquals(Boolean.FALSE, core.settings().get("webview.debugging"));
         assertEquals(Boolean.FALSE, core.settings().get("webview.launchOnBoot"));
@@ -217,6 +218,7 @@ public class WebViewHostCapabilityTest {
         @Override public void attach(net.kckern.daylight.api.KioskController controller) { attached.add(controller); }
         @Override public void detach(net.kckern.daylight.api.KioskController expected) { detached.add(expected); }
         @Override public boolean resumed() { return false; }
+        @Override public void showWhenLocked(boolean on) { }
     }
 
     /**

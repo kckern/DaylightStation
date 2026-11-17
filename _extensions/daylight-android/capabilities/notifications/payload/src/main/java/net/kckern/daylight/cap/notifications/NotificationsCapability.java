@@ -205,7 +205,7 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
             }
             if (owner == null) return new Outcome(200, LinkEffect.toast("Not available on this device"));
             try {
-                JSONObject effect = owner.handle(link.arg, link.handlerQuery());
+                JSONObject effect = owner.handle(link.arg, link.handlerQuery(), link.presentsKey(installKey()));
                 return new Outcome(200, effect == null ? LinkEffect.none() : effect);
             } catch (IllegalArgumentException unknown) {
                 // The handler's reason is its own fixed text about its own configuration.

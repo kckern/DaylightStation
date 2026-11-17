@@ -129,6 +129,33 @@ public class DeviceDefaultsTest {
         if (recorder) assertTrue("a device that records memos has an action that starts one", memos > 0);
     }
 
+    /**
+     * What a device shows to whoever picks it up, and what a page may listen to. A kiosk
+     * is a household screen: it shows over a swipe keyguard and its page gets the
+     * microphone and camera. Any other device is somebody's own: the site (admin,
+     * finance, health) stays behind the lock screen, and no page gets capture.
+     */
+    @Test public void onlyAKioskShowsOverTheLockScreenOrGivesAPageTheMicrophone() throws Exception {
+        java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
+        if (!entries.contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability")) return;
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        JSONObject defaults = new JSONObject(DeviceConfig.DEFAULTS_JSON);
+        core.prepare(defaults);
+        boolean kiosk = KIOSKS.contains(DeviceConfig.DEVICE_ID);
+        for (String key : new String[] { "webview.showWhenLocked", "webview.allowMic", "webview.allowCamera" }) {
+            assertEquals(key, kiosk, core.settings().get(key));
+            assertTrue("devices/" + DeviceConfig.DEVICE_ID + ".yml must state " + key, defaults.has(key));
+        }
+        if (!kiosk) {
+            // Keep-screen-on, immersive mode and lock task are asked for by these two alone.
+            for (String holdsTheScreen : new String[] { "screenpower.ScreenPowerCapability", "lockdown.LockdownCapability" }) {
+                assertFalse("a device that is not a kiosk must not list " + holdsTheScreen,
+                        entries.contains("net.kckern.daylight.cap." + holdsTheScreen));
+            }
+        }
+    }
+
     /** The devices that replace Fully. A new kiosk is added here; every other device is held to the phone's rules. */
     private static final java.util.Set<String> KIOSKS = new java.util.HashSet<>(java.util.Arrays.asList("piano", "portal", "shield"));
 

@@ -489,8 +489,9 @@ declare none.
 | `webview-host` | `webview.backButton` | STRING | `reload` | `page`, `reload`, `ignore` |
 | `webview-host` | `webview.interceptKeys` | STRING | empty |  |
 | `webview-host` | `webview.loadTimeoutSec` | INTEGER | 20 | 1 to 600 |
-| `webview-host` | `webview.allowMic` | BOOLEAN | true |  |
-| `webview-host` | `webview.allowCamera` | BOOLEAN | true |  |
+| `webview-host` | `webview.allowMic` | BOOLEAN | false | true in the kiosk device files |
+| `webview-host` | `webview.allowCamera` | BOOLEAN | false | true in the kiosk device files |
+| `webview-host` | `webview.showWhenLocked` | BOOLEAN | false | true in the kiosk device files |
 | `webview-host` | `webview.allowMixedContent` | BOOLEAN | false |  |
 | `webview-host` | `webview.debugging` | BOOLEAN | false |  |
 | `webview-host` | `webview.launchOnBoot` | BOOLEAN | false |  |

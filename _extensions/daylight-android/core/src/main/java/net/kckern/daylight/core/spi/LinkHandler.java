@@ -24,4 +24,17 @@ public interface LinkHandler {
      *         or is not allowed; the caller answers 400 and nothing is opened
      */
     JSONObject handle(String arg, Map<String, String> query) throws Exception;
+
+    /**
+     * Perform a link that arrived from outside the app (the link activity, POST /link).
+     *
+     * @param keyed whether the link carried this install's key. A link without it can
+     *              come from any app or web page on the device; a handler that opens a
+     *              page holds such a link to less. A kind that is honoured only with the
+     *              key always sees true. The two-argument form is a call from inside
+     *              the app (a one-tap action running its target) and is trusted.
+     */
+    default JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
+        return handle(arg, query);
+    }
 }

@@ -86,6 +86,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final LoadTracker loads = new LoadTracker();
     private final UnresponsiveTracker hung = new UnresponsiveTracker();
+    /** Whether the document in the page was opened by a link from outside the app. */
+    private final DocumentTrust trust = new DocumentTrust();
     /** What the shim spends on a token for its document. Never passed with a call. */
     private final String sessionKey = newToken();
     private final BridgeTokens tokens = new BridgeTokens(sessionKey);
@@ -182,10 +184,14 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         backMode = KeyRouter.validBackMode(mode) ? mode : DEFAULT_BACK_MODE;
         buildWebView();
         applyWindowFlags();
+        // The device file's decision; the Activity shows nothing over a lock screen until told.
+        if (!LockScreenRule.apply(h, bool("webview.showWhenLocked"))) note("this shell cannot be told webview.showWhenLocked");
         // A link, or a load asked for with wait:false, that arrived with no window up is
         // why this Activity was opened: show it, under the id its caller was given.
         String queuedId = pendingOpen.loadId();
+        boolean linkedFromOutside = pendingOpen.fromOutside();
         String linked = pendingOpen.take(System.currentTimeMillis());
+        if (linked != null && linkedFromOutside) trust.loadedFromOutside(); else trust.loadedByApp();
         String start = linked != null ? linked : startUrl();
         if (start.isEmpty()) showNotConfigured();
         else load(start, linked != null && queuedId != null ? queuedId : loads.newLoadId());
@@ -448,6 +454,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         if (RetryPolicy.abandonForStart(loads.failures(), intendedUrl, startUrl())) {
             note("giving up on a page that failed " + loads.failures() + " times in a row (origin "
                     + NavigationPolicy.originForLog(intendedUrl) + "); loading the start page");
+            trust.loadedByApp();
             load(startUrl());
             return;
         }
@@ -513,7 +520,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                     else showErrorPage(start, why, -1);
                     return;
                 }
-                if (!start.isEmpty() && navigation.allows(start)) load(start);
+                if (!start.isEmpty() && navigation.allows(start)) { trust.loadedByApp(); load(start); }
                 return;
             }
             mainUrl = url;
@@ -570,6 +577,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                         + NavigationPolicy.originForLog(String.valueOf(request.getUrl())));
                 return true;
             }
+            // A tap on a link inside the page is the user asking; a script's redirect is not.
+            if (request.isForMainFrame()) trust.pageNavigated(request.hasGesture());
             return false;
         }
 
@@ -616,15 +625,19 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 request.deny();
                 return;
             }
+            // A document a link from outside the app opened (one without the install key)
+            // gets neither, whatever the settings say: see DocumentTrust.
+            boolean outside = trust.openedFromOutside();
             List<String> grant = new ArrayList<>();
             for (String res : request.getResources()) {
-                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res) && bool("webview.allowMic")
-                        && holds(android.Manifest.permission.RECORD_AUDIO)) grant.add(res);
-                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res) && bool("webview.allowCamera")
-                        && holds(android.Manifest.permission.CAMERA)) grant.add(res);
+                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res) && DocumentTrust.mayCapture(true,
+                        bool("webview.allowMic"), holds(android.Manifest.permission.RECORD_AUDIO), outside)) grant.add(res);
+                if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res) && DocumentTrust.mayCapture(true,
+                        bool("webview.allowCamera"), holds(android.Manifest.permission.CAMERA), outside)) grant.add(res);
             }
             if (grant.isEmpty()) {
-                note("media request not granted: " + java.util.Arrays.toString(request.getResources()));
+                note("media request not granted: " + java.util.Arrays.toString(request.getResources())
+                        + (outside ? " (the page was opened by a link without the install key)" : ""));
                 request.deny();
             } else {
                 request.grant(grant.toArray(new String[0]));
@@ -750,6 +763,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     void emit(String name, JSONObject detail) {
         final String js = BridgeScript.event(name, detail.toString());
         ui.post(() -> { if (web != null && !errorPage && origins.allows(mainUrl)) web.evaluateJavascript(js, null); });
+    }
+
+    /** webview.showWhenLocked changed: tell the Activity, when there is one. Any thread. */
+    void applyLockScreen() {
+        ui.post(() -> { if (host != null) LockScreenRule.apply(host, bool("webview.showWhenLocked")); });
     }
 
     /** Called from the capability's stop(), on any thread. Does not wait for the main thread. */
@@ -969,17 +987,26 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
      * PageOpener. Never starts the Activity: from the background Android would refuse,
      * and the caller (the link activity, which is in front) brings the window forward.
      */
-    @Override public String open(final String url) {
+    @Override public String open(final String url) { return open(url, false); }
+
+    /** The same, for a link that did not carry the install key: the document it opens gets no capture. */
+    @Override public String openFromOutside(final String url) { return open(url, true); }
+
+    private String open(final String url, final boolean fromOutside) {
         requireHttp(url);
         if (attached()) {
             final String loadId = loads.newLoadId();
             ui.post(() -> {
-                if (web != null) load(url, loadId);
-                else pendingOpen.set(url, System.currentTimeMillis());
+                if (web != null) {
+                    if (fromOutside) trust.loadedFromOutside(); else trust.loadedByApp();
+                    load(url, loadId);
+                } else {
+                    pendingOpen.set(url, null, System.currentTimeMillis(), fromOutside);
+                }
             });
             return "loading";
         }
-        pendingOpen.set(url, System.currentTimeMillis());
+        pendingOpen.set(url, null, System.currentTimeMillis(), fromOutside);
         return "pending";
     }
 
@@ -987,7 +1014,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         requireHttp(url);
         final String loadId = loads.newLoadId();
         if (!ensureAttached()) return new LoadTracker.Result(loadId, url, false, "no_kiosk_activity", System.currentTimeMillis(), 0);
-        CompletableFuture<LoadTracker.Result> f = MainThread.call(() -> web == null ? null : load(url, loadId), 5000);
+        CompletableFuture<LoadTracker.Result> f = MainThread.call(() -> {
+            if (web == null) return null;
+            trust.loadedByApp();     // a control route: the caller presented the device token
+            return load(url, loadId);
+        }, 5000);
         if (f == null) return new LoadTracker.Result(loadId, url, false, "no_kiosk_activity", System.currentTimeMillis(), 0);
         return f.get(integer("webview.loadTimeoutSec") + 5L, TimeUnit.SECONDS);
     }
@@ -1008,7 +1039,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             return loadId;
         }
         ui.post(() -> {
-            if (web != null) load(url, loadId);
+            if (web != null) { trust.loadedByApp(); load(url, loadId); }
             else loads.refused(url, loadId, "no_kiosk_activity", System.currentTimeMillis());
         });
         return loadId;

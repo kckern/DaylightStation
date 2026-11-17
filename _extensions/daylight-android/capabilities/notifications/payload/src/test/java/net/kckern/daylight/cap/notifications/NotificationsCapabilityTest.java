@@ -31,6 +31,7 @@ public class NotificationsCapabilityTest {
     private NotificationsCapability cap;
     private String key;
     private final List<String> seen = new ArrayList<>();
+    private final List<Boolean> keyedSeen = new ArrayList<>();
     private final PayloadPort port = PayloadPort.named(PayloadPort.LINKS);
 
     private LinkHandler handler(final String kind, final JSONObject answer) {
@@ -41,6 +42,10 @@ public class NotificationsCapabilityTest {
                 if ("nope".equals(arg)) throw new IllegalArgumentException("unknown thing 'nope'");
                 if ("boom".equals(arg)) throw new IllegalStateException("broke");
                 return answer;
+            }
+            @Override public JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
+                keyedSeen.add(keyed);
+                return handle(arg, query);
             }
         };
     }
@@ -80,6 +85,16 @@ public class NotificationsCapabilityTest {
         assertTrue(seen.isEmpty());
         assertEquals(200, link("daylight://action/lights-off?k=" + key).getInt("_status"));
         assertEquals("[action lights-off {}]", seen.toString());
+    }
+
+    @Test public void theHandlerIsToldWhetherTheLinkCarriedThisInstallsKey() throws Exception {
+        link("daylight://open?path=/media");
+        link("daylight://open?path=/media&k=" + key);
+        link("daylight://open?path=/media&k=" + key.replace(key.charAt(0), 'x'));
+        link("https://kiosk.example/media");
+        link("daylight://action/lights-off?k=" + key);
+        assertEquals("[false, true, false, false, true]", keyedSeen.toString());
+        assertEquals("the key itself is never handed on", -1, seen.toString().indexOf(key));
     }
 
     @Test public void aKindNoCapabilityOwnsIsAMessageNotAnError() throws Exception {

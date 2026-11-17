@@ -88,6 +88,12 @@ final class Bookmarks {
         return new Bookmarks(out);
     }
 
+    /** True when some bookmark's path is exactly this text. */
+    boolean hasPath(String path) {
+        for (Bookmark b : items) if (b.path.equals(path)) return true;
+        return false;
+    }
+
     Bookmark find(String id) {
         for (Bookmark b : items) if (b.id.equals(id)) return b;
         return null;

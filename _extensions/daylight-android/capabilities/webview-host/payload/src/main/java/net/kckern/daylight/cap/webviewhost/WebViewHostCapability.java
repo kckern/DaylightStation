@@ -55,8 +55,13 @@ public final class WebViewHostCapability implements Capability {
                 SettingsRegistry.oneOf(KeyRouter.BACK_MODES));
         core.settings().declare("webview.interceptKeys", Type.STRING, "");
         core.settings().declare("webview.loadTimeoutSec", Type.INTEGER, 20, SettingsRegistry.range(1, 600));
-        core.settings().declare("webview.allowMic", Type.BOOLEAN, true);
-        core.settings().declare("webview.allowCamera", Type.BOOLEAN, true);
+        // Off unless the device file says otherwise, so a new device gives no page capture.
+        core.settings().declare("webview.allowMic", Type.BOOLEAN, false);
+        core.settings().declare("webview.allowCamera", Type.BOOLEAN, false);
+        // Whether the window shows over the lock screen. A kiosk's device file says true;
+        // on a personal device the site stays behind the lock.
+        core.settings().declare("webview.showWhenLocked", Type.BOOLEAN, false);
+        core.settings().onChange(key -> { if ("webview.showWhenLocked".equals(key) && running) session.applyLockScreen(); });
         core.settings().declare("webview.allowMixedContent", Type.BOOLEAN, false);
         core.settings().declare("webview.debugging", Type.BOOLEAN, false);
         core.settings().declare("webview.launchOnBoot", Type.BOOLEAN, false);

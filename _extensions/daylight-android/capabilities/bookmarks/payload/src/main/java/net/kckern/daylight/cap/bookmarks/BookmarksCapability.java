@@ -45,17 +45,27 @@ public final class BookmarksCapability implements Capability {
         core.services().provide(LinkHandler.class, new LinkHandler() {
             @Override public String kind() { return "open"; }
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
+                return handle(arg, query, true);
+            }
+            @Override public JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
                 String path = query.get("path");
                 if (path == null) throw new IllegalArgumentException("an open link needs a path");
-                return open(path);
+                // Without the install key the link can come from any app or web page: it
+                // may pick one of the configured bookmarks, exactly as configured, with no
+                // query or fragment of its own. Any other page needs the key.
+                if (!keyed && !current(null).hasPath(path)) throw new IllegalArgumentException("not a bookmarked page");
+                return open(path, keyed);
             }
         });
         core.services().provide(LinkHandler.class, new LinkHandler() {
             @Override public String kind() { return "bookmark"; }
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
+                return handle(arg, query, true);
+            }
+            @Override public JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
                 Bookmarks.Bookmark b = current(null).find(arg);
                 if (b == null) throw new IllegalArgumentException("unknown bookmark");
-                return open(b.path);
+                return open(b.path, keyed);
             }
         });
 
@@ -85,7 +95,8 @@ public final class BookmarksCapability implements Capability {
         return Bookmarks.usable(lines, problems == null ? new ArrayList<String>() : problems);
     }
 
-    private JSONObject open(String path) throws Exception {
+    /** @param trusted false for a link without the install key: the page host is told, and gives that page no capture */
+    private JSONObject open(String path, boolean trusted) throws Exception {
         String checked = Backend.pagePath(path);         // IllegalArgumentException for anything but a page of the site
         PageOpener opener = core.services().find(PageOpener.class);
         if (opener == null) return LinkEffect.toast("Not available on this device");
@@ -95,7 +106,7 @@ public final class BookmarksCapability implements Capability {
         } catch (IllegalStateException notConfigured) {
             return LinkEffect.refused("not_configured", "The address of the household site is not set");
         }
-        opener.open(url);
+        if (trusted) opener.open(url); else opener.openFromOutside(url);
         return LinkEffect.front();
     }
 }
