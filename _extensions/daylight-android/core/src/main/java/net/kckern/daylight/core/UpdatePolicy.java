@@ -12,6 +12,13 @@ final class UpdatePolicy {
     /** How long a committed install may wait for its confirmation before GET /update calls it failed. */
     static final long CONFIRM_WINDOW_MS = 90_000L;
 
+    /**
+     * How long the system installer may be in front of a locked kiosk for one update:
+     * the download, then the confirmation window. Granted before the download starts,
+     * because the dialog appears the moment the session is committed.
+     */
+    static final long INSTALLER_EXEMPT_MS = 5 * 60_000L;
+
     private static final Pattern SHA256 = Pattern.compile("[0-9a-fA-F]{64}");
 
     private UpdatePolicy() { }

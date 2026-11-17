@@ -244,6 +244,7 @@ public final class CoreRuntime implements CoreContext {
                 Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
                 updateError = null;
                 updateState = "downloading";
+                exemptInstallerFromRecall();
                 UpdateFlow.Result result = installer.fetchAndInstall(url, sha);
                 // The session is committed. Without device owner Android now shows a confirm
                 // dialog; the result lands in the shell log (lifeline GET /log), not here.
@@ -327,6 +328,19 @@ public final class CoreRuntime implements CoreContext {
             settings.reset(key);
             return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.shown(key)));
         });
+    }
+
+    /**
+     * A locked kiosk recalls itself over anything that is not allowed in front, and the
+     * installer's confirm dialog is not. For the length of one update the installer's
+     * packages are exempt; the exemption is timed and ends by itself.
+     */
+    private void exemptInstallerFromRecall() {
+        net.kckern.daylight.core.spi.LockdownControl lockdown = services.find(net.kckern.daylight.core.spi.LockdownControl.class);
+        if (lockdown == null) return;
+        for (String installer : UpdateConfirmRule.installerPackages()) {
+            try { lockdown.allowFor(installer, UpdatePolicy.INSTALLER_EXEMPT_MS); } catch (Throwable ignored) { }
+        }
     }
 
     /**

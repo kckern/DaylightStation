@@ -18,6 +18,9 @@ final class UpdateConfirmRule {
             "com.google.android.packageinstaller",
     };
 
+    /** The same names, for the lockdown exemption an update needs while its dialog is up. */
+    static String[] installerPackages() { return INSTALLERS.clone(); }
+
     static final class Facts {
         /** A confirmation was begun by this app's own POST /update and has not finished. */
         boolean pending;

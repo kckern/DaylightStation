@@ -270,4 +270,37 @@ public class UpdateRouteTest {
         assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
         assertTrue(TestCore.get(core, "/update").isNull("lastError"));
     }
+
+    // ── an update under lockdown ──────────────────────────────────────────────
+
+    @Test public void theInstallersDialogIsExemptFromRecallWhileAnUpdateWaitsForIt() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.prepare(new JSONObject("{}"));
+        final java.util.List<String> grants = new java.util.ArrayList<>();
+        final java.util.List<String> atInstall = new java.util.ArrayList<>();
+        core.services().provide(net.kckern.daylight.core.spi.LockdownControl.class, new net.kckern.daylight.core.spi.LockdownControl() {
+            @Override public boolean locked() { return true; }
+            @Override public String front() { return null; }
+            @Override public String frontActivity() { return null; }
+            @Override public String lastAway() { return null; }
+            @Override public void allowWhileInFront(String packageName) { }
+            @Override public void allowFor(String rule, long durationMs) { grants.add(rule + " " + durationMs); }
+            @Override public boolean recall(long waitMs) { return true; }
+        });
+        core.useUpdateInstallerForTest((url, sha) -> { atInstall.addAll(grants); return new UpdateFlow.Result(5, false); });
+        assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+        // In place before the session is committed: the dialog appears at the commit, and
+        // a watcher that recalled the kiosk over it would leave the install unconfirmed.
+        assertTrue(atInstall.contains("com.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
+        assertTrue(atInstall.contains("com.google.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
+        assertEquals("nothing but the two installer packages", 2, new java.util.HashSet<>(grants).size());
+        assertTrue("timed: the exemption ends by itself", UpdatePolicy.INSTALLER_EXEMPT_MS <= 10 * 60_000L);
+    }
+
+    @Test public void anUpdateWithNoLockdownInTheBuildNeedsNoExemption() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.prepare(new JSONObject("{}"));
+        core.useUpdateInstallerForTest((url, sha) -> new UpdateFlow.Result(5, false));
+        assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+    }
 }
