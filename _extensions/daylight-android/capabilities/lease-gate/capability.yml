@@ -1,0 +1,6 @@
+# A server-issued lease decides whether one native app may run. Phase 2 ports the
+# lease logic and its status route. Enforcement needs `lockdown` (phase 3).
+entry: net.kckern.daylight.cap.leasegate.LeaseGateCapability
+# Every capability lists the Android permissions it needs, even when the list is
+# empty. tools/verify-build.mjs compares the APK's permission set with these lists.
+permissions: []
