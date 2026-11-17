@@ -2729,6 +2729,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoMidiWakeService,
     kioskFrictionTracker,
     startStatusService: deviceStartStatusService,
+    // For the excursion guard's probe on devices running the Android kiosk app.
+    httpClient: axios,
     logger: rootLogger.child({ module: 'device-api' })
   }));
 
