@@ -8,32 +8,44 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * ShellExec — run a shell command as the bridge's own app uid and capture output.
+ * ShellExec — run a command as the app's own uid and capture its output.
  *
- * This is the engine behind the ADB-replacement control-plane endpoints (/exec,
- * /cpu, /top, /logcat, /dumpsys, …). Commands run as uid app_xxx, NOT shell (2000),
- * so the Android app sandbox is the security boundary: destructive ops on other
- * apps' data or the system fail on permission, while diagnostics that the granted
- * DUMP / READ_LOGS perms unlock (dumpsys, logcat) succeed. No allowlist — the
- * sandbox already bounds the blast radius, and the kiosk LAN trust model matches
- * the unauthenticated Fully REST endpoint.
+ * Commands run as uid app_xxx, NOT shell (2000), so the Android app sandbox is the
+ * security boundary: destructive ops on other apps' data or the system fail on
+ * permission, while diagnostics that the granted READ_LOGS permission opens (logcat)
+ * succeed. No allowlist: the sandbox bounds the damage, the route needs the device
+ * token, and it answers 501 unless debug.execEnabled is true.
  *
  * Both stdout and stderr are drained on separate threads so a command that fills
- * one pipe buffer while we block on the other can't deadlock. Output is capped at
- * ~1 MB per stream to keep a runaway `logcat` from exhausting memory.
+ * one pipe buffer while we block on the other can't deadlock. Each stream is kept up
+ * to MAX_BYTES and then cut, with a marker saying so; the rest is read and dropped
+ * so the command is not left blocked on a full pipe.
+ *
+ * A command past its timeout has its process killed. A child that process started and
+ * that outlives it is not followed.
  */
-public final class ShellExec {
+final class ShellExec {
 
-    private static final int MAX_BYTES = 1_000_000;
+    static final int MAX_BYTES = 256 * 1024;
+    static final String TRUNCATED = "\n[truncated: output passed " + MAX_BYTES + " bytes]\n";
 
     private ShellExec() { }
 
-    /** Run {@code cmd} via {@code sh -c}, returning {ok, cmd, exit, stdout, stderr, ms[, timeout]}. */
-    public static JSONObject run(String cmd, int timeoutMs) {
+    /** Run {@code cmd} via {@code sh -c}. The string is the shell's, metacharacters and all. */
+    static JSONObject run(String cmd, int timeoutMs) {
+        return exec(new String[] { "sh", "-c", cmd }, timeoutMs);
+    }
+
+    /**
+     * Run an argument list with no shell, returning
+     * {ok, exit, stdout, stderr, stdoutTruncated, stderrTruncated, ms[, timeout]}, or {ok:false, error, ms}.
+     * The command is not repeated in the result.
+     */
+    static JSONObject exec(String[] argv, int timeoutMs) {
         JSONObject o = new JSONObject();
         long t0 = System.currentTimeMillis();
         try {
-            Process p = new ProcessBuilder("sh", "-c", cmd).redirectErrorStream(false).start();
+            Process p = new ProcessBuilder(argv).redirectErrorStream(false).start();
             Gobbler out = new Gobbler(p.getInputStream());
             Gobbler err = new Gobbler(p.getErrorStream());
             out.start();
@@ -43,12 +55,13 @@ public final class ShellExec {
             out.join(2000);
             err.join(2000);
             o.put("ok", true);
-            o.put("cmd", cmd);
             o.put("exit", done ? p.exitValue() : -1);
             o.put("stdout", out.text());
             o.put("stderr", err.text());
+            o.put("stdoutTruncated", out.truncated());
+            o.put("stderrTruncated", err.truncated());
         } catch (Exception e) {
-            try { o.put("ok", false).put("cmd", cmd).put("error", String.valueOf(e.getMessage())); }
+            try { o.put("ok", false).put("error", String.valueOf(e.getMessage())); }
             catch (Exception ignored) { }
         }
         try { o.put("ms", System.currentTimeMillis() - t0); } catch (Exception ignored) { }
@@ -59,6 +72,7 @@ public final class ShellExec {
     private static final class Gobbler extends Thread {
         private final InputStream in;
         private final ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        private volatile boolean truncated;
         Gobbler(InputStream in) { this.in = in; setDaemon(true); }
 
         @Override public void run() {
@@ -66,11 +80,22 @@ public final class ShellExec {
             int n;
             try {
                 while ((n = in.read(b)) > 0) {
-                    if (buf.size() < MAX_BYTES) buf.write(b, 0, Math.min(n, MAX_BYTES - buf.size()));
+                    int room;
+                    synchronized (buf) {
+                        room = MAX_BYTES - buf.size();
+                        if (room > 0) buf.write(b, 0, Math.min(n, room));
+                    }
+                    if (n > room) truncated = true;
                 }
             } catch (Exception ignored) { }
         }
 
-        String text() { return new String(buf.toByteArray(), StandardCharsets.UTF_8); }
+        boolean truncated() { return truncated; }
+
+        String text() {
+            String text;
+            synchronized (buf) { text = new String(buf.toByteArray(), StandardCharsets.UTF_8); }
+            return truncated ? text + TRUNCATED : text;
+        }
     }
 }
