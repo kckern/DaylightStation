@@ -1,6 +1,7 @@
 # Household work/config.yml. No credentials belong here.
 work:
   enabled: false
+  catchUp: false # Optional missed-hook read catch-up; requires authorized local writer.
   write: false
   writer_env: null
   writer_host: null

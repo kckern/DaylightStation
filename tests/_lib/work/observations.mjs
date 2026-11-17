@@ -9,4 +9,4 @@ export function stores(previous=null){
  const lifelogStore={load:async(u,p)=>history.get(u+':'+p)??{},save:async(u,p,v)=>{history.set(u+':'+p,structuredClone(v));}};
  return {current,history,currentStore,lifelogStore};
 }
-export const scope=(accountId='personal',containerIds=['sample-project'])=>({accountId,containerIds,assigneeIds:null});
+export const scope=(accountId='personal',containerIds=['sample-project'])=>({accountId,containerIds,assigneeIds:null,authScope:'user'});

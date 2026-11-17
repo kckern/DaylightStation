@@ -4,7 +4,7 @@ import {createLogger} from '#system/logging/logger.mjs';
 import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { providerId, sourceInstant, historyRange, snapshotScope, activity, mergeTaskHistory, incompleteResult, observationError } from './taskObservations.mjs';
+import { providerId, sourceInstant, historyRange, snapshotScope, activity, mergeTaskHistory, incompleteResult, observationError, saveSourceHealth } from './taskObservations.mjs';
 export class ClickUpHarvester extends IHarvester {
   static API_BASE = 'https://api.clickup.com/api/v2';
   #http;
@@ -155,16 +155,14 @@ export class ClickUpHarvester extends IHarvester {
       },
       remainingMins: this.#breaker.getCooldownStatus()?.remainingMins
     };
-    const auth = this.#householdAuth?.('clickup') ?? this.#auth?.('clickup', username) ?? {},
-      apiKey = auth.api_key ?? this.#apiKey,
-      teamId = auth.workspace_id ?? this.#config?.team_id;
-    if (!apiKey || !teamId) throw new InfrastructureError('ClickUp credentials/workspace not configured', {
-      code: 'MISSING_CONFIG',
-      service: 'ClickUp'
-    });
     const range = historyRange(this.#clock, options.daysBack ?? 7),
-      scope = snapshotScope(this.#scope?.(username, 'clickup'));
+      binding = this.#scope?.(username, 'clickup'),
+      scope = snapshotScope(binding);
     try {
+      if(binding&&!['user','household'].includes(binding.authScope))throw observationError('INVALID_WORK_AUTH_SCOPE');
+      const auth=binding?(binding.authScope==='household'?this.#householdAuth?.('clickup'):this.#auth?.('clickup',username)):this.#householdAuth?.('clickup')??this.#auth?.('clickup',username);
+      const apiKey=auth?.api_key??(binding?null:this.#apiKey),teamId=auth?.workspace_id??(binding?null:this.#config?.team_id);
+      if(!apiKey||!teamId)throw observationError('MISSING_CONFIG');
       const headers = {
           Authorization: apiKey
         },
@@ -261,6 +259,7 @@ export class ClickUpHarvester extends IHarvester {
       };
       await this.#lifelog.save(username, 'clickup', history);
       await this.#current?.save(username, 'clickup', snapshot);
+      await saveSourceHealth({currentStore:this.#current,username,provider:'clickup',scope,range,complete:true});
       this.#breaker.recordSuccess();
       this.#logger?.info?.('clickup.harvest.complete', {
         username,
@@ -277,6 +276,7 @@ export class ClickUpHarvester extends IHarvester {
         latestDate: Object.keys(history)[0] ?? null
       };
     } catch (error) {
+      await saveSourceHealth({currentStore:this.#current,username,provider:'clickup',scope,range,complete:false,reason:error.code??'provider_read_failed'});
       if ([401, 429].includes(error.response?.status)) this.#breaker.recordFailure(error);
       this.#logger?.warn?.('clickup.harvest.incomplete', {
         username,

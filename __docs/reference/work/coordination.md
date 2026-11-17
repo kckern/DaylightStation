@@ -18,7 +18,7 @@ Work references include provider, account, object kind and opaque string ID. Nev
 
 ## Implementation status
 
-The first increment supplies model validation and per-user configuration contracts. Read-only provider adapters retain source dates and explicit account/container coverage. Links, historical import, two-way commands and attention workflows are implemented in subsequent increments. Configuration alone does not start extraction, change provider status or authorize a backfill.
+The context/backfill increment supplies per-user configuration, read-only provider context, durable links/relevance, and explicit quiet historical import jobs. Provider command execution and conversational attention workflows are separate increments. Starting the runtime does not extract journal history. The server has no operator import endpoint; the CLI constructs the separate job capability.
 
 
 ## Provider collection and completeness
@@ -27,7 +27,45 @@ Todoist open tasks/projects are cursor-paginated; completed history uses the cur
 
 Optional composition-supplied scope binds an observation to its configured logical account. Older snapshots without that binding remain unavailable for automatic decisions. Only one harvested account of each provider type is supported per user by the current upstream storage/auth connection; conflicting same-type account configuration is rejected. One account can still fill multiple domain roles.
 
+Account aliases must agree on credential scope as well as account identity. A known Work binding selects exactly the configured user or household credentials; missing credentials never fall back to another connection. ClickUp's configured credential record must include its workspace ID. Canonical task history is under `lifelog/{provider}.yml`; current source facts are under `current/{provider}.yml`.
+
+Collectors retain latest per-user/account attempt health separately at `current/{provider}-health.yml`. A failed refresh preserves the last complete task file but makes Work coverage unavailable, including after reader restart. A current snapshot is not proof that a later refresh succeeded.
+
 Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. No read adapter exposes command capability in this increment.
+
+## Runtime and private operator jobs
+
+Disabled Work performs no source reads, locks, timers or model work. An explicitly
+enrolled user can read context independently of KB maintenance. Local mutations
+require the configured Linux writer environment/host and a separate Work lease.
+Successful complete harvests can refresh backup context; unchanged semantic
+facts do not append another full snapshot. The optional `catchUp: true` setting
+enables missed-hook polling at `pollMinutes` only on an authorized local writer.
+Neither refresh path activates task relevance. Shutdown cancels timers and
+prevents late reads from writing after its five-second grace period.
+
+```sh
+node cli/work.cli.mjs inspect --username sample
+node cli/work.cli.mjs backfill prepare --username sample --days 90 --as-of 2026-11-17T18:00:00Z --output-dir /private/work-job
+node cli/work.cli.mjs backfill preview --manifest /private/work-job/JOB.manifest.json --usage-dir /private/shared-kb-usage
+node cli/work.cli.mjs backfill apply --manifest /private/work-job/JOB.manifest.json --artifact /private/work-job/JOB.artifact.json
+```
+
+Prepare returns the actual manifest path. Private directories must be outside
+the data tree. Preview uses the same persistent daily attempt receipts as KB
+Phase 0; keep the same usage directory across runs. Source hashes, username,
+configuration revision and exact range bind the job. Apply requires configured
+`importWrites`, local write authority and the actual permitted operator UID;
+there are no force, send, host-spoofing or environment-spoofing options.
+
+Reports separate supported historical outcomes, unresolved candidates,
+ambiguities, unsupported dates, skipped evidence and incomplete Work coverage.
+A candidate is historical context, not an assertion that a provider task is
+fresh or still due. Incomplete extraction cannot apply. Repeated jobs reuse
+cached chunks and unchanged imported evidence does not create duplicate loops.
+New imports retain their historical dates and a pinned user-initiated ask policy.
+Rollback uses existing KB object edits/retractions; retain the import ledger and
+original journal. See [quiet historical imports](../lifelog/knowledge.md#quiet-historical-imports).
 
 
 ## Durable relevance and links

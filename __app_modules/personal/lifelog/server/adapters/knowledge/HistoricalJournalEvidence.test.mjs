@@ -24,6 +24,14 @@ const query = {
   asOf
 };
 describe('bounded historical journal evidence', () => {
+  it('keeps import proof stable across CLI/live identity metadata and row key ordering',async()=>{
+    const original=row('entry',asOf);
+    const initial=await make([original]).read(query);
+    const reordered=Object.fromEntries(Object.entries(original).reverse());
+    const live=new HistoricalJournalEvidence({loadJournal:async()=>({messages:[reordered]}),identityForUser:async()=>({username:'sample',senderId:'author',conversationId:'private',extra:'runtime-only'}),timezoneForUser:()=> 'America/Los_Angeles'});
+    const later=await live.read(query);
+    expect(later.messages[0].ref).toBe(initial.messages[0].ref);expect(later.sourceHashes).toEqual(initial.sourceHashes);
+  });
   it('includes the exact rolling boundary across DST and never fabricates verification', async () => {
     const result = await make([row('old', from - 1), row('boundary', from), row('recent', asOf), row('future', asOf + 1)]).read(query);
     expect(result.messages.map(m => m.messageId)).toEqual(['boundary', 'recent']);

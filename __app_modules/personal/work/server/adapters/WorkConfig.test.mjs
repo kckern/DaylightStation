@@ -9,6 +9,10 @@ describe('work configuration boundaries',()=>{
  it('lets one account serve tasks and projects without inventing another provider',()=>{
   const p=resolve(base());expect(p.enabled).toBe(true);expect(p.domains.personal.provider).toBe('personal');expect(p.domains.project.provider).toBe('personal');expect(Object.keys(p.providers)).toEqual(['personal']);
  });
+ it('rejects two credential scopes claiming the same harvested account',()=>{
+  const c=base();c.work.providers.shared={...c.work.providers.personal,authScope:'household'};
+  expect(resolve(c)).toMatchObject({enabled:false,reason:'ambiguous_provider_account'});
+ });
  it('requires explicit user enrollment and cannot read another user override',()=>{
   const c=base();c.work.users.other={providers:{other:{type:'clickup',accountId:'other-account',authScope:'household',operations:['read']}},domains:{project:{provider:'other',containerId:'other-list',role:'projects',autoComplete:'never'}}};
   expect(resolve(c,'unknown')).toMatchObject({enabled:false,reason:'unknown_work_user'});

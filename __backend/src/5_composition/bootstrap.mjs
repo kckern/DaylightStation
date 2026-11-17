@@ -1795,6 +1795,7 @@ export function createHarvesterServices(config) {
       currentStore: effectiveCurrentStore,
       getUserAuth,
       apiKey: secret('TODOIST_KEY'),
+      getHouseholdAuth,
       timezone: harvesterTimezone,
       logger,
     }));

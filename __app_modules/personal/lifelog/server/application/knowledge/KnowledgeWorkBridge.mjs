@@ -18,6 +18,12 @@ export class KnowledgeWorkBridge {
       }))
     };
   }
+  prepareImport(input) {
+    return this.#backfill.prepare(input);
+  }
+  captureImportReceipt(input) {
+    return this.#backfill.captureOperatorReceipt(input);
+  }
   commitImport(input) {
     return this.#backfill.commit(input);
   }

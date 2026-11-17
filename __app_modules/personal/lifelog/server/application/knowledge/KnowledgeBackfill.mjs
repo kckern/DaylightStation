@@ -29,30 +29,54 @@ export class KnowledgeBackfill {
   #reserve;
   #clock;
   #timezone;
+  #workContext;
   #closed = false;
   #running = new Map();
   constructor({
-    store,
-    historical,
-    checkpoint,
+    knowledgeStore: store,
+    journalEvidence: historical,
+    checkpoints: checkpoint,
     extractor,
-    authority,
-    reserveAttempt,
+    verifyImport,
+    usageBudget: reserveAttempt,
     clock,
-    userTimezone
+    userTimezone,
+    workContext
   }) {
-    if (!store?.read || !store?.commit || !historical?.read || !checkpoint?.writeChunk || !extractor?.extract || !authority?.verify || typeof reserveAttempt !== 'function' || typeof clock !== 'function' || typeof userTimezone !== 'function') throw new TypeError('Invalid knowledge import dependencies');
+    if (!store?.read || !store?.commit || !historical?.read || !checkpoint?.writeChunk || !extractor?.extract || typeof verifyImport !== 'function' || typeof reserveAttempt !== 'function' || typeof clock !== 'function' || typeof userTimezone !== 'function') throw new TypeError('Invalid knowledge import dependencies');
     this.#store = store;
     this.#historical = historical;
     this.#checkpoint = checkpoint;
     this.#extractor = extractor;
-    this.#authority = authority;
+    this.#authority = {
+      verify: verifyImport
+    };
     this.#reserve = reserveAttempt;
     this.#clock = clock;
     this.#timezone = userTimezone;
+    this.#workContext = workContext;
   }
   #active() {
     if (this.#closed) fail('KNOWLEDGE_IMPORT_STOPPED');
+  }
+  async #workCoverage(manifest) {
+    let coverage = {
+      complete: false,
+      reason: 'work_context_unavailable',
+      sources: []
+    };
+    try {
+      if (this.#workContext?.execute) coverage = (await this.#workContext.execute({
+        username: manifest.username,
+        asOf: manifest.asOf
+      })).coverage;
+    } catch {/* Corroboration failure never becomes user evidence. */}
+    this.#active();
+    return coverage?.sources?.length === 0 ? {
+      ...coverage,
+      complete: false,
+      reason: coverage.reason ?? 'no_work_sources'
+    } : coverage;
   }
   async #sources({
     username,
@@ -160,6 +184,7 @@ export class KnowledgeBackfill {
       chunks,
       report: {
         complete: true,
+        workCoverage: await this.#workCoverage(manifest),
         selected: selected.length,
         excluded: manifest.excludedRefs.length,
         rejected: sources.rejected
@@ -294,7 +319,26 @@ export class KnowledgeBackfill {
       if (!(await processChunk(chunk))) break;
     }
     await this.#current(manifest);
+    const denied = new Set(rejected.map(row => row.proposalId));
+    const targets = new Set(entries.flatMap(entry => entry.result.proposals.filter(p => !denied.has(p.id)).map(p => p.target)));
+    const summarized = [...targets].map(id => snapshot.objects[id]).filter(Boolean).map(({
+      id,
+      title,
+      status,
+      created
+    }) => ({
+      id,
+      title,
+      status,
+      sourceAt: created.sourceAt
+    }));
     const report = {
+      supportedOutcomes: summarized.filter(o => ['answered', 'dropped'].includes(o.status)),
+      unresolvedCandidates: summarized.filter(o => ['open', 'waiting'].includes(o.status)),
+      ambiguousMatches: snapshot.state.pendingReviews.filter(r => ['ambiguous_person_name', 'person_confirmation', 'alias_confirmation'].includes(r.reason)),
+      unsupportedDates: snapshot.state.pendingReviews.filter(r => r.reason === 'unsupported_due_text'),
+      skippedEvidence: current.rejected,
+      workCoverage: await this.#workCoverage(manifest),
       complete: reason === null,
       reason,
       completedChunks: entries.length,
@@ -333,6 +377,10 @@ export class KnowledgeBackfill {
       sourceHashes: current.sourceHashes,
       capability
     })) fail('KNOWLEDGE_IMPORT_DENIED');
+    await this.#store.recover?.({
+      username: manifest.username
+    });
+    this.#active();
     const initial = await this.#store.read({
       username: manifest.username
     });

@@ -4,13 +4,14 @@ import {createLogger} from '#system/logging/logger.mjs';
 import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { providerId, sourceInstant, historyRange, cursorPages, snapshotScope, activity, mergeTaskHistory, incompleteResult } from './taskObservations.mjs';
+import { providerId, sourceInstant, historyRange, cursorPages, snapshotScope, activity, mergeTaskHistory, incompleteResult, observationError, saveSourceHealth } from './taskObservations.mjs';
 export class TodoistHarvester extends IHarvester {
   static API_BASE = 'https://api.todoist.com/api/v1';
   #http;
   #lifelog;
   #current;
   #auth;
+  #householdAuth;
   #apiKey;
   #timezone;
   #logger;
@@ -22,6 +23,7 @@ export class TodoistHarvester extends IHarvester {
     lifelogStore,
     currentStore,
     getUserAuth,
+    getHouseholdAuth,
     apiKey,
     timezone = 'America/Los_Angeles',
     logger = createLogger({source:'backend',app:'harvest',context:{module:'todoist'}}),
@@ -37,6 +39,7 @@ export class TodoistHarvester extends IHarvester {
     this.#lifelog = lifelogStore;
     this.#current = currentStore;
     this.#auth = getUserAuth;
+    this.#householdAuth = getHouseholdAuth;
     this.#apiKey = apiKey;
     this.#timezone = timezone;
     this.#logger = logger;
@@ -79,15 +82,13 @@ export class TodoistHarvester extends IHarvester {
       },
       remainingMins: this.#breaker.getCooldownStatus()?.remainingMins
     };
-    const apiKey = this.#auth?.('todoist', username)?.api_key ?? this.#apiKey;
-    if (!apiKey) throw new InfrastructureError('Todoist API key not found', {
-      code: 'MISSING_CONFIG',
-      service: 'Todoist',
-      field: 'api_key'
-    });
     const range = historyRange(this.#clock, daysBack),
-      scope = snapshotScope(this.#scope?.(username, 'todoist'));
+      binding = this.#scope?.(username, 'todoist'),
+      scope = snapshotScope(binding);
     try {
+      if(binding&&!['user','household'].includes(binding.authScope))throw observationError('INVALID_WORK_AUTH_SCOPE');
+      const apiKey=binding?(binding.authScope==='household'?this.#householdAuth?.('todoist'):this.#auth?.('todoist',username))?.api_key:this.#auth?.('todoist',username)?.api_key??this.#apiKey;
+      if(!apiKey)throw observationError('MISSING_CONFIG');
       const headers = {
           Authorization: `Bearer ${apiKey}`
         },
@@ -197,6 +198,7 @@ export class TodoistHarvester extends IHarvester {
       // Finish every read before touching either projection. Partial network data is never published.
       await this.#lifelog.save(username, 'todoist', history);
       await this.#current?.save(username, 'todoist', snapshot);
+      await saveSourceHealth({currentStore:this.#current,username,provider:'todoist',scope,range,complete:true});
       this.#breaker.recordSuccess();
       this.#logger?.info?.('todoist.harvest.complete', {
         username,
@@ -213,6 +215,7 @@ export class TodoistHarvester extends IHarvester {
         latestDate: Object.keys(history)[0] ?? null
       };
     } catch (error) {
+      await saveSourceHealth({currentStore:this.#current,username,provider:'todoist',scope,range,complete:false,reason:error.code??'provider_read_failed'});
       if ([401, 410, 429].includes(error.response?.status)) this.#breaker.recordFailure(error);
       this.#logger?.warn?.('todoist.harvest.incomplete', {
         username,

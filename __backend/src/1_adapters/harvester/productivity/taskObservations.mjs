@@ -67,6 +67,10 @@ export function snapshotScope(scope) {
     assigneeIds: scope.assigneeIds == null ? null : scope.assigneeIds.map(providerId)
   };
 }
+/** Separate attempt health preserves the last complete source projection on failure. */
+export async function saveSourceHealth({currentStore,username,provider,scope,range,complete,reason=null}) {
+  await currentStore?.save(username,provider+'-health',{schema:'work-source-health/v1',provider,accountId:scope.accountId,observedAt:range.to,complete,reason});
+}
 export function activity({
   id,
   title,

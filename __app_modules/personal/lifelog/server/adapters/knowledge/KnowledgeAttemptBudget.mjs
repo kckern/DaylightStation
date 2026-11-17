@@ -14,11 +14,13 @@ export function reserveKnowledgeAttempt({
   dir,
   username,
   timezone,
-  now
+  now,
+  maxAttempts = 4
 }) {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 4) throw new TypeError('Invalid knowledge attempt cap');
   const user = crypto.createHash('sha256').update(username).digest('hex').slice(0, 24);
   const date = moment.tz(now, timezone).format('YYYY-MM-DD');
-  for (let slot = 1; slot <= 4; slot++) {
+  for (let slot = 1; slot <= maxAttempts; slot++) {
     try {
       FileIO.writeFileExclusive(path.join(dir, `knowledge-budget-${user}-${date}-${slot}.json`), JSON.stringify({
         schema: 'knowledge-preview-budget/v1',

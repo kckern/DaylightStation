@@ -16,6 +16,61 @@ it('keeps disabled composition inert', () => {
   expect(runtime.prepare).toBeNull();
   expect(loadJournal).not.toHaveBeenCalled();
 });
+it('does not construct AI or read credentials for a prepare-only or empty preview job', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-lazy-import-'));
+  const dataDir = path.join(tmp, 'data');
+  fs.mkdirSync(dataDir);
+  const gatewayFactory = vi.fn(),
+    asOf = Date.parse('2026-11-17T18:00Z');
+  let runtime;
+  try {
+    runtime = createKnowledgeImportRuntime({
+      configuration: {
+        enabled: true,
+        write: false,
+        importWrites: false
+      },
+      dataDir,
+      rootForUser: u => path.join(dataDir, u, 'knowledge'),
+      checkpoint: {
+        writeChunk: async () => {},
+        read: async () => ({
+          chunks: {}
+        })
+      },
+      loadJournal: async () => ({
+        messages: []
+      }),
+      identityForUser: async () => ({
+        senderId: 'author',
+        conversationId: 'private'
+      }),
+      userTimezone: () => 'America/Los_Angeles',
+      clock: () => asOf,
+      gatewayFactory
+    });
+    const {
+      manifest
+    } = await runtime.prepare({
+      username: 'sample',
+      from: asOf - 90 * 86400000,
+      asOf,
+      jobId: 'job-1'
+    });
+    expect((await runtime.resume({
+      manifest,
+      usageDir: tmp
+    })).report.complete).toBe(true);
+    expect(gatewayFactory).not.toHaveBeenCalled();
+    expect(fs.readdirSync(dataDir)).toEqual([]);
+  } finally {
+    await runtime?.dispose();
+    fs.rmSync(tmp, {
+      recursive: true,
+      force: true
+    });
+  }
+});
 it('previews without data writes, then uses actual operator authority and KB lease to import quietly once', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-import-'));
   const dataDir = path.join(tmp, 'data'),

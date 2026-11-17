@@ -3,6 +3,31 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { reserveKnowledgeAttempt, outsideKnowledgeDirectory } from './KnowledgeAttemptBudget.mjs';
+it('honors a smaller configured cap within the shared four-attempt ceiling', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-small-budget-'));
+  try {
+    const input = {
+      dir: root,
+      username: 'sample',
+      timezone: 'America/Los_Angeles',
+      now: Date.now(),
+      maxAttempts: 2
+    };
+    reserveKnowledgeAttempt(input);
+    reserveKnowledgeAttempt(input);
+    expect(() => reserveKnowledgeAttempt(input)).toThrow(/exhausted/i);
+    expect(() => reserveKnowledgeAttempt({
+      ...input,
+      maxAttempts: 5
+    })).toThrow(/cap/i);
+    expect(fs.readdirSync(root)).toHaveLength(2);
+  } finally {
+    fs.rmSync(root, {
+      recursive: true,
+      force: true
+    });
+  }
+});
 it('shares the four-attempt local-day budget across restart and phase-zero receipt names', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-budget-'));
   try {

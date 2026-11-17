@@ -67,25 +67,36 @@ export function createKnowledgeImportRuntime(options) {
     timezoneForUser: userTimezone,
     logger
   });
-  const extractor = options.extractor ?? new GatewayKnowledgeExtractor({
-    gateway: options.gateway,
-    model: configuration.model,
-    modelVersion: configuration.model ?? options.gateway?.model ?? 'configured-gateway'
-  });
+  let extractorPromise;
+  const extractor = options.extractor ?? {
+    extract: async input => {
+      extractorPromise ??= (async () => {
+        const gateway = options.gateway ?? (await options.gatewayFactory?.());
+        return new GatewayKnowledgeExtractor({
+          gateway,
+          model: configuration.model,
+          modelVersion: configuration.model ?? gateway?.model ?? 'configured-gateway'
+        });
+      })();
+      return (await extractorPromise).extract(input);
+    }
+  };
   const service = new KnowledgeBackfill({
-    store,
-    historical,
-    checkpoint,
+    knowledgeStore: store,
+    journalEvidence: historical,
+    checkpoints: checkpoint,
     extractor,
-    authority,
+    verifyImport: input => authority.verify(input),
+    workContext: options.workContext,
     clock,
     userTimezone,
-    reserveAttempt: ({
+    usageBudget: ({
       usageDir,
       ...input
     }) => reserveKnowledgeAttempt({
       ...input,
-      dir: outsideKnowledgeDirectory(usageDir, dataDir)
+      dir: outsideKnowledgeDirectory(usageDir, dataDir),
+      maxAttempts: configuration.modelCallsPerLocalDay ?? 4
     })
   });
   const runtime = {

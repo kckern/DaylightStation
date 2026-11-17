@@ -1,5 +1,6 @@
 import {hostname} from 'node:os';
 import {createKnowledgeRuntime} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
+import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
 import {viewerFor} from './4_api/utils/participantHttp.mjs';
@@ -1647,12 +1648,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveAuth: (username, service, data) => dataService.user.write(`auth/${service}`, data, username),
   };
 
+  const workConfiguration=()=>configService.getHouseholdAppConfig(householdId,'work')??{};
+  const workTimezone=username=>configService.getUserProfile(username)?.timezone??configService.getHouseholdTimezone(configService.getUserHouseholdId(username));
   const harvesterServices = createHarvesterServices({
     io: harvesterIo,
     httpClient: axios,
     configService,
     dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
+    workScopeForUser:(username,provider)=>resolveWorkHarvestScope({configuration:workConfiguration(),username,provider,timezone:workTimezone(username)}),
     aiGateway: scopedGateway(sharedAiGateway, { app: 'harvester' }), // Shared OpenAI adapter
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
@@ -3434,6 +3438,16 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
   await knowledgeRuntime.start();
   process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
+  const workRuntime=createWorkRuntime({
+    configuration:workConfiguration,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),dataDir:configService.getDataDir(),
+    rootForUser:username=>path.join(configService.getUserDir(username),'work'),userTimezone:workTimezone,clock:Date.now,scheduler:new NodeApplicationScheduler(),
+    readCurrent:(username,provider)=>dataService.user.read(`current/${provider}`,username),readHealth:(username,provider)=>dataService.user.read(`current/${provider}-health`,username),readHistory:(username,provider)=>dataService.user.read(`lifelog/${provider}`,username),
+    harvesterService:harvesterServices.harvesterService,webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
+    identityForSender:senderId=>{const username=userIdentityService.resolveUsername('telegram',senderId);if(!username)return null;try{return {username,senderId:String(userIdentityService.resolvePlatformId('telegram',username)),conversationId:telegramIdentityAdapter.resolve('journalist',{username}).conversationIdString};}catch{return null;}},
+    logger:rootLogger.child({app:'work',module:'coordination'}),
+  });
+  await workRuntime.start().catch(error=>rootLogger.warn?.('work.start.failed',{reason:error.code??'startup_failed'}));
+  process.once('SIGTERM',()=>{void workRuntime.dispose().catch(error=>rootLogger.warn?.('work.dispose.failed',{reason:error.code??'shutdown_failed'}));});
 
   const journalistServices = createJournalistServices({
     knowledgeRuntime,knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,

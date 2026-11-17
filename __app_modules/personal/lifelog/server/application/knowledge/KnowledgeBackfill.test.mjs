@@ -74,15 +74,28 @@ function fixture(count = 1, contentLength) {
       verify: vi.fn(input => input.capability === capability)
     };
   const reserveAttempt = vi.fn();
+  const workContext = {
+    execute: vi.fn(async () => ({
+      coverage: {
+        complete: false,
+        reason: 'stale_snapshot',
+        sources: []
+      },
+      items: [],
+      links: [],
+      events: []
+    }))
+  };
   const service = new KnowledgeBackfill({
-    store,
-    historical,
-    checkpoint,
+    knowledgeStore: store,
+    journalEvidence: historical,
+    checkpoints: checkpoint,
     extractor,
-    authority,
-    reserveAttempt,
+    verifyImport: authority.verify,
+    usageBudget: reserveAttempt,
     clock: () => AS_OF,
-    userTimezone: () => TZ
+    userTimezone: () => TZ,
+    workContext
   });
   const prepare = () => service.prepare({
     username: 'sample',
@@ -92,6 +105,7 @@ function fixture(count = 1, contentLength) {
   });
   return {
     service,
+    workContext,
     prepare,
     store,
     messages,
@@ -105,6 +119,60 @@ function fixture(count = 1, contentLength) {
   };
 }
 describe('bounded quiet knowledge backfill', () => {
+  it('recovers a prepared KB transaction only after import authorization, so crash resume remains usable', async () => {
+    const h = fixture(),
+      {
+        manifest
+      } = await h.prepare(),
+      {
+        artifact
+      } = await h.service.resume({
+        manifest,
+        usageDir: 'private'
+      });
+    let recovering = true;
+    const read = h.store.read.getMockImplementation();
+    h.store.read.mockImplementation(async input => {
+      const snapshot = await read(input);
+      if (recovering) snapshot.health.available = false;
+      return snapshot;
+    });
+    h.store.recover.mockImplementation(async () => {
+      recovering = false;
+    });
+    await expect(h.service.commit({
+      manifest,
+      artifact,
+      capability: {}
+    })).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_DENIED'
+    });
+    expect(h.store.recover).not.toHaveBeenCalled();
+    expect((await h.service.commit({
+      manifest,
+      artifact,
+      capability: h.capability
+    })).applied).toBe(true);
+    expect(h.store.recover).toHaveBeenCalledTimes(1);
+    expect(h.extractor.extract).toHaveBeenCalledTimes(1);
+  });
+  it('reports incomplete provider context as corroboration without turning provider text into authored evidence', async () => {
+    const h = fixture(),
+      prepared = await h.prepare();
+    expect(prepared.report.workCoverage).toMatchObject({
+      complete: false,
+      reason: 'stale_snapshot'
+    });
+    const result = await h.service.resume({
+      manifest: prepared.manifest,
+      usageDir: 'private'
+    });
+    expect(result.report.workCoverage).toMatchObject({
+      complete: false,
+      reason: 'stale_snapshot'
+    });
+    expect(h.extractor.extract.mock.calls[0][0].messages.every(m => m.origin === 'historical_import')).toBe(true);
+  });
   it('keeps prepare/resume read-only and reuses cached results on retry', async () => {
     const h = fixture(),
       {
@@ -120,6 +188,11 @@ describe('bounded quiet knowledge backfill', () => {
     });
     expect(first.artifact).toEqual(second.artifact);
     expect(first.report.complete).toBe(true);
+    expect(first.report.unresolvedCandidates).toEqual([expect.objectContaining({
+      id: 'loop.item-import-0',
+      status: 'open'
+    })]);
+    expect(first.report.supportedOutcomes).toEqual([]);
     expect(h.extractor.extract).toHaveBeenCalledTimes(1);
     expect(h.reserveAttempt).toHaveBeenCalledTimes(1);
     expect(h.store.commit).not.toHaveBeenCalled();
@@ -249,6 +322,13 @@ describe('bounded quiet knowledge backfill', () => {
       capability: h.capability
     });
     expect(result.report.rejected).toEqual([]);
+    expect((await h.service.resume({
+      manifest,
+      usageDir: 'private'
+    })).report.supportedOutcomes).toEqual([expect.objectContaining({
+      id: 'loop.application-reply',
+      status: 'answered'
+    })]);
     const object = (await h.store.read({
       username: 'sample'
     })).objects['loop.application-reply'];

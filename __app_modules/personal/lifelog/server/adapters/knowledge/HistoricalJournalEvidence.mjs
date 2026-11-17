@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { JournalKnowledgeEvidence } from './JournalKnowledgeEvidence.mjs';
+import { importDigest } from '../../domain/knowledge/importManifest.mjs';
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 /** Read-only import candidates. Legacy authorship is not a Telegram attestation. */
@@ -53,7 +54,7 @@ export class HistoricalJournalEvidence {
     const rows = new Map((journal?.messages ?? []).map(row => [String(row?.id), row]));
     const sourceHashes = {};
     const messages = page.messages.filter(row => row.at >= from && row.at <= asOf).map(row => {
-      const sourceHash = hash([username, identity, timezone, rows.get(row.messageId)]);
+      const sourceHash = importDigest([username,{senderId:String(identity.senderId),conversationId:String(identity.conversationId)},timezone,rows.get(row.messageId)]);
       sourceHashes[row.ref] = sourceHash;
       const sourceId = hash([row.sourceId, sourceHash]);
       return {
