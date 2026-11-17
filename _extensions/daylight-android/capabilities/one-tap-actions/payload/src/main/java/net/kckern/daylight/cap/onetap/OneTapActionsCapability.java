@@ -18,11 +18,16 @@ import net.kckern.daylight.core.backend.Http;
 import net.kckern.daylight.core.spi.ActionList;
 import net.kckern.daylight.core.spi.LinkHandler;
 import net.kckern.daylight.core.spi.LinkKeySource;
+import net.kckern.daylight.core.spi.ShortcutPinner;
+import net.kckern.daylight.api.PayloadState;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -84,6 +89,15 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         });
 
         core.services().provide(ActionList.class, this);
+        core.services().provide(ShortcutPinner.class, new ShortcutPinner() {
+            @Override public boolean canPin() {
+                SurfaceSink s = sink;
+                try { return s != null && s.canPin(); } catch (RuntimeException e) { return false; }
+            }
+            @Override public JSONObject pinMedia(String contentId, String label) throws Exception {
+                return OneTapActionsCapability.this.pinMedia(contentId, label);
+            }
+        });
         core.services().provide(LinkHandler.class, new LinkHandler() {
             @Override public String kind() { return "action"; }
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
@@ -167,7 +181,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     @Override public JSONArray actions() {
         JSONArray out = new JSONArray();
         try {
-            for (Action a : catalog(null).all()) {
+            for (Action a : everything().all()) {
                 out.put(new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon).put("uri", uri(a))
                         .put("direct", a.kind == Kind.MEDIA ? a.id : ""));
             }
@@ -179,8 +193,87 @@ public final class OneTapActionsCapability implements Capability, ActionList {
 
     @Override public String mediaContentId(String actionId) {
         if (actionId == null) return null;
-        Action a = catalog(null).find(actionId);
+        Action a = everything().find(actionId);
         return a != null && a.kind == Kind.MEDIA ? a.value : null;
+    }
+
+    // ── pinned media actions ──────────────────────────────────────────────────
+
+    private static final String PIN_FILE = "pinned-media.json";
+    private final Object pinLock = new Object();
+    private PinnedMedia pinned;
+
+    /** The configured actions and, after them, the pinned media actions. */
+    private ActionCatalog everything() {
+        return catalog(null).withPinned(pinned());
+    }
+
+    private File pinFile() { return new File(PayloadState.dir(core.shell().payloadDir()), PIN_FILE); }
+
+    private PinnedMedia pinned() {
+        synchronized (pinLock) {
+            if (pinned == null) {
+                String json = null;
+                try {
+                    File f = pinFile();
+                    if (f.isFile()) json = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                } catch (Exception unreadable) {
+                    core.shell().note("ACTION", "could not read the pinned media actions: " + unreadable.getClass().getSimpleName());
+                }
+                pinned = PinnedMedia.fromJson(json);
+            }
+            return pinned;
+        }
+    }
+
+    /**
+     * Asks the launcher to pin a shortcut that plays this content (Android's own dialog
+     * is the confirmation) and, once the launcher has taken the request, records the
+     * pinned action so a one-action button can be given it too. The shortcut launches
+     * the action by its id, keyed like every action link; the content id is never in a
+     * link. The answer is {accepted, reason?} and nothing else.
+     */
+    private JSONObject pinMedia(String contentId, String label) throws Exception {
+        SurfaceSink s = sink;
+        if (s == null) return refusal("not_available");
+        if (!s.canPin()) return refusal("launcher_cannot_pin");
+        Action a = new Action(PinnedMedia.idFor(contentId), label, "play", Kind.MEDIA, contentId);
+        Action configured = catalog(null).find(a.id);
+        if (configured != null) return refusal("failed");
+        try {
+            s.pin(a, uri(a));
+        } catch (UnsupportedException launcher) {
+            return refusal("launcher_refused");
+        } catch (RuntimeException launcher) {
+            return refusal("launcher_refused");
+        }
+        synchronized (pinLock) {
+            PinnedMedia p = pinned();
+            List<PinnedMedia.Entry> dropped = p.add(contentId, label, System.currentTimeMillis());
+            try {
+                File f = pinFile();
+                File dir = f.getParentFile();
+                if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("no state directory");
+                File part = new File(f.getPath() + ".part");
+                Files.write(part.toPath(), p.toJson().getBytes(StandardCharsets.UTF_8));
+                if (!part.renameTo(f)) throw new IOException("rename failed");
+            } catch (IOException disk) {
+                core.shell().note("ACTION", "could not save the pinned media actions: " + disk.getClass().getSimpleName());
+            }
+            core.shell().note("ACTION", "pinned " + a.id + (dropped.isEmpty() ? "" : "; dropped the oldest, " + dropped.get(0).id));
+        }
+        // The widgets redraw (the chooser lists the new action) and a dropped action's
+        // pinned shortcut is disabled.
+        try {
+            publish(new ArrayList<String>());
+        } catch (RuntimeException launcher) {
+            core.shell().note("ACTION", "could not publish after a pin: " + launcher.getClass().getSimpleName());
+        }
+        return new JSONObject().put("accepted", true);
+    }
+
+    private static JSONObject refusal(String reason) throws Exception {
+        return new JSONObject().put("accepted", false).put("reason", reason);
     }
 
     // ── the list and its links ────────────────────────────────────────────────
@@ -211,7 +304,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     // ── running ───────────────────────────────────────────────────────────────
 
     private JSONObject run(String id) throws Exception {
-        final Action a = catalog(null).find(id == null ? "" : id);
+        final Action a = everything().find(id == null ? "" : id);
         if (a == null) throw new IllegalArgumentException("unknown action");
         if (a.kind == Kind.API) {
             String outcome = callApi(a);
@@ -287,7 +380,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         // The launcher keeps a pinned shortcut's intent, key and all. Each is rewritten
         // under the key now in force, so none outlives the run it was written in.
         try {
-            s.refreshPinned(SurfacePlan.pins(catalog(null), s.pinnedIds()), this::uri);
+            s.refreshPinned(SurfacePlan.pins(everything(), s.pinnedIds()), this::uri);
         } catch (RuntimeException launcher) {
             core.shell().note("ACTION", "could not refresh the pinned shortcuts: " + launcher.getClass().getSimpleName());
         }

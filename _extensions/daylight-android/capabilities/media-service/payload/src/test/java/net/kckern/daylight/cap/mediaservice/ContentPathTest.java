@@ -12,6 +12,16 @@ public class ContentPathTest {
         assertEquals("a source with no local id is its top level", "/api/v1/list/plex", ContentPath.of("list", "plex:"));
     }
 
+    /** A source is never a URL scheme: an id like javascript:x or intent:x is not household content. */
+    @Test public void aSourceThatIsAUrlSchemeIsRefused() {
+        for (String bad : new String[] { "http:x", "https:x", "javascript:alert(1)", "data:x", "content:x", "intent:x",
+                "file:x", "blob:x", "about:x", "daylight:action", "ftp:x", "ws:x", "wss:x", "mailto:x", "tel:x", "market:x" }) {
+            assertFalse("accepted " + bad, ContentId.valid(bad));
+        }
+        assertTrue(ContentId.valid("plex:x"));
+        assertTrue(ContentId.valid("files:x"));
+    }
+
     @Test public void refusesAnythingThatIsNotAContentId() {
         for (String bad : new String[] { null, "", "12345", ":12345", "plex/..:1", "plex:../../admin", "plex:a/./b",
                 "plex:a\\b", "plex:a|b", "plex:a\nb", "PLEX:1", "http://evil.example/a.mp3", "plex:a//b", "plex:/a" }) {

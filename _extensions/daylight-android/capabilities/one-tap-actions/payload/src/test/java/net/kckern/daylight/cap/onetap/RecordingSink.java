@@ -42,8 +42,13 @@ final class RecordingSink implements SurfaceSink {
         disabled.addAll(pins.disable);
     }
 
+    boolean refuse;
+
+    @Override public boolean canPin() { return pinSupported; }
+
     @Override public void pin(Action action, String uri) {
         if (!pinSupported) throw new UnsupportedException("this launcher does not pin shortcuts");
+        if (refuse) throw new UnsupportedException("the launcher refused the pin request");
         pinned = action.id + " " + uri;
         pinnedIds.add(SurfacePlan.pinId(action));
     }

@@ -42,6 +42,15 @@ public final class WebViewHostCapability implements Capability {
 
     @Override public String name() { return "webview-host"; }
 
+    /**
+     * Whether the page bridge offers pinMedia and canPinMedia: only in a build that
+     * lists media-service, which provides the MediaPinner. A kiosk lists no
+     * media-service, so its page has neither member (a per-device test holds this).
+     */
+    public static boolean pinMediaOffered(CoreContext core) {
+        return core.services().find(net.kckern.daylight.core.spi.MediaPinner.class) != null;
+    }
+
     @Override public void register(CoreContext core) {
         this.core = core;
         this.session = new KioskSession(core);

@@ -16,6 +16,9 @@ public class BridgeDispatcherTest {
     private final List<String> calls = new ArrayList<>();
     private String url = "https://app.example.test/piano";
     private BridgeDispatcher bridge;
+    private boolean pinAvailable = true;
+    private String pinAnswer = "{\"accepted\":true}";
+    private long now = 1_000_000;
 
     @Before public void setUp() {
         BridgeDispatcher.Actions actions = new BridgeDispatcher.Actions() {
@@ -26,9 +29,15 @@ public class BridgeDispatcherTest {
             @Override public boolean reboot() { calls.add("reboot"); return false; }
             @Override public void setBackMode(String mode) { calls.add("back " + mode); }
             @Override public String volumeJson(int stream) { calls.add("volume " + stream); return "{\"level\":40}"; }
+            @Override public boolean canPinMedia() { return pinAvailable; }
+            @Override public org.json.JSONObject pinMedia(String contentId, String label) {
+                calls.add("pin " + contentId + " " + label);
+                try { return new org.json.JSONObject(pinAnswer); } catch (Exception e) { throw new AssertionError(e); }
+            }
         };
         tokens = new BridgeTokens(KEY);
-        bridge = new BridgeDispatcher(tokens, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url, actions);
+        bridge = new BridgeDispatcher(tokens, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url, actions,
+                new PinGate(() -> now));
         TOKEN = bridge.open(KEY);
         assertFalse(TOKEN.isEmpty());
     }
@@ -109,7 +118,7 @@ public class BridgeDispatcherTest {
         for (java.lang.reflect.Method m : BridgeDispatcher.Actions.class.getDeclaredMethods()) actions.add(m.getName());
         assertEquals("the bridge does exactly what the contract lists",
                 new java.util.TreeSet<>(java.util.Arrays.asList("capabilitiesJson", "launch", "screen", "restartApp",
-                        "reboot", "setBackMode", "volumeJson")), actions);
+                        "reboot", "setBackMode", "volumeJson", "canPinMedia", "pinMedia")), actions);
     }
 
     // ── tokens belong to a document ──────────────────────────────────────────
@@ -156,5 +165,127 @@ public class BridgeDispatcherTest {
         url = "https://app.example.test/piano";            // the navigation callback arrives
         tokens.navigated();
         assertEquals("true", bridge.call(early, "screen", "true"));
+    }
+
+    // ── pinMedia and canPinMedia: the threat cases ────────────────────────────
+
+    private static final String PIN = "{\"contentId\":\"plex:12345\",\"label\":\"Morning music\"}";
+
+    private String topToken() {
+        String t = bridge.open(KEY, "top");
+        assertFalse(t.isEmpty());
+        return t;
+    }
+
+    private static org.json.JSONObject answer(String raw) throws Exception { return new org.json.JSONObject(raw); }
+
+    @Test public void theTopFrameOfTheConfiguredOriginCanPinAndIsToldItWasAccepted() throws Exception {
+        String top = topToken();
+        assertEquals("true", bridge.call(top, "canPinMedia", ""));
+        org.json.JSONObject r = answer(bridge.call(top, "pinMedia", PIN));
+        assertTrue(r.getBoolean("accepted"));
+        assertEquals(1, r.length());
+        assertEquals(java.util.Collections.singletonList("pin plex:12345 Morning music"), calls);
+    }
+
+    @Test public void threat_anotherOriginInTheMainFrameGetsNoAnswerAndPinsNothing() {
+        String top = topToken();
+        url = "https://evil.example/";
+        assertEquals("", bridge.call(top, "pinMedia", PIN));
+        assertEquals("", bridge.call(top, "canPinMedia", ""));
+        assertTrue(calls.isEmpty());
+    }
+
+    /** A cross-origin iframe has no key and so no token; an allowed-origin iframe has a token marked as a frame. */
+    @Test public void threat_anIframeCannotPin() throws Exception {
+        String frame = bridge.open(KEY, "frame");
+        assertEquals("false", bridge.call(frame, "canPinMedia", ""));
+        org.json.JSONObject r = answer(bridge.call(frame, "pinMedia", PIN));
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("not_top_frame", r.getString("reason"));
+        assertEquals("a token opened without saying where it is counts as a frame", "not_top_frame",
+                answer(bridge.call(TOKEN, "pinMedia", PIN)).getString("reason"));
+        assertEquals("a guessed token is no token", "", bridge.call("0123456789abcdef0123456789abcdef", "pinMedia", PIN));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test public void threat_aCallAfterNavigationWithAnOldTokenGetsNoAnswer() {
+        String top = topToken();
+        tokens.navigated();
+        tokens.navigated();
+        assertEquals("", bridge.call(top, "pinMedia", PIN));
+        assertEquals("", bridge.call(top, "canPinMedia", ""));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test public void threat_aRequestThatIsNotAnObjectOfTwoStringsIsABadRequest() throws Exception {
+        String top = topToken();
+        for (String bad : new String[] { "", "not json", "[]", "{}", "{\"contentId\":5,\"label\":\"x\"}",
+                "{\"contentId\":\"plex:1\"}", "{\"label\":\"x\"}" }) {
+            now += 10_000;
+            assertEquals(bad, "bad_request", answer(bridge.call(top, "pinMedia", bad)).getString("reason"));
+        }
+        assertTrue(calls.isEmpty());
+    }
+
+    /** The content id and the label rules are media-service's; its reason comes back as it is. */
+    @Test public void threat_aHostileLabelOrContentIdIsRefusedWithTheReasonMediaServiceGave() throws Exception {
+        String top = topToken();
+        pinAnswer = "{\"accepted\":false,\"reason\":\"invalid_label\"}";
+        assertEquals("invalid_label", answer(bridge.call(top, "pinMedia",
+                "{\"contentId\":\"plex:1\",\"label\":\"\\u202Eevil\"}")).getString("reason"));
+        now += 10_000;
+        pinAnswer = "{\"accepted\":false,\"reason\":\"invalid_content_id\"}";
+        assertEquals("invalid_content_id", answer(bridge.call(top, "pinMedia",
+                "{\"contentId\":\"https://evil.example/x\",\"label\":\"x\"}")).getString("reason"));
+    }
+
+    @Test public void threat_aFloodIsRefusedPastOneRequestInFiveSecondsAndCounted() throws Exception {
+        String top = topToken();
+        assertTrue(answer(bridge.call(top, "pinMedia", PIN)).getBoolean("accepted"));
+        for (int i = 0; i < 9; i++) {
+            now += 400;
+            assertEquals("rate_limited", answer(bridge.call(top, "pinMedia", PIN)).getString("reason"));
+        }
+        assertEquals(9, bridge.pinRefusals());
+        assertEquals("one dialog, not ten", 1, calls.size());
+        now += 5_000;
+        assertTrue("five seconds after the last accepted request", answer(bridge.call(top, "pinMedia", PIN)).getBoolean("accepted"));
+        assertTrue("canPinMedia is a read and is not limited", "true".equals(bridge.call(top, "canPinMedia", "")));
+    }
+
+    @Test public void theLimitIsPerDocument() throws Exception {
+        String a = topToken();
+        assertTrue(answer(bridge.call(a, "pinMedia", PIN)).getBoolean("accepted"));
+        tokens.navigated();
+        url = "https://app.example.test/media";
+        String b = topToken();
+        assertTrue(answer(bridge.call(b, "pinMedia", PIN)).getBoolean("accepted"));
+    }
+
+    /** Whatever the native side answers, the page gets accepted and a reason: never a link, the key or the pinned list. */
+    @Test public void threat_thePageCannotLearnTheKeyALinkOrThePinnedActions() throws Exception {
+        String top = topToken();
+        pinAnswer = "{\"accepted\":true,\"uri\":\"daylight://action/media-1#k=SECRETKEY\",\"pins\":[\"media-1\"],\"reason\":\"x\"}";
+        String raw = bridge.call(top, "pinMedia", PIN);
+        assertFalse(raw.contains("SECRETKEY"));
+        assertFalse(raw.contains("daylight://"));
+        assertFalse(raw.contains("media-1"));
+        org.json.JSONObject r = answer(raw);
+        assertEquals(1, r.length());
+        assertTrue(r.getBoolean("accepted"));
+        now += 10_000;
+        pinAnswer = "{\"accepted\":false,\"reason\":\"daylight://action/x#k=SECRETKEY\"}";
+        assertEquals("a reason that is not a plain word is not passed on", "failed",
+                answer(bridge.call(top, "pinMedia", PIN)).getString("reason"));
+        assertFalse(bridge.call(top, "capabilities", "").contains("SECRETKEY"));
+    }
+
+    @Test public void inABuildThatCannotPinNothingIsPinned() throws Exception {
+        pinAvailable = false;
+        String top = topToken();
+        assertEquals("false", bridge.call(top, "canPinMedia", ""));
+        pinAnswer = "{\"accepted\":false,\"reason\":\"not_available\"}";
+        assertEquals("not_available", answer(bridge.call(top, "pinMedia", PIN)).getString("reason"));
     }
 }

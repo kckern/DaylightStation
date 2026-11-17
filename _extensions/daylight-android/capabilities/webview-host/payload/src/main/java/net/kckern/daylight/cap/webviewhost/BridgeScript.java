@@ -16,12 +16,22 @@ final class BridgeScript {
      * after that presents the token, which stops working when the document is replaced.
      */
     static String shim(String sessionKey, String version, String deviceId) {
+        return shim(sessionKey, version, deviceId, false);
+    }
+
+    /**
+     * @param pinMedia whether the build offers pinMedia and canPinMedia: only a build
+     *                 that lists media-service (a MediaPinner is provided). Without it
+     *                 the members do not exist in the page.
+     */
+    static String shim(String sessionKey, String version, String deviceId, boolean pinMedia) {
         return "(function(){"
                 + "if(window.daylight)return;"
                 + "var n=window." + NATIVE_NAME + ";if(!n)return;"
                 // The token is asked for at the first call and kept. Asking at document start
                 // would make one refused answer last for the document's whole life.
-                + "var T=\"\";function t(){if(!T){try{T=n.open(" + JSONObject.quote(sessionKey) + ")||\"\";}catch(e){}}return T;}"
+                + "var T=\"\";function t(){if(!T){try{T=n.open(" + JSONObject.quote(sessionKey)
+                + ",window.top===window?\"top\":\"frame\")||\"\";}catch(e){}}return T;}"
                 + "function c(m,a){try{return n.call(t(),m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
                 + "window.daylight=Object.freeze({"
                 + "version:" + JSONObject.quote(version) + ","
@@ -33,6 +43,11 @@ final class BridgeScript {
                 + "reboot:function(){return c(\"reboot\")===\"true\";},"
                 + "setBackMode:function(m){c(\"setBackMode\",m);},"
                 + "volume:function(s){return c(\"volume\",s===undefined?3:s)||\"{}\";}"
+                + (pinMedia ? ","
+                        + "canPinMedia:function(){return c(\"canPinMedia\")===\"true\";},"
+                        + "pinMedia:function(j){var r=c(\"pinMedia\",typeof j===\"string\"?j:JSON.stringify(j));"
+                        + "try{var o=JSON.parse(r);if(o&&typeof o.accepted===\"boolean\")return o;}catch(e){}"
+                        + "return {accepted:false,reason:\"refused\"};}" : "")
                 + "});"
                 + "})();";
     }

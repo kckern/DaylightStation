@@ -11,7 +11,8 @@ public class BridgeScriptTest {
                 "restartApp:", "reboot:", "setBackMode:", "volume:" }) {
             assertTrue("missing " + member, js.contains(member));
         }
-        assertTrue("the key is spent on a token of this document's own", js.contains("n.open(\"tok-123\")"));
+        assertTrue("the key is spent on a token of this document's own, saying whether it is the top frame",
+                js.contains("n.open(\"tok-123\",window.top===window?\"top\":\"frame\")"));
         assertTrue("asked for at the first call, then kept", js.contains("function t(){if(!T){"));
         assertTrue("every call presents the token, never the key", js.contains("n.call(t(),m,"));
         assertEquals("the key appears once: it is never passed with a call", 1, js.split("tok-123", -1).length - 1);
@@ -45,4 +46,22 @@ public class BridgeScriptTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void eventNamesAreLowerCaseLettersOnly() { BridgeScript.event("x');alert(1);//", "{}"); }
+
+    // ── pinning media: only in a build that has media-service ─────────────────
+
+    @Test public void withoutPinningTheShimHasNoPinMembers() {
+        String js = BridgeScript.shim("tok-123", "p3-kiosk", "piano");
+        assertFalse(js.contains("pinMedia"));
+        assertFalse(js.contains("canPinMedia"));
+        assertEquals(js, BridgeScript.shim("tok-123", "p3-kiosk", "piano", false));
+    }
+
+    @Test public void withPinningTheShimHasPinMediaAndCanPinMediaAndStillCarriesTheKeyOnce() {
+        String js = BridgeScript.shim("tok-123", "p1-phone", "phone", true);
+        assertTrue(js.contains("canPinMedia:function(){return c(\"canPinMedia\")===\"true\";}"));
+        assertTrue(js.contains("pinMedia:function(j){"));
+        assertTrue("the page gets an object with accepted, and a reason when it was refused",
+                js.contains("{accepted:false,reason:\"refused\"}"));
+        assertEquals(1, js.split("tok-123", -1).length - 1);
+    }
 }

@@ -21,6 +21,9 @@ final class ContentId {
         if (id == null || id.length() > MAX_LENGTH) return false;
         int colon = id.indexOf(':');
         if (colon <= 0 || !SOURCE.matcher(id.substring(0, colon)).matches()) return false;
+        // A content id is never a URL: a source named like a URL scheme is refused, so
+        // "javascript:..." or "intent:..." cannot pass for household content.
+        if (URL_SCHEMES.contains(id.substring(0, colon))) return false;
         String local = id.substring(colon + 1);
         // A source alone ("plex:") is its top level.
         if (local.isEmpty()) return true;
@@ -36,6 +39,10 @@ final class ContentId {
         }
         return true;
     }
+
+    private static final java.util.Set<String> URL_SCHEMES = new java.util.HashSet<>(java.util.Arrays.asList(
+            "http", "https", "ftp", "ws", "wss", "file", "content", "intent", "android-app", "javascript", "data", "blob",
+            "about", "daylight", "mailto", "tel", "sms", "market"));
 
     private static final java.util.Set<String> MODIFIERS = new java.util.HashSet<>(
             java.util.Arrays.asList("playable", "launchable", "shuffle", "recent_on_top", "expand"));

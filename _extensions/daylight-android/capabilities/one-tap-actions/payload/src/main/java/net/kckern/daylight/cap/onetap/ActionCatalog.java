@@ -94,6 +94,18 @@ final class ActionCatalog {
         return null;
     }
 
+    /**
+     * This catalog and the pinned media actions after it. A pinned action whose id a
+     * configured action already has is left out: the settings line wins.
+     */
+    ActionCatalog withPinned(PinnedMedia pinned) {
+        List<Action> out = new ArrayList<>(actions);
+        for (PinnedMedia.Entry e : pinned.all()) {
+            if (find(e.id) == null) out.add(new Action(e.id, e.label, "play", Kind.MEDIA, e.contentId));
+        }
+        return new ActionCatalog(out);
+    }
+
     /** What is wrong with one line, without its slot; null for an empty or a well-formed line. */
     static String problem(String raw) {
         try {

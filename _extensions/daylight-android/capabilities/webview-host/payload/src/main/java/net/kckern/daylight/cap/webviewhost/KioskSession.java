@@ -46,6 +46,7 @@ import net.kckern.daylight.core.spi.AppLaunch;
 import net.kckern.daylight.core.spi.DeviceAdminAccess;
 import net.kckern.daylight.core.spi.KioskSurface;
 import net.kckern.daylight.core.spi.LockdownControl;
+import net.kckern.daylight.core.spi.MediaPinner;
 import net.kckern.daylight.core.spi.ScreenControl;
 import net.kckern.daylight.core.spi.VolumeControl;
 
@@ -104,6 +105,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private volatile Context app;
     private volatile KioskHost host;
     private volatile BridgeDispatcher dispatcher;
+    /** pinMedia's limit and its count of refusals, kept across WebView rebuilds. */
+    private final PinGate pinGate = new PinGate(System::currentTimeMillis);
     private volatile OriginPolicy origins = OriginPolicy.fromSettings("", "");
     private volatile NavigationPolicy navigation = NavigationPolicy.of("");
     /** Null until a WebView has been built. */
@@ -332,7 +335,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         BridgeAvailability availability = BridgeAvailability.decide(!origins.rules().isEmpty(), supported, refused);
         bridge = availability;
         if (availability.available) {
-            dispatcher = new BridgeDispatcher(tokens, origins, () -> mainUrl, new PageActions());
+            dispatcher = new BridgeDispatcher(tokens, origins, () -> mainUrl, new PageActions(), pinGate);
             // Visible to every frame of every page. It answers only to a token, and a
             // token is issued only for the key the document-start shim carries.
             web.addJavascriptInterface(new NativeBridge(), BridgeScript.NATIVE_NAME);
@@ -367,7 +370,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     }
 
     private String shim() {
-        return BridgeScript.shim(sessionKey, core.payloadVersion(), core.deviceId());
+        return BridgeScript.shim(sessionKey, core.payloadVersion(), core.deviceId(), WebViewHostCapability.pinMediaOffered(core));
     }
 
     private void destroyWebView() {
@@ -695,10 +698,13 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** The object addJavascriptInterface exposes. Runs on the WebView's bridge thread. */
     private final class NativeBridge {
-        /** The shim's first call: its key for a token that belongs to the calling document. */
-        @JavascriptInterface public String open(String key) {
+        /**
+         * The shim's first call: its key for a token that belongs to the calling document,
+         * and whether that document is the top frame ("top") or a frame.
+         */
+        @JavascriptInterface public String open(String key, String frame) {
             BridgeDispatcher d = dispatcher;
-            return d == null ? "" : d.open(key);
+            return d == null ? "" : d.open(key, frame);
         }
 
         @JavascriptInterface public String call(String token, String method, String arg) {
@@ -742,6 +748,21 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         @Override public String volumeJson(int stream) {
             VolumeControl volume = core.services().find(VolumeControl.class);
             return volume == null ? "{}" : volume.read(stream).toString();
+        }
+
+        @Override public boolean canPinMedia() {
+            MediaPinner pinner = core.services().find(MediaPinner.class);
+            return pinner != null && pinner.canPin();
+        }
+
+        /**
+         * On the WebView's bridge thread: the launcher's pin dialog is asked for here and
+         * the answer is whether it was. Nothing about the request is logged but the
+         * outcome, which media-service notes.
+         */
+        @Override public JSONObject pinMedia(String contentId, String label) {
+            MediaPinner pinner = core.services().find(MediaPinner.class);
+            return pinner == null ? null : pinner.pin(contentId, label);
         }
     }
 
@@ -1111,7 +1132,9 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 .put("bridgeReason", b == null || b.reason == null ? JSONObject.NULL : b.reason)
                 // Renderer crashes in a row (0 once the renderer has stayed up five minutes), and all since start.
                 .put("rendererLosses", rendererLosses.consecutive(System.currentTimeMillis()))
-                .put("rendererLossesTotal", rendererLosses.total());
+                .put("rendererLossesTotal", rendererLosses.total())
+                // pinMedia requests refused for coming within five seconds of the document's last.
+                .put("pinRequestsRefused", pinGate.refused());
         // Beyond the contract's list: lets a wait:false caller tell "still loading" from "settled".
         String loading = loads.loadingUrl(), loadingId = loads.loadingId();
         o.put("loading", loading != null)

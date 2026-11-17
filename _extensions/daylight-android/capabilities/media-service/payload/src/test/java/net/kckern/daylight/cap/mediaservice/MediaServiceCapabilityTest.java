@@ -179,6 +179,74 @@ public class MediaServiceCapabilityTest {
         assertEquals(404, cap.call(new JSONObject().put("op", "action").put("action", "radio")).status);
     }
 
+    // ── pinning media at a page's request ─────────────────────────────────────
+
+    private final List<String> pinnedHere = new ArrayList<>();
+
+    private volatile boolean shortcutsCan;
+    private volatile String shortcutsAnswer;
+    private boolean shortcutsProvided;
+
+    /** The registry keeps the first provider; later calls change what that one answers. */
+    private void provideShortcuts(boolean can, String answerJson) {
+        shortcutsCan = can;
+        shortcutsAnswer = answerJson;
+        if (shortcutsProvided) return;
+        shortcutsProvided = true;
+        core.services().provide(net.kckern.daylight.core.spi.ShortcutPinner.class, new net.kckern.daylight.core.spi.ShortcutPinner() {
+            @Override public boolean canPin() { return shortcutsCan; }
+            @Override public JSONObject pinMedia(String contentId, String label) throws Exception {
+                pinnedHere.add(contentId + " " + label);
+                return new JSONObject(shortcutsAnswer);
+            }
+        });
+    }
+
+    private net.kckern.daylight.core.spi.MediaPinner pinner() {
+        net.kckern.daylight.core.spi.MediaPinner p = core.services().find(net.kckern.daylight.core.spi.MediaPinner.class);
+        assertNotNull("media-service provides the pinner", p);
+        return p;
+    }
+
+    @Test public void aCheckedRequestIsHandedToTheShortcutsWithItsLabelTrimmed() throws Exception {
+        provideShortcuts(true, "{\"accepted\":true}");
+        JSONObject r = pinner().pin("plex:12345", "  Morning music ");
+        assertTrue(r.toString(), r.getBoolean("accepted"));
+        assertEquals(Collections.singletonList("plex:12345 Morning music"), pinnedHere);
+        assertTrue(pinner().canPin());
+    }
+
+    @Test public void aBadContentIdOrLabelIsRefusedAndNothingIsPinned() throws Exception {
+        provideShortcuts(true, "{\"accepted\":true}");
+        assertEquals("invalid_content_id", pinner().pin("https://evil.example/x", "Label").getString("reason"));
+        assertEquals("invalid_content_id", pinner().pin("plex:../x", "Label").getString("reason"));
+        assertEquals("invalid_content_id", pinner().pin("plex:1/shuffle", "Label").getString("reason"));
+        assertEquals("invalid_label", pinner().pin("plex:1", "‮evil").getString("reason"));
+        assertEquals("invalid_label", pinner().pin("plex:1", "").getString("reason"));
+        assertFalse(pinner().pin("plex:1", null).getBoolean("accepted"));
+        assertTrue(pinnedHere.isEmpty());
+    }
+
+    @Test public void withoutShortcutsOrALauncherThatPinsNothingCanBePinned() throws Exception {
+        assertFalse(pinner().canPin());
+        JSONObject r = pinner().pin("plex:1", "Radio");
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("not_available", r.getString("reason"));
+        provideShortcuts(false, "{\"accepted\":true}");
+        assertFalse(pinner().canPin());
+    }
+
+    /** Whatever the shortcuts answer, only accepted and a reason go back toward the page. */
+    @Test public void theAnswerHoldsAcceptedAndAReasonAndNothingElse() throws Exception {
+        provideShortcuts(true, "{\"accepted\":false,\"reason\":\"launcher_refused\",\"uri\":\"daylight://action/x#k=SECRET\",\"id\":\"media-1\"}");
+        JSONObject r = pinner().pin("plex:1", "Radio");
+        assertEquals(2, r.length());
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("launcher_refused", r.getString("reason"));
+        provideShortcuts(true, "{\"accepted\":true,\"uri\":\"daylight://action/x#k=SECRET\"}");
+        assertEquals("{\"accepted\":true}", pinner().pin("plex:1", "Radio").toString());
+    }
+
     @Test public void resolveAnswersWithTracksAndWhereToStart() throws Exception {
         api.responses.put("queue plex:10", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"One\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/11\",\"duration\":100}]}");
         JSONObject r = post("/media/resolve", "{\"ids\":[\"c:plex:10\"]}");

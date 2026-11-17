@@ -325,10 +325,12 @@ tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
 added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
 `star`.
 
-An action exists only as a settings line. Running one takes its id and nothing
-else: no part of a link, an intent or a request body reaches an `api:` action's
-method, path or body. The page bridge has no call that writes a setting, so a page
-cannot add or change an action either. With no control API on the phone, changing
+An action exists as a settings line, or as a pinned media action (up to 24, made
+at the owner's media page through the page bridge's `pinMedia` and Android's pin
+dialog; see "Page bridge on the phone: pinning media"). Running one takes its id
+and nothing else: no part of a link, an intent or a request body reaches an `api:`
+action's method, path or body. The page bridge has no call that writes a setting,
+and the only action a page can add is a pinned one that plays a content id. With no control API on the phone, changing
 one means changing `devices/phone.yml` and installing the new build.
 
 An `api:` action is not queued. With the VPN down it answers "no connection" and
@@ -626,6 +628,110 @@ out of reach the last answer is served, however old; a level never loaded fails
 (an empty shelf would read as an empty library). An image is given to a browser
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
+
+## Page bridge on the phone: pinning media
+
+The site's full-screen media view, inside the phone app, can ask the app to pin
+what is on screen (a playlist, an album, a track) as a one-tap action. This is the
+first page-bridge call that changes something on the phone at a page's request.
+The web side's "Add to home screen" control is built from this contract; nothing
+here has run on a phone.
+
+### Members
+
+Both exist on `window.daylight` only in a build that lists `media-service` (the
+phone). A kiosk's page has neither: a per-device test (`DeviceDefaultsTest`) fails a
+build where the members are offered without `media-service`, or on a kiosk. Like
+every member, they exist only where the bridge does (a WebView with document-start
+injection, a page of an allowed origin; see `kiosk.md`). Test for them before use:
+`typeof window.daylight?.pinMedia === "function"`.
+
+| Member | Takes | Returns |
+|---|---|---|
+| `daylight.canPinMedia()` | nothing | `true` or `false`. Read-only and not rate limited |
+| `daylight.pinMedia(request)` | an object, or its JSON text: `{"contentId": "<source>:<localId>", "label": "<text>"}` | an object `{accepted: boolean, reason?: string}` |
+
+`canPinMedia()` is `true` when all of these hold at the moment of the call: the
+calling document holds a bridge token (it is a document of an allowed origin that
+the shim was injected into), the main frame is on an allowed origin, the calling
+document is the top frame, and the launcher supports pinning shortcuts
+(`ShortcutManager.isRequestPinShortcutSupported`). It is `false` otherwise,
+including in a frame and on a launcher that cannot pin.
+
+`pinMedia` answers at once. `accepted: true` means the launcher took the request and
+Android's own "Add to home screen" dialog is showing; whether the owner then adds
+the shortcut is not reported (nothing is pinned without the owner's tap there). The
+web side says something like "Confirm on the dialog", never "Added".
+
+`accepted: false` comes with one `reason`:
+
+| `reason` | When |
+|---|---|
+| `refused` | No answer from the native side: the token is not this document's (an old document, a guessed token), the main frame is on another origin, or the bridge is gone. Built by the shim |
+| `not_top_frame` | The calling document is a frame, not the top frame |
+| `rate_limited` | A second request from the same document within five seconds of its last request that was let through. Counted (`pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process) |
+| `bad_request` | Not a JSON object, or `contentId` or `label` missing or not a string |
+| `invalid_content_id` | Fails the media service's content id rule: a URL, a source named like a URL scheme (`http`, `javascript`, `intent`, ...), an empty, `.` or `..` segment, a backslash, a bar or a control character, a modifier segment (`shuffle`, `playable`, `launchable`, `recent_on_top`, `expand`), or longer than 400 characters |
+| `invalid_label` | After trimming, empty or longer than 40 characters (counted as code points), or holding a control character, a format character (every bidi override and isolate, the direction marks, zero-width characters), a line or paragraph separator, a lone surrogate, a private-use or unassigned character |
+| `not_available` | The build has no `one-tap-actions`, or the app's surfaces are not running |
+| `launcher_cannot_pin` | The launcher does not support pinning shortcuts |
+| `launcher_refused` | The launcher refused the request (`requestPinShortcut` returned false or threw) |
+| `failed` | Anything else, including a content id whose derived action id is already a configured action's |
+
+The answer never holds anything else: no link, no install key, no action id and no
+list of what is pinned. The dispatcher builds it from `accepted` and a reason that
+must be one lower-case word; whatever else the native side holds is dropped.
+
+### What a pin does
+
+1. media-service checks the content id with the same code that guards every play
+   and browse request (`ContentId`), and the label (`PinRequest`).
+2. one-tap-actions makes an action for it: id `media-` and twelve hex digits of the
+   content id's SHA-256 (the same content is always the same action; the id does
+   not spell the content), the label, the icon `play`, target `media:<contentId>`.
+3. It asks the launcher to pin a shortcut with the id `pin-<action id>`, whose link
+   is `daylight://action/<action id>#k=<key>`, keyed like every action link. The
+   content id is never in a link from outside.
+4. Only when the launcher took the request is the action recorded, in the app's
+   private state (`files/payloads/state/pinned-media.json`), newest last. At most 24
+   are kept: a 25th drops the oldest, and the oldest one's pinned shortcut is
+   disabled ("This action is no longer set up"). Pinning the same content again
+   renames it and makes it the newest.
+5. The surfaces are published again: the "Daylight button" chooser lists the
+   pinned action after the configured ones, and a button bound to it plays with no
+   window (the play service asks the payload for an action id, and the pinned
+   actions are among those it answers for). The pinned shortcut is rewritten under
+   each new key like any pinned shortcut.
+
+A pinned action is not a launcher (long-press) shortcut, a tile or one of the
+four-button widget's buttons unless a settings line names it. A configured action
+of the same id wins. There is no way to remove a pinned action from the chooser
+other than letting it age out; removing the pinned shortcut from the home screen is
+the owner's, as for every pinned shortcut.
+
+### Threat cases, each a test
+
+| Case | Outcome | Test |
+|---|---|---|
+| A page of another origin in the main frame | No answer (`refused`); nothing pinned | `BridgeDispatcherTest.threat_anotherOriginInTheMainFrame...` |
+| A frame (an iframe) | Of another origin: no key, no token, no answer. Of an allowed origin: `not_top_frame`, and `canPinMedia()` is false | `threat_anIframeCannotPin` |
+| A call after navigation with an old document's token | No answer | `threat_aCallAfterNavigationWithAnOldToken...` |
+| A hostile label (bidi override, control character, separator, too long) | `invalid_label` | `PinRequestTest.aHostileLabelIsRefused`, `MediaServiceCapabilityTest.aBadContentIdOrLabel...` |
+| A content id that is a URL, holds `..` or a modifier segment | `invalid_content_id` | `PinRequestTest.aContentIdThatIsAUrl...`, `ContentPathTest.aSourceThatIsAUrlSchemeIsRefused` |
+| A flood | One request per document per five seconds; the rest `rate_limited` and counted; one dialog | `threat_aFloodIsRefused...`, `theLimitIsPerDocument` |
+| The page trying to learn the key, a link or the pinned list | The answer is `{accepted, reason?}` only; an unexpected reason becomes `failed` | `threat_thePageCannotLearnTheKey...`, `MediaServiceCapabilityTest.theAnswerHoldsAcceptedAndAReason...`, `SurfaceRoutesTest.theAnswerNeverHoldsALink...` |
+| A kiosk build | No member at all | `DeviceDefaultsTest.onlyADeviceWithMediaServiceOffersThePageToPinMedia`, `BridgeScriptTest.withoutPinningTheShimHasNoPinMembers` |
+
+What is not covered: an allowed-origin frame can call its parent's
+`window.daylight.pinMedia` (same origin, so the browser allows it), and that call is
+the top frame's. Such a frame is the household site itself. Script in the top
+frame of the site can call `pinMedia` without the owner having tapped anything;
+the five-second limit and Android's dialog are what stand between that and a pin.
+
+Unproven on a phone: that `requestPinShortcut` shows its dialog when called from
+the WebView's bridge thread, that the launcher accepts a shortcut id and a long
+label of this shape, and that the pinned shortcut survives the key rotation (the
+same mechanism as `POST /actions/pin`'s shortcuts).
 
 ## `android-auto`
 

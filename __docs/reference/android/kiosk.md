@@ -159,7 +159,8 @@ remedy.
 
 The native object behind the bridge is visible to every frame (an Android rule),
 so it answers only to a token. The shim carries a session key, with which each
-document asks for a token of its own at its first call; every call presents that
+document asks for a token of its own at its first call (saying whether it is the
+top frame, which only `pinMedia` and `canPinMedia` read); every call presents that
 token, and the key is never sent with a call. A token is tied to the document it was issued to: each
 main-frame navigation starts a new generation, and a token is refused once the
 document it was issued to has been replaced. Because the navigation callback and a
@@ -179,6 +180,7 @@ another origin has no `window.daylight`. The bridge is rebuilt with the WebView,
 | `daylight.reboot()` | `false` unless this app is device owner |
 | `daylight.setBackMode(mode)` | `"page"`, `"reload"` or `"ignore"`; anything else is ignored |
 | `daylight.volume(stream)` | A JSON string `{level, index, maxIndex}`, or `{}` in a build with no `volume` |
+| `daylight.canPinMedia()`, `daylight.pinMedia(json)` | Only in a build that lists `media-service` (the phone); a kiosk's page has neither. See "Page bridge on the phone: pinning media" in `phone.md` |
 
 Calls return at once; what they start happens afterwards. Events are DOM
 `CustomEvent`s on `window`:

@@ -46,6 +46,11 @@ final class AndroidSurfaces implements SurfaceSink {
         m.setDynamicShortcuts(infos);
     }
 
+    @Override public boolean canPin() {
+        ShortcutManager m = manager();
+        return m != null && m.isRequestPinShortcutSupported();
+    }
+
     @Override public void pin(Action action, String uri) {
         ShortcutManager m = manager();
         if (m == null || !m.isRequestPinShortcutSupported()) throw new UnsupportedException("this launcher does not pin shortcuts");

@@ -194,6 +194,33 @@ install.
    `adb shell am startservice -n net.kckern.daylight.phone/net.kckern.daylight.cap.mediaservice.shell.PlayActionService --es action radio`
    is refused (not exported).
 
+## D3. Pinning media from the site
+
+Needs the web side's "Add to home screen" control in the Media page's full-screen
+view. Until it exists, the calls can be made from Chrome's remote inspector
+(`chrome://inspect`, the debug build's WebView) on the Media page:
+`daylight.canPinMedia()` and `daylight.pinMedia({contentId: "<a playlist's id>", label: "Test"})`.
+
+1. `daylight.canPinMedia()` is `true` on the Media page. Record the launcher.
+2. `pinMedia` with a playlist's content id: `{accepted: true}`, and Android's "Add
+   to home screen" dialog shows. Add it. The shortcut shows the label; a tap plays
+   the playlist (through the invisible play screen).
+3. Add a "Daylight button": the chooser lists the label after the configured
+   actions. Bind it; a tap plays with no window (as D2).
+4. Cancel the dialog on a second pin: no shortcut; record whether the chooser lists
+   it (it does: the action is recorded when the launcher takes the request).
+5. Call `pinMedia` twice within five seconds: the second answers
+   `rate_limited`, and only one dialog shows.
+6. `pinMedia({contentId: "https://evil.example/x", label: "x"})` answers
+   `invalid_content_id`; a label holding `\u202E` answers `invalid_label`. No
+   dialog.
+7. In an iframe of the page (the inspector's frame selector), `canPinMedia()` is
+   `false` and `pinMedia` answers `not_top_frame`.
+8. Force-stop the app and tap the pinned shortcut a few minutes later: it still
+   plays (it was rewritten under the new key).
+9. The answer never holds a link: `JSON.stringify(daylight.pinMedia(...))` has only
+   `accepted` and `reason`.
+
 ## E. Android Auto, on the Desktop Head Unit
 
 1. On the phone: Android Auto's settings, tap "Version and permission info" ten

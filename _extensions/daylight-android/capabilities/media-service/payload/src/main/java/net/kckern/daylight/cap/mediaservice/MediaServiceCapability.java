@@ -15,6 +15,8 @@ import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.BackendHttp;
 import net.kckern.daylight.core.spi.ActionList;
 import net.kckern.daylight.core.spi.LinkHandler;
+import net.kckern.daylight.core.spi.MediaPinner;
+import net.kckern.daylight.core.spi.ShortcutPinner;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -127,6 +129,16 @@ public final class MediaServiceCapability implements Capability {
                 l.play(MediaId.leaf(id, null));
                 return LinkEffect.none();
             }
+        });
+
+        // Pinning at a page's request (the page bridge's pinMedia): the content id is held
+        // to this capability's rule, then the shortcuts record and pin it.
+        core.services().provide(MediaPinner.class, new MediaPinner() {
+            @Override public boolean canPin() {
+                ShortcutPinner shortcuts = core.services().find(ShortcutPinner.class);
+                try { return shortcuts != null && shortcuts.canPin(); } catch (RuntimeException e) { return false; }
+            }
+            @Override public JSONObject pin(String contentId, String label) { return pinMedia(contentId, label); }
         });
 
         core.router().route("GET", "/media/browse", req -> respond(call(new JSONObject().put("op", "browse")
@@ -272,6 +284,40 @@ public final class MediaServiceCapability implements Capability {
         String contentId = actions == null ? null : actions.mediaContentId(id);
         if (!ContentId.valid(contentId)) return failure(404, "unknown_action");
         return new Outcome(200, Replies.ok().put("mediaId", MediaId.leaf(contentId, null)));
+    }
+
+    /** {accepted, reason?} and nothing else, whatever the shortcuts answered. */
+    private JSONObject pinMedia(String contentId, String label) {
+        String reason = PinRequest.problem(contentId, label);
+        if (reason == null) {
+            ShortcutPinner shortcuts = core.services().find(ShortcutPinner.class);
+            if (shortcuts == null) {
+                reason = "not_available";
+            } else {
+                try {
+                    JSONObject answer = shortcuts.pinMedia(contentId, PinRequest.label(label));
+                    if (answer != null && answer.optBoolean("accepted", false)) return pinAnswer(true, null);
+                    reason = answer == null ? "failed" : answer.optString("reason", "failed");
+                } catch (Exception e) {
+                    reason = "failed";
+                }
+            }
+        }
+        // The reason of a refusal is one of a fixed set of words; anything else is "failed".
+        if (!reason.matches("[a-z_]{1,32}")) reason = "failed";
+        core.shell().note("MEDIA", "pin request refused: " + reason);
+        return pinAnswer(false, reason);
+    }
+
+    private static JSONObject pinAnswer(boolean accepted, String reason) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("accepted", accepted);
+            if (reason != null) o.put("reason", reason);
+        } catch (Exception impossible) {
+            // put of a boolean and a string does not fail
+        }
+        return o;
     }
 
     private Outcome event(JSONObject e) throws Exception {

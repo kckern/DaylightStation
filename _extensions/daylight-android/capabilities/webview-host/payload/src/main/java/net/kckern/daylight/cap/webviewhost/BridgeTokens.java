@@ -30,6 +30,8 @@ final class BridgeTokens {
     private final byte[] sessionKey;
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Long> issuedIn = new LinkedHashMap<>();
+    /** The tokens whose document said, when it opened its session, that it is the top frame. */
+    private final java.util.Set<String> topFrame = new java.util.HashSet<>();
     private long generation;
 
     BridgeTokens(String sessionKey) { this.sessionKey = sessionKey.getBytes(StandardCharsets.UTF_8); }
@@ -47,18 +49,36 @@ final class BridgeTokens {
     synchronized void navigated() {
         generation++;
         for (Iterator<Map.Entry<String, Long>> it = issuedIn.entrySet().iterator(); it.hasNext(); ) {
-            if (generation - it.next().getValue() > 1) it.remove();
+            Map.Entry<String, Long> e = it.next();
+            if (generation - e.getValue() > 1) { topFrame.remove(e.getKey()); it.remove(); }
         }
     }
 
-    /** A token for the calling document, or "" when the key is not the session key. */
-    synchronized String open(String presentedKey) {
+    /** A token for the calling document, or "" when the key is not the session key. Not marked as the top frame. */
+    synchronized String open(String presentedKey) { return open(presentedKey, null); }
+
+    /**
+     * As open(key), with what the shim found when it opened the session: "top" when its
+     * document is the top frame (window.top===window, which a page's script cannot
+     * redefine), anything else for a frame. A frame of another origin has no shim and
+     * so no key; this mark is what keeps an allowed-origin iframe from the calls that
+     * belong to the page the owner is looking at.
+     */
+    synchronized String open(String presentedKey, String frame) {
         if (presentedKey == null || !MessageDigest.isEqual(sessionKey, presentedKey.getBytes(StandardCharsets.UTF_8))) return "";
         String token = random(random);
         issuedIn.put(token, generation);
-        while (issuedIn.size() > MAX_TOKENS) issuedIn.remove(issuedIn.keySet().iterator().next());
+        if ("top".equals(frame)) topFrame.add(token);
+        while (issuedIn.size() > MAX_TOKENS) {
+            String oldest = issuedIn.keySet().iterator().next();
+            issuedIn.remove(oldest);
+            topFrame.remove(oldest);
+        }
         return token;
     }
+
+    /** Whether a valid token was opened by a top-frame document. */
+    synchronized boolean topFrame(String token) { return valid(token) && topFrame.contains(token); }
 
     /** Was this token issued to the current document (or the one a navigation is replacing right now)? */
     synchronized boolean valid(String token) {

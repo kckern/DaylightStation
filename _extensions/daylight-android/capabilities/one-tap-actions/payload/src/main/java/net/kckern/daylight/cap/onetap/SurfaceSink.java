@@ -19,6 +19,9 @@ interface SurfaceSink {
     /** Rewrite the pinned shortcuts in the plan with their current links, and disable the ones it says to. */
     void refreshPinned(SurfacePlan.Pins pins, SurfacePlan.Linker linker);
 
+    /** Whether the launcher can pin shortcuts at all. */
+    default boolean canPin() { return true; }
+
     /** Ask the launcher to pin one action, under SurfacePlan.pinId. Throw UnsupportedException when it cannot. */
     void pin(Action action, String uri);
 }

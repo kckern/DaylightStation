@@ -173,6 +173,27 @@ public class DeviceDefaultsTest {
         }
     }
 
+    /**
+     * The page bridge's pinMedia and canPinMedia are offered only where the device lists
+     * media-service (it provides the MediaPinner). No kiosk may: a kiosk's page must not
+     * be able to change anything on the device's home screen.
+     */
+    @Test public void onlyADeviceWithMediaServiceOffersThePageToPinMedia() throws Exception {
+        java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+        boolean listsMedia = entries.contains("net.kckern.daylight.cap.mediaservice.MediaServiceCapability");
+        boolean offered = core.services().find(net.kckern.daylight.core.spi.MediaPinner.class) != null;
+        assertEquals("devices/" + DeviceConfig.DEVICE_ID + ".yml: pinMedia is offered exactly when media-service is listed",
+                listsMedia, offered);
+        if (KIOSKS.contains(DeviceConfig.DEVICE_ID)) assertFalse("a kiosk's page bridge has no pinMedia", offered);
+        if (entries.contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability")) {
+            Class<?> host = Class.forName("net.kckern.daylight.cap.webviewhost.WebViewHostCapability");
+            assertEquals(offered, host.getMethod("pinMediaOffered", net.kckern.daylight.core.CoreContext.class).invoke(null, core));
+        }
+    }
+
     /** The devices that replace Fully. A new kiosk is added here; every other device is held to the phone's rules. */
     private static final java.util.Set<String> KIOSKS = new java.util.HashSet<>(java.util.Arrays.asList("piano", "portal", "shield"));
 
