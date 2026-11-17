@@ -13,7 +13,7 @@ Needs the owner's go-ahead before step A2. What installing does: the package
 `net.kckern.daylight.phone` is added to the owner's phone with a persistent
 "Daylight" notification, four quick-settings tiles the owner may add, a widget and
 launcher shortcuts. `adb uninstall net.kckern.daylight.phone` removes all of it,
-including any memo not yet uploaded.
+including any quick input (a recording, typed text, a photo) not yet uploaded.
 
 There is no control API on the phone. Every check is by hand on the phone, or over
 adb:
@@ -21,9 +21,14 @@ adb:
 ```bash
 adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)
 adb shell run-as net.kckern.daylight.phone cat files/shell.log
-adb shell run-as net.kckern.daylight.phone cat files/payloads/state/memo-queue.json
-adb shell run-as net.kckern.daylight.phone ls -l files/memos/inbox
+adb shell run-as net.kckern.daylight.phone cat files/payloads/state/input-queue.json
+adb shell run-as net.kckern.daylight.phone ls -l files/memos/inbox      # recordings
+adb shell run-as net.kckern.daylight.phone ls -l files/inputs/inbox     # typed text and photos
 ```
+
+The queue file names every waiting input by its id, kind and destination. It never
+holds what was said, typed or photographed; the files in the two inboxes do, so do
+not copy them off the phone for a check that a listing answers.
 
 The link key is needed to send a keyed link from adb. It is in
 `files/payloads/state/link-key` and is replaced every time the payload starts, so
@@ -33,7 +38,7 @@ fragment:
 
 ```bash
 K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key)
-adb shell am start -a android.intent.action.VIEW -d "'daylight://memo/queue#k=$K'"
+adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$K'"
 ```
 
 ## A. Install and first run
@@ -65,12 +70,16 @@ adb shell am start -a android.intent.action.VIEW -d "'daylight://memo/queue#k=$K
    the Media page opens in the app.
 2. `adb shell am start -a android.intent.action.VIEW -d 'daylight://open?path=//evil.example/'`:
    a message, no navigation, and a `LINK refused` line in the shell log.
-3. `daylight://action/memo`, `daylight://memo/new` and
-   `daylight://media/play?id=plex:1` with no key: each refused with a message.
+3. `daylight://action/journal`, `daylight://memo/new`,
+   `daylight://input/voice?to=journal`, `daylight://input/text?to=journal-note`,
+   `daylight://input/photo?to=meal-photo` and `daylight://media/play?id=plex:1`
+   with no key: each refused with a message. No recorder, text screen or camera
+   opens.
 4. `daylight://open?path=/media` (a bookmarked page) opens; `daylight://open?path=/admin`
    and `daylight://open?path=/media?tab=1` with no key are refused; the same two
    with `#k=$K` open.
-5. The key in the query is not a key: `daylight://action/memo?k=$K` is refused.
+5. The key in the query is not a key: `daylight://action/journal?k=$K` and
+   `daylight://input/photo?to=meal-photo&k=$K` are refused.
 6. After each of the above, `adb logcat -d | grep 'dat=daylight'` shows no line
    that holds the key.
 7. Force-stop the app, read the key again: it differs from `$K`. A link with the
@@ -91,13 +100,16 @@ adb shell am start -a android.intent.action.VIEW -d "'daylight://memo/queue#k=$K
 
 ## C. One-tap surfaces, warm and cold
 
-1. Long-press the app icon: New memo, Media, Feed, Call. Each does its thing.
+1. Long-press the app icon: Journal, Meal, Meal photo, Journal note (a launcher
+   shows about four; record how many this one shows). Each does its thing.
    Drag one to the home screen (a pinned shortcut), force-stop the app, and tap
    it: it works on the cold start and again a few minutes later, after the key
    has been replaced.
-2. Add the "Daylight 1" tile. It reads "New memo". Tap it unlocked, and from the
-   lock screen (it asks for the unlock first).
-3. Add the "Daylight actions" widget. Four buttons, each works.
+2. Add the "Daylight 1" tile. It reads "Journal". Tap it unlocked, and from the
+   lock screen (it asks for the unlock first). "Daylight 2" to "Daylight 4" read
+   "Meal", "Meal photo" and "Journal note".
+3. Add the "Daylight actions" widget. Four buttons (Journal, Meal, Meal photo,
+   Media), each works. There is no Feed button anywhere.
 4. Cold: `adb shell am force-stop net.kckern.daylight.phone`, then tap the widget's
    Media button. The page opens within the wait, or "Daylight is still starting"
    shows and the next tap works.
@@ -177,18 +189,23 @@ Pick the content id of a music track and of an album from the Media page.
    control playback.
 9. Progress reports continue while playing through the head unit (as D6).
 
-## F. Voice memos
+## F. Voice inputs (the recorder)
 
-Before the first memo: the household config must bind this phone's device key
-(`identity.device`, default `fleet:phone`) to the user. Until it does, step 2
-shows the "not allowed yet" notice instead of an upload (see step 16).
+Before the first input: the household config must bind this phone's device key
+(`identity.device`, default `fleet:phone`) to the user, for each bot
+(`quick_input: { journalist: [...], nutribot: [...] }` on the device entry). Until
+it does, step 2 shows the "not allowed yet" notice instead of an upload (see step
+16). The backend must also have the intakes of the quick-input contract deployed
+(`/api/v1/journalist/voice`, `/text`, `/api/v1/nutribot/voice`, `/text`, `/photo`).
 
-1. Tap "New memo". The first time, the phone asks for the microphone and then for
+The steps below use the Journal button. Step 18 repeats the first two for Meal.
+
+1. Tap "Journal". The first time, the phone asks for the microphone and then for
    notifications; both dialogs stay up long enough to answer. Speak for ten
    seconds, "Stop and save".
 2. Within a few minutes the transcript and the Journalist's reply arrive in the
-   owner's Telegram conversation. `memo-queue.json` shows `uploaded: 1` and no
-   memo; the inbox is empty. Record the entry's time in the journal: it is the
+   owner's Telegram conversation. `input-queue.json` shows `uploaded: 1` and no
+   input; the inbox is empty. Record the entry's time in the journal: it is the
    time the recording started, not the upload time.
 3. While recording: the notification is up and shows a running clock; its Stop
    action ends and saves the memo with the record screen closed.
@@ -197,7 +214,7 @@ shows the "not allowed yet" notice instead of an upload (see step 16).
    mode on and off. The record screen comes back showing the clock, and the
    recording goes on. (Before the fix this stopped and saved the memo.)
 6. Pull one recording from the inbox with airplane mode on and record how it
-   sounds and its size per minute. On Android 10 and later it is `<id>.ogg`,
+   sounds and its size per minute. On Android 10 and later it is `<id>.journal.ogg`,
    Opus at 16 kHz and 32 kbit/s; if logcat says the recorder did not start at
    16000 Hz, the 48 kHz fallback was used.
 7. Airplane mode on. Record two memos. A notice says two are waiting. Airplane
@@ -207,7 +224,7 @@ shows the "not allowed yet" notice instead of an upload (see step 16).
    memo uploads.
 9. **Cut-off recording.** Start a memo, speak for thirty seconds, and force-stop
    the app (`adb shell am force-stop net.kckern.daylight.phone`). The inbox holds
-   `<id>.ogg.part`. Open the app again. Within a pass the file is `<id>.ogg`,
+   `<id>.journal.ogg.part`. Open the app again. Within a pass the file is `<id>.journal.ogg`,
    it uploads, and the transcript holds what was said before the stop, journaled
    at the time the recording started. Logcat and the shell log say "cut-off
    recordings: 1 recovered". If the intake refuses the file (422 or 415), record
@@ -223,31 +240,105 @@ shows the "not allowed yet" notice instead of an upload (see step 16).
     how to stop. Start a memo, leave the screen, and stop it by tapping the memo
     tile again. Record whether Android's own "active apps" list names Daylight
     while it records.
-14. From a page of the site, try to start a memo (a link to `daylight://memo/new`
-    in a page, typed into the page's address by script): nothing records.
+14. From a page of the site, try to start a recording, the camera and the text
+    screen (links to `daylight://memo/new`, `daylight://input/voice?to=journal`,
+    `daylight://input/photo?to=meal-photo` and `daylight://input/text?to=journal-note`
+    in a page, and the same set by script as the page's location): nothing records,
+    no camera opens, no text screen opens.
 15. **Off the VPN.** Turn the VPN off with Wi-Fi on, record a memo and leave the
-    phone for an hour. `memo-queue.json` shows the memo `QUEUED` with
+    phone for an hour. `input-queue.json` shows the input `QUEUED` with
     `attempts: 0` and a growing `nextAttemptAtMs`; `lastError` is "no connection"
     or an `HTTP <status>` of some other network. Turn the VPN on: it uploads.
 16. **Device binding.** With the phone's key not bound to the user in the
-    household config, record a memo. A notice says "This phone is not allowed to
-    send memos yet"; `memo-queue.json` shows `attempts: 0`. Bind the key; the
-    memo uploads within the backoff and the notice goes.
-17. **Daily allowance.** If the allowance can be lowered for a test, exceed it:
-    a notice says the allowance is used up and when sending resumes; a tap on it
-    does not send early; after the named time the queue drains.
+    household config for the Journalist, record a memo. A notice says "This phone
+    is not allowed to send to Journal yet"; `input-queue.json` shows `attempts: 0`.
+    Bind the key; the memo uploads within the backoff and the notice goes. With the
+    key bound for the Journalist and not for Nutribot, a Meal input waits with the
+    same notice naming Meal while a Journal input goes through.
+17. **Daily allowance.** If the allowance can be lowered for a test, exceed it for
+    one bot: a notice says the allowance for that destination is used up and when
+    sending resumes; a tap on it does not send early; after the named time the
+    queue drains. While Journal is held, a Meal input still uploads: a limit on one
+    bot does not hold the other.
+18. **Meal by voice.** Tap "Meal", say what was eaten, "Stop and save". The file in
+    the inbox is `<id>.meal.ogg`; Nutribot answers in its Telegram conversation as
+    it does for a Telegram voice message. While a Journal recording is under way,
+    tap "Meal": the Journal recording stops and is saved (any capture button
+    tapped during a recording stops it), and no Meal recording starts until it is
+    tapped again.
+
+## F2. Text inputs
+
+1. Tap "Journal note" (the fourth tile, or the long-press shortcut). A small
+   window titled "Journal note" opens with the keyboard up, one field, Cancel and
+   Send. Nothing has been sent yet: `files/inputs/inbox` is empty.
+2. Type two lines and tap Send. The window closes with "Sending to Journal note".
+   Within a pass the Journalist files a journal entry with that text, as it does
+   for a Telegram text message, and `input-queue.json` shows `uploaded` one higher.
+3. Tap "Journal note", type, tap Cancel: nothing is in `files/inputs/inbox` and
+   nothing was sent. The same with the back button.
+4. Tap Send on an empty field, and on a field of spaces: "Nothing to send", and
+   the window stays.
+5. Paste a long text (more than 16,384 bytes; a long Korean text reaches it at
+   about 5,400 characters). The field stops taking text at the limit and the line
+   under it says "At the limit". Send: it arrives whole.
+6. Type a draft, turn the phone: the draft is still in the field.
+7. Type a draft and open the recents screen: the window is not listed. Send, then
+   open recents: no picture of the draft is there.
+8. Airplane mode on, send a note: the notice says one input is waiting (Journal
+   note 1). Force-stop the app, airplane mode off, open the app: it uploads.
+9. With the phone locked, tap the Journal note tile: the unlock is asked for
+   first, and the field is never shown over the lock screen.
+10. "Meal note" (from the action list; it has no tile by default): the same, to
+    Nutribot.
+
+## F3. Photo inputs
+
+1. Tap "Meal photo". The system's camera app opens at once, with no permission
+   dialog from Daylight. Record which camera app it is. If instead a message says
+   "Could not open the camera" or "No camera app on this phone", record it with
+   the logcat lines tagged `Daylight-Input`.
+2. Take the photo and accept it in the camera app. The camera closes with
+   "Sending to Meal photo" and nothing else is shown. Within a pass Nutribot
+   answers in Telegram as it does for a Telegram photo.
+3. Before it uploads (airplane mode on), check the queued file:
+   `adb shell run-as net.kckern.daylight.phone ls -l files/inputs/inbox` shows one
+   `<id>.meal-photo.jpg` and no `.part` file. Pull that one file and read its
+   metadata on the workstation (`exiftool` or `identify -verbose`): **no GPS
+   fields, no camera model, no capture time**; its long edge is at most 2048
+   pixels; it is upright. Delete the pulled copy. Do this once with the camera's
+   location tagging turned ON in the camera app's settings, which is the case that
+   matters.
+4. Take a photo holding the phone upright, on its left side and on its right
+   side: each arrives upright.
+5. Open the camera with "Meal photo" and press back without taking a photo:
+   nothing is in `files/inputs/inbox`, nothing is queued, no message.
+6. Open the camera, take a photo, and reject it in the camera's own review (the
+   retake or cancel control): the same as 5.
+7. Open the camera with "Meal photo", and with the camera in front run
+   `adb shell am kill net.kckern.daylight.phone` (or let a heavy camera app push
+   the app out of memory). Take the photo: it is still prepared and queued.
+8. The app's permissions in the system settings still list no camera. `adb shell
+   dumpsys package net.kckern.daylight.phone | grep -i camera` shows nothing.
+9. From another app, try to read the provider:
+   `adb shell content read --uri content://net.kckern.daylight.phone.inputs/capture/x`
+   is refused (the provider is not exported), and so is a query of it.
+10. With the phone locked, tap the Meal photo tile: the unlock is asked for first.
+11. A very large capture (the camera's highest resolution): it still arrives, and
+    logcat shows no `OutOfMemoryError`. Record the queued file's size.
 
 ## G. Notifications
 
-1. With a memo waiting (F7), tap the notice: a message says how many are being
-   tried again.
+1. With an input waiting (F7), tap the notice: a message says how many are being
+   tried again. The notice names the destination and a count ("1 input waiting to
+   upload (Journal 1)") and never anything that was said, typed or photographed.
 2. A parked memo cannot be produced on purpose without the backend refusing one.
    If the backend answers 422 for a recording with no speech in it, record a few
-   seconds of nothing: the notice says one memo could not be sent and has a
-   Discard action, and the audio is still in the inbox.
+   seconds of nothing: the notice says one input could not be sent (Journal 1)
+   and has a Discard action, and the audio is still in the inbox.
 3. Tap Discard: a message asks to tap again and nothing is deleted. Wait thirty
    seconds and tap again: it asks again. Tap twice within twenty seconds: the
-   memo and its audio are gone, and the notice goes.
+   input and its file are gone, and the notice goes.
 4. In the phone's notification settings the app has the channels "Uploads",
    "Voice memo recording" and "Daylight", beside the shell's own.
 

@@ -295,7 +295,7 @@ public class DeviceDefaultsTest {
                 { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" },
                 // A device that takes quick inputs is built with the user they are sent for, and its
                 // destinations are well formed.
-                { "voicememo.QuickInputCapability", "/input/queue" } };
+                { "quickinput.QuickInputCapability", "/input/queue" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);

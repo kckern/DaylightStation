@@ -11,15 +11,17 @@ routes (which the phone registers and serves to nobody), settings and the fleet 
 build verifier. Nothing has been installed. A security review of the build was
 answered before any install; what it changed is in "The lock screen, the
 microphone and the camera", "The link key", "Who may connect", "The exact list"
-and the `quick-input` section. Every statement below about what
+and the `quick-input` section. The quick inputs (text, photo, more than one
+destination) were added after that review and have had none of their own. Every statement below about what
 Android does (cold starts, tiles, the launcher, link handling) is from the
 platform's documentation and is unproven until the on-device checklist is run.
 "Unproven on a phone" below marks the places where that matters most.
 
 What the phone build has: the site's mobile web views (`webview-host`), links
 (`notifications`), `bookmarks`, `one-tap-actions`, `widgets`, native audio playback
-(`media-service`) with Android Auto (`android-auto`), voice memos for the Journalist
-(`quick-input`) and the app's own local notifications. What it does not have is
+(`media-service`) with Android Auto (`android-auto`), quick inputs for the
+Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
+the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
 ## What makes it a phone and not a kiosk
@@ -97,8 +99,9 @@ When a build does allow capture, a request is granted only when all of these hol
 1. The asking origin is the start URL's or one in `webview.bridgeOrigins`.
 2. The setting for that resource is true.
 3. The app holds the Android permission (`RECORD_AUDIO`, `CAMERA`). On the phone
-   the app holds `RECORD_AUDIO` after the first voice memo, so this condition alone
-   protects nothing there.
+   the app holds `RECORD_AUDIO` after the first voice input, so this condition alone
+   protects nothing there. The phone build never holds `CAMERA`: a photo input is
+   taken by the system's camera app.
 4. The document was not opened by a link without the install key. The app
    remembers how the document in the page got there. A link from another app or a
    web page (`daylight://bookmark/call`, say) marks it; the mark stays through a
@@ -119,7 +122,7 @@ None of these is in the repo. All go in the private tokens file.
 |---|---|---|
 | `placeholders:` | `phone_start_url` | The household site's full https URL as the phone reaches it. `webview.startUrl`; the backend's origin is taken from it |
 | `placeholders:` | `phone_link_host` | The site's host name only (lower case, no scheme, port or path). Used for the https link filter (`appLinks.host`) and for `links.origins` |
-| `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. The memo upload sends it, and sends nothing without it |
+| `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. A quick input's upload sends it, and sends nothing without it |
 
 The phone needs no top-level entry and no control token in that file. Two more
 settings exist with defaults that normally fit, and are set under `defaults:` in
@@ -145,16 +148,24 @@ Two forms are links:
 | `daylight://open?path=/media[#k=<key>]` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
-| `daylight://memo/new#k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
-| `daylight://memo/queue#k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
-| `daylight://memo/discard#k=<key>` | Throw away the memos that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
+| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder and start a recording for that destination; while one is being recorded, stop and save it | yes |
+| `daylight://input/text?to=<destination id>#k=<key>` | Open the text screen for that destination | yes |
+| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system's camera app; the photo it takes is queued for that destination | yes |
+| `daylight://input/queue#k=<key>` | Try every waiting and parked input again, and say how many there are | yes |
+| `daylight://input/discard#k=<key>` | Throw away the inputs that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
+| `daylight://memo/new#k=<key>`, `memo/queue`, `memo/discard` | The earlier names of `input/voice?to=journal`, `input/queue` and `input/discard` | yes |
 | `daylight://media/play?id=<contentId>#k=<key>` | Play that household item natively | yes |
 | `https://<the site>/<path>` | The same as `daylight://open` for that path, without a key | no key can be given; only a bookmarked path opens |
 
 The rule: a link kind needs the install key unless all it does is show a page of
-the site. `open`, `bookmark` and an https link show a page; `action`, `memo` and
-`media` do something else (run an action, record, start playback) and are refused
-with `403` without the key. A test fails a kind that is in neither list.
+the site. `open`, `bookmark` and an https link show a page; `action`, `input`,
+`memo` and `media` do something else (run an action, record, open the camera, send
+what is typed, start playback) and are refused with `403` without the key. A test
+fails a kind that is in neither list.
+
+An `input` link names a destination by its id (`to=`), and the id must be one of
+the configured destinations and take the link's kind; anything else is refused
+with `400` and nothing opens. A link can never name a route or an address.
 
 A page link without the key is held to less than one with it, because any app or
 web page can send it:
@@ -183,7 +194,7 @@ the phone can send it anything. What happens to a link:
    port, plain http for an https site or a `user@` form is refused. `intent:`,
    `file:`, `content:`, `javascript:`, `data:` and unknown `daylight://` kinds are
    refused.
-3. **The link key.** A link that changes something (`action`, `memo`, `media`)
+3. **The link key.** A link that changes something (`action`, `input`, `memo`, `media`)
    must carry `#k=<key>`: the key is the link's fragment and nothing else is
    read as one. The app's own surfaces add it. It is never returned by a route,
    shown by `GET /settings` or written to a log. See "The link key" below.
@@ -219,7 +230,7 @@ answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
 - **It is replaced at every payload start.** `notifications` starts before the
   capabilities that build links, and each of them builds its links again at
   start: the launcher shortcuts and the tile cache (`one-tap-actions`), the
-  widget (`widgets`), and the memo notices when they are next posted. A link
+  widget (`widgets`), and the quick-input notices when they are next posted. A link
   seen once, in a log or over a shoulder, stops working at the next start.
 - **The key before is honoured for one minute after a start.** A cold start is
   caused by a tap on a tile, a shortcut or the widget, and that tap carries the
@@ -235,7 +246,7 @@ answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
   tell an activity which shortcut started it, so the shortcut id alone cannot
   stand in for a key in the intent: any app could send the same id.
 - A notice that was posted before a restart carries the key of that run. The
-  memo queue posts its notice again after a start when there is still something
+  input queue posts its notice again after a start when there is still something
   to say; a tap on an older one is refused with "That link is not allowed".
 
 Nothing logs a link: the link activity logs that an intent was ignored or that
@@ -290,7 +301,8 @@ build. A duplicate id is left out and reported; the payload still starts.
 |---|---|---|
 | GET | `/bookmarks` | `{bookmarks: [{id, label, icon, path, uri}], problems: [...]}` |
 
-The phone's three are the shortcuts of the site's web manifest: Feed, Media, Call.
+The phone has two, Media and Call. Feed was removed at the owner's word: its
+bookmark, its action and its place among the shortcuts and widget buttons.
 
 ## `one-tap-actions`
 
@@ -302,9 +314,16 @@ characters.
 |---|---|
 | `open:/path` | Opens that page of the site in the app |
 | `bookmark:<id>` | Opens a bookmark |
-| `memo:new` | Opens the recorder and starts a voice memo; tapped again while one is being recorded, stops and saves it. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`; a per-device test fails a phone build where that is so |
+| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (tapped again while one is being recorded, it stops and saves it), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
+| `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
+
+The phone's actions: Journal, Meal (both by voice), Meal photo, Journal note,
+Meal note, Media, Call. The first four are its launcher shortcuts and its four
+tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
+added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
+`star`.
 
 An action exists only as a settings line. Running one takes its id and nothing
 else: no part of a link, an intent or a request body reaches an `api:` action's
@@ -320,8 +339,8 @@ as the action's id and its outcome.
 | Setting | Meaning |
 |---|---|
 | `actions.shortcuts` | Ids of the launcher shortcuts, in order. Empty: the first actions |
-| `actions.tiles` | Ids by quick-settings slot; an empty entry leaves a slot unassigned (`memo,,lights`) |
-| `actions.memoFallbackPath` | The page a memo action opens in a build without `quick-input` |
+| `actions.tiles` | Ids by quick-settings slot; an empty entry leaves a slot unassigned (`journal,,lights`) |
+| `actions.memoFallbackPath` | The page a memo or input action opens in a build without `quick-input` |
 
 | Method | Route | Answer |
 |---|---|---|
@@ -527,35 +546,187 @@ Sources: `https://developer.android.com/training/cars/testing`,
 
 ## `quick-input`
 
-A memo is recorded on the phone and sent to the Journalist, which transcribes it,
-saves a journal entry and answers in the owner's Telegram conversation with the
-transcript and then a follow-up question, as it does for a Telegram voice message.
+One capability for everything the owner sends to a household bot from the phone
+with one touch: a recording, typed text or a photo. It was `voice-memo`; the
+recorder, the queue on disk, the retry rules and the notices are the same code,
+now for three kinds and any number of destinations. Each bot answers in the
+owner's Telegram conversation as it does for a Telegram message of that kind;
+Telegram stays a full interface and this is another way in.
 
-**A memo is journaled at the time its recording started.** The upload carries
+The contract with the backend is
+`ops:docs/superpowers/specs/2026-11-17-daylight-quick-input-intake-contract.md`.
+The backend's side was built in parallel on another branch; **no request has
+been sent to it from this app.**
+
+### Destinations
+
+A destination is a settings line, `input.dest.1` to `input.dest.8`, each
+`id|label|kind|route`:
+
+| Part | Rule |
+|---|---|
+| `id` | `[a-z][a-z0-9-]*`, at most 32 characters, unique. What an action, a link and a queued input name |
+| `label` | 1 to 25 characters, no control character. What a notice and a screen's title show |
+| `kind` | `voice`, `text` or `photo`. One destination takes one kind |
+| `route` | A path on the configured backend, under `/api/v1/`: plain segments of letters, digits, `.`, `_`, `~` and `-`, at most 200 characters, with no query, no fragment, no escape, no `.` or `..` segment and no trailing slash. Never an address |
+
+The first five slots default to the contract's table, so the phone's device file
+states none of them:
+
+| Destination id | Kind | Route | Label |
+|---|---|---|---|
+| `journal` | voice | `/api/v1/journalist/voice` | Journal |
+| `journal-note` | text | `/api/v1/journalist/text` | Journal note |
+| `meal` | voice | `/api/v1/nutribot/voice` | Meal |
+| `meal-note` | text | `/api/v1/nutribot/text` | Meal note |
+| `meal-photo` | photo | `/api/v1/nutribot/photo` | Meal photo |
+
+A line that breaks a rule is refused when it is set, and as a device default it
+fails the build (the per-device payload test applies the defaults). A line whose
+id is already used is left out and reported under `problems` in
+`GET /input/queue`, which the same test requires to be empty; the payload still
+starts. The route is where a request goes and nothing else decides it: a link
+or an action names a destination by its id, the queue remembers the id and not
+the route, and the route in force when the input is sent is the one used. An
+input whose destination has since been removed is parked with "unknown
+destination" and kept.
+
+### Who can start a capture
+
+A recording, the camera and the text screen start only from a tap on this
+phone: a tile, the widget, a launcher shortcut (each a keyed `action` link whose
+action is an `input:` line), or a keyed `input` link the app built itself.
+
+- The three screens and the recorder service are not exported, and the provider
+  that hands the camera app its file is not exported either. Nothing outside the
+  app can start one by name.
+- The link activity is exported, so an `input` or `memo` link can be sent by any
+  app or page; without this install's key it is refused before it reaches the
+  capability, and the capability's own handlers refuse it again if it ever got
+  that far.
+- A page of the site has no way to build a keyed link, and the page bridge has
+  no call that runs an action or starts a capture.
+- A car reaches the media library service only, which takes media ids.
+- A page's own use of the microphone or camera (`getUserMedia`) is a separate
+  path, through the web view, and is off on the phone (`webview.allowMic` and
+  `webview.allowCamera` are false).
+
+With `identity.user` empty, or `identity.device` not `fleet:<key>`, no screen
+opens: the action answers "Quick inputs are not set up on this phone: identity
+not configured" (or "device identity not configured").
+
+### Voice
+
+A recording for a destination. The recorder is the one the voice memo had,
+unchanged but for one thing: it is told the destination's id and puts it in the
+file's name (`<id>.<destination>.ogg`), so a recording still goes where it was
+meant to after the process was killed. A recording with no destination in its
+name (one made by an earlier build) is the journal's.
+
+Tapping any voice button while a recording is under way stops and saves that
+recording, whichever destination the button is for; it does not start another.
+
+**A recording is filed at the time it started.** The upload carries
 `X-Daylight-Recorded-At`, the epoch milliseconds at which the recording began, as
-kept in the queue entry (it is the leading number of the memo's id, and for a
+kept in the queue entry (it is the leading number of the input's id, and for a
 recording recovered after a cut-off it is the start of that recording). The
-backend files the journal entry under that time when it is within the last 30
-days and no more than five minutes ahead of its own clock; outside that window it
-uses the time it received the audio. A memo recorded with no connection and
-uploaded hours later is therefore journaled when it was said.
+backend uses that time when it is within the last 30 days and no more than five
+minutes ahead of its own clock; outside that window it uses the time it received
+the input. A memo recorded with no connection and uploaded hours later is
+therefore journaled when it was said. Text and photos carry the same header: the
+time Send was tapped, and the time the camera was opened.
 
-### Recording
+### Text
+
+`TextInputActivity`: a small dialog window titled with the destination's label,
+one multi-line field, Cancel and Send.
+
+- Nothing leaves the screen until Send. Cancel and the back button discard the
+  draft; a touch beside the window does nothing, so a draft is not lost to a
+  stray tap.
+- The intake's limit of 16,384 bytes is held as the text is typed, counted in
+  UTF-8 bytes (a Korean syllable is three, most emoji four). What does not fit is
+  not taken, and a character of several bytes is taken whole or not at all. A
+  line under the field says how much is left once under 2,048 bytes remain.
+- Send trims the space around the text. A draft with no character that shows is
+  not sent ("Nothing to send"): the intake would refuse it.
+- Send writes the text to `files/inputs/inbox/<id>.<destination>.txt` (to a
+  `.part` file, synced, then renamed) and tells the payload. From there it is in
+  the queue on disk: it survives the process being killed and is sent when the
+  backend can be reached. If the file cannot be written the draft stays in the
+  field and a message says nothing was sent.
+- The window is not shown over the lock screen, is kept out of the recents list,
+  and from Android 13 the system takes no recents picture of it; the field is
+  emptied before the window closes. `FLAG_SECURE` is not set, on purpose:
+  screenshots work.
+- A second input link while the screen is up changes nothing: the draft and its
+  destination stay.
+
+### Photo
+
+`PhotoCaptureActivity` has no window. Opening it opens the system's camera app
+(`MediaStore.ACTION_IMAGE_CAPTURE`), which writes the picture to a file of this
+app. When the camera returns, the photo is prepared and queued, a short message
+says where it is going, and nothing else is shown: there is no review step.
+
+**The app has no camera permission.** Android lets an app use the system camera
+through that intent without holding `CAMERA`, as long as the app does not
+declare it; an app that declares `CAMERA` must hold it or the intent is refused.
+The phone build does not declare it (`webview-host` marks it `kioskOnly`), so it
+is never asked for. In a build that does declare it the screen asks for it first
+(`CameraAsk`).
+
+**How the camera app gets the file.** `InputFileProvider` is a content provider
+that is not exported. The photo screen creates an empty file,
+`files/inputs/inbox/<id>.<destination>.raw.part`, and gives the camera app a
+grant for that one URI (`content://<package>.inputs/capture/<that name>`), which
+it withdraws when the camera returns. The manifest allows grants for `/capture/`
+only (`grantUriPermissions="false"` with one `grant-uri-permission` path prefix;
+the verifier fails a build where that is wider). The provider serves a name of
+exactly that shape, for writing, and nothing else: not a finished photo, not
+typed text, not a recording, not any other file of the app.
+
+**What is queued is never the camera's file.** Every capture is decoded and
+written again as a JPEG (`PhotoPlan`):
+
+| Step | What |
+|---|---|
+| Turn | The camera's EXIF orientation is applied to the pixels, since the tag itself does not survive |
+| Scale | The long edge is at most 2048 pixels; a smaller photo is not enlarged |
+| Encode | JPEG quality 85 |
+| Fit | If the file is over the intake's 15,728,640 bytes it is written again at quality 70, then at 1536 pixels, then at 1024 pixels and quality 60 |
+| Check | The written file's headers are read (`JpegCheck`): a file with an EXIF or XMP segment (APP1) or an IPTC segment (APP13) is refused and deleted |
+| Clean up | The camera's file is deleted whatever the outcome |
+
+Writing the pixels again is what removes the EXIF block, and with it the
+position the photo was taken at, the phone's model and the capture time. **A
+photo's position does not leave the phone**; the check after writing is there so
+that a change to the encoder cannot undo that without a failure.
+
+A cancelled capture (back, or a rejected photo in the camera's own review)
+leaves no file. A capture whose screen was killed leaves the camera's file,
+which is removed once it is thirty minutes old, at the next pass of the queue or
+the next time a capture screen opens. If Android ends the app's process while
+the camera is in front, the screen is rebuilt when the camera returns and the
+photo is still prepared.
+
+### The pieces
 
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
-| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `memo/new` link, after checking that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
-| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `memos` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
+| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
+| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `inputs` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
+| `TextInputActivity` (not exported) | The field; writes `<files>/inputs/inbox/<id>.<destination>.txt` on Send | Opens it, on a keyed `input/text` link; told over the `inputs` port | As above: the file waits for the next scan |
+| `PhotoCaptureActivity` (not exported) and `InputFileProvider` (not exported) | Opens the camera app, prepares the photo, writes `<files>/inputs/inbox/<id>.<destination>.jpg` | Opens it, on a keyed `input/photo` link; told over the `inputs` port | As above |
 
-- A memo recording starts only from a tap on this phone: a tile, the widget, a
-  launcher shortcut (each a keyed link). A page of the site cannot start the memo
-  recorder: it has no way to build a keyed link, and the record screen is not
-  exported.
-- A page's own use of the microphone or camera (`getUserMedia`, which the site's
-  call page asks for when it loads) is a separate path, through the web view. On
-  the phone it is off: `webview.allowMic` and `webview.allowCamera` are false in
-  `devices/phone.yml`, so every such request is denied. See "The lock screen, the
-  microphone and the camera" for the rule that holds when a build turns them on.
+Text and photos have an inbox of their own because the recorder's recovery
+treats a `.part` file as a recording that was cut off, which is right for audio
+only. A capture screen an older installed app does not have answers "<label>:
+not available in the installed app" and nothing else happens.
+
+### Recording
+
+- What can start a recording is under "Who can start a capture" above.
 - The record screen's button, the notification's Stop, and the memo tile, widget
   button or shortcut tapped again all stop and save. A second tap within 1.5
   seconds of the start is taken as the same tap.
@@ -584,8 +755,8 @@ memo. The container is chosen for that:
 
 | Android | Written as | When the app is killed mid-recording |
 |---|---|---|
-| 10 and later (API 29) | One Ogg/Opus file, `<id>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
-| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
+| 10 and later (API 29) | One Ogg/Opus file, `<id>.<destination>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
+| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>.<destination>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
 
 Why Ogg and not segments everywhere: the intake takes one body per memo id and
 allows 60 memos a user a day. A thirty-minute memo is one of the sixty as Ogg and
@@ -598,7 +769,8 @@ knows whether a recording is under way. It runs before each new recording and at
 each pass of the upload queue (at payload start, when a network comes up, and at
 least every fifteen minutes):
 
-- `<id>.ogg.part` with no recorder writing it becomes `<id>.ogg` and is queued.
+- `<id>.<destination>.ogg.part` with no recorder writing it becomes
+  `<id>.<destination>.ogg` and is queued for that destination.
 - A cut-off `.m4a.part`, and an Ogg file under 4 KiB (headers and less than a
   second), is moved to `<files>/memos/cutoff/` and kept. A notice says how many
   recordings are kept there and that they are not sent.
@@ -610,80 +782,97 @@ and everything about the segment fallback, which needs a phone on Android 8 or 9
 
 ### The upload queue
 
-Kept on disk (`files/payloads/state/memo-queue.json`), so it survives the process
-being killed and a restart of the phone. A change that cannot be written (a full
-disk) is undone in memory and the pass fails; the next pass makes the same change
-again. Before, a failed write left a memo marked as being sent and nothing was
-sent again until the app restarted.
+One queue for every kind, kept on disk
+(`files/payloads/state/input-queue.json`), so it survives the process being
+killed and a restart of the phone. Each entry remembers its destination's id,
+its kind, what it is sent as, when it was captured and its file. A queue file
+written before destinations (`memo-queue.json`) is carried over once and read as
+voice memos for the journal. A change that cannot be written (a full disk) is
+undone in memory and the pass fails; the next pass makes the same change again.
 
 ```
-QUEUED ──► UPLOADING ──200──► gone (the audio is deleted)
+QUEUED ──► UPLOADING ──200──► gone (the captured file is deleted)
   ▲            │ not sent, not the intake's answer, or an answer that may change: wait 5 s, 10 s ... 1 h
   └────────────┘
                │ 400, 413, 415, 422, or the 20th failure that counts
                ▼
-            PARKED (the audio is kept until it is sent or discarded)
+            PARKED (the file is kept until it is sent or discarded)
 ```
 
-One memo is sent at a time. Nothing is tried while Android reports no network; a
-network coming up wakes the queue.
+One input is sent at a time, oldest first. Nothing is tried while Android
+reports no network; a network coming up wakes the queue.
 
 ```
-POST /api/v1/journalist/memo?user=<identity.user>
-Content-Type: audio/ogg            (audio/mp4 for an .m4a file)
+POST <the destination's route>?user=<identity.user>
+Content-Type: audio/ogg | audio/mp4 | text/plain; charset=utf-8 | image/jpeg
 X-Daylight-Device: fleet:<key>     (identity.device; default fleet:phone)
-X-Daylight-Memo-Id: <id>
-X-Daylight-Recorded-At: <epoch ms the recording started>
+X-Daylight-Input-Id: <id>
+X-Daylight-Recorded-At: <epoch ms the input was captured>
+<the file, as it is>
 ```
 
-No `Origin` header is sent: the client is not a page, and the intake refuses a
-request that names one as `cross_origin`.
+| Kind | Sent as | Body | Not sent when over |
+|---|---|---|---|
+| voice | `audio/ogg` (Android 10 and later), `audio/mp4` (a segment, below it) | The recording | 26,214,400 bytes |
+| text | `text/plain; charset=utf-8` | The text as UTF-8, with no JSON around it | 16,384 bytes |
+| photo | `image/jpeg` | The re-encoded photo | 15,728,640 bytes |
+
+An id is `<epoch ms>-<8 hex>`; a segment of a recording is `<id>-<nn>`. Only
+`X-Daylight-Input-Id` is sent (the backend also accepts the earlier
+`X-Daylight-Memo-Id`). No `Origin` header is sent: the client is not a page, and
+the intake refuses a request that names one as `cross_origin`.
 
 Only what the intake itself said counts toward parking. An answer is the
 intake's own when its body is JSON with `ok: false` and one of the intake's error
 codes. A phone can be off its VPN for days; every failure in that time is the
-network's and none is counted.
+network's and none is counted. The table is the same for every kind and every
+destination:
 
 | What happened | The queue | Counts toward 20 |
 |---|---|---|
-| 200 with a boolean `duplicate` | Done. The audio is deleted, and only then | |
+| 200 with a boolean `duplicate` | Done. The file is deleted, and only then | |
 | 200 with anything else (a sign-in page of some network) | Tried again with backoff | no |
-| 400, 413, 415, 422 (`empty_transcription` is answered the same on a retry) | Parked at once with the status and the error code | |
-| 403 `device_not_allowed` | The owner has not bound this phone to the user in the household config. Tried again with backoff, and one notice says "This phone is not allowed to send memos yet"; it goes with the first memo that is accepted | no |
-| 429 (`daily_limit`, with `limit: memos` or `bytes`) | The whole queue waits for the time the backend names: `retryAfterSeconds` in the body, else the `Retry-After` header, at least a minute and at most a day (fifteen minutes when neither is there). Nothing is sent earlier, by the timer or by a tap. One notice says the daily allowance is used up and when sending resumes | no |
+| 400, 413, 415, 422 (`empty_transcription` and `unusable_input` are answered the same on a retry) | Parked at once with the status and the error code | |
+| 403 `device_not_allowed` | The owner has not bound this phone to the user for that destination's bot. Tried again with backoff, and one notice says "This phone is not allowed to send to <label> yet"; it goes with the first input that destination accepts. Other destinations are still tried in the same pass | no |
+| 429 (`daily_limit`) | **That destination** waits for the time the backend names: `retryAfterSeconds` in the body, else the `Retry-After` header, at least a minute and at most a day (fifteen minutes when neither is there). Nothing is sent to it earlier, by the timer or by a tap. The other destinations go on: a limit on one bot does not hold the other. One notice names each held destination and when sending to it resumes | no |
 | Any other answer that is the intake's own (404 `unknown_user`, 403 `cross_origin`, 500 `processing_failed`, 503 `unavailable`) | Tried again with backoff | yes |
 | Any other answer (a redirect, 401, a bare 403 or 404, a proxy's 502 or 504, a gateway page) | Tried again with backoff | no |
 | The body was sent and no answer came within 330 seconds | Tried again; the backend answers the same id as a duplicate | yes |
 | Not sent: no connection, a connect timeout to an address that is not reachable (the VPN is down), the link dropping part-way | Tried again with backoff | no |
+| The destination is not configured any more, or does not take the input's kind | Parked without a call: "unknown destination", "destination does not take <kind>" | |
 
-A device that is not bound, for a user with no Journalist conversation, is
-answered 403 and not 404; 404 `unknown_user` is the answer for a bound device.
+A hold is kept per destination id, and a device binding and a daily allowance
+are per bot on the backend. Two destinations of one bot (`journal` and
+`journal-note`) therefore each learn of a limit from their own first answer.
 
-After 20 counted failures a memo is parked. A parked memo keeps its audio. A tap
-on its notice (`daylight://memo/queue`) tries every waiting and parked memo
-again. The notice's **Discard** action (`daylight://memo/discard`, keyed) throws
-parked memos away, audio included, and asks twice: the first tap says how many
-would go and changes nothing, and a second tap within twenty seconds deletes.
-Only parked memos are discarded; one that is still waiting never is. A recording
-over 26,214,400 bytes is parked without being sent.
+After 20 counted failures an input is parked. A parked input keeps its file. A
+tap on its notice (`daylight://input/queue`) tries every waiting and parked
+input again. The notice's **Discard** action (`daylight://input/discard`, keyed)
+throws parked inputs away, files included, and asks twice: the first tap says
+how many would go and changes nothing, and a second tap within twenty seconds
+deletes. Only parked inputs are discarded; one that is still waiting never is.
 
 **With `identity.user` empty, or `identity.device` not `fleet:<key>`, nothing is
-sent and nothing is recorded.** The memo action answers "Voice memos are not set
-up on this phone: identity not configured" (or "device identity not
-configured"); a memo already kept stays on the phone, is not retried in a loop,
-and a notice says so. `identity.user` is a build-time placeholder (`phone_user`),
-and a per-device test fails a phone build without it. `identity.device` defaults
-to `fleet:phone`; the key is 1 to 96 letters, digits, `.`, `_` or `-`, and must
-be the one the household config binds to the user.
+sent and nothing is captured.** An input already kept stays on the phone, is not
+retried in a loop, and a notice says so. `identity.user` is a build-time
+placeholder (`phone_user`), and a per-device test fails a phone build without
+it. `identity.device` defaults to `fleet:phone`; the key is 1 to 96 letters,
+digits, `.`, `_` or `-`, and must be the one the household config binds to the
+user (`quick_input: { journalist: [...], nutribot: [...] }` on the device entry).
 
 | Method | Route | Answer |
 |---|---|---|
-| GET | `/memo/queue` | `{waiting, parked, uploaded, lost, discarded, holdUntilMs, memos: [{id, state, attempts, lastError, ...}], blocked, notAllowed, cutOffKept, problems}` |
-| POST | `/memo/recorded` | Scans the inbox |
-| POST | `/memo/retry` | Makes every memo due now (a daily-allowance wait still holds) |
+| GET | `/input/queue` | `{waiting, parked, uploaded, lost, discarded, holds: {<destination id>: <until ms>}, inputs: [{id, kind, dest, state, attempts, lastError, ...}], blocked, notAllowed: [<destination id>], cutOffKept, destinations: [{id, label, kind}], problems}` |
+| POST | `/input/recorded` | Scans both inboxes |
+| POST | `/input/retry` | Makes every input due now (a daily-allowance wait still holds) |
 
-Privacy: the shell log and logcat hold a memo's id, its length and its size.
-Nothing of the audio, and no transcript, is read, kept or logged on the phone.
+On the phone nothing serves these to anyone; the build's tests call them.
+
+Privacy: the shell log and logcat hold an input's id, its kind, its
+destination's id, its length and its size. Nothing that was said, typed or
+photographed, and no transcript, is read, kept or logged on the phone outside
+the one file that waits to be sent, and that file is deleted on the intake's
+200. A notice holds counts, a state and destination labels.
 
 ## Local notifications
 
@@ -694,14 +883,15 @@ transport: household pushes keep arriving through the Home Assistant relay.
 |---|---|---|
 | Playback | Media3's own | The media session. Exempt from the notification permission |
 | "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
-| "N voice memos waiting to upload" | `daylight_uploads` (low) | `quick-input`, after a pass that left memos waiting |
-| "N voice memos could not be sent. Tap to try again.", with a Discard action | `daylight_uploads` | `quick-input`, when memos are parked |
-| "This phone is not allowed to send memos yet. ..." | `daylight_uploads` | `quick-input`, after a 403 `device_not_allowed`; removed by the first accepted memo |
-| "The daily allowance for voice memos is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `quick-input`, after a 429 |
+| "N inputs waiting to upload (Journal 2, Meal photo 1)" | `daylight_uploads` (low) | `quick-input`, after a pass that left inputs waiting |
+| "N inputs could not be sent (Meal 1). Tap to try again.", with a Discard action | `daylight_uploads` | `quick-input`, when inputs are parked |
+| "This phone is not allowed to send to <label> yet. ..." | `daylight_uploads` | `quick-input`, after a 403 `device_not_allowed`; removed by the first input that destination accepts |
+| "The daily allowance for <label> is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `quick-input`, after a 429, for each destination held |
 | "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `quick-input`, while `memos/cutoff/` holds any |
-| "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `quick-input` |
+| "Quick inputs are not set up: identity not configured. N inputs are kept on this phone (Journal 1)." | `daylight_uploads` | `quick-input` |
 
-A notice is a count and a state. A tap opens a `daylight://` link through the link
+A notice is a count, a state and the label of a destination, never anything of
+what an input holds. A tap opens a `daylight://` link through the link
 activity, with the link key added by `notifications` where the link's kind
 needs it. A notice may carry one action button, which opens such a link too. A capability posts through `LocalNotices` (`core/spi`); a state is
 posted once, and the notice is removed when nothing is left to say.
@@ -717,7 +907,7 @@ URL opens in the app once the host is turned on under "Open by default", and a
 a bookmarked page only: the https URL's path, or the `path` of a
 `daylight://open` link, must be exactly a configured bookmark's. A push that
 should open any other page needs that page added as a bookmark (`bookmarks.1` to
-`bookmarks.8`). A push cannot run an action, start a memo or start playback:
+`bookmarks.8`). A push cannot run an action, start a recording, open the camera or the text screen, or start playback:
 those need the link key, which never leaves the phone and changes at every
 start. Which field of the Home Assistant companion app
 carries a tap target is not confirmed, and no producer sets one.
@@ -728,8 +918,8 @@ carries a tap target is not confirmed, and no producer sets one.
   answers every command for `phone` with how it is debugged instead.
 - **No debug tools**: no `debug-tools`, no `app-launcher`, no remote script, shell
   or screenshot.
-- **No heartbeats and no log shipping.** Nothing about what is played or recorded
-  leaves the phone except the progress reports and the memo upload themselves.
+- **No heartbeats and no log shipping.** Nothing about what is played or captured
+  leaves the phone except the progress reports and the quick inputs' own uploads.
 - **No lockdown**, and it is never offered as the home app.
 - **No self-update** and no settings change at run time: a new build is installed.
 - **No playback resumption** after the media service is gone: a headset button does
@@ -738,9 +928,9 @@ carries a tap target is not confirmed, and no producer sets one.
   dropped.
 
 Debugging: `adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)` (tags
-`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`), and
+`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`, `Daylight-Input`), and
 `adb shell run-as net.kckern.daylight.phone` for `files/shell.log`,
-`files/payloads/state/` and `files/memos/inbox/`.
+`files/payloads/state/`, `files/memos/inbox/` and `files/inputs/inbox/`.
 
 ## The exact list
 
@@ -766,15 +956,23 @@ Twelve:
 | `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
 | `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
-| `RECORD_AUDIO` | `webview-host`, `quick-input` | Voice memos. No page is given it (`webview.allowMic` is false) |
+| `RECORD_AUDIO` | `webview-host`, `quick-input` | Voice inputs. No page is given it (`webview.allowMic` is false) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
+The text and photo inputs added no permission: the list is the same twelve as
+before them, and `tools/phone-list.test.mjs` writes it out. A photo is taken by
+the system's camera app, so there is no `CAMERA`; the photo is written to the
+app's own files, so there is no storage or media permission; and nothing asks
+for a location.
+
 Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
 `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
 for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
-`capability.yml` as well as setting `webview.allowCamera`.
+`capability.yml` as well as setting `webview.allowCamera`; the photo screen would
+then have to ask for the permission before it opens the camera app, which it
+does (`CameraAsk`).
 
 ### Application settings
 
@@ -790,6 +988,8 @@ for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
   link key, the settings and a queued recording stay on the phone they were made
   on. This holds for the kiosks too.
 - No `lockTaskMode` on any activity and no `LEANBACK_LAUNCHER` category.
+- No component declares `showWhenLocked`, `turnScreenOn` or `showOnLockScreen`:
+  the build and the verifier fail a personal build where one does.
 
 ### Debug and release builds
 
@@ -834,12 +1034,15 @@ What another app on the phone can reach, and what stands in the way.
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
 | `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
-| `PlayActivity`, `RecordActivity`, `MemoRecorderService` | Not exported | Started by this app only |
+| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
+| `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
 Eight components are exported: `LinkActivity`, `KioskActivity`, the four tile
 services (which the system alone can bind), `DaylightMediaService` and
 `BootReceiver`. A ninth, or one of these no longer exported, fails the build.
+The quick inputs added three components (two activities and a provider) and
+none of them is exported.
 
 ## Not covered by JVM tests
 
@@ -857,6 +1060,16 @@ services (which the system alone can bind), `DaylightMediaService` and
   Media3 player and session, audio focus, the media notification, a car. Their
   decisions are in pure classes that are tested (`ControllerPolicy`, `BrowseAnswer`,
   `TrackAnswer`, `PayloadMedia`).
+- `TextInputActivity`: the window, the keyboard, the field's filter as Android
+  calls it, what the recents screen shows. Its decisions are in `TextDraft` and
+  `CaptureFiles`, which are tested.
+- `PhotoCaptureActivity`, `InputFileProvider` and `AndroidPixels`: whether the
+  owner's camera app accepts the file it is handed and in which mode it opens
+  it, the grant and its withdrawal, the decoding, turning, scaling and encoding
+  of a real photo and the memory that takes, the rebuild of the screen after the
+  process was ended behind the camera. Their decisions are in `PhotoPlan`,
+  `JpegCheck`, `CameraAsk` and `CaptureFiles`, which are tested with made-up
+  files; no real photo has been through them.
 - `MemoRecorderService` and `RecordActivity`: the microphone, the encoder (Ogg/Opus,
   and the MP4 segment rotation below Android 10), the foreground service, the
   permission dialogs, a rebuild of the screen. Their decisions are in
@@ -864,7 +1077,7 @@ services (which the system alone can bind), `DaylightMediaService` and
   tested; that a cut-off Ogg file plays has not been tried.
 - `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
   with no notification service, which shows only that it does nothing there.
-- The backend's side of every media and memo request. The tests use a fake backend
+- The backend's side of every media and quick-input request. The tests use a fake backend
   built from the backend's code as read; no request has been sent.
 - That nothing listens on a real phone. The tests start the payload for the phone's
   configuration and show no control socket is bound and the port stays free; the

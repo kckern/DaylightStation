@@ -50,6 +50,8 @@ public class TextInputActivity extends Activity {
         }
         if (label == null) label = "Quick input";
         setTitle(label);
+        // A touch beside the window does not close it: a draft is not lost to a stray tap.
+        setFinishOnTouchOutside(false);
         // The task is kept out of the recents list (the manifest), and from Android 13 the
         // system takes no picture of this window for it either. Screenshots are not blocked.
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
