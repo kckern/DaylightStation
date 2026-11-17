@@ -106,6 +106,20 @@ fully.isScreenOn();
 
 ---
 
+## `injectJsCode` is not a scratchpad
+
+`injectJsCode` runs on **every page load** of that kiosk, injected with
+`evaluateJavascript`. An exception in it has no script URL, so the SPA's
+`window.onerror` sees only an opaque `Script error.` (no source, line 0) and
+logs it with `opaque: true`. A probe that reads `document.body` throws whenever
+FKB injects it before `<body>` exists.
+
+On 2026-11-17 the piano tablet was found carrying a forgotten
+`fully.setClipboardText(...)` debug probe there, one opaque error per page load
+for weeks. Clearing the setting stopped it. After an `inject`, `inject-file` or
+`fps` run from `cli/fkb.cli.mjs`, put the setting back: empty on the piano
+tablet and the Shield, `back-script` on the Portal.
+
 ## Boot / Return-to-Launcher Pattern
 
 To load the Daylight web app on boot but return to the launcher after exiting other apps:

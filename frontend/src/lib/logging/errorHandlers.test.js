@@ -92,3 +92,20 @@ describe('network error cascade suppression', () => {
     expect(suppressionRollups()).toHaveLength(0);
   });
 });
+
+describe('window.onerror', () => {
+  const onerrors = () => logged.filter((l) => l.event === 'window.onerror');
+
+  it('marks an opaque "Script error." with its likely cause', () => {
+    window.onerror('Script error.', '', 0, 0, null);
+    expect(onerrors()[0].data).toMatchObject({
+      message: 'Script error.', opaque: true, likelyCause: expect.stringContaining('injectJsCode'),
+    });
+  });
+
+  it('leaves an ordinary error unmarked', () => {
+    window.onerror('boom', 'https://example.test/app.js', 10, 2, new Error('boom'));
+    expect(onerrors()[0].data.opaque).toBeUndefined();
+    expect(onerrors()[0].data.source).toBe('https://example.test/app.js');
+  });
+});

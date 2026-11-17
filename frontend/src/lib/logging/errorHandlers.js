@@ -105,6 +105,11 @@ export function setupGlobalErrorHandlers() {
 
   // Capture uncaught errors (window.onerror)
   const onError = (message, source, lineno, colno, error) => {
+    // "Script error." with no source and line 0 is all the browser will say
+    // about a cross-origin script, or about code a kiosk host injected with
+    // evaluateJavascript (FKB `injectJsCode`). The piano tablet logged one on
+    // every page load for weeks from a leftover injected probe (2026-11-17).
+    const opaque = !source && !lineno && !error;
     logger.error('window.onerror', {
       message: String(message),
       source,
@@ -112,7 +117,12 @@ export function setupGlobalErrorHandlers() {
       colno,
       stack: error?.stack,
       name: error?.name,
-      errorType: error?.constructor?.name
+      errorType: error?.constructor?.name,
+      ...(opaque ? {
+        opaque: true,
+        likelyCause: 'cross-origin script or host-injected JS (check FKB injectJsCode)',
+        readyState: document.readyState,
+      } : {}),
     });
 
     // Return false to let default error handling continue
