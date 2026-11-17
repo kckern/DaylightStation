@@ -22,8 +22,8 @@ heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payl
 routes listed below, and the piano build carries `audio-guard` (speaker routes
 under `/speaker` and `/audio-guard`), `synth` (the native sfizz sampler) and
 `midi-bridge` (the BLE-MIDI link) and `bluetooth-controls` (the Bluetooth panel),
-and the Shield build carries `bluetooth-controls` in gamepad mode; see
-"Capabilities". The old helper apps still run every device.
+the Shield build carries `bluetooth-controls` in gamepad mode, and the Portal
+build carries `volume-keys`; see "Capabilities". The old helper apps still run every device.
 
 ## Shell and payload
 
@@ -324,6 +324,35 @@ audio-bridge API did: `200` for state, `202` for an accepted action, `400` for a
 invalid request, `409` for a refused one. The backend's arcade Bluetooth adapter
 reads both the status (`409`) and the body's `ok` and `code`. Unlike audio-bridge,
 the request's `Content-Type` is not checked.
+
+### `volume-keys`
+
+Needs `accessibility`. The hardware volume keys become page input: each press and
+release is sent on the WebSocket as
+
+```json
+{"type":"key","key":"KEYCODE_VOLUME_DOWN","action":"down","interactive":true,"ts":1800000000123}
+```
+
+(`interactive` is whether the panel is lit, `ts` epoch ms) and, with
+`keys.consumeVolume` on, is kept from Android so the system volume does not move
+under the page. Other keys pass through untouched and are noted in `GET /log`.
+With `keys.screenToggleEnabled` on, any volume key wakes a dark panel and two
+volume-down presses within `keys.doublePressMs` sleep it; that needs the
+`screen-power` capability (phase 3), and until then the attempt is logged as
+`screen-toggle-unavailable`.
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `keys.consumeVolume` | boolean | true | Keep volume keys from Android. Set false to give hardware volume back |
+| `keys.screenToggleEnabled` | boolean | false | Wake on any volume key, sleep on a double volume-down |
+| `keys.doublePressMs` | integer | 450 | The double-press window, used within 150 to 2000 |
+
+`POST /accessibility/silence-beep` removes, now, any other enabled accessibility
+service whose component name contains `KeyEvent` (the vendor service that beeps on
+volume keys). The same pass runs at each start and whenever the list of enabled
+services changes. This app's own service is never removed. `/status` carries
+`keysSeen` and `displayOn`.
 
 ## Lifeline
 

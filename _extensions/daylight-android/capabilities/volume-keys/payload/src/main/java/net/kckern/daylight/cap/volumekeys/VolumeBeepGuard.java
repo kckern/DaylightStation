@@ -6,7 +6,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import net.kckern.portalkeys.api.ShellServices;
+import net.kckern.daylight.api.ShellServices;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -25,10 +25,11 @@ import org.json.JSONObject;
  * the second pass finds nothing to remove and stops, so there is no loop.
  *
  * Removes ONLY components that mention "KeyEvent" and are not ours. The
- * Portal's presence and launcher services, and PortalKeysService itself, stay.
+ * Portal's presence and launcher services, and this app's own service, stay.
  */
 final class VolumeBeepGuard {
-    private static final String OURS = "net.kckern.portalkeys/";
+    /** This app's component prefix, "<package>/". The guard never removes this app's own service. */
+    private final String ours;
     private final Context context;
     private final ShellServices shell;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -37,6 +38,7 @@ final class VolumeBeepGuard {
     VolumeBeepGuard(Context context, ShellServices shell) {
         this.context = context;
         this.shell = shell;
+        this.ours = context.getPackageName() + "/";
     }
 
     void start() {
@@ -55,8 +57,8 @@ final class VolumeBeepGuard {
         }
     }
 
-    static boolean beeps(String component) {
-        return component.contains("KeyEvent") && !component.startsWith(OURS);
+    static boolean beeps(String component, String ours) {
+        return component.contains("KeyEvent") && !component.startsWith(ours);
     }
 
     /** One pass; returns what it did as JSON for the ops route and the shell log. */
@@ -69,7 +71,7 @@ final class VolumeBeepGuard {
             if (cur != null) {
                 for (String c : cur.split(":")) {
                     if (c.isEmpty()) continue;
-                    if (beeps(c)) { removed.put(c); continue; }
+                    if (beeps(c, ours)) { removed.put(c); continue; }
                     if (kept.length() > 0) kept.append(':');
                     kept.append(c);
                 }
