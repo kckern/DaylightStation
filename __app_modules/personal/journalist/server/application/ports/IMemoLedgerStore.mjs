@@ -2,8 +2,10 @@
  * IMemoLedgerStore Port
  * @module journalist/application/ports/IMemoLedgerStore
  *
- * Where a user's voice memo ledger is kept between requests and across
- * restarts: one document per user, read and written whole.
+ * Where a user's Journalist quick-input ledger (it began as the voice memo
+ * ledger) is kept between requests and across restarts: one document per
+ * user, read and written whole. The shared quick-input ledger reads and
+ * writes through it.
  */
 
 export class IMemoLedgerStore {

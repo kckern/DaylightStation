@@ -1,5 +1,7 @@
 /**
- * YamlMemoLedgerStore - a user's voice memo ledger as one YAML document.
+ * YamlMemoLedgerStore - a user's Journalist quick-input ledger as one YAML
+ * document. It began as the voice memo ledger and keeps that file; typed
+ * notes are recorded in it too.
  *
  * Implements IMemoLedgerStore.
  * Data stored at: users/{username}/apps/journalist/memo_ledger.yml

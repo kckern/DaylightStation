@@ -551,8 +551,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // before reading the body and answers no cross-origin preflight, so the
   // app-wide CORS handler and body parsers step aside for them. Every other
   // route gets all three exactly as before.
-  //   /api/v1/journalist/memo — voice memo intake (device, origin, daily cap)
-  const selfGuarded = exceptPaths(['/api/v1/journalist/memo']);
+  // These are the quick-input intakes (device binding, own origin, daily
+  // allowance): __docs/reference/core/quick-input.md.
+  const selfGuarded = exceptPaths([
+    '/api/v1/journalist/voice',
+    '/api/v1/journalist/memo',
+    '/api/v1/journalist/text',
+  ]);
   app.use(selfGuarded(cors()));
   app.use(selfGuarded(express.json({ limit: '50mb' })));
   app.use(selfGuarded(express.urlencoded({ limit: '50mb', extended: true })));
