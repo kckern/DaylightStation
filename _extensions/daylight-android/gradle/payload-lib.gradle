@@ -11,6 +11,10 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    // A payload module has no manifest permissions of its own: its capability's shell half
+    // declares them, and tools/verify-build.mjs checks the APK's set against capability.yml.
+    // Lint sees only this module, so its MissingPermission check cannot pass here.
+    lint { disable 'MissingPermission' }
     testOptions {
         // android.jar stubs return defaults in JVM tests instead of throwing "Stub!".
         unitTests.returnDefaultValues = true

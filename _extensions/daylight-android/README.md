@@ -112,6 +112,18 @@ The build finds the file through `-PcontrolTokens=<file>` or
 `$DAYLIGHT_ANDROID_TOKENS`. The CLI uses `$DAYLIGHT_ANDROID_TOKENS`, or
 `$DAYLIGHT_BASE_PATH/data/household/auth/daylight-android.yml` when that is unset.
 
+The same file may hold a `placeholders:` map. A string under `defaults:` in a
+device file can contain `{name}`, which the build replaces with the value of
+`placeholders.name` when that device's payload is compiled. Addresses and device
+identities go there and never in a device file. A `{name}` with no value fails the
+build of that one device, naming the placeholder and the setting.
+
+```yaml
+placeholders:
+  piano_speaker_mac: "{speaker-address}"
+  piano_speaker_name: "{speaker-name}"
+```
+
 The token is compiled into the shell APK. A device build with no token fails, since
 it would install an API nobody could reach. Rotating a token means installing a new
 shell. Never print the file, and never put a token in a command line, a doc or a
@@ -130,8 +142,13 @@ commit.
 3. Put any device defaults under `defaults:`. Each key must be a setting that one of
    the device's capabilities declares. This is checked when the payload starts, not
    at build time: a wrong key makes the payload refuse to start.
-4. Add the device's entry to the private tokens file.
-5. Build with `./gradlew :shell:assemble<Device>Debug` and run the verifier.
+4. Optional keys: `permissions:` lists permissions no capability owns (declared
+   ahead of time, because a payload update cannot add one), and
+   `foregroundServiceTypes:` sets the shell service's types (`mediaPlayback`,
+   `microphone`, `location`, and the other Android names).
+5. Add the device's entry to the private tokens file, with any placeholders its
+   defaults use.
+6. Build with `./gradlew :shell:assemble<Device>Debug` and run the verifier.
 
 Bump `shell.versionCode` each time a new shell is installed on the device.
 
@@ -151,7 +168,26 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 4. List the capability under `capabilities:` in each device file that should have
    it. A device's APK and payload contain only the capabilities it lists.
 
-`debug-tools` is the only capability today. It has a payload half and no shell half.
+Two more `capability.yml` keys: `requires: [<name>, ...]` makes the build refuse a
+device that lists this capability without the named ones, and `native: true` makes
+it refuse a device with no `abis`.
+
+`start()` runs on a worker thread with no Looper and must return quickly; work that
+needs the main thread is posted to `new Handler(Looper.getMainLooper())`. `stop()`
+may be called twice. When `core.shell().context()` is null (a JVM test of the whole
+payload), `start()` returns without touching Android.
+
+A payload module is not checked by lint for missing permissions: the permissions
+are in the shell half, and `tools/verify-build.mjs` checks the built APK.
+
+## Porting code from the old helper apps
+
+`bash tools/port.sh <move|adapt> <source.java> <dest-dir> <new.package> [Old=New ...]`
+copies one file, rewrites its package, applies class renames and records the pair
+in `tools/port-map.tsv`. `node tools/port-check.mjs` then compares every `move` row
+with its source (package, imports and added `public` aside) and lists the `adapt`
+rows. A move and a behavior change never share a commit; a file that is edited
+after its move has its row changed to `adapt`.
 
 ## Rules
 
@@ -161,5 +197,6 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 - `devices/` holds device files only. Files there whose name contains `secret`,
   `token` or `auth` are ignored by git, so do not name a device that way.
 - No addresses, tokens or household paths in this directory. Device files hold
-  package names, SDK levels and ports only.
+  package names, SDK levels, ports, permission names and setting defaults; a
+  default that is an address or a device identity is a `{placeholder}`.
 - Nothing here is installed on a device by the build. Installing is a manual step.

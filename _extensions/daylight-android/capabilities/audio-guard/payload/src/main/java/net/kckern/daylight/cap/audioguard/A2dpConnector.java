@@ -13,6 +13,9 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 
+import net.kckern.daylight.core.Diag;
+import net.kckern.daylight.core.LogEvents;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -131,7 +134,7 @@ public class A2dpConnector {
             d.put("reconnects", reconnects);
             if (key != null) d.put(key, value);
         } catch (JSONException ignored) { }
-        LogEvents.emit(cfg, msg, level, d);
+        LogEvents.emit(msg, level, d);
     }
 
     /** Force-disconnect the target speaker so the route falls back to the built-in speaker. */
@@ -240,13 +243,13 @@ public class A2dpConnector {
         HeadsetGuard.Outcome o = headsetGuard.reconcile();
         if (o.capJustHit) {
             Diag.log(TAG, "HFP guard: disconnect cap reached; leaving HFP up for the rest of the hour");
-            LogEvents.emit(cfg, "bridge.a2dp.hfp-capped", "warn", hfpData(o));
+            LogEvents.emit("bridge.a2dp.hfp-capped", "warn", hfpData(o));
         }
         // Only a real change is an event: a refused priority write retried every sweep
         // must not become thousands of log lines a day.
         if (!o.changed) return;
         Diag.log(TAG, "HFP guard: priorityOff=" + o.priorityOff + " disconnected=" + o.disconnected);
-        LogEvents.emit(cfg, "bridge.a2dp.hfp-disabled", "info", hfpData(o));
+        LogEvents.emit("bridge.a2dp.hfp-disabled", "info", hfpData(o));
     }
 
     private JSONObject hfpData(HeadsetGuard.Outcome o) {

@@ -15,6 +15,13 @@ network. On 2026-11-16 the phase 1 build was installed on the Portal beside the
 existing apps; the payload loaded and the control API answered; reboot survival was
 not tested. Everything added since then is covered by JVM tests only.
 
+**Phase 2 is in progress and nothing of it has been installed.** It copies the
+working helper code out of the old helper apps into this codebase. So far the
+`piano`, `portal` and `shield` device files build, the core has gained the
+heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
+routes listed below, and the piano build carries `audio-guard` (speaker routes
+under `/speaker` and `/audio-guard`). The old helper apps still run every device.
+
 ## Shell and payload
 
 Each app has two parts.
@@ -105,6 +112,31 @@ Served by the payload on `control.port`. All responses are JSON.
 | POST | `/settings` | JSON body `{"key": ..., "value": ...}`; stores a runtime override |
 | DELETE | `/settings?key=<key>` | Removes the override; the value returns to its default |
 | GET | `/debug/info` | From the `debug-tools` capability: `device`, `model`, `sdkInt`, `elapsedRealtimeMs` |
+| GET | `/payload` | The shell's payload status, as on the lifeline |
+| POST | `/payload` | JSON body `{"url": ..., "sha256": ...}` (or the same two as query parameters); answers `{result}`. The swap runs afterwards |
+| POST | `/payload/rollback` | Answers `{result}` |
+| POST | `/update` | JSON body `{"url": ...}`; downloads the APK and hands it to the system installer; answers `{state}` |
+| GET | `/update` | `state` (`idle`, `downloading`, `awaiting_confirmation`, `failed`) and `lastError` |
+| GET, POST | `/beat` | The heartbeat's state; `POST` sends one now and returns its body |
+| GET | `/wifi` | The Wi-Fi link: current sample, recent samples, thresholds. `?fresh=1` samples first |
+| GET | `/log` | Recent in-memory events |
+| GET | `/crashlog` | The on-disk lifecycle and crash record |
+| GET | `/diagnostics` | Time, CPU, device, thermal zones, crash record, and one section per capability |
+| POST | `/accessibility/enable` | Enables the app's accessibility service through secure settings |
+
+`/status` also carries `model`, `android`, `package`, `batteryOptExempt`,
+`wsClients`, `a11yBound` and whatever each capability contributes.
+
+A swap or rollback the shell refuses answers `409` with `ok: false` and the reason
+in both `error` and `result`. A pushed payload larger than 64 MiB is abandoned.
+
+`POST /update` waits for the download. The install itself needs a tap on the
+device's confirmation dialog unless the app is device owner; with
+`update.autoConfirm` on, the app taps its own dialog through its accessibility
+service. The outcome is written to the shell log (lifeline `GET /log`).
+
+A connection that sends nothing for 5 seconds is closed. A WebSocket client stays
+connected by answering the server's ping, which is sent every 3 seconds.
 
 Request bodies are read by their `Content-Length` and decoded as UTF-8, for every
 method. The limit is 1 MiB (1048576 bytes). A longer body gets `413` and is not
@@ -151,8 +183,29 @@ A setting's value comes from three layers. The highest one present wins:
 whether an override is in effect. A stored override that no longer fits the
 setting's type is ignored and the default applies.
 
-The only setting today is `debug.execEnabled` (boolean, default false). Nothing
-reads it yet.
+Settings the core declares on every device:
+
+| Key | Type | Fallback | Meaning |
+|-----|------|----------|---------|
+| `heartbeat.enabled` | boolean | true | Send the outbound heartbeat |
+| `heartbeat.intervalMs` | integer | 60000 | Its period; 10 seconds is the minimum |
+| `heartbeat.deviceId` | string | empty | The device name in shipped lines; empty means the device id |
+| `heartbeat.logStoreUrl` | string | empty | The log store's insert URL; empty ships nothing |
+| `heartbeat.backendUrl` | string | empty | A second place the heartbeat is posted; empty for none |
+| `logstore.app` | string | empty | `context.app` of every shipped line; empty means `daylight-<device id>` |
+| `wifi.telemetryEnabled` | boolean | true | Sample the Wi-Fi link |
+| `wifi.sampleIntervalMs` | integer | 10000 | Its period; 2 seconds is the minimum |
+| `wifi.degradedRssiDbm`, `wifi.degradedLinkMbps` | integer | -75, 20 | When a sample counts as degraded |
+| `accessibility.selfEnable` | boolean | false | Enable the app's accessibility service at each start |
+| `update.autoConfirm` | boolean | false | Tap the app's own update dialog |
+
+`debug-tools` declares `debug.execEnabled` (boolean, default false); nothing reads
+it yet. `audio-guard` declares `speaker.mac`, `speaker.name` and `speaker.enabled`.
+
+A string default in a device file may hold a `{placeholder}`. It is replaced at
+build time from the `placeholders:` map of `{private-tokens-file}`, so addresses
+and device identities stay out of the repo. A placeholder with no value fails the
+build of that device and names the placeholder, never a value.
 
 ## Lifeline
 
@@ -228,7 +281,16 @@ APK with its device file: package, SDK levels, version code, the exact permissio
 set, and that the baked payload holds the entry classes of the listed capabilities
 and no others. It also compares the sha256 of the payload baked into the APK with
 the `.sha256` file the payload build wrote, and fails when the APK holds a
-different payload than the one just built. It exits 1 on any difference.
+different payload than the one just built. It also checks that the shell
+service's foreground service types are exactly the device file's, and that a
+capability with native code ships a library for every ABI of the device. It exits
+1 on any difference.
+
+With `--legacy` it also compares the APK's permissions with what the old helper
+app for that device declared, using
+`_extensions/daylight-android/tools/legacy-permissions.yml`: every addition and
+removal must be recorded there with its reason. Until phase 2 is complete this
+fails for every device, listing the permissions still to come.
 
 ## Known limits
 

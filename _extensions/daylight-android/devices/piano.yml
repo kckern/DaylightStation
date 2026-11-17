@@ -18,5 +18,10 @@ permissions:
 capabilities:
   - debug-tools
   - accessibility
+  - audio-guard
 defaults:
   debug.execEnabled: false
+  # The speaker's identity is household-specific: both resolve from `placeholders:`
+  # in the private tokens file when this device's payload is built.
+  speaker.mac: "{piano_speaker_mac}"
+  speaker.name: "{piano_speaker_name}"
