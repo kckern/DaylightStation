@@ -265,6 +265,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `__docs/reference/core/ai-structured-wire-layer.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
+| Quick-input intake (phone uploads to the Journalist and Nutribot: voice, text, photo routes; device binding, daily allowance, once-only processing, adding an intake to a bot) | `__docs/reference/core/quick-input.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
 | Teacher flows (what a grown-up can do, from which state) | `__docs/reference/school/teacher.md` |
 | School print documents (worksheets/quizzes + OMR card grading) | `__docs/reference/school/print-documents.md` |

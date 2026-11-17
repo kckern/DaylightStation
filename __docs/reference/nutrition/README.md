@@ -400,6 +400,80 @@ tapped correction to the scanned level and accepting it.
 
 ---
 
+## Quick-input intake
+
+A recording, a typed meal or a meal photo captured in the phone app reaches Nutribot over HTTP. The routes, headers, answers, device binding, daily allowance and retry rules are the shared quick-input intake: [`__docs/reference/core/quick-input.md`](../core/quick-input.md). This section is what Nutribot does with an input.
+
+| Route | Input | Joins |
+|---|---|---|
+| `POST {app_host}/api/v1/nutribot/voice` | audio | `NutribotInputRouter.handleVoice` → `LogFoodFromVoice` → `LogFoodFromText` |
+| `POST {app_host}/api/v1/nutribot/text` | `text/plain` | `NutribotInputRouter.handleText` → `LogFoodFromText` |
+| `POST {app_host}/api/v1/nutribot/photo` | image | `NutribotInputRouter.handleImage` → `LogFoodFromImage` |
+
+Each input becomes the event a Telegram message of that kind becomes and goes to `NutribotInputRouter`, the point where Telegram and the web capture already meet. From there the path is the existing one: the meal is logged, stamped unsettled, committed through the accept path and given its receipt. There is no response context, so the status message, the receipt with its Undo/Edit buttons and "I couldn't identify any food" all go to the user's Nutribot conversation in Telegram. The HTTP answer only says what happened to the input. The handlers are in `application/services/nutribotQuickInputs.mjs`.
+
+Because it is the Telegram path, an open flow in the chat takes what comes next: a quick text or recording sent within 30 minutes of tapping Revise on an earlier log revises that log, as a Telegram message would.
+
+### Seams added for an uploaded input
+
+- **A photo as bytes.** `LogFoodFromImage` accepts `imageData.buffer`. The bytes are the source for the chat photo, the model and the photo store; nothing is downloaded and no file id is resolved. Such an image has nothing to fetch again, so a failed analysis offers no 🔄 Retry button. `NutribotInputRouter.handleImage` passes `payload.imageBuffer` through.
+- **A recording as bytes** needed no seam: the voice path already takes `{ buffer, mimeType }` in place of a Telegram file id.
+- **Outcome codes.** A no-food result carries `code: 'NO_FOOD'` and an empty transcription `code: 'EMPTY_TRANSCRIPTION'`, beside the `error` text they already had.
+
+### What each outcome answers
+
+| What Nutribot made of it | Answer |
+|---|---|
+| A meal was logged, or an open flow took the input | `200`, `duplicate: false` |
+| No food found in the text, the transcript or the photo (`NO_FOOD`) | `422 unusable_input` |
+| The bytes are not the image type they say | `422 unusable_input`, before any model is asked |
+| No words in the recording (`EMPTY_TRANSCRIPTION`) | `422 empty_transcription` |
+| Transcription is not configured (`VOICE_UNAVAILABLE`), or the AI gateway is off | `503 unavailable` |
+| The transcriber could not be reached (`TRANSCRIBE_FAILED`), any other refusal, or a thrown error | `500 processing_failed`; may be retried |
+
+### The day and meal an input belongs to
+
+A meal photographed at lunch and uploaded at night belongs to lunch. When `X-Daylight-Recorded-At` is believed, the event carries `date` (the local date it was captured) and `bucket` (the meal for the local hour it was captured, by `getMealTimeFromHour`). These are the inputs the web capture already sends: `date` is the day the log is written to (for text and voice, the day the parse treats as today, so a date the words name still wins), and `bucket` sets the meal unless the words name one. The log's `createdAt` stays the time it was processed.
+
+With no believable captured time neither is sent, and the input is filed as a Telegram message is: today, by the clock.
+
+### Once per input
+
+Nutribot has no id of its own for an uploaded input, so the ledger alone (`users/<username>/apps/nutribot/quick_input_ledger.yml`) records that an input was processed. It is noted the moment the router returns. If the router throws after the meal was saved and before it returns, the retry logs the meal a second time; the capture path is written not to throw once the meal is saved (delivery failures are caught), so this needs a store failure at that moment. A second receipt in the chat is the sign, and Undo removes it.
+
+A failed attempt sends its own message to the chat (for example "I couldn't reach the transcriber"), so an input retried through an outage leaves one such message per attempt, up to the day's attempts.
+
+### The earlier `/text`
+
+`/api/v1/nutribot/text` already answered another shape of request: `text` in a JSON body, a form or the query string, with the user defaulting to the head of household. It still does. A `POST` that names a device or an input id, or whose body is `text/plain`, is a quick input and is held to the quick-input rules; anything else reaches the earlier handler unchanged. Two things changed for the earlier shape, because the path is now kept off the app-wide CORS handler: `OPTIONS /text` answers 403, so a browser on another origin can no longer send it a request that needs a preflight (a JSON `POST`); and the route applies CORS and the body parsers itself. The earlier shape has no device binding, no daily allowance and no idempotency; neither do `/image`, `/upc` and `/pinhole`.
+
+### Config
+
+Device binding, on the device's entry in the household devices file:
+
+```yaml
+devices:
+  <device key>:
+    quick_input:
+      nutribot: [<username>, ...]
+```
+
+Daily allowance, in the nutribot app config (defaults shown). The three kinds count against the same day:
+
+```yaml
+quick_input:
+  daily_inputs: 60
+  daily_megabytes: 200
+```
+
+At the defaults one user's day is at most 60 inputs and 240 attempts. With no retries that is 60 food-detection requests (chat for text and voice, vision for a photo) and, for recordings, 60 transcriptions. The ceiling with retries is in the [shared page](../core/quick-input.md#daily-allowance-and-what-a-day-can-cost).
+
+### What is logged
+
+The capture use cases log what was typed or said by its length, the model's answer by its length, and an image by its byte count; a `data:` URL is never logged. This holds for Telegram and web captures too. The parsed result is still logged as before: item labels, grams and colors in `logText.parsed`, and density findings. Those are derived from the input and name the foods in it.
+
+---
+
 ## Config
 
 Everything lives in the `nutribot:` block of `data/household/config/scales.yml` — no new file,

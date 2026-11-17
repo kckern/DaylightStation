@@ -74,114 +74,85 @@ Starting an interview preserves the delivered debrief, its message IDs and categ
 
 ---
 
-## Voice memo intake
+## Quick-input intake
 
-A voice memo recorded away from the chat (the phone app) enters the journal over HTTP and then takes the steps a Telegram voice message takes: `SubmitVoiceMemo` has `ProcessVoiceEntry` transcribe the audio bytes and echo the transcript to the user's Journalist conversation, and `ProcessTextEntry` save the entry and send the follow-up question. The replies go to that conversation in Telegram; the HTTP answer only says what happened to the memo.
+A recording or a typed note captured away from the chat (the phone app) enters the journal over HTTP. The routes, headers, answers, device binding, daily allowance and retry rules are the shared quick-input intake: [`__docs/reference/core/quick-input.md`](../core/quick-input.md). This section is what the Journalist does with an input.
 
-```
-POST {app_host}/api/v1/journalist/memo?user=<username>
-Content-Type: audio/mp4
-X-Daylight-Device: fleet:<device key>
-X-Daylight-Memo-Id: <id>
-X-Daylight-Recorded-At: <epoch ms>     (optional)
+| Route | Input | What happens |
+|---|---|---|
+| `POST {app_host}/api/v1/journalist/voice` | audio | Transcribed, saved as a journal entry, the transcript echoed to the user's Journalist conversation, then the follow-up question sent there |
+| `POST {app_host}/api/v1/journalist/memo` | audio | The same intake as `/voice`, under the names it was built with |
+| `POST {app_host}/api/v1/journalist/text` | `text/plain` | Saved as a journal entry, then the follow-up question sent. No echo, as a Telegram text message gets none |
 
-<raw audio bytes>
-```
+The replies go to the user's Journalist conversation in Telegram; the HTTP answer only says what happened to the input.
 
-| Part | Rule |
-|------|------|
-| `user` | Required. A household username that has a Journalist conversation. There is no fallback to another user: a memo is personal. |
-| `X-Daylight-Device` | Required. `fleet:<key>`, where `<key>` is a device in the household devices file whose `voice_memo.users` lists `user` (see "Who may send"). |
-| `Content-Type` | One of `audio/mp4`, `audio/m4a`, `audio/mpeg`, `audio/mp3`, `audio/ogg`, `audio/webm`, `audio/wav`, `audio/x-wav`. Parameters after `;` are ignored. |
-| `X-Daylight-Memo-Id` | Required. 1 to 64 characters of `A-Z a-z 0-9 _ -`. The client's id for the recording; the same id from the same user is one memo. |
-| `X-Daylight-Recorded-At` | Optional. Epoch milliseconds when the recording started (see "When the entry is dated"). |
-| `Origin` | Must be absent (a native client sends none) or this app's own origin. |
-| Body | The audio, not empty, at most 25 MB (the transcriber's upload ceiling). |
+### Where an input joins the Telegram path
 
-The request is answered when processing has finished, as the Telegram webhook is. A long recording takes as long as its transcription, so the client needs a generous read timeout.
+A Telegram message reaches a use case through the Journalist's input router, which first looks for slash commands and open flows (a debrief interview, a quiz). A quick input is always a new entry, so it joins at the use cases:
 
-### Answers
+- **Voice** uses `ProcessVoiceEntry`'s steps: `transcribe` (the audio is handed over as `{ buffer, mimeType }`, which the Telegram adapter's `transcribeVoice` takes in place of a file id), `sendTranscription`, `sendNotUnderstood`.
+- **Voice and text** use `ProcessTextEntry.saveUserMessage` to save the entry and `ProcessTextEntry.execute` with `userMessageSaved` to send the follow-up question.
 
-| Answer | Body | Meaning | A client should |
-|--------|------|---------|-----------------|
-| `200` | `{ok: true, memoId, duplicate: false, transcriptionLength}` | Transcribed, journaled and answered in the chat | Drop the recording |
-| `200` | `{ok: true, memoId, duplicate: true}` | This memo is already in the journal (any reply an earlier attempt did not send has now gone) | Drop the recording |
-| `400` | `{ok: false, error: "user_required", message}` | No `user` | Fix its config; not retry as is |
-| `400` | `{ok: false, error: "invalid_memo_id", message}` | Memo id missing or malformed | Not retry |
-| `400` | `{ok: false, error: "empty_body", message}` | No audio bytes | Not retry |
-| `400` | `{ok: false, error: "unreadable_body", message}` | The body could not be read | Not retry |
-| `403` | `{ok: false, error: "cross_origin", message}` | The request, or its preflight, came from another web origin | Not applicable to a native client |
-| `403` | `{ok: false, error: "device_not_allowed", message}` | `X-Daylight-Device` is missing, is not a registered device, or the device is not bound to `user` | Keep the recording; it will go once the device is bound |
-| `404` | `{ok: false, error: "unknown_user", message}` | The user has no Journalist conversation | Keep the recording until the user is set up |
-| `413` | `{ok: false, error: "too_large", message, maxBytes}` | Over the size limit | Not retry |
-| `415` | `{ok: false, error: "unsupported_media_type", message}` | Not one of the audio types above | Not retry |
-| `422` | `{ok: false, error: "empty_transcription", memoId}` | Nothing intelligible in the audio | Not retry |
-| `429` | `{ok: false, error: "daily_limit", message, limit, retryAfterSeconds}` plus a `Retry-After: <seconds>` header | The user's daily allowance is used up. `limit` is `"memos"` or `"bytes"`; `retryAfterSeconds` is the time to the user's local midnight | Keep the recording and send it again after `retryAfterSeconds` |
-| `500` | `{ok: false, error: "processing_failed", memoId}` | Transcription, the journal or a reply failed | Retry with backoff |
-| `503` | `{ok: false, error: "unavailable", message}` | No AI gateway, journal or memo ledger on this backend | Retry with backoff |
+The order differs from a Telegram message in one way. A quick input comes from a client that retries, so its entry is saved as soon as there is text to save, before anything is sent, and each reply is noted when it has gone out. A Telegram voice message keeps its own order (echo, then save): Telegram does not retry.
 
-Refusals are decided in this order, all of them before the body is read: `cross_origin`, `unavailable`, `user_required`, `device_not_allowed`, `unknown_user`, `invalid_memo_id`, `unsupported_media_type`, `too_large` (from the declared length), `daily_limit`. Then the body is read (`too_large` again for an upload with no declared length, `unreadable_body`), then `empty_body`. Nothing is said about a user to a device that may not write for them.
+The handlers are `journalVoiceHandler` and `journalTextHandler` in `application/services/journalInputs.mjs`; `journalQuickInputs.mjs` assembles them over one ledger.
 
-The route guards itself, so the app-wide CORS handler and body parsers are kept off its path (`exceptPaths` in `app.mjs`). No response from it carries an `Access-Control-Allow-*` header, and a JSON-typed body is refused without being parsed.
+### One input, one entry
 
-### Who may send
+- A recording's entry is saved under the journal id `memo:<input id>`, a note's under `note:<input id>`. The journal is the record of what was taken in; the ledger (`users/<username>/apps/journalist/memo_ledger.yml`) records which replies went out.
+- A retry that finds the entry does not transcribe again. It sends only the replies not yet noted, from the saved entry's text, and answers `duplicate: true`. An outage of the chat costs one transcription however many times the client retries, and the follow-up question is not lost.
+- A recording found empty gets the "couldn't understand" message in the chat once, and its retry answers `422 empty_transcription` without another transcription.
+- An entry that is in the journal with no ledger record (records are dropped after 35 days) is treated as finished.
+- `/voice` and `/memo` are one intake: an id sent to one is a duplicate on the other. A note and a recording with the same id are two inputs.
+- If a multi-part transcript echo failed part way, the retry sends all of its parts again.
 
-A memo writes to one person's journal, echoes into their chat and spends transcription money, so the caller must be a household device that has been bound to that person. The binding is on the device's entry in the household devices file (`hardware/devices.yml`):
+### When the entry is dated
+
+An input captured offline and uploaded later is journaled at the time it was captured: a believed `X-Daylight-Recorded-At` becomes the stored entry's timestamp, so the entry sorts and is found by date where it belongs. The Journalist's replies are stamped when they are sent.
+
+The entry time is an optional input to `ProcessVoiceEntry`, `ProcessTextEntry` and the journal repository's `saveMessage`. A Telegram message passes none and is stamped when it is processed, as before.
+
+### The `/memo` alias
+
+`/memo` answers and logs with the names it had before the routes were generalized, and is otherwise `/voice`:
+
+| | `/voice` | `/memo` |
+|---|---|---|
+| Id in answers | `inputId` and `memoId` | `memoId` |
+| Bad id | `400 invalid_input_id` | `400 invalid_memo_id` |
+| Daily limit of inputs in the 429 body | `limit: "inputs"` | `limit: "memos"` |
+| Log events | `quick_input.*` with `bot`, `kind`, `inputId` | `journalist.memo.*` with `memoId` |
+
+Both accept `X-Daylight-Input-Id` and `X-Daylight-Memo-Id`.
+
+### Config
+
+Device binding, on the device's entry in the household devices file:
 
 ```yaml
 devices:
   <device key>:
-    # ...the device's other settings
-    voice_memo:
-      users: [<username>, ...]
+    quick_input:
+      journalist: [<username>, ...]
 ```
 
-The client sends `X-Daylight-Device: fleet:<device key>`. A device with no `voice_memo.users`, a key that is not in the file, a `browser:` id or a missing header is refused with `403 device_not_allowed`, as is a bound device asking for a user it does not list.
+`voice_memo: { users: [...] }` on the device still binds it for `/voice` and `/memo`, and for those only.
 
-The header is an identity the device states, not a secret it proves. It stops a device or a web page that was never given this role from writing to a journal by naming a user; it does not stop a caller on the household network that copies a bound device's key. The route is reachable only from the household network and VPN, like the rest of the API.
-
-### Daily allowance
-
-Each user may send 60 memos and 200 MB of audio for transcription per local day. Both are set in the journalist app config:
+Daily allowance, in the journalist app config (defaults shown). Recordings and notes count against the same day:
 
 ```yaml
-voice_memo:
-  daily_memos: 60
+quick_input:
+  daily_inputs: 60
   daily_megabytes: 200
 ```
 
-- A memo counts once per day however many times it is retried. Bytes are counted every time audio is sent to the transcriber, so a memo that keeps failing there still runs into the byte limit.
-- A retry that will not transcribe (the entry is already journaled, or the memo was found empty) is never held to the allowance.
-- The check runs before the body is read, from the declared `Content-Length`, and again against the real size before transcription.
-- The day ends at midnight in the user's household timezone. The count is kept in the memo ledger on disk, so a restart does not reset it.
-- The limit is on bytes, not minutes: the length of a recording is not known until it has been transcribed. 200 MB is roughly seven hours of the phone's AAC recording.
-- Two uploads for one user that pass the check at the same moment are both let through, so the day can end slightly over.
+`voice_memo: { daily_memos, daily_megabytes }` still counts where `quick_input` sets no value.
 
-### When the entry is dated
+At the defaults one user's day is at most 60 inputs and 240 attempts: with no retries, 60 transcriptions and 120 chat requests if every input is a recording. The ceiling with retries is in the [shared page](../core/quick-input.md#daily-allowance-and-what-a-day-can-cost).
 
-A memo recorded offline and uploaded later is journaled at the time it was recorded: `X-Daylight-Recorded-At` becomes the stored entry's timestamp, so the entry sorts and is found by date where it belongs. The header is believed when it is a number of epoch milliseconds no more than 5 minutes ahead of the backend's clock and no more than 30 days old. Otherwise it is ignored, the entry is stamped when it is processed, and `journalist.memo.recordedAtIgnored` is logged with the reason (`not_a_time`, `in_the_future`, `too_old`). The Journalist's replies are stamped when they are sent.
+### What is logged
 
-The entry time is an optional input to `ProcessVoiceEntry`, `ProcessTextEntry` and the journal repository's `saveMessage`. A Telegram message passes none and is stamped when it is processed, as before.
-
-### One memo, one entry, one transcription
-
-The memo's journal entry is saved under the id `memo:<memo id>`, and a per-user memo ledger (`users/<username>/apps/journalist/memo_ledger.yml`) records how far each memo got.
-
-- The entry is saved as soon as the transcript exists, before anything is sent to the chat. A Telegram voice message keeps its own order (echo, then save): Telegram does not retry, so it has no need of this.
-- The ledger notes each reply (the transcript echo, the follow-up question) when it has gone out.
-- A retry that finds the entry does not transcribe again. It sends only the replies not yet noted, from the saved entry's text, and answers `duplicate: true`. So an outage of the chat costs one transcription however many times the client retries, and the follow-up question is not lost.
-- A retry of a finished memo answers `duplicate: true` and does nothing else. This holds across a backend restart.
-- A memo found empty is noted too, and its retry answers `422` without another transcription.
-- Two uploads of one memo that overlap share one run.
-- Ledger records are dropped after 35 days. An entry that is in the journal with no ledger record is treated as finished.
-
-A `500` means the memo may be retried. If a multi-part echo failed part way, the retry sends all of its parts again. The backend does not keep the audio: a client must hold the recording until it has a `200`.
-
-### Log events
-
-Module `journalist-api`: `journalist.memo.received`, `.accepted`, `.duplicate` (`resumed: true` when replies were finished), `.rejected` (with `reason` and `status`), `.failed`, `.recordedAtIgnored`, `.apologyFailed`, `.identityResolutionFailed`, `.deviceLookupFailed`, `.ledger.writeFailed`. They carry the memo id, username, device id, byte count, transcript length and duration.
-
-Neither the audio nor the words in it go to the log from anywhere on the voice path. The voice use case logs a memo's audio as `{bytes, mimeType}` and a Telegram voice message as its file id; an AI reply that cannot be parsed is logged by its length. The transcript is stored in the journal and, as for every entry, in the Journalist's AI interaction file.
+Neither the audio nor the words in an entry go to the log from anywhere on this path. The voice use case logs a recording as `{bytes, mimeType}` and a Telegram voice message as its file id; an AI reply that cannot be parsed is logged by its length. The text is stored in the journal and, as for every entry, in the Journalist's AI interaction file.
 
 ---
 
