@@ -56,7 +56,10 @@ public final class DeviceProbe {
                     }
                     pow.put("thermalStatus", name);
                 }
-                pow.put("locationPowerSaveMode", pm.getLocationPowerSaveMode());
+                // API 28. The piano bridge built for 29 and up; this module's floor is 26.
+                if (Build.VERSION.SDK_INT >= 28) {
+                    pow.put("locationPowerSaveMode", pm.getLocationPowerSaveMode());
+                }
                 pow.put("sustainedPerfSupported", pm.isSustainedPerformanceModeSupported());
                 pow.put("deviceIdleMode", pm.isDeviceIdleMode());
                 pow.put("interactive", pm.isInteractive());
