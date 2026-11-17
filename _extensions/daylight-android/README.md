@@ -7,10 +7,12 @@ that device's package name, SDK levels, ports and capabilities.
 **State.** Phase 1 built the foundation: a service, a control API and a payload the
 app can swap over the network. Phase 2 ported the helper code of the old helper apps
 into capabilities, and the `piano`, `portal` and `shield` device files build with
-them. There is no kiosk and no WebView yet (phase 3). Fully Kiosk Browser and the
-old helpers still run every device. The only hardware fact: on 2026-11-16 the phase
+them. Phase 3 is adding the kiosk: the WebView window, lockdown, screen power, volume
+and the app launcher are built and listed by all three devices (lockdown switched off).
+A build that lists `lockdown` gets a HOME filter on the kiosk Activity from its
+generated device manifest. Fully Kiosk Browser and the old helpers still run every device. The only hardware fact: on 2026-11-16 the phase
 1 build was installed on the Portal beside the existing apps, its payload loaded
-and the control API answered. Nothing from phase 2 has run on a device.
+and the control API answered. Nothing from phase 2 or phase 3 has run on a device.
 
 Operating a device (routes, error codes, settings, the lifeline, the CLI) is covered
 in `__docs/reference/android/README.md`. This file covers building.

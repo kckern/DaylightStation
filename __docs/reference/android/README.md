@@ -8,8 +8,8 @@ capability are covered in `_extensions/daylight-android/README.md`.
 ## Status: helpers ported, nothing switched
 
 **Nothing here runs a device yet.** Fully Kiosk Browser and the old helper apps
-still run all three devices. There is no kiosk, no WebView and no screen control in
-this app (phase 3).
+still run all three devices. The kiosk capabilities are in the build and have never
+run on a device.
 
 **What has been on hardware.** On 2026-11-16 the phase 1 build (shell, payload
 loader, control API, lifeline) was installed on the Portal beside the existing
@@ -25,14 +25,18 @@ three device builds are:
 
 | Device | Capabilities |
 |---|---|
-| `piano` | `webview-host`, `debug-tools`, `accessibility`, `synth`, `midi-bridge`, `bluetooth-controls` (roles), `audio-guard` |
-| `portal` | `webview-host`, `debug-tools`, `accessibility`, `volume-keys`, `hid-input`, `presence` |
-| `shield` | `webview-host`, `debug-tools`, `bluetooth-controls` (gamepad), `mic-bridge`, `lease-gate` |
+| `piano` | `webview-host`, `debug-tools`, `accessibility`, `lockdown`, `screen-power`, `volume`, `app-launcher`, `synth`, `midi-bridge`, `bluetooth-controls` (roles), `audio-guard` |
+| `portal` | `webview-host`, `debug-tools`, `accessibility`, `lockdown`, `screen-power`, `volume`, `app-launcher`, `volume-keys`, `hid-input`, `presence` |
+| `shield` | `webview-host`, `debug-tools`, `accessibility`, `lockdown`, `screen-power`, `volume`, `app-launcher`, `bluetooth-controls` (gamepad), `mic-bridge`, `lease-gate` |
 
-Phase 3 has begun: every device also lists `webview-host`, the kiosk window. The
-other kiosk capabilities (`lockdown`, `screen-power`, `volume`, `app-launcher`, the
-rest of `debug-tools`) are not built yet, so a device has no lockdown, no screen
-control and no immersive mode from this app, and no start URL is compiled in.
+Phase 3 is under way. Every device lists the kiosk window (`webview-host`),
+`lockdown`, `screen-power`, `volume` and `app-launcher`, and each device's start
+URL is compiled in from `{private-tokens-file}`. **None of the kiosk capabilities
+has run on a device**: everything said about them below is what the code does
+under JVM tests and what the built APKs declare. Lockdown is built in and switched
+off (`lockdown.enabled: false` in all three device files) until a device's home
+app is switched, because the app is installed beside Fully until then. The rest of
+`debug-tools` (screenshot, eval, logcat and the others) is not built yet.
 
 The kiosk page cannot use the helper routes yet: the old helpers answered it on
 `localhost` with no token and with `Access-Control-Allow-Origin: *`; the control
@@ -219,8 +223,11 @@ Errors have the shape `{"ok":false,"error":"<code>", ...}` with a `message` fiel
 | 500 | `internal` | A handler threw something unexpected |
 | 501 | `unsupported` | The capability cannot do this on this device |
 
-No route returns 501 today. The code is reserved for capabilities that run on some
-devices and not others.
+501 is how a route says this device cannot do something, with the reason:
+`POST /device/reboot` without device owner (`device owner required`),
+`POST /screen {"on":false}` on a device with no way to turn its display off,
+`POST /lockdown/lock` while `lockdown.enabled` is false, `POST /screen/brightness`
+without the `WRITE_SETTINGS` grant, `/volume` on a device with no audio service.
 
 ### WebSocket on the control port
 
@@ -257,6 +264,10 @@ and is disconnected; the others are not affected.
 | core | `GET /status`, `GET /capabilities`, `GET /settings`, `POST /settings`, `DELETE /settings`, `GET /payload`, `POST /payload`, `POST /payload/rollback`, `POST /update`, `GET /update`, `GET /beat`, `POST /beat`, `GET /wifi`, `GET /log`, `GET /crashlog`, `GET /diagnostics`, `POST /accessibility/enable` |
 | `debug-tools` | `GET /debug/info` |
 | `webview-host` | `GET /kiosk/status`, `POST /kiosk/load`, `POST /kiosk/load-start`, `POST /kiosk/reload`, `POST /kiosk/foreground`, `POST /kiosk/renderer/reset`, `POST /kiosk/restart`, `POST /kiosk/overlay` |
+| `lockdown` | `GET /lockdown`, `POST /lockdown/lock`, `POST /lockdown/unlock`, `POST /lockdown/input` |
+| `screen-power` | `POST /screen`, `POST /screen/brightness`, `POST /device/reboot` |
+| `volume` | `GET /volume`, `POST /volume` |
+| `app-launcher` | `POST /launch` |
 | `synth` | `POST /panic` |
 | `midi-bridge` | `POST /connect`, `POST /forget`, `POST /scan`, `GET /midi/tap`, `GET /midi/send`, `POST /midi/send`, `POST /reset`, `GET /loopback`, `POST /loopback`, `POST /tone` |
 | `audio-guard` | `GET /speaker`, `POST /speaker`, `POST /speaker/reconnect`, `POST /speaker/bt-cycle`, `POST /audio-guard/bootstrap`, `POST /audio-guard/override`, `POST /audio-guard/volume-check` |
@@ -282,24 +293,30 @@ missing provider is a normal state.
 | `NoteListener` (on the note bus) | `synth` subscribes | `midi-bridge` publishes each live note |
 | `OutputGate` | `synth` | `audio-guard` closes it when sound would leave by the wrong speaker |
 | `BluetoothRole` | `midi-bridge` (`midi`), `audio-guard` (`audio`) | `bluetooth-controls`, role mode |
-| `PairingDialogExemption` | `bluetooth-controls` | `lockdown` (phase 3) |
-| `ScreenPower` | nobody until phase 3 (`screen-power`) | `volume-keys`, which logs `screen-toggle-unavailable` |
-| `InputLock` | nobody until phase 3 (`lockdown`) | `volume-keys`, which treats the lock as off |
-| `PackageGate` | nobody until phase 3 (`lockdown`, on a device that can have a device owner) | `lease-gate`, which keeps the gate closed |
-| `KioskSurface` | `webview-host` | `lockdown`, `screen-power`, `app-launcher`, `debug-tools` (the rest of phase 3): the kiosk window, its page, evaluate and capture |
-| `LockdownControl`, `DeviceAdminAccess` | nobody yet (`lockdown`) | `webview-host`: what is in front, recall, reboot support |
-| `ScreenControl` | nobody yet (`screen-power`) | `webview-host` for `daylight.screen()`; without it the bridge call answers `false` |
-| `VolumeControl` | nobody yet (`volume`) | `webview-host` for `daylight.volume()`; without it the answer is `{}` |
-| `AppLaunch` | nobody yet (`app-launcher`) | `webview-host` for `daylight.launch()`; without it the answer is `false` |
+| `PairingDialogExemption` | `bluetooth-controls` | `lockdown`: while it is granted, Android's own pairing dialog (Settings in front) is not recalled over |
+| `ScreenPower` | `screen-power` | `volume-keys`: wake on a key, sleep on a double volume-down. Without it the attempt is logged `screen-toggle-unavailable` |
+| `InputLock` | `lockdown` | `volume-keys`: while the lock is active a volume key does nothing |
+| `PackageGate` | `lockdown` | `lease-gate`: a closed package is kept from the front, and hidden as well where this app is device owner |
+| `KioskSurface` | `webview-host` | `lockdown`, `screen-power`, `app-launcher`, and the rest of `debug-tools` when it is built: the kiosk window, its page, evaluate and capture |
+| `LockdownControl`, `DeviceAdminAccess` | `lockdown` | `webview-host` (what is in front, recall, reboot support), `screen-power` (screen off, reboot), `app-launcher` (a launched app may stay in front) |
+| `ScreenControl` | `screen-power` | `webview-host` for `daylight.screen()`; without it the bridge call answers `false` |
+| `VolumeControl` | `volume` | `webview-host` for `daylight.volume()`; without it the answer is `{}` |
+| `AppLaunch` | `app-launcher` | `webview-host` for `daylight.launch()`; without it the answer is `false` |
 
 Notifications that are not instrument notes go over the core event bus
-(`core.events()`), by topic: `screen` `{on}`, `network` `{connected}`, `key`
-`{code, action}` and `kiosk-focus` `{focused}`. `webview-host` forwards `screen`,
-`network` and `key` to the page as `daylight:` events.
+(`core.events()`), by topic: `screen` `{on}` (from `screen-power`, read from the
+display's own state), `network` `{connected}`, `key` `{code, action}` (from
+`webview-host` for the keys it intercepts, and from `volume-keys` for the volume
+keys), `kiosk-focus` `{focused}` and `foreground` (what `lockdown` saw take the
+front, and each recall). `webview-host` forwards `screen`, `network` and `key` to
+the page as `daylight:` events.
+
+`screen-power` also listens on the note bus: a note played on the instrument wakes
+a dark display, within `power.wakeCooldownMs` and outside the no-wake window.
 
 The accessibility service is the `accessibility` capability's shell half; the core
-holds the bound service and shares it (`volume-keys`, `hid-input`,
-`bluetooth-controls` in role mode, and the update confirmation use it).
+holds the bound service and shares it (`lockdown`, `screen-power`, `volume-keys`,
+`hid-input`, `bluetooth-controls` in role mode, and the update confirmation use it).
 
 ## Settings
 
@@ -336,6 +353,12 @@ breaks a rule fails the build's tests. Settings with a rule today:
 | `midi.scanTimeoutMs` | 1000 to 120000 |
 | `midi.reconnectDelayMs` | 250 to 600000 |
 | `mic.port` | 1024 to 65535 |
+| `lockdown.mode` | `auto`, `app` or `owner` |
+| `lockdown.maxUnlockMin` | 1 to 60 |
+| `lockdown.recallGraceMs` | 0 to 60000 |
+| `power.screenVerifyMs` | 0 to 60000 |
+| `power.wakeCooldownMs` | 0 to 3600000 |
+| `launcher.confirmMs` | 0 to 30000 |
 
 A stored override that no longer fits the setting's type or rule (left by an older
 payload, for example) is ignored: the default applies, `overridden` reads false,
@@ -371,7 +394,7 @@ Settings the core declares on every device:
 `debug-tools` declares `debug.execEnabled` (boolean, default false); nothing reads
 it yet. `audio-guard` declares `speaker.mac`, `speaker.name` and `speaker.enabled`.
 
-**Secret settings.** `presence.token` and `lease.credential` are secrets. A secret
+**Secret settings.** `presence.token`, `lease.credential` and `lockdown.exitPin` are secrets. A secret
 is a string setting with an empty fallback that differs from the others in three
 ways: its value is never returned (`GET /settings`, and the answers to `POST` and
 `DELETE`, show `"(set)"` or an empty string); it cannot have a default in a device
@@ -389,7 +412,11 @@ build of that device and names the placeholder, never a value.
 |---|---|---|---|
 | `debug-tools` | all | `GET /debug/info` | `debug.execEnabled` |
 | `webview-host` | all | The kiosk: a fullscreen WebView, the `window.daylight` page bridge, page-load recovery, the overlay layers | `webview.*`, `recovery.*` |
-| `accessibility` | piano, portal | The app's one accessibility service, shared through the core | `accessibility.selfEnable` (core) |
+| `accessibility` | all | The app's one accessibility service, shared through the core | `accessibility.selfEnable` (core) |
+| `lockdown` | all (off) | Keeps the kiosk in front: watcher and recall, HOME candidate, device admin, owner mode where this app is device owner | `lockdown.*` |
+| `screen-power` | all | Screen on and off, brightness, keep-awake locks, reboot under device owner | `power.*` |
+| `volume` | all | A stream's volume as a percentage | none |
+| `app-launcher` | all | Starts an allowed app from the kiosk | `launcher.allowed`, `launcher.confirmMs` |
 | `synth` | piano | Native sampler | none |
 | `midi-bridge` | piano | BLE-MIDI link to the instrument | `midi.*` |
 | `audio-guard` | piano | Keeps sound on the configured Bluetooth speaker | `speaker.mac`, `speaker.name`, `speaker.enabled` |
@@ -414,8 +441,10 @@ swap or restart detaches and re-attaches without the Activity going away, and wi
 no payload the Activity shows one line of grey text on black.
 
 `webview.startUrl` is the start page. Empty means not configured: the screen says
-so, and `GET /kiosk/status` answers `ready:false` with `reason`. The three device
-files leave it empty until the household value is supplied (see the comment in each).
+so, and `GET /kiosk/status` answers `ready:false` with `reason`. Each device file
+sets it to a placeholder (`{piano_start_url}`, `{portal_start_url}`,
+`{shield_start_url}`) that is resolved from `{private-tokens-file}` when that
+device is built; a build test fails a start URL that is not https.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -463,6 +492,219 @@ frame is on an allowed origin.
 Not proven until it runs on a device: every WebView behavior above, which
 `androidx.webkit` features each device's WebView reports, the overlay windows over
 another app, and the vector TV banner on the Shield's home row.
+
+### `lockdown`
+
+Needs `webview-host` and `accessibility`. **Nothing in this section has run on a
+device.** It keeps the kiosk in front. Once a second a watcher reads the windows on
+screen through the accessibility service and decides whether to bring the kiosk
+back. The decision, in order:
+
+1. Not locked, or the display is off: stay. A display whose state cannot be read
+   counts as on.
+2. The kiosk Activity is resumed: stay.
+3. The accessibility service is not bound, or there is no window sample under
+   three seconds old: **recall**. The watcher fails closed.
+4. This app's own package is in front: stay.
+5. The package in front has been closed by a package gate (`lease-gate`): recall,
+   whatever the lists below say.
+6. It matches `lockdown.allowedApps` or a live exemption: stay.
+7. It is Android Settings while a pairing the page started waits on the system's
+   pairing dialog: stay.
+8. Inside `lockdown.recallGraceMs` of first leaving the kiosk: stay.
+9. Otherwise: recall.
+
+A recall starts the kiosk Activity from the accessibility service (the one way
+measured to work from the background on Android 10), then tries HOME, then a plain
+start; one that does not take is retried every second. Each foreground change is
+written to the shell log with the windows that came before it.
+
+**Modes.** `lockdown.mode` is `auto` (default), `app` or `owner`; the mode in force
+is read at run time and reported by `GET /lockdown`. `app` needs no special
+authority. `owner` runs only where this app is device owner and adds lock task, a
+persistent HOME preference, a disabled status bar and keyguard, and (with
+`lockdown.ownerRestrictions`) the safe-boot, factory-reset, add-user and
+apps-control restrictions, plus hiding the packages in `lockdown.ownerHidePackages`.
+The package that provides the WebView and this app are never hidden. Asking for
+`owner` without ownership runs `app` and says so in `modeError`.
+
+| Device | What is possible |
+|---|---|
+| Shield | `app` only. It has no `android.software.device_admin` feature: no device admin, no device owner, no lock task |
+| Portal | `app` until ownership is transferred. The old helper is device owner today; this app's admin declares `support-transfer-ownership` so it can receive ownership |
+| Piano tablet | `app`, with a device admin for screen-off once it is activated |
+
+A build that lists `lockdown` adds a HOME filter to the kiosk Activity, so the
+device offers it as a home app. It becomes the home app only when chosen on the
+device; `homeIsKiosk` in `GET /lockdown` is what the system resolves HOME to, read
+every five seconds.
+
+| Method | Path | Body | Answer |
+|---|---|---|---|
+| GET | `/lockdown` | | The contract's `locked`, `mode`, `homeIsKiosk`, `allowedApps`, `foreground`, `foregroundActivity`, `kioskInForeground`, `recallsSinceBoot`, `lastRecall` (null before the first recall). Also `enabled`, `watcher` (`running` or `stopped`), `home`, `exemptions`, `blockedPackages`, `packageHiding` `{supported, reason}`, `pairingDialogAllowed`, `a11yBound`, `adminActive`, `deviceOwner`, `lockTaskActive`, `overlayGranted`, `shieldShown`, `exitGesture`, `inputLock`, `trail`, and when they apply `relockAtMs`, `allowedAppsError`, `ownerError`, `modeError` |
+| POST | `/lockdown/lock` | | `{locked:true, mode}`; 501 with reason `lockdown.enabled is false` when lockdown is off |
+| POST | `/lockdown/unlock` | `{forMs?}` | `{locked:false, relockAtMs}` |
+| POST | `/lockdown/input` | `{locked, lockedUntil?, revision?}` | `{inputLocked, revision, lockedUntil}`; 409 `stale_revision` for an older or conflicting command |
+
+`GET /lockdown` answers from memory and makes no system call, so it can be polled
+every second. `foreground` is this app's package whenever the kiosk Activity is
+resumed, else the watcher's sample if it is fresh, else null. `recallsSinceBoot`
+counts since the payload started.
+
+**An unlock always ends.** With no `forMs` it lasts `lockdown.maxUnlockMin`
+minutes; a longer `forMs` is cut to that. The setting takes 1 to 60 and cannot be
+switched off. The unlock is stored and survives a restart; a stored unlock with no
+end, with an end beyond the ceiling, or that cannot be read, is locked. The page
+bridge has no way to unlock: unlocking is this route, behind the token, or the PIN.
+
+**Exit gesture.** Seven quick taps in the top-left corner raise a native PIN prompt.
+`lockdown.exitPin` is a secret setting with no compiled default; with no PIN there
+is no gesture and the only way out is the API. The PIN is compared in constant
+time and never logged; five wrong entries lock the prompt for five minutes. A
+correct PIN unlocks for `lockdown.maxUnlockMin` minutes.
+
+**`POST /lockdown/input`** is beyond the control API contract. It is the ordered
+stop and release the Portal's old helper took on `PUT /lockdown`: while the input
+lock is active the volume keys do nothing. A release must carry a higher revision
+than the stop it clears; a malformed command releases nothing. Nothing in the
+backend calls this route on the new app yet.
+
+**Exemptions.** Three things may be in front of a locked kiosk without being on
+`lockdown.allowedApps`, each for a limited time: an app `POST /launch` started
+(until it has been seen in front and leaves, or 30 seconds if it never appears),
+the system's package installer while `POST /update` waits for its confirmation
+(5 minutes from the request), and Android Settings while a pairing the page
+started waits on the system's dialog. A timed exemption never lasts more than an
+hour. `GET /lockdown` lists those in force under `exemptions`.
+
+**The package gate.** `lockdown` provides the gate `lease-gate` enforces through.
+A closed package is recalled whenever it comes to the front and `POST /launch`
+refuses it; where this app is device owner it is hidden as well. The gate is ready
+only while the kiosk is locked, so with `lockdown.enabled` false, or during an
+unlock, nothing is enforced and `GET /lease` reads `ready:false`. A closed app is
+only kept from the front; it may keep running in the background.
+
+**The Portal's Control Center.** With `lockdown.dismissControlCenter` on (the
+Portal's device file), the swipe-up panel is pushed back down as the old helper
+did: a system window covering most of the display is the signal, and after the
+open animation a downward swipe is sent, checked, and repeated up to six times.
+It is left alone during an unlock window. The window events it needs are asked of
+the accessibility service only while the setting is on.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `lockdown.enabled` | true (false in every device file) | Master switch. Off: never locked, nothing recalled |
+| `lockdown.mode` | `auto` | `auto`, `app`, `owner` |
+| `lockdown.allowedApps` | empty | What may stay in front: `com.example.app`, `com.example.*`, `com.example.app/.Activity`, comma-separated. A list that does not parse allows nothing and is reported in `allowedAppsError` |
+| `lockdown.recallGraceMs` | 0 | Grace before recalling |
+| `lockdown.maxUnlockMin` | 60 | Length of an unlock with no `forMs`, and the ceiling |
+| `lockdown.exitPin` | none (secret) | PIN for the exit gesture |
+| `lockdown.immersive` | true | Immersive fullscreen while locked |
+| `lockdown.statusBarShield` | true | A touch-eating strip over the status bar while locked; needs `SYSTEM_ALERT_WINDOW` |
+| `lockdown.selfEnableAccessibility` | true | Put the accessibility service back when it is found unbound; needs `WRITE_SECURE_SETTINGS` |
+| `lockdown.ownerRestrictions` | false (true on the Portal) | Owner mode: the four user restrictions. They persist and need ADB to undo |
+| `lockdown.ownerHidePackages` | empty (the old helper's list on the Portal) | Owner mode: packages to hide |
+| `lockdown.dismissControlCenter` | false (true on the Portal) | Push the Portal's Control Center back down |
+
+One-time grants, per device, over ADB. `<package>` is the device's application id.
+None has been run.
+
+```bash
+# Screen off through a device admin (piano tablet, Portal). Not possible on the Shield.
+adb shell dpm set-active-admin <package>/net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver
+# The accessibility service: the watcher, and the Shield's screen off. Append to the existing value.
+adb shell settings get secure enabled_accessibility_services
+adb shell settings put secure enabled_accessibility_services <existing>:<package>/net.kckern.daylight.cap.accessibility.shell.DaylightAccessibilityService
+adb shell settings put secure accessibility_enabled 1
+adb shell pm grant <package> android.permission.WRITE_SECURE_SETTINGS
+# The status-bar shield and the overlay layers
+adb shell appops set <package> SYSTEM_ALERT_WINDOW allow
+# Home app, when a device is switched (not before)
+adb shell cmd package set-home-activity <package>/net.kckern.daylight.cap.webviewhost.shell.KioskActivity
+```
+
+Device owner on the Portal arrives by `DevicePolicyManager.transferOwnership` from
+the old helper. No command here sets it.
+
+### `screen-power`
+
+**Nothing in this section has run on a device.**
+
+| Method | Path | Body | Answer |
+|---|---|---|---|
+| POST | `/screen` | `{on}` | `{screenOn}`, read back from the display's own state. `ok` is true only when that state is the one asked for; otherwise `ok:false`, `error:"screen_state_unchanged"`. Off on a device with no way to do it: 501 with the reason |
+| POST | `/screen/brightness` | `{level}` 0 to 255 | `{level}` read back; 501 with reason `WRITE_SETTINGS is not granted` without the grant |
+| POST | `/device/reboot` | | `{rebooting:true}`; 501 with reason `device owner required` otherwise |
+
+How the display is turned off is chosen at each request:
+
+1. An active device admin (the one `lockdown` declares): `lockNow`.
+2. Else a bound accessibility service, on Android 9 or later: the lock-screen
+   action. This is the Shield's only way.
+3. Else 501: `device admin or a bound accessibility service required` (below
+   Android 9: `device admin required`).
+
+The display is turned on with a wake lock. Its state is read from
+`Display.getState()`. `PowerManager.isInteractive()` is wrong on the Portal and is
+not used. Each change is published once as `screen` `{on}`, which the page
+receives as `daylight:screen`. While the payload runs the capability holds a
+partial wake lock and a Wi-Fi lock (settings below) so the control API still
+answers with the display off, and it takes the wake lock for a screen-off even
+when the setting is off. Reboot needs device owner: never on the Shield, and on
+the Portal only after ownership is transferred.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `power.keepScreenOn` | true | Keep the kiosk window's screen on |
+| `power.wifiLock` | true | Hold a high-performance Wi-Fi lock |
+| `power.preventSleepWhileScreenOff` | true | Hold a partial wake lock |
+| `power.screenVerifyMs` | 3000 | How long `/screen` waits for the display to change |
+| `power.wakeCooldownMs` | 8000 | Least time between two wakes by a played note |
+| `power.noWakeStart`, `power.noWakeEnd` | empty | `HH:mm` local window in which a played note wakes nothing |
+
+One-time grant: `adb shell appops set <package> WRITE_SETTINGS allow` (brightness).
+
+### `volume`
+
+**Has not run on a device.** `GET /volume?stream=3` and `POST /volume`
+`{level: 0..100, stream?}` answer `{stream, level, index, maxIndex}`. `level` maps
+onto the stream's index range rounding down, as Fully does; the `level` read back
+is the smallest percentage that sets the same index again, so writing a read value
+back moves nothing. `POST` answers `ok:true` only when the index read back is the
+one asked for; a stream something else holds answers `ok:false`,
+`error:"volume_unchanged"` with what the stream reads. `stream` is an Android
+stream number 0 to 10, 3 (music) by default.
+
+### `app-launcher`
+
+**Has not run on a device.** `POST /launch` takes `{package, activity?, action?,
+extras?}` or `{intent: "intent:#Intent;...;end"}` and answers `{launched:true,
+component}`, or `ok:false` with `error`:
+
+| `error` | Meaning |
+|---|---|
+| `not_allowed` | The activity the request resolves to is not in `launcher.allowed`, or a package gate has closed its package, or it resolves to the system's chooser |
+| `not_installed` | Nothing on the device resolves it |
+| `start_refused` | The system refused the start |
+| `launch_not_observed` | Started, and not seen in front within `launcher.confirmMs` (only where the foreground can be seen) |
+
+A malformed request is `400`. Every request is resolved to one explicit activity
+first, and that activity is what is checked and what is started, so an action-only
+request or an `intent:` URI cannot reach an app that is not listed. An `intent:`
+URI with a selector, or carrying a `file:` or `content:` URI, is refused as
+malformed, and no flag from the request reaches the start. `extras` are strings
+only. The page's `daylight.launch()` goes through the same two steps as the route.
+
+A launched package may stay in front until it has been seen there and leaves; it
+does not need to be in `lockdown.allowedApps`. The answer carries
+`observedInFront`: true when the watcher saw it, null when there is no bound
+accessibility service to see with.
+
+`launcher.allowed` (default empty: nothing may be launched) uses the allowlist
+syntax. It is separate from `lockdown.allowedApps` on purpose: the first is what
+may be started, the second what may stay in front with no launch at all. The
+Shield's device file allows its arcade emulator's package; the other two allow
+nothing until each device's cutover reads what Fully allows today.
 
 ### `synth`
 
@@ -578,9 +820,15 @@ under the page. Other keys pass through untouched. They are counted
 (`otherKeysSeen` in `/status`) and not recorded: `GET /log` holds volume keys
 only, so what is typed on an attached keyboard is never in it.
 With `keys.screenToggleEnabled` on, any volume key wakes a dark panel and two
-volume-down presses within `keys.doublePressMs` sleep it; that needs the
-`screen-power` capability (phase 3), and until then the attempt is logged as
-`screen-toggle-unavailable`.
+volume-down presses within `keys.doublePressMs` sleep it, through `screen-power`;
+on a build without it the attempt is logged as `screen-toggle-unavailable`.
+
+Each press and each release is also published on the event bus, so a page in this
+app's own kiosk receives it as `daylight:key` with `code` `VolumeUp` or
+`VolumeDown` (a held key repeats on the WebSocket only). Leave the volume keys out
+of `webview.interceptKeys` on a device with this capability, or the page would hear
+a key twice when `keys.consumeVolume` is off. While `lockdown`'s input lock is
+active a volume key is consumed and goes nowhere.
 
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
@@ -674,7 +922,8 @@ Any other client is refused before it gets a socket. `mic.allowNoOrigin` default
 to true while an app other than this one's kiosk hosts the page, for a host that
 sends no `Origin`. Set it to false once the page runs in this app's kiosk. A page
 that does send an `Origin` is admitted only by the first rule, so on a device
-whose `webview.startUrl` is empty no web page can open the stream.
+whose `webview.startUrl` is empty no web page can open the stream. The Shield's
+start URL is compiled in, so its own page is admitted.
 
 | Method | Path | Answer |
 |---|---|---|
@@ -707,14 +956,17 @@ the process starts, which needs `SYSTEM_ALERT_WINDOW`, granted once with
 Polls `lease.endpoint` once a second (HTTPS only, bearer `lease.credential`) for
 a lease on `lease.packageName` and expires it locally every 100 ms, so a lost
 network closes the gate. The three settings are read when the payload starts.
-Enforcement is hiding the package, which goes through `PackageGate`; nothing
-provides one in this phase, so the gate stays closed. `GET /lease` answers
-`configured`, `ready`, `blocked`, `leaseBlocked`, `epoch`, `revision`,
-`enforcement` (`unavailable` or `package-gate`), `packageHiding` (`supported` or
-`unsupported`) and `packageHidingReason`. A device without the
-`android.software.device_admin` feature can never have a device owner, so
-package hiding is reported unsupported there with that reason; such a device
-needs the block-and-recall mode that arrives with `lockdown` in phase 3.
+Enforcement goes through the `PackageGate` that `lockdown` provides. `GET /lease`
+answers `configured`, `ready`, `blocked`, `leaseBlocked`, `epoch`, `revision`,
+`enforcement`, `packageHiding` (`supported` or `unsupported`) and
+`packageHidingReason`. `enforcement` is `package-gate` where a closed package is
+hidden (this app is device owner), `block-and-recall` where it is kept from the
+front instead, and `unavailable` in a build without `lockdown`. A device without
+the `android.software.device_admin` feature (the Shield) can never have a device
+owner, so there `packageHiding` reads `unsupported` with that reason and the gate
+blocks and recalls. The gate is ready only while the kiosk is locked: with
+`lockdown.enabled` false the loop reports `ready:false` and treats the package as
+blocked, and nothing keeps the package from the front.
 
 ## Differences from the old helpers
 
@@ -751,7 +1003,9 @@ Behavior that changed in the port, for whoever switches a device over.
 | Portal non-volume keys | Each one written to the event log (`hid-pass`) | Counted (`otherKeysSeen`), never logged |
 | Portal `keys.doublePressMs`, `presence.heartbeatMs` out of range | Refused by the old config route | Refused when set, with `400 invalid_setting` (150 to 2000 ms; 5 s to 10 min) |
 | Portal accessibility service config | Events `typeWindowsChanged` and `typeWindowStateChanged`; flags `flagRequestFilterKeyEvents`, `flagRetrieveInteractiveWindows` | Declares `typeWindowStateChanged` only; flags `flagDefault`, `flagReportViewIds`, `flagRetrieveInteractiveWindows`; adds `canRequestTouchExplorationMode` (the piano's set). Key filtering and further event types are switched on at run time for a capability that registers for them. See the note below |
-| Portal Control Center dismissal | portal-keys closed the swipe-up panel when a `typeWindowsChanged` event showed it | Not ported. No capability registers for window events, so the panel stays open until someone closes it |
+| Portal Control Center dismissal | portal-keys closed the swipe-up panel when a `typeWindowsChanged` event showed it, whenever `blockControlCenter` was on | `lockdown` does the same while `lockdown.dismissControlCenter` is on, except during an unlock window. Not run on the Portal in this app |
+| Portal input lock (`PUT /lockdown`, `X-Lockdown-Token`) | Its own token and route on the old control port | `POST /lockdown/input` behind the device token; the same ordered commands |
+| Shield lease enforcement | Hiding the package (never possible on the Shield) | The package is kept from the front by the lockdown watcher, and `POST /launch` refuses it |
 | Portal USB permission dialog | Confirmed when the dialog named "Portal Keys", in a system UI or package installer window | Confirmed when it names this app's own label as a whole word, in a system UI window only |
 | `midi.targetName` default | One instrument's Bluetooth name, compiled in | Empty; the device file supplies it |
 | MIDI and speaker connector settings | The values the connector was built with | Read from the settings at each use |
@@ -765,11 +1019,9 @@ Behavior that changed in the port, for whoever switches a device over.
 
 On the accessibility config: `typeWindowsChanged` is absent from the declared
 config on purpose. The service is shared by every device, and the hub adds event
-types at run time (`addEventListener`) for a capability that needs them. What is
-missing is the capability: portal-keys' Control Center dismissal, the one consumer
-of `typeWindowsChanged`, was not ported, so today nothing asks for those events and
-the panel is not dismissed. A capability that ports it gets the events by
-registering a listener; the declared config does not need to change.
+types at run time (`addEventListener`) for a capability that needs them. `lockdown`
+asks for `typeWindowsChanged` only while `lockdown.dismissControlCenter` is on,
+which is the Portal's device default.
 `flagReportViewIds` and `canRequestTouchExplorationMode` come from the piano's
 service and are not used on the Portal; touch exploration is requested by nothing.
 
@@ -886,8 +1138,9 @@ app for that device declared, using
 removal must be recorded there with its reason. That file is the permission
 ledger: per device, the old app's list, `added` (permission and reason) and
 `dropped`. The check is new = old + added - dropped, and it passes for all three
-devices: `piano` has the old set exactly, `portal` adds two and `shield` adds
-eight, all of them shared core features.
+devices; each addition (the kiosk's page microphone and camera, the overlay
+grant, `QUERY_ALL_PACKAGES`, `WRITE_SETTINGS` and the shared core features) is
+listed there with its reason.
 
 ## Not covered by JVM tests
 
@@ -909,6 +1162,10 @@ much that shows differs by capability:
 | `audio-guard` | The connector and guard built and dropped, the guard's volume receiver registered and unregistered, the bt-cycle thread ended | The connector's own receivers and profile proxy, which it sets up on a Handler thread |
 | `presence` | The reporter built and dropped; the HTTP report with its token header | Its receiver and profile proxies, which need a Bluetooth adapter |
 | `midi-bridge` | The link built and dropped; the force-reset thread ended | The connector, which needs the MIDI service |
+| `lockdown` | The watcher's timer, the focus subscription, the accessibility event listener and the touch observer taken and given back; a tick with no watcher recalling through a fake kiosk window; unlock, relock and the stored state; the PIN flow; the package gate; the input lock | Every Android call: window samples, the accessibility start, HOME resolution, device-policy calls, the status-bar shield, the Control Center swipe |
+| `screen-power` | The screen receiver registered and unregistered, the note-bus wake and its worker thread; which screen-off path is chosen | The wake locks, `lockNow`, the accessibility lock action, what the display does |
+| `volume` | The routes over fake streams | `AudioManager` |
+| `app-launcher` | The whole decision over a fake resolver: what is refused is never started, lockdown is told before a start | `PackageManager` resolution, `Intent.parseUri`, the start itself |
 
 These classes have no behavioral test on the JVM and were not restructured to get
 one. They are the on-device acceptance list:
@@ -922,19 +1179,32 @@ one. They are the on-device acceptance list:
 - `KioskSession` past the attach: the WebView, page load recovery, overlays.
 - `OwnUpdateConfirmation` and `UsbPermissionAutomator` against the real dialogs
   (their rules are tested; the tap is not).
+- `lockdown`: that a recall takes on each device, the HOME role, immersive mode,
+  the status-bar strip, lock task and the owner policy, the PIN prompt, the
+  Control Center dismissal.
+- `screen-power`: screen off by `lockNow` and by the accessibility lock action,
+  screen on by wake lock on each device, the `screen` event on the Portal.
+- `app-launcher`: resolving and starting a real app, an `intent:` URI as Android
+  parses it, and the launch being seen in front.
 
 ## Known limits
 
-- The Portal's swipe-up Control Center is not dismissed: portal-keys' dismissal was
-  not ported (see Differences from the old helpers).
+- Installing a build that lists `lockdown` adds a second home-app candidate to the
+  device. Whether Android then asks which home app to use has not been checked on
+  any device; it must be, before such a build is installed on a kiosk in use.
+- With `lockdown.enabled` false (every device file today) the Shield's lease is
+  not enforced: the gate is not ready, as it was not with the old lease app.
+- A package the gate has closed is only kept from the front. It is still running.
+- The exit gesture's wrong-PIN count is kept in memory and starts again when the
+  payload restarts.
 - **Only a debug build exists.** Every APK is debuggable and signed with the
   Android debug key; no release signing is configured. Accepted, with this
   consequence: where ADB is enabled, `run-as <package>` reads the app's private
   storage, which holds the control token and the stored settings, secret ones
   included. ADB is enabled on these devices by design, so ADB access to a device
   is access to its token. `verify-build.mjs` prints the build type it checked.
-- No kiosk or WebView. Fully Kiosk Browser and the old helpers still run every device.
-- Nothing from phase 2 has run on a device.
+- Fully Kiosk Browser and the old helpers still run every device.
+- Nothing from phase 2 or phase 3 has run on a device.
 - Old state does not move by itself: on-device overrides, the presence token, the
   USB allowlist, the crash log and the instrument files stay with the old apps
   until each device's switch copies what matters.

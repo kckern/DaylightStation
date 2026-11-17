@@ -519,8 +519,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
     private String hidingUnsupportedReason() {
         if (ownerMode()) return null;
         return factAdminFeature
-                ? "this app is not device owner: a closed package is kept from the front, not hidden"
-                : "this device has no android.software.device_admin feature, so no app can be device owner: a closed package is kept from the front, not hidden";
+                ? "this app is not device owner: a closed package is kept from the front instead of being hidden"
+                : "this device has no android.software.device_admin feature, so no app can be device owner: a closed package is kept from the front instead of being hidden";
     }
 
     private static String webViewPackage() {
