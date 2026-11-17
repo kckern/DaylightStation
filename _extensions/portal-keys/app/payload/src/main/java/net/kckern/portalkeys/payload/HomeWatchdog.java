@@ -24,6 +24,7 @@ final class HomeWatchdog {
     private final Context context;
     private final ShellServices shell;
     private final SharedPreferences prefs;
+    private final HomeWatchdogStorage storage;
     private final HomeWatchState state = new HomeWatchState();
     private final KioskPolicy policy;
     private FkbGuard fkb;
@@ -53,6 +54,7 @@ final class HomeWatchdog {
             if (stopped) return;
             handler.removeCallbacks(this);
             try {
+                synchronized(outboxLock) { storage.retryAlert(); }
                 String home = resolveHome();
                 String event = state.observe(home, System.currentTimeMillis());
                 if (event != null) {
@@ -68,7 +70,9 @@ final class HomeWatchdog {
                 // A transition is acknowledged only after the private outbox commits it.
                 // Retry on every tick, even if Fully's observed state has not changed.
                 if (fkb != null) fkb.deliverAlerts(eventName -> enqueue(eventName, state.home));
-                policy.enforce(state.homeCorrect);
+                RecoveryGuard recovery=new RecoveryGuard(HomeWatchdog.this::pageSafety,PAGE_RECOVERY_VERIFIED);
+                policy.enforcePassive(state.homeCorrect);
+                policy.recoverActivity(state.homeCorrect,recovery);
                 boolean owner = policy.isOwner();
                 boolean required = prefs.getBoolean("policyRequired", false) || owner;
                 boolean secured = state.homeCorrect && policy.protectedHome() && policy.locked() && policy.menusSuppressed();
@@ -87,14 +91,14 @@ final class HomeWatchdog {
                     long now = android.os.SystemClock.elapsedRealtime();
                     if (lastRepair == 0 || now - lastRepair >= 30000) {
                         lastRepair = now;
-                        if (authority) {
-                            ShellExec.run("cmd package set-home-activity --user 0 " + FULLY_HOME, 2);
+                        repairHome(recovery,authority,() -> {
+                            ShellExec.run("cmd package set-home-activity --user 0 " + FULLY_HOME,2);
                             // Only the next actual resolution can establish successful recovery.
-                        }
-                        Intent fully = new Intent().setComponent(new ComponentName("de.ozerov.fully", "de.ozerov.fully.FullyActivity"));
-                        fully.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        try { context.startActivity(fully); }
-                        catch (Exception e) { shell.note("HOME", "foreground recovery failed " + e.getClass().getSimpleName()); }
+                        },() -> {
+                            Intent fully=new Intent().setComponent(new ComponentName("de.ozerov.fully","de.ozerov.fully.FullyActivity"));
+                            fully.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            context.startActivity(fully);
+                        });
                     }
                 } else { repair = "not-needed"; lastRepair = 0; }
                 checkPage();
@@ -117,16 +121,11 @@ final class HomeWatchdog {
         context = c; shell = s; prefs = c.getSharedPreferences("home-watchdog", Context.MODE_PRIVATE);
         policy = new KioskPolicy(c);
         pageIncident=prefs.getString("pageIncident","");
-        try {
-            JSONArray prior=new JSONArray(prefs.getString("pageRestarts","[]"));
-            int boot=android.provider.Settings.Global.getInt(c.getContentResolver(),"boot_count",-1);
-            if ((prior.length()>0 || prefs.getLong("pageBlockedUntil",0)>0) && (boot<0 || boot!=prefs.getInt("pageBoot",-2)))
-                page.blockedUntil=processStarted+600000;
-            else {
-                page.blockedUntil=prefs.getLong("pageBlockedUntil",0);
-                for (int i=0;i<prior.length();i++) page.restarts.add(prior.getLong(i));
-            }
-        } catch (Exception e) { page.blockedUntil=processStarted+600000; }
+        storage=new HomeWatchdogStorage(prefs);
+        int boot;
+        try { boot=android.provider.Settings.Global.getInt(c.getContentResolver(),"boot_count",-1); }
+        catch(Exception unavailable) { boot=-1; }
+        storage.restoreBudget(page,processStarted,boot);
         page.evaluate(processStarted,0,false,false,true);
         state.initialized = prefs.getBoolean("initialized", false);
         state.homeCorrect = prefs.getBoolean("correct", false);
@@ -178,6 +177,10 @@ final class HomeWatchdog {
         try { return new JSONObject(shell.pageSafetySnapshot()); }
         catch (Exception | LinkageError oldShell) { return new JSONObject(); }
     }
+    static void repairHome(RecoveryGuard guard, boolean authority, Runnable preferredHome, Runnable foreground) {
+        if (authority) guard.run(false,preferredHome);
+        guard.run(true,foreground);
+    }
     static boolean pageSafe(JSONObject safety) {
         return safety.optBoolean("known",false) && safety.optBoolean("expectedAwake",false)
                 && !safety.optBoolean("stopped",true) && !safety.optBoolean("maintenance",true);
@@ -199,25 +202,25 @@ final class HomeWatchdog {
             if (!prefs.edit().putString("pageIncident","").commit()) throw new IllegalStateException("page-storage-failed");
             pageIncident="";
         }
-        if (decision.state==PageWatchState.State.FAILED && !pageIncident.equals(prefs.getString("pageFailureIncident","")))
+        if (decision.state==PageWatchState.State.FAILED)
             enqueue("page-failed",state.home);
         if (decision.action==PageWatchState.Action.NONE) return;
-        JSONArray times=new JSONArray(); for (Long time:page.restarts) times.put(time);
         int boot=android.provider.Settings.Global.getInt(context.getContentResolver(),"boot_count",-1);
-        // Persist the budget before any side effect. A failed write prohibits dispatch.
-        if (!prefs.edit().putString("pageRestarts",times.toString()).putInt("pageBoot",boot).putLong("pageBlockedUntil",page.blockedUntil).commit())
-            throw new IllegalStateException("page-budget-storage-failed");
-        JSONObject current=pageSafety();
-        if (!PAGE_RECOVERY_VERIFIED || !prefs.getBoolean("pageRecoveryRequested",false) || !pageSafe(current)
-                || current.optLong("revision",-1)!=safety.optLong("revision",-2)) {
-            journalPage("dispatch-suppressed",current,"release-gate-or-safety"); return;
-        }
-        // Recheck again on the Fully worker immediately before each native command.
-        fkb.recoverPage(decision.action,() -> {
-            JSONObject latest=pageSafety();
-            return pageSafe(latest) && latest.optLong("revision",-1)==safety.optLong("revision",-2);
+        final boolean[] dispatched={false};
+        storage.commitBudgetThen(page,boot,() -> {
+            JSONObject current=pageSafety();
+            if (!PAGE_RECOVERY_VERIFIED || !prefs.getBoolean("pageRecoveryRequested",false) || !pageSafe(current)
+                    || current.optLong("revision",-1)!=safety.optLong("revision",-2)) return;
+            dispatched[0]=true;
+            // Recheck again on the Fully worker immediately before each native command.
+            fkb.recoverPage(decision.action,() -> {
+                JSONObject latest=pageSafety();
+                return pageSafe(latest) && latest.optLong("revision",-1)==safety.optLong("revision",-2);
+            });
         });
+        if(!dispatched[0])journalPage("dispatch-suppressed",pageSafety(),"release-gate-or-safety");
     }
+
     private synchronized void journalPage(String stage,JSONObject safety,String error) throws Exception {
         JSONArray old=new JSONArray(prefs.getString("pageJournal","[]")), entries=new JSONArray();
         for (int i=Math.max(0,old.length()-255);i<old.length();i++) entries.put(old.get(i));
@@ -286,24 +289,10 @@ final class HomeWatchdog {
                             && prefs.getString("deliveryError", "").isEmpty()).toString();
         } catch (Exception e) { snapshot = "{\"ready\":false,\"error\":\"health-unavailable\"}"; }
     }
-    private JSONArray outbox() throws Exception { return new JSONArray(prefs.getString("outbox", "[]")); }
+    private JSONArray outbox() throws Exception { return storage.outbox(); }
     private void enqueue(String event, String home) throws Exception {
         synchronized (outboxLock) {
-            JSONArray queue = outbox();
-            // Preserve queued breaches even when Home recovers before network delivery.
-            if (queue.length() >= 128) throw new IllegalStateException("alert-outbox-full");
-            long sequence = prefs.getLong("sequence", 0) + 1;
-            queue.put(new JSONObject().put("event", event).put("sequence", sequence)
-                    .put("at", state.checkedAt).put("home", home == null ? JSONObject.NULL : home)
-                    .put("incidents", state.incidents).put("device", "school-portal")
-                    .put("incidentId",event.equals("page-failed")?pageIncident:JSONObject.NULL)
-                    .put("stage",event).put("payload",Main.VERSION).put("atIso",java.time.Instant.now().toString()));
-            if (!prefs.edit().putLong("sequence", sequence).putString("outbox", queue.toString())
-                    .putBoolean("initialized", true).putBoolean("correct", state.homeCorrect)
-                    .putLong("incidents", state.incidents)
-                    .putString("pageFailureIncident",event.equals("page-failed")?pageIncident:prefs.getString("pageFailureIncident",""))
-                    .putBoolean("fkbSecure", event.startsWith("fkb-") ? event.equals("fkb-restored") : prefs.getBoolean("fkbSecure", true)).commit())
-                throw new IllegalStateException("alert-storage-failed");
+            if(!storage.enqueue(event,home,state,pageIncident))return;
         }
         shell.note("HOME", event + " incidents=" + state.incidents + " home=" + home);
     }

@@ -20,7 +20,7 @@ public class PageWatchStateTest {
         assertEquals(NONE,policy.evaluate(45000,0,true,false,true).action);
         assertEquals(NONE,policy.evaluate(45001,0,true,false,false).action);
     }
-    @Test public void restoredCooldownSurvivesServiceRestartAndFreshBeats() {
+    @Test public void seededCooldownSurvivesFreshBeats() {
         policy.restarts.add(1000L);policy.restarts.add(2000L);
         policy.evaluate(15000,0,true,false,false);
         assertEquals(FAILED,policy.evaluate(30000,0,true,false,false).state);

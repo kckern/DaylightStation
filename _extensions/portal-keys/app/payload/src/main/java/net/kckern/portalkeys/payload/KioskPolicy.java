@@ -30,7 +30,7 @@ final class KioskPolicy {
     }
     boolean isOwner() { return manager.isDeviceOwnerApp(context.getPackageName()); }
     boolean locked() { return activities.getLockTaskModeState() == ActivityManager.LOCK_TASK_MODE_LOCKED; }
-    void enforce(boolean homeCorrect) {
+    void enforcePassive(boolean homeCorrect) {
         if (!isOwner()) { policyApplied = false; return; }
         long now = SystemClock.elapsedRealtime();
         try {
@@ -60,16 +60,25 @@ final class KioskPolicy {
                 manager.setApplicationHidden(admin, "com.android.systemui", hide);
                 appliedAt = now; policyApplied = true;
             }
-            if ((!locked() || !homeCorrect) && (launchedAt == 0 || now - launchedAt >= 1000)) {
-                Intent launch = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                        .setComponent(fully).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                // Launch options do not pin an already-existing unpinned task on this ROM.
-                // Recreate it on the first repair instead of spending seconds retrying it.
-                ActivityOptions options = ActivityOptions.makeBasic(); options.setLockTaskEnabled(true);
-                context.startActivity(launch, options.toBundle()); launchedAt = now;
-            }
             error = null;
         } catch (Exception e) { policyApplied = false; error = e.getClass().getSimpleName() + ": " + e.getMessage(); }
+    }
+    void recoverActivity(boolean homeCorrect, RecoveryGuard guard) {
+        if (!isOwner()) return;
+        long now=SystemClock.elapsedRealtime();
+        if (launchedAt!=0 && now-launchedAt<1000) return;
+        try {
+            if (repairTask(homeCorrect,locked(),guard,() -> {
+                Intent launch=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                        .setComponent(fully).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                ActivityOptions options=ActivityOptions.makeBasic(); options.setLockTaskEnabled(true);
+                context.startActivity(launch,options.toBundle());
+            })) launchedAt=now;
+            // A dispatched launch is not readback evidence that lock task was repaired.
+        } catch (Exception e) { error=e.getClass().getSimpleName()+": "+e.getMessage(); }
+    }
+    static boolean repairTask(boolean homeCorrect, boolean locked, RecoveryGuard guard, Runnable launch) {
+        return (!locked || !homeCorrect) && guard.run(true,launch);
     }
     JSONObject status() throws Exception {
         return new JSONObject().put("deviceOwner", isOwner()).put("policyApplied", policyApplied)

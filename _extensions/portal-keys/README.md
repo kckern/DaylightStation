@@ -766,3 +766,11 @@ existing trusted page-metadata ingress. If the real HTTPS loopback test fails, i
 Fully's JS-to-native capability on that exact build before changing transport. No
 browser admin token is permitted. Crash/power/network history is available only where
 retained; current snapshots cannot reconstruct historical freezes.
+
+The native Home watchdog also separates passive DPC configuration from activity
+repair. Both its fallback foreground launch and KioskPolicy's lock-task recreation
+read native safety again at dispatch and retain the same hard preservation gate.
+Configured preferred Home/allowed packages are not evidence that Fully is foreground
+or lock-task readback is healthy. Failed alert admission keeps the complete pending
+outbox transaction retryable, restores the acknowledged preference-memory view,
+and prohibits delivery until its incident marker and queue commit together.
