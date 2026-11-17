@@ -1,41 +1,93 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Who may connect to the media session. Pure.
  *
  * The library service is exported, because a car, the system's media controls and a
  * headset reach it by binding it. That lets every app on the phone try. One that
- * connected could read the household's library and start playback, so a connection is
- * accepted only from this app, from the system, and from the few apps named here.
+ * connected could read the household's library and recent titles and start playback.
+ *
+ * A package name proves nothing: Media3 takes it from what the caller sends. The uid
+ * is the caller's own, from Binder. So a connection is accepted from:
+ *
+ *  - this app (its uid and its name);
+ *  - a system uid: an app id below 10000 (Process.FIRST_APPLICATION_UID), which covers
+ *    the system server (1000), Bluetooth (1002), the media server (1013) and adb's
+ *    shell (2000). No app a user installs runs there;
+ *  - a package the caller's uid owns that is signed with the platform's certificate
+ *    (the system UI, which runs under an app uid);
+ *  - a package the caller's uid owns whose signing certificate is the one pinned for
+ *    it in media.controllerPins.
+ *
+ * No package is trusted by name, and no certificate digest is compiled in. A package
+ * with no pin is refused, and the refusal carries the digest Android reports for it,
+ * so the owner can read it from the log and pin it.
  */
 final class ControllerPolicy {
     /** What the platform reports for a legacy controller it cannot name (before Android 9). */
     static final String LEGACY_UNKNOWN = "android.media.session.MediaController";
-    /** Uids below this are the system's own (system 1000, Bluetooth 1002, media 1013). */
+    /** Process.FIRST_APPLICATION_UID: app ids below it are the system's own. */
     private static final int FIRST_APP_UID = 10_000;
     private static final int MAX_ID = 1000;
 
-    private static final Set<String> ALLOWED = new HashSet<>(Arrays.asList(
-            "com.android.systemui",                       // lock screen, notification shade
-            "com.google.android.projection.gearhead",     // Android Auto
-            "com.google.android.googlequicksearchbox",    // Assistant: "play", "pause", "next"
-            "com.google.android.carassistant",            // Assistant driving mode
-            "com.google.android.wearable.app",            // a paired watch's media controls
-            "com.android.bluetooth"));
+    /** Whether a controller may connect, and when not, why and what its certificate is. */
+    static final class Decision {
+        final boolean allowed;
+        /** Fixed text. Empty when allowed. */
+        final String reason;
+        /** The package's certificate digest when it is the caller's own package and readable; else null. */
+        final String observedDigest;
+
+        private Decision(boolean allowed, String reason, String observedDigest) {
+            this.allowed = allowed;
+            this.reason = reason;
+            this.observedDigest = observedDigest;
+        }
+
+        /**
+         * The line for the log. The package name and a certificate digest are public
+         * values, and say nothing about what is played.
+         */
+        String logLine(String packageName) {
+            String line = "refused media controller " + packageName + ": " + reason;
+            if (observedDigest != null) {
+                line += ". To allow it, add " + packageName + "=" + observedDigest + " to media.controllerPins";
+            }
+            return line;
+        }
+    }
+
+    private static Decision allow() { return new Decision(true, "", null); }
+
+    private static Decision refuse(String reason, String digest) { return new Decision(false, reason, digest); }
 
     private ControllerPolicy() { }
 
-    static boolean allows(String packageName, int uid, int myUid, String myPackage, int sdk) {
-        if (packageName == null || packageName.isEmpty()) return false;
-        if (uid == myUid && packageName.equals(myPackage)) return true;
+    /**
+     * @param uid  the caller's uid as Binder reports it; -1 when the platform cannot say
+     * @param pins package to lower-case SHA-256 hex of its signing certificate
+     */
+    static Decision decide(String packageName, int uid, int myUid, String myPackage, int sdk,
+                           PackageFacts facts, Map<String, String> pins) {
+        if (packageName == null || packageName.isEmpty()) return refuse("the caller has no package name", null);
+        if (uid == myUid && packageName.equals(myPackage)) return allow();
         // A uid is user * 100000 + app id; the app id is what says "system".
-        if (uid >= 0 && uid % 100_000 < FIRST_APP_UID) return true;
-        if (LEGACY_UNKNOWN.equals(packageName)) return sdk < 28;
-        return ALLOWED.contains(packageName);
+        if (uid >= 0 && uid % 100_000 < FIRST_APP_UID) return allow();
+        // Before Android 9 a legacy controller arrives with no uid and no name of its own.
+        if (uid < 0 || LEGACY_UNKNOWN.equals(packageName)) return refuse("the platform does not say who the caller is", null);
+        String[] owned = facts.packagesForUid(uid);
+        boolean callers = false;
+        if (owned != null) for (String p : owned) callers |= packageName.equals(p);
+        if (!callers) return refuse("the package is not the caller's", null);
+        if (facts.platformSigned(packageName)) return allow();
+        String digest = facts.signingSha256(packageName);
+        if (digest == null) return refuse("the package's signing certificate cannot be read", null);
+        String pin = pins == null ? null : pins.get(packageName);
+        if (pin == null) return refuse("no pin for this package", digest);
+        if (!pin.equalsIgnoreCase(digest)) return refuse("the signing certificate is not the pinned one", digest);
+        return allow();
     }
 
     /**

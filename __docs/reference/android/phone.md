@@ -356,11 +356,48 @@ for every device.
 
 The library service is exported with no permission: a car, the system's media
 controls and Bluetooth reach it by binding it, and no permission exists that only
-they hold. Each connection is decided by `ControllerPolicy`: this app, a system uid,
-and a fixed list of packages (the system UI, Android Auto, the Google app for
-Assistant, the Wear companion). Any other app is refused. Unproven on a phone:
-that the list is enough for the owner's car and headset, and how each identifies
-itself.
+they hold. Every app on the phone can therefore try to connect, and one that got
+in could browse the household library and recent titles and start playback.
+
+A package name proves nothing: Media3 1.1.1 takes it from what the caller sends.
+The uid is the caller's own, from Binder. Each connection is decided by
+`ControllerPolicy` from the two together:
+
+| Caller | Accepted when |
+|---|---|
+| This app | Its uid and its package name |
+| A system uid | The app id (uid modulo 100000) is below 10000, Android's first application uid: the system server (1000), Bluetooth (1002), the media server (1013), adb's shell (2000). Nothing a user installs runs there |
+| A platform-signed package | The caller's uid owns the package it names (`getPackagesForUid`) and that package is signed with the certificate the platform itself is signed with (`checkSignatures("android", ...)`). This is how the system UI's lock-screen and shade controls get in: it runs under an app uid |
+| A pinned package | The caller's uid owns the package it names and the SHA-256 of that package's signing certificate equals the pin for it in `media.controllerPins` |
+| Anything else | Refused: a forged name at another uid, a right name with the wrong certificate, a package with no pin, a caller Android cannot name (a legacy controller before Android 9) |
+
+No package is trusted by name and no certificate digest is compiled in.
+`media.controllerPins` is a setting: `package=sha256, package=sha256`, each digest
+64 hex characters (colons and upper case accepted). Its default, and the phone's
+value until the owner adds to it, is empty.
+
+**The first connection from a car is refused by design.** The refusal is logged
+with the package and the digest Android reports for its certificate, both public
+values:
+
+```
+Daylight-Media: refused media controller <package>: no pin for this package. To allow it, add <package>=<sha256> to media.controllerPins
+```
+
+The owner reads that line from `adb logcat -s Daylight-Media`, checks that the
+package is the one expected (Android Auto, the Google app for Assistant), adds the
+entry under `defaults:` in `devices/phone.yml`, rebuilds and installs. A digest is
+not private, so it may be written in the device file. The payload hands the pins
+to the installed service through the surface cache at each start, so a car that
+binds the service before a payload is loaded is held to the pins of the last run;
+a phone on which the payload has never run has none.
+
+Unproven on a phone: that a package binding the service is visible to the app
+(Android 11 and later make it so without a `queries` entry; if it is not, every
+third-party controller is refused as "not the caller's"), how each car and
+assistant app identifies itself, and that the system UI is platform-signed on the
+owner's phone (if it is not, its line appears in the log like any other and it is
+pinned the same way). Below Android 9 no third-party controller can be pinned.
 
 ### Backend endpoints
 
@@ -403,6 +440,7 @@ beginning.
 | `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `catalog` or a container's content id |
 | `media.recentLimit` | 30 | Entries of the recent tab (1 to 100) |
 | `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
+| `media.controllerPins` | empty | The apps that may connect beside this app and the system: `package=sha256, ...` (see "Who may connect") |
 
 A level is kept in memory for a minute and served from there; when the backend is
 out of reach the last answer is served, however old; a level never loaded fails
@@ -601,7 +639,7 @@ What another app on the phone can reach, and what stands in the way.
 | `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it |
 | `MainActivity` (shell) | The setup activity, startable by name | It reads nothing from the intent |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
-| `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, the system and a fixed list of car and assistant apps, per connection. A controller hands over media ids; what plays is the backend's answer |
+| `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
 | `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `MemoRecorderService` | Not exported | Started by this app only |
 | `ShellService`, `InstallReceiver` | Not exported | |

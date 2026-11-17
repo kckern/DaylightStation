@@ -245,4 +245,25 @@ public class MediaServiceCapabilityTest {
         JSONObject r = link.handle("play", Collections.singletonMap("id", "plex:11"));
         assertEquals("toast", r.getString("effect"));
     }
+
+    // ── the pins of the controllers that may connect ─────────────────────────
+
+    @Test public void noControllerIsPinnedUnlessTheDeviceSaysSo() {
+        assertEquals("", core.settings().get("media.controllerPins"));
+        try {
+            core.settings().set("media.controllerPins", "com.example.app=notahash");
+            fail("accepted a pin that is not a digest");
+        } catch (RuntimeException expected) { }
+    }
+
+    @Test public void thePinsAreHandedToTheInstalledServiceAtStartAndWhenTheyChange() throws Exception {
+        final List<String> written = new ArrayList<>();
+        cap.pinCache = written::add;
+        cap.start();
+        assertEquals("[{}]", written.toString());
+        String cert = "ab".repeat(32);
+        core.settings().set("media.controllerPins", "com.example.car=" + cert);
+        assertEquals(2, written.size());
+        assertEquals(cert, new JSONObject(written.get(1)).getString("com.example.car"));
+    }
 }

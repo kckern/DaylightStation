@@ -11,6 +11,7 @@ import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
 
 import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.SurfaceCache;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,7 +61,8 @@ public class DaylightMediaService extends MediaLibraryService {
                 .build();
 
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, player,
-                new LibraryCallback(media, io, getPackageName()));
+                new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
+                        () -> SurfaceCache.get(this, ControllerPins.KEY)));
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());

@@ -46,21 +46,29 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     private final PayloadMedia media;
     private final ExecutorService io;
     private final String myPackage;
+    private final PackageFacts facts;
+    /** The pinned controllers as the payload last cached them; read at each connection. */
+    private final java.util.function.Supplier<String> pinCache;
     private final AtomicBoolean waitingForPayload = new AtomicBoolean();
 
-    LibraryCallback(PayloadMedia media, ExecutorService io, String myPackage) {
+    LibraryCallback(PayloadMedia media, ExecutorService io, String myPackage, PackageFacts facts,
+                    java.util.function.Supplier<String> pinCache) {
         this.media = media;
         this.io = io;
         this.myPackage = myPackage;
+        this.facts = facts;
+        this.pinCache = pinCache;
     }
 
     @Override
     public MediaSession.ConnectionResult onConnect(MediaSession session, MediaSession.ControllerInfo controller) {
-        if (!ControllerPolicy.allows(controller.getPackageName(), controller.getUid(), Process.myUid(), myPackage, Build.VERSION.SDK_INT)) {
-            // The package's name is logged so that a car or a headset app that should be on
-            // the list can be found. It says nothing about what is played.
-            Log.w(TAG, "refused a media controller that is not this app, the system or a known car or assistant app: "
-                    + controller.getPackageName());
+        // The name is what the caller says; the uid is Binder's. See ControllerPolicy.
+        ControllerPolicy.Decision decision = ControllerPolicy.decide(controller.getPackageName(), controller.getUid(),
+                Process.myUid(), myPackage, Build.VERSION.SDK_INT, facts, ControllerPins.fromCache(pinCache.get()));
+        if (!decision.allowed) {
+            // The line names the package and, when it is the caller's own, its certificate
+            // digest: what the owner adds to media.controllerPins to allow a car.
+            Log.w(TAG, decision.logLine(String.valueOf(controller.getPackageName())));
             return MediaSession.ConnectionResult.reject();
         }
         return MediaLibrarySession.Callback.super.onConnect(session, controller);

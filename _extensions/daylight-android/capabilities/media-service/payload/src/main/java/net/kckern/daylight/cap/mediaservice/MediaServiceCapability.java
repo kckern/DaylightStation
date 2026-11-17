@@ -59,6 +59,13 @@ public final class MediaServiceCapability implements Capability {
         Outcome(int status, JSONObject body) { this.status = status; this.body = body; }
     }
 
+    /** Where the pins go for the installed service to read. Replaced in tests. */
+    interface PinCache { void write(String json); }
+
+    static final String PINS = "media.controllerPins";
+    volatile PinCache pinCache;
+    private volatile boolean started;
+
     private CoreContext core;
     private Backend backend;
     private MediaApi api;
@@ -100,6 +107,11 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(RECENT_LIMIT, SettingsRegistry.Type.INTEGER, 30, SettingsRegistry.range(1, 100));
         // How many entries one browse level holds. A car limits what it shows per level.
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
+        // The apps that may connect to the media session beside this app and the system:
+        // "package=sha256 of its signing certificate", comma-separated. Empty: none. The
+        // installed service refuses a package with no pin and logs its digest.
+        core.settings().declare(PINS, SettingsRegistry.Type.STRING, "", value -> ControllerPinList.problem((String) value));
+        core.settings().onChange(key -> { if (PINS.equals(key) && started) writePins(); });
 
         core.services().provide(LinkHandler.class, new LinkHandler() {
             @Override public String kind() { return "media"; }
@@ -138,11 +150,34 @@ public final class MediaServiceCapability implements Capability {
             return t;
         });
         for (String problem : problems()) core.shell().note("MEDIA", problem);
+        started = true;
+        writePins();
         port.attach(onCall);
+    }
+
+    /** The installed service reads the pins from the surface cache: it may run with no payload loaded. */
+    private void writePins() {
+        try {
+            PinCache c = pinCache;
+            if (c == null) {
+                final Object context = core.shell().context();
+                if (context == null) return;
+                c = json -> {
+                    android.content.SharedPreferences prefs = ((Context) context).getSharedPreferences(
+                            net.kckern.daylight.api.SurfaceKeys.PREFS, Context.MODE_PRIVATE);
+                    if (prefs != null) prefs.edit().putString(PINS, json).apply();
+                };
+                pinCache = c;
+            }
+            c.write(ControllerPinList.cacheJson((String) core.settings().get(PINS)));
+        } catch (RuntimeException e) {
+            core.shell().note("MEDIA", "could not hand the controller pins to the media service: " + e.getClass().getSimpleName());
+        }
     }
 
     /** May be called twice. Detaches only this payload's handler: a successor may already be attached. */
     @Override public void stop() {
+        started = false;
         port.detach(onCall);
         ExecutorService w = worker;
         worker = null;

@@ -100,7 +100,11 @@ Pick the content id of a music track and of an album from the Media page.
 10. Swipe the app away while playing: playback goes on. Pause, swipe it away: the
     media notification goes.
 11. From another app's media browser, if one is at hand (a generic media controller
-    test app): it is refused. Logcat has "refused a media controller".
+    test app): it is refused. `adb logcat -s Daylight-Media` has
+    "refused media controller <package>: no pin for this package".
+12. The lock-screen and notification-shade controls worked in step 2. If they did
+    not, the same log names the system UI's package with a reason: record it. A
+    system UI that is not platform-signed is pinned as in E3.
 
 ## E. Android Auto, on the Desktop Head Unit
 
@@ -116,10 +120,23 @@ Pick the content id of a music track and of an album from the Media page.
    cd "$ANDROID_HOME/extras/google/auto" && ./desktop-head-unit
    ```
 
-3. Daylight is among the media apps. Its tabs are the `media.roots` entries. If it
-   is not listed, or its tabs never load, look in logcat for "refused a media
-   controller" and record the package named by the connection attempt: the list in
-   `ControllerPolicy` then needs that package.
+3. **The first connection from the car is refused by design.** Daylight is among
+   the media apps but its tabs do not load. Read the refusal:
+
+   ```bash
+   adb logcat -d -s Daylight-Media | grep 'refused media controller'
+   ```
+
+   The line names the package that tried and ends with the entry to add:
+   `<package>=<sha256>`. Check that the package is the one expected (Android Auto
+   is `com.google.android.projection.gearhead`; the Google app, for Assistant, may
+   appear too). Add the entry to `media.controllerPins` under `defaults:` in
+   `devices/phone.yml` (several entries are separated by commas; a digest is a
+   public value), bump `shell.versionCode`, rebuild, run the verifier and install.
+   Reconnect: the tabs are the `media.roots` entries. Record each package and
+   reason seen. A reason other than "no pin for this package" is a finding:
+   "the package is not the caller's" for the real Android Auto means the app
+   cannot see the package that binds it.
 4. Browse into a container and play a track. The rest of the container follows.
 5. A container with more than fifty entries ends in "More (51 to 100 of N)", and
    that entry opens the next page.

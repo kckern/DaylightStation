@@ -10,7 +10,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 14, versionName: "0.1-phone" }
+shell: { versionCode: 15, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -63,6 +63,11 @@ defaults:
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
   # target being recent, catalog or a container's content id.
   media.roots: "Recent=recent;Browse=catalog"
+  # The apps that may connect to the media session beside this app and the system (a
+  # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
+  # Empty: none, so the first connection from a car is refused and logged with the entry
+  # to add here. See "Who may connect" in __docs/reference/android/phone.md.
+  media.controllerPins: ""
   # A web link opens in the app only on the backend's own origin or one listed here.
   # This is the host the link activity is offered for (appLinks above).
   links.origins: "https://{phone_link_host}"
