@@ -1,6 +1,6 @@
 /** Authenticated actuator; successful HTTP alone is not a key-suppression ACK. */
 export class PortalKeysLockdownAdapter {
-  #baseUrl; #token; #fetch; #logger;
+  #baseUrl; #token; #fetch; #logger; #lastAck=null;
   constructor({baseUrl,token,fetchFn=fetch,logger=console}={}){this.#baseUrl=baseUrl?.replace(/\/$/,'');this.#token=token;this.#fetch=fetchFn;this.#logger=logger;}
   async setLockdown({locked,lockedUntil=null,commandRevision=null}){
     if(!this.#baseUrl || !this.#token)return {ok:false,skipped:true,code:'CAPABILITY_UNAVAILABLE'};
@@ -15,7 +15,12 @@ export class PortalKeysLockdownAdapter {
     let body;
     try{body=await res.json();}catch(cause){throw Object.assign(new Error('Portal Keys acknowledgement is unreadable',{cause}),{code:'NATIVE_ACK_MISMATCH',contacted:true});}
     if(body?.lockdownActive!==!!locked || (commandRevision!=null && (body.lockdownProtocolVersion!==2 || body.lockdownRevision!==commandRevision)))throw Object.assign(new Error('Portal Keys acknowledgement does not match requested restriction'),{code:'NATIVE_ACK_MISMATCH',contacted:true});
-    this.#logger.info?.('shutdown.portal_synced',{locked:!!locked,commandRevision});return {ok:true,blocked:body.lockdownActive,commandRevision};
+    // The shutdown reconciler re-asserts the same state every few seconds; only a
+    // change of acknowledged state is worth an info line.
+    const ack=`${!!locked}:${commandRevision}`;
+    (ack===this.#lastAck?this.#logger.debug:this.#logger.info)?.call(this.#logger,'shutdown.portal_synced',{locked:!!locked,commandRevision});
+    this.#lastAck=ack;
+    return {ok:true,blocked:body.lockdownActive,commandRevision};
   }
   stop({commandRevision}){return this.setLockdown({locked:true,commandRevision});}
   release({commandRevision}){return this.setLockdown({locked:false,commandRevision});}

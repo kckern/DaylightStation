@@ -67,3 +67,12 @@ describe('Portal Keys lockdown capability',()=>{
     await expect(adapter(null,{fetchFn:async()=>({ok:true,json:async()=>{throw new SyntaxError('bad JSON');}})}).probe()).rejects.toMatchObject({code:'CAPABILITY_UNAVAILABLE'});
   });
 });
+
+it('logs a repeated identical acknowledgement at debug, a change at info',async()=>{
+  const lines=[];const log={info:(e,d)=>lines.push(['info',d.locked]),debug:(e,d)=>lines.push(['debug',d.locked])};
+  let active=false;
+  const portal=new PortalKeysLockdownAdapter({baseUrl:'http://portal.test:8771',token:'fixture-secret',logger:log,fetchFn:vi.fn(async()=>response({lockdownActive:active}))});
+  await portal.setLockdown({locked:false});await portal.setLockdown({locked:false});
+  active=true;await portal.setLockdown({locked:true});
+  expect(lines).toEqual([['info',false],['debug',false],['info',true]]);
+});
