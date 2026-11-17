@@ -1,17 +1,11 @@
 package net.kckern.daylight.cap.micbridge;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.content.Intent;
-import android.content.pm.ServiceInfo;
+import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
-import android.os.IBinder;
 import android.util.Log;
 
 import org.java_websocket.WebSocket;
@@ -20,15 +14,22 @@ import org.java_websocket.server.WebSocketServer;
 
 import org.java_websocket.exceptions.WebsocketNotConnectedException;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
-public class MicStreamServer extends Service {
+/**
+ * The microphone stream: 48 kHz mono s16le PCM frames over a WebSocket, one client at
+ * a time, capture running only while that client is connected. In audio-bridge this
+ * was an Android Service around the same inner server; the service, its notification
+ * and its Bluetooth half are gone (the shell owns the service, bluetooth-controls the
+ * Bluetooth), and the socket binds to loopback only.
+ */
+final class MicStreamServer {
 
     private static final String TAG = "AudioBridge";
-    private static final String CHANNEL_ID = "audio_bridge_channel";
-    private static final int NOTIFICATION_ID = 1;
-    private static final int WS_PORT = 8765;
 
     private static final int SAMPLE_RATE = 48000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
@@ -40,89 +41,53 @@ public class MicStreamServer extends Service {
     private static final int INIT_MAX_RETRIES = 3;
     private static final int[] INIT_RETRY_DELAYS_MS = {500, 1000, 2000};
 
+    /** How long start() waits to learn whether the socket bound. */
+    private static final long BIND_WAIT_MS = 2000;
+
+    private final Context ctx;
     private AudioBridgeServer wsServer;
-    private BluetoothControls bluetooth;
-    private ControlServer controlServer;
+    private volatile int port;
+    private volatile String lastError;
+    /** True while the last attempt to open or start AudioRecord failed with the permission granted. */
+    private volatile boolean captureDenied;
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        Log.i(TAG, "Service created");
-        createNotificationChannel();
-    }
+    MicStreamServer(Context ctx) { this.ctx = ctx; }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i(TAG, "Service starting");
-
-        // Android 11 denies the microphone to a foreground service started
-        // from the background (boot, or while FKB's kiosk owns the screen).
-        // The callers show an OverlayAnchor window before requesting the
-        // start; ensure() here covers a start from anywhere else.
-        OverlayAnchor.ensure(this);
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Audio Bridge")
-                .setContentText("Streaming microphone audio")
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setOngoing(true)
-                .build();
-
-        // LOCATION as well: Bluetooth discovery is gated on fine location, and on
-        // Android 11 a foreground service only gets while-in-use location if it
-        // declares this type (the app is never otherwise in the foreground, so a
-        // microphone-only service had startDiscovery() denied — "Need
-        // ACCESS_FINE_LOCATION permission to get scan results").
-        startForeground(NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-
-        if (controlServer == null) {
-            bluetooth = new BluetoothControls(this);
-            bluetooth.start();
-            controlServer = new ControlServer(8766, new BluetoothController(bluetooth, System::currentTimeMillis));
-            try { controlServer.start(5000, false); Log.i(TAG, "bluetooth.control.started"); }
-            catch (java.io.IOException e) { controlServer.stop(); controlServer = null; bluetooth.close(); bluetooth = null; Log.e(TAG, "bluetooth.control.start-failed", e); }
+    /**
+     * Binds to loopback: the page that consumes the stream runs on this device, and the
+     * socket has no authentication. Returns once the socket is listening or has failed
+     * to bind (see running() and lastError()).
+     */
+    synchronized void start(int port) {
+        if (wsServer != null) return;
+        this.port = port;
+        wsServer = new AudioBridgeServer(new InetSocketAddress(InetAddress.getLoopbackAddress(), port));
+        wsServer.start();
+        try {
+            if (!wsServer.settled.await(BIND_WAIT_MS, TimeUnit.MILLISECONDS)) lastError = "the stream socket did not start within " + BIND_WAIT_MS + "ms";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
-        if (wsServer == null) {
-            wsServer = new AudioBridgeServer(new InetSocketAddress(WS_PORT));
-            wsServer.start();
-            Log.i(TAG, "WebSocket server started on port " + WS_PORT);
-        }
-
-        return START_NOT_STICKY;
+        if (wsServer.listening) Log.i(TAG, "WebSocket server started on port " + port);
     }
 
-    @Override
-    public void onDestroy() {
-        Log.i(TAG, "Service destroying");
-        OverlayAnchor.remove(this);
-        if (controlServer != null) controlServer.stop();
-        if (bluetooth != null) bluetooth.close();
-        if (wsServer != null) {
-            try {
-                wsServer.stop();
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Interrupted while stopping WebSocket server", e);
-            }
-            wsServer = null;
-        }
-        super.onDestroy();
+    synchronized void stop() {
+        if (wsServer == null) return;
+        try { wsServer.stop(); } catch (InterruptedException e) { Log.w(TAG, "Interrupted while stopping WebSocket server", e); }
+        // A client that was cut off by stop() may not get its close callback: release the microphone here.
+        wsServer.stopCapture();
+        wsServer = null;
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
-
-    private void createNotificationChannel() {
-        NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "Audio Bridge",
-                NotificationManager.IMPORTANCE_LOW
-        );
-        channel.setDescription("Audio bridge service notification");
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.createNotificationChannel(channel);
-    }
+    /** Listening for a client. */
+    synchronized boolean running() { return wsServer != null && wsServer.listening; }
+    int port() { return port; }
+    synchronized InetSocketAddress boundAddress() { return wsServer == null ? null : wsServer.getAddress(); }
+    String lastError() { return lastError; }
+    boolean captureDenied() { return captureDenied; }
+    /** Frames are being read from the microphone and sent to a client. */
+    boolean streaming() { AudioBridgeServer s = wsServer; return s != null && s.delivering; }
+    int clients() { AudioBridgeServer s = wsServer; return s == null ? 0 : s.getConnections().size(); }
 
     /**
      * WebSocket server that manages audio capture per client connection.
@@ -135,6 +100,12 @@ public class MicStreamServer extends Service {
         private volatile AudioRecord audioRecord = null;
         private volatile Thread captureThread = null;
         private volatile boolean capturing = false;
+        /** True from a confirmed start of recording until the capture loop ends. */
+        private volatile boolean delivering = false;
+        /** True once the socket is bound and accepting. */
+        private volatile boolean listening = false;
+        /** Released when the socket has bound or failed to. */
+        private final CountDownLatch settled = new CountDownLatch(1);
 
         public AudioBridgeServer(InetSocketAddress address) {
             super(address);
@@ -184,6 +155,12 @@ public class MicStreamServer extends Service {
         @Override
         public void onError(WebSocket conn, Exception ex) {
             Log.e(TAG, "WebSocket error", ex);
+            if (conn == null) {
+                // A server-level failure, a bind that was refused for one.
+                listening = false;
+                lastError = "stream socket: " + ex;
+                settled.countDown();
+            }
             if (conn != null && conn == activeClient) {
                 stopCapture();
                 activeClient = null;
@@ -192,7 +169,9 @@ public class MicStreamServer extends Service {
 
         @Override
         public void onStart() {
-            Log.i(TAG, "WebSocket server listening on port " + WS_PORT);
+            listening = true;
+            settled.countDown();
+            Log.i(TAG, "WebSocket server listening on port " + port);
         }
 
         private void startCapture(WebSocket client) {
@@ -231,6 +210,8 @@ public class MicStreamServer extends Service {
                     );
                 } catch (SecurityException e) {
                     Log.e(TAG, "RECORD_AUDIO permission not granted", e);
+                    // A missing grant, not another holder: captureDenied stays as it was.
+                    lastError = "RECORD_AUDIO permission not granted";
                     client.send("{\"error\":\"RECORD_AUDIO permission not granted\"}");
                     client.close(1011, "Permission denied");
                     activeClient = null;
@@ -250,6 +231,8 @@ public class MicStreamServer extends Service {
 
                 if (attempt == INIT_MAX_RETRIES) {
                     Log.e(TAG, "AudioRecord failed to initialize after all retries");
+                    lastError = "AudioRecord failed to initialize";
+                    captureDenied = true;
                     client.send("{\"error\":\"AudioRecord failed to initialize\"}");
                     client.close(1011, "AudioRecord init failed");
                     activeClient = null;
@@ -259,6 +242,8 @@ public class MicStreamServer extends Service {
 
             if (audioRecord == null) {
                 Log.e(TAG, "audioRecord is null after retry loop");
+                lastError = "AudioRecord init failed";
+                captureDenied = true;
                 client.close(1011, "AudioRecord init failed");
                 activeClient = null;
                 return;
@@ -288,6 +273,16 @@ public class MicStreamServer extends Service {
 
             capturing = true;
             audioRecord.startRecording();
+            if (audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+                captureDenied = false;
+                lastError = null;
+                delivering = true;
+            } else {
+                // The permission is granted and the record initialized, yet it will not record.
+                Log.e(TAG, "AudioRecord did not start recording");
+                lastError = "AudioRecord did not start recording";
+                captureDenied = true;
+            }
             Log.i(TAG, "AudioRecord started: source=MIC rate=" + SAMPLE_RATE
                     + " bufferSize=" + bufferSize + " minBufSize=" + minBufSize
                     + " sessionId=" + sessionId);
@@ -316,14 +311,16 @@ public class MicStreamServer extends Service {
                     }
                 }
 
+                delivering = false;
                 Log.i(TAG, "Capture loop ended after " + frameCount + " frames");
             }, "AudioBridge-Capture");
             captureThread.setPriority(Thread.MAX_PRIORITY);
             captureThread.start();
         }
 
-        private void stopCapture() {
+        private synchronized void stopCapture() {
             capturing = false;
+            delivering = false;
 
             if (captureThread != null) {
                 try {

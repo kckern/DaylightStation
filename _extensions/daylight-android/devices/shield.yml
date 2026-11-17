@@ -4,13 +4,17 @@ package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 3, versionName: "0.2-helpers" }
+shell: { versionCode: 4, versionName: "0.2-helpers" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 capabilities:
   - debug-tools
   - bluetooth-controls
+  - mic-bridge
 defaults:
   debug.execEnabled: false
   # The Bluetooth panel pairs and connects game controllers.
   bluetooth.mode: gamepad
+  # 8765 is audio-bridge's port. While both apps are installed (the rollout) the new
+  # stream listens here, on loopback only; the page's bridge URL moves with the switch.
+  mic.port: 8782
