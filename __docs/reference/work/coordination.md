@@ -141,3 +141,25 @@ coverage, imported history and estimated timestamps cannot fabricate completion.
 A provider actor stays explicitly attributed; shared project changes do not
 silently become the journal owner's actions. Incoming events never dispatch
 commands or reactivate the relevance overlay.
+
+## Attributed activity and linked KB outcomes
+
+Canonical provider occurrences project idempotently to `lifelog/work.yml`,
+grouped by the user's local occurrence date. Projection acknowledgement follows
+the durable write. A crash between them safely replays the same event ID. The KB
+consumer has a separate acknowledgement; a KB failure leaves the recorded lifelog
+activity intact and retryable without another provider command.
+
+The optional lifelog reader merges this source with legacy provider history in
+both day and range reads. Scoped provider identity and exact occurrence/time
+match suppress duplicates. Unknown accounts and ambiguous minute-only matches
+remain distinct. Summaries are rebuilt after deduplication and retain provider
+attribution. Native task titles are display metadata; they never authorize
+matching or writes.
+
+The public KB runtime supplies a guarded Work closure port. It defaults to deny
+without an injected verifier of actual Work authority and closure policy.
+Only `same_commitment` can close a matching loop after owner-side checks of its
+current authored evidence, pins, sensitivity and status. `action_for` and
+`context_for` leave the broader outcome open. Provider events never become user
+journal prose or user evidence, and closure does not relax asking policies.

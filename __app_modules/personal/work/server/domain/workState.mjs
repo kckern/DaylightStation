@@ -116,6 +116,10 @@ export function applyWorkEvents(before, events, {
         projected: false,
         knowledgeApplied: false
       };
+    } else if (['activity.projected', 'activity.knowledge_applied'].includes(event.type)) {
+      const activity = state.activities[event.eventId];
+      if (!activity || !finite(event.at) || event.type === 'activity.knowledge_applied' && !activity.projected) throw workError('INVALID_WORK_EVENT');
+      activity[event.type === 'activity.projected' ? 'projected' : 'knowledgeApplied'] = true;
     } else if (event.type === 'observation.baseline') {
       const key = accountKey(event);
       validateWorkRef({

@@ -167,6 +167,7 @@ function normalizeEvents({
         containerRef: makeRef(provider,accountId,'container',containerId),
         assigneeIds: assignees,
         type: row.action,
+        title:typeof (row.content??row.name)==='string'?(row.content??row.name).slice(0,2000):null,
         occurredAt,
         observedAt: asOf,
         providerVersion: row.providerVersion ?? hash(row),

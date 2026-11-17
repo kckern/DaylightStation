@@ -293,3 +293,13 @@ Only an unambiguous, exact later completion on a confirmed `same_commitment`
 link is reported as a corroborated outcome. Child/context links retain the parent
 candidate; stale, estimated, reopened and ambiguous matches remain explicit.
 Corroboration does not itself change KB status or create user-authored text.
+
+
+## Provider work outcomes
+
+Work activity is attributed external history, separate from authored journal
+evidence. The guarded Work bridge can close an allowed one-to-one
+`same_commitment` loop only after current evidence and user protections are
+rechecked. Completing an `action_for` or `context_for` task leaves its parent
+outcome open. Provider observations cannot create authored evidence or relax
+pins, sensitivity or asking policy. See [Work coordination](../work/coordination.md).

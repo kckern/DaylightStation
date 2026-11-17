@@ -125,3 +125,6 @@ export function getExtractorsByCategory(category) {
 }
 
 export default extractors;
+
+// Work needs the caller's timezone; instantiate only with the optional reader.
+export {WorkExtractor} from './WorkExtractor.mjs';

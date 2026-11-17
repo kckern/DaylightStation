@@ -2,10 +2,10 @@ import { LifelogAggregator } from "./application/LifelogAggregator.mjs";
 import { HarvestedLifelogSourceRegistry } from "./adapters/HarvestedLifelogSourceRegistry.mjs";
 
 export function createLifelogServices(config) {
-  const { userLoadFile, logger = console } = config;
+  const { userLoadFile, logger = console, workActivityReader, userTimezone } = config;
 
   const lifelogAggregator = new LifelogAggregator({
-    sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile, logger }),
+    sourceRegistry: new HarvestedLifelogSourceRegistry({ userLoadFile, logger, workActivityReader, userTimezone }),
     logger
   });
 
@@ -14,8 +14,8 @@ export function createLifelogServices(config) {
   };
 }
 
-export function createHarvestedLifelogAggregator({ dataService, logger }) {
+export function createHarvestedLifelogAggregator({ dataService, logger, workActivityReader, userTimezone }) {
   return new LifelogAggregator({
-    sourceRegistry: new HarvestedLifelogSourceRegistry({ dataService, logger }), logger,
+    sourceRegistry: new HarvestedLifelogSourceRegistry({ dataService, logger, workActivityReader, userTimezone }), logger,
   });
 }

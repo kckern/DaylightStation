@@ -1,3 +1,4 @@
+import {KnowledgeWorkBridge} from '../application/knowledge/KnowledgeWorkBridge.mjs';
 import path from 'node:path';
 import {createJournalKnowledgeSource} from './knowledge-source.mjs';
 import {KnowledgeWriteAuthority} from '../adapters/knowledge/KnowledgeWriteAuthority.mjs';
@@ -19,7 +20,7 @@ import {KnowledgeEntryScheduler} from '../application/knowledge/KnowledgeEntrySc
 import {KnowledgeMetrics} from '../application/knowledge/KnowledgeMetrics.mjs';
 import {evidenceProblem} from '../domain/knowledge/contracts.mjs';
 import {nextKnowledgeRun} from '../application/knowledge/KnowledgeCalendarSchedule.mjs';
-const inert=reason=>({followUps:null,companion:null,maintenance:null,metrics:null,start:async()=>({status:'disabled',reason}),dispose:async()=>{}});
+const inert=reason=>({followUps:null,companion:null,maintenance:null,metrics:null,workBridge:null,start:async()=>({status:'disabled',reason}),dispose:async()=>{}});
 const legacy=()=>({mode:'legacy',questions:[],statements:[],queuedCount:0,selectionId:null,reason:'unavailable'});
 /** Creates no work unless the explicit writer role, identities and timezone all validate. */
 export function createKnowledgeRuntime(options={}){
@@ -63,6 +64,8 @@ export function createKnowledgeRuntime(options={}){
    finally{schedule(username,kind);}
   })));
  }
+ const providerBridge=new KnowledgeWorkBridge({store,evidence,verifyProviderEvent:options.verifyProviderEvent,userTimezone});
+ const workBridge={applyProviderEvent:input=>!stopped&&ready.has(input.username)?providerBridge.applyProviderEvent(input):Promise.resolve({applied:false,reason:'kb_unavailable',pending:true})};
  const verify=principal=>{const p=authority.verify(principal);return p&&ready.has(p.username)&&!stopped?p:null;};
  const requireActive=principal=>{const p=verify(principal);if(!p)throw Object.assign(Error('KNOWLEDGE_UNAVAILABLE'),{code:'KNOWLEDGE_UNAVAILABLE'});return p;};
  const companion={
@@ -92,7 +95,7 @@ export function createKnowledgeRuntime(options={}){
   prepareDelivery:input=>{if(!ready.has(input.username)||stopped)throw Error('KNOWLEDGE_UNAVAILABLE');return questions.prepareDelivery(input);},
   recordDelivery:input=>questions.recordDelivery(input),recordDeliveryFailure:input=>questions.recordDeliveryFailure(input),
  };
- return {followUps,companion,maintenance,metrics:ledger?new KnowledgeMetrics({store,ledger}):null,
+ return {followUps,companion,maintenance,workBridge,metrics:ledger?new KnowledgeMetrics({store,ledger}):null,
   start(){
    if(stopped)return Promise.resolve({status:'stopped'});
    if(startPromise)return startPromise;
