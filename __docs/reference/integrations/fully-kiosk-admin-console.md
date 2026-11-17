@@ -74,17 +74,28 @@ looks up the device's provider on every request and sends the call to
 Fully adapter, so a fleet can hold both providers at once and Fully devices
 behave as before.
 
+`GET /status` carries `provider` (`fully-kiosk` or `daylight-android`) for
+every device, and `capabilities.actions` lists the actions that device has.
+The console words itself from the first ("Kiosk" for the Android kiosk app,
+"Fully Kiosk" otherwise) and shows only the controls in the second.
+
 What differs for these devices:
 
-- **Actions.** The action names are the same. `screensaver-start` and
-  `screensaver-stop` are refused with `INVALID_ACTION`, since the app has no
-  screensaver. `maintenance-enable` unlocks the kiosk for a fixed window, after
-  which the app relocks itself; `maintenance-disable` locks it.
+- **Actions.** The action names are the same. The app has no screensaver, so
+  `screensaver-start` and `screensaver-stop` are left out of
+  `capabilities.actions`, their buttons are hidden, and a direct call is
+  refused with `INVALID_ACTION`. `maintenance-enable` unlocks the kiosk for a
+  fixed window, after which the app relocks itself; `maintenance-disable`
+  locks it.
 - **Status.** The summary uses the same field names. Fields the app does not
   report (storage, orientation, licence, screensaver state) are empty.
 - **Settings.** The list shows the app's own setting keys, which are dotted
-  (for example `webview.startUrl`). The editable set in the console is curated
-  for Fully's setting names, so these keys are read-only there.
+  (for example `webview.startUrl`). The app declares a type for each one and
+  rejects unknown keys and wrong types itself, so every listed setting of type
+  boolean, number or string is editable; the backend checks only that the key
+  is listed and the value has the declared type. Credential-like keys stay
+  masked and read-only. The curated whitelist above still applies to Fully
+  devices, whose settings carry no types.
 - **Errors.** Gateway failures carry `DAYLIGHT_ANDROID_*` codes
   (`_TIMEOUT` 504, `_UNREACHABLE` / `_AUTH_REJECTED` / `_COMMAND_REJECTED` /
   `_INVALID_RESPONSE` 502, `_CONFIGURATION_ERROR` 503, `_UNSUPPORTED` 501),

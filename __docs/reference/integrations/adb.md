@@ -163,7 +163,7 @@ shorter, because the app confirms what Fully could only acknowledge:
 
 | Operation | Fully Kiosk | Android kiosk app |
 |-----------|-------------|-------------------|
-| `load` | `loadURL` is acknowledged on receipt; the adapter polls `currentUrl` to verify, or defers that with `verifyAsync` | `POST /kiosk/load` answers after the page's main frame has finished. A success is `verified: true`; `verifyAsync` has no effect. Only an unreachable device is retried |
+| `load` | `loadURL` is acknowledged on receipt; the adapter polls `currentUrl` to verify, or defers that with `verifyAsync` | `POST /kiosk/load` answers after the page's main frame has finished, so a plain load is `verified: true`. With `verifyAsync` the load is sent with `wait:false`, returns on the acknowledgement as `verified: 'async'`, and the outcome is read from `lastLoad` in `GET /kiosk/status` in the background and logged (`daylightandroid.load.async-verified` / `async-unverified` / `async-verify-failed`). Only an unreachable device is retried |
 | `prepareForContent` | screen on, foreground-and-poll, disable Fully's motion and acoustic detection, ADB mic check, ADB force-restart when the mic is blocked, relaunch companion apps, camera probe | `POST /screen {on:true}`, `POST /kiosk/foreground`, then for the `full` profile on a device with the `mic-bridge` capability a mic check and bridge restart, then the same ADB camera probe |
 | `healAudioBridge` | force-stop and relaunch each companion app | restart the in-app mic bridge when another process holds the mic, or when forced; `companions` is always empty |
 | `reboot` | ADB when configured, else Fully's `rebootDevice` | `POST /device/reboot`; ADB when the app cannot reboot the device (it needs device owner) or does not answer |
@@ -181,6 +181,22 @@ shorter, because the app confirms what Fully could only acknowledge:
 | Timeout | `TIMEOUT` |
 | Connection refused, no route | `UNREACHABLE` |
 | Not JSON where JSON was expected | `INVALID_RESPONSE` |
+
+`getStatus().appVersion` is the shell's version name (`appVersion` on the
+app's `/status` route), or the payload version when the shell reports none.
+
+**Other consumers of a kiosk device.** Three more places talk to a kiosk
+directly, and each picks its client from the same `provider` field:
+
+| Consumer | Fully Kiosk | Android kiosk app |
+|----------|-------------|-------------------|
+| Arcade metering, enforcement and supervision ([Arcade game sessions](../gaming/arcade-game-sessions.md)) | `FullyKioskRestClient` | `DaylightAndroidArcadeKioskClient`: foreground from `GET /lockdown`, return to the kiosk with `POST /kiosk/foreground`, announcements with `POST /speak`. No countdown overlay |
+| Excursion guard ([Android app launch](../content/android-app-launch.md#excursion-guard)) | `AndroidForegroundProbe` over the ADB fallback | `DaylightAndroidForegroundProbe`: `GET /kiosk/status`, `POST /kiosk/foreground`; no ADB needed |
+| Admin console ([Fully Kiosk Admin Console](./fully-kiosk-admin-console.md#devices-on-the-android-kiosk-app)) | `FullyKioskRemoteAdministrationAdapter` | `DaylightAndroidRemoteAdministrationAdapter` |
+
+The single-device `KioskAdapter` in the home-control capability (system `kiosk`
+app config) speaks Fully's protocol only and is not built when that config
+names another provider.
 
 Log events from these adapters are prefixed `daylightandroid.` (for example
 `daylightandroid.rest.response`, `daylightandroid.load.failed`,

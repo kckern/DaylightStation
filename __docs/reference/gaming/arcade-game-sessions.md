@@ -226,6 +226,15 @@ The film has no bundle, so it ships its own logs over its socket as
 contact it visibly degrades instead of continuing to tick: a frozen clock that
 still looks authoritative would tell a child they have time they may not.
 
+The film is a web page the kiosk draws over other apps, which is Fully Kiosk's
+web overlay. The DaylightStation Android kiosk app has a text overlay only, so
+a device whose `content_control.provider` is `daylight-android` is metered,
+warned by voice and stopped like any other, with no countdown film: startup
+logs `arcade.overlay.unsupported_provider` for each such device that declares
+`arcade_session_overlay`, and nothing is armed on it. The kiosk client for
+each device is chosen by that provider
+(`__app_modules/games/arcade/server/composition/kioskClients.mjs`).
+
 Startup clears any overlay on a device with no open session, so a process that
 died mid-session cannot leave a countdown on the family television.
 

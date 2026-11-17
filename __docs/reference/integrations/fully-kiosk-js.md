@@ -145,6 +145,11 @@ Fully. The exported functions keep the same names and signatures on both.
 | `screenOff()` / `screenOn()` | `fully.turnScreenOff()` / `turnScreenOn()` | `daylight.screen(false)` / `daylight.screen(true)` |
 | `onResume(fn)`, `scheduleDismissAfterLaunch(fn)` | `fully.bind('onResume', ...)` | `daylight:resume` event on `window` |
 | `bindBackButton()` | `fully.bind('onBackButton', ...)` | `daylight.setBackMode('page')`, then the `daylight:back` event |
+| `restartApp()`, `canRestartApp()` | `fully.restartApp()` | `daylight.restartApp()` |
+| `reboot()` | `fully.reboot()` | `daylight.reboot()`, which answers `false` when the device cannot reboot itself |
+
+No module calls `window.fully` or `window.daylight` directly. The piano
+kiosk's render watchdog and jank prompt use `restartApp()` and `reboot()`.
 
 The app reports lifecycle changes as DOM `CustomEvent`s on `window`:
 `daylight:resume` (`detail: { awayMs, from }`), `daylight:pause`,
