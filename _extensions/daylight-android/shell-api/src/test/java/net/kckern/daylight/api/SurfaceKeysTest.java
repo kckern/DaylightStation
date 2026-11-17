@@ -19,6 +19,22 @@ public class SurfaceKeysTest {
         }
     }
 
+    @Test public void namesTheKeysOfAnActionByItsId() {
+        assertEquals("action.journal.label", SurfaceKeys.action("journal", SurfaceKeys.LABEL));
+        assertEquals("action.media-0123abcd.uri", SurfaceKeys.action("media-0123abcd", SurfaceKeys.URI));
+        assertEquals("action.ids", SurfaceKeys.ACTION_IDS);
+    }
+
+    @Test public void anActionIdIsTheShapeEveryActionHasAndNothingElseBecomesAKey() {
+        assertTrue(SurfaceKeys.actionId("journal"));
+        assertTrue(SurfaceKeys.actionId("a"));
+        for (String bad : new String[] { null, "", "Journal", "1st", "a.b", "a b", "a/../b", "-a",
+                "a23456789012345678901234567890123" }) {
+            assertFalse(String.valueOf(bad), SurfaceKeys.actionId(bad));
+            try { SurfaceKeys.action(bad, SurfaceKeys.URI); fail("made a key of " + bad); } catch (IllegalArgumentException expected) { }
+        }
+    }
+
     @Test public void onlyADaylightLinkMayBeLaunchedFromTheCache() {
         assertTrue(SurfaceKeys.launchable("daylight://action/memo?k=0123"));
         for (String bad : new String[] { null, "", "https://kiosk.example/", "intent://x#Intent;end", "file:///x",

@@ -11,8 +11,8 @@ What the build is: `__docs/reference/android/phone.md`. Building:
 
 Needs the owner's go-ahead before step A2. What installing does: the package
 `net.kckern.daylight.phone` is added to the owner's phone with a persistent
-"Daylight" notification, four quick-settings tiles the owner may add, a widget and
-launcher shortcuts. `adb uninstall net.kckern.daylight.phone` removes all of it,
+"Daylight" notification, four quick-settings tiles the owner may add, two widgets
+(four buttons, and a one-action button) and launcher shortcuts. `adb uninstall net.kckern.daylight.phone` removes all of it,
 including any quick input (a recording, typed text, a photo) not yet uploaded.
 
 There is no control API on the phone. Every check is by hand on the phone, or over
@@ -113,6 +113,24 @@ adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$
 4. Cold: `adb shell am force-stop net.kckern.daylight.phone`, then tap the widget's
    Media button. The page opens within the wait, or "Daylight is still starting"
    shows and the next tap works.
+
+5. Add a "Daylight button" widget (one cell). The chooser opens and lists Journal,
+   Meal, Meal photo, Journal note, Meal note, Media, Call. Pick Journal: the
+   button shows a microphone and "Journal", and a tap opens the recorder. Record
+   whether the launcher offered the widget at one cell and what it looks like.
+6. Back out of the chooser without picking: no widget is placed.
+7. Add a second button and pick Media. Force-stop the app and tap each button:
+   each works on the cold start, and again a few minutes later (the key was
+   replaced at the start and the buttons were redrawn with the new one).
+8. Long-press a button: on Android 9 and later its menu offers to reconfigure
+   it. Pick another action; the button changes.
+9. The chooser cannot be used from outside for anything but its list:
+   `adb shell am start -n net.kckern.daylight.phone/net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity --ei appWidgetId 99999`
+   closes at once (`adb logcat -s Daylight-Widget` says the widget is not a
+   Daylight button), and the same with no id.
+10. Uninstalled-payload state: after `adb shell pm clear net.kckern.daylight.phone`
+    add a button before opening the app. The chooser says it has no actions yet;
+    after the app has been opened once, adding a button lists them.
 
 ## D. Native playback
 

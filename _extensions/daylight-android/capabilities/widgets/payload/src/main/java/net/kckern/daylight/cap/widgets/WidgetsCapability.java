@@ -2,6 +2,7 @@ package net.kckern.daylight.cap.widgets;
 
 import android.content.Context;
 
+import net.kckern.daylight.api.SurfaceKeys;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.EventBus;
@@ -22,13 +23,23 @@ import java.util.Map;
  * The home-screen widget's content. The widget itself (provider, layout) is installed
  * code that draws from the surface cache; this capability decides which actions fill
  * its four slots and writes them there, at start and whenever the actions are
- * published again.
+ * published again. It also writes every action under its own id, which is what a
+ * one-action button widget and its chooser read.
  */
 public final class WidgetsCapability implements Capability {
     private static final String ACTIONS = "widgets.actions";
 
     /** The Android side: persist the cache and ask the widget to redraw. */
-    interface WidgetSink { void apply(Map<String, String> cache); }
+    interface WidgetSink {
+        /** The four-button widget's slots. */
+        void apply(Map<String, String> cache);
+
+        /** Every action under its id, for the one-action button widgets. */
+        default void applyActions(Map<String, String> cache) { }
+
+        /** What the cache holds for a key now; "" when nothing. */
+        default String read(String key) { return ""; }
+    }
 
     private CoreContext core;
     private WidgetSink sink;
@@ -99,7 +110,11 @@ public final class WidgetsCapability implements Capability {
     }
 
     private void refresh(List<String> problems) {
-        sink.apply(WidgetModel.usable(actions(), (String) core.settings().get(ACTIONS), problems));
+        JSONArray actions = actions();
+        sink.apply(WidgetModel.usable(actions, (String) core.settings().get(ACTIONS), problems));
+        // The button widgets hold an action id each; they are redrawn with the link of
+        // that action under the key in force now.
+        sink.applyActions(WidgetModel.actionCache(actions, sink.read(SurfaceKeys.ACTION_IDS)));
     }
 
     private JSONArray slots(List<String> problems) throws Exception {

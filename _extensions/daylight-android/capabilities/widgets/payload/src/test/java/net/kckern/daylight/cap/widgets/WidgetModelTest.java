@@ -61,6 +61,46 @@ public class WidgetModelTest {
         assertEquals(1, problems.size());
     }
 
+    // ── every action, for the one-action button widgets ──────────────────────
+
+    @Test public void everyActionIsWrittenUnderItsIdWithTheListOfIdsInOrder() throws Exception {
+        Map<String, String> cache = WidgetModel.actionCache(actions(), "");
+        assertEquals("memo,feed,a3,a4,a5", cache.get("action.ids"));
+        assertEquals("New memo", cache.get("action.memo.label"));
+        assertEquals("mic", cache.get("action.memo.icon"));
+        assertEquals("daylight://action/memo#k=K", cache.get("action.memo.uri"));
+        assertEquals("", cache.get("action.a3.icon"));
+        assertEquals(1 + 5 * 3, cache.size());
+    }
+
+    @Test public void anActionThatIsGoneHasItsFieldsClearedSoAButtonBoundToItReadsNotSet() throws Exception {
+        Map<String, String> cache = WidgetModel.actionCache(new JSONArray("[{\"id\":\"memo\",\"label\":\"Memo\",\"uri\":\"daylight://action/memo\"}]"),
+                "memo,feed, old-one,,../x,Not An Id");
+        assertEquals("memo", cache.get("action.ids"));
+        assertEquals("", cache.get("action.feed.uri"));
+        assertEquals("", cache.get("action.feed.label"));
+        assertEquals("", cache.get("action.old-one.uri"));
+        assertEquals("Memo", cache.get("action.memo.label"));
+        assertFalse("what was never an id makes no key", cache.keySet().toString().contains(".."));
+    }
+
+    @Test public void anActionWithoutAnOwnLinkOrAnIdOfTheRightShapeIsLeftOutOfTheButtonList() throws Exception {
+        JSONArray odd = new JSONArray("[{\"id\":\"x\",\"label\":\"X\",\"uri\":\"https://evil.example/\"},"
+                + "{\"id\":\"Bad Id\",\"label\":\"B\",\"uri\":\"daylight://action/b\"},"
+                + "{\"id\":\"ok\",\"label\":\"OK\",\"uri\":\"daylight://action/ok\"},"
+                + "{\"id\":\"ok\",\"label\":\"Twice\",\"uri\":\"daylight://action/ok\"}]");
+        Map<String, String> cache = WidgetModel.actionCache(odd, "");
+        assertEquals("ok", cache.get("action.ids"));
+        assertEquals("OK", cache.get("action.ok.label"));
+        assertNull(cache.get("action.x.uri"));
+    }
+
+    @Test public void theButtonListIsBounded() throws Exception {
+        JSONArray many = new JSONArray();
+        for (int i = 0; i < 100; i++) many.put(new org.json.JSONObject().put("id", "a" + i).put("label", "L").put("uri", "daylight://action/a" + i));
+        assertEquals(WidgetModel.MAX_ACTIONS, WidgetModel.actionCache(many, "").get("action.ids").split(",").length);
+    }
+
     @Test public void theSettingIsCheckedForShapeWhenItIsSet() {
         assertNull(WidgetModel.listProblem(""));
         assertNull(WidgetModel.listProblem("memo, feed"));

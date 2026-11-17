@@ -1,8 +1,14 @@
-# A home-screen widget with up to four one-tap actions. Takes the action list from
-# one-tap-actions when the device lists it; without it the widget has one button
-# that opens the app.
+# Home-screen widgets: one with up to four one-tap actions, and a 1x1 button bound to
+# one action, chosen when the button is placed. Both take the action list from
+# one-tap-actions when the device lists it; without it the four-button widget has one
+# button that opens the app and a 1x1 button has nothing to choose.
 entry: net.kckern.daylight.cap.widgets.WidgetsCapability
 permissions: []
+exported:
+  # The 1x1 button's chooser. The launcher starts it when a button is placed, and no
+  # permission exists that only a launcher holds. It reads the widget id, lists the
+  # actions and stores the choice; it runs nothing.
+  - net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity
 # The widget is filled at start from the list one-tap-actions provides.
 startsAfter:
   - one-tap-actions

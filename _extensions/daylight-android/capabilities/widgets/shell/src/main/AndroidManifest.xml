@@ -10,5 +10,31 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_actions_info" />
         </receiver>
+
+        <!-- The one-action button. Not exported, for the same reason. -->
+        <receiver android:name="net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider"
+            android:exported="false" android:label="@string/daylight_widget_button">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_button_info" />
+        </receiver>
+
+        <!-- The button's chooser. Exported: the launcher starts it when a button is placed,
+             and no permission exists that only a launcher holds. It reads the widget id
+             and nothing else, uses it only for a widget Android says is this app's, lists
+             the configured actions and stores the choice. It runs nothing. Not shown over
+             the lock screen. taskAffinity "" and excludeFromRecents: it is one step of
+             placing a widget and never part of the app's own task. -->
+        <activity android:name="net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:label="@string/daylight_widget_button"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

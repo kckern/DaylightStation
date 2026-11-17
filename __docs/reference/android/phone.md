@@ -356,7 +356,7 @@ as the action's id and its outcome.
 | Launcher shortcuts (long-press) | None: the payload publishes them and the launcher holds them | They stay in the launcher and launch the link activity |
 | Pinned shortcuts | None | The same |
 | Quick-settings tiles | Four slots, "Daylight 1" to "Daylight 4" | A slot draws its last label from the surface cache; an unassigned slot is shown unavailable |
-| Home-screen widget | See `widgets` | Draws from the cache |
+| Home-screen widgets (four buttons; one-action buttons) | See `widgets` | Draw from the cache |
 
 A tile on a locked phone asks for the unlock before it launches its action. The
 tiles and the widget never call the payload and never start a service: they read
@@ -371,18 +371,65 @@ publishing.
 
 ## `widgets`
 
-One widget, "Daylight actions": up to four buttons bound to the same actions.
+Two widgets, both drawn from the surface cache by installed code that never
+calls the payload.
+
+**"Daylight actions"**: up to four buttons bound to the same actions.
 `widgets.actions` lists the ids in order; empty means the first four. Without
 `one-tap-actions`, or before the payload has ever run, the widget has one button,
 "Daylight", that opens the app.
 
+**"Daylight button"**: one cell, one action. Placing it opens a chooser
+(`ButtonWidgetConfigActivity`) that lists every action by its label; a tap on one
+binds the button to that action. The button shows the action's label and icon,
+and a tap launches the action's keyed link, the same link every other surface
+launches.
+
+- The widget remembers an action id and nothing else, in a private preferences
+  file of the installed app (`daylight_buttons`, key `button.<widget id>.action`).
+  The label, the icon and the link are read from the surface cache each time the
+  button is drawn. Removing the widget removes its entry.
+- The payload writes every action under its own id (`action.ids`, and
+  `action.<id>.label`, `.icon`, `.uri`) at start and whenever the actions are
+  published, and asks the buttons to redraw. A button's link is therefore under
+  the key in force; a tap on a cold start carries the key of the run before,
+  which is honoured for a minute.
+- A button whose action no longer exists (the settings line was removed, or the
+  widget was never given one) shows "Not set", and a tap opens the chooser again.
+  The payload empties the cache fields of an action that is gone, so the button
+  cannot launch a stale link.
+- From Android 9 the widget's own menu offers the chooser again
+  (`widgetFeatures="reconfigurable"`).
+- Before the payload has ever run the chooser has nothing to list. It says
+  "Daylight has no actions to show yet. Open the app once, then add the button
+  again." and starts the shell service, so the list is there the next time.
+
+The chooser is exported, because the launcher starts it and no permission exists
+that only a launcher holds. What it does with an intent from anybody:
+
+1. It reads the widget id and nothing else.
+2. It asks Android which provider that widget belongs to, and goes on only when
+   the answer is this app's button provider. An id of another app's widget, of
+   the four-button widget, or of no widget ends there.
+3. It lists the action labels and stores the id the owner taps, for that widget.
+
+It runs no action, starts no capture and no playback, opens no page and returns
+nothing but the widget id. Another app that starts it can put the list of action
+labels in front of the owner, and a tap by the owner then rebinds that one
+button. It is not shown over the lock screen.
+
 | Method | Route | Answer |
 |---|---|---|
 | GET | `/widgets` | `{slots: [{id, label}], problems: [...]}` |
-| POST | `/widgets/refresh` | Writes the slots and asks the widget to redraw |
+| POST | `/widgets/refresh` | Writes the slots and every action, and asks the widgets to redraw |
 
-The widget is redrawn when the payload starts and whenever the actions are
+Both widgets are redrawn when the payload starts and whenever the actions are
 published.
+
+Unproven on a phone: that the launcher offers a one-cell widget with a
+configuration step, how it sizes `minWidth` 40dp before Android 12, and the look
+of the button on the owner's launcher (a dark tile, a white icon over a two-line
+label).
 
 ## `media-service`
 
@@ -1033,16 +1080,19 @@ What another app on the phone can reach, and what stands in the way.
 | `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
-| `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
+| `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
+| `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
-Eight components are exported: `LinkActivity`, `KioskActivity`, the four tile
-services (which the system alone can bind), `DaylightMediaService` and
-`BootReceiver`. A ninth, or one of these no longer exported, fails the build.
-The quick inputs added three components (two activities and a provider) and
-none of them is exported.
+Nine components are exported: `LinkActivity`, `KioskActivity`, the four tile
+services (which the system alone can bind), `DaylightMediaService`,
+`ButtonWidgetConfigActivity` and `BootReceiver`. A tenth, or one of these no
+longer exported, fails the build. The quick inputs added three components (two
+activities and a provider) and none of them is exported. The one-action button
+added two: its provider, which is not exported, and its chooser, which is. It
+added no permission.
 
 ## Not covered by JVM tests
 
@@ -1050,9 +1100,11 @@ none of them is exported.
   once, whether the phone ever offers it as a home app (the manifest has no HOME
   filter; the verifier and a `buildSrc` test check that), link resolution, the
   tile and widget hosts.
-- `LinkActivity`, `ActionTileService` and `ActionWidgetProvider` themselves. Their
+- `LinkActivity`, `ActionTileService`, `ActionWidgetProvider`,
+  `ButtonWidgetProvider` and `ButtonWidgetConfigActivity` themselves. Their
   decisions are in pure classes that are tested (`LinkRequest`, `LinkAnswer`,
-  `TileFace`, `WidgetButtons`); the Android calls around them are not.
+  `TileFace`, `WidgetButtons`, `ButtonFace`); the Android calls around them are
+  not: the widget host, the chooser's list, what Android answers for a widget id.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.

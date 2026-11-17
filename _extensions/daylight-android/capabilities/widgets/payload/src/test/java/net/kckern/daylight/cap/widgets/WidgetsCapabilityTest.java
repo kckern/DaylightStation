@@ -134,6 +134,56 @@ public class WidgetsCapabilityTest {
         assertEquals(0, context.registered);
     }
 
+    // ── the one-action button widgets ────────────────────────────────────────
+
+    /** A sink that keeps what a real one would have in the cache file. */
+    private static final class ButtonSink implements WidgetsCapability.WidgetSink {
+        final Map<String, String> stored = new java.util.HashMap<>();
+        int actionApplies;
+        @Override public void apply(Map<String, String> cache) { stored.putAll(cache); }
+        @Override public void applyActions(Map<String, String> cache) { stored.putAll(cache); actionApplies++; }
+        @Override public String read(String key) { String v = stored.get(key); return v == null ? "" : v; }
+    }
+
+    private WidgetsCapability buttons(ButtonSink sink) throws Exception {
+        core = TestCore.create(tmp.newFolder());
+        cap = new WidgetsCapability(sink);
+        core.add(cap);
+        core.prepare(new JSONObject());
+        withActions();
+        return cap;
+    }
+
+    @Test public void everyActionIsWrittenForTheButtonWidgetsAtStartAndWheneverTheActionsArePublished() throws Exception {
+        ButtonSink sink = new ButtonSink();
+        buttons(sink).start();
+        assertEquals(1, sink.actionApplies);
+        assertEquals("memo", sink.stored.get("action.ids"));
+        assertEquals("daylight://action/memo#k=" + KEY, sink.stored.get("action.memo.uri"));
+        label = "Voice memo";
+        core.events().publish(ActionList.PUBLISHED, new JSONObject());
+        assertEquals("the link is rebuilt with the key in force each time", 2, sink.actionApplies);
+        assertEquals("Voice memo", sink.stored.get("action.memo.label"));
+    }
+
+    @Test public void anActionThatWasRemovedIsClearedFromTheCacheAtTheNextRefresh() throws Exception {
+        ButtonSink sink = new ButtonSink();
+        sink.stored.put("action.ids", "memo,gone");
+        sink.stored.put("action.gone.uri", "daylight://action/gone#k=old");
+        sink.stored.put("action.gone.label", "Gone");
+        buttons(sink).start();
+        assertEquals("memo", sink.stored.get("action.ids"));
+        assertEquals("a button bound to it now reads as not set", "", sink.stored.get("action.gone.uri"));
+        assertEquals("", sink.stored.get("action.gone.label"));
+    }
+
+    @Test public void theRoutesNeverAnswerWithAButtonsLink() throws Exception {
+        ButtonSink sink = new ButtonSink();
+        buttons(sink).start();
+        assertFalse(TestCore.call(core, "POST", "/widgets/refresh", null, "{}").toString().contains(KEY));
+        assertFalse(TestCore.get(core, "/widgets").toString().contains(KEY));
+    }
+
     @Test public void namesItself() {
         assertEquals("widgets", cap.name());
     }

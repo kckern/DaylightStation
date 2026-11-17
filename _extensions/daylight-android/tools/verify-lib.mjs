@@ -275,6 +275,13 @@ export const EXPECTED_COMPONENTS = {
   'provider net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider': { exported: false, permission: null },
   'provider net.kckern.daylight.cap.synth.shell.SynthEngineProvider': { exported: false, permission: null },
   'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider': { exported: false, permission: null },
+  'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider': { exported: false, permission: null },
+  // Exported with no permission: the launcher starts it when a one-action button is
+  // placed (APPWIDGET_CONFIGURE), and no permission exists that only a launcher holds.
+  // It reads the widget id and nothing else, uses it only for a widget Android says is
+  // this app's button, lists the configured actions and stores the choice. It runs no
+  // action and starts nothing.
+  'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity': { exported: true, permission: null },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3': { exported: true, permission: BIND_TILE },

@@ -10,6 +10,14 @@ package net.kckern.daylight.api;
  *   widget.<1..4>.label | widget.<1..4>.icon | widget.<1..4>.uri
  *
  * An empty uri means the slot is unassigned.
+ *
+ * Every action is also written under its own id, for the one-action button widgets:
+ * a widget remembers an action id, and its chooser lists the ids in order.
+ *
+ *   action.ids                                    the action ids, comma-separated, in order
+ *   action.<id>.label | action.<id>.icon | action.<id>.uri
+ *
+ * An action that no longer exists has its three fields emptied.
  */
 public final class SurfaceKeys {
     public static final String PREFS = "daylight_surfaces";
@@ -25,6 +33,26 @@ public final class SurfaceKeys {
     public static String tile(int slot, String field) { return key("tile", slot, TILE_SLOTS, field); }
 
     public static String widget(int slot, String field) { return key("widget", slot, WIDGET_SLOTS, field); }
+
+    /** The ids of every action, comma-separated, in the order a chooser lists them. */
+    public static final String ACTION_IDS = "action.ids";
+
+    /** Whether this is the shape every action id has: a lower-case letter, then letters, digits and hyphens, 32 at most. */
+    public static boolean actionId(String id) {
+        if (id == null || id.isEmpty() || id.length() > 32) return false;
+        for (int i = 0; i < id.length(); i++) {
+            char c = id.charAt(i);
+            boolean letter = c >= 'a' && c <= 'z';
+            if (i == 0 ? !letter : !(letter || (c >= '0' && c <= '9') || c == '-')) return false;
+        }
+        return true;
+    }
+
+    /** The key of one field of one action. Anything that is not an action id makes no key. */
+    public static String action(String id, String field) {
+        if (!actionId(id)) throw new IllegalArgumentException("not an action id");
+        return "action." + id + "." + field;
+    }
 
     private static String key(String surface, int slot, int slots, String field) {
         if (slot < 1 || slot > slots) throw new IllegalArgumentException(surface + " slot " + slot + " is outside 1-" + slots);

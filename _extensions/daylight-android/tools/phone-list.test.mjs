@@ -57,7 +57,7 @@ test('a photo is taken by the system camera app, so the phone asks for no camera
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these eight components of the phone build', () => {
+test('another app can reach exactly these nine components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
     'net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
@@ -67,7 +67,19 @@ test('another app can reach exactly these eight components of the phone build', 
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4',
     'net.kckern.daylight.cap.webviewhost.shell.KioskActivity',
+    'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity',
     'net.kckern.daylight.shell.BootReceiver',
+  ]);
+});
+
+test('the one-action button added one exported component, its chooser, and no permission', () => {
+  assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
+  assert.deepEqual(capabilities.widgets.permissions, []);
+  const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.widgets.'));
+  assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity exported=true permission=null',
+    'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider exported=false permission=null',
+    'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
   ]);
 });
 

@@ -55,6 +55,43 @@ final class WidgetModel {
         return cache;
     }
 
+    /** The most actions written for the button widgets: twelve configured and twenty-four pinned fit. */
+    static final int MAX_ACTIONS = 40;
+
+    /**
+     * Every action under its own id, for the one-action button widgets: action.ids (the
+     * ids in order) and action.<id>.label, .icon and .uri. An id that was in the cache
+     * before and is not an action any more has its fields emptied, so a button bound to
+     * it reads as not set. Only the app's own links go in.
+     *
+     * @param previousIdsCsv action.ids as the cache holds it now
+     */
+    static Map<String, String> actionCache(JSONArray actions, String previousIdsCsv) {
+        Map<String, String> cache = new LinkedHashMap<>();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; actions != null && i < actions.length() && ids.size() < MAX_ACTIONS; i++) {
+            JSONObject a = actions.optJSONObject(i);
+            if (a == null) continue;
+            String id = a.optString("id", "");
+            if (!SurfaceKeys.actionId(id) || ids.contains(id) || !SurfaceKeys.launchable(a.optString("uri", ""))) continue;
+            ids.add(id);
+            cache.put(SurfaceKeys.action(id, SurfaceKeys.LABEL), a.optString("label", ""));
+            cache.put(SurfaceKeys.action(id, SurfaceKeys.ICON), a.optString("icon", ""));
+            cache.put(SurfaceKeys.action(id, SurfaceKeys.URI), a.optString("uri", ""));
+        }
+        for (String raw : (previousIdsCsv == null ? "" : previousIdsCsv).split(",")) {
+            String gone = raw.trim();
+            if (!SurfaceKeys.actionId(gone) || ids.contains(gone)) continue;
+            for (String field : new String[] { SurfaceKeys.LABEL, SurfaceKeys.ICON, SurfaceKeys.URI }) {
+                cache.put(SurfaceKeys.action(gone, field), "");
+            }
+        }
+        StringBuilder csv = new StringBuilder();
+        for (String id : ids) csv.append(csv.length() == 0 ? "" : ",").append(id);
+        cache.put(SurfaceKeys.ACTION_IDS, csv.toString());
+        return cache;
+    }
+
     /** The actions that fill the slots, in order, at most SLOTS. */
     static List<JSONObject> chosen(JSONArray actions, String idsCsv, List<String> problems) {
         List<JSONObject> usable = new ArrayList<>();
