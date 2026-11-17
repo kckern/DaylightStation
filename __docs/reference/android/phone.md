@@ -12,14 +12,19 @@ build verifier. Nothing has been installed. A security review of the build was
 answered before any install; what it changed is in "The lock screen, the
 microphone and the camera", "The link key", "Who may connect", "The exact list"
 and the `quick-input` section. The quick inputs (text, photo, more than one
-destination) were added after that review and have had none of their own. Every statement below about what
+destination) were added after that review and have had none of their own. A later
+review of the car screen and of pinning media changed "Who may bind the car screen"
+(the binder gate) and "What a pin does" (recorded only on the owner's confirmation). Every statement below about what
 Android does (cold starts, tiles, the launcher, link handling) is from the
 platform's documentation and is unproven until the on-device checklist is run.
 "Unproven on a phone" below marks the places where that matters most.
 
 What the phone build has: the site's mobile web views (`webview-host`), links
-(`notifications`), `bookmarks`, `one-tap-actions`, `widgets`, native audio playback
-(`media-service`) with Android Auto (`android-auto`), quick inputs for the
+(`notifications`), `bookmarks`, `one-tap-actions` (with the "On my way"
+placeholder), `widgets` (a four-button widget and one-action buttons), native audio
+playback (`media-service`, with playing from a widget or tile with no window and
+pinning media from the site) with Android Auto (`android-auto`), a list of household
+actions and a voice memo in the car (`car-actions`), quick inputs for the
 Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
 the app's own local notifications. What it does not have is
 under "What the phone does not have".
@@ -831,8 +836,9 @@ same mechanism as `POST /actions/pin`'s shortcuts).
 ## `android-auto`
 
 Declarations only: a `com.google.android.gms.car.application` meta-data entry
-pointing at `automotive_app_desc.xml` (`<uses name="media"/>`) and a one-colour
-attribution icon. Browsing and playback are `media-service`, which the capability
+pointing at `automotive_app_desc.xml` (`<uses name="media"/>`; in a build that also
+lists `car-actions`, that capability's copy of the file replaces it and adds
+`<uses name="template"/>`) and a one-colour attribution icon. Browsing and playback are `media-service`, which the capability
 requires; the verifier fails a build that has the declaration without it, or has it
 without listing `android-auto`.
 
@@ -1075,7 +1081,9 @@ with one touch: a recording, typed text or a photo. It was `voice-memo`; the
 recorder, the queue on disk, the retry rules and the notices are the same code,
 now for three kinds and any number of destinations. Each bot answers in the
 owner's Telegram conversation as it does for a Telegram message of that kind;
-Telegram stays a full interface and this is another way in.
+Telegram stays a full interface and this is another way in. A voice memo recorded
+in the car (`car-actions`) is written to the same inbox by the same rules and goes
+through the same queue.
 
 The contract with the backend is
 `ops:docs/superpowers/specs/2026-11-17-daylight-quick-input-intake-contract.md`.
@@ -1130,7 +1138,10 @@ action is an `input:` line), or a keyed `input` link the app built itself.
   that far.
 - A page of the site has no way to build a keyed link, and the page bridge has
   no call that runs an action or starts a capture.
-- A car reaches the media library service only, which takes media ids.
+- A car reaches the media library service, which takes media ids, and the car list
+  (`car-actions`), whose voice entry records through the car's microphone only on a
+  tap on that entry on the car's screen, into this same queue (see "A voice memo in
+  the car"). Both hold the car to a pinned certificate.
 - A page's own use of the microphone or camera (`getUserMedia`) is a separate
   path, through the web view, and is off on the phone (`webview.allowMic` and
   `webview.allowCamera` are false).
@@ -1452,7 +1463,8 @@ carries a tap target is not confirmed, and no producer sets one.
   dropped.
 
 Debugging: `adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)` (tags
-`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`, `Daylight-Input`), and
+`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`, `Daylight-Input`,
+`Daylight-Action`, `Daylight-Car`), and
 `adb shell run-as net.kckern.daylight.phone` for `files/shell.log`,
 `files/payloads/state/`, `files/memos/inbox/` and `files/inputs/inbox/`.
 
@@ -1564,6 +1576,7 @@ What another app on the phone can reach, and what stands in the way.
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
+| `PinResultReceiver` (`one-tap-actions`) | Not exported | Reached only through the immutable, one-shot `PendingIntent` the payload hands `requestPinShortcut`, which the system sends once the owner has pinned a media shortcut. It passes a single-use token to the payload and nothing else |
 | `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`, `CarAppMetadataHolderService` (Car App Library) | Not exported (the last also disabled) | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
@@ -1579,7 +1592,9 @@ activities and a provider) and none of them is exported. The one-action button
 added two: its provider, which is not exported, and its chooser, which is. It
 added no permission. Playing with no window added one, the play service, which is
 not exported, and no permission (it is a `mediaPlayback` foreground service, and
-`FOREGROUND_SERVICE_MEDIA_PLAYBACK` was already declared).
+`FOREGROUND_SERVICE_MEDIA_PLAYBACK` was already declared). Recording a pin only on
+the owner's confirmation added one, its receiver, which is not exported. In all, 27
+components.
 
 ## Not covered by JVM tests
 
@@ -1615,6 +1630,16 @@ not exported, and no permission (it is a `mediaPlayback` foreground service, and
   permission dialogs, a rebuild of the screen. Their decisions are in
   `RecorderMachine`, `MemoFiles`, `MemoRecovery` and `PermissionAsk`, which are
   tested; that a cut-off Ogg file plays has not been tried.
+- `CarHostGateService`, `DaylightCarAppService`, `ActionsScreen`, `RecordScreen`,
+  `CarRecorder` and `CarMemoWriter`: Android Auto binding the gate, the forward to
+  the library's binder, the templates on a head unit, the car's microphone, the
+  Opus or AAC encoder and the muxer. Their decisions are in `CarGate`,
+  `CarHostPolicy`, `GateLink`, `CarSessionKey`, `CarAnswers`, `CarMemo`, `CarList`
+  and `PayloadCar`, which are tested.
+- `PinResultReceiver` and the result intent of `requestPinShortcut`: whether a
+  launcher sends it, and sends it for an immutable `PendingIntent`. The decisions
+  (token, slots, limits, unrecorded shortcuts) are tested in `SurfaceRoutesTest`,
+  `PinnedMediaTest`, `SurfacePlanTest` and `PinConfirmationTest`.
 - `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
   with no notification service, which shows only that it does nothing there.
 - The backend's side of every media and quick-input request. The tests use a fake backend

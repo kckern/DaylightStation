@@ -42,6 +42,56 @@ K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key
 adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$K'"
 ```
 
+## First install, in one sitting
+
+The order to walk the sections in on the first evening, with a laptop on adb and
+the Desktop Head Unit at hand. Each step names the lines it covers; record each
+line as it is walked.
+
+1. **Before installing.** The household config binds the phone's device key to the
+   owner for the Journalist and Nutribot (F, first paragraph), and the backend
+   intakes of the quick-input contract are deployed. Without them every quick input
+   waits with a notice, which is itself step F16.
+2. **Install and open** (A1 to A7).
+3. **Views and links** (B, B2).
+4. **Tiles, shortcuts and widgets**, warm and then cold (C1 to C11), including a
+   one-action button on a cold process (C7) and "On my way" (C10).
+5. **Quick inputs, online**: Journal and Meal by voice (F1, F2, F18), Journal note
+   and Meal note (F2.1, F2.2, F2.10), Meal photo (F3.1, F3.2).
+6. **Quick inputs, offline**, airplane mode on and then off: F7 (Journal voice),
+   F18b (Meal voice), F2.8 (Journal note), F2.11 (Meal note), F3.3 (Meal photo).
+   The rest of F, F2 and F3 after that, as time allows.
+7. **Notifications** (G).
+8. **Playback and pinning**: D, then D3 1 to 14 (pin a playlist from the Media
+   page), then D2 with the pinned action.
+9. **The car**, on the Desktop Head Unit: E1 to E12 (media, and the first-connection
+   pin of `media.controllerPins`), E2 1 to 7 (the car list, and the first-connection
+   pin of `car.hostPins`, which needs a rebuild and reinstall), E3 1 to 11 (a voice
+   memo from the car).
+10. **A relayed push** (H), then record the results (I).
+
+## The open questions, and which line answers each
+
+From the plan's list of what was unverified; each is answered only on the phone.
+
+| # | Question | Lines |
+|---|---|---|
+| V4 | Android Auto lists a sideloaded IOT-category app (Car App Library 1.3.0-rc01) with unknown sources on | E1, E2.1, E2.2 |
+| V5 | A widget's tap may start the media foreground service (play with no window) | D2.1, D2.2, C7 |
+| V6 | The system camera app returns a full-size photo to the app's content URI | F3.1, F3.2, F3.7, F3.11 |
+| V7 | The launcher accepts a 1x1 widget with a configuration activity, and pinning a shortcut from the Media page | C5 to C8, D3.2 to D3.4 |
+
+## Each quick input, online and offline
+
+| Destination | Kind | Online | Offline, then back online |
+|---|---|---|---|
+| `journal` | voice | F1, F2 | F7, F8 |
+| `meal` | voice | F18 | F18b |
+| `journal-note` | text | F2.1, F2.2 | F2.8 |
+| `meal-note` | text | F2.10 | F2.11 |
+| `meal-photo` | photo | F3.2 | F3.3 |
+| `journal`, from the car | voice | E3.3 | E3.11 |
+
 ## A. Install and first run
 
 1. Record the phone's model and Android version (`adb shell getprop ro.product.model`,
@@ -231,12 +281,15 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
     (waiting five seconds between them): the fourth answers `rate_limited`.
 11. Remove a pinned media shortcut from the home screen, then reopen the app: the
     chooser no longer lists it.
+12. With 24 pinned media shortcuts (once, if practical), a 25th answers
+    `limit_reached` and none of the 24 is disabled.
 13. Ask for a pin, force-stop the app while the dialog is open, then add the shortcut.
     The chooser does not list it, the shortcut stays enabled after the app is opened
     again, and a tap on it shows "This shortcut was not saved. Remove it and pin it
     again from the Media page".
-12. With 24 pinned media shortcuts (once, if practical), a 25th answers
-    `limit_reached` and none of the 24 is disabled.
+14. Ask for three pins in a row and dismiss each dialog. A fourth request within ten
+    minutes answers `rate_limited` (at most three dialogs are open at once); after
+    one of the three is confirmed instead, a new request shows its dialog.
 
 ## E. Android Auto, on the Desktop Head Unit
 
@@ -362,6 +415,10 @@ for an IOT app on this library, what the PCM is, the encoder's file).
 9. Opening, refreshing or reconnecting the list never starts a recording: the shell
    log and logcat have no "car memo began" without a tap.
 10. Leave one running for thirty minutes (once): it stops by itself and is saved.
+11. Offline: with the phone's network off (airplane mode on the phone, Bluetooth on
+    for the car if the head unit allows), record from the car and stop. The notice
+    on the phone names Journal 1. Network back on: it uploads and arrives in the
+    Journalist.
 
 ## F. Voice inputs (the recorder)
 
@@ -440,6 +497,9 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
     tap "Meal": the Journal recording stops and is saved (any capture button
     tapped during a recording stops it), and no Meal recording starts until it is
     tapped again.
+18b. **Meal by voice, offline.** Airplane mode on, tap "Meal", speak, "Stop and
+    save": the notice names Meal 1. Airplane mode off: it uploads without opening
+    the app, and Nutribot answers.
 
 ## F2. Text inputs
 
@@ -465,6 +525,8 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    first, and the field is never shown over the lock screen.
 10. "Meal note" (from the action list; it has no tile by default): the same, to
     Nutribot.
+11. "Meal note" offline: airplane mode on, send a note; the notice names Meal note 1.
+    Airplane mode off: it uploads, and Nutribot answers.
 
 ## F3. Photo inputs
 
@@ -482,7 +544,8 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    fields, no camera model, no capture time**; its long edge is at most 2048
    pixels; it is upright. Delete the pulled copy. Do this once with the camera's
    location tagging turned ON in the camera app's settings, which is the case that
-   matters.
+   matters. Then turn airplane mode off: the photo uploads without opening the app
+   and Nutribot answers.
 4. Take a photo holding the phone upright, on its left side and on its right
    side: each arrives upright.
 5. Open the camera with "Meal photo" and press back without taking a photo:
