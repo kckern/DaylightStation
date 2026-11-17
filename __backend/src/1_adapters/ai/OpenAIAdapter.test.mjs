@@ -320,9 +320,12 @@ describe('OpenAIAdapter JSON parse failure logs', () => {
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, { httpClient: { post: vi.fn() }, logger });
     adapter.chat = vi.fn(async () => '{"a": my mom}');
-    await expect(adapter.chatStructured([{ role: 'user', content: 'x' }])).rejects.toThrow();
+    const thrown = await adapter.chatStructured([{ role: 'user', content: 'x' }]).catch(error => error);
     const logged = JSON.stringify([logger.debug, logger.info, logger.warn, logger.error].flatMap(fn => fn.mock.calls));
     expect(logged).not.toContain('my mom');
     expect(logged).toContain('is not valid JSON');
+    // The thrown error's toJSON carries its context, so a raw error logged anywhere must not leak it either.
+    expect(thrown.code).toBe('INVALID_JSON_RESPONSE');
+    expect(JSON.stringify(thrown)).not.toContain('my mom');
   });
 });

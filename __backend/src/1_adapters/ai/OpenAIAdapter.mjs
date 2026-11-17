@@ -12,9 +12,7 @@ import { estimateCostUsd, estimateTranscriptionCostUsd } from './aiPricing.mjs';
 import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 import { isQuotaExhausted } from '#system/utils/retryTransient.mjs';
 
-// JSON.parse messages quote part of the input (`Unexpected token 'm', "my mom" is not valid JSON`).
-// Logs keep the error kind and position and drop the quoted text, which can be a user's words.
-const redactJsonExcerpt = message => typeof message === 'string' ? message.replace(/"[\s\S]*"/, '"…"') : message;
+import { redactJsonExcerpt } from './jsonExcerpt.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -607,7 +605,7 @@ export class OpenAIAdapter extends IAIGateway {
             code: 'INVALID_JSON_RESPONSE',
             service: 'OpenAI',
             attempts: maxParseAttempts,
-            details: parseError.message,
+            details: redactJsonExcerpt(parseError.message),
           });
         }
 
