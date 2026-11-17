@@ -627,7 +627,16 @@ node _extensions/portal-keys/pkctl.mjs lockdown-token '<server-only-secret>'
 for POST; a PUT body goes to a temp file named in `content`. Every authenticated
 `PUT /lockdown` arrived empty, so a Stop was treated as a release and
 `lockdownActive` stayed false (measured on the live Portal, 2026-11-17).
-`RequestBody.of` reads both. Verify a lock after any shell change with a short
+`RequestBody.of` reads both.
+
+**Shell 35 is installed (2026-11-17) and `shutdown/config.yml` points at `:8771`.**
+Shell APKs must be signed with the key that signed the installed app (the laptop's
+debug key, SHA-256 `3663e947…0fb4`). The payload also serves the same legacy
+contract, `PUT :8773/lockdown` (`LockdownRoute`), writing the `lockdownUntil`
+preference the shell's key filter reads; it carried the live lock before shell 35
+and remains a fallback (payload `p7.1-lockdown-route` = `04ed630a44` plus that route).
+Verified after install: a 15 s lock on `:8771` read `lockdownActive: true` and
+cleared at its deadline. Verify a lock after any shell change with a short
 deadline: `PUT /lockdown {"locked":true,"lockedUntil":<now+15s>}` must answer
 `lockdownActive: true`, then read false after the deadline.
 

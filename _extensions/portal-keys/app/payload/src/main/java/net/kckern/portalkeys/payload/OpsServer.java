@@ -12,6 +12,7 @@ final class OpsServer extends NanoHTTPD{
     OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth,VolumeBeepGuard beepGuard,HomeWatchdog homeWatchdog){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;this.beepGuard=beepGuard;this.homeWatchdog=homeWatchdog;}
     @Override public Response serve(IHTTPSession x){String u=x.getUri();try{
         if(u.equals("/page/beat"))return pageBeat(x);
+        if(u.equals("/lockdown"))return lockdown(x);
         if(!authorized(x))return json(Response.Status.UNAUTHORIZED,new JSONObject().put("ok",false).put("error","unauthorized"));
         if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload",Main.VERSION).put("homeWatchdog",homeWatchdog.status()).put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
         if(u.equals("/kiosk-home"))return json(homeWatchdog.status());
@@ -53,6 +54,20 @@ final class OpsServer extends NanoHTTPD{
         if (length<1 || length>2048 || type==null || !type.split(";",2)[0].trim().equals("application/json"))
             throw new IllegalArgumentException("bounded JSON required");
         return length;
+    }
+    /** Legacy public-kiosk lockdown (see LockdownRoute); authenticated by its own token, not the admin one. */
+    private Response lockdown(IHTTPSession x) throws Exception {
+        if (x.getMethod()!=Method.PUT) return json(Response.Status.METHOD_NOT_ALLOWED,new JSONObject().put("ok",false).put("error","PUT required"));
+        android.content.SharedPreferences prefs=context.getSharedPreferences(LockdownRoute.PREFS,Context.MODE_PRIVATE);
+        String body=LockdownRoute.readBody(x.getHeaders(),x.getInputStream());
+        long now=System.currentTimeMillis();
+        LockdownRoute.Decision decision=LockdownRoute.decide(prefs.getString(LockdownRoute.TOKEN,""),x.getHeaders().get("x-lockdown-token"),body,now);
+        if (decision.status!=200) return json(decision.status==401?Response.Status.UNAUTHORIZED:Response.Status.BAD_REQUEST,new JSONObject().put("ok",false).put("error",decision.error));
+        prefs.edit().putLong(LockdownRoute.UNTIL,decision.until).commit();
+        long until=prefs.getLong(LockdownRoute.UNTIL,0);
+        shell.note("LOCKDOWN",decision.until==0?"cleared":"blocked until "+(until==Long.MAX_VALUE?"indefinite":String.valueOf(until)));
+        return json(new JSONObject().put("ok",true).put("lockdownTokenSet",true).put("lockdownActive",LockdownRoute.active(until,now))
+            .put("lockdownUntil",until>0&&until!=Long.MAX_VALUE?(Object)until:JSONObject.NULL));
     }
     private Response pageBeat(IHTTPSession x) throws Exception {
         String origin=x.getHeaders().get("origin");
