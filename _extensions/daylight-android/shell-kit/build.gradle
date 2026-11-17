@@ -1,0 +1,8 @@
+// What the shell halves of the phone capabilities share: start the shell service, read
+// the surface cache, build the intent that opens a daylight:// link. Installed code,
+// so it is small and decides nothing; shell-api holds the contracts it uses.
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.shellkit'
+}
