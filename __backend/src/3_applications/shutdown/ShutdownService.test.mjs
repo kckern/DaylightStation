@@ -143,3 +143,15 @@ test('a delayed legacy ACK records completion time after the failure alert and i
  assert.deepEqual(alerts.map(event=>event.at),[new Date(6000).toISOString(),new Date(7000).toISOString()]);
  const row=(await service.status('school:portal',now)).enforcement.consumers[0];assert.equal(row.lastContactAt,7000);assert.equal(presentEnforcement(row,now).state,'acknowledged');
 });
+
+test('a Portal failure that keeps repeating warns once, and again when it changes',async()=>{
+ const f=fakes(),warns=[];let code='CAPABILITY_UNAVAILABLE';
+ const portal={setLockdown:async()=>{if(code==='ok')return {ok:true,blocked:false};return {ok:false,skipped:true,code};}};
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal,logger:{warn:(event,data)=>warns.push([event,data.error])}});
+ for(let i=0;i<4;i++)await service.reconcile(1000+i);
+ assert.deepEqual(warns,[['shutdown.portal_sync_failed','CAPABILITY_UNAVAILABLE']]);
+ code='NATIVE_ACK_MISMATCH';await service.reconcile(2000);await service.reconcile(2001);
+ assert.equal(warns.length,2);assert.equal(warns[1][1],'NATIVE_ACK_MISMATCH');
+ code='ok';await service.reconcile(3000);code='CAPABILITY_UNAVAILABLE';await service.reconcile(3001);
+ assert.equal(warns.length,3,'a failure after a recovery is a new failure');
+});

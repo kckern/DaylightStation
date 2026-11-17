@@ -67,6 +67,7 @@ export class ShutdownService {
     if(this.#portalJob?.signature===signature)return this.#portalJob.promise;
     const job={signature,promise:null};
     job.promise=(async()=>{
+      const priorError=this.#health?.error??null;
       const health={...this.#health,acknowledged:false,error:null};
       try {
         if(!this.#portal)throw Object.assign(Error('Portal key suppression is unavailable'),{code:'CAPABILITY_UNAVAILABLE'});
@@ -75,7 +76,11 @@ export class ShutdownService {
         health.acknowledged=true;health.blocked=result.blocked;
       } catch(error){
         health.error=error.code??'CONSUMER_UNREACHABLE';
-        this.#logger.warn?.('shutdown.portal_sync_failed',{error:health.error});
+        // The reconciler retries every few seconds and an unconfigured Portal
+        // fails every time (shutdown/config.yml omits portal_keys on purpose):
+        // ~17k identical warns a day from 2026-11-15. Warn when the failure
+        // starts or changes; status() keeps reporting it on every read.
+        if(health.error!==priorError)this.#logger.warn?.('shutdown.portal_sync_failed',{error:health.error});
       }
       const completedAt=this.#clock.now();
       if(health.acknowledged)health.lastContactAt=completedAt;
