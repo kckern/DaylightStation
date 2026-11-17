@@ -54,6 +54,14 @@ const EXIT_MARGIN_BPM = 5;
 // false-fire-ceremonies-recurring.md). A real climb pays about 1s.
 export const UPWARD_CONFIRM_SAMPLES = 2;
 export const UPWARD_CONFIRM_MS = 1000;
+// Fire must be HELD, not touched. On 2026-11-17 a rider sat at exactly 160 on
+// a 160 floor for under 4s; the 1s confirm committed Fire, the garage went red
+// and the ceremony played. His real Fire that day held the line for ~13s. The
+// commit is what the LEDs, the ceremony and the avatar ring all follow, so
+// they wait together.
+export const FIRE_ZONE_ID = 'fire';
+export const FIRE_UPWARD_CONFIRM_SAMPLES = 3;
+export const FIRE_UPWARD_CONFIRM_MS = 5000;
 // A rider whose reading was lost resumes their zone without a fresh Cool when
 // this store holds confirmed evidence for them from the same strap, at most
 // this old. A new session never has evidence, so a strap still emitting a
@@ -639,6 +647,7 @@ export class ZoneProfileStore {
    * - First accepted Cool baseline (or resumed zone): instant
    * - Upward move: needs UPWARD_CONFIRM_SAMPLES separate samples in the higher
    *   zone spanning UPWARD_CONFIRM_MS — one corrupt packet cannot commit it
+   *   (Fire: FIRE_UPWARD_CONFIRM_SAMPLES spanning FIRE_UPWARD_CONFIRM_MS)
    * - Downward move after a quiet HYSTERESIS_COOLDOWN_MS: instant
    * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
    *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
@@ -748,7 +757,10 @@ export class ZoneProfileStore {
     };
 
     // An upward move is a claim of effort; one packet is not evidence of it.
-    if (upward && !(state.rawSamples >= UPWARD_CONFIRM_SAMPLES && rawStableDuration >= UPWARD_CONFIRM_MS)) {
+    const intoFire = rawZoneId === FIRE_ZONE_ID;
+    const confirmSamples = intoFire ? FIRE_UPWARD_CONFIRM_SAMPLES : UPWARD_CONFIRM_SAMPLES;
+    const confirmMs = intoFire ? FIRE_UPWARD_CONFIRM_MS : UPWARD_CONFIRM_MS;
+    if (upward && !(state.rawSamples >= confirmSamples && rawStableDuration >= confirmMs)) {
       return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'pending-upward', ...trace };
     }
 

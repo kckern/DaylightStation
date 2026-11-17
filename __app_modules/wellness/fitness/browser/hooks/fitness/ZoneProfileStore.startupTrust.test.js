@@ -29,11 +29,13 @@ describe('ZoneProfileStore accepted baseline and stateful transitions', () => {
     advance(6000);
     expect(read(190).currentZoneId).toBe('cool'); // one sample is not a climb
     advance(1000);
-    expect(read(191)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire', zoneEntry: { heartRate: 191, threshold: 190 } });
+    expect(read(191).currentZoneId).toBe('cool'); // Fire is held 5s, not touched
+    advance(4000);
+    expect(read(192)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire', zoneEntry: { heartRate: 192, threshold: 190 } });
   });
 
   it('preserves trust through a brief dropout', () => {
-    establishCool(); read(195); advance(1000); read(195);
+    establishCool(); read(195); advance(1000); read(195); advance(4000); read(195);
     expect(read(null)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
   });
 });
@@ -178,7 +180,7 @@ describe('ZoneProfileStore wearer and session boundaries', () => {
   });
 
   it('keeps trust and the Fire entry through a configuration rebuild', () => {
-    establishCool(); read(195); advance(3000);
+    establishCool(); read(195); advance(3000); read(195); advance(2000);
     const before = read(195);
     expect(before).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
     store.clear({ preserveTrust: true });
@@ -188,9 +190,9 @@ describe('ZoneProfileStore wearer and session boundaries', () => {
   });
 
   it('commits a steady repeated reading when its hysteresis stability expires', () => {
-    establishCool(); read(115); advance(1000); read(195);
+    establishCool(); read(115); advance(1000); read(170);
     advance(3000);
-    expect(read(195).currentZoneId).toBe('fire');
+    expect(read(170).currentZoneId).toBe('hot');
   });
 
   it.each([

@@ -74,11 +74,13 @@ describe('FitnessSession real accepted Cool baseline', () => {
     advance(6000); session.ingestData(hr('f', 181)); observe();
     expect(session.getZoneProfile('rider-one').currentZoneId).toBe('cool'); // one sample is not a climb
     advance(1000); session.ingestData(hr('f', 182)); observe();
+    expect(session.getZoneProfile('rider-one').currentZoneId).toBe('cool'); // Fire is held 5s, not touched
+    advance(4000); session.ingestData(hr('f', 183)); observe();
     expect(session.getZoneProfile('rider-one').currentZoneId).toBe('fire');
     expect(entries).toEqual([]); // a ceremony needs Fire HELD (FIRE_CEREMONY_SUSTAIN_MS)
-    for (let i = 0; i < 5; i++) { advance(1000); session.ingestData(hr('f', 183)); observe(); }
+    for (let i = 0; i < 5; i++) { advance(1000); session.ingestData(hr('f', 184)); observe(); }
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ userId: 'rider-one', heartRate: 182, fireThreshold: 180 });
+    expect(entries[0]).toMatchObject({ userId: 'rider-one', heartRate: 183, fireThreshold: 180 });
   });
 
   it('preserves a trusted same-wearer climb after one null packet, and resumes it after a confirmed loss', () => {
@@ -92,6 +94,7 @@ describe('FitnessSession real accepted Cool baseline', () => {
     // second Fire sample, 2s after the first, and confirms the climb.
     session.ingestData(hr('f', null)); advance(2000);
     for (let i = 0; i < 4; i++) session.ingestData(hr('f', 181));
+    advance(3000); session.ingestData(hr('f', 181)); // Fire held 5s
     observe();
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
     advance(6000); session.ingestData(hr('f', null)); observe();
@@ -155,7 +158,12 @@ describe('FitnessSession real accepted Cool baseline', () => {
     for (const dev of ['strap-a', 'strap-b']) for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 90));
     advance(6000);
     for (const dev of ['strap-a', 'strap-b']) { session.ingestData(hr(dev, 181)); session.ingestData(hr(dev, 181)); }
-    advance(1000); // the second sample a second later confirms the climb
+    advance(1000);
+    for (const dev of ['strap-a', 'strap-b']) session.ingestData(hr(dev, 181));
+    advance(4000); // Fire commits once held 5s (FIRE_UPWARD_CONFIRM_MS)
+    for (const dev of ['strap-a', 'strap-b']) session.ingestData(hr(dev, 181));
+    // That step crossed a ring interval, which clears highestZone; the next
+    // packet records Fire for it again.
     for (const dev of ['strap-a', 'strap-b']) session.ingestData(hr(dev, 181));
     for (const id of ['rider-a', 'rider-b']) {
       expect(session.getZoneProfile(id)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
