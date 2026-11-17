@@ -68,6 +68,7 @@ export class MaintainKnowledgeBase {
         echo=null;
         reduction=reduceKnowledge({snapshot,proposals:extraction.proposals,evidence,asOf,timezone,mode:'commit'});
         const batch=reduction.batch;
+        for(const item of selected.resolved??[])batch.events.push({id:runId+':skip:'+item.sourceId,type:'knowledge.evidence.skipped',at:asOf,sourceId:item.sourceId,reason:item.reason});
         const projected={...snapshot,objects:{...snapshot.objects,...Object.fromEntries(batch.upserts.map(object=>[object.id,object]))},state:{...snapshot.state,...batch.statePatch}};
         const sweep=sweepKnowledge({snapshot:projected,asOf,timezone});
         const upserts=new Map([...batch.upserts,...sweep.upserts].map(object=>[object.id,object]));

@@ -72,3 +72,11 @@ it('does not select using a sweep timestamp from after the requested as-of',()=>
  const item=loop(),state=snapshot({[item.id]:item});state.health.lastSweepAt=AS_OF+1;
  expect(selectQuestions({snapshot:state,askDate:'2026-11-03',asOf:AS_OF,timezone:TZ}).reason).toBe('unavailable');
 });
+it('returns a skipped quiz loop after its explicit three-day deferral instead of applying the seven-day answer cooldown',async()=>{
+ const {applyUserReply}=await import('./reduceKnowledge.mjs');
+ const skipped=applyUserReply({object:loop(),action:'skip',receiptId:'skip-receipt',asOf:AS_OF,timezone:TZ});
+ const state=snapshot({[skipped.id]:skipped},{asks:[ask({askDate:'2026-11-03',channel:'quiz',deliveredAt:AS_OF,response:{action:'skip',at:AS_OF}})],health:{available:true,conflicted:false,recovering:false,lastSweepAt:Date.parse('2026-11-05T15:00Z')}});
+ expect(select(state,{askDate:'2026-11-05',asOf:Date.parse('2026-11-05T15:00Z')}).questions).toEqual([]);
+ state.health.lastSweepAt=Date.parse('2026-11-06T15:00Z');
+ expect(select(state,{askDate:'2026-11-06',asOf:Date.parse('2026-11-06T15:00Z')}).questions.map(q=>q.objectId)).toEqual(['loop.application-reply']);
+});

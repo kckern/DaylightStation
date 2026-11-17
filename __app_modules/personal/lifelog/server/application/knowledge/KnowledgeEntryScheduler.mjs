@@ -10,7 +10,7 @@ export class KnowledgeEntryScheduler {
   async onEntrySaved({username,sourceId,attributedAnswer=false,asOf}) {
     const ignored={scheduled:false,suppressFollowUp:false};
     if(!this.#enabled||this.#disposed)return ignored;
-    let suppressFollowUp=false;
+    let suppressFollowUp=false,ackHandled=false;
     try {
       const rows=await this.#evidence.readByRefs({username,refs:['journalist:msg:'+sourceId],preview:false});
       const row=rows.find(item=>item.sourceId===sourceId);
@@ -26,9 +26,10 @@ export class KnowledgeEntryScheduler {
         const acknowledgements=long?{...(snapshot.state.acknowledgements??{}),[sourceId]:{status:'prepared',attempts:1,at:asOf}}:snapshot.state.acknowledgements??{};
         return stateBatch({pendingEntry,acknowledgements,...(!snapshot.state.cursor?{cursor:{since:row.at,seen:[]},activationAt:asOf}:{})},[{id:'entry:'+sourceId,type:'knowledge.entry.queued',at:asOf,sourceId}]);
       }});
-      if(!added)return {...ignored,suppressFollowUp:long};
+      if(!added)return {...ignored,suppressFollowUp:long,ackHandled:long};
       this.#arm(username,deadline);
       if(long) {
+        ackHandled=typeof this.#sendAck==='function';
         let receipt=null,status='failed';
         try {receipt=await this.#sendAck?.({username,text:'Got it. I’ll check what needs a follow-up.',choices:[],parseMode:null});if(receipt?.messageId)status='acknowledged';}
         catch {this.#logger?.warn?.('lifelog.knowledge.ack-failed',{sourceId,reason:'send_failed'});}
@@ -37,8 +38,8 @@ export class KnowledgeEntryScheduler {
           return stateBatch({acknowledgements:{...(snapshot.state.acknowledgements??{}),[sourceId]:acknowledgement}});
         }});
       }
-      return {scheduled:true,suppressFollowUp:long};
-    }catch(error){this.#logger?.warn?.('lifelog.knowledge.entry-unavailable',{reason:error.code??'entry_failed'});return {...ignored,suppressFollowUp};}
+      return {scheduled:true,suppressFollowUp:long,ackHandled};
+    }catch(error){this.#logger?.warn?.('lifelog.knowledge.entry-unavailable',{reason:error.code??'entry_failed'});return {...ignored,suppressFollowUp,ackHandled};}
   }
   #arm(username,deadline) {
     if(this.#disposed||!Number.isFinite(deadline))return;

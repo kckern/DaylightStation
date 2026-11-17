@@ -216,7 +216,7 @@ export class SendMorningDebrief {
             categories: debrief.categories,
             sources: debrief.lifelog?._meta?.sources || [],
             summaries: debrief.lifelog?.summaries || {}, // Save source summaries for Details view
-          });
+          },...(username?[username]:[]));
         } catch (error) {
           // Log but don't fail the whole operation
           this.#logger.error?.('debrief.persist-error', {

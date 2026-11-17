@@ -25,6 +25,7 @@ export function validateKnowledgeObject(object) {
 export function evidenceProblem(evidence, { mode, timezone, asOf }) {
   if (!evidence || evidence.source !== 'user' || evidence.senderMatchesConfiguredUser !== true || (mode !== 'preview' && (evidence.verified !== true || evidence.previewOnly === true))) return 'unverified_evidence';
   if (typeof evidence.sourceId !== 'string' || evidence.ref !== 'journalist:msg:' + evidence.sourceId || !evidence.conversationId || !evidence.messageId || !evidence.senderId || typeof evidence.content !== 'string' || !Number.isFinite(evidence.at) || evidence.at > asOf || evidence.localDate !== localDateFor(evidence.at, timezone)) return 'invalid_evidence';
+  if(evidence.observedAt!=null&&(!Number.isFinite(evidence.observedAt)||evidence.observedAt<evidence.at||evidence.observedAt>asOf))return 'invalid_evidence';
   return null;
 }
 const FIELDS = {
@@ -38,7 +39,7 @@ export function proposalProblem(proposal) {
   if (typeof proposal.id !== 'string' || !proposal.id || !OBJECT_ID.test(proposal.target ?? '') || typeof proposal.evidenceRef !== 'string' || !normalizeQuote(proposal.quote)) return 'invalid_proposal';
   if (!proposal.fields || typeof proposal.fields !== 'object' || Array.isArray(proposal.fields) || Object.keys(proposal.fields).some(k => !FIELDS[proposal.op].includes(k))) return 'unsupported_fields';
   const f = proposal.fields;
-  if (proposal.op === 'open_loop' && (!proposal.target.startsWith('loop.') || typeof f.title !== 'string' || !f.title.trim() || f.title.length > 240 || (f.kind_of != null && !['status','outcome','confirm'].includes(f.kind_of)) || (f.stakes != null && (!Number.isInteger(f.stakes) || f.stakes < 1 || f.stakes > 3)) || (f.sensitivity != null && !SENSITIVITIES.includes(f.sensitivity)) || (f.ask_policy != null && !ASK_POLICIES.includes(f.ask_policy)) || (f.due != null && !isLocalDate(f.due)) || (f.links != null && (!Array.isArray(f.links) || f.links.some(id => typeof id !== 'string'))))) return 'invalid_fields';
+  if (proposal.op === 'open_loop' && (!proposal.target.startsWith('loop.') || typeof f.title !== 'string' || !f.title.trim() || f.title.length > 240 || (f.kind_of != null && !['status','outcome','confirm'].includes(f.kind_of)) || (f.stakes != null && (!Number.isInteger(f.stakes) || f.stakes < 1 || f.stakes > 3)) || (f.sensitivity != null && !SENSITIVITIES.includes(f.sensitivity)) || (f.ask_policy != null && !ASK_POLICIES.includes(f.ask_policy)) || (f.dueText != null && (typeof f.dueText!=='string'||!f.dueText.trim()||f.dueText.length>100)) || (f.due != null && !isLocalDate(f.due)) || (f.links != null && (!Array.isArray(f.links) || f.links.some(id => typeof id !== 'string'))))) return 'invalid_fields';
   if (proposal.op === 'close_loop' && !['answered','dropped','waiting'].includes(f.status)) return 'invalid_fields';
   if (proposal.op === 'propose_entity' && (!proposal.target.startsWith('person.') || typeof f.name !== 'string' || !f.name.trim() || f.name.length > 180 || (f.sensitivity != null && !SENSITIVITIES.includes(f.sensitivity)))) return 'invalid_fields';
   if (proposal.op === 'alias_candidate' && (typeof f.alias !== 'string' || !f.alias.trim() || f.alias.length > 180)) return 'invalid_fields';

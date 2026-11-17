@@ -1,3 +1,4 @@
+import {journalistEventForUpdate} from '../adapters/JournalistEditedInput.mjs';
 // __backend/src/5_composition/modules/journalistApi.mjs
 // Composition wiring for Journalist API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
@@ -52,10 +53,11 @@ export function createJournalistApiRouter(config) {
         botId,
         parser: webhookParser,
         inputRouter:{route(event,responseContext){
+          const journalEvent=journalistEventForUpdate(event,req.body);
           const companion=journalistServices.journalistContainer.getKnowledgeCompanion?.();
-          const message=req.body?.message??req.body?.callback_query?.message;
-          const knowledgePrincipal=companion?.capturePrincipal({event,webhookSecret:req.get?.('X-Telegram-Bot-Api-Secret-Token')??req.headers?.['x-telegram-bot-api-secret-token'],forwarded:!!(message?.forward_origin||message?.forward_from||message?.forward_date)});
-          return inputRouter.route(event,responseContext,{knowledgePrincipal});
+          const message=req.body?.message??req.body?.edited_message??req.body?.callback_query?.message;
+          const knowledgePrincipal=companion?.capturePrincipal({event:journalEvent,webhookSecret:req.get?.('X-Telegram-Bot-Api-Secret-Token')??req.headers?.['x-telegram-bot-api-secret-token'],forwarded:!!(message?.forward_origin||message?.forward_from||message?.forward_date)});
+          return inputRouter.route(journalEvent,responseContext,{knowledgePrincipal});
         }},
         gateway,
         logger,

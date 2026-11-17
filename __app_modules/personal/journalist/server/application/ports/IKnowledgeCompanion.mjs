@@ -1,6 +1,7 @@
 import {IFollowUpSource} from './IFollowUpSource.mjs';
 /** Optional entry and quiz companion; absent implementations preserve legacy behavior. */
 export class IKnowledgeCompanion extends IFollowUpSource {
+ shouldSuppressFollowUp(_input){return false;}
  sourceForEntry(_input){throw new Error('Not implemented');}
  async onEntrySaved(_input){throw new Error('Not implemented');}
  async handleCallback(_input){throw new Error('Not implemented');}

@@ -33,3 +33,7 @@ describe('deterministic retirement', () => {
     expect(sweep(snapshot({}, {asks,state:{backoff:{since:'2026-11-01',until:'2026-11-15'}}})).statePatch.backoff).toBeNull();
   });
 });
+it('resets morning back-off on acknowledged message engagement without answering individual loops',()=>{
+ const item=loop(),input=snapshot({[item.id]:item},{asks:[ask({askDate:'2026-11-03',deliveredAt:AS_OF-2*3600000,botMessageId:'99',arm:'knowledge'})],state:{backoff:{since:'2026-11-01',until:'2026-11-20',startedAt:AS_OF-3600000},messageReplies:{receipt:{at:AS_OF,botMessageId:'99',arm:'knowledge',channel:'morning',attribution:'reply_to'}}}});
+ expect(sweepKnowledge({snapshot:input,asOf:AS_OF,timezone:TZ}).statePatch.backoff).toBeNull();expect(input.asks[0].response).toBeNull();
+});

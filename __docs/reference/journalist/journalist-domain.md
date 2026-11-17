@@ -126,3 +126,11 @@ controls apply only to the active acknowledged KB quiz. Long verified entries ca
 suppress immediate conversational questions and schedule a validated delayed echo
 after the journal save. See [Lifelog knowledge](../lifelog/knowledge.md) for
 storage, authority, maintenance and rollout constraints.
+
+
+Telegram corrections bypass command/special-start interpretation, version the
+verified source receipt and revoke superseded references. Missing provenance can
+invalidate an old trusted receipt without making the corrected text trusted.
+Debrief storage, interviews and Details reads are scoped by the requested user.
+A reply to two questions counts one engagement without marking both loops answered;
+old Ask controls are bound to their delivered local day and explain expiry.

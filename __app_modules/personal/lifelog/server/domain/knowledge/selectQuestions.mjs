@@ -28,6 +28,7 @@ export function selectQuestions({ snapshot, askDate, asOf, timezone, max = 2 }) 
   const asks = deliveredAsks(snapshot); const candidates = [];
   for (const object of objectsOf(snapshot)) {
     if (object.kind !== 'loop' || !['open','waiting'].includes(object.status) || !['normal','user_initiated'].includes(object.ask_policy)) continue;
+    if(!(object.evidence??[]).some(item=>item.source==='user'&&!item.retracted&&!(snapshot.state?.invalidatedRefs??[]).includes(item.ref)))continue;
     const policy = object.loop?.ask ?? {};
     const eligible = policy.eligible_from ?? object.loop?.due;
     if ((eligible && askDate < eligible) || (object.loop?.due && askDate <= object.loop.due) || (policy.deferred_until && askDate < policy.deferred_until)) continue;
@@ -35,7 +36,9 @@ export function selectQuestions({ snapshot, askDate, asOf, timezone, max = 2 }) 
     const ignored = unansweredAsks(snapshot, object.id, asOf, policy.reopenedAt).length;
     if (ignored >= (policy.max_asks ?? 2) || mine.filter(a => a.response?.action === 'skip').length >= 2) continue;
     const lastAskDate = mine.map(a => a.askDate).filter(Boolean).sort().at(-1);
-    if (lastAskDate && daysBetween(lastAskDate,askDate) < Math.max(3,policy.cooldown_days ?? 7)) continue;
+    if (lastAskDate && daysBetween(lastAskDate,askDate) < 3) continue;
+    const lastOrdinaryAskDate=mine.filter(a=>a.response?.action!=='skip').map(a=>a.askDate).filter(Boolean).sort().at(-1);
+    if(lastOrdinaryAskDate&&daysBetween(lastOrdinaryAskDate,askDate)<Math.max(3,policy.cooldown_days??7))continue;
     const question = buildQuestion({ object }); if (!question) continue;
     const moved = object.evidence?.some(e => !e.retracted && e.source === 'user' && e.date === object.touched && mine.length && (e.at ?? 0) > Math.max(...mine.map(a => a.deliveredAt))) ?? false;
     candidates.push({ object, question, score: scoreLoop({stakes:object.loop?.stakes ?? 1, overdueDays: object.loop?.due ? daysBetween(object.loop.due,askDate) : 0, evidenceMoved:moved,unansweredAsks:ignored}) });

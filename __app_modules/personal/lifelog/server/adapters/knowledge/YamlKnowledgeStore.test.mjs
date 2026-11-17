@@ -154,3 +154,17 @@ it.runIf(process.platform==='linux')('marks the writer view unhealthy immediatel
  const ended=once(child,'exit');child.kill('SIGTERM');await ended;
  try{expect((await h.store.read({username})).health.available).toBe(false);}finally{child.stdin.end();}
 });
+it('preserves a third file image edited after durable prepare during a normal state-only commit',async()=>{
+ const h=setup();await commit(h);const prepare=h.ledger.prepare.bind(h.ledger),file=path.join(h.root,'loops/application-reply.yml');
+ h.ledger.prepare=async input=>{const result=await prepare(input);const row=yaml.load(fs.readFileSync(file,'utf8'));row.title='User edit after prepare';fs.writeFileSync(file,yaml.dump(row));return result;};
+ await expect(commit(h,{runId:'after-prepare-edit',data:batch([],{lastSweepAt:AS_OF+1})})).rejects.toMatchObject({code:'KNOWLEDGE_WRITE_CONFLICT'});
+ expect(yaml.load(fs.readFileSync(file,'utf8')).title).toBe('User edit after prepare');expect((await h.store.read({username})).health.available).toBe(false);
+ await expect(h.store.recover({username})).rejects.toMatchObject({code:'KNOWLEDGE_RECOVERY_CONFLICT'});
+ expect(yaml.load(fs.readFileSync(file,'utf8')).title).toBe('User edit after prepare');
+});
+it('fails closed when an acknowledged ask shard disappears instead of adopting lost history',async()=>{
+ const h=setup(),ask={id:'ask-one',askDate:'2026-11-03',objectId:'loop.application-reply',channel:'morning',arm:'knowledge',botMessageId:'99',deliveredAt:AS_OF};
+ await commit(h,{data:batch([loop()],{lastSweepAt:AS_OF,asks:[ask]})});fs.unlinkSync(path.join(h.root,'asks/2026-11-03.yml'));
+ expect((await h.store.read({username})).health).toMatchObject({available:false,reason:'KNOWLEDGE_ASKS_REMOVED'});
+ await expect(commit(h,{runId:'cannot-adopt-missing',data:batch([])})).rejects.toMatchObject({code:'KNOWLEDGE_ASKS_REMOVED'});
+});

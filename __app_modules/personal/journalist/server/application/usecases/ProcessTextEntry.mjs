@@ -103,17 +103,21 @@ export class ProcessTextEntry {
 
       let savedMessage;
       const source=this.#knowledgeCompanion?.sourceForEntry({principal:input.knowledgePrincipal,chatId,messageId,senderId});
-      const receipt=source?{messageId:userMessage.messageId,chatId:userMessage.chatId,text:userMessage.text,timestamp:userMessage.timestamp,senderId:userMessage.senderId,senderName:userMessage.senderName,role:'user',source}:userMessage;
+      const receipt=source||input.journalEdit?{messageId:userMessage.messageId,chatId:userMessage.chatId,text:userMessage.text,timestamp:userMessage.timestamp,senderId:userMessage.senderId,senderName:userMessage.senderName,role:'user',...(source?{source}:{}),...(input.journalEdit?{edit:input.journalEdit}:{})}:userMessage;
       if (this.#journalEntryRepository) {
         savedMessage=await this.#journalEntryRepository.saveMessage?.(receipt);
       }
+      if(savedMessage?.ignoredEdit){await status?.cancel?.();return {success:true,ignoredEdit:true};}
       if(source&&savedMessage){
         let knowledge;
+        const suppressByPolicy=this.#knowledgeCompanion.shouldSuppressFollowUp?.({principal:input.knowledgePrincipal,length:(savedMessage.content??savedMessage.text??text).length})===true;
         try{knowledge=await this.#knowledgeCompanion.onEntrySaved({principal:input.knowledgePrincipal,message:savedMessage,replyToMessageId:source.replyToMessageId,asOf:this.#clock()});}
         catch{this.#logger.warn?.('journalist.knowledge.entry-unavailable');}
-        if(knowledge?.suppressFollowUp){
-          await status?.cancel?.();
-          return {success:true,knowledgeScheduled:!!knowledge.scheduled,suppressedFollowUp:true};
+        if(knowledge?.suppressFollowUp||suppressByPolicy){
+          if(knowledge?.ackHandled===false||!knowledge?.suppressFollowUp){
+            if(status)await status.finish('📝 Noted.');else await messaging.sendMessage('📝 Noted.',{});
+          }else await status?.cancel?.();
+          return {success:true,knowledgeScheduled:!!knowledge?.scheduled,suppressedFollowUp:true};
         }
       }
       if(input.aiAvailable===false){

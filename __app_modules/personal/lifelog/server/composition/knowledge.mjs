@@ -2,10 +2,10 @@ import path from 'node:path';
 import {KnowledgeWriteAuthority} from '../adapters/knowledge/KnowledgeWriteAuthority.mjs';
 import {JsonlKnowledgeLedger} from '../adapters/knowledge/JsonlKnowledgeLedger.mjs';
 import {YamlKnowledgeStore} from '../adapters/knowledge/YamlKnowledgeStore.mjs';
-import {JournalKnowledgeEvidence} from '../adapters/knowledge/JournalKnowledgeEvidence.mjs';
+import {JournalKnowledgeEvidence,journalSourceId} from '../adapters/knowledge/JournalKnowledgeEvidence.mjs';
 import {GatewayKnowledgeExtractor} from '../adapters/knowledge/GatewayKnowledgeExtractor.mjs';
 import {assertUsername} from '../adapters/knowledge/knowledgeFiles.mjs';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import moment from 'moment-timezone';
 import {resolveKnowledgeConfig} from '../adapters/knowledge/KnowledgeConfig.mjs';
 import {createKnowledgePrincipalAuthority} from '../adapters/knowledge/KnowledgePrincipalAuthority.mjs';
@@ -64,16 +64,18 @@ export function createKnowledgeRuntime(options={}){
  const requireActive=principal=>{const p=verify(principal);if(!p)throw Object.assign(Error('KNOWLEDGE_UNAVAILABLE'),{code:'KNOWLEDGE_UNAVAILABLE'});return p;};
  const companion={
   capturePrincipal:input=>stopped?null:authority.attest(input),verifyPrincipal:verify,
+  shouldSuppressFollowUp({principal,length}){const p=verify(principal);return !!(p?.authored&&['text','voice'].includes(p.kind)&&c.echo_enabled&&Number.isSafeInteger(length)&&length>c.echo_min_chars);},
   async onEntrySaved({principal,message,asOf}){
    const p=verify(principal);if(!p||!p.authored||!['text','voice'].includes(p.kind))return {scheduled:false,suppressFollowUp:false};
-   const sourceId=createHash('sha256').update(JSON.stringify([p.username,p.conversationId,p.messageId])).digest('hex');
+   const sourceId=journalSourceId(p.username,p.conversationId,p.messageId,message.source?.revision);
    const rows=await evidence.readByRefs({username:p.username,refs:['journalist:msg:'+sourceId],preview:false});
    const row=rows.length===1?rows[0]:null;
    if(!row||evidenceProblem(row,{mode:'commit',timezone:userTimezone(p.username),asOf})||row.senderId!==p.senderId||row.conversationId!==p.conversationId||row.messageId!==p.messageId)return {scheduled:false,suppressFollowUp:false};
    const attribution=await questions.attributeEntry({principal:p,sourceId,length:row.content.length,asOf});
    return entry.onEntrySaved({username:p.username,sourceId,attributedAnswer:attribution.attributedAnswer,asOf});
   },
-  nextQuiz:async input=>questions.nextQuiz({...input,principal:requireActive(input.principal)}),done:async input=>questions.done({...input,principal:requireActive(input.principal)}),hasActiveQuiz:async input=>questions.hasActiveQuiz({...input,principal:requireActive(input.principal)}),
+  nextQuiz:async input=>questions.nextQuiz({...input,principal:requireActive(input.principal)}),done:async input=>questions.done({...input,principal:requireActive(input.principal)}),hasActiveQuiz:async input=>questions.hasActiveQuiz({...input,asOf:input.asOf??clock(),principal:requireActive(input.principal)}),
+  askOrigin:async input=>questions.askOrigin({...input,asOf:input.asOf??clock(),principal:requireActive(input.principal)}),
   async handleCallback({principal,callbackData,asOf}){
    const p=verify(principal);if(!p||p.kind!=='callback'||p.callbackData!==callbackData)return {status:'rejected'};
    if(callbackData.startsWith('journal:'))return questions.quizControl({principal:p,asOf});

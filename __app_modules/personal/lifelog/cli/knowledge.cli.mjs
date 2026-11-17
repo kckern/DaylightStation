@@ -124,7 +124,8 @@ async function defaultDependencies() {
     import('#adapters/ai/OpenAIAdapter.mjs'),import('#system/services/HttpClient.mjs'),
   ]);
   const configService = await getConfigService();
-  const logger = createLogger({source:'cli',app:'lifelog',module:'knowledge-preview'});
+  const diagnostic=createLogger({source:'cli',app:'lifelog',context:{module:'knowledge-preview'}});
+  const logger={...diagnostic,info(){},debug(){}}; // Keep stdout machine-readable; usage has its own durable ledger.
   const identityService = new UserIdentityService(configService.getIdentityMappings());
   const botConfigs = Object.fromEntries(Object.entries(configService.getSystemConfig('bots')??{}).filter(([,bot])=>bot?.telegram?.bot_id)
     .map(([name,bot])=>[name,{botId:bot.telegram.bot_id}]));

@@ -20,6 +20,8 @@ import { nowTs24 } from '#system/utils/index.mjs';
 export class DebriefRepository {
   #logger;
   #dataPath;
+  #defaultUsername;
+  #userPathFor;
 
   /**
    * @param {Object} deps
@@ -28,7 +30,17 @@ export class DebriefRepository {
    */
   constructor(deps) {
     this.#logger = deps.logger;
+    this.#defaultUsername=deps.username;
+    this.#userPathFor=deps.userPathFor??(deps.dataDir?(username=>path.join(deps.dataDir,'users',username,'lifelog','journalist')):null);
     this.#dataPath = deps.dataPath || path.join(deps.dataDir, 'users', deps.username, 'lifelog', 'journalist');
+  }
+
+  #path(username){
+    if(username==null)return this.#dataPath;
+    if(typeof username!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(username))throw new TypeError('Invalid journalist username');
+    if(this.#userPathFor)return this.#userPathFor(username);
+    if(username===this.#defaultUsername)return this.#dataPath;
+    throw new Error('User-scoped debrief path is unavailable');
   }
 
   /**
@@ -41,8 +53,8 @@ export class DebriefRepository {
    * @param {string} debrief.timestamp - When debrief was generated (ISO format)
    * @returns {Promise<void>}
    */
-  async appendDebrief(debrief) {
-    const debriefPath = path.join(this.#dataPath, 'debriefs.yml');
+  async appendDebrief(debrief, username) {
+    const debriefPath = path.join(this.#path(username), 'debriefs.yml');
 
     try {
       // Read existing debriefs or initialize empty structure
@@ -98,8 +110,8 @@ export class DebriefRepository {
    * Get all debriefs (newest first)
    * @returns {Promise<Array>} Array of debrief entries
    */
-  async getAllDebriefs() {
-    const debriefPath = path.join(this.#dataPath, 'debriefs.yml');
+  async getAllDebriefs(username) {
+    const debriefPath = path.join(this.#path(username), 'debriefs.yml');
 
     try {
       const basePath = debriefPath.replace(/\.yml$/, '');
@@ -125,7 +137,7 @@ export class DebriefRepository {
    * @returns {Promise<Array>} Array of recent debrief entries
    */
   async getRecentDebriefs(username, limit = 5) {
-    const debriefs = await this.getAllDebriefs();
+    const debriefs = await this.getAllDebriefs(username);
     return debriefs.slice(0, limit);
   }
 
@@ -134,8 +146,8 @@ export class DebriefRepository {
    * @param {string} date - Date (YYYY-MM-DD)
    * @returns {Promise<Object|null>} Debrief entry or null
    */
-  async getDebriefByDate(date) {
-    const debriefs = await this.getAllDebriefs();
+  async getDebriefByDate(date, username) {
+    const debriefs = await this.getAllDebriefs(username);
     return debriefs.find((d) => d.date === date) || null;
   }
 }

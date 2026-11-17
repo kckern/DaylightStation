@@ -106,6 +106,7 @@ export class HandleSpecialStart {
 
           const result = await this.#initiateDebriefInterview.execute({
             conversationId: chatId,
+            userId:input.userId,
             instructions: 'change_subject',
             previousQuestion,
             responseContext,

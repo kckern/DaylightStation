@@ -66,7 +66,7 @@ export class InitiateDebriefInterview {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, debriefDate, instructions, previousQuestion, responseContext } = input;
+    const { conversationId, debriefDate, instructions, previousQuestion, responseContext, userId } = input;
 
     this.#logger.debug?.('debriefInterview.initiate.start', {
       conversationId,
@@ -84,9 +84,9 @@ export class InitiateDebriefInterview {
       let debrief;
 
       if (debriefDate) {
-        debrief = await this.#debriefRepository.getDebriefByDate(debriefDate);
+        debrief = await this.#debriefRepository.getDebriefByDate(debriefDate,...(userId?[userId]:[]));
       } else {
-        const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(null, 1);
+        const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(userId??null, 1);
         debrief = recentDebriefs?.[0];
       }
 

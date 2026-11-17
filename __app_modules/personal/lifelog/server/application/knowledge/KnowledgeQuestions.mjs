@@ -32,8 +32,19 @@ export class KnowledgeQuestions {
   }
   #fresh(snapshot,asOf){return snapshot.health.available&&!snapshot.health.conflicted&&!snapshot.health.recovering&&Number.isFinite(snapshot.health.lastSweepAt)&&snapshot.health.lastSweepAt<=asOf&&asOf-snapshot.health.lastSweepAt<=REPLY_WINDOW_MS;}
   #nonce(tokens){for(let i=0;i<8;i++){const nonce=this.#tokens.mint();if(!Object.hasOwn(tokens,nonce))return nonce;}fail('KNOWLEDGE_TOKEN_COLLISION');}
+  async #refreshRevocations(username){
+    if(typeof this.#evidence?.readRevocations!=='function')return;
+    const refs=await this.#evidence.readRevocations({username});
+    if(!Array.isArray(refs)||refs.some(ref=>typeof ref!=='string'||!ref.startsWith('journalist:msg:')))fail('KNOWLEDGE_INVALID_REVOCATION');
+    if(!refs.length)return;
+    await mutateKnowledge({store:this.#store,username,runId:this.#id(),build:snapshot=>{
+      const existing=snapshot.state.invalidatedRefs??[],invalidatedRefs=[...new Set([...existing,...refs])];
+      return invalidatedRefs.length===existing.length?null:stateBatch({invalidatedRefs});
+    }});
+  }
   async selectForMorning({username,askDate,asOf,max=2}) {
     if(!this.#enabled)return legacy('disabled');
+    await this.#refreshRevocations(username);
     if(this.#date(username,asOf)!==askDate)fail('KNOWLEDGE_ASK_DATE_MISMATCH');
     const initial=await this.#store.read({username});if(!this.#fresh(initial,asOf))return legacy('unavailable');
     let selected;
@@ -96,6 +107,7 @@ export class KnowledgeQuestions {
   }
   async prepareDelivery({username,conversationId,selectionId,askDate,channel,questionIds=[],asOf}) {
     if(!this.#enabled)fail('KNOWLEDGE_DISABLED');
+    await this.#refreshRevocations(username);
     if(this.#date(username,asOf)!==askDate)fail('KNOWLEDGE_ASK_DATE_MISMATCH');
     if(this.#identity(username)?.conversationId!==conversationId)fail('KNOWLEDGE_CONVERSATION_MISMATCH');
     if(!['morning','quiz','review','echo'].includes(channel)||!Array.isArray(questionIds))fail('KNOWLEDGE_INVALID_DELIVERY');
@@ -224,14 +236,45 @@ export class KnowledgeQuestions {
       result={status:'applied',channel:token.channel,action};return batch;
     }});return result;
   }
+  #askOrigin(snapshot,p,askDate,asOf){
+    const delivery=Object.values(snapshot.state.deliveries??{}).find(row=>row.status==='delivered'&&row.channel==='morning'&&row.botMessageId===p.messageId&&row.conversationId===p.conversationId);
+    if(!delivery)return {mode:'unknown',status:'unknown'};
+    const selection=snapshot.state.selections?.[delivery.selectionId];
+    if(!selection||selection.kind!=='morning'||selection.askDate!==delivery.askDate)return {mode:'unknown',status:'unknown'};
+    const mode=delivery.arm==='knowledge'?'knowledge':'legacy';
+    return {mode,status:delivery.expiresAt<=asOf||delivery.askDate!==askDate?'expired':'current',selectionId:delivery.selectionId,askDate:delivery.askDate};
+  }
+  async askOrigin({principal,asOf}){
+    const p=this.#principal(principal),askDate=this.#date(p.username,asOf);
+    if(p.kind!=='callback'||p.callbackData!=='debrief:ask')fail('KNOWLEDGE_QUIZ_INTENT_REQUIRED');
+    return this.#askOrigin(await this.#store.read({username:p.username}),p,askDate,asOf);
+  }
+  async #expireQuiz(username,asOf){
+    await mutateKnowledge({store:this.#store,username,runId:this.#id(),build:snapshot=>{
+      const id=snapshot.state.quizSession?.deliveryId,delivery=snapshot.state.deliveries?.[id];
+      if(!id||!delivery||(delivery.expiresAt>asOf&&delivery.status!=='expired'))return null;
+      const callbackTokens={...(snapshot.state.callbackTokens??{})};
+      for(const nonce of delivery.nonces??[])if(callbackTokens[nonce]?.status!=='consumed')callbackTokens[nonce]={...callbackTokens[nonce],status:'expired'};
+      return stateBatch({quizSession:null,callbackTokens,deliveries:{...snapshot.state.deliveries,[id]:{...delivery,status:'expired'}}});
+    }});
+  }
   async nextQuiz({principal,asOf}) {
     const p=this.#principal(principal),askDate=this.#date(p.username,asOf);let selection;
+    await this.#refreshRevocations(p.username);
+    await this.#expireQuiz(p.username,asOf);
     await mutateKnowledge({store:this.#store,username:p.username,runId:this.#id(),build:snapshot=>{
       if(!this.#fresh(snapshot,asOf))fail('KNOWLEDGE_UNAVAILABLE');
       if(p.kind==='callback'){
         const origin=Object.values(snapshot.state.deliveries??{}).find(d=>d.status==='delivered'&&d.botMessageId===p.messageId&&d.conversationId===p.conversationId);
         if(!origin)fail('KNOWLEDGE_MESSAGE_MISMATCH');
-        if(p.callbackData!=='debrief:ask'&&!snapshot.state.appliedReceipts?.[p.receiptId])fail('KNOWLEDGE_QUIZ_INTENT_REQUIRED');
+        if(p.callbackData==='debrief:ask'){
+          const source=this.#askOrigin(snapshot,p,askDate,asOf);
+          if(source.mode!=='knowledge')fail('KNOWLEDGE_QUIZ_INTENT_REQUIRED');
+          if(source.status==='expired'){selection={expired:true};return null;}
+        }else{
+          if(origin.channel!=='quiz'||!snapshot.state.appliedReceipts?.[p.receiptId])fail('KNOWLEDGE_QUIZ_INTENT_REQUIRED');
+          if(origin.expiresAt<=asOf||origin.askDate!==askDate){selection={expired:true};return null;}
+        }
       }
       const active=snapshot.state.quizSession&&snapshot.state.deliveries?.[snapshot.state.quizSession.deliveryId];
       if(active&&!['cancelled','quarantined','expired'].includes(active.status)){selection={active};return null;}
@@ -247,13 +290,14 @@ export class KnowledgeQuestions {
       return stateBatch({selections:{...(snapshot.state.selections??{}),[selectionId]:selection},quizSelections:{...(snapshot.state.quizSelections??{}),[key]:selectionId}});
     }});
     if(selection.active)return {deliveryId:selection.active.id,questions:selection.active.displayQuestions,choices:selection.active.choices,sendAllowed:false,status:'active'};
+    if(selection.expired)return {questions:[],choices:[],sendAllowed:false,status:'expired'};
     if(selection.empty)return {questions:[],choices:[],sendAllowed:false,status:'empty'};
     return this.prepareDelivery({username:p.username,conversationId:p.conversationId,selectionId:selection.selectionId,askDate,channel:'quiz',questionIds:selection.questions.map(q=>q.id),asOf});
   }
-  async hasActiveQuiz({principal}){
+  async hasActiveQuiz({principal,asOf}){
     const p=this.#principal(principal),snapshot=await this.#store.read({username:p.username});
     const active=snapshot.state.quizSession&&snapshot.state.deliveries?.[snapshot.state.quizSession.deliveryId];
-    return !!(active?.status==='delivered'&&active.conversationId===p.conversationId&&active.botMessageId===p.messageId);
+    return !!(active?.status==='delivered'&&active.expiresAt>(asOf??p.receivedAt)&&active.conversationId===p.conversationId&&active.botMessageId===p.messageId);
   }
   async quizControl({principal,asOf}){
     const p=this.#principal(principal),action=({'journal:skip':'skip','journal:change':'skip','journal:done':'done'})[p.callbackData];
@@ -280,18 +324,29 @@ export class KnowledgeQuestions {
   async attributeEntry({principal,sourceId,length,asOf}) {
     const p=this.#principal(principal);
     if(!['text','voice'].includes(p.kind))fail('KNOWLEDGE_ENTRY_REQUIRED');
+    await this.#refreshRevocations(p.username);
     this.#date(p.username,asOf);let result={attribution:'none',attributedAnswer:false};
     await mutateKnowledge({store:this.#store,username:p.username,runId:this.#id(),build:snapshot=>{
       if(snapshot.state.attributedSources?.[sourceId]){result=snapshot.state.attributedSources[sourceId];return null;}
-      const candidates=snapshot.asks.filter(ask=>ask.botMessageId&&Number.isFinite(ask.deliveredAt)&&asOf>=ask.deliveredAt&&asOf-ask.deliveredAt<=REPLY_WINDOW_MS&&!ask.response);
-      const direct=p.replyToMessageId?candidates.filter(ask=>ask.botMessageId===p.replyToMessageId):[];
-      const found=direct.length?direct:candidates;
-      const attribution=direct.length?'reply_to':found.length===1?'window':'none';
-      const selected=attribution==='none'?[]:found;
+      const recent=snapshot.asks.filter(ask=>ask.botMessageId&&Number.isFinite(ask.deliveredAt)&&asOf>=ask.deliveredAt&&asOf-ask.deliveredAt<=REPLY_WINDOW_MS);
+      const candidates=recent.filter(ask=>!ask.response);
+      const direct=p.replyToMessageId?recent.filter(ask=>ask.botMessageId===p.replyToMessageId):[];
+      const found=p.replyToMessageId?direct:candidates;
+      const attribution=direct.length?'reply_to':!p.replyToMessageId&&found.length===1?'window':'none';
+      // One message can contain independent loop questions. Engagement is known;
+      // which loop was answered is not. Still extract a short explicitly linked reply.
+      const selected=attribution!=='none'&&found.length===1&&!found[0].response?found:[];
       result={attribution,attributedAnswer:attribution!=='none',askIds:selected.map(ask=>ask.id)};
+      const response={messageKey:p.conversationId+':message:'+p.messageId,at:asOf,action:'text',by:p.kind==='voice'?'voice':'text',length,attribution,sourceId,receiptId:p.receiptId};
       const ids=new Set(result.askIds);
-      const asks=snapshot.asks.map(ask=>ids.has(ask.id)?{...ask,response:{at:asOf,action:'text',by:p.kind==='voice'?'voice':'text',length,attribution,sourceId,receiptId:p.receiptId}}:ask);
-      return stateBatch({asks,attributedSources:{...(snapshot.state.attributedSources??{}),[sourceId]:result}},[{id:p.receiptId+':attribution',type:'knowledge.entry.attributed',at:asOf,sourceId,attribution}]);
+      const asks=snapshot.asks.map(ask=>ids.has(ask.id)?{...ask,response}:ask);
+      const messageReplies={...(snapshot.state.messageReplies??{})};
+      if(attribution!=='none'){
+        const origin=found[0];
+        messageReplies[response.messageKey]={...response,botMessageId:origin.botMessageId,deliveryId:origin.deliveryId,deliveredAt:origin.deliveredAt,askDate:origin.askDate,channel:origin.channel,arm:origin.arm};
+      }
+      return stateBatch({asks,messageReplies,attributedSources:{...(snapshot.state.attributedSources??{}),[sourceId]:result}},[{id:p.receiptId+':attribution',type:'knowledge.entry.attributed',at:asOf,sourceId,attribution}]);
     }});return result;
   }
+
 }

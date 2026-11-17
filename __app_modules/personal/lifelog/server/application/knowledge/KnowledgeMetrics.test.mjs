@@ -25,7 +25,7 @@ it('does not attribute ambiguous replies or include immature12h deliveries',asyn
  expect(result.tapShare.replies).toBe(0);
 });
 it('measures14day resolution cohorts, asks per resolution, Drop-it and current stale stock',async()=>{
- const answered=loop({status:'answered',loop:{...loop().loop,answer:{at:start+2*DAY,by:'tap'}}});
+ const answered=loop({created:{...loop().created,at:start},status:'answered',loop:{...loop().loop,answer:{at:start+2*DAY,by:'tap'}}});
  const stale=loop({id:'loop.stale',status:'stale'});
  const rows=[ask('one'),ask('two',{deliveredAt:start+1000,response:{at:start+2000,action:'drop',by:'tap',attribution:'reply_to',length:0}})];
  const result=await setup(rows,{[answered.id]:answered,[stale.id]:stale}).metrics.report(range);
@@ -43,13 +43,27 @@ it('reports unknown rates as null rather than claiming unmeasured improvement',a
  const result=await setup().metrics.report(range);expect(result.replyRate12h.knowledge.rate).toBeNull();expect(result.medianReplyLength).toBeNull();expect(result.reviewPrecision.rate).toBeNull();
 });
 it('uses the last completed immutable image at as-of for historical metrics',async()=>{
- const future=loop({status:'answered',loop:{...loop().loop,answer:{at:asOf+DAY}}});
+ const future=loop({created:{...loop().created,at:start},status:'answered',loop:{...loop().loop,answer:{at:start+2*DAY}}});
  const d=setup([ask('one')],{[future.id]:future});
- d.ledger.read.mockResolvedValue({transactions:[{prepare:{at:start,batch:{events:[]},after:{files:{'loops/application-reply.yml':loop(),'asks/2026-11-01.yml':{items:[ask('one')]}}}},complete:{at:start}}]});
+ d.ledger.read.mockResolvedValue({transactions:[{prepare:{at:start,batch:{events:[]},after:{files:{'loops/application-reply.yml':loop({created:{...loop().created,at:start}}),'asks/2026-11-01.yml':{items:[ask('one')]}}}},complete:{at:start}}]});
  expect((await d.metrics.report(range)).resolutionWithin14Days.resolved).toBe(0);
 });
 it('does not inflate reply or tap rates with a skipped quiz question',async()=>{
  const row=ask('skipped',{channel:'quiz',response:{at:start+1000,action:'skip',by:'tap',length:0,attribution:'reply_to'}});
  const result=await setup([row]).metrics.report(range);
  expect(result.tapShare).toEqual({taps:0,replies:0,rate:null});
+});
+
+it('excludes loops opened before the reporting cohort even when their first ask and resolution are recent',async()=>{
+ const old=loop({created:{...loop().created,at:start-30*DAY},status:'answered',loop:{...loop().loop,answer:{at:start+2*DAY}}});
+ expect((await setup([ask('recent')],{[old.id]:old}).metrics.report(range)).resolutionWithin14Days).toEqual({eligible:0,resolved:0,rate:null});
+});
+it('includes an opened loop resolved without ever needing an ask',async()=>{
+ const fresh=loop({created:{...loop().created,at:start},status:'answered',loop:{...loop().loop,answer:{at:start+2*DAY}}});
+ expect((await setup([],{[fresh.id]:fresh}).metrics.report(range)).resolutionWithin14Days).toEqual({eligible:1,resolved:1,rate:1});
+});
+it('counts one message-level reply without inventing per-loop answers for a shared morning message',async()=>{
+ const d=setup([ask('one',{botMessageId:'shared'}),ask('two',{objectId:'loop.second',botMessageId:'shared'})]);await d.store.read({username:'sample'});
+ d.store.users.get('sample').state.messageReplies={receipt:{receiptId:'receipt',at:start+3600000,deliveredAt:start,askDate:'2026-11-01',botMessageId:'shared',channel:'morning',arm:'knowledge',action:'text',by:'text',length:3,attribution:'reply_to'}};
+ const report=await d.metrics.report(range);expect(report.replyRate12h.knowledge).toEqual({eligible:1,replied:1,rate:1});expect(report.tapShare).toEqual({taps:0,replies:1,rate:0});expect(report.medianReplyLength).toBe(3);
 });

@@ -19,13 +19,15 @@ export function createKnowledgePrincipalAuthority({identityForSender,webhookSecr
       if(typeof senderId!=='string'||!ID.test(senderId)||event.platformUserId!==senderId||chatId!==senderId||event.metadata.chatType!=='private'||!ID.test(event.messageId??''))return null;
       const identity=identityForSender(senderId),at=clock();
       if(!identity||typeof identity.username!=='string'||String(identity.senderId)!==senderId||identity.conversationId!==event.conversationId||!Number.isFinite(at))return null;
+      const edited=event.metadata?.edited===true;
+      if(edited&&(!Number.isSafeInteger(event.metadata.editDate)||event.metadata.editDate<=0||!Number.isSafeInteger(event.metadata.updateId)||event.metadata.updateId<0))return null;
       const callbackId=event.payload?.callbackId;
       if(event.type==='callback'&&(typeof callbackId!=='string'||!callbackId||callbackId.length>128||typeof event.payload?.callbackData!=='string'||Buffer.byteLength(event.payload.callbackData,'utf8')>64))return null;
       const principal=Object.freeze({platform:'telegram',kind:event.type,username:identity.username,senderId,conversationId:identity.conversationId,
-        messageId:String(event.messageId),receiptId:event.type==='callback'?`${identity.conversationId}:callback:${callbackId}`:`${identity.conversationId}:message:${event.messageId}`,
+        messageId:String(event.messageId),receiptId:event.type==='callback'?`${identity.conversationId}:callback:${callbackId}`:`${identity.conversationId}:message:${event.messageId}${edited?':edit:'+event.metadata.updateId:''}`,
         callbackData:event.type==='callback'?event.payload.callbackData:null,
         replyToMessageId:ID.test(event.metadata.replyToMessageId??'')?String(event.metadata.replyToMessageId):null,
-        authored:!forwarded,receivedAt:at});
+        authored:!forwarded,receivedAt:at,edited,...(edited?{editDate:event.metadata.editDate,updateId:event.metadata.updateId}:{})});
       trusted.add(principal);return principal;
     },
     verify(principal){

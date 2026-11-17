@@ -38,8 +38,19 @@ export class YamlKnowledgeStore extends IKnowledgeStore {
       await this.#ledger.complete({username,runId,revision,asOf});this.#logger.info?.('knowledge.store.committed',{objects:batch.upserts.length,events:payload.events.length});return {revision,applied:true};
     });
   }
+  #assertWriteImages(root,before,after){
+    const {files,conflicted}=readFileImages({root,io:this.#io});
+    if(conflicted)throw knowledgeError('KNOWLEDGE_WRITE_CONFLICT');
+    for(const relative of new Set([...Object.keys(before),...Object.keys(after),...Object.keys(files)])){
+      const actual=files[relative];
+      const movedBefore=isObjectFile(relative)&&actual&&Object.entries(before).some(([rel,value])=>isObjectFile(rel)&&value.id===actual.id&&same(value,actual));
+      if(!same(actual,before[relative])&&!same(actual,after[relative])&&!movedBefore)throw knowledgeError('KNOWLEDGE_WRITE_CONFLICT');
+    }
+  }
   async #writeImages(root,before,after) {
+    this.#assertWriteImages(root,before,after);
     for(const [relative,value] of Object.entries(after).filter(([rel])=>rel!=='state.yml')) {
+      this.#assertWriteImages(root,before,after);
       const destination=safeFile(root,relative);const current=this.#io.fileExists(destination)?readFileImages({root,io:this.#io}).files[relative]:undefined;
       if(same(current,value))continue;
       if(isObjectFile(relative)) {
@@ -50,6 +61,7 @@ export class YamlKnowledgeStore extends IKnowledgeStore {
       }
       this.#io.saveYamlToPathAtomic(destination,value,{durable:true});
     }
+    this.#assertWriteImages(root,before,after);
     const stateFile=safeFile(root,'state.yml');const current=this.#io.fileExists(stateFile)?readFileImages({root,io:this.#io}).files['state.yml']:undefined;
     if(!same(current,after['state.yml']))this.#io.saveYamlToPathAtomic(stateFile,after['state.yml'],{durable:true});
   }

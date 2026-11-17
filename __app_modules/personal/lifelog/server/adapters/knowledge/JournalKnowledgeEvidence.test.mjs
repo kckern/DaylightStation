@@ -68,3 +68,18 @@ it('previews historical rows without role only for the configured sender, never 
  expect(result.messages).toHaveLength(1);expect(result.messages[0]).toMatchObject({messageId:'legacy-1',verified:false,previewOnly:true});
  expect(result.rejected.some(row=>row.reason==='identity_mismatch')).toBe(true);
 });
+it('caps total text per batch and leaves the unconsumed remainder available',async()=>{
+ const rows=Array.from({length:6},(_,i)=>receipt('bulk-'+i,'x'.repeat(20000))),adapter=make(rows);
+ const first=await adapter.readUserMessages(query);expect(first.messages).toHaveLength(5);expect(first.messages.reduce((n,row)=>n+row.content.length,0)).toBe(100000);
+ const second=await adapter.readUserMessages({...query,after:first.cursor});expect(second.messages).toHaveLength(1);expect(new Set([...first.messages,...second.messages].map(row=>row.sourceId)).size).toBe(6);
+});
+it('durably resolves oversized receipts while allowing later valid entries and nightly freshness to progress',async()=>{
+ const {MaintainKnowledgeBase}=await import('../../application/knowledge/MaintainKnowledgeBase.mjs');
+ const {memoryStore,nextId,AS_OF}=await import('../../application/knowledge/fixtures.testHelpers.mjs');
+ const rows=[receipt('oversize','x'.repeat(20001)),...Array.from({length:6},(_,i)=>receipt('valid-'+i,'x'.repeat(20000)))],adapter=make(rows),store=memoryStore();let calls=0;
+ const service=new MaintainKnowledgeBase({enabled:true,store,evidence:adapter,extractor:{extract:async({messages})=>{calls++;if(messages.some(row=>row.content.length>20000)||messages.reduce((n,row)=>n+row.content.length,0)>100000)throw Error('invalid batch');return {proposals:[],modelVersion:'fixture'};}},clock:()=>AS_OF,userTimezone:()=>TZ,nextId:nextId()});
+ expect((await service.execute({username:'sample',trigger:'nightly',asOf:AS_OF})).status).toBe('completed');
+ expect((await service.execute({username:'sample',trigger:'nightly',asOf:AS_OF})).status).toBe('completed');
+ const state=await store.read({username:'sample'});expect(state.state.cursor.seen).toHaveLength(7);expect(state.health.lastSweepAt).toBe(AS_OF);expect(calls).toBe(2);
+ await service.execute({username:'sample',trigger:'nightly',asOf:AS_OF});expect(calls).toBe(2);
+});

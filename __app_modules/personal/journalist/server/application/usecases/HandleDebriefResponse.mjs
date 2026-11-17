@@ -66,8 +66,6 @@ export class HandleDebriefResponse {
   async execute(input) {
     const { conversationId, text, messageId, responseContext } = input;
 
-    // Store responseContext for use in private methods
-    this._responseContext = responseContext;
 
     this.#logger.info?.('debrief.response.received', {
       conversationId,
@@ -85,7 +83,7 @@ export class HandleDebriefResponse {
 
     // Route based on button pressed
     if (text === '📊 Details') {
-      return this.#handleShowDetails(conversationId, state, messageId, messaging);
+      return this.#handleShowDetails(conversationId, state, messageId, messaging,input.userId??state.debrief?.username);
     }
 
     if (text === '💬 Ask') {
@@ -107,10 +105,7 @@ export class HandleDebriefResponse {
    * @param {string} [messageId] - Message ID to edit keyboard
    * @param {Object} messaging - Messaging interface
    */
-  async #handleShowDetails(conversationId, state, messageId, messaging) {
-    // Username is optional - used only for logging in DebriefRepository
-    // The repository path is already configured at construction time
-    const username = null;
+  async #handleShowDetails(conversationId, state, messageId, messaging,username) {
 
     // Get the most recent debrief from debriefs.yml (persistent storage)
     const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(username, 1);

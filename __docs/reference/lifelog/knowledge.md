@@ -178,3 +178,65 @@ stay null; skips do not count as answers. No deployment, activation, human
 precision acceptance or reply-rate improvement is implied by passing source tests.
 Digests, sensor feeders, lookup resolution and historical writing backfills remain
 deferred.
+
+
+## Corrections and delivery safeguards
+
+Authenticated Telegram edits version the evidence receipt under its original
+message identity. Corrections retain the original journal timestamp and use a separate observation instant for the live cursor and historical preview cutoff. Old references stop resolving, and later original-message
+redelivery cannot restore superseded text. Private corrections received while KB
+provenance is unavailable invalidate the previous trusted receipt without granting
+trust to the replacement. Revocation metadata is retained; selection and delivery
+refresh it before asking, so a withdrawn sole evidence source cannot keep driving
+questions. An extraction already in flight re-reads the versioned evidence before
+accepting any proposal. Date bases must occur in the quoted source text.
+
+A reply to a message containing two independent questions records message-level
+engagement and qualifies a short response for extraction. It does not mark both
+loops answered. Metrics deduplicate that engagement; loop unanswered history
+remains intact. A skipped question uses its explicit three-day deferral, with the
+absolute three-day repeat floor, rather than the ordinary seven-day cooldown.
+Expired quiz sessions are cleared before another is selected. Ask controls bind
+to their delivered morning selection and local ask date; old controls explain
+expiry rather than consuming today's queue.
+
+Normal writes recheck canonical file images after durable preparation, preserving
+an intervening third image and stopping the transaction. Missing acknowledged ask
+shards make storage unhealthy. Restore them from preserved ledger evidence while
+the writer is stopped; never commit an empty replacement as though history vanished.
+Extraction input is bounded to twenty thousand characters per receipt and one
+hundred thousand per batch. Unsupported oversized receipts remain in the journal,
+while their skip is durably resolved so later entries and nightly freshness can
+progress. Long-entry suppression is independent of attribution bookkeeping; when
+maintenance cannot start, the entry receives a plain acknowledgement rather than
+an invented follow-up or a promise of future work.
+
+The fourteen-day resolution metric uses opened-loop cohorts and their opening
+instant, including loops resolved without an ask. It does not restart the clock at
+first delivery. Cached debrief reads, writes, interview and Details paths use the
+request's username; one household user's roundup cannot be reused for another.
+
+## Read-only cached-facts review
+
+After the separately approved extraction preview, the KB-specific renderer uses
+its private artifact and explicit per-date requests through the actual
+`GenerateMorningDebrief` path. It reads cached facts, makes zero model calls and
+has no delivery or writer capability. The legacy headline-preview CLI is not proof
+of KB rendering behavior.
+
+```sh
+node cli/journalist-knowledge-preview.cli.mjs --username sample --input {private_dir}/extraction.json --requests {private_dir}/requests.json > {private_dir}/rendered.json
+```
+
+A requests file is an array of up to ten items:
+
+```json
+[{"reportDate":"2026-11-02","askDate":"2026-11-03","asOf":"2026-11-03T15:00:00Z"}]
+```
+
+Each ask date is the user-local day after its report date. Rendering excludes
+future evidence and rejects an artifact whose referenced source has changed or is
+unavailable. Missing cached facts are labeled as fallback; this is not a fresh
+roundup-model quality measurement. CLI stdout is JSON; routine progress logging is
+suppressed while framework warnings/errors remain diagnostic output. Extraction
+usage remains in its durable outside-data receipt/usage ledger.

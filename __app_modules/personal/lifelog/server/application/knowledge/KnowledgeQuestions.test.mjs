@@ -175,3 +175,30 @@ it('rechecks due-date and morning ask-policy edits made after selection before p
   expect(delivery.questions).toEqual([]);expect(delivery.choices).toEqual([]);
  }
 });
+it.each(['prepared','delivered'])('clears an expired %s quiz so a current-day Ask can continue',async status=>{
+ const objects=Object.fromEntries(Array.from({length:4},(_,i)=>{const item=loop({id:'loop.expiry-'+i});return[item.id,item];})),d=setup({objects});await delivered(d);
+ const old=await d.service.nextQuiz({principal:d.principal('debrief:ask'),asOf:AS_OF});if(status==='delivered')await d.service.recordDelivery({username:'sample',deliveryId:old.deliveryId,botMessageId:'100',asOf:AS_OF});
+ const later=AS_OF+8*86400000;d.store.users.get('sample').health.lastSweepAt=later;
+ const selected=await d.service.selectForMorning({username:'sample',askDate:'2026-11-11',asOf:later});
+ const morning=await d.service.prepareDelivery({username:'sample',conversationId:'telegram:b42_c101',selectionId:selected.selectionId,askDate:'2026-11-11',channel:'morning',questionIds:selected.questions.map(q=>q.id),asOf:later});
+ await d.service.recordDelivery({username:'sample',deliveryId:morning.deliveryId,botMessageId:'101',asOf:later});
+ const next=await d.service.nextQuiz({principal:d.principal('debrief:ask',{messageId:'101'}),asOf:later});
+ expect(next.sendAllowed).toBe(true);expect(next.deliveryId).not.toBe(old.deliveryId);expect((await d.store.read({username:'sample'})).state.deliveries[old.deliveryId].status).toBe('expired');
+});
+it('returns an explicit expired outcome for an old morning Ask instead of using another day queue',async()=>{
+ const d=setup({objects:{'loop.one':loop({id:'loop.one'}),'loop.two':loop({id:'loop.two'}),'loop.three':loop({id:'loop.three'})}});await delivered(d);
+ const later=AS_OF+86400000;d.store.users.get('sample').health.lastSweepAt=later;
+ expect(await d.service.nextQuiz({principal:d.principal('debrief:ask'),asOf:later})).toMatchObject({status:'expired',sendAllowed:false});
+ expect((await d.store.read({username:'sample'})).state.quizSession).toBeUndefined();
+});
+it('records engagement and short-answer extraction eligibility for a two-question reply without answering either loop',async()=>{
+ const d=setup({objects:{'loop.one':loop({id:'loop.one'}),'loop.two':loop({id:'loop.two'})}});await delivered(d);
+ const result=await d.service.attributeEntry({principal:d.principal('',{type:'text',messageId:'120',replyToMessageId:'99'}),sourceId:'short-answer',length:3,asOf:AS_OF+1000});
+ expect(result).toMatchObject({attribution:'reply_to',attributedAnswer:true,askIds:[]});
+ const snapshot=await d.store.read({username:'sample'});expect(snapshot.asks.every(row=>!row.response)).toBe(true);expect(Object.values(snapshot.state.messageReplies)).toHaveLength(1);
+});
+it('withdraws a selected question when a journal edit revokes its only evidence before delivery',async()=>{
+ const d=setup(),selection=await select(d);d.sources.readRevocations=async()=>['journalist:msg:source-old'];
+ const delivery=await d.service.prepareDelivery({username:'sample',conversationId:'telegram:b42_c101',selectionId:selection.selectionId,askDate:'2026-11-03',channel:'morning',questionIds:selection.questions.map(q=>q.id),asOf:AS_OF});
+ expect(delivery.questions).toEqual([]);expect((await d.store.read({username:'sample'})).objects['loop.application-reply'].evidence[0].quote).toBe('I will wait for a reply');
+});

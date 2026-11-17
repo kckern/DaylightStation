@@ -47,6 +47,7 @@ export function observeSnapshot({root,io,history,asOf}) {
     const last=[...history.transactions].reverse().find(t=>t.complete);
     if(last&&!same(last.prepare.after.files['state.yml'],stateDoc))throw knowledgeError('KNOWLEDGE_STATE_EDIT');
     if(last&&!same(last.prepare.after.files['roster.yml'],files['roster.yml']))throw knowledgeError('KNOWLEDGE_ROSTER_EDIT');
+    if(last&&Object.keys(last.prepare.after.files).some(relative=>relative.startsWith('asks/')&&!Object.hasOwn(files,relative)))throw knowledgeError('KNOWLEDGE_ASKS_REMOVED');
     for(const [id,manifest] of Object.entries(state.manifest??{})) {
       if(!objects[id])throw knowledgeError('KNOWLEDGE_OBJECT_REMOVED');
       const actual=files[sourcePaths[id]];

@@ -92,6 +92,7 @@ export class JournalistInputRouter {
     const enrichedMetadata = { ...metadata, userId };
 
     try {
+      if(metadata?.edited&&type===InputEventType.TEXT)return this.#processText(conversationId,payload.text,messageId,enrichedMetadata,context);
       switch (type) {
         case InputEventType.TEXT:
           return this.#handleText(conversationId, payload.text, messageId, enrichedMetadata, context);
@@ -192,8 +193,12 @@ export class JournalistInputRouter {
       }
     }
 
+    return this.#processText(conversationId,text,messageId,metadata,context);
+  }
+
+  async #processText(conversationId,text,messageId,metadata,context){
     // Regular text entry - route to ProcessTextEntry
-    if (!this.#aiGatewayAvailable && !context.knowledgePrincipal) return this.#unavailable(conversationId, 'text', context);
+    if (!this.#aiGatewayAvailable && !context.knowledgePrincipal && !metadata?.edited) return this.#unavailable(conversationId, 'text', context);
     const useCase = this.#container.getProcessTextEntry();
     return useCase.execute({
       chatId: conversationId,
@@ -202,6 +207,7 @@ export class JournalistInputRouter {
       messageId,
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
+      journalEdit:metadata?.edited&&metadata.chatType==='private'&&String(metadata.chatId)===this.#extractSenderId(metadata)?{edited:true,editDate:metadata.editDate,updateId:metadata.updateId}:undefined,
       knowledgePrincipal:context.knowledgePrincipal,
       aiAvailable:this.#aiGatewayAvailable,
       responseContext: context.responseContext,
@@ -372,7 +378,7 @@ export class JournalistInputRouter {
 
       // Get the debrief from the repository
       const debriefRepo = this.#container.getDebriefRepository();
-      const debrief = await debriefRepo.getDebriefByDate(debriefDate);
+      const debrief = await debriefRepo.getDebriefByDate(debriefDate,userId);
 
       if (!debrief || !debrief.summaries) {
         await messaging.sendMessage('❌ No debrief found for that date');
@@ -399,6 +405,7 @@ export class JournalistInputRouter {
         if (debriefResponseHandler) {
           return debriefResponseHandler.execute({
             conversationId,
+            userId:context.userId,
             text: '📊 Details',
             messageId: payload.sourceMessageId,
             responseContext:context.responseContext,

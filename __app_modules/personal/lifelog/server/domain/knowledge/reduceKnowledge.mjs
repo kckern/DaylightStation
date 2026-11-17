@@ -24,6 +24,7 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
     if (!reason && ['touch','close_loop','alias_candidate'].includes(p.op) && !original) reason = 'unknown_target';
     if (!reason && original && (source.at < original.created.sourceAt || (p.op === 'close_loop' && source.at <= original.created.sourceAt))) reason = 'predates_loop';
     if (!reason && p.op === 'close_loop' && (original.kind !== 'loop' || isPinned(original, 'status') || isPinned(original, 'loop.answer'))) reason = original.kind !== 'loop' ? 'invalid_target' : 'pinned_field';
+    if (!reason && p.op === 'open_loop' && f.dueText && !normalizeQuote(p.quote).includes(normalizeQuote(f.dueText))) reason = 'due_not_grounded';
     if (!reason && p.op === 'open_loop' && f.due && !normalizeQuote(p.quote).includes(f.due) && (!f.dueText || resolveDueDate({text:f.dueText,entryDate:source.localDate,timezone}) !== f.due)) reason = 'due_not_grounded';
     if (!reason && p.op === 'propose_entity' && original && ((f.role && f.role !== original.role && isPinned(original,'role')) || (!(original.names ?? []).includes(f.name) && isPinned(original,'names')) || isPinned(original,'status'))) reason = 'pinned_field';
     if (!reason && p.op === 'alias_candidate' && original && isPinned(original,'aliases')) reason = 'pinned_field';

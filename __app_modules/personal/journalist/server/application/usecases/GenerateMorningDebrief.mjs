@@ -82,7 +82,7 @@ export class GenerateMorningDebrief {
       }
       // Step 1.5: Check if debrief already exists for this date
       if (this.#debriefRepository) {
-        const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date);
+        const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date,username);
         if (existingDebrief) {
           this.#logger.info?.('debrief.found-existing', {
             username,
@@ -91,6 +91,7 @@ export class GenerateMorningDebrief {
 
           return {
             success: true,
+            username,
             date: existingDebrief.date,
             ...this.#presentKnowledge({summary:existingDebrief.summary,headline:existingDebrief.headline||null},lifelog,knowledgeSelection),
             ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
@@ -153,6 +154,7 @@ export class GenerateMorningDebrief {
 
       return {
         success: true,
+        username,
         date: lifelog._meta.date,
         ...this.#presentKnowledge({summary,headline},lifelog,knowledgeSelection,conversationContext),
         ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),

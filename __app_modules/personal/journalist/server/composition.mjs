@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {KnowledgeFollowUpAdapter} from './adapters/KnowledgeFollowUpAdapter.mjs';
 import { YamlJournalEntryRepository } from "./adapters/persistence/YamlJournalEntryRepository.mjs";
 import { YamlMessageQueueRepository } from "./adapters/persistence/YamlMessageQueueRepository.mjs";
@@ -39,6 +40,7 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
   // Debrief repository (YAML persistence)
   const debriefRepository = new DebriefRepository({
     dataDir: journalistConfig.dataDir,
+    userPathFor:configService.getUserDir?(username=>path.join(configService.getUserDir(username),'lifelog','journalist')):undefined,
     username: journalistConfig.username,
     logger
   });

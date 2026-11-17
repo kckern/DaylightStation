@@ -31,3 +31,9 @@ it('does not manufacture verified provenance for an unknown sender',async()=>{
  const d=setup(),event=d.event('text','202');await d.router.route(event,null,{knowledgePrincipal:d.principal(event)});
  expect((await d.read()).messages).toEqual([]);expect(d.journal().messages.some(row=>row.source?.verified)).toBe(false);expect(d.calls()).toBe(0);
 });
+it('stores an authenticated edited entry as a new evidence revision instead of rejecting the correction',async()=>{
+ const d=setup(),first=d.event();await d.router.route(first,null,{knowledgePrincipal:d.principal(first)});const original=(await d.read()).messages[0];
+ const edited={...d.event(),metadata:{...d.event().metadata,edited:true,editDate:1000,updateId:22},payload:{text:'🎲 I cancelled that plan.'}};
+ await d.router.route(edited,null,{knowledgePrincipal:d.principal(edited)});
+ const current=(await d.read()).messages;expect(current).toHaveLength(1);expect(current[0].sourceId).not.toBe(original.sourceId);expect(current[0].content).toBe('🎲 I cancelled that plan.');expect(d.journal().messages).toHaveLength(1);
+});

@@ -32,7 +32,8 @@ export function sweepKnowledge({ snapshot, asOf, timezone }) {
       if (object.status === 'stale') batch.moves.push({ id: object.id, closedYear: today.slice(0,4) });
     }
   }
-  const replyAt = Math.max(0, ...asks.filter(a => a.response && ['yes','not_yet','drop','text'].includes(a.response.action)).map(a => a.response.at ?? 0));
+  const messageReplyTimes=Object.values(snapshot.state?.messageReplies??{}).filter(reply=>reply.arm==='knowledge'&&reply.channel==='morning'&&Number.isFinite(reply.at)&&reply.at<=asOf&&['reply_to','window'].includes(reply.attribution)&&asks.some(ask=>ask.channel==='morning'&&ask.botMessageId===reply.botMessageId&&ask.deliveredAt<=reply.at)).map(reply=>reply.at);
+  const replyAt = Math.max(0,...messageReplyTimes, ...asks.filter(a => a.response && ['yes','not_yet','drop','text'].includes(a.response.action)).map(a => a.response.at ?? 0));
   const previous = snapshot.state?.backoff ?? null;
   const mornings = new Map();
   for (const a of asks.filter(a => a.channel === 'morning' && a.deliveredAt > replyAt && asOf - a.deliveredAt >= REPLY_WINDOW_MS)) {

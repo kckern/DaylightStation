@@ -186,19 +186,40 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
       timestamp: entry.timestamp || nowTs24()
     };
 
-    if(entry.source?.verified===true){
-      const source=entry.source;
-      if(message.role!=='user'||source.platform!=='telegram'||source.conversationId!==chatId||String(source.messageId)!==String(message.id)||String(source.senderId)!==String(message.senderId))throw new InfrastructureError('Invalid journal source',{code:'JOURNAL_SOURCE_INVALID'});
-      const previous=data.messages.find(row=>row.source?.verified===true&&row.source.conversationId===chatId&&String(row.id)===String(message.id));
-      if(previous){
-        if(previous.content!==message.content||String(previous.senderId)!==String(message.senderId)||(previous.source.replyToMessageId??null)!==(source.replyToMessageId??null))throw new InfrastructureError('Conflicting journal source',{code:'JOURNAL_SOURCE_CONFLICT'});
-        return previous;
+    const edited=entry.source?.edited===true||entry.edit?.edited===true;
+    const previousIndex=(entry.source?.verified===true||edited)?data.messages.findIndex(row=>String(row.id)===String(message.id)&&String(row.senderId)===String(message.senderId)&&(!row.source||row.source.conversationId===chatId)):-1;
+    const previous=previousIndex>=0?data.messages[previousIndex]:null;
+    const editMetadata=entry.source?.verified===true?entry.source:entry.edit;
+    if(previous?.source?.edited&&!edited)return {...previous,ignoredEdit:true};
+    if(previous&&edited){
+      const prior=previous.source??{};
+      if(Number.isFinite(prior.editDate)&&Number.isFinite(editMetadata?.editDate)&&editMetadata.editDate<prior.editDate)return {...previous,ignoredEdit:true};
+      if(prior.editDate===editMetadata?.editDate&&Number.isFinite(prior.updateId)&&Number.isFinite(editMetadata?.updateId)){
+        if(editMetadata.updateId<prior.updateId)return {...previous,ignoredEdit:true};
+        if(editMetadata.updateId===prior.updateId&&previous.content!==message.content)throw new InfrastructureError('Conflicting journal edit',{code:'JOURNAL_SOURCE_CONFLICT'});
       }
-      message.source={platform:'telegram',conversationId:chatId,messageId:String(message.id),senderId:String(message.senderId),replyToMessageId:source.replyToMessageId??null,verified:true,contentHash:createHash('sha256').update(JSON.stringify([String(message.id),String(message.senderId),chatId,message.content,message.timestamp])).digest('hex')};
+      if(previous.content===message.content&&prior.editDate===editMetadata?.editDate&&prior.updateId===editMetadata?.updateId)return previous;
+    }
+    if(previous&&!edited){
+      if(previous.content!==message.content||(previous.source?.replyToMessageId??null)!==(entry.source?.replyToMessageId??null))throw new InfrastructureError('Conflicting journal source',{code:'JOURNAL_SOURCE_CONFLICT'});
+      return previous;
+    }
+    const observedAt=Date.parse(message.timestamp);
+    if(edited&&previous?.timestamp)message.timestamp=previous.timestamp;
+    if(entry.source?.verified===true||edited&&previous?.source){
+      const source=entry.source?.verified===true?entry.source:previous.source;
+      if(message.role!=='user'||source.platform!=='telegram'||source.conversationId!==chatId||String(source.messageId)!==String(message.id)||String(source.senderId)!==String(message.senderId))throw new InfrastructureError('Invalid journal source',{code:'JOURNAL_SOURCE_INVALID'});
+      const contentHash=createHash('sha256').update(JSON.stringify([String(message.id),String(message.senderId),chatId,message.content,message.timestamp])).digest('hex');
+      message.source={platform:'telegram',conversationId:chatId,messageId:String(message.id),senderId:String(message.senderId),replyToMessageId:source.replyToMessageId??null,verified:entry.source?.verified===true,contentHash};
+      if(edited){
+        const history=previous?.source?.supersededRevisions??[];
+        if(!Array.isArray(history))throw new InfrastructureError('Invalid source revision history',{code:'JOURNAL_SOURCE_INVALID'});
+        message.source={...message.source,edited:true,editDate:editMetadata?.editDate,updateId:editMetadata?.updateId,observedAt,revision:createHash('sha256').update(JSON.stringify([contentHash,editMetadata?.editDate??null,editMetadata?.updateId??null,observedAt])).digest('hex'),supersededRevisions:[...new Set([...history,...(previous?.source?[previous.source.revision??'original']:[])])]};
+      }
     }
 
     // Add message
-    data.messages.push(message);
+    if(edited&&previousIndex>=0)data.messages[previousIndex]=message;else data.messages.push(message);
 
     // Sort messages by timestamp descending (newest first)
     data.messages.sort((a, b) => {
@@ -439,7 +460,8 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
       senderId: message.senderId || this.#extractUserId(conversationId),
       senderName: message.senderName,
       timestamp: localTimestamp,
-      ...(message.source?{source:message.source}:{})
+      ...(message.source?{source:message.source}:{}),
+      ...(message.edit?{edit:message.edit}:{})
     };
 
     return this.save(messageData, conversationId);

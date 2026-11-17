@@ -37,7 +37,8 @@ describe('verified knowledge proposals', () => {
     expect(reduce({ evidence: [evidence(), evidence({ content: 'changed text' })] }).rejected[0].reason).toBe('ambiguous_evidence');
   });
   it('keeps unsupported relative dates uninferred and flagged for review', () => {
-    const result = reduce({ proposals: [proposal({ fields: { title: 'Contact Sample', dueText: 'after the holidays' } })] });
+    const quote='I will contact Sample after the holidays';
+    const result = reduce({ evidence:[evidence({content:quote})], proposals: [proposal({quote, fields: { title: 'Contact Sample', dueText: 'after the holidays' } })] });
     expect(result.batch.upserts[0].loop.due).toBeNull();
     expect(result.batch.statePatch.pendingReviews[0].reason).toBe('unsupported_due_text');
   });
@@ -119,4 +120,8 @@ it('cannot bypass alias confirmation by proposing a new name on an existing pers
  expect(result.batch.upserts).toEqual([]);
  expect(result.batch.statePatch.pendingReviews).toEqual([expect.objectContaining({reason:'ambiguous_person_name'})]);
  expect(person.names).toEqual(['Sample']);
+});
+it.each([{}, {due:'2026-11-03'}])('rejects an invented relative date even when a matching canonical due is supplied: %o',extra=>{
+ const result=reduce({proposals:[proposal({quote:'I will contact Sample',fields:{title:'Contact Sample',dueText:'tomorrow',...extra}})]});
+ expect(result.batch.upserts).toEqual([]);expect(result.rejected[0].reason).toBe('due_not_grounded');
 });
