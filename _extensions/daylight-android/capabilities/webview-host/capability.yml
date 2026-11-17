@@ -6,7 +6,16 @@ permissions:
   - android.permission.ACCESS_WIFI_STATE
   # Page microphone and camera, given to the page only for the configured origin.
   - android.permission.RECORD_AUDIO
-  - android.permission.CAMERA
   - android.permission.MODIFY_AUDIO_SETTINGS
-  # POST /kiosk/overlay draws above a launched app.
-  - android.permission.SYSTEM_ALERT_WINDOW
+  # kioskOnly: declared in a kiosk's APK and taken out of any other device's (the
+  # phone's) by its generated manifest. The phone gives no page the camera
+  # (webview.allowCamera is false there), so its APK does not ask for it.
+  - { name: android.permission.CAMERA, kioskOnly: true }
+  # POST /kiosk/overlay draws above a launched app. A phone has no control API to be
+  # told to, and must not be able to draw over other apps.
+  - { name: android.permission.SYSTEM_ALERT_WINDOW, kioskOnly: true }
+# Components another app can reach. A device with control.bind none fails its build
+# when its APK exports anything no listed capability names here.
+exported:
+  # The launcher icon. It reads nothing from the intent that starts it.
+  - net.kckern.daylight.cap.webviewhost.shell.KioskActivity

@@ -60,6 +60,18 @@ public final class DeviceCatalog {
         return c;
     }
 
+    /**
+     * The permissions the device's capabilities mark kioskOnly, in list order, each once.
+     * A kiosk's APK has them; the generated manifest of any other device removes them.
+     */
+    public List<String> kioskOnlyPermissions(DeviceSpec d) {
+        List<String> out = new ArrayList<>();
+        for (String name : d.capabilities) {
+            for (String p : capability(name).kioskOnlyPermissions) if (!out.contains(p)) out.add(p);
+        }
+        return out;
+    }
+
     public static DeviceCatalog load(File root) {
         Map<String, CapabilitySpec> caps = new TreeMap<>();
         File[] capDirs = new File(root, "capabilities").listFiles(File::isDirectory);
@@ -78,10 +90,26 @@ public final class DeviceCatalog {
                 if (hasPayload && entry == null) {
                     throw new CatalogException("capability '" + name + "' has a payload but no 'entry'");
                 }
+                // A permission is a name, or a mapping {name, sdk23, maxSdkVersion, kioskOnly}.
+                List<String> everywhere = new ArrayList<>(), kioskOnly = new ArrayList<>();
+                Object rawPermissions = doc.get("permissions");
+                if (rawPermissions != null) {
+                    if (!(rawPermissions instanceof List)) throw new CatalogException("capability '" + name + "' permissions: expected a list");
+                    for (Object item : (List<?>) rawPermissions) {
+                        Object permission = item instanceof Map ? ((Map<?, ?>) item).get("name") : item;
+                        if (!(permission instanceof String) || !PERMISSION.matcher((String) permission).matches()) {
+                            throw new CatalogException("capability '" + name + "' permissions: each entry is a permission name or a mapping with 'name'");
+                        }
+                        boolean forKiosks = item instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) item).get("kioskOnly"));
+                        (forKiosks ? kioskOnly : everywhere).add((String) permission);
+                    }
+                }
                 caps.put(name, new CapabilitySpec(name, (String) entry, hasPayload, hasShell,
                         Collections.unmodifiableList(strings(doc.get("requires"), "capability '" + name + "' requires")),
                         Boolean.TRUE.equals(doc.get("native")),
-                        Collections.unmodifiableList(strings(doc.get("startsAfter"), "capability '" + name + "' startsAfter"))));
+                        Collections.unmodifiableList(strings(doc.get("startsAfter"), "capability '" + name + "' startsAfter")),
+                        Collections.unmodifiableList(everywhere), Collections.unmodifiableList(kioskOnly),
+                        Collections.unmodifiableList(strings(doc.get("exported"), "capability '" + name + "' exported"))));
             }
         }
         for (CapabilitySpec c : caps.values()) {

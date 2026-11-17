@@ -90,6 +90,19 @@ export function expectedPermission(entry) {
   return { name: String(entry.name), sdk23: Boolean(entry.sdk23), maxSdkVersion: entry.maxSdkVersion == null ? null : Number(entry.maxSdkVersion) };
 }
 
+/**
+ * The permissions a device's capabilities give it. An entry marked `kioskOnly: true`
+ * (drawing over other apps, the page's camera) is expected of a kiosk and must be
+ * absent from any other device's APK.
+ */
+export function permissionsFor(device, capabilities) {
+  const kiosk = isKiosk(device);
+  return (device.capabilities || [])
+    .flatMap((name) => capabilities[name]?.permissions || [])
+    .filter((entry) => kiosk || !(typeof entry === 'object' && entry.kioskOnly))
+    .map(expectedPermission);
+}
+
 const describePermission = (p) => `${p.sdk23 ? 'uses-permission-sdk-23' : 'uses-permission'} ${p.name}${p.maxSdkVersion == null ? '' : ` maxSdkVersion=${p.maxSdkVersion}`}`;
 
 /** Every way the APK's permissions differ from the expected ones, as messages. Empty when they agree. */
@@ -300,6 +313,67 @@ export function foregroundTypeMask(xmltree, serviceName) {
  * that guards it. A component with no row fails too, so a new one cannot ship without
  * somebody deciding both.
  */
+/**
+ * The table for one device. On a device with control.bind none whose launcher is the
+ * kiosk window, the setup activity is not exported: any app on a phone could
+ * otherwise start it to raise the battery-exemption screen and the permission prompts.
+ */
+export function expectedComponentTable(device) {
+  const table = { ...EXPECTED_COMPONENTS };
+  if (isPersonal(device) && (device.capabilities || []).includes('webview-host')) {
+    table['activity net.kckern.daylight.shell.MainActivity'] = { exported: false, permission: null };
+  }
+  return table;
+}
+
+/** A device with no control API: somebody's own phone. */
+export function isPersonal(device) {
+  return (device.control?.bind ?? 'lan') === 'none';
+}
+
+const BOOT_RECEIVER = 'net.kckern.daylight.shell.BootReceiver';
+
+/**
+ * A personal device's APK is held to an exact list: the components another app can
+ * reach are the boot receiver and what each listed capability names under `exported:`
+ * in its capability.yml. No cleartext traffic, no TV launcher entry, no lock task.
+ */
+export function personalBuildFailures(xmltree, device, capabilities) {
+  if (!isPersonal(device)) return [];
+  const failures = [];
+  const nodes = parseXmlTree(xmltree);
+  const caps = device.capabilities || [];
+  const wanted = new Set([BOOT_RECEIVER, ...caps.flatMap((name) => capabilities[name]?.exported || [])]);
+  if (!caps.includes('webview-host')) wanted.add('net.kckern.daylight.shell.MainActivity');
+  const exported = new Set(nodes.filter((n) => COMPONENT_KINDS.includes(n.name) && n.attrs.name && n.attrs.exported !== 'false').map((n) => n.attrs.name));
+  for (const name of [...exported].sort()) {
+    if (!wanted.has(name)) failures.push(`exported component not declared by the base shell or a listed capability: ${name}`);
+  }
+  for (const name of [...wanted].sort()) {
+    if (!exported.has(name)) failures.push(`a declared exported component is not exported in the APK: ${name}`);
+  }
+  const app = nodes.find((n) => n.name === 'application');
+  if (app?.attrs.usesCleartextTraffic !== 'false') failures.push('a device with control.bind none must declare android:usesCleartextTraffic="false"');
+  if (nodes.some((n) => n.name === 'category' && n.attrs.name === 'android.intent.category.LEANBACK_LAUNCHER')) {
+    failures.push('a LEANBACK_LAUNCHER category is in the manifest of a device with control.bind none');
+  }
+  for (const n of nodes) {
+    if (COMPONENT_KINDS.includes(n.name) && n.attrs.lockTaskMode !== undefined) failures.push(`${n.attrs.name} declares android:lockTaskMode on a device with control.bind none`);
+  }
+  return failures;
+}
+
+/** Nothing the app keeps is backed up or carried to another device. */
+export function backupFailures(xmltree) {
+  const failures = [];
+  const app = parseXmlTree(xmltree).find((n) => n.name === 'application');
+  if (app?.attrs.allowBackup !== 'false') failures.push('the application does not declare android:allowBackup="false"');
+  for (const attribute of ['dataExtractionRules', 'fullBackupContent']) {
+    if (!app?.attrs[attribute]) failures.push(`the application does not declare android:${attribute}`);
+  }
+  return failures;
+}
+
 export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS) {
   const failures = [];
   for (const n of parseXmlTree(xmltree)) {
@@ -353,7 +427,7 @@ const CAR_META = 'com.google.android.gms.car.application';
  * and the resource it names. A build has both exactly when its device lists
  * android-auto, and then it also has the media library service the car binds.
  */
-export function carDeclarationFailures(xmltree, capabilities, apkEntries) {
+export function carDeclarationFailures(xmltree, capabilities, apkEntries, resourceNamesKept = true) {
   const failures = [];
   const declared = parseXmlTree(xmltree).some((n) => n.name === 'meta-data' && n.attrs.name === CAR_META);
   const resource = apkEntries.some((e) => /^res\/.*automotive_app_desc.*\.xml$/.test(e));
@@ -365,6 +439,8 @@ export function carDeclarationFailures(xmltree, capabilities, apkEntries) {
     failures.push("capability 'android-auto' is listed without media-service: the car would find no media library service");
   }
   if (!declared) failures.push(`capability 'android-auto' is listed but the manifest has no ${CAR_META} meta-data`);
-  if (!resource) failures.push("capability 'android-auto' is listed but the APK has no automotive_app_desc resource");
+  // A release build shortens resource file names, so the file cannot be found by name
+  // there; the meta-data's reference to it was resolved when the APK was linked.
+  if (!resource && resourceNamesKept) failures.push("capability 'android-auto' is listed but the APK has no automotive_app_desc resource");
   return failures;
 }

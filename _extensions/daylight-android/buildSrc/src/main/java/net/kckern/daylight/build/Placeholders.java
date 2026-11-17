@@ -43,6 +43,9 @@ public final class Placeholders {
         return new Placeholders(out);
     }
 
+    /** The value of one placeholder, or null when the private file does not have it. */
+    public String find(String name) { return values.get(name); }
+
     public String resolve(String raw, String where) {
         Matcher m = TOKEN.matcher(raw);
         StringBuffer out = new StringBuffer();

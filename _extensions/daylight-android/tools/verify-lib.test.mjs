@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS, carDeclarationFailures,
+  expectedComponentTable, personalBuildFailures, backupFailures, permissionsFor,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -431,4 +432,76 @@ test('the recorder and its screen are not exported, and the recorder is a microp
     [`activity ${SCREEN} is exported=true, expected exported=false`]);
   assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'false', null, null))),
     [`service ${REC} has foregroundServiceType mask 0, expected 128 (microphone)`]);
+});
+
+// ── a device with control.bind none is held to its own exact list ────────
+
+const PHONE = { capabilities: ['webview-host', 'notifications'], control: { port: 8780, lifelinePort: 8781, bind: 'none' } };
+const WALL = { capabilities: ['webview-host', 'accessibility', 'lockdown'], control: { port: 8780, lifelinePort: 8781 } };
+const CAPS = {
+  'webview-host': { permissions: ['android.permission.RECORD_AUDIO', { name: 'android.permission.CAMERA', kioskOnly: true }],
+    exported: ['net.kckern.daylight.cap.webviewhost.shell.KioskActivity'] },
+  notifications: { permissions: [], exported: ['net.kckern.daylight.cap.notifications.shell.LinkActivity'] },
+};
+const appLine = (attrs) => ['      E: application (line=60)', ...Object.entries(attrs).map(([k, v]) => `        A: ${NS}:${k}(0x0101)=${v}`)];
+const phoneTree = (attrs, ...parts) => ['N: android=http://schemas.android.com/apk/res/android (line=2)', '  E: manifest (line=2)', ...appLine(attrs), ...parts.flat(Infinity)].join('\n');
+const GOOD_APP = { allowBackup: 'false', usesCleartextTraffic: 'false', dataExtractionRules: '@0x7f100001', fullBackupContent: '@0x7f100000' };
+const PHONE_COMPONENTS = [
+  component('activity', 'net.kckern.daylight.shell.MainActivity', 'false', null),
+  component('activity', 'net.kckern.daylight.cap.webviewhost.shell.KioskActivity', 'true', null),
+  component('activity', 'net.kckern.daylight.cap.notifications.shell.LinkActivity', 'true', null),
+  component('service', 'net.kckern.daylight.shell.ShellService', 'false', null),
+  component('receiver', 'net.kckern.daylight.shell.BootReceiver', 'true', null),
+];
+
+test('a kiosk-only permission is expected of a kiosk and not of the phone', () => {
+  assert.deepEqual(permissionsFor(PHONE, CAPS).map((p) => p.name), ['android.permission.RECORD_AUDIO']);
+  assert.deepEqual(permissionsFor(WALL, CAPS).map((p) => p.name), ['android.permission.RECORD_AUDIO', 'android.permission.CAMERA']);
+});
+
+test('the setup activity is not exported where the kiosk window is the launcher of a personal build', () => {
+  assert.equal(expectedComponentTable(PHONE)['activity net.kckern.daylight.shell.MainActivity'].exported, false);
+  assert.equal(expectedComponentTable(WALL)['activity net.kckern.daylight.shell.MainActivity'].exported, true);
+  assert.deepEqual(componentAttributeFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS), expectedComponentTable(PHONE)), []);
+  assert.match(componentAttributeFailures(phoneTree(GOOD_APP, component('activity', 'net.kckern.daylight.shell.MainActivity', 'true', null)),
+    expectedComponentTable(PHONE))[0], /MainActivity is exported=true, expected exported=false/);
+});
+
+test('a personal build with exactly its exported components passes', () => {
+  assert.deepEqual(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS), PHONE, CAPS), []);
+  assert.deepEqual(personalBuildFailures(phoneTree({}, []), WALL, CAPS), [], 'a kiosk is not held to this list');
+});
+
+test('an exported component no capability declares fails a personal build, and so does a declared one that is absent', () => {
+  const extra = personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, component('service', 'com.example.Lib', 'true', null)), PHONE, CAPS);
+  assert.deepEqual(extra, ['exported component not declared by the base shell or a listed capability: com.example.Lib']);
+  const missing = personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS.slice(0, 4)), PHONE, CAPS);
+  assert.deepEqual(missing, ['a declared exported component is not exported in the APK: net.kckern.daylight.shell.BootReceiver']);
+});
+
+test('cleartext traffic, the TV launcher category and lock task fail a personal build', () => {
+  assert.match(personalBuildFailures(phoneTree({ ...GOOD_APP, usesCleartextTraffic: 'true' }, PHONE_COMPONENTS), PHONE, CAPS)[0], /usesCleartextTraffic/);
+  const leanback = ['              E: intent-filter (line=1)', '                  E: category (line=2)',
+    `                    A: ${NS}:name(0x01010003)="android.intent.category.LEANBACK_LAUNCHER" (Raw: "x")`];
+  assert.match(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, leanback), PHONE, CAPS)[0], /LEANBACK_LAUNCHER/);
+  const locked = [...component('activity', 'net.kckern.daylight.cap.webviewhost.shell.KioskActivity', 'true', null), `            A: ${NS}:lockTaskMode(0x010104ed)=2`];
+  assert.match(personalBuildFailures(phoneTree(GOOD_APP, [PHONE_COMPONENTS[0], locked, ...PHONE_COMPONENTS.slice(2)]), PHONE, CAPS)[0], /lockTaskMode/);
+});
+
+test('every build excludes its data from backup and device transfer', () => {
+  assert.deepEqual(backupFailures(phoneTree(GOOD_APP)), []);
+  assert.match(backupFailures(phoneTree({ ...GOOD_APP, allowBackup: 'true' }))[0], /allowBackup/);
+  assert.match(backupFailures(phoneTree({ allowBackup: 'false', fullBackupContent: '@0x7f100000' }))[0], /dataExtractionRules/);
+  assert.match(backupFailures(phoneTree({ allowBackup: 'false', dataExtractionRules: '@0x7f100001' }))[0], /fullBackupContent/);
+});
+
+test('a release build is not debuggable and not signed with the debug key', () => {
+  assert.equal(buildTypeLine("package: name='x'", 'Signer #1 certificate DN: CN=Example Release'),
+    'not debuggable, signed with a key that is not the Android debug key');
+});
+
+test('a release build shortens resource file names, so the car description is not looked for by name there', () => {
+  const declared = tree(['          E: meta-data (line=1)', `            A: ${NS}:name(0x01010003)="com.google.android.gms.car.application" (Raw: "x")`]);
+  assert.equal(carDeclarationFailures(declared, ['android-auto', 'media-service'], ['res/a1.xml']).length, 1);
+  assert.deepEqual(carDeclarationFailures(declared, ['android-auto', 'media-service'], ['res/a1.xml'], false), []);
 });

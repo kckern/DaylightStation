@@ -23,11 +23,18 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
-    <!-- usesCleartextTraffic: the control API and the app server are plain HTTP on the LAN. -->
+    <!-- usesCleartextTraffic: a kiosk fetches its payload and its update over plain HTTP on
+         the LAN and ships its heartbeats there. A device with control.bind none (the
+         phone) has it set to false by its generated device manifest.
+         Backup: nothing is backed up or transferred to another device (the two rule
+         files exclude every domain), on top of allowBackup="false". -->
     <application
         android:label="Daylight"
         android:usesCleartextTraffic="true"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/daylight_backup_rules"
+        android:dataExtractionRules="@xml/daylight_data_extraction_rules"
+        tools:targetApi="s">
 
         <activity android:name=".MainActivity" android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">

@@ -42,6 +42,17 @@ public final class DeviceManifestSource {
      *                     building another device never needs this device's private values.
      */
     public static String render(DeviceSpec d, Placeholders placeholders) {
+        return render(d, placeholders, java.util.Collections.<String>emptyList());
+    }
+
+    /**
+     * @param kioskOnlyPermissions what the device's capabilities mark kioskOnly
+     *                             (DeviceCatalog.kioskOnlyPermissions). A kiosk keeps
+     *                             them; the manifest of any other device removes them.
+     */
+    public static String render(DeviceSpec d, Placeholders placeholders, java.util.List<String> kioskOnlyPermissions) {
+        // Somebody's own phone: no control API, so nothing here is operated remotely.
+        boolean personal = PersonalBuild.applies(d);
         String linkHost = "";
         if (!d.appLinksHost.isEmpty()) {
             linkHost = placeholders.resolve(d.appLinksHost, d.id + ".yml appLinks.host");
@@ -61,6 +72,14 @@ public final class DeviceManifestSource {
                  .append("\" tools:ignore=\"ProtectedPermissions\" />\n");
             }
         }
+        if (!isKiosk(d)) {
+            // What only a kiosk uses (drawing over a launched app, the page's camera) is
+            // taken out of the APK of a device that is not one.
+            for (String p : kioskOnlyPermissions) {
+                if (d.extraPermissions.contains(p)) continue;
+                s.append("    <uses-permission android:name=\"").append(p).append("\" tools:node=\"remove\" />\n");
+            }
+        }
         for (String p : d.extraPermissions) {
             // A device file may state one of the kiosk permissions itself; it is declared once.
             if (isKiosk(d) && KIOSK_BASE_PERMISSIONS.contains(p)) continue;
@@ -71,20 +90,45 @@ public final class DeviceManifestSource {
         // webview-host shell half) is the app's front door, so the setup Activity
         // gives up its MAIN/LAUNCHER filter. It stays exported and startable by name.
         boolean kiosk = d.capabilities.contains(KIOSK_CAPABILITY);
-        if (!d.foregroundServiceTypes.isEmpty() || kiosk || !linkHost.isEmpty()) {
-            s.append("    <application>\n");
+        if (!d.foregroundServiceTypes.isEmpty() || kiosk || !linkHost.isEmpty() || personal) {
+            if (personal) {
+                // Every address a personal device is built with is https (PersonalBuild.urlFailures),
+                // and it joins networks outside the house: no plain-http request leaves it.
+                s.append("    <application android:usesCleartextTraffic=\"false\" tools:replace=\"android:usesCleartextTraffic\">\n");
+            } else {
+                s.append("    <application>\n");
+            }
             if (!d.foregroundServiceTypes.isEmpty()) {
                 s.append("        <service android:name=\"net.kckern.daylight.shell.ShellService\"\n");
                 s.append("            android:foregroundServiceType=\"")
                  .append(String.join("|", d.foregroundServiceTypes)).append("\"\n");
                 s.append("            tools:node=\"merge\" />\n");
             }
-            if (kiosk) {
+            if (kiosk && !personal) {
                 s.append("        <activity android:name=\"net.kckern.daylight.shell.MainActivity\"\n");
                 // Stated again here: at target 31 and above lint reads this fragment on its
                 // own and refuses an activity with an intent-filter element and no exported.
                 s.append("            android:exported=\"true\" tools:node=\"merge\">\n");
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
+                s.append("        </activity>\n");
+            }
+            if (kiosk && personal) {
+                // On a phone any app could start an exported setup activity by name, to put
+                // the battery-exemption screen and the permission prompts in front of the
+                // owner. The kiosk window is the launcher, so nothing needs to reach this one.
+                s.append("        <activity android:name=\"net.kckern.daylight.shell.MainActivity\"\n");
+                s.append("            android:exported=\"false\" tools:node=\"merge\" tools:replace=\"android:exported\">\n");
+                s.append("            <intent-filter tools:node=\"removeAll\" />\n");
+                s.append("        </activity>\n");
+                // The window is a phone app's, not a kiosk's: no lock task, and no entry in
+                // a TV launcher. Its filters are replaced by the one a phone launcher reads.
+                s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
+                s.append("            android:exported=\"true\" tools:node=\"merge\" tools:remove=\"android:lockTaskMode\">\n");
+                s.append("            <intent-filter tools:node=\"removeAll\" />\n");
+                s.append("            <intent-filter>\n");
+                s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");
+                s.append("                <category android:name=\"android.intent.category.LAUNCHER\" />\n");
+                s.append("            </intent-filter>\n");
                 s.append("        </activity>\n");
             }
             // A build that lists lockdown CAN be the home app, and installing it changes no

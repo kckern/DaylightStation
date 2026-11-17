@@ -29,6 +29,10 @@ under "What the phone does not have".
 | `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
 | Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
 | Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
+| Drawing over other apps, the page's camera | `SYSTEM_ALERT_WINDOW`, `CAMERA` (marked `kioskOnly` in `webview-host`'s `capability.yml`) | Neither: the phone's generated manifest removes them |
+| Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
+| Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |
+| Plain-http traffic | Allowed (LAN services) | Refused by the platform: `usesCleartextTraffic="false"`, and the build fails on an address setting that is not https |
 | Back button | `reload` | `history`: back through the page history, then out of the app |
 | Other apps on the device | None | Any. Every component another app can reach is described under "Exported components" |
 
@@ -618,15 +622,84 @@ Debugging: `adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)` (t
 `adb shell run-as net.kckern.daylight.phone` for `files/shell.log`,
 `files/payloads/state/` and `files/memos/inbox/`.
 
-## Permissions
+## The exact list
 
-The base set of every build (`INTERNET`, `FOREGROUND_SERVICE`,
-`RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`, `POST_NOTIFICATIONS`,
-`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `ACCESS_WIFI_STATE`,
-`ACCESS_NETWORK_STATE`), the page's (`RECORD_AUDIO`, `CAMERA`,
-`MODIFY_AUDIO_SETTINGS`, `SYSTEM_ALERT_WINDOW`, from `webview-host`), and two for
-the foreground services: `FOREGROUND_SERVICE_MEDIA_PLAYBACK` and
-`FOREGROUND_SERVICE_MICROPHONE`. Fourteen in all; the verifier fails any other.
+A device with `control.bind: none` is held to an exact list of permissions and
+exported components. The build fails (`:shell:checkPhoneMergedManifest`, part of
+`./gradlew build`) and so does `tools/verify-build.mjs phone` when the phone's
+merged manifest or APK holds anything else, or lacks something on the list. The
+list is not written down once: it is the base shell's, plus what each listed
+capability declares in its `capability.yml` (`permissions:` without the entries
+marked `kioskOnly: true`, and `exported:`), plus `permissions:` in the device
+file.
+
+### Permissions
+
+Twelve:
+
+| Permission | From | Why |
+|---|---|---|
+| `INTERNET` | base | The site and the backend |
+| `FOREGROUND_SERVICE` | base | The shell service |
+| `RECEIVE_BOOT_COMPLETED` | base | Start after a restart |
+| `WAKE_LOCK` | base | Playback and uploads with the screen off |
+| `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
+| `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `voice-memo` | Reload and upload when a network returns |
+| `RECORD_AUDIO` | `webview-host`, `voice-memo` | Voice memos. No page is given it (`webview.allowMic` is false) |
+| `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
+| `FOREGROUND_SERVICE_MICROPHONE` | `voice-memo` | The recorder service |
+
+Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
+`REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
+for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
+`capability.yml` as well as setting `webview.allowCamera`.
+
+### Application settings
+
+- `usesCleartextTraffic="false"`: the platform refuses a plain-http request from
+  the app. The build also fails when `webview.startUrl`, `backend.baseUrl`,
+  `heartbeat.logStoreUrl`, `heartbeat.backendUrl` or an entry of `links.origins`,
+  `webview.allowedOrigins` or `webview.bridgeOrigins` resolves to anything but
+  https for a `control.bind: none` device; the message names the setting and
+  never the value.
+- No backup and no transfer: `allowBackup="false"`, and
+  `fullBackupContent` and `dataExtractionRules` (Android 12 and later) both
+  exclude every domain, for cloud backup and for a transfer to a new phone. The
+  link key, the settings and a queued recording stay on the phone they were made
+  on. This holds for the kiosks too.
+- No `lockTaskMode` on any activity and no `LEANBACK_LAUNCHER` category.
+
+### Debug and release builds
+
+`./gradlew :shell:assemblePhoneDebug` builds the debuggable APK, signed with the
+Android debug key. A debuggable build lets `adb shell run-as` read the app's
+private data: the link key, the settings and queued memo audio. That needs ADB
+enabled on the phone, which it is not by default, and the owner's unlock to
+authorize the workstation. It is an accepted limit on the owner's own phone, and
+it is the reason the debugging notes on this page work at all.
+
+`./gradlew :shell:assemblePhoneRelease` builds a release APK that is not
+debuggable. It is signed only when the private tokens file names a keystore
+under `placeholders:`:
+
+```yaml
+placeholders:
+  phone_keystore: "{keystore-file}"          # a path relative to the private file's directory
+  phone_keystore_password: "{store-password}"
+  phone_key_alias: "{key-alias}"
+  phone_key_password: "{key-password}"
+```
+
+Without those four the release APK comes out as `shell-phone-release-unsigned.apk`
+and cannot be installed; the debug build is then the only installable one. The
+build creates no keystore, and none is ever committed. A signed release is
+checked with `node tools/verify-build.mjs phone --release`, which fails an APK
+that is debuggable or signed with the debug key. A release build cannot be
+installed over a debug build (the signatures differ): uninstall first, which
+removes any memo not yet uploaded. With a release build `run-as` does not work,
+so the `run-as` steps of the acceptance runbook need the debug build.
 
 ## Exported components
 
@@ -636,13 +709,17 @@ What another app on the phone can reach, and what stands in the way.
 |---|---|---|
 | `LinkActivity` | Links from notifications, pages and the app's own surfaces | The checks under "Links": origin, page path, install key, a fixed list of effects |
 | `ActionTileService$Tile1` to `$Tile4` | The system binds tiles | `BIND_QUICK_SETTINGS_TILE`: only the system can bind. They take no input from the caller |
-| `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it |
-| `MainActivity` (shell) | The setup activity, startable by name | It reads nothing from the intent |
+| `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it. It shows nothing over the lock screen and has no lock task |
+| `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
 | `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `MemoRecorderService` | Not exported | Started by this app only |
 | `ShellService`, `InstallReceiver` | Not exported | |
+
+Eight components are exported: `LinkActivity`, `KioskActivity`, the four tile
+services (which the system alone can bind), `DaylightMediaService` and
+`BootReceiver`. A ninth, or one of these no longer exported, fails the build.
 
 ## Not covered by JVM tests
 

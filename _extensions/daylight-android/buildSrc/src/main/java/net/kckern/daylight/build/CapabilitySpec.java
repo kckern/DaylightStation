@@ -23,8 +23,26 @@ public final class CapabilitySpec {
         this(name, entry, hasPayload, hasShell, requires, nativeCode, java.util.Collections.<String>emptyList());
     }
 
+    /** Permissions every device that lists the capability gets. */
+    public final List<String> permissions;
+    /** Permissions only a kiosk gets (`{name: ..., kioskOnly: true}`): left out of a personal device's APK. */
+    public final List<String> kioskOnlyPermissions;
+    /** Class names of the components the shell half lets another app reach. */
+    public final List<String> exported;
+
     CapabilitySpec(String name, String entry, boolean hasPayload, boolean hasShell,
                    List<String> requires, boolean nativeCode, List<String> startsAfter) {
+        this(name, entry, hasPayload, hasShell, requires, nativeCode, startsAfter,
+                java.util.Collections.<String>emptyList(), java.util.Collections.<String>emptyList(),
+                java.util.Collections.<String>emptyList());
+    }
+
+    CapabilitySpec(String name, String entry, boolean hasPayload, boolean hasShell,
+                   List<String> requires, boolean nativeCode, List<String> startsAfter,
+                   List<String> permissions, List<String> kioskOnlyPermissions, List<String> exported) {
+        this.permissions = permissions;
+        this.kioskOnlyPermissions = kioskOnlyPermissions;
+        this.exported = exported;
         this.startsAfter = startsAfter;
         this.name = name;
         this.entry = entry;

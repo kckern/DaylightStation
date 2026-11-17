@@ -3,6 +3,12 @@
 # widgets capability, a home-screen widget). Owns the link kind daylight://action/<id>.
 entry: net.kckern.daylight.cap.onetap.OneTapActionsCapability
 permissions: []
+exported:
+  # Bound by the system only (BIND_QUICK_SETTINGS_TILE).
+  - net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1
+  - net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2
+  - net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3
+  - net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4
 # Every surface launches a keyed daylight://action link through the link activity.
 requires:
   - notifications

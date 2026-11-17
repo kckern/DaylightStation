@@ -44,7 +44,34 @@ android {
         }
     }
 
-    buildTypes { release { minifyEnabled false } }
+    // A release build is not debuggable, so `adb run-as` cannot open its data. It is
+    // signed only when the private file names a keystore for the device
+    // (`<id>_keystore`, a path relative to that file, with `<id>_keystore_password`,
+    // `<id>_key_alias` and `<id>_key_password` under `placeholders:`). Without one
+    // the release APK comes out unsigned and cannot be installed; the debug build is
+    // then the only installable one. No keystore is ever created or committed here.
+    signingConfigs {
+        catalog.devices().each { d ->
+            def ks = rootProject.ext.placeholders.find("${d.id}_keystore".toString())
+            if (ks != null && tokensPath) {
+                def storePath = new File(new File(tokensPath.toString()).parentFile, ks.toString())
+                create("${d.id}Release") {
+                    storeFile storePath
+                    storePassword rootProject.ext.placeholders.find("${d.id}_keystore_password".toString())
+                    keyAlias rootProject.ext.placeholders.find("${d.id}_key_alias".toString())
+                    keyPassword rootProject.ext.placeholders.find("${d.id}_key_password".toString())
+                }
+            }
+        }
+    }
+    productFlavors.all { flavor ->
+        def release = signingConfigs.findByName("${flavor.name}Release")
+        // The debug build type has its own signing config, which wins there; this one
+        // reaches the release build type alone.
+        if (release != null) flavor.signingConfig release
+    }
+
+    buildTypes { release { minifyEnabled false; debuggable false } }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
@@ -64,7 +91,7 @@ catalog.devices().each { d ->
     // Rendered when the task runs, not when the build is configured: a device with
     // appLinks resolves its host from the private file, and building another device
     // must not need that value.
-    def xml = { net.kckern.daylight.build.DeviceManifestSource.render(d, rootProject.ext.placeholders) }
+    def xml = { net.kckern.daylight.build.DeviceManifestSource.render(d, rootProject.ext.placeholders, catalog.kioskOnlyPermissions(d)) }
     def gen = tasks.create("generate${d.id.capitalize()}Manifest") {
         inputs.property('xml', providers.provider(xml))
         outputs.dir dir
@@ -91,7 +118,10 @@ def mergedManifestChecks = catalog.devices().collect { d ->
         outputs.upToDateWhen { false }
         doLast {
             if (!merged.isFile()) throw new GradleException("no merged manifest at ${merged}")
-            def failures = net.kckern.daylight.build.MergedManifestCheck.failures(merged.getText('UTF-8'), d)
+            // A device with control.bind none is also held to its exact list of permissions
+            // and exported components; every device to the backup rules.
+            def failures = net.kckern.daylight.build.MergedManifestCheck.failures(merged.getText('UTF-8'), d,
+                    net.kckern.daylight.build.PersonalBuild.expectation(d, catalog))
             if (!failures.isEmpty()) {
                 throw new GradleException("${d.id}: merged manifest check failed:\n  " + failures.join('\n  '))
             }

@@ -5,3 +5,6 @@
 # permission to show them is asked for in the app, on Android 13 and later.
 entry: net.kckern.daylight.cap.notifications.NotificationsCapability
 permissions: []
+exported:
+  # Links from other apps and web pages; every one is checked by the payload.
+  - net.kckern.daylight.cap.notifications.shell.LinkActivity

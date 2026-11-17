@@ -132,9 +132,13 @@ the kind of build it checked. Run it after building and before installing. It
 needs `ANDROID_HOME` and the repo's `node_modules`; with a Java runtime on hand it
 also reads the signing certificate.
 
-Only a debug build exists. Every APK this project produces is debuggable and
-signed with the Android debug key; there is no release signing configuration.
-That is an accepted limit, and what it means is this: on a device with ADB
+The kiosks are installed as debug builds: debuggable, signed with the Android
+debug key. A release build type exists (`assemble<Device>Release`, not
+debuggable); it is signed only when the private file names a keystore for the
+device (`<id>_keystore` and its three companions under `placeholders:`; see
+"Debug and release builds" in `__docs/reference/android/phone.md`) and is
+otherwise unsigned and not installable. `verify-build.mjs <device> --release`
+checks a signed one. For a debug build the limit is this: on a device with ADB
 enabled, `run-as <package>` opens the app's private storage, so anyone with ADB
 access can read the device's control token and the stored settings, secret ones
 (`presence.token`, `lease.credential`) included. ADB is enabled on these devices
@@ -336,6 +340,12 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
      `WRITE_SECURE_SETTINGS`) are not in the shell's manifest. The generated device
      manifest adds them to a build that lists `lockdown`, or `webview-host` with a
      control bind other than `none`.
+   - A device with `control.bind: none` is held to an exact list
+     (`PersonalBuild` in `buildSrc`, `personalBuildFailures` in the verifier): its
+     permissions and exported components are those the base shell and its
+     capabilities declare and no others, cleartext traffic is off, its address
+     settings are https, the setup Activity is not exported, and the kiosk
+     Activity has no lock task and no TV launcher category.
    - A part of a capability that takes hardware an old helper app also uses goes
      behind a `LiveSwitch` (core): a BOOLEAN setting applied when it changes and
      reported in `/status`.
@@ -350,7 +360,8 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 | Key | Meaning |
 |---|---|
 | `entry` | The payload half's `Capability` class |
-| `permissions` | Every Android permission the capability needs; an empty list when none. The verifier compares the APK's set with these lists |
+| `permissions` | Every Android permission the capability needs; an empty list when none. The verifier compares the APK's set with these lists. An entry is a name, or `{name: ..., sdk23: true}`, `{name: ..., maxSdkVersion: 30}`, or `{name: ..., kioskOnly: true}`: a kiosk-only permission is in a kiosk's APK and is removed from the APK of any other device by its generated manifest |
+| `exported` | Class names of the components of the shell half that another app can reach. A device with `control.bind: none` fails its build when its merged manifest exports a component no listed capability names here, or does not export one that is named |
 | `requires` | Capabilities a device must also list, or its build is refused |
 | `native` | `true` when the shell half ships native code; a device with no `abis` is refused |
 | `startsAfter` | Capabilities that must come earlier in a device's list when the device lists them too (capabilities start in list order); the other order is refused. `audio-guard` names `synth` |

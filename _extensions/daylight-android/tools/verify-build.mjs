@@ -7,6 +7,7 @@
 //
 //   node tools/verify-build.mjs portal
 //   node tools/verify-build.mjs piano --legacy   (also compare with tools/legacy-permissions.yml)
+//   node tools/verify-build.mjs phone --release  (the release APK: must not be debuggable or debug-signed)
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -18,6 +19,7 @@ import {
   homeAliasFailures, kioskBasePermissions, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
   foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE, carDeclarationFailures,
+  backupFailures, expectedComponentTable, personalBuildFailures, permissionsFor,
 } from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,7 +44,10 @@ const capabilities = Object.fromEntries(
     .map((name) => [name, parse(readFileSync(join(root, 'capabilities', name, 'capability.yml'), 'utf8')) || {}]),
 );
 
-const apk = join(root, 'shell/build/outputs/apk', id, 'debug', `shell-${id}-debug.apk`);
+const release = process.argv.includes('--release');
+const apk = release
+  ? join(root, 'shell/build/outputs/apk', id, 'release', `shell-${id}-release.apk`)
+  : join(root, 'shell/build/outputs/apk', id, 'debug', `shell-${id}-debug.apk`);
 const failures = [];
 const check = (ok, message) => { if (!ok) failures.push(message); };
 
@@ -74,7 +79,8 @@ for (const entry of [
   ...BASE_PERMISSIONS,
   // Only a kiosk asks for these two; a personal phone's APK must not have them.
   ...kioskBasePermissions(device),
-  ...device.capabilities.flatMap((name) => capabilities[name]?.permissions || []),
+  // Less the ones marked kioskOnly, on a device that is not a kiosk.
+  ...permissionsFor(device, capabilities),
   ...(device.permissions || []),
 ]) {
   const p = expectedPermission(entry);
@@ -110,14 +116,19 @@ const expectedComponents = [...new Set([
 ])].sort();
 failures.push(...componentFailures(parseApkComponents(tree), expectedComponents));
 // Each component's exported flag and the permission that guards it, against the table.
-failures.push(...componentAttributeFailures(tree));
+failures.push(...componentAttributeFailures(tree, expectedComponentTable(device)));
+// A device with control.bind none: exactly its declared exported components, no
+// cleartext traffic, no TV launcher entry, no lock task.
+failures.push(...personalBuildFailures(tree, device, capabilities));
+// No device's data is backed up or carried to another device.
+failures.push(...backupFailures(tree));
 // Installing must add no home candidate: the HOME filter is on a disabled alias only.
 failures.push(...homeAliasFailures(tree, device.capabilities));
 
 // A capability with native code must ship a library for every ABI of the device.
 const entries = execFileSync('unzip', ['-Z1', apk], { encoding: 'utf8' }).split('\n');
 // Only a device that lists android-auto is offered to a car as a media app.
-failures.push(...carDeclarationFailures(tree, device.capabilities, entries));
+failures.push(...carDeclarationFailures(tree, device.capabilities, entries, !release));
 for (const name of device.capabilities) {
   if (!capabilities[name]?.native) continue;
   for (const abi of device.abis || []) {
@@ -198,4 +209,9 @@ try {
   signer = execFileSync(join(sdk, 'build-tools', buildTools, 'apksigner'), ['verify', '--print-certs', apk], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 } catch { /* apksigner needs a Java runtime; without one the signer is reported as not checked */ }
 console.log(`✓ ${id}: ${pkg}, sdk ${minSdk}-${targetSdk}, ${permissions.length} permissions, ${expectedComponents.length} components, capabilities [${device.capabilities.join(', ')}], baked payload ${bakedSha.slice(0, 12)}`);
-console.log(`  build type: ${buildTypeLine(badging, signer)}`);
+const typeLine = buildTypeLine(badging, signer);
+if (release && !/^not debuggable, signed with a key that is not the Android debug key$/.test(typeLine)) {
+  console.error(`✗ --release: the APK is ${typeLine}`);
+  process.exit(1);
+}
+console.log(`  build type: ${typeLine}`);

@@ -23,7 +23,11 @@ public final class DeviceConfigSource {
             CapabilitySpec c = catalog.capability(name);
             if (c.hasPayload) entries.add(c.entry);
         }
-        return render(device, entries, payloadVersion, placeholders.resolveAll(device.defaults, device.id + ".yml"));
+        Map<String, Object> resolved = placeholders.resolveAll(device.defaults, device.id + ".yml");
+        // A device with no control API is somebody's own phone: every address it is built with is https.
+        List<String> plain = PersonalBuild.urlFailures(device, resolved);
+        if (!plain.isEmpty()) throw new CatalogException(String.join("; ", plain));
+        return render(device, entries, payloadVersion, resolved);
     }
 
     static String render(DeviceSpec device, List<String> entries, String payloadVersion) {
