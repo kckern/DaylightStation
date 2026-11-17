@@ -31,6 +31,7 @@ export default function RebootPromptModal({ open, onReboot, onDismiss, onCheckRe
         </h2>
         <p style={{ margin: '0 0 1.5rem', color: '#b9bcce' }}>
           {recovery.status === 'failed' ? 'Could not restart. Restart is unavailable, was rejected, or is blocked by current safety settings. You can retry.'
+            : recovery.status === 'expired' ? 'Could not verify the earlier restart because its recovery evidence expired or was invalid. This does not prove the restart failed. You can request a fresh restart.'
             : recovery.status === 'requested' || recovery.status === 'unverified' ? 'Restart requested. Recovery has not been verified. Check again after the device restarts.'
               : recovery.status === 'verified' ? 'A new device boot and fresh healthy page heartbeat were observed.'
                 : recovery.status === 'checking' ? 'Checking current safety settings before requesting restart…'
@@ -47,7 +48,7 @@ export default function RebootPromptModal({ open, onReboot, onDismiss, onCheckRe
               cursor: 'pointer', minWidth: '9rem',
             }}
           >
-            {['requested', 'unverified'].includes(recovery.status) ? 'Check recovery' : recovery.status === 'failed' ? 'Retry reboot' : 'Reboot now'}
+            {['requested', 'unverified'].includes(recovery.status) ? 'Check recovery' : ['failed', 'expired'].includes(recovery.status) ? 'Retry reboot' : 'Reboot now'}
           </button>
           <button
             type="button"

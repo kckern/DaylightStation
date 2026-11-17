@@ -75,6 +75,19 @@ it('retains pending legacy incident metadata across disk reopen without changing
   await reporter.observe({health:[{...row,acknowledged:true,blocked:true,lastContactAt:7000}],nowMs:7000});
   expect(alerts.map(event=>event.type)).toEqual(['enforcement-unverified','enforcement-restored']);
   expect((await reporter.incidents())[0]).toMatchObject({status:'recovered',alert:{status:'accepted'},recovery:{status:'accepted'}});
+  // A later outage/recovery keeps the same Stop revision but a new durable identity.
+  await repository.close();repository=datastore.incidentRepository();
+  const later=[];let accept=false;
+  const options=()=>({repository,monotonicNow:()=>now,notifyIncident:async event=>{later.push(event);return {accepted:accept,delivered:null};}});
+  reporter=new EnforcementIncidentReporter(options());
+  now=9000;await reporter.observe({health:[row],nowMs:now});
+  now=14000;await reporter.observe({health:[row],nowMs:now});
+  await repository.close();repository=datastore.incidentRepository();
+  reporter=new EnforcementIncidentReporter(options());accept=true;
+  now=16000;await reporter.observe({health:[row],nowMs:now});
+  expect(later).toHaveLength(2);expect(later[0].incidentId).toBe(later[1].incidentId);
+  expect(later[0].incidentId).not.toBe(alerts[0].incidentId);
+  expect((await reporter.incidents())[0]).toMatchObject({episode:2,status:'accepted',history:[{status:'recovered'}]});
   expect(await readFile(datastore.path(),'utf8')).toBe(before);
  }finally{await repository?.close();await rm(dir,{recursive:true,force:true});}
 });
@@ -113,4 +126,38 @@ it('records the capability failure that follows an initially pending Stop',async
  const h=fixture(),reporter=new EnforcementIncidentReporter(h.options);
  await h.observe(reporter,1000,{...h.row,error:null});await h.observe(reporter,6000,h.row);
  expect(h.parentAlerts[0].error).toBe('CAPABILITY_UNAVAILABLE');
+});
+
+it.each([true,false])('starts a durable new outage episode after recovery accepted=%s',async accepted=>{
+ const h=fixture(),attempts=[];
+ const options={...h.options,notifyIncident:async event=>{attempts.push(event);return {accepted:event.type==='enforcement-unverified'||accepted,delivered:null};}};
+ let reporter=new EnforcementIncidentReporter(options);
+ await h.observe(reporter,1000);await h.observe(reporter,6000);
+ await h.observe(reporter,8000,{...h.row,blocked:true,acknowledged:true,lastContactAt:8000,error:null});
+ await h.observe(reporter,9000);
+ const current=(await reporter.incidents())[0];
+ expect(current).toMatchObject({status:'watching',firstMissingAt:9000,episode:2});
+ expect(current.recoveredAt).toBeUndefined();
+ expect(current.history).toHaveLength(1);
+ expect(current.history[0]).toMatchObject({recoveredAt:new Date(8000).toISOString(),recovery:{status:accepted?'accepted':'failed'}});
+ reporter=new EnforcementIncidentReporter(options);
+ await h.observe(reporter,13999);expect(attempts).toHaveLength(2);
+ await h.observe(reporter,14000);await h.observe(reporter,16000);
+ expect(attempts.map(x=>x.type)).toEqual(['enforcement-unverified','enforcement-restored','enforcement-unverified']);
+ expect(attempts[2].incidentId).not.toBe(attempts[0].incidentId);
+ expect((await reporter.incidents())[0]).toMatchObject({episode:2,status:'accepted'});
+ await h.observe(reporter,18000,{...h.row,blocked:true,acknowledged:true,lastContactAt:18000,error:null});
+ expect(attempts[3].incidentId).toBe(attempts[2].incidentId);
+});
+it('retries a later episode with the same durable notification identity across restart',async()=>{
+ const h=fixture(),attempts=[];let accepted=true;
+ const options={...h.options,notifyIncident:async event=>{attempts.push(event);return {accepted,delivered:null};}};
+ let reporter=new EnforcementIncidentReporter(options);
+ await h.observe(reporter,1000);await h.observe(reporter,6000);
+ await h.observe(reporter,8000,{...h.row,blocked:true,acknowledged:true,lastContactAt:8000,error:null});
+ await h.observe(reporter,9000);accepted=false;await h.observe(reporter,14000);
+ reporter=new EnforcementIncidentReporter(options);accepted=true;await h.observe(reporter,16000);
+ expect(attempts).toHaveLength(4);
+ expect(attempts[2].incidentId).toBe(attempts[3].incidentId);
+ expect(attempts[2].incidentId).not.toBe(attempts[0].incidentId);
 });

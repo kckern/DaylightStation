@@ -26,6 +26,12 @@ preferred HOME or status-bar restriction: these fields are `null`, with
 An absent owner reports `containment-unavailable`. A future narrow, trusted
 privileged evidence adapter must supply fresh platform readback for the missing
 properties; saved desired settings, setter return values and HTTP 200 are not evidence.
+A committed maintenance deadline records the requested interval, not a successful
+release. Authority is rechecked after persistence and platform readback, and
+immediately before each Android release setter, including between clearing the
+lock-task packages and enabling the status bar. Revocation withholds remaining
+effects and reports refusal; it does not erase the persisted request or claim
+physical release. Native UNKNOWN and Stop still deny permission.
 No SystemUI hiding or broad Settings allowlist is added. Existing IME selection
 and the specifically delegated Bluetooth pairing dialog remain available.
 
@@ -1104,7 +1110,11 @@ subsequent checks require a user tap, with no automatic command retries. Verific
 requires the same device, a larger known OS boot count, and a visible healthy native
 page beat no older than five seconds, within ten minutes of the request. A changed
 payload/process or old “recovered” outcome cannot substitute. Failed/CORS-blocked
-readback stays unverified. Learner/game persistence remains with its existing owners;
+readback stays unverified while the correlation remains valid. Expired or invalid
+correlation is cleared on check or remount and offers an explicit **Retry reboot**.
+That state means failed proof, not proof the earlier reboot failed. A fresh attempt
+is always user-triggered and re-reads native safety; expiry never reboots a device.
+Learner/game persistence remains with its existing owners;
 the prompt never resumes content, resets work, or promises unsaved work was saved.
 
 This is source/build evidence only. Native safety remains intentionally UNKNOWN

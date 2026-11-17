@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {evaluateDrillEvidence} from '../../../live/flow/supervision/drillEvidence.mjs';
+import {evaluateDrillEvidence,completedRollbackEvidence} from '../../../live/flow/supervision/drillEvidence.mjs';
 const now=Date.parse('2026-11-16T12:00:10-08:00');
 function fixture(){return {runId:'drill-1',nowMs:now,phase:'stopped',sinceMs:now-10000,devices:[{deviceId:'portal',artifactId:'native-apk-sha',capabilities:['browser','portal-keys'],checks:['input-ceased']}],revisions:{portal:2},consumers:['browser','portal-keys'].map(capability=>({deviceId:'portal',capability,commandRevision:2,desiredBlocked:true,blocked:true,acknowledged:true,lastContactAt:now})),observations:[{runId:'drill-1',deviceId:'portal',commandRevision:2,phase:'stopped',check:'input-ceased',passed:true,observedAt:'2026-11-16T12:00:09-08:00',observer:'parent',artifactId:'native-apk-sha'}]};}
 describe('physical drill evidence',()=>{
@@ -19,3 +19,15 @@ it('requires normal current ACKs and physical activity evidence before the real 
 it('records unreachable HA failure independently from successful physical-off certification',()=>{const f=haFixture();f.phase='offline';f.observations[0].phase='offline';f.consumers[0].acknowledged=false;f.consumers[0].detail={verified:false};expect(evaluateDrillEvidence(f).rows[0]).toMatchObject({acknowledged:false,physicallyObserved:true});expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
 
 it('rejects physical observations from a different installed artifact',()=>{const f=fixture();f.observations[0].artifactId='old-apk-sha';expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+
+it.each([
+ ['2026-11-16T12:00:10-08:00', true],
+ ['2026-11-16T20:00:10Z', true],
+ ['2026-11-16T20:00:09.999Z', true],
+ ['2026-11-16T20:00:10.001Z', false],
+ ['2026-11-16T20:00:10', false],
+ ['invalidZ', false],
+ [null, false],
+])('requires offset-aware completed rollback evidence: %s', (testedAt, expected) => {
+ expect(completedRollbackEvidence({artifactId:'reviewed',ledgerPreserved:true,testedAt}, now)).toBe(expected);
+});

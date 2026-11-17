@@ -94,7 +94,8 @@ contact remains unverified. A native ACK alone displays “acknowledged (stopped
 and does not establish that power, video, audio or input physically ceased.
 
 After 5,000 ms of missing enforcement, the same Stop owner records an incident
-per device, capability and command revision. The configured runtime keeps this
+per device, capability and command revision, with a durable episode number for
+recurrent outages under the same revision. The configured runtime keeps this
 metadata in `enforcementIncidents` in its existing ledger, outside the assertion
 outbox. Legacy shutdown uses `shutdown/enforcement-incidents.json`, a separate
 kernel-locked diagnostic sidecar exposed by its existing datastore; the finite
@@ -113,7 +114,8 @@ enforcement_alerts:
 When omitted, the established ConfigService head-of-household resolver supplies
 the recipient. An absent recipient or mobile push target leaves delivery visibly
 pending. The alert adapter calls the existing NotificationService with an
-explicit required push channel and a stable incident/type dedupe key. Failed or
+explicit required push channel and a stable episode/type dedupe key. The first
+episode retains its legacy incident key; later episodes have distinct IDs. Failed or
 suppressed sends remain pending and retry that key; in-app delivery cannot count
 as parent push acceptance. Incident storage or notification failures never
 withhold an actuator Stop and are surfaced as `INCIDENT_REPORTING_UNAVAILABLE`
@@ -126,7 +128,11 @@ HA rejection remains failed. `confirmed` requires independent delivery evidence
 from the injected port; the current HA adapter cannot provide that evidence.
 Recovery is a separate event after a fresh, matching blocked acknowledgement;
 a release or a newer revision cannot claim recovery for an older incident.
-Pending alerts and recoveries survive backend restart. As with other external
+A renewed loss starts a new 5,000 ms observation window, clears the current
+recovered state, and archives the prior episode including delivery evidence.
+A pending recovery from that prior episode is superseded and never retried.
+Active-episode alerts and recoveries survive backend restart with the same
+episode identity; a prior accepted notification cannot suppress a later outage. As with other external
 side effects, a crash between transport acceptance and durable recording can
 require retrying the same dedupe key; the push tag also stays stable.
 

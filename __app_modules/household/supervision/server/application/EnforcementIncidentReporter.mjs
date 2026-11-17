@@ -1,6 +1,8 @@
 import {serialQueue} from '../../shared/contracts.mjs';
 
 const incidentKey=row=>JSON.stringify([row.deviceId,row.capability,row.commandRevision]);
+// Preserve legacy episode-one identities already present in the notification ledger.
+const notificationId=incident=>(incident.episode??1)===1?incident.incidentId:`${incident.incidentId}:episode:${incident.episode}`;
 const freshAck=(row,now)=>row?.acknowledged===true && !row.error && row.blocked===true && row.detail?.verified!==false && Number.isFinite(row.lastContactAt) && now>=row.lastContactAt && now-row.lastContactAt<=5000;
 /** Durable diagnostic metadata only. The Stop owner remains the sole command authority. */
 export class EnforcementIncidentReporter {
@@ -20,12 +22,20 @@ export class EnforcementIncidentReporter {
         if(blocked!==true)continue;
         if(freshAck(row,nowMs)){
           this.#elapsed.delete(id);
-          if(incident?.status==='watching')delete state.enforcementIncidents[id];
+          if(incident?.status==='watching' && !incident.history?.length)delete state.enforcementIncidents[id];
+          else if(incident?.status==='watching'){incident.status='recovered';incident.recoveredAt=new Date(nowMs).toISOString();}
           else if(incident && !incident.recoveredAt)incident.recoveredAt=new Date(nowMs).toISOString();
           continue;
         }
-        if(!incident){
-          incident=state.enforcementIncidents[id]={incidentId:id,deviceId:row.deviceId,capability:row.capability,commandRevision:row.commandRevision,firstMissingAt:nowMs,status:'watching',error:row.error??'ENFORCEMENT_UNVERIFIED',buildIdentity:row.detail?.buildIdentity??null,alert:{status:'pending'},recovery:{status:'pending'}};
+        if(!incident || incident.recoveredAt){
+          const history=incident?.history??[];
+          const episode=(incident?.episode??(incident?1:0))+1;
+          if(incident){
+            const {history:previousHistory,...previous}=incident;
+            history.push(previous); // Retain delivery evidence; superseded recovery is never retried.
+          }
+          this.#elapsed.delete(id);
+          incident=state.enforcementIncidents[id]={incidentId:id,episode,history,deviceId:row.deviceId,capability:row.capability,commandRevision:row.commandRevision,firstMissingAt:nowMs,status:'watching',error:row.error??'ENFORCEMENT_UNVERIFIED',buildIdentity:row.detail?.buildIdentity??null,alert:{status:'pending'},recovery:{status:'pending'}};
         }
         if(incident.status==='watching'){
           if(row.error)incident.error=row.error;
@@ -39,18 +49,18 @@ export class EnforcementIncidentReporter {
     });
     const state=await this.#repository.read();
     for(const incident of Object.values(state.enforcementIncidents??{})){
-      if(incident.status==='watching')continue;
+      if(incident.status==='watching' || !incident.at)continue;
       if(!['accepted','confirmed'].includes(incident.alert.status))await this.#deliver(incident,'alert',nowMs);
       const latest=(await this.#repository.read()).enforcementIncidents[incident.incidentId];
       if(latest.recoveredAt && ['accepted','confirmed'].includes(latest.alert.status) && !['accepted','confirmed'].includes(latest.recovery.status))await this.#deliver(latest,'recovery',nowMs);
     }
   }
   async #deliver(incident,kind,nowMs){
-    const key=`${incident.incidentId}:${kind}`,mono=this.#monotonicNow();
+    const key=`${notificationId(incident)}:${kind}`,mono=this.#monotonicNow();
     if(this.#attempts.has(key) && mono-this.#attempts.get(key)<2000)return;
     this.#attempts.set(key,mono);
     const type=kind==='alert'?'enforcement-unverified':'enforcement-restored';
-    const event={incidentId:incident.incidentId,type,deviceId:incident.deviceId,capability:incident.capability,commandRevision:incident.commandRevision,error:kind==='alert'?incident.error:null,at:kind==='alert'?incident.at:incident.recoveredAt,buildIdentity:incident.buildIdentity};
+    const event={incidentId:notificationId(incident),episode:incident.episode??1,type,deviceId:incident.deviceId,capability:incident.capability,commandRevision:incident.commandRevision,error:kind==='alert'?incident.error:null,at:kind==='alert'?incident.at:incident.recoveredAt,buildIdentity:incident.buildIdentity};
     await this.#repository.transaction(state=>{state.enforcementIncidents[incident.incidentId].status=kind==='alert'?'delivery-pending':'recovery-pending';});
     let result;
     try{result=await this.#notify?.(event);}catch{result={accepted:false,delivered:false,error:'NOTIFICATION_FAILED'};}

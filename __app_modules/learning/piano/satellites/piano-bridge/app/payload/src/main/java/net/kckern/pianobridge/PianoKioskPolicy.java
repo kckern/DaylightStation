@@ -72,8 +72,13 @@ public final class PianoKioskPolicy {
         deadline=until;
         monotonicDeadline=elapsed.getAsLong()+Math.max(0, until-now);
         if (until>0) {
-            try { if (Boolean.TRUE.equals(port.read().owner)) port.release(); }
-            catch (RuntimeException e) { store.write(0); deadline=0; throw e; }
+            // A durable request is not authority. Both persistence and readback can
+            // span revocation; retain the requested deadline but refuse the release.
+            if (!maintenance().allowed) throw new IllegalStateException("native safety revoked");
+            Readback current=port.read();
+            if (!maintenance().allowed) throw new IllegalStateException("native safety revoked");
+            if (!Boolean.TRUE.equals(current.owner)) throw new IllegalStateException("device owner unavailable");
+            port.release();
         } else enforce();
     }
     public synchronized Maintenance maintenance() {

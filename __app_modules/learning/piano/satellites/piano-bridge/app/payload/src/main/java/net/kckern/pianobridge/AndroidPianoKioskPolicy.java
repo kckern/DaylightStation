@@ -13,6 +13,7 @@ import android.content.pm.ResolveInfo;
 import android.os.SystemClock;
 import android.provider.Settings;
 import java.util.Arrays;
+import java.util.function.BooleanSupplier;
 
 /** Android boundary. No hidden/reflection API or setter-as-readback substitute. */
 final class AndroidPianoKioskPolicy implements PianoKioskPolicy.Port {
@@ -81,8 +82,16 @@ final class AndroidPianoKioskPolicy implements PianoKioskPolicy.Port {
         }
     }
     public void release() {
+        releaseWithAuthority(core::nativeRunAllowed,
+                () -> dpm.setLockTaskPackages(admin, new String[0]),
+                () -> dpm.setStatusBarDisabled(admin, false));
+    }
+    // The actual Android release path, with setters injected for JVM interleaving tests.
+    static void releaseWithAuthority(BooleanSupplier allowed, Runnable clearPackages, Runnable enableStatusBar) {
         // Empty allowlist exits this owner's lock task without broadly whitelisting Settings.
-        dpm.setLockTaskPackages(admin, new String[0]);
-        dpm.setStatusBarDisabled(admin, false);
+        if (!allowed.getAsBoolean()) throw new IllegalStateException("native safety revoked");
+        clearPackages.run();
+        if (!allowed.getAsBoolean()) throw new IllegalStateException("native safety revoked");
+        enableStatusBar.run();
     }
 }

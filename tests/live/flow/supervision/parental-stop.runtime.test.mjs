@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
-import {evaluateDrillEvidence} from './drillEvidence.mjs';
+import {evaluateDrillEvidence,completedRollbackEvidence} from './drillEvidence.mjs';
 // This test changes household state ONLY during an explicitly arranged, approved drill.
 const base=process.env.SUPERVISION_DRILL_BASE_URL;
 const views=JSON.parse(process.env.SUPERVISION_DRILL_VIEWS??'[]');
@@ -32,7 +32,7 @@ test.beforeAll(async()=>{
  const labels=new Set(views.map(view=>view.label));for(const label of Object.keys(physical))if(!labels.has(label))throw Error(`Missing drill coverage: ${label}`);
  for(const view of views)if(!view.deviceId || !view.path || !view.childSelector || !view.requiredCapabilities?.length)throw Error('Every view needs a registered device, path, child selector and explicit required capabilities.');
  const record=await evidence();
- if(!record.runId || !record.artifacts?.frontend || !record.artifacts?.backend || !record.rollback?.artifactId || !Number.isFinite(Date.parse(record.rollback.testedAt)) || record.rollback.ledgerPreserved!==true)throw Error('Record candidate build identities and an independently tested rollback preserving the Stop ledger.');
+ if(!record.runId || !record.artifacts?.frontend || !record.artifacts?.backend || !completedRollbackEvidence(record.rollback,Date.now()))throw Error('Record candidate build identities and an independently tested rollback preserving the Stop ledger.');
  for(const device of inventory()){
   const artifact=record.artifacts.devices?.[device.deviceId];
   if(!artifact?.installedVersion || !artifact?.candidateId || artifact.pairingPrepared!==true || artifact.signingLineageVerified!==true)throw Error(`Missing version/signing/pairing preflight for ${device.deviceId}`);

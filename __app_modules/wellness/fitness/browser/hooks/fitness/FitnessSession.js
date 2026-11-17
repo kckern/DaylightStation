@@ -3138,6 +3138,9 @@ export class FitnessSession {
       if (this.treasureBox) {
         this.treasureBox.stop();
       }
+      // Close active pause metadata only after final tick collection (which must
+      // still suppress samples throughout the transport gap).
+      this.transportPause = null;
       sessionData = this.summary;
       if (this.treasureBox) {
         // MEMORY LEAK FIX: Clear accumulated timeline data on session end

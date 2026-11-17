@@ -85,6 +85,8 @@ messages, socket OPEN, and a retained healthy watchdog snapshot cannot. Missing
 timeline slots are nulls with explicit gap intervals; recovery never backfills
 biometric observations or awards the silent interval. Manual End, parent Stop,
 and expiration finalize the prior session and prevent its automatic continuation.
+The actual final snapshot clears active `transportPause` at both summary and
+metadata levels, while preserving closed gaps, incident events and the end reason.
 Healthy transport with an empty roster keeps the ordinary timeout.
 
 ## Physical acceptance (release gate)

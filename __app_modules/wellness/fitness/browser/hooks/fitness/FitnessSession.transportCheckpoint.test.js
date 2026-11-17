@@ -35,6 +35,7 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 describe('transport checkpoints', () => {
   beforeEach(() => {
     wall = Date.parse('2026-11-16T20:00:00Z'); mono = 10000;
+    vi.spyOn(console, 'error').mockImplementation(() => {}); // existing end-session stack diagnostic
     vi.spyOn(Date, 'now').mockImplementation(() => wall);
     vi.spyOn(performance, 'now').mockImplementation(() => mono);
   });
@@ -80,10 +81,14 @@ describe('transport checkpoints', () => {
 
   it('manual end, Stop or expired resume window prevents automatic resume', () => {
     for (const reason of ['manual', 'force_break']) {
-      const { session } = fixture();
+      const { session, persist } = fixture();
       lose(session);
       session.activeDeviceIds.clear(); // devices may already have been pruned
       session.endSession(reason);
+      const final = persist.mock.calls.at(-1)[0];
+      expect(final).toMatchObject({ finalized: true, endReason: reason, transportPause: null, metadata: { transportPause: null, endReason: reason } });
+      expect(final.transportGaps[0]).toMatchObject({ incidentId: 'incident-1', endedAt: wall });
+      expect(final.events.some(e => e.type === 'fitness_transport' && e.data.incidentId === 'incident-1')).toBe(true);
       session.ingestData({ deviceId: '1001', type: 'heart_rate', heartRate: 120 });
       expect(session.deviceManager.getAllDevices()).toHaveLength(0);
       session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: wall });

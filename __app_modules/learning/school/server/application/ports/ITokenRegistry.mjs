@@ -117,6 +117,11 @@ export class ITokenRegistry {
     throw new Error('ITokenRegistry.revoke must be implemented');
   }
 
+  /** Atomically reserve capacity until expiresAt; never increment useCount. */
+  async reserveMountUse(token, opts) { throw new Error('ITokenRegistry.reserveMountUse must be implemented'); }
+  /** Idempotently commit or release a bound reservation in the same durable record. */
+  async settleMountUse(token, opts) { throw new Error('ITokenRegistry.settleMountUse must be implemented'); }
+
   /**
    * Count one USE of this token's panel code, and say what the record now holds.
    *
@@ -131,11 +136,6 @@ export class ITokenRegistry {
    * @param {{ at?: string }} [opts] - ISO use time (injected, not read from a clock here)
    * @returns {Promise<object|null>} the updated record, or null when unknown
    */
-  /** Atomically reserve capacity until expiresAt; never increment useCount. */
-  async reserveMountUse(token, opts) { throw new Error('ITokenRegistry.reserveMountUse must be implemented'); }
-  /** Idempotently commit or release a bound reservation in the same durable record. */
-  async settleMountUse(token, opts) { throw new Error('ITokenRegistry.settleMountUse must be implemented'); }
-
   async recordUse(token, opts) {
     throw new Error('ITokenRegistry.recordUse must be implemented');
   }

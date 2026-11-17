@@ -7,14 +7,16 @@ public class PianoKioskPolicyTest {
     static class Port implements PianoKioskPolicy.Port {
         PianoKioskPolicy.Readback state = new PianoKioskPolicy.Readback(true, true, true, true, true, true, true);
         int applies, releases;
-        public PianoKioskPolicy.Readback read() { return state; }
+        Runnable afterRead = () -> {};
+        public PianoKioskPolicy.Readback read() { afterRead.run(); return state; }
         public void apply() { applies++; }
         public void release() { releases++; }
     }
     static class Store implements PianoKioskPolicy.Store {
         long deadline;
+        Runnable afterWrite = () -> {};
         public long read() { return deadline; }
-        public void write(long value) { deadline = value; }
+        public void write(long value) { deadline = value; afterWrite.run(); }
     }
     final Port port = new Port();
     final Store store = new Store();
@@ -88,5 +90,23 @@ public class PianoKioskPolicyTest {
         port.state = new PianoKioskPolicy.Readback(false, true, true, true, true, true, true);
         assertEquals("containment-unavailable", p.enforce().reason);
         assertEquals(0, port.applies);
+    }
+    @Test public void revokedAuthorityDuringPersistenceWithholdsRelease() throws Exception {
+        PianoKioskPolicy p = policy();
+        store.afterWrite = () -> running = false;
+        try { p.setMaintenanceUntil(2000); fail("release reported success after revocation"); }
+        catch (IllegalStateException expected) { }
+        assertEquals(0, port.releases);
+        assertEquals(2000, store.deadline);
+        assertFalse(p.maintenance().allowed);
+    }
+    @Test public void revokedAuthorityDuringReadbackWithholdsRelease() throws Exception {
+        PianoKioskPolicy p = policy();
+        port.afterRead = () -> running = false;
+        try { p.setMaintenanceUntil(2000); fail("release reported success after revocation"); }
+        catch (IllegalStateException expected) { }
+        assertEquals(0, port.releases);
+        assertEquals(2000, store.deadline);
+        assertFalse(p.maintenance().allowed);
     }
 }

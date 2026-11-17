@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { DEFAULT_BEAT_URL } from './useRenderWatchdog.js';
-import { SNOOZE_KEY, RECOVERY_KEY, shouldPrompt, recoveryVerified } from './jankRebootLogic.js';
+import { SNOOZE_KEY, RECOVERY_KEY, shouldPrompt, recoveryVerified, recoveryRequestValid } from './jankRebootLogic.js';
 
 // Stable dependencies: a normal render must never restart the observation window.
 const wallNow = () => Date.now();
@@ -22,7 +22,13 @@ function readStored(key) {
   try { return window.localStorage?.getItem(key); } catch { return null; }
 }
 function readRequest() {
-  try { return JSON.parse(readStored(RECOVERY_KEY)); } catch { return null; }
+  const stored = readStored(RECOVERY_KEY);
+  if (stored == null) return null;
+  // Keep invalid-but-present records actionable, including JSON false and zero.
+  try {
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
 }
 
 /** User-requested recovery only. No reload, navigation, work reset, or automatic reboot.
@@ -90,13 +96,24 @@ export function useJankRebootPrompt({
   const onCheckRecovery = useCallback(async () => {
     if (busy.current || !request.current) return;
     busy.current = true;
+    const expireRequest = () => {
+      request.current = null;
+      try { window.localStorage.removeItem(RECOVERY_KEY); } catch { /* retry remains available */ }
+      show({ status: 'expired' });
+    };
+    const correlatedTime = () => clockOrigin.current.wall + elapsedNow() - clockOrigin.current.elapsed;
     try {
+      if (!recoveryRequestValid(request.current, correlatedTime())) { expireRequest(); return; }
       const evidence = await readStatus();
-      const correlatedNow = clockOrigin.current.wall + elapsedNow() - clockOrigin.current.elapsed;
+      const correlatedNow = correlatedTime();
+      if (!recoveryRequestValid(request.current, correlatedNow)) { expireRequest(); return; }
       const verified = recoveryVerified(request.current, evidence, correlatedNow);
       show({ status: verified ? 'verified' : 'unverified' });
       if (verified) { window.localStorage.removeItem(RECOVERY_KEY); request.current = null; }
-    } catch { show({ status: 'unverified' }); }
+    } catch {
+      if (!recoveryRequestValid(request.current, correlatedTime())) expireRequest();
+      else show({ status: 'unverified' });
+    }
     finally { busy.current = false; }
   }, [readStatus, elapsedNow, show]);
 

@@ -25,3 +25,12 @@ export function evaluateDrillEvidence({runId,nowMs,phase,sinceMs,devices,revisio
   });
   return {allEnforced:rows.length>0 && rows.every(row=>row.acknowledged && row.physicallyObserved),rows};
 }
+
+/** Rollback evidence must already be completed at the preflight clock. */
+export function completedRollbackEvidence(rollback, nowMs) {
+  const testedAt = rollback?.testedAt;
+  const time = Date.parse(testedAt);
+  return Boolean(rollback?.artifactId && rollback.ledgerPreserved === true
+    && typeof testedAt === 'string' && /(Z|[+-]\d{2}:\d{2})$/.test(testedAt)
+    && Number.isFinite(time) && Number.isFinite(nowMs) && time <= nowMs);
+}

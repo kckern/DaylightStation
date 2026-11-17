@@ -115,3 +115,36 @@ describe('requested recovery', () => {
     expect(result.current.recovery.status).toBe('failed');
   });
 });
+
+describe('expired recovery correlation', () => {
+ it('expires in process to an explicit manual retry and re-reads safety before retry', async () => {
+  const reboot = vi.fn().mockReturnValue(true), readStatus = vi.fn().mockResolvedValue(healthy);
+  let recovery;
+  function Harness() { recovery = useJankRebootPrompt({ reboot, readStatus }); return <RebootPromptModal {...recovery} />; }
+  render(<Harness />);
+  await act(async () => { await recovery.onReboot(); });
+  frame(600001);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check recovery' })); });
+  expect(screen.getByText(/could not verify the earlier restart/i)).toBeTruthy();
+  expect(localStorage.getItem('piano.jankReboot.request')).toBeNull();
+  expect(reboot).toHaveBeenCalledTimes(1);
+  readStatus.mockResolvedValue({ ...healthy, nativeRecoveryAllowed: false });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry reboot' })); });
+  expect(readStatus).toHaveBeenCalledTimes(2);
+  expect(reboot).toHaveBeenCalledTimes(1);
+  expect(recovery.recovery.status).toBe('failed');
+ });
+ it.each(['expired','invalid','malformed','false','zero'])('offers manual retry after remount of %s persisted correlation', async kind => {
+  const record = { deviceId: healthy.deviceId, bootCount: 12, bootIdentitySource: healthy.bootIdentitySource, requestedAtMs: 399999 };
+  if (kind === 'invalid') record.requestedAtMs = 'invalid';
+  localStorage.setItem('piano.jankReboot.request', kind==='malformed' ? '{' : kind==='false' ? 'false' : kind==='zero' ? '0' : JSON.stringify(record));
+  const reboot = vi.fn().mockReturnValue(true), readStatus = vi.fn().mockResolvedValue(healthy);
+  function Harness() { return <RebootPromptModal {...useJankRebootPrompt({ reboot, readStatus })} />; }
+  render(<Harness />); await act(async () => {});
+  expect(screen.getByRole('button', { name: 'Retry reboot' })).toBeTruthy();
+  expect(readStatus).not.toHaveBeenCalled();expect(reboot).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry reboot' })); });
+  expect(readStatus).toHaveBeenCalledTimes(1);expect(reboot).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(localStorage.getItem('piano.jankReboot.request')).requestedAtMs).toBe(Date.now());
+ });
+});

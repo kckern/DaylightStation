@@ -33,13 +33,19 @@ export function shouldPrompt({ sustainedLowSec, sustainSec, snoozeUntilMs, nowMs
 export const RECOVERY_KEY = 'piano.jankReboot.request';
 export const RECOVERY_MAX_AGE_MS = 10 * 60 * 1000;
 
+/** A bounded, usable request correlation; expiry is failed proof, not proof of reboot failure. */
+export function recoveryRequestValid(request, nowMs) {
+  return Boolean(request && Number.isFinite(nowMs) && Number.isFinite(request.requestedAtMs)
+    && nowMs >= request.requestedAtMs && nowMs - request.requestedAtMs <= RECOVERY_MAX_AGE_MS
+    && typeof request.deviceId === 'string' && request.deviceId.length > 0
+    && request.bootIdentitySource === 'settings.global.boot_count'
+    && Number.isInteger(request.bootCount) && request.bootCount >= 0);
+}
+
 /** Same device, actual OS boot counter, and a currently healthy native-ingested beat.
  * A process restart, accepted command, old outcome, or missing readback proves nothing. */
 export function recoveryVerified(request, evidence, nowMs) {
-  return Boolean(request && evidence
-    && Number.isFinite(request.requestedAtMs)
-    && nowMs >= request.requestedAtMs && nowMs - request.requestedAtMs <= RECOVERY_MAX_AGE_MS
-    && typeof request.deviceId === 'string' && request.deviceId.length > 0
+  return Boolean(recoveryRequestValid(request, nowMs) && evidence
     && evidence.deviceId === request.deviceId
     && request.bootIdentitySource === 'settings.global.boot_count'
     && evidence.bootIdentitySource === request.bootIdentitySource
