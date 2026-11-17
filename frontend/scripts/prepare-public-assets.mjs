@@ -18,7 +18,7 @@
  * (the Dockerfile sets it): a dev box without ffmpeg can still build.
  */
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,6 +126,20 @@ export function prepareIcons({ repoRoot = REPO_ROOT, frontendRoot = FRONTEND_ROO
   return [PATHS.iconsDir, PATHS.schoolIconsDir]
     .filter((dirRel) => existsSync(join(repoRoot, dirRel)))
     .flatMap((dirRel) => prepareIconSet(dirRel, { repoRoot, frontendRoot }));
+}
+
+/**
+ * Generated folders that source modules glob at import (flags, piano and School
+ * icons), relative to the repo, that are missing or hold no SVG. A checkout that
+ * never ran prebuild loads empty registries, and consumer tests then fail on a
+ * missing icon or flag with no word about why.
+ */
+export function missingSourceAssets({ repoRoot = REPO_ROOT } = {}) {
+  const dirs = [PATHS.flagsDir, `${PATHS.iconsDir}/svg/generated`, `${PATHS.schoolIconsDir}/svg/generated`];
+  return dirs.filter((dir) => {
+    const abs = join(repoRoot, dir);
+    return !existsSync(abs) || !readdirSync(abs).some((name) => name.endsWith('.svg'));
+  });
 }
 
 function haveFfmpeg(ffmpeg) {
