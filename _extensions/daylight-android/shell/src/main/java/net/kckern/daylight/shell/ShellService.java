@@ -8,11 +8,10 @@ import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
 
+import net.kckern.daylight.api.ShellComponents;
 import net.kckern.daylight.api.ShellServices;
 
 import java.io.File;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The shell's foreground service. It owns only what Android binds to the installed
@@ -26,8 +25,6 @@ public class ShellService extends Service {
     private static final int NOTIFICATION_ID = 2;
 
     private static volatile ShellService INSTANCE;
-    /** Shell-owned objects a payload may ask for by name (accessibility service, native engine). */
-    private static final Map<String, Object> COMPONENTS = new ConcurrentHashMap<>();
 
     private PayloadLoader loader;
     private ShellServer lifeline;
@@ -40,15 +37,17 @@ public class ShellService extends Service {
      * Pass null as instance on unbind.
      */
     public static void publishComponent(String name, Object instance) {
-        if (instance == null) COMPONENTS.remove(name); else COMPONENTS.put(name, instance);
-        ShellService s = INSTANCE;
-        if (s != null && s.loader != null) s.loader.onShellComponent(name, instance);
+        ShellComponents.publish(name, instance);
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
         INSTANCE = this;
+        ShellComponents.setListener((name, instance) -> {
+            PayloadLoader l = loader;
+            if (l != null) l.onShellComponent(name, instance);
+        });
         ShellLog.install(this);
         createNotificationChannel();
         ShellLog.note("SHELL", "service created, device=" + BuildConfig.DEVICE_ID + " versionCode=" + versionCode());
@@ -96,6 +95,7 @@ public class ShellService extends Service {
         ShellLog.note("SHELL", "service destroying");
         if (loader != null) { loader.shutdown(); loader = null; }
         if (lifeline != null) { lifeline.stop(); lifeline = null; }
+        ShellComponents.setListener(null);
         INSTANCE = null;
         super.onDestroy();
     }
@@ -137,7 +137,7 @@ public class ShellService extends Service {
         @Override public File payloadDir() {
             return loader == null ? new File(getFilesDir(), "payloads") : loader.store().dir();
         }
-        @Override public Object component(String name) { return COMPONENTS.get(name); }
+        @Override public Object component(String name) { return ShellComponents.get(name); }
         @Override public void updateNotification(String text) {
             notificationText = text == null ? "" : text;
             postNotification();
