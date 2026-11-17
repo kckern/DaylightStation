@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, HOME_ALIAS, homeAliasFailures, parseXmlTree,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -325,4 +325,25 @@ test('a component with no row, or one that does not say whether it is exported, 
   assert.match(componentAttributeFailures(tree(component('service', 'net.example.New', 'false', null)))[0], /no expected exported\/permission entry for service net\.example\.New/);
   assert.deepEqual(componentAttributeFailures(tree(component('service', 'net.kckern.daylight.shell.ShellService', null, null))),
     ['service net.kckern.daylight.shell.ShellService does not state android:exported']);
+});
+
+// ── permissions only a kiosk asks for ─────────────────────────────────────
+
+test('a kiosk expects the self-update and secure-settings permissions; the phone expects neither', () => {
+  const kiosk = { capabilities: ['webview-host', 'accessibility', 'lockdown'], control: { port: 8780, lifelinePort: 8781 } };
+  const phone = { capabilities: ['webview-host', 'notifications'], control: { port: 8780, lifelinePort: 8781, bind: 'none' } };
+  assert.equal(isKiosk(kiosk), true);
+  assert.equal(isKiosk(phone), false);
+  assert.deepEqual(kioskBasePermissions(kiosk), ['android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.WRITE_SECURE_SETTINGS']);
+  assert.deepEqual(kioskBasePermissions(phone), []);
+  // A kiosk window with a control API is a kiosk even before lockdown is listed.
+  assert.equal(isKiosk({ capabilities: ['webview-host'], control: { bind: 'loopback' } }), true);
+  assert.equal(isKiosk({ capabilities: ['debug-tools'], control: {} }), false);
+});
+
+test('a phone APK that still asks to install packages fails the permission check', () => {
+  const apk = [{ name: 'android.permission.INTERNET', sdk23: false, maxSdkVersion: null },
+    { name: 'android.permission.REQUEST_INSTALL_PACKAGES', sdk23: false, maxSdkVersion: null }];
+  const expected = [{ name: 'android.permission.INTERNET', sdk23: false, maxSdkVersion: null }];
+  assert.deepEqual(permissionFailuresAgain(apk, expected), ['unexpected permission: uses-permission android.permission.REQUEST_INSTALL_PACKAGES']);
 });

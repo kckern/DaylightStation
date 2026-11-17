@@ -83,7 +83,9 @@ public class NotificationsCapabilityTest {
     }
 
     @Test public void aKindNoCapabilityOwnsIsAMessageNotAnError() throws Exception {
-        JSONObject r = link("daylight://media/play?id=plex:1");
+        // A media link starts playback, so it is refused without this install's key.
+        assertEquals(403, link("daylight://media/play?id=plex:1").getInt("_status"));
+        JSONObject r = link("daylight://media/play?id=plex:1&k=" + key);
         assertEquals(200, r.getInt("_status"));
         assertEquals("toast", r.getString("effect"));
         assertEquals("Not available on this device", r.getString("message"));

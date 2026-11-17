@@ -25,6 +25,9 @@ public class ShellService extends Service implements ShellServer.Host {
     private static final int NOTIFICATION_ID = 2;
 
     private static volatile ShellService INSTANCE;
+    /** The compiled token where this device listens; a per-process random one where it does not. */
+    private static final String TOKEN = ControlToken.forBind(BuildConfig.CONTROL_BIND, BuildConfig.CONTROL_TOKEN,
+            new java.security.SecureRandom());
 
     /** Lifeline socket read timeout: a client that connects and sends nothing gives its thread back. */
     private static final int LIFELINE_READ_TIMEOUT_MS = 5000;
@@ -84,10 +87,11 @@ public class ShellService extends Service implements ShellServer.Host {
         postNotification();
         // The lifeline comes up before the payload, so a payload that hangs on
         // start still leaves rollback reachable.
-        if (lifeline == null) {
+        // control.bind none: this device has no lifeline, as it has no control API.
+        if (lifeline == null && net.kckern.daylight.api.ControlBind.listens(BuildConfig.CONTROL_BIND)) {
             ShellServer server = new ShellServer(this,
                     net.kckern.daylight.api.ControlBind.host(BuildConfig.CONTROL_BIND),
-                    BuildConfig.LIFELINE_PORT, BuildConfig.CONTROL_TOKEN);
+                    BuildConfig.LIFELINE_PORT, TOKEN);
             try {
                 server.start(LIFELINE_READ_TIMEOUT_MS, true);
                 lifeline = server;
@@ -190,7 +194,7 @@ public class ShellService extends Service implements ShellServer.Host {
         @Override public Object context() { return ShellService.this; }
         @Override public String deviceId() { return BuildConfig.DEVICE_ID; }
         @Override public int shellVersionCode() { return versionCode(); }
-        @Override public String controlToken() { return BuildConfig.CONTROL_TOKEN; }
+        @Override public String controlToken() { return TOKEN; }
         @Override public File payloadDir() {
             PayloadLoader l = loader;
             return l == null ? new File(getFilesDir(), "payloads") : l.store().dir();

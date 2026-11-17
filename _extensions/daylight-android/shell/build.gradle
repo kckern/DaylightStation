@@ -27,10 +27,12 @@ android {
                 versionName d.shellVersionName
                 buildConfigField 'String', 'DEVICE_ID', "\"${d.id}\""
                 buildConfigField 'int', 'LIFELINE_PORT', "${d.lifelinePort}"
-                // lan or loopback: where the lifeline listens. The payload reads the same
+                // lan, loopback or none: where the lifeline listens, if anywhere. The payload reads the same
                 // value from its generated DeviceConfig for the control server.
                 buildConfigField 'String', 'CONTROL_BIND', "\"${d.controlBind}\""
-                buildConfigField 'String', 'CONTROL_TOKEN', "\"${tokens.tokenFor(d.id)}\""
+                // A device that listens nowhere (control.bind none) gets no token compiled in:
+                // an APK can be read by every app on the device it is installed on.
+                buildConfigField 'String', 'CONTROL_TOKEN', "\"${d.controlBind == 'none' ? '' : tokens.tokenFor(d.id)}\""
                 if (!d.abis.isEmpty()) ndk { abiFilters(*d.abis) }
             }
         }
@@ -102,7 +104,7 @@ tasks.named('check') { dependsOn mergedManifestChecks }
 catalog.devices().each { d ->
     tasks.matching { it.name ==~ "pre${d.id.capitalize()}(Debug|Release)Build" }.all {
         doFirst {
-            if (!tokens.has(d.id)) {
+            if (d.controlBind != 'none' && !tokens.has(d.id)) {
                 throw new GradleException("no control token for device '${d.id}'. " +
                         "Add it to the private tokens file and set DAYLIGHT_ANDROID_TOKENS or -PcontrolTokens.")
             }

@@ -53,9 +53,16 @@ public class DeviceDefaultsTest {
             assertTrue("the compiled default is not the value in effect for " + key,
                     String.valueOf(defaults.get(key)).equals(String.valueOf(core.settings().get(key))));
         }
-        // Decided for every device: heartbeats on, and a log store to send them to.
-        assertEquals(Boolean.TRUE, core.settings().get("heartbeat.enabled"));
-        assertFalse("heartbeat.logStoreUrl is empty", ((String) core.settings().get("heartbeat.logStoreUrl")).isEmpty());
+        if (KIOSKS.contains(DeviceConfig.DEVICE_ID)) {
+            // Decided for every kiosk: heartbeats on, and a log store to send them to.
+            assertEquals(Boolean.TRUE, core.settings().get("heartbeat.enabled"));
+            assertFalse("heartbeat.logStoreUrl is empty", ((String) core.settings().get("heartbeat.logStoreUrl")).isEmpty());
+        } else {
+            // Somebody's own phone is not a household device to be watched: no heartbeats,
+            // and no log store to ship anything to.
+            assertEquals(Boolean.FALSE, core.settings().get("heartbeat.enabled"));
+            assertEquals("", core.settings().get("heartbeat.logStoreUrl"));
+        }
     }
 
     /**
@@ -195,7 +202,14 @@ public class DeviceDefaultsTest {
             // or be offered as the home app, which is what listing lockdown does, and its
             // control API must not listen on whatever network it joins.
             assertFalse("only a kiosk may list lockdown", entries.contains("net.kckern.daylight.cap.lockdown.LockdownCapability"));
-            assertEquals("a device that is not a kiosk binds its control API to loopback", "loopback", DeviceConfig.CONTROL_BIND);
+            // Every app on a phone can reach its loopback address and read its APK, so a
+            // device that is not a kiosk has no control API at all, and none of the
+            // capabilities that exist to be driven over one.
+            assertEquals("a device that is not a kiosk has no control API", "none", DeviceConfig.CONTROL_BIND);
+            assertFalse(net.kckern.daylight.api.ControlBind.listens(DeviceConfig.CONTROL_BIND));
+            for (String remoteOnly : new String[] { "debugtools.DebugToolsCapability", "applauncher.AppLauncherCapability" }) {
+                assertFalse("a device that is not a kiosk must not list " + remoteOnly, entries.contains("net.kckern.daylight.cap." + remoteOnly));
+            }
         } else {
             assertEquals("a kiosk is operated over the LAN", "lan", DeviceConfig.CONTROL_BIND);
         }

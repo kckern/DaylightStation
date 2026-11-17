@@ -60,6 +60,39 @@ public class DeviceManifestSourceTest {
         assertFalse(xml.contains("<application>"));
     }
 
+    // ── permissions only a kiosk needs ────────────────────────────────────────
+
+    private static final String INSTALL = "android.permission.REQUEST_INSTALL_PACKAGES";
+    private static final String SECURE = "android.permission.WRITE_SECURE_SETTINGS";
+
+    @Test public void aKioskBuildDeclaresTheSelfUpdateAndSecureSettingsPermissions() {
+        for (java.util.List<String> caps : Arrays.asList(
+                Arrays.asList("webview-host", "accessibility", "lockdown"), Arrays.asList("webview-host", "debug-tools"))) {
+            String xml = DeviceManifestSource.render(device(Collections.emptyList(), Collections.emptyList(), caps));
+            assertEquals(String.valueOf(caps), 1, count(xml, INSTALL));
+            assertEquals(1, count(xml, SECURE));
+        }
+    }
+
+    @Test public void aPhoneBuildDeclaresNeither() {
+        DeviceSpec phone = new DeviceSpec("phone", "net.kckern.daylight.phone", 26, 33, Collections.emptyList(),
+                8780, 8781, 1, "0.1", Arrays.asList("webview-host", "notifications"), Collections.emptyMap(),
+                Collections.emptyList(), Collections.emptyList(), "none", "");
+        assertFalse(DeviceManifestSource.isKiosk(phone));
+        String xml = DeviceManifestSource.render(phone);
+        assertFalse(xml.contains(INSTALL));
+        assertFalse(xml.contains(SECURE));
+        // A build with no kiosk window is not a kiosk either, whatever its bind.
+        assertFalse(DeviceManifestSource.isKiosk(device(Collections.emptyList(), Collections.emptyList())));
+    }
+
+    @Test public void aKioskPermissionADeviceFileAlsoStatesIsDeclaredOnce() {
+        String xml = DeviceManifestSource.render(device(Arrays.asList(INSTALL, "android.permission.VIBRATE"), Collections.emptyList(),
+                Arrays.asList("webview-host", "accessibility", "lockdown")));
+        assertEquals(1, count(xml, INSTALL));
+        assertEquals(1, count(xml, "android.permission.VIBRATE"));
+    }
+
     // ── the HOME filter ───────────────────────────────────────────────────────
 
     private static final String KIOSK = "<activity android:name=\"net.kckern.daylight.cap.webviewhost.shell.KioskActivity\"";

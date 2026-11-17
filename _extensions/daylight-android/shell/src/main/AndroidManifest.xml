@@ -10,11 +10,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Core additions shared by every device. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <!-- REQUEST_INSTALL_PACKAGES (the app updating itself over the control API) and
+         WRITE_SECURE_SETTINGS (the app turning its own accessibility service on) are NOT
+         here. Only a kiosk needs them, and they come from the generated device manifest
+         of a build that is one: see DeviceManifestSource.KIOSK_BASE_PERMISSIONS. A
+         personal phone's APK asks for neither. -->
 
     <!-- One shell runs on tablets and on TV boxes, so neither feature is required. -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

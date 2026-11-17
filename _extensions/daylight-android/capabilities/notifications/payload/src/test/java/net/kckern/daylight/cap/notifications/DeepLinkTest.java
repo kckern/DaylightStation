@@ -92,4 +92,28 @@ public class DeepLinkTest {
         try { DeepLink.parse("https://kiosk.example/media", NO_SITE); fail("accepted with no site configured"); }
         catch (IllegalArgumentException expected) { }
     }
+
+    // ── a link that does more than open a page needs the install key ─────────
+
+    @Test public void aMediaLinkStartsPlaybackSoItNeedsTheInstallKey() {
+        // The link activity is exported: without the key any web page could start playback.
+        DeepLink bare = parse("daylight://media/play?id=plex:123");
+        assertTrue(bare.needsKey());
+        assertFalse(bare.authorized(KEY));
+        assertFalse(parse("daylight://media/play?id=plex:123&k=wrong").authorized(KEY));
+        DeepLink keyed = parse("daylight://media/play?id=plex:123&k=" + KEY);
+        assertTrue(keyed.authorized(KEY));
+        assertFalse("the key is not handed on to the handler", keyed.handlerQuery().containsKey("k"));
+        assertEquals("plex:123", keyed.handlerQuery().get("id"));
+    }
+
+    @Test public void onlyLinksThatShowAPageOfTheSiteGoWithoutTheKey() {
+        assertFalse(parse("daylight://open?path=/feed").needsKey());
+        assertFalse(parse("daylight://bookmark/feed").needsKey());
+        assertFalse(parse("https://kiosk.example/feed").needsKey());
+        for (String effect : new String[] { "daylight://action/lights-off", "daylight://memo/new", "daylight://media/play?id=plex:1" }) {
+            assertTrue(effect, parse(effect).needsKey());
+        }
+        assertTrue("a kind added later must be put in one list or the other", DeepLink.everyKindIsDecided());
+    }
 }

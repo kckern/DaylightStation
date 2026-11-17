@@ -30,7 +30,11 @@ public class MainTest {
         try (ServerSocket s = new ServerSocket(0)) { return s.getLocalPort(); }
     }
 
+    private static final String BIND = net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND;
+    private static final boolean LISTENS = net.kckern.daylight.api.ControlBind.listens(BIND);
+
     @Test public void startsAndServesTheControlApi() throws Exception {
+        org.junit.Assume.assumeTrue("a device with control.bind none serves nothing; see the test below", LISTENS);
         Main main = new Main();
         int port = freePort();
         main.start(new FakeShell(tmp.newFolder()), port, 3);
@@ -44,6 +48,7 @@ public class MainTest {
     }
 
     @Test public void aControlPortThatCannotBeBoundFailsThePayloadAndStopsWhatStarted() throws Exception {
+        org.junit.Assume.assumeTrue("a device with control.bind none binds no port", LISTENS);
         Main main = new Main();
         // Held on the address this device binds. On a loopback device a socket held on
         // every interface would not be the one in the way.
@@ -82,18 +87,45 @@ public class MainTest {
         try (ServerSocket free = new ServerSocket(port)) { assertTrue(free.isBound()); }
     }
 
-    /** Runs once per device: a device file that says loopback must not listen on the network. */
+    /** Runs once per device: the control API listens where the device file says, or nowhere. */
     @Test public void theControlApiListensWhereTheDeviceFileSays() throws Exception {
         Main main = new Main();
-        main.start(new FakeShell(tmp.newFolder()), freePort(), 3);
+        int port = freePort();
+        main.start(new FakeShell(tmp.newFolder()), port, 3);
         try {
             java.net.InetAddress bound = main.boundAddress();
-            String bind = net.kckern.daylight.generated.DeviceConfig.CONTROL_BIND;
-            assertTrue("unexpected control.bind " + bind, "loopback".equals(bind) || "lan".equals(bind));
-            assertEquals(bind + " bound " + bound, "loopback".equals(bind), bound.isLoopbackAddress());
-            assertEquals(bind + " bound " + bound, "lan".equals(bind), bound.isAnyLocalAddress());
+            assertTrue("unexpected control.bind " + BIND, "loopback".equals(BIND) || "lan".equals(BIND) || "none".equals(BIND));
+            if (!LISTENS) {
+                // No socket is bound: not on the port, not on any address.
+                assertEquals(BIND + " bound " + bound, null, bound);
+                try (ServerSocket free = new ServerSocket(port)) { assertTrue("the port is still free", free.isBound()); }
+                try {
+                    HttpURLConnection c = (HttpURLConnection) new URL("http://127.0.0.1:" + port + "/status").openConnection();
+                    c.setConnectTimeout(500);
+                    c.getResponseCode();
+                    fail("something answered on the control port of a device with control.bind none");
+                } catch (java.io.IOException nothingListens) { }
+                return;
+            }
+            assertEquals(BIND + " bound " + bound, "loopback".equals(BIND), bound.isLoopbackAddress());
+            assertEquals(BIND + " bound " + bound, "lan".equals(BIND), bound.isAnyLocalAddress());
         } finally {
             main.stop();
         }
+    }
+
+    /** With no control server the payload still starts, registers its routes and stops cleanly. */
+    @Test public void aDeviceThatListensNowhereStillStartsItsCapabilities() throws Exception {
+        org.junit.Assume.assumeTrue(!LISTENS);
+        FakeShell shell = new FakeShell(tmp.newFolder());
+        Main main = new Main();
+        main.start(shell, freePort(), 3);
+        try {
+            assertTrue(shell.notes.toString(), shell.notes.toString().contains("no control server"));
+            assertTrue("the core started", shell.notes.toString().contains("CORE started"));
+        } finally {
+            main.stop();
+        }
+        main.stop();
     }
 }

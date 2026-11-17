@@ -17,6 +17,21 @@ public final class DeviceManifestSource {
     private static final java.util.regex.Pattern HOST =
             java.util.regex.Pattern.compile("[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+");
 
+    /**
+     * Base-shell permissions only a kiosk needs: installing its own update when told to
+     * over the control API, and switching its own accessibility service on. They are
+     * added to the manifest of a build that is a kiosk and left out of every other
+     * (the phone), which has no control API to be told anything over.
+     */
+    public static final java.util.List<String> KIOSK_BASE_PERMISSIONS = java.util.Collections.unmodifiableList(
+            java.util.Arrays.asList("android.permission.REQUEST_INSTALL_PACKAGES", "android.permission.WRITE_SECURE_SETTINGS"));
+
+    /** A kiosk: it lists lockdown, or it shows the kiosk window and has a control API. */
+    public static boolean isKiosk(DeviceSpec d) {
+        return d.capabilities.contains(LOCKDOWN_CAPABILITY)
+                || (d.capabilities.contains(KIOSK_CAPABILITY) && !"none".equals(d.controlBind));
+    }
+
     private DeviceManifestSource() { }
 
     /** For a device with no appLinks, whose manifest needs nothing from the private file. */
@@ -40,7 +55,15 @@ public final class DeviceManifestSource {
         s.append("<!-- Generated from devices/").append(d.id).append(".yml. Do not edit. -->\n");
         s.append("<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"\n");
         s.append("    xmlns:tools=\"http://schemas.android.com/tools\">\n");
+        if (isKiosk(d)) {
+            for (String p : KIOSK_BASE_PERMISSIONS) {
+                s.append("    <uses-permission android:name=\"").append(p)
+                 .append("\" tools:ignore=\"ProtectedPermissions\" />\n");
+            }
+        }
         for (String p : d.extraPermissions) {
+            // A device file may state one of the kiosk permissions itself; it is declared once.
+            if (isKiosk(d) && KIOSK_BASE_PERMISSIONS.contains(p)) continue;
             s.append("    <uses-permission android:name=\"").append(p)
              .append("\" tools:ignore=\"ProtectedPermissions\" />\n");
         }

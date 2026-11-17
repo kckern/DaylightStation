@@ -190,6 +190,10 @@ public class DeviceCatalogTest {
         write(new File(root, "devices/portal.yml"),
                 PORTAL.replace("lifelinePort: 8781 }", "lifelinePort: 8781, bind: loopback }"));
         assertEquals("loopback", DeviceCatalog.load(root).device("portal").controlBind);
+        // A device nobody operates remotely: no control server and no lifeline.
+        write(new File(root, "devices/portal.yml"),
+                PORTAL.replace("lifelinePort: 8781 }", "lifelinePort: 8781, bind: none }"));
+        assertEquals("none", DeviceCatalog.load(root).device("portal").controlBind);
     }
 
     @Test public void rejectsAControlBindThatIsNotLanOrLoopback() throws Exception {
@@ -197,7 +201,7 @@ public class DeviceCatalogTest {
         for (String bad : new String[] { "bind: everywhere", "bind: 0.0.0.0", "bind: 7", "bind: \"\"" }) {
             write(new File(root, "devices/portal.yml"),
                     PORTAL.replace("lifelinePort: 8781 }", "lifelinePort: 8781, " + bad + " }"));
-            assertTrue(bad, message(() -> DeviceCatalog.load(root)).contains("control.bind must be 'lan' or 'loopback'"));
+            assertTrue(bad, message(() -> DeviceCatalog.load(root)).contains("control.bind must be 'lan', 'loopback' or 'none'"));
         }
     }
 

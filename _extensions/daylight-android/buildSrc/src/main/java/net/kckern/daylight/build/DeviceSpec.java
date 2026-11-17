@@ -20,7 +20,7 @@ public final class DeviceSpec {
     public final List<String> extraPermissions;
     /** The shell service's foregroundServiceType values; empty for none. */
     public final List<String> foregroundServiceTypes;
-    /** Where the control API and the lifeline listen: "lan" (every interface) or "loopback". */
+    /** Where the control API and the lifeline listen: "lan" (every interface), "loopback", or "none" (nowhere). */
     public final String controlBind;
     /**
      * The host whose https links the app offers to open, as written in the device file

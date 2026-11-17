@@ -291,3 +291,20 @@ export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS)
   }
   return failures;
 }
+
+/**
+ * Base-shell permissions only a kiosk needs (DeviceManifestSource.KIOSK_BASE_PERMISSIONS):
+ * the app installing its own update when told to over the control API, and turning
+ * its own accessibility service on. A kiosk lists lockdown, or shows the kiosk window
+ * and has a control API. Every other device (the phone) gets neither.
+ */
+export const KIOSK_BASE_PERMISSIONS = ['android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.WRITE_SECURE_SETTINGS'];
+
+export function isKiosk(device) {
+  const caps = device.capabilities || [];
+  return caps.includes('lockdown') || (caps.includes('webview-host') && (device.control?.bind ?? 'lan') !== 'none');
+}
+
+export function kioskBasePermissions(device) {
+  return isKiosk(device) ? KIOSK_BASE_PERMISSIONS : [];
+}

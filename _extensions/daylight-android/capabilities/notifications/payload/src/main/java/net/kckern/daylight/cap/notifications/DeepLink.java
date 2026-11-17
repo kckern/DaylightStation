@@ -29,8 +29,21 @@ public final class DeepLink {
     public static final String SCHEME = "daylight";
     static final int MAX_LENGTH = 4096;
     private static final Set<String> KINDS = new HashSet<>(Arrays.asList("open", "bookmark", "action", "memo", "media"));
-    /** Kinds that change something. They are honoured only with this install's key. */
-    private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo"));
+    /**
+     * Kinds that do something other than open a page of the site. They are honoured only
+     * with this install's key: the link activity is exported, so without the key any web
+     * page or app on the phone could run an action, start a memo or start playback.
+     * "open" and "bookmark" only show a page of the site, and stay unkeyed.
+     */
+    private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo", "media"));
+    /** Kinds whose whole effect is to show a page of the site. Every other kind must be in KEYED. */
+    static final Set<String> PAGE_ONLY = new HashSet<>(Arrays.asList("open", "bookmark"));
+
+    /** Every kind is one or the other. A kind added later without deciding fails DeepLinkTest. */
+    static boolean everyKindIsDecided() {
+        for (String k : KINDS) if (KEYED.contains(k) == PAGE_ONLY.contains(k)) return false;
+        return true;
+    }
     private static final String KEY_PARAM = "k";
 
     public final String kind;
