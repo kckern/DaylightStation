@@ -1,4 +1,4 @@
-package net.kckern.daylight.cap.mediaservice.shell;
+package net.kckern.daylight.shellkit;
 
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -12,11 +12,14 @@ import java.security.MessageDigest;
  * visible to it on Android 11 and later without a queries entry, so the caller's own
  * package can be read. Whatever cannot be read answers null or false, and the policy
  * then refuses.
+ *
+ * The digest is written as Android Auto's own host check writes it (SHA-256 of the
+ * certificate, lower-case hex), so a pin copied from a refusal line works in either.
  */
-final class AndroidPackageFacts implements PackageFacts {
+public final class AndroidPackageFacts implements PackageFacts {
     private final PackageManager pm;
 
-    AndroidPackageFacts(PackageManager pm) { this.pm = pm; }
+    public AndroidPackageFacts(PackageManager pm) { this.pm = pm; }
 
     @Override public String[] packagesForUid(int uid) {
         try {

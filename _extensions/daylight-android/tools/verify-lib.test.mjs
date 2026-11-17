@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS, carDeclarationFailures,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS, carDeclarationFailures, libraryComponents,
   expectedComponentTable, personalBuildFailures, backupFailures, permissionsFor,
 } from './verify-lib.mjs';
 
@@ -420,6 +420,51 @@ test('a build that does not list android-auto is not offered to a car', () => {
 test('a car declaration without the media service it points at fails', () => {
   assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), ['android-auto'], CAR_XML),
     ["capability 'android-auto' is listed without media-service: the car would find no media library service"]);
+});
+
+// A <queries> entry names a provider of another app that this app may look up. It is
+// not a component of this app, and none is reached through it.
+const queriesProvider = (name) => [
+  '      E: queries (line=20)',
+  '        E: provider (line=21)',
+  `          A: ${NS}:name(0x01010003)="${name}" (Raw: "${name}")`,
+  `          A: ${NS}:authorities(0x01010018)="${name}" (Raw: "${name}")`,
+];
+const manifestWithQueries = (...parts) => ['N: android=http://schemas.android.com/apk/res/android (line=2)', '  E: manifest (line=2)',
+  ...queriesProvider('androidx.car.app.connection.provider'), ...appLine(GOOD_APP), ...parts.flat(Infinity)].join('\n');
+
+test('a provider named in <queries> is not one of the APK components', () => {
+  const apk = manifestWithQueries(component('service', 'net.kckern.daylight.shell.ShellService', 'false', null));
+  assert.deepEqual(parseApkComponents(apk), ['service net.kckern.daylight.shell.ShellService']);
+  assert.deepEqual(componentAttributeFailures(apk), []);
+  assert.deepEqual(personalBuildFailures(manifestWithQueries(PHONE_COMPONENTS), PHONE, CAPS), []);
+});
+
+test('a component a capability brings in from a library is expected only where the device lists that capability', () => {
+  const caps = { 'car-actions': { libraryComponents: ['activity androidx.car.app.CarAppPermissionActivity'] }, notifications: {} };
+  assert.deepEqual(libraryComponents(['notifications', 'car-actions'], caps), ['activity androidx.car.app.CarAppPermissionActivity']);
+  assert.deepEqual(libraryComponents(['notifications'], caps), []);
+});
+
+const carAppService = (name) => [
+  `          E: service (line=40)`,
+  `            A: ${NS}:name(0x01010003)="${name}" (Raw: "${name}")`,
+  `            A: ${NS}:exported(0x01010010)=true`,
+  '              E: intent-filter (line=41)',
+  '                E: action (line=42)',
+  `                  A: ${NS}:name(0x01010003)="androidx.car.app.CarAppService" (Raw: "androidx.car.app.CarAppService")`,
+  '                E: category (line=43)',
+  `                  A: ${NS}:name(0x01010003)="androidx.car.app.category.IOT" (Raw: "androidx.car.app.category.IOT")`,
+];
+const CAR_ACTIONS_CAPS = ['media-service', 'android-auto', 'car-actions'];
+const CAR_SERVICE = 'net.kckern.daylight.cap.caractions.shell.DaylightCarAppService';
+
+test('a build that lists car-actions declares one IOT car app service; any other build declares none', () => {
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR), carAppService(CAR_SERVICE)), CAR_ACTIONS_CAPS, CAR_XML), []);
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), CAR_ACTIONS_CAPS, CAR_XML),
+    ["capability 'car-actions' is listed but no service of the APK offers androidx.car.app.CarAppService"]);
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR), carAppService(CAR_SERVICE)), AUTO_CAPS, CAR_XML),
+    [`a car app service is declared but the device does not list car-actions: ${CAR_SERVICE}`]);
 });
 
 test('the recorder and its screen are not exported, and the recorder is a microphone foreground service', () => {

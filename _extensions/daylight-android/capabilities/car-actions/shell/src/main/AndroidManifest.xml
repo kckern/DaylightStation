@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The car screen. Exported: Android Auto binds it, and no permission exists that
+             only Android Auto holds. The service serves one host: Android Auto's package,
+             owned by the binding uid and signed with the certificate pinned in car.hostPins
+             (CarHostPolicy). It takes no input but row taps on its own list, and a tap runs
+             an action of that list by its id, in process. IOT: the templated category for
+             household controls. -->
+        <service
+            android:name="net.kckern.daylight.cap.caractions.shell.DaylightCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT" />
+            </intent-filter>
+        </service>
+        <!-- The oldest Car API level the list needs: a ListTemplate with rows, a
+             MessageTemplate and a car toast are all level 1. -->
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+    </application>
+</manifest>

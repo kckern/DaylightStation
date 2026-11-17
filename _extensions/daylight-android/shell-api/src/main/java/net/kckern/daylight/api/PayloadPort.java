@@ -70,6 +70,16 @@ public final class PayloadPort {
     }
 
     /**
+     * Waits for a payload to attach, delivering nothing. For a screen that answered
+     * "Daylight is starting" and redraws once a payload is there (the media service,
+     * the car screen). True as soon as one has; false when the wait ran out or the
+     * thread was interrupted.
+     */
+    public boolean awaitReady(long waitMs) {
+        return await(waitMs) != null;
+    }
+
+    /**
      * Hand one request to the payload. The request is delivered at most once: when the
      * handler throws, its exception comes back and nothing is tried again, so an action
      * that failed halfway is never run twice.

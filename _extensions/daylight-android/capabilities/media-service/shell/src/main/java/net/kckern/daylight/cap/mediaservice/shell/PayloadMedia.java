@@ -60,17 +60,6 @@ final class PayloadMedia {
 
     /** Waits for a payload to attach. True as soon as one has. */
     boolean awaitReady(long waitMs) {
-        long deadline = System.currentTimeMillis() + waitMs;
-        while (!port.ready()) {
-            long left = deadline - System.currentTimeMillis();
-            if (left <= 0) return false;
-            try {
-                Thread.sleep(Math.min(left, 250));
-            } catch (InterruptedException stopping) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-        return true;
+        return port.awaitReady(waitMs);
     }
 }

@@ -86,4 +86,21 @@ public class PayloadPortTest {
             assertTrue(Thread.interrupted());
         }
     }
+
+    /** A screen that showed "starting" waits for a payload without sending anything. */
+    @Test public void awaitReadyReturnsWhenAPayloadAttachesAndDeliversNothing() throws Exception {
+        final PayloadPort port = fresh();
+        final List<String> seen = Collections.synchronizedList(new ArrayList<String>());
+        assertFalse("nothing attached within the wait", port.awaitReady(100));
+        Thread payload = new Thread(() -> {
+            try { Thread.sleep(150); } catch (InterruptedException ignored) { }
+            port.attach(request -> { seen.add(request); return ""; });
+        });
+        payload.start();
+        long began = System.currentTimeMillis();
+        assertTrue(port.awaitReady(5000));
+        assertTrue(System.currentTimeMillis() - began < 4000);
+        assertTrue("waiting is not a request", seen.isEmpty());
+        payload.join();
+    }
 }

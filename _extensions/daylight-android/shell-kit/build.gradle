@@ -1,8 +1,14 @@
 // What the shell halves of the phone capabilities share: start the shell service, read
-// the surface cache, build the intent that opens a daylight:// link. Installed code,
-// so it is small and decides nothing; shell-api holds the contracts it uses.
+// the surface cache, build the intent that opens a daylight:// link, and hold a caller to
+// a pinned signing certificate. Installed code, so it is small and decides nothing on
+// its own; shell-api holds the contracts it uses.
 apply from: rootProject.file('gradle/shell-lib.gradle')
 
 android {
     namespace 'net.kckern.daylight.shellkit'
+}
+
+dependencies {
+    // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    testImplementation 'org.json:json:20231013'
 }

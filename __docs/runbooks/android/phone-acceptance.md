@@ -12,7 +12,8 @@ What the build is: `__docs/reference/android/phone.md`. Building:
 Needs the owner's go-ahead before step A2. What installing does: the package
 `net.kckern.daylight.phone` is added to the owner's phone with a persistent
 "Daylight" notification, four quick-settings tiles the owner may add, two widgets
-(four buttons, and a one-action button) and launcher shortcuts. `adb uninstall net.kckern.daylight.phone` removes all of it,
+(four buttons, and a one-action button), launcher shortcuts, and a list of actions
+in Android Auto. `adb uninstall net.kckern.daylight.phone` removes all of it,
 including any quick input (a recording, typed text, a photo) not yet uploaded.
 
 There is no control API on the phone. Every check is by hand on the phone, or over
@@ -274,6 +275,40 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
     if it did not, and the logcat lines around "play from search".
 12. A search with no result answers an empty list, and nothing crashes. With the
     VPN off, the search fails and the car says so.
+
+## E2. The car list (car-actions), on the Desktop Head Unit
+
+Unproven until this runs: whether Android Auto lists a sideloaded app of the IOT
+category built on Car App Library 1.3.0-rc01. Record the result either way.
+
+1. With the head unit running (E, step 2), open the app list on the head unit. Record
+   whether "Daylight" appears a second time as a non-media app. If it does not: check
+   that the unknown-sources developer setting is on, look in the head unit's full
+   app list, and read `adb logcat -d | grep -i -E 'CarApp|Daylight-Car'`. Record what
+   was seen; the next step (a newer library and compileSdk 34) is the owner's call.
+2. **The first connection is refused by design, and that is the pinning step.** Open
+   the car list: it shows "Daylight is not available on this car connection" or
+   Android Auto reports the app could not start. Read the refusal:
+
+   ```bash
+   adb logcat -d -s Daylight-Car | grep 'refused car host'
+   ```
+
+   It must name `com.google.android.projection.gearhead` with "no pin for this
+   package" and end with `To allow it, add com.google.android.projection.gearhead=<sha256> to car.hostPins`.
+   Any other package or reason is a finding: record it and do not pin it. Copy the
+   entry into `car.hostPins` under `defaults:` in `devices/phone.yml` (a digest is a
+   public value), bump `shell.versionCode`, rebuild, run the verifier, install.
+3. Reconnect. The list reads "On my way". Tap it: a car toast "Location sharing is
+   not built yet", and nothing else (no permission prompt on the phone).
+4. Cold: quit the head unit, `adb shell am force-stop net.kckern.daylight.phone`,
+   start the head unit and open the car list. Expected: the list, or one row
+   "Daylight is starting" that is replaced by the list within two minutes.
+5. Opening, refreshing or reconnecting the list runs nothing: `adb shell run-as
+   net.kckern.daylight.phone cat files/shell.log | grep CAR` shows a "run" line
+   only after a tap.
+6. While driving (the head unit's "driving" state, if the version offers it), the
+   list stays usable: rows only, no text field.
 
 ## F. Voice inputs (the recorder)
 

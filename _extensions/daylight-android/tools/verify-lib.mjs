@@ -127,20 +127,30 @@ export function permissionFailures(apkPermissions, expectedPermissions) {
 
 const COMPONENT_KINDS = ['activity', 'activity-alias', 'service', 'receiver', 'provider'];
 
+/**
+ * True for an element inside <queries>: there a <provider> names another app's
+ * provider this app may look up, and is not a component of this app.
+ */
+export function inQueries(node) {
+  for (let p = node.parent; p; p = p.parent) if (p.name === 'queries') return true;
+  return false;
+}
+
+/** The component elements of an APK manifest tree, <queries> entries left out. */
+const componentNodes = (xmltree) => parseXmlTree(xmltree).filter((n) => COMPONENT_KINDS.includes(n.name) && n.attrs.name && !inQueries(n));
+
 /** The components an APK declares, from `aapt2 dump xmltree --file AndroidManifest.xml`, as "kind name". */
 export function parseApkComponents(xmltree) {
-  const out = [];
-  const lines = xmltree.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const element = /^\s*E: ([a-z-]+) /.exec(lines[i]);
-    if (!element || !COMPONENT_KINDS.includes(element[1])) continue;
-    // The element's attributes follow it, up to the next element.
-    for (let j = i + 1; j < lines.length && !/^\s*E: /.test(lines[j]); j++) {
-      const name = /android:name\(0x01010003\)="([^"]+)"/.exec(lines[j]);
-      if (name) { out.push(`${element[1]} ${name[1]}`); break; }
-    }
-  }
-  return out.sort();
+  return componentNodes(xmltree).map((n) => `${n.name} ${n.attrs.name}`).sort();
+}
+
+/**
+ * Components a listed capability brings in from a library it depends on (its
+ * capability.yml `libraryComponents:`, each "kind name"). They are in no source
+ * manifest of this project, and each still needs a row in EXPECTED_COMPONENTS.
+ */
+export function libraryComponents(deviceCapabilities, capabilities) {
+  return deviceCapabilities.flatMap((name) => capabilities[name]?.libraryComponents || []);
 }
 
 /** The components a source AndroidManifest.xml declares, as "kind name"; a leading dot is the module's namespace. */
@@ -309,6 +319,14 @@ export const EXPECTED_COMPONENTS = {
   // makes; the provider itself is closed, and grants are limited to /capture/.
   'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider': { exported: false, permission: null, grantsOnly: '/capture/' },
   'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService': { exported: false, permission: null, foregroundServiceType: ['microphone'] },
+  // Exported with no permission: Android Auto binds it, and no permission exists that only
+  // Android Auto holds. The service serves one host, Android Auto's package owned by the
+  // binding uid and signed with the certificate pinned in car.hostPins (CarHostPolicy); with
+  // no pin it serves nothing. A tap on its list runs a car-list action by id, in process.
+  'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService': { exported: true, permission: null },
+  // Merged in by the Car App Library (androidx.car.app:app); neither is exported.
+  'activity androidx.car.app.CarAppPermissionActivity': { exported: false, permission: null },
+  'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver': { exported: false, permission: null },
 };
 
 /** The bits of android:foregroundServiceType, as aapt2 prints the attribute's mask. */
@@ -367,7 +385,7 @@ export function personalBuildFailures(xmltree, device, capabilities) {
   const caps = device.capabilities || [];
   const wanted = new Set([BOOT_RECEIVER, ...caps.flatMap((name) => capabilities[name]?.exported || [])]);
   if (!caps.includes('webview-host')) wanted.add('net.kckern.daylight.shell.MainActivity');
-  const exported = new Set(nodes.filter((n) => COMPONENT_KINDS.includes(n.name) && n.attrs.name && n.attrs.exported !== 'false').map((n) => n.attrs.name));
+  const exported = new Set(nodes.filter((n) => COMPONENT_KINDS.includes(n.name) && n.attrs.name && !inQueries(n) && n.attrs.exported !== 'false').map((n) => n.attrs.name));
   for (const name of [...exported].sort()) {
     if (!wanted.has(name)) failures.push(`exported component not declared by the base shell or a listed capability: ${name}`);
   }
@@ -406,7 +424,7 @@ export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS)
   const failures = [];
   const nodes = parseXmlTree(xmltree);
   for (const n of nodes) {
-    if (!COMPONENT_KINDS.includes(n.name) || !n.attrs.name) continue;
+    if (!COMPONENT_KINDS.includes(n.name) || !n.attrs.name || inQueries(n)) continue;
     const key = `${n.name} ${n.attrs.name}`;
     const want = table[key];
     if (!want) { failures.push(`no expected exported/permission entry for ${key} (tools/verify-lib.mjs EXPECTED_COMPONENTS)`); continue; }
@@ -486,5 +504,19 @@ export function carDeclarationFailures(xmltree, capabilities, apkEntries, resour
   // A release build shortens resource file names, so the file cannot be found by name
   // there; the meta-data's reference to it was resolved when the APK was linked.
   if (!resource && resourceNamesKept) failures.push("capability 'android-auto' is listed but the APK has no automotive_app_desc resource");
-  return failures;
+  return failures.concat(carAppServiceFailures(xmltree, capabilities));
+}
+
+/** The services that offer the Car App Library's binding action: the car screen. */
+const CAR_APP_SERVICE_ACTION = 'androidx.car.app.CarAppService';
+
+/** A car screen is in a build exactly when the device lists car-actions. */
+function carAppServiceFailures(xmltree, capabilities) {
+  const nodes = parseXmlTree(xmltree);
+  const services = nodes.filter((n) => n.name === 'action' && n.attrs.name === CAR_APP_SERVICE_ACTION)
+    .map((n) => n.parent?.parent).filter((s) => s && s.name === 'service').map((s) => s.attrs.name);
+  if (capabilities.includes('car-actions')) {
+    return services.length ? [] : ["capability 'car-actions' is listed but no service of the APK offers androidx.car.app.CarAppService"];
+  }
+  return services.map((name) => `a car app service is declared but the device does not list car-actions: ${name}`);
 }

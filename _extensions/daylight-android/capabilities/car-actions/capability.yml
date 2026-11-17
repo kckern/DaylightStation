@@ -1,0 +1,26 @@
+# A templated list of household actions in Android Auto (projection: the phone draws
+# templates the car shows). The list is the setting car.actions, ids of configured
+# one-tap actions; a tap runs the action in process through the action list, the same
+# path a keyed action link takes. The shell half holds the car app service, its session
+# and screens, and the Car App Library; only a device that lists this capability gets
+# the library.
+entry: net.kckern.daylight.cap.caractions.CarActionsCapability
+permissions: []
+exported:
+  # Bound by Android Auto. No permission exists that only it holds, so the service
+  # checks the binding host itself: Android Auto's package, owned by the binding uid,
+  # signed with the certificate pinned in car.hostPins (SignerPins, as the media
+  # service holds controllers to media.controllerPins). With no pin it serves nothing.
+  - net.kckern.daylight.cap.caractions.shell.DaylightCarAppService
+# Merged in from the Car App Library; neither is exported (rows in EXPECTED_COMPONENTS).
+libraryComponents:
+  - activity androidx.car.app.CarAppPermissionActivity
+  - receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver
+# The actions it lists and runs are one-tap actions; the car metadata file is
+# android-auto's, which this capability's shell half replaces with one that also
+# declares templates.
+requires:
+  - one-tap-actions
+  - android-auto
+startsAfter:
+  - one-tap-actions

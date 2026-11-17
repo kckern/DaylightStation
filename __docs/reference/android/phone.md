@@ -827,6 +827,116 @@ Sources: `https://developer.android.com/training/cars/testing`,
 `https://developer.android.com/training/cars/testing/dhu`,
 `https://developer.android.com/training/cars/media/auto`.
 
+## `car-actions`
+
+A templated list of household actions in Android Auto. The car is projection: the
+phone draws Car App Library templates and the car shows them. Nothing here has run
+on a phone or in a car.
+
+**Library.** `androidx.car.app:app` 1.3.0-rc01, in this capability's shell half
+only, so only a device that lists `car-actions` gets it (the kiosk APKs contain no
+`androidx/car` classes). It is the newest version whose AAR metadata accepts
+compileSdk 33 (`minCompileSdk=33`; 1.2.0 needs 31, 1.4.0 and later need 34). It
+builds with the Android Gradle Plugin 7.4.2. Read from its classes: the IOT category
+constant (`CarAppService.CATEGORY_IOT_APP`, `androidx.car.app.category.IOT`) is
+already in this version; `ListTemplate`, `GridTemplate`, `MessageTemplate`,
+`PaneTemplate`, `CarToast` and `HostValidator` are there; Car API levels 1 to 6.
+
+**Unproven until it runs:** whether Android Auto lists a sideloaded IOT-category app
+built on 1.3.0-rc01, with the developer setting for unknown sources on. If it is not
+listed (the media app is, and the car list is not), record what Android Auto shows,
+and try in this order: confirm the unknown-sources setting is on; the head unit's
+own app list rather than the launcher row; `adb logcat | grep -i CarApp` for a
+refusal on the handshake. If it is still not listed, the remaining step is a newer
+library (1.4.0 or later), which needs compileSdk 34 for every device and is the
+owner's decision.
+
+**The list.** The setting `car.actions` is a comma list of ids of configured
+one-tap actions, at most six. The phone's is `omw` ("On my way"). Usable in a car:
+
+| Kind | In the car |
+|---|---|
+| `api:/api/...` | Yes: the household call runs and its outcome is a car toast |
+| `location:share` | Yes: the toast says location sharing is not built yet |
+| `open:`, `bookmark:` | No: a web page is no use while driving |
+| `media:` | No: household media plays through Daylight's media app in the car |
+| `input:text:`, `input:photo:` | No: they need the phone's keyboard or camera |
+| `input:voice:`, `memo:new` | No in this build (see the voice memo below once it lands) |
+
+An id that is not an action, a kind the car cannot show, a duplicate or a seventh
+entry is left out and reported in `GET /car/actions` `problems` and in the shell
+log at start; `start()` never throws for it. A value written by hand that names a
+known action the car cannot show is refused when it is written; a device file with
+any problem fails `DeviceDefaultsTest` at build time.
+
+**A tap.** The car screen asks the payload over the `car` PayloadPort, in process:
+`{op: list}` and `{op: run, id}`. A run takes an id on the car list, and only such an
+id (anything else answers "That is not on the car list"), and goes through
+`ActionList.run`, the path a keyed `daylight://action/<id>` link takes. No link is
+built and no key leaves the payload. The tap runs off the main thread; the answer is
+a car toast. Drawing the list, a refresh and the car connecting run nothing: only a
+row's own click does.
+
+**Cold start.** The service starts the shell service, as the media service does.
+With no payload yet the list is one row, "Daylight is starting"; when a payload
+attaches the screen asks again and redraws.
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/car/actions` | `{actions: [{id, label, icon, kind}], problems: [...]}` |
+
+### Who may bind the car screen
+
+`DaylightCarAppService` is exported: Android Auto binds it, and no permission
+exists that only Android Auto holds. The library's own host check
+(`HostValidator`) is not enough on its own: besides its allow list it accepts any
+package that holds `android.car.permission.TEMPLATE_RENDERER`, a permission no phone
+defines, which an app could define and hold itself. So the service decides first
+(`CarHostPolicy`, through the same `SignerPins` code the media service's
+`ControllerPolicy` uses):
+
+- The library asks for the validator (`createHostValidator`) on the binder thread of
+  the host's handshake, so `Binder.getCallingUid()` there is the host's uid (read
+  from the library's classes: `CarAppBinder.onHandshakeCompleted`).
+- That uid must own Android Auto's package, `com.google.android.projection.gearhead`
+  (the package the library's own sample host list names), and that package's one
+  signing certificate must be the one pinned for it in `car.hostPins`
+  (`package=sha256`, the same form as `media.controllerPins`; only Android Auto's
+  package is accepted in it).
+- When it passes, the library's validator is handed that one host and its pinned
+  digest. When it does not, the validator is handed none, and the refusal is
+  logged. The screen also checks the decision before drawing anything or running a
+  tap, against the host the library settled on (its package and uid), so a package
+  the library would accept for the permission alone is shown "Daylight is not
+  available on this car connection" and nothing else.
+- `ALLOW_ALL_HOSTS_VALIDATOR` and the "allow every host in a debuggable build"
+  shortcut are not used. A platform-signed app or a system uid is not a car host.
+
+The pins reach the installed service through the surface cache (the payload writes
+`car.hostPins` there at start and when it changes), so a car that binds the
+service before the payload loads is held to them. With no pin Android Auto is
+refused too. The first connection is the pinning step: the refusal line is
+
+```
+refused car host com.google.android.projection.gearhead: no pin for this package. To allow it, add com.google.android.projection.gearhead=<sha256> to car.hostPins
+```
+
+The package name and the digest are public values. Copy the entry into
+`car.hostPins` in `devices/phone.yml`, bump the phone's `shell.versionCode`,
+rebuild, verify and install (see the acceptance runbook, E2).
+
+**Metadata.** `android-auto` owns the `com.google.android.gms.car.application`
+meta-data. `car-actions`' shell half depends on `android-auto`'s and has its own
+`res/xml/automotive_app_desc.xml` with `<uses name="media"/>` and
+`<uses name="template"/>`; a library's resource wins over its dependency's, so a
+build with `car-actions` declares both (checked in the built APK) and one without
+it declares media alone. The service has the IOT category and
+`androidx.car.app.minCarApiLevel` 1 (a list, a message, a toast). The library adds
+two components, `CarAppPermissionActivity` and `CarAppNotificationBroadcastReceiver`,
+neither exported, and a `<queries>` entry for Android Auto's connection provider,
+which is not a component of this app. The verifier fails a build with a car app
+service that does not list `car-actions`, and one that lists it without the service.
+
 ## `quick-input`
 
 One capability for everything the owner sends to a household bot from the phone
@@ -1316,17 +1426,21 @@ What another app on the phone can reach, and what stands in the way.
 | `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
+| `DaylightCarAppService` (`car-actions`) | Android Auto binds it | No permission exists that only Android Auto holds. `CarHostPolicy` serves Android Auto's package alone, owned by the binding uid and signed with the certificate pinned in `car.hostPins`; with no pin it serves nothing. A tap runs an action of the car list by id, in process |
 | `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
 | `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
+| `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver` (Car App Library) | Not exported | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
-Nine components are exported: `LinkActivity`, `KioskActivity`, the four tile
+Ten components are exported: `LinkActivity`, `KioskActivity`, the four tile
 services (which the system alone can bind), `DaylightMediaService`,
-`ButtonWidgetConfigActivity` and `BootReceiver`. A tenth, or one of these no
-longer exported, fails the build. The quick inputs added three components (two
+`DaylightCarAppService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
+eleventh, or one of these no longer exported, fails the build. The car screen added
+three components (its service and the library's two closed ones) and no
+permission; the list is still twelve. The quick inputs added three components (two
 activities and a provider) and none of them is exported. The one-action button
 added two: its provider, which is not exported, and its chooser, which is. It
 added no permission. Playing with no window added one, the play service, which is

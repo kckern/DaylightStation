@@ -1,5 +1,7 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
+import net.kckern.daylight.shellkit.AndroidPackageFacts;
+
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.util.Log;

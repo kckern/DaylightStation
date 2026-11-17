@@ -319,6 +319,32 @@ public class OneTapActionsCapabilityTest {
         assertNull(core.services().find(ActionList.class).mediaContentId("omw"));
     }
 
+    // ── in process, for the car screen ───────────────────────────────────────
+
+    @Test public void anActionIsDescribedByItsIdAsTheListShowsIt() throws Exception {
+        ActionList list = core.services().find(ActionList.class);
+        JSONObject lights = list.describe("lights");
+        assertEquals("lights", lights.getString("id"));
+        assertEquals("Lights off", lights.getString("label"));
+        assertEquals("api", lights.getString("kind"));
+        assertEquals("/api/v1/home/scenes/all-off", lights.getString("target"));
+        assertFalse("no link, so no key", lights.toString().contains(KEY));
+        assertEquals("open", list.describe("feed").getString("kind"));
+        assertNull(list.describe("nothing"));
+        assertNull(list.describe(null));
+    }
+
+    @Test public void anActionRunsInProcessByItsIdThroughTheSamePath() throws Exception {
+        ActionList list = core.services().find(ActionList.class);
+        JSONObject r = list.run("lights");
+        assertEquals("toast", r.getString("effect"));
+        assertEquals("Lights off: done", r.getString("message"));
+        assertEquals(1, posted.size());
+        core.settings().set("actions.3", "omw|On my way|bolt|location:share");
+        assertEquals(OneTapActionsCapability.LOCATION_NOT_BUILT, list.run("omw").getString("message"));
+        try { list.run("nothing"); fail("ran an unknown action"); } catch (IllegalArgumentException expected) { }
+    }
+
     @Test public void aMalformedInputActionIsRefusedWhenItIsSet() {
         for (String bad : new String[] { "x|X|mic|input:video:journal", "x|X|mic|input:voice:/api/v1/x" }) {
             try { core.settings().set("actions.4", bad); fail("accepted " + bad); }

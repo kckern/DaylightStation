@@ -22,10 +22,10 @@ const capabilities = Object.fromEntries(
 const BASE = ['INTERNET', 'FOREGROUND_SERVICE', 'RECEIVE_BOOT_COMPLETED', 'WAKE_LOCK', 'POST_NOTIFICATIONS',
   'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', 'ACCESS_WIFI_STATE', 'ACCESS_NETWORK_STATE'];
 
-test('the phone is a personal build that lists quick-input', () => {
+test('the phone is a personal build that lists quick-input and car-actions', () => {
   assert.equal(isPersonal(phone), true);
   assert.deepEqual(phone.capabilities, ['webview-host', 'volume', 'notifications', 'bookmarks', 'one-tap-actions', 'widgets',
-    'media-service', 'android-auto', 'quick-input']);
+    'media-service', 'android-auto', 'quick-input', 'car-actions']);
 });
 
 test('the phone asks for exactly these twelve permissions', () => {
@@ -57,9 +57,10 @@ test('a photo is taken by the system camera app, so the phone asks for no camera
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these nine components of the phone build', () => {
+test('another app can reach exactly these ten components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
+    'net.kckern.daylight.cap.caractions.shell.DaylightCarAppService',
     'net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
     'net.kckern.daylight.cap.notifications.shell.LinkActivity',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1',
@@ -124,6 +125,20 @@ test('"On my way" is a placeholder action and the phone asks for no location per
     assert.equal(names.has(`android.permission.${p}`), false, p);
   }
   assert.equal(Object.values(EXPECTED_COMPONENTS).some((row) => (row.foregroundServiceType || []).includes('location')), false);
+});
+
+test('the car screen added one exported service, two closed components of the library, and no permission', () => {
+  assert.deepEqual(capabilities['car-actions'].exported, ['net.kckern.daylight.cap.caractions.shell.DaylightCarAppService']);
+  assert.deepEqual(capabilities['car-actions'].permissions, []);
+  const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.caractions.') || key.includes(' androidx.car.app.'));
+  assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity androidx.car.app.CarAppPermissionActivity exported=false permission=null',
+    'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver exported=false permission=null',
+    'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService exported=true permission=null',
+  ]);
+  // Android Auto's own host is pinned on the first connection; nothing is pinned in the file.
+  assert.equal(phone.defaults['car.hostPins'], '');
+  assert.equal(phone.defaults['car.actions'], 'omw');
 });
 
 test('playing with no window adds one service of media-service, not exported, and no permission', () => {

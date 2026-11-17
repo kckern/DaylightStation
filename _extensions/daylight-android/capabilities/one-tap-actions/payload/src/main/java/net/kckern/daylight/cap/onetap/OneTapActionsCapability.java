@@ -193,6 +193,18 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         return out;
     }
 
+    @Override public JSONObject describe(String actionId) {
+        if (actionId == null) return null;
+        Action a = everything().find(actionId);
+        if (a == null) return null;
+        try {
+            return new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon)
+                    .put("kind", a.kind.name().toLowerCase(java.util.Locale.ROOT)).put("target", a.value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Override public String mediaContentId(String actionId) {
         if (actionId == null) return null;
         Action a = everything().find(actionId);
@@ -305,7 +317,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
 
     // ── running ───────────────────────────────────────────────────────────────
 
-    private JSONObject run(String id) throws Exception {
+    /** ActionList: the one path every surface's run takes (a keyed link, POST /actions/run, the car screen). */
+    @Override public JSONObject run(String id) throws Exception {
         final Action a = everything().find(id == null ? "" : id);
         if (a == null) throw new IllegalArgumentException("unknown action");
         if (a.kind == Kind.API) {

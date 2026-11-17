@@ -18,7 +18,7 @@ import {
   bakedPayloadFailure, buildTypeLine, componentAttributeFailures, componentFailures, declaredComponents, expectedPermission, generatedComponents,
   homeAliasFailures, kioskBasePermissions, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
-  foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE, carDeclarationFailures,
+  foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE, carDeclarationFailures, libraryComponents,
   backupFailures, expectedComponentTable, personalBuildFailures, permissionsFor,
 } from './verify-lib.mjs';
 
@@ -113,6 +113,7 @@ const expectedComponents = [...new Set([
   ...componentsOf(join(root, 'shell')),
   ...device.capabilities.flatMap((name) => componentsOf(join(root, 'capabilities', name, 'shell'))),
   ...generatedComponents(device.capabilities),
+  ...libraryComponents(device.capabilities, capabilities),
 ])].sort();
 failures.push(...componentFailures(parseApkComponents(tree), expectedComponents));
 // Each component's exported flag and the permission that guards it, against the table.

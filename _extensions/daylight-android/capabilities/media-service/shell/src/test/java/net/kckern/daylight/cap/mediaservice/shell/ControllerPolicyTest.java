@@ -1,5 +1,8 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
+import net.kckern.daylight.shellkit.PackageFacts;
+
+
 import static org.junit.Assert.*;
 
 import org.junit.Test;

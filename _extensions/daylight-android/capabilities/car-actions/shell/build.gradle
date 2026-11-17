@@ -1,0 +1,21 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.caractions.shell'
+}
+
+dependencies {
+    implementation project(':shell-kit')
+    // android-auto owns the car metadata (com.google.android.gms.car.application). This
+    // module's res/xml/automotive_app_desc.xml replaces that file's contents with one that
+    // also declares templates; a library's resource wins over its dependency's.
+    implementation project(':capabilities:android-auto:shell')
+    // 1.3.0-rc01 is the newest Car App Library whose AAR metadata accepts compileSdk 33
+    // (minCompileSdk=33; 1.2.0 needs 31; 1.4.0 and later need 34; no stable 1.3.0 was
+    // published). Do not raise it without raising compileSdk and the Android Gradle
+    // Plugin for every device. Only a device that lists car-actions gets it: the shell
+    // adds a capability's shell half to that device's flavor alone.
+    implementation 'androidx.car.app:app:1.3.0-rc01'
+    // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    testImplementation 'org.json:json:20231013'
+}

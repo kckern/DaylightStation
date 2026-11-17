@@ -316,7 +316,9 @@ public class DeviceDefaultsTest {
                 { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" },
                 // A device that takes quick inputs is built with the user they are sent for, and its
                 // destinations are well formed.
-                { "quickinput.QuickInputCapability", "/input/queue" } };
+                { "quickinput.QuickInputCapability", "/input/queue" },
+                // The car list names actions that exist and that a car can show.
+                { "caractions.CarActionsCapability", "/car/actions" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);

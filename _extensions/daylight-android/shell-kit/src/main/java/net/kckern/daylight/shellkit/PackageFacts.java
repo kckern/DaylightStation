@@ -1,7 +1,7 @@
-package net.kckern.daylight.cap.mediaservice.shell;
+package net.kckern.daylight.shellkit;
 
-/** What Android knows about the packages on the device, as far as ControllerPolicy asks. */
-interface PackageFacts {
+/** What Android knows about the packages on the device, as far as a signer check asks (SignerPins, the media service's ControllerPolicy, the car screen's host check). */
+public interface PackageFacts {
     /** The packages that run under this uid, or null when Android names none (or hides them from this app). */
     String[] packagesForUid(int uid);
 

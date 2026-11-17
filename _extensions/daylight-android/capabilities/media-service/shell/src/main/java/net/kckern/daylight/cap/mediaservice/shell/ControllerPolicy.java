@@ -1,5 +1,8 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
+import net.kckern.daylight.shellkit.PackageFacts;
+import net.kckern.daylight.shellkit.SignerPins;
+
 import java.util.Map;
 
 /**
@@ -77,16 +80,11 @@ final class ControllerPolicy {
         if (uid >= 0 && uid % 100_000 < FIRST_APP_UID) return allow();
         // Before Android 9 a legacy controller arrives with no uid and no name of its own.
         if (uid < 0 || LEGACY_UNKNOWN.equals(packageName)) return refuse("the platform does not say who the caller is", null);
-        String[] owned = facts.packagesForUid(uid);
-        boolean callers = false;
-        if (owned != null) for (String p : owned) callers |= packageName.equals(p);
-        if (!callers) return refuse("the package is not the caller's", null);
-        if (facts.platformSigned(packageName)) return allow();
-        String digest = facts.signingSha256(packageName);
-        if (digest == null) return refuse("the package's signing certificate cannot be read", null);
-        String pin = pins == null ? null : pins.get(packageName);
-        if (pin == null) return refuse("no pin for this package", digest);
-        if (!pin.equalsIgnoreCase(digest)) return refuse("the signing certificate is not the pinned one", digest);
+        // The system UI runs under an app uid; what makes it the system is the platform's signature.
+        if (SignerPins.owns(facts, uid, packageName) && facts.platformSigned(packageName)) return allow();
+        // Everything else: the caller's own package, signed with the certificate pinned for it.
+        SignerPins.Result pinned = SignerPins.check(packageName, uid, facts, pins);
+        if (!pinned.allowed) return refuse(pinned.reason, pinned.observedDigest);
         return allow();
     }
 
