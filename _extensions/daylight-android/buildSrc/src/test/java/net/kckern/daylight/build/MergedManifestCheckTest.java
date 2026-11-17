@@ -163,6 +163,19 @@ public class MergedManifestCheckTest {
                 "\"" + KIOSK + "\" android:exported=\"true\" android:lockTaskMode=\"if_whitelisted\"")).toString().contains("lockTaskMode"));
     }
 
+    /** A screen of a personal build (the site, a draft being typed) is behind the lock: no component declares otherwise. */
+    @Test public void noComponentOfAPersonalBuildDeclaresItselfOverTheLockScreen() {
+        String text = "<activity android:name=\"com.example.TextScreen\" android:exported=\"false\" />";
+        assertEquals(Collections.emptyList(), phone(PERMISSIONS, APP, COMPONENTS + text));
+        for (String attribute : new String[] { "showWhenLocked", "turnScreenOn", "showOnLockScreen" }) {
+            List<String> f = phone(PERMISSIONS, APP, COMPONENTS + text.replace(" />", " android:" + attribute + "=\"true\" />"));
+            assertEquals(String.valueOf(f), 1, f.size());
+            assertTrue(f.get(0), f.get(0).contains("com.example.TextScreen") && f.get(0).contains(attribute));
+        }
+        assertEquals("said false is not a problem", Collections.emptyList(),
+                phone(PERMISSIONS, APP, COMPONENTS + text.replace(" />", " android:showWhenLocked=\"false\" />")));
+    }
+
     @Test public void nothingOfTheAppIsBackedUpOrTransferred() {
         for (String attr : new String[] { " android:dataExtractionRules=\"@xml/daylight_data_extraction_rules\"",
                 " android:fullBackupContent=\"@xml/daylight_backup_rules\"" }) {

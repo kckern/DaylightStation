@@ -124,6 +124,8 @@ public final class MergedManifestCheck {
     }
 
     private static final String[] COMPONENTS = { "activity", "activity-alias", "service", "receiver", "provider" };
+    /** Manifest attributes that put a window over the lock screen or wake the screen for it. */
+    private static final String[] LOCK_SCREEN_ATTRIBUTES = { "showWhenLocked", "turnScreenOn", "showOnLockScreen" };
 
     /** The exact list of a device with control.bind none. */
     private static void personalRules(Document doc, PersonalBuild.Expectation want, List<String> out) {
@@ -149,6 +151,13 @@ public final class MergedManifestCheck {
                 if (reachable) exported.add(e.getAttributeNS(ANDROID, "name"));
                 if (!e.getAttributeNS(ANDROID, "lockTaskMode").isEmpty()) {
                     out.add(e.getAttributeNS(ANDROID, "name") + " declares android:lockTaskMode: a personal device is never put in lock task");
+                }
+                // The site, a recording screen, a draft being typed: all of it is behind the lock.
+                for (String attribute : LOCK_SCREEN_ATTRIBUTES) {
+                    if ("true".equals(e.getAttributeNS(ANDROID, attribute))) {
+                        out.add(e.getAttributeNS(ANDROID, "name") + " declares android:" + attribute
+                                + ": nothing of a personal device shows over the lock screen");
+                    }
                 }
             }
         }

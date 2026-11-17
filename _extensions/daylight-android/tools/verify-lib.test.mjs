@@ -488,6 +488,23 @@ test('cleartext traffic, the TV launcher category and lock task fail a personal 
   assert.match(personalBuildFailures(phoneTree(GOOD_APP, [PHONE_COMPONENTS[0], locked, ...PHONE_COMPONENTS.slice(2)]), PHONE, CAPS)[0], /lockTaskMode/);
 });
 
+test('no component of a personal build declares itself over the lock screen', () => {
+  const TEXT = 'net.kckern.daylight.cap.quickinput.shell.TextInputActivity';
+  const screen = (attr) => [...component('activity', TEXT, 'false', null), ...(attr ? [`            A: ${NS}:${attr}(0x01010001)=true`] : [])];
+  assert.deepEqual(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, screen(null)), PHONE, CAPS), []);
+  for (const attr of ['showWhenLocked', 'turnScreenOn', 'showOnLockScreen']) {
+    assert.deepEqual(personalBuildFailures(phoneTree(GOOD_APP, PHONE_COMPONENTS, screen(attr)), PHONE, CAPS),
+      [`${TEXT} declares android:${attr} on a device with control.bind none: nothing of a personal build shows over the lock screen`]);
+  }
+});
+
+test('the text screen is not exported', () => {
+  const TEXT = 'net.kckern.daylight.cap.quickinput.shell.TextInputActivity';
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', TEXT, 'false', null))), []);
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', TEXT, 'true', null))),
+    [`activity ${TEXT} is exported=true, expected exported=false`]);
+});
+
 test('every build excludes its data from backup and device transfer', () => {
   assert.deepEqual(backupFailures(phoneTree(GOOD_APP)), []);
   assert.match(backupFailures(phoneTree({ ...GOOD_APP, allowBackup: 'true' }))[0], /allowBackup/);

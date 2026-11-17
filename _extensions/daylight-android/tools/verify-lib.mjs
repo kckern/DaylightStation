@@ -289,6 +289,9 @@ export const EXPECTED_COMPONENTS = {
   // Opening the record screen starts a recording, so only this app can: the payload on a
   // keyed memo link, and the recording's own notification.
   'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity': { exported: false, permission: null },
+  // The text screen sends what is typed on it, so only this app can open it: the payload
+  // on a keyed input link.
+  'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity': { exported: false, permission: null },
   'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService': { exported: false, permission: null, foregroundServiceType: ['microphone'] },
 };
 
@@ -333,6 +336,9 @@ export function isPersonal(device) {
 
 const BOOT_RECEIVER = 'net.kckern.daylight.shell.BootReceiver';
 
+/** Manifest attributes that put a window over the lock screen or wake the screen for it. */
+const LOCK_SCREEN_ATTRIBUTES = ['showWhenLocked', 'turnScreenOn', 'showOnLockScreen'];
+
 /**
  * A personal device's APK is held to an exact list: the components another app can
  * reach are the boot receiver and what each listed capability names under `exported:`
@@ -359,6 +365,12 @@ export function personalBuildFailures(xmltree, device, capabilities) {
   }
   for (const n of nodes) {
     if (COMPONENT_KINDS.includes(n.name) && n.attrs.lockTaskMode !== undefined) failures.push(`${n.attrs.name} declares android:lockTaskMode on a device with control.bind none`);
+    // The site, a recording screen, a draft being typed: all of it is behind the lock.
+    for (const attribute of LOCK_SCREEN_ATTRIBUTES) {
+      if (COMPONENT_KINDS.includes(n.name) && n.attrs[attribute] === 'true') {
+        failures.push(`${n.attrs.name} declares android:${attribute} on a device with control.bind none: nothing of a personal build shows over the lock screen`);
+      }
+    }
   }
   return failures;
 }
