@@ -1,0 +1,92 @@
+// For every device: d8 the device's payload classes (payload + core + its
+// capabilities) into <id>-<version>.jar, write its sha256, and bake a copy
+// into that device's shell APK so a fresh install has a payload to run.
+//
+// shell-api, NanoHTTPD and org.json are compileOnly on the payload side, so
+// their classes are not in these directories and are not dexed.
+
+def catalog = rootProject.ext.catalog
+def payloadVersion = rootProject.ext.payloadVersion
+
+def sdkDir = {
+    def props = new Properties()
+    def lp = new File(rootDir, 'local.properties')
+    if (lp.exists()) lp.withInputStream { props.load(it) }
+    def d = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    if (d == null) throw new GradleException('sdk.dir not set in local.properties and no ANDROID_HOME')
+    file(d)
+}()
+
+def buildToolsDir = {
+    def versions = new File(sdkDir, 'build-tools').listFiles()?.findAll { it.isDirectory() }?.collect { it.name }?.sort()
+    if (!versions) throw new GradleException("no build-tools under ${sdkDir}")
+    new File(sdkDir, "build-tools/${versions.last()}")
+}()
+
+gradle.projectsEvaluated {
+    def payloadProject = project(':payload')
+    def shellProject = project(':shell')
+
+    catalog.devices().each { d ->
+        def cap = d.id.capitalize()
+        // module path -> the javac variant directory holding its classes
+        def modules = [(':payload'): "${d.id}Debug", (':core'): 'debug']
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasPayload) modules[":capabilities:${name}:payload".toString()] = 'debug'
+        }
+
+        def outDir = new File(payloadProject.buildDir, "payload/${d.id}")
+        def jar = new File(outDir, "${d.id}-${payloadVersion}.jar")
+        def sha = new File(jar.absolutePath + '.sha256')
+
+        def dex = payloadProject.tasks.create("payloadDex${cap}", Exec) {
+            group = 'payload'
+            description = "d8 the ${d.id} payload into a loadable jar"
+            modules.each { path, variant -> dependsOn "${path}:compile${variant.capitalize()}JavaWithJavac" }
+            outputs.file jar
+            outputs.upToDateWhen { false }
+            // Resolve the class list at execution time. At configuration time the
+            // compile has not run, so a class added since the last build would be missing.
+            doFirst {
+                outDir.mkdirs()
+                def classes = modules.collectMany { path, variant ->
+                    fileTree(new File(project(path).buildDir, "intermediates/javac/${variant}/classes"))
+                            .matching { include '**/*.class' }.files.collect { it.absolutePath }
+                }
+                if (classes.isEmpty()) throw new GradleException("no payload classes for ${d.id}")
+                commandLine([new File(buildToolsDir, 'd8').absolutePath,
+                             '--min-api', "${d.minSdk}",
+                             '--lib', new File(sdkDir, 'platforms/android-33/android.jar').absolutePath,
+                             '--output', jar.absolutePath] + classes)
+            }
+        }
+
+        def shaTask = payloadProject.tasks.create("payloadSha${cap}") {
+            dependsOn dex
+            outputs.file sha
+            doLast {
+                def md = java.security.MessageDigest.getInstance('SHA-256')
+                jar.withInputStream { input -> def b = new byte[65536]; int n; while ((n = input.read(b)) > 0) md.update(b, 0, n) }
+                sha.text = md.digest().collect { String.format('%02x', it) }.join() + '\n'
+            }
+        }
+
+        payloadProject.tasks.create("payload${cap}") {
+            group = 'payload'
+            description = "Build the ${d.id} payload jar and its sha256"
+            dependsOn shaTask
+        }
+
+        // The shell reads assets/payload-baked.jar when it has no current payload.
+        def bakedDir = new File(shellProject.buildDir, "generated/baked/${d.id}")
+        def bake = shellProject.tasks.create("bakePayload${cap}") {
+            dependsOn dex
+            outputs.dir bakedDir
+            doLast {
+                bakedDir.mkdirs()
+                new File(bakedDir, 'payload-baked.jar').bytes = jar.bytes
+            }
+        }
+        shellProject.tasks.matching { it.name ==~ "merge${cap}(Debug|Release)Assets" }.all { it.dependsOn bake }
+    }
+}

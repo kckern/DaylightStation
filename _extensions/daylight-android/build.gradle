@@ -11,3 +11,4 @@ allprojects {
 ext.catalog = net.kckern.daylight.build.DeviceCatalog.load(rootDir)
 // Also returned by the payload's version(). Override with -PpayloadVersion=p2-...
 ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p1-foundation'
+apply from: 'gradle/payload-dex.gradle'
