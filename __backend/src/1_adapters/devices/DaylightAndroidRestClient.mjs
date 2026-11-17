@@ -7,13 +7,25 @@
  * of body and query fields, never their values: those can hold private URLs,
  * overlay messages or speech text.
  *
+ * CONFLICT means the device is in a state where the command cannot run (no
+ * kiosk window, not in front, an update running). DEVICE_DEPENDENCY_FAILED and
+ * DEVICE_TIMEOUT mean the device answered, and something it depends on (a
+ * page, a download) failed or took too long; TIMEOUT and UNREACHABLE mean the
+ * device itself did not answer.
+ *
+ * A failure also carries `deviceCode`: the device's fixed word for it
+ * (`no_kiosk_activity`, `not_in_foreground`, `not_installed`, ...).
+ *
  * Results use the shape the Fully client returns, `{ ok: true, data }` or
  * `{ ok: false, code, error }`, so callers of either client read them alike.
  *
  * | Condition                          | code               |
  * |------------------------------------|--------------------|
  * | HTTP 401                           | AUTH_REJECTED      |
+ * | HTTP 409                           | CONFLICT           |
  * | HTTP 501                           | UNSUPPORTED        |
+ * | HTTP 502                           | DEVICE_DEPENDENCY_FAILED |
+ * | HTTP 504                           | DEVICE_TIMEOUT     |
  * | other HTTP 4xx, or `ok: false`     | COMMAND_REJECTED   |
  * | any other non-2xx status           | HTTP_ERROR         |
  * | timeout                            | TIMEOUT            |
@@ -137,7 +149,10 @@ export class DaylightAndroidRestClient {
 
     if (status < 200 || status >= 300) {
       const code = status === 401 ? 'AUTH_REJECTED'
+        : status === 409 ? 'CONFLICT'
         : status === 501 ? 'UNSUPPORTED'
+        : status === 502 ? 'DEVICE_DEPENDENCY_FAILED'
+        : status === 504 ? 'DEVICE_TIMEOUT'
           : status >= 400 && status < 500 ? 'COMMAND_REJECTED'
             : 'HTTP_ERROR';
       return this.#failure(code, `HTTP ${status}`, { ...context, status, payload });
@@ -177,7 +192,14 @@ export class DaylightAndroidRestClient {
   #failure(code, error, { method, route, status, startedAt, payload, neverSent } = {}) {
     const deviceError = typeof payload?.error === 'string' ? payload.error : undefined;
     const reason = typeof payload?.reason === 'string' ? payload.reason : undefined;
-    const detail = [deviceError, reason].filter(Boolean).join(' - ');
+    const deviceMessage = typeof payload?.message === 'string' ? payload.message : undefined;
+    // The device's word for the failure. `error` is normally just that word;
+    // when it is a word followed by text ("origin_not_allowed: <url>") the
+    // word is taken and the rest, which can be page data, is left out of the
+    // message and the log. The whole string stays on `deviceError` for a
+    // caller that needs it.
+    const deviceCode = deviceWord(deviceError);
+    const detail = [deviceCode ?? plain(deviceError), plain(reason)].filter(Boolean).join(' - ');
     this.#logger.warn?.('daylightandroid.rest.response', {
       method,
       route,
@@ -194,8 +216,10 @@ export class DaylightAndroidRestClient {
       ...(status ? { status } : {}),
       ...(deviceError ? { deviceError } : {}),
       ...(reason ? { reason } : {}),
-      // A route's own machine-readable refusal code, when its body carries one.
-      ...(typeof payload?.code === 'string' ? { deviceCode: payload.code } : {}),
+      ...(deviceCode ? { deviceCode } : {}),
+      ...(deviceMessage ? { deviceMessage } : {}),
+      // A route's own machine-readable `code` field, when its body carries one.
+      ...(typeof payload?.code === 'string' ? { bodyCode: payload.code } : {}),
       ...(neverSent ? { neverSent: true } : {}),
     };
   }
@@ -204,6 +228,18 @@ export class DaylightAndroidRestClient {
   #redact(text) {
     return this.#token ? String(text).split(this.#token).join('[redacted]') : String(text);
   }
+}
+
+/** The leading word of a device `error`: the whole string, or what precedes ": ". */
+function deviceWord(text) {
+  if (typeof text !== 'string') return undefined;
+  const match = /^([A-Za-z][A-Za-z0-9_.-]{0,63})(?::\s|$)/.exec(text);
+  return match ? match[1] : undefined;
+}
+
+/** Text safe to repeat: undefined for anything carrying a URL. */
+function plain(text) {
+  return typeof text === 'string' && !text.includes('://') ? text : undefined;
 }
 
 /** A plain JSON object from an object, a string or bytes; null for anything else. */

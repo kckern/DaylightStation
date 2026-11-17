@@ -73,7 +73,7 @@ function outcome(result) {
   if (result?.status === 405) return failure('This device does not support that controller action', 501, 'unsupported');
   return failure(
     'Bluetooth did not accept the action. Refresh controller status.',
-    result?.status === 409 || result?.deviceCode === 'action_rejected' ? 409 : 502,
+    result?.status === 409 || result?.bodyCode === 'action_rejected' ? 409 : 502,
     'bridge_rejected',
   );
 }

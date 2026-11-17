@@ -109,8 +109,11 @@ describe('DaylightAndroidRestClient', () => {
     [404, { ok: false, error: 'unknown_route' }, 'COMMAND_REJECTED'],
     [400, { ok: false, error: 'bad_request' }, 'COMMAND_REJECTED'],
     [405, { ok: false, error: 'method_not_allowed' }, 'COMMAND_REJECTED'],
+    [409, { ok: false, error: 'no_kiosk_activity' }, 'CONFLICT'],
     [500, { ok: false, error: 'internal' }, 'HTTP_ERROR'],
+    [502, { ok: false, error: 'download_failed' }, 'DEVICE_DEPENDENCY_FAILED'],
     [503, 'Service Unavailable', 'HTTP_ERROR'],
+    [504, { ok: false, error: 'load_timeout' }, 'DEVICE_TIMEOUT'],
   ])('maps HTTP %i to %s', async (status, data, code) => {
     const { client, logger } = build({ status, data });
     const result = await client.post('/device/reboot');
@@ -131,11 +134,45 @@ describe('DaylightAndroidRestClient', () => {
     expect(result.deviceError).toBe('unsupported');
   });
 
-  it('passes on the body `code` of a refusal', async () => {
+  it('passes on the body `code` of a refusal as bodyCode', async () => {
     const { client } = build({ status: 409, data: { ok: false, error: 'wake the controller', code: 'action_rejected' } });
-    await expect(client.post('/bluetooth/connect', {})).resolves.toMatchObject({
-      ok: false, code: 'COMMAND_REJECTED', status: 409, deviceCode: 'action_rejected',
-    });
+    const result = await client.post('/bluetooth/connect', {});
+    expect(result).toMatchObject({ ok: false, code: 'CONFLICT', status: 409, bodyCode: 'action_rejected' });
+    // A sentence is not a device word.
+    expect(result).not.toHaveProperty('deviceCode');
+  });
+
+  it.each([
+    [409, { ok: false, error: 'no_kiosk_activity' }, 'no_kiosk_activity'],
+    [409, { ok: false, error: 'not_in_foreground' }, 'not_in_foreground'],
+    [409, { ok: false, error: 'not_ready' }, 'not_ready'],
+    [200, { ok: false, error: 'not_installed' }, 'not_installed'],
+    [400, { ok: false, error: 'invalid_setting' }, 'invalid_setting'],
+    // A message that leads with the word still yields the word.
+    [400, { ok: false, error: 'origin_not_allowed: https://private.test/secret/path?token=abc' }, 'origin_not_allowed'],
+    [400, { ok: false, error: 'bad_request', message: 'origin_not_allowed: https://private.test/secret/path' }, 'bad_request'],
+  ])('carries the device word of an HTTP %i refusal as deviceCode', async (status, data, deviceCode) => {
+    const { client } = build({ status, data });
+    await expect(client.post('/kiosk/foreground')).resolves.toMatchObject({ ok: false, deviceCode });
+  });
+
+  it('keeps page data the device echoes out of the error text and the log, and keeps it for the caller', async () => {
+    const { client, logger } = build({ status: 400, data: { ok: false, error: 'origin_not_allowed: https://private.test/secret/path?token=abc' } });
+
+    const result = await client.post('/kiosk/load', { url: 'https://private.test/secret/path?token=abc' });
+
+    expect(result.code).toBe('COMMAND_REJECTED');
+    expect(result.error).toBe('HTTP 400: origin_not_allowed');
+    expect(result.deviceError).toBe('origin_not_allowed: https://private.test/secret/path?token=abc');
+    expect(logged(logger)).not.toContain('private.test');
+    expect(logger.warn).toHaveBeenCalledWith('daylightandroid.rest.response', expect.objectContaining({ detail: 'origin_not_allowed' }));
+  });
+
+  it('reads a device `message` beside `error`', async () => {
+    const { client } = build({ status: 400, data: { ok: false, error: 'bad_request', message: 'origin_not_allowed: https://private.test/x' } });
+    const result = await client.post('/kiosk/load', {});
+    expect(result.deviceMessage).toBe('origin_not_allowed: https://private.test/x');
+    expect(result.error).not.toContain('private.test');
   });
 
   it('can be told to keep what the device said out of its logs', async () => {
@@ -145,9 +182,9 @@ describe('DaylightAndroidRestClient', () => {
 
     const result = await client.post('/bluetooth/pairing', { pin: '1234' });
 
-    expect(result).toMatchObject({ ok: false, code: 'COMMAND_REJECTED', status: 409 });
+    expect(result).toMatchObject({ ok: false, code: 'CONFLICT', status: 409 });
     expect(logged(logger)).not.toMatch(/1234|0000/);
-    expect(logger.warn).toHaveBeenCalledWith('daylightandroid.rest.response', expect.objectContaining({ route: '/bluetooth/pairing', code: 'COMMAND_REJECTED', status: 409 }));
+    expect(logger.warn).toHaveBeenCalledWith('daylightandroid.rest.response', expect.objectContaining({ route: '/bluetooth/pairing', code: 'CONFLICT', status: 409 }));
   });
 
   it('maps a 2xx body with ok:false to COMMAND_REJECTED', async () => {

@@ -41,10 +41,12 @@ describe('DaylightAndroidBluetoothAdapter', () => {
   });
 
   it.each([
-    ['HTTP 409', failure('COMMAND_REJECTED', { status: 409 }), { status: 409, code: 'bridge_rejected' }],
-    ['a body that says action_rejected', failure('COMMAND_REJECTED', { status: 200, deviceCode: 'action_rejected' }), { status: 409, code: 'bridge_rejected' }],
+    ['HTTP 409', failure('CONFLICT', { status: 409 }), { status: 409, code: 'bridge_rejected' }],
+    ['a body that says action_rejected', failure('COMMAND_REJECTED', { status: 200, bodyCode: 'action_rejected' }), { status: 409, code: 'bridge_rejected' }],
     ['any other refusal', failure('COMMAND_REJECTED', { status: 400 }), { status: 502, code: 'bridge_rejected' }],
     ['a device-side failure', failure('HTTP_ERROR', { status: 500 }), { status: 502, code: 'bridge_rejected' }],
+    ['a device-side 502', failure('DEVICE_DEPENDENCY_FAILED', { status: 502 }), { status: 502, code: 'bridge_rejected' }],
+    ['a device-side 504', failure('DEVICE_TIMEOUT', { status: 504 }), { status: 502, code: 'bridge_rejected' }],
     ['a rejected token', failure('AUTH_REJECTED', { status: 401 }), { status: 502, code: 'auth_rejected' }],
     ['a wrong method (405)', failure('COMMAND_REJECTED', { status: 405, deviceError: 'method_not_allowed' }), { status: 501, code: 'unsupported' }],
     ['an unsupported action (501)', failure('UNSUPPORTED', { status: 501, reason: 'gamepad mode' }), { status: 501, code: 'unsupported' }],
