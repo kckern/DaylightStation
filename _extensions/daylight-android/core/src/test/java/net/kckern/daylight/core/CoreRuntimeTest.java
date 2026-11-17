@@ -83,7 +83,10 @@ public class CoreRuntimeTest {
         assertEquals(9, core.settings().get("sample.level"));
 
         JSONObject list = call(core, "GET", "/settings", Collections.emptyMap(), null);
-        assertEquals("sample.level", list.getJSONArray("settings").getJSONObject(0).getString("key"));
+        JSONArray rows = list.getJSONArray("settings");
+        boolean found = false;
+        for (int i = 0; i < rows.length(); i++) if ("sample.level".equals(rows.getJSONObject(i).getString("key"))) found = true;
+        assertTrue(found);
 
         JSONObject reset = call(core, "DELETE", "/settings", Collections.singletonMap("key", "sample.level"), null);
         assertEquals(200, reset.getInt("_status"));

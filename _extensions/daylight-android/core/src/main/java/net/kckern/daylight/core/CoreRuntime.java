@@ -19,12 +19,21 @@ public final class CoreRuntime implements CoreContext {
     private final List<Capability> capabilities = new ArrayList<>();
     private final List<Capability> started = new ArrayList<>();
     private final long startedAtMs = System.currentTimeMillis();
+    private final ServiceRegistry services = new ServiceRegistry();
+    private final Components components;
+    private final StatusBoard status = new StatusBoard();
+    private final NoteBus notes = new NoteBus();
+    private final EventLog log = new EventLog();
+    private final Auth auth;
+    private boolean prepared;
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
         this.shell = shell;
         this.deviceId = deviceId;
         this.payloadVersion = payloadVersion;
-        this.router = new Router(new Auth(shell.controlToken()));
+        this.auth = new Auth(shell.controlToken());
+        this.router = new Router(auth);
+        this.components = new Components(shell);
         this.settings = new SettingsRegistry(new File(stateDir, "settings-overrides.json"));
     }
 
@@ -32,14 +41,30 @@ public final class CoreRuntime implements CoreContext {
     @Override public Router router() { return router; }
     @Override public SettingsRegistry settings() { return settings; }
     @Override public String deviceId() { return deviceId; }
+    @Override public ServiceRegistry services() { return services; }
+    @Override public Components components() { return components; }
+    @Override public StatusBoard status() { return status; }
+    @Override public NoteBus notes() { return notes; }
+    @Override public EventLog log() { return log; }
+    public Auth auth() { return auth; }
+
+    /** Called by the payload entry class when the shell binds or unbinds a component. */
+    public void onShellComponent(String name, Object instance) { components.dispatch(name, instance); }
 
     public void add(Capability capability) { capabilities.add(capability); }
 
-    /** Register everything, apply device defaults, then start. Throws when the payload cannot run. */
-    public void start(JSONObject defaults) {
+    /** Register every capability and apply the device defaults. Touches no hardware. */
+    public synchronized void prepare(JSONObject defaults) {
+        if (prepared) return;
         registerCoreRoutes();
         for (Capability c : capabilities) c.register(this);
         settings.applyDefaults(defaults);
+        prepared = true;
+    }
+
+    /** Register everything, apply device defaults, then start. Throws when the payload cannot run. */
+    public void start(JSONObject defaults) {
+        prepare(defaults);
         for (Capability c : capabilities) {
             try {
                 c.start();
@@ -62,7 +87,7 @@ public final class CoreRuntime implements CoreContext {
     }
 
     private void registerCoreRoutes() {
-        router.route("GET", "/status", req -> Router.Response.json(200, status()));
+        router.route("GET", "/status", req -> Router.Response.json(200, statusBody()));
         router.route("GET", "/capabilities", req -> Router.Response.json(200, new JSONObject()
                 .put("ok", true)
                 .put("capabilities", names())
@@ -95,17 +120,18 @@ public final class CoreRuntime implements CoreContext {
         return a;
     }
 
-    private JSONObject status() throws Exception {
+    /** The core's own fields, then whatever capabilities contribute to the STATUS surface. */
+    private JSONObject statusBody() throws Exception {
         // The shell's payload status is extra detail. If it is not JSON, /status still answers.
         Object payload = JSONObject.NULL;
         try { payload = new JSONObject(shell.payloadStatusJson()); } catch (Exception notJson) { }
-        return new JSONObject()
+        return status.collect(StatusBoard.Surface.STATUS, new JSONObject()
                 .put("ok", true)
                 .put("device", deviceId)
                 .put("payloadVersion", payloadVersion)
                 .put("shellVersionCode", shell.shellVersionCode())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
                 .put("capabilities", names())
-                .put("payload", payload);
+                .put("payload", payload));
     }
 }

@@ -43,6 +43,7 @@ public final class Main implements Payload {
     @Override public String version() { return DeviceConfig.PAYLOAD_VERSION; }
 
     @Override public void onShellComponent(String name, Object instance) {
-        // Phase 1 has no capability that uses a shell component. Phase 2 forwards these to the core.
+        CoreRuntime c = core;
+        if (c != null) c.onShellComponent(name, instance);
     }
 }
