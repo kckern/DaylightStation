@@ -262,10 +262,10 @@ public class WifiLinkPolicyTest {
 
     @Test public void redactedBssidFallsBackToFkb() {
         // Android 10 with Location services off returns the placeholder; FKB still knows.
-        String[] r = WifiLinkPolicy.resolveBssid("02:00:00:00:00:00", "16:98:8F:00:00:01");
-        assertEquals("16:98:8f:00:00:01", r[0]);
+        String[] r = WifiLinkPolicy.resolveBssid("02:00:00:00:00:00", "00:00:5E:00:53:01");
+        assertEquals("00:00:5e:00:53:01", r[0]);
         assertEquals("fkb", r[1]);
-        assertEquals("fkb", WifiLinkPolicy.resolveBssid(null, "16:98:8f:00:00:01")[1]);
+        assertEquals("fkb", WifiLinkPolicy.resolveBssid(null, "00:00:5e:00:53:01")[1]);
     }
 
     @Test public void neitherSourceIsNullNotAPlaceholder() {
@@ -291,23 +291,23 @@ public class WifiLinkPolicyTest {
     @Test public void roamIsDetectedOffTheFkbFallback() {
         WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
         WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, "02:00:00:00:00:00", 0, 0);
-        a.fkbBssid = "16:98:8f:00:00:01";
+        a.fkbBssid = "00:00:5e:00:53:01";
         WifiLinkPolicy.Sample s1 = tr.add(a, T);
-        assertEquals("16:98:8f:00:00:01", s1.bssid);
+        assertEquals("00:00:5e:00:53:01", s1.bssid);
         assertEquals("fkb", s1.bssidSource);
         WifiLinkPolicy.Reading b = reading(10_000, -66, 72, 5180, "02:00:00:00:00:00", 0, 0);
-        b.fkbBssid = "16:98:8f:00:00:02";
+        b.fkbBssid = "00:00:5e:00:53:02";
         WifiLinkPolicy.Sample s2 = tr.add(b, T);
         assertTrue(s2.roamed);
-        assertEquals("16:98:8f:00:00:01", s2.roamFrom);
+        assertEquals("00:00:5e:00:53:01", s2.roamFrom);
     }
 
     @Test public void switchingSourceOnTheSameApIsNotARoam() {
         WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
         WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, null, 0, 0);
-        a.fkbBssid = "16:98:8F:00:00:01";
+        a.fkbBssid = "00:00:5E:00:53:01";
         tr.add(a, T);
-        WifiLinkPolicy.Sample s = tr.add(reading(10_000, -60, 72, 2412, "16:98:8f:00:00:01", 0, 0), T);
+        WifiLinkPolicy.Sample s = tr.add(reading(10_000, -60, 72, 2412, "00:00:5e:00:53:01", 0, 0), T);
         assertFalse(s.roamed);
         assertEquals("wifimanager", s.bssidSource);
     }
@@ -315,7 +315,7 @@ public class WifiLinkPolicyTest {
     @Test public void bssidSourceIsInTheJson() throws Exception {
         WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
         WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, null, 0, 0);
-        a.fkbBssid = "16:98:8f:00:00:01";
+        a.fkbBssid = "00:00:5e:00:53:01";
         assertEquals("fkb", tr.add(a, T).toJson().getString("bssidSource"));
         assertTrue(tr.add(reading(10_000, -60, 72, 2412, null, 0, 0), T).toJson().isNull("bssidSource"));
     }
