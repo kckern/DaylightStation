@@ -43,7 +43,14 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
         state.followUp = null;
         state.attemptId = event.attemptId; state.submitted = event; state.draft = event; state.assessment = null; state.publication = null; state.reason = null; state.retryAt=null; state.phase = 'assessing'; break;
       case 'follow-up-asked': state.followUp = { attemptId: event.attemptId, question: event.question, firstText: state.submitted?.text ?? '' }; state.followUpAsked = true; state.draft = null; state.phase = 'follow-up'; break;
-      case 'assessed': state.assessment = event; if (event.verdict === 'uncertain') { state.phase = 'retry'; state.reason = 'unclear'; } break;
+      case 'assessed':
+        state.assessment = event;
+        if (event.verdict === 'uncertain') {
+          state.phase = 'retry'; state.reason = 'unclear';
+          // After a follow-up the retry box holds both answers, so the child edits the whole thing.
+          if (state.submitted?.followUpOf && state.assessText !== state.submitted.text) state.draft = { ...state.draft, text: state.assessText, takeId: null };
+        }
+        break;
       case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; break;
       case 'publication-pending': state.publication = event; state.subject = event.subject; state.selectionId = event.selectionId; state.phase = 'pending'; state.reason = 'publication'; break;
       case 'completed': state.phase = 'completed'; state.selectionId = event.selectionId ?? state.selectionId; state.reason = null; state.retryAt = null; break;

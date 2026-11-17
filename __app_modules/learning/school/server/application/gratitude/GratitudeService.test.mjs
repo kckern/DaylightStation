@@ -144,4 +144,16 @@ describe('School gratitude workflow',()=>{
     expect((await g.service.submit('child','2026-11-16',body)).followUp).toMatchObject({question:GRATITUDE_FOLLOW_UP_FALLBACK});
     expect(g.days.get('2026-11-16').find(e=>e.type==='follow-up-asked').writer).toBe('fallback');
   });
+  it('fills the retry box with both answers after an unclear follow-up answer',async()=>{
+    const h=harness({verdicts:['general','uncertain']});
+    await h.service.submit('child','2026-11-16',{...body,text:"I'm grateful for my mom"});
+    const retry=await h.service.submit('child','2026-11-16',{...body,attemptId:'attempt-2',followUpOf:'attempt-1',text:'um'});
+    expect(retry).toMatchObject({phase:'retry',reason:'unclear',followUp:null,draft:{text:"I'm grateful for my mom\num"}});
+  });
+  it('still asks the follow-up for a general verdict stored before follow-ups were switched off',async()=>{
+    const r=harness({followUpEnabled:false});
+    r.days.set('2026-11-16',[{type:'opened',at:'2026-11-16T17:59:00Z'},{type:'submitted',at:'2026-11-16T17:59:10Z',...body},
+      {type:'assessed',at:'2026-11-16T17:59:20Z',attemptId:'attempt-1',verdict:'general',confidence:.99,model:'test',rubricVersion:5,matchedId:null}]);
+    expect((await r.restart().open('child','2026-11-16')).phase).toBe('follow-up');
+  });
 });
