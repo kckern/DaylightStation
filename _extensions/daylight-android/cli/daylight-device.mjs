@@ -8,9 +8,12 @@
 //   $DAYLIGHT_ANDROID_TOKENS, else $DAYLIGHT_BASE_PATH/data/household/auth/daylight-android.yml
 // Ports come from devices/<device>.yml.
 //
+// A device whose control.bind is none (the phone) has no control API: every command for
+// it answers with how that device is debugged instead (adb).
+//
 // The token is sent as a header only. It is never put in a URL, and every line this
 // CLI prints is passed through a filter that removes it.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
@@ -106,6 +109,18 @@ const LIFELINE = {
   'owner-release': { method: 'POST', path: '/owner/release' },
   log: { method: 'GET', path: '/log' },
 };
+
+/**
+ * A device built with control.bind none (the owner's phone) starts no control server
+ * and no lifeline, so nothing this CLI sends could arrive. Returns what to say, or null
+ * for a device that listens.
+ */
+export function noControlApi(name, control) {
+  if (control?.bind !== 'none') return null;
+  return `'${name}' has no control API (control.bind: none): this CLI cannot reach it. `
+    + `Debug it over adb: adb logcat --pid=$(adb shell pidof -s <its package>), and `
+    + `adb shell run-as <its package> for its files. See __docs/reference/android/phone.md.`;
+}
 
 export function resolveDevice(fleet, name) {
   const entry = fleet?.[name];
@@ -539,8 +554,14 @@ export async function main(argv) {
     console.log(USAGE);
     return name && name !== 'help' ? 1 : 0;
   }
+  // A device with no control API is answered before the private file is opened: there
+  // is no host or token for it to hold.
+  const deviceFile = join(HERE, '..', 'devices', `${name}.yml`);
+  const known = /^[a-z][a-z0-9]*$/.test(name) && existsSync(deviceFile);
+  const unreachable = known ? noControlApi(name, parse(readFileSync(deviceFile, 'utf8')).control) : null;
+  if (unreachable) throw new Error(unreachable);
   const device = resolveDevice(parse(readFileSync(tokensPath(), 'utf8')), name);
-  const ports = parse(readFileSync(join(HERE, '..', 'devices', `${name}.yml`), 'utf8')).control;
+  const ports = parse(readFileSync(deviceFile, 'utf8')).control;
   const clean = redactor(device.token);
   try {
     return await run(device, ports, parseArgs(args));

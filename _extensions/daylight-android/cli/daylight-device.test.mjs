@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildRequest, parseArgs, resolveDevice, run, send, usage } from './daylight-device.mjs';
+import { buildRequest, noControlApi, parseArgs, resolveDevice, run, send, usage } from './daylight-device.mjs';
 
 const fleet = { portal: { host: '192.0.2.10', token: 'x'.repeat(64) }, broken: { host: '192.0.2.11' } };
 const ports = { port: 8780, lifelinePort: 8781 };
@@ -504,4 +504,20 @@ test('run sends the wake request before a jank reading and never fails on it', a
   assert.equal(code, 0);
   assert.deepEqual(calls, [`POST ${BASE}/screen`, `GET ${BASE}/debug/fps?ms=1000`]);
   assert.ok(!out.lines.join('\n').includes('unsupported'), 'the wake request\'s answer is not printed');
+});
+
+// ── a device with no control API (the phone) ──────────────────────────────
+
+test('a device whose control.bind is none cannot be driven, and the message says how it is debugged', () => {
+  const message = noControlApi('phone', { port: 8780, lifelinePort: 8781, bind: 'none' });
+  assert.match(message, /'phone' has no control API \(control\.bind: none\)/);
+  assert.match(message, /adb logcat/);
+  assert.match(message, /phone\.md/);
+});
+
+test('a device that listens is driven as before', () => {
+  assert.equal(noControlApi('portal', { port: 8780, lifelinePort: 8781 }), null);
+  assert.equal(noControlApi('portal', { port: 8780, lifelinePort: 8781, bind: 'lan' }), null);
+  assert.equal(noControlApi('x', { port: 8780, lifelinePort: 8781, bind: 'loopback' }), null);
+  assert.equal(noControlApi('x', undefined), null);
 });

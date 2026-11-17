@@ -57,7 +57,10 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     @Override
     public MediaSession.ConnectionResult onConnect(MediaSession session, MediaSession.ControllerInfo controller) {
         if (!ControllerPolicy.allows(controller.getPackageName(), controller.getUid(), Process.myUid(), myPackage, Build.VERSION.SDK_INT)) {
-            Log.w(TAG, "refused a media controller that is not this app, the system or a known car or assistant app");
+            // The package's name is logged so that a car or a headset app that should be on
+            // the list can be found. It says nothing about what is played.
+            Log.w(TAG, "refused a media controller that is not this app, the system or a known car or assistant app: "
+                    + controller.getPackageName());
             return MediaSession.ConnectionResult.reject();
         }
         return MediaLibrarySession.Callback.super.onConnect(session, controller);

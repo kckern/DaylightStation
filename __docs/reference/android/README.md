@@ -340,6 +340,8 @@ missing provider is a normal state.
 | `NoteListener` (on the note bus) | `synth` subscribes | `midi-bridge` publishes each live note |
 | `OutputGate` | `synth` | `audio-guard` closes it when sound would leave by the wrong speaker |
 | `BluetoothRole` | `midi-bridge` (`midi`), `audio-guard` (`audio`) | `bluetooth-controls`, role mode |
+| `LinkHandler` | `bookmarks` (`open`, `bookmark`), `one-tap-actions` (`action`), `media-service` (`media`), `voice-memo` (`memo`) | `notifications` hands a checked link to the handler of its kind |
+| `LocalNotices` | `notifications` | `voice-memo` reports the state of its upload queue |
 | `PairingDialogExemption` | `bluetooth-controls` | `lockdown`: while it is granted, Android's own pairing dialog (Settings in front) is not recalled over |
 | `ScreenPower` | `screen-power` | `volume-keys`: wake on a key, sleep on a double volume-down. Without it the attempt is logged `screen-toggle-unavailable` |
 | `InputLock` | `lockdown` | `volume-keys`: while the lock is active a volume key does nothing |
@@ -586,6 +588,15 @@ build of that device and names the placeholder, never a value.
 | `presence` | portal | Reports connected Bluetooth devices to the backend | `presence.endpoint`, `presence.token` (secret), `presence.heartbeatMs` |
 | `mic-bridge` | shield | Microphone PCM over a loopback WebSocket | `mic.port`, `mic.allowNoOrigin` |
 | `lease-gate` | shield | Polls for a lease that decides whether one app may run | `lease.endpoint`, `lease.packageName`, `lease.credential` (secret) |
+| `notifications` | phone | Deep links through one link activity; the app's own local notifications (`LocalNotices`) | `links.origins` |
+| `bookmarks` | phone | Named pages of the site; the `open` and `bookmark` link kinds | `bookmarks.1` to `bookmarks.8` |
+| `one-tap-actions` | phone | Actions as launcher shortcuts, pinned shortcuts and quick-settings tiles | `actions.*` |
+| `widgets` | phone | A home-screen widget of up to four actions | `widgets.actions` |
+| `media-service` | phone | Native audio playback of household media: browse tree, stream resolution, progress reports; a Media3 library session in the shell half | `media.roots`, `media.recentLimit`, `media.pageSize` |
+| `android-auto` | phone | Declares the media library service to Android Auto. Declarations only, no payload | none |
+| `voice-memo` | phone | Records a voice memo and uploads it to the Journalist from a queue kept on disk | none (`identity.user` must be set) |
+
+The phone's capabilities are described in `__docs/reference/android/phone.md`.
 
 What each ported capability adds to a device that lists it. HTTP routes need the
 token like every other route; WebSocket messages are JSON text frames on the
@@ -1128,6 +1139,9 @@ much that shows differs by capability:
 | `webview-host` | The event subscription and the offer of the session to the Activity | Everything past the Activity completing the attach: the WebView, its detach on stop, the network callback |
 | `audio-guard` | The connector and guard built and dropped, the guard's volume receiver registered and unregistered, the bt-cycle thread ended | The connector's own receivers and profile proxy, which it sets up on a Handler thread |
 | `presence` | The reporter built and dropped; the HTTP report with its token header | Its receiver and profile proxies, which need a Bluetooth adapter |
+| `media-service` | The worker thread and the `media` port taken and given back; browse, resolve and progress decisions over a fake backend | The Media3 player and session, audio focus, the media notification, every car and headset |
+| `voice-memo` | The upload thread and the `memos` port taken and given back; an upload of a file dropped in the inbox over a fake backend | The recorder, the microphone, the network callback (the fake context has no connectivity service) |
+| `notifications` | The `links` port; a post and a cancel over a context with no notification service, which do nothing and do not throw | A notification on a screen, its channels, the permission dialog, a tap |
 | `midi-bridge` | The link built and dropped; the force-reset thread ended | The connector, which needs the MIDI service |
 | `lockdown` | The watcher's timer, the focus subscription, the accessibility event listener and the touch observer taken and given back; a tick with no watcher recalling through a fake kiosk window; unlock, relock and the stored state; the PIN flow; the package gate; the input lock | Every Android call: window samples, the accessibility start, HOME resolution, device-policy calls, the status-bar shield, the Control Center swipe |
 | `screen-power` | The screen receiver registered and unregistered, the note-bus wake and its worker thread; which screen-off path is chosen | The wake locks, `lockNow`, the accessibility lock action, what the display does |

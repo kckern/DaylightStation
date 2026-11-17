@@ -5,7 +5,11 @@ is described by one YAML file. The build reads that file and produces an app wit
 that device's package name, SDK levels, ports and capabilities.
 
 **State.** A fourth device, `phone`, builds from `devices/phone.yml` (not a kiosk; see
-`__docs/reference/android/phone.md`). It has never been installed. Phase 1 built the foundation: a service, a control API and a payload the
+`__docs/reference/android/phone.md`): web views, one-tap actions, native audio with
+Android Auto, voice memos and local notifications. It has never been installed; its
+acceptance checklist is `__docs/runbooks/android/phone-acceptance.md`. The phone's
+media capability is the only user of Jetpack Media3, pinned to 1.1.1, the newest
+version that builds at compileSdk 33; no kiosk APK contains it. Phase 1 built the foundation: a service, a control API and a payload the
 app can swap over the network. Phase 2 ported the helper code of the old helper apps
 into capabilities. Phase 3 added the kiosk: the WebView window and its page bridge,
 lockdown, screen power, volume, the app launcher and the remote diagnostics
@@ -318,6 +322,16 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
      stated fallback for `NotReadyException`. The link activity does this, after
      starting the shell service with `ShellStart.ensure`. Requests and answers are
      JSON text, so a payload swap cannot break an installed component.
+     The media library service (`media` port) and the memo recorder (`memos` port)
+     do the same. A port's name is spelled on both sides, with a test on each side
+     that pins it, so that adding a port does not change `shell-api`.
+   - A component that must not be reachable from outside the app (the play screen,
+     the record screen, the recorder service) is declared `exported="false"` and is
+     started by the payload by class name, while the link activity is on screen. A
+     link's answer still cannot name an activity (`LinkEffect`).
+   - Every component needs a row in `EXPECTED_COMPONENTS` (`tools/verify-lib.mjs`):
+     its `exported` flag, its bind permission and, for a service, its foreground
+     service type. The verifier fails a build whose APK differs from the table.
    - Base permissions only a kiosk needs (`REQUEST_INSTALL_PACKAGES`,
      `WRITE_SECURE_SETTINGS`) are not in the shell's manifest. The generated device
      manifest adds them to a build that lists `lockdown`, or `webview-host` with a

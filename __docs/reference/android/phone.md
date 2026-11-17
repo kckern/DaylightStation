@@ -13,8 +13,11 @@ Android does (cold starts, tiles, the launcher, link handling) is from the
 platform's documentation and is unproven until the on-device checklist is run.
 "Unproven on a phone" below marks the places where that matters most.
 
-Not built yet: native audio playback (`media-service`), Android Auto, voice memo
-recording and upload, local notifications.
+What the phone build has: the site's mobile web views (`webview-host`), links
+(`notifications`), `bookmarks`, `one-tap-actions`, `widgets`, native audio playback
+(`media-service`) with Android Auto (`android-auto`), voice memos for the Journalist
+(`voice-memo`) and the app's own local notifications. What it does not have is
+under "What the phone does not have".
 
 ## What makes it a phone and not a kiosk
 
@@ -72,7 +75,7 @@ None of these is in the repo. All go in the private tokens file.
 |---|---|---|
 | `placeholders:` | `phone_start_url` | The household site's full https URL as the phone reaches it. `webview.startUrl`; the backend's origin is taken from it |
 | `placeholders:` | `phone_link_host` | The site's host name only (lower case, no scheme, port or path). Used for the https link filter (`appLinks.host`) and for `links.origins` |
-| `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. Nothing sends it yet; the memo upload will |
+| `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. The memo upload sends it, and sends nothing without it |
 
 The phone needs no top-level entry and no control token in that file. Two more
 settings exist with defaults that normally fit, and are set under `defaults:` in
@@ -98,8 +101,9 @@ Two forms are links:
 | `daylight://open?path=/media` | Open that page of the site in the app | no |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>?k=<key>` | Run a one-tap action | yes |
-| `daylight://memo/new?k=<key>` | Start a voice memo (no handler yet: "Not available on this device") | yes |
-| `daylight://media/play?id=<contentId>&k=<key>` | Play natively (no handler yet) | yes |
+| `daylight://memo/new?k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
+| `daylight://memo/queue?k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
+| `daylight://media/play?id=<contentId>&k=<key>` | Play that household item natively | yes |
 | `https://<the site>/<path>` | The same as `daylight://open` for that path | no |
 
 The rule: a link kind needs the install key unless all it does is show a page of
@@ -121,7 +125,7 @@ the phone can send it anything. What happens to a link:
    port, plain http for an https site or a `user@` form is refused. `intent:`,
    `file:`, `content:`, `javascript:`, `data:` and unknown `daylight://` kinds are
    refused.
-3. **The install key.** A link that changes something (`action`, `memo`) must carry
+3. **The install key.** A link that changes something (`action`, `memo`, `media`) must carry
    `?k=<key>`. The key is 32 hex characters made on the phone at first start and
    kept beside the settings overrides. The app's own surfaces add it. It is never
    returned by a route, shown by `GET /settings` or written to a log.
@@ -198,8 +202,8 @@ characters.
 |---|---|
 | `open:/path` | Opens that page of the site in the app |
 | `bookmark:<id>` | Opens a bookmark |
-| `memo:new` | Starts a voice memo. **Stand-in today:** with no recorder in the build it opens the app at `actions.memoFallbackPath` (default `/`) and records nothing. `GET /actions` marks it `placeholder: true` |
-| `media:<contentId>` | Plays natively (no handler yet: "not available on this device") |
+| `memo:new` | Opens the recorder and starts a voice memo; tapped again while one is being recorded, stops and saves it. In a build with no `voice-memo` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`; a per-device test fails a phone build where that is so |
+| `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
 
 An action exists only as a settings line. Running one takes its id and nothing
@@ -217,7 +221,7 @@ as the action's id and its outcome.
 |---|---|
 | `actions.shortcuts` | Ids of the launcher shortcuts, in order. Empty: the first actions |
 | `actions.tiles` | Ids by quick-settings slot; an empty entry leaves a slot unassigned (`memo,,lights`) |
-| `actions.memoFallbackPath` | The page a memo action opens until recording exists |
+| `actions.memoFallbackPath` | The page a memo action opens in a build without `voice-memo` |
 
 | Method | Route | Answer |
 |---|---|---|
@@ -261,6 +265,275 @@ One widget, "Daylight actions": up to four buttons bound to the same actions.
 The widget is redrawn when the payload starts and whenever the actions are
 published.
 
+## `media-service`
+
+Native audio playback of household media: lock-screen and headset controls, a media
+notification, and browsing from a car. Audio only. A video item is not played
+natively and answers "Could not start playback"; it plays in the web view.
+
+### Who does what
+
+| Piece | Installed (shell half) | Payload | With no payload loaded |
+|---|---|---|---|
+| `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
+| `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
+
+The installed service asks the payload through the `media` `PayloadPort`, in
+process, as JSON: `browse`, `resolve`, `event`. It hands back media ids and nothing
+else. The same three are routes (`GET /media/browse`, `POST /media/resolve`,
+`POST /media/event`) and `GET /media/status` gives `{lastReportAtMs, lastError,
+reports, problems}`; on the phone nothing serves them to anyone.
+
+Media3 is pinned to 1.1.1, the newest version whose libraries build with
+compileSdk 33 and Android Gradle Plugin 7.4.2. A newer one needs a newer compileSdk
+for every device.
+
+### Only household media plays
+
+- A media id is `root`, `recent`, `catalog`, `c:<contentId>` (a container),
+  `m:<skip>|<contentId>` (a later page of it) or `p:<contentId>[|<parent>]` (an
+  item). Anything else is refused. An id is never a URL.
+- A content id is `<source>:<localId>`, checked before it becomes path segments of
+  a backend route: no relative or empty segment, no backslash, bar or control
+  character, and no segment the backend reads as a modifier (`shuffle`, `playable`,
+  `launchable`, `recent_on_top`, `expand`).
+- What plays is the `mediaUrl` in the backend's own answer for that id, and only
+  when it is on the backend's origin. A controller's own URI on an item is dropped.
+- A `media` link carries a content id and this install's key. Nothing else in the
+  link is read.
+
+### Who may connect
+
+The library service is exported with no permission: a car, the system's media
+controls and Bluetooth reach it by binding it, and no permission exists that only
+they hold. Each connection is decided by `ControllerPolicy`: this app, a system uid,
+and a fixed list of packages (the system UI, Android Auto, the Google app for
+Assistant, the Wear companion). Any other app is refused. Unproven on a phone:
+that the list is enough for the owner's car and headset, and how each identifies
+itself.
+
+### Backend endpoints
+
+Read from the backend's code; the app has never called them.
+
+| Call | Used for | Fields read |
+|---|---|---|
+| `GET /api/v1/list/` | The `catalog` tab | `items[]`: `id`, `title` or `label`, `itemType` (`container`), `thumbnail` |
+| `GET /api/v1/list/<source>/<localId>?take=&skip=` | One page of a container | `total`; `items[]`: `id`, `title` or `label`, `itemType`, `play` (an object when the item has a stream), `artist`, `grandparentTitle`, `parentTitle`, `thumbnail`. The route sends no `metadata` object and turns a string of digits into a number |
+| `GET /api/v1/queue/<source>/<localId>` | Everything playable in a container | `items[]`: `contentId` or `id`, `title`, `mediaUrl`, `mediaType` (`audio` only), `duration` (seconds), `thumbnail`, `artist`, `album`, `parentTitle`, `grandparentTitle`, `listId`, `resumable`, `resumePosition` |
+| `GET /api/v1/play/<source>/<localId>` | One item | `id` or `assetId`, `mediaUrl`, `mediaType`, `title`, `duration`, `thumbnail`, `parentTitle`, `grandparentTitle`, `metadata.artist`, `metadata.album`, `resume_position` (seconds, only for a resumable item in progress). A container answers with its first playable item; the id in the answer then differs and the container is queued |
+| `GET /api/v1/media/household/recent?limit=` | The `recent` tab | `items[]`: `contentId`, `title`, `thumbnail`, `parentTitle`, `grandparentTitle`; an entry with no title is left out |
+| `POST /api/v1/play/log` | Progress | Sends `type` (the content's source), `assetId` (the content id), `seconds`, `percent`, `title`, `listId` (null when none): the web player's fields. Sent with `X-Daylight-Device` |
+
+Not confirmed from code, and handled so that being wrong plays nothing or reports
+nothing more than intended: that `resumePosition` on a queue item is seconds;
+that `type` set to a source other than `plex` or `files` is accepted by
+`play/log` (the web player sends `plex` for a track and `files` otherwise); the
+`type` values of recent entries (a recent video is listed and then refused at
+play). A Plex track is never resumable on the backend, so music starts at its
+beginning.
+
+- A Plex stream URL gets `session=daylight-<device id>` when it has none, as the
+  web player's does, so Plex sees one client.
+- Resume: the position the backend gives, for a single item. A Plex stream URL
+  that already carries `offset=` is not sought again.
+- Progress follows the web player: at most one report every 10 seconds while
+  playing and only past 10 seconds; one more when an item is paused, stopped or
+  replaced, unless it was a skim (under 10 seconds and under 90 percent); one at
+  the end at 100 percent, with no `naturalEnd`. A report that fails is dropped;
+  the next carries a later position.
+- The phone's own progress spot on the backend needs a `phone` entry in the
+  household's `devices.yml`. Without it reports are still saved, with no
+  per-screen spot.
+
+### Browsing
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `catalog` or a container's content id |
+| `media.recentLimit` | 30 | Entries of the recent tab (1 to 100) |
+| `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
+
+A level is kept in memory for a minute and served from there; when the backend is
+out of reach the last answer is served, however old; a level never loaded fails
+(an empty shelf would read as an empty library). An image is given to a browser
+only when it is an https URL on the backend; anything else is left out, in the
+payload and again in the installed service.
+
+## `android-auto`
+
+Declarations only: a `com.google.android.gms.car.application` meta-data entry
+pointing at `automotive_app_desc.xml` (`<uses name="media"/>`) and a one-colour
+attribution icon. Browsing and playback are `media-service`, which the capability
+requires; the verifier fails a build that has the declaration without it, or has it
+without listing `android-auto`.
+
+The app is sideloaded, so Android Auto lists it only after a one-time developer
+setting on the phone:
+
+1. Open Android Auto's settings, scroll to "Version and permission info" and tap
+   it ten times; accept developer mode.
+2. In the three-dot menu open "Developer settings" and turn on the option for apps
+   from unknown sources. Its exact label is not confirmed.
+
+Testing without a car, with the Desktop Head Unit:
+
+1. In Android Studio's SDK Manager, SDK Tools, install "Android Auto Desktop Head
+   Unit Emulator". It lands in `<sdk>/extras/google/auto/`.
+2. On the phone, in Android Auto's three-dot menu, choose "Start head unit server".
+3. `adb forward tcp:5277 tcp:5277`, then run `desktop-head-unit` from that directory.
+
+Sources: `https://developer.android.com/training/cars/testing`,
+`https://developer.android.com/training/cars/testing/dhu`,
+`https://developer.android.com/training/cars/media/auto`.
+
+## `voice-memo`
+
+A memo is recorded on the phone and sent to the Journalist, which transcribes it,
+saves a journal entry and answers in the owner's Telegram conversation with the
+transcript and then a follow-up question, as it does for a Telegram voice message.
+
+**A memo is journaled at upload time.** The backend stamps the entry when it
+receives the audio. A memo recorded with no connection is journaled when it
+uploads, which can be hours later.
+
+### Recording
+
+| Piece | Installed (shell half) | Payload | With no payload loaded |
+|---|---|---|---|
+| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `memo/new` link, after checking that `identity.user` is set | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
+| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records to `<files>/memos/inbox/<id>.m4a.part` and renames it to `<id>.m4a` when whole | Told over the `memos` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
+
+- Recording starts only from a tap on this phone: a tile, the widget, a launcher
+  shortcut (each a keyed link). A page of the site cannot start the microphone: it
+  has no way to build a keyed link, and the record screen is not exported.
+- A notification is up for as long as it records, with a Stop action. The record
+  screen's button, the notification's Stop, and the memo tile or widget button
+  tapped again all stop and save. A second tap within 1.5 seconds of the start is
+  taken as the same tap.
+- AAC in an MP4 container, mono: 16 kHz at 32 kbit/s, and where the phone's
+  encoder refuses that, 44.1 kHz at 64 kbit/s. Sent as `audio/mp4`.
+- Hard cap: 30 minutes (and 24 MB), then it stops and saves.
+- A call, or another app taking audio focus, stops the recording and saves what
+  was said so far. So does an error from the recorder, when its stop succeeds.
+- Discarded: a recording under one second, an empty file, and one whose recorder
+  could not write its index. A recording cut off because the app was killed is a
+  `.part` file that nothing can play; it is removed when the next recording starts,
+  or by the payload once it is two hours old. **That memo is lost.**
+- A memo's id is `<start ms>-<8 hex>`. Files are in the app's private storage.
+
+### The upload queue
+
+Kept on disk (`files/payloads/state/memo-queue.json`), so it survives the process
+being killed and a restart of the phone.
+
+```
+QUEUED ──► UPLOADING ──200──► gone (the audio is deleted)
+  ▲            │ no answer, or one that may change: wait 5 s, 10 s ... 1 h
+  └────────────┘
+               │ refused, or the 20th failure the backend answered
+               ▼
+            PARKED (the audio is kept)
+```
+
+One memo is sent at a time. Nothing is tried while Android reports no network; a
+network coming up wakes the queue.
+
+```
+POST /api/v1/journalist/memo?user=<identity.user>
+Content-Type: audio/mp4
+X-Daylight-Memo-Id: <id>
+X-Daylight-Recorded-At: <epoch ms>
+```
+
+| Answer | The queue |
+|---|---|
+| 200 with `duplicate: true` or `false` | Done. The audio is deleted, and only then |
+| 200 with anything else (a sign-in page of some network) | Tried again; counts |
+| 400, 413, 415, 422 | Parked with the status and the backend's error code |
+| 404 (the user is not set up yet), 500, 503, any other status | Tried again; counts |
+| No answer within 330 seconds | Tried again; counts. The backend answers the same id as a duplicate |
+| No connection | Tried again; does not count, however often |
+
+After 20 counted failures a memo is parked. A parked memo keeps its audio and is
+tried again by a tap on its notification (`daylight://memo/queue`). A recording
+over 26,214,400 bytes is parked without being sent.
+
+**With `identity.user` empty nothing is sent and nothing is recorded.** The memo
+action answers "Voice memos are not set up on this phone: identity not
+configured"; a memo already kept stays on the phone, is not retried in a loop, and
+a notice says so. The value is a build-time placeholder (`phone_user`), and a
+per-device test fails a phone build without it.
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/memo/queue` | `{waiting, parked, uploaded, lost, memos: [{id, state, attempts, lastError, ...}], blocked, problems}` |
+| POST | `/memo/recorded` | Scans the inbox |
+| POST | `/memo/retry` | Makes every memo due now |
+
+Privacy: the shell log and logcat hold a memo's id, its length and its size.
+Nothing of the audio, and no transcript, is read, kept or logged on the phone.
+
+## Local notifications
+
+The app posts its own notifications for things it owns. There is no push
+transport: household pushes keep arriving through the Home Assistant relay.
+
+| What | Channel | Posted by |
+|---|---|---|
+| Playback | Media3's own | The media session. Exempt from the notification permission |
+| "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
+| "N voice memos waiting to upload" | `daylight_uploads` (low) | `voice-memo`, after a pass that left memos waiting |
+| "N voice memos could not be sent. Tap to try again." | `daylight_uploads` | `voice-memo`, when memos are parked |
+| "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `voice-memo` |
+
+A notice is a count and a state. A tap opens a `daylight://` link through the link
+activity, with the install key added by `notifications` where the link's kind
+needs it. A capability posts through `LocalNotices` (`core/spi`); a state is
+posted once, and the notice is removed when nothing is left to say.
+
+`POST_NOTIFICATIONS` is asked for in the app, once, on Android 13 and later: the
+record screen asks the first time a memo is made, beside the microphone. It is
+never asked at install, and a "no" is not asked again. Recording does not depend
+on the answer. `GET /notify/status` gives `{permission, channels}`.
+
+How a relayed push can open a view: a push whose tap target is a household https
+URL opens in the app once the host is turned on under "Open by default"; a
+`daylight://open?path=...` or `daylight://bookmark/<id>` link needs no key. A push
+cannot run an action, start a memo or start playback: those need the install key,
+which never leaves the phone. Which field of the Home Assistant companion app
+carries a tap target is not confirmed, and no producer sets one.
+
+## What the phone does not have
+
+- **No control API and no lifeline.** Nothing listens on any address. The fleet CLI
+  answers every command for `phone` with how it is debugged instead.
+- **No debug tools**: no `debug-tools`, no `app-launcher`, no remote script, shell
+  or screenshot.
+- **No heartbeats and no log shipping.** Nothing about what is played or recorded
+  leaves the phone except the progress reports and the memo upload themselves.
+- **No lockdown**, and it is never offered as the home app.
+- **No self-update** and no settings change at run time: a new build is installed.
+- **No playback resumption** after the media service is gone: a headset button does
+  not restart the last queue.
+- **No queue for progress reports or `api:` actions**: with no connection they are
+  dropped.
+
+Debugging: `adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)` (tags
+`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`), and
+`adb shell run-as net.kckern.daylight.phone` for `files/shell.log`,
+`files/payloads/state/` and `files/memos/inbox/`.
+
+## Permissions
+
+The base set of every build (`INTERNET`, `FOREGROUND_SERVICE`,
+`RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`, `POST_NOTIFICATIONS`,
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `ACCESS_WIFI_STATE`,
+`ACCESS_NETWORK_STATE`), the page's (`RECORD_AUDIO`, `CAMERA`,
+`MODIFY_AUDIO_SETTINGS`, `SYSTEM_ALERT_WINDOW`, from `webview-host`), and two for
+the foreground services: `FOREGROUND_SERVICE_MEDIA_PLAYBACK` and
+`FOREGROUND_SERVICE_MICROPHONE`. Fourteen in all; the verifier fails any other.
+
 ## Exported components
 
 What another app on the phone can reach, and what stands in the way.
@@ -272,7 +545,9 @@ What another app on the phone can reach, and what stands in the way.
 | `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it |
 | `MainActivity` (shell) | The setup activity, startable by name | It reads nothing from the intent |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
+| `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, the system and a fixed list of car and assistant apps, per connection. A controller hands over media ids; what plays is the backend's answer |
 | `ActionWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
+| `PlayActivity`, `RecordActivity`, `MemoRecorderService` | Not exported | Started by this app only |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
 ## Not covered by JVM tests
@@ -287,6 +562,17 @@ What another app on the phone can reach, and what stands in the way.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.
+- `DaylightMediaService`, `LibraryCallback`, `PlaybackEvents`, `PlayActivity`: the
+  Media3 player and session, audio focus, the media notification, a car. Their
+  decisions are in pure classes that are tested (`ControllerPolicy`, `BrowseAnswer`,
+  `TrackAnswer`, `PayloadMedia`).
+- `MemoRecorderService` and `RecordActivity`: the microphone, the encoder, the
+  foreground service, the permission dialogs. Their decisions are in
+  `RecorderMachine`, `MemoFiles` and `PermissionAsk`, which are tested.
+- `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
+  with no notification service, which shows only that it does nothing there.
+- The backend's side of every media and memo request. The tests use a fake backend
+  built from the backend's code as read; no request has been sent.
 - That nothing listens on a real phone. The tests start the payload for the phone's
   configuration and show no control socket is bound and the port stays free; the
   shell's decision not to start a lifeline is one line that reads the same value
