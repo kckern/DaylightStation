@@ -13,6 +13,18 @@ Phone (WireGuard VPN) → Binary Eye scans barcode → Opens URL with UPC
    → UPC gateway looks up product → logs food to NutriBot → sends Telegram message
 ```
 
+## Opening the route for the app
+
+The scanning app sends a plain `GET` with no header of its own, so it cannot name a household device. `/upc` refuses such a request unless the household opens the route for the users who scan this way, in the nutribot app config:
+
+```yaml
+direct_input:
+  allow_unbound:
+    upc: [<username>, ...]
+```
+
+The first user listed is the one a scan is logged for when the URL names none. Without this block every scan from the app answers `403 device_not_allowed`. Config is read at startup. What opening the route exposes is in `__docs/reference/nutrition/README.md` (Direct-input routes).
+
 ## Prerequisites
 
 - [Binary Eye](https://github.com/markusfisch/BinaryEye) app (Android, free/open-source)
@@ -28,8 +40,7 @@ GET https://{APP_DOMAIN}/api/v1/nutribot/upc?upc={BARCODE}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `upc` | Yes* | 8-14 digit barcode (UPC-A, UPC-E, EAN-13, EAN-8). *If `upc` is missing/empty, the endpoint falls back to any bare 8-14 digit query key (the shape Binary Eye produces when it appends the scan to the URL, e.g. `?member=popeye&0643843714477`). |
-| `member` | No | Household member username (e.g., `popeye`). Resolves to Telegram ID via identity mappings. |
-| `user_id` | No | Raw Telegram user ID. Fallback if `member` not provided. Defaults to head of household. |
+| `member` | No | Household member username (e.g., `popeye`). Must be one of the users the route is opened for. `user` is the same parameter. With neither, the first user the route is opened for is used; there is no fallback to the head of household. |
 
 ## Setup Steps
 
@@ -49,7 +60,7 @@ https://{APP_DOMAIN}/api/v1/nutribot/upc?member={YOUR_USERNAME}
 
 4. Set the send type to **GET, add content to URL**
 
-**Important:** Binary Eye's send-scan feature has NO placeholder substitution — do not put `%s` or `upc=` in the URL. It simply appends the scanned code to the URL (`...?member=popeye&0643843714477`), and the endpoint detects the appended barcode automatically (see `directInput.mjs` bare-key fallback). Replace `{YOUR_USERNAME}` with your household member name (e.g., `popeye`), or omit `?member=...` entirely if you're the head of household.
+**Important:** Binary Eye's send-scan feature has NO placeholder substitution — do not put `%s` or `upc=` in the URL. It simply appends the scanned code to the URL (`...?member=popeye&0643843714477`), and the endpoint detects the appended barcode automatically (see `directInput.mjs` bare-key fallback). Replace `{YOUR_USERNAME}` with your household member name (e.g., `popeye`), or omit `?member=...` entirely if you are the first user the route is opened for.
 
 (Binary Eye's `{RESULT}` placeholder only exists in its separate "Automated actions" and deep-link `ret` features, which open a browser per scan — the background send-scan feature is the better UX.)
 
@@ -86,10 +97,12 @@ Expected response:
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | 403 Forbidden | Not on VPN | Connect WireGuard before scanning |
+| `403 device_not_allowed` | The route is not opened, or `member` names a user it is not opened for | Add the user under `direct_input.allow_unbound.upc` and restart |
+| `429 daily_limit` | The user's Nutribot day is used up | Wait for local midnight, or raise `quick_input.daily_inputs` |
 | `Missing required parameter: upc` / `Invalid UPC format` with `upc=` or `upc=%s` in proxy logs | URL template contains `upc=` or `%s` — Binary Eye sends these literally and appends the code after `&` | Remove `upc=%s` from the URL; rely on append + server-side bare-key fallback (see step 2) |
 | `Invalid UPC format` | Non-numeric barcode scanned | Only EAN/UPC barcodes work (not QR codes) |
 | `Product not found` | UPC not in database | Describe the food via text in Telegram instead |
-| No Telegram message | Wrong user_id | Add `&user_id={YOUR_TELEGRAM_ID}` to custom URL |
+| No Telegram message | Logged for another user | Put `?member={YOUR_USERNAME}` in the URL |
 
 ## Supported Barcode Formats
 

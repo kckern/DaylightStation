@@ -19,9 +19,21 @@ Phone → IFTTT Button Widget → Take Photo → Upload to IFTTT → GET request
 - IFTTT app on phone
 - NutriBot running in production
 
+## Opening the route for the service
+
+The webhook service sends a plain `GET` and cannot name a household device, so `/pinhole` refuses its request unless the household opens the route, in the nutribot app config:
+
+```yaml
+direct_input:
+  allow_unbound:
+    pinhole: [<username>, ...]
+```
+
+Without this block every request answers `403 device_not_allowed`. Config is read at startup.
+
 ## User ID
 
-The `/pinhole` endpoint defaults to the head of household. For other household members, append `&member={USERNAME}` to the URL (e.g., `&member=olive`). The username is resolved to a Telegram ID via identity mappings in the user's `profile.yml`.
+A photo is logged for the first user the route is opened for. For another listed member, append `&member={USERNAME}` to the URL (e.g., `&member=olive`). There is no fallback to the head of household.
 
 ## Setup Steps
 
@@ -84,12 +96,16 @@ You should also see the food log appear in the Telegram NutriBot chat.
 |-------|-------|-----|
 | 403 Forbidden | Cloudflare blocking | Verify path ends with `/pinhole` |
 | `Missing required parameter: img_url` | IFTTT not passing image URL | Check webhook URL contains `?img_url={{ImageURL}}` |
-| No Telegram message | Wrong user_id | Add `&user_id={YOUR_TELEGRAM_ID}` to URL |
+| No Telegram message | Logged for another user | Add `&member={USERNAME}` to the URL |
+| `403 device_not_allowed` | The route is not opened, or `member` names a user it is not opened for | Add the user under `direct_input.allow_unbound.pinhole` and restart |
+| `429 daily_limit` | The user's Nutribot day is used up | Wait for local midnight, or raise `quick_input.daily_inputs` |
 | AI returns no food items | Image too dark/blurry | Ensure good lighting when photographing food |
 
 ## Security Notes
 
 - The `/pinhole` endpoint is publicly accessible (no IP restriction)
+- It answers only while `direct_input.allow_unbound.pinhole` lists a user, and only for the users listed
+- Once opened, anything on the internet that knows the address can log a photo for those users. No caller identity is checked on this path
+- Each request counts against the user's daily Nutribot allowance (60 inputs at the default), which is the bound on what an abuser can spend
+- A request from a web page on another site is refused
 - Input validation: URL format checked, request IP/user-agent logged
-- No authentication required — security through obscurity of the URL
-- Consider adding rate limiting if abuse is a concern

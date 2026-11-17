@@ -57,6 +57,8 @@ The request is answered when the bot has finished with the input. A long recordi
 | 500 | `{ok: false, error: "processing_failed", inputId}` | The bot's processing or a reply threw. May be retried |
 | 503 | `{ok: false, error: "unavailable", message}` | A service the bot needs is not configured on this backend |
 
+`/api/v1/nutribot/text` is the one path that also answers an earlier shape of request: there a `POST` with a JSON or form body goes to that earlier route and its guard, not to `415` ([Nutribot direct-input routes](../nutrition/README.md#direct-input-routes)).
+
 The two Journalist voice routes also carry the id as `memoId`. The `/memo` alias keeps the names it was built with and differs from the table in these ways only: its answers carry `memoId` and no `inputId`, a bad id is `invalid_memo_id`, and the daily limit of inputs is named `"memos"`.
 
 Refusals are decided in this order, all before the body is read: `cross_origin`, `unavailable`, `user_required`, `device_not_allowed`, `unknown_user`, `invalid_input_id`, `unsupported_media_type`, `too_large` (from the declared length), `daily_limit`. Then the body is read (`too_large` again for an upload with no declared length, `unreadable_body`), then `empty_body`, then for a photo the check that the bytes begin as the declared image type does. Nothing is said about a user to a device that may not send for them.

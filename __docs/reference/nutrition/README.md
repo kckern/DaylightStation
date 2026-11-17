@@ -443,9 +443,9 @@ Nutribot has no id of its own for an uploaded input, so the ledger alone (`users
 
 A failed attempt sends its own message to the chat (for example "I couldn't reach the transcriber"), so an input retried through an outage leaves one such message per attempt, up to the day's attempts.
 
-### The earlier `/text`
+### `/text` answers two shapes
 
-`/api/v1/nutribot/text` already answered another shape of request: `text` in a JSON body, a form or the query string, with the user defaulting to the head of household. It still does. A `POST` that names a device or an input id, or whose body is `text/plain`, is a quick input and is held to the quick-input rules; anything else reaches the earlier handler unchanged. Two things changed for the earlier shape, because the path is now kept off the app-wide CORS handler: `OPTIONS /text` answers 403, so a browser on another origin can no longer send it a request that needs a preflight (a JSON `POST`); and the route applies CORS and the body parsers itself. The earlier shape has no device binding, no daily allowance and no idempotency; neither do `/image`, `/upc` and `/pinhole`.
+`/api/v1/nutribot/text` already answered another shape of request: `text` in a JSON body, a form or the query string. It still does, as one of the [direct-input routes](#direct-input-routes). A `POST` whose body is JSON or a form is always the earlier shape. Any other `POST` that names a device or an input id, or whose body is `text/plain`, is a quick input. So on this one path a JSON or form body sent by a quick-input client is answered by the earlier route (and its guard), where the other quick-input routes answer `415`.
 
 ### Config
 
@@ -471,6 +471,75 @@ At the defaults one user's day is at most 60 inputs and 240 attempts. With no re
 ### What is logged
 
 The capture use cases log what was typed or said by its length, the model's answer by its length, and an image by its byte count; a `data:` URL is never logged. This holds for Telegram and web captures too. The parsed result is still logged as before: item labels, grams and colors in `logText.parsed`, and density findings. Those are derived from the input and name the foods in it.
+
+---
+
+## Direct-input routes
+
+Four older routes log food from a plain HTTP request, by any method, and can call paid models on the way (`/upc` classifies and estimates with a model, `/image` and `/pinhole` read the photo with one, `/text` parses with one):
+
+| Route | Takes | Runs |
+|---|---|---|
+| `/api/v1/nutribot/upc` | `upc` in the query or a JSON body; a bare 8 to 14 digit query key | `LogFoodFromUPC` |
+| `/api/v1/nutribot/image` | `img_url` | `LogFoodFromImage` |
+| `/api/v1/nutribot/pinhole` | `img_url`. The same handler as `/image`, on a path the perimeter leaves open to the internet | `LogFoodFromImage` |
+| `/api/v1/nutribot/text` (earlier shape) | `text`, optional `date` | `LogFoodFromText` |
+
+Each sits behind one guard (`api/handlers/directInputGuard.mjs`, rules in `application/services/NutribotDirectInput.mjs`). Answers to a request it lets through are unchanged: `{ok: true, result, durationMs}`.
+
+### Who may call
+
+A request is refused unless it is one of these:
+
+| Caller | Must present | Acts for |
+|---|---|---|
+| A household device | `X-Daylight-Device: fleet:<device key>`, with the device bound for Nutribot (`quick_input.nutribot` on its entry in the devices file) | The user it names (`user`, or `member`), who must be in the device's list. Naming a user is required |
+| A signed-in user of the web app | A valid session (cookie or bearer token), the app's own origin, and the `X-Daylight-Device` header the app sends on every call | Themselves only |
+| Anyone, on a route the household has opened | Nothing. Only where `direct_input.allow_unbound.<route>` lists users | A listed user it names; the first listed when it names none |
+
+There is no fallback to the head of household on any of them.
+
+Always refused, whoever the caller is:
+
+- A request whose `Origin` is not this app's own, and every `OPTIONS` (`403 cross_origin`). The paths are off the app-wide CORS handler, so no answer carries an `Access-Control-Allow-*` header.
+- A request a browser marks as coming from another site (`Sec-Fetch-Site: cross-site` or `same-site`). A `GET` carries no `Origin`, so this is what stops a link or an image tag on another page from logging food, on an opened route too. A session cookie alone is not enough for the same reason: it rides along on such a request, and a custom header cannot.
+- A body declared over 64 KB (`413 too_large`), before it is read.
+
+| Status | `error` | When |
+|---|---|---|
+| 400 | `user_required` | A bound device named no user |
+| 400 | `invalid_input_id` | `X-Daylight-Input-Id` sent and malformed |
+| 403 | `cross_origin` | Another origin or site; any preflight |
+| 403 | `device_not_allowed` | None of the three callers above |
+| 404 | `unknown_user` | The user has no Nutribot conversation |
+| 413 | `too_large` | Body over 64 KB (`maxBytes` in the answer) |
+| 429 | `daily_limit` | The user's Nutribot day is used up (`limit`, `retryAfterSeconds`, and a `Retry-After` header) |
+| 503 | `unavailable` | No ledger to count in |
+
+All carry `ok: false` and a `message`. The handlers' own refusals (`Missing required parameter: upc`, a barcode that is not a food code) are as before.
+
+### The day, and once per id
+
+These routes count against the same per-user Nutribot day as the quick inputs (`quick_input.daily_inputs`, `daily_megabytes`, and the attempts cap), checked before the operation runs. Each request is one input.
+
+A caller that sends `X-Daylight-Input-Id` is processed once for that id on that route, and a repeat answers `{ok: true, duplicate: true}`. A caller that sends none (the barcode app, the webhook service) is not deduplicated: there is nothing to tell a repeat from a second scan.
+
+### Opening a route to a caller that cannot send a header
+
+Two documented callers cannot name a device: the barcode scanning app (`GET /upc`, see `runbooks/binary-eye-nutribot-upc-scanning.md`) and the webhook service (`GET /pinhole`, see `runbooks/ifttt-nutribot-image-upload.md`). They keep working only where the household opens the route, in the nutribot app config:
+
+```yaml
+direct_input:
+  allow_unbound:
+    upc: [<username>, ...]       # the barcode app
+    pinhole: [<username>]        # the webhook service
+```
+
+Off unless set, per route; `image` and `text` can be opened the same way and have no known caller that needs it. An opened route takes a request from anything that can reach it, for the listed users only: on `/upc` that is any device on the household network or VPN, on `/pinhole` anything on the internet that knows the address. The cross-site refusals and the daily allowance still apply, so the exposure is bounded by the user's day (60 inputs, 240 attempts at the defaults). Closing it means a caller that can send `X-Daylight-Device`, or putting the route behind the phone app's quick inputs and leaving the setting out.
+
+### What is logged
+
+`nutribot.direct.admitted` (`route`, `via`: `device`, `session` or `unbound`, `username`, `deviceId`) and `nutribot.direct.rejected` (`route`, `reason`, `status`). The handlers log a typed meal by its length, and an image by the start of its web address.
 
 ---
 

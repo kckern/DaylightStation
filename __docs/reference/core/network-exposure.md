@@ -46,7 +46,7 @@ See `data/system/config/chatbots.yml` for bot configuration and secret tokens.
 
 | Endpoint | Purpose | Access |
 |----------|---------|--------|
-| `/api/v1/nutribot/pinhole` | IFTTT image upload | Public |
+| `/api/v1/nutribot/pinhole` | IFTTT image upload | Public at the perimeter. The backend answers it only while `direct_input.allow_unbound.pinhole` lists a user (see `reference/nutrition/README.md`, Direct-input routes) |
 | `/api/v1/nutribot/report` | Daily nutrition report | Requires auth |
 
 ---
