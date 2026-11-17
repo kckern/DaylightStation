@@ -33,6 +33,8 @@ export function resolveWorkPolicy({configuration={},username,timezone}){
   const invalidAttention=!validateAttention(rawAttention)||rawAttention.housekeepingDomains.some(id=>!Object.hasOwn(merged.domains??{},id))||rawAttention.reviewWindows.some(w=>w.start>=w.end);
   if(invalidAttention){merged.attention=structuredClone(defaults.attention);merged.proactive=false;}
   if(!validate(merged)||merged.write&&(!merged.writer_env||!merged.writer_host))return inert('invalid_work_config');
+  const accounts=new Map();
+  for(const p of Object.values(merged.providers)){if(accounts.has(p.type)&&accounts.get(p.type)!==p.accountId)return inert('ambiguous_provider_account');accounts.set(p.type,p.accountId);}
   for(const d of Object.values(merged.domains))if(!Object.hasOwn(merged.providers,d.provider))return inert('invalid_work_config');
   const result=policy(merged,username,timezone,invalidAttention?'invalid_attention_policy':null);
   if(invalidAttention)result.revision=revision({merged,rawAttention},username,timezone);

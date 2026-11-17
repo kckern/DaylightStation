@@ -1676,6 +1676,7 @@ export function createHarvesterServices(config) {
     stravaClient: stravaClientParam,
     authStore: authStoreParam,
     currentStore,
+    workScopeForUser,
     aiGateway,
     rssParser,
     sharedStore: sharedStoreParam,
@@ -1789,6 +1790,7 @@ export function createHarvesterServices(config) {
   if (httpClient) {
     registerHarvester('todoist', () => new TodoistHarvester({
       httpClient,
+      workScopeForUser,
       lifelogStore,
       currentStore: effectiveCurrentStore,
       getUserAuth,
@@ -1802,6 +1804,7 @@ export function createHarvesterServices(config) {
   if (httpClient) {
     registerHarvester('clickup', () => new ClickUpHarvester({
       httpClient,
+      workScopeForUser,
       lifelogStore,
       currentStore: effectiveCurrentStore,
       getUserAuth,

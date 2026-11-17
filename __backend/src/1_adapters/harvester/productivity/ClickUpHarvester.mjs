@@ -1,52 +1,24 @@
-/**
- * ClickUpHarvester
- *
- * Fetches task data from ClickUp API and saves to lifelog YAML.
- * Implements IHarvester interface with circuit breaker resilience.
- *
- * Features:
- * - Open tasks fetched by status (current data)
- * - Created/completed tasks by date (lifelog data)
- * - Space/project/list taxonomy mapping
- * - Paginated task fetching
- *
- * @module harvester/productivity/ClickUpHarvester
- */
-
+/** Read-only ClickUp task collection. Source workflow and coverage stay explicit. */
 import moment from 'moment-timezone';
+import {createLogger} from '#system/logging/logger.mjs';
 import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.mjs';
-import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-
-/**
- * ClickUp task harvester
- * @implements {IHarvester}
- */
+import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { providerId, sourceInstant, historyRange, snapshotScope, activity, mergeTaskHistory, incompleteResult, observationError } from './taskObservations.mjs';
 export class ClickUpHarvester extends IHarvester {
-  #httpClient;
-  #lifelogStore;
-  #currentStore;
-  #getUserAuth;
-  #getHouseholdAuth;
-  #adapterConfig;
+  static API_BASE = 'https://api.clickup.com/api/v2';
+  #http;
+  #lifelog;
+  #current;
+  #auth;
+  #householdAuth;
+  #config;
   #apiKey;
-  #circuitBreaker;
   #timezone;
   #logger;
-
-  /**
-   * @param {Object} config
-   * @param {Object} config.httpClient - HTTP client for API requests
-   * @param {Object} config.lifelogStore - Store for lifelog YAML
-   * @param {Object} [config.currentStore] - Store for current data YAML
-   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
-   * @param {(service: string) => Object} [config.getHouseholdAuth] - Household-level auth accessor
-   * @param {Object} [config.adapterConfig] - Resolved ClickUp adapter config (statuses, team_id, etc.)
-   * @param {string} [config.apiKey] - ClickUp API key (from secrets)
-   * @param {string} [config.timezone] - Timezone for date parsing
-   * @param {Object} [config.logger] - Logger instance
-   */
+  #clock;
+  #scope;
+  #breaker;
   constructor({
     httpClient,
     lifelogStore,
@@ -56,363 +28,266 @@ export class ClickUpHarvester extends IHarvester {
     adapterConfig,
     apiKey,
     timezone = 'America/Los_Angeles',
-    logger = console,
-  }) {
+    logger = createLogger({source:'backend',app:'harvest',context:{module:'clickup'}}),
+    clock = Date.now,
+    workScopeForUser
+  } = {}) {
     super();
-
-    if (!httpClient) {
-      throw new InfrastructureError('ClickUpHarvester requires httpClient', {
-        code: 'MISSING_DEPENDENCY',
-        dependency: 'httpClient'
-      });
-    }
-    if (!lifelogStore) {
-      throw new InfrastructureError('ClickUpHarvester requires lifelogStore', {
-        code: 'MISSING_DEPENDENCY',
-        dependency: 'lifelogStore'
-      });
-    }
-
-    this.#httpClient = httpClient;
-    this.#lifelogStore = lifelogStore;
-    this.#currentStore = currentStore;
-    this.#getUserAuth = getUserAuth;
-    this.#getHouseholdAuth = getHouseholdAuth;
-    this.#adapterConfig = adapterConfig;
+    if (!httpClient) throw new InfrastructureError('ClickUpHarvester requires httpClient', {
+      code: 'MISSING_DEPENDENCY',
+      dependency: 'httpClient'
+    });
+    if (!lifelogStore) throw new InfrastructureError('ClickUpHarvester requires lifelogStore', {
+      code: 'MISSING_DEPENDENCY',
+      dependency: 'lifelogStore'
+    });
+    this.#http = httpClient;
+    this.#lifelog = lifelogStore;
+    this.#current = currentStore;
+    this.#auth = getUserAuth;
+    this.#householdAuth = getHouseholdAuth;
+    this.#config = adapterConfig;
     this.#apiKey = apiKey;
     this.#timezone = timezone;
     this.#logger = logger;
-
-    this.#circuitBreaker = new CircuitBreaker({
+    this.#clock = clock;
+    this.#scope = workScopeForUser;
+    this.#breaker = new CircuitBreaker({
       maxFailures: 3,
-      baseCooldownMs: 5 * 60 * 1000,
-      maxCooldownMs: 2 * 60 * 60 * 1000,
-      logger: logger,
+      baseCooldownMs: 300000,
+      maxCooldownMs: 7200000,
+      logger
     });
   }
-
   get serviceId() {
     return 'clickup';
   }
-
   get category() {
     return HarvesterCategory.PRODUCTIVITY;
   }
-
-  /**
-   * Harvest tasks from ClickUp
-   *
-   * @param {string} username - Target user
-   * @param {Object} [options] - Harvest options
-   * @param {number} [options.daysBack=7] - Days of history to fetch for lifelog
-   * @param {Array<string>} [options.statuses] - Statuses to fetch for current tasks
-   * @param {Array<string>} [options.doneStatuses] - Statuses considered "done"
-   * @returns {Promise<{ current: number, lifelog: { created: number, completed: number }, status: string }>}
-   */
-  async harvest(username, options = {}) {
-    const clickupConfig = this.#adapterConfig || null;
-    const {
-      daysBack = 7,
-      statuses = clickupConfig?.statuses || [],
-      doneStatuses = clickupConfig?.done_statuses || ['done', 'complete', 'closed'],
-    } = options;
-
-    // Check circuit breaker
-    if (this.#circuitBreaker.isOpen()) {
-      const cooldown = this.#circuitBreaker.getCooldownStatus();
-      this.#logger.debug?.('clickup.harvest.skipped', {
-        username,
-        reason: 'Circuit breaker active',
-        remainingMins: cooldown?.remainingMins,
-      });
-      return {
-        current: 0,
-        lifelog: { created: 0, completed: 0 },
-        status: 'skipped',
-        reason: 'cooldown',
-        remainingMins: cooldown?.remainingMins,
-      };
-    }
-
-    try {
-      this.#logger.info?.('clickup.harvest.start', { username, daysBack });
-
-      // Get auth
-      const auth = this.#getHouseholdAuth?.('clickup') ||
-                   this.#getUserAuth?.('clickup', username) || {};
-      const apiKey = auth.api_key || this.#apiKey;
-      const teamId = auth.workspace_id || clickupConfig?.team_id;
-
-      if (!apiKey) {
-        throw new InfrastructureError('ClickUp API key not found', {
-          code: 'MISSING_CONFIG',
-          service: 'ClickUp',
-          field: 'api_key'
-        });
-      }
-      if (!teamId) {
-        throw new InfrastructureError('ClickUp team ID not found', {
-          code: 'MISSING_CONFIG',
-          service: 'ClickUp',
-          field: 'workspace_id'
-        });
-      }
-
-      const headers = { Authorization: apiKey };
-
-      // Fetch spaces for taxonomy mapping
-      const spacesDict = await this.#fetchSpaces(teamId, headers);
-
-      // === CURRENT DATA: In-progress tasks ===
-      const tickets = await this.#fetchTasksByStatus(teamId, statuses, headers);
-      const processedTickets = this.#processTickets(tickets, spacesDict);
-
-      if (this.#currentStore) {
-        await this.#currentStore.save(username, 'clickup', {
-          lastUpdated: nowTs24(),
-          taskCount: processedTickets.length,
-          tasks: processedTickets,
-        });
-      }
-
-      // === LIFELOG DATA: Created and completed tasks ===
-      const cutoffDate = moment().subtract(daysBack, 'days');
-      const lifelogTasks = [];
-
-      // Created tasks from current tickets
-      const createdTasks = processedTickets
-        .filter(t => t.date_created && moment(parseInt(t.date_created)).isAfter(cutoffDate))
-        .map(t => ({
-          id: t.id,
-          name: t.name,
-          time: moment(parseInt(t.date_created)).tz(this.#timezone).format('HH:mm'),
-          date: moment(parseInt(t.date_created)).tz(this.#timezone).format('YYYY-MM-DD'),
-          status: t.status,
-          taxonomy: t.taxonomy,
-          action: 'created',
-        }));
-      lifelogTasks.push(...createdTasks);
-
-      // Fetch completed tasks
-      try {
-        const doneTasks = await this.#fetchTasksByStatus(teamId, doneStatuses, headers);
-        const completedTasks = doneTasks
-          .filter(t => {
-            const doneDate = t.date_done || t.date_updated;
-            return doneDate && moment(parseInt(doneDate)).isAfter(cutoffDate);
-          })
-          .map(t => {
-            const doneDate = t.date_done || t.date_updated;
-            return {
-              id: t.id,
-              name: t.name,
-              time: moment(parseInt(doneDate)).tz(this.#timezone).format('HH:mm'),
-              date: moment(parseInt(doneDate)).tz(this.#timezone).format('YYYY-MM-DD'),
-              taxonomy: this.#buildTaxonomy(t, spacesDict),
-              action: 'completed',
-            };
-          });
-        lifelogTasks.push(...completedTasks);
-      } catch (error) {
-        this.#logger.warn?.('clickup.completed.error', {
-          username,
-          error: error.message,
-        });
-      }
-
-      // Merge into existing lifelog
-      const existingLifelog = await this.#lifelogStore.load(username, 'clickup') || {};
-      const existingDateKeyed = Array.isArray(existingLifelog) ? {} : existingLifelog;
-      const updatedLifelog = this.#mergeTasksByDate(existingDateKeyed, lifelogTasks);
-
-      // Sort by date (newest first)
-      const sortedLifelog = this.#sortByDate(updatedLifelog);
-      await this.#lifelogStore.save(username, 'clickup', sortedLifelog);
-
-      // Success - reset circuit breaker
-      this.#circuitBreaker.recordSuccess();
-
-      const createdCount = lifelogTasks.filter(t => t.action === 'created').length;
-      const completedCount = lifelogTasks.filter(t => t.action === 'completed').length;
-
-      this.#logger.info?.('clickup.harvest.complete', {
-        username,
-        current: processedTickets.length,
-        lifelog: { created: createdCount, completed: completedCount },
-      });
-
-      // Get latest date from lifelog (keys sorted descending)
-      const latestDate = Object.keys(sortedLifelog).sort().reverse()[0] || null;
-
-      return {
-        current: processedTickets.length,
-        lifelog: { created: createdCount, completed: completedCount },
-        status: 'success',
-        latestDate,
-      };
-
-    } catch (error) {
-      const statusCode = error.response?.status;
-
-      if (statusCode === 429 || statusCode === 401) {
-        this.#circuitBreaker.recordFailure(error);
-      }
-
-      this.#logger.error?.('clickup.harvest.error', {
-        username,
-        error: error.message,
-        statusCode,
-        circuitState: this.#circuitBreaker.getStatus().state,
-      });
-
-      throw error;
-    }
-  }
-
   getStatus() {
-    return this.#circuitBreaker.getStatus();
+    return this.#breaker.getStatus();
   }
-
-  /**
-   * Get available harvest parameters
-   * @returns {HarvesterParam[]}
-   */
   getParams() {
-    return [
-      { name: 'daysBack', type: 'number', default: 7, description: 'Days of history to fetch for lifelog' },
-    ];
+    return [{
+      name: 'daysBack',
+      type: 'number',
+      default: 7,
+      description: 'Days of history to fetch for lifelog (maximum90)'
+    }, {
+      name: 'statuses',
+      type: 'array',
+      default: [],
+      description: 'Open workflow statuses'
+    }];
   }
-
-  /**
-   * Fetch spaces and build ID->name mapping
-   * @private
-   */
-  async #fetchSpaces(teamId, headers) {
-    const response = await this.#httpClient.get(
-      `https://api.clickup.com/api/v2/team/${teamId}/space`,
-      { headers }
-    );
-
-    const spaces = response.data?.spaces || [];
-    return spaces.reduce((acc, space) => {
-      acc[space.id] = space.name;
-      return acc;
-    }, {});
+  async #tasks({
+    teamId,
+    statuses,
+    headers,
+    budget,
+    done = false
+  }) {
+    const tasks = [];
+    for (let page = 0;; page++) {
+      if (budget.remaining-- <= 0) throw observationError('WORK_PAGE_LIMIT');
+      const params = {
+        subtasks: true,
+        include_closed: done,
+        page
+      };
+      statuses.forEach((status, index) => {
+        params[`statuses[${index}]`] = status;
+      });
+      const url = ClickUpHarvester.API_BASE + '/team/' + encodeURIComponent(teamId) + '/task?' + new URLSearchParams(params),
+        response = await this.#http.get(url, {
+          headers
+        }),
+        data = response?.data;
+      if (!Array.isArray(data?.tasks)) throw observationError('INVALID_PROVIDER_PAGE');
+      tasks.push(...data.tasks);
+      if (data.last_page === true || data.last_page == null && data.tasks.length < 100) return tasks;
+      if (data.last_page !== false && data.last_page != null) throw observationError('INVALID_PROVIDER_PAGE');
+    }
   }
-
-  /**
-   * Fetch tasks by status with pagination
-   * @private
-   */
-  async #fetchTasksByStatus(teamId, statuses, headers) {
-    const params = { subtasks: true };
-    statuses.forEach((status, index) => {
-      params[`statuses[${index}]`] = status;
+  #row(task, spaces) {
+    const ancestors = [];
+    if (task.space?.id) ancestors.push({
+      id: providerId(task.space.id),
+      nativeKind: 'space',
+      name: spaces[task.space.id] ?? task.space.name ?? null
     });
-
-    const tickets = [];
-    let page = 0;
-    let lastPage = false;
-
-    while (!lastPage) {
-      const url = `https://api.clickup.com/api/v2/team/${teamId}/task?${new URLSearchParams({ ...params, page })}`;
-      const response = await this.#httpClient.get(url, { headers });
-
-      tickets.push(...(response.data?.tasks || []));
-      lastPage = response.data?.last_page ?? true;
-      page++;
-
-      // Safety limit
-      if (page > 10) break;
-    }
-
-    return tickets;
+    const folder = task.folder ?? task.project;
+    if (folder?.id && folder.hidden !== true) ancestors.push({
+      id: providerId(folder.id),
+      nativeKind: 'folder',
+      name: folder.name ?? null
+    });
+    const taxonomy = Object.fromEntries([...ancestors, ...(task.list?.id ? [{
+      id: providerId(task.list.id),
+      name: task.list.name
+    }] : [])].filter(x => x.name && x.name !== 'hidden').map(x => [x.id, x.name]));
+    return {
+      ...task,
+      id: providerId(task.id),
+      name: task.name,
+      status: task.status?.status ?? task.status ?? null,
+      statusType: task.status?.type ?? null,
+      date_created: task.date_created ?? null,
+      createdAt: sourceInstant(task.date_created),
+      modifiedAt: sourceInstant(task.date_updated),
+      completedAt: sourceInstant(task.date_done),
+      containerId: task.list?.id ? providerId(task.list.id) : null,
+      containerType: 'list',
+      ancestorRefs: ancestors,
+      taxonomy,
+      assigneeIds: (task.assignees ?? []).map(a => providerId(a.id))
+    };
   }
-
-  /**
-   * Process raw tickets into structured format
-   * @private
-   */
-  #processTickets(tickets, spacesDict) {
-    return tickets.map(ticket => ({
-      id: ticket.id,
-      name: ticket.name,
-      status: ticket.status?.status,
-      date_created: ticket.date_created,
-      taxonomy: this.#buildTaxonomy(ticket, spacesDict),
-    }));
-  }
-
-  /**
-   * Build taxonomy object for a ticket
-   * @private
-   */
-  #buildTaxonomy(ticket, spacesDict) {
-    const taxonomy = {};
-
-    if (ticket.space?.id && spacesDict[ticket.space.id]) {
-      taxonomy[ticket.space.id] = spacesDict[ticket.space.id];
-    }
-    if (ticket.project?.id && ticket.project?.name) {
-      taxonomy[ticket.project.id] = ticket.project.name;
-    }
-    if (ticket.list?.id && ticket.list?.name) {
-      taxonomy[ticket.list.id] = ticket.list.name;
-    }
-
-    // Remove hidden or empty values
-    return Object.fromEntries(
-      Object.entries(taxonomy).filter(([_, val]) => val && val !== 'hidden')
-    );
-  }
-
-  /**
-   * Merge tasks by date with composite key deduplication
-   * @private
-   */
-  #mergeTasksByDate(existing, newTasks) {
-    const merged = { ...existing };
-
-    for (const task of newTasks) {
-      if (!task.date) continue;
-
-      if (!merged[task.date]) {
-        merged[task.date] = [];
+  async harvest(username, options = {}) {
+    if (this.#breaker.isOpen()) return {
+      status: 'skipped',
+      reason: 'cooldown',
+      current: 0,
+      lifelog: {
+        created: 0,
+        completed: 0
+      },
+      remainingMins: this.#breaker.getCooldownStatus()?.remainingMins
+    };
+    const auth = this.#householdAuth?.('clickup') ?? this.#auth?.('clickup', username) ?? {},
+      apiKey = auth.api_key ?? this.#apiKey,
+      teamId = auth.workspace_id ?? this.#config?.team_id;
+    if (!apiKey || !teamId) throw new InfrastructureError('ClickUp credentials/workspace not configured', {
+      code: 'MISSING_CONFIG',
+      service: 'ClickUp'
+    });
+    const range = historyRange(this.#clock, options.daysBack ?? 7),
+      scope = snapshotScope(this.#scope?.(username, 'clickup'));
+    try {
+      const headers = {
+          Authorization: apiKey
+        },
+        budget = {
+          remaining: 100
+        };
+      const rawSpaces = (await this.#http.get(ClickUpHarvester.API_BASE + '/team/' + encodeURIComponent(teamId) + '/space', {
+        headers
+      }))?.data?.spaces;
+      if (!Array.isArray(rawSpaces)) throw observationError('INVALID_PROVIDER_PAGE');
+      const spaces = Object.fromEntries(rawSpaces.map(s => [providerId(s.id), s.name])),
+        containers = [];
+      for (const id of scope.containerIds ?? []) {
+        const list = (await this.#http.get(ClickUpHarvester.API_BASE + '/list/' + encodeURIComponent(id), {
+          headers
+        }))?.data;
+        if (!list || providerId(list.id) !== id || !Object.hasOwn(spaces, String(list.space?.id))) throw observationError('INVALID_PROVIDER_SCOPE');
+        containers.push({
+          ...list,
+          id,
+          nativeKind: 'list',
+          parentId: list.folder?.id ? providerId(list.folder.id) : null
+        });
       }
-
-      const isDupe = merged[task.date].find(
-        t => t.id === task.id && t.action === task.action
-      );
-
-      if (!isDupe) {
-        merged[task.date].push(task);
+      const open = await this.#tasks({
+        teamId,
+        statuses: options.statuses ?? this.#config?.statuses ?? [],
+        headers,
+        budget
+      });
+      const done = await this.#tasks({
+        teamId,
+        statuses: options.doneStatuses ?? this.#config?.done_statuses ?? ['done', 'complete', 'closed'],
+        headers,
+        budget,
+        done: true
+      });
+      const rows = open.map(task => this.#row(task, spaces)),
+        events = [];
+      for (const task of rows) if (task.createdAt !== null && task.createdAt >= range.from && task.createdAt < range.to) events.push(activity({
+        id: task.id,
+        title: task.name,
+        at: task.createdAt,
+        createdAt: task.createdAt,
+        action: 'created',
+        timezone: this.#timezone,
+        projectId: task.containerId,
+        actorId: task.creator?.id,
+        extra: {
+          status: task.status,
+          taxonomy: task.taxonomy,
+          accountId: scope.accountId,
+          provider: 'clickup',
+          assigneeIds: task.assigneeIds
+        }
+      }));
+      for (const raw of done) {
+        const task = this.#row(raw, spaces),
+          at = task.completedAt ?? task.modifiedAt;
+        if (at !== null && at >= range.from && at < range.to) events.push(activity({
+          id: task.id,
+          title: task.name,
+          at,
+          createdAt: task.createdAt,
+          action: 'completed',
+          timezone: this.#timezone,
+          projectId: task.containerId,
+          estimated: task.completedAt === null,
+          extra: {
+            taxonomy: task.taxonomy,
+            accountId: scope.accountId,
+            provider: 'clickup',
+            assigneeIds: task.assigneeIds
+          }
+        }));
       }
+      const history = mergeTaskHistory(await this.#lifelog.load(username, 'clickup'), events),
+        coverage = {
+          complete: true,
+          scope,
+          ...range,
+          reason: null
+        };
+      const snapshot = {
+        schema: 'work-source-snapshot/v1',
+        provider: 'clickup',
+        accountId: scope.accountId,
+        observedAt: range.to,
+        lastUpdated: moment.tz(range.to, this.#timezone).format('YYYY-MM-DD HH:mm:ss'),
+        taskCount: rows.length,
+        tasks: rows,
+        containers,
+        coverage
+      };
+      await this.#lifelog.save(username, 'clickup', history);
+      await this.#current?.save(username, 'clickup', snapshot);
+      this.#breaker.recordSuccess();
+      this.#logger?.info?.('clickup.harvest.complete', {
+        username,
+        current: rows.length
+      });
+      return {
+        status: 'success',
+        current: rows.length,
+        lifelog: {
+          created: events.filter(e => e.action === 'created').length,
+          completed: events.filter(e => e.action === 'completed').length
+        },
+        coverage,
+        latestDate: Object.keys(history)[0] ?? null
+      };
+    } catch (error) {
+      if ([401, 429].includes(error.response?.status)) this.#breaker.recordFailure(error);
+      this.#logger?.warn?.('clickup.harvest.incomplete', {
+        username,
+        code: error.code ?? 'provider_read_failed'
+      });
+      return incompleteResult({
+        error,
+        scope,
+        range
+      });
     }
-
-    // Sort each day's tasks by time
-    for (const date of Object.keys(merged)) {
-      merged[date].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-    }
-
-    return merged;
-  }
-
-  /**
-   * Sort lifelog by date (newest first)
-   * @private
-   */
-  #sortByDate(data) {
-    const sortedDates = Object.keys(data).sort((a, b) => new Date(b) - new Date(a));
-    const sorted = {};
-
-    for (const date of sortedDates) {
-      if (data[date].length > 0) {
-        sorted[date] = data[date];
-      }
-    }
-
-    return sorted;
   }
 }
-
 export default ClickUpHarvester;

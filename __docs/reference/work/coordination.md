@@ -18,4 +18,13 @@ Work references include provider, account, object kind and opaque string ID. Nev
 
 ## Implementation status
 
-The first increment supplies model validation and per-user configuration contracts. Provider completeness, links, historical import, two-way commands and attention workflows are implemented in subsequent increments. Configuration alone does not start extraction, change provider status or authorize a backfill.
+The first increment supplies model validation and per-user configuration contracts. Read-only provider adapters retain source dates and explicit account/container coverage. Links, historical import, two-way commands and attention workflows are implemented in subsequent increments. Configuration alone does not start extraction, change provider status or authorize a backfill.
+
+
+## Provider collection and completeness
+
+Todoist open tasks/projects are cursor-paginated; completed history uses the current completion-date endpoint with bounded 28-day query windows. ClickUp task pages are bounded and retain native status, typed hierarchy IDs and source timestamp metadata. Collection has a hard page budget; hitting it, a later-page failure or malformed provider data returns incomplete coverage and preserves the last complete current snapshot.
+
+Optional composition-supplied scope binds an observation to its configured logical account. Older snapshots without that binding remain unavailable for automatic decisions. Only one harvested account of each provider type is supported per user by the current upstream storage/auth connection; conflicting same-type account configuration is rejected. One account can still fill multiple domain roles.
+
+Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. No read adapter exposes command capability in this increment.

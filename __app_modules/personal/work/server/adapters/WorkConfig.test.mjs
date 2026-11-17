@@ -45,3 +45,7 @@ it.each([
  const c=base();c.work.proactive=true;c.work.attention=attention;
  const p=resolve(c);expect(p.enabled).toBe(true);expect(p.proactive).toBe(false);expect(p.diagnostics).toContain('invalid_attention_policy');
 });
+it('rejects multiple harvested accounts of one provider for the same user instead of silently sharing one snapshot',()=>{
+ const c=base();c.work.providers.second={...c.work.providers.personal,accountId:'second-account'};
+ expect(resolve(c)).toMatchObject({enabled:false,reason:'ambiguous_provider_account'});
+});
