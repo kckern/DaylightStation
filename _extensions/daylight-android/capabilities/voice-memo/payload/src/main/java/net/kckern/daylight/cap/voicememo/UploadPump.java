@@ -26,6 +26,10 @@ final class UploadPump {
         boolean offline;
         /** Why nothing can be sent at all ("identity not configured"), or "". */
         String blocked = "";
+        /** The backend does not take memos from this phone for this user yet. */
+        boolean notAllowed;
+        /** The backend's daily allowance is used up: nothing is sent before this time. 0 when not so. */
+        long limitUntilMs;
         /** The ids uploaded, for the log. */
         final java.util.List<String> uploadedIds = new java.util.ArrayList<>();
         final java.util.List<Long> sizes = new java.util.ArrayList<>();
@@ -92,7 +96,14 @@ final class UploadPump {
                     queue.release(memo.id);
                     pass.blocked = result.detail;
                     return pass;
+                case WAIT:
+                    // The backend said when. The whole queue waits: every memo would get the same answer.
+                    pass.limitUntilMs = nowMs + result.waitMs;
+                    queue.holdUntil(memo.id, result.detail, pass.limitUntilMs);
+                    return pass;
                 default:
+                    if (result.outcome == Outcome.NOT_ALLOWED) pass.notAllowed = true;
+                    // Only what the intake itself answered, or may have received, counts toward parking.
                     if (queue.retryLater(memo.id, result.detail, result.outcome == Outcome.RETRY, nowMs)) pass.parked++;
                     // The link is down or the backend is unwell: the next memo would fail the
                     // same way. Stop, and let the wait decide when to look again.

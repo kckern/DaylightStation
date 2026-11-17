@@ -35,4 +35,27 @@ public class QueueNoticeTest {
         assertEquals(QueueNotice.of(2, 1, "").key(), QueueNotice.of(2, 1, "").key());
         assertNotEquals(QueueNotice.of(2, 1, "").key(), QueueNotice.of(3, 1, "").key());
     }
+
+    @Test public void parkedMemosCanBeDiscardedFromTheNotice() {
+        QueueNotice n = QueueNotice.of(0, 2, "");
+        assertEquals("Discard", n.actionLabel);
+        assertEquals("daylight://memo/discard", n.actionLink);
+        assertEquals("a waiting memo has no such button", "", QueueNotice.of(2, 0, "").actionLabel);
+    }
+
+    @Test public void aPhoneNotYetAllowedIsSaidInThoseWords() {
+        QueueNotice n = QueueNotice.of(1, 0, "", true, 0);
+        assertTrue(n.text, n.text.startsWith("This phone is not allowed to send memos yet."));
+        assertTrue(n.text, n.text.contains("1 voice memo is kept"));
+        assertEquals("", n.actionLabel);
+    }
+
+    @Test public void theDailyAllowanceSaysWhenSendingResumes() {
+        long at = 1_700_000_000_000L;
+        QueueNotice n = QueueNotice.of(3, 0, "", false, at);
+        assertTrue(n.text, n.text.startsWith("The daily allowance for voice memos is used up. Sending resumes at about " + QueueNotice.clock(at)));
+        assertTrue(n.text, n.text.endsWith("3 voice memos waiting."));
+        assertTrue(QueueNotice.clock(at), QueueNotice.clock(at).matches("[A-Z][a-z]{2} \\d\\d:\\d\\d"));
+        assertNotEquals("a new time is a new notice", n.key(), QueueNotice.of(3, 0, "", false, at + 3_600_000L).key());
+    }
 }

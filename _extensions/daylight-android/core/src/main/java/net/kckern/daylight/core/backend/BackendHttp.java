@@ -32,8 +32,26 @@ public final class BackendHttp implements Http {
     private static final int MAX_REPLY_BYTES = 4 * 1024 * 1024;
 
     private final DeviceHeader device;
+    private final int connectMs;
+    private final int uploadReadMs;
 
-    public BackendHttp(DeviceHeader device) { this.device = device; }
+    public BackendHttp(DeviceHeader device) { this(device, CONNECT_MS, UPLOAD_READ_MS); }
+
+    /** With its own timeouts, for a test. */
+    BackendHttp(DeviceHeader device, int connectMs, int uploadReadMs) {
+        this.device = device;
+        this.connectMs = connectMs;
+        this.uploadReadMs = uploadReadMs;
+    }
+
+    /**
+     * What a failure before the end of the request body is: not sent. A connect timeout
+     * to an unreachable private address (the VPN is down) is a SocketTimeoutException
+     * like a read timeout; wrapped here, it is no longer one.
+     */
+    static IOException beforeTheBody(IOException e) {
+        return e instanceof NotSentException ? e : new NotSentException(e);
+    }
 
     @Override public Reply get(String url) throws IOException {
         return finish(open(url, "GET", READ_MS));
@@ -50,16 +68,24 @@ public final class BackendHttp implements Http {
     }
 
     @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) throws IOException {
-        HttpURLConnection c = open(url, "POST", UPLOAD_READ_MS);
-        c.setDoOutput(true);
-        c.setRequestProperty("Content-Type", contentType);
-        for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
-        c.setFixedLengthStreamingMode(file.length());
-        try (OutputStream out = c.getOutputStream(); InputStream in = new FileInputStream(file)) {
-            byte[] buf = new byte[65536];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        HttpURLConnection c;
+        // Connecting and writing the body: a failure here means the far side has not got the request.
+        try {
+            c = open(url, "POST", uploadReadMs);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", contentType);
+            for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
+            c.setFixedLengthStreamingMode(file.length());
+            c.connect();
+            try (OutputStream out = c.getOutputStream(); InputStream in = new FileInputStream(file)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+        } catch (IOException e) {
+            throw beforeTheBody(e);
         }
+        // The body is out. A timeout from here on is the answer not arriving in time.
         return finish(c);
     }
 
@@ -67,7 +93,7 @@ public final class BackendHttp implements Http {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setRequestMethod(method);
         c.setInstanceFollowRedirects(false);
-        c.setConnectTimeout(CONNECT_MS);
+        c.setConnectTimeout(connectMs);
         c.setReadTimeout(readMs);
         c.setRequestProperty("Accept", "application/json");
         c.setRequestProperty("X-Daylight-Device", device.value());
@@ -86,7 +112,11 @@ public final class BackendHttp implements Http {
                     while ((n = body.read(buf)) > 0 && out.size() < MAX_REPLY_BYTES) out.write(buf, 0, n);
                 }
             }
-            return new Reply(status, new String(out.toByteArray(), StandardCharsets.UTF_8));
+            Map<String, String> headers = new java.util.HashMap<>();
+            for (Map.Entry<String, java.util.List<String>> h : c.getHeaderFields().entrySet()) {
+                if (h.getKey() != null && h.getValue() != null && !h.getValue().isEmpty()) headers.put(h.getKey(), h.getValue().get(0));
+            }
+            return new Reply(status, new String(out.toByteArray(), StandardCharsets.UTF_8), headers);
         } finally {
             c.disconnect();
         }

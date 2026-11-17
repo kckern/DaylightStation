@@ -21,12 +21,18 @@ import java.util.List;
  *   QUEUED ──claim──► UPLOADING ──200──► gone (the audio is deleted by the pump)
  *     ▲                  │ no answer, or an answer that may change: wait 5 s, 10 s ... 1 h
  *     └──────────────────┘
- *                        │ refused, or the 20th answered failure
+ *                        │ refused for good (400, 413, 415, 422), or the 20th counted failure
  *                        ▼
- *                     PARKED  (the audio is kept; retryAll makes it due again)
+ *                     PARKED  (the audio is kept; retryAll makes it due again, discardParked removes it)
  *
  * One memo is out at a time. A memo found UPLOADING at start was interrupted and is
  * queued again: the backend answers a repeat of the same id as a duplicate.
+ *
+ * The whole queue can be held until a time (the backend's daily allowance is used up):
+ * nothing is claimed before it, whatever asks.
+ *
+ * A change that cannot be written is undone in memory before the failure is reported,
+ * so a full disk never leaves a memo marked as out with nothing sending it.
  */
 final class MemoQueue {
     static final long BASE_DELAY_MS = 5_000;
@@ -55,14 +61,23 @@ final class MemoQueue {
         }
     }
 
+    /** Where the state goes. A test replaces it with one that fails. */
+    interface Store { void write(byte[] bytes) throws Exception; }
+
     private final File stateFile;
+    private final Store store;
     private final List<Memo> memos = new ArrayList<>();
     private int uploaded;
     private int lost;
+    private int discarded;
+    private long holdUntilMs;
     private boolean closed;
 
-    MemoQueue(File stateFile) {
+    MemoQueue(File stateFile) { this(stateFile, null); }
+
+    MemoQueue(File stateFile, Store store) {
         this.stateFile = stateFile;
+        this.store = store != null ? store : this::writeFile;
         load();
     }
 
@@ -76,7 +91,7 @@ final class MemoQueue {
 
     /** The oldest memo that is due, now marked UPLOADING; null when none is due or one is already out. */
     synchronized Memo claim(long nowMs) {
-        if (closed) return null;
+        if (closed || nowMs < holdUntilMs) return null;
         Memo oldest = null;
         for (Memo m : memos) {
             if (m.state == State.UPLOADING) return null;
@@ -139,6 +154,43 @@ final class MemoQueue {
         return parked;
     }
 
+    /**
+     * The backend said when it will take memos again (its daily allowance). The memo
+     * goes back to the queue with no attempt counted, and nothing is claimed before
+     * that time: not by the timer, and not by the owner asking to try again.
+     */
+    synchronized void holdUntil(String id, String error, long untilMs) {
+        Memo m = find(id);
+        if (closed || m == null) return;
+        m.state = State.QUEUED;
+        m.lastError = error == null ? "" : error;
+        holdUntilMs = Math.max(holdUntilMs, untilMs);
+        persist();
+    }
+
+    /** The time before which nothing is sent; 0 when there is none or it has passed. */
+    synchronized long holdUntilMs(long nowMs) { return holdUntilMs > nowMs ? holdUntilMs : 0; }
+
+    /**
+     * The owner threw away what could not be sent. Parked memos leave the queue; the
+     * caller deletes their audio.
+     *
+     * @return the audio files of the memos removed
+     */
+    synchronized List<String> discardParked() {
+        List<String> files = new ArrayList<>();
+        if (closed) return files;
+        for (java.util.Iterator<Memo> it = memos.iterator(); it.hasNext(); ) {
+            Memo m = it.next();
+            if (m.state != State.PARKED) continue;
+            files.add(m.file);
+            it.remove();
+            discarded++;
+        }
+        if (!files.isEmpty()) persist();
+        return files;
+    }
+
     /** The backend refused it for good. The audio is kept. */
     synchronized void park(String id, String error) {
         Memo m = find(id);
@@ -168,7 +220,7 @@ final class MemoQueue {
         for (Memo m : memos) {
             if (m.state == State.QUEUED && (next < 0 || m.nextAttemptAtMs < next)) next = m.nextAttemptAtMs;
         }
-        return next;
+        return next < 0 ? next : Math.max(next, holdUntilMs);
     }
 
     synchronized int waiting() {
@@ -194,7 +246,8 @@ final class MemoQueue {
                     .put("attempts", m.attempts).put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
         }
         return new JSONObject().put("ok", true).put("waiting", waiting()).put("parked", parked())
-                .put("uploaded", uploaded).put("lost", lost).put("memos", list);
+                .put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
+                .put("holdUntilMs", holdUntilMs).put("memos", list);
     }
 
     private Memo find(String id) {
@@ -208,6 +261,8 @@ final class MemoQueue {
             JSONObject doc = new JSONObject(new String(Files.readAllBytes(stateFile.toPath()), StandardCharsets.UTF_8));
             uploaded = doc.optInt("uploaded", 0);
             lost = doc.optInt("lost", 0);
+            discarded = doc.optInt("discarded", 0);
+            holdUntilMs = doc.optLong("holdUntilMs", 0);
             JSONArray list = doc.optJSONArray("memos");
             for (int i = 0; list != null && i < list.length(); i++) {
                 try {
@@ -232,11 +287,16 @@ final class MemoQueue {
             memos.clear();
             uploaded = 0;
             lost = 0;
+            discarded = 0;
+            holdUntilMs = 0;
         }
+        lastWritten = snapshot();
     }
 
-    /** Written beside the file and renamed over it, so a crash leaves the old state or the new, never half of one. */
-    private void persist() {
+    /** The state as it is on disk: what a change that cannot be written is undone to. */
+    private String lastWritten = "";
+
+    private String snapshot() {
         try {
             JSONArray list = new JSONArray();
             for (Memo m : memos) {
@@ -244,18 +304,63 @@ final class MemoQueue {
                         .put("state", m.state.name()).put("attempts", m.attempts).put("failures", m.failures)
                         .put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
             }
-            byte[] bytes = new JSONObject().put("uploaded", uploaded).put("lost", lost).put("memos", list)
-                    .toString().getBytes(StandardCharsets.UTF_8);
-            File dir = stateFile.getParentFile();
-            if (dir != null) dir.mkdirs();
-            File part = new File(stateFile.getPath() + ".part");
-            try (FileOutputStream out = new FileOutputStream(part)) {
-                out.write(bytes);
-                out.getFD().sync();
+            return new JSONObject().put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
+                    .put("holdUntilMs", holdUntilMs).put("memos", list).toString();
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    /** Puts the in-memory state back to a snapshot. UPLOADING is kept as written: the caller's change is what is undone. */
+    private void restore(String snapshot) {
+        try {
+            JSONObject doc = new JSONObject(snapshot);
+            memos.clear();
+            uploaded = doc.optInt("uploaded", 0);
+            lost = doc.optInt("lost", 0);
+            discarded = doc.optInt("discarded", 0);
+            holdUntilMs = doc.optLong("holdUntilMs", 0);
+            JSONArray list = doc.optJSONArray("memos");
+            for (int i = 0; list != null && i < list.length(); i++) {
+                JSONObject o = list.getJSONObject(i);
+                Memo m = new Memo(o.getString("id"), o.getString("file"), o.optLong("recordedAtMs", 0));
+                m.state = State.valueOf(o.optString("state", "QUEUED"));
+                m.attempts = o.optInt("attempts", 0);
+                m.failures = o.optInt("failures", 0);
+                m.nextAttemptAtMs = o.optLong("nextAttemptAtMs", 0);
+                m.lastError = o.optString("lastError", "");
+                memos.add(m);
             }
-            if (!part.renameTo(stateFile)) throw new java.io.IOException("rename failed");
+        } catch (JSONException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    /**
+     * Every change ends here. When the state cannot be written (a full disk), the change
+     * is undone in memory and the failure is thrown: the queue then says what the disk
+     * says, and the next pass can try the same change again.
+     */
+    private void persist() {
+        String next = snapshot();
+        try {
+            store.write(next.getBytes(StandardCharsets.UTF_8));
+            lastWritten = next;
         } catch (Exception e) {
+            restore(lastWritten);
             throw new IllegalStateException("cannot persist the memo queue: " + e.getClass().getSimpleName(), e);
         }
+    }
+
+    /** Written beside the file and renamed over it, so a crash leaves the old state or the new, never half of one. */
+    private void writeFile(byte[] bytes) throws Exception {
+        File dir = stateFile.getParentFile();
+        if (dir != null) dir.mkdirs();
+        File part = new File(stateFile.getPath() + ".part");
+        try (FileOutputStream out = new FileOutputStream(part)) {
+            out.write(bytes);
+            out.getFD().sync();
+        }
+        if (!part.renameTo(stateFile)) throw new java.io.IOException("rename failed");
     }
 }

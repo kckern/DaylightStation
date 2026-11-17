@@ -35,6 +35,8 @@ public class VoiceMemoCapabilityTest {
     private File inbox;
     private volatile boolean down;
     private volatile int status = 200;
+    /** The body the backend answers with; null for the usual one of the status. */
+    private volatile String answer;
     private volatile boolean linkUp = true;
     private long now = 10_000;
     private int recordScreens;
@@ -47,7 +49,8 @@ public class VoiceMemoCapabilityTest {
         @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) throws IOException {
             if (down) throw new IOException("no route to host");
             uploads.add(headers.get("X-Daylight-Memo-Id"));
-            return new Reply(status, status == 200 ? "{\"ok\":true,\"duplicate\":false}" : "{\"error\":\"processing_failed\"}");
+            if (answer != null) return new Reply(status, answer);
+            return new Reply(status, status == 200 ? "{\"ok\":true,\"duplicate\":false}" : "{\"ok\":false,\"error\":\"processing_failed\"}");
         }
     };
 
@@ -232,5 +235,132 @@ public class VoiceMemoCapabilityTest {
         net.kckern.daylight.core.testing.FakeShell shell = (net.kckern.daylight.core.testing.FakeShell) core.shell();
         assertEquals(1, shell.notes.size());
         assertEquals("MEMO uploaded 1700000000000-ab12cd34 32 bytes", shell.notes.get(0));
+    }
+
+    // ── the intake's device binding and daily allowance ──────────────────────
+
+    @Test public void aPhoneTheBackendDoesNotAllowYetIsToldOnceAndTheNoticeGoesWithTheFirstSuccess() throws Exception {
+        status = 403;
+        answer = "{\"ok\":false,\"error\":\"device_not_allowed\"}";
+        File memo = record("1700000000000-ab12cd34");
+        for (int i = 0; i < 30; i++) {
+            cap.pumpOnce();
+            now += 3_700_000;
+        }
+        JSONObject queue = TestCore.get(core, "/memo/queue");
+        assertEquals("thirty refusals later it is still waiting, not parked", 1, queue.getInt("waiting"));
+        assertEquals(0, queue.getInt("parked"));
+        assertTrue(queue.getBoolean("notAllowed"));
+        assertTrue(memo.exists());
+        assertEquals("said once", 1, notices.size());
+        assertTrue(notices.get(0), notices.get(0).contains("This phone is not allowed to send memos yet."));
+
+        status = 200;
+        answer = null;
+        cap.pumpOnce();
+        assertFalse(memo.exists());
+        assertEquals("cancel memo-queue", notices.get(notices.size() - 1));
+        assertFalse(TestCore.get(core, "/memo/queue").getBoolean("notAllowed"));
+    }
+
+    @Test public void theDailyAllowanceStopsSendingUntilTheBackendsTimeAndSaysWhen() throws Exception {
+        status = 429;
+        answer = "{\"ok\":false,\"error\":\"daily_limit\",\"limit\":\"memos\",\"retryAfterSeconds\":3600}";
+        record("1700000000000-ab12cd34");
+        record("1700000001000-ab12cd34");
+        cap.pumpOnce();
+        assertEquals(1, uploads.size());
+        assertEquals(now + 3_600_000L, cap.nextWakeAtMs());
+        assertTrue(notices.get(0), notices.get(0).contains("The daily allowance for voice memos is used up. Sending resumes at about "
+                + QueueNotice.clock(now + 3_600_000L)));
+        // The owner taps the notice: nothing is sent early, and the answer says why.
+        JSONObject r = memoLink().handle("queue", NO_QUERY);
+        assertTrue(r.getString("message"), r.getString("message").startsWith("The daily allowance is used up."));
+        now += 3_599_000;
+        cap.pumpOnce();
+        assertEquals("not before the time the backend named", 1, uploads.size());
+        status = 200;
+        answer = null;
+        now += 1_000;
+        cap.pumpOnce();
+        assertEquals(3, uploads.size());
+        assertEquals(0, TestCore.get(core, "/memo/queue").getInt("waiting"));
+    }
+
+    @Test public void withADeviceIdentityTheIntakeCannotBindNothingIsRecordedOrSent() throws Exception {
+        core.settings().set(Backend.DEVICE, "browser:example-tablet");
+        JSONObject r = memoLink().handle("new", NO_QUERY);
+        assertEquals("Voice memos are not set up on this phone: device identity not configured", r.getString("message"));
+        assertEquals(0, recordScreens);
+        record("1700000000000-ab12cd34");
+        cap.pumpOnce();
+        assertTrue(uploads.isEmpty());
+        assertTrue(notices.get(0), notices.get(0).contains("device identity not configured. 1 voice memo is kept on this phone."));
+        assertEquals("device identity not configured", TestCore.get(core, "/memo/queue").getString("blocked"));
+    }
+
+    // ── a recording that was cut off ─────────────────────────────────────────
+
+    @Test public void whatTheRecorderRecoversIsQueuedWithItsStartTimeAndWhatItCannotIsSaidOnce() throws Exception {
+        final File cutOff = new File(inbox.getParentFile(), "cutoff");
+        cap.recovery = () -> {
+            // The installed recorder's part: a playable Ogg becomes a finished file, an MP4 without its index is set aside.
+            try {
+                Files.write(new File(inbox, "1700000000000-ab12cd34.ogg").toPath(), new byte[5000]);
+                cutOff.mkdirs();
+                Files.write(new File(cutOff, "1690000000000-ab12cd34-03.m4a").toPath(), new byte[5000]);
+            } catch (IOException e) { throw new IllegalStateException(e); }
+            return new int[] { 1, 1 };
+        };
+        cap.pumpOnce();
+        assertEquals("the recovered memo was sent", Collections.singletonList("1700000000000-ab12cd34"), uploads);
+        assertEquals(1, TestCore.get(core, "/memo/queue").getInt("cutOffKept"));
+        assertEquals(1, notices.size());
+        assertEquals("memo-cutoff uploads Voice memos: 1 recording was cut off and cannot be played. It is kept on this phone and not sent. ",
+                notices.get(0));
+        assertTrue("never deleted", new File(cutOff, "1690000000000-ab12cd34-03.m4a").isFile());
+        cap.recovery = () -> new int[] { 0, 0 };
+        cap.pumpOnce();
+        assertEquals("said once", 1, notices.size());
+    }
+
+    @Test public void anInstalledShellWithoutRecoveryLosesNothingAndStopsNothing() throws Exception {
+        cap.recovery = () -> { throw new NoClassDefFoundError("MemoRecovery"); };
+        File part = new File(inbox, "1700000000000-ab12cd34.ogg.part");
+        Files.write(part.toPath(), new byte[5000]);
+        record("1700000001000-ab12cd34");
+        cap.pumpOnce();
+        cap.pumpOnce();
+        assertTrue(part.exists());
+        assertEquals(1, uploads.size());
+    }
+
+    // ── discarding what could not be sent ────────────────────────────────────
+
+    @Test public void discardingParkedMemosIsAskedTwiceAndLeavesWaitingOnesAlone() throws Exception {
+        status = 422;
+        answer = "{\"ok\":false,\"error\":\"empty_transcription\"}";
+        File refused = record("1700000000000-ab12cd34");
+        cap.pumpOnce();
+        assertEquals(1, TestCore.get(core, "/memo/queue").getInt("parked"));
+        assertTrue("the notice carries the action", notices.get(notices.size() - 1).contains("could not be sent"));
+        down = true;
+        File waiting = record("1700000005000-ab12cd34");
+        cap.pumpOnce();
+
+        JSONObject first = memoLink().handle("discard", NO_QUERY);
+        assertEquals("Tap Discard again to delete 1 voice memo that could not be sent. This cannot be undone.", first.getString("message"));
+        assertTrue("nothing is deleted by the first tap", refused.exists());
+        now += VoiceMemoCapability.DISCARD_CONFIRM_MS + 1;
+        assertTrue("too late: it asks again", memoLink().handle("discard", NO_QUERY).getString("message").startsWith("Tap Discard again"));
+        assertTrue(refused.exists());
+        now += 2_000;
+        assertEquals("Discarded 1 voice memo", memoLink().handle("discard", NO_QUERY).getString("message"));
+        assertFalse(refused.exists());
+        assertTrue("a memo that is only waiting is kept", waiting.exists());
+        JSONObject queue = TestCore.get(core, "/memo/queue");
+        assertEquals(0, queue.getInt("parked"));
+        assertEquals(1, queue.getInt("waiting"));
+        assertEquals("No voice memos to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
     }
 }

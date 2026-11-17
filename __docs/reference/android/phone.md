@@ -144,6 +144,7 @@ Two forms are links:
 | `daylight://action/<id>?k=<key>` | Run a one-tap action | yes |
 | `daylight://memo/new?k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
 | `daylight://memo/queue?k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
+| `daylight://memo/discard?k=<key>` | Throw away the memos that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
 | `daylight://media/play?id=<contentId>&k=<key>` | Play that household item natively | yes |
 | `https://<the site>/<path>` | The same as `daylight://open` for that path, without a key | no key can be given; only a bookmarked path opens |
 
@@ -485,16 +486,21 @@ A memo is recorded on the phone and sent to the Journalist, which transcribes it
 saves a journal entry and answers in the owner's Telegram conversation with the
 transcript and then a follow-up question, as it does for a Telegram voice message.
 
-**A memo is journaled at upload time.** The backend stamps the entry when it
-receives the audio. A memo recorded with no connection is journaled when it
-uploads, which can be hours later.
+**A memo is journaled at the time its recording started.** The upload carries
+`X-Daylight-Recorded-At`, the epoch milliseconds at which the recording began, as
+kept in the queue entry (it is the leading number of the memo's id, and for a
+recording recovered after a cut-off it is the start of that recording). The
+backend files the journal entry under that time when it is within the last 30
+days and no more than five minutes ahead of its own clock; outside that window it
+uses the time it received the audio. A memo recorded with no connection and
+uploaded hours later is therefore journaled when it was said.
 
 ### Recording
 
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
-| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `memo/new` link, after checking that `identity.user` is set | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
-| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records to `<files>/memos/inbox/<id>.m4a.part` and renames it to `<id>.m4a` when whole | Told over the `memos` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
+| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `memo/new` link, after checking that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
+| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `memos` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
 
 - A memo recording starts only from a tap on this phone: a tile, the widget, a
   launcher shortcut (each a keyed link). A page of the site cannot start the memo
@@ -505,33 +511,73 @@ uploads, which can be hours later.
   the phone it is off: `webview.allowMic` and `webview.allowCamera` are false in
   `devices/phone.yml`, so every such request is denied. See "The lock screen, the
   microphone and the camera" for the rule that holds when a build turns them on.
-- A notification is up for as long as it records, with a Stop action. The record
-  screen's button, the notification's Stop, and the memo tile or widget button
-  tapped again all stop and save. A second tap within 1.5 seconds of the start is
-  taken as the same tap.
-- AAC in an MP4 container, mono: 16 kHz at 32 kbit/s, and where the phone's
-  encoder refuses that, 44.1 kHz at 64 kbit/s. Sent as `audio/mp4`.
+- The record screen's button, the notification's Stop, and the memo tile, widget
+  button or shortcut tapped again all stop and save. A second tap within 1.5
+  seconds of the start is taken as the same tap.
+- The screen acts on its intent once. When Android builds the screen again (the
+  phone is turned, the theme or the font size changes) it shows the recording
+  under way and does nothing else. Before, that rebuild was read as a second tap
+  and stopped the memo.
 - Hard cap: 30 minutes (and 24 MB), then it stops and saves.
 - A call, or another app taking audio focus, stops the recording and saves what
-  was said so far. So does an error from the recorder, when its stop succeeds.
-- Discarded: a recording under one second, an empty file, and one whose recorder
-  could not write its index. A recording cut off because the app was killed is a
-  `.part` file that nothing can play; it is removed when the next recording starts,
-  or by the payload once it is two hours old. **That memo is lost.**
+  was said so far. So does an error from the recorder.
+- Discarded: a recording under one second, and an empty file.
 - A memo's id is `<start ms>-<8 hex>`. Files are in the app's private storage.
+
+**With notifications denied.** A foreground service's notification is then not
+shown in the shade, so there is no "Recording a voice memo" notice and no Stop
+action. The recording runs all the same. It is stopped from the record screen,
+or by tapping the memo tile, widget button or shortcut again; the record screen
+says so when notifications are off. The tile and the widget do not change their
+look while a memo is being recorded. Android's own list of running apps (the
+"active apps" entry in the shade on Android 13 and later) still names Daylight.
+
+### The container, and a recording that is cut off
+
+One recording is one memo, and a recording whose process is killed is still a
+memo. The container is chosen for that:
+
+| Android | Written as | When the app is killed mid-recording |
+|---|---|---|
+| 10 and later (API 29) | One Ogg/Opus file, `<id>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
+| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
+
+Why Ogg and not segments everywhere: the intake takes one body per memo id and
+allows 60 memos a user a day. A thirty-minute memo is one of the sixty as Ogg and
+six as five-minute segments. MP4 cannot be made to survive a kill at all (its
+index is written at the end), and Ogg/Opus is only written by `MediaRecorder`
+from Android 10, so the segments are the fallback and nothing more.
+
+Recovery is `MemoRecovery`, in the installed half, because only the recorder
+knows whether a recording is under way. It runs before each new recording and at
+each pass of the upload queue (at payload start, when a network comes up, and at
+least every fifteen minutes):
+
+- `<id>.ogg.part` with no recorder writing it becomes `<id>.ogg` and is queued.
+- A cut-off `.m4a.part`, and an Ogg file under 4 KiB (headers and less than a
+  second), is moved to `<files>/memos/cutoff/` and kept. A notice says how many
+  recordings are kept there and that they are not sent.
+- **Nothing that holds audio is deleted.** Only an empty file is removed.
+
+Unproven on a phone: that a cut-off Ogg file from this phone's encoder is
+accepted and transcribed by the intake, that the recorder accepts 16 kHz Opus,
+and everything about the segment fallback, which needs a phone on Android 8 or 9.
 
 ### The upload queue
 
 Kept on disk (`files/payloads/state/memo-queue.json`), so it survives the process
-being killed and a restart of the phone.
+being killed and a restart of the phone. A change that cannot be written (a full
+disk) is undone in memory and the pass fails; the next pass makes the same change
+again. Before, a failed write left a memo marked as being sent and nothing was
+sent again until the app restarted.
 
 ```
 QUEUED ──► UPLOADING ──200──► gone (the audio is deleted)
-  ▲            │ no answer, or one that may change: wait 5 s, 10 s ... 1 h
+  ▲            │ not sent, not the intake's answer, or an answer that may change: wait 5 s, 10 s ... 1 h
   └────────────┘
-               │ refused, or the 20th failure the backend answered
+               │ 400, 413, 415, 422, or the 20th failure that counts
                ▼
-            PARKED (the audio is kept)
+            PARKED (the audio is kept until it is sent or discarded)
 ```
 
 One memo is sent at a time. Nothing is tried while Android reports no network; a
@@ -539,35 +585,57 @@ network coming up wakes the queue.
 
 ```
 POST /api/v1/journalist/memo?user=<identity.user>
-Content-Type: audio/mp4
+Content-Type: audio/ogg            (audio/mp4 for an .m4a file)
+X-Daylight-Device: fleet:<key>     (identity.device; default fleet:phone)
 X-Daylight-Memo-Id: <id>
-X-Daylight-Recorded-At: <epoch ms>
+X-Daylight-Recorded-At: <epoch ms the recording started>
 ```
 
-| Answer | The queue |
-|---|---|
-| 200 with `duplicate: true` or `false` | Done. The audio is deleted, and only then |
-| 200 with anything else (a sign-in page of some network) | Tried again; counts |
-| 400, 413, 415, 422 | Parked with the status and the backend's error code |
-| 404 (the user is not set up yet), 500, 503, any other status | Tried again; counts |
-| No answer within 330 seconds | Tried again; counts. The backend answers the same id as a duplicate |
-| No connection | Tried again; does not count, however often |
+No `Origin` header is sent: the client is not a page, and the intake refuses a
+request that names one as `cross_origin`.
 
-After 20 counted failures a memo is parked. A parked memo keeps its audio and is
-tried again by a tap on its notification (`daylight://memo/queue`). A recording
+Only what the intake itself said counts toward parking. An answer is the
+intake's own when its body is JSON with `ok: false` and one of the intake's error
+codes. A phone can be off its VPN for days; every failure in that time is the
+network's and none is counted.
+
+| What happened | The queue | Counts toward 20 |
+|---|---|---|
+| 200 with a boolean `duplicate` | Done. The audio is deleted, and only then | |
+| 200 with anything else (a sign-in page of some network) | Tried again with backoff | no |
+| 400, 413, 415, 422 (`empty_transcription` is answered the same on a retry) | Parked at once with the status and the error code | |
+| 403 `device_not_allowed` | The owner has not bound this phone to the user in the household config. Tried again with backoff, and one notice says "This phone is not allowed to send memos yet"; it goes with the first memo that is accepted | no |
+| 429 (`daily_limit`, with `limit: memos` or `bytes`) | The whole queue waits for the time the backend names: `retryAfterSeconds` in the body, else the `Retry-After` header, at least a minute and at most a day (fifteen minutes when neither is there). Nothing is sent earlier, by the timer or by a tap. One notice says the daily allowance is used up and when sending resumes | no |
+| Any other answer that is the intake's own (404 `unknown_user`, 403 `cross_origin`, 500 `processing_failed`, 503 `unavailable`) | Tried again with backoff | yes |
+| Any other answer (a redirect, 401, a bare 403 or 404, a proxy's 502 or 504, a gateway page) | Tried again with backoff | no |
+| The body was sent and no answer came within 330 seconds | Tried again; the backend answers the same id as a duplicate | yes |
+| Not sent: no connection, a connect timeout to an address that is not reachable (the VPN is down), the link dropping part-way | Tried again with backoff | no |
+
+A device that is not bound, for a user with no Journalist conversation, is
+answered 403 and not 404; 404 `unknown_user` is the answer for a bound device.
+
+After 20 counted failures a memo is parked. A parked memo keeps its audio. A tap
+on its notice (`daylight://memo/queue`) tries every waiting and parked memo
+again. The notice's **Discard** action (`daylight://memo/discard`, keyed) throws
+parked memos away, audio included, and asks twice: the first tap says how many
+would go and changes nothing, and a second tap within twenty seconds deletes.
+Only parked memos are discarded; one that is still waiting never is. A recording
 over 26,214,400 bytes is parked without being sent.
 
-**With `identity.user` empty nothing is sent and nothing is recorded.** The memo
-action answers "Voice memos are not set up on this phone: identity not
-configured"; a memo already kept stays on the phone, is not retried in a loop, and
-a notice says so. The value is a build-time placeholder (`phone_user`), and a
-per-device test fails a phone build without it.
+**With `identity.user` empty, or `identity.device` not `fleet:<key>`, nothing is
+sent and nothing is recorded.** The memo action answers "Voice memos are not set
+up on this phone: identity not configured" (or "device identity not
+configured"); a memo already kept stays on the phone, is not retried in a loop,
+and a notice says so. `identity.user` is a build-time placeholder (`phone_user`),
+and a per-device test fails a phone build without it. `identity.device` defaults
+to `fleet:phone`; the key is 1 to 96 letters, digits, `.`, `_` or `-`, and must
+be the one the household config binds to the user.
 
 | Method | Route | Answer |
 |---|---|---|
-| GET | `/memo/queue` | `{waiting, parked, uploaded, lost, memos: [{id, state, attempts, lastError, ...}], blocked, problems}` |
+| GET | `/memo/queue` | `{waiting, parked, uploaded, lost, discarded, holdUntilMs, memos: [{id, state, attempts, lastError, ...}], blocked, notAllowed, cutOffKept, problems}` |
 | POST | `/memo/recorded` | Scans the inbox |
-| POST | `/memo/retry` | Makes every memo due now |
+| POST | `/memo/retry` | Makes every memo due now (a daily-allowance wait still holds) |
 
 Privacy: the shell log and logcat hold a memo's id, its length and its size.
 Nothing of the audio, and no transcript, is read, kept or logged on the phone.
@@ -582,7 +650,10 @@ transport: household pushes keep arriving through the Home Assistant relay.
 | Playback | Media3's own | The media session. Exempt from the notification permission |
 | "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
 | "N voice memos waiting to upload" | `daylight_uploads` (low) | `voice-memo`, after a pass that left memos waiting |
-| "N voice memos could not be sent. Tap to try again." | `daylight_uploads` | `voice-memo`, when memos are parked |
+| "N voice memos could not be sent. Tap to try again.", with a Discard action | `daylight_uploads` | `voice-memo`, when memos are parked |
+| "This phone is not allowed to send memos yet. ..." | `daylight_uploads` | `voice-memo`, after a 403 `device_not_allowed`; removed by the first accepted memo |
+| "The daily allowance for voice memos is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `voice-memo`, after a 429 |
+| "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `voice-memo`, while `memos/cutoff/` holds any |
 | "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `voice-memo` |
 
 A notice is a count and a state. A tap opens a `daylight://` link through the link
@@ -737,9 +808,11 @@ services (which the system alone can bind), `DaylightMediaService` and
   Media3 player and session, audio focus, the media notification, a car. Their
   decisions are in pure classes that are tested (`ControllerPolicy`, `BrowseAnswer`,
   `TrackAnswer`, `PayloadMedia`).
-- `MemoRecorderService` and `RecordActivity`: the microphone, the encoder, the
-  foreground service, the permission dialogs. Their decisions are in
-  `RecorderMachine`, `MemoFiles` and `PermissionAsk`, which are tested.
+- `MemoRecorderService` and `RecordActivity`: the microphone, the encoder (Ogg/Opus,
+  and the MP4 segment rotation below Android 10), the foreground service, the
+  permission dialogs, a rebuild of the screen. Their decisions are in
+  `RecorderMachine`, `MemoFiles`, `MemoRecovery` and `PermissionAsk`, which are
+  tested; that a cut-off Ogg file plays has not been tried.
 - `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
   with no notification service, which shows only that it does nothing there.
 - The backend's side of every media and memo request. The tests use a fake backend

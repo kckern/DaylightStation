@@ -151,46 +151,76 @@ Pick the content id of a music track and of an album from the Media page.
 
 ## F. Voice memos
 
+Before the first memo: the household config must bind this phone's device key
+(`identity.device`, default `fleet:phone`) to the user. Until it does, step 2
+shows the "not allowed yet" notice instead of an upload (see step 16).
+
 1. Tap "New memo". The first time, the phone asks for the microphone and then for
    notifications; both dialogs stay up long enough to answer. Speak for ten
    seconds, "Stop and save".
 2. Within a few minutes the transcript and the Journalist's reply arrive in the
    owner's Telegram conversation. `memo-queue.json` shows `uploaded: 1` and no
    memo; the inbox is empty. Record the entry's time in the journal: it is the
-   upload time.
+   time the recording started, not the upload time.
 3. While recording: the notification is up and shows a running clock; its Stop
    action ends and saves the memo with the record screen closed.
 4. While recording, tap the memo tile again: the memo stops and is saved.
-5. Record how the file sounds and its size per minute (pull one from the inbox
-   with airplane mode on): the first profile is 16 kHz at 32 kbit/s. If logcat says
-   the recorder did not start at 16000 Hz, the fallback was used.
-6. Airplane mode on. Record two memos. A notice says two are waiting. Airplane
+5. While recording, more than two seconds in, turn the phone, and switch dark
+   mode on and off. The record screen comes back showing the clock, and the
+   recording goes on. (Before the fix this stopped and saved the memo.)
+6. Pull one recording from the inbox with airplane mode on and record how it
+   sounds and its size per minute. On Android 10 and later it is `<id>.ogg`,
+   Opus at 16 kHz and 32 kbit/s; if logcat says the recorder did not start at
+   16000 Hz, the 48 kHz fallback was used.
+7. Airplane mode on. Record two memos. A notice says two are waiting. Airplane
    mode off: both upload without opening the app, one after the other, and the
-   notice goes.
-7. Record a memo with airplane mode on, restart the phone, airplane mode off: the
+   notice goes. Their journal entries carry the times they were recorded.
+8. Record a memo with airplane mode on, restart the phone, airplane mode off: the
    memo uploads.
-8. Record a memo, and force-stop the app in the middle of the recording. Open the
-   recorder again: logcat says one cut-off recording was removed. That memo is
-   lost; confirm nothing else is.
-9. Take a phone call in the middle of a recording: the memo stops and what was
-   said before the call is uploaded.
-10. Let a recording run to thirty minutes: it stops by itself and uploads. Record
-    the file's size.
-11. Deny the microphone: nothing is recorded and the app says so.
-12. Answer "Don't allow" to notifications: recording still works, and the question
-    is not asked again.
-13. From a page of the site, try to start a memo (a link to `daylight://memo/new`
+9. **Cut-off recording.** Start a memo, speak for thirty seconds, and force-stop
+   the app (`adb shell am force-stop net.kckern.daylight.phone`). The inbox holds
+   `<id>.ogg.part`. Open the app again. Within a pass the file is `<id>.ogg`,
+   it uploads, and the transcript holds what was said before the stop, journaled
+   at the time the recording started. Logcat and the shell log say "cut-off
+   recordings: 1 recovered". If the intake refuses the file (422 or 415), record
+   that: the truncated Ogg is not accepted and the design needs another look.
+   Nothing is deleted either way.
+10. Take a phone call in the middle of a recording: the memo stops and what was
+    said before the call is uploaded.
+11. Let a recording run to thirty minutes: it stops by itself and uploads as one
+    memo. Record the file's size.
+12. Deny the microphone: nothing is recorded and the app says so.
+13. Answer "Don't allow" to notifications: recording still works, the question is
+    not asked again, and the record screen says there is no recording notice and
+    how to stop. Start a memo, leave the screen, and stop it by tapping the memo
+    tile again. Record whether Android's own "active apps" list names Daylight
+    while it records.
+14. From a page of the site, try to start a memo (a link to `daylight://memo/new`
     in a page, typed into the page's address by script): nothing records.
+15. **Off the VPN.** Turn the VPN off with Wi-Fi on, record a memo and leave the
+    phone for an hour. `memo-queue.json` shows the memo `QUEUED` with
+    `attempts: 0` and a growing `nextAttemptAtMs`; `lastError` is "no connection"
+    or an `HTTP <status>` of some other network. Turn the VPN on: it uploads.
+16. **Device binding.** With the phone's key not bound to the user in the
+    household config, record a memo. A notice says "This phone is not allowed to
+    send memos yet"; `memo-queue.json` shows `attempts: 0`. Bind the key; the
+    memo uploads within the backoff and the notice goes.
+17. **Daily allowance.** If the allowance can be lowered for a test, exceed it:
+    a notice says the allowance is used up and when sending resumes; a tap on it
+    does not send early; after the named time the queue drains.
 
 ## G. Notifications
 
-1. With a memo waiting (F6), tap the notice: a message says how many are being
+1. With a memo waiting (F7), tap the notice: a message says how many are being
    tried again.
-2. A parked memo cannot be produced on purpose without the backend refusing one. If
-   the backend answers 422 for a recording with no speech in it, record a few
-   seconds of nothing: the notice says one memo could not be sent, and the audio is
-   still in the inbox.
-3. In the phone's notification settings the app has the channels "Uploads",
+2. A parked memo cannot be produced on purpose without the backend refusing one.
+   If the backend answers 422 for a recording with no speech in it, record a few
+   seconds of nothing: the notice says one memo could not be sent and has a
+   Discard action, and the audio is still in the inbox.
+3. Tap Discard: a message asks to tap again and nothing is deleted. Wait thirty
+   seconds and tap again: it asks again. Tap twice within twenty seconds: the
+   memo and its audio are gone, and the notice goes.
+4. In the phone's notification settings the app has the channels "Uploads",
    "Voice memo recording" and "Daylight", beside the shell's own.
 
 ## H. A relayed push that opens a view

@@ -56,6 +56,13 @@ final class AndroidNotices implements NotificationsCapability.NoticeSink {
             builder.setContentIntent(PendingIntent.getActivity(context, notice.androidId(), tap,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         }
+        if (!notice.actionUri.isEmpty()) {
+            // The button opens one of this app's own links, like the tap; a different request code keeps the two apart.
+            Intent action = new Intent(Intent.ACTION_VIEW, Uri.parse(notice.actionUri)).setPackage(context.getPackageName());
+            builder.addAction(new Notification.Action.Builder(null, notice.actionLabel,
+                    PendingIntent.getActivity(context, notice.androidId() + 1_000_000, action,
+                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+        }
         m.notify(notice.androidId(), builder.build());
     }
 

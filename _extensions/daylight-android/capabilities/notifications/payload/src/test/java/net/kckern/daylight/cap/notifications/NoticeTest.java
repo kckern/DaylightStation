@@ -2,6 +2,8 @@ package net.kckern.daylight.cap.notifications;
 
 import static org.junit.Assert.*;
 
+import net.kckern.daylight.core.spi.LocalNotices;
+
 import org.junit.Test;
 
 public class NoticeTest {
@@ -63,5 +65,23 @@ public class NoticeTest {
         assertEquals("a page link needs none", "daylight://bookmark/feed", notice("x", "uploads", "t", "", "daylight://bookmark/feed").uri);
         assertEquals("with no key yet the link is posted as it is, and a tap is refused", "daylight://memo/queue",
                 Notice.of("x", "uploads", "t", "", "daylight://memo/queue", "").uri);
+    }
+
+    @Test public void aNoticeMayCarryOneActionThatOpensOneOfTheAppsOwnLinks() {
+        String key = "0123456789abcdef0123456789abcdef";
+        Notice n = Notice.of("memo-queue", LocalNotices.UPLOADS, "Voice memos", "1 could not be sent", "daylight://memo/queue",
+                "Discard", "daylight://memo/discard", key);
+        assertEquals("Discard", n.actionLabel);
+        assertTrue("the action is a keyed link like the tap", n.actionUri.startsWith("daylight://memo/discard") && n.actionUri.contains(key));
+        Notice plain = Notice.of("memo-queue", LocalNotices.UPLOADS, "Voice memos", "1 waiting", "daylight://memo/queue", key);
+        assertEquals("", plain.actionLabel);
+        assertEquals("", plain.actionUri);
+        for (String[] bad : new String[][] { { "Discard", "" }, { "", "daylight://memo/discard" }, { "Discard", "https://evil.example/" },
+                { "A label that is far too long for a button", "daylight://memo/discard" } }) {
+            try {
+                Notice.of("memo-queue", LocalNotices.UPLOADS, "Voice memos", "x", "", bad[0], bad[1], key);
+                fail("accepted " + bad[0] + " / " + bad[1]);
+            } catch (IllegalArgumentException expected) { }
+        }
     }
 }

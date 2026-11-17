@@ -6,4 +6,8 @@ android {
 
 dependencies {
     implementation project(':core')
+    // The recovery of cut-off recordings is the installed recorder's (MemoRecovery). Its
+    // classes come from the APK at run time and are not dexed into the payload.
+    compileOnly project(':capabilities:voice-memo:shell')
+    testImplementation project(':capabilities:voice-memo:shell')
 }

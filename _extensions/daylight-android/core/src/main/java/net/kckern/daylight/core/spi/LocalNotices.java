@@ -29,6 +29,16 @@ public interface LocalNotices {
      */
     void post(String id, String channel, String title, String text, String linkUri);
 
+    /**
+     * As {@link #post}, with one action button under the notice.
+     *
+     * @param actionLabel the button's text, 1 to 20 characters; "" for no button
+     * @param actionUri   the daylight:// link the button opens, held to the same rules as linkUri
+     */
+    default void post(String id, String channel, String title, String text, String linkUri, String actionLabel, String actionUri) {
+        post(id, channel, title, text, linkUri);
+    }
+
     /** Remove the notice with this id. Nothing happens when none is shown. */
     void cancel(String id);
 }

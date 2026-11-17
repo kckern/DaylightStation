@@ -95,4 +95,65 @@ public class BackendHttpTest {
         // The memo intake answers after transcription and the journal save.
         assertTrue(BackendHttp.UPLOAD_READ_MS >= 5 * 60 * 1000);
     }
+
+    // ── an upload: not sent, sent and not answered, answered ─────────────────
+
+    private File memo() throws Exception {
+        File f = tmp.newFile();
+        Files.write(f.toPath(), new byte[2048]);
+        return f;
+    }
+
+    @Test public void anUploadThatCannotConnectWasNotSent() throws Exception {
+        int closed;
+        try (java.net.ServerSocket s = new java.net.ServerSocket(0)) { closed = s.getLocalPort(); }
+        try {
+            new BackendHttp(() -> "fleet:phone").postFile("http://127.0.0.1:" + closed + "/api/v1/journalist/memo", "audio/ogg",
+                    memo(), Collections.<String, String>emptyMap());
+            fail("answered with nothing listening");
+        } catch (Http.NotSentException expected) {
+            // The VPN is down, the address is unreachable: the backend never saw the memo.
+        }
+    }
+
+    @Test public void aConnectTimeoutIsNotSentEitherThoughItIsTheSameExceptionAsAReadTimeout() {
+        java.io.IOException atConnect = BackendHttp.beforeTheBody(new java.net.SocketTimeoutException("connect timed out"));
+        assertTrue(atConnect instanceof Http.NotSentException);
+        assertFalse("the queue counts a SocketTimeoutException", atConnect instanceof java.net.SocketTimeoutException);
+    }
+
+    @Test public void anUploadThatWasSentAndNeverAnsweredIsATimeout() throws Exception {
+        // Accepts, reads everything and says nothing: the intake, still transcribing.
+        final java.net.ServerSocket quiet = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"));
+        Thread t = new Thread(() -> {
+            try (java.net.Socket s = quiet.accept()) {
+                java.io.InputStream in = s.getInputStream();
+                byte[] buf = new byte[4096];
+                while (in.read(buf) >= 0) { /* keep reading until the client gives up */ }
+            } catch (Exception ignored) { }
+        });
+        t.setDaemon(true);
+        t.start();
+        try {
+            new BackendHttp(() -> "fleet:phone", 2000, 300).postFile("http://127.0.0.1:" + quiet.getLocalPort() + "/m", "audio/ogg",
+                    memo(), Collections.<String, String>emptyMap());
+            fail("answered");
+        } catch (java.net.SocketTimeoutException expected) {
+            // The body arrived, so the backend may have the memo: this one counts.
+        } finally {
+            quiet.close();
+        }
+    }
+
+    @Test public void aReplyCarriesItsHeadersAndNoOriginIsEverSent() throws Exception {
+        Http.Reply r = new BackendHttp(() -> "fleet:phone").postFile(base + "/api/v1/journalist/memo", "audio/ogg", memo(),
+                Collections.singletonMap("X-Daylight-Memo-Id", "1700000000000-ab12cd34"));
+        assertEquals("application/json", r.header("Content-Type"));
+        assertEquals("application/json", r.header("content-type"));
+        assertNull(r.header("Retry-After"));
+        // The intake refuses a request that names an origin as cross-origin; a native client names none.
+        assertFalse(seenHeaders.containsKey("origin"));
+        assertFalse(seenHeaders.containsKey("referer"));
+        assertEquals("fleet:phone", seenHeaders.get("x-daylight-device"));
+    }
 }

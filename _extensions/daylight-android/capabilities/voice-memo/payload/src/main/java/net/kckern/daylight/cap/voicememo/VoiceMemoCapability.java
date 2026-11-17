@@ -38,9 +38,10 @@ import java.util.function.LongSupplier;
  * only after the backend answered 200 for it. Nothing here reads the audio, and no
  * log line or notice holds more than a memo's id, its size and its state.
  *
- * Recording starts from one place: the keyed link daylight://memo/new, which only
- * this app's own surfaces (a tile, the widget, a shortcut) can build. A page of the
- * site cannot start the microphone.
+ * A memo recording starts from one place: the keyed link daylight://memo/new, which
+ * only this app's own surfaces (a tile, the widget, a shortcut) can build. A page of
+ * the site cannot start this recorder. What a page may do with the microphone itself
+ * is the web view's rule (webview.allowMic, and how the page was opened).
  */
 public final class VoiceMemoCapability implements Capability {
     /** The PayloadPort the recorder tells of a finished recording. The shell half spells the same name (MemoFiles.PORT). */
@@ -52,6 +53,17 @@ public final class VoiceMemoCapability implements Capability {
 
     /** Opens the installed record screen. */
     interface Recorder { void open(); }
+
+    /**
+     * Asks the installed recorder to recover recordings that were cut off. It alone
+     * knows whether a recording is under way, so the decision is its own (MemoRecovery
+     * in the shell half). Answers {recovered, unplayable}.
+     */
+    interface Recovery { int[] recover(); }
+
+    static final String CUT_OFF_NOTICE = "memo-cutoff";
+    /** A second tap on Discard within this long deletes; the first only asks. */
+    static final long DISCARD_CONFIRM_MS = 20_000L;
 
     private CoreContext core;
     private Backend backend;
@@ -68,7 +80,13 @@ public final class VoiceMemoCapability implements Capability {
     private final Object wake = new Object();
     private boolean woken;
     private volatile String blocked = "";
+    /** The backend answered that this phone may not send memos for the user yet. Cleared by the first success. */
+    private volatile boolean notAllowed;
     private String lastAnnounced = "";
+    private int cutOffAnnounced;
+    private File cutOffDir;
+    Recovery recovery;
+    private long discardArmedAtMs;
     private Object networkCallback;
 
     private final PayloadPort port = PayloadPort.named(PORT);
@@ -105,7 +123,8 @@ public final class VoiceMemoCapability implements Capability {
                 // The query is whatever the sender of the link wrote, and is not read.
                 if ("new".equals(arg)) return startRecording();
                 if ("queue".equals(arg)) return tryAgain();
-                throw new IllegalArgumentException("expected memo/new or memo/queue");
+                if ("discard".equals(arg)) return discard();
+                throw new IllegalArgumentException("expected memo/new, memo/queue or memo/discard");
             }
         });
 
@@ -114,7 +133,9 @@ public final class VoiceMemoCapability implements Capability {
             JSONObject body = q == null
                     ? Replies.ok().put("waiting", 0).put("parked", 0).put("uploaded", 0).put("lost", 0).put("memos", new JSONArray())
                     : q.describe();
-            return Router.Response.json(200, body.put("blocked", blocked).put("problems", new JSONArray(problems())));
+            return Router.Response.json(200, body.put("blocked", blocked).put("notAllowed", notAllowed)
+                    .put("cutOffKept", cutOffDir == null ? 0 : MemoInbox.cutOffKept(cutOffDir))
+                    .put("problems", new JSONArray(problems())));
         });
         core.router().route("POST", "/memo/recorded", req -> Router.Response.json(200, Replies.ok().put("waiting", recorded())));
         core.router().route("POST", "/memo/retry", req -> {
@@ -163,9 +184,19 @@ public final class VoiceMemoCapability implements Capability {
         if (inbox == null || stateDir == null) {
             Object context = core.shell().context();
             if (context == null) return null;
-            if (inbox == null) inbox = new File(((Context) context).getFilesDir(), MemoInbox.DIR);
+            final File filesDir = ((Context) context).getFilesDir();
+            if (inbox == null) inbox = new File(filesDir, MemoInbox.DIR);
             if (stateDir == null) stateDir = PayloadState.dir(core.shell().payloadDir());
+            if (cutOffDir == null) cutOffDir = new File(filesDir, MemoInbox.CUT_OFF_DIR);
+            if (recovery == null) {
+                recovery = () -> {
+                    net.kckern.daylight.cap.voicememo.shell.MemoRecovery.Found f =
+                            net.kckern.daylight.cap.voicememo.shell.MemoRecovery.recoverNow(filesDir);
+                    return new int[] { f.recovered, f.unplayable };
+                };
+            }
         }
+        if (cutOffDir == null) cutOffDir = new File(inbox.getParentFile(), "cutoff");
         inbox.mkdirs();
         if (link == null) link = this::networkUp;
         MemoQueue q = new MemoQueue(new File(stateDir, "memo-queue.json"));
@@ -194,16 +225,55 @@ public final class VoiceMemoCapability implements Capability {
     void pumpOnce() {
         MemoQueue q = requireQueue();
         long now = clock.getAsLong();
-        MemoInbox.sweepCutOff(inbox, now);
+        recoverCutOff();
         MemoInbox.scan(inbox, q);
         UploadPump.Pass pass = pump.drain(now);
         blocked = pass.blocked;
+        if (pass.uploaded > 0) notAllowed = false;
+        if (pass.notAllowed) notAllowed = true;
+        if (pass.limitUntilMs > 0) core.shell().note("MEMO", "the daily allowance is used up; nothing is sent for "
+                + ((pass.limitUntilMs - now) / 60_000) + " min");
         for (int i = 0; i < pass.uploadedIds.size(); i++) {
             core.shell().note("MEMO", "uploaded " + pass.uploadedIds.get(i) + " " + pass.sizes.get(i) + " bytes");
         }
         if (pass.parked > 0) core.shell().note("MEMO", "parked " + pass.parked + ", " + q.parked() + " in all");
         if (pass.lost > 0) core.shell().note("MEMO", pass.lost + " recording(s) were gone before they could be sent");
         announce(q);
+    }
+
+    /**
+     * A recording whose recorder is gone (the app was killed) is never deleted. The
+     * installed recorder turns what can be played into a finished memo, which the scan
+     * that follows queues with the start time in its id, and moves the rest to
+     * memos/cutoff. The owner is told once how many are kept there.
+     */
+    private void recoverCutOff() {
+        Recovery r = recovery;
+        if (r != null) {
+            try {
+                int[] found = r.recover();
+                if (found[0] + found[1] > 0) {
+                    core.shell().note("MEMO", "cut-off recordings: " + found[0] + " recovered, " + found[1] + " kept aside as unplayable");
+                }
+            } catch (RuntimeException | LinkageError olderShellOrBroken) {
+                // An installed shell from before recovery existed: nothing is recovered and nothing is removed.
+                core.shell().note("MEMO", "cut-off recordings were not looked for: " + olderShellOrBroken.getClass().getSimpleName());
+                recovery = null;
+            }
+        }
+        int kept = MemoInbox.cutOffKept(cutOffDir);
+        if (kept == cutOffAnnounced) return;
+        LocalNotices notices = core.services().find(LocalNotices.class);
+        if (notices == null) return;
+        try {
+            if (kept == 0) notices.cancel(CUT_OFF_NOTICE);
+            else notices.post(CUT_OFF_NOTICE, LocalNotices.UPLOADS, "Voice memos",
+                    kept + (kept == 1 ? " recording was" : " recordings were") + " cut off and cannot be played. "
+                            + (kept == 1 ? "It is" : "They are") + " kept on this phone and not sent.", "");
+            cutOffAnnounced = kept;
+        } catch (RuntimeException e) {
+            core.shell().note("MEMO", "could not show the cut-off notice: " + e.getClass().getSimpleName());
+        }
     }
 
     /** When the upload thread should look again, or -1 for "only when something changes". */
@@ -242,14 +312,15 @@ public final class VoiceMemoCapability implements Capability {
 
     /** A local notice through the notifications capability; nothing when it is absent. Said once per state. */
     private synchronized void announce(MemoQueue q) {
-        QueueNotice notice = QueueNotice.of(q.waiting(), q.parked(), blocked);
+        QueueNotice notice = QueueNotice.of(q.waiting(), q.parked(), blocked, notAllowed, q.holdUntilMs(clock.getAsLong()));
         String key = notice == null ? "" : notice.key();
         if (key.equals(lastAnnounced)) return;
         LocalNotices notices = core.services().find(LocalNotices.class);
         if (notices == null) return;
         try {
             if (notice == null) notices.cancel(QueueNotice.ID);
-            else notices.post(QueueNotice.ID, LocalNotices.UPLOADS, notice.title, notice.text, notice.link);
+            else notices.post(QueueNotice.ID, LocalNotices.UPLOADS, notice.title, notice.text, notice.link,
+                    notice.actionLabel, notice.actionLink);
             lastAnnounced = key;
         } catch (RuntimeException e) {
             core.shell().note("MEMO", "could not show the queue's notice: " + e.getClass().getSimpleName());
@@ -260,9 +331,8 @@ public final class VoiceMemoCapability implements Capability {
 
     private JSONObject startRecording() throws Exception {
         // A memo that could never be sent is not recorded in the first place.
-        if (backend.user().isEmpty()) {
-            return LinkEffect.toast("Voice memos are not set up on this phone: " + MemoUploader.IDENTITY_NOT_CONFIGURED);
-        }
+        String why = MemoUploader.blocked(backend);
+        if (why != null) return LinkEffect.toast("Voice memos are not set up on this phone: " + why);
         Recorder r = recorder();
         if (r == null) return LinkEffect.toast("Not available on this device");
         r.open();
@@ -275,12 +345,43 @@ public final class VoiceMemoCapability implements Capability {
         if (q == null) return LinkEffect.toast("Not available on this device");
         int kept = q.waiting() + q.parked();
         if (kept == 0) return LinkEffect.toast("No voice memos are waiting");
-        if (backend.user().isEmpty()) {
-            return LinkEffect.toast("Voice memos are not set up on this phone: " + MemoUploader.IDENTITY_NOT_CONFIGURED);
-        }
-        q.retryAll(clock.getAsLong());
+        String why = MemoUploader.blocked(backend);
+        if (why != null) return LinkEffect.toast("Voice memos are not set up on this phone: " + why);
+        long now = clock.getAsLong();
+        q.retryAll(now);
         wake();
+        long held = q.holdUntilMs(now);
+        if (held > 0) {
+            return LinkEffect.toast("The daily allowance is used up. " + QueueNotice.memos(kept) + " will be sent after about "
+                    + QueueNotice.clock(held));
+        }
         return LinkEffect.toast("Trying again: " + QueueNotice.memos(kept));
+    }
+
+    /**
+     * Throws away the memos that could not be sent, audio and all. Asked twice: the
+     * first tap says what would go and changes nothing; a second within twenty seconds
+     * deletes. Only parked memos go. One that is waiting is never discarded this way.
+     */
+    private synchronized JSONObject discard() throws Exception {
+        MemoQueue q = queueOrNull();
+        if (q == null) return LinkEffect.toast("Not available on this device");
+        int parked = q.parked();
+        if (parked == 0) {
+            discardArmedAtMs = 0;
+            return LinkEffect.toast("No voice memos to discard");
+        }
+        long now = clock.getAsLong();
+        if (discardArmedAtMs == 0 || now - discardArmedAtMs > DISCARD_CONFIRM_MS || now < discardArmedAtMs) {
+            discardArmedAtMs = now;
+            return LinkEffect.toast("Tap Discard again to delete " + QueueNotice.memos(parked) + " that could not be sent. This cannot be undone.");
+        }
+        discardArmedAtMs = 0;
+        List<String> files = q.discardParked();
+        for (String path : files) new File(path).delete();
+        core.shell().note("MEMO", "discarded " + files.size() + " parked memo(s) at the owner's request");
+        announce(q);
+        return LinkEffect.toast("Discarded " + QueueNotice.memos(files.size()));
     }
 
     private Recorder recorder() {
@@ -301,6 +402,7 @@ public final class VoiceMemoCapability implements Capability {
     private List<String> problems() {
         List<String> out = new ArrayList<>();
         if (backend.user().isEmpty()) out.add("identity.user is not set: voice memos cannot be sent");
+        else if (MemoUploader.blocked(backend) != null) out.add("identity.device is not fleet:<key>: voice memos cannot be sent");
         if (!backend.configured()) out.add(MemoUploader.SITE_NOT_SET);
         return out;
     }

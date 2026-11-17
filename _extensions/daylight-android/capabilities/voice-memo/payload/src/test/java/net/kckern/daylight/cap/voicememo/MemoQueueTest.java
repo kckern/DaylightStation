@@ -179,4 +179,102 @@ public class MemoQueueTest {
         assertEquals(0, d.getInt("parked"));
         assertFalse("ids, states and counts only", d.toString().contains("/data/"));
     }
+
+    // ── a change that cannot be written is undone ────────────────────────────
+
+    /** A disk that is full for a while. */
+    private static final class Disk implements MemoQueue.Store {
+        boolean full;
+        int writes;
+        @Override public void write(byte[] bytes) throws Exception {
+            if (full) throw new java.io.IOException("No space left on device");
+            writes++;
+        }
+    }
+
+    private static void failing(Runnable change) {
+        try { change.run(); fail("the change was reported as made"); } catch (IllegalStateException expected) { }
+    }
+
+    @Test public void aClaimThatCannotBeWrittenLeavesTheMemoQueuedSoTheNextPassTakesIt() {
+        Disk disk = new Disk();
+        final MemoQueue q = new MemoQueue(state, disk);
+        q.add("100-a", "/x/100-a.ogg", 100);
+        disk.full = true;
+        failing(() -> q.claim(1000));
+        // Before: the memo stayed UPLOADING in memory and every later claim answered null.
+        failing(() -> q.claim(2000));
+        disk.full = false;
+        Memo m = q.claim(3000);
+        assertNotNull("the queue is not stuck", m);
+        assertEquals("100-a", m.id);
+        assertEquals(State.UPLOADING, m.state);
+    }
+
+    @Test public void aRetryThatCannotBeWrittenIsNotCountedTwiceAndTheMemoStaysOut() {
+        Disk disk = new Disk();
+        final MemoQueue q = new MemoQueue(state, disk);
+        q.add("100-a", "/x/100-a.ogg", 100);
+        q.claim(1000);
+        disk.full = true;
+        failing(() -> q.retryLater("100-a", "HTTP 500 processing_failed", true, 1000));
+        disk.full = false;
+        assertFalse(q.retryLater("100-a", "HTTP 500 processing_failed", true, 1000));
+        Memo m = q.claim(1000 + MemoQueue.BASE_DELAY_MS);
+        assertEquals("one failure was written, so one is counted", 1, m.attempts);
+    }
+
+    @Test public void aParkThatCannotBeWrittenLeavesTheMemoAsItWas() throws Exception {
+        Disk disk = new Disk();
+        final MemoQueue q = new MemoQueue(state, disk);
+        q.add("100-a", "/x/100-a.ogg", 100);
+        q.claim(1000);
+        disk.full = true;
+        failing(() -> q.park("100-a", "HTTP 422 empty_transcription"));
+        assertEquals(0, q.parked());
+        assertEquals(1, q.waiting());
+        disk.full = false;
+        q.park("100-a", "HTTP 422 empty_transcription");
+        assertEquals(1, q.parked());
+        assertEquals("PARKED", q.describe().getJSONArray("memos").getJSONObject(0).getString("state"));
+    }
+
+    // ── the daily allowance holds the whole queue ────────────────────────────
+
+    @Test public void aHeldQueueSendsNothingBeforeItsTimeWhoeverAsks() {
+        MemoQueue q = new MemoQueue(state);
+        q.add("100-a", "/x/100-a.ogg", 100);
+        q.add("200-b", "/x/200-b.ogg", 200);
+        assertEquals("100-a", q.claim(1000).id);
+        q.holdUntil("100-a", "HTTP 429 daily_limit", 1000 + 7_200_000L);
+        assertNull(q.claim(2000));
+        q.retryAll(3000);                       // the owner tapped "try again"
+        assertNull("the backend said when; a tap does not change that", q.claim(4000));
+        assertEquals(1000 + 7_200_000L, q.nextAttemptAtMs());
+        assertEquals(1000 + 7_200_000L, q.holdUntilMs(4000));
+        assertEquals(0, q.holdUntilMs(1000 + 7_200_000L));
+        Memo m = q.claim(1000 + 7_200_000L);
+        assertEquals("100-a", m.id);
+        assertEquals("waiting for the allowance is not an attempt", 0, m.attempts);
+        // And it survives a restart.
+        MemoQueue held = new MemoQueue(state);
+        held.holdUntil("100-a", "HTTP 429 daily_limit", 9_000_000_000L);
+        assertNull(new MemoQueue(state).claim(8_000_000_000L));
+    }
+
+    // ── discarding what could not be sent ────────────────────────────────────
+
+    @Test public void discardingRemovesParkedMemosOnlyAndSaysWhichFilesToDelete() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("100-a", "/x/100-a.ogg", 100);
+        q.add("200-b", "/x/200-b.ogg", 200);
+        q.claim(1000);
+        q.park("100-a", "HTTP 422 empty_transcription");
+        assertEquals(java.util.Collections.singletonList("/x/100-a.ogg"), q.discardParked());
+        assertEquals(0, q.parked());
+        assertEquals("a memo that is only waiting is never discarded", 1, q.waiting());
+        assertEquals(1, q.describe().getInt("discarded"));
+        assertTrue(q.discardParked().isEmpty());
+        assertEquals(1, new MemoQueue(state).describe().getInt("discarded"));
+    }
 }

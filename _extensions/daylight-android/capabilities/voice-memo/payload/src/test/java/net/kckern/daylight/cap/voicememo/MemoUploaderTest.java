@@ -27,6 +27,7 @@ public class MemoUploaderTest {
     private int status = 200;
     private String body = "{\"ok\":true,\"duplicate\":false}";
     private IOException failure;
+    private Map<String, String> replyHeaders;
     private String seenUrl;
     private String seenType;
     private Map<String, String> seenHeaders;
@@ -39,7 +40,7 @@ public class MemoUploaderTest {
             calls++;
             if (failure != null) throw failure;
             seenUrl = url; seenType = contentType; seenHeaders = headers;
-            return new Reply(status, body);
+            return new Reply(status, body, replyHeaders);
         }
     };
 
@@ -76,16 +77,23 @@ public class MemoUploaderTest {
     /** The table of the intake's answers and what the queue does with each. */
     @Test public void eachAnswerOfTheIntakeHasItsAction() throws Exception {
         Object[][] table = {
-                { 400, "{\"error\":\"user_required\"}", Outcome.REJECTED, "HTTP 400 user_required" },
-                { 400, "{\"error\":\"invalid_memo_id\"}", Outcome.REJECTED, "HTTP 400 invalid_memo_id" },
-                { 400, "{\"error\":\"empty_body\"}", Outcome.REJECTED, "HTTP 400 empty_body" },
-                { 400, "{\"error\":\"unreadable_body\"}", Outcome.REJECTED, "HTTP 400 unreadable_body" },
-                { 404, "{\"error\":\"unknown_user\"}", Outcome.RETRY, "HTTP 404 unknown_user" },
-                { 413, "{\"error\":\"too_large\"}", Outcome.REJECTED, "HTTP 413 too_large" },
-                { 415, "{\"error\":\"unsupported_media_type\"}", Outcome.REJECTED, "HTTP 415 unsupported_media_type" },
-                { 422, "{\"error\":\"empty_transcription\"}", Outcome.REJECTED, "HTTP 422 empty_transcription" },
-                { 500, "{\"error\":\"processing_failed\"}", Outcome.RETRY, "HTTP 500 processing_failed" },
-                { 503, "{\"error\":\"unavailable\"}", Outcome.RETRY, "HTTP 503 unavailable" },
+                { 400, "{\"ok\":false,\"error\":\"user_required\"}", Outcome.REJECTED, "HTTP 400 user_required" },
+                { 400, "{\"ok\":false,\"error\":\"invalid_memo_id\"}", Outcome.REJECTED, "HTTP 400 invalid_memo_id" },
+                { 400, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.REJECTED, "HTTP 400 empty_body" },
+                { 400, "{\"ok\":false,\"error\":\"unreadable_body\"}", Outcome.REJECTED, "HTTP 400 unreadable_body" },
+                { 413, "{\"ok\":false,\"error\":\"too_large\"}", Outcome.REJECTED, "HTTP 413 too_large" },
+                { 413, "<html>Request Entity Too Large</html>", Outcome.REJECTED, "HTTP 413" },
+                { 415, "{\"ok\":false,\"error\":\"unsupported_media_type\"}", Outcome.REJECTED, "HTTP 415 unsupported_media_type" },
+                // Answered again on a retry, without transcribing: it never changes.
+                { 422, "{\"ok\":false,\"error\":\"empty_transcription\"}", Outcome.REJECTED, "HTTP 422 empty_transcription" },
+                // The intake's own word, so each of these counts toward the limit of twenty.
+                { 404, "{\"ok\":false,\"error\":\"unknown_user\"}", Outcome.RETRY, "HTTP 404 unknown_user" },
+                { 403, "{\"ok\":false,\"error\":\"cross_origin\"}", Outcome.RETRY, "HTTP 403 cross_origin" },
+                { 500, "{\"ok\":false,\"error\":\"processing_failed\"}", Outcome.RETRY, "HTTP 500 processing_failed" },
+                { 503, "{\"ok\":false,\"error\":\"unavailable\"}", Outcome.RETRY, "HTTP 503 unavailable" },
+                // The owner has not bound this phone to the user yet: not the memo's fault.
+                { 403, "{\"ok\":false,\"error\":\"device_not_allowed\"}", Outcome.NOT_ALLOWED, "HTTP 403 device_not_allowed" },
+                { 429, "{\"ok\":false,\"error\":\"daily_limit\",\"limit\":\"memos\",\"retryAfterSeconds\":7200}", Outcome.WAIT, "HTTP 429 daily_limit" },
         };
         for (Object[] row : table) {
             status = (Integer) row[0];
@@ -96,14 +104,68 @@ public class MemoUploaderTest {
         }
     }
 
-    @Test public void anyOtherStatusIsTriedAgainAndCounts() throws Exception {
-        for (int other : new int[] { 301, 302, 401, 403, 408, 429, 502, 504 }) {
-            status = other;
-            body = "<html>gateway</html>";
-            Result r = upload();
-            assertEquals(String.valueOf(other), Outcome.RETRY, r.outcome);
-            assertEquals("a page's text is never kept as a reason", "HTTP " + other, r.detail);
+    /**
+     * Off the VPN, or behind some other network's gateway, every answer is some other
+     * machine's. None of them says anything about the memo, so none counts toward parking.
+     */
+    @Test public void anAnswerThatIsNotTheIntakesOwnIsTriedAgainAndNeverCounts() throws Exception {
+        for (int other : new int[] { 301, 302, 401, 403, 404, 408, 500, 502, 503, 504 }) {
+            for (String notTheIntake : new String[] { "<html>gateway</html>", "", "{\"error\":\"unknown_user\"}",
+                    "{\"ok\":false,\"error\":\"something_else\"}", "{\"ok\":true,\"error\":\"unknown_user\"}" }) {
+                status = other;
+                body = notTheIntake;
+                Result r = upload();
+                assertEquals(other + " " + notTheIntake, Outcome.RETRY_UNCOUNTED, r.outcome);
+                assertEquals("a page's text is never kept as a reason", "HTTP " + other, r.detail);
+            }
         }
+    }
+
+    // ── the daily allowance ──────────────────────────────────────────────────
+
+    private long waitFor(String answer, String retryAfterHeader) throws Exception {
+        status = 429;
+        body = answer;
+        replyHeaders = retryAfterHeader == null ? null : java.util.Collections.singletonMap("Retry-After", retryAfterHeader);
+        Result r = upload();
+        assertEquals(Outcome.WAIT, r.outcome);
+        return r.waitMs;
+    }
+
+    @Test public void theDailyLimitSaysHowLongToWaitInItsBodyOrElseItsHeader() throws Exception {
+        String limit = "{\"ok\":false,\"error\":\"daily_limit\",\"limit\":\"bytes\"";
+        assertEquals(7_200_000L, waitFor(limit + ",\"retryAfterSeconds\":7200}", "60"));
+        assertEquals("the header, when the body names no time", 1_800_000L, waitFor(limit + "}", "1800"));
+        assertEquals("never under a minute", 60_000L, waitFor(limit + ",\"retryAfterSeconds\":1}", null));
+        assertEquals("never over a day", 86_400_000L, waitFor(limit + ",\"retryAfterSeconds\":999999}", null));
+        assertEquals(86_400_000L, waitFor(limit + "}", "172800"));
+        assertEquals("no time at all", MemoUploader.DEFAULT_WAIT_MS, waitFor(limit + "}", null));
+        assertEquals("a date in the header is not read", MemoUploader.DEFAULT_WAIT_MS, waitFor("<html>slow down</html>", "Wed, 21 Oct 2026 07:28:00 GMT"));
+    }
+
+    // ── what is sent ─────────────────────────────────────────────────────────
+
+    @Test public void theRecordedAtHeaderIsWhenTheRecordingStartedAsKeptInTheQueueEntry() throws Exception {
+        File f = tmp.newFile("1700000000000-ab12cd34.ogg");
+        Files.write(f.toPath(), new byte[64]);
+        // Queued long ago, uploaded now: the header is neither the file's time nor the clock's.
+        MemoQueue.Memo recovered = new MemoQueue.Memo("1700000000000-ab12cd34", f.getPath(), 1700000000000L);
+        assertEquals(Outcome.UPLOADED, new MemoUploader(backend, http).upload(recovered).outcome);
+        assertEquals("1700000000000", seenHeaders.get("X-Daylight-Recorded-At"));
+        assertEquals("an Ogg recording is sent as what it is", "audio/ogg", seenType);
+        assertEquals("audio/mp4", MemoUploader.contentType("1700000000000-ab12cd34-00@1700000000000.m4a"));
+    }
+
+    @Test public void withADeviceIdentityTheIntakeCannotBindNothingIsSent() throws Exception {
+        core.settings().set(Backend.DEVICE, "browser:example-tablet");
+        Result r = upload();
+        assertEquals(Outcome.BLOCKED, r.outcome);
+        assertEquals("device identity not configured", r.detail);
+        assertEquals(0, calls);
+        core.settings().set(Backend.DEVICE, "fleet:example-phone");
+        assertEquals(Outcome.UPLOADED, upload().outcome);
+        core.settings().set(Backend.DEVICE, "");
+        assertEquals("the default is fleet:<device id>", Outcome.UPLOADED, upload().outcome);
     }
 
     /**
@@ -114,12 +176,12 @@ public class MemoUploaderTest {
         for (String notTheIntake : new String[] { "<html>Sign in</html>", "", "{}", "{\"ok\":true}", "[]", "{\"duplicate\":\"yes\"}" }) {
             body = notTheIntake;
             Result r = upload();
-            assertEquals(notTheIntake, Outcome.RETRY, r.outcome);
+            assertEquals(notTheIntake, Outcome.RETRY_UNCOUNTED, r.outcome);
             assertEquals("unexpected answer", r.detail);
         }
         status = 204;
         body = "";
-        assertEquals(Outcome.RETRY, upload().outcome);
+        assertEquals(Outcome.RETRY_UNCOUNTED, upload().outcome);
     }
 
     @Test public void aDeadLinkIsRetriedAndDoesNotCountButATimeoutDoes() throws Exception {
@@ -127,6 +189,12 @@ public class MemoUploaderTest {
         Result down = upload();
         assertEquals(Outcome.NO_CONNECTION, down.outcome);
         assertEquals("no connection", down.detail);
+        // Off the VPN the private address does not answer: a connect timeout. The body
+        // never left, so this is the link's failure, however many hours it lasts.
+        failure = new Http.NotSentException(new SocketTimeoutException("connect timed out"));
+        Result unreachable = upload();
+        assertEquals(Outcome.NO_CONNECTION, unreachable.outcome);
+        assertEquals("no connection", unreachable.detail);
         // The answer comes after transcription. The request may have arrived, so this is an attempt.
         failure = new SocketTimeoutException("Read timed out");
         Result slow = upload();

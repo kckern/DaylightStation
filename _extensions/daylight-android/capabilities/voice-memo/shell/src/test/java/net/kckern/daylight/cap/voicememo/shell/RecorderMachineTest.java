@@ -80,4 +80,45 @@ public class RecorderMachineTest {
         assertEquals("with nothing recording, the notification's screen has nothing to show and starts nothing",
                 RecorderMachine.Tap.CLOSE, RecorderMachine.tap(0, 10_000, true));
     }
+
+    // ── the screen rebuilt by Android is not the owner tapping again ─────────
+
+    @Test public void aRebuiltScreenNeverStopsTheRecordingItsIntentStarted() {
+        long started = 1_000_000;
+        // A rotation three seconds in: read as a tap, the same intent would stop and save the memo.
+        assertEquals(RecorderMachine.Tap.STOP, RecorderMachine.open(false, started, started + 3000, false, false));
+        assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.open(true, started, started + 3000, false, false));
+        assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.open(true, started, started + 600_000, true, false));
+    }
+
+    @Test public void aRebuiltScreenWithNothingRecordingStartsNothing() {
+        assertEquals("the first open starts a recording", RecorderMachine.Tap.START, RecorderMachine.open(false, 0, 5000, false, false));
+        assertEquals("a rebuild does not start a second one", RecorderMachine.Tap.CLOSE, RecorderMachine.open(true, 0, 5000, false, false));
+        assertEquals("the permission dialog is still up: wait for its answer", RecorderMachine.Tap.SHOW,
+                RecorderMachine.open(true, 0, 5000, false, true));
+    }
+
+    // ── the container ────────────────────────────────────────────────────────
+
+    @Test public void aRecordingIsOneOggFileWhereThePhoneCanWriteOne() {
+        assertEquals(RecorderMachine.Format.OGG_OPUS, RecorderMachine.format(29));
+        assertEquals(RecorderMachine.Format.OGG_OPUS, RecorderMachine.format(34));
+        assertEquals(RecorderMachine.Format.MP4_SEGMENTS, RecorderMachine.format(28));
+        assertEquals(RecorderMachine.Format.MP4_SEGMENTS, RecorderMachine.format(26));
+    }
+
+    @Test public void anOggRecordingIsAMemoEvenWhenTheRecordersStopFailed() {
+        assertTrue(RecorderMachine.keep(RecorderMachine.Format.OGG_OPUS, false, 60_000, 500_000));
+        assertFalse(RecorderMachine.keep(RecorderMachine.Format.OGG_OPUS, true, 999, 3_000));
+        assertFalse(RecorderMachine.keep(RecorderMachine.Format.OGG_OPUS, true, 5_000, 0));
+        assertFalse("an MP4 without its index is not", RecorderMachine.keep(RecorderMachine.Format.MP4_SEGMENTS, false, 60_000, 500_000));
+    }
+
+    @Test public void anMp4RecordingIsWrittenInFiveMinuteSegments() {
+        assertEquals(5 * 60_000, RecorderMachine.SEGMENT_MS);
+        // Thirty minutes is six segments: six of the sixty memos a day, not thirty.
+        assertEquals(6, RecorderMachine.MAX_DURATION_MS / RecorderMachine.SEGMENT_MS);
+        assertEquals(1_260_000L, RecorderMachine.segmentBytes(32_000));
+        assertTrue(RecorderMachine.segmentBytes(64_000) < RecorderMachine.MAX_FILE_BYTES);
+    }
 }

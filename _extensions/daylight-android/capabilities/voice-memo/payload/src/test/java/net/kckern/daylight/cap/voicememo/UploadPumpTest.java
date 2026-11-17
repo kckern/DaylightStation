@@ -143,4 +143,60 @@ public class UploadPumpTest {
         assertTrue("the successor sends it again and is answered as a duplicate", audio("1000-a").exists());
         assertEquals(0, holder[0].drain(5000).uploaded);
     }
+
+    // ── what counts toward parking, and what only waits ──────────────────────
+
+    @Test public void daysWithoutTheVpnNeverParkAMemo() throws Exception {
+        MemoQueue q = queueWith("100-a");
+        Result[] script = new Result[400];
+        for (int i = 0; i < script.length; i++) {
+            // A connect timeout, another network's gateway page, a redirect to a sign-in page.
+            script[i] = i % 3 == 0 ? new Result(Outcome.NO_CONNECTION, "no connection")
+                    : i % 3 == 1 ? new Result(Outcome.RETRY_UNCOUNTED, "HTTP 502") : new Result(Outcome.RETRY_UNCOUNTED, "HTTP 302");
+        }
+        UploadPump pump = pump(q, script);
+        long now = 0;
+        for (int i = 0; i < script.length; i++) {
+            now += MemoQueue.MAX_DELAY_MS;      // 400 hours
+            assertEquals(0, pump.drain(now).parked);
+        }
+        assertEquals(0, q.parked());
+        assertEquals(1, q.waiting());
+        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertTrue(audio("100-a").exists());
+    }
+
+    @Test public void aPhoneNotYetAllowedWaitsWithoutCountingAndThePassSaysSo() throws Exception {
+        MemoQueue q = queueWith("100-a", "200-b");
+        UploadPump.Pass pass = pump(q, new Result(Outcome.NOT_ALLOWED, "HTTP 403 device_not_allowed")).drain(1000);
+        assertTrue(pass.notAllowed);
+        assertEquals("the next memo would be answered the same way", 1, sent.size());
+        assertEquals(0, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertEquals(1000 + MemoQueue.BASE_DELAY_MS, q.describe().getJSONArray("memos").getJSONObject(0).getLong("nextAttemptAtMs"));
+    }
+
+    @Test public void theDailyAllowanceHoldsTheWholeQueueUntilTheBackendsTime() throws Exception {
+        MemoQueue q = queueWith("100-a", "200-b");
+        UploadPump pump = pump(q, new Result(Outcome.WAIT, "HTTP 429 daily_limit", 7_200_000L), ok(), ok());
+        UploadPump.Pass pass = pump.drain(1000);
+        assertEquals(1000 + 7_200_000L, pass.limitUntilMs);
+        assertEquals(1, sent.size());
+        assertEquals(0, pump.drain(1000 + 7_199_999L).uploaded);
+        assertEquals("nothing was tried in the meantime", 1, sent.size());
+        assertEquals(2, pump.drain(1000 + 7_200_000L).uploaded);
+        assertEquals(0, q.waiting() + q.parked());
+    }
+
+    @Test public void aQueueThatCannotBeWrittenFailsThePassAndTheNextOneSendsTheMemo() throws Exception {
+        final boolean[] full = { false };
+        MemoQueue q = new MemoQueue(new File(tmp.newFolder(), "q.json"), bytes -> { if (full[0]) throw new java.io.IOException("full"); });
+        Files.write(audio("100-a").toPath(), new byte[8]);
+        q.add("100-a", audio("100-a").getPath(), 100);
+        UploadPump pump = new UploadPump(q, memo -> { sent.add(memo.id); return ok(); }, () -> linkUp);
+        full[0] = true;
+        try { pump.drain(1000); fail("the pass went on with nothing written"); } catch (IllegalStateException expected) { }
+        assertTrue(sent.isEmpty());
+        full[0] = false;
+        assertEquals(1, pump.drain(2000).uploaded);
+    }
 }

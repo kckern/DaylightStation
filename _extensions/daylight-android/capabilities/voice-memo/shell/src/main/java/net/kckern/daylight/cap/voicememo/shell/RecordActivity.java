@@ -35,6 +35,15 @@ public class RecordActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1;
     private static final String PREFS = "daylight_memo";
     private static final String ASKED_NOTIFICATIONS = "asked_notifications";
+    /**
+     * What is true with notifications off: Android then shows no recording notice in
+     * the shade (the system's own list of running apps still names Daylight), and the
+     * recording runs all the same. It is stopped from this screen, or by tapping the
+     * memo tile, widget button or shortcut a second time. The tile and the widget do
+     * not change while a memo is being recorded.
+     */
+    static final String NOTIFICATIONS_OFF = "Notifications are off for Daylight, so there is no recording notice. "
+            + "The recording still runs. Stop it here, or tap the memo tile, widget button or shortcut again.";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private TextView status;
@@ -57,22 +66,37 @@ public class RecordActivity extends Activity {
         }
     };
 
+    private static final String STATE_ASKING = "asking";
+    /** The permission dialog is up. Kept across a rebuild of the screen. */
+    private boolean asking;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         build();
-        act(getIntent());
+        // The intent is acted on once, when the owner opened the screen. When Android
+        // builds the screen again (a rotation, a theme or font change) the same intent
+        // is still there; acting on it again would stop and save the recording.
+        boolean rebuilt = savedInstanceState != null;
+        asking = rebuilt && savedInstanceState.getBoolean(STATE_ASKING, false);
+        act(getIntent(), rebuilt);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_ASKING, asking);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        act(intent);
+        act(intent, false);
     }
 
-    private void act(Intent intent) {
+    private void act(Intent intent, boolean rebuilt) {
         boolean fromNotification = intent != null && intent.getBooleanExtra(EXTRA_SHOW, false);
-        switch (RecorderMachine.tap(MemoRecorderService.startedAtMs(), System.currentTimeMillis(), fromNotification)) {
+        switch (RecorderMachine.open(rebuilt, MemoRecorderService.startedAtMs(), System.currentTimeMillis(), fromNotification, asking)) {
             case STOP:
                 stopAndSave();
                 break;
@@ -102,19 +126,28 @@ public class RecordActivity extends Activity {
         String[] ask = PermissionAsk.toRequest(Build.VERSION.SDK_INT, micWasGranted, notificationsGranted,
                 prefs.getBoolean(ASKED_NOTIFICATIONS, false));
         if (micWasGranted) begin();
-        if (ask.length == 0) return;
+        if (ask.length == 0) {
+            if (!notificationsGranted) hint.setText(NOTIFICATIONS_OFF);
+            return;
+        }
         if (PermissionAsk.asksForNotifications(ask)) {
             prefs.edit().putBoolean(ASKED_NOTIFICATIONS, true).apply();
             hint.setText("Notifications are how Daylight tells you that a memo is waiting to upload or could not be sent.");
         }
         if (!micWasGranted) status.setText("Daylight needs the microphone to record a memo");
+        asking = true;
         requestPermissions(ask, REQUEST_PERMISSIONS);
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode != REQUEST_PERMISSIONS) return;
-        hint.setText("");
+        asking = false;
+        boolean notificationsOff = Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(PermissionAsk.NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED;
+        hint.setText(notificationsOff ? NOTIFICATIONS_OFF : "");
+        // A rebuilt screen has lost the field; the recorder itself says whether it is running.
+        if (MemoRecorderService.startedAtMs() > 0) micWasGranted = true;
         if (micWasGranted) return;                  // already recording; only notifications were asked for
         if (PermissionAsk.micGranted(permissions, grantResults, false)) {
             begin();

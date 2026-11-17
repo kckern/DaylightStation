@@ -21,7 +21,8 @@ public class MemoInboxTest {
     /** The recorder in the shell half writes to this directory under the app's files (MemoFiles.INBOX there). */
     @Test public void theInboxIsWhereTheRecorderWrites() {
         assertEquals("memos/inbox", MemoInbox.DIR);
-        assertEquals(".m4a", MemoInbox.SUFFIX);
+        assertEquals("memos/cutoff", MemoInbox.CUT_OFF_DIR);
+        assertArrayEquals(new String[] { ".ogg", ".m4a" }, MemoInbox.SUFFIXES);
     }
 
     @Test public void queuesFinishedRecordingsAndIgnoresOnesStillBeingWritten() throws Exception {
@@ -71,23 +72,49 @@ public class MemoInboxTest {
     @Test public void aMissingInboxIsEmpty() throws Exception {
         MemoQueue q = new MemoQueue(new File(tmp.newFolder(), "q.json"));
         assertEquals(0, MemoInbox.scan(new File(tmp.getRoot(), "absent"), q));
-        assertEquals(0, MemoInbox.sweepCutOff(new File(tmp.getRoot(), "absent"), 0));
+        assertEquals(0, MemoInbox.cutOffKept(new File(tmp.getRoot(), "absent")));
     }
 
-    /**
-     * A recording that was cut off (the app was killed while recording) is a .part file
-     * with no index, which nothing can play. It is removed once it is older than any
-     * recording still under way can be.
-     */
-    @Test public void aRecordingThatWasCutOffIsRemovedOnceItCannotBeUnderWay() throws Exception {
+    @Test public void anOggMemoIsQueuedWithTheStartTimeInItsId() throws Exception {
+        File inbox = tmp.newFolder("inbox");
+        File ogg = file(inbox, "1700000000000-ab12cd34.ogg", 10);
+        MemoQueue q = new MemoQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(1, MemoInbox.scan(inbox, q));
+        MemoQueue.Memo m = q.claim(Long.MAX_VALUE);
+        assertEquals("1700000000000-ab12cd34", m.id);
+        assertEquals("when the recording started, not when the file was found", 1700000000000L, m.recordedAtMs);
+        assertEquals(ogg.getPath(), m.file);
+    }
+
+    /** Android 8 and 9: each five-minute segment is a memo of its own, in order, with its own start. */
+    @Test public void aSegmentIsAMemoOfItsOwnWithItsOwnStartTime() throws Exception {
+        File inbox = tmp.newFolder("inbox");
+        file(inbox, "1700000000000-ab12cd34-00@1700000000000.m4a", 10);
+        file(inbox, "1700000000000-ab12cd34-01@1700000300500.m4a", 10);
+        MemoQueue q = new MemoQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(2, MemoInbox.scan(inbox, q));
+        MemoQueue.Memo first = q.claim(Long.MAX_VALUE);
+        assertEquals("1700000000000-ab12cd34-00", first.id);
+        assertEquals(1700000000000L, first.recordedAtMs);
+        q.uploaded(first.id);
+        MemoQueue.Memo second = q.claim(Long.MAX_VALUE);
+        assertEquals("1700000000000-ab12cd34-01", second.id);
+        assertEquals("the segment's own start, so the journal orders them", 1700000300500L, second.recordedAtMs);
+        assertTrue(second.id.matches(MemoInbox.ID.pattern()));
+    }
+
+    /** A recording that was cut off is the installed recorder's to recover. Nothing here removes one. */
+    @Test public void aRecordingStillBeingWrittenOrCutOffIsNeverRemovedHere() throws Exception {
         File inbox = tmp.newFolder("inbox");
         File old = file(inbox, "1700000000000-ab12cd34.m4a.part", 10);
-        File live = file(inbox, "1700000009000-ab12cd34.m4a.part", 10);
-        long now = 1_700_010_000_000L;
-        assertTrue(old.setLastModified(now - MemoInbox.CUT_OFF_AFTER_MS - 1));
-        assertTrue(live.setLastModified(now - 60_000));
-        assertEquals(1, MemoInbox.sweepCutOff(inbox, now));
-        assertFalse(old.exists());
-        assertTrue("a recording under way is not touched", live.exists());
+        File ogg = file(inbox, "1700000009000-ab12cd34.ogg.part", 10);
+        assertTrue(old.setLastModified(1L));
+        MemoQueue q = new MemoQueue(new File(tmp.newFolder(), "q.json"));
+        assertEquals(0, MemoInbox.scan(inbox, q));
+        assertTrue(old.exists());
+        assertTrue(ogg.exists());
+        File cutOff = tmp.newFolder("cutoff");
+        file(cutOff, "1700000000000-ab12cd34-02.m4a", 10);
+        assertEquals(1, MemoInbox.cutOffKept(cutOff));
     }
 }

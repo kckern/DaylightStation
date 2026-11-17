@@ -24,16 +24,27 @@ final class Notice {
     /** A daylight:// link opened on tap, or "" to open the app. */
     final String uri;
 
-    private Notice(String id, String channel, String title, String text, String uri) {
+    /** The one action button: its text and the daylight:// link it opens. Both "" for none. */
+    final String actionLabel;
+    final String actionUri;
+
+    private Notice(String id, String channel, String title, String text, String uri, String actionLabel, String actionUri) {
         this.id = id;
         this.channel = channel;
         this.title = title;
         this.text = text;
         this.uri = uri;
+        this.actionLabel = actionLabel;
+        this.actionUri = actionUri;
+    }
+
+    static Notice of(String id, String channel, String title, String text, String uri, String installKey) {
+        return of(id, channel, title, text, uri, "", "", installKey);
     }
 
     /** @param installKey added to a link of a kind that needs it; the app posts the notice itself, so its tap may carry it */
-    static Notice of(String id, String channel, String title, String text, String uri, String installKey) {
+    static Notice of(String id, String channel, String title, String text, String uri, String actionLabel, String actionUri,
+                     String installKey) {
         if (id == null || !ID.matcher(id).matches()) throw new IllegalArgumentException("notice id must match [a-z0-9-]{1,40}");
         boolean known = false;
         for (String c : CHANNELS) known |= c.equals(channel);
@@ -42,6 +53,16 @@ final class Notice {
         if (heading.isEmpty() || heading.length() > MAX_TITLE) throw new IllegalArgumentException("notice title must be 1 to 80 characters");
         String body = text == null ? "" : text;
         if (body.length() > MAX_TEXT) body = body.substring(0, MAX_TEXT);
+        String label = actionLabel == null ? "" : actionLabel.trim();
+        String action = actionUri == null ? "" : actionUri.trim();
+        if (label.isEmpty() != action.isEmpty() || label.length() > 20) {
+            throw new IllegalArgumentException("a notice's action needs a label of 1 to 20 characters and a link");
+        }
+        return new Notice(id, channel, heading, body, ownLink(uri, installKey), label, ownLink(action, installKey));
+    }
+
+    /** A link a notice may open: "" or one of this app's own, given the install key where its kind needs it. */
+    private static String ownLink(String uri, String installKey) {
         String link = uri == null ? "" : uri.trim();
         if (!link.isEmpty()) {
             DeepLink parsed;
@@ -55,7 +76,7 @@ final class Notice {
                 link += (link.indexOf('?') >= 0 ? "&" : "?") + "k=" + installKey;
             }
         }
-        return new Notice(id, channel, heading, body, link);
+        return link;
     }
 
     String androidChannel() { return "daylight_" + channel; }

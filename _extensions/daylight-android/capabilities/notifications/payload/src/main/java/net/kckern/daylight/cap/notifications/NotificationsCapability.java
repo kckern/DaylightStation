@@ -159,6 +159,12 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
         show(id, channel, title, text, linkUri);
     }
 
+    @Override public void post(String id, String channel, String title, String text, String linkUri, String actionLabel, String actionUri) {
+        Notice notice = Notice.of(id, channel, title, text, linkUri, actionLabel, actionUri, installKey());
+        NoticeSink s = sink();
+        if (s != null) s.post(notice);
+    }
+
     /**
      * A notice that cannot be described is refused (IllegalArgumentException). One that
      * Android will not show (the owner has not allowed notifications) is not an error:
