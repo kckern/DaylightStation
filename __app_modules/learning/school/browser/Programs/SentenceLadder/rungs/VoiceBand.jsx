@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { barCount, binsFromSamples, drawBand, rmsOfBytes, shapeLevel } from "./voiceBand.js";
+import { DS_TOKENS } from '#frontend/lib/theme/tokens.mjs';
+import { PACKS } from '#frontend/lib/theme/packs.mjs';
 
 /**
  * The recording rung's voice band — the child's own sound, drawn as it
@@ -83,9 +85,9 @@ export default function VoiceBand({ stream = null, take = null, getPlayhead = nu
       size = { width, height };
       const style = getComputedStyle(canvas);
       colors = {
-        voice: style.getPropertyValue('--school-accent').trim() || '#2ec46f',
-        rest: style.getPropertyValue('--school-border').trim() || '#34343f',
-        baseline: style.getPropertyValue('--school-muted').trim() || '#9a9aa6',
+        voice: style.getPropertyValue('--school-accent').trim() || PACKS.school.accent,
+        rest: style.getPropertyValue('--school-border').trim() || DS_TOKENS.colors.border,
+        baseline: style.getPropertyValue('--school-muted').trim() || DS_TOKENS.colors.textMid,
       };
       return true;
     };

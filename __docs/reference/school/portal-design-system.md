@@ -55,4 +55,33 @@ Material playback reports natural completion separately from player clearing. Cl
 4. Use scoped API/resource hooks, explicit status/error/retry behavior and event invalidation. Define cleanup for acquired resources and pending writes.
 5. Verify durable acknowledgment, learner changes, exit, touch/keyboard behavior and a constrained host. Use the isolated Portal fixture for viewport, overlay and focus checks.
 
-`npm run audit:ui` scans School with a separate per-file baseline for reviewed legacy styling and passive listeners. New `portal`, `runtime` and `activities` mechanisms have no baseline allowance; native controls, raw command listeners and undefined tokens fail the gate. The original global baseline is unchanged. This ratchet intentionally leaves authored legacy artwork and motion for focused visual redesign rather than claiming every old stylesheet has been eliminated.
+## Activity styling
+
+Every child-facing Portal activity is styled from the Portal's roles, never a
+palette of its own. An activity stylesheet owns layout; colour and motion come from:
+
+| Need | Use |
+| --- | --- |
+| Page, panel, rule, text, muted text | `--school-bg`, `--school-surface`, `--school-surface-2`, `--school-border`, `--school-fg`, `--school-muted` (aliases of `--ds-*`, set on `.school-surface`) |
+| Selected / primary / focus | `--school-accent` (the school pack's green), ink on it `--school-accent-ink` |
+| Status fills and their ink | `--school-warn` + `--school-warn-ink`, `--school-danger` + `--school-danger-ink`, `--ds-success` |
+| Right / wrong on a choice | a 2px `--ds-success` / `--school-danger` edge on the normal surface, not a light fill |
+| Shadows, scrims, media letterbox, text on video | `--school-black` / `--school-white`, alpha via `color-mix(in srgb, var(--school-black) 45%, transparent)` |
+| Low-emphasis text (counts, index numbers) | `--ds-text-low` |
+| Lesson kind (watch / practice / do / listen) | `--kind-video`, `--kind-deck`, `--kind-app`, `--kind-audio` |
+| UI transitions | `--ds-motion-fast` / `--ds-motion-base` / `--ds-motion-easing` |
+
+Buttons are the shared `SchoolButton` (`.ds-touch`). Do not repaint them with an
+activity palette: that is how white text came to sit on cream buttons in the
+Rubik's Cube course. Named art keeps its own colours, declared once and commented
+at the top of its file: the Today board and coins (`--school-board-*`,
+`--school-coin-*`, in `School.scss`'s `.school-app` block), subject icons, the
+cube's plastic and sticker ink, the chess board, the reward chest, and the IME's
+Korean/English identities. Teacher console styling (`teacher/`) is a separate
+grown-up surface and is not held to this table; the TV-shown reading and lesson
+screens (`reading/`, `lesson/`) keep their theatre palette for now.
+
+To judge a styling change, render it: `tests/_fixtures/school/style-gallery/`
+captures real activity DOM and shoots it at 1280x800 before and after.
+
+`npm run audit:ui` scans School with a separate per-file baseline for reviewed legacy styling and passive listeners. New `portal`, `runtime` and `activities` mechanisms have no baseline allowance; native controls, raw command listeners and undefined tokens fail the gate. The original global baseline is unchanged. This ratchet intentionally leaves authored artwork, the teacher console and the TV-shown screens rather than claiming every old stylesheet has been eliminated. The 2026-11-17 Portal pass moved Flashcards, Language Reels, Chess Lessons, Rubik's Cube chrome, the rewards modal, the IME badge and the shared School notices onto the roles above (1124 to 984 reviewed hits).

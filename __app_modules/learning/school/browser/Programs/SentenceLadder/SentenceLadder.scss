@@ -73,7 +73,7 @@ $disc: 5.5rem;
 
   &__notice {
     margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
-    background: var(--school-warn); color: #241a05; font-weight: 700;
+    background: var(--school-warn); color: var(--school-warn-ink); font-weight: 700;
   }
 
   // Quieter than __notice on purpose: this is orientation, not a problem. It
@@ -304,7 +304,7 @@ $disc: 5.5rem;
   // The live microphone. The only red on the recording stage, and it is on
   // the control, never on the child's own sound — a red waveform reads as an
   // error, and there is nothing wrong.
-  &--live { background: var(--school-danger); color: #fff; border-color: transparent; }
+  &--live { background: var(--school-danger); color: var(--school-white); border-color: transparent; }
   // The same square while something SOUNDS — the prompt, the ding, the take.
   // A span, not a button: nothing to press, so it must not look pressable. The
   // glyph takes the accent because sound is happening; the ground stays quiet.
@@ -543,7 +543,7 @@ $disc: 5.5rem;
   // class clears, which is what makes it read as a rebound rather than a jump.
   &__strip {
     width: 100%;
-    .lang-strip__col { transition: transform 140ms ease-out; }
+    .lang-strip__col { transition: transform var(--ds-motion-fast) ease-out; }
     &.is-refused .lang-strip__col.is-current {
       transform: translateX(-0.14em);
       .lang-strip__want, .lang-strip__got { color: var(--school-danger); }
@@ -588,7 +588,7 @@ $disc: 5.5rem;
   &__notice {
     display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
     margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
-    background: var(--school-warn); color: #241a05;
+    background: var(--school-warn); color: var(--school-warn-ink);
     p { margin: 0; }
   }
 

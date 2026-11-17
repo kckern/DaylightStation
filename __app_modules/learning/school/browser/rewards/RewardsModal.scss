@@ -2,26 +2,26 @@
   --rewards-icon-size: min(var(--rewards-fit-size), clamp(48px, 10vh, 96px));
   box-sizing: border-box; width: 95vw; height: 95vh; height: 95dvh; max-width: 1600px;
   max-height: 95dvh; margin: auto; padding: clamp(10px, 2vh, 24px) clamp(12px, 2vw, 30px);
-  border: 1px solid #ffffff1f; border-radius: 1em; background: #171a24; color: #ececf0;
+  border: 1px solid var(--ds-border); border-radius: 1em; background: var(--ds-surface); color: var(--ds-text-high);
   font: clamp(12px, min(1.5vw, 2.2vh), 22px)/1.2 "Roboto Condensed", sans-serif;
-  overflow: hidden; box-shadow: 0 12px 40px #0008;
+  overflow: hidden; box-shadow: 0 12px 40px color-mix(in srgb, var(--ds-surface-alt) 55%, transparent);
   &, * { box-sizing: border-box; }
   &[open] { display: flex; flex-direction: column; gap: clamp(4px, 1vh, 12px); }
-  &::backdrop { background: #06080eb8; }
+  &::backdrop { background: color-mix(in srgb, var(--ds-background) 72%, transparent); }
   button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
-  button:focus-visible { outline: 3px solid #f9d681; outline-offset: 2px; }
+  button:focus-visible { outline: 3px solid var(--ds-accent); outline-offset: 2px; }
   &__header { display: flex; align-items: center; gap: .8em; flex: 0 0 auto; min-width: 0; }
   &__header .piano-avatar { width: clamp(40px, 8vh, 72px); height: clamp(40px, 8vh, 72px); flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
   h2 { margin: 0; font-size: 1.5em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  &__week { color: #94a3b8; margin-left: auto; white-space: nowrap; font-size: .85em; }
-  &__close { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; margin-left: auto; border: 0; border-radius: 50%; background: #ffffff0d; }
+  &__week { color: var(--ds-text-mid); margin-left: auto; white-space: nowrap; font-size: .85em; }
+  &__close { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; margin-left: auto; border: 0; border-radius: 50%; background: var(--ds-surface-alt); }
   &__close svg { width: 32px; height: 32px; }
   &__totals { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(16px, 5vw, 90px); flex: 0 0 auto; padding: .35em 0; }
   &__totals > div { display: grid; grid-template-columns: auto auto; align-items: center; column-gap: .5em; }
   &__totals .coin-icon, &__totals .ring-icon { width: var(--rewards-icon-size); height: var(--rewards-icon-size); grid-row: 1 / 3; }
   &__totals strong { font-size: clamp(20px, 4vh, 44px); line-height: 1; font-variant-numeric: tabular-nums; }
-  &__totals span { color: #94a3b8; font-size: .8em; }
-  &__legend { flex: 0 0 auto; display: flex; gap: 1.6em; justify-content: center; color: #94a3b8; font-size: .8em; }
+  &__totals span { color: var(--ds-text-mid); font-size: .8em; }
+  &__legend { flex: 0 0 auto; display: flex; gap: 1.6em; justify-content: center; color: var(--ds-text-mid); font-size: .8em; }
   &__legend > span { display: inline-flex; align-items: center; gap: .35em; }
   .area-icon { width: 1em; height: 1em; }
   &__grid-box { min-height: 0; min-width: 0; flex: 1 1 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
@@ -29,9 +29,9 @@
   &__gem { height: 5.8em; width: 5em; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: .2em; }
   &__gem > [role=img] { height: 3.8em; flex: 0 0 3.8em; }
   &__gem-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: center; font-size: .75em; line-height: 1.15; max-width: 100%; }
-  &__empty { color: #94a3b8; }
+  &__empty { color: var(--ds-text-mid); }
   &__footer { flex: 0 0 auto; display: flex; justify-content: flex-end; min-height: 36px; }
-  &__bank { padding: .5em .9em; border: 1px solid #ffffff26; border-radius: .5em; background: #ffffff08; }
+  &__bank { padding: .5em .9em; border: 1px solid var(--ds-border); border-radius: .5em; background: var(--ds-surface-alt); }
   &__bank span { margin-left: .5em; }
   @media (max-width: 500px) {
     &__header .piano-avatar { width: 40px; height: 40px; }

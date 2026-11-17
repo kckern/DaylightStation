@@ -39,6 +39,18 @@
   // icon itself carries its own palette: lib/icons/CoinIcon.jsx COIN_PALETTES.
   --school-coin-silver: #c0c0c0;
   --school-coin-gold: #e2c15a;
+  // The gem figure, the third coin beside silver and gold.
+  --school-coin-gem: #7cc0ff;
+  // Ink ON a filled status colour. The design system names the fills
+  // (--school-warn, --school-danger) but not what is printed on them; these are
+  // the near-blacks that keep a label legible on amber and on red.
+  --school-warn-ink: #241a05;
+  --school-danger-ink: #2a0806;
+  // True black and white, named once. Black is the media letterbox, the locked
+  // panel's ground and every shadow/scrim; white is text and veils over video.
+  // Translucent variants are color-mix() of these, never a fresh rgba literal.
+  --school-black: #000;
+  --school-white: #fff;
   --school-board-done: #7fb069;
   // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
   // is the one pairing on this board with no contrast to spare.
@@ -158,7 +170,7 @@
 // --- bank browser ---
 .school-browse {
   &--loading, &--empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--school-muted); text-align: center; gap: 0.5rem; }
-  &__notice { margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__notice { margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: var(--school-warn-ink); font-weight: 700; }
   &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
   &__card { display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); }
   &__title { margin: 0; font-size: 1.2rem; }
@@ -222,7 +234,7 @@
     padding: 0.15rem 0.7rem; border: 1px solid var(--school-border); border-radius: 999px;
     background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
   }
-  &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: var(--school-danger-ink); font-weight: 700; }
   // The advance is NEUTRAL ink (audit #5): green belongs to CORRECT alone —
   // it must never celebrate you into the next question you just missed.
   &__next {
@@ -329,7 +341,7 @@
     color: var(--school-muted); font-size: 1rem; font-weight: 700; cursor: pointer;
   }
   &__trail span:last-child button { color: var(--school-fg); }
-  &__error { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  &__error { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: var(--school-danger-ink); font-weight: 700; }
   &__grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem;
   }
@@ -445,7 +457,7 @@
     align-self: flex-start; min-height: 64px; padding: 0 1rem;
     border: none; background: transparent; color: var(--school-fg); font-size: 1.1rem; cursor: pointer;
   }
-  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: var(--school-warn-ink); font-weight: 700; }
   &__loading, &__empty { color: var(--school-muted); }
   &__retry {
     margin-top: 0.75rem; min-height: 48px; padding: 0 1.25rem;
@@ -571,7 +583,7 @@
   }
   &__thumb-lock {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(0, 0, 0, 0.45); color: var(--school-fg);
+    background: color-mix(in srgb, var(--school-black) 45%, transparent); color: var(--school-fg);
   }
   &__thumb-done {
     position: absolute; top: 6px; right: 6px;
@@ -582,11 +594,11 @@
   &__thumb-duration {
     position: absolute; bottom: 6px; right: 6px;
     padding: 0.1rem 0.45rem; border-radius: 6px;
-    background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 0.8rem; font-weight: 700;
+    background: color-mix(in srgb, var(--school-black) 65%, transparent); color: var(--school-white); font-size: 0.8rem; font-weight: 700;
   }
   &__thumb-progress {
     position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in srgb, var(--school-white) 25%, transparent);
     span { display: block; height: 100%; background: var(--school-fg); }
   }
   &__unit-title { font-size: 0.95rem; line-height: 1.3; }
@@ -649,8 +661,8 @@
 // header breadcrumb sits above the body, so it stays visible for back-nav.
 .school-material-player {
   position: absolute; inset: 0; z-index: 40;
-  display: flex; flex-direction: column; background: #000;
-  &__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+  display: flex; flex-direction: column; background: var(--school-black);
+  &__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--school-black); }
   &__loading, &__placeholder {
     flex: 1; display: flex; align-items: center; justify-content: center;
     color: var(--school-muted); padding: 1rem;
@@ -672,15 +684,15 @@
     border: none; background: transparent; color: transparent;
     cursor: pointer; // tap highlight already killed at .school-app
     // The only feedback a bare zone can give that the tap landed.
-    &:active { background: rgba(255,255,255,0.07); }
+    &:active { background: color-mix(in srgb, var(--school-white) 7%, transparent); }
   }
   // position:relative keeps the bar painting ABOVE the absolute zones (equal
   // stacking, later sibling wins) so its own buttons get the tap first.
   &__overlay-chrome {
     position: relative;
-    background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+    background: linear-gradient(to top, color-mix(in srgb, var(--school-black) 90%, transparent), color-mix(in srgb, var(--school-black) 0%, transparent));
     padding-top: 3rem;
-    transition: opacity 0.15s;
+    transition: opacity var(--ds-motion-fast);
   }
   &__overlay.is-hidden &__overlay-chrome { opacity: 0; pointer-events: none; }
   // We supply the whole transport; hide the shared Player's own chrome so it
@@ -699,17 +711,17 @@
   }
   &__bar {
     position: relative; height: 10px; border-radius: 0;
-    background: rgba(255,255,255,0.25); cursor: pointer;
+    background: color-mix(in srgb, var(--school-white) 25%, transparent); cursor: pointer;
   }
   &--audio .school-chrome__bar { background: var(--school-surface-2); }
   &__progress { position: absolute; left: 0; top: 0; bottom: 0; background: var(--school-fg); }
   // Video only: the progress numbers float centered just above the seek bar.
   &__time-float {
     display: flex; justify-content: center; padding: 0 1rem 0.35rem;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    text-shadow: 0 1px 3px color-mix(in srgb, var(--school-black) 60%, transparent);
   }
   &__row { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem 0.9rem; }
-  &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  &__time { flex: 0 0 auto; color: color-mix(in srgb, var(--school-white) 85%, transparent); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
   &--audio .school-chrome__time { color: var(--school-muted); }
   // On the light audio bar the video's dark text-shadow reads as grime; drop it.
   &--audio .school-chrome__time-float { text-shadow: none; }
@@ -719,10 +731,10 @@
   &__btn {
     flex: 0 0 auto; min-width: 48px; min-height: 48px;
     display: flex; align-items: center; justify-content: center;
-    border: none; background: transparent; color: #fff; font-size: 1.35rem; cursor: pointer;
+    border: none; background: transparent; color: var(--school-white); font-size: 1.35rem; cursor: pointer;
     border-radius: 10px;
     &:disabled { opacity: 0.35; cursor: default; }
-    &.is-on { color: var(--school-fg); background: rgba(255,255,255,0.15); }
+    &.is-on { color: var(--school-fg); background: color-mix(in srgb, var(--school-white) 15%, transparent); }
   }
   &--audio .school-chrome__btn { color: var(--school-fg); }
   &__btn--play { font-size: 1.7rem; min-width: 56px; min-height: 56px; }
@@ -877,7 +889,7 @@
   }
   &__flag {
     padding: 0.2rem 0.6rem; border-radius: 999px;
-    background: var(--school-warn); color: #241a05;
+    background: var(--school-warn); color: var(--school-warn-ink);
     font-size: 0.9rem; font-weight: 700;
   }
 
@@ -908,11 +920,11 @@
     display: flex; flex-direction: column; gap: 0.15rem;
     margin: 0.25rem 0 0; padding: 0.6rem 0.75rem;
     border-radius: 8px; background: var(--school-surface-2);
-    &.is-blocked { background: var(--school-warn); color: #241a05; }
+    &.is-blocked { background: var(--school-warn); color: var(--school-warn-ink); }
   }
   &__next-label { font-size: 1.05rem; font-weight: 700; }
   &__next-detail { font-size: 0.9rem; color: var(--school-muted); }
-  &__next.is-blocked &__next-detail { color: #241a05; }
+  &__next.is-blocked &__next-detail { color: var(--school-warn-ink); }
 
   &__metrics { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-top: 0.25rem; }
   &__seen { margin: 0; font-size: 0.9rem; color: var(--school-muted); }
@@ -937,7 +949,7 @@
   &__today-badge {
     display: inline-flex; align-items: center; min-height: 40px; padding: 0 0.75rem;
     margin-left: auto; border-radius: 999px;
-    background: var(--school-warn); color: #241a05;
+    background: var(--school-warn); color: var(--school-warn-ink);
     font-size: 0.85rem; font-weight: 700; text-decoration: none;
   }
 }
@@ -988,7 +1000,7 @@
   &__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
   &__actions button {
     min-height: 48px; padding: 0 1rem; border: none; border-radius: 10px;
-    background: var(--school-accent); color: #07100d; font-weight: 800; cursor: pointer;
+    background: var(--school-accent); color: var(--school-accent-ink); font-weight: 800; cursor: pointer;
     &:disabled { opacity: 0.4; cursor: default; }
   }
 
@@ -1030,7 +1042,7 @@
   }
   &__connection.is-connected > span { background: var(--school-accent); }
   &__connection.is-sending > span, &__connection.is-retrying > span { background: var(--school-warn); }
-  &__connection.is-disconnected > span { background: #d35f5f; }
+  &__connection.is-disconnected > span { background: var(--school-danger); }
   &__mastery {
     display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0.6rem;
   }
@@ -1045,7 +1057,7 @@
   &__explanation { white-space: pre-wrap; line-height: 1.5; }
   &__primary {
     min-height: 50px; padding: 0.65rem 1rem; border: none; border-radius: 10px;
-    background: var(--school-accent); color: #07100d; font: inherit; font-weight: 800; cursor: pointer;
+    background: var(--school-accent); color: var(--school-accent-ink); font: inherit; font-weight: 800; cursor: pointer;
     &:disabled { opacity: 0.45; cursor: default; }
   }
   &__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
@@ -1162,7 +1174,7 @@
   &__char {
     color: var(--school-muted);
     &.is-correct { color: var(--school-fg); }
-    &.is-incorrect { color: #fff; background: var(--school-danger); border-radius: 3px; }
+    &.is-incorrect { color: var(--school-white); background: var(--school-danger); border-radius: 3px; }
     &.is-space.is-incorrect { background: var(--school-danger); }
     &.is-caret { box-shadow: inset 2px 0 0 var(--school-fg); background: var(--school-surface-2); }
     &.is-space { white-space: pre; }
@@ -1198,8 +1210,8 @@
   &__flash {
     padding: 0.85rem 1rem; border-radius: 12px; font-weight: 700;
     &--ok { background: var(--school-surface-2); border-left: 4px solid var(--school-fg); color: var(--school-fg); }
-    &--wait { background: var(--school-warn); color: #241a05; }
-    &--error { background: var(--school-danger); color: #fff; }
+    &--wait { background: var(--school-warn); color: var(--school-warn-ink); }
+    &--error { background: var(--school-danger); color: var(--school-white); }
   }
   &__grid {
     list-style: none; margin: 0; padding: 0;
@@ -1292,7 +1304,7 @@
     background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
 
     // Blocked shows its remedy AS the action — a detour, not a failure.
-    &.is-blocked { background: var(--school-warn); color: #241a05; }
+    &.is-blocked { background: var(--school-warn); color: var(--school-warn-ink); }
     &:disabled { opacity: 0.6; cursor: default; }
   }
   &__next-tag { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; }
@@ -1374,7 +1386,7 @@
     margin: 0; font-size: 0.85rem; color: var(--school-muted);
     text-transform: uppercase; letter-spacing: 0.06em;
   }
-  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: var(--school-warn-ink); font-weight: 700; }
 }
 
 // --- subject shelves: content-aware shelf packing (shelfLayout.js) -----------
@@ -1558,8 +1570,8 @@
 .school-clickable {
   width: 100%;
   svg { width: 100%; height: auto; display: block; }
-  [data-region-id] { fill: var(--school-surface-2); stroke: var(--school-border); stroke-width: 0.5; cursor: pointer; transition: fill 0.12s; }
-  &:not(.is-locked) [data-region-id]:hover { fill: var(--school-accent-weak, #cfe0a8); }
+  [data-region-id] { fill: var(--school-surface-2); stroke: var(--school-border); stroke-width: 0.5; cursor: pointer; transition: fill var(--ds-motion-fast); }
+  &:not(.is-locked) [data-region-id]:hover { fill: color-mix(in srgb, var(--school-accent) 35%, var(--school-surface-2)); }
   [data-region-id].is-selected { fill: var(--school-accent); }
   [data-region-id].is-right { fill: var(--school-accent); }
   [data-region-id].is-wrong { fill: var(--school-warn); }
@@ -1586,7 +1598,7 @@
 
 .school-app__leave-confirm {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
-  padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
+  padding: 0.6rem 1rem; background: var(--school-warn); color: var(--school-warn-ink);
   font-weight: 800; text-align: center;
 }
 
@@ -1637,7 +1649,7 @@
   position: relative; overflow: hidden; background: var(--school-surface-2);
   &::after {
     content: ''; position: absolute; inset: 0;
-    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%);
+    background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--school-white) 6%, transparent) 50%, transparent 70%);
     animation: school-shimmer 1.4s infinite;
   }
 }
@@ -1651,13 +1663,13 @@
 // The panel has no header in this mode, so the body owns the whole viewport.
 // PURE BLACK, not the app's near-black. The locked panel is what the school
 // room screen shows all day between codes — closer to a screensaver than to a
-// page — so the ground goes to #000: least light thrown into the room, least
+// page — so the ground goes to true black (--school-black): least light thrown into the room, least
 // burn-in on a panel holding one static layout for hours, and the keypad reads
 // as the only lit thing on the wall. The surfaces come down with it so the
 // slots and keys still sit ON something rather than glowing off a black field.
 // Scoped to the modifier: the browsable app keeps its own softer dark theme.
 .school-app--locked {
-  background: #000;
+  background: var(--school-black);
 }
 .school-app--locked .school-app__body {
   display: block; padding: 0; overflow: hidden;
@@ -1714,7 +1726,7 @@
   // the same row.
   font-family: 'Kongtext', ui-monospace, monospace;
   font-size: clamp(1.3rem, 3.6vw, 2rem);
-  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition: border-color var(--ds-motion-fast) ease, background-color var(--ds-motion-fast) ease, color var(--ds-motion-fast) ease;
   &.is-filled { border-color: var(--school-accent); }
   // A turned-over slot: red, STAMPED rather than faded in (so six of them in
   // sequence read as one deliberate answer instead of a slow dissolve), then
@@ -1722,7 +1734,7 @@
   // sitting there look like a rendering bug; six breathing ones are obviously
   // the panel talking, and they stay legible from across the room.
   &.is-reject {
-    border-color: var(--school-danger); color: #ff7063;
+    border-color: var(--school-danger); color: var(--school-danger);
     background: color-mix(in srgb, var(--school-danger) 16%, var(--school-surface));
     font-weight: 800; letter-spacing: 0.02em;
     animation:
@@ -2451,11 +2463,11 @@
 }
 .school-selfservice__sleep {
   position: fixed; bottom: 16px; right: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.35);
+  border: 1px solid color-mix(in srgb, var(--school-white) 15%, transparent); border-radius: 8px; padding: 8px 16px;
+  background: color-mix(in srgb, var(--school-white) 6%, transparent); color: color-mix(in srgb, var(--school-white) 35%, transparent);
   font-size: 0.8rem; cursor: pointer;
   touch-action: manipulation;
-  &:active { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); }
+  &:active { background: color-mix(in srgb, var(--school-white) 12%, transparent); color: color-mix(in srgb, var(--school-white) 60%, transparent); }
 }
 
 @keyframes school-selfservice-shake {
@@ -2469,17 +2481,16 @@
   from { transform: scale(1.35); opacity: 0.2; }
   to { transform: scale(1); opacity: 1; }
 }
-// The red is literal rgb rather than the token: these are alpha shadows, and a
-// hex custom property cannot be dropped into rgba(). Keep in step with
-// --school-danger (#e05a4f) if that ever moves.
+// The glow is --school-danger at alpha via color-mix(), so it follows the
+// token instead of a hand-copied rgb that drifted from it.
 @keyframes school-selfservice-glow {
   0%, 100% {
-    box-shadow: 0 0 0 rgba(224, 90, 79, 0);
-    text-shadow: 0 0 6px rgba(224, 90, 79, 0.35);
+    box-shadow: 0 0 0 color-mix(in srgb, var(--school-danger) 0%, transparent);
+    text-shadow: 0 0 6px color-mix(in srgb, var(--school-danger) 35%, transparent);
   }
   50% {
-    box-shadow: 0 0 26px rgba(224, 90, 79, 0.7), inset 0 0 20px rgba(224, 90, 79, 0.35);
-    text-shadow: 0 0 20px rgba(255, 112, 99, 0.95);
+    box-shadow: 0 0 26px color-mix(in srgb, var(--school-danger) 70%, transparent), inset 0 0 20px color-mix(in srgb, var(--school-danger) 35%, transparent);
+    text-shadow: 0 0 20px color-mix(in srgb, var(--school-danger) 95%, transparent);
   }
 }
 // The refusal must still READ without motion: the letters, the red and a
@@ -2488,8 +2499,8 @@
   .school-selfservice__entry.is-shaking { animation: none; }
   .school-selfservice__slot.is-reject {
     animation: none;
-    box-shadow: 0 0 20px rgba(224, 90, 79, 0.5);
-    text-shadow: 0 0 14px rgba(255, 112, 99, 0.8);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--school-danger) 50%, transparent);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--school-danger) 80%, transparent);
   }
   .school-selfservice__key:active { transform: none; }
 }
@@ -2540,11 +2551,11 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap;
   padding: 0.75rem clamp(1rem, 2.5vw, 1.5rem);
-  border: 2px solid #b78103; border-radius: 16px;
+  border: 2px solid var(--school-warn); border-radius: 16px;
   background: repeating-linear-gradient(
     135deg,
-    rgba(214, 158, 15, 0.22) 0 14px,
-    rgba(214, 158, 15, 0.10) 14px 28px
+    color-mix(in srgb, var(--school-warn) 22%, transparent) 0 14px,
+    color-mix(in srgb, var(--school-warn) 10%, transparent) 14px 28px
   );
   color: var(--school-fg);
 }
@@ -2594,7 +2605,7 @@
   padding: clamp(1.2rem, 3vw, 2rem);
   border: 1px solid var(--school-border); border-radius: 22px;
   background: var(--school-surface);
-  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 18px 55px color-mix(in srgb, var(--school-black) 24%, transparent);
 }
 .school-selfservice-card__crumbs { grid-area: head; }
 // TOP-aligned, not centred. The poster is the first thing in the card's left
@@ -2788,7 +2799,7 @@
   // stepped; `linear` because a child is reading it as a clock, not an
   // animation.
   transition: transform 250ms linear;
-  background: rgba(255, 255, 255, 0.28);
+  background: color-mix(in srgb, var(--school-white) 28%, transparent);
   pointer-events: none;
 }
 .school-selfservice-card__action-label { position: relative; z-index: 1; }
@@ -3037,7 +3048,7 @@
     border-radius: 999px;
     background: var(--school-surface);
     border: 1px solid var(--school-border);
-    box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--school-black) 35%, transparent);
     font-weight: 800; font-size: clamp(0.8rem, 1.9vh, 1.1rem); line-height: 1.2;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -3177,7 +3188,7 @@
     border-radius: 999px;
     background: var(--school-fg);
     color: var(--school-surface);
-    box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--school-black) 35%, transparent);
     font-size: clamp(0.65rem, 1.6vh, 0.9rem);
     font-weight: 900; line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -3214,7 +3225,7 @@
   &__left { font-size: clamp(2rem, 7vh, 3.4rem); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
   &__check {
     width: clamp(2.2rem, 7vh, 3.4rem); aspect-ratio: 1; border-radius: 50%;
-    display: grid; place-items: center; background: var(--school-board-done); color: #fff;
+    display: grid; place-items: center; background: var(--school-board-done); color: var(--school-board-done-ink);
     svg { width: 62%; height: 62%; }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
@@ -3232,7 +3243,7 @@
     opacity: 1; text-align: center;
   }
   // Solid, not translucent (the kiosk standard): a quieter ink, full opacity.
-  &__status-hint { font-weight: 500; font-size: 0.85em; opacity: 1; color: color-mix(in srgb, var(--school-board-ink) 72%, #000); }
+  &__status-hint { font-weight: 500; font-size: 0.85em; opacity: 1; color: color-mix(in srgb, var(--school-board-ink) 72%, var(--school-black)); }
 
   // At 100% the count gives way to `__check` (above): one mark, no words. The
   // row is already green end to end, so a caption would say it a third time.
@@ -3304,7 +3315,7 @@
     cursor: pointer; border-radius: 6px;
     pointer-events: auto;
     &.is-zero .school-status-board__coin-icon { opacity: 0.35; }
-    &:focus-visible { outline: 3px solid #7cc0ff; outline-offset: 3px; }
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 3px; }
   }
   &__coin-grid {
     display: grid; grid-template-columns: clamp(1.6rem, 4.6vh, 2.4rem) auto;
@@ -3326,7 +3337,7 @@
   &__figure { justify-self: start; }
   &__figure--silver { font-size: var(--silver); }
   &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gold); }
-  &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
+  &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gem); }
 
   &__grid {
     // The day grid declares its own defaults on its root; the plot's values
@@ -3381,7 +3392,7 @@
     border: 1px solid var(--school-border); border-radius: 24px;
     background: var(--school-surface); color: var(--school-text);
     font: inherit; cursor: pointer;
-    box-shadow: 0 1.2rem 3rem color-mix(in srgb, #000 45%, transparent);
+    box-shadow: 0 1.2rem 3rem color-mix(in srgb, var(--school-black) 45%, transparent);
     animation: school-coin-ceremony-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
     &.is-exiting { animation: school-coin-ceremony-out 320ms ease-in both; }
     &:focus-visible { outline: 3px solid var(--school-coin-silver); outline-offset: 4px; }
@@ -3515,7 +3526,7 @@
     width: auto; max-width: 100%;
     height: clamp(14rem, 58vh, 30rem); max-height: none;
     aspect-ratio: 2 / 3; object-fit: contain;
-    border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+    border-radius: 10px; box-shadow: 0 10px 28px color-mix(in srgb, var(--school-black) 55%, transparent);
   }
   // Straddling: the doors sit half over the cover's bottom edge, on their own
   // plinth so the cover's art never shows through the gaps between them.
@@ -3638,7 +3649,7 @@
   .school-book-pile__faces .school-book-scan__learners .piano-avatar { width: clamp(4rem, 13vh, 7rem); height: clamp(4rem, 13vh, 7rem); flex: 0 0 auto; }
   .school-book-pile__sheet {
     position: fixed; inset: 0; z-index: 160; display: grid; place-items: center;
-    background: rgb(0 0 0 / 55%); padding: 1rem; box-sizing: border-box;
+    background: color-mix(in srgb, var(--school-black) 55%, transparent); padding: 1rem; box-sizing: border-box;
   }
   .school-book-pile__sheet-body {
     display: flex; flex-direction: column; gap: 0.9rem; width: min(40rem, 100%);
@@ -3662,7 +3673,7 @@
   display: flex; align-items: center; gap: .75rem;
   width: min(24rem, calc(100% - 2rem)); box-sizing: border-box;
   padding: .75rem 1rem; border: 1px solid var(--school-border); border-radius: 12px;
-  background: var(--school-surface); box-shadow: 0 6px 24px rgb(0 0 0 / 28%);
+  background: var(--school-surface); box-shadow: 0 6px 24px color-mix(in srgb, var(--school-black) 28%, transparent);
   // The dead sentence this replaced was pointer-events: none. The card IS the
   // way into the book now, so it must take a tap — but only the card: nothing
   // here may swallow one meant for the work underneath.
@@ -3750,7 +3761,7 @@
   pointer-events: auto;
   position: fixed; inset: 0; z-index: 150;
   display: grid; place-items: center;
-  background: color-mix(in srgb, #000 72%, transparent);
+  background: color-mix(in srgb, var(--school-black) 72%, transparent);
   &__sheet {
     display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.5vh, 1.6rem);
     padding: clamp(1rem, 3vh, 2rem) clamp(1.2rem, 3vw, 2.4rem);

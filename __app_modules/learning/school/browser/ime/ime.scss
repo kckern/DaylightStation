@@ -11,10 +11,12 @@
 // changes and stays still the rest of the time.
 
 .school-ime-badge {
-  --ime-bg: #1f1f26;
-  --ime-border: #34343f;
-  --ime-fg: #f1f1f4;
-  --ime-muted: #9a9aa6;
+  // Chrome from the design-system contract (on :root, so it reaches a badge
+  // drawn outside .school-app); only the two language identities are its own.
+  --ime-bg: var(--ds-surface);
+  --ime-border: var(--ds-border);
+  --ime-fg: var(--ds-text-high);
+  --ime-muted: var(--ds-text-mid);
   --ime-kr: #f472b6;
   --ime-en: #4ade80;
 
@@ -81,7 +83,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.1em; height: 1.1em;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-text-high) 22%, transparent);
   line-height: 1;
   vertical-align: middle;
   .school-icon { display: flex; }

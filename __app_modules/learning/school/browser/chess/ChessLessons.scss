@@ -1,19 +1,19 @@
 /**
  * Chess in School.
  *
- * Lighter than the kiosk: this is read at a desk, not across a garage. The board
- * keeps its walnut and ivory (it is the same component), but the page around it
- * is paper rather than piano case, so the reading surface stays a reading
- * surface.
+ * Portal design system: the course pages sit on the School surface in its
+ * tokens, like every other activity. The board keeps its walnut and ivory —
+ * that is the shared ChessBoard component's own art, not page chrome. The local
+ * --cl-* names stay as the file's vocabulary, now pointing at the Portal roles.
  */
 
 .chess-lessons {
-  --cl-paper: #f7f3ea;
-  --cl-ink: #2b2119;
-  --cl-ink-soft: #6b5c4c;
-  --cl-rule: #d9cfbd;
-  --cl-brass: #96731a;
-  --cl-walnut: #55392b;
+  --cl-paper: transparent;
+  --cl-card: var(--school-surface);
+  --cl-ink: var(--school-fg);
+  --cl-ink-soft: var(--school-muted);
+  --cl-rule: var(--school-border);
+  --cl-brass: var(--school-accent);
 
   padding: 1.5rem clamp(1rem, 4vw, 3rem) 3rem;
   background: var(--cl-paper);
@@ -67,13 +67,13 @@
   width: 100%;
   padding: 0.9rem 1rem;
   text-align: start;
-  background: #fff;
+  background: var(--cl-card);
   border: 1px solid var(--cl-rule);
   border-radius: 3px;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition: border-color var(--ds-motion-fast) ease, transform var(--ds-motion-fast) ease;
 
   &:hover,
   &:focus-visible {
@@ -87,7 +87,7 @@
   align-self: center;
   font-size: 1.6rem;
   font-weight: 700;
-  color: var(--cl-rule);
+  color: var(--ds-text-low);
   font-variant-numeric: tabular-nums;
 }
 
@@ -139,7 +139,7 @@
   width: 100%;
   padding: 0.75rem 1rem;
   text-align: start;
-  background: #fff;
+  background: var(--cl-card);
   border: 1px solid var(--cl-rule);
   border-radius: 3px;
   color: inherit;
@@ -158,13 +158,14 @@
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #fff;
+  color: var(--school-bg);
   background: var(--cl-ink-soft);
 }
 
-.chess-lessons__kind--demonstration { background: var(--cl-walnut); }
-.chess-lessons__kind--drill { background: var(--cl-brass); }
-.chess-lessons__kind--play { background: #4e8878; }
+// The Portal's lesson-kind palette: watch, practice, do.
+.chess-lessons__kind--demonstration { background: var(--kind-video); }
+.chess-lessons__kind--drill { background: var(--kind-deck); }
+.chess-lessons__kind--play { background: var(--kind-app); }
 
 .chess-lessons__lesson-title { grid-area: title; font-size: 1.05rem; font-weight: 700; }
 .chess-lessons__lesson-summary { grid-area: summary; font-size: 0.88rem; color: var(--cl-ink-soft); }
@@ -174,7 +175,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--cl-rule);
+  color: var(--ds-text-low);
 }
 
 /* ---- one lesson --------------------------------------------------------- */
@@ -190,7 +191,7 @@
   margin: 1rem 0;
   padding: 0.75rem 0.9rem;
   border-inline-start: 3px solid var(--cl-brass);
-  background: #fff;
+  background: var(--cl-card);
   font-size: 0.92rem;
   color: var(--cl-ink-soft);
 }
@@ -222,7 +223,7 @@
   padding: 0.4rem 1rem;
   border: 1px solid var(--cl-rule);
   border-radius: 2px;
-  background: #fff;
+  background: var(--cl-card);
   color: var(--cl-ink);
   font: inherit;
   letter-spacing: 0.12em;
