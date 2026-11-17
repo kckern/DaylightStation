@@ -1,0 +1,11 @@
+rootProject.name = 'DaylightAndroid'
+include ':shell-api', ':core', ':payload', ':shell'
+
+// A directory under capabilities/ with a capability.yml is a capability.
+// Its payload/ (logic) and shell/ (Android declarations) halves are optional modules.
+def capRoot = new File(rootDir, 'capabilities')
+(capRoot.listFiles() ?: [] as File[]).findAll { new File(it, 'capability.yml').exists() }.sort { it.name }.each { dir ->
+    ['payload', 'shell'].each { half ->
+        if (new File(dir, "${half}/build.gradle").exists()) include ":capabilities:${dir.name}:${half}"
+    }
+}
