@@ -1,0 +1,182 @@
+package net.kckern.daylight.cap.voicememo;
+
+import static org.junit.Assert.*;
+
+import net.kckern.daylight.cap.voicememo.MemoQueue.Memo;
+import net.kckern.daylight.cap.voicememo.MemoQueue.State;
+
+import org.json.JSONObject;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+
+public class MemoQueueTest {
+    @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    private File state;
+
+    @Before public void setUp() throws Exception { state = new File(tmp.newFolder(), "memo-queue.json"); }
+
+    @Test public void addingTheSameMemoTwiceQueuesItOnce() {
+        MemoQueue q = new MemoQueue(state);
+        assertTrue(q.add("1000-a", "/inbox/1000-a.m4a", 1000));
+        assertFalse(q.add("1000-a", "/inbox/1000-a.m4a", 1000));
+        assertEquals(1, q.waiting());
+    }
+
+    @Test public void claimTakesTheOldestDueMemoAndMarksItUploading() {
+        MemoQueue q = new MemoQueue(state);
+        q.add("2000-a", "/inbox/2000-a.m4a", 2000);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        Memo first = q.claim(5000);
+        assertEquals("1000-a", first.id);
+        assertEquals(State.UPLOADING, first.state);
+        assertNull("one upload at a time: nothing else is claimed while one is out", q.claim(5000));
+        q.uploaded("1000-a");
+        assertEquals("2000-a", q.claim(5000).id);
+        q.uploaded("2000-a");
+        assertNull(q.claim(5000));
+    }
+
+    @Test public void aFailureWaitsLongerEachTimeUpToAnHour() {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        long now = 10_000;
+        long[] expected = { 5_000, 10_000, 20_000, 40_000 };
+        for (long wait : expected) {
+            assertNotNull(q.claim(now));
+            assertFalse(q.retryLater("1000-a", "no connection", false, now));
+            assertEquals(now + wait, q.nextAttemptAtMs());
+            assertNull("not due yet", q.claim(now + wait - 1));
+            now += wait;
+        }
+        // Failures that never reached the backend do not count toward the limit, however many.
+        for (int i = 0; i < 60; i++) { q.claim(now); q.retryLater("1000-a", "no connection", false, now); now = q.nextAttemptAtMs(); }
+        q.claim(now);
+        q.retryLater("1000-a", "no connection", false, now);
+        assertEquals(now + 3_600_000, q.nextAttemptAtMs());
+        assertEquals(0, q.parked());
+        assertEquals(1, q.waiting());
+    }
+
+    @Test public void afterTwentyAttemptsTheBackendAnsweredTheMemoIsParked() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        long now = 10_000;
+        for (int attempt = 1; attempt < MemoQueue.MAX_ATTEMPTS; attempt++) {
+            assertNotNull("attempt " + attempt, q.claim(now));
+            assertFalse(q.retryLater("1000-a", "HTTP 500", true, now));
+            now = q.nextAttemptAtMs();
+        }
+        assertNotNull(q.claim(now));
+        assertTrue("the twentieth parks it", q.retryLater("1000-a", "HTTP 500", true, now));
+        assertEquals(1, q.parked());
+        assertEquals(0, q.waiting());
+        assertNull(q.claim(Long.MAX_VALUE));
+        JSONObject memo = q.describe().getJSONArray("memos").getJSONObject(0);
+        assertEquals("PARKED", memo.getString("state"));
+        assertEquals(20, memo.getInt("attempts"));
+        assertEquals("HTTP 500", memo.getString("lastError"));
+        assertEquals("parked survives a restart", 1, new MemoQueue(state).parked());
+    }
+
+    @Test public void aRefusalParksTheMemoAtOnceWithItsReason() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.claim(5000);
+        q.park("1000-a", "HTTP 422 empty_transcription");
+        assertEquals(0, q.waiting());
+        assertEquals(1, q.parked());
+        assertNull(q.claim(999_999_999));
+        assertEquals(-1, q.nextAttemptAtMs());
+        assertEquals("HTTP 422 empty_transcription", q.describe().getJSONArray("memos").getJSONObject(0).getString("lastError"));
+    }
+
+    @Test public void retryAllMakesWaitingAndParkedMemosDueNowWithAFreshCount() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.add("2000-a", "/inbox/2000-a.m4a", 2000);
+        q.claim(5000); q.park("1000-a", "HTTP 422");
+        q.claim(5000); q.retryLater("2000-a", "no connection", false, 5000);
+        q.retryAll(6000);
+        assertEquals(2, q.waiting());
+        assertEquals(0, q.parked());
+        Memo again = q.claim(6000);
+        assertEquals("1000-a", again.id);
+        assertEquals(0, again.attempts);
+        q.uploaded("1000-a");
+        assertEquals("2000-a", q.claim(6000).id);
+    }
+
+    @Test public void aMemoHandedBackUntriedIsDueAtOnceAndCostsNoAttempt() {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.claim(5000);
+        q.release("1000-a");
+        Memo again = q.claim(5000);
+        assertEquals(0, again.attempts);
+        assertEquals(State.UPLOADING, again.state);
+    }
+
+    @Test public void theQueueSurvivesARestartAndAnInterruptedUploadIsQueuedAgain() {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.add("2000-a", "/inbox/2000-a.m4a", 2000);
+        q.claim(5000);                                  // 1000-a is UPLOADING when the process dies
+        MemoQueue restarted = new MemoQueue(state);
+        assertEquals(2, restarted.waiting());
+        assertEquals("the backend answers a repeat of the same id as a duplicate, so it is sent again", "1000-a", restarted.claim(5000).id);
+    }
+
+    @Test public void anUploadedMemoLeavesTheQueueAndIsCounted() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.claim(5000);
+        q.uploaded("1000-a");
+        assertEquals(0, q.waiting());
+        assertEquals(1, new MemoQueue(state).describe().getInt("uploaded"));
+    }
+
+    @Test public void aMemoWhoseRecordingIsGoneIsDroppedAndCounted() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        q.claim(5000);
+        q.lost("1000-a");
+        assertEquals(0, q.waiting());
+        assertEquals(0, q.parked());
+        assertEquals(1, q.describe().getInt("lost"));
+    }
+
+    @Test public void aCorruptStateFileStartsAnEmptyQueue() throws Exception {
+        Files.write(state.toPath(), "{not json".getBytes(StandardCharsets.UTF_8));
+        assertEquals(0, new MemoQueue(state).waiting());
+        Files.write(state.toPath(), "{\"memos\":[{\"id\":\"1000-a\"},7,{\"id\":\"2000-a\",\"file\":\"/x\",\"state\":\"NOPE\"}]}".getBytes(StandardCharsets.UTF_8));
+        assertEquals("an entry that cannot be read is left out; the recording is still in the inbox", 0, new MemoQueue(state).waiting());
+    }
+
+    /** A payload that was swapped out can still be inside a five-minute upload. */
+    @Test public void aClosedQueueWritesNothingMore() throws Exception {
+        MemoQueue old = new MemoQueue(state);
+        old.add("1000-a", "/inbox/1000-a.m4a", 1000);
+        old.claim(5000);
+        old.close();
+        MemoQueue successor = new MemoQueue(state);
+        successor.add("2000-a", "/inbox/2000-a.m4a", 2000);
+        old.uploaded("1000-a");
+        old.add("3000-a", "/inbox/3000-a.m4a", 3000);
+        assertEquals("the successor's file is as the successor left it", 2, new MemoQueue(state).waiting());
+    }
+
+    @Test public void theDescriptionHoldsStatesAndCountsAndNoPathOutsideTheInbox() throws Exception {
+        MemoQueue q = new MemoQueue(state);
+        q.add("1000-a", "/data/user/0/app/files/memos/inbox/1000-a.m4a", 1000);
+        JSONObject d = q.describe();
+        assertEquals(1, d.getInt("waiting"));
+        assertEquals(0, d.getInt("parked"));
+        assertFalse("ids, states and counts only", d.toString().contains("/data/"));
+    }
+}

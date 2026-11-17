@@ -10,7 +10,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 8, versionName: "0.1-phone" }
+shell: { versionCode: 9, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -23,12 +23,14 @@ capabilities:
   - widgets
   - media-service
   - android-auto
+  - voice-memo
 defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
   webview.startUrl: "{phone_start_url}"
   # The household user this phone acts for, where a backend route takes one (the memo
-  # upload will). A name from the private file, never written here.
+  # upload does, and sends nothing without it). A name from the private file, never
+  # written here.
   identity.user: "{phone_user}"
   # Back steps through the page history and then leaves the app, as in any phone app.
   webview.backButton: "history"
@@ -40,8 +42,8 @@ defaults:
   # One-tap actions, defined once here and shown as launcher shortcuts, tiles and the
   # widget. Each is "id|label|icon|target"; a target is open:/page, bookmark:<id>,
   # memo:new, media:<content id> or api:/api/... (an empty POST to that path).
-  # "New memo" is a stand-in until the voice-memo capability is built: it opens the app
-  # at actions.memoFallbackPath and records nothing.
+  # "New memo" opens the recorder (the voice-memo capability); tapped again while a memo
+  # is being recorded, it stops and saves it.
   actions.1: "memo|New memo|mic|memo:new"
   actions.2: "media|Media|play|bookmark:media"
   actions.3: "feed|Feed|open|bookmark:feed"

@@ -107,6 +107,28 @@ public class DeviceDefaultsTest {
         }
     }
 
+    /**
+     * Without a recorder in the build a memo action is a stand-in that opens a page. A
+     * device that lists voice-memo has the recorder, so none of its actions is one.
+     */
+    @Test public void aMemoActionIsTheRecorderWhereTheDeviceHasOne() throws Exception {
+        java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
+        if (!entries.contains("net.kckern.daylight.cap.onetap.OneTapActionsCapability")) return;
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+        boolean recorder = entries.contains("net.kckern.daylight.cap.voicememo.VoiceMemoCapability");
+        org.json.JSONArray actions = TestCore.get(core, "/actions").getJSONArray("actions");
+        int memos = 0;
+        for (int i = 0; i < actions.length(); i++) {
+            JSONObject a = actions.getJSONObject(i);
+            if (!"memo".equals(a.getString("kind"))) continue;
+            memos++;
+            assertEquals("action " + a.getString("id") + " placeholder", !recorder, a.optBoolean("placeholder", false));
+        }
+        if (recorder) assertTrue("a device that records memos has an action that starts one", memos > 0);
+    }
+
     /** The devices that replace Fully. A new kiosk is added here; every other device is held to the phone's rules. */
     private static final java.util.Set<String> KIOSKS = new java.util.HashSet<>(java.util.Arrays.asList("piano", "portal", "shield"));
 
@@ -226,7 +248,9 @@ public class DeviceDefaultsTest {
         for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
         core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
         String[][] lists = { { "bookmarks.BookmarksCapability", "/bookmarks" }, { "onetap.OneTapActionsCapability", "/actions" },
-                { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" } };
+                { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" },
+                // A device that records memos is built with the user they are sent for.
+                { "voicememo.VoiceMemoCapability", "/memo/queue" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);
