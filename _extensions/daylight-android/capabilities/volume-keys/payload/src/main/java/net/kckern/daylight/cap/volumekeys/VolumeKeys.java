@@ -127,6 +127,10 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
             return true;
         }
         broadcast(name, down ? "down" : "up", interactive);
+        // The page in this app's own kiosk hears the key as daylight:key, through the event
+        // bus and webview-host. Once per press and once per release: a held key repeats on
+        // the WebSocket, as it always did, and not here.
+        if (repeatCount == 0) publishForPage(code, down);
 
         // Display is OFF: any volume key wakes it, and changes nothing else.
         // Stepping the volume blind, with no HUD visible, would be a surprise.
@@ -173,6 +177,15 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
         Log.i(TAG, "key code=" + keyName + " action=" + action + " interactive=" + interactive);
         // onKeyEvent runs on the service's main thread; a socket write there kills the process.
         core.socket().broadcastAsync(keyFrame(keyName, action, interactive, clock.getAsLong()));
+    }
+
+    /** The key names webview-host uses for the keys it intercepts itself. */
+    private void publishForPage(int code, boolean down) {
+        try {
+            core.events().publish("key", new org.json.JSONObject()
+                    .put("code", code == KeyEvent.KEYCODE_VOLUME_UP ? "VolumeUp" : "VolumeDown")
+                    .put("action", down ? "down" : "up"));
+        } catch (Exception ignored) { }
     }
 
     private void sleepDisplay() { screen(false); }

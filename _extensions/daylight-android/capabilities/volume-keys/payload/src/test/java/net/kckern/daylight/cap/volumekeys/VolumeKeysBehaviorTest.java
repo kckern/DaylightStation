@@ -141,4 +141,30 @@ public class VolumeKeysBehaviorTest {
         assertFalse(after.contains("hid-pass"));
         assertFalse(after.contains("scanCode"));
     }
+
+    // ── the page's daylight:key event ─────────────────────────────────────────
+
+    @Test public void aVolumeKeyIsPublishedForThePageOncePerPressAndRelease() {
+        List<String> heard = new ArrayList<>();
+        core.events().subscribe((topic, detail) -> heard.add(topic + " " + detail.optString("code") + " " + detail.optString("action")));
+        keys.onKey(DOWN, true, 0);
+        keys.onKey(DOWN, true, 1);          // auto-repeat while held
+        keys.onKey(DOWN, true, 2);
+        keys.onKey(DOWN, false, 0);
+        keys.onKey(UP, true, 0);
+        assertEquals(java.util.Arrays.asList("key VolumeDown down", "key VolumeDown up", "key VolumeUp down"), heard);
+    }
+
+    @Test public void otherKeysAndSuppressedKeysAreNotPublished() {
+        List<String> heard = new ArrayList<>();
+        core.events().subscribe((topic, detail) -> heard.add(topic));
+        keys.onKey(KEY_A, true, 0);
+        keys.onKey(KEY_ENTER, true, 0);
+        core.services().provide(InputLock.class, new InputLock() {
+            @Override public boolean active() { return true; }
+            @Override public long revision() { return 9; }
+        });
+        keys.onKey(DOWN, true, 0);
+        assertTrue("what is typed never goes on the bus, and a locked key goes nowhere", heard.isEmpty());
+    }
 }
