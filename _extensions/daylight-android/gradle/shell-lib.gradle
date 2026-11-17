@@ -11,8 +11,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    // android.jar stubs return defaults in JVM tests instead of throwing "Stub!".
+    testOptions { unitTests.returnDefaultValues = true }
 }
 
 dependencies {
     implementation project(':shell-api')
+    testImplementation 'junit:junit:4.13.2'
 }
