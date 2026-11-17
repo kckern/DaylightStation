@@ -11,6 +11,9 @@ const QUICK_INPUT_PATHS = [
   '/api/v1/journalist/memo',
   '/api/v1/journalist/text',
   '/api/v1/journalist/voice',
+  '/api/v1/nutribot/photo',
+  '/api/v1/nutribot/text',
+  '/api/v1/nutribot/voice',
 ];
 
 const app = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'app.mjs'), 'utf8');

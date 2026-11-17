@@ -85,6 +85,15 @@ test('an input with nothing usable in it is not processed twice, and the user is
   }
 });
 
+test('a bot that lacks a service it needs says so, and the input can be sent again', async () => {
+  let configured = false;
+  const { intake, calls } = build({ outcome: () => (configured ? {} : { unavailable: true }) });
+  assert.deepEqual(await intake.execute(input()), { kind: 'unavailable', inputId: 'i1' });
+  configured = true;
+  assert.equal((await intake.execute(input())).kind, 'accepted');
+  assert.equal(calls.process.length, 2);
+});
+
 test('telling the user that failed does not fail the input', async () => {
   const { intake, events } = build({ outcome: { nothing: 'unusable_input', notify: async () => { throw new Error('chat is down'); } } });
   assert.equal((await intake.execute(input())).kind, 'unusable_input');

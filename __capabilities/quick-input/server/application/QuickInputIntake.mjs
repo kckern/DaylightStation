@@ -18,9 +18,12 @@
  *
  *   process(input)  -> { state?, summary? }
  *                    | { nothing: 'empty_transcription' | 'unusable_input', notify? }
+ *                    | { unavailable: true }
  *       Take the input in and store it. `summary` is added to the accepted
  *       answer. `nothing` means there was nothing usable in it; `notify`, if
  *       given, tells the user so and may fail without failing the input.
+ *       `unavailable` means a service the bot needs is not configured; the
+ *       input is not stored and may be sent again.
  *       Throwing means the attempt failed and may be tried again.
  *
  *   replies?: [{ step, send(input, state) }]
@@ -96,6 +99,7 @@ export class QuickInputIntake {
    *   | {kind: 'duplicate', inputId: string}
    *   | {kind: 'resumed', inputId: string}
    *   | {kind: 'empty_transcription'|'unusable_input', inputId: string}
+   *   | {kind: 'unavailable', inputId: string}
    *   | {kind: 'daily_limit', inputId: string, limit: 'inputs'|'bytes', retryAfterSeconds: number}>}
    *   `resumed`: the input was already stored and this call sent the replies
    *   an earlier attempt did not.
@@ -150,6 +154,7 @@ export class QuickInputIntake {
       input.capturedAt = at;
 
       const outcome = await this.#handler.process(input) || {};
+      if (outcome.unavailable) return { kind: 'unavailable', inputId };
       if (outcome.nothing) {
         // Noted first, so a retry of the same input does not redo the work.
         this.#ledger.mark(username, kind, inputId, { outcome: outcome.nothing });

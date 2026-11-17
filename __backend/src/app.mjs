@@ -557,6 +557,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     '/api/v1/journalist/voice',
     '/api/v1/journalist/memo',
     '/api/v1/journalist/text',
+    '/api/v1/nutribot/voice',
+    // /nutribot/text also answers an earlier shape of request; its router
+    // applies CORS and the body parsers to that one itself.
+    '/api/v1/nutribot/text',
+    '/api/v1/nutribot/photo',
   ]);
   app.use(selfGuarded(cors()));
   app.use(selfGuarded(express.json({ limit: '50mb' })));
@@ -3388,6 +3393,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     userResolver,
     userIdentityService,
     telegramIdentityAdapter,
+    configService,
     defaultMember: configService.getHeadOfHousehold(),
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
