@@ -86,7 +86,12 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final LoadTracker loads = new LoadTracker();
     private final UnresponsiveTracker hung = new UnresponsiveTracker();
-    private final String token = newToken();
+    /** What the shim spends on a token for its document. Never passed with a call. */
+    private final String sessionKey = newToken();
+    private final BridgeTokens tokens = new BridgeTokens(sessionKey);
+    private final RendererLossPolicy rendererLosses = new RendererLossPolicy();
+    /** Said once per payload: a WebView that cannot inject at document start gets no bridge. */
+    private boolean bridgeUnavailableNoted;
     private final ExecutorService bridgeExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "daylight-bridge");
         t.setDaemon(true);
@@ -97,6 +102,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private volatile KioskHost host;
     private volatile BridgeDispatcher dispatcher;
     private volatile OriginPolicy origins = OriginPolicy.fromSettings("", "");
+    private volatile NavigationPolicy navigation = NavigationPolicy.of("");
+    /** Null until a WebView has been built. */
+    private volatile BridgeAvailability bridge;
+    /** The renderer was ended on request (POST /kiosk/renderer/reset): not a crash to count. */
+    private boolean resetRequested;
     private volatile TouchObserver touches;
     private volatile boolean resumed, rendererAlive, errorPage, keepScreenOn, immersive;
     private volatile String mainUrl = "", intendedUrl = "", backMode = DEFAULT_BACK_MODE, lastLaunched;
@@ -137,6 +147,12 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     private String startUrl() { return str("webview.startUrl").trim(); }
 
+    /** A setting another capability declares, or "" when that capability is not in this build. */
+    private String foreign(String key) {
+        try { return String.valueOf(core.settings().get(key)); }
+        catch (net.kckern.daylight.core.SettingsRegistry.UnknownSettingException notInThisBuild) { return ""; }
+    }
+
     private void note(String message) {
         if (core.shell() != null) core.shell().note("KIOSK", message);
     }
@@ -165,10 +181,13 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         backMode = KeyRouter.validBackMode(mode) ? mode : DEFAULT_BACK_MODE;
         buildWebView();
         applyWindowFlags();
-        // A link that arrived with no window up is why this Activity was opened: show it.
+        // A link, or a load asked for with wait:false, that arrived with no window up is
+        // why this Activity was opened: show it, under the id its caller was given.
+        String queuedId = pendingOpen.loadId();
         String linked = pendingOpen.take(System.currentTimeMillis());
         String start = linked != null ? linked : startUrl();
-        if (start.isEmpty()) showNotConfigured(); else load(start);
+        if (start.isEmpty()) showNotConfigured();
+        else load(start, linked != null && queuedId != null ? queuedId : loads.newLoadId());
         // A layer that was drawn inside the previous Activity's window is drawn again in this one.
         renderText();
         renderWeb();
@@ -269,7 +288,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private void buildWebView() {
         WebView.setWebContentsDebuggingEnabled(bool("webview.debugging"));
         origins = OriginPolicy.fromSettings(str("webview.bridgeOrigins"), startUrl());
-        dispatcher = new BridgeDispatcher(token, origins, () -> mainUrl, new PageActions());
+        // The phone lists the origins its links may open; they may be navigated to as well.
+        navigation = NavigationPolicy.of(startUrl(), str("webview.allowedOrigins"), foreign("links.origins"));
         web = new WebView(activity);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -288,16 +308,32 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         web.setFocusableInTouchMode(true);
         web.setWebViewClient(new PageClient());
         web.setWebChromeClient(new ChromeClient());
-        // Visible to every frame of every page. It answers only to the token the shim holds.
-        web.addJavascriptInterface(new NativeBridge(), BridgeScript.NATIVE_NAME);
-
+        // The bridge exists only where its shim can be injected at document start, into
+        // frames of an allowed origin. There is no fallback: evaluating the shim when a
+        // load starts runs it in the outgoing document, whatever its origin.
+        boolean supported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
+        String refused = null;
         shimAtDocumentStart = false;
-        if (!origins.rules().isEmpty() && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        if (!origins.rules().isEmpty() && supported) {
             try {
                 WebViewCompat.addDocumentStartJavaScript(web, shim(), origins.rules());
                 shimAtDocumentStart = true;
             } catch (Throwable t) {
-                note("document-start script refused: " + t);
+                refused = String.valueOf(t);
+            }
+        }
+        BridgeAvailability availability = BridgeAvailability.decide(!origins.rules().isEmpty(), supported, refused);
+        bridge = availability;
+        if (availability.available) {
+            dispatcher = new BridgeDispatcher(tokens, origins, () -> mainUrl, new PageActions());
+            // Visible to every frame of every page. It answers only to a token, and a
+            // token is issued only for the key the document-start shim carries.
+            web.addJavascriptInterface(new NativeBridge(), BridgeScript.NATIVE_NAME);
+        } else {
+            dispatcher = null;
+            if (!bridgeUnavailableNoted) {
+                bridgeUnavailableNoted = true;
+                note("page bridge unavailable: " + availability.reason);
             }
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
@@ -319,11 +355,12 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 ViewGroup.LayoutParams.MATCH_PARENT));
         web.requestFocus();
         rendererAlive = true;
-        note("webview built; bridge origins=" + origins.rules() + " shimAtDocumentStart=" + shimAtDocumentStart);
+        note("webview built; bridge=" + availability.state() + " origins=" + origins.rules()
+                + " navigation=" + navigation.origins());
     }
 
     private String shim() {
-        return BridgeScript.shim(token, core.payloadVersion(), core.deviceId());
+        return BridgeScript.shim(sessionKey, core.payloadVersion(), core.deviceId());
     }
 
     private void destroyWebView() {
@@ -405,6 +442,14 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             return;
         }
         if ("superseded".equals(r.error)) return;
+        // A page-initiated address that keeps failing is not retried for ever: the kiosk
+        // goes back to its start page. Origin only in the log; a path can carry a token.
+        if (RetryPolicy.abandonForStart(loads.failures(), intendedUrl, startUrl())) {
+            note("giving up on a page that failed " + loads.failures() + " times in a row (origin "
+                    + NavigationPolicy.originForLog(intendedUrl) + "); loading the start page");
+            load(startUrl());
+            return;
+        }
         long delay = RetryPolicy.delayMs(loads.failures(), integer("recovery.reloadOnPageFailureSec"),
                 integer("recovery.maxRetrySec"));
         note("load failed: " + r.error + " url=" + r.url + " retryInMs=" + delay);
@@ -445,22 +490,32 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final class PageClient extends WebViewClient {
         @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (view != web || isLocalPage(url)) return;
+            // The second line of the navigation rule: a main-frame load that got past
+            // shouldOverrideUrlLoading (a redirect, a form post) is stopped here.
+            if (!navigation.allows(url)) {
+                note("stopped a main-frame load outside the allowed origins: " + NavigationPolicy.originForLog(url));
+                view.stopLoading();
+                String start = startUrl();
+                if (!start.isEmpty() && navigation.allows(start)) load(start);
+                return;
+            }
             mainUrl = url;
+            // A new document: the tokens of the ones before it stop working.
+            tokens.navigated();
             // A navigation the page started itself is tracked too, so its failure gets the same recovery.
             if (loads.state() != LoadTracker.State.LOADING) {
                 intendedUrl = url;
                 errorPage = false;
                 armDeadline(loads.begin(url, System.currentTimeMillis()));
-            } else {
-                loads.redirected(url);
             }
-            if (!shimAtDocumentStart && origins.allows(url)) view.evaluateJavascript(shim(), null);
+            loads.started(url);
         }
 
         @Override public void onPageFinished(WebView view, String url) {
             if (view != web || isLocalPage(url)) return;
-            if (!shimAtDocumentStart && origins.allows(url)) view.evaluateJavascript(shim(), null);
-            LoadTracker.Result r = loads.finished(System.currentTimeMillis());
+            // Counted only for the load whose start was seen: the finish of a load that
+            // was superseded must not settle the one that replaced it.
+            LoadTracker.Result r = loads.finished(System.currentTimeMillis(), url);
             if (r == null) return;
             cancelDeadline();
             afterSettle(r);
@@ -486,19 +541,52 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String scheme = request.getUrl().getScheme();
             boolean http = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
-            if (!http) note("blocked a non-http navigation: " + scheme);
-            return !http;   // true = do not load. intent:, market:, tel: never leave the page this way.
+            if (!http) {
+                note("blocked a non-http navigation: " + scheme);
+                return true;   // true = do not load. intent:, market:, tel: never leave the page this way.
+            }
+            // The main frame goes only to the start origin and the origins this device
+            // adds. Frames inside the page are not held to this: it embeds media from elsewhere.
+            if (request.isForMainFrame() && !navigation.allows(String.valueOf(request.getUrl()))) {
+                note("refused a main-frame navigation outside the allowed origins: "
+                        + NavigationPolicy.originForLog(String.valueOf(request.getUrl())));
+                return true;
+            }
+            return false;
         }
 
         @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
             if (view != web) return true;   // a WebView already replaced
+            long now = System.currentTimeMillis();
             rendererAlive = false;
-            loads.rendererGone(System.currentTimeMillis());
+            loads.rendererGone(now);
             cancelDeadline();
-            note("renderer gone, crashed=" + detail.didCrash());
+            cancelRetry();
+            boolean requested = resetRequested;
+            resetRequested = false;
+            // A reset that was asked for is not a crash. A crash is counted, and one that
+            // follows the last within the window is slowed down: a page that kills its
+            // renderer each time it loads must not be reloaded at once for ever.
+            RendererLossPolicy.Action action = requested ? new RendererLossPolicy.Action(0, 0, false)
+                    : rendererLosses.lost(now, integer("recovery.reloadOnPageFailureSec"), integer("recovery.maxRetrySec"));
+            note("renderer gone, crashed=" + detail.didCrash() + (requested ? " (reset requested)"
+                    : " lossesInARow=" + action.count + " reloadInMs=" + action.delayMs));
             // Every WebView in the process may share that renderer; the web overlay is rebuilt too.
             if (overlayWeb != null) { removeOverlayWeb(); renderWeb(); }
-            rebuild("renderer gone");
+            if (activity == null) return true;
+            final String url = reloadTarget();
+            destroyWebView();
+            buildWebView();
+            if (url.isEmpty()) {
+                showNotConfigured();
+            } else if (action.delayMs <= 0) {
+                load(url);
+            } else {
+                intendedUrl = url;
+                showErrorPage(url, "the page's renderer was lost " + action.count + " times in a row", action.delayMs);
+                retry = () -> { if (web != null && !intendedUrl.isEmpty()) load(intendedUrl); };
+                ui.postDelayed(retry, action.delayMs);
+            }
             return true;                     // handled: do not kill the app
         }
     }
@@ -576,6 +664,12 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** The object addJavascriptInterface exposes. Runs on the WebView's bridge thread. */
     private final class NativeBridge {
+        /** The shim's first call: its key for a token that belongs to the calling document. */
+        @JavascriptInterface public String open(String key) {
+            BridgeDispatcher d = dispatcher;
+            return d == null ? "" : d.open(key);
+        }
+
         @JavascriptInterface public String call(String token, String method, String arg) {
             BridgeDispatcher d = dispatcher;
             return d == null ? "" : d.call(token, method, arg);
@@ -832,8 +926,17 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     // ── for the routes (any thread) ───────────────────────────────────────────
 
-    private static void requireHttp(String url) {
+    /**
+     * What may be loaded into the main frame on request: an http or https URL on the
+     * start origin or an origin this device adds. The same rule the page's own
+     * navigations are held to, asked before anything is started.
+     */
+    private void requireHttp(String url) {
         if (url == null || OriginPolicy.originOf(url) == null) throw new IllegalArgumentException("url must be an http or https URL");
+        NavigationPolicy allowed = NavigationPolicy.of(startUrl(), str("webview.allowedOrigins"), foreign("links.origins"));
+        if (!allowed.allows(url)) {
+            throw new IllegalArgumentException("origin_not_allowed: the kiosk loads only its start URL's origin and webview.allowedOrigins");
+        }
     }
 
     /** True when a kiosk Activity is attached, starting one and waiting briefly when it is not. */
@@ -873,16 +976,19 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /**
      * The wait:false mode. Starts the load and returns at once with its id; the outcome
-     * is read from lastLoad in GET /kiosk/status. Returns null when there is no kiosk
-     * Activity to load into: that request is refused, not queued.
+     * is read from lastLoad in GET /kiosk/status. With no kiosk Activity the load is
+     * queued (the latest one wins) and the Activity is started; it loads when that attaches.
      */
     String loadAccepted(final String url) {
         requireHttp(url);
-        if (!attached()) {
-            bringToFront();          // the start URL loads when the Activity attaches
-            return null;
-        }
         final String loadId = loads.newLoadId();
+        if (!attached()) {
+            // Queued for the Activity that attaches next, in place of the start page. One
+            // slot: a later request replaces it, so nothing piles up while no window is up.
+            pendingOpen.set(url, loadId, System.currentTimeMillis());
+            bringToFront();
+            return loadId;
+        }
         ui.post(() -> {
             if (web != null) load(url, loadId);
             else loads.refused(url, loadId, "no_kiosk_activity", System.currentTimeMillis());
@@ -904,9 +1010,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             boolean ended = false;
             try {
                 if (web != null && WebViewFeature.isFeatureSupported(WebViewFeature.GET_WEB_VIEW_RENDERER)) {
+                    resetRequested = true;
                     ended = terminate(WebViewCompat.getWebViewRenderProcess(web));   // then onRenderProcessGone rebuilds
                 }
             } catch (Throwable ignored) { }
+            if (!ended) resetRequested = false;
             if (!ended) rebuild("reset requested");
             return null;
         }, 5000);
@@ -948,6 +1056,13 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 .put("rendererAlive", rendererAlive)
                 .put("errorPage", errorPage)
                 .put("lastLoad", last == null ? JSONObject.NULL : last.toJson());
+        // The page bridge: available, unavailable (with the reason), or unknown before a WebView exists.
+        BridgeAvailability b = bridge;
+        o.put("bridge", b == null ? "unknown" : b.state())
+                .put("bridgeReason", b == null || b.reason == null ? JSONObject.NULL : b.reason)
+                // Renderer crashes in a row (0 once the renderer has stayed up five minutes), and all since start.
+                .put("rendererLosses", rendererLosses.consecutive(System.currentTimeMillis()))
+                .put("rendererLossesTotal", rendererLosses.total());
         // Beyond the contract's list: lets a wait:false caller tell "still loading" from "settled".
         String loading = loads.loadingUrl(), loadingId = loads.loadingId();
         o.put("loading", loading != null)

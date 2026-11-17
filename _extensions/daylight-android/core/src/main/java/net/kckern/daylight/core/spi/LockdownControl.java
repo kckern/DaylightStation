@@ -16,6 +16,13 @@ public interface LockdownControl {
     /** Allow a package until it has been in front and left again. */
     void allowWhileInFront(String packageName);
 
+    /**
+     * As above, for one activity of the package (a full class name), or the whole
+     * package when activity is null. A launch that an activity-level allow rule let
+     * through passes its activity, so nothing else of that package is exempt with it.
+     */
+    void allowWhileInFront(String packageName, String activity);
+
     /** Allow a rule (AllowRules syntax) for a limited time. Capped at one hour. */
     void allowFor(String rule, long durationMs);
 

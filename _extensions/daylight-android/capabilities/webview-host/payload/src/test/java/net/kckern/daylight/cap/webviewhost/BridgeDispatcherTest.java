@@ -9,7 +9,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class BridgeDispatcherTest {
-    private static final String TOKEN = "0123456789abcdef0123456789abcdef";
+    private static final String KEY = "0123456789abcdef0123456789abcdef";
+    private BridgeTokens tokens;
+    /** The token this test's document was issued. */
+    private String TOKEN;
     private final List<String> calls = new ArrayList<>();
     private String url = "https://app.example.test/piano";
     private BridgeDispatcher bridge;
@@ -24,7 +27,10 @@ public class BridgeDispatcherTest {
             @Override public void setBackMode(String mode) { calls.add("back " + mode); }
             @Override public String volumeJson(int stream) { calls.add("volume " + stream); return "{\"level\":40}"; }
         };
-        bridge = new BridgeDispatcher(TOKEN, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url, actions);
+        tokens = new BridgeTokens(KEY);
+        bridge = new BridgeDispatcher(tokens, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url, actions);
+        TOKEN = bridge.open(KEY);
+        assertFalse(TOKEN.isEmpty());
     }
 
     @Test public void aCallWithTheTokenFromAnAllowedOriginRuns() {
@@ -78,7 +84,7 @@ public class BridgeDispatcherTest {
     }
 
     @Test public void anActionThatThrowsNeverReachesThePage() {
-        BridgeDispatcher b = new BridgeDispatcher(TOKEN, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url,
+        BridgeDispatcher b = new BridgeDispatcher(tokens, OriginPolicy.fromSettings("", "https://app.example.test/"), () -> url,
                 new BridgeDispatcher.Actions() {
                     @Override public String capabilitiesJson() { throw new IllegalStateException("boom"); }
                     @Override public boolean launch(String json) { throw new IllegalStateException("boom"); }
@@ -104,5 +110,35 @@ public class BridgeDispatcherTest {
         assertEquals("the bridge does exactly what the contract lists",
                 new java.util.TreeSet<>(java.util.Arrays.asList("capabilitiesJson", "launch", "screen", "restartApp",
                         "reboot", "setBackMode", "volumeJson")), actions);
+    }
+
+    // ── tokens belong to a document ──────────────────────────────────────────
+
+    @Test public void aTokenCannotBeUsedAfterItsDocumentWasReplaced() {
+        assertEquals("true", bridge.call(TOKEN, "screen", "false"));
+        tokens.navigated();                      // a navigation replaces the document
+        tokens.navigated();                      // and another
+        calls.clear();
+        assertEquals("", bridge.call(TOKEN, "restartApp", ""));
+        assertEquals("", bridge.call(TOKEN, "launch", "{\"package\":\"ok\"}"));
+        assertEquals("", bridge.call(TOKEN, "reboot", ""));
+        assertTrue(calls.isEmpty());
+        // The document that is showing now opens its own session.
+        String fresh = bridge.open(KEY);
+        assertEquals("true", bridge.call(fresh, "screen", "true"));
+    }
+
+    @Test public void theSessionKeyIsNotATokenAndAWrongKeyOpensNothing() {
+        assertEquals("", bridge.call(KEY, "restartApp", ""));
+        assertEquals("", bridge.open("wrong"));
+        assertEquals("", bridge.open(null));
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test public void noSessionIsOpenedWhileTheMainFrameIsOnADisallowedPage() {
+        // A frame of the allowed origin embedded in a hostile page holds the key (the shim
+        // is injected by origin) and still gets nothing.
+        url = "https://elsewhere.test/";
+        assertEquals("", bridge.open(KEY));
     }
 }

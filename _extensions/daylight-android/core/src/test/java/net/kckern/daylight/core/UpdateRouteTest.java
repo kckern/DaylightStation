@@ -285,6 +285,7 @@ public class UpdateRouteTest {
         @Override public String frontActivity() { return null; }
         @Override public String lastAway() { return null; }
         @Override public void allowWhileInFront(String packageName) { }
+        @Override public void allowWhileInFront(String packageName, String activity) { }
         @Override public void allowFor(String rule, long durationMs) { grants.add(rule + " " + durationMs); inForce.add(rule); }
         @Override public void revoke(String rule) { inForce.remove(rule); }
         @Override public boolean recall(long waitMs) { return true; }
@@ -378,5 +379,55 @@ public class UpdateRouteTest {
         core.prepare(new JSONObject("{}"));
         core.useUpdateInstallerForTest((url, sha, verified) -> new UpdateFlow.Result(5, false));
         assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+    }
+
+    // ── the HTTP status of each failure, and what GET /update reports ────────
+
+    @Test public void eachFailureHasAStatusTheBackendCanMapAndTheSameBody() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.prepare(new JSONObject("{}"));
+        JSONObject noUrl = TestCore.post(core, "/update");
+        assertEquals(400, noUrl.getInt("_status"));
+        assertEquals("missing url", noUrl.getString("error"));
+        JSONObject notReady = TestCore.call(core, "POST", "/update", null, BODY);
+        assertEquals("no installer in this state", 409, notReady.getInt("_status"));
+        assertEquals("not_ready", notReady.getString("error"));
+
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new UpdateFlow.Refused("sha256_mismatch"); });
+        JSONObject refused = TestCore.call(core, "POST", "/update", null, BODY);
+        assertEquals("the APK was refused", 409, refused.getInt("_status"));
+        assertEquals("failed", refused.getString("state"));
+
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new IOException("connection refused"); });
+        assertEquals("the download failed", 502, TestCore.call(core, "POST", "/update", null, BODY).getInt("_status"));
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new java.net.SocketTimeoutException("read timed out"); });
+        assertEquals("the download timed out", 504, TestCore.call(core, "POST", "/update", null, BODY).getInt("_status"));
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new IllegalStateException("session"); });
+        JSONObject unexpected = TestCore.call(core, "POST", "/update", null, BODY);
+        assertEquals(500, unexpected.getInt("_status"));
+        assertEquals("IllegalStateException: session", unexpected.getString("error"));
+        assertFalse(unexpected.getBoolean("ok"));
+    }
+
+    @Test public void getUpdateCarriesSha256VerifiedAndConfirming() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.prepare(new JSONObject("{}"));
+        JSONObject idle = TestCore.get(core, "/update");
+        assertFalse(idle.getBoolean("sha256Verified"));
+        assertFalse(idle.getBoolean("confirming"));
+
+        core.useUpdateInstallerForTest((url, sha, verified) -> new UpdateFlow.Result(5, true));
+        TestCore.call(core, "POST", "/update", null, "{\"url\":\"http://192.0.2.1/a.apk\",\"sha256\":\"" + SHA_OF_APK + "\"}");
+        JSONObject waiting = TestCore.get(core, "/update");
+        assertEquals("awaiting_confirmation", waiting.getString("state"));
+        assertTrue(waiting.getBoolean("sha256Verified"));
+        assertTrue(waiting.getBoolean("confirming"));
+
+        // The next one carries no hash and is not confirmed for the user.
+        core.useUpdateInstallerForTest((url, sha, verified) -> new UpdateFlow.Result(5, false));
+        TestCore.call(core, "POST", "/update", null, BODY);
+        JSONObject plain = TestCore.get(core, "/update");
+        assertFalse(plain.getBoolean("sha256Verified"));
+        assertFalse(plain.getBoolean("confirming"));
     }
 }

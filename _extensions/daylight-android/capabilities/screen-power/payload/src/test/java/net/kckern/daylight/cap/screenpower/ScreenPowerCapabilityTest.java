@@ -205,4 +205,36 @@ public class ScreenPowerCapabilityTest {
         assertEquals(501, r.getInt("_status"));
         assertEquals("device admin required", r.getString("reason"));
     }
+
+    /**
+     * The payload loader gives up on a start() that overruns and calls stop() from
+     * another thread while start() is still running. A stop that lands in the middle
+     * used to find nothing registered yet, and start() then registered its receiver and
+     * its display listener, which nothing ever took back.
+     */
+    @Test(timeout = 20000) public void aStopThatLandsInTheMiddleOfStartLeavesNothingRegistered() throws Exception {
+        cap.stop();
+        File dir = tmp.newFolder();
+        final Thread[] stopper = new Thread[1];
+        FakeContext ctx = new FakeContext(dir) {
+            @Override public android.content.Intent registerReceiver(android.content.BroadcastReceiver receiver, android.content.IntentFilter filter) {
+                // stop() arrives exactly here, before the receiver is registered.
+                stopper[0] = new Thread(() -> cap.stop(), "late-stop");
+                stopper[0].start();
+                try { stopper[0].join(300); } catch (InterruptedException ignored) { }
+                return super.registerReceiver(receiver, filter);
+            }
+        };
+        core = TestCore.createWithContext(dir, ctx);
+        cap = new ScreenPowerCapability();
+        core.add(cap);
+        core.prepare(new JSONObject());
+
+        cap.start();
+        stopper[0].join(5000);
+        assertFalse("the stop finished", stopper[0].isAlive());
+        assertEquals("nothing start() took after the stop is left behind: " + ctx.receivers, 0, ctx.receivers.size());
+        core.services().find(ScreenControl.class).poke();        // stopped: does nothing
+        assertEquals(0, FakeContext.liveThreads("daylight-screen"));
+    }
 }

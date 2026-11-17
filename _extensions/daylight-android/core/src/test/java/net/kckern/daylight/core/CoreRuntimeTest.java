@@ -112,6 +112,8 @@ public class CoreRuntimeTest {
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("sample"));
         }
+        // What it took before it threw must be given back: stop() is called on it as well.
+        assertEquals(java.util.Arrays.asList("register", "stop"), events);
     }
 
     @Test public void aDefaultForAnUndeclaredSettingFailsTheWholePayload() throws Exception {
@@ -143,7 +145,9 @@ public class CoreRuntimeTest {
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("capability 'broken' cannot start"));
         }
-        assertEquals(java.util.Arrays.asList("register", "start", "stop"), events);
+        // The capability that threw is stopped first (it may hold what it took before
+        // it threw), then the ones that had started.
+        assertEquals(java.util.Arrays.asList("register", "start", "broken-stop", "stop"), events);
     }
 
     @Test public void statusStillAnswersWhenTheShellPayloadStatusIsNotJson() throws Exception {
@@ -249,5 +253,31 @@ public class CoreRuntimeTest {
         CoreRuntime core = runtime(new Sample(false), "{}");
         core.settings().set("sample.level", 3);
         assertTrue(net.kckern.daylight.api.PayloadState.settingsOverrides(shell.dir).isFile());
+    }
+
+    @Test public void theControlAndLifelinePortsAreReserved() throws Exception {
+        CoreRuntime core = new CoreRuntime(shell, "test", "p-test", new java.io.File(shell.dir, "state"));
+        assertFalse(core.portReserved(8780));
+        core.reservePorts(8780, 8781);
+        assertTrue(core.portReserved(8780));
+        assertTrue(core.portReserved(8781));
+        assertFalse(core.portReserved(8782));
+    }
+
+    @Test public void statusSaysWhenTheStoredSettingsCouldNotBeReadAsWritten() throws Exception {
+        java.io.File state = new java.io.File(shell.dir, "state");
+        assertTrue(state.mkdirs());
+        java.nio.file.Files.write(net.kckern.daylight.api.PayloadState.settingsOverridesIn(state).toPath(), "{torn".getBytes("UTF-8"));
+        CoreRuntime core = runtime(new Sample(false), "{}");
+        JSONObject status = call(core, "GET", "/status", java.util.Collections.emptyMap(), null);
+        assertTrue(status.getString("settingsProblem"), status.getString("settingsProblem").contains("unreadable"));
+        assertTrue("and the shell log has the line", shell.notes.toString().contains("SETTINGS "));
+        core.stop();
+
+        FakeShell clean = new FakeShell(tmp.newFolder());
+        CoreRuntime healthy = new CoreRuntime(clean, "test", "p-test", new java.io.File(clean.dir, "state"));
+        healthy.start(new JSONObject("{}"));
+        assertTrue(call(healthy, "GET", "/status", java.util.Collections.emptyMap(), null).isNull("settingsProblem"));
+        healthy.stop();
     }
 }

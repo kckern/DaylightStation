@@ -44,6 +44,8 @@ public final class CoreRuntime implements CoreContext {
     /** idle, downloading, awaiting_confirmation or failed. */
     private volatile String updateState = "idle";
     private volatile String updateError;
+    /** Of the last update that reached the installer. Reported by GET /update. */
+    private volatile boolean updateSha256Verified, updateConfirming;
     /** When the install session behind awaiting_confirmation was committed. */
     private volatile long updateCommittedAtMs;
     /** Test seam for the confirmation window. */
@@ -101,6 +103,16 @@ public final class CoreRuntime implements CoreContext {
 
     public void add(Capability capability) { capabilities.add(capability); }
 
+    private volatile int[] reservedPorts = new int[0];
+
+    /** The control port and the lifeline port of this device. Called by the payload entry class before start. */
+    public void reservePorts(int... ports) { reservedPorts = ports.clone(); }
+
+    @Override public boolean portReserved(int port) {
+        for (int p : reservedPorts) if (p == port) return true;
+        return false;
+    }
+
     /** Register every capability and apply the device defaults. Touches no hardware. */
     public synchronized void prepare(JSONObject defaults) {
         if (prepared) return;
@@ -145,6 +157,9 @@ public final class CoreRuntime implements CoreContext {
             } catch (Throwable e) {
                 // Throwable: a missing class or native library is an Error, and it must
                 // still stop what already started and fail the payload the same way.
+                // The capability that threw is stopped too: it is not in `started`, and
+                // what it took before it threw (a receiver, a port) would stay taken.
+                try { c.stop(); } catch (Throwable ignored) { }
                 stop();
                 throw new IllegalStateException("capability '" + c.name() + "' cannot start: " + e.getMessage(), e);
             }
@@ -165,6 +180,7 @@ public final class CoreRuntime implements CoreContext {
             throw stoppedDuringStart("after the capabilities started");
         }
         shell.note("CORE", "started " + payloadVersion + " with " + capabilities.size() + " capabilities");
+        if (settings.loadProblem() != null) shell.note("SETTINGS", settings.loadProblem());
     }
 
     private static IllegalStateException stoppedDuringStart(String when) {
@@ -201,8 +217,9 @@ public final class CoreRuntime implements CoreContext {
                 if (url == null) url = textOrNull(body, "url");
                 if (sha == null) sha = textOrNull(body, "sha256");
             }
-            if (url == null) return Replies.json(Replies.err("missing url"));
-            if (sha == null) return Replies.json(Replies.err("missing sha256"));
+            // 400: the request is incomplete. The body is the one these answers always had.
+            if (url == null) return Router.Response.json(400, Replies.err("missing url"));
+            if (sha == null) return Router.Response.json(400, Replies.err("missing sha256"));
             Diag.log("Daylight-Core", "/payload swap from " + req.remote + " url=" + url.trim());
             return requested("payload.swap", shell.requestPayloadSwap(url.trim(), sha.trim()));
         });
@@ -225,7 +242,7 @@ public final class CoreRuntime implements CoreContext {
                     url = b;
                 }
             }
-            if (url == null || url.trim().isEmpty()) return Replies.json(Replies.err("missing url"));
+            if (url == null || url.trim().isEmpty()) return Router.Response.json(400, Replies.err("missing url"));
             // Optional. When present it must be a sha256: a mistyped one would otherwise be
             // found out only after the whole download.
             if (sha != null) {
@@ -233,7 +250,7 @@ public final class CoreRuntime implements CoreContext {
                 if (!UpdatePolicy.wellFormedSha256(sha)) throw new IllegalArgumentException("'sha256' must be 64 hex characters");
             }
             UpdateInstaller installer = updateInstaller;
-            if (installer == null) return Replies.json(Replies.err("not_ready"));
+            if (installer == null) return Router.Response.json(409, Replies.err("not_ready"));
             url = url.trim();
             // One install at a time: two calls would write the same staged file.
             if (!updateInFlight.compareAndSet(false, true)) {
@@ -243,11 +260,15 @@ public final class CoreRuntime implements CoreContext {
                 lastUpdateRequestAtMs = System.currentTimeMillis();
                 Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
                 updateError = null;
+                updateSha256Verified = false;
+                updateConfirming = false;
                 updateState = "downloading";
                 UpdateFlow.Result result = installer.fetchAndInstall(url, sha, this::exemptInstallerFromRecall);
                 // The session is committed. Without device owner Android now shows a confirm
                 // dialog; the result lands in the shell log (lifeline GET /log), not here.
                 updateCommittedAtMs = updateClock.getAsLong();
+                updateSha256Verified = sha != null;
+                updateConfirming = result.confirming;
                 updateState = "awaiting_confirmation";
                 String note = result.confirming ? "confirming on the device"
                         : config.updateAutoConfirm() && sha == null
@@ -259,21 +280,28 @@ public final class CoreRuntime implements CoreContext {
                 updateState = "failed";
                 updateError = e.getMessage();
                 endInstallerExemption();
-                return Replies.json(Replies.err(updateError).put("state", updateState));
+                // 409: the request was well formed and the APK it names was refused
+                // (hash mismatch, another package, a lower version).
+                return Router.Response.json(409, Replies.err(updateError).put("state", updateState));
             } catch (Exception e) {
                 updateState = "failed";
                 updateError = e.getClass().getSimpleName() + ": " + e.getMessage();
                 endInstallerExemption();
-                return Replies.json(Replies.err(updateError).put("state", updateState));
+                return Router.Response.json(failureStatus(e), Replies.err(updateError).put("state", updateState));
             } finally {
                 updateInFlight.set(false);
             }
         });
         router.route("GET", "/update", req -> {
             settleUpdateState();
+            boolean awaiting = "awaiting_confirmation".equals(updateState);
             return Replies.json(Replies.ok()
                     .put("state", updateState)
-                    .put("lastError", updateError == null ? JSONObject.NULL : updateError));
+                    .put("lastError", updateError == null ? JSONObject.NULL : updateError)
+                    // Of the last update handed to the installer: was its hash checked, and is
+                    // the confirmation being tapped for the user right now.
+                    .put("sha256Verified", updateSha256Verified)
+                    .put("confirming", awaiting && updateConfirming));
         });
         router.route("POST", "/accessibility/enable", req -> {
             CoreServices d = device;
@@ -376,6 +404,17 @@ public final class CoreRuntime implements CoreContext {
         }
     }
 
+    /**
+     * The HTTP status of a failure that is not the caller's: 504 when what the device
+     * depends on did not answer in time, 502 when it answered badly or could not be
+     * reached, 500 for anything else.
+     */
+    static int failureStatus(Throwable e) {
+        if (e instanceof java.net.SocketTimeoutException || e instanceof java.util.concurrent.TimeoutException) return 504;
+        if (e instanceof java.io.IOException) return 502;
+        return 500;
+    }
+
     /** A string field of a JSON body, or null when it is absent, null or not a string. */
     private static String textOrNull(JSONObject body, String key) {
         Object v = body.opt(key);
@@ -440,6 +479,8 @@ public final class CoreRuntime implements CoreContext {
                 .put("capabilities", names())
                 .put("wsClients", socket.clients())
                 .put("a11yBound", accessibility.isBound())
+                // Null when the stored settings were read as written. Otherwise what was wrong; never a value.
+                .put("settingsProblem", settings.loadProblem() == null ? JSONObject.NULL : settings.loadProblem())
                 .put("payload", payload));
     }
 }

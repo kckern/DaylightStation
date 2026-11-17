@@ -1,6 +1,5 @@
 package net.kckern.daylight.cap.lockdown;
 
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -43,6 +42,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.function.Supplier;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -72,6 +72,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
     private final HomeState home = new HomeState();
     private final ControlCenter controlCenter = new ControlCenter();
     private final AtomicInteger recalls = new AtomicInteger();
+    private final RecallPacer pacer = new RecallPacer();
+    private final AtomicInteger recallsHeldBack = new AtomicInteger();
     private final Set<String> blocked = ConcurrentHashMap.newKeySet();
     private final Object lockGuard = new Object();
     private LockState lockState = new LockState();                 // guarded by lockGuard
@@ -79,6 +81,16 @@ public final class LockdownCapability implements Capability, LockdownControl {
 
     private volatile ForegroundTrail trail;
     private volatile OwnerPolicy owner;
+    /** Test seams: the JVM has no device-policy service, no window list and no keyguard. */
+    private volatile DevicePolicy devicePolicyForTest;
+    private volatile Supplier<List<ForegroundTrail.Win>> windowsForTest;
+    private volatile Boolean watcherBoundForTest, keyguardForTest;
+    void useDevicePolicyForTest(DevicePolicy p) { devicePolicyForTest = p; }
+    void useWindowsForTest(Supplier<List<ForegroundTrail.Win>> windows) { windowsForTest = windows; watcherBoundForTest = windows != null; }
+    void useKeyguardForTest(boolean showing) { keyguardForTest = showing; }
+    /** Why owner mode is not being applied although this app is the owner, or null. */
+    private volatile String ownerRefused;
+    private boolean ownerRefusalNoted;
     private volatile StatusBarShield shield;
     private volatile HomeAlias homeAlias;
     /** Test seam: the JVM has no package manager. */
@@ -154,6 +166,14 @@ public final class LockdownCapability implements Capability, LockdownControl {
         @Override public String hidingUnsupportedReason() { return LockdownCapability.this.hidingUnsupportedReason(); }
     };
 
+    /** Settings whose change alters what "locked" does to the device. */
+    private static final Set<String> APPLIED_ON_CHANGE = new java.util.HashSet<>(java.util.Arrays.asList(
+            "lockdown.enabled", "lockdown.mode", "lockdown.immersive", "lockdown.statusBarShield",
+            "lockdown.ownerRestrictions", "lockdown.ownerHidePackages", "lockdown.allowedApps", "lockdown.exitPin"));
+
+    /** Lockdown is in force: the device file requires it, or the setting is on. */
+    private boolean enforced() { return bool("lockdown.required") || bool("lockdown.enabled"); }
+
     @Override public String name() { return "lockdown"; }
 
     // ── settings ──────────────────────────────────────────────────────────────
@@ -174,6 +194,16 @@ public final class LockdownCapability implements Capability, LockdownControl {
         this.a11y = new A11yFace(core.accessibility());
         SettingsRegistry s = core.settings();
         s.declare("lockdown.enabled", Type.BOOLEAN, true);
+        // Compiled per device and changeable nowhere else. True means lockdown is enforced
+        // whatever lockdown.enabled says and whatever happens to the stored overrides (a
+        // lifeline settings reset, a file that cannot be read). Only an unlock, which
+        // always has an end, relaxes it. Set in the device file as the last cutover step.
+        s.declareCompiled("lockdown.required", Type.BOOLEAN, false);
+        s.guard("lockdown.enabled", value -> Boolean.FALSE.equals(value) && bool("lockdown.required")
+                ? "cannot be false on this device: lockdown.required is true in its device file. "
+                        + "Unlock with a duration (POST /lockdown/unlock) to relax it for a while" : null);
+        // The admin component ownership may be handed to, as package/receiver. Empty refuses every transfer.
+        s.declare("lockdown.ownerTransferTarget", Type.STRING, "");
         s.declare("lockdown.mode", Type.STRING, "auto", SettingsRegistry.oneOf(LockMode.SETTINGS));
         s.declare("lockdown.allowedApps", Type.STRING, "");
         s.declare("lockdown.recallGraceMs", Type.INTEGER, 0, SettingsRegistry.range(0, 60_000));
@@ -190,8 +220,15 @@ public final class LockdownCapability implements Capability, LockdownControl {
         s.declare("lockdown.ownerHidePackages", Type.STRING, "");
         s.declare("lockdown.dismissControlCenter", Type.BOOLEAN, false);
         s.onChange(key -> {
+            if (!running || !key.startsWith("lockdown.")) return;
             // The window events the dismissal needs are asked for only while it is on.
-            if (running && "lockdown.dismissControlCenter".equals(key)) listenToAccessibility();
+            if ("lockdown.dismissControlCenter".equals(key)) listenToAccessibility();
+            // Applied when it changes, not at the next payload start: turning lockdown off
+            // in owner mode used to leave lock task and the disabled status bar in place.
+            if (APPLIED_ON_CHANGE.contains(key)) {
+                note(key + " changed; applying locked=" + locked());
+                applyLocked(locked());
+            }
         });
 
         core.services().provide(LockdownControl.class, this);
@@ -202,7 +239,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         Router router = core.router();
         router.route("GET", "/lockdown", req -> Router.Response.json(200, status()));
         router.route("POST", "/lockdown/lock", req -> {
-            if (!bool("lockdown.enabled")) throw new UnsupportedException("lockdown.enabled is false");
+            if (!enforced()) throw new UnsupportedException("lockdown.enabled is false");
             synchronized (lockGuard) { lockState.lock(); persist(); }
             applyLocked(true);
             note("locked by request");
@@ -211,7 +248,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         router.route("POST", "/lockdown/unlock", req -> {
             // With lockdown off there is nothing to unlock, and an unlock recorded now would
             // be waiting, with its window, for the moment lockdown is switched on.
-            if (!bool("lockdown.enabled")) throw new UnsupportedException("lockdown.enabled is false");
+            if (!enforced()) throw new UnsupportedException("lockdown.enabled is false");
             JSONObject body = Requests.body(req);
             Long forMs = null;
             if (body.has("forMs")) {
@@ -281,7 +318,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         context = ctx;
         ownPackage = ctx.getPackageName();
         trail = new ForegroundTrail(ownPackage);
-        owner = new OwnerPolicy(ctx);
+        DevicePolicy policy = devicePolicyForTest;
+        owner = new OwnerPolicy(policy != null ? policy : new AndroidDevicePolicy(ctx), ownPackage);
         shield = new StatusBarShield(ctx);
         if (homeAlias == null) homeAlias = new HomeAlias.Android(ctx);
         File stateDir = new File(core.shell().payloadDir(), "state");
@@ -304,10 +342,10 @@ public final class LockdownCapability implements Capability, LockdownControl {
         applyLocked(locked());
 
         timer = new Timer("daylight-lockdown", true);
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override public void run() {
-                try { tick(System.currentTimeMillis()); } catch (Throwable t) { note("tick failed: " + t); }
-            }
+        // Fixed delay, not fixed rate: after a suspend a fixed-rate timer runs every tick it
+        // missed, back to back (a Shield waking from eight hours ran about 28,800 of them).
+        timer.schedule(new TimerTask() {
+            @Override public void run() { tickSafely(System.currentTimeMillis()); }
         }, TICK_MS, TICK_MS);
         note("started locked=" + locked() + " mode=" + mode() + " a11yBound=" + a11y.bound()
                 + " adminActive=" + factAdmin + " overlayGranted=" + factOverlay);
@@ -347,6 +385,46 @@ public final class LockdownCapability implements Capability, LockdownControl {
 
     // ── the watcher ───────────────────────────────────────────────────────────
 
+    /**
+     * A tick that throws still ends in a decision. Whatever broke, the watcher could not
+     * say what is in front, and that is the case it recalls for.
+     */
+    void tickSafely(long nowMs) {
+        try {
+            tick(nowMs);
+        } catch (Throwable t) {
+            note("tick failed: " + t);
+            try {
+                if (running && locked() && pacer.due(nowMs)) doRecall("watcher failed", true);
+            } catch (Throwable alsoFailed) {
+                note("recall after a failed tick failed: " + alsoFailed);
+            }
+        }
+    }
+
+    private List<ForegroundTrail.Win> sampleWindows() {
+        Supplier<List<ForegroundTrail.Win>> test = windowsForTest;
+        return test != null ? test.get() : a11y.windows();
+    }
+
+    private boolean watcherBound() {
+        Boolean test = watcherBoundForTest;
+        return test != null ? test : a11y.bound();
+    }
+
+    /** Android's own lock screen is up. False when it cannot be asked. */
+    private boolean keyguardShowing() {
+        Boolean test = keyguardForTest;
+        if (test != null) return test;
+        try {
+            Context c = context;
+            android.app.KeyguardManager km = c == null ? null : (android.app.KeyguardManager) c.getSystemService(Context.KEYGUARD_SERVICE);
+            return km != null && km.isKeyguardLocked();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** One pass of the watcher. The timer calls it every second; nowMs is the wall clock. */
     void tick(long nowMs) {
         if (!running) return;
@@ -361,11 +439,17 @@ public final class LockdownCapability implements Capability, LockdownControl {
         boolean locked = locked();
         KioskSurface surface = surface();
 
-        List<ForegroundTrail.Win> wins = a11y.windows();
+        // What this sample identified, and nothing older. A window list with no
+        // application window in it (or no list at all) leaves `sampled` null: the front
+        // is then unknown for this tick. It used to refresh the age of the last package
+        // seen, and a stale "our own package" then meant no recall.
+        String sampled = null;
+        List<ForegroundTrail.Win> wins = sampleWindows();
         if (wins != null) {
             for (ForegroundTrail.Event e : trail.sample(nowMs, wins)) report(e);
-            if (trail.front() != null) { front = trail.front(); frontAtMs = nowMs; }
+            sampled = trail.sampledFront();
         }
+        if (sampled != null) { front = sampled; frontAtMs = nowMs; }
         boolean fresh = frontAtMs != 0 && nowMs - frontAtMs <= RecallDecision.FRESH_MS;
         boolean resumed = surface != null && surface.inForeground();
         awaySinceMs = RecallDecision.awaySince(awaySinceMs, resumed, nowMs);
@@ -375,10 +459,11 @@ public final class LockdownCapability implements Capability, LockdownControl {
         in.locked = locked;
         in.screenOn = RecallDecision.screenOn(displayState());
         in.kioskResumed = resumed;
-        in.watcherBound = a11y.bound();
-        in.front = front;
-        in.frontActivity = a11y.activityFor(front);
-        in.sampleAgeMs = frontAtMs == 0 ? Long.MAX_VALUE : nowMs - frontAtMs;
+        in.watcherBound = watcherBound();
+        in.front = sampled;
+        in.frontActivity = a11y.activityFor(sampled);
+        in.sampleAgeMs = sampled == null ? Long.MAX_VALUE : 0;
+        in.keyguardShowing = sampled == null && !resumed && keyguardShowing();
         in.ownPackage = ownPackage;
         in.allow = AllowRules.parseOrEmpty(str("lockdown.allowedApps"));
         in.exemptions = exemptions;
@@ -389,17 +474,23 @@ public final class LockdownCapability implements Capability, LockdownControl {
         in.pairingDialogAllowed = pairingDialogAllowed();
         RecallDecision.Decision d = RecallDecision.decide(in);
         if (d.recall) {
-            consecutiveRecalls++;
-            doRecall(d.reason, RecallDecision.shouldNote(consecutiveRecalls));
+            // Paced: a recall that cannot succeed is not repeated every second for ever.
+            if (pacer.due(nowMs)) {
+                consecutiveRecalls = pacer.consecutive();
+                doRecall(d.reason, RecallDecision.shouldNote(consecutiveRecalls));
+            } else {
+                recallsHeldBack.incrementAndGet();
+            }
         } else {
             consecutiveRecalls = 0;
+            pacer.settled();
         }
 
         if (ticks % 5 == 0) {
             refreshFacts();
             observeHome();
             OwnerPolicy o = owner;
-            if (locked && o != null && ownerMode()) {
+            if (locked && o != null && ownerMode() && ownerMayLock()) {
                 enforceOwner();
                 if (surface != null && surface.inForeground() && !o.lockTaskActive()) surface.setLockTask(true);
             }
@@ -453,6 +544,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
     private void doRecall(String reason, boolean noteIt) {
         KioskSurface surface = surface();
         String how = "failed";
+        boolean bound = a11y.bound();
         if (surface != null) {
             Intent intent = null;
             try { intent = surface.kioskIntent(); } catch (Throwable ignored) { }
@@ -460,14 +552,22 @@ public final class LockdownCapability implements Capability, LockdownControl {
                 how = "accessibility";
             } else {
                 boolean homePressed = home.homeIsKiosk && a11y.home();
-                how = surface.bringToFront() ? (homePressed ? "home+service" : "service") : (homePressed ? "home" : "failed");
+                boolean asked = surface.bringToFront();
+                // Said as it is. A start from the service context does not throw when
+                // Android ignores it (API 29 and later block it from the background), so
+                // "asked" is all that is known: with the accessibility service unbound
+                // there is no start that is known to work.
+                how = asked ? (homePressed ? "home+service-start-unverified" : "service-start-unverified")
+                        : (homePressed ? "home" : "failed");
             }
         }
         recalls.incrementAndGet();
         try {
             String from = front;
             JSONObject r = new JSONObject().put("atMs", System.currentTimeMillis())
-                    .put("from", from == null ? JSONObject.NULL : from).put("reason", reason).put("how", how);
+                    .put("from", from == null ? JSONObject.NULL : from).put("reason", reason).put("how", how)
+                    // False: the recall went out without the one start that works from the background.
+                    .put("a11yBound", bound);
             lastRecall = r;
             if (noteIt) note("recall #" + consecutiveRecalls + " " + r);
             core.events().publish("foreground", new JSONObject().put("event", "kiosk.recall").put("level", "warn").put("data", r));
@@ -567,9 +667,30 @@ public final class LockdownCapability implements Capability, LockdownControl {
         }
     }
 
+    /**
+     * Owner mode holds the device in lock task with the status bar and the keyguard
+     * disabled. With no exit PIN the only way out is the control API, and a device that
+     * has lost its network then has no exit at all. So owner mode does not lock until a
+     * PIN is set; lockdown still runs in app mode's way (watcher, immersive, shield).
+     */
+    private boolean ownerMayLock() {
+        boolean ok = !str("lockdown.exitPin").isEmpty();
+        ownerRefused = ok ? null
+                : "owner mode is not applied: lockdown.exitPin is empty, and without it a locked device with no network has no exit. "
+                        + "Set it with `settings set lockdown.exitPin <digits>`";
+        if (ok) {
+            ownerRefusalNoted = false;
+        } else if (!ownerRefusalNoted) {
+            ownerRefusalNoted = true;
+            note(ownerRefused);
+        }
+        return ok;
+    }
+
     private void enforceOwner() {
         OwnerPolicy o = owner;
         if (o == null) return;
+        if (!ownerMayLock()) return;
         Set<String> packages = new TreeSet<>();
         packages.add(ownPackage);
         packages.addAll(AllowRules.parseOrEmpty(str("lockdown.allowedApps")).exactPackages());
@@ -578,8 +699,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         List<String> hide = OwnerHide.packages(str("lockdown.ownerHidePackages"), ownPackage, webViewPackage());
         // The preferred home is the alias, and only once it was enabled on the device:
         // a preference for a disabled component resolves to nothing.
-        ComponentName homeComponent = HomeAlias.ENABLED.equals(factHomeAlias) ? new ComponentName(ownPackage, HomeAlias.NAME) : null;
-        ownerError = o.apply(packages, homeComponent, bool("lockdown.ownerRestrictions"), hide);
+        String homeClass = HomeAlias.ENABLED.equals(factHomeAlias) ? HomeAlias.NAME : null;
+        ownerError = o.apply(packages, homeClass, bool("lockdown.ownerRestrictions"), hide);
     }
 
     private void applyLocked(boolean locked) {
@@ -589,7 +710,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         if (o != null) {
             factOwner = o.isOwner();
             if (ownerMode()) {
-                if (locked) {
+                if (locked && ownerMayLock()) {
                     enforceOwner();
                     if (surface != null) surface.setLockTask(true);
                 } else {
@@ -693,6 +814,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         JSONObject o = Replies.ok()
                 .put("locked", locked())
                 .put("enabled", bool("lockdown.enabled"))
+                .put("required", bool("lockdown.required"))
                 .put("mode", mode())
                 .put("watcher", running ? "running" : "stopped")
                 .put("homeIsKiosk", home.homeIsKiosk)
@@ -708,6 +830,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
                 .put("foregroundActivity", activity == null ? JSONObject.NULL : activity)
                 .put("kioskInForeground", surface != null && surface.inForeground())
                 .put("recallsSinceBoot", recalls.get())
+                .put("recallsHeldBack", recallsHeldBack.get())
                 .put("lastRecall", recall == null ? JSONObject.NULL : recall)
                 .put("a11yBound", a11y.bound())
                 .put("adminActive", factAdmin)
@@ -723,6 +846,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         if (allowError != null) o.put("allowedAppsError", allowError);
         String ownerErr = ownerError;
         if (ownerErr != null) o.put("ownerError", ownerErr);
+        String refused = ownerRefused;
+        if (refused != null) o.put("ownerRefused", refused);
         String modeError = LockMode.error(str("lockdown.mode"), factOwner);
         if (modeError != null) o.put("modeError", modeError);
         return o;
@@ -731,7 +856,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
     // ── LockdownControl ───────────────────────────────────────────────────────
 
     @Override public boolean locked() {
-        if (!bool("lockdown.enabled")) return false;
+        if (!enforced()) return false;
         synchronized (lockGuard) { return lockState.locked(); }
     }
 
@@ -754,11 +879,14 @@ public final class LockdownCapability implements Capability, LockdownControl {
 
     @Override public String lastAway() { ForegroundTrail t = trail; return t == null ? null : t.lastAway(); }
 
-    @Override public void allowWhileInFront(String packageName) {
-        exemptions.allowWhileInFront(packageName, System.currentTimeMillis());
+    @Override public void allowWhileInFront(String packageName) { allowWhileInFront(packageName, null); }
+
+    @Override public void allowWhileInFront(String packageName, String activity) {
+        exemptions.allowWhileInFront(packageName, activity, System.currentTimeMillis());
         // Lock task refuses to start a package that is not on its list, so widen the list before the launch.
+        // That list is per package; the watcher still holds the launch to its one activity.
         if (owner != null && ownerMode() && locked()) enforceOwner();
-        note("allowed while in front: " + packageName);
+        note("allowed while in front: " + packageName + (activity == null ? "" : "/" + activity));
     }
 
     @Override public void allowFor(String rule, long durationMs) {

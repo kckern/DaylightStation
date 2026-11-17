@@ -104,6 +104,11 @@ public final class MicBridgeCapability implements Capability {
         this.core = core;
         // audio-bridge's port. A device that still runs audio-bridge beside this app sets another.
         core.settings().declare("mic.port", SettingsRegistry.Type.INTEGER, 8765, SettingsRegistry.range(1024, 65535));
+        // The stream must not be asked to listen where the control API or the lifeline
+        // does: whichever bound second would fail, and the lifeline is the way back in.
+        final CoreContext c = core;
+        core.settings().guard("mic.port", value -> value instanceof Integer && c.portReserved((Integer) value)
+                ? "cannot be " + value + ": that is this device's control or lifeline port" : null);
         // A client that sends no Origin header is admitted from loopback while this is true.
         // True for as long as an app other than this one's kiosk hosts the page; see MicOriginRule.
         core.settings().declare("mic.allowNoOrigin", SettingsRegistry.Type.BOOLEAN, true);
@@ -116,11 +121,14 @@ public final class MicBridgeCapability implements Capability {
         core.router().route("POST", "/mic/restart", req -> {
             // Replaces the backend's force-stop and relaunch of the companion app.
             Diag.log(TAG, "/mic/restart from " + req.remote);
-            if (!restart()) return Replies.json(status().put("ok", false).put("error", "not_ready"));
+            // 409: there is no stream to restart in this state (not started, or mic.enabled is off).
+            if (!restart()) return net.kckern.daylight.core.Router.Response.json(409, status().put("ok", false).put("error", "not_ready"));
             // "running" means the stream is listening again. Capture starts per client, so
             // "streaming" turns true when the page reconnects.
             JSONObject after = status();
-            return Replies.json(after.put("ok", after.getBoolean("running")));
+            boolean running = after.getBoolean("running");
+            // 500: the stream was stopped and did not come back (lastError says why).
+            return net.kckern.daylight.core.Router.Response.json(running ? 200 : 500, after.put("ok", running));
         });
         core.status().add(StatusBoard.Surface.STATUS, name(), o -> o.put("mic", status()));
     }
@@ -170,6 +178,11 @@ public final class MicBridgeCapability implements Capability {
 
     /** The context is null only in a JVM test, which also replaces the overlay. */
     synchronized void startStream(Context c) {
+        int port = (Integer) core.settings().get("mic.port");
+        // A compiled default is not seen by the settings guard, so it is refused here.
+        if (core.portReserved(port)) {
+            throw new IllegalStateException("mic.port " + port + " is this device's control or lifeline port");
+        }
         ctx = c;
         // The shell half put the anchor up at process start; this covers a process in
         // which that failed (the overlay permission was granted after it started).

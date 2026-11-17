@@ -31,6 +31,8 @@ public class MicBridgeCapabilityTest {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         new MicBridgeCapability().register(core);
         JSONObject r = TestCore.post(core, "/mic/restart");
+        assertEquals("there is no stream to restart in this state", 409, r.getInt("_status"));
+        assertEquals("not_ready", r.getString("error"));
         assertFalse("ok only after capture is confirmed running", r.getBoolean("ok"));
         assertFalse(r.getBoolean("running"));
     }
@@ -214,6 +216,68 @@ public class MicBridgeCapabilityTest {
             mic.stop();
         } finally {
             TestCore.releaseMainThread();
+        }
+    }
+
+    @Test public void theStreamPortCannotBeTheControlOrLifelinePort() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        MicBridgeCapability mic = new MicBridgeCapability();
+        core.add(mic);
+        core.reservePorts(8780, 8781);
+        core.prepare(new JSONObject());
+        for (int reserved : new int[] { 8780, 8781 }) {
+            JSONObject r = TestCore.call(core, "POST", "/settings", null, "{\"key\":\"mic.port\",\"value\":" + reserved + "}");
+            assertEquals(400, r.getInt("_status"));
+            assertEquals("invalid_setting", r.getString("error"));
+            assertTrue(r.getString("message"), r.getString("message").contains("control or lifeline port"));
+        }
+        assertEquals(8765, core.settings().get("mic.port"));
+        assertEquals(200, TestCore.call(core, "POST", "/settings", null, "{\"key\":\"mic.port\",\"value\":8782}").getInt("_status"));
+    }
+
+    @Test public void aCompiledStreamPortThatIsReservedIsNotBound() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        MicBridgeCapability mic = new MicBridgeCapability();
+        core.add(mic);
+        int port = freePort();
+        core.reservePorts(port);
+        core.prepare(new JSONObject("{\"mic.port\":" + port + "}"));     // a device file's mistake: no guard sees a default
+        mic.useOverlayForTest(new NoOverlay());
+        try {
+            mic.startStream(null);
+            fail("the stream took the lifeline's port");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("control or lifeline port"));
+        }
+        assertTrue(portIsFree(port));
+        assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
+    }
+
+    @Test public void aRestartThatDoesNotComeBackIsAServerError() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        int port = freePort();
+        MicBridgeCapability mic = started(core, port, new NoOverlay());
+        try {
+            // Something else takes the port between the stop and the new start.
+            final java.net.ServerSocket[] taken = new java.net.ServerSocket[1];
+            MicBridgeCapability.Overlay grabbing = new MicBridgeCapability.Overlay() {
+                @Override public void ensure(android.content.Context c) { }
+                @Override public void rebuild(android.content.Context c) throws InterruptedException {
+                    long deadline = System.currentTimeMillis() + 3000;
+                    while (taken[0] == null && System.currentTimeMillis() < deadline) {
+                        try { taken[0] = new java.net.ServerSocket(port, 1, java.net.InetAddress.getLoopbackAddress()); }
+                        catch (java.io.IOException stillHeld) { Thread.sleep(20); }
+                    }
+                }
+            };
+            mic.useOverlayForTest(grabbing);
+            JSONObject r = TestCore.post(core, "/mic/restart");
+            assertEquals(500, r.getInt("_status"));
+            assertFalse(r.getBoolean("ok"));
+            assertEquals("bind_failed", r.getString("lastError"));
+            if (taken[0] != null) taken[0].close();
+        } finally {
+            mic.stop();
         }
     }
 }

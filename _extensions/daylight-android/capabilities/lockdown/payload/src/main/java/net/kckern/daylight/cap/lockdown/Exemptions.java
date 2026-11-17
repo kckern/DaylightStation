@@ -27,11 +27,22 @@ final class Exemptions {
         Timed(String text, AllowRules rule, long untilMs) { this.text = text; this.rule = rule; this.untilMs = untilMs; }
     }
 
+    /**
+     * How many samples in a row must show another package in front before a
+     * while-in-front grant ends. One sample is a permission prompt, a toast window or a
+     * system dialog passing over the launched app; ending the grant on it had the
+     * watcher recall the kiosk over a game that was still running.
+     */
+    static final int AWAY_SAMPLES = 3;
+
     private static final class WhileFront {
         final String pkg;
+        /** The one activity the grant is for, or null for the whole package. */
+        final String activity;
         final long grantedAtMs;
         boolean seen;
-        WhileFront(String pkg, long grantedAtMs) { this.pkg = pkg; this.grantedAtMs = grantedAtMs; }
+        int awaySamples;
+        WhileFront(String pkg, String activity, long grantedAtMs) { this.pkg = pkg; this.activity = activity; this.grantedAtMs = grantedAtMs; }
     }
 
     private final List<Timed> timed = new ArrayList<>();
@@ -44,13 +55,22 @@ final class Exemptions {
         timed.add(new Timed(parsed.describe().get(0), parsed, nowMs + Math.min(durationMs, MAX_MS)));
     }
 
-    synchronized void allowWhileInFront(String packageName, long nowMs) {
+    synchronized void allowWhileInFront(String packageName, long nowMs) { allowWhileInFront(packageName, null, nowMs); }
+
+    /**
+     * @param activity the one activity that may be in front, as a full class name, or null
+     *                 for any activity of the package. A launch that was allowed by an
+     *                 activity-level rule passes its activity, so the rest of the package
+     *                 (its settings screen, say) is not let through with it.
+     */
+    synchronized void allowWhileInFront(String packageName, String activity, long nowMs) {
         AllowRules parsed = AllowRules.parse(packageName);
         if (parsed.exactPackages().size() != 1 || !parsed.describe().get(0).equals(packageName)) {
             throw new IllegalArgumentException("a plain package name is required");
         }
         for (Iterator<WhileFront> it = fronts.iterator(); it.hasNext(); ) if (it.next().pkg.equals(packageName)) it.remove();
-        fronts.add(new WhileFront(packageName, nowMs));
+        if (activity != null && activity.isEmpty()) throw new IllegalArgumentException("an activity must be a class name");
+        fronts.add(new WhileFront(packageName, activity, nowMs));
     }
 
     /** Ends every timed exemption granted for exactly this rule. A rule that is not in force, or not a rule, is ignored. */
@@ -71,8 +91,8 @@ final class Exemptions {
     synchronized void observeFront(String front, long nowMs) {
         for (Iterator<WhileFront> it = fronts.iterator(); it.hasNext(); ) {
             WhileFront w = it.next();
-            if (w.pkg.equals(front)) w.seen = true;
-            else if (w.seen && front != null) it.remove();
+            if (w.pkg.equals(front)) { w.seen = true; w.awaySamples = 0; }
+            else if (w.seen && front != null) { if (++w.awaySamples >= AWAY_SAMPLES) it.remove(); }
             else if (!w.seen && nowMs - w.grantedAtMs > UNSEEN_MS) it.remove();
         }
         for (Iterator<Timed> it = timed.iterator(); it.hasNext(); ) if (nowMs >= it.next().untilMs) it.remove();
@@ -81,7 +101,9 @@ final class Exemptions {
     synchronized boolean allows(String pkg, String activity, long nowMs) {
         if (pkg == null) return false;
         for (Timed t : timed) if (nowMs < t.untilMs && t.rule.matches(pkg, activity)) return true;
-        for (WhileFront w : fronts) if (w.pkg.equals(pkg)) return true;
+        // An activity-level grant matches that activity alone. An activity that is not
+        // known (null) does not match it: unknown is not allowed.
+        for (WhileFront w : fronts) if (w.pkg.equals(pkg) && (w.activity == null || w.activity.equals(activity))) return true;
         return false;
     }
 
@@ -96,7 +118,7 @@ final class Exemptions {
     synchronized List<String> describe(long nowMs) {
         List<String> out = new ArrayList<>();
         for (Timed t : timed) if (nowMs < t.untilMs) out.add(t.text + " until " + t.untilMs);
-        for (WhileFront w : fronts) out.add(w.pkg + " while in front");
+        for (WhileFront w : fronts) out.add((w.activity == null ? w.pkg : w.pkg + "/" + w.activity) + " while in front");
         return out;
     }
 }

@@ -49,4 +49,19 @@ public final class KioskSlot {
         current = null;
         return old;
     }
+
+    /** The first wait before a controller that failed is attached again. */
+    public static final long RETRY_FIRST_MS = 2_000L;
+    public static final long RETRY_MAX_MS = 60_000L;
+
+    /**
+     * How long to wait before attempt number {@code attempt} (1-based) to attach a
+     * controller again after it threw: 2 s, doubling, at most a minute. A controller
+     * fault used to leave the Activity on its fallback screen until the payload was
+     * restarted by hand.
+     */
+    public static long retryDelayMs(int attempt) {
+        if (attempt <= 1) return RETRY_FIRST_MS;
+        return Math.min(RETRY_FIRST_MS << Math.min(attempt - 1, 10), RETRY_MAX_MS);
+    }
 }

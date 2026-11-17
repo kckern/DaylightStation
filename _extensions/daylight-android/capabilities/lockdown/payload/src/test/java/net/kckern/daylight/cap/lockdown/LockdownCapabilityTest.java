@@ -31,6 +31,10 @@ public class LockdownCapabilityTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     private CoreRuntime core;
     private LockdownCapability cap;
+    /** What the next startForReal compiles in, stores before start, and uses as the device's policy service. */
+    private JSONObject realDefaults = new JSONObject();
+    private final java.util.Map<String, Object> realOverrides = new java.util.LinkedHashMap<>();
+    private DevicePolicy realPolicy;
 
     /** A kiosk window that records what lockdown asks of it. */
     private static final class FakeSurface implements KioskSurface {
@@ -83,8 +87,10 @@ public class LockdownCapabilityTest {
         core.services().provide(KioskSurface.class, surface);
         cap = new LockdownCapability();
         core.add(cap);
-        core.prepare(new JSONObject());
+        core.prepare(realDefaults);
         if (alias != null) cap.useHomeAliasForTest(alias);
+        if (realPolicy != null) cap.useDevicePolicyForTest(realPolicy);
+        for (java.util.Map.Entry<String, Object> e : realOverrides.entrySet()) core.settings().set(e.getKey(), e.getValue());
         cap.start();
         return surface;
     }
@@ -617,5 +623,195 @@ public class LockdownCapabilityTest {
     @Test public void aGrantedPairingDialogIsReportedInStatus() throws Exception {
         core.services().provide(PairingDialogExemption.class, () -> true);
         assertTrue(call("GET", "/lockdown", null).getBoolean("pairingDialogAllowed"));
+    }
+
+    // ── split screen, a sample that saw nothing, a tick that throws ──────────
+
+    private static ForegroundTrail.Win app(String pkg, boolean active) {
+        return new ForegroundTrail.Win(ForegroundTrail.TYPE_APPLICATION, pkg, "", active);
+    }
+
+    private static final String OWN = "net.kckern.daylight.test";
+
+    @Test public void settingsBesideTheResumedKioskInSplitScreenIsRecalled() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        surface.resumed = true;                                  // Android 10+: both halves are resumed
+        cap.useWindowsForTest(() -> java.util.Arrays.asList(app(OWN, false), app("com.android.settings", true)));
+        cap.tick(1_000_000);
+        assertEquals("the active window is another app's: recalled although the kiosk is resumed", 1, surface.broughtToFront);
+        JSONObject recall = call("GET", "/lockdown", null).getJSONObject("lastRecall");
+        assertEquals("not allowed beside the kiosk: com.android.settings", recall.getString("reason"));
+
+        // The kiosk's own window active again: nothing to do.
+        cap.useWindowsForTest(() -> java.util.Arrays.asList(app(OWN, true), app("com.android.settings", false)));
+        cap.tick(1_001_000);
+        assertEquals(1, surface.broughtToFront);
+    }
+
+    @Test public void aSampleThatFoundNoApplicationWindowIsUnknownNotTheLastPackageSeen() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        cap.useKeyguardForTest(false);
+        surface.resumed = true;
+        cap.useWindowsForTest(() -> java.util.Collections.singletonList(app(OWN, true)));
+        cap.tick(1_000_000);                                     // the last package seen is our own
+        assertEquals(0, surface.broughtToFront);
+
+        // The kiosk is gone and the window list names no application window. The stale
+        // "our own package" must not stand in for what this sample could not see.
+        surface.resumed = false;
+        cap.useWindowsForTest(java.util.Collections::emptyList);
+        cap.tick(1_001_000);
+        assertEquals("fail closed", 1, surface.broughtToFront);
+        assertEquals("foreground unknown", call("GET", "/lockdown", null).getJSONObject("lastRecall").getString("reason"));
+    }
+
+    @Test public void anUnknownFrontUnderTheKeyguardIsNotRecalledOver() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        cap.useKeyguardForTest(true);
+        cap.useWindowsForTest(java.util.Collections::emptyList);
+        cap.tick(1_000_000);
+        assertEquals(0, surface.broughtToFront);
+    }
+
+    @Test public void aTickThatThrowsStillEndsInARecall() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        cap.useWindowsForTest(() -> { throw new IllegalStateException("window service died"); });
+        cap.tickSafely(1_000_000);
+        assertEquals("the watcher could not see: it recalls", 1, surface.broughtToFront);
+        assertEquals("watcher failed", call("GET", "/lockdown", null).getJSONObject("lastRecall").getString("reason"));
+        assertTrue(((FakeShell) core.shell()).notes.toString().contains("tick failed"));
+    }
+
+    @Test public void aTickThatThrowsWhileUnlockedRecallsNothing() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        call("POST", "/lockdown/unlock", "{\"forMs\":60000}");
+        cap.useWindowsForTest(() -> { throw new IllegalStateException("window service died"); });
+        cap.tickSafely(System.currentTimeMillis());
+        assertEquals(0, surface.broughtToFront);
+    }
+
+    @Test public void aRecallThatCannotSucceedBacksOffAndIsCounted() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        // Accessibility unbound: every tick wants a recall and none of them takes.
+        for (int i = 0; i < 60; i++) cap.tick(1_000_000 + i * 1_000L);
+        assertTrue("three at once, then 2, 4, 8, 16, 30 s apart: " + surface.broughtToFront,
+                surface.broughtToFront >= RecallPacer.FREE && surface.broughtToFront <= 9);
+        JSONObject status = call("GET", "/lockdown", null);
+        assertEquals(60 - surface.broughtToFront, status.getInt("recallsHeldBack"));
+    }
+
+    @Test public void aRecallWithAccessibilityUnboundSaysItWasNotVerified() throws Exception {
+        File dir = tmp.newFolder();
+        startForReal(new FakeContext(dir), dir);
+        cap.tick(1_000_000);
+        JSONObject recall = call("GET", "/lockdown", null).getJSONObject("lastRecall");
+        assertFalse(recall.getBoolean("a11yBound"));
+        assertEquals("a start from the service is asked for, never known to have worked",
+                "service-start-unverified", recall.getString("how"));
+    }
+
+    // ── lockdown.required, and settings applied when they change ─────────────
+
+    @Test public void requiredIsEnforcedWhateverEnabledSaysAndWithNoOverridesAtAll() throws Exception {
+        realDefaults = new JSONObject("{\"lockdown.required\":true,\"lockdown.enabled\":false}");
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        // This is the state after a lifeline settings reset, or after the overrides file
+        // was lost: no override anywhere, and the compiled lockdown.enabled is false.
+        assertTrue(core.services().find(LockdownControl.class).locked());
+        JSONObject status = call("GET", "/lockdown", null);
+        assertTrue(status.getBoolean("locked"));
+        assertTrue(status.getBoolean("required"));
+        assertFalse(status.getBoolean("enabled"));
+        cap.tick(1_000_000);
+        assertEquals("and the watcher recalls", 1, surface.broughtToFront);
+    }
+
+    @Test public void requiredCannotBeSwitchedOffThroughTheSettingsRoute() throws Exception {
+        realDefaults = new JSONObject("{\"lockdown.required\":true}");
+        File dir = tmp.newFolder();
+        startForReal(new FakeContext(dir), dir);
+        JSONObject off = call("POST", "/settings", "{\"key\":\"lockdown.enabled\",\"value\":false}");
+        assertEquals(400, off.getInt("_status"));
+        assertEquals("invalid_setting", off.getString("error"));
+        assertTrue(off.getString("message"), off.getString("message").contains("lockdown.required"));
+        assertTrue("it says what to do instead", off.getString("message").contains("/lockdown/unlock"));
+
+        JSONObject required = call("POST", "/settings", "{\"key\":\"lockdown.required\",\"value\":false}");
+        assertEquals(400, required.getInt("_status"));
+        assertTrue(required.getString("message").contains("device file"));
+        assertTrue(core.services().find(LockdownControl.class).locked());
+
+        // Only an unlock relaxes it, and that always ends.
+        JSONObject unlocked = call("POST", "/lockdown/unlock", "{\"forMs\":60000}");
+        assertEquals(200, unlocked.getInt("_status"));
+        assertTrue(unlocked.getLong("relockAtMs") > 0);
+        assertFalse(core.services().find(LockdownControl.class).locked());
+    }
+
+    @Test public void withoutRequiredLockdownEnabledCanStillBeTurnedOff() throws Exception {
+        JSONObject off = call("POST", "/settings", "{\"key\":\"lockdown.enabled\",\"value\":false}");
+        assertEquals(200, off.getInt("_status"));
+        assertFalse(core.services().find(LockdownControl.class).locked());
+    }
+
+    @Test public void turningLockdownOffAtRunTimeIsAppliedAtOnce() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        assertEquals(Boolean.TRUE, surface.immersive);
+        core.settings().set("lockdown.enabled", false);
+        assertEquals("immersive is given up without a payload restart", Boolean.FALSE, surface.immersive);
+        core.settings().set("lockdown.enabled", true);
+        assertEquals(Boolean.TRUE, surface.immersive);
+    }
+
+    // ── owner mode ───────────────────────────────────────────────────────────
+
+    @Test public void turningLockdownOffInOwnerModeLeavesLockTaskAndGivesTheStatusBarBack() throws Exception {
+        FakeDevicePolicy policy = new FakeDevicePolicy();
+        realPolicy = policy;
+        realOverrides.put("lockdown.exitPin", "4711");
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        assertEquals("owner", call("GET", "/lockdown", null).getString("mode"));
+        assertTrue(policy.statusBarDisabled);
+        assertTrue(policy.lockTaskPackages.contains(OWN));
+        assertEquals(1, surface.lockTaskOn);
+
+        core.settings().set("lockdown.enabled", false);
+        assertEquals(1, surface.lockTaskOff);
+        assertFalse("the status bar comes back without a payload restart", policy.statusBarDisabled);
+        assertTrue(policy.lockTaskPackages.isEmpty());
+    }
+
+    @Test public void ownerModeDoesNotLockWithoutAnExitPinAndSaysWhy() throws Exception {
+        FakeDevicePolicy policy = new FakeDevicePolicy();
+        realPolicy = policy;
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        JSONObject status = call("GET", "/lockdown", null);
+        assertEquals("owner", status.getString("mode"));
+        assertTrue(status.getString("ownerRefused"), status.getString("ownerRefused").contains("lockdown.exitPin"));
+        assertEquals("no lock task", 0, surface.lockTaskOn);
+        assertFalse(policy.statusBarDisabled);
+        assertTrue("nothing is on the lock-task list: " + policy.calls, policy.lockTaskPackages.isEmpty());
+        assertFalse(policy.keyguardDisabled);
+        assertTrue(((FakeShell) core.shell()).notes.toString().contains("lockdown.exitPin is empty"));
+        assertTrue("lockdown itself still holds, in app mode's way", status.getBoolean("locked"));
+        assertEquals(Boolean.TRUE, surface.immersive);
+
+        // Setting the PIN is applied at once.
+        core.settings().set("lockdown.exitPin", "4711");
+        assertTrue(policy.statusBarDisabled);
+        assertEquals(1, surface.lockTaskOn);
+        assertFalse(call("GET", "/lockdown", null).has("ownerRefused"));
+        assertFalse("the PIN is never in an answer or a log line", call("GET", "/lockdown", null).toString().contains("4711"));
+        assertFalse(((FakeShell) core.shell()).notes.toString().contains("4711"));
     }
 }

@@ -76,6 +76,9 @@ public final class DebugToolsCapability implements Capability {
 
     void useSpeechForTest(Speech s) { speech = s; }
     void useSoundForTest(Sound s) { sound = s; }
+    /** How a sound URL's redirects are looked up. Null with a test's own player: nothing is fetched then. */
+    private volatile SoundRedirects.Probe redirects;
+    void useRedirectsForTest(SoundRedirects.Probe probe) { redirects = probe; }
     void useLogsForTest(LogReader reader, LogAccess access) { logReader = reader; logAccess = access; }
     void useLogStoreForTest(LogStore store) { logStore = store; }
     boolean started() { return started; }
@@ -107,7 +110,8 @@ public final class DebugToolsCapability implements Capability {
         return s.attached() ? s : null;
     }
 
-    private static Router.Response noPage() { return Replies.json(Replies.err("no_kiosk_activity")); }
+    /** 409: the request was fine and there is no kiosk window to do it in. The backend maps by status. */
+    private static Router.Response noPage() { return Router.Response.json(409, Replies.err("no_kiosk_activity")); }
 
     /** `timeoutMs` from a body: a whole number in range, or the setting when it is absent. */
     private int timeout(JSONObject body, String settingKey) {
@@ -293,8 +297,9 @@ public final class DebugToolsCapability implements Capability {
                 if (player != null) player.stop();
                 return Router.Response.json(200, Replies.ok().put("playing", false));
             }
-            String refusal = SoundPolicy.refusal(text(body, "url"), foreign("webview.startUrl"),
+            final SoundRedirects.Check rule = u -> SoundPolicy.refusal(u, foreign("webview.startUrl"),
                     foreign("webview.bridgeOrigins"), (String) core.settings().get("debug.soundOrigins"));
+            String refusal = rule.refusal(text(body, "url"));
             if (refusal != null) throw new IllegalArgumentException(refusal);
             int stream = 3;
             if (body.has("stream")) {
@@ -304,7 +309,23 @@ public final class DebugToolsCapability implements Capability {
             if (stream < 0 || stream > 10) throw new IllegalArgumentException("stream must be 0..10");
             Sound player = sound;
             if (player == null) throw new UnsupportedException("the payload has no Android context");
-            boolean playing = player.play(body.getString("url").trim(), body.optBoolean("loop", false), stream);
+            // The player follows redirects by itself, so they are followed here first, by
+            // hand: every hop is held to the origin rule, and what is played is the
+            // address that answered without redirecting.
+            String url = body.getString("url").trim();
+            SoundRedirects.Probe probe = redirects;
+            if (probe != null) {
+                try {
+                    url = SoundRedirects.resolve(url, probe, rule);
+                } catch (SoundRedirects.Refused off) {
+                    throw off;                                   // 400 with the reason
+                } catch (Exception unreachable) {
+                    ring("sound playing=false (the url could not be reached)");
+                    return Router.Response.json(502, Replies.err("sound_unreachable").put("playing", false)
+                            .put("message", unreachable.getClass().getSimpleName()));
+                }
+            }
+            boolean playing = player.play(url, body.optBoolean("loop", false), stream);
             ring("sound playing=" + playing + " stream=" + stream);
             return Router.Response.json(200, (playing ? Replies.ok() : Replies.err("sound_failed")).put("playing", playing));
         });
@@ -316,7 +337,10 @@ public final class DebugToolsCapability implements Capability {
         if (ctx == null) return;
         context = ctx;
         if (speech == null) speech = new Speaker();
-        if (sound == null) sound = new SoundPlayer();
+        if (sound == null) {
+            sound = new SoundPlayer();
+            if (redirects == null) redirects = SoundRedirects::httpNext;
+        }
         started = true;
     }
 

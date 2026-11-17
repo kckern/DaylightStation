@@ -35,6 +35,8 @@ public final class Main implements Payload {
             final CoreRuntime c = new CoreRuntime(shell, DeviceConfig.DEVICE_ID, DeviceConfig.PAYLOAD_VERSION,
                     net.kckern.daylight.api.PayloadState.dir(shell.payloadDir()));
             core = c;
+            // No capability may listen on either of these (the mic stream has a port setting).
+            c.reservePorts(port, DeviceConfig.LIFELINE_PORT);
             if (stopped) throw new IllegalStateException("stopped before start");
             for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
                 c.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());

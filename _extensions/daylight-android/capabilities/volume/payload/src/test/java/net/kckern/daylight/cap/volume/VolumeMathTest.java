@@ -43,4 +43,13 @@ public class VolumeMathTest {
             try { VolumeMath.stream(bad); fail("expected rejection of " + bad); } catch (IllegalArgumentException expected) { }
         }
     }
+
+    @Test public void aLevelUnderTheStreamsMinimumBecomesTheMinimum() {
+        assertEquals(1, VolumeMath.indexFor(0, 1, 7));
+        assertEquals(1, VolumeMath.indexFor(5, 1, 7));
+        assertEquals(3, VolumeMath.indexFor(50, 1, 7));
+        assertEquals(7, VolumeMath.indexFor(100, 1, 7));
+        assertEquals("a minimum of 0 changes nothing", VolumeMath.indexFor(40, 15), VolumeMath.indexFor(40, 0, 15));
+        assertEquals("a minimum above the maximum is held to it", 7, VolumeMath.indexFor(0, 9, 7));
+    }
 }

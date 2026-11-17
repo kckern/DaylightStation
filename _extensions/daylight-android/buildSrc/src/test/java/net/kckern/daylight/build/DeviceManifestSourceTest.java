@@ -93,6 +93,9 @@ public class DeviceManifestSourceTest {
         String restated = xml.substring(activity, alias);
         assertTrue(restated.contains("tools:node=\"merge\""));
         assertFalse("no filter of any kind is added to the Activity", restated.contains("intent-filter"));
+        // Split screen and picture-in-picture are off for a kiosk that can be locked.
+        assertTrue(restated.contains("android:resizeableActivity=\"false\""));
+        assertTrue(restated.contains("android:supportsPictureInPicture=\"false\""));
         assertFalse(restated.contains("removeAll"));
     }
 

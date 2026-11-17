@@ -58,6 +58,7 @@ public class RecallDecisionTest {
 
     @Test public void theKiosksOwnLifecycleIsBelievedFirst() {
         RecallDecision.Input in = away("com.android.vending", null);   // a stale sample says otherwise
+        in.sampleAgeMs = RecallDecision.FRESH_MS + 1;
         in.kioskResumed = true;
         assertStay("kiosk in front", in);
     }
@@ -152,5 +153,70 @@ public class RecallDecisionTest {
         assertTrue(RecallDecision.screenOn(RecallDecision.DISPLAY_ON));
         assertFalse(RecallDecision.screenOn(1));     // Display.STATE_OFF
         assertFalse(RecallDecision.screenOn(3));     // Display.STATE_DOZE
+    }
+
+    // ── split screen: both windows are resumed on Android 10 and later ────────
+
+    @Test public void anotherAppsActiveWindowBesideAResumedKioskIsRecalled() {
+        RecallDecision.Input in = away("com.android.settings", "com.android.settings.Settings");
+        in.kioskResumed = true;                         // split screen: the kiosk Activity is resumed too
+        in.sampleAgeMs = 0;
+        in.awaySinceMs = 0;
+        assertRecall("not allowed beside the kiosk: com.android.settings", in);
+    }
+
+    @Test public void anAllowedAppBesideAResumedKioskStays() {
+        RecallDecision.Input in = away("com.example.game", null);
+        in.kioskResumed = true;
+        in.allow = AllowRules.parse("com.example.game");
+        assertStay("allowed", in);
+    }
+
+    @Test public void aBlockedPackageBesideAResumedKioskIsRecalled() {
+        RecallDecision.Input in = away("com.example.game", null);
+        in.kioskResumed = true;
+        in.allow = AllowRules.parse("com.example.game");
+        in.blocked = java.util.Collections.singleton("com.example.game");
+        assertRecall("blocked: com.example.game", in);
+    }
+
+    @Test public void theGracePeriodDoesNotCoverAnAppBesideAResumedKiosk() {
+        RecallDecision.Input in = away("com.android.settings", null);
+        in.kioskResumed = true;
+        in.graceMs = 60_000;
+        in.awaySinceMs = in.nowMs - 10;
+        assertRecall("not allowed beside the kiosk: com.android.settings", in);
+    }
+
+    @Test public void aResumedKioskWithNoSampleOrItsOwnWindowActiveStays() {
+        RecallDecision.Input unknown = away(null, null);
+        unknown.kioskResumed = true;
+        assertStay("kiosk in front", unknown);
+        RecallDecision.Input own = away(KIOSK, null);
+        own.kioskResumed = true;
+        assertStay("kiosk in front", own);
+        RecallDecision.Input unbound = away("com.android.settings", null);
+        unbound.kioskResumed = true;
+        unbound.watcherBound = false;                    // nothing to contradict the lifecycle with
+        assertStay("kiosk in front", unbound);
+    }
+
+    // ── a sample that identified nothing ─────────────────────────────────────
+
+    @Test public void aSampleWithNoApplicationWindowIsUnknownAndRecalls() {
+        RecallDecision.Input in = away(null, null);
+        in.sampleAgeMs = Long.MAX_VALUE;
+        assertRecall("foreground unknown", in);
+    }
+
+    @Test public void theKeyguardIsNotRecalledOver() {
+        RecallDecision.Input in = away(null, null);
+        in.sampleAgeMs = Long.MAX_VALUE;
+        in.keyguardShowing = true;
+        assertStay("keyguard", in);
+        // The keyguard excuses an unknown front only. Something identified is still judged.
+        RecallDecision.Input known = away("com.android.vending", null);
+        known.keyguardShowing = true;
+        assertRecall("not allowed: com.android.vending", known);
     }
 }

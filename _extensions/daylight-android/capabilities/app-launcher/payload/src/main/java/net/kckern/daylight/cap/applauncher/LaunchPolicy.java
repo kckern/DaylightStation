@@ -20,4 +20,14 @@ final class LaunchPolicy {
         if (gateClosed) return "not_allowed";
         return allowed.matches(resolvedPackage, resolvedClass) ? null : "not_allowed";
     }
+
+    /**
+     * What the watcher is told to let stay in front after an allowed launch: null (the
+     * whole package) when a package or wildcard rule allows it, and the resolved
+     * activity when only a rule naming that activity does. A rule matches a package
+     * with an unknown activity (null) exactly when it is not an activity-level rule.
+     */
+    static String exemptActivity(String resolvedPackage, String resolvedClass, AllowRules allowed) {
+        return allowed.matches(resolvedPackage, null) ? null : resolvedClass;
+    }
 }

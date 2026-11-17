@@ -23,7 +23,7 @@ final class RecallDecision {
         boolean kioskResumed;
         /** The accessibility service is bound. */
         boolean watcherBound;
-        /** Package in front per the last sample; may be null. */
+        /** The package whose application window THIS sample found active; null when it found none. */
         String front;
         /** Activity in front when known, else null. */
         String frontActivity;
@@ -39,6 +39,8 @@ final class RecallDecision {
         Set<String> blocked;
         /** A pairing the kiosk page started is waiting on Android's own pairing dialog. */
         boolean pairingDialogAllowed;
+        /** Android's keyguard is showing (KeyguardManager.isKeyguardLocked). */
+        boolean keyguardShowing;
     }
 
     static final class Decision {
@@ -52,17 +54,34 @@ final class RecallDecision {
     static Decision decide(Input in) {
         if (!in.locked) return new Decision(false, "unlocked");
         if (!in.screenOn) return new Decision(false, "display off");
-        if (in.kioskResumed) return new Decision(false, "kiosk in front");
-        if (!in.watcherBound || in.front == null || in.sampleAgeMs > FRESH_MS) return new Decision(true, "foreground unknown");
-        if (in.front.equals(in.ownPackage)) return new Decision(false, "own package");
-        // A closed package comes before the allowlist, every exemption and the grace period.
-        if (in.blocked != null && in.blocked.contains(in.front)) return new Decision(true, "blocked: " + in.front);
-        if (in.allow.matches(in.front, in.frontActivity) || in.exemptions.allows(in.front, in.frontActivity, in.nowMs)) {
-            return new Decision(false, "allowed");
+        // What THIS sample saw. A sample that identified no application window, or one that
+        // is old, or no watcher at all, is "unknown", never the last package that was seen.
+        boolean known = in.watcherBound && in.front != null && in.sampleAgeMs <= FRESH_MS;
+        if (known && !in.front.equals(in.ownPackage)) {
+            // Another package's application window is the active one. This is decided
+            // before the kiosk's own lifecycle is asked: on Android 10 and later every
+            // visible activity is resumed, so with Settings beside the kiosk in split
+            // screen the kiosk reads "resumed" while Settings is in use.
+            // A closed package comes before the allowlist, every exemption and the grace period.
+            if (in.blocked != null && in.blocked.contains(in.front)) return new Decision(true, "blocked: " + in.front);
+            if (in.allow.matches(in.front, in.frontActivity) || in.exemptions.allows(in.front, in.frontActivity, in.nowMs)) {
+                return new Decision(false, "allowed");
+            }
+            if (in.pairingDialogAllowed && SETTINGS_PACKAGE.equals(in.front)) return new Decision(false, "pairing dialog");
+            // The grace period covers the kiosk leaving the front. Beside a resumed kiosk
+            // there is nothing to wait for.
+            if (!in.kioskResumed && in.graceMs > 0 && in.awaySinceMs > 0 && in.nowMs - in.awaySinceMs < in.graceMs) {
+                return new Decision(false, "grace");
+            }
+            return new Decision(true, (in.kioskResumed ? "not allowed beside the kiosk: " : "not allowed: ") + in.front);
         }
-        if (in.pairingDialogAllowed && SETTINGS_PACKAGE.equals(in.front)) return new Decision(false, "pairing dialog");
-        if (in.graceMs > 0 && in.awaySinceMs > 0 && in.nowMs - in.awaySinceMs < in.graceMs) return new Decision(false, "grace");
-        return new Decision(true, "not allowed: " + in.front);
+        if (in.kioskResumed) return new Decision(false, "kiosk in front");
+        // Android's own lock screen has no application window. Recalling over it does nothing.
+        if (in.keyguardShowing) return new Decision(false, "keyguard");
+        if (!known) return new Decision(true, "foreground unknown");
+        // The sample says our own package and the Activity says it is not resumed: a
+        // dialog of ours (the PIN prompt) or the moment between the two. Not an escape.
+        return new Decision(false, "own package");
     }
 
     /**

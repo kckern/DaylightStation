@@ -90,16 +90,24 @@ public class WebViewHostCapabilityTest {
         assertEquals(400, post("/kiosk/reload", "{\"wait\":0}").getInt("_status"));
     }
 
-    @Test public void anUnwaitedLoadWithNoKioskActivityIsRefusedAtOnceAndSaysWhy() throws Exception {
-        JSONObject r = post("/kiosk/load", "{\"url\":\"https://kiosk.example/\",\"wait\":false}");
-        assertEquals(200, r.getInt("_status"));
-        assertFalse(r.getBoolean("ok"));
-        assertFalse(r.getBoolean("accepted"));
-        assertEquals("no_kiosk_activity", r.getString("error"));
-        assertEquals("https://kiosk.example/", r.getString("url"));
+    @Test public void anUnwaitedLoadWithNoKioskActivityIsQueuedForTheNextOneAndAccepted() throws Exception {
+        core.settings().set("webview.startUrl", "https://kiosk.example/start");
+        JSONObject first = post("/kiosk/load", "{\"url\":\"https://kiosk.example/a\",\"wait\":false}");
+        assertEquals(200, first.getInt("_status"));
+        assertTrue(first.getBoolean("ok"));
+        assertTrue(first.getBoolean("accepted"));
+        assertTrue("it says the load is waiting for a window", first.getBoolean("queued"));
+        assertEquals("https://kiosk.example/a", first.getString("url"));
+        assertFalse(first.getString("loadId").isEmpty());
+
+        // The latest request wins: one slot, so nothing piles up while no window is up.
+        JSONObject second = post("/kiosk/load", "{\"url\":\"https://kiosk.example/b\",\"wait\":false}");
+        assertTrue(second.getBoolean("accepted"));
+        assertNotEquals(first.getString("loadId"), second.getString("loadId"));
     }
 
     @Test public void aWaitedLoadWithNoKioskActivityAnswersWithoutWaitingForAPage() throws Exception {
+        core.settings().set("webview.startUrl", "https://kiosk.example/start");
         long began = System.currentTimeMillis();
         JSONObject r = post("/kiosk/load", "{\"url\":\"https://kiosk.example/\"}");
         assertEquals(200, r.getInt("_status"));
@@ -136,7 +144,7 @@ public class WebViewHostCapabilityTest {
 
     @Test public void foregroundIsNotOkUntilTheKioskIsSeenInFront() throws Exception {
         JSONObject r = post("/kiosk/foreground", null);
-        assertEquals(200, r.getInt("_status"));
+        assertEquals("the backend maps by status: it could not be done in this state", 409, r.getInt("_status"));
         assertFalse(r.getBoolean("ok"));
         assertEquals("not_in_foreground", r.getString("error"));
         assertFalse(r.getBoolean("kioskInForeground"));
@@ -145,6 +153,7 @@ public class WebViewHostCapabilityTest {
 
     @Test public void aRendererResetWithNoKioskActivityIsNotOk() throws Exception {
         JSONObject r = post("/kiosk/renderer/reset", null);
+        assertEquals(409, r.getInt("_status"));
         assertFalse(r.getBoolean("ok"));
         assertEquals("no_kiosk_activity", r.getString("error"));
         assertFalse(r.getBoolean("rendererAlive"));
@@ -253,6 +262,7 @@ public class WebViewHostCapabilityTest {
     // ── PageOpener: what a link or a bookmark uses ────────────────────────────
 
     @Test public void offersToOpenAPageAndKeepsItForTheNextWindowWhenNoneIsUp() {
+        core.settings().set("webview.startUrl", "https://kiosk.example/start");
         net.kckern.daylight.core.spi.PageOpener opener = core.services().find(net.kckern.daylight.core.spi.PageOpener.class);
         assertNotNull(opener);
         assertEquals("no kiosk Activity in a JVM test", "pending", opener.open("https://kiosk.example/media"));
@@ -263,5 +273,41 @@ public class WebViewHostCapabilityTest {
         for (String bad : new String[] { null, "", "javascript:alert(1)", "file:///sdcard/x", "content://x", "intent://x#Intent;end", "/media" }) {
             try { opener.open(bad); fail("accepted " + bad); } catch (IllegalArgumentException expected) { }
         }
+    }
+
+    // ── statuses, the bridge's state and the navigation setting ──────────────
+
+    @Test public void aLoadShapedFailureHasAStatusForEachCause() {
+        assertEquals(200, WebViewHostCapability.failureStatus(new LoadTracker.Result("id", "u", true, null, 0, 0)));
+        assertEquals(409, WebViewHostCapability.failureStatus(new LoadTracker.Result("id", "u", false, "no_kiosk_activity", 0, 0)));
+        assertEquals(504, WebViewHostCapability.failureStatus(new LoadTracker.Result("id", "u", false, "timeout", 0, 0)));
+        assertEquals(502, WebViewHostCapability.failureStatus(new LoadTracker.Result("id", "u", false, "-2 net::ERR_NAME_NOT_RESOLVED", 0, 0)));
+        assertEquals(502, WebViewHostCapability.failureStatus(new LoadTracker.Result("id", "u", false, "renderer gone", 0, 0)));
+    }
+
+    @Test public void statusReportsTheBridgeAndTheRendererLosses() throws Exception {
+        JSONObject s = TestCore.get(core, "/kiosk/status");
+        assertEquals("no WebView has been built in a JVM test", "unknown", s.getString("bridge"));
+        assertTrue(s.isNull("bridgeReason"));
+        assertEquals(0, s.getInt("rendererLosses"));
+        assertEquals(0, s.getInt("rendererLossesTotal"));
+    }
+
+    @Test public void theNavigationAllowlistIsEmptyByDefault() {
+        assertEquals("the start origin only", "", core.settings().get("webview.allowedOrigins"));
+    }
+
+    @Test public void aRequestedLoadOutsideTheAllowedOriginsIsRefusedBeforeAnythingStarts() throws Exception {
+        core.settings().set("webview.startUrl", "https://kiosk.example/start");
+        for (String body : new String[] { "{\"url\":\"https://www.example.org/\"}", "{\"url\":\"https://www.example.org/\",\"wait\":false}" }) {
+            JSONObject r = post("/kiosk/load", body);
+            assertEquals(400, r.getInt("_status"));
+            assertTrue(r.getString("message"), r.getString("message").startsWith("origin_not_allowed"));
+        }
+        core.settings().set("webview.allowedOrigins", "https://www.example.org");
+        assertTrue(post("/kiosk/load", "{\"url\":\"https://www.example.org/\",\"wait\":false}").getBoolean("accepted"));
+        net.kckern.daylight.core.spi.PageOpener opener = core.services().find(net.kckern.daylight.core.spi.PageOpener.class);
+        try { opener.open("https://elsewhere.example/"); fail("a link outside the allowed origins was taken"); }
+        catch (IllegalArgumentException expected) { }
     }
 }

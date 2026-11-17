@@ -20,12 +20,16 @@ public final class PayloadState {
     public static File settingsOverrides(File payloadDir) { return settingsOverridesIn(dir(payloadDir)); }
 
     /**
-     * Delete the settings overrides and the temporary file a half-finished write leaves
-     * beside them. True when no overrides file remains.
+     * Delete the settings overrides, their backup and the temporary file a half-finished
+     * write leaves beside them. True when neither the overrides nor the backup remains.
      */
     public static boolean deleteSettingsOverrides(File payloadDir) {
         File f = settingsOverrides(payloadDir);
         new File(f.getPath() + ".part").delete();
-        return !f.exists() || f.delete();
+        // The payload keeps its last good overrides as a backup and reads it when the file
+        // is missing. A reset that left the backup would be undone at the next start.
+        File bak = new File(f.getPath() + ".bak");
+        boolean bakGone = !bak.exists() || bak.delete();
+        return (!f.exists() || f.delete()) && bakGone;
     }
 }

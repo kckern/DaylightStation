@@ -69,6 +69,12 @@ public final class SettingsRegistry {
 
     public interface Listener { void onSettingChanged(String key); }
 
+    /** A reason to refuse one change to one key, beyond its type and rule. */
+    public interface Guard {
+        /** Null when the key may take this value, otherwise why not. The message goes to the caller. */
+        String refusal(Object newValue);
+    }
+
     private final Map<String, Entry> entries = new LinkedHashMap<>();
     private final File overridesFile;
     private final JSONObject overrides;
@@ -76,10 +82,51 @@ public final class SettingsRegistry {
     private final java.util.List<Listener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Keys whose stored override was already reported as unusable, so each is logged once. */
     private final java.util.Set<String> reportedStale = new java.util.HashSet<>();
+    /** Keys whose value comes from the device file alone: no override is stored or honored. */
+    private final java.util.Set<String> compiledOnly = new java.util.HashSet<>();
+    private final Map<String, Guard> guards = new LinkedHashMap<>();
+    /** What was wrong with the stored overrides when they were read, or null. Never a value. */
+    private final String loadProblem;
 
     public SettingsRegistry(File overridesFile) {
         this.overridesFile = overridesFile;
-        this.overrides = readOverrides(overridesFile);
+        Loaded loaded = readOverrides(overridesFile);
+        this.overrides = loaded.overrides;
+        this.loadProblem = loaded.problem;
+    }
+
+    /** The last good overrides, kept beside the file and read when the file itself cannot be. */
+    public static File backupOf(File overridesFile) { return new File(overridesFile.getPath() + ".bak"); }
+
+    /**
+     * Why the stored overrides were not read as written, or null when they were (or there
+     * were none). "unreadable; using the backup" or "unreadable; no backup, defaults apply".
+     */
+    public String loadProblem() { return loadProblem; }
+
+    /**
+     * A setting only the device file decides. POST /settings and DELETE /settings refuse
+     * it, and a stored override for it is ignored, so nothing that happens to the stored
+     * overrides (a reset, a corrupt file, a mistaken write) can change it.
+     */
+    public synchronized void declareCompiled(String key, Type type, Object fallback) {
+        declare(key, type, fallback, null);
+        compiledOnly.add(key);
+    }
+
+    /** Refuse some changes to a key. One guard per key; it sees the value the key would take. */
+    public synchronized void guard(String key, Guard guard) {
+        entry(key);
+        guards.put(key, guard);
+    }
+
+    private void checkChange(String key, Object newValue) {
+        if (compiledOnly.contains(key)) {
+            throw new InvalidSettingException("setting '" + key + "' is decided by the device file and cannot be changed on the device");
+        }
+        Guard g = guards.get(key);
+        String refusal = g == null ? null : g.refusal(newValue);
+        if (refusal != null) throw new InvalidSettingException("setting '" + key + "' " + refusal);
     }
 
     public synchronized void declare(String key, Type type, Object fallback) {
@@ -118,7 +165,7 @@ public final class SettingsRegistry {
 
     public synchronized Object get(String key) {
         Entry e = entry(key);
-        if (overrides.has(key)) {
+        if (overrides.has(key) && !compiledOnly.contains(key)) {
             try {
                 return checked(key, e.type, e.rule, overrides.opt(key));
             } catch (InvalidSettingException stale) {
@@ -144,6 +191,7 @@ public final class SettingsRegistry {
         synchronized (this) {
             Entry e = entry(key);
             Object coerced = checked(key, e.type, e.rule, value);
+            checkChange(key, coerced);
             Object previous = overrides.opt(key);
             try { overrides.put(key, coerced); } catch (JSONException ex) { throw new InvalidSettingException(ex.getMessage()); }
             try {
@@ -167,6 +215,7 @@ public final class SettingsRegistry {
             for (Map.Entry<String, Object> v : values.entrySet()) {
                 Entry e = entry(v.getKey());
                 coerced.put(v.getKey(), checked(v.getKey(), e.type, e.rule, v.getValue()));
+                checkChange(v.getKey(), coerced.get(v.getKey()));
             }
             Map<String, Object> previous = new LinkedHashMap<>();
             for (String key : coerced.keySet()) previous.put(key, overrides.opt(key));
@@ -184,7 +233,8 @@ public final class SettingsRegistry {
 
     public void reset(String key) {
         synchronized (this) {
-            entry(key);
+            // A reset puts the default in effect, so it is a change to the default's value.
+            checkChange(key, entry(key).def);
             Object previous = overrides.opt(key);
             overrides.remove(key);
             try {
@@ -208,7 +258,7 @@ public final class SettingsRegistry {
 
     /** True when a stored override exists and still fits the declared type and rule, so get() returns it. */
     private boolean overrideInEffect(String key, Entry e) {
-        if (!overrides.has(key)) return false;
+        if (!overrides.has(key) || compiledOnly.contains(key)) return false;
         try {
             checked(key, e.type, e.rule, overrides.opt(key));
             return true;
@@ -275,24 +325,76 @@ public final class SettingsRegistry {
         throw new InvalidSettingException("setting '" + key + "' must be " + type.name().toLowerCase());
     }
 
-    private static JSONObject readOverrides(File f) {
-        try {
-            if (f != null && f.isFile()) {
-                return new JSONObject(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
-            }
-        } catch (Exception unreadable) {
-            // A corrupt overrides file must not stop the payload; defaults apply.
-        }
-        return new JSONObject();
+    private static final class Loaded {
+        final JSONObject overrides;
+        final String problem;
+        Loaded(JSONObject overrides, String problem) { this.overrides = overrides; this.problem = problem; }
     }
 
+    /** The file's JSON object; null when the file is absent; an exception when it cannot be read as one. */
+    private static JSONObject parse(File f) throws Exception {
+        if (f == null || !f.isFile()) return null;
+        return new JSONObject(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A corrupt overrides file must not stop the payload, and must not pass unnoticed
+     * either: a setting that exists only as an override (a device turned on at its
+     * cutover) would be gone without a line anywhere. The file is read; when it cannot
+     * be, the last good copy is; and what happened is logged once, without any value.
+     */
+    private static Loaded readOverrides(File f) {
+        if (f == null) return new Loaded(new JSONObject(), null);
+        File bak = backupOf(f);
+        String problem = null;
+        try {
+            JSONObject main = parse(f);
+            if (main != null) return new Loaded(main, null);
+            // No file. After a write that was interrupted between its two renames the
+            // backup is the newest good state; after a reset there is no backup either.
+            if (!bak.isFile()) return new Loaded(new JSONObject(), null);
+            problem = "the overrides file is missing but its backup exists";
+        } catch (Exception unreadable) {
+            problem = "the overrides file is unreadable (" + unreadable.getClass().getSimpleName() + ")";
+        }
+        try {
+            JSONObject backup = parse(bak);
+            if (backup != null) {
+                problem += "; using the backup";
+                Diag.log("Daylight-Settings", problem);
+                return new Loaded(backup, problem);
+            }
+            problem += "; no backup, compiled defaults apply";
+        } catch (Exception alsoUnreadable) {
+            problem += "; the backup is unreadable too, compiled defaults apply";
+        }
+        Diag.log("Daylight-Settings", problem);
+        return new Loaded(new JSONObject(), problem);
+    }
+
+    /**
+     * Written to a temporary file and forced to disk before it replaces the overrides
+     * file, so a power cut leaves either the old state or the new one, never a
+     * half-written file. The state being replaced is kept as the backup.
+     */
     private void persist() {
         try {
             File dir = overridesFile.getParentFile();
             if (dir != null) dir.mkdirs();
             File part = new File(overridesFile.getPath() + ".part");
-            Files.write(part.toPath(), overrides.toString().getBytes(StandardCharsets.UTF_8));
-            if (!part.renameTo(overridesFile)) throw new java.io.IOException("rename failed");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(part)) {
+                out.write(overrides.toString().getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                out.getFD().sync();
+            }
+            if (overridesFile.isFile()) {
+                try {
+                    parse(overridesFile);     // only a readable file is worth keeping as the last good one
+                    Files.move(overridesFile.toPath(), backupOf(overridesFile).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (Exception notWorthKeeping) { /* the new file replaces it below */ }
+            }
+            Files.move(part.toPath(), overridesFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         } catch (Exception e) {
             throw new IllegalStateException("cannot persist settings: " + e.getMessage(), e);
         }

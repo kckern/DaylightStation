@@ -34,6 +34,9 @@ public interface CoreContext {
     /** The WebSocket channel on the control port. */
     SocketHub socket();
 
+    /** True for the device's control port and its lifeline port: no capability may listen on either. */
+    boolean portReserved(int port);
+
     /** The APK's one accessibility service, when the device has the `accessibility` capability. */
     AccessibilityHub accessibility();
 }

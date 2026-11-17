@@ -57,7 +57,10 @@ public class AppLauncherCapabilityTest {
         @Override public String front() { return front; }
         @Override public String frontActivity() { return null; }
         @Override public String lastAway() { return null; }
-        @Override public void allowWhileInFront(String packageName) { order.add("allow " + packageName); }
+        @Override public void allowWhileInFront(String packageName) { allowWhileInFront(packageName, null); }
+        @Override public void allowWhileInFront(String packageName, String activity) {
+            order.add("allow " + packageName + (activity == null ? "" : "/" + activity));
+        }
         @Override public void allowFor(String rule, long durationMs) { }
         @Override public void revoke(String rule) { }
         @Override public boolean recall(long waitMs) { return true; }
@@ -217,5 +220,14 @@ public class AppLauncherCapabilityTest {
         cap.stop();
         assertEquals("not_installed", post("{\"package\":\"com.example.game\"}").getString("error"));
         cap.stop();
+    }
+
+    @Test public void aLaunchAllowedByAnActivityRuleExemptsOnlyThatActivity() throws Exception {
+        core.settings().set("launcher.allowed", "com.example.game/.Main");
+        core.services().provide(LockdownControl.class, new FakeLockdown());
+        JSONObject r = post("{\"package\":\"com.example.game\"}");
+        assertTrue(r.toString(), r.getBoolean("launched"));
+        assertEquals("the watcher is told the activity, not the whole package",
+                "allow com.example.game/com.example.game.Main", order.get(0));
     }
 }

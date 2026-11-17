@@ -11,7 +11,9 @@ public class BridgeScriptTest {
                 "restartApp:", "reboot:", "setBackMode:", "volume:" }) {
             assertTrue("missing " + member, js.contains(member));
         }
-        assertTrue(js.contains("\"tok-123\""));
+        assertTrue("the key is spent on a token of this document's own", js.contains("n.open(\"tok-123\")"));
+        assertTrue("with no token there is no window.daylight", js.contains("if(!T)return;"));
+        assertEquals("the key appears once: it is never passed with a call", 1, js.split("tok-123", -1).length - 1);
         assertTrue(js.contains("\"p3-kiosk\""));
         assertTrue(js.contains("\"piano\""));
         assertTrue(js.contains("window." + BridgeScript.NATIVE_NAME));

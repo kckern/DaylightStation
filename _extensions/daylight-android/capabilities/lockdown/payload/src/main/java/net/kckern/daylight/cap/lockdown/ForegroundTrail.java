@@ -83,6 +83,7 @@ final class ForegroundTrail {
 
     private final String kioskPackage;
     private String lastAway;
+    private String sampledFront;
 
     /** kioskPackage: the app whose loss of the foreground is an escape. */
     ForegroundTrail(String kioskPackage) { this.kioskPackage = kioskPackage; }
@@ -96,9 +97,17 @@ final class ForegroundTrail {
     /** The recent window trail, oldest first (for /kiosk/foreground). */
     synchronized JSONArray trail() { return new JSONArray(trail); }
 
+    /**
+     * The package of the application window the LAST sample identified, or null when
+     * that sample had none (the keyguard, a screen that is off, a list that came back
+     * empty). Unlike front(), this never repeats an earlier sample's answer.
+     */
+    synchronized String sampledFront() { return sampledFront; }
+
     synchronized List<Event> sample(long now, List<Win> wins) {
         List<Event> out = new ArrayList<>();
         Win app = frontApp(wins);
+        sampledFront = app == null ? null : app.pkg;
 
         Set<String> nowOverlays = new HashSet<>();
         for (Win w : wins) {

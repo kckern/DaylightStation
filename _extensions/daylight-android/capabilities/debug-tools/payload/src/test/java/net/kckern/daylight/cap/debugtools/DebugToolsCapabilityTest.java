@@ -357,6 +357,7 @@ public class DebugToolsCapabilityTest {
         for (String[] c : new String[][] { { "POST", "/debug/eval", "{\"js\":\"1+1\"}" }, { "GET", "/debug/html", null },
                 { "GET", "/debug/fps", null }, { "GET", "/debug/screenshot", null } }) {
             JSONObject r = call(c[0], c[1], c[2]);
+            assertEquals("an HTTP error status: the backend maps by status", 409, r.getInt("_status"));
             assertFalse(c[1], r.getBoolean("ok"));
             assertEquals(c[1], "no_kiosk_activity", r.getString("error"));
         }
@@ -577,6 +578,28 @@ public class DebugToolsCapabilityTest {
         assertFalse(failed.getBoolean("ok"));
         assertEquals("sound_failed", failed.getString("error"));
         assertFalse(failed.getBoolean("playing"));
+    }
+
+    @Test public void aSoundUrlsRedirectsAreCheckedHopByHopBeforeAnythingIsPlayed() throws Exception {
+        FakeSound sound = soundOnAKiosk();
+        final java.util.Map<String, String> hops = new java.util.HashMap<>();
+        cap.useRedirectsForTest(hops::get);
+        hops.put("https://kiosk.example/chime", "https://kiosk.example/media/chime.mp3");
+        JSONObject ok = call("POST", "/sound", "{\"url\":\"https://kiosk.example/chime\"}");
+        assertTrue(ok.getBoolean("playing"));
+        assertEquals("the player is given the address that answered", "https://kiosk.example/media/chime.mp3 loop=false stream=3", sound.played.get(0));
+
+        hops.put("https://kiosk.example/open-redirect", "http://192.0.2.7:8780/status");
+        JSONObject refused = call("POST", "/sound", "{\"url\":\"https://kiosk.example/open-redirect\"}");
+        assertEquals(400, refused.getInt("_status"));
+        assertTrue(refused.getString("message"), refused.getString("message").startsWith("redirect 1 leaves"));
+        assertEquals("nothing more was handed to the player", 1, sound.played.size());
+
+        cap.useRedirectsForTest(url -> { throw new java.net.UnknownHostException("kiosk.example"); });
+        JSONObject unreachable = call("POST", "/sound", "{\"url\":\"https://kiosk.example/chime\"}");
+        assertEquals(502, unreachable.getInt("_status"));
+        assertEquals("sound_unreachable", unreachable.getString("error"));
+        assertEquals(1, sound.played.size());
     }
 
     @Test public void soundRefusesLocalFilesOtherSchemesAndOriginsItDoesNotTrust() throws Exception {

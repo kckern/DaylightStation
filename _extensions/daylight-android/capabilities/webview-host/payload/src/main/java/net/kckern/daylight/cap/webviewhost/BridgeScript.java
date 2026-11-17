@@ -9,12 +9,18 @@ final class BridgeScript {
 
     private BridgeScript() { }
 
-    /** Defines window.daylight (frozen) over the native object. Safe to run twice. */
-    static String shim(String token, String version, String deviceId) {
+    /**
+     * Defines window.daylight (frozen) over the native object. Safe to run twice.
+     * Injected at document start only, into frames of an allowed origin. It carries the
+     * session key, with which this document asks for a token of its own; every call
+     * after that presents the token, which stops working when the document is replaced.
+     */
+    static String shim(String sessionKey, String version, String deviceId) {
         return "(function(){"
                 + "if(window.daylight)return;"
                 + "var n=window." + NATIVE_NAME + ";if(!n)return;"
-                + "var T=" + JSONObject.quote(token) + ";"
+                + "var T=\"\";try{T=n.open(" + JSONObject.quote(sessionKey) + ")||\"\";}catch(e){}"
+                + "if(!T)return;"
                 + "function c(m,a){try{return n.call(T,m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
                 + "window.daylight=Object.freeze({"
                 + "version:" + JSONObject.quote(version) + ","

@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import {
-  bakedPayloadFailure, buildTypeLine, componentFailures, declaredComponents, expectedPermission, generatedComponents,
+  bakedPayloadFailure, buildTypeLine, componentAttributeFailures, componentFailures, declaredComponents, expectedPermission, generatedComponents,
   homeAliasFailures, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
 } from './verify-lib.mjs';
@@ -108,6 +108,8 @@ const expectedComponents = [...new Set([
   ...generatedComponents(device.capabilities),
 ])].sort();
 failures.push(...componentFailures(parseApkComponents(tree), expectedComponents));
+// Each component's exported flag and the permission that guards it, against the table.
+failures.push(...componentAttributeFailures(tree));
 // Installing must add no home candidate: the HOME filter is on a disabled alias only.
 failures.push(...homeAliasFailures(tree, device.capabilities));
 

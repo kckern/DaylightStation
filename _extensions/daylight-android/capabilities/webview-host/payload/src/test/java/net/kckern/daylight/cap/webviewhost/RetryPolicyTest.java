@@ -30,4 +30,20 @@ public class RetryPolicyTest {
         assertFalse(RetryPolicy.reloadOnNetworkReturn(true, LoadTracker.State.LOADING));
         assertFalse(RetryPolicy.reloadOnNetworkReturn(false, LoadTracker.State.FAILED));
     }
+
+    @Test public void aPageInitiatedAddressThatKeepsFailingIsGivenUpForTheStartPage() {
+        String start = "https://kiosk.example/screen/piano";
+        String dead = "https://kiosk.example/gone";
+        assertFalse(RetryPolicy.abandonForStart(1, dead, start));
+        assertFalse(RetryPolicy.abandonForStart(RetryPolicy.GIVE_UP_AFTER - 1, dead, start));
+        assertTrue(RetryPolicy.abandonForStart(RetryPolicy.GIVE_UP_AFTER, dead, start));
+        assertTrue(RetryPolicy.abandonForStart(50, dead, start));
+    }
+
+    @Test public void theStartPageItselfIsRetriedForAsLongAsItTakes() {
+        String start = "https://kiosk.example/screen/piano";
+        assertFalse(RetryPolicy.abandonForStart(500, start, start));
+        assertFalse("a fragment or a trailing slash is the same page", RetryPolicy.abandonForStart(500, start + "/#top", start));
+        assertFalse("nothing to go back to", RetryPolicy.abandonForStart(500, "https://kiosk.example/gone", ""));
+    }
 }

@@ -113,7 +113,10 @@ public class CoreRegistriesTest {
         assertEquals("test.jar", TestCore.get(core, "/payload").getString("current"));
         java.util.Map<String, String> q = new java.util.HashMap<>();
         q.put("url", "http://example/p.jar");
-        assertEquals("missing sha256", TestCore.call(core, "POST", "/payload", q, null).getString("error"));
+        JSONObject noSha = TestCore.call(core, "POST", "/payload", q, null);
+        assertEquals("missing sha256", noSha.getString("error"));
+        assertEquals("an incomplete request is a 400", 400, noSha.getInt("_status"));
+        assertEquals(400, TestCore.post(core, "/payload").getInt("_status"));
         q.put("sha256", "abc");
         assertEquals("queued", TestCore.call(core, "POST", "/payload", q, null).getString("result"));
         assertEquals("queued", TestCore.post(core, "/payload/rollback").getString("result"));

@@ -134,6 +134,24 @@ public class DeviceDefaultsTest {
         assertTrue("every kiosk has at least one helper part", declared > 0);
     }
 
+    /** A port a capability listens on is neither the control port nor the lifeline port. */
+    @Test public void noCompiledPortSettingIsTheControlOrLifelinePort() throws Exception {
+        JSONObject defaults = new JSONObject(DeviceConfig.DEFAULTS_JSON);
+        assertNotEquals(DeviceConfig.CONTROL_PORT, DeviceConfig.LIFELINE_PORT);
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
+            core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        }
+        core.reservePorts(DeviceConfig.CONTROL_PORT, DeviceConfig.LIFELINE_PORT);
+        core.prepare(defaults);
+        for (java.util.Iterator<String> it = defaults.keys(); it.hasNext(); ) {
+            String key = it.next();
+            if (!key.endsWith(".port")) continue;
+            int port = (Integer) core.settings().get(key);
+            assertFalse(key + " is the control or lifeline port", core.portReserved(port));
+        }
+    }
+
     /** The control API contract's routes: the core's, and each capability's kiosk table. */
     private static final String[] CORE_ROUTES = { "GET /status", "GET /capabilities", "GET /settings", "POST /settings",
             "DELETE /settings", "GET /payload", "POST /payload", "POST /payload/rollback", "POST /update", "GET /update" };

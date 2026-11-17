@@ -27,13 +27,14 @@ public class VolumeCapabilityTest {
     /** A device's streams: 15 steps each, and optionally one that refuses to move. */
     private static final class FakeStreams implements VolumeCapability.Streams {
         final Map<Integer, Integer> index = new HashMap<>();
-        int max = 15;
+        int max = 15, min = 0;
         boolean stuck, refuses;
         @Override public int max(int stream) { return max; }
+        @Override public int min(int stream) { return min; }
         @Override public int get(int stream) { Integer i = index.get(stream); return i == null ? 0 : i; }
         @Override public void set(int stream, int i) {
             if (refuses) throw new SecurityException("Not allowed to change Do Not Disturb state");
-            if (!stuck) index.put(stream, i);
+            if (!stuck) index.put(stream, Math.max(min, i));    // the system clamps to the stream's minimum
         }
     }
 
@@ -161,5 +162,19 @@ public class VolumeCapabilityTest {
         cap.stop();
         assertEquals("stopped: the streams are let go", 501, status("GET", null, null));
         cap.stop();
+    }
+
+    @Test public void levelZeroOnAStreamWhoseMinimumIsOneSucceedsAtTheMinimum() throws Exception {
+        // The alarm and call streams on some devices: the system clamps an index of 0 to 1.
+        FakeStreams streams = new FakeStreams();
+        streams.min = 1;
+        streams.index.put(4, 9);
+        cap.useStreamsForTest(streams);
+        JSONObject r = call("POST", null, "{\"level\":0,\"stream\":4}");
+        assertEquals(200, r.getInt("_status"));
+        assertTrue("the minimum is as low as this stream goes: " + r, r.getBoolean("ok"));
+        assertEquals(1, r.getInt("index"));
+        assertEquals("and the answer says what the minimum is", 1, r.getInt("minIndex"));
+        assertEquals(15, r.getInt("maxIndex"));
     }
 }

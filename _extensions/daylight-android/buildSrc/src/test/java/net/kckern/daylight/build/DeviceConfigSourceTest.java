@@ -30,6 +30,8 @@ public class DeviceConfigSourceTest {
     @Test public void rendersWhereTheControlApiListens() {
         java.util.List<String> none = Collections.emptyList();
         assertTrue(DeviceConfigSource.render(device(Collections.emptyMap()), none, "p").contains("CONTROL_BIND = \"lan\";"));
+        // The payload reserves both ports, so it must know the lifeline's as well as its own.
+        assertTrue(DeviceConfigSource.render(device(Collections.emptyMap()), none, "p").contains("public static final int LIFELINE_PORT = "));
         DeviceSpec phone = new DeviceSpec("phone", "net.kckern.daylight.phone", 26, 33, Collections.emptyList(),
                 8780, 8781, 1, "0.1", Arrays.asList("debug-tools"), Collections.emptyMap(),
                 Collections.emptyList(), Collections.emptyList(), "loopback", "");

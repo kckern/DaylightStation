@@ -320,4 +320,84 @@ public class SettingsRegistryTest {
         assertEquals(5, s.get("recovery.retrySec"));
         assertEquals(Boolean.FALSE, s.get("power.keepScreenOn"));
     }
+
+    // ── a stored state that cannot be read ────────────────────────────────────
+
+    private static void write(File f, String text) throws Exception {
+        java.nio.file.Files.write(f.toPath(), text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test public void aCorruptOverridesFileFallsBackToTheLastGoodOneAndSaysSo() throws Exception {
+        SettingsRegistry s = fresh();
+        s.set("recovery.retrySec", 5);            // first write: no backup yet
+        s.set("power.keepScreenOn", true);        // second write: the first state becomes the backup
+        assertTrue(SettingsRegistry.backupOf(file).isFile());
+        write(file, "{\"recovery.retrySec\":5,\"power.keepScr");   // torn by a power cut
+
+        SettingsRegistry again = fresh();
+        assertEquals("the last good state is in effect", 5, again.get("recovery.retrySec"));
+        assertNotNull("and it is not passed over without a word", again.loadProblem());
+        assertTrue(again.loadProblem(), again.loadProblem().contains("using the backup"));
+        assertFalse("no value is ever part of the message", again.loadProblem().contains("5"));
+    }
+
+    @Test public void aCorruptFileWithNoBackupMeansDefaultsAndSaysSo() throws Exception {
+        write(file, "not json");
+        SettingsRegistry s = fresh();
+        assertEquals(0, s.get("recovery.retrySec"));
+        assertTrue(s.loadProblem(), s.loadProblem().contains("compiled defaults apply"));
+        s.set("recovery.retrySec", 7);            // still writable afterwards
+        assertEquals(7, fresh().get("recovery.retrySec"));
+        assertFalse("a corrupt file is not kept as the last good one", SettingsRegistry.backupOf(file).isFile());
+    }
+
+    @Test public void aMissingFileWithABackupUsesTheBackup() throws Exception {
+        // A write interrupted between its two renames leaves exactly this.
+        write(SettingsRegistry.backupOf(file), "{\"recovery.retrySec\":9}");
+        SettingsRegistry s = fresh();
+        assertEquals(9, s.get("recovery.retrySec"));
+        assertNotNull(s.loadProblem());
+    }
+
+    @Test public void aHealthyStoreAndAnEmptyOneReportNoProblem() throws Exception {
+        assertNull(fresh().loadProblem());
+        SettingsRegistry s = fresh();
+        s.set("recovery.retrySec", 5);
+        assertNull(fresh().loadProblem());
+        assertFalse("no temporary file is left behind", new File(file.getPath() + ".part").exists());
+    }
+
+    // ── settings only the device file decides, and guarded changes ───────────
+
+    @Test public void aCompiledSettingCannotBeChangedOnTheDeviceAndIgnoresAStoredOverride() throws Exception {
+        write(file, "{\"lockdown.required\":false}");              // somebody edited the file by hand
+        SettingsRegistry s = new SettingsRegistry(file);
+        s.declareCompiled("lockdown.required", Type.BOOLEAN, false);
+        s.applyDefaults(new JSONObject("{\"lockdown.required\":true}"));
+        assertEquals("the stored override is not honored", Boolean.TRUE, s.get("lockdown.required"));
+        for (Runnable change : new Runnable[] { () -> s.set("lockdown.required", false), () -> s.reset("lockdown.required"),
+                () -> s.setAll(of("lockdown.required", false)) }) {
+            try {
+                change.run();
+                fail("a compiled setting was changed on the device");
+            } catch (InvalidSettingException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("device file"));
+            }
+        }
+        assertEquals(Boolean.TRUE, s.get("lockdown.required"));
+        assertFalse(s.describe().toString().contains("\"overridden\":true"));
+    }
+
+    @Test public void aGuardRefusesAValueWithItsReasonForSetSetAllAndReset() throws Exception {
+        SettingsRegistry s = fresh();
+        s.applyDefaults(new JSONObject("{\"power.keepScreenOn\":false}"));
+        s.guard("power.keepScreenOn", v -> Boolean.FALSE.equals(v) ? "cannot be false here" : null);
+        s.set("power.keepScreenOn", true);
+        try { s.set("power.keepScreenOn", false); fail(); } catch (InvalidSettingException e) { assertTrue(e.getMessage().contains("cannot be false here")); }
+        try { s.setAll(of("recovery.retrySec", 9, "power.keepScreenOn", false)); fail(); } catch (InvalidSettingException expected) { }
+        assertEquals("nothing of the refused batch was applied", 0, s.get("recovery.retrySec"));
+        // A reset would put the default (false) in effect: the same change by another road.
+        try { s.reset("power.keepScreenOn"); fail(); } catch (InvalidSettingException expected) { }
+        assertEquals(Boolean.TRUE, s.get("power.keepScreenOn"));
+    }
 }

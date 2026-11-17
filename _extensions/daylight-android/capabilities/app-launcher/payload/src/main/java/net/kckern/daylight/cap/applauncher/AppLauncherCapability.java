@@ -133,7 +133,12 @@ public final class AppLauncherCapability implements Capability, AppLaunch {
             // Before the start: under lock task the package must already be on the list,
             // and the watcher must not recall it in the second it takes to appear.
             final LockdownControl lockdown = core.services().find(LockdownControl.class);
-            if (lockdown != null) lockdown.allowWhileInFront(pkg);
+            // When only an activity-level rule allows this launch, only that activity is
+            // exempt; a rule for the whole package exempts the package.
+            if (lockdown != null) {
+                AllowRules rules = AllowRules.parseOrEmpty((String) core.settings().get("launcher.allowed"));
+                lockdown.allowWhileInFront(pkg, LaunchPolicy.exemptActivity(pkg, r.target.cls, rules));
+            }
 
             if (!p.start(r.target)) {
                 note("start refused: " + component);

@@ -58,4 +58,13 @@ public class KioskSlotTest {
         assertNull(slot.current());
         assertNull(slot.clear());
     }
+
+    @Test public void aFailedControllerIsTriedAgainWithAGrowingWaitUpToAMinute() {
+        assertEquals(2_000, KioskSlot.retryDelayMs(1));
+        assertEquals(4_000, KioskSlot.retryDelayMs(2));
+        assertEquals(8_000, KioskSlot.retryDelayMs(3));
+        assertEquals(60_000, KioskSlot.retryDelayMs(6));
+        assertEquals(60_000, KioskSlot.retryDelayMs(500));
+        assertEquals(2_000, KioskSlot.retryDelayMs(0));
+    }
 }

@@ -48,6 +48,9 @@ public final class WebViewHostCapability implements Capability {
 
         core.settings().declare("webview.startUrl", Type.STRING, "");
         core.settings().declare("webview.bridgeOrigins", Type.STRING, "");
+        // Origins the main frame may navigate to beyond the start URL's own. Comma-separated
+        // origins or URLs. Empty (every device's default): the start origin only.
+        core.settings().declare("webview.allowedOrigins", Type.STRING, "");
         core.settings().declare("webview.backButton", Type.STRING, KioskSession.DEFAULT_BACK_MODE,
                 SettingsRegistry.oneOf(KeyRouter.BACK_MODES));
         core.settings().declare("webview.interceptKeys", Type.STRING, "");
@@ -85,12 +88,20 @@ public final class WebViewHostCapability implements Capability {
         });
         router.route("POST", "/kiosk/foreground", req -> foreground());
         router.route("POST", "/kiosk/renderer/reset", req -> {
-            LoadTracker.Result r = session.resetRendererAndWait();
-            return Router.Response.json(200, r.ok
+            LoadTracker.Result r;
+            try {
+                r = session.resetRendererAndWait();
+            } catch (java.util.concurrent.TimeoutException slow) {
+                // The new renderer did not load the page in time. Same body, a status that says so.
+                return Router.Response.json(504, Replies.err("timeout").put("rendererAlive", session.attached()));
+            }
+            return Router.Response.json(failureStatus(r), r.ok
                     ? withLoad(Replies.ok(), r).put("rendererAlive", true)
                     : withLoad(Replies.err(r.error), r).put("rendererAlive", session.attached()));
         });
         router.route("POST", "/kiosk/restart", req -> {
+            // The restart is asked of the shell after this answer has left, so the shell's
+            // own refusal cannot be reported here; it is in the shell log.
             session.restartPayloadSoon();
             return Router.Response.json(200, Replies.ok().put("restarting", true));
         });
@@ -112,10 +123,23 @@ public final class WebViewHostCapability implements Capability {
                     ? withLoad(Replies.ok(), r).put("loaded", true).put("loadTimeMs", r.loadTimeMs)
                     : withLoad(Replies.err(r.error), r).put("loaded", false));
         }
+        boolean queued = !session.attached();
         String loadId = session.loadAccepted(url);
-        return Router.Response.json(200, loadId != null
-                ? Replies.ok().put("accepted", true).put("url", url).put("loadId", loadId)
-                : Replies.err("no_kiosk_activity").put("accepted", false).put("url", url));
+        // With no kiosk Activity the load is queued for the one being started (the latest
+        // request wins), and the answer says so; lastLoad carries the outcome by loadId.
+        return Router.Response.json(200, Replies.ok().put("accepted", true).put("url", url).put("loadId", loadId).put("queued", queued));
+    }
+
+    /**
+     * The HTTP status of a load-shaped answer: 200 when it loaded, 409 when there is no
+     * kiosk Activity to do it in, 504 when the page did not finish in time, 502 when the
+     * page could not be loaded.
+     */
+    static int failureStatus(LoadTracker.Result r) {
+        if (r.ok) return 200;
+        if ("no_kiosk_activity".equals(r.error)) return 409;
+        if ("timeout".equals(r.error)) return 504;
+        return 502;
     }
 
     private static JSONObject withLoad(JSONObject o, LoadTracker.Result r) throws Exception {
@@ -136,7 +160,8 @@ public final class WebViewHostCapability implements Capability {
         }
         String front = session.frontPackage(), frontActivity = session.frontActivity();
         JSONObject o = inFront ? Replies.ok() : Replies.err("not_in_foreground");
-        return Router.Response.json(200, o.put("kioskInForeground", inFront)
+        // 409: the kiosk could not be brought to the front in the state the device is in.
+        return Router.Response.json(inFront ? 200 : 409, o.put("kioskInForeground", inFront)
                 .put("foreground", front == null ? JSONObject.NULL : front)
                 .put("foregroundActivity", frontActivity == null ? JSONObject.NULL : frontActivity));
     }

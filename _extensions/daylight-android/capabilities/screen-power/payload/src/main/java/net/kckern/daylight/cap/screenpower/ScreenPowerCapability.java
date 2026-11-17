@@ -59,6 +59,14 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
     private volatile int sdkInt = Build.VERSION.SDK_INT;
     void useSdkForTest(int sdk) { sdkInt = sdk; }
     private final Object workerGuard = new Object();
+    /**
+     * Held by start() while it takes things and by stop() while it gives them back, so
+     * the two never interleave. start() waits on nothing while it holds this (no main
+     * thread, no network), so a stop() that arrives in the middle waits only for it to
+     * finish and then releases everything it took.
+     */
+    private final Object lifecycle = new Object();
+    private boolean receiverRegistered;
     // Read on the MIDI thread for every note-on, so they are kept here and not looked up there.
     private volatile int cooldownMs = 8000;
     private volatile String noWakeStart = "", noWakeEnd = "";
@@ -188,6 +196,11 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
         Context ctx = (Context) core.shell().context();
         // JVM tests boot every capability with no Android context: there is no screen.
         if (ctx == null) return;
+        synchronized (lifecycle) { startLocked(ctx); }
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private void startLocked(Context ctx) {
         context = ctx;
         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
         power = pm;
@@ -217,6 +230,7 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         ctx.registerReceiver(screenReceiver, filter);
+        receiverRegistered = true;
         try {
             DisplayManager dm = (DisplayManager) ctx.getSystemService(Context.DISPLAY_SERVICE);
             if (dm != null) {
@@ -248,11 +262,17 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
 
     /** May be called twice, and while start() is still running. */
     @Override public void stop() {
-        boolean wasRunning = running;
+        // Seen at once by poke(), publishScreen() and worker(), before the lock is had.
+        running = false;
+        synchronized (lifecycle) { stopLocked(); }
+    }
+
+    private void stopLocked() {
         running = false;
         try { if (core != null) core.notes().unsubscribe(onNote); } catch (Throwable ignored) { }
         Context c = context;
-        if (wasRunning && c != null) {
+        if (receiverRegistered && c != null) {
+            receiverRegistered = false;
             try { c.unregisterReceiver(screenReceiver); } catch (Throwable ignored) { }
         }
         DisplayManager dm = displays;

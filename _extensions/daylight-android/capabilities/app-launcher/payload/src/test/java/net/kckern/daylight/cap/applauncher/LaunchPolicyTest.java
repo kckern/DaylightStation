@@ -37,4 +37,15 @@ public class LaunchPolicyTest {
     @Test public void aPackageTheGateHasClosedIsNotAllowedEvenWhenListed() {
         assertEquals("not_allowed", LaunchPolicy.refusal("com.example.game", "com.example.game.Main", ALLOWED, true));
     }
+
+    @Test public void anActivityLevelRuleExemptsThatActivityAndAPackageRuleThePackage() {
+        AllowRules activityOnly = AllowRules.parse("com.example.game/.Play");
+        assertEquals("only the activity the rule names", "com.example.game.Play",
+                LaunchPolicy.exemptActivity("com.example.game", "com.example.game.Play", activityOnly));
+        assertNull("a package rule exempts the package",
+                LaunchPolicy.exemptActivity("com.example.game", "com.example.game.Play", AllowRules.parse("com.example.game")));
+        assertNull(LaunchPolicy.exemptActivity("com.example.game", "com.example.game.Play", AllowRules.parse("com.example.*")));
+        assertNull("a package rule beside an activity rule still covers the package",
+                LaunchPolicy.exemptActivity("com.example.game", "com.example.game.Play", AllowRules.parse("com.example.game/.Play,com.example.game")));
+    }
 }

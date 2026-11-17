@@ -1,15 +1,14 @@
 package net.kckern.daylight.cap.webviewhost;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.function.Supplier;
 
 /**
  * Every page-to-native call lands here first. Pure Java.
  *
  * addJavascriptInterface exposes the native object to every frame of every page, so a
- * call is honored only with the per-WebView token (which only allowed-origin frames
- * are given) AND while the main frame is on an allowed origin. A refused call returns "".
+ * call is honored only with a token issued to the calling document (which only a frame
+ * of an allowed origin can ask for, see {@link BridgeTokens}) AND while the main frame is
+ * on an allowed origin. A refused call returns "".
  */
 final class BridgeDispatcher {
     interface Actions {
@@ -22,21 +21,32 @@ final class BridgeDispatcher {
         String volumeJson(int stream);
     }
 
-    private final byte[] token;
+    private final BridgeTokens tokens;
     private final OriginPolicy origins;
     private final Supplier<String> mainFrameUrl;
     private final Actions actions;
 
-    BridgeDispatcher(String token, OriginPolicy origins, Supplier<String> mainFrameUrl, Actions actions) {
-        this.token = token.getBytes(StandardCharsets.UTF_8);
+    BridgeDispatcher(BridgeTokens tokens, OriginPolicy origins, Supplier<String> mainFrameUrl, Actions actions) {
+        this.tokens = tokens;
         this.origins = origins;
         this.mainFrameUrl = mainFrameUrl;
         this.actions = actions;
     }
 
+    /**
+     * A document opens its session: the key the shim carries buys a token of its own.
+     * Refused ("") with a wrong key, or while the main frame is not on an allowed origin.
+     */
+    String open(String presentedKey) {
+        if (!origins.allows(mainFrameUrl.get())) return "";
+        return tokens.open(presentedKey);
+    }
+
     String call(String presentedToken, String method, String arg) {
         if (presentedToken == null || method == null) return "";
-        if (!MessageDigest.isEqual(token, presentedToken.getBytes(StandardCharsets.UTF_8))) return "";
+        // The token must have been issued to the document that is showing now, and the
+        // main frame must be on an allowed origin at the moment of the call.
+        if (!tokens.valid(presentedToken)) return "";
         if (!origins.allows(mainFrameUrl.get())) return "";
         String a = arg == null ? "" : arg;
         try {

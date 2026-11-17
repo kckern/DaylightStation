@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, generatedComponents, HOME_ALIAS, homeAliasFailures, parseXmlTree,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, HOME_ALIAS, homeAliasFailures, parseXmlTree,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -243,6 +243,8 @@ const KIOSK_ACTIVITY_LINES = [
   '          E: activity (line=76)',
   `            A: ${NS}:name(0x01010003)="net.kckern.daylight.cap.webviewhost.shell.KioskActivity" (Raw: "x")`,
   `            A: ${NS}:exported(0x01010010)=true`,
+  `            A: ${NS}:resizeableActivity(0x010104f6)=false`,
+  `            A: ${NS}:supportsPictureInPicture(0x010104f7)=false`,
 ];
 const aliasLines = (enabled) => [
   '          E: activity-alias (line=95)',
@@ -281,4 +283,46 @@ test('a lockdown build with no alias fails, and a build without lockdown must ha
   assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES), KIOSK_CAPS)[0], /expected one HOME filter/);
   assert.deepEqual(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES), ['webview-host']), []);
   assert.match(homeAliasFailures(tree(KIOSK_ACTIVITY_LINES, aliasLines('false')), ['webview-host'])[0], /must have no HOME filter/);
+});
+
+test('a lockdown build whose kiosk activity can be resized fails', () => {
+  const resizable = KIOSK_ACTIVITY_LINES.filter((l) => !l.includes('resizeableActivity'));
+  assert.deepEqual(homeAliasFailures(tree(resizable, aliasLines('false')), KIOSK_CAPS),
+    ['the kiosk activity does not declare android:resizeableActivity="false"']);
+  assert.deepEqual(homeAliasFailures(tree(resizable), ['webview-host']), [], 'the phone may be resized');
+});
+
+// ── exported flags and bind permissions ───────────────────────────────────
+
+const component = (kind, name, exported, permission) => [
+  `          E: ${kind} (line=10)`,
+  `            A: ${NS}:name(0x01010003)="${name}" (Raw: "${name}")`,
+  ...(exported == null ? [] : [`            A: ${NS}:exported(0x01010010)=${exported}`]),
+  ...(permission == null ? [] : [`            A: ${NS}:permission(0x01010006)="${permission}" (Raw: "${permission}")`]),
+];
+const ADMIN = 'net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver';
+
+test('components that match the table pass', () => {
+  const apk = tree(
+    component('service', 'net.kckern.daylight.shell.ShellService', 'false', null),
+    component('receiver', ADMIN, 'true', 'android.permission.BIND_DEVICE_ADMIN'),
+    KIOSK_ACTIVITY_LINES, aliasLines('false'));
+  assert.deepEqual(componentAttributeFailures(apk), []);
+});
+
+test('a service that became exported fails', () => {
+  assert.deepEqual(componentAttributeFailures(tree(component('service', 'net.kckern.daylight.shell.ShellService', 'true', null))),
+    ['service net.kckern.daylight.shell.ShellService is exported=true, expected exported=false']);
+});
+
+test('an admin receiver that lost its bind permission fails', () => {
+  assert.deepEqual(componentAttributeFailures(tree(component('receiver', ADMIN, 'true', null))),
+    [`receiver ${ADMIN} is guarded by no permission, expected android.permission.BIND_DEVICE_ADMIN`]);
+  assert.match(componentAttributeFailures(tree(component('receiver', ADMIN, 'true', 'android.permission.INTERNET')))[0], /guarded by android\.permission\.INTERNET/);
+});
+
+test('a component with no row, or one that does not say whether it is exported, fails', () => {
+  assert.match(componentAttributeFailures(tree(component('service', 'net.example.New', 'false', null)))[0], /no expected exported\/permission entry for service net\.example\.New/);
+  assert.deepEqual(componentAttributeFailures(tree(component('service', 'net.kckern.daylight.shell.ShellService', null, null))),
+    ['service net.kckern.daylight.shell.ShellService does not state android:exported']);
 });

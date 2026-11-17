@@ -17,9 +17,10 @@ import javax.xml.parsers.DocumentBuilderFactory;
  * generated fragment cannot promise by itself because other modules' manifests are
  * merged in after it.
  *
- * The rule checked here: installing a build must change no device's home candidate
- * set. A HOME filter exists only on an activity-alias that is declared disabled, whose
- * target is the kiosk Activity and is declared before it.
+ * The rules checked here. Installing a build must change no device's home candidate
+ * set: a HOME filter exists only on an activity-alias that is declared disabled, whose
+ * target is the kiosk Activity and is declared before it. And in a build that lists
+ * lockdown the kiosk Activity cannot be resized into split screen or picture-in-picture.
  */
 public final class MergedManifestCheck {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
@@ -68,9 +69,31 @@ public final class MergedManifestCheck {
                 out.add("the HOME alias is declared before its target activity: the APK would not install");
             }
         }
+        if (wantsAlias) {
+            Element kiosk = activity(doc, DeviceManifestSource.KIOSK_ACTIVITY);
+            if (kiosk == null) {
+                out.add("the kiosk activity is missing from the merged manifest");
+            } else {
+                for (String attribute : new String[] { "resizeableActivity", "supportsPictureInPicture" }) {
+                    if (!"false".equals(kiosk.getAttributeNS(ANDROID, attribute))) {
+                        out.add("the kiosk activity must declare android:" + attribute + "=\"false\" in a build that lists lockdown: "
+                                + "beside another app in split screen it would count as in front");
+                    }
+                }
+            }
+        }
         if (wantsAlias && homeFilters != 1) out.add("expected exactly one HOME filter (on the disabled alias), found " + homeFilters);
         if (!wantsAlias && homeFilters != 0) out.add("a build without lockdown must have no HOME filter, found " + homeFilters);
         return out;
+    }
+
+    private static Element activity(Document doc, String name) {
+        NodeList list = doc.getElementsByTagName("activity");
+        for (int i = 0; i < list.getLength(); i++) {
+            Element e = (Element) list.item(i);
+            if (name.equals(e.getAttributeNS(ANDROID, "name"))) return e;
+        }
+        return null;
     }
 
     /** True when an activity of that name is a sibling that comes before {@code alias}. */

@@ -25,7 +25,13 @@ public class MergedManifestCheckTest {
                 + "<application>" + application + "</application></manifest>";
     }
 
-    private static String activity(String inner) { return "<activity android:name=\"" + KIOSK + "\" android:exported=\"true\">" + inner + "</activity>"; }
+    private static String activity(String inner) { return activity(inner, "false", "false"); }
+
+    private static String activity(String inner, String resizeable, String pip) {
+        return "<activity android:name=\"" + KIOSK + "\" android:exported=\"true\""
+                + (resizeable == null ? "" : " android:resizeableActivity=\"" + resizeable + "\"")
+                + (pip == null ? "" : " android:supportsPictureInPicture=\"" + pip + "\"") + ">" + inner + "</activity>";
+    }
 
     private static String alias(String enabled, String target) {
         return "<activity-alias android:name=\"" + ALIAS + "\" android:targetActivity=\"" + target + "\""
@@ -57,6 +63,17 @@ public class MergedManifestCheckTest {
                 .contains("declared before its target"));
         assertTrue(MergedManifestCheck.failures(manifest(activity("") + alias("false", "com.example.Other")), KIOSK_DEVICE).toString()
                 .contains("does not target"));
+    }
+
+    @Test public void aLockdownBuildWhoseKioskCanBeResizedOrShownInPictureInPictureFails() {
+        for (String[] attrs : new String[][] { { null, "false" }, { "true", "false" }, { "false", null }, { "false", "true" } }) {
+            List<String> f = MergedManifestCheck.failures(manifest(activity("", attrs[0], attrs[1]) + alias("false", KIOSK)), KIOSK_DEVICE);
+            assertEquals(String.valueOf(f), 1, f.size());
+            assertTrue(f.get(0), f.get(0).contains(attrs[0] == null || "true".equals(attrs[0]) ? "resizeableActivity" : "supportsPictureInPicture"));
+        }
+        // The phone is not a kiosk: its window may be resized.
+        assertEquals(Collections.emptyList(),
+                MergedManifestCheck.failures(manifest(activity("", null, null)), device("webview-host", "notifications")));
     }
 
     @Test public void aLockdownBuildWithNoHomeFilterAtAllFails() {

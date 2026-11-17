@@ -75,6 +75,11 @@ public final class DeviceManifestSource {
             // merged manifest, and the merger keeps this file's order.
             if (kiosk && d.capabilities.contains(LOCKDOWN_CAPABILITY)) {
                 s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
+                // A locked kiosk is never one half of a split screen and never a picture-in-
+                // picture window: on Android 10 and later every visible activity is resumed,
+                // so beside Settings the kiosk would still read as "in front".
+                s.append("            android:resizeableActivity=\"false\"\n");
+                s.append("            android:supportsPictureInPicture=\"false\"\n");
                 s.append("            android:exported=\"true\" tools:node=\"merge\" />\n");
                 s.append("        <activity-alias android:name=\"").append(HOME_ALIAS).append("\"\n");
                 s.append("            android:targetActivity=\"").append(KIOSK_ACTIVITY).append("\"\n");

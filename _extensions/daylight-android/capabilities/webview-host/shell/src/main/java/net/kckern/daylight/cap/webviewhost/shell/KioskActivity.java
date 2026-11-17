@@ -31,6 +31,20 @@ public class KioskActivity extends Activity implements KioskHost {
     /** Main thread only. */
     private final KioskSlot slot = new KioskSlot();
     private boolean visible;
+    /** The controller that threw and is waiting to be attached again, and how often it has been tried. Main thread only. */
+    private KioskController failed;
+    private int retryAttempts;
+    private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable retryAttach = () -> {
+        KioskController again = failed;
+        // Only while nothing else has taken the window in the meantime.
+        if (again == null || slot.current() != null || isFinishing() || isDestroyed()) return;
+        failed = null;
+        attachNow(again);
+    };
+    /** A controller that has stayed attached this long is taken to be healthy again. */
+    private static final long HEALTHY_AFTER_MS = 60_000L;
+    private final Runnable markHealthy = () -> { if (slot.current() != null) retryAttempts = 0; };
     private volatile boolean resumed;
 
     @Override
@@ -56,22 +70,33 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override
     public void attach(final KioskController next) {
         runOnUiThread(() -> {
-            // The same component can be reported twice; the attached controller stays as it is.
-            if (slot.holds(next)) return;
-            KioskController old = slot.replace(next);
-            if (old != null) {
-                try { old.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
-            }
-            if (next == null || isFinishing() || isDestroyed()) {
-                slot.clear();
-                showFallback("Daylight is restarting…");
-                return;
-            }
-            guard("attach", () -> next.onHostAttached(this));
-            if (slot.current() == next && visible) guard("visible", () -> next.onHostVisible(true));
-            if (slot.current() == next && resumed) guard("resume", next::onHostResumed);
-            if (slot.current() == next && hasWindowFocus()) guard("focus", () -> next.onHostWindowFocus(true));
+            // A controller handed over by the payload ends any wait to retry an older one.
+            if (next != failed) { failed = null; retryAttempts = 0; }
+            main.removeCallbacks(retryAttach);
+            attachNow(next);
         });
+    }
+
+    private void attachNow(final KioskController next) {
+        // The same component can be reported twice; the attached controller stays as it is.
+        if (slot.holds(next)) return;
+        KioskController old = slot.replace(next);
+        if (old != null) {
+            try { old.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
+        }
+        if (next == null || isFinishing() || isDestroyed()) {
+            slot.clear();
+            showFallback("Daylight is restarting…");
+            return;
+        }
+        guard("attach", () -> next.onHostAttached(this));
+        if (slot.current() == next && visible) guard("visible", () -> next.onHostVisible(true));
+        if (slot.current() == next && resumed) guard("resume", next::onHostResumed);
+        if (slot.current() == next && hasWindowFocus()) guard("focus", () -> next.onHostWindowFocus(true));
+        if (slot.current() == next) {
+            main.removeCallbacks(markHealthy);
+            main.postDelayed(markHealthy, HEALTHY_AFTER_MS);
+        }
     }
 
     /**
@@ -81,6 +106,8 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override
     public void detach(final KioskController expected) {
         runOnUiThread(() -> {
+            // A stopping payload's controller is not to be attached again either.
+            if (failed == expected) { failed = null; main.removeCallbacks(retryAttach); }
             if (!slot.releaseIf(expected)) return;
             try { expected.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
             showFallback("Daylight is restarting…");
@@ -116,6 +143,9 @@ public class KioskActivity extends Activity implements KioskHost {
     @Override protected void onDestroy() {
         // Only when this instance is still the published one: a newer Activity may have replaced it.
         if (ShellComponents.get(COMPONENT) == this) ShellComponents.publish(COMPONENT, null);
+        main.removeCallbacks(retryAttach);
+        main.removeCallbacks(markHealthy);
+        failed = null;
         KioskController old = slot.clear();
         if (old != null) {
             try { old.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
@@ -166,7 +196,20 @@ public class KioskActivity extends Activity implements KioskHost {
         if (broken != null) {
             try { broken.onHostDetached(); } catch (Throwable ignored) { }
         }
-        showFallback("The kiosk payload failed (" + what + "): " + t);
+        // The fallback is not where this ends. The same controller is attached again
+        // after a wait that doubles up to a minute; a new controller from the payload, or
+        // the payload stopping, cancels it.
+        main.removeCallbacks(markHealthy);
+        if (broken != null && !isFinishing() && !isDestroyed()) {
+            failed = broken;
+            retryAttempts++;
+            long delay = KioskSlot.retryDelayMs(retryAttempts);
+            main.removeCallbacks(retryAttach);
+            main.postDelayed(retryAttach, delay);
+            showFallback("The kiosk payload failed (" + what + "): " + t + "\nTrying again in " + (delay / 1000) + " s.");
+        } else {
+            showFallback("The kiosk payload failed (" + what + "): " + t);
+        }
     }
 
     private void showFallback(String message) {

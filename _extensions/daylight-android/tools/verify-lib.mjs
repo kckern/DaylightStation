@@ -166,6 +166,8 @@ export function buildTypeLine(badging, signerText) {
 /** The alias the generated device manifest adds to a build that lists lockdown (DeviceManifestSource.HOME_ALIAS). */
 export const HOME_ALIAS = 'net.kckern.daylight.cap.lockdown.shell.KioskHome';
 
+export const KIOSK_ACTIVITY = 'net.kckern.daylight.cap.webviewhost.shell.KioskActivity';
+
 /** Components that come from the generated device manifest and so are in no module's source manifest. */
 export function generatedComponents(capabilities) {
   return capabilities.includes('lockdown') && capabilities.includes('webview-host') ? [`activity-alias ${HOME_ALIAS}`] : [];
@@ -219,7 +221,73 @@ export function homeAliasFailures(xmltree, capabilities) {
       failures.push(`the HOME alias is not declared disabled (android:enabled=${owner.attrs.enabled ?? 'absent'}): installing would add a home candidate`);
     }
   }
+  if (wantsAlias) {
+    // A kiosk that can be locked is never half of a split screen or a picture-in-picture window.
+    const kiosk = parseXmlTree(xmltree).find((n) => n.name === 'activity' && n.attrs.name === KIOSK_ACTIVITY);
+    for (const attribute of ['resizeableActivity', 'supportsPictureInPicture']) {
+      if (kiosk?.attrs[attribute] !== 'false') failures.push(`the kiosk activity does not declare android:${attribute}="false"`);
+    }
+  }
   if (wantsAlias && homes.length !== 1) failures.push(`expected one HOME filter on the disabled alias, found ${homes.length}`);
   if (!wantsAlias && homes.length !== 0) failures.push(`a build without lockdown must have no HOME filter, found ${homes.length}`);
+  return failures;
+}
+
+const BIND_ADMIN = 'android.permission.BIND_DEVICE_ADMIN';
+const BIND_TILE = 'android.permission.BIND_QUICK_SETTINGS_TILE';
+
+/**
+ * Every component this project declares, with whether another app may reach it and
+ * the permission a caller must hold. Written out here, apart from the manifests, on
+ * purpose: a manifest edit that exports a component, or drops the permission that
+ * guards one, then fails the verifier until this table is changed to match, which is
+ * a decision somebody has to make. An exported component with no permission is one
+ * any app on the device can start or send to; each of those says why it is.
+ */
+export const EXPECTED_COMPONENTS = {
+  // The setup screen and the kiosk window are started by the launcher and by adb.
+  'activity net.kckern.daylight.shell.MainActivity': { exported: true, permission: null },
+  'activity net.kckern.daylight.cap.webviewhost.shell.KioskActivity': { exported: true, permission: null },
+  // The HOME alias: the system starts it as the home app once it is enabled.
+  [`activity-alias ${HOME_ALIAS}`]: { exported: true, permission: null },
+  // Opened by a link in another app; every link is checked by the payload before anything happens.
+  'activity net.kckern.daylight.cap.notifications.shell.LinkActivity': { exported: true, permission: null },
+  'service net.kckern.daylight.shell.ShellService': { exported: false, permission: null },
+  'receiver net.kckern.daylight.shell.InstallReceiver': { exported: false, permission: null },
+  // BOOT_COMPLETED and MY_PACKAGE_REPLACED are protected broadcasts: only the system sends them.
+  'receiver net.kckern.daylight.shell.BootReceiver': { exported: true, permission: null },
+  'receiver net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver': { exported: true, permission: BIND_ADMIN },
+  'service net.kckern.daylight.cap.lockdown.shell.DaylightOwnerService': { exported: true, permission: BIND_ADMIN },
+  'service net.kckern.daylight.cap.accessibility.shell.DaylightAccessibilityService': { exported: true, permission: 'android.permission.BIND_ACCESSIBILITY_SERVICE' },
+  'provider net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider': { exported: false, permission: null },
+  'provider net.kckern.daylight.cap.synth.shell.SynthEngineProvider': { exported: false, permission: null },
+  'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider': { exported: false, permission: null },
+  'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1': { exported: true, permission: BIND_TILE },
+  'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2': { exported: true, permission: BIND_TILE },
+  'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3': { exported: true, permission: BIND_TILE },
+  'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4': { exported: true, permission: BIND_TILE },
+};
+
+/**
+ * Holds each component in the APK to the table: its `exported` flag and the permission
+ * that guards it. A component with no row fails too, so a new one cannot ship without
+ * somebody deciding both.
+ */
+export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS) {
+  const failures = [];
+  for (const n of parseXmlTree(xmltree)) {
+    if (!COMPONENT_KINDS.includes(n.name) || !n.attrs.name) continue;
+    const key = `${n.name} ${n.attrs.name}`;
+    const want = table[key];
+    if (!want) { failures.push(`no expected exported/permission entry for ${key} (tools/verify-lib.mjs EXPECTED_COMPONENTS)`); continue; }
+    // A component that does not say is exported when it has an intent filter (below API 31): it must say.
+    const exported = n.attrs.exported === 'true' ? true : n.attrs.exported === 'false' ? false : undefined;
+    if (exported === undefined) failures.push(`${key} does not state android:exported`);
+    else if (exported !== want.exported) failures.push(`${key} is exported=${exported}, expected exported=${want.exported}`);
+    const permission = n.attrs.permission ?? null;
+    if (permission !== want.permission) {
+      failures.push(`${key} is guarded by ${permission ?? 'no permission'}, expected ${want.permission ?? 'no permission'}`);
+    }
+  }
   return failures;
 }

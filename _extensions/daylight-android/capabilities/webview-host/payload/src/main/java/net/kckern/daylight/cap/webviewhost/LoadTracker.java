@@ -59,6 +59,10 @@ final class LoadTracker {
     private String url;
     private String loadId;
     private String pendingError;
+    /** onPageStarted was seen for the current generation. Only then can a finish be its finish. */
+    private boolean startSeen;
+    /** The URL of the load the current one superseded, whose finish may still arrive. */
+    private String supersededUrl;
     private int failures;
     private Result last;
     private final Map<Long, CompletableFuture<Result>> waiters = new HashMap<>();
@@ -88,7 +92,12 @@ final class LoadTracker {
 
     /** As begin, for a load whose id was reserved with newLoadId(). */
     synchronized long begin(String url, long nowMs, String id) {
-        if (state == State.LOADING) settle(new Result(loadId, this.url, false, "superseded", nowMs, nowMs - startedAt), false);
+        supersededUrl = null;
+        if (state == State.LOADING) {
+            supersededUrl = this.url;
+            settle(new Result(loadId, this.url, false, "superseded", nowMs, nowMs - startedAt), false);
+        }
+        startSeen = false;
         generation++;
         state = State.LOADING;
         this.url = url;
@@ -115,15 +124,37 @@ final class LoadTracker {
         return f;
     }
 
-    synchronized void redirected(String url) { if (state == State.LOADING) this.url = url; }
+    /**
+     * onPageStarted for the load in progress: its start is now seen, and the URL is the
+     * one the WebView is on (a redirect chain reports each hop here).
+     */
+    synchronized void started(String url) {
+        if (state != State.LOADING) return;
+        startSeen = true;
+        this.url = url;
+    }
+
+    /** Kept for callers that only mean "the URL changed"; it counts as a start. */
+    synchronized void redirected(String url) { started(url); }
 
     synchronized void mainFrameError(String error) {
         if (state == State.LOADING && pendingError == null) pendingError = error;
     }
 
-    /** onPageFinished. Null when no load was in progress. */
-    synchronized Result finished(long nowMs) {
-        if (state != State.LOADING) return null;
+    /**
+     * onPageFinished. Null when no load was in progress, or when this finish belongs to
+     * a load that was superseded: a finish counts only for the generation whose
+     * onPageStarted has been seen. Starting load B while A is still loading makes the
+     * WebView report A's finish, and that used to settle B as loaded.
+     *
+     * @param finishedUrl the URL the WebView reports. A server redirect can make it
+     *                    differ from the started URL, so it is not required to match;
+     *                    it is used only to recognise the superseded load's finish.
+     */
+    synchronized Result finished(long nowMs, String finishedUrl) {
+        if (state != State.LOADING || !startSeen) return null;
+        if (finishedUrl != null && finishedUrl.equals(supersededUrl) && !finishedUrl.equals(url)) return null;
+        if (finishedUrl != null) url = finishedUrl;
         return settle(new Result(loadId, url, pendingError == null, pendingError, nowMs, nowMs - startedAt), true);
     }
 

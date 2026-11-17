@@ -20,6 +20,8 @@ public final class VolumeCapability implements Capability, VolumeControl {
     /** A device's audio streams. The real one is AudioManager; a JVM test gives its own. */
     interface Streams {
         int max(int stream);
+        /** The lowest index the stream takes. 1 for the call and alarm streams on some devices. Default 0. */
+        default int min(int stream) { return 0; }
         int get(int stream);
         void set(int stream, int index);
     }
@@ -46,12 +48,15 @@ public final class VolumeCapability implements Capability, VolumeControl {
             int stream = VolumeMath.stream(body.opt("stream"));
             Streams s = required();
             try {
-                s.set(stream, VolumeMath.indexFor(level, s.max(stream)));
+                s.set(stream, VolumeMath.indexFor(level, s.min(stream), s.max(stream)));
             } catch (SecurityException refused) {
                 // Do-not-disturb can refuse a change. The read-back below reports what is true.
             }
             JSONObject result = readOrThrow(stream);
-            boolean applied = result.getInt("index") == VolumeMath.indexFor(level, result.getInt("maxIndex"));
+            // A stream whose lowest index is 1 cannot be set to 0: level 0 means its
+            // minimum there, and that is a success. minIndex in the answer says so.
+            boolean applied = result.getInt("index")
+                    == VolumeMath.indexFor(level, result.getInt("minIndex"), result.getInt("maxIndex"));
             // ok only when the index read back is the one asked for. Something else may hold the
             // stream (do-not-disturb, or audio-guard pinning the tablet's own speaker).
             return Router.Response.json(200, merge(applied ? Replies.ok() : Replies.err("volume_unchanged"), result));
@@ -71,6 +76,10 @@ public final class VolumeCapability implements Capability, VolumeControl {
         if (audio == null) return;       // the routes then answer 501 with the reason
         streams = new Streams() {
             @Override public int max(int stream) { return audio.getStreamMaxVolume(stream); }
+            @Override public int min(int stream) {
+                // getStreamMinVolume arrived in API 28; before it the minimum cannot be asked.
+                return android.os.Build.VERSION.SDK_INT >= 28 ? audio.getStreamMinVolume(stream) : 0;
+            }
             @Override public int get(int stream) { return audio.getStreamVolume(stream); }
             @Override public void set(int stream, int index) { audio.setStreamVolume(stream, index, 0); }
         };
@@ -86,9 +95,9 @@ public final class VolumeCapability implements Capability, VolumeControl {
 
     private JSONObject readOrThrow(int stream) throws Exception {
         Streams s = required();
-        int max = s.max(stream), index = s.get(stream);
+        int max = s.max(stream), min = Math.max(0, Math.min(s.min(stream), max)), index = s.get(stream);
         return new JSONObject().put("stream", stream).put("level", VolumeMath.levelFor(index, max))
-                .put("index", index).put("maxIndex", max);
+                .put("index", index).put("minIndex", min).put("maxIndex", max);
     }
 
     // ── VolumeControl ─────────────────────────────────────────────────────────
@@ -102,7 +111,7 @@ public final class VolumeCapability implements Capability, VolumeControl {
         Streams s = streams;
         if (s == null) return new JSONObject();
         try {
-            s.set(stream, VolumeMath.indexFor(level, s.max(stream)));
+            s.set(stream, VolumeMath.indexFor(level, s.min(stream), s.max(stream)));
         } catch (SecurityException refused) {
             // The read-back reports what is true.
         } catch (Throwable t) {

@@ -11,6 +11,15 @@ final class VolumeMath {
         return clamped * maxIndex / 100;
     }
 
+    /**
+     * As above, never below the stream's lowest index: a level that maps under it (0 on
+     * a stream whose minimum is 1) becomes the minimum.
+     */
+    static int indexFor(int level, int minIndex, int maxIndex) {
+        int floor = Math.max(0, Math.min(minIndex, Math.max(0, maxIndex)));
+        return Math.max(floor, indexFor(level, maxIndex));
+    }
+
     /** Rounds up, so that indexFor(levelFor(i)) == i and a read value written back changes nothing. */
     static int levelFor(int index, int maxIndex) {
         if (maxIndex <= 0) return 0;
