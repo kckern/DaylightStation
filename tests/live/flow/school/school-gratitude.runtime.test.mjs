@@ -32,7 +32,9 @@ test('gratitude typing saves the subject and finishes one daily obligation',asyn
   const {submissions}=await world(page);
   const field=page.getByRole('textbox');await expect(field).toBeVisible();
   await expect(field).not.toBeFocused();
-  await field.press('Space');await expect(field).toHaveValue(' ');
+  // A letter pressed on the page (not on the field) must focus the box and land in it.
+  await page.keyboard.press('I');await expect(field).toBeFocused();await expect(field).toHaveValue('I');
+  await field.press('Space');await expect(field).toHaveValue('I ');
   await field.fill("I'm grateful for my toys");await field.press('Enter');
   await expect(page.getByText('Toys',{exact:true})).toBeVisible();
   expect(submissions).toHaveLength(1);expect(submissions[0].via).toBe('typed');
