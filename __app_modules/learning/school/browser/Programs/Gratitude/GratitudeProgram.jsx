@@ -8,15 +8,20 @@ import { useGratitudeApi } from '../../runtime/useSchoolFeatureApi.js';
 import { gratitudeLog } from './gratitudeLog.js';
 import './GratitudeProgram.scss';
 const IDLE_THRESHOLDS=[45_000,120_000,300_000];
+// Phases in which the answer box is open and a draft may be saved.
+const ANSWER_PHASES=new Set(['draft','not-started','retry']);
 
 export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}){
   const api=useGratitudeApi({learnerId,grant:gratitudeGrant});
   const [view,setView]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[now,setNow]=useState(Date.now());
   const live=useRef(true),sending=useRef(false),lastBody=useRef(null),clockOffset=useRef(0),expiryCheck=useRef(null);
   const takeIds=useRef(new WeakMap());
+  // Set inside `apply`, before React re-renders, so a blur from the last answer
+  // render (as the screen switches to "Thank you!") sees the finished phase.
+  const phaseRef=useRef(null);
   const apply=useCallback(result=>{
     if(!live.current)return false;
-    if(result?.ok){setView(result.data);clockOffset.current=Date.now()-Date.parse(result.data.serverNow);setError(null);return true;}
+    if(result?.ok){phaseRef.current=result.data.phase;setView(result.data);clockOffset.current=Date.now()-Date.parse(result.data.serverNow);setError(null);return true;}
     setError(result?.data?.error??'Your answer could not be sent. Please try again.');return false;
   },[]);
   const open=useCallback(async()=>{setBusy(true);try{apply(await api.open(today));}finally{if(live.current)setBusy(false);}},[api,today,apply]);
@@ -41,7 +46,7 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
     finally{sending.current=false;if(live.current)setBusy(false);}
   };
   const retry=async()=>{if(sending.current)return;sending.current=true;setBusy(true);try{const result=await api.retry(view.studyDay,{attemptId:view.attemptId});if(apply(result)&&result.data.phase==='completed'&&view.studyDay!==today)await open();}finally{sending.current=false;if(live.current)setBusy(false);}};
-  const saveDraft=async body=>{if(!sending.current)await api.draft(view.studyDay,body);};
+  const saveDraft=async body=>{if(sending.current||!ANSWER_PHASES.has(phaseRef.current))return;await api.draft(view.studyDay,body);};
   if(!gratitudeGrant||!learnerId)return <section className="gratitude-program"><p>Open Gratitude from your School agenda.</p><TouchButton onClick={onExit}>Back to School</TouchButton></section>;
   return <section className="gratitude-program">
     <header className="gratitude-program__header"><h1>Gratitude</h1><TouchButton variant="secondary" onClick={onExit}>Back to School</TouchButton></header>
