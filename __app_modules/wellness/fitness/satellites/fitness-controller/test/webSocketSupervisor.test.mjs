@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBridgeHealth, createWebSocketSupervisor } from "../src/webSocketSupervisor.mjs";
 
+import { createDataPathHealth } from '../src/dataPathHealth.mjs';
+
 class FakeClock {
   now = 0;
   nextId = 1;
@@ -234,20 +236,43 @@ test('bridge health is unavailable until its event channel is open', () => {
   }), {
     httpStatus: 503,
     body: {
-      status: 'unhealthy',
+      status: 'socket-unavailable',
       websocket: { connected: false, phase: 'retrying', retryScheduled: true, attempts: 4, outageMs: 45_000 },
     },
   });
 });
 
-test('bridge health is healthy only after subscriptions complete', () => {
+test('bridge socket is ready only after subscriptions complete', () => {
   assert.deepEqual(buildBridgeHealth({
     connected: true, phase: 'open', retryScheduled: false, attempts: 0, outageMs: 0,
   }), {
     httpStatus: 200,
     body: {
-      status: 'healthy',
+      status: 'socket-ready',
       websocket: { connected: true, phase: 'open', retryScheduled: false, attempts: 0, outageMs: 0 },
     },
   });
+});
+
+test('pongs cannot refresh receiver sample freshness', () => {
+  const { clock, sockets, supervisor } = setup();
+  const health = createDataPathHealth({ bootId: 'boot-test', now: () => clock.now });
+  supervisor.start();
+  sockets[0].open();
+  health.received();
+  for (let i = 0; i < 4; i += 1) {
+    clock.advance(5000);
+    sockets[0].emit('pong');
+  }
+  const afterPong = health.snapshot(supervisor.getStatus().phase);
+  assert.equal(afterPong.lastSourceAgeMs, 20000);
+  assert.equal(afterPong.receivedCount, 1);
+  assert.equal(supervisor.getStatus().connected, true);
+});
+
+test('bridge health separates socket readiness from receiver evidence', () => {
+  const dataPath = { protocol: 1, bootId: 'boot-test', sourceSeq: 0, receivedCount: 0, sentCount: 0, lastSourceAgeMs: null, socketPhase: 'open' };
+  const health = buildBridgeHealth({ connected: true, phase: 'open' }, dataPath);
+  assert.deepEqual(health.body.dataPath, dataPath);
+  assert.equal(health.body.status, 'socket-ready');
 });

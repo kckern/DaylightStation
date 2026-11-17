@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'url';
 import { ANTPlusManager } from "./ant.mjs";
 import { BLEManager } from "./ble.mjs";
@@ -11,6 +12,7 @@ import { createReaderArbiter } from "./readerArbiter.mjs";
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from "./continuousScanLoop.mjs";
 import { startBtInventoryBroadcast } from "./btInventory.mjs";
 import { handleBtPairRequest, handleBtRemoveRequest } from "./btPairing.mjs";
+import { createDataPathHealth, createFitnessDataBroadcaster } from "./dataPathHealth.mjs";
 import { buildBridgeHealth, createWebSocketSupervisor } from "./webSocketSupervisor.mjs";
 import { exec as nodeExec } from 'child_process';
 import { promisify } from 'util';
@@ -146,6 +148,13 @@ const app = express();
 
 // Global state
 let websocketClient = null;
+let dataPathTimer = null;
+const serviceIdentity = Object.freeze({
+  service: 'fitness-controller',
+  version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
+  buildId: process.env.FITNESS_BUILD_ID || 'unknown',
+});
+const dataPathHealth = createDataPathHealth({ bootId: randomUUID() });
 // Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
 let btInventoryBroadcast = null;
 
@@ -174,12 +183,12 @@ function sendUnlockResult(result) {
 }
 
 // Broadcast function for fitness data
-function broadcastFitnessData(message) {
-  // Send via WebSocket if connected
-  if (websocketClient && websocketClient.readyState === WebSocket.OPEN) {
-    websocketClient.send(JSON.stringify(message));
-  }
-}
+const broadcastFitnessData = createFitnessDataBroadcaster({
+  health: dataPathHealth,
+  getSocket: () => websocketClient,
+  openState: WebSocket.OPEN,
+  logEvent: logToStore,
+});
 
 // Ship a structured event to the app's log store via the backend's log
 // ingestion (topic 'logging', no `source`, so it is not relayed as sensor
@@ -191,7 +200,8 @@ function logToStore(level, event, data) {
     topic: 'logging',
     events: [{
       ts: new Date().toISOString(), level, event, data,
-      context: { source: 'satellite', app: 'fitness', module: 'fitness-controller' }
+      context: { source: 'satellite', app: 'fitness', module: 'fitness-controller',
+        ...serviceIdentity, bootId: dataPathHealth.snapshot().bootId }
     }]
   }));
 }
@@ -397,6 +407,7 @@ const websocketSupervisor = createWebSocketSupervisor({
   onMessage: handleWebSocketMessage,
   onOpen: (ws) => {
     websocketClient = ws;
+    logToStore('info', 'fitness.transport.connected', { ...serviceIdentity, bootId: dataPathHealth.snapshot().bootId });
     for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request', 'bt.remove']) {
       ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
     }
@@ -434,7 +445,8 @@ app.use(express.json());
 app.get('/status', (req, res) => {
   const status = {
     server: 'Fitness Controller',
-    version: '1.0.0',
+    ...serviceIdentity,
+    dataPath: dataPathHealth.snapshot(websocketSupervisor.getStatus().phase),
     timestamp: new Date().toISOString(),
     ant_plus: antManager.getStatus(),
     ble: bleManager.getStatus(),
@@ -539,9 +551,11 @@ app.get('/fingerprint/pending', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  const health = buildBridgeHealth(websocketSupervisor.getStatus());
+  const socket = websocketSupervisor.getStatus();
+  const health = buildBridgeHealth(socket, dataPathHealth.snapshot(socket.phase));
   res.status(health.httpStatus).json({
     ...health.body,
+    ...serviceIdentity,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
@@ -566,6 +580,8 @@ process.on('SIGINT', async () => {
   }
 
   // Close WebSocket
+  if (dataPathTimer != null) clearInterval(dataPathTimer);
+  dataPathTimer = null;
   websocketSupervisor.stop();
   
   // Close ANT+ device
@@ -589,6 +605,8 @@ process.on('SIGTERM', async () => {
   }
 
   // Close WebSocket
+  if (dataPathTimer != null) clearInterval(dataPathTimer);
+  dataPathTimer = null;
   websocketSupervisor.stop();
   
   // Close ANT+ device
@@ -652,6 +670,11 @@ async function startServer() {
 
   // Connect to DaylightStation WebSocket
   websocketSupervisor.start();
+  dataPathTimer = setInterval(() => {
+    // Diagnostic traffic never enters broadcastFitnessData or carries source:fitness.
+    const snapshot = dataPathHealth.snapshot(websocketSupervisor.getStatus().phase);
+    sendBus('fitness.transport.health', { ...snapshot, ...serviceIdentity, timestamp: new Date().toISOString() });
+  }, 5_000);
 
   // Start the BlueZ BT inventory broadcast: periodically reports OS-level
   // connected BT devices (address/name/connected/battery) over the WS as

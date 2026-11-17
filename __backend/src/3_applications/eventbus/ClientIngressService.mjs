@@ -1,4 +1,4 @@
-import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic } from './ClientRelayPolicy.mjs';
+import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic, shouldRelayFitnessDiagnosticTopic } from './ClientRelayPolicy.mjs';
 import {
   controlTargetFromTopic,
   validateClientAck,
@@ -70,6 +70,11 @@ export class ClientIngressService {
     }
     if (message.topic?.startsWith('homeline-call:')) {
       this.publications.publishCall(message.topic, message);
+      return;
+    }
+    if (shouldRelayFitnessDiagnosticTopic(message.topic)) {
+      this.publications.publishRelay(message.topic, message);
+      this.logger.debug?.('eventbus.fitness.diagnostic', { clientId, topic: message.topic });
       return;
     }
     if (message.source === 'fitness' || message.source === 'fitness-simulator') {
