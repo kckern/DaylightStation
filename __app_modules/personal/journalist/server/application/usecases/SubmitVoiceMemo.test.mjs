@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { SubmitVoiceMemo } from './SubmitVoiceMemo.mjs';
 
 const CHAT = 'telegram:b1_c2';
+const NOW = Date.UTC(2026, 10, 18, 20, 0, 0);
+const MINUTE = 60 * 1000;
+const DAY = 24 * 60 * MINUTE;
 
 /**
  * A journal that stores what the fake voice path saves, the way ProcessTextEntry
@@ -11,7 +14,10 @@ const CHAT = 'telegram:b1_c2';
 function build({ transcription = 'Bought the tickets today.', failAfterSave = false, failBeforeSave = false } = {}) {
   const calls = { voice: [] };
   const journal = new Map();
+  const events = [];
   const useCase = new SubmitVoiceMemo({
+    clock: () => NOW,
+    logger: { info: (event, data) => events.push({ event, data }) },
     processVoiceEntry: {
       execute: async (input) => {
         calls.voice.push(input);
@@ -26,7 +32,7 @@ function build({ transcription = 'Bought the tickets today.', failAfterSave = fa
       findById: async (id, chatId) => journal.get(`${chatId}|${id}`) || null,
     },
   });
-  return { useCase, calls, journal };
+  return { useCase, calls, journal, events };
 }
 
 const memo = (over = {}) => ({
@@ -108,4 +114,42 @@ test('audio with nothing intelligible is reported, not journaled', async () => {
 test('the collaborators are required', () => {
   assert.throws(() => new SubmitVoiceMemo({ journalEntryRepository: { findById() {} } }), /processVoiceEntry/);
   assert.throws(() => new SubmitVoiceMemo({ processVoiceEntry: { execute() {} } }), /journalEntryRepository/);
+});
+
+test('a memo recorded earlier is journaled at the time it was recorded', async () => {
+  const { useCase, calls, events } = build();
+  const recordedAt = NOW - 2 * DAY;
+  await useCase.execute(memo({ recordedAt }));
+  assert.ok(calls.voice[0].timestamp instanceof Date);
+  assert.equal(calls.voice[0].timestamp.getTime(), recordedAt);
+  assert.equal(events.length, 0);
+});
+
+test('a phone clock a few minutes ahead is believed', async () => {
+  const { useCase, calls } = build();
+  await useCase.execute(memo({ recordedAt: NOW + 4 * MINUTE }));
+  assert.equal(calls.voice[0].timestamp.getTime(), NOW + 4 * MINUTE);
+});
+
+test('a memo with no recorded time is journaled now, with nothing passed on', async () => {
+  const { useCase, calls, events } = build();
+  await useCase.execute(memo());
+  assert.equal('timestamp' in calls.voice[0], false);
+  assert.equal(events.length, 0);
+});
+
+test('a recorded time that cannot be right is ignored and said so', async () => {
+  const cases = [
+    [NOW + 6 * MINUTE, 'in_the_future'],
+    [NOW - 31 * DAY, 'too_old'],
+    [Number.NaN, 'not_a_time'],
+    ['yesterday', 'not_a_time'],
+    [-5, 'not_a_time'],
+  ];
+  for (const [recordedAt, reason] of cases) {
+    const { useCase, calls, events } = build();
+    await useCase.execute(memo({ recordedAt }));
+    assert.equal('timestamp' in calls.voice[0], false, String(recordedAt));
+    assert.deepEqual(events, [{ event: 'journalist.memo.recordedAtIgnored', data: { memoId: '1700000000000', username: 'user_1', reason } }]);
+  }
 });

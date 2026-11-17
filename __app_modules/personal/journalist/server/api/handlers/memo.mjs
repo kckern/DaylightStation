@@ -76,10 +76,12 @@ export function journalistMemoRoute(journalistApi, options = {}) {
 
     const mimeType = bareType(req.get('Content-Type'));
     const declaredBytes = Number(req.get('Content-Length'));
-    const recordedAt = Number(req.get('X-Daylight-Recorded-At'));
+    // Passed on as the number sent; the use case decides whether to believe it.
+    const recordedHeader = req.get('X-Daylight-Recorded-At');
+    const recordedAt = recordedHeader === undefined || recordedHeader === '' ? null : Number(recordedHeader);
     req.memo = {
       username, conversationId, memoId, mimeType,
-      recordedAt: Number.isFinite(recordedAt) && recordedAt > 0 ? recordedAt : null,
+      recordedAt,
       startedAt: Date.now(),
     };
 
@@ -105,7 +107,7 @@ export function journalistMemoRoute(journalistApi, options = {}) {
 
     let result;
     try {
-      result = await journalistApi.submitMemo({ conversationId, username, memoId, audioBuffer, mimeType });
+      result = await journalistApi.submitMemo({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt });
     } catch (error) {
       logger.error?.('journalist.memo.failed', {
         memoId, username, bytes, durationMs: Date.now() - startedAt,

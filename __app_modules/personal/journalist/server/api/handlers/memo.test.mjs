@@ -47,6 +47,7 @@ test('an accepted memo answers 200 with its id and reaches the journal as audio'
   assert.equal(command.memoId, 'm1');
   assert.equal(command.mimeType, 'audio/mp4');
   assert.ok(command.audioBuffer.equals(AUDIO));
+  assert.equal(command.recordedAt, 1700000000000);
   assert.equal(events(seen, 'journalist.memo.received').length, 1);
   assert.equal(events(seen, 'journalist.memo.accepted')[0].data.bytes, AUDIO.length);
 });

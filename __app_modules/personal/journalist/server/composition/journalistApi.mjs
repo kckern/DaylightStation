@@ -72,6 +72,7 @@ export function createJournalistApiRouter(config) {
     ? new SubmitVoiceMemo({
         processVoiceEntry: container.getProcessVoiceEntry(),
         journalEntryRepository: memoJournal,
+        logger,
       })
     : null;
 

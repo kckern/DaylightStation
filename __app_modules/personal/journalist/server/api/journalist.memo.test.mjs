@@ -70,12 +70,12 @@ function build({ transcript = TRANSCRIPT, failReplies = 0 } = {}) {
 
   const userEntries = () => (files.get('user_1/lifelog/journalist/messages')?.messages || [])
     .filter((m) => String(m.id).startsWith('memo:'));
-  return { app, telegram, userEntries };
+  return { app, telegram, userEntries, journal };
 }
 
-const upload = (app, { id = '1700000000000', user = 'user_1' } = {}) => request(app)
+const upload = (app, { id = '1700000000000', user = 'user_1', recordedAt = null } = {}) => request(app)
   .post('/api/v1/journalist/memo').query({ user })
-  .set('X-Daylight-Memo-Id', id).set('X-Daylight-Recorded-At', id).set('Content-Type', 'audio/mp4')
+  .set('X-Daylight-Memo-Id', id).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {}).set('Content-Type', 'audio/mp4')
   .send(Buffer.from('aac bytes'));
 
 test('a memo is transcribed from its bytes, journaled, and answered in the conversation', async () => {
@@ -144,4 +144,35 @@ test('a user the Journalist does not know is refused before any audio is read', 
   assert.equal(res.status, 404);
   assert.equal(res.body.error, 'unknown_user');
   assert.equal(telegram.transcribed.length, 0);
+});
+
+test('a memo recorded two days ago lands on the day it was recorded', async () => {
+  const { app, userEntries, journal } = build();
+  const recordedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  const recordedIso = new Date(recordedAt).toISOString();
+  const res = await upload(app, { recordedAt });
+  assert.equal(res.status, 200);
+
+  const [entry] = userEntries();
+  assert.equal(entry.timestamp, recordedIso);
+  const thatDay = await journal.findByDate(CHAT, recordedIso.slice(0, 10));
+  assert.deepEqual(thatDay.map((m) => m.id), ['memo:1700000000000']);
+  const today = await journal.findByDate(CHAT, new Date().toISOString().slice(0, 10));
+  assert.equal(today.some((m) => m.id === 'memo:1700000000000'), false);
+});
+
+test('a back-dated memo sits in time order among the entries already there', async () => {
+  const { app, userEntries } = build();
+  await upload(app, { id: 'today' });
+  await upload(app, { id: 'earlier', recordedAt: Date.now() - 3 * 24 * 60 * 60 * 1000 });
+  // The file is kept newest first.
+  assert.deepEqual(userEntries().map((m) => m.id), ['memo:today', 'memo:earlier']);
+});
+
+test('a memo with no recorded time is stamped when it is processed', async () => {
+  const { app, userEntries } = build();
+  const before = Date.now();
+  await upload(app);
+  const stamped = new Date(userEntries()[0].timestamp).getTime();
+  assert.ok(stamped >= before && stamped <= Date.now());
 });

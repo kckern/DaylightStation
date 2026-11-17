@@ -7,7 +7,7 @@
  */
 
 import { ConversationMessage } from "../../domain/entities/ConversationMessage.mjs";
-import { nowTs24 } from '#system/utils/time.mjs';
+import { nowTs24, formatLocalTimestamp } from '#system/utils/time.mjs';
 import {
   formatAsChat,
   truncateToLength,
@@ -26,6 +26,9 @@ import {
  * @property {string} messageId
  * @property {string} senderId
  * @property {string} senderName
+ * @property {Date} [timestamp] - When the entry was made, if that was not now
+ *   (a memo recorded earlier and uploaded later). Left out, the entry is
+ *   stamped with the time it is processed, as it always has been.
  */
 
 /**
@@ -71,7 +74,7 @@ export class ProcessTextEntry {
    * @param {ProcessTextEntryInput} input
    */
   async execute(input) {
-    const { chatId, text, messageId, senderId, senderName, responseContext } = input;
+    const { chatId, text, messageId, senderId, senderName, responseContext, timestamp } = input;
 
     this.#logger.debug?.('textEntry.process.start', { chatId, textLength: text.length, hasResponseContext: !!responseContext });
 
@@ -91,14 +94,17 @@ export class ProcessTextEntry {
       const userMessage = ConversationMessage.createUserMessage({
         messageId,
         chatId,
-        timestamp: nowTs24(),
+        timestamp: timestamp ? formatLocalTimestamp(timestamp) : nowTs24(),
         senderId,
         senderName,
         text,
       });
 
       if (this.#journalEntryRepository) {
-        await this.#journalEntryRepository.saveMessage?.(userMessage);
+        // The repository stamps the stored entry itself. It is told a time
+        // only when the entry was not made now.
+        if (timestamp) await this.#journalEntryRepository.saveMessage?.(userMessage, { at: timestamp });
+        else await this.#journalEntryRepository.saveMessage?.(userMessage);
       }
 
       // 2. Load conversation history

@@ -14,6 +14,7 @@ import { splitTranscription } from "../../domain/services/MessageSplitter.mjs";
  * @property {string} messageId
  * @property {string} senderId
  * @property {string} senderName
+ * @property {Date} [timestamp] - When the audio was recorded, if not now
  */
 
 /**
@@ -78,7 +79,7 @@ export class ProcessVoiceEntry {
    * @param {ProcessVoiceEntryInput} input
    */
   async execute(input) {
-    const { chatId, voiceFileId, messageId, senderId, senderName, responseContext } = input;
+    const { chatId, voiceFileId, messageId, senderId, senderName, responseContext, timestamp } = input;
 
     this.#logger.debug?.('voiceEntry.process.start', { chatId, voice: describeVoice(voiceFileId), hasResponseContext: !!responseContext });
 
@@ -132,6 +133,9 @@ export class ProcessVoiceEntry {
         senderId,
         senderName,
         responseContext,
+        // Only a memo recorded earlier carries a time; a Telegram voice
+        // message does not, and is stamped when it is processed.
+        ...(timestamp ? { timestamp } : {}),
       });
 
       this.#logger.info?.('voiceEntry.process.complete', {

@@ -13,18 +13,41 @@
 /** The journal id a memo's entry is saved under. */
 export const memoMessageId = (memoId) => `memo:${memoId}`;
 
+// A phone clock may run a little ahead of this one.
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+// The upload queue gives up long before this; anything older is a wrong clock.
+const OLDEST_RECORDING_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The time a memo says it was recorded, if it can be believed.
+ * @returns {{at: Date|null, ignored: string|null}}
+ */
+export function recordedTime(recordedAt, nowMs) {
+  if (recordedAt === null || recordedAt === undefined) return { at: null, ignored: null };
+  if (typeof recordedAt !== 'number' || !Number.isFinite(recordedAt) || recordedAt <= 0) {
+    return { at: null, ignored: 'not_a_time' };
+  }
+  if (recordedAt > nowMs + CLOCK_SKEW_MS) return { at: null, ignored: 'in_the_future' };
+  if (recordedAt < nowMs - OLDEST_RECORDING_MS) return { at: null, ignored: 'too_old' };
+  return { at: new Date(recordedAt), ignored: null };
+}
+
 export class SubmitVoiceMemo {
   #processVoiceEntry;
   #journalEntryRepository;
+  #clock;
+  #logger;
   // Uploads being processed right now, so a retry that arrives before the
   // first attempt has reached the journal joins it and does not start a second.
   #inFlight = new Map();
 
-  constructor({ processVoiceEntry, journalEntryRepository } = {}) {
+  constructor({ processVoiceEntry, journalEntryRepository, clock = Date.now, logger = {} } = {}) {
     if (!processVoiceEntry) throw new Error('processVoiceEntry is required');
     if (!journalEntryRepository?.findById) throw new Error('journalEntryRepository is required');
     this.#processVoiceEntry = processVoiceEntry;
     this.#journalEntryRepository = journalEntryRepository;
+    this.#clock = clock;
+    this.#logger = logger;
   }
 
   /**
@@ -34,22 +57,23 @@ export class SubmitVoiceMemo {
    * @param {string} input.memoId - The client's id for this recording
    * @param {Buffer} input.audioBuffer
    * @param {string} input.mimeType
+   * @param {number|null} [input.recordedAt] - Epoch ms the recording started
    * @returns {Promise<{kind: 'accepted', memoId: string, transcriptionLength: number}
    *   | {kind: 'duplicate', memoId: string}
    *   | {kind: 'empty_transcription', memoId: string}>}
    */
-  async execute({ conversationId, username, memoId, audioBuffer, mimeType }) {
+  async execute({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt = null }) {
     const key = `${conversationId}|${memoId}`;
     const running = this.#inFlight.get(key);
     if (running) return running;
 
-    const work = this.#run({ conversationId, username, memoId, audioBuffer, mimeType })
+    const work = this.#run({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt })
       .finally(() => this.#inFlight.delete(key));
     this.#inFlight.set(key, work);
     return work;
   }
 
-  async #run({ conversationId, username, memoId, audioBuffer, mimeType }) {
+  async #run({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt }) {
     const messageId = memoMessageId(memoId);
 
     // The journal is the record of what was accepted. It survives a restart,
@@ -64,10 +88,18 @@ export class SubmitVoiceMemo {
       messageId,
       senderId: username,
       senderName: username,
+      ...this.#entryTime({ username, memoId, recordedAt }),
     });
 
     if (result?.success === false) return { kind: 'empty_transcription', memoId };
     return { kind: 'accepted', memoId, transcriptionLength: String(result?.transcription ?? '').length };
+  }
+
+  /** The entry's time when the memo was recorded earlier; nothing when it is now. */
+  #entryTime({ username, memoId, recordedAt }) {
+    const { at, ignored } = recordedTime(recordedAt, this.#clock());
+    if (ignored) this.#logger.info?.('journalist.memo.recordedAtIgnored', { memoId, username, reason: ignored });
+    return at ? { timestamp: at } : {};
   }
 }
 

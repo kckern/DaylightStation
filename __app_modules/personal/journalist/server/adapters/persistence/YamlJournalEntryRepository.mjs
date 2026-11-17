@@ -406,9 +406,13 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
   /**
    * Save a ConversationMessage entity
    * @param {Object} message - ConversationMessage entity
+   * @param {Object} [options]
+   * @param {Date} [options.at] - When the message was made, if not now. The
+   *   entry is stored under this time, so it sorts and is found by date where
+   *   it belongs. Left out, the entry is stamped now.
    * @returns {Promise<Object>}
    */
-  async saveMessage(message) {
+  async saveMessage(message, { at = null } = {}) {
     const conversationId = message.chatId || message.conversationId;
     if (!conversationId) {
       throw new InfrastructureError('Message must have chatId or conversationId', {
@@ -417,7 +421,7 @@ export class YamlJournalEntryRepository extends IJournalEntryRepository {
     }
 
     const timezone = this.#getTimezone(conversationId);
-    const localTimestamp = this.#formatLocalTimestamp(new Date(), timezone);
+    const localTimestamp = this.#formatLocalTimestamp(at || new Date(), timezone);
 
     const messageData = {
       id: message.messageId || message.id,
