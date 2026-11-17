@@ -93,6 +93,25 @@ the 2026-08-25 bouncing-reader signature (§5). A `school.print.printable-exclud
 warn means the picker silently hid an item — check the paper surface
 profile's declared `capabilities:` against the bank's item types.
 
+### Keypad program launch: prepared versus opened
+
+A successful `/act` response with `outcome: mount` prepares a local launch.
+The backend's existing `school.selfservice.program.mounted` event describes
+that preparation; it does **not** confirm that the browser opened the activity.
+Follow the frontend outcome too: `school.selfservice.mount.refused` means
+SchoolApp declined the target. A runner's mounted event establishes that its
+component rendered, but an API authorization refusal can still leave it on
+an error screen without opening an authorized activity.
+
+For Gratitude, the keypad must forward `gratitudeGrant`, `learnerId` and
+`today` from the launcher effect. A missing grant is refused by SchoolApp;
+a wrong-purpose grant is rejected by the Gratitude API before opening or
+writing work. Use the learner and time window to correlate these events;
+never log the grant or code. `school.gratitude.ui.mounted` confirms the
+runner rendered; successful authorized activity loading is a further check.
+Neither a prepared launch nor a mounted component proves completion or
+credit. Existing server code-use accounting is unchanged by grant forwarding.
+
 ### 4b. OMR sheet scan → grade → thermal receipt → HA sound cue
 
 ```

@@ -1,4 +1,5 @@
 import path from 'path';
+import { version as viteVersion } from 'vite';
 import { fileURLToPath } from 'url';
 import { existsSync, realpathSync } from 'fs';
 
@@ -26,8 +27,11 @@ export default {
   root: __dirname,
   // Numeric loopback avoids DNS during confined middleware-only test startup.
   server: { host: '127.0.0.1' },
-  // Vitest runs on Vite 8; OXC supplies JSX without the production Vite 6 plugin.
-  oxc: { jsx: { runtime: 'automatic' } },
+  // Match the production automatic JSX runtime on either installed toolchain.
+  // Vite 6/7 transform JSX with esbuild; Vite 8 uses OXC.
+  ...(Number.parseInt(viteVersion, 10) < 8
+    ? { esbuild: { jsx: 'automatic' } }
+    : { oxc: { jsx: { runtime: 'automatic' } } }),
   plugins: [
     {
       // Modules under __app_modules/ and __capabilities/ import frontend

@@ -69,6 +69,18 @@ describe('useSelfService: the /act mount effect reaches onLaunch intact', () => 
     expect(log.error).not.toHaveBeenCalledWith('mount.refused', expect.anything());
   });
 
+  it('gratitude grant and learner reach onLaunch intact', async () => {
+    const onLaunch = vi.fn(async () => true);
+    await drive({ effect: { kind: 'program', programId: 'gratitude', learnerId: 'kid1', today: '2026-11-16', gratitudeGrant: 'signed-gratitude' }, onLaunch });
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ program: 'gratitude', learnerId: 'kid1', today: '2026-11-16', gratitudeGrant: 'signed-gratitude' }));
+  });
+
+  it('an effect with no gratitudeGrant hands over null, never undefined', async () => {
+    const onLaunch = vi.fn(async () => false);
+    await drive({ effect: { kind: 'program', programId: 'gratitude', learnerId: 'kid1', today: '2026-11-16' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toHaveProperty('gratitudeGrant', null);
+  });
+
   it('an effect with no bookGrant hands over null, never undefined', async () => {
     const onLaunch = vi.fn(async () => false);
     await drive({

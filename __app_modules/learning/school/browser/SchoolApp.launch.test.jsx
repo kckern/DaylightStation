@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import SchoolApp from "./SchoolApp.jsx";
 import { schoolApi } from "./schoolApi.js";
 import { HmacSchoolBookGrantIssuer } from "../server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
+import { HmacSchoolGratitudeGrantIssuer } from '../server/adapters/actions/HmacSchoolGratitudeGrantIssuer.mjs';
+import { createSchoolGratitudeRouter } from '../server/api/schoolGratitude.mjs';
 import { DEFAULT_IDLE_TIMEOUT_SECONDS } from "./selfService/useSelfService.js";
 
 // Capture the WS subscribers, KEYED BY TOPIC, so these tests can push
@@ -185,6 +187,7 @@ const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: 
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   h.byTopic = {};
   h.subs = {};
   bankLogMock.mockClear();
@@ -935,5 +938,91 @@ describe('SchoolApp — the /test door', () => {
     } finally {
       window.history.replaceState({}, '', oldUrl);
     }
+  });
+});
+
+
+describe('SchoolApp — Gratitude authorization from the real keypad hook', () => {
+  const today = '2026-11-16';
+  const key = 'isolated-gratitude-launch-test-key-32bytes';
+  const grants = new HmacSchoolGratitudeGrantIssuer({ key });
+  const signedGrant = grants.issue({ learnerId: 'kid1', days: [today] });
+
+  async function openFromKeypad(gratitudeGrant) {
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: {
+      ok: true, learner: 'kid1',
+      context: { learner: { id: 'kid1', displayName: 'Alpha' }, trail: [], progress: [] },
+      presentation: { status: 'ready', message: null },
+      actions: [{ kind: 'program', label: 'Open Gratitude', target: 'gratitude', role: 'primary' }],
+    } });
+    actMock.mockResolvedValue({ ok: true, status: 200, data: {
+      outcome: 'mount', sentence: 'Opening it here on the screen.',
+      effect: { kind: 'program', program: 'gratitude', programId: 'gratitude', unitId: 'gratitude:daily', learnerId: 'kid1', today, gratitudeGrant },
+    } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    for (const digit of '123456') {
+      const button = screen.getByRole('button', { name: digit });
+      fireEvent.pointerDown(button);
+      fireEvent.click(button);
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Gratitude' }));
+    await waitFor(() => expect(actMock).toHaveBeenCalledWith({ code: '123456', action: 'program' }));
+  }
+
+  // Keep the runner, API client, route guard and HMAC verifier real. Only the
+  // fetch transport is replaced; the router runs in memory without a server.
+  function serveGratitude(service) {
+    const router = createSchoolGratitudeRouter({ service, grants });
+    return vi.spyOn(globalThis, 'fetch').mockImplementation((url, options) => new Promise((resolve, reject) => {
+      if (!String(url).startsWith('/api/v1/school/gratitude/')) {
+        resolve({ ok: false, status: 404, json: async () => ({}) });
+        return;
+      }
+      const path = String(url).replace('/api/v1/school/gratitude', '');
+      const req = { method: options.method, url: path, headers: options.headers, get: name => options.headers[name] };
+      const res = {
+        statusCode: 200,
+        status(status) { this.statusCode = status; return this; },
+        json(data) { resolve({ ok: this.statusCode < 400, status: this.statusCode, json: async () => data }); },
+      };
+      router.handle(req, res, error => reject(error ?? new Error(`Unexpected request: ${path}`)));
+    }));
+  }
+
+  it('opens the authorized activity with the launcher grant, learner and today intact', async () => {
+    const service = { open: vi.fn(async () => ({ learnerId: 'kid1', studyDay: today, today, serverNow: '2026-11-16T18:00:00Z', phase: 'draft', draft: null, prompt: { id: 'gratitude', text: 'What are you grateful for today?', required: true } })) };
+    const transport = serveGratitude(service);
+    try {
+      await openFromKeypad(signedGrant);
+      expect(await screen.findByText('What are you grateful for today?')).toBeInTheDocument();
+      expect(service.open).toHaveBeenCalledExactlyOnceWith('kid1', today);
+      expect(transport).toHaveBeenCalledWith(`/api/v1/school/gratitude/kid1/day/${today}/open`, expect.objectContaining({ headers: expect.objectContaining({ 'X-School-Gratitude-Grant': signedGrant }) }));
+      expect(selfServiceErrorMock).not.toHaveBeenCalledWith('mount.refused', expect.anything());
+    } finally { transport.mockRestore(); }
+  });
+
+  it('missing or wrong-purpose grant never opens or credits Gratitude', async () => {
+    const recordCompletion = vi.fn();
+    // These service boundaries would be capable of opening/writing work if
+    // the real route guard let an unauthorized request through.
+    const service = { open: vi.fn(recordCompletion), submit: vi.fn(recordCompletion) };
+    const transport = serveGratitude(service);
+    const wrongPurpose = new HmacSchoolBookGrantIssuer({ key }).issue({ learnerId: 'kid1' });
+    try {
+      await openFromKeypad(null);
+      await waitFor(() => expect(selfServiceErrorMock).toHaveBeenCalledWith('mount.refused', expect.anything()));
+      expect(screen.queryByRole('heading', { name: 'Gratitude' })).toBeNull();
+      expect(transport.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/school/gratitude/'))).toHaveLength(0);
+      // A nonempty token can render the runner's error shell, but cannot open
+      // the authorized activity. Purpose validation belongs to the server.
+      await act(async () => { await launchHook.onLaunch({ kind: 'program', program: 'gratitude', learnerId: 'kid1', today, gratitudeGrant: wrongPurpose }, 'kid1'); });
+      expect(await screen.findByRole('alert')).toHaveTextContent('Please open Gratitude from School again.');
+      const gratitudeMounted = screen.queryByText('What are you grateful for today?') !== null;
+      expect(gratitudeMounted).toBe(false);
+      expect(service.open).not.toHaveBeenCalled();
+      expect(service.submit).not.toHaveBeenCalled();
+      expect(recordCompletion).not.toHaveBeenCalled();
+    } finally { transport.mockRestore(); }
   });
 });
