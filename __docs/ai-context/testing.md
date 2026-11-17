@@ -145,6 +145,13 @@ Registry: `data/system/testdata.yml`
    - Unit test? → `tests/unit/suite/`
    - API test? → `tests/integration/suite/`
    - E2E? → `tests/runtime/suite/`
+5. **Refusing a large upload before reading it?** Use
+   `tests/_lib/refusedUpload.mjs`, not supertest's `.send(bigBuffer)`. A route
+   that answers early can leave the uploading client with EPIPE or ECONNRESET,
+   depending on the OS's socket buffers (it failed every run on macOS). The
+   helper stops writing once the response arrives and records, server side,
+   whether the body was read or parsed when the response went out; assert
+   `refusedStatus` and `refusal: {bodyComplete: false, bodyParsed: false}`.
 
 ## Isolated Fitness styled acceptance
 
