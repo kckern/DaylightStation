@@ -146,4 +146,50 @@ public class SettingsRegistryTest {
         assertEquals(0, row.getInt("value"));
         assertFalse(row.getBoolean("overridden"));
     }
+
+    @Test public void aSecretIsNeverDescribedInTheClear() throws Exception {
+        SettingsRegistry s = fresh();
+        s.declareSecret("presence.token");
+        s.set("presence.token", "s3cret-value");
+        assertEquals("s3cret-value", s.get("presence.token"));
+        JSONObject row = null;
+        for (int i = 0; i < s.describe().length(); i++) {
+            JSONObject o = s.describe().getJSONObject(i);
+            if (o.getString("key").equals("presence.token")) row = o;
+        }
+        assertNotNull(row);
+        assertTrue(row.getBoolean("secret"));
+        assertEquals("(set)", row.getString("value"));
+        assertFalse(s.describe().toString().contains("s3cret-value"));
+    }
+
+    @Test public void anUnsetSecretDescribesAsEmpty() throws Exception {
+        SettingsRegistry s = fresh();
+        s.declareSecret("presence.token");
+        assertEquals("", s.describe().getJSONObject(3).getString("value"));
+    }
+
+    @Test public void listenersHearSetAndResetButNotAFailedSet() {
+        SettingsRegistry s = fresh();
+        java.util.List<String> heard = new java.util.ArrayList<>();
+        s.onChange(heard::add);
+        s.set("recovery.retrySec", 5);
+        s.reset("recovery.retrySec");
+        try { s.set("recovery.retrySec", "soon"); } catch (InvalidSettingException expected) { }
+        assertEquals(java.util.Arrays.asList("recovery.retrySec", "recovery.retrySec"), heard);
+    }
+
+    @Test public void aListenerThatThrowsDoesNotBreakTheWrite() {
+        SettingsRegistry s = fresh();
+        s.onChange(key -> { throw new IllegalStateException("boom"); });
+        s.set("recovery.retrySec", 5);
+        assertEquals(5, s.get("recovery.retrySec"));
+    }
+
+    @Test(expected = InvalidSettingException.class)
+    public void aSecretCannotHaveACompiledDefault() throws Exception {
+        SettingsRegistry s = fresh();
+        s.declareSecret("presence.token");
+        s.applyDefaults(new JSONObject("{\"presence.token\":\"in-a-public-repo\"}"));
+    }
 }
