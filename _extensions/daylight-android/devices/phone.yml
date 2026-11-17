@@ -21,10 +21,14 @@ capabilities:
   - notifications
   - bookmarks
   - one-tap-actions
+  - widgets
 defaults:
   # The household site as the phone reaches it: a full https URL, resolved from
   # `placeholders:` in the private tokens file when the payload is built.
   webview.startUrl: "{phone_start_url}"
+  # The household user this phone acts for, where a backend route takes one (the memo
+  # upload will). A name from the private file, never written here.
+  identity.user: "{phone_user}"
   # Back steps through the page history and then leaves the app, as in any phone app.
   webview.backButton: "history"
   debug.execEnabled: false
@@ -46,6 +50,8 @@ defaults:
   # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
   actions.shortcuts: "memo,media,feed,call"
   actions.tiles: "memo"
+  # The four buttons of the "Daylight actions" home-screen widget, in order.
+  widgets.actions: "memo,media,feed,call"
   # A web link opens in the app only on the backend's own origin or one listed here.
   # This is the host the link activity is offered for (appLinks above).
   links.origins: "https://{phone_link_host}"

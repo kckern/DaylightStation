@@ -284,6 +284,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 | DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API and error codes, every setting, helper capabilities, lifeline, fleet CLI `cli/daylight-device.cli.mjs`) | `__docs/reference/android/README.md` |
 | DaylightStation Android kiosk (replaces Fully: `webview-host` and the `window.daylight` page bridge, `lockdown` modes per device, `screen-power`, `volume`, `app-launcher`, `debug-tools` routes with error codes, one-time ADB grants, differences from Fully) | `__docs/reference/android/kiosk.md` |
+| DaylightStation Android on the phone (`devices/phone.yml`: not a kiosk, control API on loopback, `daylight://` and https links through one link activity, the install key, `bookmarks`, `one-tap-actions` as launcher shortcuts / tiles / pinned shortcuts, `widgets`, the private values a phone build needs) | `__docs/reference/android/phone.md` |
 | Switching a kiosk from Fully to DaylightStation Android (per-device cutover: pre-flight, install, grants, route and bridge checks, device-specific checks, reboot survival, payload push/rollback, escape attempts, home-app switch, rollback to Fully) | `__docs/runbooks/android/kiosk-cutover.md` |
 
 ---

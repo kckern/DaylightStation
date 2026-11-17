@@ -39,7 +39,7 @@ device is built; a build test fails a start URL that is not https.
 |---|---|---|
 | `webview.startUrl` | empty | Start page, https |
 | `webview.bridgeOrigins` | empty | Comma-separated origins given the bridge, the microphone and the camera. Empty means the origin of the start URL |
-| `webview.backButton` | `reload` | `reload`, `page` (the page gets `daylight:back`) or `ignore` |
+| `webview.backButton` | `reload` | `reload`, `page` (the page gets `daylight:back`), `ignore`, or `history` (step back through the page history, then put the app behind the previous one; the phone's value) |
 | `webview.interceptKeys` | empty | Key names sent to the page as `daylight:key` and kept from the system, for example `VolumeUp,VolumeDown` |
 | `webview.loadTimeoutSec` | 20 | A load not finished by then is stopped and counted as failed |
 | `webview.allowMic`, `webview.allowCamera` | true | Grant a page request from an allowed origin, when the app holds the Android permission |

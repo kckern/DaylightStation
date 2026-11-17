@@ -116,6 +116,12 @@ payload can still be rolled back or restarted remotely.
 
 Both are plain HTTP on the local network.
 
+`control.bind` in the device file says where both listen: `lan` (the default, every
+interface, what the kiosks do) or `loopback` (the device's own loopback address
+only). The phone uses `loopback`, because a phone joins networks outside the house;
+its control API is then reached through `adb forward`. See
+`__docs/reference/android/phone.md`.
+
 ## Authentication
 
 Every request to either port must carry the device's token in the
@@ -316,6 +322,10 @@ missing provider is a normal state.
 | `PairingDialogExemption` | `bluetooth-controls` | `lockdown`: while it is granted, Android's own pairing dialog (Settings in front) is not recalled over |
 | `ScreenPower` | `screen-power` | `volume-keys`: wake on a key, sleep on a double volume-down. Without it the attempt is logged `screen-toggle-unavailable` |
 | `InputLock` | `lockdown` | `volume-keys`: while the lock is active a volume key does nothing |
+| `PageOpener` | `webview-host` | `bookmarks`: show a URL in the app's page, now or in the window that attaches next |
+| `LinkHandler` (one per link kind) | `bookmarks` (`open`, `bookmark`), `one-tap-actions` (`action`) | `notifications`: hands a checked link to the handler of its kind |
+| `LinkKeySource` | `notifications` | `one-tap-actions`: the install key for the links its surfaces launch |
+| `ActionList` | `one-tap-actions` | `widgets`: the actions and their keyed links, in process only |
 | `PackageGate` | `lockdown` | `lease-gate`: a closed package is kept from the front, and hidden as well where this app is device owner |
 | `KioskSurface` | `webview-host` | `lockdown`, `screen-power`, `app-launcher` and `debug-tools`: the kiosk window, its page, evaluate and capture |
 | `LockdownControl`, `DeviceAdminAccess` | `lockdown` | `webview-host` (what is in front, recall, reboot support), `screen-power` (screen off, reboot), `app-launcher` (a launched app may stay in front) |

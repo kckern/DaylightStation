@@ -4,7 +4,8 @@ One Android codebase that builds a separate APK for each household device. A dev
 is described by one YAML file. The build reads that file and produces an app with
 that device's package name, SDK levels, ports and capabilities.
 
-**State.** Phase 1 built the foundation: a service, a control API and a payload the
+**State.** A fourth device, `phone`, builds from `devices/phone.yml` (not a kiosk; see
+`__docs/reference/android/phone.md`). It has never been installed. Phase 1 built the foundation: a service, a control API and a payload the
 app can swap over the network. Phase 2 ported the helper code of the old helper apps
 into capabilities. Phase 3 added the kiosk: the WebView window and its page bridge,
 lockdown, screen power, volume, the app launcher and the remote diagnostics
@@ -32,7 +33,8 @@ capabilities/<name>/      one directory per capability
   payload/                optional: logic, loaded at runtime
   shell/                  optional: Android declarations baked into the APK
 buildSrc/                 reads and validates devices and capabilities; generates DeviceConfig
-shell-api/                the two interfaces shared by the shell and the payload
+shell-api/                the contracts shared by the shell and the payload
+shell-kit/                what the phone capabilities' shell halves share (start the service, read the surface cache)
 core/                     settings registry, token auth, router, control server
 payload/                  the fixed entry class; wires a device's capabilities into the core
 shell/                    the installed app: service, payload loader, lifeline
@@ -242,6 +244,11 @@ commit.
    ahead of time, because a payload update cannot add one), and
    `foregroundServiceTypes:` sets the shell service's types (`mediaPlayback`,
    `microphone`, `location`, and the other Android names).
+   Two more optional keys, both used by the phone: `control.bind: loopback` makes
+   the control API and the lifeline listen on the loopback address only (the
+   default, `lan`, is every interface), and `appLinks: { host: "{placeholder}" }`
+   offers the app for https links to that one host (the device must list
+   `notifications`; the host is private, so it is a placeholder).
 5. Add the device's entry to the private tokens file, with any placeholders its
    defaults use.
 6. Build with `./gradlew :shell:assemble<Device>Debug` and run the verifier.
@@ -288,6 +295,15 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
      runs on a worker thread with no Looper: views, windows and the WebView are
      created and touched on the main thread (`MainThread` in core), and `start()`
      must not wait for it.
+   - A component Android creates by class name while the process may be cold (an
+     activity another app can start, a tile, a widget) cannot count on a payload.
+     It either reads what the payload last wrote (`SurfaceKeys` in `shell-api`,
+     `SurfaceCache` in `shell-kit`; the tiles and the widget do this) or asks the
+     payload through a `PayloadPort` in `shell-api`: the payload attaches a handler
+     at start and detaches it at stop, the component calls with a wait and has a
+     stated fallback for `NotReadyException`. The link activity does this, after
+     starting the shell service with `ShellStart.ensure`. Requests and answers are
+     JSON text, so a payload swap cannot break an installed component.
    - A device that lists `webview-host` has one launcher icon, the kiosk Activity:
      the generated device manifest takes the launcher filter off the shell's setup
      Activity.
