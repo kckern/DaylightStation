@@ -282,7 +282,9 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
 | Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
-| DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API, fleet CLI) | `__docs/reference/android/README.md` |
+| DaylightStation Android (one codebase, per-device APKs: device YAML, capabilities, shell + payload, control API and error codes, every setting, helper capabilities, lifeline, fleet CLI `cli/daylight-device.cli.mjs`) | `__docs/reference/android/README.md` |
+| DaylightStation Android kiosk (replaces Fully: `webview-host` and the `window.daylight` page bridge, `lockdown` modes per device, `screen-power`, `volume`, `app-launcher`, `debug-tools` routes with error codes, one-time ADB grants, differences from Fully) | `__docs/reference/android/kiosk.md` |
+| Switching a kiosk from Fully to DaylightStation Android (per-device cutover: pre-flight, install, grants, route and bridge checks, device-specific checks, reboot survival, payload push/rollback, escape attempts, home-app switch, rollback to Fully) | `__docs/runbooks/android/kiosk-cutover.md` |
 
 ---
 

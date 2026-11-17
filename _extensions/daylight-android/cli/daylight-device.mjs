@@ -505,8 +505,8 @@ export async function run(device, ports, parsed, deps = {}) {
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   if (parsed.pre) {
     // Best effort and not printed: a device that cannot do it (no way to wake the screen) is still measured.
-    const quiet = { log() {}, error() {} };
-    try { await send(buildRequest(device, ports, parsed.pre), fetchImpl, quiet, parsed.pre); } catch { /* the command itself reports */ }
+    const unprinted = { log() {}, error() {} };
+    try { await send(buildRequest(device, ports, parsed.pre), fetchImpl, unprinted, parsed.pre); } catch { /* the command itself reports */ }
     await sleep(1000);
   }
   return send(buildRequest(device, ports, parsed), fetchImpl, out, { ...parsed, writeFile: deps.writeFile });

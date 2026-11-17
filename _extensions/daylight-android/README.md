@@ -6,16 +6,22 @@ that device's package name, SDK levels, ports and capabilities.
 
 **State.** Phase 1 built the foundation: a service, a control API and a payload the
 app can swap over the network. Phase 2 ported the helper code of the old helper apps
-into capabilities, and the `piano`, `portal` and `shield` device files build with
-them. Phase 3 is adding the kiosk: the WebView window, lockdown, screen power, volume
-and the app launcher are built and listed by all three devices (lockdown switched off).
-A build that lists `lockdown` gets a HOME filter on the kiosk Activity from its
-generated device manifest. Fully Kiosk Browser and the old helpers still run every device. The only hardware fact: on 2026-11-16 the phase
-1 build was installed on the Portal beside the existing apps, its payload loaded
-and the control API answered. Nothing from phase 2 or phase 3 has run on a device.
+into capabilities. Phase 3 added the kiosk: the WebView window and its page bridge,
+lockdown, screen power, volume, the app launcher and the remote diagnostics
+(`debug-tools`). The `piano`, `portal` and `shield` device files list all of it,
+with lockdown switched off, and each build serves every route of the control API
+contract. A build that lists `lockdown` gets a HOME filter on the kiosk Activity
+from its generated device manifest. Fully Kiosk Browser and the old helpers still
+run every device. The only hardware fact: on 2026-11-16 the phase 1 build was
+installed on the Portal beside the existing apps, its payload loaded and the
+control API answered. Nothing from phase 2 or phase 3 has run on a device.
 
-Operating a device (routes, error codes, settings, the lifeline, the CLI) is covered
-in `__docs/reference/android/README.md`. This file covers building.
+Operating a device (routes, error codes, settings, the lifeline, the CLI) is
+covered in `__docs/reference/android/README.md`, and the kiosk capabilities (the
+page bridge, lockdown, the debug tools, the one-time grants) in
+`__docs/reference/android/kiosk.md`. Switching a device
+from Fully to this app is `__docs/runbooks/android/kiosk-cutover.md`. This file
+covers building.
 
 ## Layout
 
@@ -38,7 +44,7 @@ tools/verify-build.mjs    checks a built APK against its device file (--legacy: 
 tools/legacy-permissions.yml  the permission ledger --legacy reads
 tools/port.sh             copies a file out of an old helper app and records it
 tools/port-check.mjs      checks the recorded copies against their sources
-cli/daylight-device.mjs   the fleet CLI (repo entry: cli/daylight-device.cli.mjs)
+cli/daylight-device.mjs   the fleet CLI (repo entry: cli/daylight-device.cli.mjs); `help` lists its commands
 ```
 
 ## Shell and payload
@@ -127,14 +133,18 @@ test starts it for real over `FakeContext` (`core-testing`): build the runtime
 with `TestCore.createWithContext(dir, context)`, call `start()`, assert what was
 taken (`context.receivers`, a bound port, a key filter), call `stop()` and assert
 it was all given back, then `stop()` again. What the JVM cannot show is listed in
-the reference under "Not covered by JVM tests". The payload
+the reference under "Not covered by JVM tests". `debug-tools` also runs the
+JavaScript it generates for the page in Node, against a stand-in window, so Node
+must be on the path for the Java tests as it is for the port check. The payload
 module's tests run once per device, against that device's generated configuration:
 `./gradlew :payload:testPianoDebugUnitTest :payload:testPortalDebugUnitTest
 :payload:testShieldDebugUnitTest`. Each boots the device's real capabilities with
 a fake shell and applies the device file's `defaults:`, so a default for an
 undeclared setting, a default of the wrong type, a default for a secret, a route or
-WebSocket message type claimed twice, or an entry class that cannot be constructed
-fails the build instead of the first start on the device. The Node tests
+WebSocket message type claimed twice, an entry class that cannot be constructed, a
+contract route a listed capability does not serve, or a WebSocket message type that
+would reach the debug tools or the settings fails the build instead of the first
+start on the device. The Node tests
 for the CLI and the verifier's helpers run with
 `node --test _extensions/daylight-android/cli/ _extensions/daylight-android/tools/`
 from the repo root.
@@ -224,8 +234,10 @@ commit.
    differ), `shell.versionCode`, `shell.versionName` (letters, digits, `.`, `_`
    and `-` only) and the list of `capabilities`.
 3. Put any device defaults under `defaults:`. Each key must be a setting that one of
-   the device's capabilities declares. This is checked when the payload starts, not
-   at build time: a wrong key makes the payload refuse to start.
+   the device's capabilities declares, with a value of its type and inside its rule.
+   The payload refuses to start otherwise, and the build finds it first: the payload
+   module's tests run once per device (`DeviceDefaultsTest`) and apply the device
+   file's defaults to its real capabilities. A secret setting cannot have a default.
 4. Optional keys: `permissions:` lists permissions no capability owns (declared
    ahead of time, because a payload update cannot add one), and
    `foregroundServiceTypes:` sets the shell service's types (`mediaPlayback`,
@@ -244,7 +256,12 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 2. Put the logic in `capabilities/<name>/payload/` (copy the `build.gradle` from
    `debug-tools`). The entry class needs a public no-argument constructor. In
    `register` it declares its settings and routes; `start` and `stop` do the work.
-   A capability talks to the core only, never to another capability.
+   A capability talks to the core only, never to another capability. Where two must
+   cooperate, one provides an interface from `core/spi` through
+   `core.services().provide(...)` and the other asks for it with `find` (which may
+   answer null: the provider may not be in the device's build) or `require` (which
+   answers 501 naming the missing capability). Notifications go over
+   `core.events()` by topic.
 3. If it needs manifest entries (a permission, a service, a receiver, a provider),
    resources, native code, a library, or a class Android creates by name, add a
    `capabilities/<name>/shell/` Android library module: a `build.gradle` that starts
@@ -291,6 +308,17 @@ A setting that must stay off the device file (a token, a credential) is declared
 with `declareSecret`. A setting whose value is household-specific and not secret (an
 address, a URL) is a normal setting whose device default is a `{placeholder}`; a
 capability treats an empty value as "not configured" and says so once in the log.
+
+What a route may write down: the device's event log (`core.log()`), the shell log
+(`core.shell().note`) and the log store (`LogEvents.emit`) are read by people and
+shipped off the device. A route that handles what is on screen, what a page holds
+or what a command printed logs that it ran and how much it returned, never the
+content. `debug-tools` is the example, and its tests assert it.
+
+Anything a capability takes from Android (an engine, a player, a permission check)
+sits behind a small interface the test can replace, as `debug-tools` does for
+speech, sound and the log reader; `FakeContext` answers null for the package
+manager and every system service.
 
 `start()` runs on a worker thread with no Looper and must return quickly; work that
 needs the main thread is posted to `new Handler(Looper.getMainLooper())`. `stop()`
