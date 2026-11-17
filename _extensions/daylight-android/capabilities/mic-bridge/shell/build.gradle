@@ -1,0 +1,11 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.micbridge.shell'
+}
+
+dependencies {
+    // A payload cannot carry a library: only its own classes are dexed. The shell
+    // ships Java-WebSocket and the payload compiles against it.
+    api 'org.java-websocket:Java-WebSocket:1.5.4'
+}
