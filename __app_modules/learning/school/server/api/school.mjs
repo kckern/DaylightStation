@@ -4,6 +4,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * All policy lives in the service; this file only maps errors to statuses.
  */
 import express from 'express';
+import {asyncHandler} from '#system/http/middleware/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentPublicResources } from "#api/v1/presenters/publicResourceRefs.mjs";
@@ -11,6 +12,8 @@ import { mountTeacherReadingRoutes } from "./school.teacherReading.mjs";
 import { mountCardLadderRoutes } from "./school.cardLadder.mjs";
 
 export function createSchoolRouter({
+  authorizeKioskAction = null,
+  resolveSupervisionLearner = null,
   schoolErrors = {},
   coreErrors = {},
   slugify,
@@ -129,12 +132,28 @@ export function createSchoolRouter({
   const { GuestForbiddenError, SessionGoneError } = schoolErrors;
   const { ValidationError, EntityNotFoundError, DomainInvariantError } = coreErrors;
   const router = express.Router();
+  if (authorizeKioskAction) router.use(asyncHandler(async (req,_res,next)=>{await authorizeKioskAction(req);next();}));
+  if(authorizeKioskAction)router.param('sessionId',(req,_res,next,sessionId)=>{
+    Promise.resolve().then(async()=>{
+      const perLearnerStore=/^\/(flashcards|card-ladder)\//.test(req.path);
+      const learnerId=perLearnerStore?(req.body?.userId??req.body?.learnerId??req.query?.userId??req.query?.learnerId??null):resolveSupervisionLearner?await resolveSupervisionLearner(req):schoolService.sessionLearner?.(sessionId)??null;
+      await authorizeKioskAction(req,{learnerId});
+    }).then(()=>next(),next);
+  });
   if (presenceMiddleware) router.use(presenceMiddleware);
   let warnedMaterialsConfigMissing = false;
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
-      .then(() => fn(req, res))
+      .then(async()=>{
+        if(authorizeKioskAction){
+          const explicit=req.params.learnerId??req.params.userId??req.body?.learnerId??req.body?.userId??req.query.learnerId??req.query.userId;
+          const actual=explicit!=null?{learnerId:explicit}:req.params.sessionId?{learnerId:resolveSupervisionLearner?await resolveSupervisionLearner(req):schoolService.sessionLearner?.(req.params.sessionId)??null}:{};
+          await authorizeKioskAction(req,actual);
+        }
+        return fn(req,res);
+      })
       .catch((err) => {
+        if(err.status===403)return res.status(403).json({error:err.message,code:err.code});
         if (GuestForbiddenError && err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (SessionGoneError && err instanceof SessionGoneError) return res.status(410).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });

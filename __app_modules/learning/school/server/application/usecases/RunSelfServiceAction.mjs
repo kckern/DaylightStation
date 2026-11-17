@@ -90,7 +90,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 
 export class RunSelfServiceAction {
   #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
-  #newSessionId; #clock; #logger; #tokens;
+  #newSessionId; #clock; #logger; #tokens; #mountAcknowledgements; #mountReceiptIssuer;
 
   /**
    * @param {object} deps
@@ -130,7 +130,7 @@ export class RunSelfServiceAction {
     resolveAccessCode, sessions,
     issueDocument = null, dispatchMedia = null, openRemediation = null,
     donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
-    tokens = null,
+    tokens = null, mountAcknowledgements = false, mountReceiptIssuer = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -140,6 +140,8 @@ export class RunSelfServiceAction {
     this.#resolver = resolveAccessCode;
     this.#sessions = sessions;
     this.#tokens = tokens;
+    this.#mountAcknowledgements = mountAcknowledgements;
+    this.#mountReceiptIssuer = mountReceiptIssuer;
     this.#issue = issueDocument;
     this.#media = dispatchMedia;
     this.#remediation = openRemediation;
@@ -166,12 +168,12 @@ export class RunSelfServiceAction {
    *   `effect` carries what it needs to do so. `sessionId` is always a REAL
    *   session id or null — never the card's synthetic marker.
    */
-  async execute({ code, action } = {}) {
+  async execute({ code, action, deviceId = null, mountProtocol = null } = {}) {
     const kind = typeof action === 'string' ? action : (action?.kind ?? null);
     // Filled in by `#run` once a real action is under way, so the spend below
     // can happen HERE, where the outcome is finally known, without threading a
     // return value through every branch of a method with a dozen exits.
-    const spend = {};
+    const spend = { deviceId, mountProtocol };
     let result;
     try {
       result = await this.#run({ code, kind, spend });
@@ -183,7 +185,12 @@ export class RunSelfServiceAction {
       });
       result = { outcome: 'failed', sentence: TELL_A_GROWN_UP, effect: null };
     }
+    if (spend.reservation && result.outcome !== 'mount') {
+      try { await this.#tokens.settleMountUse(spend.token, { ...spend.reservation, mounted: false, at: this.#clock().toISOString() }); }
+      catch { this.#logger.warn?.('school.selfservice.mount-release-pending', { deviceId, action: kind }); }
+    }
     const answer = {
+      ...(result.outcome === 'mount' && spend.receipt ? { mountProtocol: 1, mountReceipt: spend.receipt, mountExpiresAt: spend.reservation.expiresAt } : {}),
       outcome: result.outcome,
       // THE NON-EMPTY SENTENCE IS AN INVARIANT, not a convention every branch
       // is trusted to keep. No path below produces a blank one today, but the
@@ -202,6 +209,10 @@ export class RunSelfServiceAction {
     this.#logger.info?.('school.selfservice.action.run', {
       action: kind, outcome: answer.outcome, sessionId: answer.sessionId,
       status: answer.effect?.status ?? answer.effect?.decision ?? null,
+    });
+    if (answer.outcome === 'mount') this.#logger.info?.('school.selfservice.program.mount-prepared', {
+      action: kind, deviceId, learnerId: spend.learnerId, programId: answer.effect?.programId ?? null,
+      mountProtocol: answer.mountProtocol ?? 0, at: this.#clock().toISOString(),
     });
     await this.#spendCode(spend, answer.outcome);
     return answer;
@@ -225,7 +236,7 @@ export class RunSelfServiceAction {
    */
   async #spendCode(spend, outcome) {
     const token = spend?.token ?? null;
-    if (!token || outcome === 'failed' || outcome === 'refused') return;
+    if (!token || spend.reservation || outcome === 'failed' || outcome === 'refused') return;
     if (typeof this.#tokens?.recordUse !== 'function') return;
     try {
       await this.#tokens.recordUse(token, { at: this.#clock().toISOString() });
@@ -275,7 +286,26 @@ export class RunSelfServiceAction {
 
     // Past `exit`, a real action is about to run. Handed to `execute`, which
     // spends it only if the action actually delivered something.
-    if (spend) spend.token = record?.token ?? null;
+    if (spend) { spend.token = record?.token ?? null; spend.learnerId = card.learner; }
+
+    const programId = offered.target ?? resolution?.programId ?? null;
+    let portalProgram = false;
+    if (this.#mountAcknowledgements && kind === 'program') {
+      try { portalProgram = this.#launchers.get(programId)?.surface === 'portal'; }
+      catch { /* #program retains its established safe remote-dispatch fallback. */ }
+    }
+    const localMount = kind === 'screen' || kind === 'companion'
+      || (kind === 'retry' && offered.operation === 'screen') || portalProgram;
+    if (this.#mountAcknowledgements && localMount) {
+      if (spend.mountProtocol !== 1) return { outcome: 'refused', sentence: 'Refresh this screen, then try your code again.' };
+      if (!this.#mountReceiptIssuer || !spend.deviceId || !spend.token) return { outcome: 'failed', sentence: TELL_A_GROWN_UP };
+      const at = this.#clock().toISOString();
+      const reservation = { useId: `mount_${shortId(24)}`, deviceId: spend.deviceId, learnerId: card.learner, action: kind, at, expiresAt: new Date(Date.parse(at) + 120_000).toISOString() };
+      const reserved = await this.#tokens.reserveMountUse(spend.token, reservation);
+      if (!reserved.reserved) return { outcome: 'refused', sentence: 'That code is already opening. Wait a moment and try again.' };
+      spend.reservation = reservation;
+      spend.receipt = this.#mountReceiptIssuer.issue({ ...reservation, token: spend.token });
+    }
 
     if (kind === 'companion' && resolution?.kind === 'companion') {
       const answer = await this.#companionHandlers?.open?.({ offer: resolution.offer });
@@ -654,7 +684,6 @@ export class RunSelfServiceAction {
         });
         return { outcome: 'failed', sentence: 'Ask a grown-up to set this up.', effect: null };
       }
-      this.#logger.info?.('school.selfservice.program.mounted', { programId, unitId });
       return {
         outcome: 'mount',
         sentence: 'Opening it here on the screen.',
@@ -713,7 +742,7 @@ export class RunSelfServiceAction {
    * and DoNow will interrupt a child mid-quiz.
    */
   async #screen({ sessionId, learnerId, unit }) {
-    this.#logger.info?.('school.selfservice.screen.mounted', {
+    this.#logger.info?.('school.selfservice.screen.mount-prepared', {
       sessionId, unitId: unit?.unitId ?? null, bank: unit?.bank ?? null,
     });
     return {

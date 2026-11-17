@@ -1,0 +1,46 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { YamlAgendaRepository } from '../adapters/YamlAgendaRepository.mjs';
+import { AgendaPlanningService } from './AgendaPlanningService.mjs';
+
+const series = {schema:'agenda-series/v1',series_id:'family',household_id:'home',revision:0,title:'Together',calendar:{frequency:'weekly',timezone:'America/Los_Angeles',week_starts_on:'monday',default_day:'monday'},status:'active',defaults:{participants:[],list:{title:'Together',sections:[{uid:'s',items:[{uid:'i',title:'Song',play:'song'}]}]},activity_settings:{}}};
+let dir, repo, service, n;
+beforeEach(async () => { dir=mkdtempSync(path.join(tmpdir(),'agenda-')); n=0; repo=new YamlAgendaRepository({pathForHousehold:()=>dir}); service=new AgendaPlanningService({repository:repo,clock:()=>new Date('2026-11-16T20:00:00Z'),ids:Object.fromEntries(['plan','section','item','rosterEntry'].map(k=>[k,()=>`${k}_${++n}`])),resolveItemImage:async()=>null,validateActivities:async()=>({valid:true,errors:[]}),logger:{info(){}}}); await repo.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:null,mutate:()=>series}); });
+afterEach(()=>rmSync(dir,{recursive:true,force:true}));
+const create=(requestId,weekOf='2026-11-16')=>service.createPlan({householdId:'home',seriesId:'family',weekOf,requestId});
+it('copies content independently and makes past plans immutable',async()=>{const p=await create('a'); const next=await create('b','2026-11-23'); next.document.list.sections[0].items[0].title='changed'; expect((await repo.readPlan({householdId:'home',planId:p.document.plan_id})).document.list.sections[0].items[0].title).toBe('Song'); const old=await create('old','2026-11-09'); await expect(service.savePlan({householdId:'home',planId:old.document.plan_id,expectedEtag:old.etag,plan:old.document})).rejects.toMatchObject({code:'past_plan'});});
+it('requires successful validation before publication and resolves only current published week',async()=>{const p=await create('a'); expect((await service.resolveCurrent({householdId:'home',seriesId:'family'})).document).toBeNull(); const published=await service.publishPlan({householdId:'home',planId:p.document.plan_id,expectedEtag:p.etag,viewer:{}}); expect(published.document.state).toBe('published'); expect((await service.resolveCurrent({householdId:'home',seriesId:'family'})).document.plan_id).toBe(p.document.plan_id);});
+it('rejects failed activity validation for publish and published edits',async()=>{const p=await create('a'); const rejected=new AgendaPlanningService({repository:repo,clock:()=>new Date('2026-11-16T20:00:00Z'),ids:{},resolveItemImage:async()=>null,validateActivities:async()=>({valid:false,errors:[{field:'activity',message:'Incomplete'}]}),logger:{info(){}}}); await expect(rejected.publishPlan({householdId:'home',planId:p.document.plan_id,expectedEtag:p.etag,viewer:{}})).rejects.toMatchObject({code:'invalid_agenda'}); const published=await service.publishPlan({householdId:'home',planId:p.document.plan_id,expectedEtag:p.etag,viewer:{}}); await expect(rejected.savePlan({householdId:'home',planId:p.document.plan_id,expectedEtag:published.etag,viewer:{},plan:{...published.document,title:'Changed'}})).rejects.toMatchObject({code:'invalid_agenda'}); expect((await repo.readPlan({householdId:'home',planId:p.document.plan_id})).document.title).toBe('Together');});
+it('blocks archived series creation and calendar changes with existing plans',async()=>{await create('a'); const s=await repo.readSeries({householdId:'home',seriesId:'family'}); await expect(service.saveSeries({householdId:'home',seriesId:'family',expectedEtag:s.etag,series:{...s.document,calendar:{...s.document.calendar,timezone:'UTC'}}})).rejects.toMatchObject({code:'calendar_locked'}); await service.archiveSeries({householdId:'home',seriesId:'family',expectedEtag:s.etag}); await expect(create('b','2026-11-23')).rejects.toMatchObject({code:'series_archived'});});
+it('never substitutes a future published week for the current local week',async()=>{const future=await create('future','2026-11-23'); await service.publishPlan({householdId:'home',planId:future.document.plan_id,expectedEtag:future.etag,viewer:{}}); const current=await service.resolveCurrent({householdId:'home',seriesId:'family'}); expect(current).toEqual({weekOf:'2026-11-16',document:null,etag:null,state:'missing'});});
+
+it('hydrates defaults from the current directory while preserving copied plan snapshots',async()=>{
+ const original=await repo.readSeries({householdId:'home',seriesId:'family'});
+ const updated=structuredClone(original.document); updated.defaults.participants=[{id:'template',person:{kind:'guest',id:'visitor'},display:{name:'Old',avatar:null}}];
+ await repo.mutateSeries({householdId:'home',seriesId:'family',expectedEtag:original.etag,mutate:()=>updated});
+ service.resolveDisplay=async()=>({active:true,display:{name:'New',avatar:null}});
+ const first=await create('hydrated'); expect(first.document.participants[0].display.name).toBe('New');
+ service.resolveDisplay=async()=>({active:true,display:{name:'Later',avatar:null}});
+ const copy=await service.createPlan({householdId:'home',seriesId:'family',weekOf:'2026-11-23',requestId:'copy',sourcePlanId:first.document.plan_id,sourceRevision:first.document.revision});
+ expect(copy.document.participants[0].display.name).toBe('New');
+});
+it('retains source UID artwork as an explicit reference through defaults and plan copies',async()=>{
+ service.resolveItemImage=async({item})=>item.uid==='i'?'/media/img/lists/i.jpg':null;
+ const first=await create('art');const item=first.document.list.sections[0].items[0];expect(item.uid).not.toBe('i');expect(item.image).toBe('/media/img/lists/i.jpg');
+ const copy=await service.createPlan({householdId:'home',seriesId:'family',weekOf:'2026-11-23',requestId:'art-copy',sourcePlanId:first.document.plan_id,sourceRevision:first.document.revision});
+ expect(copy.document.list.sections[0].items[0].image).toBe('/media/img/lists/i.jpg');
+});
+it('fails closed when an implicit artwork lookup is unavailable',async()=>{
+ service.resolveItemImage=undefined;
+ await expect(create('unavailable-art')).rejects.toMatchObject({code:'service_unavailable'});
+ expect(await repo.listPlans({householdId:'home',seriesId:'family'})).toHaveLength(0);
+});
+it('saves a replacement of draft content without changing creation provenance',async()=>{
+ const {replaceDraftContent}=await import('../../portable/copyContent.mjs');
+ const original=await create('replace');const copied={participants:[],list:{sections:[]},activity_settings:{}};
+ const replacement=replaceDraftContent(original.document,copied);
+ const saved=await service.savePlan({householdId:'home',planId:original.document.plan_id,expectedEtag:original.etag,plan:replacement,viewer:{}});
+ expect(saved.document.seeded_from).toEqual(original.document.seeded_from);expect(saved.document.list.sections).toEqual([]);
+});

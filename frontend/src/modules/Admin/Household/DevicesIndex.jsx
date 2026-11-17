@@ -5,6 +5,7 @@ import {
   TextInput, Select, Loader, Center, Alert
 } from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconDevices } from '@tabler/icons-react';
+import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 const DEVICE_TYPE_OPTIONS = [
@@ -25,6 +26,7 @@ function typeBadgeColor(type) {
 
 function DevicesIndex() {
   const navigate = useNavigate();
+  const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -70,6 +72,17 @@ function DevicesIndex() {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(()=>{
+    let disposed=false;
+    const refresh=async()=>{
+      setEnforcementNow(Date.now());
+      try{const status=await DaylightAPI('/api/v1/admin/household/shutdown/status');if(!disposed){setShutdown(status);setEnforcementNow(Date.now());}}
+      catch{if(!disposed)setShutdown(null);}
+    };
+    void refresh();const timer=setInterval(()=>void refresh(),2000);
+    return()=>{disposed=true;clearInterval(timer);};
+  },[]);
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));
@@ -136,6 +149,12 @@ function DevicesIndex() {
           Add Device
         </Button>
       </Group>
+
+      <Card padding="lg" withBorder>
+        <Text fw={600}>Kiosk Stop enforcement</Text>
+        {shutdown?.mode==='legacy' && <Text>{shutdown.locked?'Timed Stop requested':'No active timed Stop'}</Text>}
+        <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
+      </Card>
 
       {devices.length > 0 ? (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">

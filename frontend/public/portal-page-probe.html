@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Portal native transport check</title>
+<body><p id="result">Checking native transport…</p>
+<script>
+// Deliberately public and credential-free. A device instrumentation test supplies
+// opaque IDs and verifies native receipt independently of this page's text.
+const parameters=new URLSearchParams(location.search);
+const activityId=parameters.get('activityId');
+const build=parameters.get('build');
+let seq=0;
+if (location.protocol==='https:' && /^[a-zA-Z0-9_-]{1,80}$/.test(activityId||'') && /^[a-zA-Z0-9_.-]{1,100}$/.test(build||'')) {
+  const beat=async () => {
+    try {
+      const response=await fetch('http://127.0.0.1:8773/page/beat', {
+        method:'POST',credentials:'omit',redirect:'error',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({protocol:1,build,activityId,visible:document.visibilityState==='visible',seq:++seq})
+      });
+      document.getElementById('result').textContent=response.ok?'Native receipt accepted':'Native receipt rejected';
+    } catch (_) { document.getElementById('result').textContent='Native transport unavailable'; }
+  };
+  beat(); setInterval(beat,5000);
+} else document.getElementById('result').textContent='HTTPS and test identifiers required';
+</script></body></html>

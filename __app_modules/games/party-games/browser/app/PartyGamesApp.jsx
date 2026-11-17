@@ -1,6 +1,8 @@
 // Shell root: outer flow (loading → set-picker → team-setup → buzzer-bind →
 // playing → results). Mounts the selected game from the registry
 // during 'playing'. Game-agnostic — knows nothing about clues or boards.
+import {contentReturnUrl} from '../../../../../__capabilities/screen-host/browser/return-navigation.mjs';
+import {participantSessionAttachment} from '../participants/participantSessionAttachment.js';
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { flowReducer, initialFlowState } from "./flowReducer.js";
@@ -62,7 +64,7 @@ function BuzzerBind({ seats, onDone, onBack }) {
   );
 }
 
-export default function PartyGamesApp({ dismiss, clear, definitionId, param, appPath }) {
+export default function PartyGamesApp({ dismiss, clear, definitionId, param, appPath, participantLaunch }) {
   // Mounted as a screen widget (gets `dismiss`) or via /app/:appId (gets `clear`).
   const shellExit = dismiss || clear;
   const rootRef = useRef(null);
@@ -70,10 +72,11 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const audioRef = useRef(null);
   const completedSession = useRef(null);
   const currentSession = useRef(null);
+  const [sourceAttachment, setSourceAttachment] = useState(null);
   const [launch] = useState(() => {
-    const raw = definitionId || param || appPath || '';
+    const raw = participantLaunch?.output?.data?.definition_id || definitionId || param || appPath || '';
     const queryIndex = raw.indexOf('?');
-    const query = new URLSearchParams(queryIndex < 0 ? window.location.search : raw.slice(queryIndex + 1));
+    const query = new URLSearchParams(participantLaunch ? '' : (queryIndex < 0 ? window.location.search : raw.slice(queryIndex + 1)));
     return {
       definition: queryIndex < 0 ? raw : raw.slice(0, queryIndex),
       ...(query.has('autostart') ? { autostart: query.get('autostart') === 'true' } : {}),
@@ -103,24 +106,25 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     if (friendlyPath) return friendlyPath.replace(/\/charades(?:\/test)?$/, '');
     return window.location.pathname.replace(/\/party-games(?:\/.*)?$/, '') || '/';
   });
+  const effectiveReturnTo = sourceAttachment?.returnTo ? contentReturnUrl(sourceAttachment.returnTo, window.location.pathname) : returnTo;
   const restoreLocation = useCallback(() => {
-    window.history.replaceState({}, '', returnTo);
-  }, [returnTo]);
+    window.history.replaceState({}, '', effectiveReturnTo);
+  }, [effectiveReturnTo]);
   const exit = useCallback(() => {
     audioRef.current?.stopAll('app-exit');
-    if (needsDocumentReturn) {
-      window.location.replace(returnTo);
+    if (needsDocumentReturn || (sourceAttachment && /^\/app\/party-games(?:\/|$)/.test(window.location.pathname))) {
+      window.location.replace(effectiveReturnTo);
       return;
     }
     restoreLocation(); shellExit?.();
-  }, [needsDocumentReturn, returnTo, restoreLocation, shellExit]);
+  }, [needsDocumentReturn, effectiveReturnTo, restoreLocation, shellExit, sourceAttachment]);
   const [attachment, setAttachment] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     // Embedded previews must not inherit a previous game's ambient URL attachment.
     const directRoute = /^\/screens?\/[^/]+\/(?:party-games(?:\/|$)|fhe\/charades(?:\/test)?$)/.test(window.location.pathname)
       || /^\/app\/party-games(?:\/|$)/.test(window.location.pathname);
-    const diagnosticSessionId = directRoute ? params.get('diagnostic_session') : null;
-    const explicitSessionId = directRoute ? params.get('session') : null;
+    const diagnosticSessionId = !participantLaunch && directRoute ? params.get('diagnostic_session') : null;
+    const explicitSessionId = participantLaunch?.output?.data?.session_id || (directRoute ? params.get('session') : null);
     let savedSessionId = null;
     if (!diagnosticSessionId && !explicitSessionId && requestedDefinition) {
       try { savedSessionId = window.localStorage.getItem(activeSessionKey(requestedDefinition)); }
@@ -135,6 +139,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useEffect(() => () => audio.stopAll('owner-unmount'), [audio]);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [confirmExit, setConfirmExit] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
   const backActionRef = useRef(null);
   const forwardActionRef = useRef(null);
@@ -153,6 +158,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return () => { if (remoteActionRef.current === handler) remoteActionRef.current = null; };
   }, []);
   const requestExit = useCallback(() => {
+    if (confirmReset) { setConfirmReset(false); return; }
     if (confirmExit) { logger.info('party-games.exit-cancelled', { sessionId: flow.sessionId }); setConfirmExit(false); return; }
     if (backActionRef.current?.()) return;
     if (flow.phase === 'playing' && flow.sessionId) {
@@ -160,20 +166,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       setConfirmExit(true); return;
     }
     exit();
-  }, [confirmExit, exit, flow.phase, flow.sessionId, logger]);
+  }, [confirmReset, confirmExit, exit, flow.phase, flow.sessionId, logger]);
   const requestDirectionalBack = useCallback(() => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return backActionRef.current?.() === true;
-  }, [flow.phase, confirmExit]);
+  }, [flow.phase, confirmExit, confirmReset]);
   const requestAdvance = useCallback(() => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return forwardActionRef.current?.() ?? false;
-  }, [confirmExit, flow.phase]);
+  }, [confirmExit, confirmReset, flow.phase]);
   const offerRemoteAction = useCallback((remote) => {
-    if (flow.phase !== 'playing' || confirmExit) return false;
+    if (flow.phase !== 'playing' || confirmExit || confirmReset) return false;
     return remoteActionRef.current?.(remote) === true;
-  }, [confirmExit, flow.phase]);
-  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction });
+  }, [confirmExit, confirmReset, flow.phase]);
+  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction, focusSelector: 'button:not(:disabled):not([tabindex="-1"]), a[href], input:not(:disabled)' });
   // Keep disconnect guidance specific to the mounted controller model.
   const { connected } = useWebSocketStatus();
 
@@ -222,18 +228,37 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useEffect(() => {
     let cancelled = false;
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
-      .then(({ config, sets, attachedSession }) => {
+      .then(({ config, sets, catalogUnavailable, attachedSession }) => {
         if (!cancelled) {
+          if (catalogUnavailable && attachment.savedSession) throw new Error('Current game catalog unavailable');
+          const explicitDefinition = (definitionId || param || appPath || '').split('?')[0];
+          if (participantLaunch && explicitDefinition.includes(':') && explicitDefinition !== participantLaunch.output?.data?.definition_id) throw new Error('Attached session belongs to a different game definition');
           const attachedDefinition = attachedSession?.diagnostic?.definition_id || attachedSession?.header?.artifacts?.rules_definition?.id;
           if (requestedDefinition && attachedDefinition && attachedDefinition !== requestedDefinition) throw new Error('Attached session belongs to a different game definition');
+          if (participantLaunch || attachedSession?.header?.launch?.participant_launch) {
+            const ambientSession = /^\/screens?\/[^/]+\/party-games(?:\/|$)|^\/app\/party-games(?:\/|$)/.test(window.location.pathname) ? new URLSearchParams(window.location.search).get('session') : null;
+            if (participantLaunch && ambientSession && ambientSession !== attachment.sessionId) throw new Error('Attached session identity does not match');
+            const resolved = participantSessionAttachment({participantLaunch, explicitSession:attachment.sessionId, sessionHeader:attachedSession?.header});
+            if (resolved.returnTo && !contentReturnUrl(resolved.returnTo, window.location.pathname)) throw new Error('Invalid saved return target');
+            setSourceAttachment(resolved);
+          }
           if (attachedSession?.replacementSessionId) {
             followReplacement(attachedSession.header.session_id, attachedSession.replacementSessionId, attachedSession);
+            return;
+          }
+          const configuredSet = sets.find(set => set.definitionId === requestedDefinition);
+          if (attachedSession && attachment.savedSession && !attachment.diagnosticSessionId && configuredSet?.launch?.autostart && !canResumeSavedSession(attachedSession, configuredSet)) {
+            logger.info('party-games.configured-roster-changed', {sessionId: attachedSession.header?.session_id, definitionId: requestedDefinition});
+            try { window.localStorage.removeItem(activeSessionKey(requestedDefinition)); } catch { /* URL recovery remains available. */ }
+            const url = new URL(window.location.href); url.searchParams.delete('session');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+            setAttachment(value => ({...value, sessionId: null, savedSession: false}));
             return;
           }
           if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
             throw new Error('Saved session uses an older team setup');
           }
-          if (attachedSession) {
+          if (attachedSession && !participantLaunch && !attachedSession.header?.launch?.participant_launch) {
             const expectedPolicy = launch.historyPolicy === 'disabled' ? 'disabled' : 'recorded';
             const actualPolicy = attachedSession.state?.charades_history_policy;
             const mismatch = expectedPolicy === 'disabled' ? actualPolicy !== 'disabled' : actualPolicy === 'disabled';
@@ -246,7 +271,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
             resumed: true,
             source: attachment.savedSession ? 'saved' : 'url',
           });
-          dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame, launch });
+          dispatchFlow({ type: 'BOOT_LOADED', config, sets, attachedSession, requestedDefinition, requestedGame, launch, resetSetup: attachment.resetSetup });
         }
       })
       .catch((err) => {
@@ -263,7 +288,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   }, [attachment, bootAttempt, requestedDefinition, requestedGame, launch, logger]);
 
   useEffect(() => {
-    if (!flow.definitionId) return;
+    if (!flow.definitionId || participantLaunch || sourceAttachment) return;
     const key = activeSessionKey(flow.definitionId);
     try {
       if (flow.phase === 'playing' && flow.sessionId) window.localStorage.setItem(key, flow.sessionId);
@@ -281,7 +306,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   // Reuse the pending creation during StrictMode effect replay; obsolete flows
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
-    if (flow.phase !== 'playing' || flow.sessionId) return;
+    if (participantLaunch || sourceAttachment || flow.phase !== 'playing' || flow.sessionId) return;
     const key = JSON.stringify([flow.definitionId, flow.seats, flow.hostMode, flow.setupProfile, launch.historyPolicy]);
     if (!creation.current || creation.current.key !== key) {
       creation.current = { key, promise: createSession({ definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode, setupProfile: flow.setupProfile, historyPolicy: launch.historyPolicy }) };
@@ -302,18 +327,43 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     if (!screenBase && !/^\/app\/party-games(?:\/|$)/.test(window.location.pathname)) return;
     const location = new URL(window.location.href);
     if (screenBase) location.pathname = friendlyPath || `${screenBase}/party-games/${flow.definitionId}`;
-    location.searchParams.set('return_to', returnTo);
-    if (launch.autostart !== undefined) location.searchParams.set('autostart', String(launch.autostart));
-    if (launch.participants) location.searchParams.set('participants', launch.participants.join(','));
+    location.searchParams.set('return_to', effectiveReturnTo);
+    if (sourceAttachment) { location.searchParams.delete('participants'); location.searchParams.delete('autostart'); }
+    if (!sourceAttachment && launch.autostart !== undefined) location.searchParams.set('autostart', String(launch.autostart));
+    if (!sourceAttachment && launch.participants) location.searchParams.set('participants', launch.participants.join(','));
     location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
     if (flow.sessionId) location.searchParams.set(flow.sessionId.startsWith('diagnostic:') ? 'diagnostic_session' : 'session', flow.sessionId);
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
-  }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch, friendlyPath]);
+  }, [flow.definitionId, flow.phase, flow.sessionId, effectiveReturnTo, launch, friendlyPath, sourceAttachment]);
   const playAgain = () => {
     audio.stopAll('game-restart');
     creation.current = null;
     try { if (flow.definitionId) window.localStorage.removeItem(activeSessionKey(flow.definitionId)); } catch { /* continue */ }
     restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' });
+  };
+
+  const forceReset = () => {
+    const sourceId = flow.sessionId || attachment.diagnosticSessionId || attachment.sessionId;
+    logger.info('party-games.force-reset', { sessionId: sourceId, definitionId: flow.definitionId || requestedDefinition });
+    audio.stopAll('force-reset');
+    const definition = flow.definitionId || requestedDefinition;
+    try { if (definition) window.localStorage.removeItem(activeSessionKey(definition)); } catch { /* A clean URL still prevents attachment recovery. */ }
+    const location = new URL(window.location.href);
+    location.searchParams.delete('session'); location.searchParams.delete('diagnostic_session');
+    window.history.replaceState({}, '', `${location.pathname}${location.search}${location.hash}`);
+    const resetSetup = flow.definitionId ? {
+      definitionId: flow.definitionId, seats: flow.seats, hostMode: flow.hostMode,
+      buzzerBindings: flow.buzzerBindings ?? loadBuzzerBindings(sourceId),
+    } : attachment.resetSetup;
+    if (sourceId) forgetBuzzerBindings(sourceId);
+    // Invalidate callbacks before the old experience unmounts.
+    currentSession.current = null;
+    completedSession.current = null;
+    creation.current = null;
+    backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
+    setConfirmReset(false); setConfirmExit(false);
+    dispatchFlow({ type: 'SESSION_RESTARTING' });
+    setAttachment({ diagnosticSessionId: null, sessionId: null, savedSession: false, resetSetup });
   };
 
   const onComplete = useCallback((result) => {
@@ -324,14 +374,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   }, [flow.sessionId]);
 
   const isJeopardy = flow.presenterId === 'jeopardy-board';
+  const canForceReset = !participantLaunch && !sourceAttachment && (flow.game === 'charades' || requestedGame === 'charades' || requestedDefinition?.startsWith('charades:'));
   const Game = EXPERIENCE_REGISTRY[flow.presenterId]?.component;
 
   return (
     <div ref={rootRef} className="party-games-container"><PartyStage className={`party-games${isJeopardy ? ' party-games--jeopardy' : ''}`} theme={flow.theme?.id} phase={flow.phase}>
+
       {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => {
         // A session created after boot has no initial URL attachment. Recover the
         // current authority after a reconnect read fails, including its successor.
         if (flow.sessionId) setAttachment({ diagnosticSessionId: flow.sessionId.startsWith('diagnostic:') ? flow.sessionId : null, sessionId: flow.sessionId.startsWith('diagnostic:') ? null : flow.sessionId, savedSession: false });
+        if (flow.phase === 'playing' && !flow.sessionId) {
+          creation.current = null;
+          dispatchFlow({ type: 'SESSION_RESTARTING' });
+        }
         setBootAttempt((value) => value + 1);
       }}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
       {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>{isJeopardy ? 'Host controls are unavailable. Reconnecting…' : 'Keyboard and on-screen controls still work.'}</span></div>}
@@ -364,7 +420,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
       {flow.phase === 'playing' && Game && flow.sessionId && (
         <>
-          <div className="party-games__play" aria-hidden={confirmExit || undefined}>
+          <div className="party-games__play" aria-hidden={confirmExit || confirmReset || undefined}>
             <div className="party-games__play-stage"><PartyGamesExperience
               key={flow.sessionId}
               component={Game}
@@ -391,6 +447,20 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
         <div className="party-games__error" role="alert">Mounted presenter unavailable: {flow.presenterId || 'missing'}</div>
       )}
 
+      {canForceReset && (['loading', 'playing', 'results'].includes(flow.phase) || flow.error) && !confirmReset && !confirmExit && (
+        <div className="party-games__reset-utility"><GameButton tone="quiet" tabIndex={flow.phase === 'playing' && !flow.sessionId ? -1 : undefined} onClick={() => setConfirmReset(true)}>Force reset</GameButton></div>
+      )}
+      {confirmReset && (
+        <div className="party-games__confirm-exit" role="dialog" aria-modal="true" aria-labelledby="party-games-reset-title">
+          <h2 id="party-games-reset-title">Reset Charades?</h2>
+          <p>Discard this game's progress and start fresh with the same players?</p>
+          <div>
+            <GameButton tone="primary" autoFocus onClick={() => setConfirmReset(false)}>Keep playing</GameButton>
+            <GameButton tone="danger" onClick={forceReset}>Confirm reset</GameButton>
+          </div>
+        </div>
+      )}
+
       {confirmExit && (
         <div className="party-games__confirm-exit" role="dialog" aria-modal="true" aria-labelledby="party-games-leave-title">
           <h2 id="party-games-leave-title">Leave game?</h2>
@@ -402,7 +472,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       )}
 
       {flow.phase === 'results' && (
-        <PartyGamesResults allowPlayAgain={!isJeopardy} competition={flow.competition} seats={flow.seats} result={flow.result}
+        <PartyGamesResults allowPlayAgain={!isJeopardy && !participantLaunch && !sourceAttachment} competition={flow.competition} seats={flow.seats} result={flow.result}
           onPlayAgain={playAgain}
           onExit={exit} />
       )}

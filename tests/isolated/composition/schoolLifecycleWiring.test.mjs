@@ -13,6 +13,8 @@
 //     routes actually carry, and "school first, whatever the route" is asserted
 //     against the scan vocabulary that now decides it — because "first" is the
 //     whole requirement and nothing else pins it.
+import express from 'express';
+import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -119,7 +121,7 @@ describe('fail closed', () => {
   it('exposes the whole use-case graph once wired', async () => {
     const { useCases } = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(Object.keys(useCases).sort()).toEqual([
-      'buildAgenda', 'closeLanguageDay', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
+      'acknowledgeSelfServiceMount', 'buildAgenda', 'closeLanguageDay', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
       'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getLearnerTerm', 'getPianoLessonGate',
       'gradeSubmission',
       'invalidateSessionEvidence', 'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDirectLaunch',
@@ -430,4 +432,24 @@ describe('the real screen playback target', () => {
     // must not be built beside it and dispatch through a second path.
     expect(result.devices.playback.constructor.name).toBe('VirtualPlaybackAdapter');
   });
+});
+
+it('boot-caches the opt-in and settles existing signed reservations after flag rollback/reopen', async () => {
+  const config = { lifecycle: { enabled: true }, printing: { host: 'printer.invalid' }, selfService: { enabled: true, mountAcknowledgements: true } };
+  const signing = { householdId: 'test-household', mountReceiptKey: 'test-mount-signing-material-'.repeat(2) };
+  const preparedRuntime = await wire(config, signing);
+  const now = new Date();
+  const record = { token: 'sch:ROLLOUTTEST', tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'reading' }, accessCode: '123456', accessCodeExpiresAt: new Date(+now+3600000).toISOString(), maxUses: 1 };
+  await preparedRuntime.stores.tokens.put(record);
+  preparedRuntime.launchers.set('local-test', { surface: 'portal', launch() {}, issueLaunchTarget: () => ({ kind: 'program', program: 'local-test' }) });
+  preparedRuntime.useCases.resolveAccessCode.resolve = async () => ({ record, card: { ok: true, learner: 'kid1', actions: [{ kind: 'program', target: 'local-test' }] }, resolution: {} });
+  const appFor = runtime => { const app = express(); app.use(express.json()); app.use('/api/v1/school/self-service', runtime.selfServiceRouter); return app; };
+  config.selfService.mountAcknowledgements = false;
+  const prepared = await request(appFor(preparedRuntime)).post('/api/v1/school/self-service/act').send({ code: '123456', action: 'program', mountProtocol: 1 });
+  expect(prepared.body.mountProtocol).toBe(1);
+  expect((await preparedRuntime.stores.tokens.get(record.token)).useCount ?? 0).toBe(0);
+  const reopened = await wire(config, signing);
+  const settled = await request(appFor(reopened)).post('/api/v1/school/self-service/mount-ack').set('Cookie', prepared.headers['set-cookie']).send({ receipt: prepared.body.mountReceipt, mounted: true });
+  expect(settled.body).toEqual({ ok: true, committed: true, replayed: false });
+  expect((await reopened.stores.tokens.get(record.token)).useCount).toBe(1);
 });

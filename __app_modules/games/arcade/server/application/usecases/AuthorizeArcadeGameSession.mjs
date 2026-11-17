@@ -21,14 +21,15 @@ import { ArcadeGameSessionIntent } from "../../domain/value-objects/ArcadeGameSe
  * simply have not walked over yet would be both wrong and unkind.
  */
 export class AuthorizeArcadeGameSession {
-  #authorization; #intents; #credentials; #defaultTtlMs; #now; #logger;
+  #supervision; #authorization; #intents; #credentials; #defaultTtlMs; #now; #logger;
 
   constructor({
-    authorization, intents, credentialsFor = null,
+    authorization, intents, credentialsFor = null, supervision = null,
     defaultTtlMs = 10 * 60 * 1000, now = () => new Date().toISOString(), logger = console,
   }) {
     if (!authorization?.confirmIdentity) throw new Error('AuthorizeArcadeGameSession requires an authorization gateway');
     if (!intents?.record) throw new Error('AuthorizeArcadeGameSession requires an intents repository');
+    this.#supervision = supervision;
     this.#authorization = authorization;
     this.#intents = intents;
     this.#credentials = credentialsFor;
@@ -46,11 +47,14 @@ export class AuthorizeArcadeGameSession {
    * @param {number} [input.ttlMs]   How long the walk back may take.
    * @returns {Promise<{authorized: boolean, userId: string|null, reason: string|null, intent: ArcadeGameSessionIntent|null}>}
    */
-  async execute({ deviceId, content, surface, candidates = null, ttlMs = null, grantRef = null }) {
+  async execute({ deviceId, content, surface, candidates = null, ttlMs = null, grantRef = null, accessContext = null }) {
     if (!deviceId || !content?.contentId || !surface) {
       throw new Error('AuthorizeArcadeGameSession requires deviceId, surface and content.contentId');
     }
 
+    if (this.#supervision && !accessContext) await this.#supervision.authorize(accessContext);
+    const context = {...accessContext,deviceId,activityId:content.contentId};
+    if (this.#supervision) await this.#supervision.authorize(context);
     const enrolled = candidates ?? (this.#credentials ? await this.#credentials() : []);
     const result = await this.#authorization.confirmIdentity({ candidates: enrolled });
 
@@ -72,7 +76,8 @@ export class AuthorizeArcadeGameSession {
       expiresAt: new Date(Date.parse(requestedAt) + (ttlMs ?? this.#defaultTtlMs)).toISOString(),
     });
 
-    await this.#intents.record(intent);
+    if (this.#supervision) await this.#supervision.runAuthorized({...context,learnerId:result.userId}, () => this.#intents.record(intent));
+    else await this.#intents.record(intent);
     this.#logger.info?.('arcade.authorize.issued', {
       deviceId, userId: result.userId, contentId: content.contentId, expiresAt: intent.expiresAt,
     });

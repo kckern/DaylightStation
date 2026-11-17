@@ -67,6 +67,9 @@ $item-radius: 0.75rem;
     0 8px 16px rgba(0, 0, 0, 0.08 * $intensity);
 }
 
+.menu-admin-link { align-self: flex-start; padding: .5rem; color: #fff; }
+.menu-admin-link:focus { box-shadow: 0 0 0 3px #ffda6a; }
+
 .menu-items-container {
   height: 100%;
   width: 100%;

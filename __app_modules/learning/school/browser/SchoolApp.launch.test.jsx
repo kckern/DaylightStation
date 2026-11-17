@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import SchoolApp from "./SchoolApp.jsx";
 import { schoolApi } from "./schoolApi.js";
 import { HmacSchoolBookGrantIssuer } from "../server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
+import { HmacSchoolGratitudeGrantIssuer } from '../server/adapters/actions/HmacSchoolGratitudeGrantIssuer.mjs';
+import { createSchoolGratitudeRouter } from '../server/api/schoolGratitude.mjs';
 import { DEFAULT_IDLE_TIMEOUT_SECONDS } from "./selfService/useSelfService.js";
 
 // Capture the WS subscribers, KEYED BY TOPIC, so these tests can push
@@ -89,6 +91,7 @@ vi.mock("./schoolApi.js", () => ({
     // beside it asks for.
     selfServiceResolve: (...a) => resolveMock(...a),
     selfServiceAct: (...a) => actMock(...a),
+    selfServiceMountAck: vi.fn(async () => ({ ok: true, data: { ok: true } })),
     selfServicePrinterStatus: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     earningsRoster: (...a) => earningsRosterMock(...a),
@@ -185,6 +188,7 @@ const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: 
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   h.byTopic = {};
   h.subs = {};
   bankLogMock.mockClear();
@@ -411,10 +415,10 @@ describe('SchoolApp — book-log launch target mounts the reading shelf', () => 
     let mounted;
     await act(async () => {
       launchHook.claim('kid1');
-      mounted = await launchHook.onLaunch(BOOK_TARGET, 'kid1');
+      mounted = launchHook.onLaunch(BOOK_TARGET, 'kid1');
     });
 
-    expect(mounted).toBe(true);
+    expect(await mounted).toBe(true);
     expect(await screen.findByRole('heading', { name: 'Reading' })).toBeInTheDocument();
     expect(document.querySelector('.school-books')).not.toBeNull();
     expect(screen.queryByTestId('cube-stub')).toBeNull();
@@ -441,10 +445,10 @@ describe('SchoolApp — book-log launch target mounts the reading shelf', () => 
     let mounted;
     await act(async () => {
       launchHook.claim('kid1');
-      mounted = await launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1' }, 'kid1');
+      mounted = launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1' }, 'kid1');
     });
 
-    expect(mounted).toBe(false);
+    expect(await mounted).toBe(false);
     expect(document.querySelector('.school-books')).toBeNull();
     expect(bookShelfProps).not.toHaveBeenCalled();
     // Refused by THIS branch — named, and not as a fall-through.
@@ -459,10 +463,10 @@ describe('SchoolApp — book-log launch target mounts the reading shelf', () => 
 
     let mounted;
     await act(async () => {
-      mounted = await launchHook.onLaunch({ kind: 'program', program: 'book-log', bookGrant: 'signed-book-grant' }, null);
+      mounted = launchHook.onLaunch({ kind: 'program', program: 'book-log', bookGrant: 'signed-book-grant' }, null);
     });
 
-    expect(mounted).toBe(false);
+    expect(await mounted).toBe(false);
     expect(document.querySelector('.school-books')).toBeNull();
     expect(bookShelfProps).not.toHaveBeenCalled();
     expect(bookShelfLogMock).toHaveBeenCalledWith('launch-refused', { reason: 'no-learner' });
@@ -652,9 +656,9 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     let mounted;
     await act(async () => {
       launchHook.claim('kid1');
-      mounted = await launchHook.onLaunch({ kind: 'program', program: 'economy-bank', learnerId: 'kid2' }, 'kid1');
+      mounted = launchHook.onLaunch({ kind: 'program', program: 'economy-bank', learnerId: 'kid2' }, 'kid1');
     });
-    expect(mounted).toBe(false);
+    expect(await mounted).toBe(false);
     expect(screen.queryByTestId('bank-screen')).toBeNull();
     expect(bankLogMock).toHaveBeenCalledWith('economy-bank-refused', { reason: 'learner-mismatch' });
   });
@@ -672,7 +676,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     // Something else takes the panel (a reading shelf, here), then goes home.
     await act(async () => {
       launchHook.claim('kid1');
-      await launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'g' }, 'kid1');
+      void launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'g' }, 'kid1');
     });
     expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
     await act(async () => { bookShelfProps.mock.calls.at(-1)[0].onExit('done'); });
@@ -851,9 +855,9 @@ describe('SchoolApp — card-ladder flashcards target', () => {
     let mounted;
     await act(async () => {
       launchHook.claim('kid1');
-      mounted = await launchHook.onLaunch(TARGET, 'kid1');
+      mounted = launchHook.onLaunch(TARGET, 'kid1');
     });
-    expect(mounted).toBe(true);
+    expect(await mounted).toBe(true);
     expect(await screen.findByTestId('card-ladder-stub')).toBeInTheDocument();
     const props = cardLadderProps.mock.calls.at(-1)[0];
     expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null, entry: null });
@@ -865,8 +869,8 @@ describe('SchoolApp — card-ladder flashcards target', () => {
     render(<SchoolApp clear={() => {}} mode="open" />);
     await screen.findByText('Civilization');
     let mounted;
-    await act(async () => { mounted = await launchHook.onLaunch({ ...TARGET, deckId: null }, 'kid1'); });
-    expect(mounted).toBe(false);
+    await act(async () => { mounted = launchHook.onLaunch({ ...TARGET, deckId: null }, 'kid1'); });
+    expect(await mounted).toBe(false);
     expect(screen.queryByTestId('card-ladder-stub')).toBeNull();
   });
 });
@@ -937,3 +941,132 @@ describe('SchoolApp — the /test door', () => {
     }
   });
 });
+
+
+describe('SchoolApp — Gratitude authorization from the real keypad hook', () => {
+  const today = '2026-11-16';
+  const key = 'isolated-gratitude-launch-test-key-32bytes';
+  const grants = new HmacSchoolGratitudeGrantIssuer({ key });
+  const signedGrant = grants.issue({ learnerId: 'kid1', days: [today] });
+
+  async function openFromKeypad(gratitudeGrant) {
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: {
+      ok: true, learner: 'kid1',
+      context: { learner: { id: 'kid1', displayName: 'Alpha' }, trail: [], progress: [] },
+      presentation: { status: 'ready', message: null },
+      actions: [{ kind: 'program', label: 'Open Gratitude', target: 'gratitude', role: 'primary' }],
+    } });
+    actMock.mockResolvedValue({ ok: true, status: 200, data: {
+      outcome: 'mount', sentence: 'Opening it here on the screen.',
+      mountProtocol: 1, mountReceipt: 'test-opaque-receipt', mountExpiresAt: new Date(Date.now()+120000).toISOString(),
+      effect: { kind: 'program', program: 'gratitude', programId: 'gratitude', unitId: 'gratitude:daily', learnerId: 'kid1', today, gratitudeGrant },
+    } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    for (const digit of '123456') {
+      const button = screen.getByRole('button', { name: digit });
+      fireEvent.pointerDown(button);
+      fireEvent.click(button);
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Gratitude' }));
+    await waitFor(() => expect(actMock).toHaveBeenCalledWith({ code: '123456', action: 'program' }));
+  }
+
+  // Keep the runner, API client, route guard and HMAC verifier real. Only the
+  // fetch transport is replaced; the router runs in memory without a server.
+  function serveGratitude(service) {
+    const router = createSchoolGratitudeRouter({ service, grants });
+    return vi.spyOn(globalThis, 'fetch').mockImplementation((url, options) => new Promise((resolve, reject) => {
+      if (!String(url).startsWith('/api/v1/school/gratitude/')) {
+        resolve({ ok: false, status: 404, json: async () => ({}) });
+        return;
+      }
+      const path = String(url).replace('/api/v1/school/gratitude', '');
+      const req = { method: options.method, url: path, headers: options.headers, get: name => options.headers[name] };
+      const res = {
+        statusCode: 200,
+        status(status) { this.statusCode = status; return this; },
+        json(data) { resolve({ ok: this.statusCode < 400, status: this.statusCode, json: async () => data }); },
+      };
+      router.handle(req, res, error => reject(error ?? new Error(`Unexpected request: ${path}`)));
+    }));
+  }
+
+  it('opens the authorized activity with the launcher grant, learner and today intact', async () => {
+    const service = { open: vi.fn(async () => ({ learnerId: 'kid1', studyDay: today, today, serverNow: '2026-11-16T18:00:00Z', phase: 'draft', draft: null, prompt: { id: 'gratitude', text: 'What are you grateful for today?', required: true } })) };
+    const transport = serveGratitude(service);
+    try {
+      schoolApi.selfServiceMountAck.mockClear();
+      schoolApi.selfServiceMountAck.mockImplementation(async body => {
+        expect(document.querySelector('.gratitude-program')).not.toBeNull();
+        return { ok: true, data: { ok: true, committed: body.mounted } };
+      });
+      await openFromKeypad(signedGrant);
+      expect(await screen.findByText('What are you grateful for today?')).toBeInTheDocument();
+      expect(service.open).toHaveBeenCalledExactlyOnceWith('kid1', today);
+      await waitFor(() => expect(schoolApi.selfServiceMountAck).toHaveBeenCalledExactlyOnceWith({ receipt: 'test-opaque-receipt', mounted: true }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
+      expect(transport).toHaveBeenCalledWith(`/api/v1/school/gratitude/kid1/day/${today}/open`, expect.objectContaining({ headers: expect.objectContaining({ 'X-School-Gratitude-Grant': signedGrant }) }));
+      expect(selfServiceErrorMock).not.toHaveBeenCalledWith('mount.refused', expect.anything());
+    } finally { transport.mockRestore(); }
+  });
+
+  it('missing or wrong-purpose grant never opens or credits Gratitude', async () => {
+    const recordCompletion = vi.fn();
+    // These service boundaries would be capable of opening/writing work if
+    // the real route guard let an unauthorized request through.
+    const service = { open: vi.fn(recordCompletion), submit: vi.fn(recordCompletion) };
+    const transport = serveGratitude(service);
+    const wrongPurpose = new HmacSchoolBookGrantIssuer({ key }).issue({ learnerId: 'kid1' });
+    try {
+      schoolApi.selfServiceMountAck.mockReset().mockResolvedValue({ ok: true, data: { ok: true } });
+      await openFromKeypad(null);
+      await waitFor(() => expect(selfServiceErrorMock).toHaveBeenCalledWith('mount.refused', expect.anything()));
+      expect(screen.queryByRole('heading', { name: 'Gratitude' })).toBeNull();
+      expect(transport.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/school/gratitude/'))).toHaveLength(0);
+      // A nonempty token can render the runner's error shell, but cannot open
+      // the authorized activity. Purpose validation belongs to the server.
+      await act(async () => { void launchHook.onLaunch({ kind: 'program', program: 'gratitude', learnerId: 'kid1', today, gratitudeGrant: wrongPurpose }, 'kid1'); });
+      expect(await screen.findByRole('alert')).toHaveTextContent('Please open Gratitude from School again.');
+      const gratitudeMounted = screen.queryByText('What are you grateful for today?') !== null;
+      expect(gratitudeMounted).toBe(false);
+      expect(service.open).not.toHaveBeenCalled();
+      expect(service.submit).not.toHaveBeenCalled();
+      expect(recordCompletion).not.toHaveBeenCalled();
+    } finally { transport.mockRestore(); }
+  });
+});
+
+it('does not confirm a bank launch that resolves after SchoolApp unmounts', async () => {
+  const view = render(<SchoolApp clear={() => {}} mode="open" />);
+  await screen.findByText('Civilization');
+  await openLibraryAndWaitForBanks();
+  let finish;
+  schoolApi.bank.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  let launch;
+  await act(async () => { launchHook.claim('kid1'); launch = launchHook.onLaunch({ kind: 'bank', bankId: 'caps' }, 'kid1'); });
+  expect(typeof finish).toBe('function');
+  view.unmount();
+  let mounted;
+  await act(async () => { finish({ ok: true, data: { id: 'caps', items: [] } }); mounted = await launch; });
+  expect(await mounted).toBe(false);
+});
+
+for (const stop of ['unmount', 'deadline']) {
+  it(`resolves a pending bank launch false on ${stop} without waiting for its fetch`, async () => {
+    const view = render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization'); await openLibraryAndWaitForBanks();
+    let finish;
+    schoolApi.bank.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const resolved = vi.fn(); const opensBefore = schoolApi.openSession.mock.calls.length;
+    vi.useFakeTimers();
+    try {
+      await act(async () => { launchHook.claim('kid1'); void launchHook.onLaunch({ kind: 'bank', bankId: 'caps' }, 'kid1').then(resolved); });
+      expect(typeof finish).toBe('function');
+      await act(async () => { if (stop === 'unmount') view.unmount(); else await vi.advanceTimersByTimeAsync(120000); });
+      expect(resolved).toHaveBeenCalledExactlyOnceWith(false);
+      await act(async () => { finish({ ok: true, data: { id: 'caps', items: [] } }); });
+      expect(schoolApi.openSession).toHaveBeenCalledTimes(opensBefore);
+      expect(resolved).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+}

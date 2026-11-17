@@ -128,6 +128,14 @@ export function IdentityProvider({ children }) {
   // Single stable handler for every identity event — reads activeLock/phase/emergency
   // from refs so the WS subscription can be installed once (handler identity stable).
   const handleIdentity = useCallback((msg) => {
+    // A server-authenticated stop outranks local modal state and legacy ceremonies.
+    if (msg.parentalIntervention) {
+      if (msg.parentalIntervention.blocked) {
+        emergencyRef.current?.adoptParentalStop?.({actorId:msg.userId,...(msg.parentalIntervention.epoch!=null?{epoch:msg.parentalIntervention.epoch}:{})});
+        return;
+      }
+      if (msg.parentalIntervention.purpose !== 'unlock') return;
+    }
     if (!msg || msg.topic !== IDENTITY_TOPIC) return;
     const lock = activeLockRef.current;
 
@@ -261,6 +269,14 @@ export function IdentityProvider({ children }) {
     pendingGrantRef.current = null; // fresh attempt — no decided grant yet
     setActiveLock(lock);
     setUnlockState('scanning');
+    if (emergencyRef.current?.supervisionEnabled) {
+      setUnlockState('preparing');
+      emergencyRef.current.beginUnlockContext().then(() => {
+        if (activeLockRef.current === lock) setUnlockState('scanning');
+      }).catch(() => {
+        if (activeLockRef.current === lock) setUnlockState('denied');
+      });
+    }
     setUnlockedUser(null);
     logger().info('unlock-registered', { lock, identifyOnly: !!identifyOnly, adminOnly: !!adminOnly });
     return new Promise((resolve) => { verdictResolverRef.current = resolve; });
@@ -281,6 +297,7 @@ export function IdentityProvider({ children }) {
   );
 
   const clearUnlock = useCallback(() => {
+    if (emergencyRef.current?.supervisionEnabled) void emergencyRef.current.clearUnlockContext().catch(() => {});
     lastUnlockActivityRef.current = Date.now();
     activeLockRef.current = null;
     identifyOnlyRef.current = false;

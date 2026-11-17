@@ -39,8 +39,13 @@
  * importing `#system/config/*` (layer rule `apps-no-config-internals`), which is
  * what put this file here; `shared/contracts/media/` is the same pattern.
  */
+// New opt-in owners do not inherit accidental legacy app configuration.
+export const COLOCATED_ONLY_HOUSEHOLD_APPS = Object.freeze(['agenda']);
+
 export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   agents:           'agents/config',
+  agenda:           'agendas/config',
+  supervision:      'supervision/config',
   ambient:          'ambient/config',
   art:              'art/config',
   artmode:          'art/artmode',

@@ -1,4 +1,4 @@
-/** Application-facing contract for a registered content source. */
+/** Registered sources implement identity and list reads. Playback and sibling methods are optional capabilities and must only exist when supported. A source may opt in to getList(ref, context) with acceptsListContext === true; otherwise only ref is passed. A source may implement describeParticipantAction(item, action), returning null or {participantConsumer:{id,version}} for that exact item and action. */
 export class IContentSource {
   get source() { throw new Error('IContentSource.source not implemented'); }
   get prefixes() { throw new Error('IContentSource.prefixes not implemented'); }
@@ -9,8 +9,6 @@ export class IContentSource {
    * container, or null when this container cannot be paged at the source.
    */
   async getListPage(_id, _page) { return null; }
-  async resolvePlayables(_id) { throw new Error('IContentSource.resolvePlayables not implemented'); }
-  async resolveSiblings(_compoundId) { throw new Error('IContentSource.resolveSiblings not implemented'); }
 }
 
 /** Base class retained for concrete adapter implementations. */
@@ -24,14 +22,12 @@ export class ContentSourceBase extends IContentSource {
   get prefixes() { throw new Error('prefixes must be implemented'); }
   async getItem(_id) { throw new Error('getItem must be implemented'); }
   async getList(_id) { throw new Error('getList must be implemented'); }
-  async resolvePlayables(_id) { throw new Error('resolvePlayables must be implemented'); }
-  async resolveSiblings(_compoundId) { throw new Error('resolveSiblings must be implemented'); }
 }
 
 export function validateAdapter(adapter) {
   if (!adapter?.source || typeof adapter.source !== 'string') throw new Error('Adapter must have source property (string)');
   if (!Array.isArray(adapter.prefixes)) throw new Error('Adapter must have prefixes array');
-  for (const method of ['getItem', 'getList', 'resolvePlayables', 'resolveSiblings']) {
+  for (const method of ['getItem', 'getList']) {
     if (typeof adapter[method] !== 'function') throw new Error(`Adapter must implement ${method}`);
   }
 }

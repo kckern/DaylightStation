@@ -42,15 +42,26 @@ function selectSet(state, set) {
   };
 }
 
+// Explicit support is versioned: a retired catalog cannot choose a presenter.
+const FROZEN_EXPERIENCES = Object.freeze({ 'charades:1': 'charades-stage' });
 function attachSession(state, sets, session, requestedDefinition) {
   const diagnosticDefinitionId = session?.diagnostic?.definition_id || requestedDefinition;
   const experienceId = session?.header?.experience?.id;
-  const mounted = sets.find((set) => set.valid && (
+  const frozen = session?.header?.launch?.participant_launch;
+  const ref = session?.header?.experience;
+  const declared = session?.definition?.experience;
+  const presenter = ref && declared && ref.id === declared.id && ref.version === declared.version
+    ? FROZEN_EXPERIENCES[`${ref.id}:${ref.version}`] : null;
+  const mounted = frozen && presenter ? {
+    game:ref.id, setId:session.header.artifacts?.content_pack?.id || null,
+    definitionId:session.header.artifacts?.rules_definition?.id,
+    presenter_id:presenter, setup:'none', competition:session.definition.competition,
+  } : !frozen && sets.find((set) => set.valid && (
     diagnosticDefinitionId ? set.definitionId === diagnosticDefinitionId : set.game === experienceId
   ));
   if (!mounted) {
     const identity = diagnosticDefinitionId || experienceId || 'missing';
-    return { ...state, phase: 'set-picker', error: `Session experience is not mounted: ${identity}` };
+    return { ...state, phase: frozen ? 'loading' : 'set-picker', error: `Session experience is not mounted: ${identity}` };
   }
   return {
     ...selectSet(state, mounted),
@@ -76,7 +87,15 @@ function selectConfiguredSet(state, set, overrides = {}) {
   if (!set) error = 'Configured game is not available';
   else if ((set.setupProfile?.kind || set.setup) !== 'individuals') error = 'Automatic participant setup requires an individual game';
   else if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length) error = 'Automatic setup requires distinct participant IDs';
-  const known = new Map((state.config?.household_members || []).map(member => [member.id, member]));
+  const participants = [...(state.config?.household_members || []), ...(state.config?.named_guests || [])];
+  const known = new Map();
+  for (const participant of participants) {
+    if (known.has(participant.id)) {
+      error ||= `Duplicate participant identity: ${participant.id}`;
+      break;
+    }
+    known.set(participant.id, participant);
+  }
   if (!error) {
     const unknown = ids.find(id => !known.has(id));
     if (unknown) error = `Unknown configured participant: ${unknown}`;
@@ -97,6 +116,11 @@ export function flowReducer(state, action) {
       const requestedSet = action.sets.find((set) => set.valid && (action.requestedDefinition
         ? set.definitionId === action.requestedDefinition
         : action.requestedGame && set.game === action.requestedGame));
+      if (action.resetSetup) {
+        const mounted = action.sets.find(set => set.valid && set.definitionId === action.resetSetup.definitionId);
+        if (!mounted) return { ...next, phase: 'loading', error: 'Reset game is no longer available' };
+        return { ...selectSet(next, mounted), phase: 'playing', ...action.resetSetup, sessionId: null, result: null, error: null };
+      }
       if (action.attachedSession || action.diagnosticSession) return attachSession(next, action.sets, action.attachedSession || action.diagnosticSession, action.requestedDefinition);
       if (requestedSet || action.launch?.autostart) return selectConfiguredSet(next, requestedSet, action.launch);
       return { ...next, phase: 'set-picker' };

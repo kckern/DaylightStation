@@ -147,6 +147,10 @@ export class ListManagementService {
    * @param {string} householdId
    * @returns {{ ok: boolean, type: string, list: string, path: string }}
    */
+  canonicalCreateName(name) {
+    return toKebabCase(name);
+  }
+
   createList(type, name, householdId) {
     validateType(type);
 
@@ -154,7 +158,7 @@ export class ListManagementService {
       throw new ValidationError('List name is required', { field: 'name' });
     }
 
-    const listName = toKebabCase(name);
+    const listName = this.canonicalCreateName(name);
 
     if (!LIST_NAME_PATTERN.test(listName)) {
       throw new ValidationError('Invalid list name', {

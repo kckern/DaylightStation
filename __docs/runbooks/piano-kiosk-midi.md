@@ -547,3 +547,131 @@ On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=
 - Path OUT: browser →HTTP→ APK →BLE→ JamCorder →USB/DIN→ piano
 - FKB sets `mdmDisableADB: true`, so ADB is refused until flipped via `setBooleanSetting`
 - Prior investigation: `ops:docs/_wip/bugs/2026-08-22-piano-midi-one-way-outage.md`
+
+
+## Read page health separately from recovery history
+
+`GET /kiosk` keeps its legacy `verdict`, FPS aliases, counters, `lastAction`,
+`lastOutcome` and `lastDecision` fields. Read the additive independent observations
+alongside them: `liveness` is `alive`, `dead` or `unknown`; `responsiveness` is
+`healthy`, `degraded`, `screen-off` or `unknown`. A fresh visible 3–6 FPS beat is
+alive and degraded. Native recovery still requires sustained low FPS; the defaults
+remain 12 FPS, 5 seconds sustained and 12 seconds of beat silence. Startup grace,
+disabled recovery or an old successful action do not make current low FPS healthy.
+A hidden page with fresh beats is screen-off; beat silence is dead even if its last
+FPS sample was high. Without a beat or fresh presentation measurement, health is
+unknown. `screenOn` is nullable cached FKB readback, expiring after the beat timeout;
+unknown readback is reported explicitly without changing the existing ladder gate.
+
+The same additive allowlist reaches `/status.watchdog` and the outbound heartbeat:
+`liveness`, `responsiveness`, `decisionId`, `decisionAt`, `screenOn`, `quiet`,
+`activeGame` and `recoveryStage`. `decisionAt` is UTC with a `Z` suffix. A new ID and
+time identify an actual changed policy choice or recovery step; reading status or
+repeating an unchanged evaluation does not refresh them. Legacy outcome/action
+text is historical, including when it remains beside a newer decision. Native
+edge events include measured FPS, visibility, beat age, thresholds and recovery
+gates, device identity and candidate payload identity; they do not log per frame.
+
+To diagnose a report of low FPS with a healthy legacy label, compare the installed
+build/payload identity and effective `/kiosk` thresholds against the raw
+`/kiosk/beat` FPS/visibility and both serialized health fields. Source regressions
+exercise that boundary but cannot establish an unavailable installed build or
+configuration's historical cause. Physical recovery and containment require
+device acceptance independently of these diagnostics. Automatic recovery remains
+blocked by unknown/stopped native safety or maintenance, protects active games
+from disruptive rungs, and preserves parent Stop. Browser self restart remains
+disabled (`SELF_HEAL_RESTART=false`).
+
+## Repeated video controls and responsiveness
+
+The video player admits skips through the existing 700 ms burst governor (at
+most 60 seconds forward per burst), then sends them through one seek in flight
+plus one latest target. Restart and scrub requests share that queue. A matching
+`seeked` event releases the latest target; after five seconds without completion,
+the queue discards pending work. Relative controls also check that deadline
+before reading the queued target, so a delayed timer cannot retain an expired
+cursor. Leaving the player or changing its content or
+media element clears the queue. Backward seeking and sequential lesson limits
+continue to apply. The queue does not grant watched credit.
+
+A bounded queue reduces repeated browser work. It does not establish the cause
+of a historical sustained slowdown. Diagnose presentation separately from native
+liveness and preserve the existing bridge/ownership release gates.
+
+Run the isolated fixture profile from the repository root (requires the existing
+Playwright/Chromium tooling and `ffmpeg` on PATH):
+
+```bash
+BASE_URL=http://127.0.0.1:1 npx playwright test \
+  --config tests/_infrastructure/config/playwright.config.mjs \
+  tests/live/flow/piano/incident-responsiveness.runtime.test.mjs --workers=1
+```
+
+The explicit `BASE_URL` suppresses the shared test configuration's household
+server startup. The test starts its own ephemeral loopback fixture server,
+bundles the real piano video component/controller with mocked context and player
+boundaries, and generates a 120-second 320×180, 30 fps VP8 WebM using ffmpeg's
+`testsrc2` source. Its mock player seeks an actual video element. Play-log replies
+carry no credit; every other request is rejected, including cross-origin traffic.
+It never opens household media or writes learner history.
+
+The attached `piano-fixture-profile.json` records three local sequences: frame
+interval percentiles, long tasks, React commits, seek dispatches, media
+mount/disposal counts, named media handler cleanup, and MIDI subscriptions. CSS
+is omitted, so the fixture makes no layout or full-kiosk rendering claim. To
+compare a committed revision, set `PIANO_PROFILE_ONLY=1` and
+`PIANO_PROFILE_BASELINE_REF=<commit>`; the harness reads that revision of
+`PianoVideoPlayer.jsx` without changing the checkout.
+
+Desktop fixture success does not satisfy device acceptance. After deployment is
+authorized, capture 20 complete sequences and a 30-minute on-device MIDI/video
+soak with frame distributions, handler/media-instance counts, native CPU and
+thermal evidence, browser/build identity and native responsiveness/liveness
+edges. If sustained slowdown still reproduces, keep the repair unaccepted and
+prepare a measured WebView/runtime or hardware remediation candidate.
+
+## Requested display recovery and physical acceptance (2026-11-16 candidate)
+
+A slow alive page asks after 60 seconds of visible degradation; “Not now” defers
+for one hour. Failed or unavailable restart remains visible with retry. The existing
+Fully reboot request is held when current native Stop/maintenance authority is
+unavailable. `SELF_HEAL_RESTART=false` remains unchanged. A requested restart is
+not a verified recovery. The source candidate uses a read-only local `/kiosk` check
+before requesting, then one read on remount and explicit “Check recovery” taps.
+
+Read `deviceId`, `payload`, `bootCount`, `bootIdentitySource`, `lastBeatAgoMs`,
+`beatCount`, `lastVisibility`, `liveness`, `responsiveness` and
+`nativeRecoveryAllowed` together. OS boot evidence must be known both before and
+after, with a larger `settings.global.boot_count` on the same device and a fresh
+visible healthy page beat. Unknown/old/wrong-device evidence stays unverified;
+process uptime, an accepted command, and historical outcome text do not prove it.
+The prompt’s observation is narrower than device certification: no readback can
+prove the physical controls worked or the learner’s unsaved work survived.
+
+Before release, record actual model, Android/WebView versions, installed shell and
+payload identity/digest, signing lineage, owner/lock-task readback and rollback
+artifact in the private incident record. No device was contacted for this change.
+Native authority remains UNKNOWN and the full APK still requires trusted sfizz
+vendor input. Those are blocked acceptance items, not passing tests.
+
+After candidate review and explicitly authorized provisioning/deployment:
+
+1. Verify learner/workout evidence, recording/game saves and durable parent Stop
+   revision before and after every reboot and rollback. Stop must dominate a game,
+   pending reboot and maintenance; a lost Stop ledger fails acceptance.
+2. Physically try keyboard shortcuts, Home, recents, notification shade and edge
+   swipes, then pairing and bounded maintenance entry/expiry. A foreground recall
+   alone fails containment acceptance. Record each actual outcome.
+3. Reproduce low FPS on an aged page without a reload, defer for the snooze window,
+   request restart and capture before/after OS boot counts plus fresh page beats.
+   Check actual touch response and MIDI/game behavior. Log rejected/unavailable
+   command and readback paths separately from successful repair.
+4. Apply parent Stop during the game and during requested restart. After reboot,
+   confirm stopped content does not launch and the durable Stop revision remains.
+5. If only physical reboot measurably recovers the display, state that result and
+   leave hardware/WebView remediation open. Unit tests or command acknowledgement
+   cannot close the reproduced user-visible incident.
+
+Rollback must preserve durable Stop and learner/workout evidence. The p38 payload
+remains an undeployed candidate under the shell32 loader gate; regenerated digest
+and earlier rollback artifacts belong in the private rollout record.

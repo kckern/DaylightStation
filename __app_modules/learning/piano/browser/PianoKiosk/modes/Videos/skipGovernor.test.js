@@ -56,3 +56,16 @@ describe('skipTarget', () => {
     expect(skipTarget({ current: 100, delta: 30, duration: 600, isSequential: false, furthestWatched: 0 })).toBe(130);
   });
 });
+
+
+it('a backward press preserves the forward cap until a complete 700ms gap', () => {
+  let time = 0;
+  const governor = createSkipGovernor({ now: () => time });
+  expect(governor.admit(60)).toBe(60);
+  time = 699;
+  expect(governor.admit(-30)).toBe(-30);
+  time = 1398;
+  expect(governor.admit(30)).toBe(0);
+  time = 2098;
+  expect(governor.admit(30)).toBe(30);
+});

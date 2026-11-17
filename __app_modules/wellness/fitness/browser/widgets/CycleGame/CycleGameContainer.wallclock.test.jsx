@@ -214,6 +214,28 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(renderApi.getByTestId('race-results')).toBeTruthy();
   });
 
+  it('global transport loss uses zero cadence immediately while the race clock keeps its deadline', () => {
+    let stalled = false;
+    mockCtx = makeCtx({ fitnessSessionInstance: {
+      getEquipmentRider: id => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id],
+      getEquipmentCadence: () => ({ rpm: 100, connected: !stalled, transportStalled: stalled }),
+    } });
+    const view = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(view);
+    nowMs = 2000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    const ticks = () => logSpy.debug.mock.calls.filter(([event]) => event === 'cycle_game.tick').map(([, data]) => data);
+    const before = ticks().at(-1);
+    stalled = true;
+    nowMs = 5000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    const after = ticks().at(-1);
+    expect(after.tick).toBe(5);
+    expect(after.riders.map(r => r.rpm)).toEqual([0, 0]);
+    expect(after.riders.map(r => r.distanceM)).toEqual(before.riders.map(r => r.distanceM));
+  });
+
   it('a permanently dead sensor rides through the capped hold, gets flagged sensor_lost, then is parked (audit game-design #6)', () => {
     // user_2's sensor connects for the first two ticks (so he "starts" — registers
     // movement — before it dies), then never reconnects. With the pre-fix

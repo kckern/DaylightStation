@@ -31,7 +31,7 @@ import fi.iki.elonen.NanoHTTPD;
  *   GET  /log              tail of shell.log
  *   POST /restart          stop + restart the current payload in place
  *
- * No auth — same LAN-only trust model as :8770. Deliberately no /exec: the lifeline
+ * Mutations require device-local authentication and native run authority. No /exec: the lifeline
  * must have the smallest possible surface that can't itself break.
  */
 public final class ShellServer extends NanoHTTPD {
@@ -51,6 +51,12 @@ public final class ShellServer extends NanoHTTPD {
         String uri = session.getUri();
         Method method = session.getMethod();
         try {
+            if (method!=Method.GET && method!=Method.OPTIONS) {
+                if (!net.kckern.pianobridge.api.AdminAccess.accepts(AdminToken.get(service), session.getHeaders().get("x-admin-token")))
+                    return json(Response.Status.FORBIDDEN, err("admin_auth_required"));
+                if (!service.nativeSafety().allowsRun(android.os.SystemClock.elapsedRealtime()))
+                    return json(Response.Status.CONFLICT, err("native_safety_unavailable_or_stopped"));
+            }
             Map<String, java.util.List<String>> p = session.getParameters();
             switch (uri) {
                 case "/":

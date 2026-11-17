@@ -37,6 +37,8 @@ export const DEFAULT_BEAT_URL = 'http://localhost:8770/kiosk/beat';
  * without a DOM. `fps` is frames presented in the last ~1s.
  * `activity`, when present, is deliberately small: it tells the out-of-process
  * watchdog that a game is in progress without sending a player name or game state.
+ * Preserve raw measured FPS here: native status reports freshness and responsiveness
+ * separately, and applies its own sustain/grace gates to recovery decisions.
  * @returns {{fps:number, visibility:string, url:string, sinceLoadMs:number, ts:number, activity?:{type:string,id:string}}}
  */
 export function buildBeat(fps, { visibility, url, sinceLoadMs, ts, activity } = {}) {

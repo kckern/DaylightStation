@@ -37,7 +37,7 @@ import java.util.function.Supplier;
  *       holds it in memory and PERSISTS it, so the hold survives the service restart
  *       that the install itself causes. Inferred from install activity, so the deploy
  *       needs no new manual step. See {@link #installHoldUntilMs()}.</li>
- *   <li><b>Disarm</b> — POST /kiosk/settings/disarm silences the guard for an hour
+ *   <li><b>Disarm</b> — POST /kiosk/settings/disarm silences the guard for 15 minutes
  *       (persisted, so it survives the bridge restarts that hands-on fiddling causes).</li>
  * </ul>
  *
@@ -61,6 +61,8 @@ public final class KioskSettingsGuard {
         NO_PASSWORD,
         /** FKB did not answer — state unknown. */
         UNREACHABLE,
+        /** Native run authority or maintenance withheld writes; passive read still ran. */
+        SAFETY_HOLD,
         /** FKB answered but refused fkbPassword ({"status":"Error"}): the guard is blind. */
         AUTH_FAILED,
         /** Read succeeded, nothing had drifted. */
@@ -171,10 +173,10 @@ public final class KioskSettingsGuard {
     /**
      * Hard ceiling on any window in which the guard stands down (disarm or install
      * hold). Kids reached other apps on 2026-10-09; a stand-down is the one state in
-     * which nothing pulls them back, so no stand-down may outlast an hour — including
+     * which nothing pulls them back, so no stand-down may outlast 15 minutes — including
      * one written straight into config with `pbctl config set`.
      */
-    static final long MAX_STAND_DOWN_MS = 60 * 60_000L;
+    static final long MAX_STAND_DOWN_MS = 15 * 60_000L;
 
     /** Fully Kiosk's own package — the only app that belongs in front. */
     static final String FKB_PACKAGE = "de.ozerov.fully";
@@ -182,10 +184,12 @@ public final class KioskSettingsGuard {
     static final String SETTINGS_PACKAGE = "com.android.settings";
     /** The bridge's own activity (`fkb launch net.kckern.pianobridge` bounces the process). */
     static final String BRIDGE_PACKAGE = "net.kckern.pianobridge";
+    private BooleanSupplier recallAllowed = () -> true;
     private volatile BooleanSupplier systemPairingDialogAllowed = () -> false;
 
     /** Device wiring: config from {@link DeviceConfig}, FKB over REST, log to CrashLog. */
     public KioskSettingsGuard(BridgeCore service, DeviceConfig cfg) {
+        recallAllowed=service::recoveryAllowed;
         final DeviceConfig[] held = { cfg };
         this.configHolder = held;
         this.params = () -> {
@@ -219,11 +223,13 @@ public final class KioskSettingsGuard {
                 return fg == null || fg == JSONObject.NULL ? null : String.valueOf(fg);
             }
             @Override public boolean toForeground() {
+                if (!service.recoveryAllowed()) return false;
                 // Android refuses FKB's own toForeground from the background (it answers
                 // OK and does nothing). HOME, then a direct start from the a11y context,
                 // which is exempt from that block; toForeground last, belt and braces.
                 boolean home = A11y.home();
                 boolean launched = A11y.launch(FKB_PACKAGE);
+                if (!service.recoveryAllowed()) return false;
                 int code = FkbRest.command(held[0], "toForeground");
                 return home || launched || (code >= 200 && code < 400);
             }
@@ -232,6 +238,7 @@ public final class KioskSettingsGuard {
                 Map<String, String> p = new LinkedHashMap<>();
                 p.put("key", key);
                 p.put("value", value);
+                if (!service.recoveryAllowed()) return false;
                 int code = FkbRest.command(held[0], cmd, p);
                 return code >= 200 && code < 400;
             }
@@ -265,6 +272,13 @@ public final class KioskSettingsGuard {
     /** Test wiring with a config store, so persistence round-trips are assertable. */
     KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
                        Fkb fkb, Notes notes, LongSupplier clock, ConfigWriter configWriter) {
+        this(params, lastUpdateRequestAtMs, fkb, notes, clock, configWriter, () -> true);
+    }
+
+    KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
+                       Fkb fkb, Notes notes, LongSupplier clock, ConfigWriter configWriter,
+                       BooleanSupplier recallAllowed) {
+        this.recallAllowed = recallAllowed;
         this.configHolder = null;
         this.configWriter = configWriter;
         this.params = params;
@@ -391,6 +405,7 @@ public final class KioskSettingsGuard {
         long grace = graceFor(app, p);
         if (away < grace) return fg(ForegroundVerdict.GRACE, app);
 
+        if (!recallAllowed.getAsBoolean()) return fg(ForegroundVerdict.UNKNOWN, app);
         boolean ok = fkb.toForeground();
         int n = recallsSinceBoot.incrementAndGet();
         lastRecall = app + " after " + (away / 1000) + "s" + (ok ? "" : " [toForeground FAILED]");
@@ -427,7 +442,7 @@ public final class KioskSettingsGuard {
         if (until > now + MAX_STAND_DOWN_MS) {
             until = now + MAX_STAND_DOWN_MS;
             applyDeadline(KEY_DISARM_UNTIL, until, "kiosk_settings_disarm_capped",
-                    "disarm deadline beyond the 1h ceiling — capped to " + until);
+                    "disarm deadline beyond the 15-minute ceiling — capped to " + until);
         }
         return until;
     }
@@ -438,7 +453,7 @@ public final class KioskSettingsGuard {
         if (until > now + MAX_STAND_DOWN_MS) {
             until = now + MAX_STAND_DOWN_MS;
             applyDeadline(KEY_INSTALL_HOLD_UNTIL, until, "kiosk_settings_install_hold_capped",
-                    "install-hold deadline beyond the 1h ceiling — capped to " + until);
+                    "install-hold deadline beyond the 15-minute ceiling — capped to " + until);
         }
         return until;
     }
@@ -521,11 +536,20 @@ public final class KioskSettingsGuard {
         List<String> drifted = new ArrayList<>();
         List<String> repaired = new ArrayList<>();
         List<String> detail = new ArrayList<>();
+        boolean safetyHeld = false;
         for (KioskSettings.Drift d : drifts) {
             drifted.add(d.key);
+            // listSettings and every preceding setter can block. Do not reuse the
+            // authority state from before those calls for the next mutation.
+            if (!recallAllowed.getAsBoolean()) {
+                safetyHeld = true;
+                detail.add(d.key + " [SAFETY HOLD]");
+                continue;
+            }
             boolean ok = d.type == KioskSettings.Type.BOOL
                     ? fkb.setBoolean(d.key, d.desired)
                     : fkb.setString(d.key, d.desired);
+            if (!ok && !recallAllowed.getAsBoolean()) safetyHeld = true;
             detail.add(d.key + " " + d.live + "→" + d.desired + (ok ? "" : " [WRITE FAILED]"));
             if (ok) {
                 repaired.add(d.key);
@@ -535,9 +559,10 @@ public final class KioskSettingsGuard {
         lastRepair = String.join(", ", detail);
         // This line is the whole point of the feature: it is how a kiosk found
         // switched off becomes visible after the fact.
-        notes.note("KIOSKSET", "drift repaired: " + lastRepair);
-        Log.w(TAG, "drift repaired: " + lastRepair);
-        return record(Verdict.REPAIRED, drifted, repaired);
+        String outcome = safetyHeld ? "drift repair held: " : "drift repaired: ";
+        notes.note("KIOSKSET", outcome + lastRepair);
+        Log.w(TAG, outcome + lastRepair);
+        return record(safetyHeld ? Verdict.SAFETY_HOLD : Verdict.REPAIRED, drifted, repaired);
     }
 
     /** A pass that stopped at a gate — no read, no write, nothing found. */
@@ -629,7 +654,7 @@ public final class KioskSettingsGuard {
         return o != null ? o : params.get().installHoldUntilMs;
     }
 
-    /** Disarm for {@code minutes}, persisting the deadline. Clamped 1…60 by the caller. */
+    /** Disarm for {@code minutes}, persisting the deadline. Clamped 1…15 by the caller. */
     public JSONObject disarmForMinutes(int minutes) {
         long until = clock.getAsLong() + minutes * 60_000L;
         return applyDeadline(KEY_DISARM_UNTIL, until, "kiosk_settings_disarm",

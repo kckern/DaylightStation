@@ -30,11 +30,12 @@ function structuredCloneSafe(value) {
   try { return value == null ? value : structuredClone(value); } catch { return value; }
 }
 
-async function send(path, body, method, headers = {}) {
+async function send(path, body, method, headers = {}, signal = undefined) {
   try {
     const opts = body === undefined
       ? { method: method || 'GET', credentials: 'same-origin', headers: schoolDeviceHeaders(headers) }
       : { method: method || 'POST', credentials: 'same-origin', headers: schoolDeviceHeaders({ 'Content-Type': 'application/json', ...headers }), body: JSON.stringify(body) };
+    if (signal) opts.signal = signal;
     const r = await fetch(BASE + path, opts);
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -403,7 +404,8 @@ export const schoolApi = {
   selfServicePreview: (link) => req(`/self-service/preview/${encodeURIComponent(link)}`),
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
-  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action, mountProtocol: 1 }),
+  selfServiceMountAck: ({ receipt, mounted }, { signal } = {}) => send('/self-service/mount-ack', { receipt, mounted }, 'POST', {}, signal),
   companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
   // "Can the printer print right now?" — polled ONLY while the panel is asking
   // a child "Did it print?", so it can name a jam or an empty tray instead of

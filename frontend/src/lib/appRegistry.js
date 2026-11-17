@@ -1,3 +1,4 @@
+import { SCREEN_APP_IDS } from '../../../__capabilities/screen-host/portable/appIds.mjs';
 import { DaylightAPI, DaylightMediaPath } from './api.mjs';
 
 // App icon SVGs (Vite resolves these to hashed URLs)
@@ -11,6 +12,8 @@ import glympseIcon from '../assets/app-icons/glympse.svg';
 import websocketIcon from '../assets/app-icons/websocket.svg';
 import { videocallIcon } from "../../../__app_modules/household/homeline/browser/assets.mjs";
 
+// Optional participantLaunch: {consumer:{id,version}, outputSchema}; only an
+// exact matching ready result is forwarded by AppContainer to that app.
 export const APP_REGISTRY = {
   'webcam':          { label: 'Webcam',           icon: webcamIcon,         param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
   'videocall':       { label: 'Video Call',       icon: videocallIcon,      param: { name: 'device' }, component: () => import("../../../__app_modules/household/homeline/browser/tv.mjs") },
@@ -22,7 +25,7 @@ export const APP_REGISTRY = {
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../__app_modules/personal/weekly-review/browser/widget.mjs") },
-  'party-games':      { label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
+  'party-games':      { participantLaunch:{consumer:{id:'party-games',version:1},outputSchema:'party-games-launch-result/v1'}, label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../__app_modules/learning/school/browser/kiosk.mjs") },
   'controllers':     { label: 'Controllers',      icon: null,               param: null, component: () => import("../../../__app_modules/games/emulator/browser/bluetooth.mjs").then((m) => ({ default: m.ControllersApp })) },
 };
@@ -33,7 +36,7 @@ export const APP_REGISTRY = {
  * @returns {object|null} Registry entry or null if not found
  */
 export function getApp(id) {
-  return APP_REGISTRY[id] || null;
+  return SCREEN_APP_IDS.includes(id) ? APP_REGISTRY[id] || null : null;
 }
 
 /**

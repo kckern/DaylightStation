@@ -40,7 +40,10 @@ public final class ScreenWaker {
     private final ExecutorService exec;
     private final AtomicLong lastWakeAt = new AtomicLong(0);
 
-    public ScreenWaker(DeviceConfig cfg) {
+    private final java.util.function.BooleanSupplier runAllowed;
+    public ScreenWaker(DeviceConfig cfg) { this(cfg, () -> false); }
+    public ScreenWaker(DeviceConfig cfg, java.util.function.BooleanSupplier runAllowed) {
+        this.runAllowed=runAllowed;
         this.enabled = cfg.fkbWakeEnabled();
         this.cooldownMs = cfg.fkbWakeCooldownMs();
         this.quietStartMin = parseHhmm(cfg.fkbWakeQuietStart());
@@ -66,7 +69,7 @@ public final class ScreenWaker {
      * window. Safe to call on the MIDI thread for every note-on.
      */
     public void poke() {
-        if (!enabled) return;
+        if (!enabled || !runAllowed.getAsBoolean()) return;
         long now = System.currentTimeMillis();
         if (now < suppressUntilMs) return;   // externally muted until a deadline (backend policy)
         if (inQuietWindow()) return;         // inside the daily local-time quiet window
@@ -109,6 +112,7 @@ public final class ScreenWaker {
     }
 
     private void doWake() {
+        if (!runAllowed.getAsBoolean()) return;
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();

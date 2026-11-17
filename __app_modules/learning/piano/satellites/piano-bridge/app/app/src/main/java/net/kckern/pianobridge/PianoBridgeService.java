@@ -117,6 +117,8 @@ public class PianoBridgeService extends Service {
     /** Package-visible for ShellServer. */
     PayloadLoader loaderOrNull() { return loader; }
 
+    ShellServices.SafetyState nativeSafety() { return ShellServices.SafetyState.UNKNOWN; }
+
     int versionCode() {
         try {
             return (int) getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
@@ -147,6 +149,8 @@ public class PianoBridgeService extends Service {
     // ── the one interface the payload sees ─────────────────────────────────
 
     private final class Shell implements ShellServices {
+        @Override public ShellServices.SafetyState nativeSafety() { return PianoBridgeService.this.nativeSafety(); }
+        @Override public String adminToken() { return AdminToken.get(PianoBridgeService.this); }
         @Override public Object context() { return PianoBridgeService.this; }
         @Override public void updateNotification(String text) {
             notificationText = text == null ? "" : text;

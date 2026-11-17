@@ -14,6 +14,7 @@ import useResolvedMediaEl from './useResolvedMediaEl.js';
 import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
 import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
 import { createSkipGovernor, skipTarget } from './skipGovernor.js';
+import { createSeekIntentQueue } from './seekIntentQueue.js';
 import { usePlayerSessionBinding } from "../../../../../../../__capabilities/playback/browser/sessions.mjs";
 import Icon from '../../../ui/icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
@@ -414,10 +415,51 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // Apply the shared media level to the resolved element (mirrors MusicPlayer).
   useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
 
+  // The resolved element AND content identify a generation. Check the live
+  // controller too: it can swap elements before the 100ms resolver sees it.
+  const seekWorkRef = useRef(null);
+  const seekMedia = ctrl.seek;
+  useLayoutEffect(() => {
+    if (!mediaEl) return undefined;
+    const work = { inFlightTarget: null, queue: null };
+    const isCurrent = () => seekWorkRef.current === work
+      && playerRef.current?.getMediaElement?.() === mediaEl;
+    work.queue = createSeekIntentQueue({
+      seek: ({ target }) => {
+        if (!isCurrent()) return;
+        work.inFlightTarget = target;
+        seekMedia(target);
+      },
+    });
+    seekWorkRef.current = work;
+    work.queue.reset(work);
+    const onSeeked = () => {
+      if (!isCurrent() || work.inFlightTarget === null
+        || Math.abs(mediaEl.currentTime - work.inFlightTarget) > 1) return;
+      work.inFlightTarget = null;
+      work.queue.complete({ mediaKey: work });
+    };
+    mediaEl.addEventListener('seeked', onSeeked);
+    return () => {
+      mediaEl.removeEventListener('seeked', onSeeked);
+      work.queue.dispose();
+      if (seekWorkRef.current === work) seekWorkRef.current = null;
+    };
+  }, [contentId, mediaEl, seekMedia]);
+
+  const requestSeek = useCallback((target) => {
+    const work = seekWorkRef.current;
+    if (!work) return;
+    // Pending relative skips start at the latest intent, preserving +30,+30
+    // while decoding is slow; completion/timeout releases that cursor.
+    if (work.queue.getTarget() === null && target === ctrl.getCurrentTime()) return;
+    work.queue.request({ mediaKey: work, target });
+  }, [ctrl.getCurrentTime]);
+
   const handleRestart = useCallback(() => {
-    ctrl.seek(0);
+    requestSeek(0);
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.restart');
-  }, [ctrl]);
+  }, [requestSeek]);
 
   // A held/mashed skip can't fly through the lesson, and a sequential lesson
   // can't skip past what was watched (the scrubber already clamps; the skip
@@ -432,9 +474,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       getLogger().child({ component: 'piano-video-player' }).sampled('piano.video.skip-dropped', { contentId, delta }, { maxPerMinute: 10, aggregate: true });
       return;
     }
-    const cur = ctrl.getCurrentTime() || 0;
-    ctrl.seek(skipTarget({ current: cur, delta: admitted, duration, isSequential, furthestWatched: furthestWatchedRef.current }));
-  }, [ctrl, duration, isSequential, contentId]);
+    const cur = seekWorkRef.current?.queue.getTarget() ?? (ctrl.getCurrentTime() || 0);
+    requestSeek(skipTarget({ current: cur, delta: admitted, duration, isSequential, furthestWatched: furthestWatchedRef.current }));
+  }, [ctrl, duration, isSequential, contentId, requestSeek]);
 
   // Sequential: can't skip forward past the furthest point already reached
   // (1s tolerance) — mirrors the chrome's own calc (PianoVideoChrome.jsx:28).
@@ -539,7 +581,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             onMarkB={loop.markB}
             onToggleLoop={loop.toggle}
             onClearLoop={loop.clear}
-            onSeek={ctrl.seek}
+            onSeek={requestSeek}
             onToggleFullscreen={toggleFullscreen}
           />
         </div>

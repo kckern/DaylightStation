@@ -186,6 +186,10 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
   }
 
   capabilities(item, resolution) { return derivedCapabilities(item, this.#source(resolution)); }
+  async participantActionDescriptor(item, resolution, action) {
+    const source=this.#source(resolution);
+    return typeof source?.describeParticipantAction === 'function' ? source.describeParticipantAction(item,action) : null;
+  }
   supports(resolution, capability) { return typeof this.#source(resolution)?.[capability] === 'function'; }
 
   describeItem(item, resolution, session = null, quality = {}) {
@@ -200,10 +204,11 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     };
   }
 
-  async getList(resolution, contentRef = null) {
+  async getList(resolution, contentRef = null, context = undefined) {
     const source = this.#source(resolution);
     if (typeof source?.getList !== 'function') return [];
-    return source.getList(contentRef ?? resolution.localId);
+    const ref = contentRef ?? resolution.localId;
+    return source.acceptsListContext === true ? source.getList(ref, context) : source.getList(ref);
   }
 
   async getListPage(resolution, contentRef = null, page) {

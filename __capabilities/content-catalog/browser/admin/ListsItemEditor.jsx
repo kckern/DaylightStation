@@ -38,7 +38,7 @@ function extractCustomFields(item) {
  * Build save payload with only non-default values
  * Always includes label and input as they are required
  */
-function buildSavePayload(formData, customFields) {
+function buildSavePayload(formData, customFields, preserveImageClear) {
   const payload = {
     label: formData.label?.trim() || '',
     input: formData.input?.trim() || ''
@@ -75,9 +75,9 @@ function buildSavePayload(formData, customFields) {
     }
   }
 
-  // Add image if it has a value (not in ITEM_DEFAULTS)
-  if (formData.image) {
-    payload.image = formData.image;
+  // Controlled hosts can request an explicit null when an override is removed.
+  if (formData.image || preserveImageClear) {
+    payload.image = formData.image || null;
   }
 
   // Merge custom fields
@@ -93,7 +93,7 @@ function buildSavePayload(formData, customFields) {
 /**
  * Simple mode - Just the essential fields
  */
-function SimpleMode({ formData, onChange, errors, sections }) {
+function SimpleMode({ formData, onChange, errors, sections, hideSection }) {
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const imageSrc = formData.image
     ? (formData.image.startsWith('/media/') || formData.image.startsWith('media/')
@@ -121,6 +121,7 @@ function SimpleMode({ formData, onChange, errors, sections }) {
           onChange={(val) => onChange('input', val)}
           placeholder="Search content or type source:id"
           selectContainers
+          withinPortal={false}
         />
         <Text size="xs" c="dimmed" mt={4}>
           Search or type directly: plex:123, media:path, youtube:xyz
@@ -130,18 +131,20 @@ function SimpleMode({ formData, onChange, errors, sections }) {
 
       <Select
         label="Action"
+        comboboxProps={{withinPortal:false}}
         data={ACTION_OPTIONS}
         value={formData.action}
         onChange={(value) => onChange('action', value)}
       />
 
-      <Select
+      {!hideSection && <Select
         label="Section"
+        comboboxProps={{withinPortal:false}}
         description="Which section this item belongs to"
         data={sections.map((s, i) => ({ value: String(i), label: s.title || `Section ${i + 1}` }))}
         value={String(formData.sectionIndex ?? 0)}
         onChange={(val) => onChange('sectionIndex', parseInt(val))}
-      />
+      />}
 
       <Switch
         label="Active"
@@ -192,7 +195,7 @@ function SimpleMode({ formData, onChange, errors, sections }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
+function ListsItemEditor({ hideSection = false, preserveImageClear = false, opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -292,7 +295,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = []
     e.preventDefault();
     if (!validate()) return;
 
-    const payload = buildSavePayload(formData, customFields);
+    const payload = buildSavePayload(formData, customFields, preserveImageClear);
     await onSave(payload);
   };
 
@@ -342,6 +345,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = []
               onChange={handleInputChange}
               errors={errors}
               sections={sections}
+              hideSection={hideSection}
             />
           ) : (
             <EditorCategories

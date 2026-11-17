@@ -29,3 +29,31 @@ export function shouldPrompt({ sustainedLowSec, sustainSec, snoozeUntilMs, nowMs
   if (isSnoozed(snoozeUntilMs, nowMs)) return false;
   return sustainedLowSec >= sustainSec;
 }
+
+export const RECOVERY_KEY = 'piano.jankReboot.request';
+export const RECOVERY_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** A bounded, usable request correlation; expiry is failed proof, not proof of reboot failure. */
+export function recoveryRequestValid(request, nowMs) {
+  return Boolean(request && Number.isFinite(nowMs) && Number.isFinite(request.requestedAtMs)
+    && nowMs >= request.requestedAtMs && nowMs - request.requestedAtMs <= RECOVERY_MAX_AGE_MS
+    && typeof request.deviceId === 'string' && request.deviceId.length > 0
+    && request.bootIdentitySource === 'settings.global.boot_count'
+    && Number.isInteger(request.bootCount) && request.bootCount >= 0);
+}
+
+/** Same device, actual OS boot counter, and a currently healthy native-ingested beat.
+ * A process restart, accepted command, old outcome, or missing readback proves nothing. */
+export function recoveryVerified(request, evidence, nowMs) {
+  return Boolean(recoveryRequestValid(request, nowMs) && evidence
+    && evidence.deviceId === request.deviceId
+    && request.bootIdentitySource === 'settings.global.boot_count'
+    && evidence.bootIdentitySource === request.bootIdentitySource
+    && Number.isInteger(request.bootCount) && request.bootCount >= 0
+    && Number.isInteger(evidence.bootCount) && evidence.bootCount > request.bootCount
+    && typeof evidence.payload === 'string' && evidence.payload.length > 0
+    && Number.isFinite(evidence.lastBeatAgoMs) && evidence.lastBeatAgoMs >= 0 && evidence.lastBeatAgoMs <= 5000
+    && Number.isInteger(evidence.beatCount) && evidence.beatCount > 0 && evidence.lastVisibility === 'visible'
+    && evidence.liveness === 'alive' && evidence.responsiveness === 'healthy'
+    && evidence.nativeRecoveryAllowed === true);
+}

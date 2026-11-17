@@ -85,12 +85,13 @@ it('does not initialize data after recovery finishes beyond the shutdown deadlin
  release();await startup;expect(d.store.commit.mock.calls.length).toBe(before);
 });
 import {GenerateMorningDebrief} from '../../journalist/server/application/usecases/GenerateMorningDebrief.mjs';
-it.each(['read_failure','conflict','stale'])('keeps the ordinary debrief working when KB is unavailable: %s',async failure=>{
+it.each(['read_failure','write_failure','conflict','stale'])('keeps the ordinary debrief working when KB is unavailable: %s',async failure=>{
  const d=activeSetup();await d.runtime.start();const before=d.store.commit.mock.calls.length;
  if(failure==='read_failure')d.store.read.mockRejectedValueOnce(Error('disk unavailable'));
+ else if(failure==='write_failure')d.store.commit.mockRejectedValueOnce(Error('disk full'));
  else if(failure==='conflict')d.store.users.get('sample').health.conflicted=true;
  else d.store.users.get('sample').health.lastSweepAt=d.time.now()-36*3600000-1;
  const generator=new GenerateMorningDebrief({followUpSource:d.runtime.followUps,clock:d.time.now,userTimezone:()=>TZ,lifelogAggregator:{aggregate:async()=>({_meta:{date:'2026-11-01',hasEnoughData:true,sources:['calendar']},summaryText:'Activity recorded'})},aiGateway:{chat:async()=> 'HOOK: Activity recorded\nWhat happened at the activity?'},logger:{info(){},warn(){},error(){}}});
  const result=await generator.execute({username:'sample',date:'2026-11-01',askDate:'2026-11-02',asOf:d.time.now()});
- expect(result.success).toBe(true);expect(result.summary).toBe('What happened at the activity?');expect(result.knowledgeSelection).toBeUndefined();expect(d.store.commit.mock.calls.length).toBe(before);await d.runtime.dispose();
+ expect(result.success).toBe(true);expect(result.summary).toBe('What happened at the activity?');expect(result.knowledgeSelection).toBeUndefined();expect(d.store.commit.mock.calls.length).toBe(before+(failure==='write_failure'?1:0));await d.runtime.dispose();
 });

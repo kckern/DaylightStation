@@ -1,4 +1,4 @@
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
@@ -11,7 +11,9 @@ import {
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
 import { MenuNavigationProvider } from "../../../../../__capabilities/screen-host/browser/menu-context.mjs";
+import {useMenuNavigationContext} from '../../../../../__capabilities/screen-host/browser/menu-navigation.mjs';
 import { SessionSourceProvider } from '../../../../../__capabilities/playback/browser/sessions/SessionSourceContext.jsx';
+import { ActivityScopeProvider } from '../../../../../__app_modules/household/supervision/browser/ActivityScope.jsx';
 import * as apiModule from '../../../lib/api.mjs';
 import {
   __resetPlayerQueueOpRegistryForTests,
@@ -74,6 +76,8 @@ vi.mock('../../../../../__capabilities/screen-host/browser/widgets/registry.js',
   }),
 }));
 
+vi.mock('../../../../../__app_modules/household/agenda/browser/screen.mjs', () => ({ default: ({contentId}) => <div data-testid="agenda-host">{contentId}</div>, createAgendaMenuController: vi.fn() }));
+
 describe('ScreenActionHandler', () => {
   beforeEach(() => {
     resetActionBus();
@@ -82,6 +86,89 @@ describe('ScreenActionHandler', () => {
     window.localStorage.clear();
   });
 
+  it('opens Agenda content in its capable host', () => {
+    const { getByTestId } = render(<ScreenOverlayProvider><ScreenActionHandler /></ScreenOverlayProvider>);
+    act(() => getActionBus().emit('menu:open', {menuId:'agenda:series/current'}));
+    expect(getByTestId('agenda-host').textContent).toBe('agenda:series/current');
+  });
+
+  it('resolves direct menu alias before opening the capable owner', async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+    expect((await view.findByTestId('agenda-host')).textContent).toBe('agenda:neutral');
+    expect(apiModule.DaylightAPI).toHaveBeenCalledWith('/api/v1/list/_ownership/menu/neutral');vi.restoreAllMocks();
+  });
+  it('leaves an unclaimed direct alias ordinary and fails closed on malformed ownership',async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockResolvedValueOnce({alias:null}).mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral',extra:true}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:ordinary'}));expect((await view.findByTestId('menu-stack')).dataset.menuContentid).toBe('menu:ordinary');
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:invalid'}));const error=await view.findByRole('alert',{name:'Menu error'});expect(error.textContent).toContain('Unable to load menu');fireEvent.click(view.getByRole('button',{name:'Back'}));expect(view.queryByRole('alert')).toBeNull();vi.restoreAllMocks();
+  });
+  it('retries a failed direct ownership lookup without falling back',async()=>{
+    vi.spyOn(apiModule,'DaylightAPI').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));await view.findByRole('alert',{name:'Menu error'});expect(view.queryByTestId('menu-stack')).toBeNull();
+    fireEvent.click(view.getByRole('button',{name:'Retry'}));expect((await view.findByTestId('agenda-host')).textContent).toBe('agenda:neutral');vi.restoreAllMocks();
+  });
+  it('does not replace newer playback when a retry completes late',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));await view.findByRole('alert',{name:'Menu error'});fireEvent.click(view.getByRole('button',{name:'Retry'}));
+    act(()=>getActionBus().emit('media:play',{contentId:'plex:12345'}));await view.findByTestId('player');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('player')).toBeTruthy();vi.restoreAllMocks();
+  });
+  it('ignores a late alias response after a later menu opens',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));act(()=>getActionBus().emit('menu:open',{menuId:'music'}));
+    expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('menu-stack').dataset.menu).toBe('music');vi.restoreAllMocks();
+  });
+  it.each(['success','failure'])('hardware Back cancels an old Retry without dismissing newer playback on late %s',async outcome=>{
+    let resolve,reject;
+    vi.spyOn(apiModule,'DaylightAPI').mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(()=>new Promise((yes,no)=>{resolve=yes;reject=no;}));
+    const view=render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider></MenuNavigationProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:neutral'}));
+    await view.findByRole('alert',{name:'Menu error'});
+    fireEvent.click(view.getByRole('button',{name:'Retry'}));
+    act(()=>getActionBus().emit('media:play',{contentId:'plex:12345'}));
+    await view.findByTestId('player');
+    fireEvent.popState(window);
+    expect(view.getByTestId('player')).toBeTruthy();
+    await act(async()=>{
+      if(outcome==='success')resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});
+      else reject(new Error('offline'));
+      await Promise.resolve();await Promise.resolve();
+    });
+    expect(view.queryByTestId('agenda-host')).toBeNull();
+    expect(view.queryByRole('alert',{name:'Menu error'})).toBeNull();
+    expect(view.getByTestId('player')).toBeTruthy();
+    vi.restoreAllMocks();
+  });
+  it('does not replace playback that starts during an alias lookup',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    const view=render(<ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));act(()=>getActionBus().emit('media:play',{contentId:'plex:12345'}));
+    await view.findByTestId('player');await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.getByTestId('player')).toBeTruthy();vi.restoreAllMocks();
+  });
+  it('does not replace an activity started on the menu stack during alias lookup',async()=>{
+    let resolve;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+    function OpenActivity(){const {push}=useMenuNavigationContext();return <button onClick={()=>push({type:'player',props:{}})}>Start stack activity</button>;}
+    const view=render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/><OpenActivity/></ScreenOverlayProvider></MenuNavigationProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));fireEvent.click(view.getByText('Start stack activity'));
+    await act(async()=>{resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();vi.restoreAllMocks();
+  });
+  it.each([['escape','success'],['escape','failure'],['hardware','success'],['hardware','failure']])('cancels a pending direct alias on %s with late %s',async(back,outcome)=>{
+    let resolve,reject;vi.spyOn(apiModule,'DaylightAPI').mockImplementationOnce(()=>new Promise((yes,no)=>{resolve=yes;reject=no;}));
+    const view=render(<MenuNavigationProvider><ScreenOverlayProvider><ScreenActionHandler/></ScreenOverlayProvider></MenuNavigationProvider>);
+    act(()=>getActionBus().emit('menu:open',{menuId:'menu:pending'}));
+    if(back==='escape')act(()=>getActionBus().emit('escape',{}));else fireEvent.popState(window);
+    await act(async()=>{if(outcome==='success')resolve({alias:{owner:'agenda',canonicalContentId:'agenda:neutral'}});else reject(new Error('offline'));await Promise.resolve();await Promise.resolve();});
+    expect(view.queryByTestId('agenda-host')).toBeNull();expect(view.queryByRole('alert',{name:'Menu error'})).toBeNull();vi.restoreAllMocks();
+  });
   it('opens MenuStack overlay on menu:open action', () => {
     const { getByTestId, queryByTestId } = render(
       <ScreenOverlayProvider>
@@ -751,6 +838,35 @@ describe('ScreenActionHandler', () => {
       expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Escape'))
         .toBe(false);
       dispatchSpy.mockRestore();
+    });
+
+    it('retains approved current-item transport without running an idle secondary selection', () => {
+      const owner = vi.fn();
+      getPlayerQueueOpRegistry().register(owner);
+      const onMismatch = vi.fn();
+      let contentId = 'plex:42';
+      const source = { getBareSnapshot: () => ({ currentItem: { contentId } }) };
+      const { queryByTestId } = render(
+        <ActivityScopeProvider value={{ restricted: true, activityId: 'media:plex:42', onMismatch }}>
+          <SessionSourceProvider source={source}>
+            <ScreenOverlayProvider><ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} /></ScreenOverlayProvider>
+          </SessionSourceProvider>
+        </ActivityScopeProvider>
+      );
+
+      for (const command of ['play', 'pause', 'toggle']) {
+        act(() => getActionBus().emit('media:playback', { command,
+          secondary: { action: 'media:play', payload: { contentId: 'plex:other' } } }));
+      }
+      expect(owner.mock.calls.map(([request]) => request.op)).toEqual(['play', 'pause', 'toggle']);
+      expect(queryByTestId('player')).toBeNull();
+      expect(onMismatch).not.toHaveBeenCalled();
+
+      // Read current ownership at dispatch time, not a captured pre-change snapshot.
+      contentId = 'plex:other';
+      act(() => getActionBus().emit('media:playback', { command: 'play', contentId: 'plex:42' }));
+      expect(owner).toHaveBeenCalledTimes(3);
+      expect(onMismatch).toHaveBeenCalledTimes(1);
     });
 
     it('routes explicit remote transport commands to the active Player owner without toggling by keydown', () => {

@@ -27,11 +27,12 @@ describe('FitnessSession empty-roster timeout vs transport stall', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('ends the session after the empty-roster timeout when packets keep arriving', () => {
+  it('healthy transport with an empty roster retains the ordinary timeout', () => {
     const { session, ended } = sessionWithEmptyRoster();
     for (let t = 0; t <= 70000; t += 5000) {
       now += 5000;
       session.deviceManager.lastPacketAt = now; // e.g. an idle cadence sensor still broadcasting
+      session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: now });
       session._checkEmptyRosterTimeout();
     }
     expect(ended).toHaveBeenCalledWith('empty_roster');

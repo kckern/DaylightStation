@@ -16,6 +16,12 @@ import { isFKBAvailable } from "../../../../../frontend/src/lib/fkb.js";
 import { isPlayerKeyboardActive } from "../../../../../__capabilities/playback/browser/player-support/playerKeyboardOwnership.js";
 import { useMenuPerfMonitor } from "./hooks/useMenuPerfMonitor.js";
 
+// Admin destinations are local routes, never arbitrary URLs supplied by content.
+function localAdminHref(value) {
+  if (typeof value !== 'string' || !/^\/admin(?:\/|$)/.test(value) || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
+  try {const url=new URL(value,window.location.origin);return url.origin===window.location.origin && (url.pathname==='/admin' || url.pathname.startsWith('/admin/')) ? value : null;} catch {return null;}
+}
+
 /**
  * Logs a menu selection to the server.
  */
@@ -166,6 +172,8 @@ export function TVMenu({
         itemCount={menuItems.length}
         image={menuMeta.image}
       />
+      {menuMeta.notice && <p role="status">{menuMeta.notice}</p>}
+      {menuMeta.notice && localAdminHref(menuMeta.adminUrl) && <a className="menu-admin-link" href={localAdminHref(menuMeta.adminUrl)} data-menu-admin-link>Open Admin</a>}
       <MenuItems
         items={menuItems}
         columns={5}
@@ -175,7 +183,7 @@ export function TVMenu({
         onSelectedIndexChange={onSelectedIndexChange}
         onSelect={handleSelect}
         onClose={onEscape}
-        MENU_TIMEOUT={MENU_TIMEOUT}
+        MENU_TIMEOUT={menuMeta.disableAutoCountdown ? 0 : MENU_TIMEOUT}
         containerRef={containerRef}
       />
     </div>
@@ -547,6 +555,7 @@ const MenuItem = React.memo(function MenuItem({
     <div
       className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
       onClick={onActivate}
+      aria-disabled={isDisabled || undefined}
     >
       <MenuIMG key={imageKey} img={img} label={item.label} />
       <h3 className="menu-item-label">{item.label}</h3>
@@ -657,7 +666,7 @@ function MenuItems({
     const action = item?.play || item?.queue || item?.list || item?.open;
     const actionVal = action && (Array.isArray(action) ? action[0] : Object.values(action)[0]);
     const androidKey = item?.android ? `android:${item.android.package}` : null;
-    return item?.id ?? item?.key ?? actionVal ?? androidKey ?? item?.label ?? null;
+    return item?.uid ?? item?.id ?? item?.key ?? actionVal ?? androidKey ?? item?.label ?? null;
   }, []);
   
   const setSelectedIndex = useCallback((value, key = null) => {
@@ -808,7 +817,7 @@ function MenuItems({
 
   const handleItemActivate = useCallback((index) => {
     const item = items[index];
-    if (!item) return;
+    if (!item || item.disabled) return;
 
     const key = findKeyForItem(item);
     navigateTo(index);
@@ -878,7 +887,6 @@ function MenuItems({
 
     const handler = (e) => {
       const curItems = itemsRef.current;
-      if (!curItems.length) return;
 
       // A fullscreen video player is mounted over this menu and owns the
       // keyboard — stand down entirely so its bindings win (Space=play/pause,
@@ -889,6 +897,14 @@ function MenuItems({
       if (isPlayerKeyboardActive()) return;
 
       const key = e.key;
+      const menuAdminLink=containerRef?.current?.querySelector('[data-menu-admin-link]');
+      const adminLink=document.activeElement;
+      if (menuAdminLink && key==='ArrowUp' && adminLink!==menuAdminLink && activeIndexRef.current===0) {e.preventDefault();menuAdminLink.focus();return;}
+      if (menuAdminLink && adminLink===menuAdminLink && key.startsWith('Arrow')) {e.preventDefault();if(key==='ArrowDown') menuAdminLink.blur();return;}
+      if (menuAdminLink && adminLink===menuAdminLink && ['Enter',' ','GamepadA','GamepadB','GamepadStart','MediaPlayPause'].includes(key)) {
+        e.preventDefault();if(!e.repeat) adminLink.click();return;
+      }
+      if (!curItems.length) return;
       const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"
         || key === "GamepadSelect" || e.keyCode === 4;  // Android KEYCODE_BACK = 4
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
@@ -931,6 +947,7 @@ function MenuItems({
         setTimeout(() => { selectCooldown = false; }, 300);
         // Sync React state on selection (Enter) — this is the only time React needs to know
         const idx = activeIndexRef.current;
+        if (curItems[idx]?.disabled) return;
         logger.info('menu.select', { key, index: idx, title: curItems[idx]?.label });
         setSelectedIndex(idx, findKeyForItem(curItems[idx]));
         onSelectRef.current?.(curItems[idx]);
@@ -949,7 +966,7 @@ function MenuItems({
    * Optional countdown timer to auto-select.
    */
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {
-    onSelect?.(items[activeIndexRef.current]);
+    if (!items[activeIndexRef.current]?.disabled) onSelect?.(items[activeIndexRef.current]);
   });
   resetTimeRef.current = resetTime;
 
@@ -1011,7 +1028,7 @@ function MenuItems({
     }
 
     const isAndroid = !!item.android;
-    const isDisabled = isAndroid && !_fkbAvailable;
+    const isDisabled = item.disabled || (isAndroid && !_fkbAvailable);
 
     return { item, itemKey, imageSrc, isDisabled };
   }), [items, findKeyForItem]);

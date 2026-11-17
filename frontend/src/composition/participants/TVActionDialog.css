@@ -1,0 +1,33 @@
+.tv-action-dialog {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 82%);
+  color: white;
+}
+.tv-action-dialog__panel {
+  box-sizing: border-box;
+  min-height: 0;
+  scroll-padding: .5rem;
+  width: min(100%, 42rem);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid #777;
+  border-radius: .75rem;
+  background: #222;
+  font-size: 1.15rem;
+}
+.tv-action-dialog__panel button {
+  padding: .65rem 1rem;
+  margin: .35rem .5rem .35rem 0;
+  border-radius: .35rem;
+  font-size: inherit;
+}
+.tv-action-dialog__panel button:focus-visible, .tv-action-dialog__panel [data-tv-scroll]:focus-visible { outline: 3px solid #ffda6a; outline-offset: 3px; }
+.tv-action-dialog__participants { list-style: none; padding: 0; max-height: min(45vh, 18rem); overflow: auto; }
+.tv-action-dialog__participants li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .4rem 0; overflow-wrap: anywhere; }

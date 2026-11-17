@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+
 const DEFAULTS = Object.freeze({
   handshakeTimeoutMs: 10_000,
   heartbeatPingMs: 5_000,
@@ -7,12 +9,13 @@ const DEFAULTS = Object.freeze({
   exitAfterMs: 120_000,
 });
 
-export function buildBridgeHealth(websocket) {
+export function buildBridgeHealth(websocket, dataPath) {
   return {
     httpStatus: websocket.connected ? 200 : 503,
     body: {
-      status: websocket.connected ? 'healthy' : 'unhealthy',
+      status: websocket.connected ? 'socket-ready' : 'socket-unavailable',
       websocket,
+      ...(dataPath ? { dataPath } : {}),
     },
   };
 }
@@ -31,7 +34,7 @@ export function createWebSocketSupervisor({
   onOpen,
   onMessage,
   logger = console,
-  now = Date.now,
+  now = () => performance.now(),
   timers = globalThis,
   exit = (code) => process.exit(code),
   ...configured

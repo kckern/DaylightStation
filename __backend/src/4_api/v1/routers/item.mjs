@@ -71,7 +71,7 @@ export function createItemRouter(options = {}) {
         // Include info and parents for FitnessShow compatibility
         ...(outcome.info && { info: outcome.info }),
         ...(Object.keys(parents).length > 0 && { parents }),
-        items: outcome.items.map(toListItem)
+        items: outcome.items.map(item => toListItem(item))
       };
 
       res.json(response);

@@ -468,7 +468,7 @@ export function createFitnessRouter(config) {
       image: result.containerItem?.thumbnail,
       info: result.info,
       parents: result.parents,
-      items: result.items.map(toListItem)
+      items: result.items.map(item => toListItem(item))
     }));
   }));
 

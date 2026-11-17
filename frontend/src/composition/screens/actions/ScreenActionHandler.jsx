@@ -1,10 +1,14 @@
+import {useActivityScope} from '../../../../../__app_modules/household/supervision/browser/index.js';
+import {screenActionActivity} from './supervisionScope.mjs';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { useScreenAction as useRawScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
-import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
+import { useHasMenuNavigationContext, useMenuNavigationContext, useOptionalMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import { usePip } from "../../../../../__capabilities/screen-host/browser/pip.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
 import MenuStack from "../../../../../__app_modules/media/media/browser/menu.mjs";
+import {menuSourceHost,resolveMenuSource,screenOwnership} from '../menuSourceHosts.js';
+import {TVActionDialog} from '../../participants/TVActionDialog.jsx';
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
 import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
@@ -18,6 +22,20 @@ import { getActionBus } from "../../../../../__capabilities/screen-host/browser/
 import { useSessionSourceContext } from "../../../../../__capabilities/playback/browser/sessions.mjs";
 import { getScreenItemActions } from './screenItemActions.js';
 
+function useScreenAction(action,handler){
+  const scope=useActivityScope();
+  const sessionSource=useSessionSourceContext();
+  const guarded=useCallback((payload)=>{
+    const snapshot=scope?.restricted?(sessionSource?.getBareSnapshot?.()??sessionSource?.getSnapshot?.()):null;
+    const activity=screenActionActivity(action,payload,snapshot);
+    if(scope?.restricted && activity!==null && activity!==scope.activityId){scope.onMismatch?.();return;}
+    // A paused/held current item must keep its controls. Its idle secondary
+    // selection could launch another activity, so it cannot borrow this grant.
+    if(scope?.restricted && action==='media:playback')return handler({...payload,secondary:undefined});
+    return handler(payload);
+  },[action,handler,scope,sessionSource]);
+  useRawScreenAction(action,guarded);
+}
 let _logger;
 import { withLoopAlias } from './loopAlias.js';
 function logger() {
@@ -82,12 +100,18 @@ const toMenuRoot = (menuId) => (
   typeof menuId === 'string' && menuId.includes(':') ? { contentId: menuId } : menuId
 );
 
+function MenuOwnershipError({retry,back}) {
+  return <TVActionDialog role="alert" label="Menu error" onBack={back}><p>Unable to load menu.</p><button onClick={retry}>Retry</button><button onClick={back}>Back</button></TVActionDialog>;
+}
+
 export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const sessionSource = useSessionSourceContext();
   const itemActions = useMemo(() => getScreenItemActions(sessionSource), [sessionSource]);
-  const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
+  const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef, fullscreenIdentity } = useScreenOverlay();
+  const fullscreenRef=useRef(fullscreenIdentity);fullscreenRef.current=fullscreenIdentity;
   const pip = usePip();
   const hasMenuNav = useHasMenuNavigationContext();
+  const nav=useOptionalMenuNavigationContext();const navContentRef=useRef(nav?.currentContent);navContentRef.current=nav?.currentContent;
   const { step: stepVolume, toggleMute: toggleVolumeMute, stepSize: volumeStepSize } = useScreenVolume();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
@@ -113,6 +137,9 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
   // --- Menu ---
   const currentMenuRef = useRef(null);
+  const menuRequestRef = useRef(0);
+  const pendingMenuLookupRef = useRef(false);
+  useEffect(()=>()=>{menuRequestRef.current++;},[]);
 
   // Nav-stack Player session bridge: MenuStack overlays mount the legacy
   // Player for menu selections (type:player). Forward a ref so the mounted
@@ -125,6 +152,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const menuId = payload.menuId;
     const appId = menuId?.split('/')[0];
     if (appId && getApp(appId)) {
+      menuRequestRef.current++;pendingMenuLookupRef.current=false;
       logger().info('app.open', { menuId, appId });
       showOverlay(AppContainer, { open: menuId, clear: () => dismissOverlay() });
       return;
@@ -145,16 +173,29 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     currentMenuRef.current = menuId;
+    pendingMenuLookupRef.current=false;
+    const request=++menuRequestRef.current;
+    let initialFullscreen=fullscreenRef.current;const initialNavContent=navContentRef.current;
     const menuTimeout = actions?.menu?.timeout ?? 0;
     // `ownsNavStack`: a MenuStack overlay RENDERS the shared MenuNavigation
     // stack, so for as long as it is up it is the stack's only renderer and the
     // screen's own menu widget yields (MenuWidget). Without it, a selection made
     // here mounted a Player in BOTH — two unmuted videos in sync.
-    showOverlay(
-      MenuStack,
-      { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
-      { priority: 'high', ownsNavStack: true },
-    );
+    const open = id => {
+      if(menuRequestRef.current!==request || fullscreenRef.current!==initialFullscreen || navContentRef.current!==initialNavContent) return;
+      const host=menuSourceHost(id);
+      showOverlay(host || MenuStack,
+        host ? {contentId:id,initialFocusUid:payload.focusUid,playerRef:navPlayerRef,onClose:()=>dismissOverlay()} : {rootMenu:toMenuRoot(id),MENU_TIMEOUT:menuTimeout,playerRef:navPlayerRef,resolveMenuSource},
+        {priority:'high',ownsNavStack:true});
+    };
+    const resolveAlias = () => {pendingMenuLookupRef.current=true;return screenOwnership(menuId).then(alias=>{if(menuRequestRef.current===request) pendingMenuLookupRef.current=false;open(alias?.canonicalContentId || menuId);}).catch(()=>{
+      if(menuRequestRef.current!==request || fullscreenRef.current!==initialFullscreen || navContentRef.current!==initialNavContent) return;
+      pendingMenuLookupRef.current=false;
+      const back=()=>{menuRequestRef.current++;pendingMenuLookupRef.current=false;currentMenuRef.current=null;dismissOverlay();};
+      const retry=()=>{initialFullscreen=fullscreenRef.current;resolveAlias();};
+      showOverlay(MenuOwnershipError,{retry,back},{priority:'high',suspendsNavStack:true});
+    });};
+    if(typeof menuId==='string' && menuId.startsWith('menu:')) resolveAlias(); else open(menuId);
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
@@ -442,7 +483,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       } else if (action === 'media:play') {
         showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media', suspendsNavStack: true });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef }, { ownsNavStack: true });
+        handleMenuOpen(secPayload);
       }
       return;
     }
@@ -509,7 +550,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       return;
     }
     window.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true }));
-  }, [actions, showOverlay, dismissOverlay, sessionSource]);
+  }, [actions, showOverlay, dismissOverlay, sessionSource, handleMenuOpen]);
 
   // --- Playback rate ---
   // ArtMode's background music is excluded: rate is meaningless for it, and the
@@ -587,6 +628,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
 
   // --- Escape ---
   const handleEscape = useCallback(() => {
+    if(pendingMenuLookupRef.current){pendingMenuLookupRef.current=false;menuRequestRef.current++;currentMenuRef.current=null;return;}
     // First priority: let any registered interceptor handle escape
     // (e.g., MenuStack pops its navigation stack before the framework acts)
     if (escapeInterceptorRef?.current) {
@@ -659,6 +701,14 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   pipRef.current = pip;
 
   const consumeBack = useCallback(() => {
+    // The visible error owns Back even while Retry is pending. Its lifecycle
+    // invalidates the lookup AND dismisses the dialog; cancellation alone
+    // would leave its retry callback attached to an obsolete generation.
+    if (fullscreenRef.current?.Component === MenuOwnershipError) {
+      fullscreenRef.current.props.back();
+      return true;
+    }
+    if(pendingMenuLookupRef.current){pendingMenuLookupRef.current=false;menuRequestRef.current++;currentMenuRef.current=null;return true;}
     // An overlay that manages its own back navigation (MenuStack popping levels,
     // Piano blocking escapes) registers an escape interceptor — defer to the
     // normal menu pop for those. Otherwise a "dumb" fullscreen scene (e.g. a

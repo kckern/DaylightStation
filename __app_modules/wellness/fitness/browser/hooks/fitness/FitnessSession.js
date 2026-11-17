@@ -1,3 +1,4 @@
+import { SESSION_RESUME_MERGE_WINDOW_MS } from '../../../shared/sessionResumePolicy.mjs';
 import { formatSessionId, ensureSeriesCapacity, deepClone } from "./types.js";
 import { DeviceManager } from "./DeviceManager.js";
 import { UserManager } from "./UserManager.js";
@@ -659,6 +660,101 @@ export class FitnessSession {
     }
   }
 
+  // `at` is a wall clock; watchdog `since` is monotonic and never a timestamp.
+  setTransportState({ state, at = Date.now(), incidentId = null, silenceMs = 0, reason } = {}) {
+    this._transportState = state;
+    if (!this.sessionId || this.endTime) return false;
+    const mono = performance.now();
+    if (this.transportPause && mono >= this._transportResumeDeadline) {
+      this.endSession('transport_lost');
+      return false;
+    }
+    if (state === 'healthy' && reason === 'sample-delivered') {
+      const recoveredGap = !!this._transportGap;
+      if (this._transportGap) {
+        this._padTransportGap(at);
+        this._resetTransportEarningInterval();
+        this.transportGaps = [...(this.transportGaps || []), { ...this._transportGap, endedAt: at }];
+        this._transportGap = null;
+      }
+      const wasPaused = !!this.transportPause;
+      this.transportPause = null;
+      this._transportSilenceSince = null;
+      this._transportResumeDeadline = null;
+      if (recoveredGap || wasPaused) this._emptyRosterStartTime = null;
+      if (wasPaused) {
+        this.logEvent('transport_resumed', { incidentId }, at);
+        this._startAutosaveTimer();
+        this._maybeAutosave();
+      }
+      return true;
+    }
+    if (state === 'lost' || state === 'recovering') {
+      if (this._transportSilenceSince == null) this._transportSilenceSince = mono - silenceMs;
+      this._holdTransportCollection(at, incidentId);
+    }
+    const holdMs = this._getTimeouts().emptySessionTransportHold ?? 180000;
+    if (state === 'lost' && mono - this._transportSilenceSince >= holdMs && !this.transportPause) {
+      // Match server lookup eligibility: the hold must not add minutes to
+      // the window measured from the last observed/saved timeline end.
+      const observedEnd = this.summary?.endTime ?? at;
+      const resumeUntil = Math.min(at, observedEnd) + SESSION_RESUME_MERGE_WINDOW_MS;
+      this.transportPause = { startedAt: at, incidentId, resumeUntil };
+      this._transportResumeDeadline = mono + Math.max(0, resumeUntil - at);
+      this.logEvent('transport_paused', { ...this.transportPause }, at);
+      // Defer snapshot capture until the watchdog's synchronous lost-event
+      // callback has run, and serialize behind any save already in flight.
+      this._checkpointTransportPause();
+    }
+    return false;
+  }
+
+  _holdTransportCollection(at = Date.now(), incidentId = null) {
+    if (!this._transportGap) {
+      this._transportHeldDeviceIds = [...this.activeDeviceIds];
+      this._transportGap = { startedAt: this.deviceManager?.lastPacketAt || at, incidentId, endedAt: null };
+      this._resetTransportEarningInterval();
+    } else if (incidentId) this._transportGap.incidentId = incidentId;
+  }
+
+  _resetTransportEarningInterval() {
+    for (const [userId] of this.treasureBox?.perUser || []) {
+      this.treasureBox.recordUserHeartRate(userId, null);
+    }
+  }
+
+  _padTransportGap(at) {
+    if (!this.timeline) return;
+    const last = this.timeline.timebase.lastTickTimestamp ?? this.startTime;
+    const ticks = Math.max(0, Math.floor((at - last) / this.timeline.timebase.intervalMs));
+    this.timeline.padWithNulls(ticks);
+    this.timeline.timebase.lastTickTimestamp = at;
+  }
+
+  get transportCollectionHeld() {
+    return !!this.transportPause || !!this._transportGap
+      || !!this.deviceManager?.isTransportStalled?.(this._getTimeouts().transportStallMs ?? 1200);
+  }
+
+  _checkpointTransportPause() {
+    if (this._transportCheckpointPending || !this.transportPause) return;
+    const pause = this.transportPause;
+    const sessionId = this.sessionId;
+    this._transportCheckpointPending = true;
+    this.whenFinalPersistSettled().then(async () => {
+      if (this.sessionId !== sessionId || this.transportPause !== pause) return;
+      const revision = this._persistenceManager.successfulSaveRevision;
+      const accepted = this._persistSession(this.summary, { force: false });
+      await this.whenFinalPersistSettled();
+      if (this.sessionId !== sessionId || this.transportPause !== pause) return;
+      if (accepted && this._persistenceManager.successfulSaveRevision > revision) {
+        this._stopAutosaveTimer();
+      } else {
+        getLogger().warn('fitness.session.transport_checkpoint_failed', { sessionId, incidentId: pause.incidentId });
+      }
+    }).finally(() => { this._transportCheckpointPending = false; });
+  }
+
   setKioskMode(isKiosk) {
     this._kioskMode = !!isKiosk;
     // Governance is kiosk-bound: only the garage kiosk locks content off behind
@@ -679,6 +775,12 @@ export class FitnessSession {
     this.lastActivityTime = now;
     
     // Register/Update device in manager
+    // Reset the earnings interval before the FIRST recovered packet can award
+    // a ring for time spent waiting for delivery.
+    if (this.transportCollectionHeld) {
+      this._holdTransportCollection(now);
+      this._resetTransportEarningInterval();
+    }
     const device = this.deviceManager.registerDevice(deviceData);
     if (device) {
       this.activeDeviceIds.add(device.id);
@@ -2026,11 +2128,27 @@ export class FitnessSession {
     const intervalMs = this.timeline.timebase.intervalMs || 5000;
     const gapTicks = Math.floor(gapMs / intervalMs);
 
-    if (gapTicks > 0) {
+    const savedTransportPause = sessionData.transportPause ?? sessionData.metadata?.transportPause ?? null;
+    // A paused reload is still silence, not a recovery receipt. Keep its
+    // observed-end cursor durable; padding now would make the next checkpoint
+    // look newer to server resume lookup. Align the gap once on real recovery.
+    if (gapTicks > 0 && !savedTransportPause) {
       this.timeline.padWithNulls(gapTicks);
     }
 
     this._sessionMetadata = { ...(sessionData.metadata || {}) };
+    this.transportPause = savedTransportPause;
+    this.transportGaps = sessionData.transportGaps ?? this._sessionMetadata.transportGaps ?? [];
+    this.endReason = sessionData.endReason ?? this._sessionMetadata.endReason ?? null;
+    if (this.transportPause) {
+      this.timeline.timebase.lastTickTimestamp = previousEndTime;
+      const remaining = Math.max(0, this.transportPause.resumeUntil - now);
+      this._transportResumeDeadline = performance.now() + remaining;
+      this._transportGap = this.transportGaps.find(gap => gap.endedAt == null) || {
+        startedAt: this.transportPause.startedAt, incidentId: this.transportPause.incidentId, endedAt: null
+      };
+      this.transportGaps = this.transportGaps.filter(gap => gap.endedAt != null);
+    }
     this._timelineRecorder?.setTimeline(this.timeline);
     this._restorePressureMats(sessionData);
 
@@ -2324,6 +2442,7 @@ export class FitnessSession {
     this.sessionTimestamp = requestedSessionId ? String(requestedSessionId).replace(/^fs_/, '') : formatSessionId(nowDate);
     this.sessionId = requestedSessionId || `fs_${this.sessionTimestamp}`;
     this._liveSessionRole = liveSessionRole;
+    this._finalized = false;
     this.startTime = now;
     this.lastActivityTime = now;
     this.endTime = null;
@@ -2800,6 +2919,13 @@ export class FitnessSession {
    */
   _collectTimelineTick({ timestamp } = {}) {
     if (!this.timeline || !this.sessionId) return null;
+    if (this.transportCollectionHeld) {
+      if (!this._isEndingSession) {
+        this._holdTransportCollection();
+        this._checkEmptyRosterTimeout();
+      }
+      return null;
+    }
 
     // Tick telemetry: count EVERY recorded tick here, at the one point all tick
     // sources funnel through. This used to be incremented only inside the
@@ -2935,7 +3061,7 @@ export class FitnessSession {
   }
 
   maybeEnd() {
-    if (!this.sessionId || this.endTime) return false;
+    if (!this.sessionId || this.endTime || this.transportCollectionHeld) return false;
     const { remove } = this._getTimeouts();
     const now = Date.now();
     if (!this.lastActivityTime || (now - this.lastActivityTime) < remove) return false;
@@ -2963,7 +3089,12 @@ export class FitnessSession {
     this.endTime = now;
 
     // Mark as finalized when user explicitly ends (not timeout/empty_roster)
-    this._finalized = (reason === 'manual' || reason === 'user_initiated');
+    this._finalized = ['manual', 'user_initiated', 'force_break', 'transport_lost'].includes(reason);
+    this.endReason = reason;
+    if (this._transportGap) {
+      this.transportGaps = [...(this.transportGaps || []), { ...this._transportGap, endedAt: now }];
+      this._transportGap = null;
+    }
 
     // DEBUG: Capture stack trace to identify what's triggering early session ends (throttled: first 5 only)
     const durationMs = this.endTime - this.startTime;
@@ -3007,6 +3138,9 @@ export class FitnessSession {
       if (this.treasureBox) {
         this.treasureBox.stop();
       }
+      // Close active pause metadata only after final tick collection (which must
+      // still suppress samples throughout the transport gap).
+      this.transportPause = null;
       sessionData = this.summary;
       if (this.treasureBox) {
         // MEMORY LEAK FIX: Clear accumulated timeline data on session end
@@ -3044,7 +3178,7 @@ export class FitnessSession {
     // pre-session buffer). Auto/inactivity/empty_roster ends keep the cooldown to
     // suppress duplicate sessions from leftover HR.
     const deliberateEnd = reason === 'manual' || reason === 'user_initiated' || reason === 'force_break';
-    if (deliberateEnd) this._endedDeviceHold.hold(this.activeDeviceIds, now);
+    if (deliberateEnd) this._endedDeviceHold.hold(new Set([...this.activeDeviceIds, ...(this._transportHeldDeviceIds || [])]), now);
     _lastSessionEndTimestamp = deliberateEnd ? 0 : Date.now();
     this.reset();
     return true;
@@ -3181,6 +3315,15 @@ export class FitnessSession {
    * Called from _collectTimelineTick after device pruning.
    */
   _checkEmptyRosterTimeout() {
+    if (this._isEndingSession) return;
+    if (this.transportPause) {
+      if (performance.now() >= this._transportResumeDeadline) this.endSession('transport_lost');
+      return;
+    }
+    if (this._transportState === 'lost') {
+      this.setTransportState({ state: 'lost', incidentId: this._transportGap?.incidentId });
+      if (this.transportPause) return;
+    }
     const roster = this.roster;
     const now = Date.now();
     const { emptySession, transportStallMs = 1200, emptySessionTransportHold = 180000 } = this._getTimeouts();
@@ -3234,6 +3377,14 @@ export class FitnessSession {
 
   reset() {
     this._lastStartupHeartRateAt = null;
+    this.transportPause = null;
+    this.transportGaps = [];
+    this.endReason = null;
+    this._transportGap = null;
+    this._transportSilenceSince = null;
+    this._transportResumeDeadline = null;
+    this._transportState = null;
+    this._transportHeldDeviceIds = [];
     this.sessionId = null;
     this.startTime = null;
     this.endTime = null;
@@ -3766,6 +3917,7 @@ export class FitnessSession {
 
   _maybeAutosave(force = false) {
     if (!this.sessionId) return;
+    if (this.transportPause) { this._checkpointTransportPause(); return; }
     if (!force) {
       if (this._autosaveIntervalMs <= 0) return;
       // Check PersistenceManager directly - don't use stale _saveTriggered
@@ -3789,7 +3941,7 @@ export class FitnessSession {
   }
 
   _maybeTickTimeline(targetTimestamp = Date.now()) {
-    if (!this.timeline || !this.sessionId) return;
+    if (!this.timeline || !this.sessionId || this.transportCollectionHeld) return;
     const interval = this.timeline.timebase?.intervalMs || 0;
     if (!(interval > 0)) return;
     let lastTick = this.timeline.timebase?.lastTickTimestamp
@@ -3952,11 +4104,17 @@ export class FitnessSession {
           endTime: derivedEndTime,
           durationMs,
           finalized: this._finalized,
+          transportPause: this.transportPause || null,
+          transportGaps: [...(this.transportGaps || []), ...(this._transportGap ? [{ ...this._transportGap }] : [])],
+          endReason: this.endReason || null,
           roster: this.roster.length > 0 ? this.roster : (this._lastKnownGoodRoster || []),
           deviceAssignments,
           entities,
           metadata: {
             ...this._sessionMetadata,
+            transportPause: this.transportPause || null,
+            transportGaps: [...(this.transportGaps || []), ...(this._transportGap ? [{ ...this._transportGap }] : [])],
+            endReason: this.endReason || null,
             pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
               .filter(tracker => tracker.seenThisSession)
               .map(tracker => {

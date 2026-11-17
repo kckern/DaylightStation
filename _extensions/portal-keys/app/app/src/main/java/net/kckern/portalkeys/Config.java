@@ -35,12 +35,13 @@ public class Config {
     // never returned by /status or /config, just like the FKB password.
     public static final String KEY_LOCKDOWN_TOKEN = "lockdownToken";
     private static final String KEY_LOCKDOWN_UNTIL = "lockdownUntil";
+    private static final String KEY_LOCKDOWN_REVISION = "lockdownRevision";
 
+    public static final String KEY_PAGE_MAINTENANCE_UNTIL="pageRecoveryMaintenanceUntil";
     private final SharedPreferences prefs;
 
-    public Config(Context ctx) {
-        this.prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-    }
+    public Config(Context ctx) { this(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)); }
+    Config(SharedPreferences prefs) { this.prefs=prefs; }
 
     /** FKB REST endpoint on this same device. Loopback by default. */
     public String fkbHost() {
@@ -128,9 +129,40 @@ public class Config {
 
     public long lockdownUntil() { return prefs.getLong(KEY_LOCKDOWN_UNTIL, 0); }
 
-    public void setLockdown(boolean locked, Long until) {
-        long value = !locked ? 0 : (until == null ? Long.MAX_VALUE : until);
-        prefs.edit().putLong(KEY_LOCKDOWN_UNTIL, value).apply();
+    public long lockdownRevision() { return prefs.getLong(KEY_LOCKDOWN_REVISION,0); }
+
+    /** Commit both values together before acknowledging to the safety service. */
+    public synchronized boolean applyLockdown(LockdownCommand command) {
+        if (!command.canApply(lockdownRevision(),lockdownUntil())) return false;
+        SharedPreferences.Editor update=prefs.edit().putLong(KEY_LOCKDOWN_UNTIL,command.deadline());
+        if (command.revision!=null) update.putLong(KEY_LOCKDOWN_REVISION,command.revision);
+        if (!update.commit()) throw new IllegalStateException("Lockdown persistence failed");
+        return true;
+    }
+
+    /** -1 unknown, 0 explicitly cleared; deadlines expire to UNKNOWN, never automatic release. */
+    public int pageMaintenance(long now) {
+        long until=prefs.getLong(KEY_PAGE_MAINTENANCE_UNTIL,-1);
+        long setAt=prefs.getLong("pageMaintenanceSetAt",-1);
+        return until==0 ? 0 : (until>now && now>=setAt && until-setAt<=900000 ? 1 : -1);
+    }
+    public void setPageMaintenance(long until,long now) {
+        if (until!=0 && (until<=now || until-now>900000)) throw new IllegalArgumentException("maintenance must be 0 or a future deadline within 15 minutes");
+        if (!prefs.edit().putLong(KEY_PAGE_MAINTENANCE_UNTIL,until).putLong("pageMaintenanceSetAt",now).commit())
+            throw new IllegalStateException("maintenance persistence failed");
+    }
+
+    /** One atomic preferences view prevents pairing a stale Stop flag with a new revision. */
+    public String pageSafetySnapshot(Integer displayState,long now) throws org.json.JSONException {
+        java.util.Map<String,?> values=prefs.getAll();
+        long revision=values.get(KEY_LOCKDOWN_REVISION) instanceof Long?(Long)values.get(KEY_LOCKDOWN_REVISION):0;
+        long until=values.get(KEY_LOCKDOWN_UNTIL) instanceof Long?(Long)values.get(KEY_LOCKDOWN_UNTIL):Long.MAX_VALUE;
+        long maintenance=values.get(KEY_PAGE_MAINTENANCE_UNTIL) instanceof Long?(Long)values.get(KEY_PAGE_MAINTENANCE_UNTIL):-1;
+        long setAt=values.get("pageMaintenanceSetAt") instanceof Long?(Long)values.get("pageMaintenanceSetAt"):-1;
+        boolean maintenanceKnown=maintenance==0 || (maintenance>now && now>=setAt && maintenance-setAt<=900000);
+        return new org.json.JSONObject().put("known",displayState!=null && (displayState==1 || displayState==2) && maintenanceKnown && revision>0)
+            .put("expectedAwake",displayState!=null && displayState==2).put("stopped",until==Long.MAX_VALUE || until>now)
+            .put("revision",revision).put("maintenance",maintenance!=0).toString();
     }
 
     /** Redacted view for pkctl status — never emits the password. */
@@ -146,6 +178,8 @@ public class Config {
                 + "\"gateTokenSet\":" + (!gateToken().isEmpty()) + ","
                 + "\"gateHeartbeatMs\":" + gateHeartbeatMs() + ","
                 + "\"lockdownTokenSet\":" + (!lockdownToken().isEmpty()) + ","
+                + "\"lockdownProtocolVersion\":2,"
+                + "\"lockdownRevision\":" + lockdownRevision() + ","
                 + "\"lockdownActive\":" + lockdownActive() + ","
                 + "\"lockdownUntil\":" + (lockdownUntil() > 0 && lockdownUntil() != Long.MAX_VALUE ? lockdownUntil() : "null")
                 + "}";

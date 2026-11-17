@@ -708,3 +708,88 @@ disconnected device is still included with `connected: false`; no entry means
 the Android bond has not completed (or Bluetooth is off). Do not use a device
 name as an access-control rule: names are only the keypad's display matcher;
 the backend gate's configured MAC remains the security authority.
+
+
+## School page evidence and recovery gate
+
+Payload `p9-page-evidence-disabled` and shell version 34 add page evidence to
+`GET /status` (`homeWatchdog.page`) and the authenticated `GET /page/journal`.
+The journal retains 256 metadata entries: UTC ISO timestamps, device/build/payload,
+process/uptime, screen/Stop revision/maintenance, network availability, page age,
+incident ID and stage. Permission failures appear as unavailable, never healthy.
+No answers, grants, raw input, credentials or full page URLs are recorded.
+
+Provision the exact application HTTPS **origin** through authenticated
+`POST /page/config` with `{"origin":"https://<app-host>","recovery":false}`.
+Only `POST /page/beat` bypasses the admin token, requiring BOTH an actual loopback
+peer and that exact Origin; it accepts at most 2 KiB of JSON. Its contract is
+`{protocol:1,build,visible,activityId,seq}`. Preflight allows POST/Content-Type and
+private-network access for that origin. Browser visibility is evidence only.
+The stable page host sends every five seconds even when School is replaced by a
+supervision or shutdown gate. It never sends act, print, grade, or release commands.
+
+The shell reads existing durable Stop/revision and platform display state. A
+missing/old shell API, unordered Stop state, unknown display or unknown maintenance
+prohibits recovery. Through existing admin-authenticated `/config`, set
+`pageRecoveryMaintenanceUntil` to `0` for explicit clearance, or a future Unix-ms
+deadline no more than 15 minutes away. Maintenance survives service restart; expiry
+or backward clock movement makes it **unknown**, requiring fresh clearance. Stop
+always dominates it. No new Stop ledger exists.
+
+The policy proposes foreground/current-page reload after 15 seconds silent, then
+restartApp after another 15 seconds. It allows at most two restarts per ten minutes;
+the budget commits before dispatch and survives service restart. A changed/unknown
+boot conservatively holds restarts for ten minutes. Fresh beats close incidents but
+do not erase the budget. The existing durable Home alert outbox records one page
+failure per incident. The external watcher still detects native process death as
+unreachable; it must not create another recovery authority.
+
+**Active page recovery is hard-disabled in this candidate**, even if an operator
+requests it. `PAGE_RECOVERY_VERIFIED=false` is a release gate, not proof of physical
+verification. A later reviewed change may remove that gate only after both:
+
+1. The actual Fully HTTPS transport test passes on the chosen device. Compile the
+   `:app:assembleDebugAndroidTest` target; deploy/run instrumentation separately under
+   rollout authorization. `PageHeartbeatTransportTest` opens the public, credential-free
+   `/portal-page-probe.html` fixture from the configured origin in actual Fully and
+   asserts matching native receipt. Desktop fetch mocks cannot substitute for this.
+2. Recovery preserves required School state for the selected route. Current URL and
+   existing backend session/domain evidence survive. `parseSchoolPath` reconstructs
+   browsable sections/material paths, but learner program authority stays in memory:
+   those reloads return to School. `/go` may mint a new grant and is not a safe
+   generic resume path. Unsaved runner drafts are
+   not universally checkpointed. Fully `reload`/`restartApp` alone does not prove draft
+   recovery. Task 4 must qualify supported resume routes and reject unsafe recovery.
+
+The Fully channel inspection found REST control and browser key delivery, not an
+existing trusted page-metadata ingress. If the real HTTPS loopback test fails, inspect
+Fully's JS-to-native capability on that exact build before changing transport. No
+browser admin token is permitted. Crash/power/network history is available only where
+retained; current snapshots cannot reconstruct historical freezes.
+
+The native Home watchdog also separates passive DPC configuration from activity
+repair. Both its fallback foreground launch and KioskPolicy's lock-task recreation
+read native safety again at dispatch and retain the same hard preservation gate.
+Configured preferred Home/allowed packages are not evidence that Fully is foreground
+or lock-task readback is healthy. Failed alert admission keeps the complete pending
+outbox transaction retryable, restores the acknowledged preference-memory view,
+and prohibits delivery until its incident marker and queue commit together.
+Fully's retained-head retry acknowledgement survives unrelated admissions. Home
+reconciles its committed observation before observing current Home again; policy
+commits its state marker with the outbox event. Neither recomputing producer retains
+a name-only receipt. Page failures use their durable incident marker.
+
+The local [School incident replay](../../tests/isolated/e2e/school/incident-2026-11-16.test.jsx)
+checks real browser controls and grading/printing services with fake fetch/device
+transport and temporary YAML records. Lost responses and Space bursts must not
+replay work; a remounted page preserves recorded evidence and returns an unsupported
+learner-program route to School. An unfinished text draft is deliberately shown
+as **not restored**. This is characterization of current authority boundaries,
+not qualification of active-runner recovery; `PAGE_RECOVERY_VERIFIED=false` remains.
+
+Before changing that gate, retain private results for both outage windows and qualify
+the chosen runner/draft without persisting grants or replaying `/act`. The actual
+Fully HTTPS probe, native crash/power/network diagnosis, saved-draft renderer-kill
+drill, bounded recovery/alert, sleep immunity and parent Stop all require separately
+authorized device acceptance. No local replay or compiled artifact satisfies them.
+See the [School replay and acceptance procedure](../../__docs/runbooks/school/logs-and-tracing.md#local-interaction-replay-and-physical-acceptance).

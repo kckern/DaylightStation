@@ -1,0 +1,389 @@
+alias: Garage Speaker Plug Enforcement
+id: garage_speaker_plug_enforcement
+# Safety net for a plug that can eat commands: force-enabled on every HA start.
+initial_state: true
+trace:
+  stored_traces: 30
+description: |
+  Sole verifier of the garage speaker plug. Desired state is TV power, except
+  that an active garage keeps an already-on plug on.
+
+  Runs on every TV-power / garage-active change AND every 5 min, and decides
+  inside the action, so a recovered plug can also clear a stale failure
+  notification.
+
+  2026-08-11: this automation fired every 5 minutes for ~1h45m issuing
+  switch.turn_off at a Third Reality plug that had silently stopped acking ZCL
+  commands (Z2M kept receiving its reports, so it never looked offline). It had
+  no verification and no alert, so the speaker stayed on all evening with
+  nothing in the logs saying anything was wrong. It now retries, verifies, and
+  escalates to a persistent notification when the device stops obeying.
+
+  2026-08-18: absorbed the state trigger from automation.garage_speaker_plug_sync,
+  which is now RETIRED. That automation issued switch.turn_{{state}} three times
+  unconditionally — its trailing `condition` inside `repeat: count: 3` does NOT
+  abort the loop the way its author expected (trace ad34eb53 shows all three
+  iterations running after the condition went false). Combined with the direct
+  call in script.garage_activate that put FOUR commands on this plug inside six
+  seconds, and the plug dropped itself OFF mid-burst at 21:48:39 despite every
+  command being turn_on. Commanded once and left alone it is rock solid: verified
+  30s at 5.6-6.6W with no dropout.
+
+  So: script.garage_activate / garage_deactivate issue ONE command for
+  immediacy, and this automation verifies shortly after. When that command
+  worked, the `already correct` branch fires and NO further command is sent —
+  one command per transition instead of four.
+
+  2026-10-23: speaker recovery. The speaker itself shuts off (0 W behind a plug
+  that still reports on) several times a session; usually it restarts in
+  5-15 s, but on 10-23 it sat in a failed-restart loop until someone pressed
+  the plug's button. The `already correct` branch could not see that: the plug
+  was on and should have been on. Now a `dropout` trigger (power < 1 W for
+  25 s, or the plug on 60 s with no load) runs the speaker recovery branch:
+  power-cycle (off, 10 s, on), require > 3 W held 10 s, at most 2 cycles per
+  rolling hour (input_datetime.garage_speaker_cycle_last/_prev), then give up
+  loudly. Every step is reported to DaylightStation
+  (rest_command.daylight_station_garage_speaker_event), which logs
+  fitness.garage_speaker.* and pushes the phone on gave_up. Bug report:
+  ops:docs/_wip/bugs/2026-10-23-fitness-garage-speaker-recovery-ineffective.md
+
+  Manual plug changes are reverted by design (within 5 min): this is the verifier, so it
+  has no manual-off hold. Change the speaker via TV power / garage_active instead.
+
+  Do not add another writer for this plug. If you need a new trigger, add it
+  here.
+triggers:
+  - platform: state
+    entity_id: input_boolean.daylight_parental_stop
+    to: "on"
+    id: parental_stop
+  - platform: time_pattern
+    minutes: "/5"
+    id: tick
+  - platform: homeassistant
+    event: start
+    id: start
+  # Absorbed from the retired sync automation. garage_active matters because it
+  # holds an already-on plug on; when it clears, desired can flip to off.
+  - platform: state
+    entity_id: input_boolean.garage_tv_power
+    to: "on"
+    id: tv_on
+  - platform: state
+    entity_id: input_boolean.garage_tv_power
+    to: "off"
+    id: tv_off
+  - platform: state
+    entity_id: binary_sensor.garage_active
+    to: "off"
+    id: garage_inactive
+  # Speaker went dark behind a plug that is on. 25 s clears the speaker's own
+  # 5-15 s self-restarts and the 5-6 s dip every power-on shows; the recovery
+  # branch re-checks everything before acting.
+  - platform: numeric_state
+    entity_id: sensor.garage_speaker_plug_power
+    below: 1
+    for:
+      seconds: 25
+    id: dropout
+  # numeric_state only fires on a crossing, so a speaker that never powers up
+  # after the plug turns on (0 W before, 0 W after) needs its own trigger.
+  - platform: state
+    entity_id: switch.garage_speaker_plug
+    to: "on"
+    for:
+      seconds: 60
+    id: dropout
+# A speaker recovery runs ~1-2.5 min. mode: restart would let the 5-min tick, HA
+# start, or another dropout kill it between turn_off and turn_on. Conditions are
+# checked BEFORE restart, so those triggers are dropped while a recovery is in
+# flight (a run is current and a power cycle began < 4 min ago). TV / garage
+# state changes still restart it: a new desired state must win.
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.id not in ['tick', 'start', 'dropout']
+         or (this.attributes.current | int(0)) == 0
+         or (now().timestamp() - (state_attr('input_datetime.garage_speaker_cycle_last', 'timestamp') | float(0))) > 240 }}
+actions:
+  # Settle window so we never race the single command script.garage_activate /
+  # garage_deactivate just issued. The plug reports its new state in ~0.2s; 3s
+  # is generous and costs nothing on the 5-minute tick.
+  - delay:
+      seconds: 3
+  - variables:
+      # Desired plug state. An active garage holds an already-on plug on even
+      # when the TV is off; it never forces one on.
+      # Keep this on ONE line: a folded block scalar leaks newlines/spaces into
+      # the result, which silently breaks both is_state() and switch.turn_{{ }}.
+      desired: "{% if not is_state('input_boolean.daylight_parental_stop', 'off') %}off{% elif is_state('input_boolean.garage_tv_power', 'on') %}on{% elif is_state('switch.garage_speaker_plug', 'on') and is_state('binary_sensor.garage_active', 'on') %}on{% else %}off{% endif %}"
+      # False when the entity is absent from the state machine entirely, not
+      # merely unavailable. Z2M withdraws its MQTT discovery config when the
+      # device fails to interview, which deletes the entity outright.
+      plug_present: "{{ states.switch.garage_speaker_plug is not none }}"
+  - choose:
+      # Entity is gone, not just unresponsive. switch.turn_* can only emit
+      # "referenced entities are missing" warnings every 5 min, and any
+      # states.switch.garage_speaker_plug.<attr> lookup raises on None. Alert
+      # with the actual remedy instead of commanding into the void.
+      - conditions:
+          - condition: template
+            value_template: "{{ not plug_present }}"
+        sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Garage Speaker Plug Missing From Home Assistant"
+              message: >-
+                switch.garage_speaker_plug no longer exists. Zigbee2MQTT has the
+                device as unsupported / not interviewed and has withdrawn its
+                MQTT discovery config, so no command can reach it. Unplug and
+                replug the plug to force a rejoin and re-interview.
+              notification_id: garage_speaker_plug_enforcement_failure
+      # Speaker recovery: the plug is on and should be on, but the speaker draws
+      # nothing. Re-checked here after the 3 s settle, and only with the TV on
+      # and the plug on > 30 s (excludes the power-on dip).
+      - conditions:
+          - condition: trigger
+            id: dropout
+          - condition: template
+            value_template: >-
+              {{ desired == 'on'
+                 and is_state('switch.garage_speaker_plug', 'on')
+                 and is_state('input_boolean.garage_tv_power', 'on')
+                 and (now() - states.switch.garage_speaker_plug.last_changed).total_seconds() > 30
+                 and states('sensor.garage_speaker_plug_power') | float(99) < 1 }}
+        sequence:
+          - variables:
+              # When the speaker went dark (last power-sensor change).
+              dark_since: "{{ as_timestamp(states.sensor.garage_speaker_plug_power.last_changed) }}"
+              cycles_last_hour: >-
+                {{ [state_attr('input_datetime.garage_speaker_cycle_last', 'timestamp') | float(0),
+                    state_attr('input_datetime.garage_speaker_cycle_prev', 'timestamp') | float(0)]
+                   | select('>', now().timestamp() - 3600) | list | count }}
+          - service: logbook.log
+            data:
+              name: Garage speaker
+              entity_id: switch.garage_speaker_plug
+              message: >-
+                dropout: {{ states('sensor.garage_speaker_plug_power') }} W for
+                {{ (now().timestamp() - dark_since) | round(0) }} s with the plug on
+                ({{ cycles_last_hour }} power cycles in the last hour)
+          - service: rest_command.daylight_station_garage_speaker_event
+            continue_on_error: true
+            data:
+              report:
+                event: dropout
+                powerW: "{{ states('sensor.garage_speaker_plug_power') }}"
+                currentA: "{{ states('sensor.garage_speaker_plug_current') }}"
+                durationS: "{{ (now().timestamp() - dark_since) | round(1) }}"
+                cyclesLastHour: "{{ cycles_last_hour }}"
+                haContextId: "{{ context.id }}"
+          # Hourly cap reached: give up without touching the plug.
+          - if:
+              - condition: template
+                value_template: "{{ cycles_last_hour | int(0) >= 2 }}"
+            then:
+              - service: logbook.log
+                data:
+                  name: Garage speaker
+                  entity_id: switch.garage_speaker_plug
+                  message: "gave up: already power-cycled {{ cycles_last_hour }} times this hour"
+              - service: persistent_notification.create
+                data:
+                  title: "Garage Speaker Out"
+                  message: >-
+                    The garage speaker is drawing no power with its plug on. It was
+                    already power-cycled {{ cycles_last_hour }} times in the last hour,
+                    so it was left alone. Press the speaker plug's button, or check
+                    the speaker's power brick.
+                  notification_id: garage_speaker_recovery
+              - service: rest_command.daylight_station_garage_speaker_event
+                continue_on_error: true
+                data:
+                  report:
+                    event: gave_up
+                    reason: cap_reached
+                    powerW: "{{ states('sensor.garage_speaker_plug_power') }}"
+                    durationS: "{{ (now().timestamp() - dark_since) | round(1) }}"
+                    cyclesLastHour: "{{ cycles_last_hour }}"
+                    haContextId: "{{ context.id }}"
+              - stop: "Garage speaker recovery capped"
+          # Up to the hourly cap: one off command and one on command per cycle
+          # (a 1 s manual cycle fixed it on 10-23), then require > 3 W HELD for
+          # 10 s, because the failed restarts that day blipped to 2.0 / 1.4 / 7.5 W.
+          - repeat:
+              sequence:
+                - service: input_datetime.set_datetime
+                  target:
+                    entity_id: input_datetime.garage_speaker_cycle_prev
+                  data:
+                    timestamp: "{{ state_attr('input_datetime.garage_speaker_cycle_last', 'timestamp') | float(0) }}"
+                - service: input_datetime.set_datetime
+                  target:
+                    entity_id: input_datetime.garage_speaker_cycle_last
+                  data:
+                    timestamp: "{{ now().timestamp() }}"
+                - service: logbook.log
+                  data:
+                    name: Garage speaker
+                    entity_id: switch.garage_speaker_plug
+                    message: "power cycle {{ repeat.index }} (speaker dark {{ (now().timestamp() - dark_since) | round(0) }} s)"
+                - service: rest_command.daylight_station_garage_speaker_event
+                  continue_on_error: true
+                  data:
+                    report:
+                      event: power_cycle
+                      cycle: "{{ repeat.index }}"
+                      powerW: "{{ states('sensor.garage_speaker_plug_power') }}"
+                      durationS: "{{ (now().timestamp() - dark_since) | round(1) }}"
+                      cyclesLastHour: "{{ cycles_last_hour | int(0) + repeat.index - 1 }}"
+                      haContextId: "{{ context.id }}"
+                - service: switch.turn_off
+                  target:
+                    entity_id: switch.garage_speaker_plug
+                - delay:
+                    seconds: 10
+                - condition: state
+                  entity_id: input_boolean.daylight_parental_stop
+                  state: "off"
+                - service: switch.turn_on
+                  target:
+                    entity_id: switch.garage_speaker_plug
+                - wait_template: "{{ states('sensor.garage_speaker_plug_power') | float(0) > 3 }}"
+                  timeout:
+                    seconds: 45
+                  continue_on_timeout: true
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.completed }}"
+                  then:
+                    - delay:
+                        seconds: 10
+              until:
+                - condition: template
+                  value_template: >-
+                    {{ states('sensor.garage_speaker_plug_power') | float(0) > 3
+                       or cycles_last_hour | int(0) + repeat.index >= 2 }}
+          - variables:
+              # Cycles this episode, read back from the ledger (repeat.index is
+              # out of scope here).
+              cycles_this_episode: >-
+                {{ [state_attr('input_datetime.garage_speaker_cycle_last', 'timestamp') | float(0),
+                    state_attr('input_datetime.garage_speaker_cycle_prev', 'timestamp') | float(0)]
+                   | select('>=', dark_since | float(0)) | list | count }}
+          - if:
+              - condition: template
+                value_template: "{{ states('sensor.garage_speaker_plug_power') | float(0) > 3 }}"
+            then:
+              - service: logbook.log
+                data:
+                  name: Garage speaker
+                  entity_id: switch.garage_speaker_plug
+                  message: >-
+                    recovered at {{ states('sensor.garage_speaker_plug_power') }} W after
+                    {{ cycles_this_episode }} power cycle(s),
+                    {{ (now().timestamp() - dark_since) | round(0) }} s after it went dark
+              - service: persistent_notification.dismiss
+                data:
+                  notification_id: garage_speaker_recovery
+              - service: rest_command.daylight_station_garage_speaker_event
+                continue_on_error: true
+                data:
+                  report:
+                    event: recovered
+                    cycle: "{{ cycles_this_episode }}"
+                    powerW: "{{ states('sensor.garage_speaker_plug_power') }}"
+                    currentA: "{{ states('sensor.garage_speaker_plug_current') }}"
+                    durationS: "{{ (now().timestamp() - dark_since) | round(1) }}"
+                    haContextId: "{{ context.id }}"
+            else:
+              - service: logbook.log
+                data:
+                  name: Garage speaker
+                  entity_id: switch.garage_speaker_plug
+                  message: >-
+                    gave up: {{ states('sensor.garage_speaker_plug_power') }} W after
+                    {{ cycles_this_episode }} power cycle(s) (plug reports
+                    {{ states('switch.garage_speaker_plug') }})
+              - service: persistent_notification.create
+                data:
+                  title: "Garage Speaker Out"
+                  message: >-
+                    The garage speaker did not come back after power cycling its plug
+                    (now {{ states('sensor.garage_speaker_plug_power') }} W, plug
+                    {{ states('switch.garage_speaker_plug') }}). Press the speaker plug's
+                    button, or check the speaker's power brick.
+                  notification_id: garage_speaker_recovery
+              - service: rest_command.daylight_station_garage_speaker_event
+                continue_on_error: true
+                data:
+                  report:
+                    event: gave_up
+                    reason: no_power_after_cycle
+                    cycle: "{{ cycles_this_episode }}"
+                    powerW: "{{ states('sensor.garage_speaker_plug_power') }}"
+                    durationS: "{{ (now().timestamp() - dark_since) | round(1) }}"
+                    haContextId: "{{ context.id }}"
+      # Already correct — clear any stale failure notification and stop WITHOUT
+      # sending a command. This is the normal path after a successful activate or
+      # deactivate, and it is what keeps the plug from being hammered.
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state('switch.garage_speaker_plug', desired) }}"
+        sequence:
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: garage_speaker_plug_enforcement_failure
+          # Legacy id from the retired garage_speaker_plug_sync automation, which
+          # could only ever CREATE this notification and never dismissed it — one
+          # bad morning left a permanent red flag on the dashboard (the 2026-08-17
+          # one survived 34h). Clear it here so it cannot outlive its cause.
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: garage_speaker_plug_sync_failure
+    default:
+      # Out of sync: command it, then actually check that it took.
+      # repeat/until, NOT repeat/count with a trailing condition: a `condition`
+      # step inside repeat/count does not abort the loop, so that shape sends
+      # every attempt whether or not the first one worked — exactly the command
+      # flood that made the plug drop itself on 2026-08-18.
+      - repeat:
+          sequence:
+            - condition: template
+              value_template: "{{ desired == 'off' or is_state('input_boolean.daylight_parental_stop', 'off') }}"
+            - service: "switch.turn_{{ desired }}"
+              target:
+                entity_id: switch.garage_speaker_plug
+            - delay:
+                seconds: 5
+          until:
+            - condition: template
+              value_template: >-
+                {{ is_state('switch.garage_speaker_plug', desired) or repeat.index >= 3 }}
+      - if:
+          - condition: template
+            value_template: "{{ is_state('switch.garage_speaker_plug', desired) }}"
+        then:
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: garage_speaker_plug_enforcement_failure
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: garage_speaker_plug_sync_failure
+        else:
+          - service: persistent_notification.create
+            data:
+              title: "Garage Speaker Plug Not Responding"
+              message: >-
+                Commanded {{ desired }} three times; plug still reports
+                {{ states('switch.garage_speaker_plug') }}{% if
+                states.switch.garage_speaker_plug is not none %} (last device
+                report {{ relative_time(states.switch.garage_speaker_plug.last_reported) }}
+                ago){% endif %}. The plug is accepting no ZCL commands — Zigbee
+                re-interview and Z2M restart do not fix this mode; unplug and
+                replug it.
+              notification_id: garage_speaker_plug_enforcement_failure
+# restart, not single: the latest desired state must win. With mode:single a
+# TV-power change landing during a 5-minute tick's retry loop was dropped
+# outright (max_exceeded: silent), leaving the plug on the previous target.
+mode: restart

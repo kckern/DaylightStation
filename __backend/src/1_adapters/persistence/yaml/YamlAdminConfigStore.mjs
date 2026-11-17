@@ -40,10 +40,11 @@ function isAllowed(relativePath) {
 export class YamlAdminConfigStore extends IAdminConfigStore {
   #dataRoot;
 
-  constructor({ dataRoot }) {
+  constructor({ dataRoot,assertWritable=()=>{} }) {
     super();
     if (!dataRoot) throw new Error('YamlAdminConfigStore requires dataRoot');
     this.#dataRoot = path.resolve(dataRoot);
+    this.assertWritable=assertWritable;
   }
 
   #resolve(configPath) {
@@ -71,6 +72,7 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
   #writeText(configPath, raw) {
     const absolutePath = this.#resolve(configPath);
     if (!absolutePath) throw new Error('Config path escapes the data root');
+    this.assertWritable(absolutePath);
     writeFileAtomic(absolutePath, raw);
     return this.#metadata(absolutePath);
   }
@@ -162,6 +164,7 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
   #writeConfig(configPath, raw) {
     const absolutePath = this.#resolve(configPath);
     if (!absolutePath || !fileExists(path.dirname(absolutePath))) return null;
+    this.assertWritable(absolutePath);
     writeFileAtomic(absolutePath, raw);
     return this.#metadata(absolutePath);
   }

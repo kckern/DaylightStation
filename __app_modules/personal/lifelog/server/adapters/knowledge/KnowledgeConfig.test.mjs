@@ -10,6 +10,6 @@ it('requires exact writer environment and host plus Linux before participation',
  for(const over of [{environment:'dev'},{hostId:'laptop'},{platform:'darwin'}])expect(resolveKnowledgeConfig({configuration:writer,...context,...over}).active).toBe(false);
  expect(resolveKnowledgeConfig({configuration:{enabled:true,write:true},...context}).active).toBe(false);
 });
-it.each([{post_entry_minutes:0},{sweep_at:'25:99'},{max_runs_per_day:5},{quiz_max:6},{echo_enabled:'yes'},{timezone:'Not/AZone'}])('disables invalid enabled configuration without throwing: %o',over=>{
+it.each([{post_entry_minutes:0},{sweep_at:'25:99'},{max_runs_per_day:5},{quiz_max:6},{echo_enabled:'yes'},{timezone:'Not/AZone'},{timezone:{}},{timezone:123}])('disables invalid enabled configuration without throwing: %o',over=>{
  const result=resolveKnowledgeConfig({configuration:{...writer,...over},...context});expect(result.active).toBe(false);expect(result.reason).toBe('invalid_configuration');
 });

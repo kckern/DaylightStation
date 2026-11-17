@@ -1,0 +1,35 @@
+import {test,expect} from './agendaTest.mjs';
+import {randomUUID} from 'node:crypto';
+import {defaultParticipantSettings} from '../../../../__app_modules/games/party-games/portable/participantSettings.mjs';
+
+test.use({actionTimeout:10000});
+test('simultaneous opens share one durable launch and an automatic activity starts without confirmation',async({page,request,agendaFixture:fixture})=>{
+ const definition=process.env.AGENDA_TEST_CHARADES_DEFINITION;if(!definition)throw Error('AGENDA_TEST_CHARADES_DEFINITION required');
+ const get=async path=>{const r=await request.get(path,{headers:fixture.headers});expect(r.ok()).toBe(true);return r;};
+ const series=await get(`${fixture.base}/${fixture.id}`),context=await get(`${fixture.base}/${fixture.id}/planning-context`);
+ const create=await request.post(`${fixture.base}/${fixture.id}/plans`,{headers:fixture.headers,data:{weekOf:(await context.json()).thisWeek,requestId:randomUUID(),sourceRevision:(await series.json()).revision}});expect(create.status()).toBe(201);
+ const plan=await create.json(),planPath=`${fixture.base}/${fixture.id}/plans/${plan.plan_id}`;
+ plan.participants=['One','Two','Three'].map(name=>({id:`rp_${randomUUID()}`,anonymous:true,display:{name,avatar:null}}));
+ const race=`item_${randomUUID()}`,automatic=`item_${randomUUID()}`;
+ plan.list={sections:[{uid:`section_${randomUUID()}`,title:'Activities',items:[{uid:race,title:'Concurrent activity',open:`party-games/${definition}`},{uid:automatic,title:'Automatic activity',open:`party-games/${definition}`}]}]};
+ plan.activity_settings=Object.fromEntries([race,automatic].map(uid=>[uid,{schema:'agenda-activity-setup/v1',action:'open',participants:{mode:'plan'},consumer:{id:'party-games',version:1},settings:defaultParticipantSettings()}]));
+ const saved=await request.put(planPath,{headers:{...fixture.headers,'If-Match':create.headers().etag},data:{plan}});expect(saved.ok()).toBe(true);
+ const published=await request.post(`${planPath}/publish`,{headers:{...fixture.headers,'If-Match':saved.headers().etag},data:{}});expect(published.ok()).toBe(true);
+ const menuResponse=await request.get(`/api/v1/list/agenda/${fixture.id}/plans/${plan.plan_id}`,{headers:{...fixture.headers,'X-Daylight-Participant-Launch-Version':'1'}});expect(menuResponse.ok()).toBe(true);const menu=await menuResponse.json();const ref=menu.items.find(row=>row.uid===race).participantLaunches.open;
+ const automaticRef=menu.items.find(row=>row.uid===automatic).participantLaunches.open;const beforeAutomatic=await request.post('/api/v1/participant-launches/inspect',{headers:fixture.headers,data:{ref:automaticRef,action:'open'}});expect(beforeAutomatic.ok()).toBe(true);const automaticOptions=await beforeAutomatic.json();expect(automaticOptions.confirmation).toBe('none');expect(automaticOptions.choices).toEqual([]);
+ const inspect=await request.post('/api/v1/participant-launches/inspect',{headers:fixture.headers,data:{ref,action:'open'}});expect(inspect.ok()).toBe(true);const options=await inspect.json();expect(options.confirmation).toBe('none');expect(options.choices).toEqual([]);
+ const inputs=[randomUUID(),randomUUID()].map(requestId=>({ref,action:'open',requestId,intent:'open',expectedSetupHash:options.setup_hash}));
+ const responses=await Promise.all(inputs.map(data=>request.post('/api/v1/participant-launches/begin',{headers:fixture.headers,data})));
+ const results=await Promise.all(responses.map(response=>response.json().catch(()=>null)));const ready=results.filter(result=>result?.kind==='ready');
+ fixture.manifest.sessionIds.push(...new Set(ready.map(result=>result.output.data.session_id)));await fixture.saveManifest();
+ for(const response of responses)expect(response.ok()).toBe(true);expect(ready.length).toBeGreaterThanOrEqual(1);expect(new Set(ready.map(result=>result.output.data.session_id)).size).toBe(1);
+ for(const result of results.filter(result=>result?.kind==='resume_available'))expect(result.choices.map(choice=>choice.launch_id)).toContain(ready[0].launch_id);
+ expect(results.every(result=>result && ['ready','resume_available'].includes(result.kind))).toBe(true);
+ const retryIndex=results.findIndex(result=>result.kind==='ready');const retried=await request.post('/api/v1/participant-launches/begin',{headers:fixture.headers,data:inputs[retryIndex]});expect(retried.ok()).toBe(true);expect((await retried.json()).output.data.session_id).toBe(ready[0].output.data.session_id);
+ let beginCount=0;page.on('request',req=>{if(new URL(req.url()).pathname.endsWith('/participant-launches/begin'))beginCount++;});
+ await page.goto(`/tv?list=${encodeURIComponent(`agenda:${fixture.id}/plans/${plan.plan_id}`)}`);await expect(page.getByText('Automatic activity',{exact:true})).toBeVisible();expect(beginCount).toBe(0);
+ const inspected=page.waitForResponse(r=>r.request().method()==='POST' && new URL(r.url()).pathname.endsWith('/participant-launches/inspect'));
+ const started=page.waitForResponse(r=>r.request().method()==='POST' && new URL(r.url()).pathname.endsWith('/participant-launches/begin'));
+ await page.getByText('Automatic activity',{exact:true}).click();const inspectedResponse=await inspected;expect(inspectedResponse.ok()).toBe(true);expect((await inspectedResponse.json()).confirmation).toBe('none');
+ const startedResponse=await started;expect(startedResponse.ok()).toBe(true);const startedBody=await startedResponse.json();expect(startedBody.kind).toBe('ready');await expect(page.getByRole('button',{name:'Start',exact:true})).toHaveCount(0);expect(beginCount).toBe(1);fixture.manifest.sessionIds.push(startedBody.output.data.session_id);await fixture.saveManifest();await expect(page.locator('.charades')).toBeVisible();
+});

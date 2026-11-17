@@ -26,8 +26,9 @@ const DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true, sortKeys: false };
 export class YamlConfigFileStore {
   #logger;
 
-  constructor({ logger = console } = {}) {
+  constructor({ logger = console,assertWritable=()=>{} } = {}) {
     this.#logger = logger;
+    this.assertWritable=assertWritable;
   }
 
   /** @returns {boolean} */
@@ -90,6 +91,7 @@ export class YamlConfigFileStore {
    *  that truncates first can be read (or crashed into) mid-write, and this
    *  store owns config files that something else is always reading. */
   writeText(absPath, contents) {
+    this.assertWritable(absPath);
     writeFileAtomic(absPath, contents);
     return absPath;
   }

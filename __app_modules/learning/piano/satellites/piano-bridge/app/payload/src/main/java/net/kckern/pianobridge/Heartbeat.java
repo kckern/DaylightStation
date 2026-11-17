@@ -224,6 +224,7 @@ public final class Heartbeat {
             KioskWatchdog wd = core.getKioskWatchdog();
             if (wd != null) {
                 JSONObject s = wd.snapshot();
+                KioskWatchdog.appendHealthStatus(s, o);
                 o.put("kiosk", s.optString("verdict", "?"));
                 // pageRafFps: rAF frames/s the kiosk page presented, self-reported in
                 // its beat. `fps` is the deprecated alias (kept for old log queries).

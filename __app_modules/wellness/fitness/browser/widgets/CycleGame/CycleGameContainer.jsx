@@ -1632,7 +1632,10 @@ export default function CycleGameContainer({ onMount } = {}) {
             gapTicks = (gapTicksRef.current.get(userId) || 0) + 1;
             gapTicksRef.current.set(userId, gapTicks);
           }
-          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || [], gapTicks || 1);
+          // Global delivery loss is missing evidence, never inferred exercise.
+          // Keep advancing the wall-clock race so the deadline cannot grow.
+          rawRpm = cadence?.transportStalled || liveSession?.transportCollectionHeld
+            ? 0 : rpmDuringGap(rpmHistoryRef.current.get(userId) || [], gapTicks || 1);
         }
         // A rider who has NEVER had a single connected reading since the race
         // started hasn't lost a sensor — they simply haven't started pedaling

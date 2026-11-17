@@ -1,7 +1,7 @@
 import { VerifiedSessionCache } from './verifiedSessionCache.mjs';
 import { createGameSessionHeader, SESSION_STATUSES } from "./contracts.mjs";
 import { GamingKernelError } from "./errors.mjs";
-import { stableHash } from "./canonical.mjs";
+import { stableHash, stableSha256 } from "./canonical.mjs";
 
 const clone = (value) => structuredClone(value);
 
@@ -26,6 +26,32 @@ export class GameSessionCoordinator {
     const checkpoint = await this.snapshots.put(session, { expectedRevision: null });
     await this.#remember(header.session_id, session, pinned.definition, { journalVersion: committedJournal?.version, snapshotVersion: checkpoint?.version });
     return this.#view(session, pinned.definition, viewer);
+  }
+
+  async createReserved({ reservation, viewer = {} }) {
+    const frozen = clone(reservation);
+    const { sessionId, seed, pinnedDefinition, ruleset, experience = null, launch = null, participants = [], seats = [], setup = {}, creationKey, participantEvidence = null } = frozen;
+    if (typeof creationKey !== 'string' || !creationKey || !pinnedDefinition?.definition || !pinnedDefinition?.hash || Object.hasOwn(setup, '_reserved_creation')) throw new GamingKernelError('invalid_reservation', 'Invalid reserved creation');
+    const digest = stableSha256({ schema: 'gaming-reserved-creation/v1', ...frozen });
+    return this.#operation('createReserved', sessionId, async metric => {
+      const records = await this.journal.read(sessionId);
+      if (records.length) {
+        const { session, definition } = await this.#verified(sessionId, metric);
+        this.authorization.authorizeView({ session, viewer });
+        if (records[0].setup?._reserved_creation?.digest !== digest) throw new GamingKernelError('creation_conflict', 'Reserved session creation differs');
+        return { view: this.#view(session, definition, viewer), created: false };
+      }
+      if (await this.snapshots.get(sessionId)) throw new GamingKernelError('journal_corrupt', 'Gaming snapshot has no creation journal');
+      const header = createGameSessionHeader({ sessionId, ruleset: { ...ruleset, definition_hash: pinnedDefinition.hash }, experience, launch, artifacts: pinnedDefinition.artifacts || {}, seed, participants, seats, status: SESSION_STATUSES.ACTIVE });
+      const session = this.runtime.create({ header, definition: pinnedDefinition.definition, setup });
+      this.authorization.authorizeView({ session, viewer });
+      const journalSetup = { ...setup, _reserved_creation: { schema: 'gaming-reserved-creation/v1', digest } };
+      const created = { header: clone(header), definition_id: pinnedDefinition.artifacts?.rules_definition?.id, setup: journalSetup, ...(participantEvidence ? {participant_evidence:clone(participantEvidence)} : {}) };
+      const committed = await this.journal.create(sessionId, { ...created, checksum: stableHash(created) });
+      const checkpoint = await this.snapshots.put(session, { expectedRevision: null });
+      await this.#remember(sessionId, session, pinnedDefinition.definition, { journalVersion: committed?.version, snapshotVersion: checkpoint?.version });
+      return { view: this.#view(session, pinnedDefinition.definition, viewer), created: true };
+    });
   }
 
   /**
@@ -73,6 +99,15 @@ export class GameSessionCoordinator {
   async resume(sessionId, viewer = {}) {
     return this.#operation('resume', sessionId, async metric => {
       const { session, definition } = await this.#verified(sessionId, metric);
+      this.authorization.authorizeView({ session, viewer });
+      metric.revision = session.header.revision;
+      return this.#timed(metric, 'projectMs', () => this.#view(session, definition, viewer));
+    });
+  }
+
+  async inspect(sessionId, viewer = {}) {
+    return this.#operation('inspect', sessionId, async metric => {
+      const { session, definition } = await this.#verified(sessionId, metric, { repair: false });
       this.authorization.authorizeView({ session, viewer });
       metric.revision = session.header.revision;
       return this.#timed(metric, 'projectMs', () => this.#view(session, definition, viewer));
@@ -133,7 +168,7 @@ export class GameSessionCoordinator {
     if (this.#same(versions, await this.#versions(id))) this.cache.set(id, { session, definition, ...versions });
   }
 
-  async #verified(sessionId, metric) {
+  async #verified(sessionId, metric, { repair = true } = {}) {
     const before = await this.#timed(metric, 'loadMs', () => this.#versions(sessionId));
     const cached = this.cache.get(sessionId, before);
     if (cached) { metric.cacheResult = 'hit'; return cached; }
@@ -144,13 +179,15 @@ export class GameSessionCoordinator {
       if (snapshot) throw new GamingKernelError('journal_corrupt', 'Gaming snapshot has no creation journal');
       throw new GamingKernelError('session_not_found', `Session ${sessionId} was not found`);
     }
-    const creation = { header: created.header, definition_id: created.definition_id, setup: created.setup || {} };
+    const creation = { header: created.header, definition_id: created.definition_id, setup: created.setup || {}, ...(created.participant_evidence ? {participant_evidence:created.participant_evidence} : {}) };
     if (!created.checksum || created.checksum !== stableHash(creation)) throw new GamingKernelError('journal_corrupt', 'Gaming session creation record checksum failed');
     if (created.header.session_id !== sessionId || (snapshot && snapshot.header.session_id !== sessionId)) throw new GamingKernelError('journal_corrupt', 'Gaming session identity does not match storage');
     const definition = await this.#timed(metric, 'loadMs', () => this.definitions.getPinned(created.header.ruleset.definition_hash));
     if (!definition) throw new GamingKernelError('definition_snapshot_missing', 'Pinned rules definition is unavailable');
     let session = await this.#timed(metric, 'replayMs', async () => {
-      let recovered = this.runtime.create({ header: created.header, definition, setup: created.setup || {} });
+      const replaySetup = clone(created.setup || {});
+      if (replaySetup._reserved_creation?.schema === 'gaming-reserved-creation/v1') delete replaySetup._reserved_creation;
+      let recovered = this.runtime.create({ header: created.header, definition, setup: replaySetup });
       for (const record of records.slice(1)) {
         if (!record.command || record.revision !== recovered.header.revision + 1) throw new GamingKernelError('journal_corrupt', 'Gaming journal has a revision gap');
         const committed = { revision: record.revision, command: record.command, events: record.events };
@@ -165,13 +202,14 @@ export class GameSessionCoordinator {
     let versions = await this.#versions(sessionId);
     if (before && !this.#same(before, versions)) throw this.#changed();
     if (snapshot && session.header.revision < snapshot.header.revision) throw new GamingKernelError('journal_corrupt', 'Gaming snapshot is ahead of its journal');
-    if (!snapshot || stableHash(session) !== stableHash(snapshot)) {
+    const needsRepair = !snapshot || stableHash(session) !== stableHash(snapshot);
+    if (repair && needsRepair) {
       const checkpoint = await this.#timed(metric, 'checkpointMs', () => this.snapshots.put(session, { expectedRevision: snapshot ? snapshot.header.revision : null }));
       versions = before && checkpoint?.version !== undefined ? { journalVersion: before.journalVersion, snapshotVersion: checkpoint.version } : null;
     }
     if (versions) {
       if (!this.#same(versions, await this.#versions(sessionId))) throw this.#changed();
-      this.cache.set(sessionId, { session, definition, ...versions });
+      if (repair || !needsRepair) this.cache.set(sessionId, { session, definition, ...versions });
     }
     return { session, definition };
   }

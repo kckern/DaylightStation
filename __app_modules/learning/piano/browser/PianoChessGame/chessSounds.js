@@ -114,3 +114,6 @@ export function playCue(name) {
 }
 
 export default { playCue, CUES };
+
+/** Silence cached WebAudio on parental stop; a later deliberate cue may resume. */
+export async function suspendChessSounds(){const active=context;context=null;if(active?.close)await active.close();else await active?.suspend?.();}

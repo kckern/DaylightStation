@@ -49,6 +49,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { schoolApi } from "../schoolApi.js";
+import { rememberMount, settleMount, resumeMountAcknowledgements } from './mountAcknowledgements.js';
 import { schoolLog } from "../schoolLog.js";
 
 /** Neither a code problem nor the child's fault — say so, and offer a retry. */
@@ -243,6 +244,7 @@ function launchTarget(action, effect) {
       bookGrant: effect.bookGrant ?? null,
       // The after-school debrief mounts on its grant and the days it may write.
       debriefGrant: effect.debriefGrant ?? null,
+      gratitudeGrant: effect.gratitudeGrant ?? null,
       today: effect.today ?? null,
       lateDay: effect.lateDay ?? null,
       learnerId: effect.learnerId ?? null,
@@ -266,6 +268,7 @@ export function useSelfService({
   idleTimeoutSeconds = DEFAULT_IDLE_TIMEOUT_SECONDS,
   claim = null,
   onLaunch = null,
+  onCancelLaunch = null,
   // This panel's own identity, sent with every code so the backend's
   // wrong-code throttle can bucket per DEVICE. It cannot use `req.ip`: every
   // screen in the house reaches the backend through one reverse proxy, so an
@@ -296,6 +299,7 @@ export function useSelfService({
   // Rule 4. Bumped by every return-to-lock; an in-flight request whose
   // generation has moved on drops its answer on the floor.
   const genRef = useRef(0);
+  useEffect(() => { resumeMountAcknowledgements(); return () => { genRef.current += 1; }; }, []);
   // The double-tap guard has to be a REF, not the `busy` state. Two taps on a
   // wall panel land as two synchronous handler calls in the same React batch,
   // so both read the same stale `busy === false` and both fire. Only a ref
@@ -317,6 +321,7 @@ export function useSelfService({
   }, []);
 
   const toLock = useCallback(() => {
+    onCancelLaunch?.();
     genRef.current += 1;
     workRef.current = false;
     setView('keypad');
@@ -330,7 +335,7 @@ export function useSelfService({
     // out — claimed nobody, and must not be claimable later either. Cleared
     // with everything else the card was holding.
     pendingLearnerRef.current = null;
-  }, []);
+  }, [onCancelLaunch]);
 
 
   /** Land on words with a Done. The ending every non-mounting path shares. */
@@ -347,7 +352,10 @@ export function useSelfService({
     const gen = genRef.current;
     schoolLog.selfService('action.run', { kind: action.kind });
     const res = await schoolApi.selfServiceAct({ code: codeRef.current, action: action.kind });
-    if (genRef.current !== gen) return; // rule 4
+    if (genRef.current !== gen) {
+      if (res.data?.mountProtocol === 1 && rememberMount(res.data)) void settleMount(res.data.mountReceipt, false);
+      return;
+    }
     endWork();
 
     if (!res.ok || !res.data) {
@@ -370,11 +378,16 @@ export function useSelfService({
     // local (`IProgramLauncher.surface`), and `outcome: 'mount'` is how it
     // says so.
     if (outcome === ACT_OUTCOMES.MOUNT) {
+      const receipt = res.data.mountProtocol === 1 ? res.data.mountReceipt : null;
+      if (res.data.mountProtocol === 1 && !rememberMount(res.data)) {
+        say('That opening timed out. Try your code again.'); return;
+      }
       // The launch-card entry the child tapped (card ladder: dictation,
       // review, today) rides to the program as where to open (owner 2026-11-06).
       const target = launchTarget(action, effect);
       const mountTarget = target && entry ? { ...target, entry } : target;
       if (!mountTarget || !onLaunch) {
+        if (receipt) void settleMount(receipt, false);
         schoolLog.selfServiceError('mount.no-target', {
           kind: action.kind, effectKind: effect?.kind ?? null,
         });
@@ -388,7 +401,10 @@ export function useSelfService({
       // wrong for a child who just pressed the button. Anything but an
       // explicit `true` counts as a miss, so a callback that forgets to report
       // still fails toward words.
-      const mounted = await onLaunch(mountTarget);
+      let mounted = false;
+      try { mounted = await onLaunch(mountTarget); } catch { /* a rejected launch releases the reservation */ }
+      // Settlement survives expected route unmount and precedes the UI generation fence.
+      if (receipt) void settleMount(receipt, mounted === true);
       if (genRef.current !== gen) return; // rule 4
       if (mounted !== true) {
         schoolLog.selfServiceError('mount.refused', { kind: action.kind, target: mountTarget.kind });

@@ -4,8 +4,19 @@ import { normalizeListItem, extractContentId, normalizeListConfig, serializeList
 
 describe('normalizeListItem', () => {
 
-  // ── New format passthrough (only when input/label are absent) ──
-  describe('new format passthrough (no input/label)', () => {
+  it('preserves canonical action and distinct label together', () => {
+    const item = {title:'Catalog title',label:'Weekly label',play:{contentId:'music:one'}};
+    expect(normalizeListItem(item)).toMatchObject(item);
+  });
+
+  it.each(['', undefined])('uses legacy handling for explicit %s input', input => {
+    const result = normalizeListItem({title:'Catalog',label:'Label',input,play:{contentId:'stale'}});
+    expect(result).toMatchObject({title:'Catalog',label:'Label'});
+    expect(result.play).toBeUndefined();
+  });
+
+  // ── New format passthrough (when input is absent) ──
+  describe('new format passthrough (no input)', () => {
     it('passes through item with play key when no input present', () => {
       const item = { title: 'Opening Hymn', play: { contentId: 'hymn:198' } };
       const result = normalizeListItem(item);
@@ -869,5 +880,15 @@ describe('round-trip: normalizeListConfig → serializeListConfig', () => {
     const serialized = serializeListConfig(normalized);
     expect(serialized.items[0].input).toBe('plex:457387');
     expect(serialized.items[0].play).toBeUndefined();
+  });
+});
+
+describe('legacy section round trip', () => {
+  it('retains titles, labels, identities, images, activity, playback and string Open', () => {
+    const raw = { title: 'Gathering', sections: [{ title: 'Opening', uid: 'section', items: [
+      { title: 'Welcome', label: 'Greeting', uid: 'one', input: 'app:welcome', action: 'Open', image: '/cover', active: false },
+      { label: 'Song', uid: 'two', input: 'files:song', resume: false, seconds: 3, shuffle: true },
+    ] }] };
+    expect(JSON.parse(JSON.stringify(serializeListConfig(normalizeListConfig(raw))))).toEqual(raw);
   });
 });

@@ -74,3 +74,15 @@ describe('ClientIngressService', () => {
     expect(publications.publishClientAck).toHaveBeenCalledTimes(1);
   });
 });
+
+it('diagnostic topic is forwarded but never rebroadcast as sensor data', () => {
+  const { service, publications } = fixture({ logger: { debug() {} } });
+  const packet = { topic: 'fitness.transport.health', source: 'fitness', protocol: 1, bootId: 'synthetic-boot', sourceSeq: 4 };
+  service.handle('bridge', packet);
+  service.relayAllowlisted('bridge', packet);
+  const diagnosticDeliveries = publications.publishRelay.mock.calls;
+  const sensorUpdates = publications.publishFitness.mock.calls;
+  expect(diagnosticDeliveries).toHaveLength(1);
+  expect(diagnosticDeliveries[0]).toEqual(['fitness.transport.health', packet]);
+  expect(sensorUpdates).toHaveLength(0);
+});

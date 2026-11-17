@@ -39,13 +39,14 @@ export class PushNotificationAdapter {
       // `metadata.pushData` is the push-standard companion-app block (tag,
       // group, channel) a producer composed with `pushData`; relayed as `data`.
       const data = intent.metadata?.pushData;
-      await this.#haGateway.callService('notify', service, {
+      const response=await this.#haGateway.callService('notify', service, {
         title: intent.title,
         message: intent.body,
         ...(data && typeof data === 'object' ? { data } : {}),
       });
+      if(response?.ok===false)return {accepted:false,delivered:false,error:'Home Assistant rejected notification'};
       this.#logger?.info?.('notification.push.sent', { username, service, category: intent.category });
-      return { delivered: true, channelId: `ha-${service}` };
+      return { ...(intent.metadata?.deliveryRequired==='push'?{accepted:true,delivered:null}:{delivered:true}), channelId: `ha-${service}` };
     } catch (error) {
       this.#logger?.warn?.('notification.push.failed', { username, service, error: error.message });
       return { delivered: false, error: error.message };

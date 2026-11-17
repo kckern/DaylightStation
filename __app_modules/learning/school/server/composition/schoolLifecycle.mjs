@@ -142,6 +142,8 @@ import { ResolveScanAction } from "../application/usecases/ResolveScanAction.mjs
 import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.mjs";
 import { ResolveAccessCode } from "../application/usecases/ResolveAccessCode.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
+import { HmacSchoolMountReceiptIssuer } from '../adapters/actions/HmacSchoolMountReceiptIssuer.mjs';
+import { AcknowledgeSelfServiceMount } from '../application/usecases/AcknowledgeSelfServiceMount.mjs';
 import { RunSelfServiceAction } from "../application/usecases/RunSelfServiceAction.mjs";
 import { IssueSubjectNext } from "../application/usecases/IssueSubjectNext.mjs";
 import { RecordLessonCompanionProgress } from "../application/usecases/RecordLessonCompanionProgress.mjs";
@@ -270,6 +272,7 @@ function cryptoRng(crypto) {
  * }>}
  */
 export async function createSchoolLifecycle({
+  authorizeKioskAction = null, mountReceiptKey = null,
   configService, householdId = null, schoolService,
   attemptDatastore = null,
   economyService = null, economyMode = null, userService = null, eventBus = null, realtime = null,
@@ -1558,7 +1561,14 @@ export async function createSchoolLifecycle({
   // `openRemediation`, `donow`, `closeSessionOutcome`). Deliberately NOT
   // routed through `ResolveScanAction` (design D7): every exit from that file
   // prints a thermal slip, and a keypad tap must not put paper in the tray.
+  // Boot-cached opt-in: deploy browser support before enabling this flag.
+  const mountAcknowledgements = cfg.selfService?.mountAcknowledgements === true;
+  let mountReceiptIssuer = null;
+  try { mountReceiptIssuer = new HmacSchoolMountReceiptIssuer({ key: mountReceiptKey, householdId, clock: () => clock().getTime() }); }
+  catch { if (mountAcknowledgements) logger.error?.('school.selfservice.mount-signing-unavailable', {}); }
+  const acknowledgeSelfServiceMount = new AcknowledgeSelfServiceMount({ tokens: stores.tokens, mountReceiptIssuer, clock, logger });
   const runSelfServiceAction = new RunSelfServiceAction({
+    mountAcknowledgements, mountReceiptIssuer,
     resolveAccessCode,
     sessions: stores.sessions,
     // The same registry `/resolve` reads the cap from, so a use is counted
@@ -1686,7 +1696,7 @@ export async function createSchoolLifecycle({
     setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, sweepAnswerSheets, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     invalidateSessionEvidence, recoverMisattributedWorksheet,
-    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, issueSubjectNext, recordLessonCompanionProgress,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, acknowledgeSelfServiceMount, issueSubjectNext, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch, issueSubjectCode,
     getLearnerTerm, rebuildLearnerTerm,
@@ -1733,8 +1743,11 @@ export async function createSchoolLifecycle({
   const selfServiceEnabled = cfg.selfService?.enabled === true;
   const selfServiceRouter = selfServiceEnabled
     ? createSchoolSelfServiceRouter({
+      resolveCompanionLearner:async id=>(await companions.get(id))?.learnerId??null,
+      authorizeKioskAction,
       resolveAccessCode,
       runSelfServiceAction,
+      acknowledgeSelfServiceMount, mountReceiptIssuer,
       recordLessonCompanionProgress,
       readPrinterHealth,
       curriculum,

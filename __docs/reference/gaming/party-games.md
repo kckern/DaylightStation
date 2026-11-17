@@ -10,6 +10,14 @@ TV and companion presenters share two import aliases: `@gaming` resolves to the 
 
 Jeopardy and Activity Party use the direct Gaming coordinator. Activity Party supports Draw and Charades, performer-ready gates, rounds, deterministic timers and rotation, host modes, progressive reveals, score adjustments, and verifier confirmation for subjective hostless outcomes. Drawing checkpoints are transient and are deleted when an outcome commits.
 
+Charades provides a **Force reset** control during play, loading, errors, and
+results. Confirming discards the current session attachment and starts a fresh
+session with the same players and definition. The shell stops audio, unmounts
+the previous experience, and clears its URL and saved resume key before creating
+the new session. If an attachment cannot load, reset returns to fresh setup.
+Recorded clue history is retained; history-disabled test routes remain isolated.
+Leaving normally still preserves the active session for later resumption.
+
 Charades is also mounted as a focused Party Games experience with a seeded,
 deterministic clue bank. Its reusable sixteen-segment text decoder
 (`SegmentedSecretText`) lights every segment of every cell, spaces included, so
@@ -480,3 +488,12 @@ Run both `jeopardy-reliable-input.runtime.test.mjs` and `jeopardy-durable-latenc
 Compare reviewed and installed authored content with `node scripts/audit-jeopardy-content.mjs reviewed.yml installed.yml`. The read-only auditor exits 1 on a normalized mismatch,2 on invalid input, and prints paths/hashes rather than answers. A passing source fixture is insufficient: compare actual mounted content and compiled definition identities as well. New Jeremiah and Isaiah packs require31 nonblank references, open-book mode, hosted rounds and explicit risked DD policy. Publishing source content applies to new/restarted games; existing pinned journals and scores remain unchanged.
 
 Ready renewals recheck the current phase, setup epoch, tested assignments and fresh hardware when dequeued and before retrying an explicitly uncommitted conflict. An ambiguous acknowledgment still reconciles with the identical command envelope. TV snapshot notifications share one fetch with a pending follow-up; an older failed read cannot hide a newer accepted command or another session. Suppressed renewals and superseded reads use bounded structured diagnostics.
+
+
+### Named guests in explicit autostart
+
+The Party Games environment profile exposes active shared-directory guests in `named_guests`, separately from `household_members`. A guest has runtime ID `guest:<id>`, a typed `person` reference, display name, and avatar. Its avatar's user key is independent of its runtime ID. Archived guests are omitted; a missing named-guest document produces an empty list.
+
+An individual game's explicit `launch.participants` may include both household member IDs and guest runtime IDs in the desired order. Unknown IDs, duplicate launch IDs, and collisions in the available participant IDs reject automatic setup. Listing a guest does not grant host authority. Existing sessions retain their saved roster; start a new game to use changes to the launch roster.
+
+Configured automatic launches compare the attached participant IDs and order with the current launch roster. A changed roster starts a fresh session, including when an old session ID remains in the URL. Existing session journals are preserved.

@@ -1,5 +1,8 @@
 import {hostname} from 'node:os';
 import {createKnowledgeRuntime} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
+import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
+import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
+import {viewerFor} from './4_api/utils/participantHttp.mjs';
 import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
@@ -50,7 +53,7 @@ import { createSchoolLearningRuntime } from "../../__app_modules/learning/school
 import { createSchoolCatalogRuntime } from "../../__app_modules/learning/school/server/catalog-runtime.mjs";
 import { createSchoolLanguageRuntime } from "../../__app_modules/learning/school/server/language-runtime.mjs";
 import { createSchoolLessonHookRuntime } from "../../__app_modules/learning/school/server/lesson-hook-runtime.mjs";
-import { createSchoolLifecycleRuntime } from "../../__app_modules/learning/school/server/lifecycle-runtime.mjs";
+import { createSchoolLifecycleRuntime, createSchoolLifecycleLogger } from "../../__app_modules/learning/school/server/lifecycle-runtime.mjs";
 import { createFitnessServicesRuntime } from "../../__app_modules/wellness/fitness/server/services-runtime.mjs";
 import { createFitnessReceiptRuntime } from "../../__app_modules/wellness/fitness/server/receipt-runtime.mjs";
 import { createFitnessApiRuntime } from "../../__app_modules/wellness/fitness/server/api-runtime.mjs";
@@ -146,6 +149,9 @@ import { createPianoScreenPowerSync } from '../../__app_modules/learning/piano/s
 import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/composition/midi-wake.mjs";
 import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
+import {randomUUID as supervisionCommandId} from 'node:crypto';
+import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier} from '#composition/modules/supervision.mjs';
+import {AccessDenied,EnforcementIncidentReporter} from '../../__app_modules/household/supervision/server/index.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
@@ -951,7 +957,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
   // `fitness.unlock.result` replies settle the pending request (Task 2.3).
   // Task 2.4's HTTP endpoint imports requestUnlock from this module.
-  const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService });
+  const agendaOwnership=createConfiguredMigrationOwnership(configService);
+  const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService, assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
@@ -1140,8 +1147,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const {playLedger,loadOriginHints}=await createMediaPlayLedger({configService,householdId,rootLogger});
 
+  const agendaResourceAliases=agendaOwnership.aliases;
   const { routers: contentRouters, services: contentServices } = createApiRouters({
+    resourceAliases:agendaResourceAliases,
     registry: contentRegistry,
+    viewerForRequest: req => { try { return req.user?.sub ? viewerFor(req,householdId) : null; } catch { return null; } },
     sequenceStore,
     menuMemoryRepository: new YamlMenuMemoryRepository({
       filePath: configService.getHouseholdPath('history/menu_memory', householdId),
@@ -1310,7 +1320,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const notificationConfigService = new NotificationConfigService({
     repository: new YamlNotificationConfigRepository({
       configService,
-      configFiles: new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) }),
+      configFiles: new YamlConfigFileStore({ assertWritable:agendaOwnership.assertFileWritable,logger: rootLogger.child({ module: 'config-files' }) }),
     }),
     logger: rootLogger.child({ module: 'notifications', submodule: 'config' }),
   });
@@ -1449,6 +1459,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // nor a generic event-bus message can impersonate these publishers.
   const schoolStateGatesPrincipal = Object.freeze({ service: 'school-state-gates-producer' });
   const fitnessStateGatesPrincipal = Object.freeze({ service: 'fitness-state-gates-producer' });
+  const householdPresenceStateGatesPrincipal = Object.freeze({service:'household-presence'});
+  const supervisionStateGatesPrincipal = Object.freeze({ service: 'supervision' });
   // Threaded to KioskFrictionTracker in a later task — see kiosk-friction-detection Task 3.
   const kioskFrictionStateGatesPrincipal = Object.freeze({ service: 'kiosk-friction-tracker' });
   const stateGatesProducerScheduler = Object.freeze({
@@ -1465,12 +1477,59 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     clock: { now: () => Date.now() },
     roleIds: Object.keys(authConfig.roles ?? {}),
     producerPrincipals: {
+      supervision: supervisionStateGatesPrincipal,
+      'household-presence':householdPresenceStateGatesPrincipal,
       school: schoolStateGatesPrincipal,
       fitness: fitnessStateGatesPrincipal,
       'kiosk-friction-tracker': kioskFrictionStateGatesPrincipal,
     },
     logger: rootLogger,
   });
+  let supervisionHaGateway=householdAdapters?.has?.('home_automation')?householdAdapters.get('home_automation'):null,supervisionIdentity=null;
+  const parentActor=userId=>{
+    const profile=userService.getProfile(userId);
+    if(!profile || (profile.household_id??householdId)!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
+    return {id:userId,roles:[...(profile.roles??[]),...(profile.type==='owner'?['owner']:[]),...((profile.roles??[]).includes('parent')?['guardian']:[])],authenticatedBy:'household-auth'};
+  };
+  const parentalSupervision=await createSupervisionRuntime({notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
+    clock:{now:()=>Date.now()},logger:rootLogger.child({module:'supervision'}),getHaGateway:()=>supervisionHaGateway,getIdentity:()=>supervisionIdentity,
+    gamesCatalog:dataService.household.read('gaming/retroarch/catalog'),
+    getLearners:()=> (configService.getHouseholdUsers(householdId)??[]).map(value=>typeof value==='string'?value:value.username??value.userId??value.id).filter(Boolean).map(id=>({id,label:userService.getProfile(id)?.display_name??userService.getProfile(id)?.name??id})),
+    learnerName:id=>userService.getProfile(id)?.display_name??userService.getProfile(id)?.name,
+    baselineEligibility:async context=>{
+      const declaration=configService.getHouseholdAppConfig(householdId,'supervision')?.activities?.find(activity=>activity.id===context.activityId && activity.devices?.includes(context.deviceId));
+      if(!declaration || !userService.getProfile(context.learnerId))return {allowed:false};
+      if(declaration.owner==='school')return {allowed:declaration.id==='school:workspace'};
+      if(declaration.owner==='arcade')return arcadeGameSessionTracking.checkEligibility?.execute({userId:context.learnerId,deviceId:context.deviceId,contentId:context.activityId})??{allowed:false};
+      if(declaration.owner==='piano-game'){
+        const now=Date.now(),result=await stateGatesModule.container.getCurrentEntitlements(householdId,{capabilityId:'piano.games',subjectKind:'learner',subjectId:context.learnerId});
+        const eligible=result.items?.some(item=>item.decision==='granted' && item.period.startsAt<=now && (item.period.endsAt==null || item.period.endsAt>now) && (item.validUntil==null || item.validUntil>now));
+        const budget=await pianoGameBudgetService.balance({learnerId:context.learnerId});return {allowed:eligible===true && (budget.enabled===false || budget.secondsLeft>0)};
+      }
+      if(declaration.owner==='fitness-module' && ['fitness.skyline-glider','fitness.skyline-invaders'].includes(declaration.baselineCapability)){
+        const now=Date.now(),result=await stateGatesModule.container.getCurrentEntitlements(householdId,{capabilityId:declaration.baselineCapability,subjectKind:'learner',subjectId:context.learnerId});
+        return {allowed:result.items?.some(item=>item.decision==='granted' && item.period.startsAt<=now && (item.period.endsAt==null || item.period.endsAt>now) && (item.validUntil==null || item.validUntil>now))===true};
+      }
+      return {allowed:false};
+    },
+    scheduleEvery:(ms,task)=>{const timer=setInterval(task,ms);timer.unref?.();return ()=>clearInterval(timer);},
+    verifyParentCredentials:async({username,password})=>{
+      if(typeof username!=='string' || !username || username.length>128 || typeof password!=='string' || !password || password.length>1024)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
+      const user=await authService.login(username,password);if(!user || user.householdId!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');return parentActor(user.username);
+    },
+    authenticateParent:async req=>{if(!req.user?.sub || req.user.hid!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');return parentActor(req.user.sub);},
+  });
+  const authorizeSupervisedAction=parentalSupervision.enabled?async(req,input={})=>{
+    const actual=typeof input==='string'?{activityId:input}:input;
+    const learnerValues=[req.params?.learnerId,req.params?.userId,req.body?.learnerId,req.body?.userId,req.body?.username,req.query?.learnerId,req.query?.userId,req.query?.username].filter(value=>value!=null);
+    if(new Set(learnerValues).size>1)throw new AccessDenied('SUPERVISION_CONTEXT_MISMATCH');
+    const learnerId=Object.hasOwn(actual,'learnerId')?actual.learnerId:learnerValues[0];
+    const context = await parentalSupervision.resolveContext(req,{activityId:actual.activityId??'school:workspace',learnerId});
+    const permit = await parentalSupervision.guard.authorize(context);
+    return { ...permit, deviceId: context.deviceId };
+  }:null;
+  v1Routers.supervision=parentalSupervision.router;
+  server?.once?.('close',()=>parentalSupervision.dispose());
   v1Routers.stateGates = stateGatesModule.stateGatesRouter;
   v1Routers.entitlements = stateGatesModule.entitlementsRouter;
   rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'siblings', 'queue', 'play', 'localContent', 'local', 'stream'] });
@@ -1699,7 +1758,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
-  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter } = createPartyGamesCatalogRuntime({ contentPath, rootLogger });
+  const { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory } = createPartyGamesCatalogRuntime({ contentPath, rootLogger,assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
   const { gamingModule, gamingAssetCatalog } = createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath });
 
@@ -1710,6 +1769,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { gamingRouter } = createPartyGamesHttpRuntime({ gamingModule, gamingAssetCatalog, mediaBasePath, contentPath, rootLogger });
 
   v1Routers.gaming = gamingRouter;
+  const participantRuntime=installParticipantRuntime({enabled:configService.getHouseholdAppConfig(householdId,'agenda')?.enabled === true,configService,peopleDirectory,contentRegistry,contentServices,gaming:{gamingApplication:gamingModule.gamingApplication,definitions:gamingDefinitionStore,manifestStore:gamingManifestStore,clueHistory:gamingModule.clueHistory},logger:rootLogger.child({module:'agenda'}),resourceAliases:agendaResourceAliases,ownership:agendaOwnership});
+  if(participantRuntime.agenda.migrationRouter) app.use('/api/v1/admin/agenda-migration',participantRuntime.agenda.migrationRouter);
+  v1Routers.participantLaunches=participantRuntime.participantRouter;
   const { GetPublicPresentationCatalog } = await import("./3_applications/presentation/GetPublicPresentationCatalog.mjs");
   v1Routers.presentation = createPresentationRouter({
     catalog: presentationCatalog,
@@ -2289,7 +2351,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let fitnessStateGatesProducer = null;
-  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth } = await createFitnessApiRuntime({ createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
+  const { stravaEnrichmentService, stravaReconciliationService, stravaSyncHealth, adminIntervention } = await createFitnessApiRuntime({ peopleDirectory, parentalSupervision:parentalSupervision.enabled?{service:parentalSupervision.service,garageDeviceId:parentalSupervision.configuration.garage_device_id,scopeId:parentalSupervision.configuration.scope_id,verifyScan:parentalSupervision.verifyScan}:null, createSchoolLearnerDirectory, get fitnessStateGatesProducer() { return fitnessStateGatesProducer; }, configService, rootLogger, axios, NodeApplicationScheduler, get householdAdapters() { return householdAdapters; }, userService, harvesterServices, v1Routers, eventBus, loadFitnessConfig, householdId, exerciseLibrary, fitnessServices, userDataService, contentRegistry, contentServices, get createFitnessReceiptCanvas() { return createFitnessReceiptCanvas; }, hardwareAdapters, fingerprintProfileWriter, fitnessPlayableModule });
+
+  supervisionIdentity=adminIntervention;
 
   // Home automation domain
   const kioskConfig = configService.getAppConfig('kiosk') || {};
@@ -2440,6 +2504,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   v1Routers['arcade-game-sessions'] = createArcadeGameSessionsRouter({
+    authorizeKioskAction:authorizeSupervisedAction?req=>authorizeSupervisedAction(req,req.query?.contentId??'arcade:menu'):null,
     recordObservation: arcadeGameSessionTracking.recordObservation,
     sessions: arcadeGameSessionTracking.sessions,
     trackers: arcadeGameSessionTracking.trackers,
@@ -2562,6 +2627,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const { createDonow } = await import("../../__app_modules/household/donow/server/composition/donow.mjs");
     donowModule = await createDonow({
+      resolveAccessContext:parentalSupervision.enabled?(req,metadata)=>parentalSupervision.resolveContext(req,{targetDeviceId:parentalSupervision.configuration.surface_devices?.[metadata.surface],activityId:metadata.action?.contentId??metadata.action?.id??metadata.surface,learnerId:metadata.learnerId}):null,
+      dispatchAuthority:parentalSupervision.enabled?createDoNowSupervisionAuthority(parentalSupervision):null,
+      canRequestLegacyApproval:parentalSupervision.enabled?async({surface})=>(await parentalSupervision.service.decideActivity({deviceId:parentalSupervision.configuration.surface_devices?.[surface]})).allowed:null,
       configService,
       householdId,
       eventBus,
@@ -2589,7 +2657,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // now takes the real `donow` service as a dependency, and `donow` itself
   // needed the seams just above to exist first.
   // ==========================================================================
-  const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
+  const schoolLifecycleLogger = createSchoolLifecycleLogger({ rootLogger, buildMetadataSource: new BuildMetadataSource({ checkoutDirectory: __dirname }) });
   // The parsed NFC reader locations, for the school reachability check. Set
   // when the trigger API is composed further down; read only from inside a
   // thunk, long after that has happened.
@@ -2638,7 +2706,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // one repository and one resolver.
   const books = createBooksModule({ configService, logger: rootLogger });
 
-  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook: schoolPresenceHook } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, gratitudeServices, broadcastGratitude:broadcastEvent, schoolGratitudeGrants, get schoolDebriefGrants() { return schoolDebriefGrants; }, get notificationService() { return notificationStack?.notificationService ?? null; }, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, pianoDayActivity, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, mediaBasePath, languageTranscription, createBooksApiRouter });
+  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook: schoolPresenceHook } = await createSchoolLifecycleRuntime({ mountReceiptKey: jwtSecret, authorizeKioskAction:authorizeSupervisedAction, nfcLocationsForReachability, gratitudeServices, broadcastGratitude:broadcastEvent, schoolGratitudeGrants, get schoolDebriefGrants() { return schoolDebriefGrants; }, get notificationService() { return notificationStack?.notificationService ?? null; }, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, pianoDayActivity, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, mediaBasePath, languageTranscription, createBooksApiRouter });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -2913,8 +2981,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       });
     },
   } : null;
+  const shutdownDatastore=new YamlShutdownDatastore({configService});
+  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
+  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})}):null;
   const shutdownService = new ShutdownService({
-    repo: new YamlShutdownDatastore({ configService }),
+    incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
+    supervision:parentalSupervision.enabled?{
+      activate:async({readerId,tagUid})=>parentalSupervision.service.stop({actor:{id:`nfc:${readerId??'configured-reader'}`,roles:['guardian'],authenticatedBy:'configured-nfc-trigger'},scopeId:parentalSupervision.configuration.scope_id??'child-public',source:'nfc',idempotencyKey:supervisionCommandId()}),
+      status:async target=>{const deviceId=parentalSupervision.configuration.legacy_targets?.[target]??target.split(':').at(-1);const state=await parentalSupervision.service.status({deviceId});return {locked:state.active,lockedUntil:null,persistent:true,epoch:state.epoch};},
+      reconcile:()=>parentalSupervision.service.reconcile(),
+      diagnostics:async()=>({mode:'configured',enforcement:await parentalSupervision.health()}),
+    }:null,
+    repo: shutdownDatastore,
     notifier: { publishState: (payload) => eventBus.broadcast('shutdown.state', payload) },
     getPolicy: getShutdownPolicy,
     cue: shutdownCue,
@@ -2928,7 +3006,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'shutdown' }),
   });
   shutdownService.start();
-  server?.once?.('close', () => shutdownService.dispose());
+  server?.once?.('close', () => {shutdownService.dispose();void shutdownIncidentRepository?.close().catch(error=>rootLogger.warn('shutdown.incidents.close_failed',{error:error.message}));});
   v1Routers.shutdown = createShutdownRouter({ shutdownService });
 
   // Weekly measures — the school board's ring figure. One registry, one
@@ -3762,6 +3840,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   }
 
+  // Drain only committed Fitness transport incidents through the same
+  // production scheduler lifecycle as the existing voice-memo retry worker.
+  if (agentsServices.scheduler && v1Routers.fitness?.transportIncidentRetryWorker) {
+    v1Routers.fitness.transportIncidentRetryWorker.register(agentsServices.scheduler);
+  }
+
   // Strava reconciliation sweep — propagates LOCAL session corrections (splits,
   // edited primary media, late voice memos) back to Strava without waiting for
   // the next workout's webhook to opportunistically trigger reconcile(). The
@@ -4094,7 +4178,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // in these services; the sub-routers are thin HTTP shells.
   const adminApiLogger = rootLogger.child({ module: 'admin-api' });
   // D5: the admin services decide WHICH config file; this store does the I/O.
-  const adminConfigStore = new YamlAdminConfigStore({ dataRoot: configService.getDataDir() });
+  const adminConfigStore = new YamlAdminConfigStore({ dataRoot: configService.getDataDir(),assertWritable:agendaOwnership.assertFileWritable });
   const householdAdminService = new HouseholdAdminService({
     configStore: adminConfigStore,
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
@@ -4154,6 +4238,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     listStore: new YamlListDatastore({
       dataDir: configService.getDataDir(),
       listConfigCodec: ListConfigCodec,
+      assertWritable:agendaOwnership.assertLegacyWritable,
     }),
     logger: adminApiLogger.child?.({ submodule: 'content' }) || adminApiLogger,
   });
@@ -4195,6 +4280,10 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
+    shutdownDiagnostics:{householdId,read:()=>shutdownService.diagnostics()},
+    resourceAliases:agendaResourceAliases,
+    agendaRouter:participantRuntime.agenda.adminRouter,
+    peopleRouter:participantRuntime.peopleRouter,
     householdContext,
     listManagementService,
     adminArtService,
@@ -4279,6 +4368,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   }
 
   const launchService = new LaunchService({
+    supervision:parentalSupervision.enabled?parentalSupervision.guard:null,
     contentCatalog: contentServices.contentCatalog,
     deviceLauncher: adbLauncher,
     prepareLaunch,
@@ -4286,6 +4376,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
 
   v1Routers.launch = createLaunchRouter({
+    resolveAccessContext:parentalSupervision.enabled?(req,metadata)=>parentalSupervision.resolveContext(req,metadata):null,
     launchService,
     logger: rootLogger.child({ module: 'launch-api' })
   });

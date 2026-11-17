@@ -47,12 +47,35 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createSchoolSelfServiceRouter({
   resolveAccessCode,
   runSelfServiceAction,
+  acknowledgeSelfServiceMount = null,
+  mountReceiptIssuer = null,
   recordLessonCompanionProgress = null,
   readPrinterHealth = null,
   curriculum = null,
   issueSubjectNext = null,
+  authorizeKioskAction = null,
+  resolveCompanionLearner = null,
 } = {}) {
   const router = express.Router();
+  // no-store also covers validation and authorization failures.
+  router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  if (authorizeKioskAction) router.use(asyncHandler(async (req,res,next)=>{res.locals.schoolKioskPermit = await authorizeKioskAction(req);next();}));
+  const mountIdentity = (req, res, issue = false) => {
+    if (authorizeKioskAction) {
+      const id = res.locals.schoolKioskPermit?.deviceId;
+      return typeof id === 'string' && id ? `kiosk:${id}` : null;
+    }
+    const name = 'daylight_school_mount';
+    let cookie = req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1);
+    let identity = mountReceiptIssuer?.sessionIdentity(cookie) ?? null;
+    if (!identity && issue && mountReceiptIssuer) {
+      cookie = mountReceiptIssuer.issueSession();
+      identity = mountReceiptIssuer.sessionIdentity(cookie);
+      res.cookie(name, cookie, { httpOnly: true, sameSite: 'strict', secure: req.secure,
+        path: '/api/v1/school/self-service', maxAge: 86_400_000 });
+    }
+    return identity;
+  };
 
   // Registered only when the use case is actually injected, so a deployment
   // without it 404s rather than half-answering — the same rule the lifecycle
@@ -65,6 +88,7 @@ export function createSchoolSelfServiceRouter({
       // nothing else — keying on it would let one screen throttle another.
       const { code, deviceId } = req.body || {};
       const card = await resolveAccessCode.execute({ code, deviceId });
+      if(authorizeKioskAction && card?.ok)await authorizeKioskAction(req,{learnerId:card.learner??null});
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
@@ -90,6 +114,7 @@ export function createSchoolSelfServiceRouter({
   if (resolveAccessCode?.preview) {
     router.get('/preview/:link', asyncHandler(async (req, res) => {
       const card = await resolveAccessCode.preview({ link: req.params.link });
+      if(authorizeKioskAction && card?.ok)await authorizeKioskAction(req,{learnerId:card.learner??null});
       res.set('Cache-Control', 'no-store').json(card);
     }));
   }
@@ -148,9 +173,28 @@ export function createSchoolSelfServiceRouter({
     // on it — so this router does no validation of its own; a bad `action` is
     // a sentence, not a 400.
     router.post('/act', asyncHandler(async (req, res) => {
-      const { code, action } = req.body || {};
-      const result = await runSelfServiceAction.execute({ code, action });
+      const { code, action, mountProtocol } = req.body || {};
+      if(authorizeKioskAction){const card=await resolveAccessCode?.execute({code});if(card?.ok)res.locals.schoolKioskPermit = await authorizeKioskAction(req,{learnerId:card.learner??null});}
+      const result = await runSelfServiceAction.execute({ code, action,
+        ...(mountProtocol == null ? {} : { mountProtocol, deviceId: mountIdentity(req, res, mountProtocol === 1) }) });
       res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+  // Remains available during flag rollback to settle receipts already prepared.
+  if (acknowledgeSelfServiceMount) {
+    router.post('/mount-ack', asyncHandler(async (req, res) => {
+      const { receipt, mounted } = req.body || {};
+      if (JSON.stringify(req.body ?? {}).length > 8192 || typeof receipt !== 'string' || !receipt || receipt.length > 4096 || typeof mounted !== 'boolean') {
+        return res.status(400).json({ ok: false, committed: false, replayed: false });
+      }
+      const deviceId = mountIdentity(req, res);
+      const result = await acknowledgeSelfServiceMount.execute({ receipt, mounted, deviceId,
+        authorizeLearner: authorizeKioskAction ? async learnerId => {
+          const permit = await authorizeKioskAction(req, { learnerId });
+          if (`kiosk:${permit?.deviceId}` !== deviceId) throw new Error('Kiosk context changed');
+        } : null,
+      });
+      res.json(result);
     }));
   }
   // Is the printer able to print at all? Polled by the panel only while it is
@@ -177,6 +221,7 @@ export function createSchoolSelfServiceRouter({
       // `id` LAST, so the path wins. Spread second, a body-supplied `id` would
       // override the path parameter — and `id` is not one field among many, it
       // selects which learner's companion record gets written.
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:await resolveCompanionLearner?.(req.params.id)??null});
       const result = await recordLessonCompanionProgress.execute({ ...(req.body || {}), id: req.params.id });
       res.set('Cache-Control', 'no-store').json(result);
     }));
@@ -192,6 +237,7 @@ export function createSchoolSelfServiceRouter({
   // by the caller. A refusal or a printer failure is a 200 with a sentence.
   if (issueSubjectNext) {
     router.post('/learners/:learnerId/print-next', asyncHandler(async (req, res) => {
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:req.params.learnerId});
       const { subject = null, deviceId = null } = req.body || {};
       const result = await issueSubjectNext.execute({
         learnerId: req.params.learnerId, subject, deviceId,
@@ -202,6 +248,7 @@ export function createSchoolSelfServiceRouter({
     // The dry run behind the button's label: which unit would print, and the
     // reward for it when the economy can say. Opens no session.
     router.get('/learners/:learnerId/next', asyncHandler(async (req, res) => {
+      if(authorizeKioskAction)await authorizeKioskAction(req,{learnerId:req.params.learnerId});
       const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
       const result = await issueSubjectNext.preview({ learnerId: req.params.learnerId, subject });
       res.set('Cache-Control', 'no-store').json(result);

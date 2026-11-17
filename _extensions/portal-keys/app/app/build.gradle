@@ -11,8 +11,9 @@ android {
         // Facebook Portal 10" runs sideloaded Android 9 = API 28.
         minSdk 26
         targetSdk 28
+        testInstrumentationRunner "android.test.InstrumentationTestRunner"
         // BUMP on every build — install -r rejects a lower versionCode.
-        versionCode 32
+        versionCode 34
         versionName "1.2-no-qr"
     }
 
@@ -29,6 +30,11 @@ android {
 }
 
 dependencies {
+    // Installed SDK test stubs only; no added production dependency.
+    androidTestCompileOnly files("${android.sdkDirectory}/platforms/${android.compileSdkVersion}/optional/android.test.runner.jar",
+            "${android.sdkDirectory}/platforms/${android.compileSdkVersion}/optional/android.test.base.jar")
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
     implementation project(':shell-api')
     // NanoHTTPD WebSocket server — control channel to the browser kiosk, same
     // version piano-bridge uses on the tablet.

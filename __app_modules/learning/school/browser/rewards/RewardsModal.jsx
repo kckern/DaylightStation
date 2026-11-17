@@ -69,6 +69,7 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
   const groups = (view.groups ?? []).filter(group => view.gems.some(row => row.group === group.id));
   return createPortal(
     <dialog ref={dialogRef} className="school-rewards-modal" aria-labelledby={titleId}
+      style={{ '--rewards-fit-size': `${fit.fontPx * 3.8}px` }}
       onCancel={event => { event.preventDefault(); closeRef.current?.(); }}
       onMouseDown={event => {
         if (event.target !== event.currentTarget) return;
@@ -80,7 +81,7 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
         <ProfileAvatar id={learner.id} name={learner.name} size={192} />
         <h2 id={titleId}>{learner.name}'s rewards</h2>
         {view.week && <span className="school-rewards-modal__week">Week of {weekLabel(view.week)}</span>}
-        <button type="button" className="school-rewards-modal__close" aria-label="Close rewards" {...pressDown(() => closeRef.current?.())} autoFocus>
+        <button type="button" className="school-rewards-modal__close" aria-label="Close rewards" onClick={() => closeRef.current?.()} autoFocus>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
         </button>
       </header>
@@ -94,7 +95,7 @@ export default function RewardsModal({ learner, snapshot, onClose, onOpenBank = 
       </div>
       <div ref={gridBox} className="school-rewards-modal__grid-box">
         {view.gems.length ? (
-          <div className="school-rewards-modal__grid" role="list" aria-label="Your gems" style={{ fontSize: `${fit.fontPx}px`, gridTemplateColumns: `repeat(${fit.columns}, 5em)` }}>
+          <div className="school-rewards-modal__grid" role="list" aria-label="Your gems" style={{ gridTemplateColumns: `repeat(${fit.columns}, 5em)` }}>
             {view.gems.map(row => (
               <div className="school-rewards-modal__gem" role="listitem" key={row.id} data-group={row.group}>
                 <span role="img" aria-label={`${row.label}: ${glyphWords(row.cell)}`}><GemGlyph cell={row.cell} color={row.color} area={row.area ?? row.group} /></span>

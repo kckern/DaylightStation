@@ -93,6 +93,87 @@ the 2026-08-25 bouncing-reader signature (§5). A `school.print.printable-exclud
 warn means the picker silently hid an item — check the paper surface
 profile's declared `capabilities:` against the bank's item types.
 
+### Keypad program launch: prepared versus opened
+
+A successful `/act` response with `outcome: mount` prepares a local launch.
+`school.selfservice.program.mount-prepared` records that preparation, with
+`mountProtocol`, authenticated device/session identity and an offset-aware time.
+Both preparation and confirmation also inherit `context.buildIdentity` from the
+existing build metadata source: `baked-build-metadata`, `development-checkout`,
+or `unavailable`. Available metadata carries a SHA-256 fingerprint and a valid
+40-character commit declaration when present, explicitly marked
+`declared-unverified`. Metadata input is bounded to 8 KiB; raw file contents and
+paths are never logged. `mountProtocol: 1` identifies the payload protocol.
+Matching declared metadata to the actual deployed artifact remains a release gate.
+`school.selfservice.program.mount-confirmed` is emitted only after a signed
+browser ACK commits the reserved code use. The browser waits for the matching
+local runner shell to commit in React; a queued navigation, suspended target,
+throwing render or overridden launch is insufficient. Follow the frontend
+outcome too: `school.selfservice.mount.refused` means SchoolApp declined the
+target. A committed shell can still show an API authorization error; this ACK
+never awards program completion or learning credit. Historical
+`school.selfservice.program.mounted` events described preparation only.
+
+The additive protocol uses `mountProtocol: 1`, an opaque `mountReceipt`, and
+`mountExpiresAt` on local `/act` responses. A reservation holds capacity for
+120,000 ms. Only `mounted: true` commits a use; false releases it. Pending
+reservations expire without a cleanup write from `/resolve`. Reservation,
+settlement, revocation and ordinary use writes share the token registry queue
+and durable atomic file replacement. One household backend owns that registry.
+Duplicate successful ACKs replay their result, including after restart and at
+the cap. Revocation, token expiry, learner and reservation identity are checked
+again at settlement. Receipts are household-, action-, learner- and
+kiosk-bound; legacy panels use a purpose-separated server-issued HttpOnly
+SameSite=Strict session cookie. A body/query device label or proxy IP grants
+no settlement authority. Never log receipts, access codes or program grants.
+
+The browser retains at most eight pending opaque receipts in session storage,
+retries transport failures every three seconds until expiry, and settles after
+awaiting the launch promise even if navigation unmounts the keypad. Each ACK
+attempt is bounded to five seconds (or the remaining receipt lifetime), aborts
+its fetch on timeout, and allows later receipts to progress; late responses
+cannot mutate the queue. In-process expiry uses a monotonic deadline derived
+once when accepting the receipt. Epoch expiry is retained only for reloads;
+wall-clock corrections cannot shorten or extend active retries. Cancellation
+and the 120-second launch deadline resolve independently of a hung bank/deck
+fetch, whose eventual stale result cannot mount. Reload
+replays a known mount result; an interrupted result that never reached the
+commit boundary is released conservatively. Lost ACK responses replay safely.
+
+**Staged rollout:** deploy browser support and the additive endpoint first,
+leaving the boot-cached household School configuration disabled:
+
+```yaml
+selfService:
+  mountAcknowledgements: false
+```
+
+After reviewing the browser/API identity and commit evidence on the selected
+kiosk, change only `mountAcknowledgements` to `true` in the existing
+`selfService` mapping and restart the single household backend through the
+approved deployment workflow. Preserve the other mapping keys. Signing uses
+the existing household authentication material; missing material refuses local
+preparation, without generating an ephemeral authority. Old browser bundles
+receive a refresh/retry sentence before reservation or grant issuance.
+
+**Rollback:** disable that flag while retaining this version's settlement
+endpoint, receipt verifier and durable token fields. Existing reservations
+remain visible to `/resolve`; their ACKs can settle until expiry. Committed
+uses remain spent. Do not restore older token snapshots or remove the ACK
+handler while receipts are live. A code rollback must retain these settlement
+compatibility changes. Unit/browser evidence does not establish physical kiosk
+recovery or enforcement; native/device validation and production activation
+remain separate rollout gates.
+
+For Gratitude, the keypad must forward `gratitudeGrant`, `learnerId` and
+`today` from the launcher effect. A missing grant is refused by SchoolApp;
+a wrong-purpose grant is rejected by the Gratitude API before opening or
+writing work. Use the learner and time window to correlate these events;
+never log the grant or code. `school.gratitude.ui.mounted` confirms the
+runner rendered; successful authorized activity loading is a further check.
+Neither a prepared launch nor a mounted component proves completion or
+credit. Existing server code-use accounting is unchanged by grant forwarding.
+
 ### 4b. OMR sheet scan → grade → thermal receipt → HA sound cue
 
 ```
@@ -369,3 +450,59 @@ correction.
 4. If evidence exists on disk (attempts, allocation records, session files)
    but the logs are quiet, suspect the 7-day retention or the pre-2026-08-22
    timestamp shift (§2) before suspecting the code.
+
+
+### Native Portal page evidence
+
+The Portal payload exposes authenticated `/status` → `homeWatchdog.page` and
+`/page/journal` (256 metadata entries). Correlate UTC `at`, `incidentId`, `stage`,
+page build/activity/sequence/age, process identity/uptime, network and native safety
+revision with the existing external five-second watcher. An unreachable native
+process is a different failure from a live native process with a stale page beat.
+Unknown/permission-denied evidence is not healthy evidence. Do not infer a historic
+crash, network outage or power event from a current snapshot; mark unavailable
+retained history explicitly.
+
+The heartbeat lives above `SupervisionHost` and `SchoolShutdownGate`. Visibility
+never authorizes a wake. Parent Stop remains in the existing shell Config authority;
+old/unknown safety, sleeping, Stop and maintenance suppress recovery. Active page
+recovery remains disabled pending actual HTTPS Fully transport and saved-state
+qualification. See the [Portal release gate and device probe](../../../_extensions/portal-keys/README.md#school-page-evidence-and-recovery-gate).
+No recovery path may replay act/print/grade POSTs. URL/domain-backed state can be
+resumed only through existing read paths; unsaved drafts require route-specific
+qualification before enabling renderer restarts.
+
+### Local interaction replay and physical acceptance
+
+Run the isolated replay without starting a household backend:
+
+```bash
+npm run test:file -- tests/isolated/e2e/school/incident-2026-11-16.test.jsx
+```
+
+It exercises the real School shell, quiz text inputs, Home keyboard handler,
+fetch client, grading/quota services and temporary YAML attempt/sitting/print
+records. Its synthetic vocabulary quiz completes before a science answer; ordinary
+text spaces, held Space, repeated Space and an Enter/Check burst are delivered to
+those real controls. Fake fetch can lose a response after the grade or print has
+committed. The assertions require one science grade, one printer dispatch, visible
+failure feedback, a usable Home and no unhandled errors or replayed writes.
+Catalogue data, WebSocket subscription, diagnostic transport, PDF rendering and
+physical printer output are fakes. DOM events do not establish Android key delivery,
+native button activation, HTTPS loopback transport or physical device responsiveness.
+
+The reload case reopens actual YAML stores and preserves the saved sitting ID,
+finished answer and print record. It explicitly does **not** restore the unfinished
+text draft or reconstruct a learner program from its URL. A saved sitting is domain
+evidence, not a restored runner or grant. Do not use `/go` or replay `/act` to disguise
+that limitation; keep `PAGE_RECOVERY_VERIFIED=false` until a reviewed resume design
+qualifies the selected activity and its draft.
+
+For **each** outage window, keep a private acceptance record with offset-aware times,
+device/build/payload identity, retained crash/power/network history (or explicitly
+unavailable history), the observed failure boundary, and artifact/rollback identities.
+After authorized candidate rollout, require the real Fully HTTPS transport probe and
+an on-device interaction replay, deliberate renderer termination with a saved draft,
+bounded recovery or alert, sleep immunity and parent Stop. Record actual physical
+readback and delivery, not merely accepted commands or heartbeats. If these cannot
+be collected, retain unresolved incident status and pending physical acceptance.

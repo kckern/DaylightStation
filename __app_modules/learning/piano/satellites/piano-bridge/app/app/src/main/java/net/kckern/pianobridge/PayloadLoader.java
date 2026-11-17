@@ -39,15 +39,18 @@ import dalvik.system.DexClassLoader;
  *  - If nothing loads at all, fall back to the payload baked into the APK's assets
  *    so a fresh install is never payload-less.
  *
- * This class has no opinion about what the payload does. Keep it that way.
+ * The installed shell admits only explicitly reviewed native-safety-compatible payload identities.
  */
 public final class PayloadLoader {
 
     private static final String TAG = "PianoBridge-Loader";
     static final String ENTRY_CLASS = "net.kckern.pianobridge.payload.Main";
     static final String BAKED_ASSET = "payload-baked.jar";
-    static final String BAKED_NAME = "p0-baked.jar";
+    static final String BAKED_NAME = "p38-managed-candidate-baked.jar";
 
+    interface PayloadFactory { Payload create(String jar) throws Exception; }
+    private PayloadFactory factory;
+    private Runnable prepareBaked;
     private final Context ctx;
     private final PayloadStore store;
     private final ShellServices shell;
@@ -64,6 +67,12 @@ public final class PayloadLoader {
         this.ctx = ctx;
         this.shell = shell;
         this.store = new PayloadStore(new File(ctx.getFilesDir(), "payloads"));
+        factory=this::instantiate;
+        prepareBaked=this::ensureBaked;
+    }
+
+    PayloadLoader(PayloadStore store, ShellServices shell, PayloadFactory factory, Runnable prepareBaked) {
+        ctx=null; this.store=store; this.shell=shell; this.factory=factory; this.prepareBaked=prepareBaked;
     }
 
     public PayloadStore store() { return store; }
@@ -74,42 +83,41 @@ public final class PayloadLoader {
 
     /**
      * Load the right payload for this boot. Order: crash-loop rollback check →
-     * current pointer → baked asset. Synchronous; called from the Service's
+     * compatible current/previous selection → baked asset. Synchronous; called from the Service's
      * onStartCommand so the bridge is up before it returns.
      */
     public synchronized void boot() {
-        long now = System.currentTimeMillis();
-        try {
-            if (store.shouldRollBack(now)) {
-                String to = store.rollback();
-                shell.note("PAYLOAD", "ROLLBACK at boot: " + store.previous() + " crash-looped -> " + to);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "rollback check failed", e);
+        long now=System.currentTimeMillis();
+        java.util.LinkedHashSet<String> candidates=new java.util.LinkedHashSet<>();
+        // Keep durable pointers intact while selecting a compatible fallback. A legacy
+        // payload must never start merely because it was current/previous before upgrade.
+        // Quarantine the crashing current for this entire boot. An incompatible
+        // previous must fall through to baked, never back into the known crash loop.
+        if (!store.shouldRollBack(now)) candidates.add(store.current());
+        candidates.add(store.previous());
+        for (String jar:candidates) {
+            if (jar!=null && tryBoot(jar, now)) return;
         }
-        if (store.current() == null) ensureBaked();
-        String jar = store.current();
-        if (jar == null) {
-            lastError = "no payload available (no current, no baked asset)";
-            shell.note("PAYLOAD", lastError);
-            return;
-        }
+        prepareBaked.run();
+        if (!tryBoot(BAKED_NAME, now)) shell.note("PAYLOAD", "no compatible payload available: " + lastError);
+    }
+
+    private boolean tryBoot(String jar, long now) {
         try {
             store.recordBoot(jar, now);
-            bootsThisPayload = store.recentBoots(jar, now);
+            bootsThisPayload=store.recentBoots(jar, now);
         } catch (Exception ignored) { }
-        if (!load(jar)) {
-            // start() threw: this payload cannot run. Fall back NOW, don't wait for
-            // the crash counter.
-            try {
-                String to = store.rollback();
-                shell.note("PAYLOAD", "start() failed for " + jar + " -> rollback to " + to + " (" + lastError + ")");
-                if (to != null) load(to);
-            } catch (Exception e) {
-                Log.e(TAG, "rollback after failed start also failed", e);
-            }
-        }
+        return load(jar);
     }
+
+    /** Compatibility declaration only; download integrity still requires SHA-256. */
+    static boolean compatibleVersion(String version) { return "p38-managed-candidate".equals(version); }
+
+    private boolean mayMutate() {
+        try { return shell.nativeSafety().allowsRun(android.os.SystemClock.elapsedRealtime()); }
+        catch (RuntimeException | LinkageError e) { return false; }
+    }
+
 
     /** Orderly shutdown (Service.onDestroy). Clears the crash counter for this payload. */
     public synchronized void shutdown() {
@@ -120,6 +128,7 @@ public final class PayloadLoader {
     // ── swap / rollback (async: called from the payload's own HTTP thread) ──
 
     public String requestSwap(String url, String sha256) {
+        if (!mayMutate()) return "refused: native safety unavailable or stopped";
         if (url == null || url.isEmpty()) return "refused: no url";
         if (sha256 == null || sha256.trim().length() < 32) return "refused: sha256 required";
         exec.submit(() -> swap(url, sha256.trim()));
@@ -128,28 +137,27 @@ public final class PayloadLoader {
 
     /** Stop and re-start the CURRENT payload in place (no fetch). For a wedged server. */
     public String requestRestart() {
-        String cur = store.current();
+        if (!mayMutate()) return "refused: native safety unavailable or stopped";
+        String cur = activeJar!=null ? activeJar : store.current();
         if (cur == null) return "refused: no current payload";
         exec.submit(() -> { synchronized (this) {
+            if (!mayMutate()) return;
             unloadActive();
             shell.note("PAYLOAD", "manual restart of " + cur);
-            if (!load(cur)) {
-                String to = null;
-                try { to = store.rollback(); } catch (Exception ignored) { }
-                shell.note("PAYLOAD", "restart of " + cur + " failed -> rollback to " + to + " (" + lastError + ")");
-                if (to != null) load(to);
-            }
+            if (!load(cur)) boot();
         } });
         return "accepted: restarting " + cur;
     }
 
     public String requestRollback() {
+        if (!mayMutate()) return "refused: native safety unavailable or stopped";
         if (store.previous() == null) return "refused: no previous payload";
         exec.submit(this::rollbackNow);
         return "accepted: rolling back to " + store.previous();
     }
 
     private synchronized void swap(String url, String sha256) {
+        if (!mayMutate()) return;
         String name = jarNameFrom(url, sha256);
         File part = new File(store.dir(), name + ".part");
         try {
@@ -157,13 +165,15 @@ public final class PayloadLoader {
             download(url, part);
             store.commit(part, name, sha256);
             shell.note("PAYLOAD", "verified " + name + " sha256=" + sha256.substring(0, 12) + "…");
+            if (!mayMutate()) throw new IllegalStateException("native safety revoked");
+            if (!compatibleVersion(factory.create(name).version())) throw new IllegalStateException("payload safety compatibility unavailable");
             unloadActive();
             store.activate(name);
             store.recordBoot(name, System.currentTimeMillis());
             if (!load(name)) {
                 String to = store.rollback();
                 shell.note("PAYLOAD", "new payload " + name + " failed to start -> rollback to " + to + " (" + lastError + ")");
-                if (to != null) load(to);
+                if (to == null || !load(to)) boot();
             } else {
                 shell.note("PAYLOAD", "ACTIVE " + name + " v=" + safeVersion());
             }
@@ -173,16 +183,24 @@ public final class PayloadLoader {
             part.delete();
             // The old payload was only unloaded AFTER commit succeeded, so a download
             // or sha failure leaves it untouched and running.
-            if (active == null && store.current() != null) load(store.current());
+            if (active == null) boot();
         }
     }
 
     private synchronized void rollbackNow() {
         try {
+            if (!mayMutate()) return;
+            String previous=store.previous();
+            if (previous==null || !compatibleVersion(factory.create(previous).version())) {
+                lastError="rollback refused: payload safety compatibility unavailable";
+                shell.note("PAYLOAD", lastError);
+                return; // Preserve both pointers and the running managed candidate.
+            }
+            if (!mayMutate()) return;
             unloadActive();
             String to = store.rollback();
             shell.note("PAYLOAD", "manual rollback -> " + to);
-            if (to != null) load(to);
+            if (to == null || !load(to)) boot();
         } catch (Exception e) {
             lastError = e.getMessage();
             shell.note("PAYLOAD", "manual rollback FAILED: " + lastError);
@@ -225,16 +243,9 @@ public final class PayloadLoader {
 
     /** Load + start one jar. Returns false (and sets lastError) if it cannot run. */
     private boolean load(String jar) {
-        File f = new File(store.dir(), jar);
-        File opt = new File(ctx.getCodeCacheDir(), "payload-opt");
-        if (!opt.exists()) opt.mkdirs();
         try {
-            // Parent = the shell's loader, so the payload resolves ShellServices,
-            // PianoEngine, NanoHTTPD and org.json from the APK — it bundles no libs.
-            DexClassLoader cl = new DexClassLoader(f.getAbsolutePath(), opt.getAbsolutePath(),
-                    null, ctx.getClassLoader());
-            Class<?> c = cl.loadClass(ENTRY_CLASS);
-            Payload p = (Payload) c.getDeclaredConstructor().newInstance();
+            Payload p = factory.create(jar);
+            if (!compatibleVersion(p.version())) throw new IllegalStateException("payload safety compatibility unavailable");
             p.start(shell);
             active = p;
             activeJar = jar;
@@ -248,6 +259,14 @@ public final class PayloadLoader {
             activeJar = null;
             return false;
         }
+    }
+
+    private Payload instantiate(String jar) throws Exception {
+        File f=new File(store.dir(), jar);
+        File opt=new File(ctx.getCodeCacheDir(), "payload-opt");
+        if (!opt.exists()) opt.mkdirs();
+        DexClassLoader cl=new DexClassLoader(f.getAbsolutePath(), opt.getAbsolutePath(), null, ctx.getClassLoader());
+        return (Payload)cl.loadClass(ENTRY_CLASS).getDeclaredConstructor().newInstance();
     }
 
     private void unloadActive() {
@@ -270,7 +289,6 @@ public final class PayloadLoader {
                     while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
                 }
             }
-            store.activate(BAKED_NAME);
             shell.note("PAYLOAD", "using baked " + BAKED_NAME);
         } catch (Exception e) {
             lastError = "baked payload unavailable: " + e.getMessage();

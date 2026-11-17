@@ -22,7 +22,7 @@ function fakes() {
   return {
     repo, saved, events, portalCalls, haCalls,
     notifier: { publishState(payload) { events.push({ topic: 'shutdown.state', payload }); } },
-    portal: { async setLockdown(value) { portalCalls.push(value); } },
+    portal: { async setLockdown(value) { portalCalls.push(value); return {ok:true}; } },
     cue: { async announce(value) { haCalls.push(value); } },
     invalid() { result = { state: null, invalid: true }; },
   };
@@ -100,4 +100,46 @@ test('a bad timezone never withholds the cue: announce still runs', async () => 
   assert.equal(f.haCalls[0].lockedUntil, state.lockedUntil);
   // formatClockTime degrades to null, so the push still composes, without the clock time.
   assert.equal(f.haCalls[0].notification.title, '🔒 Kiosks locked — 30 min');
+});
+test('a resolved skipped Portal command cannot advance the reconciliation signature',async()=>{
+ const f=fakes();let calls=0;const portal={setLockdown:async()=>{calls++;return {ok:false,skipped:true};}};
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal,logger:{warn(){}}});
+ await service.activate({readerId:'reader',tagUid:'ABCD',now:1000});await service.reconcile(1001);
+ assert.equal(calls,2);
+});
+
+test('legacy status exposes unavailable Portal enforcement without extending its finite lock window',async()=>{
+ const f=fakes(),observations=[];const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async()=>({ok:false,skipped:true})},incidentReporter:{observe:async value=>observations.push(value)},logger:{warn(){}}});
+ const state=await service.activate({now:1000});await service.reconcile(6000);
+ const status=await service.status('school:portal',6000);
+ assert.equal(status.lockedUntil,state.lockedUntil);assert.equal(status.locked,true);
+ assert.equal(status.enforcement.consumers[0].acknowledged,false);assert.equal(status.enforcement.consumers[0].error,'CAPABILITY_UNAVAILABLE');
+ assert.ok(observations.some(value=>value.health[0].desiredBlocked===true));
+ assert.equal((await service.status('school:portal',1801001)).locked,false);
+});
+test('legacy refreshes current native evidence and exposes matching ACK without physical verification',async()=>{
+ const f=fakes();let now=1000;const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,clock:{now:()=>now},portal:{setLockdown:async({locked})=>({ok:true,blocked:locked})}});
+ await service.activate({now});now=6000;await service.reconcile(now);
+ assert.equal((await service.status('school:portal',6000)).enforcement.consumers[0].lastContactAt,6000);
+ assert.equal((await service.status('school:portal',6000)).enforcement.consumers[0].acknowledged,true);
+});
+test('legacy incident persistence failure does not prevent the Portal command',async()=>{
+ const f=fakes();let stops=0;
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async({locked})=>{stops++;return {ok:true,blocked:locked};}},incidentReporter:{observe:async()=>{throw Error('disk failure');}},logger:{warn(){}}});
+ await service.activate({now:1000});assert.equal(stops,1);
+ assert.equal((await service.status('school:portal',1000)).enforcement.incidentReportingError,'INCIDENT_REPORTING_UNAVAILABLE');
+});
+
+test('a delayed legacy ACK records completion time after the failure alert and is freshly presented',async()=>{
+ const {EnforcementIncidentReporter}=await import('../../../../__app_modules/household/supervision/server/application/EnforcementIncidentReporter.mjs');
+ const {emptySupervisionState}=await import('../../../../__app_modules/household/supervision/shared/contracts.mjs');
+ const {presentEnforcement}=await import('../../../../__app_modules/household/supervision/browser/enforcementPresentation.js');
+ let now=1000,finish,state=emptySupervisionState();const alerts=[];
+ const reporter=new EnforcementIncidentReporter({repository:{read:async()=>structuredClone(state),transaction:async fn=>fn(state)},monotonicNow:()=>now,notifyIncident:async event=>{alerts.push(event);return {accepted:true,delivered:null};}});
+ const f=fakes(),service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,clock:{now:()=>now},incidentReporter:reporter,portal:{setLockdown:()=>new Promise(resolve=>{finish=resolve;})}});
+ const activation=service.activate({now});await new Promise(resolve=>setImmediate(resolve));
+ now=6000;const retry=service.reconcile(now);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(alerts[0].type,'enforcement-unverified');now=7000;finish({ok:true,blocked:true});await Promise.all([activation,retry]);
+ assert.deepEqual(alerts.map(event=>event.at),[new Date(6000).toISOString(),new Date(7000).toISOString()]);
+ const row=(await service.status('school:portal',now)).enforcement.consumers[0];assert.equal(row.lastContactAt,7000);assert.equal(presentEnforcement(row,now).state,'acknowledged');
 });

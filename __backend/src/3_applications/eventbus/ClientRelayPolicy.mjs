@@ -18,3 +18,10 @@ export function shouldRelayBtTopic(topic) {
 export function shouldRelayKioskLaunchTopic(topic) {
   return typeof topic === 'string' && KIOSK_LAUNCH_RELAY_TOPICS.has(topic);
 }
+
+// Diagnostics have their own route; they must never become fitness samples.
+export const FITNESS_DIAGNOSTIC_TOPICS = new Set(['fitness.transport.health']);
+
+export function shouldRelayFitnessDiagnosticTopic(topic) {
+  return typeof topic === 'string' && FITNESS_DIAGNOSTIC_TOPICS.has(topic);
+}

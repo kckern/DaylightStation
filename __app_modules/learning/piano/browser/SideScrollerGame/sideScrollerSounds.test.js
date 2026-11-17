@@ -78,3 +78,9 @@ describe('resolveSoundSrc', () => {
     expect(created[0]).toMatch(/\/api\/v1\/proxy\/media\/audio\/sfx\/side-scroller\/death\.mp3$/);
   });
 });
+it('stops every detached overlapping sound on owner unmount',()=>{
+ let playing=0;
+ const createAudio=()=>({cloneNode:()=>({currentTime:0,play(){playing++;return Promise.resolve();},pause(){playing--;},addEventListener(){}})});
+ const sfx=createSfxPlayer({jump:'/jump.wav'},{createAudio});sfx.play('jump');sfx.play('jump');expect(playing).toBe(2);
+ sfx.stopAll();expect(playing).toBe(0);
+});

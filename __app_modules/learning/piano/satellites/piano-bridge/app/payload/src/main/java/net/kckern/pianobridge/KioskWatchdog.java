@@ -53,6 +53,20 @@ public final class KioskWatchdog {
 
     public enum Verdict { DISABLED, GRACE, NO_BEATS_YET, HEALTHY, SCREEN_OFF, BUILDING, DECAYED, DEAD }
 
+    /** External recovery I/O stays in one boundary; policy never grants authority. */
+    static class RecoveryIo {
+        JSONObject screen(DeviceConfig c) throws Exception { return FkbRest.deviceInfo(c); }
+        int command(DeviceConfig c, String command) { return FkbRest.command(c, command); }
+        void burst(DeviceConfig c) { TouchPulser.burst(c, 6); }
+        long elapsed() { return SystemClock.elapsedRealtime(); }
+        int minuteOfDay() {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
+        }
+        void pause(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) { } }
+    }
+
+    private final RecoveryIo io;
     private final BridgeCore service;
     private volatile DeviceConfig cfg;
 
@@ -69,9 +83,10 @@ public final class KioskWatchdog {
     private volatile String activeGameId = null;
     private volatile long activeGameSinceWallTs = 0;
 
-    private final long startedAtRt = SystemClock.elapsedRealtime();
+    private final long startedAtRt;
     private long lowMs = 0;                       // accumulated ms of visible-low-fps
     private volatile Verdict lastVerdict = Verdict.GRACE;
+    private String lastHealth = "";
     private volatile long cooldownUntilRt = 0;
 
     // --- recovery bookkeeping (surfaced over /kiosk and /diagnostics) ---
@@ -86,14 +101,34 @@ public final class KioskWatchdog {
     private volatile String lastDecision = null;
     private volatile long lastDecisionWallTs = 0;
 
+    // Current policy choices have their own immutable identity. Legacy outcome and
+    // action text remain historical; serializing them never creates a new choice.
+    private static final class Decision {
+        final String key, id, at, stage;
+        Decision(String key, String id, String at, String stage) {
+            this.key = key; this.id = id; this.at = at; this.stage = stage;
+        }
+    }
+    private final String decisionSession = java.util.UUID.randomUUID().toString();
+    private long decisionSequence;
+    private volatile Decision currentDecision;
+    private volatile Boolean screenOn;
+    private volatile long screenReadAtRt;
+
     private final ExecutorService recoveryExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "kiosk-recovery"); t.setDaemon(true); return t;
     });
     private java.util.Timer timer;
 
     public KioskWatchdog(BridgeCore service, DeviceConfig cfg) {
+        this(service, cfg, new RecoveryIo());
+    }
+
+    KioskWatchdog(BridgeCore service, DeviceConfig cfg, RecoveryIo io) {
         this.service = service;
         this.cfg = cfg;
+        this.io = io;
+        this.startedAtRt = io.elapsed();
     }
 
     /** Swap in refreshed config (after a pbctl /config edit) WITHOUT losing beat state. */
@@ -118,7 +153,7 @@ public final class KioskWatchdog {
 
     /** Ingest a heartbeat from the page (POST /kiosk/beat). */
     public void onBeat(JSONObject beat) {
-        lastBeatAtRt = SystemClock.elapsedRealtime();
+        lastBeatAtRt = io.elapsed();
         lastBeatWallTs = System.currentTimeMillis();
         lastFps = beat.optInt("fps", -1);
         lastVisibility = beat.optString("visibility", "unknown");
@@ -175,7 +210,7 @@ public final class KioskWatchdog {
 
     private void tick(long periodMs) {
         DeviceConfig c = cfg;
-        long now = SystemClock.elapsedRealtime();
+        long now = io.elapsed();
         boolean sawAny = lastBeatAtRt != 0;
         long beatAge = sawAny ? now - lastBeatAtRt : now - startedAtRt;
 
@@ -188,9 +223,18 @@ public final class KioskWatchdog {
                 lastFps, lastVisibility, lowMs,
                 c.watchdogMinFps(), c.watchdogSustainSec(), c.watchdogBeatTimeoutMs(), c.watchdogGraceMs());
 
+        String live = liveness(c, now);
+        String responsive = responsiveness(c, now);
+        String health = live + ":" + responsive;
+        if (!health.equals(lastHealth)) {
+            CrashLog.note("WATCHDOG", "health-edge at=" + Heartbeat.iso(System.currentTimeMillis())
+                    + " liveness=" + live + " responsiveness=" + responsive + " " + measuredGates(c, beatAge));
+            lastHealth = health;
+        }
+
         if (v != lastVerdict) {
             CrashLog.note("WATCHDOG", "verdict " + lastVerdict + " → " + v
-                    + " (fps=" + lastFps + " beatAgeMs=" + beatAge + " vis=" + lastVisibility + ")");
+                    + " " + measuredGates(c, beatAge));
             lastVerdict = v;
         }
 
@@ -199,7 +243,14 @@ public final class KioskWatchdog {
         // invisible touch-burst, DEAD gets the full disruptive ladder. Escalating a
         // DECAYED page past L1 is the 2026-07-15 outage — see escalatesPastL1.
         boolean actionable = (v == Verdict.DEAD || v == Verdict.DECAYED);
-        if (actionable && c.watchdogRecoverEnabled() && now >= cooldownUntilRt
+        boolean allowed = c.watchdogRecoverEnabled() && service != null && service.recoveryAllowed();
+        if (!recovering.get()) {
+            String reason = !actionable ? "observe" : !c.watchdogRecoverEnabled() ? "recovery-disabled"
+                    : !allowed ? "native-safety-or-maintenance" : now < cooldownUntilRt ? "cooldown" : "eligible";
+            recordDecision("watch:" + v + ":" + reason,
+                    actionable ? ("eligible".equals(reason) ? "eligible" : "suppressed") : "observing", reason);
+        }
+        if (actionable && allowed && now >= cooldownUntilRt
                 && recovering.compareAndSet(false, true)) {
             final Verdict trigger = v;
             recoveryExec.execute(() -> {
@@ -207,7 +258,7 @@ public final class KioskWatchdog {
                 catch (Throwable t) { Log.e(TAG, "ladder failed", t); CrashLog.note("RECOVERY", "ladder EXCEPTION " + t); }
                 finally {
                     lowMs = 0;
-                    cooldownUntilRt = SystemClock.elapsedRealtime() + cfg.watchdogLadderCooldownMs();
+                    cooldownUntilRt = io.elapsed() + cfg.watchdogLadderCooldownMs();
                     recovering.set(false);
                 }
             });
@@ -217,6 +268,7 @@ public final class KioskWatchdog {
     // --- the ladder ---------------------------------------------------------
 
     private void runLadder(Verdict trigger) {
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         DeviceConfig c = cfg;
         final String gameAtTrigger = activeGameId;
 
@@ -245,24 +297,17 @@ public final class KioskWatchdog {
         }
 
         decide("ladder-start", "trigger=" + trigger + " fps=" + lastFps
-                + " beatAgeMs=" + (SystemClock.elapsedRealtime() - lastBeatAtRt)
+                + " beatAgeMs=" + (io.elapsed() - lastBeatAtRt)
                 + " activeGame=" + (gameAtTrigger == null ? "none" : gameAtTrigger));
-        // Two independent safety gates on the DISRUPTIVE rungs (L2 reload / L3 restart
-        // / L4 reboot): the daily quiet window, AND FKB's authoritative screen state.
-        // screenOn guards the common "screen off at night, rAF throttled to ~1fps" case
-        // that visibilityState alone doesn't catch — without it a decayed night reading
-        // could escalate to a 3am reboot. Fail-safe OPEN: if FKB can't tell us (unknown/
-        // unreachable), assume on and allow recovery (a latched-but-lit kiosk MUST heal;
-        // and if FKB REST is truly down, the disruptive rungs — which need it — no-op anyway).
-        boolean quiet = inQuietWindow(c);
-        boolean screenOn = fkbScreenOn(c);
-        boolean disruptiveOk = !quiet && screenOn;
+        // Every disruptive rung re-reads current screen/quiet/game/native safety.
+        // Unknown screen readback never grants a disruptive action.
 
         // L1 — invisible synthetic-touch burst (the common un-throttle). Always safe.
-        long t1 = SystemClock.elapsedRealtime();
+        if (!service.recoveryAllowed()) { finish("native safety or maintenance suppressed recovery"); return; }
         act("L1 touch-burst", burstCount);
-        TouchPulser.burst(c, 6);
-        sleep(3000);
+        long t1 = io.elapsed();
+        io.burst(c);
+        io.pause(3000);
         if (recovered(t1, c)) { finish("recovered@L1-touch"); return; }
 
         // A DECAYED page is SLOW but ALIVE — it is still heartbeating, just at the
@@ -284,24 +329,20 @@ public final class KioskWatchdog {
             return;
         }
 
-        if (!disruptiveOk) {
-            finish("L1 only — " + (quiet ? "quiet window" : "screen off")
-                    + "; disruptive rungs (reload/restart/reboot) suppressed");
-            return;
-        }
-
         // L2 — reload the SPA.
-        long t2 = SystemClock.elapsedRealtime();
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L2 loadStartUrl", reloadCount);
-        FkbRest.command(c, "loadStartUrl");
-        sleep(6500);
+        long t2 = io.elapsed();
+        io.command(c, "loadStartUrl");
+        io.pause(6500);
         if (recovered(t2, c)) { finish("recovered@L2-reload"); return; }
 
         // L3 — respawn the renderer.
-        long t3 = SystemClock.elapsedRealtime();
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L3 restartApp", restartCount);
-        FkbRest.command(c, "restartApp");
-        sleep(8000);
+        long t3 = io.elapsed();
+        io.command(c, "restartApp");
+        io.pause(8000);
         if (recovered(t3, c)) { finish("recovered@L3-restartApp"); return; }
 
         // L4 — reboot the device (the only thing that clears the hard latch). Capped.
@@ -312,10 +353,11 @@ public final class KioskWatchdog {
                     + "s ago < " + (c.watchdogRebootMinGapMs() / 1000) + "s) — NEEDS HUMAN");
             return;
         }
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         act("L4 rebootDevice", rebootCount);
         CrashLog.recordReboot();           // persist BEFORE the reboot so the cap survives it
         CrashLog.note("RECOVERY", "issuing FKB rebootDevice — hard latch unrecoverable by soft ladder");
-        int rc = FkbRest.command(c, "rebootDevice");
+        int rc = io.command(c, "rebootDevice");
         if (rc >= 200 && rc < 300) {
             finish("issued reboot");       // process is about to die with the device
             return;
@@ -333,13 +375,15 @@ public final class KioskWatchdog {
             finish("UNRECOVERED — FKB REST down AND a11y service not bound; no lever — NEEDS HUMAN");
             return;
         }
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         if (!A11y.powerDialog()) {
             finish("UNRECOVERED — a11y powerDialog refused — NEEDS HUMAN");
             return;
         }
-        sleep(1500); // let the dialog inflate
+        io.pause(1500); // let the dialog inflate
+        if (!disruptiveAllowed(c)) { finish("current screen, quiet, game or native safety suppressed recovery"); return; }
         boolean clicked = A11y.clickText("restart");
-        if (!clicked) clicked = A11y.clickText("reboot");
+        if (!clicked && disruptiveAllowed(c)) clicked = A11y.clickText("reboot");
         finish(clicked ? "issued L5 a11y restart" : "UNRECOVERED — power dialog up but no Restart control found — NEEDS HUMAN");
     }
 
@@ -347,6 +391,7 @@ public final class KioskWatchdog {
         counter.incrementAndGet();
         lastAction = action;
         lastActionWallTs = System.currentTimeMillis();
+        recordDecision("action:" + action + ":" + counter.get(), action, action);
         CrashLog.note("RECOVERY", "→ " + action);
     }
 
@@ -354,38 +399,98 @@ public final class KioskWatchdog {
     private void decide(String decision, String reason) {
         lastDecision = decision + " — " + reason;
         lastDecisionWallTs = System.currentTimeMillis();
+        recordDecision("ladder:" + decision + ":" + lastDecisionWallTs, decision, reason);
         CrashLog.note("RECOVERY", "DECISION " + lastDecision);
     }
 
     private void finish(String outcome) {
         lastOutcome = outcome;
+        recordDecision("finish:" + outcome, "finished", outcome);
         CrashLog.note("RECOVERY", "LADDER end: " + outcome);
+    }
+
+    private synchronized void recordDecision(String key, String stage, String reason) {
+        if (currentDecision != null && currentDecision.key.equals(key)) return;
+        currentDecision = new Decision(key, decisionSession + ":" + (++decisionSequence),
+                Heartbeat.iso(System.currentTimeMillis()), stage);
+        long age = lastBeatAtRt == 0 ? -1 : io.elapsed() - lastBeatAtRt;
+        CrashLog.note("RECOVERY", "decisionId=" + currentDecision.id + " decisionAt=" + currentDecision.at
+                + " stage=" + stage + " reason=" + reason + " " + measuredGates(cfg, age));
+    }
+
+    private String measuredGates(DeviceConfig c, long age) {
+        return "deviceId=" + c.heartbeatDeviceId() + " payload=" + ControlServer.BUILT_BY
+                + " fps=" + lastFps + " beatAgeMs=" + age + " visibility=" + lastVisibility
+                + " minFps=" + c.watchdogMinFps() + " sustainSec=" + c.watchdogSustainSec()
+                + " beatTimeoutMs=" + c.watchdogBeatTimeoutMs() + " quiet=" + inQuietWindow(c)
+                + " screenOn=" + knownScreenOn(c) + " activeGame=" + (activeGameId != null)
+                + " recoverEnabled=" + c.watchdogRecoverEnabled()
+                + " nativeRecoveryAllowed=" + (service != null && service.recoveryAllowed());
+    }
+
+    private Boolean knownScreenOn(DeviceConfig c) {
+        return io.elapsed() - screenReadAtRt <= c.watchdogBeatTimeoutMs() ? screenOn : null;
+    }
+
+    /** Independent observations: freshness is liveness; raw presentation is responsiveness.
+     * Sustain/grace/enable gates affect recovery policy, never turn 3 fps into healthy. */
+    private String liveness(DeviceConfig c, long now) {
+        if (lastBeatAtRt == 0) return "unknown";
+        return now - lastBeatAtRt > c.watchdogBeatTimeoutMs() ? "dead" : "alive";
+    }
+
+    private String responsiveness(DeviceConfig c, long now) {
+        if (!"alive".equals(liveness(c, now))) return "unknown";
+        if ("hidden".equals(lastVisibility) || Boolean.FALSE.equals(knownScreenOn(c))) return "screen-off";
+        if (!("visible".equals(lastVisibility) || "unknown".equals(lastVisibility)) || lastFps < 0) return "unknown";
+        return lastFps >= c.watchdogMinFps() ? "healthy" : "degraded";
+    }
+
+    /** Additive status allowlist shared by /status and the outbound heartbeat.
+     * Keep nulls explicit: unknown screen state is not affirmative readback. */
+    static void appendHealthStatus(JSONObject source, JSONObject target) throws org.json.JSONException {
+        for (String key : new String[]{"liveness", "responsiveness", "decisionId", "decisionAt",
+                "screenOn", "quiet", "activeGame", "recoveryStage",
+                "deviceId", "payload", "bootCount", "bootIdentitySource", "lastBeatAgoMs",
+                "beatCount", "lastVisibility", "nativeRecoveryAllowed"}) {
+            target.put(key, source.has(key) ? source.get(key) : JSONObject.NULL);
+        }
     }
 
     /** True once a beat NEWER than the action shows healthy fps (reload remounts → fresh beats). */
     private boolean recovered(long actionAtRt, DeviceConfig c) {
-        return lastBeatAtRt > actionAtRt && lastFps >= c.watchdogMinFps();
+        long age = io.elapsed() - lastBeatAtRt;
+        return lastBeatAtRt > actionAtRt && age >= 0 && age <= c.watchdogBeatTimeoutMs()
+                && "visible".equals(lastVisibility) && lastFps >= c.watchdogMinFps();
     }
 
-    /** FKB's authoritative screen state; fail-safe OPEN (true) when it can't be read. */
+    /** Re-evaluate the current gates at each disruptive boundary, including after sleeps. */
+    private boolean disruptiveAllowed(DeviceConfig c) {
+        if (service == null || !service.recoveryAllowed() || activeGameId != null || inQuietWindow(c)) return false;
+        if (!fkbScreenOn(c)) return false;
+        // The synchronous read can take seconds. Every current gate must still
+        // permit the action after readback, including a newly opened game/quiet.
+        return service.recoveryAllowed() && activeGameId == null && !inQuietWindow(c);
+    }
+
+    /** FKB's authoritative screen state; unknown cannot authorize disruption. */
     private boolean fkbScreenOn(DeviceConfig c) {
         try {
-            JSONObject fkb = FkbRest.deviceInfo(c);
-            if (!fkb.optBoolean("reachable", false)) return true; // FKB down → assume on
-            Object s = fkb.opt("screenOn");
-            if (s instanceof Boolean) return (Boolean) s;
-            return true; // field absent/unknown → assume on
+            JSONObject fkb = io.screen(c);
+            Object s = fkb.optBoolean("reachable", false) ? fkb.opt("screenOn") : null;
+            screenOn = s instanceof Boolean ? (Boolean) s : null;
         } catch (Exception e) {
-            return true;
+            screenOn = null;
         }
+        screenReadAtRt = io.elapsed();
+        return Boolean.TRUE.equals(screenOn);
     }
 
     private boolean inQuietWindow(DeviceConfig c) {
         int start = parseHhmm(c.fkbWakeQuietStart());
         int end = parseHhmm(c.fkbWakeQuietEnd());
         if (start < 0 || end < 0 || start == end) return false;
-        java.util.Calendar cal = java.util.Calendar.getInstance();
-        int nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
+        int nowMin = io.minuteOfDay();
         if (start < end) return nowMin >= start && nowMin < end;
         return nowMin >= start || nowMin < end;
     }
@@ -403,20 +508,42 @@ public final class KioskWatchdog {
         } catch (NumberFormatException e) { return -1; }
     }
 
-    private static void sleep(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) { } }
-
     // --- introspection (GET /kiosk, embedded in /diagnostics) ---------------
+
+    private Integer bootCount() {
+        try {
+            if (service == null || service.getContext() == null) return null;
+            int count = android.provider.Settings.Global.getInt(service.getContext().getContentResolver(),
+                    android.provider.Settings.Global.BOOT_COUNT, -1);
+            return count >= 0 ? count : null;
+        } catch (RuntimeException e) { return null; }
+    }
 
     public JSONObject snapshot() {
         JSONObject o = new JSONObject();
         try {
             DeviceConfig c = cfg;
-            long now = SystemClock.elapsedRealtime();
+            long now = io.elapsed();
             boolean sawAny = lastBeatAtRt != 0;
+            Integer boot = bootCount();
+            o.put("deviceId", c.heartbeatDeviceId());
+            o.put("payload", ControlServer.BUILT_BY);
+            o.put("bootCount", boot == null ? JSONObject.NULL : boot);
+            o.put("bootIdentitySource", boot == null ? JSONObject.NULL : "settings.global.boot_count");
+            o.put("nativeRecoveryAllowed", service != null && service.recoveryAllowed());
             o.put("enabled", c.watchdogEnabled());
             o.put("recoverEnabled", c.watchdogRecoverEnabled());
             o.put("rebootEnabled", c.watchdogRebootEnabled());
             o.put("verdict", lastVerdict.name());
+            o.put("liveness", liveness(c, now));
+            o.put("responsiveness", responsiveness(c, now));
+            Decision decision = currentDecision;
+            o.put("decisionId", decision == null ? JSONObject.NULL : decision.id);
+            o.put("decisionAt", decision == null ? JSONObject.NULL : decision.at);
+            o.put("recoveryStage", decision == null ? "idle" : decision.stage);
+            Boolean screen = knownScreenOn(c);
+            o.put("screenOn", screen == null ? JSONObject.NULL : screen);
+            o.put("quiet", inQuietWindow(c));
             // The one number people read as "how janky is the screen": rAF frames the
             // kiosk PAGE presented in its last ~1s window, self-reported in its beat
             // (useRenderWatchdog.js). NOT an Android/GPU counter, NOT smoothed by the

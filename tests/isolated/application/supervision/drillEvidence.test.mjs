@@ -1,0 +1,33 @@
+import {describe,it,expect} from 'vitest';
+import {evaluateDrillEvidence,completedRollbackEvidence} from '../../../live/flow/supervision/drillEvidence.mjs';
+const now=Date.parse('2026-11-16T12:00:10-08:00');
+function fixture(){return {runId:'drill-1',nowMs:now,phase:'stopped',sinceMs:now-10000,devices:[{deviceId:'portal',artifactId:'native-apk-sha',capabilities:['browser','portal-keys'],checks:['input-ceased']}],revisions:{portal:2},consumers:['browser','portal-keys'].map(capability=>({deviceId:'portal',capability,commandRevision:2,desiredBlocked:true,blocked:true,acknowledged:true,lastContactAt:now})),observations:[{runId:'drill-1',deviceId:'portal',commandRevision:2,phase:'stopped',check:'input-ceased',passed:true,observedAt:'2026-11-16T12:00:09-08:00',observer:'parent',artifactId:'native-apk-sha'}]};}
+describe('physical drill evidence',()=>{
+ it('accepts only current ACKs together with independent physical observations',()=>{expect(evaluateDrillEvidence(fixture()).allEnforced).toBe(true);});
+ it.each(['missing','offline','stale','future','obsolete','released'])('cannot certify a %s consumer',kind=>{const f=fixture();const row=f.consumers[1];if(kind==='missing')f.consumers.pop();if(kind==='offline')row.acknowledged=false;if(kind==='stale')row.lastContactAt=now-5001;if(kind==='future')row.lastContactAt=now+1;if(kind==='obsolete')row.commandRevision=1;if(kind==='released')row.blocked=false;expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+ it.each(['absent','old-run','old-revision','pre-stop','future','no-offset','no-observer','no-artifact','failed'])('cannot replace physical evidence with %s observations',kind=>{const f=fixture(),o=f.observations[0];if(kind==='absent')f.observations=[];if(kind==='old-run')o.runId='previous';if(kind==='old-revision')o.commandRevision=1;if(kind==='pre-stop')o.observedAt='2026-11-16T11:59:59-08:00';if(kind==='future')o.observedAt='2026-11-16T12:00:11-08:00';if(kind==='no-offset')o.observedAt='2026-11-16T12:00:09';if(kind==='no-observer')delete o.observer;if(kind==='no-artifact')delete o.artifactId;if(kind==='failed')o.passed=false;expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+ it('rejects empty inventory and checks every configured device',()=>{const f=fixture();f.devices=[];expect(evaluateDrillEvidence(f).allEnforced).toBe(false);f.devices=[{deviceId:'piano',capabilities:['browser'],checks:['input-ceased']}];expect(evaluateDrillEvidence(f).rows[0]).toMatchObject({deviceId:'piano',acknowledged:false,physicallyObserved:false});});
+});
+
+function haFixture(){const f=fixture();f.devices[0].capabilities=['ha-stop'];f.consumers=[{...f.consumers[0],capability:'ha-stop',requestedAt:now-10000,detail:{verified:true,samples:[{at:now-4000,timestamps:[now-4000],entities:['switch.fixture']},{at:now-2000,timestamps:[now-2000],entities:['switch.fixture']}]}}];return f;}
+it('requires two distinct fresh HA off reports at least two seconds apart within thirty seconds',()=>{expect(evaluateDrillEvidence(haFixture()).allEnforced).toBe(true);});
+it.each(['single','repeated','too-close','late','stale','unverified'])('rejects %s HA physical-off evidence',kind=>{const f=haFixture(),r=f.consumers[0],s=r.detail.samples;if(kind==='single')s.pop();if(kind==='repeated')s[1].timestamps=s[0].timestamps;if(kind==='too-close')s[1].at=s[0].at+1999;if(kind==='late')r.requestedAt=now-40000;if(kind==='stale')s[0].timestamps=[now-20000];if(kind==='unverified')r.detail.verified=false;expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+it('checks release acknowledgements against false and still requires no-resume observation',()=>{const f=fixture();f.phase='released';f.devices[0].checks=['no-content-resume'];f.consumers.forEach(r=>{r.desiredBlocked=false;r.blocked=false;});Object.assign(f.observations[0],{phase:'released',check:'no-content-resume'});expect(evaluateDrillEvidence(f).allEnforced).toBe(true);});
+
+it('requires normal current ACKs and physical activity evidence before the real scan',()=>{const f=fixture();f.phase='active';f.consumers.forEach(r=>{r.desiredBlocked=false;r.blocked=false;});f.observations[0].phase='active';expect(evaluateDrillEvidence(f).allEnforced).toBe(true);});
+
+it('records unreachable HA failure independently from successful physical-off certification',()=>{const f=haFixture();f.phase='offline';f.observations[0].phase='offline';f.consumers[0].acknowledged=false;f.consumers[0].detail={verified:false};expect(evaluateDrillEvidence(f).rows[0]).toMatchObject({acknowledged:false,physicallyObserved:true});expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+
+it('rejects physical observations from a different installed artifact',()=>{const f=fixture();f.observations[0].artifactId='old-apk-sha';expect(evaluateDrillEvidence(f).allEnforced).toBe(false);});
+
+it.each([
+ ['2026-11-16T12:00:10-08:00', true],
+ ['2026-11-16T20:00:10Z', true],
+ ['2026-11-16T20:00:09.999Z', true],
+ ['2026-11-16T20:00:10.001Z', false],
+ ['2026-11-16T20:00:10', false],
+ ['invalidZ', false],
+ [null, false],
+])('requires offset-aware completed rollback evidence: %s', (testedAt, expected) => {
+ expect(completedRollbackEvidence({artifactId:'reviewed',ledgerPreserved:true,testedAt}, now)).toBe(expected);
+});

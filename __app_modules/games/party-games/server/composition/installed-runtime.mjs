@@ -15,7 +15,10 @@ import { createGamingRouter } from "../api/gaming.mjs";
 import { GamingMediaService } from "../application/GamingMediaService.mjs";
 import { FilesystemGamingMediaRepository } from "../adapters/FilesystemGamingMediaRepository.mjs";
 
-export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
+import { PeopleDirectory } from '../../../../../__capabilities/household-identity/server/public.mjs';
+import { YamlNamedGuestStore } from '../../../../../__capabilities/household-identity/server/adapters/index.mjs';
+
+export function createPartyGamesCatalogRuntime({ contentPath, rootLogger,assertIdentityWritable }) {
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
     definitionsDir: configService.getHouseholdPath('gaming/games'),
     archiveDir: configService.getHouseholdPath('gaming/definitions'),
@@ -25,7 +28,20 @@ export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
   const gamingManifestStore = new YamlGamingExperienceManifestStore({
     manifestsDir: configService.getHouseholdPath('gaming/manifests'),
   });
+  const householdId = configService.getDefaultHouseholdId();
+  const peopleDirectory = new PeopleDirectory({
+    householdDirectory: {
+      userIds: id => configService.getHouseholdUsers(id),
+      userProfile: id => configService.getUserProfile(id),
+    },
+    guestStore: new YamlNamedGuestStore({
+      assertWritable:assertIdentityWritable,
+      pathForHousehold: id => configService.getHouseholdPath('identity/named-guests.yml', id),
+    }),
+  });
   const partyGamesCatalog = new PartyGamesCatalog({
+    peopleDirectory,
+    householdId,
     configProjection: new PartyGamesConfigProjection({ configService }),
     userService,
     definitionStore: gamingDefinitionStore,
@@ -43,7 +59,7 @@ export function createPartyGamesCatalogRuntime({ contentPath, rootLogger }) {
     print: (pdf, { sessionId }) => partyGamesPrinterAdapter.printPdf(pdf, { jobName: `Party Games host packet — ${sessionId}`, user: 'party-games', copies: 1 }),
   } : null;
 
-  return { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter };
+  return { gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, partyGamesPrinter, peopleDirectory };
 }
 
 export function createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingManifestStore, partyGamesCatalog, partyGamesProfile, sharedAiGateway, partyGamesPrinter, rootLogger, mediaBasePath }) {

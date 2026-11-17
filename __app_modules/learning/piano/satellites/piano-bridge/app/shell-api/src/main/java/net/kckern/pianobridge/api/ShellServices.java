@@ -12,6 +12,24 @@ import java.io.File;
  * shell must keep across every future payload.
  */
 public interface ShellServices {
+    /** Device-local control credential; absent on legacy shells. Never expose to a browser/status. */
+    default String adminToken() { return ""; }
+
+    /** Read-only current native authority. Unknown MUST NOT grant recall, wake, or recovery. */
+    default SafetyState nativeSafety() { return SafetyState.UNKNOWN; }
+
+    final class SafetyState {
+        public static final SafetyState UNKNOWN = new SafetyState(false, true, -1, 0);
+        public final boolean known, stopped;
+        public final long revision, validUntilElapsedMs;
+        public SafetyState(boolean known, boolean stopped, long revision, long validUntilElapsedMs) {
+            this.known=known; this.stopped=stopped; this.revision=revision; this.validUntilElapsedMs=validUntilElapsedMs;
+        }
+        public boolean allowsRun(long nowElapsedMs) {
+            return known && !stopped && revision>=0 && nowElapsedMs<validUntilElapsedMs;
+        }
+    }
+
     /** The foreground Service's Context (an {@code android.content.Context}). */
     Object context();
 

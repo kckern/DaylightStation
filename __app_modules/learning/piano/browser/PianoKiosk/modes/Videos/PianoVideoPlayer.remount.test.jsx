@@ -7,7 +7,7 @@
 // object remounted the video and opened another Plex transcode session —
 // which produced another element swap. 495 Plex sessions in 4 minutes.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 
 const midiState = { activeNotes: new Map(), pressNote: vi.fn(), releaseNote: vi.fn() };
@@ -30,6 +30,8 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (
 // Player stub: records the `play` prop object identity on every render and
 // hands back whatever element the test currently declares as the media el.
 let fakeMedia = null;
+const seekSpy = vi.fn();
+const timingSpies = [];
 const playPropSpy = vi.fn();
 vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx', async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
@@ -38,9 +40,9 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
       playPropSpy(play);
       useImperativeHandle(ref, () => ({
         getMediaElement: () => fakeMedia,
-        getCurrentTime: () => 0,
+        getCurrentTime: () => fakeMedia?.currentTime || 0,
         getDuration: () => 0,
-        play: vi.fn(), pause: vi.fn(), toggle: vi.fn(), seek: vi.fn(),
+        play: vi.fn(), pause: vi.fn(), toggle: vi.fn(), seek: (target) => { seekSpy(target); fakeMedia.currentTime = target; },
       }), []);
       return <div data-testid="player-stub" />;
     }),
@@ -49,11 +51,13 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
 
 beforeEach(() => {
   playPropSpy.mockClear();
+  seekSpy.mockClear();
   fakeMedia = null;
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
 afterEach(() => {
+  for (const spy of timingSpies.splice(0)) spy.mockRestore();
   vi.useRealTimers();
 });
 
@@ -103,4 +107,98 @@ describe('PianoVideoPlayer — play prop identity', () => {
     const play = playPropSpy.mock.calls.at(-1)[0];
     expect(play).toMatchObject({ contentId: 'plex:694719', seconds: 42, resume: false });
   });
+});
+
+
+it('old media callbacks cannot seek the next video', async () => {
+  const lecture = { plex: 'fixture-a', label: 'Lesson A', userPlayhead: 0 };
+  fakeMedia = document.createElement('video');
+  Object.defineProperty(fakeMedia, 'duration', { value: 600 });
+  const oldMedia = fakeMedia;
+  vi.spyOn(oldMedia, 'addEventListener');
+  const { rerender, unmount } = render(<PianoVideoPlayer lecture={lecture} onBack={vi.fn()} />);
+  await screen.findByTestId('player-stub');
+  await act(async () => { vi.advanceTimersByTime(150); });
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Back 15 seconds' }));
+  const oldCallbacks = oldMedia.addEventListener.mock.calls.filter(([event]) => event === 'seeked').map(([, callback]) => callback);
+  expect(oldCallbacks.length).toBeGreaterThan(0);
+  fakeMedia = document.createElement('video');
+  Object.defineProperty(fakeMedia, 'duration', { value: 600 });
+  // Swap before the 100ms resolver poll: the stale callback must check the live controller too.
+  seekSpy.mockClear();
+  for (const callback of oldCallbacks) callback();
+  expect(seekSpy).not.toHaveBeenCalled();
+  rerender(<PianoVideoPlayer lecture={{ ...lecture, plex: 'fixture-b' }} onBack={vi.fn()} />);
+  await act(async () => { vi.advanceTimersByTime(150); });
+  const newVideoSeek = seekSpy;
+  for (const callback of oldCallbacks) callback();
+  await act(async () => { vi.advanceTimersByTime(5100); });
+  expect(newVideoSeek).not.toHaveBeenCalled();
+  unmount();
+  for (const callback of oldCallbacks) callback();
+  expect(newVideoSeek).not.toHaveBeenCalled();
+});
+
+
+it('timeout and unmount discard queued targets and release the relative-skip cursor', async () => {
+  fakeMedia = document.createElement('video');
+  Object.defineProperty(fakeMedia, 'duration', { value: 600 });
+  const { unmount } = render(<PianoVideoPlayer lecture={{ plex: 'fixture', label: 'Fixture' }} onBack={vi.fn()} />);
+  await screen.findByTestId('player-stub');
+  await act(async () => { vi.advanceTimersByTime(150); });
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30]);
+  await act(async () => { vi.advanceTimersByTime(5100); });
+  await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+  expect(seekSpy).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Back 15 seconds' }));
+  expect(seekSpy).toHaveBeenLastCalledWith(15);
+  fireEvent.click(screen.getByRole('button', { name: 'Back 15 seconds' }));
+  unmount();
+  await act(async () => { vi.advanceTimersByTime(5100); });
+  await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30,15]);
+});
+
+
+it('expires the queued cursor before a relative skip even when its timer has not run', async () => {
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+  timingSpies.push(clock);
+  fakeMedia = document.createElement('video');
+  Object.defineProperty(fakeMedia, 'duration', { value: 600 });
+  render(<PianoVideoPlayer lecture={{ plex: 'delayed-timer', label: 'Fixture' }} onBack={vi.fn()} />);
+  await screen.findByTestId('player-stub');
+  await act(async () => { vi.advanceTimersByTime(150); });
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30]);
+  // Advance both clocks without executing the queued five-second timeout.
+  clock.mockReturnValue(6100);
+  vi.setSystemTime(Date.now() + 5100);
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30,60]);
+});
+
+it('a cancelled timeout cannot clear a newer active relative-skip cursor', async () => {
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+  timingSpies.push(clock);
+  fakeMedia = document.createElement('video');
+  Object.defineProperty(fakeMedia, 'duration', { value: 600 });
+  const timers = vi.spyOn(globalThis, 'setTimeout');
+  timingSpies.push(timers);
+  render(<PianoVideoPlayer lecture={{ plex: 'cancelled-timer', label: 'Fixture' }} onBack={vi.fn()} />);
+  await screen.findByTestId('player-stub');
+  await act(async () => { vi.advanceTimersByTime(150); });
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  const oldTimeout = timers.mock.calls.find(([, delay]) => delay === 5000)[0];
+  fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+  await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30,60]);
+  fireEvent.click(screen.getByRole('button', { name: 'Back 15 seconds' }));
+  oldTimeout(); // already cancelled on completion; simulate a queued callback.
+  fireEvent.click(screen.getByRole('button', { name: 'Back 15 seconds' }));
+  await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+  expect(seekSpy.mock.calls.map(([target]) => target)).toEqual([30,60,30]);
 });

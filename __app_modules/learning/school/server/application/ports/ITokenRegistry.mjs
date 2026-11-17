@@ -14,7 +14,7 @@
  */
 export class ITokenRegistry {
   /**
-   * Store a minted token record.
+   * Store a minted token record, preserving existing runtime use/settlement and revocation fields.
    *
    * @param {object} record - from `mintToken`: `{ token, tokenClass, subject, issuedAt, expiresAt,
    *   revokedAt }`, and on a `subject_next` token optionally `{ accessCode, accessCodeExpiresAt }` —
@@ -117,6 +117,11 @@ export class ITokenRegistry {
     throw new Error('ITokenRegistry.revoke must be implemented');
   }
 
+  /** Atomically reserve capacity until expiresAt; never increment useCount. */
+  async reserveMountUse(token, opts) { throw new Error('ITokenRegistry.reserveMountUse must be implemented'); }
+  /** Idempotently commit or release a bound reservation in the same durable record. */
+  async settleMountUse(token, opts) { throw new Error('ITokenRegistry.settleMountUse must be implemented'); }
+
   /**
    * Count one USE of this token's panel code, and say what the record now holds.
    *
@@ -125,7 +130,7 @@ export class ITokenRegistry {
    * would spend two uses per interaction, and `ResolveAccessCode` is
    * read-only by contract anyway.
    *
-   * An implementation must read-modify-write: `put` replaces the whole record.
+   * An implementation must read-modify-write: `put` updates token metadata while retaining runtime mutation state.
    *
    * @param {string} token
    * @param {{ at?: string }} [opts] - ISO use time (injected, not read from a clock here)

@@ -1,3 +1,4 @@
+import { FitnessTransportIncidentService } from '../application/services/FitnessTransportIncidentService.mjs';
 import moment from 'moment-timezone';
 import { PlaybackBudgetService } from '../application/PlaybackBudgetService.mjs';
 import { YamlPlaybackBudgetStore } from '../adapters/persistence/YamlPlaybackBudgetStore.mjs';
@@ -95,6 +96,7 @@ export function createFitnessApiRouter(config) {
   const {
     fitnessServices,
     userService,
+    peopleDirectory,
     createSchoolLearnerDirectory,
     configService,
     fitnessConfig,
@@ -110,6 +112,7 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown = null,
     getLockdownState = null,
     identityRelay = null,
+    parentalSupervision = null,
     garageHumanActivityGateway = null,
     eventBus = null,
     // Workout persistence + its save-time slug guard, both built in app.mjs and passed
@@ -335,7 +338,7 @@ export function createFitnessApiRouter(config) {
   const voiceMemoDebugStore = new FilesystemVoiceMemoDebugStore({ dataDir: configService.getDataDir() });
   const fitnessContentService = new FitnessContentService({
     fitnessConfigService,
-    userHydrator: new FitnessUserHydrator({ profileReader: userService, schoolLearnerDirectory, logger }),
+    userHydrator: createFitnessUserHydrator({ profileReader:userService, peopleDirectory, householdId, schoolLearnerDirectory, logger }),
     contentAccessAvailable: Boolean(contentRegistry),
     contentCatalog: fitnessContentCatalog,
     logger,
@@ -396,6 +399,7 @@ export function createFitnessApiRouter(config) {
   });
   const fitnessSessionPublications = new FitnessSessionPublications({ eventBus });
   const emergencyOperations = new EmergencyLockdownService({
+    supervision: parentalSupervision,
     access: emergencyAccessService,
     trigger: triggerEmergencyLockdown,
     release: releaseEmergencyLockdown,
@@ -406,7 +410,12 @@ export function createFitnessApiRouter(config) {
     logger,
   });
   new FitnessCoinsRelay({ eventBus, logger }).start();
+  const transportIncidentRetryWorker = createFitnessTransportIncidentReporter({
+    store: fitnessServices.sessionStore, householdId, logger, configService,
+    userService, garageHumanActivityGateway,
+  });
   const fitnessSessionOperations = new FitnessSessionOperations({
+    transportIncidents: transportIncidentRetryWorker,
     sessions: fitnessServices.sessionService,
     grouping: fitnessServices.sessionGroupingService,
     timelapse: generateSessionTimelapse,
@@ -506,6 +515,7 @@ export function createFitnessApiRouter(config) {
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
   fitnessRouter.voiceMemoRetryWorker = voiceMemoRetryWorker;
+  fitnessRouter.transportIncidentRetryWorker = transportIncidentRetryWorker;
   // Shared with School's lifecycle composition: these are the already-wired
   // Fitness authorities, not second instances with drifting config/caches.
   fitnessRouter.fitnessPlayableService = fitnessPlayableService;
@@ -561,4 +571,29 @@ export function createFitnessPlayableModule({
 export function createFitnessSchoolCourseOperation({ attemptStore, sessionService, publications = null,
   clock = () => new Date(), logger = console }) {
   return new FitnessSchoolCourseService({ attemptStore, sessionService, publications, clock, logger });
+}
+
+/** Wire shared identity into the existing Fitness projection. */
+export function createFitnessUserHydrator({profileReader,peopleDirectory,householdId,schoolLearnerDirectory,logger}) {
+  const guestResolver=peopleDirectory ? id=>peopleDirectory.resolve({householdId,person:{kind:'guest',id}}) : null;
+  return new FitnessUserHydrator({profileReader,guestResolver,schoolLearnerDirectory,logger});
+}
+
+/** Production transport-report binding, shared with isolated composition tests. */
+export function createFitnessTransportIncidentReporter({
+  store, householdId, logger, configService, userService, garageHumanActivityGateway, now, wallNow,
+}) {
+  return new FitnessTransportIncidentService({
+    store,
+    allowedHouseholdId: householdId,
+    logger, now, wallNow,
+    sendPush: async (push, selectedHouseholdId) => {
+      if (selectedHouseholdId !== householdId) return { accepted: false };
+      const recipient = configService?.getHeadOfHousehold?.(selectedHouseholdId);
+      const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
+      if (!garageHumanActivityGateway?.callService || !notifyService) return { accepted: false };
+      const result = await garageHumanActivityGateway.callService('notify', notifyService, push);
+      return { accepted: result?.ok === true }; // Gateway acceptance cannot prove phone delivery.
+    },
+  });
 }

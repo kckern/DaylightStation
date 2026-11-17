@@ -11,5 +11,7 @@ public interface ShellServices {
     String requestPayloadSwap(String url, String sha256);
     String requestPayloadRollback();
     String payloadStatusJson();
+    /** Read-only native authority. Old shells are unknown and cannot authorize recovery. */
+    default String pageSafetySnapshot() { return "{\"known\":false}"; }
     void note(String kind, String message);
 }

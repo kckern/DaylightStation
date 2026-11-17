@@ -44,6 +44,7 @@ const KNOWN_UNCONNECTED_TOPICS = new Set([
   // lock/unlock state. Consumed by frontend/src/hooks/useShutdownLock.js via
   // wsService.subscribe('shutdown.state', ...).
   'shutdown.state',
+  'fitness.transport.health', // Sensor bridge diagnostics; consumed only by fitness transport monitoring.
   ARCADE_SESSIONS_TOPIC,
 ]);
 

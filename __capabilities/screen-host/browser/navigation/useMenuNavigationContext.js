@@ -25,3 +25,6 @@ export function useHasMenuNavigationContext() {
   const context = useContext(MenuNavigationContext);
   return context !== null;
 }
+
+/** Read the active stack when present without requiring a provider. */
+export function useOptionalMenuNavigationContext() { return useContext(MenuNavigationContext); }

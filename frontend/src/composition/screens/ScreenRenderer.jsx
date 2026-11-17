@@ -1,3 +1,6 @@
+import {menuSourceHost,screenOwnership} from './menuSourceHosts.js';
+import {focusUidFromSearch} from '../../../../__capabilities/screen-host/browser/return-navigation.mjs';
+import {useActivityStop} from '../../../../__app_modules/household/supervision/browser/index.js';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import useDocumentTitle from '../../hooks/useDocumentTitle.js';
@@ -41,7 +44,7 @@ import { useInitialActionGate } from "../../../../__capabilities/screen-host/bro
 import { useFleetDeviceIdentity } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { ActionLoadingShell } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { layoutOwnsRouting } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
-import { resolveScreenAppPath } from './screenAppPath.js';
+import { resolveScreenAppPath, preservesScreenPath } from './screenAppPath.js';
 import { rescueGesture, RESCUE_PRESSES, RESCUE_WINDOW_MS } from "../../../../__capabilities/screen-host/browser/input.mjs";
 
 // Register built-ins on module load
@@ -64,13 +67,51 @@ enableGlobalKeyCapture();
  *
  * Runs once on mount, then cleans the URL to prevent re-triggering on reload.
  */
+
 export function ScreenAutoplay({ routes, layout }) {
-  const { push } = useMenuNavigationContext();
+  const { push, subscribeNavigationIntent } = useMenuNavigationContext();
   const [initialLocation] = useState(() => ({ pathname: window.location.pathname, search: window.location.search }));
+  const [ownershipError,setOwnershipError]=useState(false);
+  const [ownershipRetry,setOwnershipRetry]=useState(0);
+  const cancelOwnership = React.useRef(() => {});
 
   useEffect(() => {
     const { pathname, search } = initialLocation;
     let timer;
+    let cancelled=false;
+    const cancel = () => {
+      if (!cancelled) getLogger().debug('screen-autoplay.cancelled', {});
+      cancelled = true;
+      clearTimeout(timer);
+      setOwnershipError(false);
+    };
+    cancelOwnership.current = cancel;
+    const onKey = event => { if (event.key === 'Escape') cancel(); };
+    const unsubscribeIntent = subscribeNavigationIntent?.(cancel);
+    const newerActions = new Set(['escape', 'menu:open', 'media:play', 'media:queue',
+      'media:handoff', 'media:restore-snapshot', 'display:content', 'app:open', 'screen:overlay-mounted']);
+    const unsubscribeActions = getActionBus().subscribe('*', action => {
+      if (newerActions.has(action)) cancel();
+    });
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('popstate', cancel);
+    const cleanup = () => {
+      cancelled = true;
+      clearTimeout(timer);
+      unsubscribeIntent?.();
+      unsubscribeActions();
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('popstate', cancel);
+    };
+    const ownershipFailed = error => {
+      if (cancelled) return;
+      getLogger().warn('screen-autoplay.ownership-error', {code:error.code});
+      setOwnershipError(true);
+    };
+    // The timer is part of the same intent as the asynchronous ownership lookup.
+    const schedule = action => {
+      timer = setTimeout(() => { if (!cancelled) action(); }, 500);
+    };
 
     // Path-based navigation: /screens/living-room/weekly-review or /screens/living-room/fhe
     const pathMatch = pathname.match(/\/screens?\/[^/]+\/(.+)/);
@@ -84,40 +125,44 @@ export function ScreenAutoplay({ routes, layout }) {
       const appRoute = resolveScreenAppPath(pathname, (appId) => Boolean(getApp(appId)), routes);
       if (appRoute) {
         logger.info('screen-autoplay.app', { app: appRoute.appId, appPath: appRoute.appPath });
-        timer = setTimeout(() => {
+        schedule(() => {
           const bus = getActionBus();
           bus.emit('menu:open', { menuId: appRoute.menuId });
-        }, 500);
+        });
       } else if (routes?.[subPath]) {
         // Route defined in screen config — use its content ID and props
         // Props like menuStyle go INSIDE the list object — MenuStack passes
         // props.list to TVMenu, dropping any sibling properties.
-        const { contentId, ...routeProps } = routes[subPath];
+        const { contentId, persistPath, participantSource: _participantSource, ...routeProps } = routes[subPath];
         logger.info('screen-autoplay.route', { subPath, contentId });
-        timer = setTimeout(() => {
-          push({ type: 'menu', props: { list: { contentId, ...routeProps } } });
-        }, 500);
+        screenOwnership(contentId).then(alias=>{
+          if (cancelled) return;
+          schedule(()=>{
+            if (alias || menuSourceHost(contentId)) getActionBus().emit('menu:open', {menuId:alias?.canonicalContentId || contentId,focusUid:focusUidFromSearch(search)});
+            else push({ type:'menu', props:{list:{contentId,...routeProps}} });
+          });
+        }).catch(ownershipFailed);
       } else {
         // Default: treat suffix as menu name
-        timer = setTimeout(() => {
+        schedule(() => {
           push({ type: 'menu', props: { list: { contentId: `menu:${subPath}` } } });
-        }, 500);
+        });
       }
 
       // App deep links are durable: keep the canonical URL so a refresh opens
       // the same app/game. One-shot menu suffixes retain the legacy cleanup.
-      if (!appRoute?.appPath && subPath !== 'fhe') {
+      if (!appRoute?.appPath && !preservesScreenPath(subPath, routes)) {
         const cleanPath = pathname.replace(/\/[^/]+$/, '');
         window.history.replaceState({}, '', cleanPath);
       }
-      return () => clearTimeout(timer);
+      return cleanup;
     }
 
     // Query-based autoplay: ?queue=plex:642120&shader=dark
-    if (!search) return;
+    if (!search) return cleanup;
 
     const autoplay = parseAutoplayParams(search, AUTOPLAY_ACTIONS);
-    if (!autoplay) return;
+    if (!autoplay) return cleanup;
 
     const bus = getActionBus();
     const logger = getLogger().child({ component: 'ScreenAutoplay' });
@@ -125,22 +170,26 @@ export function ScreenAutoplay({ routes, layout }) {
 
     // Emit appropriate action after a brief delay to let the screen framework mount
     const action = autoplayToAction(autoplay);
+    const focusUid = focusUidFromSearch(search);
+    if (action?.event === 'menu:open' && autoplay.list && focusUid) action.payload.focusUid = focusUid;
     if (action) {
-      timer = setTimeout(() => {
-        bus.emit(action.event, action.payload);
-      }, 500);
+      const lookup=action.event === 'menu:open' && autoplay.list ? screenOwnership(action.payload.menuId) : Promise.resolve(null);
+      lookup.then(alias=>{
+        if (cancelled) return;
+        if (alias) {action.payload.menuId=alias.canonicalContentId;}
+        schedule(()=>bus.emit(action.event,action.payload));
+        window.history.replaceState({}, '', pathname);
+      }).catch(ownershipFailed);
     }
-
-    // Clean URL to prevent re-trigger
-    window.history.replaceState({}, '', pathname);
-    return () => clearTimeout(timer);
+    return cleanup;
   // Deliberately mount-once (see docblock): this parses the URL for a one-shot
   // autoplay action and then rewrites the URL specifically so it can't re-fire.
   // Adding layout/routes would let a later config reload re-trigger the very
   // autoplay this effect just cleaned up after.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [push]);
+  }, [push, subscribeNavigationIntent, ownershipRetry]);
 
+  if (ownershipError) return <div role="alert">Unable to check menu ownership. <button onClick={()=>{setOwnershipError(false);setOwnershipRetry(value=>value+1);}}>Retry</button><button onClick={()=>{cancelOwnership.current();window.history.back();}}>Back</button></div>;
   return null;
 }
 
@@ -376,6 +425,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     return controls;
   }, [sessionDeviceId]);
   useEffect(() => () => sessionControls?.dispose(), [sessionControls]);
+  useActivityStop(()=>sessionControls?.dispose());
   const sessionSource = useMemo(() => {
     if (!sessionDeviceId) return null;
     try {

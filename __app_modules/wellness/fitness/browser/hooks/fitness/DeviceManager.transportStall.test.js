@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock("../../../../../../frontend/src/lib/logging/Logger.js", () => {
   const noop = () => {};
   const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
-  return { default: () => logger };
+  return { default: () => logger, getLogger: () => logger };
 });
 
 import { DeviceManager } from "./DeviceManager.js";
@@ -49,6 +49,7 @@ describe('DeviceManager — a stalled pipeline holds cadence instead of zeroing 
     mgr.pruneStaleDevices(timeouts);
     expect(mgr.isTransportStalled(timeouts.transportStallMs)).toBe(true);
     expect(mgr.getDevice('bike-1').cadence).toBe(80);
+    expect(mgr.getDevice('bike-1').transportStalled).toBe(true);
     expect(mgr.getDevice('bike-2').cadence).toBe(55);
   });
 
@@ -90,6 +91,73 @@ describe('DeviceManager — a stalled pipeline holds cadence instead of zeroing 
     mgr.updateDevice('bike-2', 'CAD', { CalculatedCadence: 57 });
     mgr.pruneStaleDevices(timeouts);
     expect(mgr.getDevice('bike-1').cadence).toBe(0);   // genuinely silent now
+    expect(mgr.getDevice('bike-1').transportStalled).toBe(false);
     expect(mgr.getDevice('bike-2').cadence).toBe(57);
   });
+});
+
+const pendingRecovery = vi.hoisted(() => new Set());
+
+// The real provider subscription must keep diagnostics out of DeviceManager.
+vi.mock('../../../../../../frontend/src/services/WebSocketService.js', () => ({
+  wsService: {
+    subscribe: vi.fn((_topics, callback) => { globalThis.fitnessTransportMessage = callback; return vi.fn(); }),
+    onStatusChange: () => () => {},
+    refreshSubscriptions: vi.fn(),
+    requestRecovery: vi.fn(() => {
+      const timer = setTimeout(() => pendingRecovery.delete(timer), 1000);
+      pendingRecovery.add(timer);
+      return () => { clearTimeout(timer); pendingRecovery.delete(timer); };
+    }),
+  },
+}));
+
+it('Stop cancels recovery and no diagnostic packet updates sensor time', async () => {
+  const React = await import('react');
+  const { render, act } = await import('@testing-library/react/pure');
+  const { FitnessProvider, useFitnessContext } = await import('../../context/FitnessContext.jsx');
+  const { wsService } = await import('../../../../../../frontend/src/services/WebSocketService.js');
+  vi.useFakeTimers();
+  vi.setSystemTime(t0);
+  let context;
+  function Probe() { context = useFitnessContext(); return null; }
+  let mounted;
+  try {
+    await act(async () => { mounted = render(React.createElement(FitnessProvider, { fitnessConfiguration: { users: { primary: [] }, plex: {}, sensors: {} } }, React.createElement(Probe))); });
+    expect(wsService.subscribe.mock.calls[0][0]).toContain('fitness.transport.health');
+    const session = context.fitnessSessionInstance;
+    session.sessionId = 'test-session';
+    session._autosave = vi.fn();
+    session._persistSession = vi.fn();
+    await act(async () => { globalThis.fitnessTransportMessage({ topic: 'fitness', type: 'ant', deviceId: 'bike-1', profile: 'CAD', data: { CalculatedCadence: 80 }, bootId: 'a', sourceSeq: 1 }); });
+    expect(session.deviceManager.getDevice('bike-1').cadence).toBe(80);
+    const beforeHealthPacket = session.deviceManager.lastPacketAt;
+    // The watchdog retains a healthy snapshot for five seconds. A timer tick
+    // must not treat that old snapshot as a newly delivered sensor packet.
+    const setTransport = vi.spyOn(session, 'setTransportState');
+    setTransport.mockClear();
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(setTransport.mock.calls.some(([state]) => state.state === 'healthy')).toBe(false);
+    await act(async () => {
+      globalThis.fitnessTransportMessage({ topic: 'fitness.transport.health', protocol: 1, bootId: 'a', sourceSeq: 1, receivedCount: 1, sentCount: 1, lastSourceAgeMs: 0 });
+    });
+    const lastPacketAt = session.deviceManager.lastPacketAt;
+    expect(lastPacketAt).toBe(beforeHealthPacket);
+    await act(async () => { vi.advanceTimersByTime(28000); });
+    expect(wsService.requestRecovery).toHaveBeenCalledTimes(1);
+    expect(pendingRecovery.size).toBe(1);
+    // Avoid persistence in this browser fixture; the Stop entry point is real.
+    session.endSession = vi.fn(() => true);
+    await act(async () => { context.requestEndSession(); });
+    const pendingRecoveryTimers = pendingRecovery.size;
+    expect(pendingRecoveryTimers).toBe(0);
+    await act(async () => { mounted.unmount(); });
+    const calls = wsService.requestRecovery.mock.calls.length;
+    vi.advanceTimersByTime(120000);
+    expect(wsService.requestRecovery).toHaveBeenCalledTimes(calls);
+  } finally {
+    mounted?.unmount();
+    vi.useRealTimers();
+    delete globalThis.fitnessTransportMessage;
+  }
 });

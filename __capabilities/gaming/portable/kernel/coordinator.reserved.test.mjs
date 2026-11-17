@@ -1,0 +1,91 @@
+import { describe, expect, it, vi } from 'vitest';
+import { defineRuleModule, GameRuntime, GameSessionCoordinator, SessionActorAuthorization } from './index.mjs';
+import { MemorySessionJournal, MemorySnapshotRepository } from '../testing/memoryPorts.mjs';
+
+const rules = defineRuleModule({id:'counter',version:1,validateDefinition:()=>({valid:true,errors:[]}),createInitialState:(_definition,{setup})=>({status:'active',value:setup.value}),handleCommand:()=>({error:{code:'illegal_command',message:'no'}}),project:state=>({state})});
+function fixture() {
+ const snapshots=new MemorySnapshotRepository(), journal=new MemorySessionJournal();
+ const pinned={hash:'a'.repeat(64),definition:{maximum:10},artifacts:{rules_definition:{id:'counter',hash:'b'.repeat(64)}}};
+ const definitions={getCurrent:vi.fn(),pin:vi.fn(),getPinned:vi.fn(async()=>pinned.definition)};
+ const coordinator=new GameSessionCoordinator({runtime:new GameRuntime({rulesets:[rules]}),snapshots,journal,definitions,ids:{session:()=> 'ordinary',seed:()=>1},clock:{now:()=>new Date('2026-01-01')},authorization:new SessionActorAuthorization()});
+ const reservation={sessionId:'reserved:1',seed:7,pinnedDefinition:pinned,ruleset:{id:'counter',version:1},experience:null,launch:null,participants:[{id:'p1'}],seats:[],setup:{value:3},creationKey:'private'};
+ return {coordinator,snapshots,journal,definitions,reservation};
+}
+const viewer={role:'host'};
+describe('reserved creation',()=>{
+ it('serializes simultaneous retries and rejects changed frozen inputs',async()=>{
+  const {coordinator,journal,reservation,definitions}=fixture();
+  const results=await Promise.all([coordinator.createReserved({reservation,viewer}),coordinator.createReserved({reservation,viewer})]);
+  expect(results.map(x=>x.created)).toEqual([true,false]);
+  expect((await journal.read(reservation.sessionId))).toHaveLength(1);
+  expect(JSON.stringify(results)).not.toContain('private');
+  expect(definitions.getCurrent).not.toHaveBeenCalled();
+  await expect(coordinator.createReserved({reservation:{...reservation,setup:{value:4}},viewer})).rejects.toMatchObject({code:'creation_conflict'});
+  await expect(coordinator.createReserved({reservation:{...reservation,creationKey:'other'},viewer})).rejects.toMatchObject({code:'creation_conflict'});
+  await expect(coordinator.createReserved({reservation,viewer:{}})).rejects.toMatchObject({code:'authorization_denied'});
+ });
+ it('recovers the journal after a failed initial snapshot without creating again',async()=>{
+  const {coordinator,snapshots,journal,reservation}=fixture();
+  const put=snapshots.put.bind(snapshots); snapshots.put=vi.fn().mockRejectedValueOnce(new Error('interrupted')).mockImplementation(put);
+  await expect(coordinator.createReserved({reservation,viewer})).rejects.toThrow('interrupted');
+  const retry=await coordinator.createReserved({reservation,viewer});
+  expect(retry.created).toBe(false); expect(retry.view.state.value).toBe(3);
+  expect(await snapshots.get(reservation.sessionId)).toBeTruthy(); expect(await journal.read(reservation.sessionId)).toHaveLength(1);
+ });
+});
+
+it('retries the same reserved creation after a failure before the journal write',async()=>{
+ const {coordinator,journal,reservation}=fixture();
+ const create=journal.create.bind(journal);journal.create=vi.fn().mockRejectedValueOnce(Error('before journal')).mockImplementation(create);
+ await expect(coordinator.createReserved({reservation,viewer})).rejects.toThrow('before journal');
+ expect(await journal.read(reservation.sessionId)).toHaveLength(0);
+ const recovered=await coordinator.createReserved({reservation,viewer});
+ expect(recovered.view.state.value).toBe(3);expect(await journal.read(reservation.sessionId)).toHaveLength(1);
+});
+it('journals frozen participant creation evidence and rejects changed evidence on retry',async()=>{
+ const {coordinator,journal,reservation}=fixture();
+ const evidence={schema:'participant-execution-evidence/v1',snapshot:{participant_context:{participants:[{key:'frozen'}]}},metadata:{schema:'participant-execution-metadata/v1',source_ref:{schema:'participant-launch-ref/v1',provider:'agenda',ref:'opaque'},return_to:{kind:'content',content_id:'agenda:family/plans/old',item_uid:'item'}}};
+ const frozen={...reservation,participantEvidence:evidence};
+ await coordinator.createReserved({reservation:frozen,viewer});
+ expect((await journal.read(reservation.sessionId))[0].participant_evidence).toEqual(evidence);
+ await expect(coordinator.createReserved({reservation:{...frozen,participantEvidence:{...evidence,metadata:{...evidence.metadata,return_to:{kind:'content',content_id:'agenda:family/plans/new'}}}},viewer})).rejects.toMatchObject({code:'creation_conflict'});
+});
+
+it('inspects a journal with a missing snapshot without repairing storage', async () => {
+ const {coordinator,snapshots,journal,reservation}=fixture();
+ const put=snapshots.put.bind(snapshots); snapshots.put=vi.fn().mockRejectedValueOnce(Error('interrupted')).mockImplementation(put);
+ await expect(coordinator.createReserved({reservation,viewer})).rejects.toThrow('interrupted');
+ const before=await journal.read(reservation.sessionId);
+ snapshots.put.mockClear();
+ expect((await coordinator.inspect(reservation.sessionId,viewer)).state.value).toBe(3);
+ expect(snapshots.put).not.toHaveBeenCalled();
+ expect(await snapshots.get(reservation.sessionId)).toBeNull();
+ expect(await journal.read(reservation.sessionId)).toEqual(before);
+ await coordinator.resume(reservation.sessionId, viewer);
+ expect(await snapshots.get(reservation.sessionId)).toBeTruthy();
+});
+
+it('enforces view authorization during read-only inspection', async () => {
+ const {coordinator,reservation}=fixture();
+ await coordinator.createReserved({reservation,viewer});
+ await expect(coordinator.inspect(reservation.sessionId,{role:'spectator',participant_id:'stranger'})).rejects.toMatchObject({code:'authorization_denied'});
+});
+
+it('inspects an actual durable journal with a missing snapshot without persistent writes',async()=>{
+ const {createGamingSessionRuntime}=await import('../../server/composition/session-runtime.mjs');
+ const {mkdtempSync,readdirSync,readFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const path=await import('node:path');
+ const dir=mkdtempSync(path.join(tmpdir(),'gaming-inspect-'));
+ try {
+  const pinned={hash:'a'.repeat(64),definition:{maximum:10},artifacts:{rules_definition:{id:'counter',hash:'b'.repeat(64)}}};
+  const definitions={getPinned:async()=>pinned.definition};
+  const runtime=createGamingSessionRuntime({definitions,snapshotsDir:path.join(dir,'snapshots'),journalsDir:path.join(dir,'journals'),rulesets:[rules],createIds:()=>({session:()=> 'ordinary',seed:()=>1}),clock:{now:()=>new Date('2026-01-01')}});
+  const reservation={sessionId:'reserved:1',seed:7,pinnedDefinition:pinned,ruleset:{id:'counter',version:1},experience:null,launch:null,participants:[{id:'p1'}],seats:[],setup:{value:3},creationKey:'private'};
+  const realPut=runtime.snapshots.put.bind(runtime.snapshots);runtime.snapshots.put=vi.fn().mockRejectedValueOnce(Error('interrupted')).mockImplementation(realPut);
+  await expect(runtime.coordinator.createReserved({reservation,viewer})).rejects.toThrow('interrupted');
+  const journalFiles=readdirSync(path.join(dir,'journals'));expect(journalFiles.length).toBeGreaterThan(0);
+  const before=journalFiles.map(file=>readFileSync(path.join(dir,'journals',file),'utf8'));runtime.snapshots.put.mockClear();
+  expect((await runtime.coordinator.inspect(reservation.sessionId,viewer)).state.value).toBe(3);
+  expect(runtime.snapshots.put).not.toHaveBeenCalled();expect(readdirSync(path.join(dir,'snapshots'))).toEqual([]);
+  expect(journalFiles.map(file=>readFileSync(path.join(dir,'journals',file),'utf8'))).toEqual(before);
+ } finally {rmSync(dir,{recursive:true,force:true});}
+});

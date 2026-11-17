@@ -1,4 +1,5 @@
 .school-rewards-modal {
+  --rewards-icon-size: min(var(--rewards-fit-size), clamp(48px, 10vh, 96px));
   box-sizing: border-box; width: 95vw; height: 95vh; height: 95dvh; max-width: 1600px;
   max-height: 95dvh; margin: auto; padding: clamp(10px, 2vh, 24px) clamp(12px, 2vw, 30px);
   border: 1px solid #ffffff1f; border-radius: 1em; background: #171a24; color: #ececf0;
@@ -13,18 +14,18 @@
   &__header .piano-avatar { width: clamp(40px, 8vh, 72px); height: clamp(40px, 8vh, 72px); flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
   h2 { margin: 0; font-size: 1.5em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   &__week { color: #94a3b8; margin-left: auto; white-space: nowrap; font-size: .85em; }
-  &__close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: #ffffff0d; }
-  &__close svg { width: 22px; height: 22px; }
-  &__totals { display: flex; justify-content: center; gap: clamp(16px, 5vw, 90px); flex: 0 0 auto; padding: .35em 0; }
+  &__close { display: grid; place-items: center; flex: 0 0 56px; width: 56px; height: 56px; margin-left: auto; border: 0; border-radius: 50%; background: #ffffff0d; }
+  &__close svg { width: 32px; height: 32px; }
+  &__totals { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(16px, 5vw, 90px); flex: 0 0 auto; padding: .35em 0; }
   &__totals > div { display: grid; grid-template-columns: auto auto; align-items: center; column-gap: .5em; }
-  &__totals .coin-icon, &__totals .ring-icon { width: clamp(28px, 6vh, 62px); height: clamp(28px, 6vh, 62px); grid-row: 1 / 3; }
+  &__totals .coin-icon, &__totals .ring-icon { width: var(--rewards-icon-size); height: var(--rewards-icon-size); grid-row: 1 / 3; }
   &__totals strong { font-size: clamp(20px, 4vh, 44px); line-height: 1; font-variant-numeric: tabular-nums; }
   &__totals span { color: #94a3b8; font-size: .8em; }
   &__legend { flex: 0 0 auto; display: flex; gap: 1.6em; justify-content: center; color: #94a3b8; font-size: .8em; }
   &__legend > span { display: inline-flex; align-items: center; gap: .35em; }
   .area-icon { width: 1em; height: 1em; }
   &__grid-box { min-height: 0; min-width: 0; flex: 1 1 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  &__grid { flex: 0 0 auto; display: grid; gap: .4em; align-content: center; justify-content: center; }
+  &__grid { font-size: calc(var(--rewards-icon-size) / 3.8); flex: 0 0 auto; display: grid; gap: .4em; align-content: center; justify-content: center; }
   &__gem { height: 5.8em; width: 5em; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: .2em; }
   &__gem > [role=img] { height: 3.8em; flex: 0 0 3.8em; }
   &__gem-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: center; font-size: .75em; line-height: 1.15; max-width: 100%; }
@@ -39,13 +40,10 @@
     &__header { gap: .3em; }
     &__totals { gap: 14px; }
     &__totals > div { column-gap: .25em; }
-    &__totals .coin-icon, &__totals .ring-icon { width: 24px; height: 24px; }
   }
   @media (max-height: 400px) {
     &__header .piano-avatar { width: 36px; height: 36px; }
     padding-block: 8px; gap: 3px !important;
-    &__close { height: 36px; flex-basis: 36px; width: 36px; }
-    &__totals .coin-icon, &__totals .ring-icon { width: 24px; height: 24px; }
     &__totals strong { font-size: 20px; }
     &__legend { font-size: 10px; }
     &__footer { min-height: 30px; }

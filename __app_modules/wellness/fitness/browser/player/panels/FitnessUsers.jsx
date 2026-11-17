@@ -1059,9 +1059,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   boxShadow: `0 0 6px ${connected ? '#51cf66' : '#ff6b6b'}, 0 0 12px ${connected ? '#51cf66aa' : '#ff6b6baa'}`
                 }}
               />
-              <span>{connected ? UI_LABELS.CONNECTED_STATUS : UI_LABELS.DISCONNECTED_STATUS}</span>
+              <span>{fitnessContext?.transportPause ? 'Sensor connection lost — workout paused'
+                : ['recovering', 'lost'].includes(fitnessContext?.transportRecovery?.state) ? 'Sensor connection lost — reconnecting'
+                : connected ? UI_LABELS.CONNECTED_STATUS : UI_LABELS.DISCONNECTED_STATUS}</span>
             </div>
-            {!connected && (
+            {(!connected || ['recovering', 'lost'].includes(fitnessContext?.transportRecovery?.state)) && (
               <button
                 type="button"
                 className="ws-reconnect-btn"

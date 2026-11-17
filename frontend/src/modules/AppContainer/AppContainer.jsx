@@ -1,13 +1,25 @@
+import {SupervisedActivity} from '../../../../__app_modules/household/supervision/browser/index.js';
 import { useEffect, useMemo, lazy, Suspense } from "react";
 import "./AppContainer.scss";
 import { getApp } from "../../lib/appRegistry.js";
 import { getChildLogger } from "../../lib/logging/singleton.js";
 
-export default function AppContainer({ open, clear }) {
+export function parseAppInput(open) {
+  const raw = open?.app || open?.open || open;
+  if (typeof raw !== 'string') return {app: raw, param: open?.param || null};
+  const slash = raw.indexOf('/');
+  return {app: slash < 0 ? raw : raw.slice(0, slash), param: (slash < 0 ? null : raw.slice(slash + 1)) || open?.param || null};
+}
+
+export function participantPropsForApp(entry, result) {
+  const registration = entry?.participantLaunch;
+  if (result?.schema !== 'participant-launch-result/v1' || result.kind !== 'ready' || !registration || registration.consumer?.id !== result.consumer?.id || registration.consumer?.version !== result.consumer?.version || registration.outputSchema !== result.output?.schema) return {};
+  return {participantLaunch: result};
+}
+
+export default function AppContainer({ open, clear, participantLaunch }) {
   // Parse app string - may contain param after slash (e.g., "art/nativity")
-  const rawApp = open?.app || open?.open || open;
-  const [app, paramFromApp] = typeof rawApp === 'string' ? rawApp.split('/') : [rawApp, null];
-  const param = paramFromApp || open?.param || null;
+  const {app, param} = parseAppInput(open);
   const logger = useMemo(() => getChildLogger({ app: 'app-container' }), []);
 
   useEffect(() => {
@@ -37,14 +49,14 @@ export default function AppContainer({ open, clear }) {
     );
   }
 
-  const appProps = { clear };
+  const appProps = { clear, ...participantPropsForApp(entry, participantLaunch) };
   if (entry.param?.name && param) {
     appProps[entry.param.name] = param;
   }
 
   return (
-    <Suspense fallback={null}>
+    <SupervisedActivity activityId={app==='school'?'school:workspace':`app:${app}`}><Suspense fallback={null}>
       <Component {...appProps} />
-    </Suspense>
+    </Suspense></SupervisedActivity>
   );
 }

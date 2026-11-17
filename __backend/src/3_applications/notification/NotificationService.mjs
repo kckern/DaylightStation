@@ -143,7 +143,8 @@ export class NotificationService {
     }
 
     const preference = this.#preferenceLoader?.();
-    const channels = preference
+    const requiredChannel=intent.metadata?.deliveryRequired;
+    const channels = requiredChannel ? [requiredChannel] : preference
       ? preference.getChannelsFor(intent.category, intent.urgency)
       : ['app'];
 
@@ -174,7 +175,7 @@ export class NotificationService {
     }
 
     // If no adapter delivered, fall back to app
-    if (results.length === 0) {
+    if (results.length === 0 && !requiredChannel) {
       const appAdapter = this.#adapterMap.get('app');
       if (appAdapter) {
         try {
@@ -187,12 +188,13 @@ export class NotificationService {
     }
 
     // Track undelivered for in-app pending list
-    const anyDelivered = results.some(r => r.delivered);
+    const anyDelivered = results.some(r => r.delivered || (requiredChannel && r.channel===requiredChannel && r.accepted));
+    if(requiredChannel && intent.dedupeKey)this.#pending=this.#pending.filter(item=>item.intent.dedupeKey!==intent.dedupeKey || item.intent.metadata?.username!==intent.metadata?.username);
     if (!anyDelivered) {
       this.#pending.push({ intent: toNotificationRecord(intent), results, timestamp: new Date().toISOString() });
     }
 
-    if (governed && gv) {
+    if (governed && gv && (!requiredChannel || anyDelivered)) {
       try {
         this.#ledgerStore.recordSent({ username: gv.username, dedupeKey: gv.dedupeKey, category: intent.category, atMs: gv.now.getTime() });
       } catch (error) {

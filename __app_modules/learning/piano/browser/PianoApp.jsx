@@ -1,3 +1,5 @@
+import {useActivityStop} from '../../../household/supervision/browser/index.js';
+import {suspendChessSounds} from './PianoChessGame/chessSounds.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../../../../frontend/src/hooks/useDocumentTitle.js';
@@ -404,6 +406,7 @@ function PianoRoutes() {
  * (one kiosk each). Sibling of FitnessApp; NOT a screen-framework screen.
  */
 export default function PianoApp() {
+  useActivityStop(suspendChessSounds);
   useDocumentTitle('Piano');
 
   // Tag every event this kiosk emits so it reaches disk. The backend's
@@ -461,7 +464,7 @@ export default function PianoApp() {
   return (
     <PianoConfigProvider>
       <PianoRoutes />
-      <RebootPromptModal open={jankReboot.open} onReboot={jankReboot.onReboot} onDismiss={jankReboot.onDismiss} />
+      <RebootPromptModal {...jankReboot} />
     </PianoConfigProvider>
   );
 }

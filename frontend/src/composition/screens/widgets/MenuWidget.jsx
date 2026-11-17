@@ -1,4 +1,5 @@
 // frontend/src/screen-framework/widgets/MenuWidget.jsx
+import {resolveMenuSource} from '../menuSourceHosts.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { MenuStack } from "../../../../../__app_modules/media/media/browser/menu.mjs";
@@ -65,7 +66,7 @@ function MenuWidget({ source }) {
     return <MenuSkeleton />;
   }
 
-  return <MenuStack rootMenu={list} playerRef={playerRef} />;
+  return <MenuStack rootMenu={list} playerRef={playerRef} resolveMenuSource={resolveMenuSource} />;
 }
 
 export default MenuWidget;

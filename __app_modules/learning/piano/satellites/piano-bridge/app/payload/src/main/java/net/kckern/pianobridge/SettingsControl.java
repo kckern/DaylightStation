@@ -47,6 +47,24 @@ public final class SettingsControl {
         return o;
     }
 
+    interface AccessibilitySettings {
+        String enabledServices();
+        boolean writeEnabledServices(String value);
+        boolean writeAccessibilityEnabled();
+    }
+    static AccessibilitySettings accessibilitySettings(Context c) {
+        return new AccessibilitySettings() {
+            public String enabledServices() {
+                return Settings.Secure.getString(c.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            }
+            public boolean writeEnabledServices(String value) {
+                return Settings.Secure.putString(c.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,value);
+            }
+            public boolean writeAccessibilityEnabled() {
+                return Settings.Secure.putInt(c.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED,1);
+            }
+        };
+    }
     /**
      * Enable an AccessibilityService of THIS app by writing the secure settings the
      * system observes — the ADB-free equivalent of
@@ -57,19 +75,24 @@ public final class SettingsControl {
      *
      * @param component flattened ComponentName, e.g. net.kckern.pianobridge/net.kckern.pianobridge.PianoTouchService
      */
-    public static JSONObject enableAccessibilityService(Context c, String component) {
+    static JSONObject enableAccessibilityService(AccessibilitySettings settings, String component,
+                                                 java.util.function.BooleanSupplier runAllowed) {
         JSONObject o = new JSONObject();
         try {
-            String cur = Settings.Secure.getString(c.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            String cur = settings.enabledServices();
             boolean present = false;
             if (cur != null && !cur.isEmpty()) {
                 for (String part : cur.split(":")) { if (part.equals(component)) { present = true; break; } }
             }
             if (!present) {
                 String next = (cur == null || cur.isEmpty()) ? component : cur + ":" + component;
-                Settings.Secure.putString(c.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
+                if (!runAllowed.getAsBoolean())
+                    return o.put("ok",false).put("error","native_safety_unavailable_or_stopped");
+                settings.writeEnabledServices(next);
             }
-            Settings.Secure.putInt(c.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+            if (!runAllowed.getAsBoolean())
+                return o.put("ok",false).put("error","native_safety_unavailable_or_stopped");
+            settings.writeAccessibilityEnabled();
             o.put("ok", true).put("component", component).put("wasAlreadyEnabled", present);
         } catch (Exception e) {
             try { o.put("ok", false).put("component", component).put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }

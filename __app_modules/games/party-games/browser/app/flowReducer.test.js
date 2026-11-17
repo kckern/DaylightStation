@@ -121,3 +121,24 @@ it('resumes the requested definition and authoritative casual mode among multipl
  const state=flowReducer(initialFlowState,{type:'BOOT_LOADED',sets,config:CONFIG,requestedDefinition:'charades:family',attachedSession});
  expect(state).toMatchObject({definitionId:'charades:family',competition:false,sessionId:'saved'});
 });
+
+
+it('autostarts the ordered explicit member and named guest roster and rejects ambiguous identities', () => {
+  const member = { id: 'member', name: 'Member' };
+  const guest = { id: 'guest:visitor', person: { kind: 'guest', id: 'visitor' }, name: 'Visitor', avatar: '/api/v1/static/users/portrait' };
+  const set = { valid: true, game: 'charades', definitionId: 'charades:one', setup: 'individuals', launch: { autostart: true, participants: [guest.id, member.id] } };
+  const run = config => flowReducer(initialFlowState, { type: 'BOOT_LOADED', config, sets: [set], requestedDefinition: set.definitionId });
+  const state = run({ household_members: [member], named_guests: [guest] });
+  expect(state.phase).toBe('playing');
+  expect(state.seats.map(seat => seat.members[0])).toEqual([guest, member]);
+  expect(run({ household_members: [member] }).error).toMatch(/Unknown configured participant/);
+  expect(run({ household_members: [member, guest], named_guests: [guest] }).error).toMatch(/duplicate|ambiguous/i);
+  expect(run({ household_members: [member, member], named_guests: [guest] }).error).toMatch(/duplicate|ambiguous/i);
+  const duplicate = { ...set, launch: { autostart: true, participants: [member.id, member.id] } };
+  expect(flowReducer(initialFlowState, { type: 'BOOT_LOADED', config: { household_members: [member] }, sets: [duplicate], requestedDefinition: duplicate.definitionId }).error).toMatch(/distinct/);
+});
+it('fails closed for an unsupported frozen experience version',()=>{
+ const session={header:{session_id:'game:old',experience:{id:'charades',version:99},artifacts:{rules_definition:{id:'charades:old'}},launch:{participant_launch:{schema:'participant-session-attachment/v1'}},seats:[]},definition:{experience:{id:'charades',version:99}},state:{}};
+ const state=flowReducer(initialFlowState,{type:'BOOT_LOADED',config:CONFIG,sets:[{valid:true,definitionId:'charades:old',game:'charades',presenter_id:'charades-stage'}],attachedSession:session,requestedDefinition:'charades:old'});
+ expect(state.error).toMatch(/not mounted/i);expect(state.sessionId).toBeNull();expect(state.phase).toBe('loading');
+});

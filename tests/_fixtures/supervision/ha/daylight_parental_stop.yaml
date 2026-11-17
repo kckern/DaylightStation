@@ -1,0 +1,4 @@
+daylight_parental_stop:
+  name: Daylight parental stop
+  icon: mdi:hand-back-right
+# No initial: preserve restored Stop across HA restart.

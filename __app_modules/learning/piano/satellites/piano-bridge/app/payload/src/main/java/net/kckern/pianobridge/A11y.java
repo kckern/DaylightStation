@@ -29,6 +29,8 @@ public final class A11y {
     private A11y() { }
 
     /** Called by Main when the shell reports the a11y service bound. */
+    private static volatile java.util.function.BooleanSupplier runAllowed = () -> false;
+    static void setRunAllowed(java.util.function.BooleanSupplier allowed) { runAllowed=allowed; }
     public static void bind(AccessibilityService s) {
         svc = s;
         Log.i(TAG, "AccessibilityService bound to payload — synthetic touch available");
@@ -104,12 +106,14 @@ public final class A11y {
      * @return true if a gesture was dispatched (service bound), false otherwise.
      */
     public static boolean swipe(int x, int y, int len, int durationMs) {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         return doSwipe(s, x, y, len, durationMs);
     }
 
     private static boolean doSwipe(AccessibilityService s, int x, int y, int len, int durationMs) {
+        if (!runAllowed.getAsBoolean()) return false;
         try {
             Path p = new Path();
             p.moveTo(x, y);
@@ -137,6 +141,7 @@ public final class A11y {
      * @return true if the power dialog was requested (service bound), else false.
      */
     public static boolean powerDialog() {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -157,6 +162,7 @@ public final class A11y {
      * @return true if the start was issued, else false.
      */
     public static boolean launch(String pkg) {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -181,6 +187,7 @@ public final class A11y {
      * @return true if HOME was performed (service bound), else false.
      */
     public static boolean home() {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -201,6 +208,7 @@ public final class A11y {
      * @return true if a matching clickable node was found and ACTION_CLICK accepted.
      */
     public static boolean clickText(String needle) {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -216,6 +224,7 @@ public final class A11y {
     }
 
     private static boolean clickTextIn(AccessibilityNodeInfo n, String needle) {
+        if (!runAllowed.getAsBoolean()) return false;
         if (n == null) return false;
         CharSequence t = n.getText(); CharSequence d = n.getContentDescription();
         String txt = ((t == null ? "" : t) + " " + (d == null ? "" : d)).toLowerCase();
@@ -303,6 +312,7 @@ public final class A11y {
 
     /** Click the node whose text or description EQUALS {@code label} (case-insensitive). */
     public static boolean clickExact(String label) {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -315,6 +325,7 @@ public final class A11y {
     }
 
     private static boolean clickExactIn(AccessibilityNodeInfo n, String label) {
+        if (!runAllowed.getAsBoolean()) return false;
         if (n == null) return false;
         CharSequence t = n.getText(); CharSequence d = n.getContentDescription();
         boolean match = (t != null && t.toString().trim().toLowerCase().equals(label))
@@ -332,6 +343,7 @@ public final class A11y {
 
     /** Scroll the first scrollable node forward (backward=true to go back). */
     public static boolean scroll(boolean backward) {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         if (s == null) return false;
         try {
@@ -356,6 +368,7 @@ public final class A11y {
 
     /** Press BACK. */
     public static boolean back() {
+        if (!runAllowed.getAsBoolean()) return false;
         AccessibilityService s = svc;
         return s != null && s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK);
     }

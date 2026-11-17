@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PersistenceManager } from "./PersistenceManager.js";
+import { SessionService } from '../../../server/application/services/SessionService.mjs';
+import { serializeSession, reconstituteSession } from '../../../server/application/sessionRecords.mjs';
+import { dehydrateSessionRecord } from '../../../server/adapters/persistence/YamlSessionDatastore.mjs';
 
 // Minimal valid session payload that passes validateSessionPayload.
 function validSession() {
@@ -53,5 +56,59 @@ describe('PersistenceManager — whenLastSaveSettled', () => {
   it('returns an already-resolved promise when no save is in flight', async () => {
     const pm = new PersistenceManager({ persistApi: vi.fn().mockResolvedValue({ ok: true }) });
     await expect(pm.whenLastSaveSettled()).resolves.toBeUndefined();
+  });
+});
+
+describe('PersistenceManager transport checkpoint followed by explicit end', () => {
+  it('commits the final snapshot after an in-flight checkpoint and waits for both', async () => {
+    let completeCheckpoint;
+    let completeFirstFinal;
+    const requests = [];
+    let disk;
+    const service = new SessionService({ sessionStore: {
+      findById: async () => disk ? reconstituteSession(disk) : null,
+      findByDate: async () => [{ ...reconstituteSession(disk), contentId: 'plex:test' }],
+      save: async entity => { disk = JSON.parse(JSON.stringify(dehydrateSessionRecord(entity))); },
+    } });
+    const pm = new PersistenceManager({ persistApi: async (url, body) => {
+      if (!url.endsWith('save_session')) return { granted: true };
+      requests.push(body.sessionData);
+      if (requests.length === 1) await new Promise(resolve => { completeCheckpoint = resolve; });
+      if (requests.length === 2) await new Promise(resolve => { completeFirstFinal = resolve; });
+      return service.saveSession(body.sessionData, 'test');
+    } });
+    const checkpoint = { ...validSession(), metadata: { transportPause: { incidentId: 'loss-1' } } };
+    expect(pm.persistSession(checkpoint, { force: true })).toBe(true);
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    expect(requests).toHaveLength(1);
+    const final = { ...validSession(), finalized: true, metadata: { endReason: 'force_break' } };
+    expect(pm.persistSession(final, { force: true })).toBe(true);
+    final.metadata.endReason = 'manual';
+    expect(pm.persistSession(final, { force: true })).toBe(true);
+    final.metadata.endReason = 'mutated-after-request';
+    let settled = false;
+    const completion = pm.whenLastSaveSettled().then(() => { settled = true; });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    expect(requests).toHaveLength(1);
+    expect(settled).toBe(false);
+    completeCheckpoint({ ok: true });
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    expect(requests).toHaveLength(2);
+    expect(pm.isSaveInProgress()).toBe(true);
+    expect(settled).toBe(false);
+    let latestSettled = false;
+    const latestCompletion = pm.whenLastSaveSettled().then(() => { latestSettled = true; });
+    expect(latestSettled).toBe(false);
+    completeFirstFinal({ ok: true });
+    await completion;
+    await latestCompletion;
+    expect(requests).toHaveLength(3);
+    expect(requests[1]).toMatchObject({ finalized: true, metadata: { endReason: 'force_break' } });
+    expect(requests[2]).toMatchObject({ finalized: true, metadata: { endReason: 'manual' } });
+    expect(pm.successfulSaveRevision).toBe(3);
+    const reopened = serializeSession(reconstituteSession(disk));
+    expect(reopened).toMatchObject({ finalized: true, metadata: { endReason: 'manual' } });
+    expect(reopened.metadata.transportPause).toBeUndefined();
+    expect(await service.findResumable('plex:test', 'test')).toEqual({ resumable: false });
   });
 });

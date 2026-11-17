@@ -13,7 +13,7 @@ function normalizeInput(input) {
 
 export function normalizeListItem(item) {
   if (!item) return item;
-  if (!item.input && !item.label && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
+  if (!item.input && (!item.label || !Object.hasOwn(item, 'input')) && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
     return preserveAuthoredTitle({ ...item }, item);
   }
   const result = {};

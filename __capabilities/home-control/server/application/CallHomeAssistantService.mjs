@@ -43,7 +43,7 @@ export class CallHomeAssistantService {
    * @throws {ValidationError} when `domain` or `service` is missing/empty.
    * @throws {ApplicationError} when the HA gateway is not configured.
    */
-  async execute({ domain, service, data = {} } = {}) {
+  async execute({ domain, service, data = {}, sensitive = false } = {}) {
     if (!domain) {
       throw new InvalidInputError('domain required', {
         code: 'HA_CALL_MISSING_DOMAIN',
@@ -62,9 +62,9 @@ export class CallHomeAssistantService {
       });
     }
 
-    this.#logger.info?.('home-automation.ha.call', { domain, service, data });
-    const result = await this.#haGateway.callService(domain, service, data);
-    return { domain, service, data, result };
+    this.#logger.info?.('home-automation.ha.call', { domain, service, data:sensitive?{redacted:true}:data });
+    const result = await this.#haGateway.callService(domain, service, data,...(sensitive?[{sensitive:true}]:[]));
+    return { domain, service, data:sensitive?{redacted:true}:data, result };
   }
 }
 

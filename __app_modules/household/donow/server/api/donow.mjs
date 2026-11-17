@@ -20,7 +20,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} [config.logger]
  */
 export function createDoNowRouter({
-  service, approvals, authenticateApproval, expectedToken = null, logger = console,
+  service, approvals, authenticateApproval, expectedToken = null, logger = console, resolveAccessContext = null,
 } = {}) {
   if (typeof authenticateApproval !== 'function') {
     throw new Error('createDoNowRouter: authenticateApproval required');
@@ -32,6 +32,7 @@ export function createDoNowRouter({
     logger.debug?.('donow.router.dispatch', { surface, learnerId, ref });
     const result = await service.dispatch({
       surface, action, learnerId, ref, force, programId, requestedBy: 'api',
+      accessContext:resolveAccessContext?await resolveAccessContext(req,{surface,action,learnerId}):null,
     });
     res.json(result);
   }));

@@ -1,3 +1,4 @@
+import {useActivityStop} from '../../../../household/supervision/browser/index.js';
 import { useEffect, useMemo, useRef } from 'react';
 import { useFitnessSelector } from "../context/FitnessContext.jsx";
 import { useIdentity } from "../identity/useIdentity.js";
@@ -27,6 +28,7 @@ const EmergencyPlaybackController = () => {
     setVideoPlayerPaused: c?.setVideoPlayerPaused,
     setEmergencyPlaybackHold: c?.setEmergencyPlaybackHold,
   }));
+  useActivityStop(()=>{setVideoPlayerPaused?.(true);setEmergencyPlaybackHold?.(true);});
   const emergencyActive = Boolean(emergencyPhase && emergencyPhase !== 'normal');
 
   const logger = useMemo(

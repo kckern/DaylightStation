@@ -17,14 +17,16 @@ export class YamlUserProfileDatastore {
   #configService;
   #load;
   #save;
+  #assertWritable;
 
-  constructor({ configService, load = loadYamlFromPath, save = saveYamlToPath }) {
+  constructor({ configService, load = loadYamlFromPath, save = saveYamlToPath, assertWritable = () => {} }) {
     if (!configService || typeof configService.getUserDir !== 'function') {
       throw new Error('YamlUserProfileDatastore: configService with getUserDir() is required');
     }
     this.#configService = configService;
     this.#load = load;
     this.#save = save;
+    this.#assertWritable = assertWritable;
   }
 
   #pathFor(username) {
@@ -38,6 +40,7 @@ export class YamlUserProfileDatastore {
 
   /** Persist the full profile object back to disk. */
   writeProfile(username, profile) {
+    this.#assertWritable();
     this.#save(this.#pathFor(username), profile);
   }
 }

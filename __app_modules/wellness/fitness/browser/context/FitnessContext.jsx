@@ -24,6 +24,7 @@ import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
 import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
+import { createTransportRecovery } from '../hooks/fitness/transportRecovery.js';
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
 import { buildRiderToast } from "../player/overlays/buildRiderToast.js";
@@ -304,6 +305,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const ringConfigSignatureRef = useRef(null);
   const [voiceMemoVersion, setVoiceMemoVersion] = useState(0);
   const [connected, setConnected] = useState(false);
+  const [transportRecovery, setTransportRecovery] = useState({ state: 'quiet', reason: 'inactive', incidentId: null });
+  const transportRecoveryRef = useRef(null);
+  const transportStoppedRef = useRef(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
   // Vibration state lives in a ref, not useState: raw Zigbee vibration packets
@@ -763,6 +767,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Deliberate "End Session" from the kiosk UI. Ends the LIVE session instance
   // (the SSoT for the active recording) — the server POST alone never reaches it.
   const requestEndSession = useCallback(() => {
+    transportStoppedRef.current = true;
+    transportRecoveryRef.current?.tick({ active: false, stopped: true });
     const ok = endLiveSession(fitnessSessionRef.current);
     if (ok) {
       getLogger().info('fitness.session.user_end', { source: 'sidebar_button' });
@@ -1574,19 +1580,54 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // MEMORY LEAK FIX: Move cleanup refs outside .then() to ensure proper cleanup
     let unsubscribe = null;
     let unsubscribeStatus = null;
+    let recoveryTimer = null;
+    let recovery = null;
     let mounted = true;
     
     // Import dynamically to avoid circular dependencies
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
       if (!mounted) return;
       
+      const reportTransportIncident = (metadata) => {
+        getLogger().info(`fitness.transport.${metadata.type}`, metadata);
+        fitnessSessionRef.current?.logEvent?.('fitness_transport', metadata);
+      };
+      recovery = createTransportRecovery({
+        now: () => performance.now(),
+        refreshSubscription: () => wsService.refreshSubscriptions(),
+        reconnect: () => wsService.requestRecovery({ owner: 'fitness-transport', reason: 'sensor-delivery-stalled' }),
+        onState: setTransportRecovery,
+        onIncident: reportTransportIncident,
+        onEscalate: reportTransportIncident,
+      });
+      transportRecoveryRef.current = recovery;
+      const tickRecovery = () => {
+        const snapshot = recovery.tick({
+          active: !!fitnessSessionRef.current?.sessionId,
+          stopped: transportStoppedRef.current,
+        });
+        // A healthy snapshot can be several seconds old. Only observeSample's
+        // accepted-packet path below may release collection or a checkpoint.
+        const session = fitnessSessionRef.current;
+        const pause = session?.transportPause;
+        if (snapshot.state !== 'healthy') session?.setTransportState({ ...snapshot, at: Date.now() });
+        if (pause !== session?.transportPause) batchedForceUpdate();
+      };
+      tickRecovery();
+      recoveryTimer = setInterval(tickRecovery, 1000);
+
       // Subscribe to fitness and vibration topics
       unsubscribe = wsService.subscribe(
-        ['fitness', 'vibration', 'pressure-mat', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
+        ['fitness', 'fitness.transport.health', 'vibration', 'pressure-mat', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
         (data) => {
           // Guard against malformed or empty data during reconnect churn
           if (!data || typeof data !== 'object') return;
           if (data.topic === undefined && data.type === undefined) return;
+
+          if (data?.topic === 'fitness.transport.health') {
+            recovery.observeHealth(data);
+            return;
+          }
 
           if (data?.topic === 'vibration') {
             handleVibrationEvent(data);
@@ -1621,21 +1662,23 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
 
-          // Reconnection backoff: if we've reconnected >3 times rapidly, skip processing
-          if (reconnectCountRef.current > 3) {
-            return;
-          }
-
           const session = fitnessSessionRef.current;
           if (!session) return;
 
           // force_break: explicitly end the current session (overrides grace period)
           if (data?.action === 'force_break') {
+            transportStoppedRef.current = true;
+            recovery.tick({ active: false, stopped: true });
             if (session.sessionId) {
               getLogger().info('fitness.session.force_break', { sessionId: session.sessionId });
               session.endSession('force_break');
               batchedForceUpdate();
             }
+            return;
+          }
+
+          // Reconnection backoff: if we've reconnected >3 times rapidly, skip processing
+          if (reconnectCountRef.current > 3) {
             return;
           }
 
@@ -1649,7 +1692,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             batchedForceUpdate();
             return;
           }
-          session.ingestData(data);
+          // Fence retired bridge samples before they can refresh DeviceManager.
+          // Only actual sensor data can prove delivery or release a Stop hold;
+          // session ingestion still owns whether ended equipment may restart.
+          if (data.topic !== 'fitness' || !(data.deviceId ?? data.id)) return;
+          const sample = { bootId: data.bootId, seq: data.sourceSeq };
+          if (!recovery.acceptsSample(sample)) return;
+          const beforePacketAt = session.deviceManager.lastPacketAt;
+          const delivered = session.ingestData(data);
+          if (delivered || session.deviceManager.lastPacketAt !== beforePacketAt) {
+            recovery.observeSample(sample);
+            // A real accepted packet is the only recovery authority. Health or
+            // socket OPEN cannot release the workout pause.
+            session.setTransportState({ state: 'healthy', reason: 'sample-delivered', at: Date.now() });
+            if (session.sessionId && !session._finalized) transportStoppedRef.current = false;
+          }
           // Most sensor packets repeat the last reading (4 Hz broadcast, two
           // dongles). Re-render only when something shown changed, plus a 1 s
           // keepalive while packets flow. See fitnessRenderGate.js.
@@ -1685,6 +1742,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Cleanup subscriptions and vibration timeouts on unmount
     return () => {
       mounted = false;
+      clearInterval(recoveryTimer);
+      recovery?.dispose();
+      if (transportRecoveryRef.current === recovery) transportRecoveryRef.current = null;
       unsubscribe?.();
       unsubscribeStatus?.();
       if (reconnectStabilityTimerRef.current) {
@@ -1715,11 +1775,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [batchedForceUpdate]);
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
-    // Use the centralized WebSocketService to reconnect
-    import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.disconnect();
-      wsService.connect();
-    });
+    if (!transportStoppedRef.current) transportRecoveryRef.current?.requestReconnect();
   }, []);
 
   // Bluetooth game-controller management actions (Task 3.3)
@@ -3227,6 +3283,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Legacy / Compatibility
     fitnessSession: session?.summary,
     fitnessSessionInstance: session,
+    transportRecovery,
+    transportStopped: transportStoppedRef.current,
+    transportPause: session.transportPause || null,
     requestEndSession,
     isSessionActive: session?.isActive,
     fitnessPlayQueue,

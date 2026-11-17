@@ -11,11 +11,14 @@ final class OpsServer extends NanoHTTPD{
     private final UsbHidController usbHid;private final BluetoothController bluetooth;private final VolumeBeepGuard beepGuard;private final HomeWatchdog homeWatchdog;
     OpsServer(ShellServices s,UsbHidController usbHid,BluetoothController bluetooth,VolumeBeepGuard beepGuard,HomeWatchdog homeWatchdog){super(PORT);shell=s;context=(Context)s.context();this.usbHid=usbHid;this.bluetooth=bluetooth;this.beepGuard=beepGuard;this.homeWatchdog=homeWatchdog;}
     @Override public Response serve(IHTTPSession x){String u=x.getUri();try{
+        if(u.equals("/page/beat"))return pageBeat(x);
         if(!authorized(x))return json(Response.Status.UNAUTHORIZED,new JSONObject().put("ok",false).put("error","unauthorized"));
         if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload",Main.VERSION).put("homeWatchdog",homeWatchdog.status()).put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
         if(u.equals("/kiosk-home"))return json(homeWatchdog.status());
         if(u.equals("/kiosk-policy/system-ui")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureShellUi(new JSONObject(body(x)).getBoolean("hidden")));
         if(u.equals("/kiosk-home/webhook")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureWebhook(new JSONObject(body(x)).getString("url")));
+        if(u.equals("/page/config")&&x.getMethod()==Method.POST)return json(homeWatchdog.configurePage(new JSONObject(body(x))));
+        if(u.equals("/page/journal"))return json(homeWatchdog.pageJournal());
         if(u.equals("/input"))return json(InputProbe.snapshot(context));
         if(u.equals("/usb-hid"))return json(usbHid==null?new JSONObject().put("ok",false).put("error","USB HID unavailable"):usbHid.inventory());
         if(u.equals("/usb-hid/retry")&&x.getMethod()==Method.POST){if(usbHid==null)return err("USB HID unavailable");usbHid.retry();return json(usbHid.status());}
@@ -39,6 +42,45 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/payload/rollback")&&x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadRollback()));
         return err("routes: /status /kiosk-home /kiosk-home/webhook /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
     }catch(Exception e){return err(e.toString());}}
+    static boolean trustedPage(String peer,String origin,String allowed) {
+        return ("127.0.0.1".equals(peer) || "::1".equals(peer) || "0:0:0:0:0:0:0:1".equals(peer))
+                && origin!=null && allowed!=null && allowed.startsWith("https://") && origin.equals(allowed);
+    }
+    static int pageBodyLength(Map<String,String> headers) {
+        if (headers.containsKey("transfer-encoding")) throw new IllegalArgumentException("chunked body prohibited");
+        int length=Integer.parseInt(headers.get("content-length"));
+        String type=headers.get("content-type");
+        if (length<1 || length>2048 || type==null || !type.split(";",2)[0].trim().equals("application/json"))
+            throw new IllegalArgumentException("bounded JSON required");
+        return length;
+    }
+    private Response pageBeat(IHTTPSession x) throws Exception {
+        String origin=x.getHeaders().get("origin");
+        if (!trustedPage(x.getRemoteIpAddress(),origin,homeWatchdog.pageOrigin()))
+            return newFixedLengthResponse(Response.Status.FORBIDDEN,"application/json","{\"ok\":false}");
+        Response response;
+        if (x.getMethod()==Method.OPTIONS) {
+            if (!"POST".equals(x.getHeaders().get("access-control-request-method")))
+                return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED,"application/json","{}");
+            response=newFixedLengthResponse(Response.Status.OK,"application/json","{}");
+            response.addHeader("Access-Control-Allow-Methods","POST");
+            response.addHeader("Access-Control-Allow-Headers","Content-Type");
+            response.addHeader("Access-Control-Allow-Private-Network","true");
+        } else if (x.getMethod()==Method.POST) {
+            try {
+                int length=pageBodyLength(x.getHeaders());
+                byte[] bytes=new byte[length]; int read=0;
+                while (read<length) { int n=x.getInputStream().read(bytes,read,length-read); if(n<0) throw new IllegalArgumentException("short body"); read+=n; }
+                org.json.JSONTokener tokens=new org.json.JSONTokener(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));
+                Object body=tokens.nextValue();
+                if (!(body instanceof JSONObject) || tokens.nextClean()!=0) throw new IllegalArgumentException("JSON object required");
+                homeWatchdog.pageBeat((JSONObject)body);
+                response=newFixedLengthResponse(Response.Status.OK,"application/json","{\"ok\":true}");
+            } catch (Exception invalid) { response=newFixedLengthResponse(Response.Status.BAD_REQUEST,"application/json","{\"ok\":false,\"error\":\"invalid-beat\"}"); }
+        } else response=newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED,"application/json","{}");
+        response.addHeader("Access-Control-Allow-Origin",origin); response.addHeader("Vary","Origin");
+        response.addHeader("Cache-Control","no-store"); return response;
+    }
     private static String param(IHTTPSession x,String k){Map<String,List<String>>p=x.getParameters();List<String>v=p.get(k);return v==null||v.isEmpty()?null:v.get(0);}
     private static int intParam(IHTTPSession x,String k,int d){try{return Integer.parseInt(param(x,k));}catch(Exception e){return d;}}
     private static int numberParam(IHTTPSession x,String k,int d){try{return Integer.decode(param(x,k));}catch(Exception e){return d;}}

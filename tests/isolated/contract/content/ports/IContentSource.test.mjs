@@ -44,14 +44,14 @@ describe('IContentSource port', () => {
     expect(() => validateAdapter(adapter)).toThrow('must implement getList');
   });
 
-  test('validateAdapter rejects adapter missing resolvePlayables', () => {
+  test('validateAdapter accepts navigation-only sources', () => {
     const adapter = {
       source: 'test',
       prefixes: [{ prefix: 'test' }],
       getItem: async () => null,
       getList: async () => []
     };
-    expect(() => validateAdapter(adapter)).toThrow('must implement resolvePlayables');
+    expect(() => validateAdapter(adapter)).not.toThrow();
   });
 });
 
@@ -83,6 +83,7 @@ describe('ContentSourceBase', () => {
     const adapter = new PartialAdapter();
     await expect(adapter.getItem('test')).rejects.toThrow('getItem must be implemented');
     await expect(adapter.getList('test')).rejects.toThrow('getList must be implemented');
-    await expect(adapter.resolvePlayables('test')).rejects.toThrow('resolvePlayables must be implemented');
+    expect(adapter.resolvePlayables).toBeUndefined();
+    expect(adapter.resolveSiblings).toBeUndefined();
   });
 });

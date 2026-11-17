@@ -1,4 +1,5 @@
 import path from 'path';
+import { version as viteVersion } from 'vite';
 import { fileURLToPath } from 'url';
 import { existsSync, realpathSync } from 'fs';
 
@@ -20,18 +21,18 @@ try {
 } catch (_) { /* no node_modules symlink — rely on other candidates */ }
 const frontendNodeModules = candidates.find((p) => existsSync(p)) || frontendNodeModulesLocal;
 
-// Load React plugin from frontend's node_modules (it's not installed at the root).
-const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/plugin-react/dist/index.mjs'));
-
 const RUNNING_IN_WORKTREE = /[\\/]\.(claude[\\/]|claire[\\/])?worktrees[\\/]/.test(__dirname);
 
 export default {
   root: __dirname,
   // Numeric loopback avoids DNS during confined middleware-only test startup.
   server: { host: '127.0.0.1' },
-  // React plugin enables automatic JSX runtime so test files don't need `import React`.
+  // Match the production automatic JSX runtime on either installed toolchain.
+  // Vite 6/7 transform JSX with esbuild; Vite 8 uses OXC.
+  ...(Number.parseInt(viteVersion, 10) < 8
+    ? { esbuild: { jsx: 'automatic' } }
+    : { oxc: { jsx: { runtime: 'automatic' } } }),
   plugins: [
-    react(),
     {
       // Modules under __app_modules/ and __capabilities/ import frontend
       // dependencies (three, vexflow, highcharts, ...) that live only in

@@ -24,6 +24,14 @@ public class PortalBridgeService extends Service {
     int versionCode(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionCode;}catch(Exception e){return -1;}}
     private final class Shell implements ShellServices{
         public Object context(){return PortalBridgeService.this;} public Object accessibilityService(){return PortalKeysService.current();}
+        public String pageSafetySnapshot() {
+            try {
+                Config config=new Config(PortalBridgeService.this);
+                android.hardware.display.DisplayManager manager=getSystemService(android.hardware.display.DisplayManager.class);
+                android.view.Display display=manager==null?null:manager.getDisplay(android.view.Display.DEFAULT_DISPLAY);
+                return config.pageSafetySnapshot(display==null?null:display.getState(),System.currentTimeMillis());
+            } catch (Exception e) { return "{\"known\":false}"; }
+        }
         public String adminToken(){return AdminToken.get(PortalBridgeService.this);}
         public int shellVersionCode(){return versionCode();} public File payloadDir(){return loader.store().dir();}
         public String requestPayloadSwap(String u,String s){return loader.swap(u,s);} public String requestPayloadRollback(){return loader.rollback();}

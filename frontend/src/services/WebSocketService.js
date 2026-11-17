@@ -50,6 +50,8 @@ class WebSocketService {
     this.reconnectTier = 0; // Current reconnection tier (0-9)
     this.degradedMode = false; // True when tier >= DEGRADED_MODE_TIER
     this.reconnectTimeout = null;
+    this._recoveryOwners = new Map();
+    this._ordinaryReconnectPending = false;
     this.messageQueue = []; // Buffer messages during disconnect
     this.statusListeners = new Set(); // Connection status observers
     this.authorizedTopics = new Map(); // topic -> call authorization (memory only)
@@ -131,6 +133,8 @@ class WebSocketService {
    * Disconnect and cleanup
    */
   disconnect() {
+    this._recoveryOwners.clear();
+    this._ordinaryReconnectPending = false;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -148,11 +152,33 @@ class WebSocketService {
     this._notifyStatusListeners();
   }
 
-  /**
-   * Schedule a reconnection attempt with adaptive throttling.
-   * Uses progressive delays that never give up, backing off to hourly attempts.
-   */
-  _scheduleReconnect() {
+  /** Reassert every consumer's desired topics, including authorized call topics. */
+  refreshSubscriptions() {
+    this._lastSyncKey = null;
+    this._syncSubscriptions();
+  }
+
+  /** Join the singleton reconnect scheduler. Releasing cancels only this owner. */
+  requestRecovery({ owner, reason }) {
+    if (!owner) throw new Error('Recovery owner is required');
+    if (this._recoveryOwners.has(owner)) return this._recoveryOwners.get(owner);
+    const release = () => {
+      if (this._recoveryOwners.get(owner) !== release) return;
+      this._recoveryOwners.delete(owner);
+      if (!this._recoveryOwners.size && !this._ordinaryReconnectPending && this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+    };
+    this._recoveryOwners.set(owner, release);
+    this.logger.info('websocket.recovery-requested', { owner, reason });
+    this._scheduleReconnect({ recovery: true });
+    return release;
+  }
+
+  _scheduleReconnect({ recovery = false } = {}) {
+    if (!recovery) this._ordinaryReconnectPending = true;
+    if (this.reconnectTimeout) return;
     const delay = RECONNECT_DELAYS[Math.min(this.reconnectTier, RECONNECT_DELAYS.length - 1)];
     const wasDegraded = this.degradedMode;
     this.degradedMode = this.reconnectTier >= DEGRADED_MODE_TIER;
@@ -172,6 +198,23 @@ class WebSocketService {
     this.logger.info('websocket.reconnect-scheduled', { delayMs: delay, delayLabel, tierLabel });
 
     this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      const requested = this._recoveryOwners.size > 0;
+      this._recoveryOwners.clear();
+      this._ordinaryReconnectPending = false;
+      if (requested && this.ws) {
+        // Detach the obsolete socket before closing: its late close must not
+        // clear a replacement socket or schedule another reconnect.
+        const oldSocket = this.ws;
+        oldSocket.onopen = oldSocket.onmessage = oldSocket.onclose = oldSocket.onerror = null;
+        this.ws = null;
+        this.connected = false;
+        this.connecting = false;
+        this._lastSyncKey = null;
+        this._stopStaleCheck();
+        oldSocket.close();
+        this._notifyStatusListeners();
+      }
       this.reconnectTier++;
       this.connect();
     }, delay);

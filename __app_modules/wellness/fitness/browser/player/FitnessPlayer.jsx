@@ -202,6 +202,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     governanceState,
     plexConfig,
     fitnessSessionInstance,
+    transportRecovery,
+    transportPause,
+    transportStopped,
     voiceMemoOverlayState, // 4A: Voice memo overlay state for exit guard
     voiceMemos, // 4B: Voice memos for 15-minute rule
     openVoiceMemoCapture, // 4B: Open voice memo prompt
@@ -453,7 +456,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   });
   const presenceBlocked = presencePrompt.blocked;
   // Holds that are not exercise governance: they pause and refuse autoplay alike.
-  const externalHold = budgetBlocked || presenceBlocked;
+  const transportHeld = !!transportPause || !!transportStopped || ['recovering', 'lost'].includes(transportRecovery?.state);
+  const externalHold = budgetBlocked || presenceBlocked || transportHeld;
   const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || externalHold;
 
   const [showChart, setShowChart] = useState(true);
@@ -488,13 +492,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       { blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null },
       { blocked: budgetBlocked, id: GATE_ID.PLAYBACK_BUDGET, seekCeiling: null },
       { blocked: presenceBlocked, id: GATE_ID.PRESENCE, seekCeiling: null },
+      { blocked: transportHeld, id: 'sensor_transport', seekCeiling: null },
     ],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, videoHeld, budgetBlocked, presenceBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, videoHeld, budgetBlocked, presenceBlocked, transportHeld, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
   // Live governance verdict for callbacks. Handlers handed to <Player> can
@@ -672,6 +677,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // Wait a moment for resilience grace period to take effect, then try to play
       // The resilience system has a 5s grace period after governance unlock
       const tryPlay = (attempt = 0) => {
+        if (isGovernanceLocked()) return;
         const currentMedia = playerRef?.current?.getMediaElement?.();
         if (!currentMedia) {
           // Media element not ready yet, retry later

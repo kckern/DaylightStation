@@ -1,6 +1,10 @@
 // tests/unit/infrastructure/eventbus/WebSocketEventBus.test.mjs
 import { vi } from 'vitest';
-import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus, isKnownTopic } from '#adapters/eventbus/WebSocketEventBus.mjs';
+
+import { ClientIngressService } from '#apps/eventbus/ClientIngressService.mjs';
+import { EventBusClientIngressAdapter } from '#adapters/eventbus/EventBusClientIngressAdapter.mjs';
+import { createDataPathHealth, createFitnessDataBroadcaster } from '../../../../../__app_modules/wellness/fitness/satellites/fitness-controller/src/dataPathHealth.mjs';
 
 describe('WebSocketEventBus', () => {
   let bus;
@@ -167,4 +171,40 @@ describe('WebSocketEventBus', () => {
       expect(bus.sendToClient('unknown-id', { test: 'message' })).toBe(false);
     });
   });
+});
+
+test('synthetic source samples and diagnostics survive actual ingress and browser subscription routing', () => {
+  const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const bus = new WebSocketEventBus({ logger });
+  bus._testSetServerAttached();
+  const browserPackets = [];
+  let lastPacketAt = 10;
+  const ws = { OPEN: 1, readyState: 1, send: (raw) => {
+    const packet = JSON.parse(raw);
+    browserPackets.push(packet);
+    if (packet.topic === 'fitness') lastPacketAt = 20;
+  } };
+  bus._testSetClientPool(new Map([['browser', { ws, meta: { subscriptions: new Set(['fitness', 'fitness.transport.health']) } }]]));
+  const adapter = new EventBusClientIngressAdapter({ eventBus: bus });
+  adapter.attach(new ClientIngressService({ publications: adapter, logger }));
+  const source = createDataPathHealth({ bootId: 'synthetic-source', now: () => 0 });
+  const broadcast = createFitnessDataBroadcaster({ health: source, openState: 1,
+    getSocket: () => ({ readyState: 1, send: (raw, done) => { bus._testHandleIncomingMessage('bridge', raw); done(); } }),
+  });
+  broadcast({ topic: 'fitness', source: 'fitness', type: 'synthetic-sample', data: {} });
+  expect(browserPackets[0]).toMatchObject({ topic: 'fitness', bootId: 'synthetic-source', sourceSeq: 1 });
+  const beforeHealthPacket = lastPacketAt;
+  const health = { topic: 'fitness.transport.health', ...source.snapshot('open') };
+  bus._testHandleIncomingMessage('bridge', health);
+  expect(browserPackets).toHaveLength(2);
+  expect(browserPackets[1]).toMatchObject(health);
+  expect(lastPacketAt).toBe(beforeHealthPacket);
+  bus._testHandleIncomingMessage('bridge', { ...health, source: 'fitness' });
+  expect(browserPackets.filter((packet) => packet.topic === 'fitness')).toHaveLength(1);
+  expect(browserPackets.filter((packet) => packet.topic === 'fitness.transport.health')).toHaveLength(2);
+  expect(lastPacketAt).toBe(beforeHealthPacket);
+  expect(isKnownTopic('fitness.transport.health')).toBe(true);
+  bus._testSetClientPool(new Map());
+  bus.broadcast('fitness.transport.health', health);
+  expect(logger.warn).not.toHaveBeenCalledWith('bus.topic.unknown', expect.anything());
 });
