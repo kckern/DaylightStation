@@ -40,11 +40,11 @@ public final class Backend {
 
     public static Backend from(SettingsRegistry s, String deviceId) {
         declareOnce(s, BASE_URL, value -> ((String) value).isEmpty() || Origins.of((String) value) != null
-                ? null : "'" + BASE_URL + "' is not an http(s) URL");
+                ? null : "is not an http(s) URL");
         declareOnce(s, USER, value -> ((String) value).isEmpty() || USER_NAME.matcher((String) value).matches()
-                ? null : "'" + USER + "' must be 1 to 64 letters, digits, '.', '_' or '-'");
+                ? null : "must be 1 to 64 letters, digits, '.', '_' or '-'");
         declareOnce(s, DEVICE, value -> ((String) value).isEmpty() || DEVICE_ID.matcher((String) value).matches()
-                ? null : "'" + DEVICE + "' must be fleet:<id> or browser:<id>");
+                ? null : "must be fleet:<id> or browser:<id>");
         return new Backend(s, deviceId);
     }
 

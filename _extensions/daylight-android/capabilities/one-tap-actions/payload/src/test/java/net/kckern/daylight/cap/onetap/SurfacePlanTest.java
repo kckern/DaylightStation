@@ -1,0 +1,83 @@
+package net.kckern.daylight.cap.onetap;
+
+import static org.junit.Assert.*;
+
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+public class SurfacePlanTest {
+    private static final ActionCatalog CATALOG = ActionCatalog.parse(Arrays.asList(
+            "memo|New memo|mic|memo:new", "media|Media|play|bookmark:media",
+            "feed|Feed|open|bookmark:feed", "call|Call|open|bookmark:call", "lights|Lights off|bolt|api:/api/v1/x"));
+
+    private static SurfacePlan plan(String shortcuts, String tiles, int max) {
+        return SurfacePlan.of(CATALOG, shortcuts, tiles, max, a -> "daylight://action/" + a.id + "?k=KEY");
+    }
+
+    private static String message(String shortcuts, String tiles) {
+        try { plan(shortcuts, tiles, 4); } catch (IllegalArgumentException e) { return e.getMessage(); }
+        fail("expected IllegalArgumentException");
+        return null;
+    }
+
+    @Test public void shortcutsFollowTheListedOrder() {
+        SurfacePlan p = plan("lights, memo", "", 4);
+        assertEquals(2, p.shortcuts.size());
+        assertEquals("lights", p.shortcuts.get(0).id);
+        assertEquals("memo", p.shortcuts.get(1).id);
+    }
+
+    @Test public void withNoListTheFirstActionsAreUsedUpToTheLauncherLimit() {
+        SurfacePlan p = plan("", "", 3);
+        assertEquals(3, p.shortcuts.size());
+        assertEquals("memo", p.shortcuts.get(0).id);
+        assertEquals("feed", p.shortcuts.get(2).id);
+        assertEquals("a listed set is cut to the limit too", 2, plan("memo,media,feed", "", 2).shortcuts.size());
+        assertEquals(0, plan("memo", "", 0).shortcuts.size());
+    }
+
+    @Test public void tilesAreAssignedBySlotAndEverySlotIsWritten() {
+        Map<String, String> cache = plan("", "memo,,lights", 4).tileCache;
+        assertEquals("New memo", cache.get("tile.1.label"));
+        assertEquals("mic", cache.get("tile.1.icon"));
+        assertEquals("daylight://action/memo?k=KEY", cache.get("tile.1.uri"));
+        assertEquals("an unassigned slot is cleared, not left stale", "", cache.get("tile.2.uri"));
+        assertEquals("Lights off", cache.get("tile.3.label"));
+        assertEquals("", cache.get("tile.4.uri"));
+        assertEquals(12, cache.size());
+    }
+
+    @Test public void namesAnUnknownActionOrTooManyTiles() {
+        assertTrue(message("memo,nope", "").contains("actions.shortcuts names unknown action 'nope'"));
+        assertTrue(message("", "nope").contains("actions.tiles names unknown action 'nope'"));
+        assertTrue(message("", "memo,media,feed,call,lights").contains("actions.tiles has 5 entries; there are 4 tile slots"));
+    }
+
+    @Test public void theLenientPlanLeavesOutWhatItCannotPlaceAndReportsIt() {
+        List<String> problems = new ArrayList<>();
+        SurfacePlan p = SurfacePlan.usable(CATALOG, "memo,nope,feed", "nope,lights,,,memo", 4,
+                a -> "daylight://action/" + a.id, problems);
+        assertEquals("[memo, feed]", ids(p));
+        assertEquals("", p.tileCache.get("tile.1.uri"));
+        assertEquals("Lights off", p.tileCache.get("tile.2.label"));
+        assertEquals(12, p.tileCache.size());
+        assertEquals(3, problems.size());
+    }
+
+    @Test public void aListSettingIsCheckedForShapeWhenItIsSet() {
+        assertNull(SurfacePlan.listProblem("", 4));
+        assertNull(SurfacePlan.listProblem("memo, ,lights", 4));
+        assertTrue(SurfacePlan.listProblem("memo,Not An Id", 4).contains("action ids"));
+        assertTrue(SurfacePlan.listProblem("a,b,c,d,e", 4).contains("at most 4"));
+    }
+
+    private static String ids(SurfacePlan p) {
+        List<String> out = new ArrayList<>();
+        for (ActionCatalog.Action a : p.shortcuts) out.add(a.id);
+        return out.toString();
+    }
+}

@@ -1,0 +1,11 @@
+# One-tap actions, defined once in settings (actions.1 to actions.12) and surfaced as
+# launcher shortcuts, pinned shortcuts and quick-settings tiles (and, through the
+# widgets capability, a home-screen widget). Owns the link kind daylight://action/<id>.
+entry: net.kckern.daylight.cap.onetap.OneTapActionsCapability
+permissions: []
+# Every surface launches a keyed daylight://action link through the link activity.
+requires:
+  - notifications
+# The link key is asked for when the surfaces are published at start.
+startsAfter:
+  - notifications

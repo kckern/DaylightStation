@@ -58,7 +58,7 @@ public final class NotificationsCapability implements Capability, LinkKeySource 
         core.settings().declare(ORIGINS, SettingsRegistry.Type.STRING, "", value -> {
             for (String part : ((String) value).split(",")) {
                 if (!part.trim().isEmpty() && Origins.of(part.trim()) == null) {
-                    return "'" + ORIGINS + "' must be a comma-separated list of http(s) origins";
+                    return "must be a comma-separated list of http(s) origins";
                 }
             }
             return null;
