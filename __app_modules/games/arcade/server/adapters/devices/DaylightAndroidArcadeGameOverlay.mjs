@@ -16,9 +16,9 @@ const GRAVITIES = Object.freeze(['top', 'bottom']);
  * arm.
  *
  * Second, disarm is idempotent and cheap, so the caller can re-assert "nothing
- * is armed" at startup without knowing whether anything was. One difference
- * from Fully: the app has a single overlay, so clearing it also clears a text
- * message an operator put up from the Admin console.
+ * is armed" at startup without knowing whether anything was. It clears the web
+ * layer only. The app's text message is a separate layer, so a message an
+ * operator put up from the Admin console stays where it is.
  */
 export class DaylightAndroidArcadeGameOverlay extends IArcadeGameOverlay {
   #clients; #httpClient; #gravity; #logger;
@@ -55,9 +55,11 @@ export class DaylightAndroidArcadeGameOverlay extends IArcadeGameOverlay {
     }
 
     const result = await client.showWebOverlay(url, this.#gravity);
-    // The device says what it is showing; anything but a web overlay is not armed.
-    const showing = result?.ok === true && result.data?.shown !== false
-      && (result.data?.kind === undefined || result.data.kind === 'web');
+    // Armed means the WEB layer is showing. The answer reports each layer;
+    // the summary `kind` is read only from an answer that has no `web` field.
+    const web = result?.data?.web;
+    const showing = result?.ok === true
+      && (web && typeof web === 'object' ? web.shown === true : result.data?.kind === 'web');
     this.#logger[showing ? 'info' : 'warn']?.('arcade.overlay.armed', {
       deviceId, ok: showing, url, gravity: this.#gravity,
       error: showing ? undefined : (result?.error || 'kiosk did not show the web overlay'),

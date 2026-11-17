@@ -38,9 +38,12 @@ export class DaylightAndroidArcadeKioskClient {
     return this.#rest.post('/kiosk/overlay', { url, ...(gravity ? { gravity } : {}) });
   }
 
-  /** Clear the overlay. Safe when none is showing. */
+  /**
+   * Clear the web overlay. Safe when none is showing. The text message is a
+   * separate layer and is left alone: `{url:''}` clears only the web layer.
+   */
   clearOverlay() {
-    return this.#rest.post('/kiosk/overlay', { text: '' });
+    return this.#rest.post('/kiosk/overlay', { url: '' });
   }
 
   async command(name, params = {}) {

@@ -17,7 +17,9 @@ const overlay = (over = {}) => new DaylightAndroidArcadeGameOverlay({
 
 beforeEach(() => {
   posts = [];
-  answer = (_route, body) => ok(body.url ? { shown: true, kind: 'web' } : { shown: false, kind: 'none' });
+  answer = (_route, body) => ok(body.url
+    ? { shown: true, kind: 'web', text: { shown: false }, web: { shown: true, url: body.url } }
+    : { shown: false, kind: 'none', text: { shown: false }, web: { shown: false, url: null } });
   Object.values(quiet).forEach(fn => fn.mockClear());
 });
 
@@ -83,18 +85,31 @@ describe('DaylightAndroidArcadeGameOverlay - arm', () => {
     }));
   });
 
-  it('reports failure when the device answers that no web overlay is showing', async () => {
-    answer = () => ok({ shown: false, kind: 'none' });
+  it('is armed when the web layer is showing, whatever the text layer is doing', async () => {
+    // An operator message is up as well; the summary `kind` may name it.
+    answer = () => ok({ shown: true, kind: 'text', text: { shown: true }, web: { shown: true, url: 'https://x/film.html' } });
+    expect(await overlay().arm('tv', 'https://x/film.html')).toBe(true);
+  });
+
+  it('is not armed when the web layer is not showing, even though a text message is', async () => {
+    answer = () => ok({ shown: true, kind: 'web', text: { shown: true }, web: { shown: false, url: null } });
     expect(await overlay().arm('tv', 'https://x/film.html')).toBe(false);
+  });
+
+  it('falls back to `kind` only when the answer has no web layer field', async () => {
+    answer = () => ok({ shown: true, kind: 'web' });
+    expect(await overlay().arm('tv', 'https://x/film.html')).toBe(true);
     answer = () => ok({ shown: true, kind: 'text' });
+    expect(await overlay().arm('tv', 'https://x/film.html')).toBe(false);
+    answer = () => ok({ shown: false, kind: 'none' });
     expect(await overlay().arm('tv', 'https://x/film.html')).toBe(false);
   });
 });
 
 describe('DaylightAndroidArcadeGameOverlay - teardown', () => {
-  it('clears the overlay with an empty text and no url', async () => {
+  it('clears the web overlay only, leaving an operator text message alone', async () => {
     expect(await overlay().disarm('tv')).toBe(true);
-    expect(posts).toEqual([['/kiosk/overlay', { text: '' }]]);
+    expect(posts).toEqual([['/kiosk/overlay', { url: '' }]]);
     expect(quiet.info).toHaveBeenCalledWith('arcade.overlay.disarmed', { deviceId: 'tv', ok: true, error: undefined });
   });
 

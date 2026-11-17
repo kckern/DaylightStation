@@ -287,6 +287,26 @@ describe('bezel table', () => {
 });
 
 describe('devices on the Android kiosk app', () => {
+  it('skips a daylight-android device with no host instead of failing the whole build', async () => {
+    const warn = [];
+    const logger = { ...quiet, warn: (event, data) => warn.push([event, data]) };
+    let r;
+    expect(() => {
+      r = build(
+        {
+          'typo-tv': { arcade_session_observation: true, arcade_session_overlay: true, content_control: { provider: 'daylight-android', auth_ref: 'daylight-android' } },
+          'den-tv': metered,
+        },
+        { daylightHost: 'https://host', logger },
+      );
+    }).not.toThrow();
+
+    expect(r.trackers).toHaveLength(1);
+    expect(warn).toContainEqual(['arcade.kiosk.unconfigured', { deviceId: 'typo-tv', provider: 'daylight-android' }]);
+    await expect(r.start()).resolves.not.toThrow();
+    r.stop();
+  });
+
   const fullHttp = { get: async () => ({ status: 200, data: { ok: true } }), post: async () => ({ status: 200, data: { ok: true } }), delete: async () => ({ status: 200, data: { ok: true } }) };
   const daylightAuth = {
     ...configService,
@@ -334,7 +354,7 @@ describe('devices on the Android kiosk app', () => {
     // daylight device through its overlay route, the Fully one through its setting.
     await r.start();
     r.stop();
-    expect(posts).toContainEqual(['http://kiosk.test:8780/kiosk/overlay', { text: '' }]);
+    expect(posts).toContainEqual(['http://kiosk.test:8780/kiosk/overlay', { url: '' }]);
     expect(gets.some(url => url.startsWith('http://10.0.0.9:2323/') && url.includes('webOverlayUrl'))).toBe(true);
   });
 });

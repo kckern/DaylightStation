@@ -67,7 +67,8 @@ describe('DaylightAndroidArcadeKioskClient', () => {
     await client.clearOverlay();
     expect(post.mock.calls).toEqual([
       ['/kiosk/overlay', { url: 'https://x.test/film.html', gravity: 'top' }],
-      ['/kiosk/overlay', { text: '' }],
+      // Only the web layer: an operator's text message is a separate layer.
+      ['/kiosk/overlay', { url: '' }],
     ]);
   });
 
