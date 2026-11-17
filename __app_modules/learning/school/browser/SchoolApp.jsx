@@ -1643,4 +1643,5 @@ function SchoolAppInner({
   );
 }
 
+// Page heartbeat is owned by main.jsx SupervisedRoutes, above both supervision and shutdown gates.
 export default function SchoolApp(props) { return <SchoolShutdownGate {...props} />; }

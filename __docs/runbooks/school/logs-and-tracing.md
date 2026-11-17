@@ -450,3 +450,24 @@ correction.
 4. If evidence exists on disk (attempts, allocation records, session files)
    but the logs are quiet, suspect the 7-day retention or the pre-2026-08-22
    timestamp shift (§2) before suspecting the code.
+
+
+### Native Portal page evidence
+
+The Portal payload exposes authenticated `/status` → `homeWatchdog.page` and
+`/page/journal` (256 metadata entries). Correlate UTC `at`, `incidentId`, `stage`,
+page build/activity/sequence/age, process identity/uptime, network and native safety
+revision with the existing external five-second watcher. An unreachable native
+process is a different failure from a live native process with a stale page beat.
+Unknown/permission-denied evidence is not healthy evidence. Do not infer a historic
+crash, network outage or power event from a current snapshot; mark unavailable
+retained history explicitly.
+
+The heartbeat lives above `SupervisionHost` and `SchoolShutdownGate`. Visibility
+never authorizes a wake. Parent Stop remains in the existing shell Config authority;
+old/unknown safety, sleeping, Stop and maintenance suppress recovery. Active page
+recovery remains disabled pending actual HTTPS Fully transport and saved-state
+qualification. See the [Portal release gate and device probe](../../../_extensions/portal-keys/README.md#school-page-evidence-and-recovery-gate).
+No recovery path may replay act/print/grade POSTs. URL/domain-backed state can be
+resumed only through existing read paths; unsaved drafts require route-specific
+qualification before enabling renderer restarts.

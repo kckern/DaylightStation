@@ -57,6 +57,18 @@ final class FkbGuard {
                 .put("alertsReady", alerts.ready())
                 .put("alertError", alerts.error() == null ? JSONObject.NULL : alerts.error());
     }
+    void recoverPage(PageWatchState.Action action,java.util.function.BooleanSupplier permitted) {
+        handler.post(() -> {
+            try {
+                if (stopped || !permitted.getAsBoolean()) return;
+                if (action==PageWatchState.Action.FOREGROUND_LOAD) {
+                    call("toForeground",null,null);
+                    // reload retains Fully's current URL. Never navigate to a fresh start URL or replay POSTs.
+                    if (permitted.getAsBoolean()) call("reload",null,null);
+                } else if (action==PageWatchState.Action.RESTART_RENDERER && permitted.getAsBoolean()) call("restartApp",null,null);
+            } catch (Exception e) { error="page-recovery:"+e.getClass().getSimpleName(); }
+        });
+    }
     private JSONObject call(String command, String key, String value) throws Exception {
         String password = config.getString("fkbPassword", "");
         if (password.isEmpty()) throw new IllegalStateException("missing-fully-credential");

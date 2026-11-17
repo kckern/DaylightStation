@@ -15,6 +15,7 @@ public class ConfigLockdownTest {
     SharedPreferences open() {
       Map<String,Object> memory=new HashMap<>(disk);
       return (SharedPreferences)Proxy.newProxyInstance(getClass().getClassLoader(),new Class[]{SharedPreferences.class},(proxy,method,args)-> {
+        if(method.getName().equals("getAll"))return new HashMap<>(memory);
         if(method.getName().startsWith("get") && args!=null && args.length==2)return memory.getOrDefault(args[0],args[1]);
         if(method.getName().equals("edit")) {
           Map<String,Object> updates=new HashMap<>();
@@ -28,6 +29,28 @@ public class ConfigLockdownTest {
         throw new UnsupportedOperationException(method.getName());
       });
     }
+  }
+  @Test public void readOnlySafetyCombinesOrderedStopAndMaintenance() throws Exception {
+    Preferences storage=new Preferences();Config config=new Config(storage.open());
+    assertFalse(new org.json.JSONObject(config.pageSafetySnapshot(2,1000)).getBoolean("known"));
+    config.setPageMaintenance(0,1000);
+    config.applyLockdown(LockdownCommand.parse("{\"locked\":true,\"revision\":4}",1000));
+    org.json.JSONObject safety=new org.json.JSONObject(config.pageSafetySnapshot(2,1001));
+    assertTrue(safety.getBoolean("known"));assertTrue(safety.getBoolean("stopped"));assertEquals(4,safety.getLong("revision"));
+    assertFalse(new org.json.JSONObject(config.pageSafetySnapshot(null,1001)).getBoolean("known"));
+  }
+  @Test public void maintenanceIsExplicitDurableAndExpiresToUnknown() {
+    Preferences storage=new Preferences(); Config config=new Config(storage.open());
+    assertEquals(-1,config.pageMaintenance(1000));
+    config.setPageMaintenance(2000,1000);
+    Config restarted=new Config(storage.open());
+    assertEquals(1,restarted.pageMaintenance(1001));
+    assertEquals(-1,restarted.pageMaintenance(2000));
+    assertEquals(-1,restarted.pageMaintenance(999));
+    restarted.setPageMaintenance(0,2001);assertEquals(0,new Config(storage.open()).pageMaintenance(2002));
+    try { restarted.setPageMaintenance(1000000,1000);fail("unbounded maintenance"); } catch(IllegalArgumentException expected) {}
+    storage.commitSucceeds=false;
+    try { restarted.setPageMaintenance(0,3000);fail("undurable maintenance"); } catch(IllegalStateException expected) {}
   }
   @Test public void acknowledgedStopSurvivesPowerLossAndRejectsDelayedRelease() {
     Preferences storage=new Preferences();Config config=new Config(storage.open());

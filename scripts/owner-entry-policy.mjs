@@ -609,6 +609,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/school/browser/lesson.mjs': null,
   '__app_modules/learning/school/browser/reading.mjs': null,
   '__app_modules/learning/school/browser/kiosk.mjs': null,
+  '__app_modules/learning/school/browser/page-evidence.mjs': null,
   '__app_modules/learning/school/browser/teacher.mjs': null,
   '__app_modules/learning/school/server/adapters-catalog-yaml-learning-catalog-repository.mjs': 'adapters',
   '__app_modules/learning/school/server/adapters-catalog-yaml-learning-content-repository.mjs': 'adapters',

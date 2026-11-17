@@ -1,3 +1,4 @@
+import { usePortalPageHeartbeat } from '../../__app_modules/learning/school/browser/page-evidence.mjs';
 import React, { useState, useEffect } from 'react';
 import {SupervisionHost} from '../../__app_modules/household/supervision/browser/index.js';
 import ReactDOM from 'react-dom/client';
@@ -182,6 +183,7 @@ function SetupCheck({ children }) {
 /** One boundary covers nested app, screen, bank and native-game routes alike. */
 function SupervisedRoutes({children}) {
   const {pathname}=useLocation();
+  usePortalPageHeartbeat(pathname);
   const screen=pathname.match(/^\/screens?\/[^/]+/);
   const homeHref=screen?.[0]??(pathname.startsWith('/piano/')?pathname.split('/').slice(0,3).join('/'):pathname.startsWith('/fitness')?'/fitness':'/');
   return <SupervisionHost routePath={pathname} homeHref={homeHref}>{children}</SupervisionHost>;

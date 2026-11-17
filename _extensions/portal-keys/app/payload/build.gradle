@@ -15,4 +15,7 @@ dependencies {
     compileOnly project(':shell-api')
     compileOnly 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
+    testImplementation project(':shell-api')
+    testImplementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
 }
