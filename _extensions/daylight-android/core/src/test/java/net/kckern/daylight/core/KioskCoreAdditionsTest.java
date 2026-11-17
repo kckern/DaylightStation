@@ -64,24 +64,24 @@ public class KioskCoreAdditionsTest {
     }
 
     @Test public void aBodyIsAJsonObjectAndAnEmptyOneIsAnEmptyObject() {
-        assertEquals(0, Json.body(request(null, Collections.emptyMap())).length());
-        assertEquals(0, Json.body(request("  ", Collections.emptyMap())).length());
-        assertEquals("b", Json.body(request("{\"a\":\"b\"}", Collections.emptyMap())).optString("a"));
+        assertEquals(0, Requests.body(request(null, Collections.emptyMap())).length());
+        assertEquals(0, Requests.body(request("  ", Collections.emptyMap())).length());
+        assertEquals("b", Requests.body(request("{\"a\":\"b\"}", Collections.emptyMap())).optString("a"));
         for (String bad : new String[] { "not json", "[1,2]", "7" }) {
-            try { Json.body(request(bad, Collections.emptyMap())); fail("expected a bad request for " + bad); }
+            try { Requests.body(request(bad, Collections.emptyMap())); fail("expected a bad request for " + bad); }
             catch (IllegalArgumentException expected) { assertEquals("body must be a JSON object", expected.getMessage()); }
         }
     }
 
     @Test public void anIntegerQueryIsClampedAndANonNumberIsABadRequest() {
         Map<String, String> q = new HashMap<>();
-        assertEquals(1000, Json.intQuery(request(null, q), "ms", 1000, 100, 10_000));
+        assertEquals(1000, Requests.intQuery(request(null, q), "ms", 1000, 100, 10_000));
         q.put("ms", "50");
-        assertEquals(100, Json.intQuery(request(null, q), "ms", 1000, 100, 10_000));
+        assertEquals(100, Requests.intQuery(request(null, q), "ms", 1000, 100, 10_000));
         q.put("ms", "99999");
-        assertEquals(10_000, Json.intQuery(request(null, q), "ms", 1000, 100, 10_000));
+        assertEquals(10_000, Requests.intQuery(request(null, q), "ms", 1000, 100, 10_000));
         q.put("ms", "soon");
-        try { Json.intQuery(request(null, q), "ms", 1000, 100, 10_000); fail("expected a bad request"); }
+        try { Requests.intQuery(request(null, q), "ms", 1000, 100, 10_000); fail("expected a bad request"); }
         catch (IllegalArgumentException expected) { assertEquals("query 'ms' must be an integer", expected.getMessage()); }
     }
 

@@ -8,7 +8,7 @@ import net.kckern.daylight.api.KioskHost;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.EventBus;
-import net.kckern.daylight.core.Json;
+import net.kckern.daylight.core.Requests;
 import net.kckern.daylight.core.MainThread;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
@@ -65,18 +65,18 @@ public final class WebViewHostCapability implements Capability {
         Router router = core.router();
         router.route("GET", "/kiosk/status", req -> Router.Response.json(200, session.status()));
         router.route("POST", "/kiosk/load", req -> {
-            JSONObject body = Json.body(req);
+            JSONObject body = Requests.body(req);
             if (!(body.opt("url") instanceof String)) throw new IllegalArgumentException("body needs 'url', a string");
             return load((String) body.opt("url"), wait(body));
         });
         router.route("POST", "/kiosk/load-start", req -> {
-            boolean wait = wait(Json.body(req));
+            boolean wait = wait(Requests.body(req));
             String start = ((String) core.settings().get("webview.startUrl")).trim();
             if (start.isEmpty()) throw new IllegalArgumentException(KioskSession.NOT_CONFIGURED);
             return load(start, wait);
         });
         router.route("POST", "/kiosk/reload", req -> {
-            boolean wait = wait(Json.body(req));
+            boolean wait = wait(Requests.body(req));
             return load(session.reloadUrl(), wait);
         });
         router.route("POST", "/kiosk/foreground", req -> foreground());
@@ -91,7 +91,7 @@ public final class WebViewHostCapability implements Capability {
             return Router.Response.json(200, Replies.ok().put("restarting", true));
         });
         router.route("POST", "/kiosk/overlay", req ->
-                Router.Response.json(200, session.overlay(OverlayRequest.parse(Json.body(req)))));
+                Router.Response.json(200, session.overlay(OverlayRequest.parse(Requests.body(req)))));
     }
 
     /** Body field `wait`: absent or true waits for the main frame; false answers at once. */
