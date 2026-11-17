@@ -1,0 +1,54 @@
+import { describe,it,expect } from 'vitest';
+import { deriveGratitudeState, combineGratitudeAnswers } from './gratitude.mjs';
+import { validGratitudeEvidence } from './gratitudeEvidence.mjs';
+const t=n=>`2026-11-16T18:0${n}:00Z`;
+const first={type:'submitted',at:t(1),attemptId:'a1',text:"I'm grateful for my mom",via:'typed',audioRef:null,edited:false};
+const general={type:'assessed',at:t(2),attemptId:'a1',verdict:'general',confidence:.95,model:'jev',rubricVersion:5,matchedId:null};
+const asked={type:'follow-up-asked',at:t(3),attemptId:'a1',question:'What about your mom are you grateful for today?',writer:'model'};
+const second={type:'submitted',at:t(4),attemptId:'a2',followUpOf:'a1',text:'She made me pancakes',via:'typed',audioRef:null,edited:false};
+const base=[{type:'opened',at:t(0)},first,general,asked];
+describe('gratitude follow-up evidence',()=>{
+  it('combines two answers on one line each',()=>{
+    expect(combineGratitudeAnswers(' my mom ',' pancakes ')).toBe('my mom\npancakes');
+  });
+  it('enters the follow-up phase with an empty draft and the question',()=>{
+    const s=deriveGratitudeState(base);
+    expect(s).toMatchObject({phase:'follow-up',draft:null,followUpAsked:true,followUp:{attemptId:'a1',question:asked.question,firstText:first.text}});
+  });
+  it('keeps the follow-up phase while drafting and recording',()=>{
+    const s=deriveGratitudeState([...base,{type:'take-saved',at:t(4),takeId:'k1',audioRef:'child/k1.webm',text:'pancakes'},{type:'draft-saved',at:t(5),draft:{text:'pancakes!',via:'voice',audioRef:'child/k1.webm',edited:true}}]);
+    expect(s.phase).toBe('follow-up');expect(s.draft.text).toBe('pancakes!');
+  });
+  it('a take in the follow-up does not prepend the first answer',()=>{
+    const s=deriveGratitudeState([...base,{type:'take-saved',at:t(4),takeId:'k1',audioRef:'child/k1.webm',text:'pancakes'}]);
+    expect(s.draft.text).toBe('pancakes');
+  });
+  it('judges the combined text after a follow-up answer',()=>{
+    const s=deriveGratitudeState([...base,second]);
+    expect(s.phase).toBe('assessing');expect(s.assessText).toBe("I'm grateful for my mom\nShe made me pancakes");
+  });
+  it('judges the plain text when there was no follow-up',()=>{
+    expect(deriveGratitudeState([{type:'opened',at:t(0)},first]).assessText).toBe(first.text);
+  });
+  it('accepts the follow-up chain and a publication of the combined text',()=>{
+    const chain=[...base,second,{type:'assessed',at:t(5),attemptId:'a2',verdict:'eligible',confidence:.9,model:'jev',rubricVersion:5,matchedId:null},
+      {type:'publication-pending',at:t(6),attemptId:'a2',text:"I'm grateful for my mom\nShe made me pancakes",subject:'Mom making pancakes',selectionId:'school-gratitude:child:2026-11-16',timestamp:t(6)}];
+    expect(validGratitudeEvidence(chain,{learnerId:'child',studyDay:'2026-11-16'})).toBe(true);
+    chain[6]={...chain[6],text:'She made me pancakes'};
+    expect(validGratitudeEvidence(chain)).toBe(false);
+  });
+  it('refuses a second follow-up, a stray followUpOf, and a follow-up for another attempt',()=>{
+    expect(validGratitudeEvidence([...base,second,{...general,at:t(5),attemptId:'a2'}])).toBe(false);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},{...first,followUpOf:'zz'}])).toBe(false);
+    expect(validGratitudeEvidence([...base,{...second,followUpOf:'other'}])).toBe(false);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},first,general,{...asked,attemptId:'other'}])).toBe(false);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},first,general,{...asked,question:''}])).toBe(false);
+  });
+  it('a retry after an unclear combined answer starts fresh without followUpOf',()=>{
+    const unclear={type:'assessed',at:t(5),attemptId:'a2',verdict:'uncertain',confidence:null,model:'jev',rubricVersion:5,matchedId:null};
+    const again={type:'submitted',at:t(6),attemptId:'a3',text:'Mom reading to me',via:'typed',audioRef:null,edited:false};
+    const events=[...base,second,unclear,again];
+    expect(validGratitudeEvidence(events)).toBe(true);
+    expect(deriveGratitudeState(events)).toMatchObject({assessText:'Mom reading to me',followUpAsked:true});
+  });
+});

@@ -1,5 +1,7 @@
 import { SUBJECT_IDS } from './curriculum/unitValidation.mjs';
-import { validGratitudeEvidence } from './gratitudeEvidence.mjs';
+import { validGratitudeEvidence, combineGratitudeAnswers } from './gratitudeEvidence.mjs';
+
+export { combineGratitudeAnswers };
 
 export const GRATITUDE_PROGRAM_ID = 'gratitude';
 export const GRATITUDE_UNIT_ID = 'gratitude:daily';
@@ -23,7 +25,7 @@ export const gratitudePublicationId = (learnerId, day) => `school-gratitude:${le
 /** Event-derived evidence, separate from the browser view and all wall-clock policy. */
 export function deriveGratitudeState(events = [], { now = null } = {}) {
   if(!validGratitudeEvidence(events))throw new Error('Invalid Gratitude evidence');
-  const state = { phase: 'not-started', attemptId: null, draft: null, submitted: null, assessment: null, publication: null, subject: null, selectionId: null, retryAt: null, reason: null };
+  const state = { phase: 'not-started', attemptId: null, draft: null, submitted: null, assessment: null, publication: null, subject: null, selectionId: null, retryAt: null, reason: null, followUp: null, followUpAsked: false, assessText: null };
   const takeBases=new Map();
   for (const event of events) {
     switch (event.type) {
@@ -32,10 +34,14 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
         if(!takeBases.has(event.takeId))takeBases.set(event.takeId,state.draft?.text??'');
         const base=takeBases.get(event.takeId);
         state.draft={text:event.text?(base?`${base} ${event.text}`:event.text):base,via:'voice',audioRef:event.audioRef,takeId:event.takeId,edited:false};
-        state.phase='draft';break;
+        state.phase=state.phase==='follow-up'?'follow-up':'draft';break;
       }
-      case 'draft-saved': state.draft = {...event.draft,takeId:event.draft.audioRef===state.draft?.audioRef?state.draft?.takeId:null}; state.phase = 'draft'; break;
-      case 'submitted': state.attemptId = event.attemptId; state.submitted = event; state.draft = event; state.assessment = null; state.publication = null; state.reason = null; state.retryAt=null; state.phase = 'assessing'; break;
+      case 'draft-saved': state.draft = {...event.draft,takeId:event.draft.audioRef===state.draft?.audioRef?state.draft?.takeId:null}; state.phase = state.phase === 'follow-up' ? 'follow-up' : 'draft'; break;
+      case 'submitted':
+        state.assessText = event.followUpOf && state.followUp?.attemptId === event.followUpOf ? combineGratitudeAnswers(state.followUp.firstText, event.text) : event.text;
+        state.followUp = null;
+        state.attemptId = event.attemptId; state.submitted = event; state.draft = event; state.assessment = null; state.publication = null; state.reason = null; state.retryAt=null; state.phase = 'assessing'; break;
+      case 'follow-up-asked': state.followUp = { attemptId: event.attemptId, question: event.question, firstText: state.submitted?.text ?? '' }; state.followUpAsked = true; state.draft = null; state.phase = 'follow-up'; break;
       case 'assessed': state.assessment = event; if (event.verdict === 'uncertain') { state.phase = 'retry'; state.reason = 'unclear'; } break;
       case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; break;
       case 'publication-pending': state.publication = event; state.subject = event.subject; state.selectionId = event.selectionId; state.phase = 'pending'; state.reason = 'publication'; break;
