@@ -247,6 +247,65 @@ public class MediaServiceCapabilityTest {
         assertEquals("{\"accepted\":true}", pinner().pin("plex:1", "Radio").toString());
     }
 
+    // ── search (a car's voice search) ─────────────────────────────────────────
+
+    private static final String RESULTS = "{\"items\":["
+            + "{\"id\":\"plex:100\",\"title\":\"Kind of Blue\",\"itemType\":\"container\",\"thumbnail\":\"/api/v1/display/plex/100\"},"
+            + "{\"id\":\"plex:101\",\"title\":\"So What\",\"mediaType\":\"audio\",\"mediaUrl\":\"/api/v1/proxy/plex/101\",\"metadata\":{\"artist\":\"Miles Davis\"}}"
+            + "]}";
+
+    private JSONObject search(String query) throws Exception {
+        return cap.call(new JSONObject().put("op", "search").put("query", query)).body;
+    }
+
+    @Test public void aSearchAsksTheBackendAndAnswersWithBrowseEntriesAndTheBestToPlay() throws Exception {
+        api.responses.put("search miles 50", RESULTS);
+        JSONObject r = search("miles");
+        assertTrue(r.toString(), r.getBoolean("ok"));
+        assertEquals("c:plex:100", r.getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("p:plex:101", r.getJSONArray("items").getJSONObject(1).getString("id"));
+        assertEquals("the first result plays; a container plays from its first item", "p:plex:100", r.getString("best"));
+    }
+
+    @Test public void theQueryIsCutTo200CharactersAndIsNeverNoted() throws Exception {
+        StringBuilder longQuery = new StringBuilder();
+        for (int i = 0; i < 300; i++) longQuery.append('a');
+        String cut = longQuery.substring(0, 200);
+        api.responses.put("search " + cut + " 50", RESULTS);
+        assertTrue(search(longQuery.toString()).getBoolean("ok"));
+        api.responses.put("search secret words 50", RESULTS);
+        search("secret\nwords");
+        assertTrue(api.calls.contains("search secret words 50"));
+        for (String n : ((net.kckern.daylight.core.testing.FakeShell) core.shell()).notes) assertFalse(n, n.contains("secret"));
+    }
+
+    @Test public void anEmptyQueryAnswersTheRecentList() throws Exception {
+        api.responses.put("recent 30", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"So What\"}]}");
+        JSONObject r = search("  ");
+        assertEquals("p:plex:11", r.getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("p:plex:11", r.getString("best"));
+        assertFalse(api.calls.toString().contains("search"));
+    }
+
+    @Test public void theAnswerIsBoundedByThePageSizeAndASearchWithNoResultHasNoBest() throws Exception {
+        core.settings().set("media.pageSize", 10);
+        StringBuilder many = new StringBuilder("{\"items\":[");
+        for (int i = 0; i < 40; i++) many.append(i == 0 ? "" : ",").append("{\"id\":\"plex:").append(i).append("\",\"title\":\"T\",\"itemType\":\"container\"}");
+        api.responses.put("search x 10", many.append("]}").toString());
+        assertEquals(10, search("x").getJSONArray("items").length());
+        api.responses.put("search none 10", "{\"items\":[]}");
+        JSONObject r = search("none");
+        assertEquals(0, r.getJSONArray("items").length());
+        assertFalse(r.has("best"));
+    }
+
+    @Test public void aBackendThatCannotSearchIsAFailureNotAnEmptyAnswer() throws Exception {
+        assertEquals(404, cap.call(new JSONObject().put("op", "search").put("query", "x")).status);
+        api.down = true;
+        assertEquals(502, cap.call(new JSONObject().put("op", "search").put("query", "y")).status);
+        assertEquals(400, cap.call(new JSONObject().put("op", "search").put("query", 5)).status);
+    }
+
     @Test public void resolveAnswersWithTracksAndWhereToStart() throws Exception {
         api.responses.put("queue plex:10", "{\"items\":[{\"contentId\":\"plex:11\",\"title\":\"One\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/11\",\"duration\":100}]}");
         JSONObject r = post("/media/resolve", "{\"ids\":[\"c:plex:10\"]}");

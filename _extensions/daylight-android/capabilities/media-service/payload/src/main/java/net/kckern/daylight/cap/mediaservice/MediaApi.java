@@ -18,5 +18,7 @@ interface MediaApi {
     JSONObject recent(int limit) throws Exception;
     JSONObject queue(String contentId) throws Exception;
     JSONObject play(String contentId) throws Exception;
+    /** GET /api/v1/content/query/search?text=&take=. text is already cut and cleaned (BrowseTree.searchText). */
+    JSONObject search(String text, int take) throws Exception;
     void log(JSONObject body) throws Exception;
 }

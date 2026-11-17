@@ -263,6 +263,14 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
 8. In the head unit's console, `keycode media_play_pause` and `keycode media_next`
    control playback.
 9. Progress reports continue while playing through the head unit (as D6).
+10. Voice search: on the head unit, the search (magnifier) or the voice button,
+    "search for <an album you know>": results appear, an album opens, a track
+    plays. `adb logcat -s Daylight-Media` has "search, <n> characters, <m> results"
+    and never the words.
+11. "Play <a track you know> on Daylight": it plays. Record what Android Auto said
+    if it did not, and the logcat lines around "play from search".
+12. A search with no result answers an empty list, and nothing crashes. With the
+    VPN off, the search fails and the car says so.
 
 ## F. Voice inputs (the recorder)
 

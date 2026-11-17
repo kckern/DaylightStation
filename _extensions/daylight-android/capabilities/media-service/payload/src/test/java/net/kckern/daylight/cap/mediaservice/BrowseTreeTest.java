@@ -141,4 +141,58 @@ public class BrowseTreeTest {
         assertEquals("a level never holds more than was asked for", 11,
                 BrowseTree.paged(new BrowseTree.Level(fifty, 50, 50), "plex:9", 0, 10).size());
     }
+
+    // ── search results (GET /api/v1/content/query/search) ────────────────────
+
+    @Test public void aSearchResultIsAContainerToBrowseOrAnItemWithAStreamToPlay() throws Exception {
+        org.json.JSONObject r = new org.json.JSONObject("{\"items\":["
+                + "{\"id\":\"plex:100\",\"title\":\"Kind of Blue\",\"itemType\":\"container\",\"thumbnail\":\"/api/v1/display/plex/100\"},"
+                + "{\"id\":\"plex:101\",\"title\":\"So What\",\"mediaType\":\"audio\",\"mediaUrl\":\"/api/v1/proxy/plex/101\",\"metadata\":{\"artist\":\"Miles Davis\"}},"
+                + "{\"id\":\"plex:102\",\"title\":\"A film\",\"mediaType\":\"video\",\"mediaUrl\":\"/v\"},"
+                + "{\"id\":\"immich:9\",\"title\":\"A photo\",\"mediaType\":\"image\",\"mediaUrl\":\"/i\"},"
+                + "{\"id\":\"plex:103\",\"title\":\"No stream\"},"
+                + "{\"id\":\"https://evil.example/x\",\"title\":\"Bad\",\"itemType\":\"container\"},"
+                + "{\"id\":\"plex:104\",\"itemType\":\"container\"},"
+                + "{\"id\":\"plex:105\",\"title\":\"Off-site art\",\"itemType\":\"container\",\"thumbnail\":\"https://evil.example/a.jpg\"}"
+                + "]}");
+        java.util.List<MediaNode> nodes = BrowseTree.fromSearch(r, backend, 50);
+        assertEquals(3, nodes.size());
+        assertEquals("c:plex:100", nodes.get(0).id);
+        assertTrue(nodes.get(0).browsable);
+        assertEquals("https://kiosk.example/api/v1/display/plex/100", nodes.get(0).artUrl);
+        assertEquals("p:plex:101", nodes.get(1).id);
+        assertTrue(nodes.get(1).playable);
+        assertEquals("Miles Davis", nodes.get(1).subtitle);
+        assertEquals("c:plex:105", nodes.get(2).id);
+        assertNull("art on another host is left out", nodes.get(2).artUrl);
+    }
+
+    @Test public void searchResultsAreBoundedAndAnAnswerThatIsNotOneIsEmpty() throws Exception {
+        StringBuilder many = new StringBuilder("{\"items\":[");
+        for (int i = 0; i < 80; i++) many.append(i == 0 ? "" : ",").append("{\"id\":\"plex:").append(i).append("\",\"title\":\"T\",\"itemType\":\"container\"}");
+        assertEquals(25, BrowseTree.fromSearch(new org.json.JSONObject(many.append("]}").toString()), backend, 25).size());
+        assertTrue(BrowseTree.fromSearch(null, backend, 25).isEmpty());
+        assertTrue(BrowseTree.fromSearch(new org.json.JSONObject("{\"items\":5}"), backend, 25).isEmpty());
+    }
+
+    @Test public void theBestResultToPlayIsTheFirstEntryAsAnItem() {
+        java.util.List<MediaNode> nodes = java.util.Arrays.asList(
+                new MediaNode("m:50|plex:9", "More", "", null, true, false),
+                new MediaNode("c:plex:100", "Album", "", null, true, false),
+                new MediaNode("p:plex:101", "Track", "", null, false, true));
+        assertEquals("p:plex:100", BrowseTree.best(nodes));
+        assertEquals("p:plex:101", BrowseTree.best(nodes.subList(2, 3)));
+        assertNull(BrowseTree.best(java.util.Collections.<MediaNode>emptyList()));
+    }
+
+    @Test public void aQueryIsCutTo200CharactersAndLosesItsControlCharacters() {
+        StringBuilder s = new StringBuilder();
+        for (int i = 0; i < 250; i++) s.append('\u00e9');
+        assertEquals(200, BrowseTree.searchText(s.toString()).length());
+        assertEquals("a b c", BrowseTree.searchText(" a\nb\u0000c "));
+        assertEquals("", BrowseTree.searchText(null));
+        String cut = BrowseTree.searchText(new String(new char[250]).replace("\0", "\uD83C\uDFB5"));
+        assertEquals("cut on whole characters", 200, cut.codePointCount(0, cut.length()));
+        assertEquals(400, cut.length());
+    }
 }

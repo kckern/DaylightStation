@@ -206,6 +206,7 @@ public final class MediaServiceCapability implements Capability {
             if ("resolve".equals(op)) return resolve(request);
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
+            if ("search".equals(op)) return search(request);
             return failure(400, "bad_request");
         } catch (IllegalArgumentException refused) {
             return failure(400, "bad_request");
@@ -284,6 +285,33 @@ public final class MediaServiceCapability implements Capability {
         String contentId = actions == null ? null : actions.mediaContentId(id);
         if (!ContentId.valid(contentId)) return failure(404, "unknown_action");
         return new Outcome(200, Replies.ok().put("mediaId", MediaId.leaf(contentId, null)));
+    }
+
+    /**
+     * A car's voice search (the library session's onSearch). The query is cut and
+     * cleaned (BrowseTree.searchText) and sent as one encoded parameter; an empty one
+     * answers the recent list. The answer is browse entries, at most media.pageSize, and
+     * "best": what "play <query>" plays. The query is never noted or logged; it is kept
+     * for a minute as the key of the answer in memory, as a browse level is.
+     */
+    private Outcome search(JSONObject request) throws Exception {
+        Object raw = request.opt("query");
+        if (raw != null && raw != JSONObject.NULL && !(raw instanceof String)) throw new IllegalArgumentException("query must be text");
+        final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
+        final int pageSize = (Integer) core.settings().get(PAGE_SIZE);
+        List<MediaNode> nodes;
+        if (text.isEmpty()) {
+            nodes = cache.get(MediaId.RECENT, clock.getAsLong(), () -> load(MediaId.parse(MediaId.RECENT), pageSize));
+        } else {
+            nodes = cache.get("s|" + text, clock.getAsLong(), () -> BrowseTree.fromSearch(api.search(text, pageSize), backend, pageSize));
+        }
+        if (nodes.size() > pageSize) nodes = new ArrayList<>(nodes.subList(0, pageSize));
+        JSONArray items = new JSONArray();
+        for (MediaNode n : nodes) items.put(n.toJson());
+        JSONObject body = Replies.ok().put("items", items);
+        String best = BrowseTree.best(nodes);
+        if (best != null) body.put("best", best);
+        return new Outcome(200, body);
     }
 
     /** {accepted, reason?} and nothing else, whatever the shortcuts answered. */

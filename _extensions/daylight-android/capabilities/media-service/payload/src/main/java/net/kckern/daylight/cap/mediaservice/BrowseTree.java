@@ -113,6 +113,76 @@ final class BrowseTree {
         return out;
     }
 
+    /** The longest query sent, in characters (code points). */
+    static final int MAX_QUERY = 200;
+    /** Media types a search result may name that the native player does not play. */
+    private static final java.util.Set<String> NOT_AUDIO = new java.util.HashSet<>(java.util.Arrays.asList(
+            "video", "image", "photo", "movie", "episode", "show", "season", "clip", "dash_video", "readable", "book", "comic"));
+
+    /**
+     * A query as it is sent: control characters become spaces, the ends are trimmed and
+     * runs of spaces collapse, cut to MAX_QUERY whole characters. "" for none.
+     */
+    static String searchText(String raw) {
+        if (raw == null) return "";
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        boolean space = false;
+        for (int i = 0; i < raw.length() && count < MAX_QUERY; ) {
+            int cp = raw.codePointAt(i);
+            i += Character.charCount(cp);
+            boolean blank = Character.isWhitespace(cp) || Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT;
+            if (blank) { space = out.length() > 0; continue; }
+            if (space) { out.append(' '); count++; space = false; if (count >= MAX_QUERY) break; }
+            out.appendCodePoint(cp);
+            count++;
+        }
+        return out.toString();
+    }
+
+    /**
+     * A GET /api/v1/content/query/search response, as browse entries: a container to
+     * browse, or an item with a stream to play. The same rules as a browse level: a
+     * checked content id, a title, art only as an https URL on the backend, at most max
+     * entries. An item whose media type is plainly not audio is left out (the player
+     * would refuse it). Fields read: items[].id, title, itemType, mediaType, mediaUrl,
+     * metadata.type, metadata.artist, subtitle, thumbnail (read from the backend's code;
+     * the route has never been called by the app).
+     */
+    static List<MediaNode> fromSearch(JSONObject response, Backend backend, int max) {
+        List<MediaNode> out = new ArrayList<>();
+        JSONArray items = response == null ? null : response.optJSONArray("items");
+        for (int i = 0; items != null && i < items.length() && out.size() < max; i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String id = Json.str(item, "id");
+            String title = Json.str(item, "title");
+            if (!ContentId.valid(id) || title.isEmpty()) continue;
+            JSONObject meta = item.optJSONObject("metadata");
+            String subtitle = Json.first(meta == null ? "" : Json.str(meta, "artist"), Json.str(item, "subtitle"));
+            String art = art(backend, Json.str(item, "thumbnail"));
+            if ("container".equals(Json.str(item, "itemType"))) {
+                out.add(new MediaNode(MediaId.container(id), title, subtitle, art, true, false));
+                continue;
+            }
+            String type = Json.first(Json.str(item, "mediaType"), meta == null ? "" : Json.str(meta, "type")).toLowerCase(java.util.Locale.ROOT);
+            if (Json.str(item, "mediaUrl").isEmpty() || NOT_AUDIO.contains(type)) continue;
+            out.add(new MediaNode(MediaId.leaf(id, null), title, subtitle, art, false, true));
+        }
+        return out;
+    }
+
+    /** What "play <query>" plays: the first entry, as an item (a container plays from its first item), or null. */
+    static String best(List<MediaNode> nodes) {
+        for (MediaNode n : nodes) {
+            MediaId id;
+            try { id = MediaId.parse(n.id); } catch (IllegalArgumentException notOurs) { continue; }
+            if (id.kind == MediaId.Kind.LEAF) return n.id;
+            if (id.kind == MediaId.Kind.CONTAINER && id.skip == 0 && n.id.startsWith("c:")) return MediaId.leaf(id.contentId, null);
+        }
+        return null;
+    }
+
     /**
      * One level of a container as a car shows it: at most pageSize entries, and, when
      * the container holds more, one last browsable entry that leads to the next page.

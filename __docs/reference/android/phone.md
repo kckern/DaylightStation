@@ -591,6 +591,7 @@ Read from the backend's code; the app has never called them.
 | `GET /api/v1/queue/<source>/<localId>` | Everything playable in a container | `items[]`: `contentId` or `id`, `title`, `mediaUrl`, `mediaType` (`audio` only), `duration` (seconds), `thumbnail`, `artist`, `album`, `parentTitle`, `grandparentTitle`, `listId`, `resumable`, `resumePosition` |
 | `GET /api/v1/play/<source>/<localId>` | One item | `id` or `assetId`, `mediaUrl`, `mediaType`, `title`, `duration`, `thumbnail`, `parentTitle`, `grandparentTitle`, `metadata.artist`, `metadata.album`, `resume_position` (seconds, only for a resumable item in progress). A container answers with its first playable item; the id in the answer then differs and the container is queued |
 | `GET /api/v1/media/household/recent?limit=` | The `recent` tab | `items[]`: `contentId`, `title`, `thumbnail`, `parentTitle`, `grandparentTitle`; an entry with no title is left out |
+| `GET /api/v1/content/query/search?text=&take=` | Voice search from a car | `items[]`: `id` (a content id, `<source>:<localId>`), `title`, `itemType` (`container` on a listable item), `mediaType`, `mediaUrl` (on a playable item), `metadata.type`, `subtitle`, `thumbnail`; `metadata.artist` is read when present (unverified that a source sets it). A 400 (validation), 501 (no query service) or 500 is a failure |
 | `POST /api/v1/play/log` | Progress | Sends `type` (the content's source), `assetId` (the content id), `seconds`, `percent`, `title`, `listId` (null when none): the web player's fields. Sent with `X-Daylight-Device` |
 
 Not confirmed from code, and handled so that being wrong plays nothing or reports
@@ -613,6 +614,52 @@ beginning.
 - The phone's own progress spot on the backend needs a `phone` entry in the
   household's `devices.yml`. Without it reports are still saved, with no
   per-screen spot.
+
+### Voice search in the car
+
+Android Auto's voice button and "play ... on Daylight" reach the library session's
+search callbacks. Only connected controllers can search, and every connection was
+admitted by `ControllerPolicy` (see "Who may connect").
+
+- `onSearch` hands the query to the payload (`media` port, op `search`) on the io
+  executor, never the main thread, then tells the car how many results there are;
+  `onGetSearchResult` asks again for the page the car wants (the payload keeps the
+  answer for a minute) and slices it.
+- Play-from-search: Media3 1.1.1 delivers it to `onSetMediaItems` as one item with
+  an empty media id and the words in its request metadata's search query (read
+  from the 1.1.1 bytecode: `MediaSessionLegacyStub.onPlayFromSearch`). The service
+  asks the payload to search, takes the item the payload names as `best` (the first
+  result; a container plays from its first item) and resolves it like any id. A
+  search with no result fails the request.
+- The payload cleans the query (control and format characters become spaces, runs
+  of spaces collapse), cuts it to 200 characters and sends it as one URL-encoded
+  parameter, `text`, never as a path. `take` is `media.pageSize`. An empty query
+  answers the recent list.
+- Results are mapped by the browse rules: a checked content id and a title, an
+  image only as an https URL on the backend, at most `media.pageSize` entries. A
+  container is browsable; an item is playable when it has a `mediaUrl` and its
+  media type is not plainly something the player cannot play (video, image, photo,
+  movie, episode, show, season, clip, a book). What plays is still the backend's
+  answer to the play and queue routes for that id.
+- The query is never written to a log or a note: the installed service logs
+  "search, <n> characters, <m> results" and "play from search, <n> characters".
+  The payload keeps it in memory for a minute as the key of the cached answer.
+
+Read from the backend's code (`__capabilities/content-catalog/server/api/content.mjs`,
+the router mounted at `/api/v1/content`; `ContentQueryService.search`; the `Item`,
+`PlayableItem` and `ListableItem` entities), never called by the app. Not sent:
+`mediaType` and `capability` (the route's `capability=playable` filter drops
+containers, and `mediaType` is handed to the adapters, which may not support it).
+**Unverified:** which `mediaType` values the household's sources give an audio
+track (the code's comments mention `track`); whether every source's search answers
+`itemType` on a playlist (a playlist without it is shown as a playable item when it
+has a `mediaUrl`, and left out otherwise); and that the ids it returns are accepted
+by the queue and play routes for every source (they are the same `source:localId`
+ids the list routes give). The backend's own request log line records the query
+text; that is the backend's log, not the phone's.
+
+Unproven in a car: all of it, including whether Android Auto routes the voice
+button to this app's search at all for a sideloaded app.
 
 ### Browsing
 

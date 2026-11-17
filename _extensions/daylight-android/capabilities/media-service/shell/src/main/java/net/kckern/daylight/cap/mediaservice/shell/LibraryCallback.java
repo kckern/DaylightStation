@@ -177,11 +177,86 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /**
      * Only the media ids are read from what a controller sends. A URI or metadata it
      * put on an item is dropped: what plays is what the payload answers for the id.
+     * The one exception is a play-from-search (one item, no id, a search query): the
+     * payload searches and names the item to play, which is then resolved like any id.
      */
     private TrackAnswer resolve(List<MediaItem> requested) throws Exception {
         List<String> ids = new ArrayList<>();
-        for (MediaItem item : requested) ids.add(item.mediaId);
+        List<String> queries = new ArrayList<>();
+        for (MediaItem item : requested) {
+            ids.add(item.mediaId);
+            queries.add(item.requestMetadata == null ? null : item.requestMetadata.searchQuery);
+        }
+        String query = SearchAnswer.playFromSearch(ids, queries);
+        if (query != null) {
+            // The words are never logged; their length is.
+            Log.i(TAG, "play from search, " + query.length() + " characters");
+            String best = SearchAnswer.best(media.search(query, PLAY_WAIT_MS));
+            if (best == null) throw new IllegalStateException("nothing found");
+            ids = java.util.Collections.singletonList(best);
+        }
         return TrackAnswer.parse(media.resolve(ids, PLAY_WAIT_MS));
+    }
+
+    // ── voice search ──────────────────────────────────────────────────────────
+    //
+    // Media3 lets only connected controllers search, and onConnect admitted each one
+    // (ControllerPolicy). The query goes to the payload and is never logged; its length is.
+
+    @Override
+    public ListenableFuture<LibraryResult<Void>> onSearch(final MediaLibrarySession session,
+            final MediaSession.ControllerInfo browser, final String query, final LibraryParams params) {
+        final SettableFuture<LibraryResult<Void>> future = SettableFuture.create();
+        try {
+            io.execute(() -> {
+                int count;
+                try {
+                    count = BrowseAnswer.parse(media.search(query, BROWSE_WAIT_MS)).size();
+                } catch (Throwable failedOrNoPayload) {
+                    count = 0;
+                }
+                Log.i(TAG, "search, " + (query == null ? 0 : query.length()) + " characters, " + count + " results");
+                final int results = count;
+                // A session is used from the application's main thread.
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    try {
+                        session.notifySearchResultChanged(browser, query, results, params);
+                    } catch (Throwable released) {
+                        // The session or the browser went away while searching.
+                    }
+                });
+            });
+            future.set(LibraryResult.ofVoid());
+        } catch (RuntimeException stopping) {
+            future.set(LibraryResult.<Void>ofError(LibraryResult.RESULT_ERROR_INVALID_STATE));
+        }
+        return future;
+    }
+
+    @Override
+    public ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> onGetSearchResult(
+            MediaLibrarySession session, MediaSession.ControllerInfo browser, final String query,
+            final int page, final int pageSize, final LibraryParams params) {
+        final SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future = SettableFuture.create();
+        try {
+            io.execute(() -> {
+                try {
+                    // The payload keeps the answer for a minute, so asking again for a page is cheap.
+                    List<BrowseAnswer.Entry> entries = BrowseAnswer.parse(media.search(query, BROWSE_WAIT_MS));
+                    future.set(LibraryResult.ofItemList(NodeItems.nodes(SearchAnswer.page(entries, page, pageSize)), params));
+                } catch (PayloadPort.NotReadyException noPayload) {
+                    future.set(LibraryResult.ofItemList(ImmutableList.<MediaItem>of(), params));
+                } catch (BrowseAnswer.Failed refused) {
+                    future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_IO));
+                } catch (Throwable broke) {
+                    Log.w(TAG, "search failed: " + broke.getClass().getSimpleName());
+                    future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_UNKNOWN));
+                }
+            });
+        } catch (RuntimeException stopping) {
+            future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_INVALID_STATE));
+        }
+        return future;
     }
 
     private static Exception failure(Throwable e) {

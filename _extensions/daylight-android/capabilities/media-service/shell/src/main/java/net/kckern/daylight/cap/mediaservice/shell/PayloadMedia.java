@@ -29,6 +29,11 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds)).toString(), waitMs);
     }
 
+    /** A car's voice search. The query goes to the payload as it came; the payload cuts and cleans it. */
+    String search(String query, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "search").put("query", query == null ? "" : query).toString(), waitMs);
+    }
+
     /**
      * A tap on a widget or a tile handed the play service an action id. The payload
      * answers with the media id of that action's content, or refuses.
