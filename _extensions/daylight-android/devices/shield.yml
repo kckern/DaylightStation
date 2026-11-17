@@ -11,6 +11,7 @@ capabilities:
   - debug-tools
   - bluetooth-controls
   - mic-bridge
+  - lease-gate
 defaults:
   debug.execEnabled: false
   # The Bluetooth panel pairs and connects game controllers.

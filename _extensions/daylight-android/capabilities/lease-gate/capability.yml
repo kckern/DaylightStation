@@ -1,5 +1,7 @@
-# A server-issued lease decides whether one native app may run. Phase 2 ports the
-# lease logic and its status route. Enforcement needs `lockdown` (phase 3).
+# A server-issued lease decides whether one native app may run. The loop polls for the
+# lease and expires it locally. Hiding the package needs a PackageGate provider
+# (`lockdown`, phase 3, on a device that can have a device owner); without one the gate
+# stays closed and GET /lease says why. WAKE_LOCK and INTERNET are in every device's base set.
 entry: net.kckern.daylight.cap.leasegate.LeaseGateCapability
 # Every capability lists the Android permissions it needs, even when the list is
 # empty. tools/verify-build.mjs compares the APK's permission set with these lists.

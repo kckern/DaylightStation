@@ -1,33 +1,70 @@
 package net.kckern.daylight.cap.leasegate;
 
+import android.content.Context;
 import android.os.SystemClock;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.SettingsRegistry;
+import net.kckern.daylight.core.spi.PackageGate;
 
 import org.json.JSONObject;
 
+import java.io.File;
+
+/**
+ * A server-issued lease decides whether one native app may run. The loop polls for
+ * the lease and expires it locally; hiding the package goes through PackageGate, which
+ * nothing provides in this phase, so the gate stays closed and says why.
+ */
 public final class LeaseGateCapability implements Capability {
+    /** What GET /lease reports before the loop exists. */
     private final LeaseDeadline lease = new LeaseDeadline();
+    private CoreContext core;
+    private volatile LeaseLoop loop;
 
     @Override public String name() { return "lease-gate"; }
 
     @Override public void register(CoreContext core) {
+        this.core = core;
         core.settings().declare("lease.endpoint", SettingsRegistry.Type.STRING, "");
         core.settings().declare("lease.packageName", SettingsRegistry.Type.STRING, "");
-        core.router().route("GET", "/lease", req -> Router.Response.json(200, new JSONObject()
-                .put("ok", true)
-                .put("configured", !((String) core.settings().get("lease.endpoint")).isEmpty())
-                .put("blocked", lease.blocked(SystemClock.elapsedRealtime()))
-                .put("epoch", lease.epoch())
-                .put("revision", lease.revision())
-                // Task 23 replaces this with the state of the enforcement loop.
-                .put("enforcement", "unavailable")));
+        core.settings().declareSecret("lease.credential");
+        core.router().route("GET", "/lease", req -> {
+            LeaseLoop l = loop;
+            if (l != null) return Router.Response.json(200, l.status().put("ok", true));
+            // A payload that has not started.
+            return Router.Response.json(200, new JSONObject()
+                    .put("ok", true)
+                    .put("configured", !((String) core.settings().get("lease.endpoint")).isEmpty())
+                    .put("blocked", lease.blocked(SystemClock.elapsedRealtime()))
+                    .put("epoch", lease.epoch())
+                    .put("revision", lease.revision())
+                    .put("enforcement", "unavailable"));
+        });
     }
 
-    @Override public void start() { }
+    /**
+     * The endpoint, credential and package are read once here, as GuardService read its
+     * file once. Changing them takes a payload restart.
+     */
+    @Override public void start() {
+        Context ctx = (Context) core.shell().context();
+        // JVM tests boot every capability with no Android context: nothing to enforce.
+        if (ctx == null) return;
+        LeaseOrder order = new LeaseOrder(new File(core.shell().payloadDir(), "state/lease-order.json"));
+        LeaseLoop l = new LeaseLoop(ctx, order, () -> core.services().find(PackageGate.class),
+                (String) core.settings().get("lease.endpoint"),
+                (String) core.settings().get("lease.credential"),
+                (String) core.settings().get("lease.packageName"));
+        l.start();
+        loop = l;
+    }
 
-    @Override public void stop() { }
+    @Override public void stop() {
+        LeaseLoop l = loop;
+        loop = null;
+        if (l != null) l.stop();
+    }
 }

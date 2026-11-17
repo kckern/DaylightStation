@@ -25,5 +25,24 @@ public class LeaseGateCapabilityTest {
         assertTrue("no lease has been granted, so the gate is closed", o.getBoolean("blocked"));
         assertFalse(o.getBoolean("configured"));
         assertEquals(-1, o.getLong("epoch"));
+        assertEquals("unavailable", o.getString("enforcement"));
+    }
+
+    @Test public void theCredentialIsASecret() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        new LeaseGateCapability().register(core);
+        core.settings().set("lease.credential", "0123456789abcdef0123456789abcdef");
+        assertFalse(TestCore.get(core, "/settings").toString().contains("0123456789abcdef0123456789abcdef"));
+        assertFalse(TestCore.get(core, "/lease").toString().contains("0123456789abcdef0123456789abcdef"));
+    }
+
+    @Test public void startWithoutAnAndroidContextDoesNothingAndStopTwiceIsSafe() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        LeaseGateCapability cap = new LeaseGateCapability();
+        cap.register(core);
+        cap.start();
+        assertTrue(TestCore.get(core, "/lease").getBoolean("blocked"));
+        cap.stop();
+        cap.stop();
     }
 }
