@@ -156,6 +156,32 @@ public final class SettingsRegistry {
         changed(key);
     }
 
+    /**
+     * Several settings as one change: every value is checked first, then all are
+     * stored with a single write. If any value is refused, or the write fails,
+     * nothing is changed. Listeners hear each key afterwards, in the map's order.
+     */
+    public void setAll(Map<String, Object> values) {
+        synchronized (this) {
+            Map<String, Object> coerced = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> v : values.entrySet()) {
+                Entry e = entry(v.getKey());
+                coerced.put(v.getKey(), checked(v.getKey(), e.type, e.rule, v.getValue()));
+            }
+            Map<String, Object> previous = new LinkedHashMap<>();
+            for (String key : coerced.keySet()) previous.put(key, overrides.opt(key));
+            try {
+                for (Map.Entry<String, Object> v : coerced.entrySet()) overrides.put(v.getKey(), v.getValue());
+                persist();
+            } catch (JSONException | RuntimeException failed) {
+                for (Map.Entry<String, Object> p : previous.entrySet()) restore(p.getKey(), p.getValue());
+                if (failed instanceof RuntimeException) throw (RuntimeException) failed;
+                throw new InvalidSettingException(failed.getMessage());
+            }
+        }
+        for (String key : values.keySet()) changed(key);
+    }
+
     public void reset(String key) {
         synchronized (this) {
             entry(key);

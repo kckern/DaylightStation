@@ -740,6 +740,38 @@ Behavior that changed in the port, for whoever switches a device over.
 | Shield microphone socket | Every interface, port 8765 | Loopback only; port `mic.port` (8782 while both apps are installed) |
 | Shield microphone health | Read from the system log over ADB | `GET /mic/status` |
 | Shield lease loop | Its own app, device-protected storage, started before unlock | Inside this app, started with the payload; ordering kept under the payload directory |
+| Shield lease acknowledgement with no package gate | Acknowledged the state the app enforced | While nothing provides a package gate the loop acknowledges `capabilityReady: false, blocked: true`, whatever the lease says |
+| Shield `/bluetooth/<unknown action>` | `400` with `code: invalid_request` | `404 unknown_route`: only the named actions are routes |
+| Shield `/bluetooth` response headers | `Cache-Control: no-store` | No cache header |
+| Shield `/bluetooth` before the controller exists | No such answer | `200` with `ok: false, code: unavailable` (not `409`) until the capability has started |
+| Shield `GET /mic/status` fields | The control API contract's `running`, `streaming`, `clients`, `heldByOther`, `lastError` | Adds `port` and `lastErrorDetail`; `lastError` is a code (`bind_failed`, `capture_denied`, `permission_missing`) and `capture_denied` survives a restart |
+| Shield microphone socket clients | Any client that could reach the port | The handshake's `Origin` must match `webview.startUrl`; a client with no `Origin` is admitted from loopback while `mic.allowNoOrigin` is true |
+| Portal keyboard socket's first frame | `{"type":"ready","port":...}` | `{"type":"ready","device":"<id>"}`, the hub's greeting; there is no `port` field |
+| Portal keyboard events' audience | The clients of the keyboard socket | Every client of the control port's WebSocket |
+| Portal non-volume keys | Each one written to the event log (`hid-pass`) | Counted (`otherKeysSeen`), never logged |
+| Portal `keys.doublePressMs`, `presence.heartbeatMs` out of range | Refused by the old config route | Refused when set, with `400 invalid_setting` (150 to 2000 ms; 5 s to 10 min) |
+| Portal accessibility service config | Events `typeWindowsChanged` and `typeWindowStateChanged`; flags `flagRequestFilterKeyEvents`, `flagRetrieveInteractiveWindows` | Declares `typeWindowStateChanged` only; flags `flagDefault`, `flagReportViewIds`, `flagRetrieveInteractiveWindows`; adds `canRequestTouchExplorationMode` (the piano's set). Key filtering and further event types are switched on at run time for a capability that registers for them. See the note below |
+| Portal Control Center dismissal | portal-keys closed the swipe-up panel when a `typeWindowsChanged` event showed it | Not ported. No capability registers for window events, so the panel stays open until someone closes it |
+| Portal USB permission dialog | Confirmed when the dialog named "Portal Keys", in a system UI or package installer window | Confirmed when it names this app's own label as a whole word, in a system UI window only |
+| `midi.targetName` default | One instrument's Bluetooth name, compiled in | Empty; the device file supplies it |
+| MIDI and speaker connector settings | The values the connector was built with | Read from the settings at each use |
+| `GET /midi/send` | Hex from the query only | The same handler as `POST`: a hex body is read too |
+| Synth engine lifetime | Created and released by the piano-bridge service | Created by a ContentProvider when the process starts and never released; it ends with the process |
+| Synth engine failed to load | Not reported | `/status` and `/diagnostics` read `engine: load_failed` with `engineError` |
+| Role `assign` (bluetooth-controls giving a device the MIDI or the audio role) | One config write | One settings write of three keys (address, name, enabled): all three are stored or none is |
+| `POST /update` | Installed what the URL returned; the dialog was tapped whenever auto-confirm was on | Refuses another package or a lower `versionCode`; optional `sha256`; the dialog is tapped only for a verified `sha256`; `GET /update` leaves `awaiting_confirmation` after 90 s |
+| A setting with a fixed set of values or a range | Checked where it was used, or not at all | Checked when set; see Settings |
+| WebSocket sends | On the thread that produced the frame | Queued per client; a client that stops reading is disconnected after 512 queued frames |
+
+On the accessibility config: `typeWindowsChanged` is absent from the declared
+config on purpose. The service is shared by every device, and the hub adds event
+types at run time (`addEventListener`) for a capability that needs them. What is
+missing is the capability: portal-keys' Control Center dismissal, the one consumer
+of `typeWindowsChanged`, was not ported, so today nothing asks for those events and
+the panel is not dismissed. A capability that ports it gets the events by
+registering a listener; the declared config does not need to change.
+`flagReportViewIds` and `canRequestTouchExplorationMode` come from the piano's
+service and are not used on the Portal; touch exploration is requested by nothing.
 
 The backend's arcade Bluetooth adapter calls the Shield's `/bluetooth` API without
 a token today. It must send the device's token before the Shield can switch; that
@@ -859,6 +891,8 @@ eight, all of them shared core features.
 
 ## Known limits
 
+- The Portal's swipe-up Control Center is not dismissed: portal-keys' dismissal was
+  not ported (see Differences from the old helpers).
 - **Only a debug build exists.** Every APK is debuggable and signed with the
   Android debug key; no release signing is configured. Accepted, with this
   consequence: where ADB is enabled, `run-as <package>` reads the app's private

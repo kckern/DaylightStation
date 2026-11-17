@@ -161,7 +161,7 @@ public class MicStreamServerTest {
         return false;
     }
 
-    private WebSocketClient silentClient(int port, final CountDownLatch gotAudio) throws Exception {
+    private WebSocketClient audioClient(int port, final CountDownLatch gotAudio) throws Exception {
         return new WebSocketClient(new URI("ws://127.0.0.1:" + port)) {
             @Override public void onOpen(ServerHandshake h) { }
             @Override public void onMessage(String message) { }
@@ -178,7 +178,7 @@ public class MicStreamServerTest {
         server.useRecordFactoryForTest(bufferSize -> record);
         server.start(port);
         CountDownLatch gotAudio = new CountDownLatch(1);
-        WebSocketClient client = silentClient(port, gotAudio);
+        WebSocketClient client = audioClient(port, gotAudio);
         assertTrue(client.connectBlocking(5, TimeUnit.SECONDS));
         assertTrue("PCM frames reach the client", gotAudio.await(5, TimeUnit.SECONDS));
         assertTrue(server.streaming());
@@ -203,7 +203,7 @@ public class MicStreamServerTest {
             return record;                 // the slow open finishes only after stop() has run
         });
         server.start(port);
-        WebSocketClient client = silentClient(port, new CountDownLatch(1));
+        WebSocketClient client = audioClient(port, new CountDownLatch(1));
         assertTrue(client.connectBlocking(5, TimeUnit.SECONDS));
         assertTrue(opening.await(5, TimeUnit.SECONDS));
 
@@ -227,7 +227,7 @@ public class MicStreamServerTest {
             s.useRecordFactoryForTest(bufferSize -> new FakeRecord());
             s.start(port);
             CountDownLatch gotAudio = new CountDownLatch(1);
-            final WebSocketClient client = silentClient(port, gotAudio);
+            final WebSocketClient client = audioClient(port, gotAudio);
             assertTrue(client.connectBlocking(5, TimeUnit.SECONDS));
             assertTrue(gotAudio.await(5, TimeUnit.SECONDS));
             Thread leaver = new Thread(client::close);

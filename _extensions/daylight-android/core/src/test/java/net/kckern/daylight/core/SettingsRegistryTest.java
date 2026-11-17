@@ -268,4 +268,56 @@ public class SettingsRegistryTest {
         assertEquals(150, rows.getJSONObject(1).getInt("min"));
         assertEquals(2000, rows.getJSONObject(1).getInt("max"));
     }
+
+    // ── several settings as one change ──────────────────────────────────────
+
+    private static java.util.Map<String, Object> of(Object... pairs) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) m.put((String) pairs[i], pairs[i + 1]);
+        return m;
+    }
+
+    @Test public void setAllStoresEveryValueAndTellsListenersOfEach() {
+        SettingsRegistry s = fresh();
+        java.util.List<String> heard = new java.util.ArrayList<>();
+        s.onChange(heard::add);
+        s.setAll(of("webview.startUrl", "https://kiosk.example/", "recovery.retrySec", "30", "power.keepScreenOn", true));
+        assertEquals("https://kiosk.example/", s.get("webview.startUrl"));
+        assertEquals(30, s.get("recovery.retrySec"));
+        assertEquals(Boolean.TRUE, s.get("power.keepScreenOn"));
+        assertEquals(java.util.Arrays.asList("webview.startUrl", "recovery.retrySec", "power.keepScreenOn"), heard);
+        assertEquals(30, fresh().get("recovery.retrySec"));
+    }
+
+    @Test public void setAllWithOneRefusedValueChangesNothing() {
+        SettingsRegistry s = fresh();
+        s.set("webview.startUrl", "https://kiosk.example/old");
+        java.util.List<String> heard = new java.util.ArrayList<>();
+        s.onChange(heard::add);
+        try {
+            s.setAll(of("webview.startUrl", "https://kiosk.example/new", "recovery.retrySec", "soon"));
+            fail("a refused value was accepted");
+        } catch (InvalidSettingException expected) { }
+        try {
+            s.setAll(of("webview.startUrl", "https://kiosk.example/new", "no.such.key", 1));
+            fail("an unknown key was accepted");
+        } catch (UnknownSettingException expected) { }
+        assertEquals("the first value of the batch was not applied", "https://kiosk.example/old", s.get("webview.startUrl"));
+        assertEquals(0, s.get("recovery.retrySec"));
+        assertTrue(heard.isEmpty());
+        assertEquals("https://kiosk.example/old", fresh().get("webview.startUrl"));
+    }
+
+    @Test public void setAllThatCannotBeWrittenLeavesMemoryAsItWas() throws Exception {
+        SettingsRegistry s = fresh();
+        s.set("recovery.retrySec", 5);
+        // A directory where the temporary file should go: the write fails.
+        assertTrue(new File(file.getPath() + ".part").mkdir());
+        try {
+            s.setAll(of("recovery.retrySec", 60, "power.keepScreenOn", true));
+            fail("the write cannot have succeeded");
+        } catch (IllegalStateException expected) { }
+        assertEquals(5, s.get("recovery.retrySec"));
+        assertEquals(Boolean.FALSE, s.get("power.keepScreenOn"));
+    }
 }

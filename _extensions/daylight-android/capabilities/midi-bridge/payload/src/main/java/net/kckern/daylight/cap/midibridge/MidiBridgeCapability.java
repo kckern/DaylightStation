@@ -256,9 +256,12 @@ public final class MidiBridgeCapability implements Capability {
         @Override public void assign(String address, String name) {
             applying = true;
             try {
-                core.settings().set("midi.targetMac", address);
-                core.settings().set("midi.targetName", name);
-                core.settings().set("midi.enabled", true);
+                // One write: a failure leaves the old instrument assigned, not half of a new one.
+                java.util.Map<String, Object> values = new java.util.LinkedHashMap<>();
+                values.put("midi.targetMac", address);
+                values.put("midi.targetName", name);
+                values.put("midi.enabled", true);
+                core.settings().setAll(values);
             } finally { applying = false; }
             MidiLink l = link;
             if (l != null) l.reconnect();

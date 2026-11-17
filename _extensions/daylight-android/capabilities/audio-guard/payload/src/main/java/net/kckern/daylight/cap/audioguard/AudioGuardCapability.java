@@ -182,9 +182,12 @@ public final class AudioGuardCapability implements Capability {
         @Override public void assign(String address, String name) {
             applying = true;
             try {
-                core.settings().set("speaker.mac", address);
-                core.settings().set("speaker.name", name);
-                core.settings().set("speaker.enabled", true);
+                // One write: a failure leaves the old speaker assigned, not half of a new one.
+                java.util.Map<String, Object> values = new java.util.LinkedHashMap<>();
+                values.put("speaker.mac", address);
+                values.put("speaker.name", name);
+                values.put("speaker.enabled", true);
+                core.settings().setAll(values);
             } finally { applying = false; }
             AudioGuardHost h = host;
             if (h != null) h.rebuild();
