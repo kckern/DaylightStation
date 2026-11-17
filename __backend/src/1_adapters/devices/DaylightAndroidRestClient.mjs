@@ -36,8 +36,15 @@ export class DaylightAndroidRestClient {
   #token;
   #httpClient;
   #logger;
+  #logDeviceText;
 
-  constructor({ host, port = DEFAULT_PORT, token } = {}, { httpClient, logger = console } = {}) {
+  /**
+   * @param {Object} config
+   * @param {boolean} [config.logDeviceText=true] - false keeps the device's
+   *   own `error` / `reason` words out of the log, for routes whose refusals
+   *   can quote something private (a pairing PIN)
+   */
+  constructor({ host, port = DEFAULT_PORT, token, logDeviceText = true } = {}, { httpClient, logger = console } = {}) {
     if (!host) throw new Error('DaylightAndroidRestClient requires host');
     if (!httpClient?.get || !httpClient?.post || !httpClient?.delete) {
       throw new Error('DaylightAndroidRestClient requires httpClient with get, post and delete');
@@ -47,6 +54,7 @@ export class DaylightAndroidRestClient {
     this.#token = token || '';
     this.#httpClient = httpClient;
     this.#logger = logger;
+    this.#logDeviceText = logDeviceText !== false;
   }
 
   /**
@@ -177,7 +185,7 @@ export class DaylightAndroidRestClient {
       code,
       status,
       durationMs: Date.now() - startedAt,
-      ...(detail ? { detail } : {}),
+      ...(detail && this.#logDeviceText ? { detail } : {}),
     });
     return {
       ok: false,
@@ -186,6 +194,8 @@ export class DaylightAndroidRestClient {
       ...(status ? { status } : {}),
       ...(deviceError ? { deviceError } : {}),
       ...(reason ? { reason } : {}),
+      // A route's own machine-readable refusal code, when its body carries one.
+      ...(typeof payload?.code === 'string' ? { deviceCode: payload.code } : {}),
       ...(neverSent ? { neverSent: true } : {}),
     };
   }

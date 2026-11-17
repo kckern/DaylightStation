@@ -131,6 +131,25 @@ describe('DaylightAndroidRestClient', () => {
     expect(result.deviceError).toBe('unsupported');
   });
 
+  it('passes on the body `code` of a refusal', async () => {
+    const { client } = build({ status: 409, data: { ok: false, error: 'wake the controller', code: 'action_rejected' } });
+    await expect(client.post('/bluetooth/connect', {})).resolves.toMatchObject({
+      ok: false, code: 'COMMAND_REJECTED', status: 409, deviceCode: 'action_rejected',
+    });
+  });
+
+  it('can be told to keep what the device said out of its logs', async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const httpClient = { get: vi.fn(), post: vi.fn(async () => ({ status: 409, data: { ok: false, error: 'pin 1234 refused', reason: 'try 0000' } })), delete: vi.fn() };
+    const client = new DaylightAndroidRestClient({ host: 'kiosk.test', token: TOKEN, logDeviceText: false }, { httpClient, logger });
+
+    const result = await client.post('/bluetooth/pairing', { pin: '1234' });
+
+    expect(result).toMatchObject({ ok: false, code: 'COMMAND_REJECTED', status: 409 });
+    expect(logged(logger)).not.toMatch(/1234|0000/);
+    expect(logger.warn).toHaveBeenCalledWith('daylightandroid.rest.response', expect.objectContaining({ route: '/bluetooth/pairing', code: 'COMMAND_REJECTED', status: 409 }));
+  });
+
   it('maps a 2xx body with ok:false to COMMAND_REJECTED', async () => {
     const { client } = build({ status: 200, data: { ok: false, error: 'not_installed' } });
     const result = await client.post('/launch', { package: 'org.example.app' });

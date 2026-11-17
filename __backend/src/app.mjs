@@ -2501,6 +2501,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // caller gets an explicit 503 rather than a 404 that looks like a typo.
   v1Routers['arcade-bluetooth'] = createArcadeBluetoothRuntime({
     devicesConfig,
+    // For devices on the Android kiosk app, whose controller routes sit on the
+    // control port behind its token. Audio-bridge devices need neither.
+    configService,
+    httpClient: axios,
     logger: rootLogger.child({ module: 'arcade-bluetooth-api' }),
   });
 
