@@ -6,20 +6,25 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application>
-        <!-- The car screen. Exported: Android Auto binds it, and no permission exists that
-             only Android Auto holds. The service serves one host: Android Auto's package,
-             owned by the binding uid and signed with the certificate pinned in car.hostPins
-             (CarHostPolicy). It takes no input but row taps on its own list, and a tap runs
-             an action of that list by its id, in process. IOT: the templated category for
-             household controls. -->
+        <!-- The car screen's exported face. Android Auto binds it, and no permission exists
+             that only Android Auto holds. Every transaction is judged by its own calling uid
+             (CarGate): only Android Auto's package, owned by that uid and signed with the
+             certificate pinned in car.hostPins, gets through, to the library's binder in
+             DaylightCarAppService; everything else is refused before the library reads it.
+             IOT: the templated category for household controls. -->
         <service
-            android:name="net.kckern.daylight.cap.caractions.shell.DaylightCarAppService"
+            android:name="net.kckern.daylight.cap.caractions.shell.CarHostGateService"
             android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
                 <category android:name="androidx.car.app.category.IOT" />
             </intent-filter>
         </service>
+        <!-- The Car App Library's service. Not exported and no intent filter: bound only by
+             the gate above, in process, with the host's own intent. -->
+        <service
+            android:name="net.kckern.daylight.cap.caractions.shell.DaylightCarAppService"
+            android:exported="false" />
         <!-- The oldest Car API level the list needs: a ListTemplate with rows, a
              MessageTemplate and a car toast are all level 1. -->
         <meta-data

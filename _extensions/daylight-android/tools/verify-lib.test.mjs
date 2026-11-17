@@ -457,7 +457,7 @@ const carAppService = (name) => [
   `                  A: ${NS}:name(0x01010003)="androidx.car.app.category.IOT" (Raw: "androidx.car.app.category.IOT")`,
 ];
 const CAR_ACTIONS_CAPS = ['media-service', 'android-auto', 'car-actions'];
-const CAR_SERVICE = 'net.kckern.daylight.cap.caractions.shell.DaylightCarAppService';
+const CAR_SERVICE = 'net.kckern.daylight.cap.caractions.shell.CarHostGateService';
 
 test('a build that lists car-actions declares one IOT car app service; any other build declares none', () => {
   assert.deepEqual(carDeclarationFailures(tree(metaData(CAR), carAppService(CAR_SERVICE)), CAR_ACTIONS_CAPS, CAR_XML), []);

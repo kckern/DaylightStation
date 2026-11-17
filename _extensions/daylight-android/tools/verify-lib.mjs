@@ -320,10 +320,12 @@ export const EXPECTED_COMPONENTS = {
   'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider': { exported: false, permission: null, grantsOnly: '/capture/' },
   'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService': { exported: false, permission: null, foregroundServiceType: ['microphone'] },
   // Exported with no permission: Android Auto binds it, and no permission exists that only
-  // Android Auto holds. The service serves one host, Android Auto's package owned by the
-  // binding uid and signed with the certificate pinned in car.hostPins (CarHostPolicy); with
-  // no pin it serves nothing. A tap on its list runs a car-list action by id, in process.
-  'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService': { exported: true, permission: null },
+  // Android Auto holds. Every transaction is judged by its own calling uid (CarGate): only
+  // Android Auto's package owned by that uid and signed with the certificate pinned in
+  // car.hostPins gets through, in process, to the library's binder; any other is refused.
+  'service net.kckern.daylight.cap.caractions.shell.CarHostGateService': { exported: true, permission: null },
+  // The Car App Library's service. Bound only by the gate above, in process.
+  'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService': { exported: false, permission: null },
   // Merged in by the Car App Library (androidx.car.app:app); neither is exported.
   'activity androidx.car.app.CarAppPermissionActivity': { exported: false, permission: null },
   'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver': { exported: false, permission: null },

@@ -60,7 +60,7 @@ test('a photo is taken by the system camera app, so the phone asks for no camera
 test('another app can reach exactly these ten components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
-    'net.kckern.daylight.cap.caractions.shell.DaylightCarAppService',
+    'net.kckern.daylight.cap.caractions.shell.CarHostGateService',
     'net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
     'net.kckern.daylight.cap.notifications.shell.LinkActivity',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1',
@@ -127,8 +127,9 @@ test('"On my way" is a placeholder action and the phone asks for no location per
   assert.equal(Object.values(EXPECTED_COMPONENTS).some((row) => (row.foregroundServiceType || []).includes('location')), false);
 });
 
-test('the car screen added one exported service, three closed components of the library, and no permission to the list', () => {
-  assert.deepEqual(capabilities['car-actions'].exported, ['net.kckern.daylight.cap.caractions.shell.DaylightCarAppService']);
+test('the car screen added one exported gate, its closed car service, three closed components of the library, and no permission to the list', () => {
+  // Android Auto binds the gate; the library's service behind it is not exported.
+  assert.deepEqual(capabilities['car-actions'].exported, ['net.kckern.daylight.cap.caractions.shell.CarHostGateService']);
   // The car's microphone: the permission quick-input already brings, so the twelve stay twelve.
   assert.deepEqual(capabilities['car-actions'].permissions, ['android.permission.RECORD_AUDIO']);
   assert.ok(capabilities['quick-input'].permissions.includes('android.permission.RECORD_AUDIO'));
@@ -137,7 +138,8 @@ test('the car screen added one exported service, three closed components of the 
     'activity androidx.car.app.CarAppPermissionActivity exported=false permission=null',
     'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver exported=false permission=null',
     'service androidx.car.app.CarAppMetadataHolderService exported=false permission=null',
-    'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService exported=true permission=null',
+    'service net.kckern.daylight.cap.caractions.shell.CarHostGateService exported=true permission=null',
+    'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService exported=false permission=null',
   ]);
   // Android Auto's own host is pinned on the first connection; nothing is pinned in the file.
   assert.equal(phone.defaults['car.hostPins'], '');

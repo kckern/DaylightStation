@@ -287,8 +287,12 @@ category built on Car App Library 1.3.0-rc01. Record the result either way.
    app list, and read `adb logcat -d | grep -i -E 'CarApp|Daylight-Car'`. Record what
    was seen; the next step (a newer library and compileSdk 34) is the owner's call.
 2. **The first connection is refused by design, and that is the pinning step.** Open
-   the car list: it shows "Daylight is not available on this car connection" or
-   Android Auto reports the app could not start. Read the refusal:
+   the car list: Android Auto reports the app could not start (every call it makes is
+   refused at the gate, `CarHostGateService`, until its certificate is pinned).
+   Record exactly what the head unit shows. If Android Auto does not list the app at
+   all even after pinning, record it: whether it accepts a car app whose intent filter
+   is on the gate (a plain service, not a `CarAppService` subclass) is unproven. Read
+   the refusal:
 
    ```bash
    adb logcat -d -s Daylight-Car | grep 'refused car host'
@@ -305,10 +309,17 @@ category built on Car App Library 1.3.0-rc01. Record the result either way.
 4. Cold: quit the head unit, `adb shell am force-stop net.kckern.daylight.phone`,
    start the head unit and open the car list. Expected: the list, or one row
    "Daylight is starting" that is replaced by the list within two minutes.
-5. Opening, refreshing or reconnecting the list runs nothing: `adb shell run-as
+5. Another app cannot drive the car screen. This needs a small test app that binds
+   `net.kckern.daylight.phone/net.kckern.daylight.cap.caractions.shell.CarHostGateService`
+   with the action `androidx.car.app.CarAppService` and calls `getManager("app", ...)`
+   on what it gets; none is in this repository. If one is at hand, run it with the
+   head unit connected: every call fails, `adb logcat -s Daylight-Car` has one
+   "refused car host <package>: the binding app is not Android Auto" line a minute,
+   and the head unit's list keeps working. Otherwise record "not run".
+6. Opening, refreshing or reconnecting the list runs nothing: `adb shell run-as
    net.kckern.daylight.phone cat files/shell.log | grep CAR` shows a "run" line
    only after a tap.
-6. While driving (the head unit's "driving" state, if the version offers it), the
+7. While driving (the head unit's "driving" state, if the version offers it), the
    list stays usable: rows only, no text field.
 
 ### E3. A voice memo from the car

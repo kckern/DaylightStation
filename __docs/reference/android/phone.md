@@ -888,30 +888,69 @@ attaches the screen asks again and redraws.
 
 ### Who may bind the car screen
 
-`DaylightCarAppService` is exported: Android Auto binds it, and no permission
-exists that only Android Auto holds. The library's own host check
-(`HostValidator`) is not enough on its own: besides its allow list it accepts any
-package that holds `android.car.permission.TEMPLATE_RENDERER`, a permission no phone
-defines, which an app could define and hold itself. So the service decides first
-(`CarHostPolicy`, through the same `SignerPins` code the media service's
-`ControllerPolicy` uses):
+Android Auto binds an exported service, and no permission exists that only Android
+Auto holds, so any app on the phone can bind it too. The Car App Library's binder
+does not hold such a caller off on its own (read from the 1.3.0-rc01 classes):
+`CarAppService.onBind` is final and hands the same `CarAppBinder` to every client
+that binds with the same or no `SessionInfo`; the caller's uid is read only in
+`onHandshakeCompleted`; `getManager`, the app manager's `getTemplate` and a row's
+click check nobody. An app could bind, skip the handshake, ask for the app manager
+and the template, and press a row: run a household call, or open the car's
+microphone. Its own handshake could also overwrite a single stored decision.
 
-- The library asks for the validator (`createHostValidator`) on the binder thread of
-  the host's handshake, so `Binder.getCallingUid()` there is the host's uid (read
-  from the library's classes: `CarAppBinder.onHandshakeCompleted`).
-- That uid must own Android Auto's package, `com.google.android.projection.gearhead`
-  (the package the library's own sample host list names), and that package's one
-  signing certificate must be the one pinned for it in `car.hostPins`
-  (`package=sha256`, the same form as `media.controllerPins`; only Android Auto's
-  package is accepted in it).
-- When it passes, the library's validator is handed that one host and its pinned
-  digest. When it does not, the validator is handed none, and the refusal is
-  logged. The screen also checks the decision before drawing anything or running a
-  tap, against the host the library settled on (its package and uid), so a package
-  the library would accept for the permission alone is shown "Daylight is not
-  available on this car connection" and nothing else.
-- `ALLOW_ALL_HOSTS_VALIDATOR` and the "allow every host in a debuggable build"
-  shortcut are not used. A platform-signed app or a system uid is not a car host.
+So the check sits at the binder boundary:
+
+- **`CarHostGateService`** is the exported service with the
+  `androidx.car.app.CarAppService` action and the IOT category. Its `onBind` returns a
+  `Binder` whose `onTransact` judges every transaction by the uid Binder reports for
+  that transaction (`CarGate`, then `CarHostPolicy`): the uid must own Android Auto's
+  package, `com.google.android.projection.gearhead` (the package the library's own
+  sample host list names), and that package's one signing certificate must be the
+  one pinned for it in `car.hostPins` (`package=sha256`, the same form as
+  `media.controllerPins`; only Android Auto's package is accepted in it), through the
+  same `SignerPins` code the media service's `ControllerPolicy` uses. A shared uid is
+  let through when Android Auto's package is among its packages and that package is
+  pinned. A platform-signed app, a system uid and any other pinned app are refused.
+- **A refused transaction** returns "unknown transaction" before the library reads a
+  byte of it, whatever its code: every car app call, the descriptor query
+  (`INTERFACE_TRANSACTION`) and a dump alike. Nothing is bound, created or stored for
+  it beyond its own uid's decision, and a refusal is logged at most once a minute per
+  uid.
+- **A transaction that is let through** goes to the library's binder in
+  `DaylightCarAppService`, which is not exported and has no intent filter. The gate
+  binds it in process, with the host's own intent (the `SessionInfo` is in its
+  extras), on the first transaction let through, and unbinds when the host does
+  (`onUnbind`, which Android also calls when the host dies). The forward is a local
+  `Binder.transact` on the same binder thread, with the parcels as they came, so the
+  descriptor is the library's own (`androidx.car.app.ICarApp`) and the library still
+  reads the host's uid at its handshake.
+- **Checked on every call**, against what is installed and pinned now: an update,
+  removal or re-signing of Android Auto, or a changed pin, takes effect at the next
+  call. One uid's refusal never changes another's admission.
+- **Everything the car screen hands out comes from a gated call.** Every `ICarApp`
+  method (`onAppCreate`, `onAppStart`, `onAppResume`, `onAppPause`, `onAppStop`,
+  `onNewIntent`, `onConfigurationChanged`, `getManager`, `getAppInfo`,
+  `onHandshakeCompleted`, all one-way) passes the gate. The app manager is handed out
+  only in answer to `getManager`; the templates and their click listeners only by
+  the app manager; the microphone's callback and every other app-side binder only to
+  the `ICarHost` that the gated `onAppCreate` delivered. A refused caller can obtain
+  none of them.
+- **Two further checks stay behind the gate.** `DaylightCarAppService` records
+  `CarHostPolicy`'s decision per uid in `createHostValidator` (which the library calls
+  on the handshake's binder thread) and hands the library's validator that one host
+  and its pinned digest, or none; and the screens check `servesHost()` before drawing
+  or acting, against the decision for the uid the library settled on. The library's
+  validator alone would also accept a package holding
+  `android.car.permission.TEMPLATE_RENDERER`, which an app could define for itself.
+  `ALLOW_ALL_HOSTS_VALIDATOR` and the "allow every host in a debuggable build"
+  shortcut are not used.
+
+**Unproven until it runs:** that Android Auto accepts a car app whose
+`CarAppService` intent filter is on a class that is not a `CarAppService` subclass.
+All Android Auto can see of the app is the manifest entry (an exported service with
+that action and category, as before) and the binder protocol, which the gate
+forwards unchanged; it cannot see the class behind the binder. So it should, but no
+car has confirmed it.
 
 The pins reach the installed service through the surface cache (the payload writes
 `car.hostPins` there at start and when it changes), so a car that binds the
@@ -1482,7 +1521,8 @@ What another app on the phone can reach, and what stands in the way.
 | `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
 | `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
 | `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
-| `DaylightCarAppService` (`car-actions`) | Android Auto binds it | No permission exists that only Android Auto holds. `CarHostPolicy` serves Android Auto's package alone, owned by the binding uid and signed with the certificate pinned in `car.hostPins`; with no pin it serves nothing. A tap runs an action of the car list by id, in process |
+| `CarHostGateService` (`car-actions`) | Android Auto binds it | No permission exists that only Android Auto holds. Every transaction is judged by its own calling uid (`CarGate`): only Android Auto's package, owned by that uid and signed with the certificate pinned in `car.hostPins`, gets through to the library's binder; every other transaction is refused before the library reads it |
+| `DaylightCarAppService` (`car-actions`) | Not exported | The Car App Library's service; bound only by the gate, in process |
 | `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
 | `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
@@ -1493,11 +1533,12 @@ What another app on the phone can reach, and what stands in the way.
 
 Ten components are exported: `LinkActivity`, `KioskActivity`, the four tile
 services (which the system alone can bind), `DaylightMediaService`,
-`DaylightCarAppService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
+`CarHostGateService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
 eleventh, or one of these no longer exported, fails the build. The car screen added
-four components (its service and the library's three closed ones) and no
-permission to the list: it declares `RECORD_AUDIO` for the car's microphone, which
-`quick-input` already brings, so the list is still twelve. The quick inputs added three components (two
+five components (the exported gate, the closed car service behind it and the
+library's three closed ones) and no permission to the list: it declares `RECORD_AUDIO`
+for the car's microphone, which `quick-input` already brings, so the list is still
+twelve. The quick inputs added three components (two
 activities and a provider) and none of them is exported. The one-action button
 added two: its provider, which is not exported, and its chooser, which is. It
 added no permission. Playing with no window added one, the play service, which is

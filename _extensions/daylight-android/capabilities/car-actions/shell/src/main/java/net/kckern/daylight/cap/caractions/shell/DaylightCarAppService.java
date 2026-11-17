@@ -16,24 +16,29 @@ import net.kckern.daylight.shellkit.SignerPins;
 import net.kckern.daylight.shellkit.SurfaceCache;
 
 /**
- * The car screen's service: Android Auto binds it and shows the templates its session's
- * screens draw. Android creates it by class name, possibly in a process whose payload
- * is not loaded; every question about the list goes to the payload over the "car" port.
+ * The car screen's service: the Car App Library's CarAppService, whose session and
+ * screens draw the templates the car shows. Android creates it by class name, possibly
+ * in a process whose payload is not loaded; every question about the list goes to the
+ * payload over the "car" port.
  *
- * Exported, because Android Auto must bind it. Who is served is CarHostPolicy's
- * decision, made in createHostValidator: the library calls it on the binder thread of
- * the host's handshake, so Binder.getCallingUid() there is the host's own uid. The
- * library's validator is then given that one host and its pinned digest, or none; and
- * the screens also check the decision, because the library's validator would accept a
- * package holding the TEMPLATE_RENDERER permission, which this check does not.
- * The debug shortcut that allows every host in a debuggable build is not used.
+ * Not exported. Android Auto binds CarHostGateService, which lets a transaction
+ * through to this service's binder, in process, only when the transaction's own
+ * calling uid is the pinned Android Auto (CarGate). That gate is what holds every
+ * call; this class keeps two further checks behind it. createHostValidator runs on
+ * the binder thread of the host's handshake (so Binder.getCallingUid() is the host's
+ * uid), records CarHostPolicy's decision for that uid, and hands the library's
+ * validator that one host and its pinned digest, or none. The screens check
+ * servesHost() before drawing or acting, against the decision for the uid the library
+ * settled on. The library's "allow every host in a debuggable build" shortcut and
+ * ALLOW_ALL_HOSTS_VALIDATOR are not used.
  */
 public class DaylightCarAppService extends CarAppService {
     static final String TAG = "Daylight-Car";
     /** The surface cache key the payload writes car.hostPins into (CarActionsCapability.HOST_PINS). */
     static final String PIN_KEY = "car.hostPins";
 
-    private volatile CarHostPolicy.Decision decision;
+    /** The decision for each uid that completed a handshake. One uid's refusal never touches another's. */
+    private final java.util.Map<Integer, CarHostPolicy.Decision> decisions = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public void onCreate() {
@@ -47,7 +52,7 @@ public class DaylightCarAppService extends CarAppService {
     public HostValidator createHostValidator() {
         CarHostPolicy.Decision d = CarHostPolicy.decide(Binder.getCallingUid(), new AndroidPackageFacts(getPackageManager()),
                 SignerPins.fromCache(SurfaceCache.get(this, PIN_KEY)));
-        decision = d;
+        decisions.put(d.uid, d);
         HostValidator.Builder validator = new HostValidator.Builder(this);
         if (d.allowed) {
             validator.addAllowedHost(CarHostPolicy.ANDROID_AUTO, d.pinnedDigest);
@@ -65,7 +70,7 @@ public class DaylightCarAppService extends CarAppService {
         } catch (RuntimeException notYet) {
             return false;
         }
-        return host != null && CarHostPolicy.serves(decision, host.getPackageName(), host.getUid());
+        return host != null && CarHostPolicy.serves(decisions.get(host.getUid()), host.getPackageName(), host.getUid());
     }
 
     @Override

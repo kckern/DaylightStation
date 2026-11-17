@@ -10,11 +10,12 @@ entry: net.kckern.daylight.cap.caractions.CarActionsCapability
 permissions:
   - android.permission.RECORD_AUDIO
 exported:
-  # Bound by Android Auto. No permission exists that only it holds, so the service
-  # checks the binding host itself: Android Auto's package, owned by the binding uid,
-  # signed with the certificate pinned in car.hostPins (SignerPins, as the media
-  # service holds controllers to media.controllerPins). With no pin it serves nothing.
-  - net.kckern.daylight.cap.caractions.shell.DaylightCarAppService
+  # Bound by Android Auto. No permission exists that only it holds, so every
+  # transaction is judged by its own calling uid at this gate (CarGate): Android Auto's
+  # package, owned by that uid, signed with the certificate pinned in car.hostPins
+  # (SignerPins, as the media service holds controllers to media.controllerPins). Any
+  # other caller's transaction is refused before the Car App Library's binder sees it.
+  - net.kckern.daylight.cap.caractions.shell.CarHostGateService
 # Merged in from the Car App Library (app, and app-projected for the car's microphone);
 # none is exported (rows in EXPECTED_COMPONENTS). The metadata holder is also disabled.
 libraryComponents:
