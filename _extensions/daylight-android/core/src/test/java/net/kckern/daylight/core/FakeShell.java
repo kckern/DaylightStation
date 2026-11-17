@@ -10,6 +10,7 @@ final class FakeShell implements ShellServices {
     static final String TOKEN = "0123456789abcdef0123456789abcdef";
     final File dir;
     final List<String> notes = new ArrayList<>();
+    String payloadStatus = "{\"current\":\"test.jar\"}";
 
     FakeShell(File dir) { this.dir = dir; }
 
@@ -22,6 +23,6 @@ final class FakeShell implements ShellServices {
     @Override public void updateNotification(String text) { }
     @Override public String requestPayloadSwap(String url, String sha256) { return "queued"; }
     @Override public String requestPayloadRollback() { return "queued"; }
-    @Override public String payloadStatusJson() { return "{\"current\":\"test.jar\"}"; }
+    @Override public String payloadStatusJson() { return payloadStatus; }
     @Override public void note(String kind, String message) { notes.add(kind + " " + message); }
 }

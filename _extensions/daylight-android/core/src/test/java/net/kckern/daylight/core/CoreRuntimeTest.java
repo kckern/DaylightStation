@@ -122,4 +122,38 @@ public class CoreRuntimeTest {
         core.stop();
         assertEquals("stop", events.get(events.size() - 1));
     }
+
+    @Test public void aLinkageErrorOnStartStopsTheStartedCapabilitiesAndFailsThePayload() throws Exception {
+        Capability broken = new Capability() {
+            @Override public String name() { return "broken"; }
+            @Override public void register(CoreContext core) { }
+            @Override public void start() { throw new NoClassDefFoundError("gone/Missing"); }
+            @Override public void stop() { events.add("broken-stop"); }
+        };
+        CoreRuntime core = new CoreRuntime(shell, "test", "p-test", new java.io.File(shell.dir, "state"));
+        core.add(new Sample(false));
+        core.add(broken);
+        try {
+            core.start(new JSONObject("{}"));
+            fail("expected start to throw so the shell rolls back");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("capability 'broken' cannot start"));
+        }
+        assertEquals(java.util.Arrays.asList("register", "start", "stop"), events);
+    }
+
+    @Test public void statusStillAnswersWhenTheShellPayloadStatusIsNotJson() throws Exception {
+        shell.payloadStatus = "not json";
+        JSONObject s = call(runtime(new Sample(false), "{}"), "GET", "/status", Collections.emptyMap(), null);
+        assertEquals(200, s.getInt("_status"));
+        assertTrue(s.has("payload"));
+        assertTrue(s.isNull("payload"));
+    }
+
+    @Test public void aSettingsKeyThatIsNotAStringIsABadRequest() throws Exception {
+        JSONObject r = call(runtime(new Sample(false), "{}"), "POST", "/settings", Collections.emptyMap(),
+                "{\"key\":5,\"value\":9}");
+        assertEquals(400, r.getInt("_status"));
+        assertEquals("bad_request", r.getString("error"));
+    }
 }

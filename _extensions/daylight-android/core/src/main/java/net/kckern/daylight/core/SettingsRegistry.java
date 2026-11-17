@@ -69,14 +69,46 @@ public final class SettingsRegistry {
     public synchronized void set(String key, Object value) {
         Entry e = entry(key);
         Object coerced = coerce(key, e.type, value);
+        Object previous = overrides.opt(key);
         try { overrides.put(key, coerced); } catch (JSONException ex) { throw new InvalidSettingException(ex.getMessage()); }
-        persist();
+        try {
+            persist();
+        } catch (RuntimeException failed) {
+            restore(key, previous);
+            throw failed;
+        }
     }
 
     public synchronized void reset(String key) {
         entry(key);
+        Object previous = overrides.opt(key);
         overrides.remove(key);
-        persist();
+        try {
+            persist();
+        } catch (RuntimeException failed) {
+            restore(key, previous);
+            throw failed;
+        }
+    }
+
+    /** Put memory back the way it was when the new state could not be written to disk. */
+    private void restore(String key, Object previous) {
+        if (previous == null) {
+            overrides.remove(key);
+            return;
+        }
+        try { overrides.put(key, previous); } catch (JSONException ex) { throw new IllegalStateException(ex); }
+    }
+
+    /** True when a stored override exists and still fits the declared type, so get() returns it. */
+    private boolean overrideInEffect(String key, Entry e) {
+        if (!overrides.has(key)) return false;
+        try {
+            coerce(key, e.type, overrides.opt(key));
+            return true;
+        } catch (InvalidSettingException stale) {
+            return false;
+        }
     }
 
     public synchronized JSONArray describe() {
@@ -88,7 +120,7 @@ public final class SettingsRegistry {
                         .put("type", e.getValue().type.name())
                         .put("value", get(e.getKey()))
                         .put("default", e.getValue().def)
-                        .put("overridden", overrides.has(e.getKey())));
+                        .put("overridden", overrideInEffect(e.getKey(), e.getValue())));
             } catch (JSONException ex) {
                 throw new IllegalStateException(ex);
             }

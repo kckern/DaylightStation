@@ -44,7 +44,9 @@ public final class CoreRuntime implements CoreContext {
             try {
                 c.start();
                 started.add(c);
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Throwable: a missing class or native library is an Error, and it must
+                // still stop what already started and fail the payload the same way.
                 stop();
                 throw new IllegalStateException("capability '" + c.name() + "' cannot start: " + e.getMessage(), e);
             }
@@ -73,7 +75,9 @@ public final class CoreRuntime implements CoreContext {
             try { body = new JSONObject(req.body == null ? "" : req.body); }
             catch (Exception e) { throw new IllegalArgumentException("body must be JSON with 'key' and 'value'"); }
             if (!body.has("key") || !body.has("value")) throw new IllegalArgumentException("body needs 'key' and 'value'");
-            String key = body.getString("key");
+            // Android's getString coerces a number to text; a newer org.json throws. Check the type here.
+            if (!(body.opt("key") instanceof String)) throw new IllegalArgumentException("'key' must be a string");
+            String key = (String) body.opt("key");
             settings.set(key, body.get("value"));
             return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.get(key)));
         });
@@ -92,6 +96,9 @@ public final class CoreRuntime implements CoreContext {
     }
 
     private JSONObject status() throws Exception {
+        // The shell's payload status is extra detail. If it is not JSON, /status still answers.
+        Object payload = JSONObject.NULL;
+        try { payload = new JSONObject(shell.payloadStatusJson()); } catch (Exception notJson) { }
         return new JSONObject()
                 .put("ok", true)
                 .put("device", deviceId)
@@ -99,6 +106,6 @@ public final class CoreRuntime implements CoreContext {
                 .put("shellVersionCode", shell.shellVersionCode())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
                 .put("capabilities", names())
-                .put("payload", new JSONObject(shell.payloadStatusJson()));
+                .put("payload", payload);
     }
 }

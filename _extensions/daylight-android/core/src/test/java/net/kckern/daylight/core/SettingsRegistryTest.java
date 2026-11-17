@@ -106,4 +106,44 @@ public class SettingsRegistryTest {
         smaller.set("recovery.retrySec", 9);
         assertEquals("http://override", fresh().get("webview.startUrl"));
     }
+
+    @Test public void aSetThatCannotBePersistedLeavesTheOldValue() throws Exception {
+        File notADir = tmp.newFile("blocker");
+        SettingsRegistry s = new SettingsRegistry(new File(new File(notADir, "sub"), "overrides.json"));
+        s.declare("recovery.retrySec", Type.INTEGER, 0);
+        try {
+            s.set("recovery.retrySec", 5);
+            fail("expected set to throw when the overrides file cannot be written");
+        } catch (IllegalStateException expected) { }
+        assertEquals(0, s.get("recovery.retrySec"));
+    }
+
+    @Test public void aResetThatCannotBePersistedKeepsTheOverride() throws Exception {
+        SettingsRegistry s = fresh();
+        s.set("recovery.retrySec", 5);
+        // Replace the overrides directory with a regular file so the next write fails.
+        File dir = file.getParentFile();
+        assertTrue(file.delete());
+        assertTrue(dir.delete());
+        assertTrue(dir.createNewFile());
+        try {
+            s.reset("recovery.retrySec");
+            fail("expected reset to throw when the overrides file cannot be written");
+        } catch (IllegalStateException expected) { }
+        assertEquals(5, s.get("recovery.retrySec"));
+    }
+
+    @Test public void anOverrideThatNoLongerFitsItsTypeIsNotReportedAsOverridden() throws Exception {
+        java.nio.file.Files.write(file.toPath(),
+                "{\"recovery.retrySec\":\"soon\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        JSONObject row = null;
+        org.json.JSONArray rows = fresh().describe();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject o = rows.getJSONObject(i);
+            if (o.getString("key").equals("recovery.retrySec")) row = o;
+        }
+        assertNotNull(row);
+        assertEquals(0, row.getInt("value"));
+        assertFalse(row.getBoolean("overridden"));
+    }
 }
