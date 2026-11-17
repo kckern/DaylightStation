@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { reboot as kioskReboot } from '../../../../../frontend/src/lib/fkb.js';
 import { SNOOZE_KEY, shouldPrompt } from './jankRebootLogic.js';
 
 /**
@@ -10,9 +11,10 @@ import { SNOOZE_KEY, shouldPrompt } from './jankRebootLogic.js';
  * uses) and, only after rendering has been visibly degraded for a sustained
  * window, opens a modal that lets the user reboot the device or defer. Deferring
  * snoozes the prompt for `snoozeMs` (persisted so a reload can't nag past it),
- * after which it re-arms. The reboot itself goes through Fully's JS interface
- * (`window.fully.reboot`) — a device reboot is the only thing that clears this
- * latch (a page reload and an app restart do not).
+ * after which it re-arms. The reboot itself goes through the kiosk bridge
+ * (`reboot()` in lib/fkb.js: Fully or the Android kiosk app) — a device reboot
+ * is the only thing that clears this latch (a page reload and an app restart
+ * do not).
  *
  * @param {object} [opts]
  * @param {number} [opts.minFps=12]      below this (while visible) counts as bad
@@ -75,9 +77,8 @@ export function useJankRebootPrompt({
     log.warn('piano.jank-reboot.reboot', {});
     try {
       if (reboot) { reboot(); return; }
-      if (typeof window !== 'undefined' && window.fully && typeof window.fully.reboot === 'function') {
-        window.fully.reboot();
-      } else {
+      // lib/fkb.js picks the bridge: fully.reboot() or daylight.reboot().
+      if (!kioskReboot()) {
         log.error('piano.jank-reboot.no-fully', {}); // not in kiosk / no device-admin — can't self-reboot
       }
     } catch (e) {

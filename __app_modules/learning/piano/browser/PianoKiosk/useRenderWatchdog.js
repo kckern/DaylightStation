@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { autoReport } from '../../../../../frontend/src/lib/diagnostics/autoReport.js';
+import { canRestartApp, restartApp } from '../../../../../frontend/src/lib/fkb.js';
 
 /**
  * Self-heal watchdog for the Fully Kiosk WebView.
@@ -9,7 +10,8 @@ import { autoReport } from '../../../../../frontend/src/lib/diagnostics/autoRepo
  * compositor can get stuck after certain navigations — the renderer pegs a CPU
  * core and the page drops to a few fps (JS keeps running, frames stop
  * presenting). A page reload does NOT clear it; only a renderer-process restart
- * does. Fully exposes `window.fully.restartApp()` via its JavaScript Interface,
+ * does. The kiosk bridge exposes `restartApp()` (lib/fkb.js: `fully.restartApp()`
+ * on Fully, `daylight.restartApp()` on the Android kiosk app),
  * which respawns the WebView cleanly — on-device, no network, survives reboots.
  *
  * This hook watches frame-presentation rate via requestAnimationFrame. When the
@@ -127,12 +129,13 @@ export function useRenderWatchdog({
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return undefined;
     // The self-heal restart is gated (see SELF_HEAL_RESTART). When enabled it
-    // uses Fully's JS Interface or an injected action (tests). When disabled the
+    // uses the kiosk bridge (Fully or the Android kiosk app, via lib/fkb.js) or
+    // an injected action (tests). When disabled the
     // loop still runs as a passive fps sensor — measuring is cheap and the
     // episode telemetry is how we diagnose the stall.
     const restart = onRestart
-      || (SELF_HEAL_RESTART && window.fully && typeof window.fully.restartApp === 'function'
-        ? () => { try { window.fully.restartApp(); } catch { /* not fatal */ } }
+      || (SELF_HEAL_RESTART && canRestartApp()
+        ? () => { restartApp(); } // never throws; logs its own outcome
         : null);
 
     const logger = getLogger().child({ component: 'piano-watchdog' });

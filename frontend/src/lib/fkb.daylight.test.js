@@ -318,6 +318,74 @@ describe('fkb on the daylight bridge', () => {
   });
 });
 
+describe('fkb restartApp and reboot', () => {
+  it('on Fully calls fully.restartApp and fully.reboot', () => {
+    const fully = mockFully({ restartApp: vi.fn(), reboot: vi.fn() });
+
+    expect(fkb.canRestartApp()).toBe(true);
+    expect(fkb.restartApp()).toBe(true);
+    expect(fkb.reboot()).toBe(true);
+
+    expect(fully.restartApp).toHaveBeenCalledTimes(1);
+    expect(fully.reboot).toHaveBeenCalledTimes(1);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('works on a Fully object that carries nothing but restartApp or reboot', () => {
+    global.fully = { reboot: vi.fn() };
+    expect(fkb.reboot()).toBe(true);
+    expect(fkb.canRestartApp()).toBe(false);
+    expect(fkb.restartApp()).toBe(false);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'fully' }]);
+  });
+
+  it('on daylight calls daylight.restartApp and daylight.reboot', () => {
+    const daylight = mockDaylight();
+    const fully = mockFully({ restartApp: vi.fn(), reboot: vi.fn() });
+
+    expect(fkb.canRestartApp()).toBe(true);
+    expect(fkb.restartApp()).toBe(true);
+    expect(fkb.reboot()).toBe(true);
+
+    expect(daylight.restartApp).toHaveBeenCalledTimes(1);
+    expect(daylight.reboot).toHaveBeenCalledTimes(1);
+    expect(fully.restartApp).not.toHaveBeenCalled();
+    expect(fully.reboot).not.toHaveBeenCalled();
+  });
+
+  it('reports a reboot the device cannot do', () => {
+    mockDaylight({ reboot: vi.fn(() => false) });
+    expect(fkb.reboot()).toBe(false);
+    expect(warned('fkb.reboot.rejected')).toEqual([{ bridge: 'daylight' }]);
+  });
+
+  it('names the bridge that lacks the call', () => {
+    mockDaylight({ restartApp: undefined, reboot: undefined });
+    expect(fkb.canRestartApp()).toBe(false);
+    expect(fkb.restartApp()).toBe(false);
+    expect(fkb.reboot()).toBe(false);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'daylight' }]);
+    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'daylight' }]);
+  });
+
+  it('is unavailable with no bridge, and canRestartApp does not warn', () => {
+    expect(fkb.canRestartApp()).toBe(false);
+    expect(log.warn).not.toHaveBeenCalled();
+    expect(fkb.restartApp()).toBe(false);
+    expect(fkb.reboot()).toBe(false);
+    expect(warned('fkb.restartApp.unavailable')).toEqual([{ bridge: 'absent' }]);
+    expect(warned('fkb.reboot.unavailable')).toEqual([{ bridge: 'absent' }]);
+  });
+
+  it('contains a bridge that throws', () => {
+    mockFully({ restartApp: vi.fn(() => { throw new Error('bridge down'); }), reboot: vi.fn(() => { throw new Error('bridge down'); }) });
+    expect(() => fkb.restartApp()).not.toThrow();
+    expect(fkb.restartApp()).toBe(false);
+    expect(fkb.reboot()).toBe(false);
+    expect(warned('fkb.reboot.failed')).toEqual([{ bridge: 'fully', error: 'bridge down' }]);
+  });
+});
+
 describe('fkb with no bridge', () => {
   it('every call returns safely and says the bridge is absent', () => {
     expect(fkb.isFKBAvailable()).toBe(false);

@@ -69,13 +69,15 @@ function encodeIntentPart(part) {
  * `bridgeMethod(name)` answers the only question a caller has — "can I call
  * this?". Every call site goes through the second one.
  */
-const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind'];
+const CONTROL_METHODS = [
+  'turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind', 'restartApp', 'reboot',
+];
 
 /**
  * The `window.daylight` members this module calls. As with Fully, a name on
  * `window` is not a capability: the object must carry at least one of these.
  */
-const DAYLIGHT_METHODS = ['launch', 'screen', 'setBackMode'];
+const DAYLIGHT_METHODS = ['launch', 'screen', 'setBackMode', 'restartApp', 'reboot'];
 const DAYLIGHT_ADAPTER = Symbol('daylight-bridge-adapter');
 
 /**
@@ -89,6 +91,7 @@ const DAYLIGHT_ADAPTER = Symbol('daylight-bridge-adapter');
  *   turnScreenOff() / turnScreenOn() -> daylight.screen(false / true)
  *   bind('onResume', fn)             -> 'daylight:resume' CustomEvent on window
  *   bind('onBackButton', fn)         -> daylight.setBackMode('page') + 'daylight:back'
+ *   restartApp() / reboot()          -> daylight.restartApp() / daylight.reboot()
  *
  * Two differences from Fully are kept, because they are improvements the
  * daylight bridge makes possible:
@@ -136,6 +139,8 @@ function daylightAdapter() {
     adapter.turnScreenOff = () => call('screen', false);
     adapter.turnScreenOn = () => call('screen', true);
   }
+  if (has.restartApp) adapter.restartApp = () => call('restartApp');
+  if (has.reboot) adapter.reboot = () => call('reboot');
   // Returns false when the event cannot be bound on this bridge.
   adapter.bind = (event, handler) => {
     if (event === 'onResume') {
@@ -455,6 +460,63 @@ export function screenOn() {
     logger().warn('fkb.screenOn.failed', { error: error?.message ?? String(error) });
     return false;
   }
+}
+
+/**
+ * One no-argument bridge call that answers a boolean and never throws.
+ * `call` is the method name on the bridge and the middle of the log events:
+ * `fkb.<call>`, `fkb.<call>.unavailable`, `.rejected`, `.failed`.
+ */
+function simpleBridgeCall(call) {
+  const method = bridgeMethod(call);
+  if (!method) {
+    logger().warn(`fkb.${call}.unavailable`, { bridge: bridgeName() });
+    return false;
+  }
+  logger().info(`fkb.${call}`, { bridge: bridgeName() });
+  try {
+    if (method() === false) {
+      logger().warn(`fkb.${call}.rejected`, { bridge: bridgeName() });
+      return false;
+    }
+    return true;
+  } catch (error) {
+    logger().warn(`fkb.${call}.failed`, { bridge: bridgeName(), error: error?.message ?? String(error) });
+    return false;
+  }
+}
+
+/**
+ * True when the active bridge can restart the kiosk app. Asks without calling
+ * and without logging, for a caller that decides up front whether a restart
+ * action exists (the piano render watchdog).
+ *
+ * @returns {boolean}
+ */
+export function canRestartApp() {
+  return bridgeMethod('restartApp') !== null;
+}
+
+/**
+ * Restart the kiosk app, which respawns the WebView's renderer process. A page
+ * reload does not do that. `fully.restartApp()` on Fully,
+ * `daylight.restartApp()` on the Android kiosk app. Never throws.
+ *
+ * @returns {boolean} true if the active bridge took the request
+ */
+export function restartApp() {
+  return simpleBridgeCall('restartApp');
+}
+
+/**
+ * Reboot the device. `fully.reboot()` on Fully (needs device admin there),
+ * `daylight.reboot()` on the Android kiosk app, which answers false when the
+ * device cannot do it (it needs device owner). Never throws.
+ *
+ * @returns {boolean} true if the active bridge took the request
+ */
+export function reboot() {
+  return simpleBridgeCall('reboot');
 }
 
 /**
