@@ -4,6 +4,8 @@ import android.content.Context;
 import android.os.SystemClock;
 import android.util.Log;
 
+import net.kckern.daylight.api.CrashRelay;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -42,17 +44,28 @@ public final class CrashLog {
 
     private static File dir;
     private static volatile boolean prevDeathUnclean = false;
+    /** This payload's entry in the process crash handler, cleared on stop. */
+    private static CrashRelay.Sink sink;
 
     private CrashLog() { }
 
     /**
-     * Wire up durable logging. Call once from Service.onCreate BEFORE anything that
+     * Wire up durable logging. Called on every payload start, before anything that
      * might crash. Detects an unclean previous death, then (re)arms the marker and
-     * the uncaught-exception handler.
+     * makes this payload the process crash handler's sink.
      */
     public static synchronized void install(Context ctx) {
         try {
-            dir = new File(ctx.getExternalFilesDir(null), "diag");
+            installAt(new File(ctx.getExternalFilesDir(null), "diag"));
+        } catch (Throwable t) {
+            Log.e(TAG, "install failed", t);
+        }
+    }
+
+    /** The directory is a parameter so a JVM test can run this without a Context. */
+    static synchronized void installAt(File diagDir) {
+        try {
+            dir = diagDir;
             if (!dir.exists()) dir.mkdirs();
 
             File marker = new File(dir, "running");
@@ -64,16 +77,19 @@ public final class CrashLog {
             }
             writeFile(marker, String.valueOf(System.currentTimeMillis()));
 
-            final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
-            Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            // One handler per process, owned by the shell's class loader (CrashRelay). This
+            // class is reloaded with every payload; chaining a handler here on each start
+            // would keep every earlier payload's class loader reachable.
+            CrashRelay.Sink s = (thread, ex) -> {
                 try {
                     StringWriter sw = new StringWriter();
                     ex.printStackTrace(new PrintWriter(sw));
                     note("CRASH", "thread=" + thread.getName() + " " + sw.toString().replace('\n', '⏎'));
                     snapshotDiag();
                 } catch (Throwable ignored) { }
-                if (prev != null) prev.uncaughtException(thread, ex); // keep the system's dialog/kill
-            });
+            };
+            sink = s;
+            CrashRelay.set(s);
         } catch (Throwable t) {
             Log.e(TAG, "install failed", t);
         }
@@ -86,6 +102,10 @@ public final class CrashLog {
             File marker = new File(dir, "running");
             if (marker.exists()) marker.delete();
         } catch (Throwable ignored) { }
+        // Called from the payload's stop(): after this the process handler holds nothing of ours.
+        CrashRelay.Sink s = sink;
+        sink = null;
+        if (s != null) CrashRelay.clear(s);
     }
 
     /** Append one timestamped line to the durable event ring. Also mirrors to Diag. */

@@ -497,20 +497,12 @@ public final class PayloadLoader {
 
     /** Refuse a download whose declared length is over the limit. A length of -1 means none was declared. */
     static void checkDeclaredLength(long declared, long limit) throws java.io.IOException {
-        if (declared > limit) throw new java.io.IOException("payload is larger than " + limit + " bytes");
+        net.kckern.daylight.api.CappedCopy.checkDeclaredLength(declared, limit, "payload");
     }
 
     /** Copy until the stream ends, giving up once more than the limit has arrived. Returns the byte count. */
     static long copyCapped(InputStream in, java.io.OutputStream out, long limit) throws java.io.IOException {
-        byte[] buf = new byte[65536];
-        long total = 0;
-        int n;
-        while ((n = in.read(buf)) > 0) {
-            total += n;
-            if (total > limit) throw new java.io.IOException("payload is larger than " + limit + " bytes");
-            out.write(buf, 0, n);
-        }
-        return total;
+        return net.kckern.daylight.api.CappedCopy.copy(in, out, limit, "payload");
     }
 
     private String safeVersion() {

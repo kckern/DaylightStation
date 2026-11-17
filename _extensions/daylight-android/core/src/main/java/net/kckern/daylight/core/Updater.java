@@ -30,14 +30,17 @@ public final class Updater {
 
     private Updater() {}
 
-    /** Stream a staged APK file into a PackageInstaller session and commit it. */
-    public static void install(Context ctx, File apk) throws Exception {
+    /** Stream a staged APK file into a PackageInstaller session and commit it. Returns the session id. */
+    public static int install(Context ctx, File apk) throws Exception {
         if (apk == null || !apk.exists() || apk.length() == 0) {
             throw new IllegalStateException("staged apk missing/empty");
         }
         PackageInstaller pi = ctx.getPackageManager().getPackageInstaller();
         PackageInstaller.SessionParams params =
                 new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        // This session only ever installs this app. Recorded on the session so the
+        // auto-confirm rule can check that the pending session targets this package.
+        params.setAppPackageName(ctx.getPackageName());
         int sessionId = pi.createSession(params);
         Diag.log(TAG, "install session " + sessionId + " apk=" + apk.getName() + " bytes=" + apk.length());
         PackageInstaller.Session session = pi.openSession(sessionId);
@@ -61,5 +64,6 @@ public final class Updater {
         session.commit(pending.getIntentSender());
         session.close();
         Diag.log(TAG, "install committed session " + sessionId + " — awaiting one-tap confirm on device");
+        return sessionId;
     }
 }

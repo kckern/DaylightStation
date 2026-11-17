@@ -1,6 +1,9 @@
 package net.kckern.daylight.core;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Context;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInstaller;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -10,28 +13,42 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Approves only this app's own Package Installer confirmation after POST /update,
- * and only when the device sets update.autoConfirm. The dialog is recognized by the
- * installer's package and by this app's label in its text.
+ * Taps "Update" on this app's own Package Installer confirmation after POST /update,
+ * and only when the device sets update.autoConfirm. What may be tapped is decided by
+ * {@link UpdateConfirmRule}; this class gathers the facts it asks for.
+ *
+ * Checked against the platform: the window's package and whether that package is a
+ * system app; that the install session this app committed still exists, was created
+ * by this package and (because Updater names it in the session parameters) installs
+ * this package. Not available from the platform: which session the dialog on screen
+ * belongs to. The accessibility tree of the installer carries no session id.
  */
 final class OwnUpdateConfirmation {
+    private final Context ctx;
     private final AccessibilityHub accessibility;
     private final EventLog eventLog;
-    /** This app's label, lower case, as the installer dialog shows it. */
+    /** This app's label, as the installer dialog shows it. */
     private final String appLabel;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean pending;
     private long deadline;
+    /** The install session the pending update committed. */
+    private int sessionId = -1;
+    private String lastRefusal;
 
-    OwnUpdateConfirmation(AccessibilityHub accessibility, EventLog eventLog, String appLabel) {
+    OwnUpdateConfirmation(Context ctx, AccessibilityHub accessibility, EventLog eventLog, String appLabel) {
+        this.ctx = ctx;
         this.accessibility = accessibility;
         this.eventLog = eventLog;
-        this.appLabel = appLabel == null ? "" : appLabel.trim().toLowerCase(Locale.US);
+        this.appLabel = appLabel == null ? "" : appLabel.trim();
     }
 
-    void begin() {
+    /** Called once the update's install session is committed, with that session's id. */
+    void begin(int committedSessionId) {
         // Without the accessibility service, or without a label to match, there is nothing to tap.
         if (accessibility.service() == null || appLabel.isEmpty()) return;
+        sessionId = committedSessionId;
+        lastRefusal = null;
         pending = true;
         deadline = System.currentTimeMillis() + 90_000;
         handler.removeCallbacks(poll);
@@ -40,6 +57,7 @@ final class OwnUpdateConfirmation {
 
     void finish() {
         pending = false;
+        sessionId = -1;
         handler.removeCallbacks(poll);
     }
 
@@ -55,27 +73,57 @@ final class OwnUpdateConfirmation {
                 return;
             }
             AccessibilityNodeInfo root = service.getRootInActiveWindow();
-            if (isOwnInstallDialog(root, appLabel) && clickInstall(root)) {
+            String refusal = root == null ? "no_window" : UpdateConfirmRule.refusal(facts(root));
+            if (refusal == null && clickInstall(root)) {
                 pending = false;
-                eventLog.add("self-update confirmation-approved");
+                eventLog.add("self-update confirmation-approved session=" + sessionId);
                 return;
             }
+            // One line per distinct reason, so a dialog that was left alone can be explained later.
+            if (refusal != null && !refusal.equals(lastRefusal) && !"no_window".equals(refusal)
+                    && !"not_installer".equals(refusal)) {
+                eventLog.add("self-update confirmation-withheld " + refusal);
+            }
+            lastRefusal = refusal;
             handler.postDelayed(this, 200);
         }
     };
 
-    private static boolean isOwnInstallDialog(AccessibilityNodeInfo root, String appLabel) {
-        if (root == null) return false;
+    private UpdateConfirmRule.Facts facts(AccessibilityNodeInfo root) {
+        UpdateConfirmRule.Facts f = new UpdateConfirmRule.Facts();
+        f.pending = pending;
+        f.nowMs = System.currentTimeMillis();
+        f.deadlineMs = deadline;
         CharSequence packageValue = root.getPackageName();
-        String packageName = packageValue == null ? "" : packageValue.toString();
-        if (!(packageName.equals("com.android.packageinstaller")
-                || packageName.equals("com.google.android.packageinstaller"))) return false;
+        f.dialogPackage = packageValue == null ? null : packageValue.toString();
+        f.dialogPackageIsSystemApp = isSystemApp(f.dialogPackage);
         StringBuilder text = new StringBuilder();
         collectText(root, text);
-        String normalized = text.toString().toLowerCase(Locale.US);
-        return normalized.contains(appLabel)
-                && !normalized.contains("uninstall")
-                && (normalized.contains("install") || normalized.contains("update"));
+        f.dialogText = text.toString();
+        f.appLabel = appLabel;
+        f.ownPackage = ctx.getPackageName();
+        try {
+            PackageInstaller.SessionInfo info = ctx.getPackageManager().getPackageInstaller().getSessionInfo(sessionId);
+            if (info != null) {
+                f.sessionFound = true;
+                f.sessionInstallerPackage = info.getInstallerPackageName();
+                f.sessionAppPackage = info.getAppPackageName();
+            }
+        } catch (Throwable ignored) {
+            // No session facts: the rule refuses.
+        }
+        return f;
+    }
+
+    /** Fails closed: a package this app cannot look up is not treated as the system's. */
+    private boolean isSystemApp(String packageName) {
+        if (packageName == null) return false;
+        try {
+            ApplicationInfo info = ctx.getPackageManager().getApplicationInfo(packageName, 0);
+            return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private static boolean clickInstall(AccessibilityNodeInfo root) {

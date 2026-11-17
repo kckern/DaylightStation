@@ -130,10 +130,25 @@ Served by the payload on `control.port`. All responses are JSON.
 A swap or rollback the shell refuses answers `409` with `ok: false` and the reason
 in both `error` and `result`. A pushed payload larger than 64 MiB is abandoned.
 
-`POST /update` waits for the download. The install itself needs a tap on the
+`POST /update` waits for the download. One update runs at a time: a second call
+while one is in flight answers `409` with `error: update_in_progress`. An APK
+larger than 256 MiB is abandoned. The install itself needs a tap on the
 device's confirmation dialog unless the app is device owner; with
 `update.autoConfirm` on, the app taps its own dialog through its accessibility
 service. The outcome is written to the shell log (lifeline `GET /log`).
+
+The automatic tap happens only when all of these hold: an update this app started
+is waiting for confirmation; the window on screen belongs to the system's package
+installer (one of its known package names, and a system app); the install session
+this app committed still exists, was created by this package and installs this
+package; and the dialog names the app's exact label as a whole word. The dialog
+does not expose which install session it belongs to, so that link is inferred
+from the other conditions. A dialog left alone is recorded in `GET /log` as
+`self-update confirmation-withheld <reason>`.
+
+The process has one uncaught-exception handler, installed by the first payload
+start and kept across payload swaps. It writes the crash through the running
+payload's crash log and then lets the system handle the exception.
 
 A connection that sends nothing for 5 seconds is closed. A WebSocket client stays
 connected by answering the server's ping, which is sent every 3 seconds.

@@ -18,7 +18,7 @@ final class CoreServices {
         this.heartbeat = new Heartbeat(core, cfg);
         this.wifiLink = new WifiLink(ctx, cfg);
         this.cfg = cfg;
-        this.updateConfirmation = new OwnUpdateConfirmation(core.accessibility(), core.log(), appLabel(ctx));
+        this.updateConfirmation = new OwnUpdateConfirmation(ctx, core.accessibility(), core.log(), appLabel(ctx));
     }
 
     void start() {

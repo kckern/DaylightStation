@@ -35,6 +35,16 @@ public final class CoreRuntime implements CoreContext {
     private volatile String updateState = "idle";
     private volatile String updateError;
     private volatile long lastUpdateRequestAtMs;
+    /** True from the moment POST /update is accepted until its download and commit return. */
+    private final java.util.concurrent.atomic.AtomicBoolean updateInFlight = new java.util.concurrent.atomic.AtomicBoolean();
+    /** Downloads and commits a self-update. Null whenever there is no Android context. */
+    private volatile UpdateInstaller updateInstaller;
+
+    /** The download and install behind POST /update. Returns the APK's byte count. */
+    interface UpdateInstaller { long fetchAndInstall(String url) throws Exception; }
+
+    /** Test seam: POST /update needs an Android context otherwise. */
+    void useUpdateInstallerForTest(UpdateInstaller installer) { updateInstaller = installer; }
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
         this.shell = shell;
@@ -100,6 +110,14 @@ public final class CoreRuntime implements CoreContext {
         if (shell.context() != null) {
             CoreServices d = new CoreServices(this, config);
             device = d;
+            updateInstaller = url -> {
+                File staged = new File(d.ctx.getCacheDir(), "update.apk");
+                long bytes = Downloads.to(url, staged, Downloads.MAX_UPDATE_BYTES, "apk");
+                int sessionId = Updater.install(d.ctx, staged);
+                // After the commit, so the confirmation knows which session it is waiting on.
+                if (config.updateAutoConfirm()) d.updateConfirmation.begin(sessionId);
+                return bytes;
+            };
             d.start();
         }
         for (Capability c : capabilities) {
@@ -125,6 +143,7 @@ public final class CoreRuntime implements CoreContext {
         started.clear();
         CoreServices d = device;
         device = null;
+        updateInstaller = null;
         if (d != null) { try { d.stop(); } catch (Throwable ignored) { } }
         socket.stop();
     }
@@ -158,18 +177,19 @@ public final class CoreRuntime implements CoreContext {
                 url = b.startsWith("{") ? textOrNull(new JSONObject(b), "url") : b;
             }
             if (url == null || url.trim().isEmpty()) return Replies.json(Replies.err("missing url"));
-            CoreServices d = device;
-            if (d == null) return Replies.json(Replies.err("not_ready"));
+            UpdateInstaller installer = updateInstaller;
+            if (installer == null) return Replies.json(Replies.err("not_ready"));
             url = url.trim();
-            lastUpdateRequestAtMs = System.currentTimeMillis();
-            Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
-            updateError = null;
-            updateState = "downloading";
+            // One install at a time: two calls would write the same staged file.
+            if (!updateInFlight.compareAndSet(false, true)) {
+                return Router.Response.json(409, Replies.err("update_in_progress").put("state", updateState));
+            }
             try {
-                File staged = new File(d.ctx.getCacheDir(), "update.apk");
-                long bytes = Downloads.to(url, staged);
-                if (config.updateAutoConfirm()) d.updateConfirmation.begin();
-                Updater.install(d.ctx, staged);
+                lastUpdateRequestAtMs = System.currentTimeMillis();
+                Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
+                updateError = null;
+                updateState = "downloading";
+                long bytes = installer.fetchAndInstall(url);
                 // The session is committed. Without device owner Android now shows a confirm
                 // dialog; the result lands in the shell log (lifeline GET /log), not here.
                 updateState = "awaiting_confirmation";
@@ -179,6 +199,8 @@ public final class CoreRuntime implements CoreContext {
                 updateState = "failed";
                 updateError = e.getClass().getSimpleName() + ": " + e.getMessage();
                 return Replies.json(Replies.err(updateError).put("state", updateState));
+            } finally {
+                updateInFlight.set(false);
             }
         });
         router.route("GET", "/update", req -> Replies.json(Replies.ok()

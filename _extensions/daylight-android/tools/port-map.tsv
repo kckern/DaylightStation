@@ -1,7 +1,7 @@
 move	_extensions/supervision-guard/app/src/main/java/net/kckern/supervisionguard/LeaseDeadline.java	_extensions/daylight-android/capabilities/lease-gate/payload/src/main/java/net/kckern/daylight/cap/leasegate/LeaseDeadline.java	
 move	_extensions/supervision-guard/app/src/test/java/net/kckern/supervisionguard/LeaseDeadlineTest.java	_extensions/daylight-android/capabilities/lease-gate/payload/src/test/java/net/kckern/daylight/cap/leasegate/LeaseDeadlineTest.java	
 move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/Diag.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/Diag.java	
-move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/CrashLog.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/CrashLog.java	
+adapt	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/CrashLog.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/CrashLog.java	
 move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/ProcStats.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/ProcStats.java	
 adapt	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/DeviceProbe.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/DeviceProbe.java	
 move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/SettingsControl.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/SettingsControl.java	
