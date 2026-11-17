@@ -54,7 +54,7 @@ final class HomeWatchdog {
             if (stopped) return;
             handler.removeCallbacks(this);
             try {
-                synchronized(outboxLock) { storage.retryAlert(); }
+                synchronized(outboxLock) { storage.retryBeforeObserve(state); }
                 String home = resolveHome();
                 String event = state.observe(home, System.currentTimeMillis());
                 if (event != null) {
@@ -79,7 +79,6 @@ final class HomeWatchdog {
                 boolean wasSecured = prefs.getBoolean("policySecured", true);
                 if (required && secured != wasSecured) {
                     enqueue(secured ? "policy-restored" : "policy-lost", home);
-                    prefs.edit().putBoolean("policySecured", secured).commit();
                 }
                 if (owner && !prefs.getBoolean("policyRequired", false)) prefs.edit().putBoolean("policyRequired", true).commit();
                 if (!state.homeCorrect) {

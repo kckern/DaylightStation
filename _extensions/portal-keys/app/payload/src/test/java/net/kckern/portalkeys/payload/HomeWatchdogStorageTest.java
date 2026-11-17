@@ -74,6 +74,35 @@ public class HomeWatchdogStorageTest {
   assertTrue(fully.ready());assertEquals(1,storage.outbox().length());
   fully.observe(true);fully.deliver(event->storage.enqueue(event,null,home,""));assertEquals(2,storage.outbox().length());
  }
+ @Test public void retriedHomeLossReconcilesObservationAndDoesNotConsumeFutureLoss() throws Exception {
+  Disk disk=new Disk();SharedPreferences prefs=disk.open();HomeWatchdogStorage storage=new HomeWatchdogStorage(prefs);
+  HomeWatchState home=new HomeWatchState();String fully="de.ozerov.fully/.LauncherReplacement";
+  home.observe(fully,1000);storage.enqueue("home-restored",fully,home,"");
+  String loss=home.observe("other/.Home",2000);disk.succeeds=false;
+  try{storage.enqueue(loss,home.home,home,"");fail();}catch(IllegalStateException expected){
+   home.initialized=prefs.getBoolean("initialized",false);home.homeCorrect=prefs.getBoolean("correct",false);home.incidents=prefs.getLong("incidents",0);
+  }
+  disk.succeeds=true;storage.retryBeforeObserve(home);
+  String restored=home.observe(fully,3000);assertEquals("home-restored",restored);
+  storage.enqueue(restored,home.home,home,"");storage.enqueue("policy-restored",home.home,home,"");
+  String laterLoss=home.observe("other/.Home",4000);assertEquals("home-lost",laterLoss);
+  assertTrue(storage.enqueue(laterLoss,home.home,home,""));assertEquals(2,home.incidents);
+  assertEquals(5,storage.outbox().length());assertEquals("home-lost",storage.outbox().getJSONObject(4).getString("event"));
+ }
+ @Test public void policyMarkerCommitsAtomicallyAndLaterTransitionsAreNotDeduplicated() throws Exception {
+  Disk disk=new Disk();SharedPreferences prefs=disk.open();HomeWatchdogStorage storage=new HomeWatchdogStorage(prefs);HomeWatchState home=new HomeWatchState();
+  disk.succeeds=false;
+  try{storage.enqueue("policy-lost",null,home,"");fail();}catch(IllegalStateException expected){}
+  assertTrue(prefs.getBoolean("policySecured",true));assertFalse(disk.values.containsKey("outbox"));
+  disk.succeeds=true;storage.retryBeforeObserve(home);
+  assertFalse(prefs.getBoolean("policySecured",true));assertEquals(false,disk.values.get("policySecured"));
+  assertEquals(1,storage.outbox().length());
+  // The recomputing policy producer sees its committed marker, so no second lost event is proposed.
+  boolean secured=false;assertEquals(secured,prefs.getBoolean("policySecured",true));
+  assertTrue(storage.enqueue("policy-restored",null,home,""));assertTrue(prefs.getBoolean("policySecured",false));
+  assertTrue(storage.enqueue("policy-lost",null,home,""));assertFalse(prefs.getBoolean("policySecured",true));
+  assertEquals(3,storage.outbox().length());
+ }
  @Test public void interveningHomeAdmissionDoesNotConsumeFullyWriterReceipt() throws Exception {
   Disk disk=new Disk();HomeWatchdogStorage storage=new HomeWatchdogStorage(disk.open());HomeWatchState home=new HomeWatchState();
   FkbAlertState fully=new FkbAlertState(true);fully.observe(false);disk.succeeds=false;
@@ -96,9 +125,9 @@ public class HomeWatchdogStorageTest {
   fully.deliver(event->storage.enqueue(event,null,home,""));
   disk.succeeds=true;storage.retryAlert();disk.succeeds=false;
   try{storage.enqueue("home-lost",null,home,"");fail();}catch(IllegalStateException expected){}
-  disk.succeeds=true;storage.retryAlert();
+  disk.succeeds=true;storage.retryBeforeObserve(home);
   fully.deliver(event->storage.enqueue(event,null,home,""));assertTrue(fully.ready());
-  assertFalse(storage.enqueue("home-lost",null,home,""));assertEquals(2,storage.outbox().length());
+  assertNull(home.observe("other/.Home",1000));assertEquals(2,storage.outbox().length());
   fully.observe(true);fully.deliver(event->storage.enqueue(event,null,home,""));assertEquals(3,storage.outbox().length());
  }
  @Test public void serviceRestartCannotMistakeFailedPreferenceMemoryForDurableAdmission() throws Exception {

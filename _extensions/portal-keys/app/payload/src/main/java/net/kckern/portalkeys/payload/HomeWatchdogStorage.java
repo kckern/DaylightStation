@@ -9,7 +9,9 @@ final class HomeWatchdogStorage {
     private final SharedPreferences prefs;
     private java.util.function.BooleanSupplier pendingAlertCommit;
     private String pendingReceipt;
-    private final java.util.Set<String> retryReceipts=new java.util.HashSet<>();
+    private final java.util.Set<String> fullyRetryReceipts=new java.util.HashSet<>();
+    private Boolean pendingHomeCorrect,committedHomeCorrect;
+    private long pendingHomeIncidents,committedHomeIncidents;
     HomeWatchdogStorage(SharedPreferences prefs) { this.prefs=prefs; }
     void restoreBudget(PageWatchState page,long now,int boot) {
         try {
@@ -28,11 +30,23 @@ final class HomeWatchdogStorage {
                 .putLong("pageBlockedUntil",page.blockedUntil).commit()) throw new IllegalStateException("page-budget-storage-failed");
         action.run();
     }
+    void retryBeforeObserve(HomeWatchState home) {
+        retryAlert();
+        if(committedHomeCorrect!=null) {
+            // Home recomputes observations; it has no retained writer head to ACK.
+            // Reconcile the committed transition before looking at the current Home.
+            home.initialized=true;home.homeCorrect=committedHomeCorrect;home.incidents=committedHomeIncidents;
+            committedHomeCorrect=null;
+        }
+    }
     void retryAlert() {
         if(pendingAlertCommit==null)return;
         if(!pendingAlertCommit.getAsBoolean())throw new IllegalStateException("alert-storage-failed");
         pendingAlertCommit=null;
-        if(pendingReceipt!=null)retryReceipts.add(pendingReceipt);
+        if(pendingReceipt!=null)fullyRetryReceipts.add(pendingReceipt);
+        if(pendingHomeCorrect!=null) {
+            committedHomeCorrect=pendingHomeCorrect;committedHomeIncidents=pendingHomeIncidents;
+        }
     }
     JSONArray outbox() throws Exception {
         // Android commit(false) can leave memory ahead of disk. Never deliver that view.
@@ -40,21 +54,22 @@ final class HomeWatchdogStorage {
         return new JSONArray(prefs.getString("outbox","[]"));
     }
     private static String receiptKey(String event) {
-        // Page failures already have a durable incident marker. Retain only the
-        // finite native transition names here, independent of changing page identity.
-        return event.equals("page-failed")?null:event;
+        // Only Fully retains an unacknowledged writer head. Home and policy
+        // recompute observations; page failures use their durable incident marker.
+        return event.equals("fkb-lost") || event.equals("fkb-restored")?event:null;
     }
     boolean enqueue(String event,String home,HomeWatchState state,String pageIncident) throws Exception {
         retryAlert();
         String receipt=receiptKey(event);
         // An unrelated Home/policy admission must neither consume nor overwrite
         // the acknowledgement still owed to Fully's retained writer head.
-        if(retryReceipts.remove(receipt))return false;
+        if(fullyRetryReceipts.remove(receipt))return false;
         if(event.equals("page-failed") && pageIncident.equals(prefs.getString("pageFailureIncident","")))return false;
         JSONArray queue=outbox();
         String oldQueue=queue.toString(),oldFailure=prefs.getString("pageFailureIncident","");
         long oldSequence=prefs.getLong("sequence",0),oldIncidents=prefs.getLong("incidents",0);
         boolean oldInitialized=prefs.getBoolean("initialized",false),oldCorrect=prefs.getBoolean("correct",false),oldSecure=prefs.getBoolean("fkbSecure",true);
+        boolean oldPolicySecured=prefs.getBoolean("policySecured",true);
         if(queue.length()>=128)throw new IllegalStateException("alert-outbox-full");
         long sequence=prefs.getLong("sequence",0)+1;
         queue.put(new JSONObject().put("event",event).put("sequence",sequence).put("at",state.checkedAt)
@@ -65,25 +80,28 @@ final class HomeWatchdogStorage {
         boolean correct=state.homeCorrect;long incidents=state.incidents;
         String failure=event.equals("page-failed")?pageIncident:prefs.getString("pageFailureIncident","");
         boolean secure=event.startsWith("fkb-")?event.equals("fkb-restored"):prefs.getBoolean("fkbSecure",true);
+        boolean policySecured=event.equals("policy-restored")?true:event.equals("policy-lost")?false:oldPolicySecured;
         // Capture a whole transaction, not just the marker. Retry even if preference memory
         // already contains it; only successful commit acknowledges durable admission.
         pendingReceipt=receipt;
+        pendingHomeCorrect=event.equals("home-lost") || event.equals("home-restored")?correct:null;
+        pendingHomeIncidents=incidents;
         pendingAlertCommit=() -> {
             boolean saved=prefs.edit().putLong("sequence",sequence).putString("outbox",encoded)
                     .putBoolean("initialized",true).putBoolean("correct",correct).putLong("incidents",incidents)
-                    .putString("pageFailureIncident",failure).putBoolean("fkbSecure",secure).commit();
+                    .putString("pageFailureIncident",failure).putBoolean("fkbSecure",secure).putBoolean("policySecured",policySecured).commit();
             if(!saved) {
                 // Restore the acknowledged view in Android's cached memory even if disk
                 // is still failing. A replacement service must not inherit a false ACK.
                 prefs.edit().putLong("sequence",oldSequence).putString("outbox",oldQueue)
                         .putBoolean("initialized",oldInitialized).putBoolean("correct",oldCorrect).putLong("incidents",oldIncidents)
-                        .putString("pageFailureIncident",oldFailure).putBoolean("fkbSecure",oldSecure).commit();
+                        .putString("pageFailureIncident",oldFailure).putBoolean("fkbSecure",oldSecure).putBoolean("policySecured",oldPolicySecured).commit();
             }
             return saved;
         };
         retryAlert();
         // This caller received the successful admission. Only a later retry needs a receipt.
-        retryReceipts.remove(receipt);
+        fullyRetryReceipts.remove(receipt);
         return true;
     }
 }

@@ -774,5 +774,7 @@ Configured preferred Home/allowed packages are not evidence that Fully is foregr
 or lock-task readback is healthy. Failed alert admission keeps the complete pending
 outbox transaction retryable, restores the acknowledged preference-memory view,
 and prohibits delivery until its incident marker and queue commit together.
-Retry acknowledgements remain available to their originating native writer across
-unrelated Home or policy admissions; page failures use their durable incident marker.
+Fully's retained-head retry acknowledgement survives unrelated admissions. Home
+reconciles its committed observation before observing current Home again; policy
+commits its state marker with the outbox event. Neither recomputing producer retains
+a name-only receipt. Page failures use their durable incident marker.
