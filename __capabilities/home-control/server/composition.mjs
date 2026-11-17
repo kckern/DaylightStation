@@ -4,7 +4,10 @@ import { TaskerAdapter } from "./adapters/tasker/TaskerAdapter.mjs";
 import { RemoteExecAdapter } from "./adapters/remote-exec/RemoteExecAdapter.mjs";
 
 export function createHomeAutomationAdapters(config) {
-  const { logger = console, haGateway: preloadedHaGateway } = config;
+  // `httpClient` is the system HttpClient the kiosk and tasker adapters call
+  // through. Both refuse to be built without one, so with none given they are
+  // left out (and reported) instead of failing the whole composition.
+  const { logger = console, haGateway: preloadedHaGateway, httpClient = null } = config;
 
   // Home Assistant gateway (provided by composition root)
   const haGateway = preloadedHaGateway ?? null;
@@ -31,6 +34,8 @@ export function createHomeAutomationAdapters(config) {
   const kioskProvider = config.kiosk?.provider || 'fully-kiosk';
   if (config.kiosk?.host && kioskProvider !== 'fully-kiosk') {
     logger.warn?.('homeAutomation.kiosk.unsupportedProvider', { provider: kioskProvider });
+  } else if (config.kiosk?.host && !httpClient) {
+    logger.warn?.('homeAutomation.kiosk.disabled', { reason: 'no http client' });
   } else if (config.kiosk?.host) {
     kioskAdapter = new KioskAdapter(
       {
@@ -39,19 +44,21 @@ export function createHomeAutomationAdapters(config) {
         password: config.kiosk.password,
         daylightHost: config.kiosk.daylightHost
       },
-      { logger }
+      { httpClient, logger }
     );
   }
 
   // Tasker adapter (optional)
   let taskerAdapter = null;
-  if (config.tasker?.host) {
+  if (config.tasker?.host && !httpClient) {
+    logger.warn?.('homeAutomation.tasker.disabled', { reason: 'no http client' });
+  } else if (config.tasker?.host) {
     taskerAdapter = new TaskerAdapter(
       {
         host: config.tasker.host,
         port: config.tasker.port
       },
-      { logger }
+      { httpClient, logger }
     );
   }
 

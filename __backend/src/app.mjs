@@ -2378,6 +2378,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       privateKey: remoteExecConfig.privateKey || remoteExecConfig.private_key || '',
       knownHostsPath: remoteExecConfig.knownHostsPath || remoteExecConfig.known_hosts_path || ''
     },
+    // The kiosk and tasker adapters cannot be built without an http client.
+    httpClient: new HttpClient({ logger: rootLogger.child({ module: 'home-automation' }) }),
     logger: rootLogger.child({ module: 'home-automation' })
   });
 

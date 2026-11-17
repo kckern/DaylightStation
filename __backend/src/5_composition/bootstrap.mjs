@@ -914,6 +914,7 @@ export function createProxyService(config) {
  * @param {number} [config.kiosk.port] - Kiosk port
  * @param {string} [config.kiosk.password] - Kiosk password
  * @param {string} [config.kiosk.daylightHost] - Daylight host for kiosk
+ * @param {Object} [config.httpClient] - System HttpClient for the kiosk and tasker adapters
  * @param {Object} [config.tasker] - Tasker config
  * @param {string} [config.tasker.host] - Tasker device host
  * @param {number} [config.tasker.port] - Tasker port
