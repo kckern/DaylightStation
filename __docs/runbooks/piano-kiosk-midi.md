@@ -581,3 +581,49 @@ device acceptance independently of these diagnostics. Automatic recovery remains
 blocked by unknown/stopped native safety or maintenance, protects active games
 from disruptive rungs, and preserves parent Stop. Browser self restart remains
 disabled (`SELF_HEAL_RESTART=false`).
+
+## Repeated video controls and responsiveness
+
+The video player admits skips through the existing 700 ms burst governor (at
+most 60 seconds forward per burst), then sends them through one seek in flight
+plus one latest target. Restart and scrub requests share that queue. A matching
+`seeked` event releases the latest target; after five seconds without completion,
+the queue discards pending work. Leaving the player or changing its content or
+media element clears the queue. Backward seeking and sequential lesson limits
+continue to apply. The queue does not grant watched credit.
+
+A bounded queue reduces repeated browser work. It does not establish the cause
+of a historical sustained slowdown. Diagnose presentation separately from native
+liveness and preserve the existing bridge/ownership release gates.
+
+Run the isolated fixture profile from the repository root (requires the existing
+Playwright/Chromium tooling and `ffmpeg` on PATH):
+
+```bash
+BASE_URL=http://127.0.0.1:1 npx playwright test \
+  --config tests/_infrastructure/config/playwright.config.mjs \
+  tests/live/flow/piano/incident-responsiveness.runtime.test.mjs --workers=1
+```
+
+The explicit `BASE_URL` suppresses the shared test configuration's household
+server startup. The test starts its own ephemeral loopback fixture server,
+bundles the real piano video component/controller with mocked context and player
+boundaries, and generates a 120-second 320×180, 30 fps VP8 WebM using ffmpeg's
+`testsrc2` source. Its mock player seeks an actual video element. Play-log replies
+carry no credit; every other request is rejected, including cross-origin traffic.
+It never opens household media or writes learner history.
+
+The attached `piano-fixture-profile.json` records three local sequences: frame
+interval percentiles, long tasks, React commits, seek dispatches, media
+mount/disposal counts, named media handler cleanup, and MIDI subscriptions. CSS
+is omitted, so the fixture makes no layout or full-kiosk rendering claim. To
+compare a committed revision, set `PIANO_PROFILE_ONLY=1` and
+`PIANO_PROFILE_BASELINE_REF=<commit>`; the harness reads that revision of
+`PianoVideoPlayer.jsx` without changing the checkout.
+
+Desktop fixture success does not satisfy device acceptance. After deployment is
+authorized, capture 20 complete sequences and a 30-minute on-device MIDI/video
+soak with frame distributions, handler/media-instance counts, native CPU and
+thermal evidence, browser/build identity and native responsiveness/liveness
+edges. If sustained slowdown still reproduces, keep the repair unaccepted and
+prepare a measured WebView/runtime or hardware remediation candidate.

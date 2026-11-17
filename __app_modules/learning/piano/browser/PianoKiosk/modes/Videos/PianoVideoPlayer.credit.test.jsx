@@ -1,7 +1,7 @@
 // PianoVideoPlayer.credit.test.jsx — the end of an enforced lesson waits for the
 // server's credit answer: a warm-up swaps in on drill-owed; credit ends as today.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 
 const midiState = { activeNotes: new Map(), pressNote: vi.fn(), releaseNote: vi.fn() };
@@ -22,6 +22,7 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (
 vi.mock('./LessonDrill.jsx', () => ({ default: (props) => <div data-testid="lesson-drill">drill {props.drill.reps}</div> }));
 
 let fakeMedia = null;
+const seekSpy = vi.fn();
 vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx', async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
   return {
@@ -33,7 +34,7 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
         play: vi.fn(),
         pause: vi.fn(),
         toggle: vi.fn(),
-        seek: vi.fn(),
+        seek: (target) => { seekSpy(target); fakeMedia.currentTime = target; },
       }), []);
       return <div data-testid="player-stub" />;
     }),
@@ -43,6 +44,7 @@ vi.mock('../../../../../../../__capabilities/playback/browser/player/Player.jsx'
 const lecture = { plex: '243203', label: 'Lecture 3', userWatched: false, userPlayhead: 0, expectation: { enforced: true, preschool: false } };
 
 beforeEach(() => {
+  seekSpy.mockClear();
   fakeMedia = document.createElement('video');
   Object.defineProperty(fakeMedia, 'duration', { value: 600, configurable: true });
   Object.defineProperty(fakeMedia, 'currentTime', { value: 600, writable: true, configurable: true });
@@ -121,5 +123,28 @@ describe('PianoVideoPlayer — credit at the end of a lesson', () => {
     const posts = api.fn.mock.calls.filter((c) => c[0] === 'api/v1/play/log');
     expect(posts.length).toBeGreaterThan(0);
     expect(posts.at(-1)[1].practice.playedSec).toBe(3);
+  });
+});
+
+
+describe('PianoVideoPlayer — bounded transport work', () => {
+  it('seek bursts respect the existing cap and never create watched credit', async () => {
+    api.fn = vi.fn().mockResolvedValue({});
+    fakeMedia.currentTime = 0;
+    render(<PianoVideoPlayer lecture={{ ...lecture, expectation: null }} onBack={vi.fn()} />);
+    await screen.findByTestId('player-stub');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
+    for (let i = 0; i < 9; i += 1) fireEvent.click(screen.getByRole('button', { name: 'Forward 30 seconds' }));
+    expect(seekSpy).toHaveBeenCalledTimes(1);
+    await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+    const forwardSeconds = Math.max(...seekSpy.mock.calls.map(([target]) => target));
+    const creditWrites = api.fn.mock.calls.filter(([url]) => url === 'api/v1/play/log');
+    expect(forwardSeconds).toBe(60);
+    expect(forwardSeconds).toBeLessThanOrEqual(60);
+    expect(creditWrites).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Restart from beginning' }));
+    expect(seekSpy).toHaveBeenCalledTimes(2);
+    await act(async () => { fakeMedia.dispatchEvent(new Event('seeked')); });
+    expect(seekSpy).toHaveBeenLastCalledWith(0);
   });
 });
