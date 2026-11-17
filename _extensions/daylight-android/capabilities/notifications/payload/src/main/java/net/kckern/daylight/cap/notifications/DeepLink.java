@@ -17,7 +17,7 @@ import java.util.Set;
 /**
  * A parsed link. Pure: no Android types. Two forms are links:
  *
- *   daylight://<kind>[/<arg>][?<query>][#k=<key>]     kind: open, bookmark, action, memo, media
+ *   daylight://<kind>[/<arg>][?<query>][#k=<key>]     kind: open, bookmark, action, memo, input, media
  *   http(s)://<an allowed origin>/<path>    read as daylight://open for that path
  *
  * Everything else is refused, and so is a web link on any other origin. Every link
@@ -28,17 +28,18 @@ import java.util.Set;
 public final class DeepLink {
     public static final String SCHEME = "daylight";
     static final int MAX_LENGTH = 4096;
-    private static final Set<String> KINDS = new HashSet<>(Arrays.asList("open", "bookmark", "action", "memo", "media"));
+    private static final Set<String> KINDS = new HashSet<>(Arrays.asList("open", "bookmark", "action", "memo", "input", "media"));
     /**
      * Kinds that do something other than open a page of the site. They are honoured only
      * with this install's key: the link activity is exported, so without the key any web
-     * page or app on the phone could run an action, start a memo or start playback.
+     * page or app on the phone could run an action, start a recording, open the camera,
+     * send typed text or start playback.
      * "open" and "bookmark" only show a page of the site and are accepted without the
      * key, but their handler is told whether it was there (see LinkHandler): without
      * it, "open" shows a configured bookmark's page and nothing else, and the page that
      * opens is given no microphone or camera.
      */
-    private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo", "media"));
+    private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo", "input", "media"));
     /** Kinds whose whole effect is to show a page of the site. Every other kind must be in KEYED. */
     static final Set<String> PAGE_ONLY = new HashSet<>(Arrays.asList("open", "bookmark"));
 

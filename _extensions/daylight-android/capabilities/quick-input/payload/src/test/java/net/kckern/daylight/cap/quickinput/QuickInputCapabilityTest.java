@@ -40,6 +40,23 @@ public class QuickInputCapabilityTest {
     private volatile boolean linkUp = true;
     private long now = 10_000;
     private int recordScreens;
+    /** Every capture screen asked for: "voice journal Journal". */
+    private final List<String> opened = new ArrayList<>();
+    private boolean screensBroken;
+    private final QuickInputCapability.Screens screens = new QuickInputCapability.Screens() {
+        @Override public void record(String dest, String label) { open("voice", dest, label); recordScreens++; }
+        @Override public void text(String dest, String label) { open("text", dest, label); }
+        @Override public void photo(String dest, String label) { open("photo", dest, label); }
+        private void open(String kind, String dest, String label) {
+            if (screensBroken) throw new android.content.ActivityNotFoundException();
+            opened.add(kind + " " + dest + " " + label);
+        }
+    };
+    private static final QuickInputCapability.Screens NO_SCREENS = new QuickInputCapability.Screens() {
+        @Override public void record(String dest, String label) { }
+        @Override public void text(String dest, String label) { }
+        @Override public void photo(String dest, String label) { }
+    };
     private final List<String> notices = new ArrayList<>();
     private final List<String> uploads = Collections.synchronizedList(new ArrayList<String>());
     private final List<String> urls = Collections.synchronizedList(new ArrayList<String>());
@@ -61,7 +78,7 @@ public class QuickInputCapabilityTest {
     @Before public void setUp() throws Exception {
         core = TestCore.create(tmp.newFolder());
         inbox = tmp.newFolder("inbox");
-        cap = new QuickInputCapability(http, new File(tmp.newFolder(), "state"), inbox, () -> now, () -> linkUp, () -> recordScreens++);
+        cap = new QuickInputCapability(http, new File(tmp.newFolder(), "state"), inbox, () -> now, () -> linkUp, screens);
         core.add(cap);
         core.prepare(new JSONObject());
         core.settings().set(Backend.BASE_URL, "https://kiosk.example");
@@ -81,6 +98,13 @@ public class QuickInputCapabilityTest {
         Files.write(f.toPath(), new byte[32]);
         return f;
     }
+
+    private LinkHandler inputLink() {
+        for (LinkHandler h : core.services().all(LinkHandler.class)) if ("input".equals(h.kind())) return h;
+        throw new AssertionError("no input link handler");
+    }
+
+    private static Map<String, String> to(String dest) { return Collections.singletonMap("to", dest); }
 
     private LinkHandler memoLink() {
         for (LinkHandler h : core.services().all(LinkHandler.class)) if ("memo".equals(h.kind())) return h;
@@ -104,7 +128,7 @@ public class QuickInputCapabilityTest {
         record("1700000000000-ab12cd34");
         cap.pumpOnce();
         assertEquals(1, TestCore.get(core, "/input/queue").getInt("waiting"));
-        assertEquals("input-queue uploads Quick inputs: 1 input waiting to upload (Journal 1) daylight://memo/queue", notices.get(0));
+        assertEquals("input-queue uploads Quick inputs: 1 input waiting to upload (Journal 1) daylight://input/queue", notices.get(0));
         cap.pumpOnce();
         assertEquals("an unchanged state is not announced again", 1, notices.size());
 
@@ -160,7 +184,7 @@ public class QuickInputCapabilityTest {
         assertTrue(uploads.isEmpty());
         assertTrue(memo.exists());
         assertEquals(1, notices.size());
-        assertEquals("input-queue uploads Quick inputs are not set up: identity not configured. 1 input is kept on this phone (Journal 1). daylight://memo/queue",
+        assertEquals("input-queue uploads Quick inputs are not set up: identity not configured. 1 input is kept on this phone (Journal 1). daylight://input/queue",
                 notices.get(0));
         JSONObject queue = TestCore.get(core, "/input/queue");
         assertEquals("identity not configured", queue.getString("blocked"));
@@ -187,7 +211,7 @@ public class QuickInputCapabilityTest {
         PayloadPort port = PayloadPort.named(QuickInputCapability.PORT);
         assertFalse(port.ready());
         CoreRuntime real = TestCore.createWithContext(tmp.newFolder(), new FakeContext(tmp.newFolder()));
-        QuickInputCapability started = new QuickInputCapability(http, null, null, System::currentTimeMillis, () -> true, () -> { });
+        QuickInputCapability started = new QuickInputCapability(http, null, null, System::currentTimeMillis, () -> true, NO_SCREENS);
         real.add(started);
         real.prepare(new JSONObject());
         real.settings().set(Backend.BASE_URL, "https://kiosk.example");
@@ -475,7 +499,7 @@ public class QuickInputCapabilityTest {
                 + "\"file\":\"" + kept.getPath().replace("\\", "\\\\") + "\",\"recordedAtMs\":1600000000000,\"state\":\"PARKED\",\"attempts\":20}]}")
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         CoreRuntime other = TestCore.create(tmp.newFolder());
-        QuickInputCapability carried = new QuickInputCapability(http, stateDir, inbox, () -> now, () -> linkUp, () -> { });
+        QuickInputCapability carried = new QuickInputCapability(http, stateDir, inbox, () -> now, () -> linkUp, NO_SCREENS);
         other.add(carried);
         other.prepare(new JSONObject());
         JSONObject queue = TestCore.get(other, "/input/queue");
@@ -485,5 +509,73 @@ public class QuickInputCapabilityTest {
         assertTrue(new File(stateDir, QuickInputCapability.STATE_FILE).isFile());
         assertFalse(new File(stateDir, QuickInputCapability.OLD_STATE_FILE).exists());
         carried.stop();
+    }
+    // ── links: what starts a capture ─────────────────────────────────────────
+
+    @Test public void anInputLinkOpensTheScreenOfItsKindForItsDestination() throws Exception {
+        assertEquals("none", inputLink().handle("voice", to("meal")).getString("effect"));
+        assertEquals("none", inputLink().handle("text", to("journal-note")).getString("effect"));
+        assertEquals("none", inputLink().handle("photo", to("meal-photo")).getString("effect"));
+        assertEquals(java.util.Arrays.asList("voice meal Meal", "text journal-note Journal note", "photo meal-photo Meal photo"), opened);
+    }
+
+    @Test public void theMemoLinkIsAVoiceInputForTheJournal() throws Exception {
+        memoLink().handle("new", NO_QUERY);
+        inputLink().handle("voice", to("journal"));
+        assertEquals(java.util.Arrays.asList("voice journal Journal", "voice journal Journal"), opened);
+    }
+
+    @Test public void anInputLinkForADestinationThatDoesNotExistOrDoesNotTakeItsKindOpensNothing() throws Exception {
+        String[][] bad = { { "voice", "walk" }, { "text", "journal" }, { "photo", "meal" }, { "voice", "meal-photo" }, { "voice", "" },
+                { "video", "journal" }, { "", "journal" }, { "voice/extra", "journal" }, { "VOICE", "journal" },
+                { "voice", "/api/v1/journalist/voice" }, { "voice", "https://elsewhere.example/api/v1/x" } };
+        for (String[] row : bad) {
+            try { inputLink().handle(row[0], to(row[1])); fail("accepted " + row[0] + " to " + row[1]); }
+            catch (IllegalArgumentException expected) { }
+        }
+        try { inputLink().handle("voice", NO_QUERY); fail("accepted a link with no destination"); } catch (IllegalArgumentException expected) { }
+        assertTrue(opened.isEmpty());
+    }
+
+    /**
+     * The link activity is exported, so a web page or another app can send any link. The
+     * notifications capability refuses an input or memo link without this install's key
+     * before it reaches here; this is the second lock on the same door.
+     */
+    @Test public void aLinkThatDidNotCarryTheInstallKeyStartsNoCaptureEvenIfItGotThisFar() throws Exception {
+        for (String kind : new String[] { "voice", "text", "photo" }) {
+            JSONObject r = inputLink().handle(kind, to(kind.equals("voice") ? "journal" : kind.equals("text") ? "journal-note" : "meal-photo"), false);
+            assertFalse(r.getBoolean("ok"));
+            assertEquals("forbidden", r.getString("error"));
+        }
+        assertFalse(memoLink().handle("new", NO_QUERY, false).getBoolean("ok"));
+        assertFalse(inputLink().handle("discard", NO_QUERY, false).getBoolean("ok"));
+        assertTrue("no recorder, no text screen, no camera", opened.isEmpty());
+        assertEquals("none", inputLink().handle("photo", to("meal-photo"), true).getString("effect"));
+        assertEquals(1, opened.size());
+    }
+
+    @Test public void withNoIdentityNoCaptureScreenOpensForAnyKind() throws Exception {
+        core.settings().set(Backend.USER, "");
+        for (String[] row : new String[][] { { "voice", "meal" }, { "text", "meal-note" }, { "photo", "meal-photo" } }) {
+            JSONObject r = inputLink().handle(row[0], to(row[1]));
+            assertEquals("Quick inputs are not set up on this phone: identity not configured", r.getString("message"));
+        }
+        assertTrue(opened.isEmpty());
+    }
+
+    /** An installed app from before a screen existed: the tap says so and nothing else happens. */
+    @Test public void aScreenTheInstalledAppDoesNotHaveIsSaidAndNothingBreaks() throws Exception {
+        screensBroken = true;
+        JSONObject r = inputLink().handle("photo", to("meal-photo"));
+        assertEquals("toast", r.getString("effect"));
+        assertEquals("Meal photo: not available in the installed app", r.getString("message"));
+    }
+
+    @Test public void theQueueAndDiscardLinksAreTheSameUnderEitherName() throws Exception {
+        assertEquals("No inputs are waiting", inputLink().handle("queue", NO_QUERY).getString("message"));
+        assertEquals("No inputs to discard", inputLink().handle("discard", NO_QUERY).getString("message"));
+        assertEquals("No inputs to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
+        try { inputLink().handle("erase", NO_QUERY); fail("accepted input/erase"); } catch (IllegalArgumentException expected) { }
     }
 }

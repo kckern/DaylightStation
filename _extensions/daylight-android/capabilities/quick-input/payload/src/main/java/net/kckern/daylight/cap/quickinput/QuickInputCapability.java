@@ -40,10 +40,12 @@ import java.util.function.LongSupplier;
  * after the backend answered 200 for it. Nothing here reads it, and no log line or
  * notice holds more than an input's id, its kind, its destination, its size and its state.
  *
- * A memo recording starts from one place: the keyed link daylight://memo/new, which
- * only this app's own surfaces (a tile, the widget, a shortcut) can build. A page of
- * the site cannot start this recorder. What a page may do with the microphone itself
- * is the web view's rule (webview.allowMic, and how the page was opened).
+ * A capture (the recorder, the camera, the text screen) starts from one place: a keyed
+ * link, daylight://input/<kind>?to=<destination> or its earlier name daylight://memo/new,
+ * which only this app's own surfaces (a tile, the widget, a shortcut) can build. A page
+ * of the site, a link from another app and a car cannot start one. What a page may do
+ * with the microphone itself is the web view's rule (webview.allowMic, and how the page
+ * was opened).
  */
 public final class QuickInputCapability implements Capability {
     /** The PayloadPort the recorder tells of a finished recording. The shell half spells the same name (MemoFiles.PORT). */
@@ -56,11 +58,23 @@ public final class QuickInputCapability implements Capability {
     /** input.dest.1 to input.dest.8: one destination a line (Destinations). */
     static final String DEST = "input.dest.";
     private static final String RECORD_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.RecordActivity";
+    private static final String TEXT_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.TextInputActivity";
+    private static final String PHOTO_ACTIVITY = "net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity";
+    /** The extras a capture screen is started with (MemoFiles.EXTRA_DEST and EXTRA_LABEL in the shell half). */
+    static final String EXTRA_DEST = "dest";
+    static final String EXTRA_LABEL = "label";
     /** With nothing due, look again this often anyway (a recording made while no payload was loaded). */
     private static final long IDLE_MS = 15 * 60_000L;
 
-    /** Opens the installed record screen. */
-    interface Recorder { void open(); }
+    /**
+     * Opens one of the installed capture screens for a destination. Each takes the
+     * destination's id and its label and nothing else: never a route.
+     */
+    interface Screens {
+        void record(String dest, String label);
+        void text(String dest, String label);
+        void photo(String dest, String label);
+    }
 
     /**
      * Asks the installed recorder to recover recordings that were cut off. It alone
@@ -81,7 +95,7 @@ public final class QuickInputCapability implements Capability {
     private File inbox;
     private LongSupplier clock;
     private UploadPump.Link link;
-    private Recorder recorder;
+    private Screens screens;
 
     private volatile InputQueue queue;
     private volatile UploadPump pump;
@@ -111,13 +125,13 @@ public final class QuickInputCapability implements Capability {
 
     public QuickInputCapability() { }
 
-    QuickInputCapability(Http http, File stateDir, File inbox, LongSupplier clock, UploadPump.Link link, Recorder recorder) {
+    QuickInputCapability(Http http, File stateDir, File inbox, LongSupplier clock, UploadPump.Link link, Screens screens) {
         this.http = http;
         this.stateDir = stateDir;
         this.inbox = inbox;
         this.clock = clock;
         this.link = link;
-        this.recorder = recorder;
+        this.screens = screens;
     }
 
     @Override public String name() { return "quick-input"; }
@@ -135,11 +149,23 @@ public final class QuickInputCapability implements Capability {
                     value -> Destinations.problem((String) value));
         }
 
-        core.services().provide(LinkHandler.class, new LinkHandler() {
-            @Override public String kind() { return "memo"; }
+        // daylight://input/<voice|text|photo>?to=<destination id>, input/queue, input/discard.
+        core.services().provide(LinkHandler.class, new KeyedOnly("input") {
+            @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
+                if ("queue".equals(arg)) return tryAgain();
+                if ("discard".equals(arg)) return discard();
+                Destinations.Kind kind = Destinations.Kind.of(arg);
+                // Of the query only "to" is read, and only as the id of a configured destination.
+                String to = query == null ? null : query.get("to");
+                if (kind == null || to == null) throw new IllegalArgumentException("expected input/<voice|text|photo>?to=<destination>");
+                return startInput(kind, to);
+            }
+        });
+        // The earlier name: memo/new is a voice input for the journal.
+        core.services().provide(LinkHandler.class, new KeyedOnly("memo") {
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
                 // The query is whatever the sender of the link wrote, and is not read.
-                if ("new".equals(arg)) return startRecording();
+                if ("new".equals(arg)) return startInput(Destinations.Kind.VOICE, Destinations.MEMO_DESTINATION);
                 if ("queue".equals(arg)) return tryAgain();
                 if ("discard".equals(arg)) return discard();
                 throw new IllegalArgumentException("expected memo/new, memo/queue or memo/discard");
@@ -386,14 +412,46 @@ public final class QuickInputCapability implements Capability {
 
     // ── links ─────────────────────────────────────────────────────────────────
 
-    private JSONObject startRecording() throws Exception {
-        // A memo that could never be sent is not recorded in the first place.
+    /**
+     * A link handler that does nothing for a link that came from outside the app without
+     * this install's key. The notifications capability already refuses such a link for
+     * these kinds; this holds even if that list were ever changed.
+     */
+    private abstract static class KeyedOnly implements LinkHandler {
+        private final String kind;
+        KeyedOnly(String kind) { this.kind = kind; }
+        @Override public String kind() { return kind; }
+        @Override public JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
+            if (!keyed) return LinkEffect.refused("forbidden", "That link is not allowed");
+            return handle(arg, query);
+        }
+    }
+
+    /**
+     * Opens the capture screen of a kind for a destination. The destination is one of
+     * the configured lines, named by its id, and must take that kind: nothing in a link
+     * can name a route.
+     */
+    private JSONObject startInput(Destinations.Kind kind, String to) throws Exception {
+        Destinations.Destination dest = Destinations.ID.matcher(to).matches() ? destinations(null).find(to) : null;
+        if (dest == null || dest.kind != kind) throw new IllegalArgumentException("no destination of that name takes this kind");
+        // An input that could never be sent is not captured in the first place.
         String why = InputUploader.blocked(backend);
         if (why != null) return LinkEffect.toast(NOT_SET_UP + why);
-        Recorder r = recorder();
-        if (r == null) return LinkEffect.toast("Not available on this device");
-        r.open();
-        core.shell().note("INPUT", "record screen opened");
+        Screens s = screens();
+        if (s == null) return LinkEffect.toast("Not available on this device");
+        try {
+            switch (kind) {
+                case TEXT: s.text(dest.id, dest.label); break;
+                case PHOTO: s.photo(dest.id, dest.label); break;
+                default: s.record(dest.id, dest.label); break;
+            }
+        } catch (RuntimeException noSuchScreen) {
+            // An installed app from before this screen existed.
+            core.shell().note("INPUT", kind.word + " screen could not be opened: " + noSuchScreen.getClass().getSimpleName());
+            return LinkEffect.toast(dest.label + ": not available in the installed app");
+        }
+        core.shell().note("INPUT", kind.word + " screen opened for " + dest.id);
         return LinkEffect.none();
     }
 
@@ -445,19 +503,28 @@ public final class QuickInputCapability implements Capability {
         return LinkEffect.toast("Discarded " + QueueNotice.inputs(files.size()));
     }
 
-    private Recorder recorder() {
-        if (recorder == null) {
+    private Screens screens() {
+        if (screens == null) {
             final Object context = core.shell().context();
             if (context == null) return null;
-            recorder = () -> {
-                Context c = (Context) context;
-                // By name: the record screen is installed code in this capability's shell half.
-                // It is not exported, so only this app can start it. Started while the link
-                // activity is on screen, which is what lets a service context start one.
-                c.startActivity(new Intent().setClassName(c, RECORD_ACTIVITY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            final Context c = (Context) context;
+            screens = new Screens() {
+                @Override public void record(String dest, String label) { open(RECORD_ACTIVITY, dest, label); }
+                @Override public void text(String dest, String label) { open(TEXT_ACTIVITY, dest, label); }
+                @Override public void photo(String dest, String label) { open(PHOTO_ACTIVITY, dest, label); }
+
+                /**
+                 * By name: a capture screen is installed code in this capability's shell half.
+                 * None is exported, so only this app can start one. Started while the link
+                 * activity is on screen, which is what lets a service context start one.
+                 */
+                private void open(String activity, String dest, String label) {
+                    c.startActivity(new Intent().setClassName(c, activity).putExtra(EXTRA_DEST, dest).putExtra(EXTRA_LABEL, label)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                }
             };
         }
-        return recorder;
+        return screens;
     }
 
     /** The configured destinations. A line that cannot be used is left out and reported, never thrown. */

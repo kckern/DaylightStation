@@ -108,25 +108,42 @@ public class DeviceDefaultsTest {
     }
 
     /**
-     * Without a recorder in the build a memo action is a stand-in that opens a page. A
-     * device that lists quick-input has the recorder, so none of its actions is one.
+     * Without the quick-input capability a memo or input action is a stand-in that opens a
+     * page. A device that lists quick-input has the capture screens, so none of its
+     * actions is one, and each names a configured destination that takes its kind: a
+     * button that could only ever answer "that link cannot be opened" fails here.
      */
-    @Test public void aMemoActionIsTheRecorderWhereTheDeviceHasOne() throws Exception {
+    @Test public void aCaptureActionIsTheRealThingWhereTheDeviceHasQuickInput() throws Exception {
         java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
         if (!entries.contains("net.kckern.daylight.cap.onetap.OneTapActionsCapability")) return;
         CoreRuntime core = TestCore.create(tmp.newFolder());
         for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
         core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
-        boolean recorder = entries.contains("net.kckern.daylight.cap.quickinput.QuickInputCapability");
+        boolean quickInput = entries.contains("net.kckern.daylight.cap.quickinput.QuickInputCapability");
+        java.util.Map<String, String> kindOf = new java.util.HashMap<>();
+        if (quickInput) {
+            org.json.JSONArray destinations = TestCore.get(core, "/input/queue").getJSONArray("destinations");
+            for (int i = 0; i < destinations.length(); i++) {
+                kindOf.put(destinations.getJSONObject(i).getString("id"), destinations.getJSONObject(i).getString("kind"));
+            }
+        }
         org.json.JSONArray actions = TestCore.get(core, "/actions").getJSONArray("actions");
-        int memos = 0;
+        int captures = 0;
         for (int i = 0; i < actions.length(); i++) {
             JSONObject a = actions.getJSONObject(i);
-            if (!"memo".equals(a.getString("kind"))) continue;
-            memos++;
-            assertEquals("action " + a.getString("id") + " placeholder", !recorder, a.optBoolean("placeholder", false));
+            String kind = a.getString("kind");
+            if (!"memo".equals(kind) && !"input".equals(kind)) continue;
+            captures++;
+            assertEquals("action " + a.getString("id") + " placeholder", !quickInput, a.optBoolean("placeholder", false));
+            if (!quickInput) continue;
+            // memo:new is a voice input for the journal; input:<kind>:<destination> says both.
+            String target = "memo".equals(kind) ? "voice:journal" : a.getString("target");
+            String wantedKind = target.substring(0, target.indexOf(':'));
+            String destination = target.substring(target.indexOf(':') + 1);
+            assertEquals("action " + a.getString("id") + " names destination '" + destination + "', which must be configured and take " + wantedKind,
+                    wantedKind, kindOf.get(destination));
         }
-        if (recorder) assertTrue("a device that records memos has an action that starts one", memos > 0);
+        if (quickInput) assertTrue("a device with quick-input has an action that starts one", captures > 0);
     }
 
     /**

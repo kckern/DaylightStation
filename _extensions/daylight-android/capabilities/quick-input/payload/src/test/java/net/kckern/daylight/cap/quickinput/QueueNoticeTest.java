@@ -33,7 +33,7 @@ public class QueueNoticeTest {
         QueueNotice one = of(counts("Journal", 1), NONE, "");
         assertEquals("Quick inputs", one.title);
         assertEquals("1 input waiting to upload (Journal 1)", one.text);
-        assertEquals("daylight://memo/queue", one.link);
+        assertEquals("daylight://input/queue", one.link);
         assertEquals("3 inputs waiting to upload (Journal 3)", of(counts("Journal", 3), NONE, "").text);
         assertEquals("3 inputs waiting to upload (Journal 2, Meal photo 1)", of(counts("Journal", 2, "Meal photo", 1), NONE, "").text);
     }
@@ -63,7 +63,7 @@ public class QueueNoticeTest {
     @Test public void parkedInputsCanBeDiscardedFromTheNotice() {
         QueueNotice n = of(NONE, counts("Meal photo", 2), "");
         assertEquals("Discard", n.actionLabel);
-        assertEquals("daylight://memo/discard", n.actionLink);
+        assertEquals("daylight://input/discard", n.actionLink);
         assertEquals("a waiting input has no such button", "", of(counts("Journal", 2), NONE, "").actionLabel);
     }
 

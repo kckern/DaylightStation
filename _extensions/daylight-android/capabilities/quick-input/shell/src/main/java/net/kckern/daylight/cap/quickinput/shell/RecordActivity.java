@@ -74,6 +74,9 @@ public class RecordActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         build();
+        // Where this recording goes, by its destination's label. A title and nothing more.
+        String label = MemoFiles.label(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
+        if (label != null) setTitle(label);
         // The intent is acted on once, when the owner opened the screen. When Android
         // builds the screen again (a rotation, a theme or font change) the same intent
         // is still there; acting on it again would stop and save the recording.
@@ -160,7 +163,9 @@ public class RecordActivity extends Activity {
     private void begin() {
         try {
             // This screen is visible, which is what lets a microphone foreground service start.
-            startForegroundService(new Intent(this, MemoRecorderService.class).setAction(MemoRecorderService.ACTION_START));
+            // The destination travels as its id; the recorder puts it in the file's name.
+            startForegroundService(new Intent(this, MemoRecorderService.class).setAction(MemoRecorderService.ACTION_START)
+                    .putExtra(MemoFiles.EXTRA_DEST, MemoFiles.dest(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_DEST))));
             status.setText("Starting…");
             main.removeCallbacks(watch);
             main.post(watch);

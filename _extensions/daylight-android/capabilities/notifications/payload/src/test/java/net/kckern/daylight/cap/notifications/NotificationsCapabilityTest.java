@@ -241,4 +241,28 @@ public class NotificationsCapabilityTest {
         assertTrue(seen.isEmpty());
         assertFalse(shell.notes.toString(), shell.notes.toString().contains(key));
     }
+    /** Capture starts from a keyed link or not at all: an input link from a page or another app never reaches its handler. */
+    @Test public void anInputLinkWithoutTheKeyIsRefusedAndNeverReachesTheCaptureScreens() throws Exception {
+        core.services().provide(LinkHandler.class, handler("input", LinkEffect.none()));
+        core.services().provide(LinkHandler.class, handler("memo", LinkEffect.none()));
+        for (String uri : new String[] { "daylight://input/voice?to=journal", "daylight://input/text?to=journal-note",
+                "daylight://input/photo?to=meal-photo", "daylight://input/photo?to=meal-photo&k=" + key,
+                "daylight://input/photo?to=meal-photo#k=" + key.replace(key.charAt(0), 'x'), "daylight://memo/new",
+                "daylight://input/discard", "daylight://input/queue" }) {
+            JSONObject r = link(uri);
+            assertEquals(uri.replace(key, "KEY"), 403, r.getInt("_status"));
+            assertEquals("forbidden", r.getString("error"));
+        }
+        assertTrue("nothing was dispatched", seen.isEmpty());
+        assertEquals(200, link("daylight://input/photo?to=meal-photo#k=" + key).getInt("_status"));
+        assertEquals("[input photo {to=meal-photo}]", seen.toString());
+        assertEquals("[true]", keyedSeen.toString());
+    }
+
+    @Test public void aNoticeMayOpenAnInputLinkAndIsGivenTheKeyForIt() throws Exception {
+        Notice n = Notice.of("input-queue", net.kckern.daylight.core.spi.LocalNotices.UPLOADS, "Quick inputs", "1 input waiting to upload (Journal 1)",
+                "daylight://input/queue", "Discard", "daylight://input/discard", key);
+        assertEquals("daylight://input/queue#k=" + key, n.uri);
+        assertEquals("daylight://input/discard#k=" + key, n.actionUri);
+    }
 }

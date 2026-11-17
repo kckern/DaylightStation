@@ -122,4 +122,48 @@ public class MemoFilesTest {
         }
         assertEquals("once its recorder is gone it is recovered", 1, MemoRecovery.recoverNow(files).recovered);
     }
+    // ── a recording for a destination ────────────────────────────────────────
+
+    /** The payload reads the destination from the name (InputInbox): "<id>.<dest>.ogg", "<id>-<nn>.<dest>@<start>.m4a". */
+    @Test public void aRecordingForADestinationCarriesItsIdInTheName() throws Exception {
+        File inbox = tmp.newFolder();
+        assertEquals("1700000000000-ab12cd34.meal", MemoFiles.stem("1700000000000-ab12cd34", "meal"));
+        assertEquals("with no destination the name is the one an earlier build wrote", "1700000000000-ab12cd34",
+                MemoFiles.stem("1700000000000-ab12cd34", null));
+        File part = MemoFiles.part(inbox, MemoFiles.stem("1700000000000-ab12cd34", "meal"), MemoFiles.OGG);
+        assertEquals("1700000000000-ab12cd34.meal.ogg.part", part.getName());
+        Files.write(part.toPath(), new byte[10]);
+        assertEquals("1700000000000-ab12cd34.meal.ogg", MemoFiles.finish(part).getName());
+        File segment = MemoFiles.part(inbox, MemoFiles.stem(MemoFiles.segmentId("1700000000000-ab12cd34", 0), "meal"), MemoFiles.M4A);
+        assertEquals("1700000000000-ab12cd34-00.meal.m4a.part", segment.getName());
+        Files.write(segment.toPath(), new byte[10]);
+        assertEquals("1700000000000-ab12cd34-00.meal@1700000000500.m4a", MemoFiles.finishSegment(segment, 1_700_000_000_500L).getName());
+    }
+
+    /** What arrives in an intent is text: a destination is an id of the settled shape, or it is not one. */
+    @Test public void aDestinationFromAnIntentIsAnIdOrNothing() {
+        assertEquals("meal", MemoFiles.dest("meal"));
+        assertEquals("journal-note", MemoFiles.dest("journal-note"));
+        for (String bad : new String[] { null, "", "Meal", "meal.ogg", "../x", "a/b", "meal photo", "1meal", "abcdefghijklmnopqrstuvwxyzabcdefg" }) {
+            assertNull(String.valueOf(bad), MemoFiles.dest(bad));
+        }
+    }
+
+    @Test public void aLabelFromAnIntentIsShortPlainTextOrNothing() {
+        assertEquals("Meal photo", MemoFiles.label(" Meal photo "));
+        for (String bad : new String[] { null, "", "   ", "abcdefghijklmnopqrstuvwxyz", "Meal\nphoto", "Meal\u0007" + "x" }) {
+            assertNull(String.valueOf(bad), MemoFiles.label(bad));
+        }
+    }
+
+    /** A cut-off recording for a destination is recovered under the same name, so it still goes where it was meant to. */
+    @Test public void aCutOffRecordingKeepsItsDestination() throws Exception {
+        File inbox = tmp.newFolder();
+        File cutOff = new File(tmp.newFolder(), "cutoff");
+        File part = new File(inbox, "1700000000000-ab12cd34.meal.ogg.part");
+        Files.write(part.toPath(), new byte[5000]);
+        MemoRecovery.Found found = MemoRecovery.recover(inbox, cutOff, null);
+        assertEquals(1, found.recovered);
+        assertTrue(new File(inbox, "1700000000000-ab12cd34.meal.ogg").isFile());
+    }
 }

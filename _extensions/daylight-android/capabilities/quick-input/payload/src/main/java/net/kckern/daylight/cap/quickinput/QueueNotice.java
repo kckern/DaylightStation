@@ -12,9 +12,9 @@ import java.util.Map;
 final class QueueNotice {
     static final String ID = "input-queue";
     /** A tap opens this link: it tries everything again and says what is there. Keyed by the notifications capability. */
-    static final String LINK = "daylight://memo/queue";
+    static final String LINK = "daylight://input/queue";
     /** The Discard action of a notice about parked inputs. Asked twice before anything is deleted. */
-    static final String DISCARD_LINK = "daylight://memo/discard";
+    static final String DISCARD_LINK = "daylight://input/discard";
     static final String DISCARD_LABEL = "Discard";
     static final String TITLE = "Quick inputs";
 

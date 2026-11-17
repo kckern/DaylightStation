@@ -111,7 +111,9 @@ public class DeepLinkTest {
         assertFalse(parse("daylight://open?path=/feed").needsKey());
         assertFalse(parse("daylight://bookmark/feed").needsKey());
         assertFalse(parse("https://kiosk.example/feed").needsKey());
-        for (String effect : new String[] { "daylight://action/lights-off", "daylight://memo/new", "daylight://media/play?id=plex:1" }) {
+        for (String effect : new String[] { "daylight://action/lights-off", "daylight://memo/new", "daylight://media/play?id=plex:1",
+                "daylight://input/voice?to=journal", "daylight://input/text?to=meal-note", "daylight://input/photo?to=meal-photo",
+                "daylight://input/queue", "daylight://input/discard" }) {
             assertTrue(effect, parse(effect).needsKey());
         }
         assertTrue("a kind added later must be put in one list or the other", DeepLink.everyKindIsDecided());
@@ -148,5 +150,19 @@ public class DeepLinkTest {
         assertEquals("a fragment already there is replaced", "daylight://memo/queue#k=" + KEY, DeepLink.withKey("daylight://memo/queue#k=old", KEY));
         assertEquals("no key, no change", "daylight://memo/queue", DeepLink.withKey("daylight://memo/queue", ""));
         assertFalse("what the system logs holds no key", DeepLink.withKey("daylight://memo/queue", KEY).split("#")[0].contains(KEY));
+    }
+    /** A quick input records, opens the camera or sends what is typed: none of that without this install's key. */
+    @Test public void anInputLinkCapturesSomethingSoItNeedsTheInstallKey() {
+        DeepLink bare = parse("daylight://input/photo?to=meal-photo");
+        assertEquals("input", bare.kind);
+        assertEquals("photo", bare.arg);
+        assertEquals("meal-photo", bare.query.get("to"));
+        assertTrue(bare.needsKey());
+        assertFalse(bare.authorized(KEY));
+        assertFalse("a key in the query is not a key", parse("daylight://input/photo?to=meal-photo&k=" + KEY).authorized(KEY));
+        assertFalse(parse("daylight://input/voice?to=journal#k=wrong").authorized(KEY));
+        DeepLink keyed = parse("daylight://input/voice?to=journal#k=" + KEY);
+        assertTrue(keyed.authorized(KEY));
+        assertEquals("{to=journal}", keyed.handlerQuery().toString());
     }
 }

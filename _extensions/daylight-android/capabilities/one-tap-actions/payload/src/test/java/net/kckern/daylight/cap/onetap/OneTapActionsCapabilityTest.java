@@ -241,4 +241,31 @@ public class OneTapActionsCapabilityTest {
     @Test public void namesItself() {
         assertEquals("one-tap-actions", cap.name());
     }
+    // ── quick inputs ─────────────────────────────────────────────────────────
+
+    @Test public void anInputActionGoesToTheInputHandlerWithItsKindAndDestination() throws Exception {
+        core.services().provide(LinkHandler.class, handler("input"));
+        core.settings().set("actions.3", "meal-photo|Meal photo|star|input:photo:meal-photo");
+        actionLink().handle("meal-photo", Collections.singletonMap("to", "somewhere-else"));
+        assertEquals("the destination is the settings line's, never the link's", "[input photo {to=meal-photo}]", handled.toString());
+        JSONObject listed = TestCore.get(core, "/actions").getJSONArray("actions").getJSONObject(2);
+        assertEquals("input", listed.getString("kind"));
+        assertEquals("photo:meal-photo", listed.getString("target"));
+        assertFalse(listed.optBoolean("placeholder", false));
+    }
+
+    @Test public void inABuildWithoutQuickInputAnInputActionOpensTheAppAndIsMarked() throws Exception {
+        core.settings().set("actions.3", "journal|Journal|mic|input:voice:journal");
+        JSONObject r = actionLink().handle("journal", NO_QUERY);
+        assertEquals("front", r.getString("effect"));
+        assertEquals("[open  {path=/}]", handled.toString());
+        assertTrue(TestCore.get(core, "/actions").getJSONArray("actions").getJSONObject(2).getBoolean("placeholder"));
+    }
+
+    @Test public void aMalformedInputActionIsRefusedWhenItIsSet() {
+        for (String bad : new String[] { "x|X|mic|input:video:journal", "x|X|mic|input:voice:/api/v1/x" }) {
+            try { core.settings().set("actions.4", bad); fail("accepted " + bad); }
+            catch (RuntimeException expected) { assertTrue(expected.getMessage(), expected.getMessage().contains("actions.4")); }
+        }
+    }
 }

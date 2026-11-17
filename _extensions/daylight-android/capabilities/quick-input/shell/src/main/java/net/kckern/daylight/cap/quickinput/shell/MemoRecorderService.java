@@ -65,6 +65,8 @@ public class MemoRecorderService extends Service {
     private int segment;
     private long segmentStartMs;
     private String memoId;
+    /** The id of the destination this recording is for; null for a memo with none (the journal's). */
+    private String dest;
     private AudioFocusRequest focus;
 
     /** When the recording under way began; 0 when none is. */
@@ -76,6 +78,8 @@ public class MemoRecorderService extends Service {
         if (ACTION_START.equals(action)) {
             // Within five seconds of being started as a foreground service, whatever follows.
             if (!goForeground()) { stopSelf(); return START_NOT_STICKY; }
+            // Read only while nothing is recording: a second start does not move a recording under way.
+            if (!MACHINE.recording() && recorder == null) dest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
             handle(Event.START);
         } else {
             // STOP, and anything else: a restart with no intent has nothing to record.
@@ -178,8 +182,8 @@ public class MemoRecorderService extends Service {
         segment = 0;
         segmentStartMs = memoStart();
         boolean ogg = format == RecorderMachine.Format.OGG_OPUS;
-        part = ogg ? MemoFiles.part(inbox, memoId, MemoFiles.OGG)
-                : MemoFiles.part(inbox, MemoFiles.segmentId(memoId, segment), MemoFiles.M4A);
+        part = ogg ? MemoFiles.part(inbox, MemoFiles.stem(memoId, dest), MemoFiles.OGG)
+                : MemoFiles.part(inbox, MemoFiles.stem(MemoFiles.segmentId(memoId, segment), dest), MemoFiles.M4A);
         MemoRecovery.live(memoId);
         for (final RecorderMachine.Profile profile : ogg ? RecorderMachine.OPUS_PROFILES : RecorderMachine.PROFILES) {
             MediaRecorder r = new MediaRecorder();
@@ -233,7 +237,7 @@ public class MemoRecorderService extends Service {
             handle(Event.CAP_REACHED);
         } else if (segmented && what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_APPROACHING) {
             try {
-                nextPart = MemoFiles.part(inbox, MemoFiles.segmentId(memoId, segment + 1), MemoFiles.M4A);
+                nextPart = MemoFiles.part(inbox, MemoFiles.stem(MemoFiles.segmentId(memoId, segment + 1), dest), MemoFiles.M4A);
                 mr.setNextOutputFile(nextPart);
             } catch (Exception e) {
                 nextPart = null;

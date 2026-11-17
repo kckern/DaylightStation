@@ -76,8 +76,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         core.settings().declare(SHORTCUTS, SettingsRegistry.Type.STRING, "", value -> SurfacePlan.listProblem((String) value, SLOTS));
         core.settings().declare(TILES, SettingsRegistry.Type.STRING, "",
                 value -> SurfacePlan.listProblem((String) value, SurfacePlan.TILE_SLOTS));
-        // STAND-IN until the quick-input capability exists: with no recorder in the build a
-        // memo action opens this page of the site in the app instead of recording.
+        // STAND-IN in a build without the quick-input capability: with nothing to capture
+        // with, a memo or input action opens this page of the site in the app instead.
         core.settings().declare(MEMO_FALLBACK, SettingsRegistry.Type.STRING, "/", value -> {
             try { Backend.pagePath((String) value); return null; }
             catch (IllegalArgumentException e) { return "must be a page of the site, starting with a single '/'"; }
@@ -191,7 +191,10 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         return keys == null ? link : keys.keyed(link);
     }
 
-    private boolean memoIsStandIn(Action a) { return a.kind == Kind.MEMO && handlerFor("memo") == null; }
+    /** A memo or input action in a build that has no quick-input capability to perform it. */
+    private boolean memoIsStandIn(Action a) {
+        return (a.kind == Kind.MEMO || a.kind == Kind.INPUT) && handlerFor(a.linkKind()) == null;
+    }
 
     private LinkHandler handlerFor(String kind) {
         for (LinkHandler h : core.services().all(LinkHandler.class)) if (kind.equals(h.kind())) return h;
@@ -209,11 +212,11 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             return LinkEffect.toast(a.label + ": " + outcome);
         }
         if (memoIsStandIn(a)) {
-            // STAND-IN: recording comes with the quick-input capability. Until then the
+            // STAND-IN: capturing comes with the quick-input capability. Without it the
             // action opens the app at actions.memoFallbackPath.
             LinkHandler open = handlerFor("open");
             if (open == null) return LinkEffect.toast(a.label + ": not available on this device");
-            core.shell().note("ACTION", a.id + " opened the app (no recorder in this build)");
+            core.shell().note("ACTION", a.id + " opened the app (no quick-input in this build)");
             return open.handle("", Collections.singletonMap("path", (String) core.settings().get(MEMO_FALLBACK)));
         }
         LinkHandler handler = handlerFor(a.linkKind());

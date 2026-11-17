@@ -93,4 +93,36 @@ public class ActionCatalogTest {
         assertEquals(2, problems.size());
         assertTrue(problems.get(0).startsWith("actions.2:"));
     }
+    // ── quick inputs ─────────────────────────────────────────────────────────
+
+    @Test public void anInputActionNamesAKindAndADestination() {
+        ActionCatalog c = ActionCatalog.parse(Arrays.asList("journal|Journal|mic|input:voice:journal",
+                "note|Meal note|open|input:text:meal-note", "photo|Meal photo|star|input:photo:meal-photo"));
+        Action journal = c.find("journal");
+        assertEquals(Kind.INPUT, journal.kind);
+        assertEquals("voice:journal", journal.value);
+        assertEquals("input", journal.linkKind());
+        assertEquals("voice", journal.linkArg());
+        assertEquals("{to=journal}", journal.linkQuery().toString());
+        assertEquals("text", c.find("note").linkArg());
+        assertEquals("{to=meal-note}", c.find("note").linkQuery().toString());
+        assertEquals("photo", c.find("photo").linkArg());
+        assertEquals("{to=meal-photo}", c.find("photo").linkQuery().toString());
+    }
+
+    @Test public void anInputTargetIsHeldToItsShape() {
+        for (String bad : new String[] { "input:video:journal", "input:voice:", "input:voice", "input::journal", "input:voice:Journal",
+                "input:voice:journal:extra", "input:voice:/api/v1/journalist/voice", "input:voice:https://elsewhere.example", "input:" }) {
+            assertTrue(bad, message("x|X|mic|" + bad).contains("input: needs voice, text or photo and a destination id"));
+        }
+    }
+
+    /** The earlier name keeps working: memo:new is a voice input for the journal, through the memo link. */
+    @Test public void memoNewIsStillAnActionAndStillTheMemoLink() {
+        Action memo = ActionCatalog.parse(Arrays.asList("memo|Journal|mic|memo:new")).find("memo");
+        assertEquals(Kind.MEMO, memo.kind);
+        assertEquals("memo", memo.linkKind());
+        assertEquals("new", memo.linkArg());
+        assertTrue(memo.linkQuery().isEmpty());
+    }
 }

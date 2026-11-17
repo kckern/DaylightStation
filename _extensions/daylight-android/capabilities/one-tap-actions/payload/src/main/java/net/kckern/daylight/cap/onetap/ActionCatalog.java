@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
  *
  *   open:/path          a page of the household site, in the web view
  *   bookmark:<id>       a configured bookmark
- *   memo:new            start a voice memo
+ *   memo:new            start a voice memo: the earlier name of input:voice:journal
+ *   input:<kind>:<dest> a quick input (voice, text or photo) to a configured destination
  *   media:<contentId>   play natively
  *   api:/api/...        an empty POST to that backend path, and a message with the outcome
  *
@@ -24,14 +25,14 @@ import java.util.regex.Pattern;
  * arrives in a link, an intent or from a page can add one or change what one does.
  */
 final class ActionCatalog {
-    enum Kind { OPEN, BOOKMARK, MEMO, MEDIA, API }
+    enum Kind { OPEN, BOOKMARK, MEMO, INPUT, MEDIA, API }
 
     static final class Action {
         final String id;
         final String label;
         final String icon;
         final Kind kind;
-        /** Page path, bookmark id, "new", content id or API path, by kind. */
+        /** Page path, bookmark id, "new", "<input kind>:<destination id>", content id or API path, by kind. */
         final String value;
 
         Action(String id, String label, String icon, Kind kind, String value) {
@@ -48,6 +49,7 @@ final class ActionCatalog {
                 case OPEN: return "open";
                 case BOOKMARK: return "bookmark";
                 case MEMO: return "memo";
+                case INPUT: return "input";
                 case MEDIA: return "media";
                 default: return null;
             }
@@ -57,6 +59,7 @@ final class ActionCatalog {
         String linkArg() {
             switch (kind) {
                 case BOOKMARK: case MEMO: return value;
+                case INPUT: return value.substring(0, value.indexOf(':'));
                 case MEDIA: return "play";
                 default: return "";
             }
@@ -67,6 +70,7 @@ final class ActionCatalog {
             Map<String, String> query = new LinkedHashMap<>();
             if (kind == Kind.OPEN) query.put("path", value);
             if (kind == Kind.MEDIA) query.put("id", value);
+            if (kind == Kind.INPUT) query.put("to", value.substring(value.indexOf(':') + 1));
             return query;
         }
     }
@@ -77,6 +81,8 @@ final class ActionCatalog {
     private static final Pattern CONTENT_ID = Pattern.compile("[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9._/-]{1,200}");
     /** An API path: segments of unreserved characters, and an optional plain query. */
     private static final Pattern API_PATH = Pattern.compile("/api(/[A-Za-z0-9._~-]+)+/?(\\?[A-Za-z0-9._~&=,:-]*)?");
+    /** What a quick input is, and the id of where it goes. Whether that destination exists is the quick-input capability's to say. */
+    private static final Pattern INPUT = Pattern.compile("(voice|text|photo):[a-z][a-z0-9-]{0,31}");
     private final List<Action> actions;
 
     private ActionCatalog(List<Action> actions) { this.actions = Collections.unmodifiableList(actions); }
@@ -155,6 +161,9 @@ final class ActionCatalog {
             case "memo":
                 if (!"new".equals(rest)) throw new IllegalArgumentException("memo: only 'new' is supported");
                 return new Action(id, label, icon, Kind.MEMO, rest);
+            case "input":
+                if (!INPUT.matcher(rest).matches()) throw new IllegalArgumentException("input: needs voice, text or photo and a destination id");
+                return new Action(id, label, icon, Kind.INPUT, rest);
             case "media":
                 if (!CONTENT_ID.matcher(rest).matches()) throw new IllegalArgumentException("media: needs a content id such as plex:12345");
                 return new Action(id, label, icon, Kind.MEDIA, rest);
@@ -165,7 +174,7 @@ final class ActionCatalog {
                 }
                 return new Action(id, label, icon, Kind.API, rest);
             default:
-                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, media: or api:");
+                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, input:, media: or api:");
         }
     }
 }
