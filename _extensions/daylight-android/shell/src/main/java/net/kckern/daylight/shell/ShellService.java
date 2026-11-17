@@ -169,6 +169,10 @@ public class ShellService extends Service implements ShellServer.Host {
             PayloadLoader l = loader;
             return l == null ? "refused: loader not ready" : l.requestRollback();
         }
+        @Override public String requestPayloadRestart() {
+            PayloadLoader l = loader;
+            return l == null ? "refused: loader not ready" : l.requestRestart();
+        }
         @Override public String payloadStatusJson() {
             PayloadLoader l = loader;
             return l == null ? "{\"ok\":false,\"error\":\"loader not ready\"}" : l.status().toString();

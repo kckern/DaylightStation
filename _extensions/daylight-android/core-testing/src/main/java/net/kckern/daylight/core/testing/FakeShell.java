@@ -29,6 +29,10 @@ public final class FakeShell implements ShellServices {
     @Override public void updateNotification(String text) { }
     @Override public String requestPayloadSwap(String url, String sha256) { return swapResult; }
     @Override public String requestPayloadRollback() { return rollbackResult; }
+    /** One entry per restart the payload asked for. */
+    public final List<String> restarts = java.util.Collections.synchronizedList(new ArrayList<>());
+    public String restartResult = "accepted: restarting test.jar";
+    @Override public String requestPayloadRestart() { restarts.add("restart"); return restartResult; }
     @Override public String payloadStatusJson() { return payloadStatus; }
     @Override public void note(String kind, String message) { notes.add(kind + " " + message); }
 }

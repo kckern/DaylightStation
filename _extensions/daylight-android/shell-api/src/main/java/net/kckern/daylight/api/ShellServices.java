@@ -33,6 +33,9 @@ public interface ShellServices {
 
     String requestPayloadRollback();
 
+    /** Stop and start the current payload in place, with no fetch. Asynchronous. */
+    String requestPayloadRestart();
+
     /** JSON: current, previous, available, boots, lastError. */
     String payloadStatusJson();
 

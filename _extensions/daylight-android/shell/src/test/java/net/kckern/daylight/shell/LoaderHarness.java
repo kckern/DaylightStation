@@ -60,6 +60,7 @@ final class LoaderHarness {
         @Override public void updateNotification(String text) { }
         @Override public String requestPayloadSwap(String url, String sha256) { return "refused: test"; }
         @Override public String requestPayloadRollback() { return "refused: test"; }
+        @Override public String requestPayloadRestart() { return "refused: test"; }
         @Override public String payloadStatusJson() { return "{}"; }
         @Override public void note(String kind, String message) { notes.add(kind + " " + message); }
     }
