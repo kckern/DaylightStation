@@ -55,7 +55,7 @@ public final class WifiLink {
     static final long FKB_REFRESH_MS = 30_000L;
     static final long FKB_MAX_AGE_MS = 90_000L;
 
-    private final BridgeCore core;
+    private final Context ctx;
     private volatile CoreConfig cfg;
     private Timer timer;
     private long runningEveryMs;
@@ -72,8 +72,8 @@ public final class WifiLink {
     private volatile long fkbAttemptAtMs;
     private final AtomicInteger fkbFailures = new AtomicInteger();
 
-    public WifiLink(BridgeCore core, CoreConfig cfg) {
-        this.core = core;
+    public WifiLink(Context ctx, CoreConfig cfg) {
+        this.ctx = ctx;
         this.cfg = cfg;
     }
 
@@ -155,22 +155,9 @@ public final class WifiLink {
      * (/wifi?fresh=1) only ever reads the cache.
      */
     private void refreshFkbBssid() {
-        if (lastWifiManagerBssidPresent) return;   // nothing to fill in
-        long now = System.currentTimeMillis();
-        if (!WifiLinkPolicy.fkbRefreshDue(now, fkbAttemptAtMs, FKB_REFRESH_MS)) return;
-        fkbAttemptAtMs = now;
-        try {
-            JSONObject info = FkbRest.deviceInfo(cfg);
-            String b = info.optBoolean("authOk", false) ? info.optString("bssid", null) : null;
-            if (WifiLinkPolicy.normalizeBssid(b) != null) {
-                fkbBssid = b;
-                fkbFetchedAtMs = now;
-            } else {
-                fkbFailures.incrementAndGet();
-            }
-        } catch (Throwable t) {
-            fkbFailures.incrementAndGet();
-        }
+        // No Fully client in this app. When Android redacts the BSSID it stays redacted.
+        // WifiLinkPolicy still carries the fallback logic and its tests for whatever
+        // phase 3 offers as a second source.
     }
 
     private volatile boolean lastWifiManagerBssidPresent;
@@ -180,15 +167,19 @@ public final class WifiLink {
         r.epochMs = System.currentTimeMillis();
         r.elapsedMs = SystemClock.elapsedRealtime();
         try {
-            Context cx = core.getContext().getApplicationContext();
+            Context cx = ctx.getApplicationContext();
             WifiManager wm = (WifiManager) cx.getSystemService(Context.WIFI_SERVICE);
             WifiInfo info = wm == null ? null : wm.getConnectionInfo();
             if (info != null) {
                 r.connected = info.getSupplicantState() == SupplicantState.COMPLETED;
                 r.rssi = info.getRssi();
                 r.linkSpeedMbps = info.getLinkSpeed();
-                r.rxLinkSpeedMbps = info.getRxLinkSpeedMbps();   // API 29+ (minSdk 29)
-                r.txLinkSpeedMbps = info.getTxLinkSpeedMbps();
+                // API 29+. The Portal is API 28: there the two rates keep the Reading's own
+                // initial values, and the frequency and BSSID below are still read.
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    r.rxLinkSpeedMbps = info.getRxLinkSpeedMbps();
+                    r.txLinkSpeedMbps = info.getTxLinkSpeedMbps();
+                }
                 r.freqMhz = info.getFrequency();
                 r.bssid = info.getBSSID();
             }

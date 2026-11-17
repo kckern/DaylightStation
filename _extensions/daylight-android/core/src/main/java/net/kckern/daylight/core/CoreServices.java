@@ -9,19 +9,23 @@ import android.content.Context;
 final class CoreServices {
     final Context ctx;
     final Heartbeat heartbeat;
+    final WifiLink wifiLink;
 
     CoreServices(CoreRuntime core, CoreConfig cfg) {
         this.ctx = (Context) core.shell().context();
         this.heartbeat = new Heartbeat(core, cfg);
+        this.wifiLink = new WifiLink(ctx, cfg);
     }
 
     void start() {
         // First, so an unclean previous death is on record before anything else runs.
         CrashLog.install(ctx);
         heartbeat.start();
+        wifiLink.start();
     }
 
     void stop() {
+        wifiLink.stop();
         heartbeat.stop();
         CrashLog.markCleanShutdown();
     }

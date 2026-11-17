@@ -68,6 +68,19 @@ public final class CoreRuntime implements CoreContext {
         if (prepared) return;
         CoreConfig.declare(settings);
         LogEvents.configure(config);
+        status.add(StatusBoard.Surface.HEARTBEAT, "core", o -> {
+            CoreServices d = device;
+            JSONObject w = d == null ? null : d.wifiLink.compact();
+            if (w != null) o.put("wifi", w);
+        });
+        // The piano bridge re-read thresholds on every config reload. Reads are live now;
+        // only the timer period needs a restart.
+        settings.onChange(key -> {
+            CoreServices d = device;
+            if (d == null) return;
+            if (key.startsWith("wifi.")) d.wifiLink.updateConfig(config);
+            if (key.startsWith("heartbeat.")) d.heartbeat.updateConfig(config);
+        });
         registerCoreRoutes();
         for (Capability c : capabilities) c.register(this);
         settings.applyDefaults(defaults);
@@ -111,6 +124,11 @@ public final class CoreRuntime implements CoreContext {
     }
 
     private void registerCoreRoutes() {
+        router.route("GET", "/wifi", req -> {
+            CoreServices d = device;
+            return Replies.json(d == null ? Replies.err("not_ready")
+                    : d.wifiLink.snapshot("1".equals(Replies.strParam(req, "fresh", "0"))));
+        });
         router.route("GET", "/beat", req -> {
             CoreServices d = device;
             return Replies.json(d == null ? Replies.err("not_ready") : Replies.ok().put("heartbeat", d.heartbeat.snapshot()));
