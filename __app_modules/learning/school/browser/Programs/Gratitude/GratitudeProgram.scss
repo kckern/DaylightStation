@@ -2,3 +2,4 @@
 .gratitude-program__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .gratitude-program__message { max-width: 52rem; margin: 3rem auto; font-size: 1.6rem; line-height: 1.5; }
 .gratitude-program__subject { font-size: 2.5rem; color: var(--ds-accent); }
+.gratitude-program__close { display: inline-grid; place-items: center; inline-size: 3.5rem; block-size: 3.5rem; border-radius: 999px; font-size: 1.75rem; color: var(--ds-text-high); }

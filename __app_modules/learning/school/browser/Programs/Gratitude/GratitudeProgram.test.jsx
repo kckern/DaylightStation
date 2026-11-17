@@ -5,7 +5,8 @@ const api=vi.hoisted(()=>({open:vi.fn(),submit:vi.fn(),retry:vi.fn(),take:vi.fn(
 let receiveTake;
 vi.mock('../shared/useTakeRecorder.js',()=>({default:({onTake})=>{receiveTake=onTake;return {phase:'idle',unavailable:false,stream:null,start:vi.fn(),stop:vi.fn()};}}));
 vi.mock('./gratitudeApi.js',()=>({createGratitudeApi:()=>api}));
-vi.mock('./gratitudeLog.js',()=>({gratitudeLog:new Proxy({},{get:()=>()=>{}})}));
+const log=vi.hoisted(()=>({}));
+vi.mock('./gratitudeLog.js',()=>({gratitudeLog:new Proxy(log,{get:(target,name)=>(target[name]??=vi.fn())})}));
 const initial={learnerId:'child',studyDay:'2026-11-16',today:'2026-11-16',serverNow:'2026-11-16T18:00:00Z',phase:'draft',draft:null,prompt:{id:'gratitude',text:'What are you grateful for today?',required:true},retryAt:null,attemptId:null};
 it('reuses its take identity when a saved upload loses its response',async()=>{
   api.open.mockResolvedValue({ok:true,data:initial});api.take.mockReset();
@@ -32,5 +33,26 @@ it('disables new answers during a server-enforced cooldown and permits leaving',
   const exit=vi.fn();render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={exit} />);
   await waitFor(()=>expect(screen.getByText(/already used/i)).toBeVisible());
   expect(screen.queryByRole('textbox')).toBeNull();
-  fireEvent.click(screen.getByRole('button',{name:/Back to School/}));expect(exit).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(exit).toHaveBeenCalled();
+  expect(log.closed).toHaveBeenCalledWith({phase:'cooldown'});
+});
+it('opens without raising the keyboard and offers one close control', async () => {
+  api.open.mockResolvedValue({ok:true,data:initial});
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  const box=await screen.findByRole('textbox');
+  expect(document.activeElement).not.toBe(box);
+  expect(screen.getByRole('button',{name:'Close'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:/Back to School/})).toBeNull();
+});
+it('says the recording is being written down, then what to do next', async () => {
+  api.open.mockResolvedValue({ok:true,data:initial});api.take.mockReset();
+  let finish;api.take.mockReturnValue(new Promise(r=>{finish=r;}));
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  const box=await screen.findByRole('textbox');
+  let upload;act(()=>{upload=receiveTake({blob:new Blob(['voice'])});});
+  expect(await screen.findByText('Writing down what you said…')).toBeVisible();
+  expect(log.transcribing).toHaveBeenCalledWith({promptId:'gratitude'});
+  await act(async()=>{finish({ok:true,data:{audioRef:'child/a.webm',text:'I am grateful for eating cookies.'}});await upload;});
+  expect(screen.getByText('Check your words, then tap Submit.')).toBeVisible();
+  expect(document.activeElement).not.toBe(box);
 });

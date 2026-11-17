@@ -1,5 +1,7 @@
 import { useCallback,useEffect,useMemo,useRef,useState } from 'react';
 import { TouchButton } from '../../../../../../frontend/src/lib/ui/index.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import Icon from '../../home/icons/Icon.jsx';
 import ReflectionResponse from '../shared/ReflectionResponse.jsx';
 import ProgramRetryButton from '../shared/ProgramRetryButton.jsx';
 import { useProgramKeys } from '../shared/useProgramKeys.js';
@@ -30,7 +32,6 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
   const remaining=view?.retryAt?Math.max(0,Date.parse(view.retryAt)-(now-clockOffset.current)):0;
   useEffect(()=>{if(view?.phase!=='cooldown')return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[view?.phase]);
   useEffect(()=>{if(view?.phase==='cooldown'&&remaining===0&&expiryCheck.current!==view.retryAt){expiryCheck.current=view.retryAt;open();}},[view?.phase,view?.retryAt,remaining,open]);
-  useProgramKeys({arrowleft:onExit,...(view?.phase==='completed'?{enter:onExit}:{})});
   const take=useCallback(async blob=>{
     if(!takeIds.current.has(blob))takeIds.current.set(blob,crypto.randomUUID());
     const result=await api.take(view.studyDay,blob,takeIds.current.get(blob));
@@ -47,14 +48,16 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
   };
   const retry=async()=>{if(sending.current)return;sending.current=true;setBusy(true);try{const result=await api.retry(view.studyDay,{attemptId:view.attemptId});if(apply(result)&&result.data.phase==='completed'&&view.studyDay!==today)await open();}finally{sending.current=false;if(live.current)setBusy(false);}};
   const saveDraft=async body=>{if(sending.current||!ANSWER_PHASES.has(phaseRef.current))return;await api.draft(view.studyDay,body);};
+  const close=()=>{gratitudeLog.closed({phase:view?.phase??null});onExit?.();};
+  useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})});
   if(!gratitudeGrant||!learnerId)return <section className="gratitude-program"><p>Open Gratitude from your School agenda.</p><TouchButton onClick={onExit}>Back to School</TouchButton></section>;
   return <section className="gratitude-program">
-    <header className="gratitude-program__header"><h1>Gratitude</h1><TouchButton variant="secondary" onClick={onExit}>Back to School</TouchButton></header>
+    <header className="gratitude-program__header"><h1>Gratitude</h1><SchoolButton variant="plain" type="button" className="gratitude-program__close" aria-label="Close" onClick={close}><Icon name="close"/></SchoolButton></header>
     {error&&<p role="alert">{error}</p>}
     {!view&&<>{!error&&<p role="status">Opening Gratitude…</p>}{error&&<ProgramRetryButton onRetry={open}/>}</>}
     {view&&['draft','not-started','retry'].includes(view.phase)&&<>
       {view.reason==='unclear'&&<p role="status">Please make your gratitude a little clearer and try again.</p>}
-      <ReflectionResponse key={`${view.studyDay}:${view.attemptId??'new'}`} prompt={view.prompt} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={submit} submitLabel="Submit" events={gratitudeLog}/>
+      <ReflectionResponse key={`${view.studyDay}:${view.attemptId??'new'}`} prompt={view.prompt} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={submit} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
     </>}
     {view?.phase==='cooldown'&&<div className="gratitude-program__message" role="status"><h2>Take a little break</h2><p>{view.reason==='repetition'?'You already used that gratitude topic recently. Think of something different.':'Please take some time to think of something you are grateful for.'}</p><p>Try again in {Math.max(1,Math.ceil(remaining/60000))} minutes.</p></div>}
     {['pending','assessing'].includes(view?.phase)&&<div className="gratitude-program__message"><p role="status">Your answer is saved and waiting to be processed.</p><TouchButton disabled={busy} onClick={retry}>Try saved answer again</TouchButton></div>}
