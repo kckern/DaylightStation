@@ -1,15 +1,33 @@
 /** Semantic Journalist operations for the HTTP surface. */
 export class JournalistApiService {
   constructor({ exportJournal = null, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-    principalResolver, resolveConversationId, logger = console } = {}) {
+    submitVoiceMemo = null, principalResolver, resolveConversationId, logger = console } = {}) {
     Object.assign(this, { exportJournal, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-      principalResolver, resolveConversationId, logger });
+      submitVoiceMemo, principalResolver, resolveConversationId, logger });
   }
 
   canExportJournal() { return Boolean(this.exportJournal); }
   resolveUsername(explicit = null) { return this.principalResolver.resolve(explicit); }
   export(command) { return this.exportJournal.execute(command); }
   trigger(command) { return this.initiatePrompt.execute(command); }
+
+  canSubmitMemo() { return Boolean(this.submitVoiceMemo); }
+  submitMemo(command) { return this.submitVoiceMemo.execute(command); }
+
+  /**
+   * The Journalist conversation a memo for `username` is journaled in, or null
+   * when the user has none. A memo is personal, so there is no fallback to
+   * another user here.
+   */
+  memoConversationFor(username) {
+    if (!username) return null;
+    try {
+      return this.resolveConversationId(username) || null;
+    } catch (error) {
+      this.logger.warn?.('journalist.memo.identityResolutionFailed', { username, error: error.message });
+      return null;
+    }
+  }
 
   async morning({ requestedUsername = null, date = null } = {}) {
     const username = this.resolveUsername(requestedUsername);

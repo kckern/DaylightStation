@@ -7,6 +7,7 @@ import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHand
 import { createJournalistRouter } from "../api/journalist.mjs";
 import { createJournalistServices } from "../../../../../__backend/src/5_composition/bootstrap.mjs";
 import { JournalistApiService } from "../application/JournalistApiService.mjs";
+import { SubmitVoiceMemo } from "../application/usecases/SubmitVoiceMemo.mjs";
 import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
@@ -63,6 +64,17 @@ export function createJournalistApiRouter(config) {
       throw error;
     },
   };
+  // A memo takes the Telegram voice path: it needs that path's AI gateway and
+  // a journal to record the memo in. Without either the route answers 503.
+  const container = journalistServices.journalistContainer;
+  const memoJournal = container.getJournalEntryRepository?.() || null;
+  const submitVoiceMemo = aiGatewayAvailable && memoJournal?.findById
+    ? new SubmitVoiceMemo({
+        processVoiceEntry: container.getProcessVoiceEntry(),
+        journalEntryRepository: memoJournal,
+      })
+    : null;
+
   const journalistApi = new JournalistApiService({
     exportJournal: journalistServices.journalistContainer.getExportJournalMarkdown?.() || null,
     initiatePrompt: aiGatewayAvailable
@@ -74,6 +86,7 @@ export function createJournalistApiRouter(config) {
     sendMorningDebrief: aiGatewayAvailable
       ? journalistServices.journalistContainer.getSendMorningDebrief()
       : unavailableAiOperation,
+    submitVoiceMemo,
     principalResolver: new DefaultPrincipalResolver({
       headOfHousehold: () => configService?.getHeadOfHousehold?.(),
       fallback: 'user_1',
