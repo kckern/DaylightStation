@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Not exported: only the system (the launcher's widget host) and this app send it
+             updates. It takes nothing from the broadcast but the widget ids. -->
+        <receiver android:name="net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider"
+            android:exported="false" android:label="@string/daylight_widget_actions">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_actions_info" />
+        </receiver>
+    </application>
+</manifest>

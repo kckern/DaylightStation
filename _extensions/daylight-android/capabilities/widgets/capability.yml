@@ -1,0 +1,8 @@
+# A home-screen widget with up to four one-tap actions. Takes the action list from
+# one-tap-actions when the device lists it; without it the widget has one button
+# that opens the app.
+entry: net.kckern.daylight.cap.widgets.WidgetsCapability
+permissions: []
+# The widget is filled at start from the list one-tap-actions provides.
+startsAfter:
+  - one-tap-actions
