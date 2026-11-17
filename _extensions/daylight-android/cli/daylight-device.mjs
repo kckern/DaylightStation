@@ -37,20 +37,16 @@ export function resolveDevice(fleet, name) {
   return { host: String(entry.host), token: String(entry.token) };
 }
 
-function coerce(raw) {
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  if (/^-?\d+$/.test(raw)) return Number(raw);
-  return raw;
-}
-
 export function parseArgs(args) {
   const [command, sub, ...rest] = args;
   if (SIMPLE[command]) return { plane: 'control', ...SIMPLE[command] };
   if (command === 'settings') {
     if (!sub || sub === 'list') return { plane: 'control', method: 'GET', path: '/settings' };
+    // The value goes out as the text that was typed. The device knows the setting's
+    // declared type and coerces "true" or "30" itself; guessing here would make a
+    // string setting impossible to set to such text.
     if (sub === 'set' && rest.length >= 2) {
-      return { plane: 'control', method: 'POST', path: '/settings', body: { key: rest[0], value: coerce(rest.slice(1).join(' ')) } };
+      return { plane: 'control', method: 'POST', path: '/settings', body: { key: rest[0], value: rest.slice(1).join(' ') } };
     }
     if (sub === 'reset' && rest.length === 1) {
       return { plane: 'control', method: 'DELETE', path: `/settings?key=${encodeURIComponent(rest[0])}` };
@@ -90,13 +86,17 @@ export async function main(argv) {
   }
   const device = resolveDevice(parse(readFileSync(tokensPath(), 'utf8')), name);
   const ports = parse(readFileSync(join(HERE, '..', 'devices', `${name}.yml`), 'utf8')).control;
-  const request = buildRequest(device, ports, parseArgs(args));
-  const res = await fetch(request.url, {
+  return send(buildRequest(device, ports, parseArgs(args)));
+}
+
+/** Sends one request, prints the response, and returns the exit code: 1 for any non-2xx status. */
+export async function send(request, fetchImpl = fetch, out = console) {
+  const res = await fetchImpl(request.url, {
     method: request.method, headers: request.headers, body: request.body, signal: AbortSignal.timeout(15000),
   });
   const text = await res.text();
-  try { console.log(JSON.stringify(JSON.parse(text), null, 2)); } catch { console.log(text); }
-  if (!res.ok) { console.error(`✗ HTTP ${res.status}`); return 1; }
+  try { out.log(JSON.stringify(JSON.parse(text), null, 2)); } catch { out.log(text); }
+  if (!res.ok) { out.error(`✗ HTTP ${res.status}`); return 1; }
   return 0;
 }
 

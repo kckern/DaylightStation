@@ -39,6 +39,18 @@ capabilities) that the shell loads at runtime. A copy is baked into the APK as
 `assets/payload-baked.jar` so a fresh install has something to run. A newer payload
 can be sent to a running device through the lifeline without reinstalling.
 
+Installing a new shell replaces the running payload. The shell records its
+`versionCode` beside its payload pointers. On the first start after the number
+changes it extracts the new APK's baked payload as `p0-baked-v<versionCode>.jar`
+and makes it current; the payload that was current, pushed or baked, becomes
+previous and is one rollback away. A reinstall with the same `versionCode` is not
+seen as a new shell and keeps the stored payload, so bump the number for every
+install.
+
+A pushed payload is always stored as `p-<first 12 hex of its sha256>.jar`. The name
+in its URL is not used, so a push can never overwrite another stored payload or the
+baked one.
+
 ## Build
 
 Requirements: JDK 11 and the Android SDK (platform 33 and a build-tools release).
@@ -66,13 +78,24 @@ Outputs:
 - APK: `shell/build/outputs/apk/<id>/debug/shell-<id>-debug.apk`
 - Payload: `payload/build/payload/<id>/<id>-<payloadVersion>.jar` and `.jar.sha256`
 
+Building the APK always dexes the payload again, writes its `.sha256` and bakes
+that jar, so the payload inside an APK is the one built from the current sources.
+
 The payload version defaults to `p1-foundation`. Override it with
 `-PpayloadVersion=<name>`.
 
 `tools/verify-build.mjs` reads the built APK and fails with exit code 1 when the
 package, SDK levels, version code, permission set or the capability classes in the
-baked payload differ from the device file. Run it after building and before
-installing. It needs `ANDROID_HOME` and the repo's `node_modules`.
+baked payload differ from the device file. It also compares the sha256 of the
+APK's `assets/payload-baked.jar` with the payload build's `.jar.sha256` file (the
+most recently written one, when any exists) and fails when they differ, which
+means the APK holds a stale payload. Run it after building and before installing.
+It needs `ANDROID_HOME` and the repo's `node_modules`.
+
+Tests: `./gradlew build` runs the Java unit tests of every module. The Node tests
+for the CLI and the verifier's helpers run with
+`node --test _extensions/daylight-android/cli/ _extensions/daylight-android/tools/`
+from the repo root.
 
 ## The tokens file
 
@@ -98,9 +121,12 @@ commit.
 
 1. Copy `devices/_example.yml` to `devices/<id>.yml`. The file name must equal `id`,
    and `id` must match `[a-z][a-z0-9]*`. Files starting with `_` are not devices.
-2. Set `package` (unique per device), `android.minSdk` (26 or higher),
-   `android.targetSdk`, the two ports (they must differ), `shell.versionCode`, and
-   the list of `capabilities`.
+   The ids `debug`, `release`, `main` and `test` are refused: they are Android
+   source-set names.
+2. Set `package` (two devices with the same package are refused),
+   `android.minSdk` (26 or higher), `android.targetSdk`, the two ports (they must
+   differ), `shell.versionCode`, `shell.versionName` (letters, digits, `.`, `_`
+   and `-` only) and the list of `capabilities`.
 3. Put any device defaults under `defaults:`. Each key must be a setting that one of
    the device's capabilities declares. This is checked when the payload starts, not
    at build time: a wrong key makes the payload refuse to start.
@@ -130,7 +156,10 @@ Bump `shell.versionCode` each time a new shell is installed on the device.
 ## Rules
 
 - Never commit an APK, a payload jar, `local.properties`, or anything under
-  `build/` or `.gradle/`. The only tracked jar is the Gradle wrapper.
+  `build/` or `.gradle/`. The only tracked jar is the Gradle wrapper; `.gitignore`
+  ignores every other `*.jar`.
+- `devices/` holds device files only. Files there whose name contains `secret`,
+  `token` or `auth` are ignored by git, so do not name a device that way.
 - No addresses, tokens or household paths in this directory. Device files hold
   package names, SDK levels and ports only.
 - Nothing here is installed on a device by the build. Installing is a manual step.
