@@ -22,17 +22,31 @@ describe('DaylightAndroidForegroundProbe', () => {
   it('reports the kiosk under the guard\'s kiosk package when the app says it is in front', async () => {
     const { probe, get } = build(ok({ foreground: 'net.example.kioskapp', kioskInForeground: true }));
     await expect(probe.foreground()).resolves.toEqual({ package: KIOSK, activity: '' });
-    expect(get).toHaveBeenCalledWith('/kiosk/status');
+    expect(get).toHaveBeenCalledWith('/lockdown');
   });
 
-  it('reports the package in front when the kiosk is not', async () => {
-    const { probe } = build(ok({ foreground: 'com.android.tv.settings', kioskInForeground: false }));
-    await expect(probe.foreground()).resolves.toEqual({ package: 'com.android.tv.settings', activity: '' });
+  it('reports the package and activity in front when the kiosk is not', async () => {
+    const { probe } = build(ok({
+      foreground: 'com.android.tv.settings',
+      foregroundActivity: 'com.android.tv.settings.accessories.AddAccessoryActivity',
+      kioskInForeground: false,
+    }));
+    await expect(probe.foreground()).resolves.toEqual({
+      package: 'com.android.tv.settings',
+      activity: 'com.android.tv.settings.accessories.AddAccessoryActivity',
+    });
+  });
+
+  it('still recognises the kiosk when it reports its own activity', async () => {
+    const { probe } = build(ok({ foreground: 'net.example.kioskapp', foregroundActivity: 'net.example.kioskapp.Main', kioskInForeground: true }));
+    await expect(probe.foreground()).resolves.toEqual({ package: KIOSK, activity: 'net.example.kioskapp.Main' });
   });
 
   it.each([
     ['the device does not answer', { ok: false, code: 'UNREACHABLE', error: 'connect ECONNREFUSED' }],
     ['the status carries no foreground', ok({ kioskInForeground: false })],
+    // The ADB probe answers null when it cannot read the resumed activity; so does this one.
+    ['the app does not know the activity in front', ok({ foreground: 'com.android.tv.settings', foregroundActivity: null, kioskInForeground: false })],
   ])('returns null, not a guess, when %s', async (_label, status) => {
     const { probe } = build(status);
     await expect(probe.foreground()).resolves.toBeNull();
@@ -68,7 +82,7 @@ describe('DaylightAndroidForegroundProbe', () => {
     it('keeps watching while the kiosk is still in front just after the launch', async () => {
       const g = guarded([
         ok({ foreground: 'net.example.kioskapp', kioskInForeground: true }),
-        ok({ foreground: 'org.example.game', kioskInForeground: false }),
+        ok({ foreground: 'org.example.game', foregroundActivity: 'org.example.game.Main', kioskInForeground: false }),
       ]);
       expect(g.guard.start({ deviceId: 'tv', package: 'com.android.tv.settings' })).toEqual({ guarded: true });
       await g.step();
@@ -76,8 +90,35 @@ describe('DaylightAndroidForegroundProbe', () => {
       expect(g.post).not.toHaveBeenCalled();
     });
 
+    it('leaves an allowed screen alone and sends the device home from any other screen of the same package', async () => {
+      const g = guarded([
+        ok({ foreground: 'com.android.tv.settings', foregroundActivity: 'com.android.tv.settings.accessories.AddAccessoryActivity', kioskInForeground: false }),
+        ok({ foreground: 'com.android.tv.settings', foregroundActivity: '.accessories.BluetoothPairingDialog', kioskInForeground: false }),
+        ok({ foreground: 'com.android.tv.settings', foregroundActivity: 'com.android.tv.settings.MainSettings', kioskInForeground: false }),
+      ]);
+      g.guard.start({ deviceId: 'tv', package: 'com.android.tv.settings' });
+      await g.step();
+      await g.step();
+      expect(g.post).not.toHaveBeenCalled();
+      expect(g.running()).toBe(true);
+
+      await g.step();
+      expect(g.post).toHaveBeenCalledWith('/kiosk/foreground');
+      expect(g.logger.warn).toHaveBeenCalledWith('device.excursion.tripped', expect.objectContaining({
+        reason: 'outside-policy', foreground: 'com.android.tv.settings/com.android.tv.settings.MainSettings',
+      }));
+    });
+
+    it('counts an unknown activity as a failed probe, and does not send the device home for it', async () => {
+      const g = guarded([ok({ foreground: 'com.android.tv.settings', foregroundActivity: null, kioskInForeground: false })]);
+      g.guard.start({ deviceId: 'tv', package: 'com.android.tv.settings' });
+      await g.step();
+      expect(g.post).not.toHaveBeenCalled();
+      expect(g.running()).toBe(true);
+    });
+
     it('sends the device home when the excursion is somewhere its policy does not allow', async () => {
-      const g = guarded([ok({ foreground: 'org.example.game', kioskInForeground: false })]);
+      const g = guarded([ok({ foreground: 'org.example.game', foregroundActivity: 'org.example.game.Main', kioskInForeground: false })]);
       g.guard.start({ deviceId: 'tv', package: 'com.android.tv.settings' });
       await g.step();
       expect(g.post).toHaveBeenCalledWith('/kiosk/foreground');

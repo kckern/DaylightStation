@@ -7,15 +7,18 @@
  * AndroidExcursionGuard consumes; this one asks the app over its control API
  * where that one asks Android over ADB.
  *
- * Two things differ from the ADB probe:
+ * It polls `GET /lockdown`, which the app keeps cheap to read.
+ *
+ * Two things to know beside the ADB probe:
  *
  *   - The guard recognises the kiosk by one package name. The app reports
  *     `kioskInForeground` itself, so when that is true this probe answers with
  *     the guard's kiosk package and the guard needs no second name.
- *   - The app reports the PACKAGE in front, not the activity, so `activity` is
- *     always empty. A guard policy that allows only some screens of a package
- *     (`allow: ['.accessories.']`) therefore matches nothing here, and the
- *     guard sends the device home as soon as it sees the excursion.
+ *   - The app reports the resumed activity as `foregroundActivity`, or null
+ *     when it does not know it. The ADB probe answers null when it cannot read
+ *     the resumed activity, which the guard counts as a failed probe and does
+ *     not act on; this probe does the same, so a screen-level policy
+ *     (`allow: ['.accessories.']`) is never judged on a missing activity.
  *
  * Contract: ops:docs/superpowers/specs/2026-11-16-daylight-android-control-api.md
  */
@@ -37,14 +40,21 @@ export class DaylightAndroidForegroundProbe {
 
   /** @returns {Promise<{package: string, activity: string}|null>} null when the device could not be asked */
   async foreground() {
-    const result = await this.#rest.get('/kiosk/status');
+    const result = await this.#rest.get('/lockdown');
     if (!result?.ok) {
       this.#logger.debug?.('android.foreground.probe_failed', { error: result?.error });
       return null;
     }
-    if (result.data?.kioskInForeground === true) return { package: this.#kioskPackage, activity: '' };
-    const foreground = result.data?.foreground;
-    return typeof foreground === 'string' && foreground ? { package: foreground, activity: '' } : null;
+    const { foreground, foregroundActivity, kioskInForeground } = result.data || {};
+    const activity = typeof foregroundActivity === 'string' ? foregroundActivity : '';
+    if (kioskInForeground === true) return { package: this.#kioskPackage, activity };
+    if (typeof foreground !== 'string' || !foreground || !activity) {
+      this.#logger.debug?.('android.foreground.probe_failed', {
+        error: foreground ? 'activity in front is unknown' : 'no foreground reported',
+      });
+      return null;
+    }
+    return { package: foreground, activity };
   }
 
   async returnToKiosk() {

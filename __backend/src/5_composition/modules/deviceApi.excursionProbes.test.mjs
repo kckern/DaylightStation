@@ -42,7 +42,7 @@ describe('excursion probes by provider', () => {
     expect(probe).toBeInstanceOf(DaylightAndroidForegroundProbe);
     await expect(probe.foreground()).resolves.toEqual({ package: 'de.ozerov.fully', activity: '' });
     const [url, config] = http.get.mock.calls[0];
-    expect(url).toBe('http://kiosk.test:8780/kiosk/status');
+    expect(url).toBe('http://kiosk.test:8780/lockdown');
     expect(config.headers['X-Daylight-Token']).toBe(TOKEN);
   });
 
