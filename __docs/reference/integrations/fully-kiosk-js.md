@@ -165,6 +165,12 @@ Every `fkb.<call>.unavailable` warning that carried `bridge: 'present' |
 `bridgeKind: 'fully' | 'daylight' | null`, which says which bridge the page
 found.
 
+The Android kiosk app injects `window.daylight` only where the device's
+WebView supports document-start script injection. Where it does not, the
+object is absent, every call here reports `bridge: 'absent'`, and the page
+runs as in an ordinary browser. The backend sees this as `bridge:
+'unavailable'` in the device's content status.
+
 **What counts as a bridge.** A name on `window` is not enough. `fully` (or
 `FullyKiosk`) qualifies only if it has one of `turnScreenOff`, `turnScreenOn`,
 `startApplication`, `startIntent` or `bind`; `restartApp()` and `reboot()` are

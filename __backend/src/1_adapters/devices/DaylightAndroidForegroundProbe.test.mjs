@@ -37,6 +37,14 @@ describe('DaylightAndroidForegroundProbe', () => {
     });
   });
 
+  it('reads only the three fields it needs, whatever else /lockdown carries', async () => {
+    const { probe } = build(ok({
+      locked: true, mode: 'owner', homeIsKiosk: true, homeAlias: false, required: true, ownerHold: false, ownerRefused: false, recallsHeldBack: 0, recallsSinceBoot: 3, lastRecall: { how: 'home+service-start-unverified', atMs: 5 }, allowedApps: [],
+      foreground: 'com.android.tv.settings', foregroundActivity: '.accessories.AddAccessoryActivity', kioskInForeground: false,
+    }));
+    await expect(probe.foreground()).resolves.toEqual({ package: 'com.android.tv.settings', activity: '.accessories.AddAccessoryActivity' });
+  });
+
   it('still recognises the kiosk when it reports its own activity', async () => {
     const { probe } = build(ok({ foreground: 'net.example.kioskapp', foregroundActivity: 'net.example.kioskapp.Main', kioskInForeground: true }));
     await expect(probe.foreground()).resolves.toEqual({ package: KIOSK, activity: 'net.example.kioskapp.Main' });

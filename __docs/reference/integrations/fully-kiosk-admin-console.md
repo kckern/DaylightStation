@@ -96,7 +96,8 @@ What differs for these devices:
   key is listed and the value has the declared type. An integer is edited as
   a number with no range limit. A few are listed and never editable from the
   console, because changing them widens what the device will do or who may
-  drive it: every `debug.*`, `control.*` and `lockdown.*` setting, and
+  drive it: every `debug.*`, `control.*` and `lockdown.*` setting
+  (`lockdown.required` among them, which the device itself never accepts), and
   `webview.bridgeOrigins` and `webview.startUrl`. A write to one is refused
   with the same error as a Fully setting off the whitelist, before it reaches
   the device. Credential-like keys stay
@@ -107,6 +108,16 @@ What differs for these devices:
   after the request went out is reported as sent; a connection that was never
   made is still an error. When the device cannot reboot itself, the message
   carries the device's reason (for example "device owner required").
+- **When the kiosk cannot act.** A device that is in the wrong state for a
+  command answers 409, and the console shows why in plain words
+  (`DAYLIGHT_ANDROID_CONFLICT`: "the kiosk window is not open", "the kiosk is
+  not in front", "an update is already running"). A device that answered and
+  then failed on a page or download gives `DAYLIGHT_ANDROID_DEPENDENCY_FAILED`
+  (502) or `DAYLIGHT_ANDROID_DEVICE_TIMEOUT` (504), which are different from
+  the device itself not answering.
+- **Home alias.** Turning the app's HOME alias on or off
+  (`POST /lockdown/home`) is not offered here. It changes which app the
+  device's home button opens, and is done from the device's command line tool.
 - **Errors.** Gateway failures carry `DAYLIGHT_ANDROID_*` codes
   (`_TIMEOUT` 504, `_UNREACHABLE` / `_AUTH_REJECTED` / `_COMMAND_REJECTED` /
   `_INVALID_RESPONSE` 502, `_CONFIGURATION_ERROR` 503, `_UNSUPPORTED` 501),

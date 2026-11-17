@@ -180,9 +180,12 @@ shorter, because the app confirms what Fully could only acknowledge:
 | Condition | `code` |
 |-----------|--------|
 | HTTP 401 | `AUTH_REJECTED` |
+| HTTP 409 | `CONFLICT`: the device is in a state where the command cannot run (no kiosk window, not in front, an update running) |
 | HTTP 501 | `UNSUPPORTED` |
+| HTTP 502 | `DEVICE_DEPENDENCY_FAILED`: the device answered, and a page or download it depends on failed |
+| HTTP 504 | `DEVICE_TIMEOUT`: the device answered, and gave up waiting on a page or download |
 | Other HTTP 4xx, or a body with `ok: false` | `COMMAND_REJECTED` |
-| HTTP 5xx | `HTTP_ERROR` |
+| Other HTTP 5xx | `HTTP_ERROR` |
 | Timeout | `TIMEOUT` |
 | Connection refused, no route | `UNREACHABLE` |
 | Not JSON where JSON was expected | `INVALID_RESPONSE` |
@@ -206,6 +209,40 @@ names another provider. It and the tasker adapter call through the system
 kiosk password in the request URL, which the HTTP client logs; it is dormant
 (no `kiosk` app config names a host) and should move onto
 `FullyKioskRestClient` before it is ever configured.
+
+A failure also carries `deviceCode`, the device's fixed word for it
+(`no_kiosk_activity`, `not_in_foreground`, `not_ready`, `not_installed`, ...).
+Some routes still answer HTTP 200 with `ok: false` (a waited load whose page
+failed, `/launch`, `/screen`, `/volume`, `/kiosk/overlay`); those come back as
+`COMMAND_REJECTED` with the word in `deviceCode`.
+
+**When the kiosk window is not up.** A 409 `no_kiosk_activity` or
+`not_in_foreground` means there is no kiosk window to act on, which is a state
+and not a refusal:
+
+- `prepareForContent` goes on and reports `kioskWindowUp: false`
+  (`daylightandroid.prepareForContent.kioskWindowNotUp`).
+- `load` sends the URL again with `wait:false`. The device queues it and shows
+  it when the window attaches. The load returns `verified: 'async', queued:
+  true` (`daylightandroid.load.queued`) and is verified by `loadId` in the
+  background like any other asynchronous load.
+
+**Allowed origins.** The device loads pages only from the start URL's origin
+and its `webview.allowedOrigins` setting. A load outside them is refused with
+HTTP 400 `origin_not_allowed`. That is configuration, so it is not retried:
+`load` returns `code: 'ORIGIN_NOT_ALLOWED'` with a message naming the origin
+(never the path or query), and logs one warning,
+`daylightandroid.load.originNotAllowed`. The fix is on the device.
+
+**Page bridge availability.** `getStatus()` carries `bridge` (`available` or
+`unavailable`), `bridgeReason` and `rendererLosses` from the device. The app
+offers `window.daylight` only where the WebView can inject it at document
+start; on a device where it cannot, `bridge` is `unavailable` and the page runs
+as it would in an ordinary browser (see
+[Fully Kiosk JavaScript API](./fully-kiosk-js.md#the-windowdaylight-bridge)).
+
+**Mic bridge restart.** `POST /mic/restart` answering 409 `not_ready` is
+retried once after a short pause; any other failure stands.
 
 Log events from these adapters are prefixed `daylightandroid.` (for example
 `daylightandroid.rest.response`, `daylightandroid.load.failed`,

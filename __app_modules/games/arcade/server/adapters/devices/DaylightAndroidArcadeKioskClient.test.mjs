@@ -29,6 +29,12 @@ describe('DaylightAndroidArcadeKioskClient', () => {
     expect(result.data).toMatchObject({ foreground: 'com.example.emulator', foregroundApp: 'com.example.emulator' });
   });
 
+  it('reads the foreground whatever else /lockdown carries', async () => {
+    const { client } = build({ get: vi.fn(async () => ok({ locked: true, mode: 'owner', homeIsKiosk: true, homeAlias: false, required: true, ownerHold: false, ownerRefused: false, recallsHeldBack: 0, recallsSinceBoot: 3, lastRecall: { how: 'home+service-start-unverified', atMs: 5 }, allowedApps: [], foreground: 'com.example.emulator', kioskInForeground: false })) });
+    const result = await client.command('deviceInfo');
+    expect(result.data.foregroundApp).toBe('com.example.emulator');
+  });
+
   it('toForeground posts /kiosk/foreground', async () => {
     const { client, post } = build({ post: vi.fn(async () => ok({ kioskInForeground: true })) });
     const result = await client.command('toForeground');
