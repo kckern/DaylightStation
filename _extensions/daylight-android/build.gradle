@@ -6,3 +6,6 @@ buildscript {
 allprojects {
     repositories { google(); mavenCentral() }
 }
+
+// Parsed and validated by buildSrc. Every module reads devices from here.
+ext.catalog = net.kckern.daylight.build.DeviceCatalog.load(rootDir)

@@ -1,5 +1,7 @@
 .gradle/
 build/
 **/build/
+# The build logic's Java package is net.kckern.daylight.build; it is source, not output.
+!**/src/**/build/
 local.properties
 *.apk
