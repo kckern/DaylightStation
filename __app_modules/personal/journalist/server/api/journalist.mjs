@@ -13,6 +13,7 @@ import {
   journalistTriggerHandler,
   journalistMorningDebriefHandler,
   journalistMemoRoute,
+  journalistMemoPreflight,
 } from "./handlers/index.mjs";
 
 // HTTP middleware
@@ -58,8 +59,11 @@ export function createJournalistRouter(journalistApi, options = {}) {
     asyncHandler(journalistMorningDebriefHandler(journalistApi, { logger })),
   );
 
-  // Voice memo intake (the phone app). Raw audio body; the route does its own
-  // refusals and error answers. Contract: the Journalist reference doc.
+  // Voice memo intake (the phone app). Raw audio body; the route guards itself
+  // (origin, device binding, daily allowance) and answers its own errors, and
+  // app.mjs keeps the app-wide CORS and body parsers off this path.
+  // Contract: the Journalist reference doc.
+  router.options('/memo', journalistMemoPreflight({ logger }));
   router.post('/memo', ...journalistMemoRoute(journalistApi, { logger }));
 
   // Health check endpoint

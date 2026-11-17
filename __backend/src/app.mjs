@@ -187,7 +187,7 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext } from "./0_system/http/middleware/index.mjs";
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext, exceptPaths } from "./0_system/http/middleware/index.mjs";
 import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
@@ -547,9 +547,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
     next();
   });
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  // Routes that guard themselves: each refuses a request from its headers
+  // before reading the body and answers no cross-origin preflight, so the
+  // app-wide CORS handler and body parsers step aside for them. Every other
+  // route gets all three exactly as before.
+  //   /api/v1/journalist/memo — voice memo intake (device, origin, daily cap)
+  const selfGuarded = exceptPaths(['/api/v1/journalist/memo']);
+  app.use(selfGuarded(cors()));
+  app.use(selfGuarded(express.json({ limit: '50mb' })));
+  app.use(selfGuarded(express.urlencoded({ limit: '50mb', extended: true })));
   // AI usage origin (`http:METHOD /path`) for every ledger row a request
   // causes. After the body parsers on purpose: they finish on a stream event
   // outside any context opened before them.

@@ -20,8 +20,13 @@ const CHAT = 'telegram:b1_c2';
 const TRANSCRIPT = 'Bought the tickets today.';
 const nullLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
-function build({ transcript = TRANSCRIPT, failReplies = 0, failEchoes = 0 } = {}) {
-  const files = new Map();
+function capturingLogger() {
+  const events = [];
+  const at = (level) => (event, data) => events.push({ level, event, data });
+  return { events, debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
+}
+
+function build({ transcript = TRANSCRIPT, failReplies = 0, failEchoes = 0, files = new Map(), limits, logger = nullLogger } = {}) {
   const dataService = {
     user: {
       read: (relativePath, username) => files.get(`${username}/${relativePath}`) ?? null,
@@ -53,10 +58,10 @@ function build({ transcript = TRANSCRIPT, failReplies = 0, failEchoes = 0 } = {}
   const journal = new YamlJournalEntryRepository({
     dataService,
     userResolver: { resolveUser: () => 'user_1' },
-    logger: nullLogger,
+    logger: logger,
   });
   const container = new JournalistContainer({ username: 'user_1' }, {
-    messagingGateway, aiGateway, journalEntryRepository: journal, logger: nullLogger,
+    messagingGateway, aiGateway, journalEntryRepository: journal, logger,
   });
   const journalistApi = new JournalistApiService({
     initiatePrompt: {}, generateMorningDebrief: {}, sendMorningDebrief: {},
@@ -64,26 +69,28 @@ function build({ transcript = TRANSCRIPT, failReplies = 0, failEchoes = 0 } = {}
       processVoiceEntry: container.getProcessVoiceEntry(),
       processTextEntry: container.getProcessTextEntry(),
       journalEntryRepository: journal,
-      memoLedger: new MemoLedger({ store: new YamlMemoLedgerStore({ dataService, logger: nullLogger }) }),
-      logger: nullLogger,
+      memoLedger: new MemoLedger({ store: new YamlMemoLedgerStore({ dataService, logger }), limits }),
+      logger,
     }),
+    // The household devices file: one phone, bound to user_1 and to a user with no conversation.
+    memoDeviceUsers: (deviceKey) => ({ phone: ['user_1', 'stranger'] })[deviceKey],
     principalResolver: { resolve: (explicit) => explicit || 'user_1' },
     resolveConversationId: (username) => {
       if (username !== 'user_1') throw new Error(`Cannot resolve Telegram ID for username "${username}"`);
       return CHAT;
     },
-    logger: nullLogger,
+    logger,
   });
   const app = express();
-  app.use('/api/v1/journalist', createJournalistRouter(journalistApi, { logger: nullLogger }));
+  app.use('/api/v1/journalist', createJournalistRouter(journalistApi, { logger }));
 
   const userEntries = () => (files.get('user_1/lifelog/journalist/messages')?.messages || [])
     .filter((m) => String(m.id).startsWith('memo:'));
-  return { app, telegram, userEntries, journal };
+  return { app, telegram, userEntries, journal, files };
 }
 
-const upload = (app, { id = '1700000000000', user = 'user_1', recordedAt = null } = {}) => request(app)
-  .post('/api/v1/journalist/memo').query({ user })
+const upload = (app, { id = '1700000000000', user = 'user_1', recordedAt = null, device = 'fleet:phone' } = {}) => request(app)
+  .post('/api/v1/journalist/memo').query({ user }).set(device ? { 'X-Daylight-Device': device } : {})
   .set('X-Daylight-Memo-Id', id).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {}).set('Content-Type', 'audio/mp4')
   .send(Buffer.from('aac bytes'));
 
@@ -207,4 +214,61 @@ test('a memo with no recorded time is stamped when it is processed', async () =>
   await upload(app);
   const stamped = new Date(userEntries()[0].timestamp).getTime();
   assert.ok(stamped >= before && stamped <= Date.now());
+});
+
+test('a device that is not bound to the user cannot write to their journal', async () => {
+  const { app, telegram, userEntries } = build();
+  for (const device of [null, 'fleet:kitchen-tablet', 'browser:abc']) {
+    const res = await upload(app, { device });
+    assert.equal(res.status, 403, String(device));
+    assert.equal(res.body.error, 'device_not_allowed');
+  }
+  assert.equal(telegram.transcribed.length, 0);
+  assert.equal(telegram.sent.length, 0);
+  assert.equal(userEntries().length, 0);
+});
+
+test('a page on another origin gets no preflight grant and no entry', async () => {
+  const { app, telegram } = build();
+  const preflight = await request(app).options('/api/v1/journalist/memo')
+    .set('Origin', 'https://elsewhere.example').set('Access-Control-Request-Method', 'POST');
+  assert.equal(preflight.status, 403);
+  assert.equal(preflight.headers['access-control-allow-origin'], undefined);
+
+  const res = await upload(app).set('Origin', 'https://elsewhere.example');
+  assert.equal(res.status, 403);
+  assert.equal(res.body.error, 'cross_origin');
+  assert.equal(telegram.transcribed.length, 0);
+});
+
+test('the daily allowance holds across a restart', async () => {
+  const first = build({ limits: { memos: 2 } });
+  assert.equal((await upload(first.app, { id: 'one' })).status, 200);
+  assert.equal((await upload(first.app, { id: 'two' })).status, 200);
+
+  // A restarted backend over the same data files.
+  const restarted = build({ limits: { memos: 2 }, files: first.files });
+  const refused = await upload(restarted.app, { id: 'three' });
+  assert.equal(refused.status, 429);
+  assert.equal(refused.body.error, 'daily_limit');
+  assert.equal(refused.body.limit, 'memos');
+  assert.ok(refused.body.retryAfterSeconds > 0 && refused.body.retryAfterSeconds <= 86400);
+  assert.equal(refused.headers['retry-after'], String(refused.body.retryAfterSeconds));
+  assert.equal(restarted.telegram.transcribed.length, 0);
+
+  // A memo already journaled is still answered.
+  assert.equal((await upload(restarted.app, { id: 'one' })).body.duplicate, true);
+});
+
+test('nothing spoken reaches the log anywhere on the way through', async () => {
+  const logger = capturingLogger();
+  const { app } = build({ logger });
+  assert.equal((await upload(app)).status, 200);
+  assert.ok(logger.events.some((e) => e.event === 'voiceEntry.transcribe.start'));
+  const walk = (value) => {
+    if (Buffer.isBuffer(value) || ArrayBuffer.isView(value)) assert.fail('an event carries binary data');
+    if (typeof value === 'string') assert.ok(!value.includes(TRANSCRIPT.slice(0, 13)), 'an event repeats the transcript');
+    else if (value && typeof value === 'object') Object.values(value).forEach(walk);
+  };
+  logger.events.forEach((e) => walk(e.data));
 });

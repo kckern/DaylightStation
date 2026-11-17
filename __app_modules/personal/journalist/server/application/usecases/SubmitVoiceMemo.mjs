@@ -62,6 +62,15 @@ export class SubmitVoiceMemo {
   }
 
   /**
+   * Whether a memo of `bytes` would be sent for transcription today, asked
+   * before the body is read.
+   * @returns {{allowed: true} | {allowed: false, limit: 'memos'|'bytes', retryAfterSeconds: number}}
+   */
+  admission({ username, memoId, bytes = 0 }) {
+    return this.#memoLedger.admission(username, memoId, bytes);
+  }
+
+  /**
    * @param {Object} input
    * @param {string} input.conversationId - The user's Journalist conversation
    * @param {string} input.username
@@ -72,7 +81,8 @@ export class SubmitVoiceMemo {
    * @returns {Promise<{kind: 'accepted', memoId: string, transcriptionLength: number}
    *   | {kind: 'duplicate', memoId: string}
    *   | {kind: 'resumed', memoId: string}
-   *   | {kind: 'empty_transcription', memoId: string}>}
+   *   | {kind: 'empty_transcription', memoId: string}
+   *   | {kind: 'daily_limit', memoId: string, limit: 'memos'|'bytes', retryAfterSeconds: number}>}
    *   `resumed`: the entry was already journaled and this call sent the
    *   replies an earlier attempt did not.
    */
@@ -106,7 +116,14 @@ export class SubmitVoiceMemo {
     if (journaled) {
       text = String(journaled.content ?? journaled.text ?? '');
     } else {
-      this.#memoLedger.mark(username, memoId, { saved: false });
+      // The audio's real size against the user's day. The route asks the same
+      // question from the declared length before reading the body; an upload
+      // with no declared length is first measured here.
+      const admission = this.#memoLedger.admission(username, memoId, audioBuffer.length);
+      if (!admission.allowed) {
+        return { kind: 'daily_limit', memoId, limit: admission.limit, retryAfterSeconds: admission.retryAfterSeconds };
+      }
+      this.#memoLedger.countTranscription(username, memoId, audioBuffer.length);
       text = await this.#processVoiceEntry.transcribe({
         chatId: conversationId,
         voiceFileId: { buffer: audioBuffer, mimeType },

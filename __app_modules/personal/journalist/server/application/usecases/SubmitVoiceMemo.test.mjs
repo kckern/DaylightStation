@@ -22,7 +22,7 @@ function memoryStore(files = new Map()) {
  * The voice and text use cases as step-recording fakes over one journal map.
  * `fail` names steps that throw, each a number of times.
  */
-function build({ transcription = TRANSCRIPT, fail = {}, journal = new Map(), store = memoryStore() } = {}) {
+function build({ transcription = TRANSCRIPT, fail = {}, journal = new Map(), store = memoryStore(), limits } = {}) {
   const steps = [];
   const events = [];
   const failures = { ...fail };
@@ -33,7 +33,7 @@ function build({ transcription = TRANSCRIPT, fail = {}, journal = new Map(), sto
   const useCase = new SubmitVoiceMemo({
     clock: () => NOW,
     logger: { info: (event, data) => events.push({ event, data }) },
-    memoLedger: new MemoLedger({ store, clock: () => NOW }),
+    memoLedger: new MemoLedger({ store, clock: () => NOW, limits }),
     journalEntryRepository: {
       findById: async (id, chatId) => journal.get(`${chatId}|${id}`) || null,
     },
@@ -231,4 +231,36 @@ test('a recorded time that cannot be right is ignored and said so', async () => 
     assert.equal('timestamp' in first('save'), false, String(recordedAt));
     assert.deepEqual(events, [{ event: 'journalist.memo.recordedAtIgnored', data: { memoId: '1700000000000', username: 'user_1', reason } }]);
   }
+});
+
+test('past the daily memo count a new memo is refused before it is transcribed', async () => {
+  const { useCase, count } = build({ limits: { memos: 1 } });
+  await useCase.execute(memo());
+  const refused = await useCase.execute(memo({ memoId: 'second' }));
+  assert.equal(refused.kind, 'daily_limit');
+  assert.equal(refused.limit, 'memos');
+  assert.ok(refused.retryAfterSeconds > 0);
+  assert.equal(count('transcribe'), 1);
+});
+
+test('the real size of the audio is held to the daily byte limit', async () => {
+  const { useCase, count } = build({ limits: { bytes: 5 } });
+  const refused = await useCase.execute(memo({ audioBuffer: Buffer.alloc(6) }));
+  assert.equal(refused.kind, 'daily_limit');
+  assert.equal(refused.limit, 'bytes');
+  assert.equal(count('transcribe'), 0);
+});
+
+test('a retry that only has replies left to send is not held to the limit', async () => {
+  const { useCase } = build({ limits: { memos: 1 }, fail: { echo: 1 } });
+  await assert.rejects(useCase.execute(memo()), /echo failed/);
+  assert.equal((await useCase.execute(memo())).kind, 'resumed');
+});
+
+test('the gate can ask ahead of the body whether a memo would be admitted', async () => {
+  const { useCase } = build({ limits: { memos: 1, bytes: 100 } });
+  assert.deepEqual(useCase.admission({ username: 'user_1', memoId: 'm1', bytes: 50 }), { allowed: true });
+  assert.equal(useCase.admission({ username: 'user_1', memoId: 'm1', bytes: 101 }).limit, 'bytes');
+  await useCase.execute(memo());
+  assert.equal(useCase.admission({ username: 'user_1', memoId: 'other', bytes: 1 }).limit, 'memos');
 });

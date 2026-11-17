@@ -1,9 +1,9 @@
 /** Semantic Journalist operations for the HTTP surface. */
 export class JournalistApiService {
   constructor({ exportJournal = null, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-    submitVoiceMemo = null, principalResolver, resolveConversationId, logger = console } = {}) {
+    submitVoiceMemo = null, memoDeviceUsers = null, principalResolver, resolveConversationId, logger = console } = {}) {
     Object.assign(this, { exportJournal, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-      submitVoiceMemo, principalResolver, resolveConversationId, logger });
+      submitVoiceMemo, memoDeviceUsers, principalResolver, resolveConversationId, logger });
   }
 
   canExportJournal() { return Boolean(this.exportJournal); }
@@ -13,6 +13,25 @@ export class JournalistApiService {
 
   canSubmitMemo() { return Boolean(this.submitVoiceMemo); }
   submitMemo(command) { return this.submitVoiceMemo.execute(command); }
+  memoAdmission(question) { return this.submitVoiceMemo.admission(question); }
+
+  /**
+   * Whether the device a request names may send memos for `username`.
+   * `deviceId` is the `X-Daylight-Device` value. Only a registered household
+   * device (`fleet:<key>`) that lists the user qualifies; a browser id, an
+   * unknown key or a device with no list does not.
+   */
+  memoDeviceAllowed(deviceId, username) {
+    const match = /^fleet:([A-Za-z0-9._-]{1,96})$/.exec(String(deviceId ?? ''));
+    if (!match || !username || !this.memoDeviceUsers) return false;
+    try {
+      const users = this.memoDeviceUsers(match[1]);
+      return Array.isArray(users) && users.includes(username);
+    } catch (error) {
+      this.logger.warn?.('journalist.memo.deviceLookupFailed', { deviceId, error: error.message });
+      return false;
+    }
+  }
 
   /**
    * The Journalist conversation a memo for `username` is journaled in, or null

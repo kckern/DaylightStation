@@ -8,7 +8,7 @@ import { createJournalistRouter } from "../api/journalist.mjs";
 import { createJournalistServices } from "../../../../../__backend/src/5_composition/bootstrap.mjs";
 import { JournalistApiService } from "../application/JournalistApiService.mjs";
 import { SubmitVoiceMemo } from "../application/usecases/SubmitVoiceMemo.mjs";
-import { MemoLedger } from "../application/services/MemoLedger.mjs";
+import { MemoLedger, memoLimits } from "../application/services/MemoLedger.mjs";
 import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
@@ -70,7 +70,11 @@ export function createJournalistApiRouter(config) {
   const container = journalistServices.journalistContainer;
   const memoJournal = container.getJournalEntryRepository?.() || null;
   const memoLedger = journalistServices.memoLedgerStore
-    ? new MemoLedger({ store: journalistServices.memoLedgerStore })
+    ? new MemoLedger({
+        store: journalistServices.memoLedgerStore,
+        limits: memoLimits(configService?.getAppConfig?.('journalist')?.voice_memo),
+        timezone: (username) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(username)),
+      })
     : null;
   const submitVoiceMemo = aiGatewayAvailable && memoJournal?.findById && memoLedger
     ? new SubmitVoiceMemo({
@@ -94,6 +98,9 @@ export function createJournalistApiRouter(config) {
       ? journalistServices.journalistContainer.getSendMorningDebrief()
       : unavailableAiOperation,
     submitVoiceMemo,
+    // Which users a household device may send memos for:
+    // `voice_memo.users` on the device's entry in the devices file.
+    memoDeviceUsers: (deviceKey) => configService?.getDeviceConfig?.(deviceKey)?.voice_memo?.users,
     principalResolver: new DefaultPrincipalResolver({
       headOfHousehold: () => configService?.getHeadOfHousehold?.(),
       fallback: 'user_1',
