@@ -19,6 +19,8 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
+import net.kckern.daylight.core.Diag;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -209,8 +211,9 @@ public class BleMidiConnector {
         final String targetMac = cfg.targetMac();
         if (targetMac.isEmpty()) {
             // No MAC — config was lost or corrupted (the 2026-07-15 outage). NEVER
-            // give up: fall back to a NAME scan for targetName (which always has a
-            // baked default, "jam-7e6"), and keep retrying so the link self-heals
+            // give up: fall back to a NAME scan for targetName (the device file
+            // supplies it; when it is empty too, nothing is scanned by name and the
+            // state is FAILED with a retry), and keep retrying so the link self-heals
             // the instant the target reappears or config is restored. A terminal
             // FAILED here is exactly the "drops the connection and gives up" bug.
             final String targetName = cfg.targetName();
@@ -302,8 +305,9 @@ public class BleMidiConnector {
     /**
      * Unfiltered scan that connects the first non-blocklisted device whose NAME
      * matches {@code targetName}. This is the fallback when {@code targetMac} is
-     * missing (config loss/corruption) — the Jamcorder advertises as "jam-7e6", so
-     * we can still find and open it with no MAC on file. Learns the MAC on connect.
+     * missing (config loss/corruption) — the MIDI router advertises under a fixed
+     * name, so we can still find and open it with no MAC on file. Learns the MAC on
+     * connect. Never called with an empty name: an empty name matches no device.
      */
     private void startNameScan(final String targetName) {
         if (!running || stopped || suspended || pairingPaused || scanner == null) { scheduleRetry(); return; }
@@ -524,10 +528,13 @@ public class BleMidiConnector {
     private boolean isLocationEnabled() {
         LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return false;
-        try { return lm.isLocationEnabled(); } catch (Exception e) {
-            return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                    || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        // isLocationEnabled() arrived in API 28. Below that the call is a NoSuchMethodError,
+        // which the catch here would not stop; ask the providers there instead.
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            try { return lm.isLocationEnabled(); } catch (Exception e) { /* ask the providers */ }
         }
+        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
 
     private static String bluetoothMac(MidiDeviceInfo info) {

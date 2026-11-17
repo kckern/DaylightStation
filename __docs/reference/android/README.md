@@ -20,8 +20,8 @@ working helper code out of the old helper apps into this codebase. So far the
 `piano`, `portal` and `shield` device files build, the core has gained the
 heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
 routes listed below, and the piano build carries `audio-guard` (speaker routes
-under `/speaker` and `/audio-guard`) and `synth` (the native sfizz sampler; see
-"Capabilities"). The old helper apps still run every device.
+under `/speaker` and `/audio-guard`), `synth` (the native sfizz sampler) and
+`midi-bridge` (the BLE-MIDI link); see "Capabilities". The old helper apps still run every device.
 
 ## Shell and payload
 
@@ -250,6 +250,40 @@ device file so a key press reaches the sampler before anything else.
 `/status` and `/diagnostics` carry `engine` and `preset`. The synth provides the
 output gate `audio-guard` closes when sound would leave by the wrong speaker; when
 the gate opens again, the stream is reopened only if the page had asked for sound.
+
+### `midi-bridge`
+
+The BLE-MIDI link to an instrument. It connects to `midi.targetMac` (or, with no
+address, to the device advertising as `midi.targetName`), reconnects when the link
+drops, and checks delivery by sending a probe note the instrument echoes back.
+
+| Kind | Name | What it does |
+|---|---|---|
+| HTTP | `POST /connect` | Scan and connect now |
+| HTTP | `POST /forget` | Close the link and stop reconnecting |
+| HTTP | `POST /scan?ms=` | Nearby BLE devices: `name`, `mac`, `rssi`, `isTarget`, `isBlocklisted` |
+| HTTP | `GET /midi/tap` | The last 64 raw chunks the read port delivered, with counters |
+| HTTP | `GET`, `POST /midi/send?hex=&repeat=&inMs=` | Write raw MIDI, SysEx included. `hex` may be the POST body. `inMs` sends that many ms from now on the device's clock |
+| HTTP | `POST /reset` | Reconnect, then bounce the Bluetooth radio if the echo still fails; answers `fixed`, `recoveredAt`, `steps` |
+| HTTP | `GET /loopback`, `POST /loopback` | The echo check's rolling state; `POST` probes now and waits for the echo |
+| HTTP | `POST /tone?note=&velocity=&ms=` | One audible note, then an echo probe |
+| WS out | `note.on` `{note, velocity, t}`, `note.off` `{note, t}` | Live notes; `t` is the key event's epoch ms |
+| WS in | `midi.raw` `{hex}` or `{bytes}`, optional `repeat` | Write raw MIDI to the instrument |
+| WS out | `error` `{code, msg}` | `bad_hex`, `no_bytes`, `write_failed` |
+
+The note frames are built by the same code as the old piano bridge's, and a test
+compares them byte for byte with that bridge's output. `/status` carries `ble`,
+`outVerified` and `midiWrite`; `/diagnostics` carries `midiIn` and `ble`. The
+heartbeat carries `ble`, `bleUptimeS`, `bleReconnects`, `midiWriteOpen`,
+`midiInOpen`, `outVerified`, `loopRttMs`, `loopMisses` and `linkVerdict` (`DOWN`,
+`VERIFIED`, or `ZOMBIE` for a connected link the instrument does not answer), and
+a probe runs before each beat. Each live note goes to the capabilities that
+subscribed (the synth first) and then to the WebSocket.
+
+Settings: `midi.targetMac`, `midi.targetName`, `midi.blocklistMacs`
+(comma-separated), `midi.scanTimeoutMs` (15000), `midi.reconnectDelayMs` (3000),
+`midi.enabled` (true), `midi.serviceUuid`. Changing any of them except the name
+rebuilds the link. It offers the `midi` role to `bluetooth-controls`.
 
 ## Lifeline
 

@@ -2,6 +2,8 @@ package net.kckern.daylight.cap.midibridge;
 
 import android.util.Log;
 
+import net.kckern.daylight.core.CrashLog;
+
 import org.json.JSONObject;
 
 import java.util.concurrent.ConcurrentHashMap;
