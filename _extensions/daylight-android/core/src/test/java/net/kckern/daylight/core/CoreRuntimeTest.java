@@ -160,4 +160,25 @@ public class CoreRuntimeTest {
         assertEquals(400, r.getInt("_status"));
         assertEquals("bad_request", r.getString("error"));
     }
+
+    @Test public void settingOrResettingASecretNeverEchoesItsValue() throws Exception {
+        Capability withSecret = new Capability() {
+            @Override public String name() { return "vault"; }
+            @Override public void register(CoreContext core) { core.settings().declareSecret("vault.key"); }
+            @Override public void start() { }
+            @Override public void stop() { }
+        };
+        CoreRuntime core = runtime(withSecret, "{}");
+        Router.Response set = core.router().dispatch("POST", "/settings", FakeShell.TOKEN, Collections.emptyMap(),
+                "{\"key\":\"vault.key\",\"value\":\"hunter2-hunter2\"}");
+        String text = new String(set.body, StandardCharsets.UTF_8);
+        assertEquals(200, set.status);
+        assertFalse("the response must not hold the secret", text.contains("hunter2"));
+        assertEquals("(set)", new JSONObject(text).getString("value"));
+        assertEquals("hunter2-hunter2", core.settings().get("vault.key"));
+
+        Router.Response reset = core.router().dispatch("DELETE", "/settings", FakeShell.TOKEN,
+                Collections.singletonMap("key", "vault.key"), null);
+        assertEquals("", new JSONObject(new String(reset.body, StandardCharsets.UTF_8)).getString("value"));
+    }
 }

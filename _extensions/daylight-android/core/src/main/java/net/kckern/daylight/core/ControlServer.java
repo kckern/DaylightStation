@@ -2,6 +2,8 @@ package net.kckern.daylight.core;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +13,12 @@ import fi.iki.elonen.NanoWSD;
 
 /** The NanoHTTPD/NanoWSD adapter. HTTP behavior lives in Router, socket behavior in SocketHub. */
 public final class ControlServer extends NanoWSD {
+    /** The largest request body the server reads. A longer one is answered 413 and not read. */
+    public static final int MAX_BODY_BYTES = 1024 * 1024;
+
+    /** A refused request's body up to this size is discarded so the connection stays usable; above it the connection closes. */
+    private static final int DISCARD_LIMIT = 64 * 1024;
+
     private final Router router;
     private final Auth auth;
     private final SocketHub hub;
@@ -70,18 +78,41 @@ public final class ControlServer extends NanoWSD {
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) { return new HubSocket(handshake); }
 
+    /**
+     * The token is checked before any of the body is read, so a caller without it
+     * cannot make the device buffer an upload. The body is then read by its
+     * content-length, for every method, and decoded as UTF-8. NanoHTTPD's own
+     * parseBody is not used: it decodes as US-ASCII when the content type names
+     * no charset, and it rejects bodies it cannot parse as a form.
+     */
     @Override
     protected Response serveHttp(IHTTPSession session) {
-        String body = null;
         Method method = session.getMethod();
-        if (method == Method.POST || method == Method.PUT) {
-            Map<String, String> files = new HashMap<>();
+        long declared = declaredLength(session);
+        if (!router.authorized(session.getHeaders().get(Auth.HEADER))) {
+            return refuse(session, declared, Router.Response.error(401, "unauthorized", "message", null));
+        }
+        if (declared < 0) {
+            return closing(Router.Response.error(400, "bad_request", "message", "content-length is not a number"));
+        }
+        if (declared == 0 && session.getHeaders().get("transfer-encoding") != null) {
+            return closing(Router.Response.error(411, "length_required", "message", "send a content-length"));
+        }
+        if (declared > MAX_BODY_BYTES) {
+            return closing(Router.Response.error(413, "payload_too_large", "message",
+                    "body is over " + MAX_BODY_BYTES + " bytes"));
+        }
+        String body = null;
+        if (declared > 0) {
+            byte[] bytes = new byte[(int) declared];
             try {
-                session.parseBody(files);
-            } catch (Exception e) {
-                return respond(Router.Response.error(400, "bad_request", "message", "unreadable body"));
+                if (!readFully(session.getInputStream(), bytes)) {
+                    return closing(Router.Response.error(400, "bad_request", "message", "body is shorter than its content-length"));
+                }
+            } catch (IOException e) {
+                return closing(Router.Response.error(400, "bad_request", "message", "unreadable body"));
             }
-            body = files.get("postData");
+            body = new String(bytes, StandardCharsets.UTF_8);
         }
         Map<String, String> query = new HashMap<>();
         for (Map.Entry<String, List<String>> e : session.getParameters().entrySet()) {
@@ -98,6 +129,49 @@ public final class ControlServer extends NanoWSD {
         for (int i = 0; i < 20 && isAlive(); i++) {
             try { Thread.sleep(100L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
         }
+    }
+
+    /** The content-length header: 0 when absent, -1 when it is not a non-negative number. */
+    private static long declaredLength(IHTTPSession session) {
+        String raw = session.getHeaders().get("content-length");
+        if (raw == null) return 0;
+        try {
+            long n = Long.parseLong(raw.trim());
+            return n < 0 ? -1 : n;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static boolean readFully(InputStream in, byte[] into) throws IOException {
+        int off = 0;
+        while (off < into.length) {
+            int n = in.read(into, off, into.length - off);
+            if (n < 0) return false;
+            off += n;
+        }
+        return true;
+    }
+
+    /**
+     * Refuse a request whose body has not been read. A small body is read and
+     * discarded so the next request on the connection parses; anything else
+     * closes the connection, since the unread bytes would be taken for a request.
+     */
+    private static Response refuse(IHTTPSession session, long declared, Router.Response r) {
+        if (declared == 0) return respond(r);
+        if (declared > 0 && declared <= DISCARD_LIMIT) {
+            try {
+                if (readFully(session.getInputStream(), new byte[(int) declared])) return respond(r);
+            } catch (IOException ignored) { }
+        }
+        return closing(r);
+    }
+
+    private static Response closing(Router.Response r) {
+        Response response = respond(r);
+        response.closeConnection(true);
+        return response;
     }
 
     private static Response respond(Router.Response r) {

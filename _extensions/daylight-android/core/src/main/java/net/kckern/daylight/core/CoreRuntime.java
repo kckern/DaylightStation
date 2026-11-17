@@ -113,13 +113,13 @@ public final class CoreRuntime implements CoreContext {
             if (!(body.opt("key") instanceof String)) throw new IllegalArgumentException("'key' must be a string");
             String key = (String) body.opt("key");
             settings.set(key, body.get("value"));
-            return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.get(key)));
+            return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.shown(key)));
         });
         router.route("DELETE", "/settings", req -> {
             String key = req.query.get("key");
             if (key == null) throw new IllegalArgumentException("query needs 'key'");
             settings.reset(key);
-            return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.get(key)));
+            return Router.Response.json(200, new JSONObject().put("ok", true).put("key", key).put("value", settings.shown(key)));
         });
     }
 

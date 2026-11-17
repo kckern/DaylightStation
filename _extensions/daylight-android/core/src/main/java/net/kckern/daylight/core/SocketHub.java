@@ -116,7 +116,8 @@ public final class SocketHub {
         }
         try {
             handler.handle(message, reply);
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Throwable, as in Router.dispatch: a linkage Error must not end the socket's thread.
             reply.error("dispatch_failed", e.getMessage());
         }
     }

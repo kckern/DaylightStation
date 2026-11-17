@@ -13,27 +13,36 @@ import java.io.File;
 
 /** The fixed entry class the shell loads. Wires the device's capabilities into the core. */
 public final class Main implements Payload {
-    private CoreRuntime core;
-    private ControlServer server;
+    private static final int BIND_ATTEMPTS = 15;
+
+    /** Written on the loader's thread, read by onShellComponent on whichever thread Android binds a component. */
+    private volatile CoreRuntime core;
+    private volatile ControlServer server;
 
     @Override public void start(ShellServices shell) {
+        start(shell, DeviceConfig.CONTROL_PORT, BIND_ATTEMPTS);
+    }
+
+    /** The port and the attempt count are parameters so a JVM test can hold a port and expect the failure. */
+    void start(ShellServices shell, final int port, int bindAttempts) {
         try {
-            core = new CoreRuntime(shell, DeviceConfig.DEVICE_ID, DeviceConfig.PAYLOAD_VERSION,
+            final CoreRuntime c = new CoreRuntime(shell, DeviceConfig.DEVICE_ID, DeviceConfig.PAYLOAD_VERSION,
                     new File(shell.payloadDir(), "state"));
+            core = c;
             for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
-                core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+                c.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
             }
-            core.start(new JSONObject(DeviceConfig.DEFAULTS_JSON));
-            final CoreRuntime c = core;
-            server = ControlServer.startWithRetry(
-                    () -> new ControlServer(DeviceConfig.CONTROL_PORT, c.router(), c.auth(), c.socket()), 15);
+            c.start(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+            server = ControlServer.startWithRetry(() -> new ControlServer(port, c.router(), c.auth(), c.socket()), bindAttempts);
             if (server == null) {
-                // As the piano bridge did: keep running without the control port and say so.
-                // The lifeline is in the shell and still answers.
-                shell.note("CONTROL", "control server failed to bind :" + DeviceConfig.CONTROL_PORT);
+                // A payload without its control port cannot be operated. Failing here makes the
+                // shell go back to the previous payload, which may still be able to bind.
+                shell.note("CONTROL", "control server failed to bind :" + port);
+                throw new IllegalStateException("control port " + port + " could not be bound");
             }
             shell.updateNotification(DeviceConfig.DEVICE_ID + " " + DeviceConfig.PAYLOAD_VERSION);
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Throwable: a missing class or method is an Error, and what already started must still be stopped.
             stop();
             // Throwing tells the shell this payload cannot run, so it rolls back.
             throw new IllegalStateException("payload cannot start: " + e, e);
@@ -41,8 +50,12 @@ public final class Main implements Payload {
     }
 
     @Override public void stop() {
-        if (server != null) { try { server.stop(); } catch (Throwable ignored) { } server = null; }
-        if (core != null) { try { core.stop(); } catch (Throwable ignored) { } core = null; }
+        ControlServer s = server;
+        server = null;
+        if (s != null) { try { s.stop(); } catch (Throwable ignored) { } }
+        CoreRuntime c = core;
+        core = null;
+        if (c != null) { try { c.stop(); } catch (Throwable ignored) { } }
     }
 
     @Override public String version() { return DeviceConfig.PAYLOAD_VERSION; }

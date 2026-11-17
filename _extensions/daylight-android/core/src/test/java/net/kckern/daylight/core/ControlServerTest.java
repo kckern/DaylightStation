@@ -23,6 +23,9 @@ public class ControlServerTest {
         Router router = new Router(auth);
         router.route("GET", "/status", req -> Router.Response.json(200, new JSONObject().put("ok", true).put("q", req.query.get("q"))));
         router.route("POST", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
+        router.route("PUT", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
+        router.route("DELETE", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body == null ? JSONObject.NULL : req.body)));
+        router.route("POST", "/length", req -> Router.Response.json(200, new JSONObject().put("length", req.body.length())));
         server = new ControlServer(0, router, auth, new SocketHub("test", new StatusBoard()));
         server.start(0, true);
         base = "http://127.0.0.1:" + server.getListeningPort();
@@ -82,5 +85,92 @@ public class ControlServerTest {
         assertTrue(handshake("/", TOKEN).contains(" 101 "));
         assertTrue(handshake("/", null).contains(" 401 "));
         assertTrue(handshake("/?token=wrong", null).contains(" 401 "));
+    }
+
+    /** Sends a request head and no body, then returns the status line. Proves the server did not wait for a body. */
+    private String statusLineFor(String head) throws Exception {
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", server.getListeningPort())) {
+            s.setSoTimeout(3000);
+            s.getOutputStream().write(head.getBytes(StandardCharsets.US_ASCII));
+            s.getOutputStream().flush();
+            return new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream(), StandardCharsets.US_ASCII)).readLine();
+        }
+    }
+
+    @Test public void anUnauthenticatedUploadIsRefusedBeforeItsBodyIsRead() throws Exception {
+        String head = "POST /echo HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                + "Content-Length: 500000000\r\n\r\n";
+        assertTrue(statusLineFor(head).contains(" 401 "));
+        assertTrue(statusLineFor(head.replace("\r\n\r\n", "\r\nX-Daylight-Token: wrong\r\n\r\n")).contains(" 401 "));
+    }
+
+    @Test public void aMalformedUnauthenticatedPostIs401Not400() throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(base + "/echo").openConnection();
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "multipart/form-data");   // no boundary: unparseable
+        try (OutputStream o = c.getOutputStream()) { o.write("garbage".getBytes(StandardCharsets.UTF_8)); }
+        assertEquals(401, c.getResponseCode());
+    }
+
+    @Test public void aBodyIsDecodedAsUtf8WhenTheContentTypeNamesNoCharset() throws Exception {
+        String json = "{\"a\":\"é한\"}";
+        String[] r = http("POST", base + "/echo", TOKEN, json);
+        assertEquals("200", r[0]);
+        assertEquals(json, new JSONObject(r[1]).getString("body"));
+    }
+
+    @Test public void putAndDeleteBodiesReachTheHandlerToo() throws Exception {
+        String json = "{\"a\":\"é한\"}";
+        assertEquals(json, new JSONObject(http("PUT", base + "/echo", TOKEN, json)[1]).getString("body"));
+        assertEquals(json, new JSONObject(http("DELETE", base + "/echo", TOKEN, json)[1]).getString("body"));
+        assertTrue(new JSONObject(http("DELETE", base + "/echo", TOKEN, null)[1]).isNull("body"));
+    }
+
+    @Test public void aMultipartBodyIsPassedThroughInsteadOfFailingToParse() throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(base + "/echo").openConnection();
+        c.setRequestMethod("POST");
+        c.setRequestProperty("X-Daylight-Token", TOKEN);
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "multipart/form-data");
+        try (OutputStream o = c.getOutputStream()) { o.write("garbage".getBytes(StandardCharsets.UTF_8)); }
+        assertEquals(200, c.getResponseCode());
+    }
+
+    @Test public void aBodyOverTheLimitIs413AndIsNotRead() throws Exception {
+        String head = "POST /echo HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Daylight-Token: " + TOKEN + "\r\n"
+                + "Content-Length: " + (ControlServer.MAX_BODY_BYTES + 1) + "\r\n\r\n";
+        assertTrue(statusLineFor(head).contains(" 413 "));
+    }
+
+    @Test public void aBodyOfExactlyTheLimitIsAccepted() throws Exception {
+        char[] big = new char[ControlServer.MAX_BODY_BYTES];
+        java.util.Arrays.fill(big, 'x');
+        String[] r = http("POST", base + "/length", TOKEN, new String(big));
+        assertEquals("200", r[0]);
+        assertEquals(ControlServer.MAX_BODY_BYTES, new JSONObject(r[1]).getInt("length"));
+    }
+
+    @Test public void aContentLengthThatIsNotANumberIs400() throws Exception {
+        String head = "POST /echo HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Daylight-Token: " + TOKEN + "\r\nContent-Length: lots\r\n\r\n";
+        assertTrue(statusLineFor(head).contains(" 400 "));
+    }
+
+    @Test public void theConnectionStaysUsableAfterARefusedSmallBody() throws Exception {
+        // A wrong token with a small body: the body is discarded, so the next request on the socket parses.
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", server.getListeningPort())) {
+            s.setSoTimeout(3000);
+            String first = "POST /echo HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Daylight-Token: wrong\r\nContent-Length: 7\r\n\r\n{\"a\":1}";
+            String second = "GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Daylight-Token: " + TOKEN + "\r\n\r\n";
+            s.getOutputStream().write((first + second).getBytes(StandardCharsets.US_ASCII));
+            java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream(), StandardCharsets.US_ASCII));
+            String line = in.readLine();
+            assertTrue(line, line.contains(" 401 "));
+            String next;
+            // The first response's body has no trailing newline, so the second status line follows it on one line.
+            do { next = in.readLine(); } while (next != null && !next.contains("HTTP/1.1 "));
+            assertNotNull("the second request got no answer", next);
+            assertTrue(next, next.contains(" 200 "));
+        }
     }
 }

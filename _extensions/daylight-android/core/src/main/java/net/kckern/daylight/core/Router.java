@@ -16,7 +16,7 @@ public final class Router {
         public final String method;
         public final String path;
         public final Map<String, String> query;
-        /** Request body for POST and PUT, otherwise null. */
+        /** The request body decoded as UTF-8, whatever the method, or null when the request carried none. */
         public final String body;
         /** The caller's address as the transport reports it. Null when dispatched without one. */
         public final String remote;
@@ -68,6 +68,9 @@ public final class Router {
 
     public synchronized List<String> routes() { return new ArrayList<>(handlers.keySet()); }
 
+    /** The same check dispatch makes, for a transport that must refuse a caller before reading its body. */
+    public boolean authorized(String token) { return auth.accepts(token); }
+
     public Response dispatch(String method, String path, String token, Map<String, String> query, String body) {
         return dispatch(method, path, token, query, body, null);
     }
@@ -99,7 +102,9 @@ public final class Router {
             return Response.error(400, "invalid_setting", "message", e.getMessage());
         } catch (IllegalArgumentException e) {
             return Response.error(400, "bad_request", "message", e.getMessage());
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Throwable: a handler built against a newer shell can raise NoSuchMethodError.
+            // That is an Error, and uncaught it would end the server's request thread.
             return Response.error(500, "internal", "message", e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }

@@ -82,4 +82,18 @@ public class RouterTest {
     @Test public void listsItsRoutes() {
         assertTrue(router.routes().contains("GET /status"));
     }
+
+    @Test public void aHandlerLinkageErrorIs500AndNeverPropagates() throws Exception {
+        router.route("GET", "/missing", req -> { throw new NoSuchMethodError("Thing.gone()"); });
+        Router.Response r = call("GET", "/missing", TOKEN);
+        assertEquals(500, r.status);
+        assertEquals("internal", body(r).getString("error"));
+        assertTrue(body(r).getString("message").contains("NoSuchMethodError"));
+    }
+
+    @Test public void theTokenCanBeCheckedBeforeDispatch() {
+        assertTrue(router.authorized(TOKEN));
+        assertFalse(router.authorized("wrong"));
+        assertFalse(router.authorized(null));
+    }
 }

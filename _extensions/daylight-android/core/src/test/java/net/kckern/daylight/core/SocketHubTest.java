@@ -100,4 +100,10 @@ public class SocketHubTest {
         assertTrue(client.closed);
         assertEquals(0, hub.clients());
     }
+
+    @Test public void aHandlerLinkageErrorAnswersWithAnErrorInsteadOfKillingTheSocketThread() throws Exception {
+        hub.on("missing", (message, reply) -> { throw new NoSuchMethodError("Thing.gone()"); });
+        hub.message(client, "{\"type\":\"missing\"}");
+        assertEquals("dispatch_failed", client.last().getString("code"));
+    }
 }

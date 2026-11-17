@@ -86,6 +86,13 @@ public final class SettingsRegistry {
         return e.def;
     }
 
+    /** What a response may show for this key: the value, or for a secret only whether one is set. */
+    public synchronized Object shown(String key) {
+        Object value = get(key);
+        if (!secrets.contains(key)) return value;
+        return "".equals(value) ? "" : "(set)";
+    }
+
     /** Listeners are called after the lock is released, and only when the write was persisted. */
     public void set(String key, Object value) {
         synchronized (this) {
@@ -143,11 +150,10 @@ public final class SettingsRegistry {
         for (Map.Entry<String, Entry> e : entries.entrySet()) {
             try {
                 boolean secret = secrets.contains(e.getKey());
-                Object value = get(e.getKey());
                 out.put(new JSONObject()
                         .put("key", e.getKey())
                         .put("type", e.getValue().type.name())
-                        .put("value", secret ? ("".equals(value) ? "" : "(set)") : value)
+                        .put("value", shown(e.getKey()))
                         .put("default", secret ? "" : e.getValue().def)
                         .put("secret", secret)
                         .put("overridden", overrideInEffect(e.getKey(), e.getValue())));
