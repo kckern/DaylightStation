@@ -54,3 +54,8 @@ describe('householdConfig registry', () => {
     expect(allAppNames().length).toBe(Object.keys(HOUSEHOLD_APP_CONFIGS).length);
   });
 });
+
+it('registers work only at its explicit colocated config path',()=>{
+ expect(registry.appConfigRelPath('work')).toBe('work/config');
+ expect(registry.COLOCATED_ONLY_HOUSEHOLD_APPS).toContain('work');
+});

@@ -1,0 +1,46 @@
+# Household work/config.yml. No credentials belong here.
+work:
+  enabled: false
+  write: false
+  writer_env: null
+  writer_host: null
+  operator_uid: null
+  providerWrites: false
+  importWrites: false
+  proactive: false
+  pollMinutes: 15
+  snapshotMaxAgeHours: 24
+  modelCallsPerLocalDay: 4
+  backfillMaxDays: 90
+  providers:
+    personal:
+      type: todoist
+      accountId: personal
+      authScope: user
+      operations: [read]
+  domains:
+    personal:
+      provider: personal
+      containerId: sample-list
+      role: tasks
+      autoComplete: linked_explicit
+    projects:
+      provider: personal
+      containerId: sample-project
+      role: projects
+      autoComplete: never
+  # Enroll each known user explicitly. Override maps replace the full base map.
+  users:
+    sample: {}
+  attention:
+    maxProactiveUnitsPerDay: 2
+    maxHousekeepingPer7Days: 1
+    itemCooldownDays: 30
+    ignoredOffersBeforeQuiet: 2
+    ignoredOfferHours: 36
+    quietDays: 30
+    staleRelevanceDays: 30
+    offerExpiryHours: 24
+    reviewWindows: []
+    housekeepingDomains: []
+    rankerEnabled: false
