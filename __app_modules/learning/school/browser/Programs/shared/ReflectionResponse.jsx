@@ -8,7 +8,7 @@ import { useProgramKeys, speak } from './useProgramKeys.js';
 import './ReflectionResponse.scss';
 
 const NO_EVENTS = Object.freeze({});
-export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusField = true }) {
+export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusOnOpen = true, focusAfterTake = true, transcribingLabel = null, afterTakeHint = null }) {
   const [text, setText] = useState(initial);
   const [audioRef, setAudioRef] = useState(initialAudioRef);
   const [via, setVia] = useState(initialVia ?? (initial ? 'typed' : null));
@@ -16,13 +16,13 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const [failedBlob,setFailedBlob]=useState(null);
-  // True once a transcript has filled the box, until the child records again.
-  const [transcribed, setTranscribed] = useState(false);
+  // The next-step line after a transcript (`afterTakeHint`), until the child records again.
+  const [hint, setHint] = useState(null);
   const field = useRef(null);
   const live = useRef(true);
   const pending = useRef(false);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
-  useEffect(() => { setText(initial); setAudioRef(initialAudioRef); setVia(initialVia ?? (initial ? 'typed' : null)); setEdited(initialEdited); setNotice(null); setTranscribed(false); }, [prompt.id, initial, initialAudioRef, initialVia, initialEdited]);
+  useEffect(() => { setText(initial); setAudioRef(initialAudioRef); setVia(initialVia ?? (initial ? 'typed' : null)); setEdited(initialEdited); setNotice(null); setHint(null); }, [prompt.id, initial, initialAudioRef, initialVia, initialEdited]);
   const uploadTake = useCallback(async ({ blob, retrySaved = false }) => {
     pending.current = true; setBusy(true);
     events.transcribing?.({ promptId: prompt.id });
@@ -32,11 +32,11 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
       if(!result?.audioRef)throw new Error('Recording was not confirmed');
       setFailedBlob(null);
       if (result?.audioRef) { setAudioRef(result.audioRef); setVia('voice'); }
-      if (result?.text) { setText(t => t ? `${t} ${result.text}` : result.text); setTranscribed(true); events.takeKept?.({ promptId: prompt.id }); if (focusField) field.current?.focus(); }
+      if (result?.text) { setText(t => t ? `${t} ${result.text}` : result.text); events.takeKept?.({ promptId: prompt.id }); if (afterTakeHint) setHint(afterTakeHint); if (focusAfterTake) field.current?.focus(); }
       else setNotice(result?.audioRef ? 'Your recording is saved. Please type your answer or try recording again.' : "That recording didn't save. Please try again.");
     } catch { if (live.current) {setFailedBlob(blob??null);setNotice("We couldn't confirm your recording. Please try again.");} }
     finally { pending.current = false; if (live.current) setBusy(false); }
-  }, [onTake, onRetryTake, events, prompt.id, focusField]);
+  }, [onTake, onRetryTake, events, prompt.id, afterTakeHint, focusAfterTake]);
   const recorder = useTakeRecorder({ floor, onTake: uploadTake });
   const promptRef = useRef(prompt.id); promptRef.current = prompt.id;
   useEffect(() => {
@@ -47,16 +47,16 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
   }, [recorder.verdict]);
   const recording = recorder.phase === 'recording';
   const capturing = recorder.phase === 'recording' || recorder.phase === 'saving';
-  // Between Stop and the transcript the box can still be empty: say so (role=status).
+  // Between Stop and the transcript the box can still be empty; a program that
+  // passes `transcribingLabel` says so in its place.
   const transcribing = !recording && (recorder.phase === 'saving' || busy);
-  const checkWords = transcribed && !notice && !capturing && !busy && text.trim().length > 0;
   const canSubmit = !parentBusy && !busy && !capturing && !pending.current && (!prompt.required || text.trim().length > 0);
   const submit = () => { if (canSubmit) { events.submit?.({ promptId: prompt.id, via: via ?? 'typed', chars: text.length }); onSubmit({ text: text.trim(), via: via ?? 'typed', audioRef, edited }); } };
-  const record = () => { if (busy || parentBusy || recorder.phase === 'saving') return; setNotice(null); setTranscribed(false); if (recording) { pending.current = true; recorder.stop(); } else { events.takeStart?.({ promptId: prompt.id }); recorder.start(); } };
+  const record = () => { if (busy || parentBusy || recorder.phase === 'saving') return; setNotice(null); setHint(null); if (recording) { pending.current = true; recorder.stop(); } else { events.takeStart?.({ promptId: prompt.id }); recorder.start(); } };
   useProgramKeys({ ...(recorder.unavailable ? {} : { ' ': () => { if (!text || recording) record(); } }), enter: submit, tab: () => speak(prompt.text), ...(onBack ? { arrowleft: onBack } : {}) });
   return <section className="reflection-response" aria-label="Tell me">
     <h2 className="reflection-response__prompt">{prompt.text}</h2>
-    <textarea ref={field} className="reflection-response__field" value={text} rows={4} autoFocus={focusField} aria-label={prompt.text}
+    <textarea ref={field} className="reflection-response__field" value={text} rows={4} autoFocus={focusOnOpen} aria-label={prompt.text}
       onBlur={()=>{if(!capturing&&!busy)onDraft?.({text,via:via??'typed',audioRef,edited});}}
       onChange={e => { setText(e.target.value); if (via === 'voice') setEdited(true); else setVia('typed'); }}
       onKeyDown={e => {
@@ -66,9 +66,9 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
       }} />
     {!recorder.unavailable && <VoiceBand stream={recording ? recorder.stream : null} onLevel={recording ? recorder.onLevel : null} />}
     {recording && <p role="status">{recorder.heard ? 'I hear you' : 'Listening…'}</p>}
-    {transcribing && <p className="reflection-response__status" role="status">Writing down what you said…</p>}
+    {transcribing && transcribingLabel && <p className="reflection-response__status" role="status">{transcribingLabel}</p>}
     {notice && <p className="reflection-response__notice" role="status">{notice}</p>}
-    {checkWords && <p className="reflection-response__hint" role="status">{`Check your words, then tap ${submitLabel}.`}</p>}
+    {hint && !notice && !capturing && !busy && text.trim().length > 0 && <p className="reflection-response__hint" role="status">{hint}</p>}
     <div className="reflection-controls">
       {failedBlob&&<TouchButton variant="secondary" disabled={busy||capturing||parentBusy} onClick={()=>uploadTake({blob:failedBlob})}>Retry recording upload</TouchButton>}
       {!failedBlob&&initialAudioRef&&!text&&onRetryTake&&<TouchButton variant="secondary" disabled={busy||capturing||parentBusy} onClick={()=>uploadTake({retrySaved:true})}>Retry saved recording</TouchButton>}

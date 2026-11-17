@@ -72,55 +72,58 @@ describe('shared reflection response', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: 'Family', via: 'typed' }));
   });
-  it('focuses the answer box on mount and after a transcript by default (Debrief keeps this)', async () => {
-    render(<ReflectionResponse prompt={prompt} onTake={async () => ({ audioRef: 'learner/take.webm', text: 'My dog' })} onSubmit={vi.fn()} />);
-    expect(screen.getByRole('textbox')).toHaveFocus();
-    screen.getByRole('textbox').blur();
-    await act(async () => { await receive({ blob: new Blob(['audio']) }); });
-    expect(screen.getByRole('textbox')).toHaveFocus();
+  it('focuses the answer box on open by default and not when asked', () => {
+    const { unmount } = render(<ReflectionResponse prompt={prompt} onTake={vi.fn()} onSubmit={vi.fn()} />);
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+    unmount();
+    render(<ReflectionResponse prompt={prompt} focusOnOpen={false} onTake={vi.fn()} onSubmit={vi.fn()} />);
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
   });
-  it('with focusField off, neither opening nor a transcript focuses the answer box', async () => {
-    render(<ReflectionResponse prompt={prompt} focusField={false} onTake={async () => ({ audioRef: 'learner/take.webm', text: 'My dog' })} onSubmit={vi.fn()} />);
-    expect(screen.getByRole('textbox')).not.toHaveFocus();
-    await act(async () => { await receive({ blob: new Blob(['audio']) }); });
-    expect(screen.getByRole('textbox')).toHaveValue('My dog');
-    expect(screen.getByRole('textbox')).not.toHaveFocus();
+
+  it('says what is happening while a recording is written down, then gives the next step without focusing', async () => {
+    let finish;
+    const onTake = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    const transcribing = vi.fn();
+    render(<ReflectionResponse prompt={prompt} focusOnOpen={false} focusAfterTake={false}
+      transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."
+      events={{ transcribing }} onTake={onTake} onSubmit={vi.fn()} />);
+    let upload;
+    act(() => { upload = receive({ blob: new Blob(['voice']) }); });
+    expect(screen.getByText('Writing down what you said…')).toBeVisible();
+    expect(transcribing).toHaveBeenCalledWith({ promptId: 'gratitude' });
+    await act(async () => { finish({ audioRef: 'child/a.webm', text: 'I am grateful for eating cookies.' }); await upload; });
+    expect(screen.queryByText('Writing down what you said…')).toBeNull();
+    expect(screen.getByText('Check your words, then tap Submit.')).toBeVisible();
+    expect(screen.getByRole('textbox')).toHaveValue('I am grateful for eating cookies.');
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'));
   });
-  it('with focusField off, physical Enter still submits and Space still records an empty answer', () => {
+
+  it('shows the label while the recorder is still saving its take', () => {
+    recorder.phase = 'saving';
+    render(<ReflectionResponse prompt={prompt} transcribingLabel="Writing down what you said…" onTake={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.getByText('Writing down what you said…')).toBeVisible();
+  });
+
+  it('keeps today\'s behavior when no label or hint is given', async () => {
+    render(<ReflectionResponse prompt={prompt} onTake={async () => ({ audioRef: 'a', text: 'My toys' })} onSubmit={vi.fn()} />);
+    await act(async () => { await receive({ blob: new Blob(['v']) }); });
+    expect(document.activeElement).toBe(screen.getByRole('textbox'));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('with no focus on open, physical Enter still submits and Space still records an empty answer', () => {
     const submit = vi.fn();
-    const { unmount } = render(<ReflectionResponse prompt={prompt} focusField={false} onTake={vi.fn()} onSubmit={submit} />);
+    const { unmount } = render(<ReflectionResponse prompt={prompt} focusOnOpen={false} onTake={vi.fn()} onSubmit={submit} />);
     fireEvent.keyDown(window, { key: ' ', code: 'Space' });
     expect(recorder.start).toHaveBeenCalledTimes(1);
     unmount();
-    render(<ReflectionResponse prompt={prompt} focusField={false} initial="My toys" onTake={vi.fn()} onSubmit={submit} />);
+    render(<ReflectionResponse prompt={prompt} focusOnOpen={false} initial="My toys" onTake={vi.fn()} onSubmit={submit} />);
     fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: 'My toys' }));
   });
-  it('says what is happening while a take uploads and transcribes, and logs it once without text', async () => {
-    let finish;
-    const events = { transcribing: vi.fn() };
-    render(<ReflectionResponse prompt={prompt} events={events} onTake={() => new Promise(resolve => { finish = resolve; })} onSubmit={vi.fn()} />);
-    let upload;
-    act(() => { upload = receive({ blob: new Blob(['audio']) }); });
-    expect(screen.getByRole('status')).toHaveTextContent('Writing down what you said…');
-    expect(events.transcribing).toHaveBeenCalledTimes(1);
-    expect(events.transcribing).toHaveBeenCalledWith({ promptId: 'gratitude' });
-    await act(async () => { finish({ audioRef: 'learner/take.webm', text: 'My dog' }); await upload; });
-    expect(screen.queryByText('Writing down what you said…')).toBeNull();
-  });
-  it('shows the same status line between Stop and the recorder handing over the take', () => {
-    recorder.phase = 'saving';
-    render(<ReflectionResponse prompt={prompt} onTake={vi.fn()} onSubmit={vi.fn()} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Writing down what you said…');
-  });
-  it('after a transcript, tells the child to check the words and press the submit button', async () => {
-    render(<ReflectionResponse prompt={prompt} submitLabel="Submit" onTake={async () => ({ audioRef: 'learner/take.webm', text: 'My dog' })} onSubmit={vi.fn()} />);
-    expect(screen.queryByText(/Check your words/)).toBeNull();
-    await act(async () => { await receive({ blob: new Blob(['audio']) }); });
-    expect(screen.getByRole('status')).toHaveTextContent('Check your words, then tap Submit.');
-  });
-  it('a saved recording with no text keeps the type-it-instead notice and no check-your-words line', async () => {
-    render(<ReflectionResponse prompt={prompt} submitLabel="Submit" onTake={async () => ({ audioRef: 'learner/take.webm', text: '' })} onSubmit={vi.fn()} />);
+
+  it('a saved recording with no text keeps the type-it-instead notice and no next-step line', async () => {
+    render(<ReflectionResponse prompt={prompt} afterTakeHint="Check your words, then tap Submit." onTake={async () => ({ audioRef: 'learner/take.webm', text: '' })} onSubmit={vi.fn()} />);
     await act(async () => { await receive({ blob: new Blob(['audio']) }); });
     expect(screen.getByRole('status')).toHaveTextContent(/Your recording is saved\. Please type/);
     expect(screen.queryByText(/Check your words/)).toBeNull();
