@@ -1,4 +1,4 @@
-# Piano tablet (Samsung SM-T590, Android 10). Helpers, the kiosk window, lockdown (built in, off until the home app is switched) and screen power.
+# Piano tablet (Samsung SM-T590, Android 10). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power and volume.
 id: piano
 package: net.kckern.daylight.piano
 android: { minSdk: 29, targetSdk: 29 }
@@ -21,6 +21,7 @@ capabilities:
   - accessibility
   - lockdown
   - screen-power
+  - volume
   - synth              # before midi-bridge: a key press reaches sound first
   - midi-bridge
   - bluetooth-controls

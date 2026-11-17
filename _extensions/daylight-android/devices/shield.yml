@@ -1,4 +1,4 @@
-# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched) and screen power.
+# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power and volume.
 id: shield
 package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
@@ -16,6 +16,7 @@ capabilities:
   - accessibility
   - lockdown
   - screen-power
+  - volume
   - bluetooth-controls
   - mic-bridge
   - lease-gate

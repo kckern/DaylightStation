@@ -1,4 +1,4 @@
-# Facebook Portal panel (Android 9, API 28). Helpers, the kiosk window, lockdown (built in, off until the home app is switched) and screen power.
+# Facebook Portal panel (Android 9, API 28). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power and volume.
 id: portal
 package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
@@ -11,6 +11,7 @@ capabilities:
   - accessibility
   - lockdown
   - screen-power
+  - volume
   - volume-keys
   - hid-input
   - presence
