@@ -2361,6 +2361,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Config-driven HA adapter (use .has() to avoid NoOp)
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     kiosk: {
+      provider: kioskConfig.provider,
       host: kioskConfig.host || '',
       port: kioskConfig.port || 5000,
       password: kioskConfig.password || '',

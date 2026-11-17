@@ -22,9 +22,16 @@ export function createHomeAutomationAdapters(config) {
     });
   }
 
-  // Kiosk adapter (optional)
+  // Kiosk adapter (optional). KioskAdapter speaks Fully Kiosk's query-string
+  // API only, with the password in the URL. A kiosk on another provider (the
+  // Android kiosk app, `daylight-android`) is driven through the device
+  // adapters selected by `content_control.provider` in devices.yml, so this
+  // adapter is not built for it.
   let kioskAdapter = null;
-  if (config.kiosk?.host) {
+  const kioskProvider = config.kiosk?.provider || 'fully-kiosk';
+  if (config.kiosk?.host && kioskProvider !== 'fully-kiosk') {
+    logger.warn?.('homeAutomation.kiosk.unsupportedProvider', { provider: kioskProvider });
+  } else if (config.kiosk?.host) {
     kioskAdapter = new KioskAdapter(
       {
         host: config.kiosk.host,
