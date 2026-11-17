@@ -15,8 +15,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * The loader's state machine is the ONE piece of the shell that must be right, because
- * a bug here can't be fixed by a payload drop. So every rule in PayloadStore is pinned.
+ * A bug in the shell's payload state cannot be fixed by pushing a payload, so every
+ * rule in PayloadStore has a test.
  */
 public class PayloadStoreTest {
 
@@ -146,5 +146,37 @@ public class PayloadStoreTest {
         jar("b.jar"); jar("a.jar");
         Files.write(new File(store.dir(), "current").toPath(), "a.jar".getBytes());
         assertEquals(java.util.Arrays.asList("a.jar", "b.jar"), store.available());
+    }
+
+    @Test public void availableLeavesOutCrashCountersAndPointers() throws Exception {
+        jar("p0-baked-v1.jar"); jar("p-0123456789ab.jar");
+        store.activate("p0-baked-v1.jar");
+        store.activate("p-0123456789ab.jar");
+        store.recordBoot("p0-baked-v1.jar", 1_000_000L);
+        store.recordBoot("p-0123456789ab.jar", 1_000_000L);
+        store.recordShellStamp("1");
+        assertTrue(new File(store.dir(), "boots.p0-baked-v1.jar").isFile());
+        assertEquals(java.util.Arrays.asList("p-0123456789ab.jar", "p0-baked-v1.jar"), store.available());
+    }
+
+    @Test public void theShellStampIsRememberedAcrossInstances() throws Exception {
+        assertNull(store.shellStamp());
+        store.recordShellStamp("7");
+        assertEquals("7", new PayloadStore(store.dir()).shellStamp());
+    }
+
+    @Test public void aPushedPayloadIsNamedAfterItsHash() {
+        assertEquals("p-0123456789ab.jar",
+                PayloadStore.pushedName("0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"));
+    }
+
+    @Test public void commitNeverWritesABakedOrBookkeepingName() throws Exception {
+        for (String name : new String[] { "p0-baked.jar", "p0-baked-v2.jar", "boots.p1.jar", "current" }) {
+            File part = new File(store.dir(), "dl.part");
+            Files.write(part.toPath(), "hello".getBytes());
+            try { store.commit(part, name, PayloadStore.sha256(part)); fail("expected a refusal for " + name); }
+            catch (java.io.IOException expected) { }
+            assertFalse(name, new File(store.dir(), name).exists());
+        }
     }
 }

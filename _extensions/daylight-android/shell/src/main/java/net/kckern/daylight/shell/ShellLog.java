@@ -11,12 +11,13 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * ShellLog — the shell's own durable log, separate from the payload's CrashLog.
+ * ShellLog is the shell's own durable log, separate from anything a payload writes.
  *
- * Exists because payload events (fetch, verify, activate, ROLLBACK) are exactly the
- * record you need when the tablet comes back looking wrong, and they must survive
- * the payload being swapped out from under them. Append-only text, head-truncated at
- * 64 KB, readable over {@code /exec cat}. Mirrored to logcat.
+ * Payload events (fetch, verify, activate, rollback) are the record needed when a
+ * device comes back in an unexpected state, and they must outlive the payload they
+ * describe. Append-only text in app-private storage, cut back to its newer half
+ * when it passes 64 KB, served by the lifeline's {@code GET /log}, and mirrored
+ * to logcat.
  */
 public final class ShellLog {
 
@@ -26,8 +27,15 @@ public final class ShellLog {
 
     private ShellLog() { }
 
-    public static synchronized void install(Context ctx) {
-        File dir = new File(ctx.getExternalFilesDir(null), "diag");
+    public static void install(Context ctx) { installIn(ctx.getFilesDir()); }
+
+    /**
+     * The log lives under the app's private files directory. With no directory there
+     * is no log file: a relative path would land wherever the process happens to run.
+     */
+    static synchronized void installIn(File filesDir) {
+        if (filesDir == null) { file = null; return; }
+        File dir = new File(filesDir, "diag");
         if (!dir.exists()) dir.mkdirs();
         file = new File(dir, "shell.log");
     }

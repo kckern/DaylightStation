@@ -10,33 +10,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * PayloadStore — the on-disk state machine behind hot-swappable payloads.
+ * PayloadStore is the on-disk state behind hot-swappable payloads.
  *
- * Pure Java, no Android: this is the part that MUST be right and therefore the part
- * that is unit-tested on the JVM. Layout under {@code dir}:
+ * Pure Java, no Android, so every rule here is unit-tested on the JVM. Layout
+ * under {@code dir}, which is app-private storage:
  *
  * <pre>
  *   payloads/
- *     p1-baseline.jar          one file per fetched payload (sha256-verified)
- *     p2-midi-write.jar
+ *     p0-baked-v3.jar          the payload extracted from the APK with shell versionCode 3
+ *     p-0123456789ab.jar       a pushed payload, named after its sha256
  *     current                  pointer file: ONE jar filename
- *     previous                 pointer file: the last-known-good, for rollback
- *     boots.<jar>              crash counter: newline-separated epoch-ms of each boot
+ *     previous                 pointer file: the jar to fall back to
+ *     shell-version            the shell stamp that last extracted its baked payload
+ *     boots.&lt;jar&gt;              crash counter: newline-separated epoch-ms of each boot
  * </pre>
  *
- * Pointer FILES, not symlinks: survives every filesystem, trivially inspectable over
- * {@code /exec cat}, and atomic enough (write temp + rename).
+ * Pointers are files, not symlinks: they work on every filesystem and are
+ * replaced atomically (write a temp file, then rename). Their values are
+ * reported by the lifeline's {@code GET /payload}.
  *
- * ROLLBACK RULE (the reason this class exists): a payload whose process dies
- * {@link #CRASH_LIMIT} times within {@link #CRASH_WINDOW_MS} while current is
- * demoted — {@code current ← previous} — so a bad drop costs ~10 min, then self-heals.
- * The shell calls {@link #recordBoot} on every start and {@link #shouldRollBack}
- * before loading; the payload never touches this.
+ * Rollback rule: a payload whose process starts {@link #CRASH_LIMIT} times within
+ * {@link #CRASH_WINDOW_MS} while it is current is demoted, {@code current ← previous},
+ * so a bad payload costs about ten minutes. The shell calls {@link #recordBoot} on
+ * every start and {@link #shouldRollBack} before loading; the payload never touches this.
  */
 public final class PayloadStore {
 
     public static final int CRASH_LIMIT = 3;
     public static final long CRASH_WINDOW_MS = 10 * 60 * 1000L;
+    /** Jars with this prefix come out of the APK. A pushed payload is never stored under such a name. */
+    static final String BAKED_PREFIX = "p0-baked";
+    private static final String BOOTS_PREFIX = "boots.";
+    private static final String SHELL_STAMP = "shell-version";
 
     private final File dir;
 
@@ -75,6 +80,13 @@ public final class PayloadStore {
         return prev;
     }
 
+    // ── shell stamp ─────────────────────────────────────────────────────────
+
+    /** The stamp of the shell that last extracted its baked payload here, or null. */
+    public String shellStamp() { return readPointer(SHELL_STAMP); }
+
+    public synchronized void recordShellStamp(String stamp) throws IOException { writePointer(SHELL_STAMP, stamp); }
+
     // ── crash accounting ────────────────────────────────────────────────────
 
     /** Record a boot of {@code jar} at {@code nowMs}. Keeps only the recent window. */
@@ -112,7 +124,11 @@ public final class PayloadStore {
     public List<String> available() {
         List<String> out = new ArrayList<>();
         File[] fs = dir.listFiles();
-        if (fs != null) for (File f : fs) if (f.getName().endsWith(".jar")) out.add(f.getName());
+        // boots.<jar> also ends in .jar; it is bookkeeping, not a payload.
+        if (fs != null) for (File f : fs) {
+            String n = f.getName();
+            if (f.isFile() && n.endsWith(".jar") && !n.startsWith(BOOTS_PREFIX)) out.add(n);
+        }
         java.util.Collections.sort(out);
         return out;
     }
@@ -134,12 +150,21 @@ public final class PayloadStore {
         }
     }
 
+    /** The name a pushed payload is stored under: its content hash, never a name taken from the URL. */
+    public static String pushedName(String sha256) {
+        return "p-" + sha256.trim().toLowerCase(java.util.Locale.ROOT).substring(0, 12) + ".jar";
+    }
+
     /**
-     * Accept a downloaded {@code .part} file as payload {@code jar} iff its sha256
-     * matches. Unverified drops are refused — the LAN is trusted, a truncated
-     * download is not.
+     * Accept a downloaded {@code .part} file as payload {@code jar} only when its
+     * sha256 matches. A download without a matching hash is refused and deleted.
+     * A baked name is refused too: the fallback payload only ever comes from the APK.
      */
     public synchronized void commit(File part, String jar, String expectedSha256) throws IOException {
+        if (jar.startsWith(BAKED_PREFIX) || jar.startsWith(BOOTS_PREFIX) || !jar.endsWith(".jar")) {
+            part.delete();
+            throw new IOException("not a name for a pushed payload: " + jar);
+        }
         String got = sha256(part);
         if (expectedSha256 == null || !got.equalsIgnoreCase(expectedSha256.trim())) {
             part.delete();
@@ -151,7 +176,7 @@ public final class PayloadStore {
 
     // ── plumbing ────────────────────────────────────────────────────────────
 
-    private File bootsFile(String jar) { return new File(dir, "boots." + jar); }
+    private File bootsFile(String jar) { return new File(dir, BOOTS_PREFIX + jar); }
 
     private List<Long> boots(String jar) {
         List<Long> out = new ArrayList<>();

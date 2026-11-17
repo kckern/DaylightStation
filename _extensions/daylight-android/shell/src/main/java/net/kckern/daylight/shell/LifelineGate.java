@@ -20,6 +20,19 @@ final class LifelineGate {
     private LifelineGate() { }
 
     /**
+     * Maps what the loader said about a swap, rollback or restart request. The
+     * loader answers "accepted: ..." or "refused: <reason>". A refusal is 409:
+     * the request was well formed, and the loader's state does not allow it.
+     * Returns null when the request was accepted.
+     */
+    static Refusal refusalOf(String loaderResult) {
+        String prefix = "refused: ";
+        if (loaderResult == null) return new Refusal(409, "refused");
+        if (!loaderResult.startsWith(prefix)) return null;
+        return new Refusal(409, loaderResult.substring(prefix.length()));
+    }
+
+    /**
      * Returns the refusal for this request, or null when the route may run.
      * Routes that do not touch the loader (status, log, unknown paths) are never
      * refused here.

@@ -19,14 +19,20 @@ import java.io.File;
  *
  * Rule for editing this file: if it can live in the payload, it does not belong here.
  */
-public class ShellService extends Service {
+public class ShellService extends Service implements ShellServer.Host {
     private static final String TAG = "Daylight";
     private static final String CHANNEL_ID = "daylight_shell";
     private static final int NOTIFICATION_ID = 2;
 
     private static volatile ShellService INSTANCE;
 
-    private PayloadLoader loader;
+    /** Lifeline socket read timeout: a client that connects and sends nothing gives its thread back. */
+    private static final int LIFELINE_READ_TIMEOUT_MS = 5000;
+    private static final java.util.concurrent.atomic.AtomicBoolean CRASH_HANDLER_INSTALLED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Read by lifeline threads and by the component listener, written on the main thread. */
+    private volatile PayloadLoader loader;
     private ShellServer lifeline;
     private volatile String notificationText = "Starting…";
 
@@ -55,8 +61,13 @@ public class ShellService extends Service {
         ShellKeepAlive.schedule(this);
     }
 
-    /** Before the default handler kills the process, set an alarm that starts the service again. */
+    /**
+     * Before the default handler kills the process, set an alarm that starts the service again.
+     * Installed once per process: a second service creation would otherwise wrap the first
+     * handler and set the alarm twice for one crash.
+     */
     private void installRestartOnCrash() {
+        if (!CRASH_HANDLER_INSTALLED.compareAndSet(false, true)) return;
         final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
         final android.content.Context app = getApplicationContext();
         Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
@@ -71,21 +82,26 @@ public class ShellService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         postNotification();
-        // The lifeline comes up before the payload, so a payload that wedges on
+        // The lifeline comes up before the payload, so a payload that hangs on
         // start still leaves rollback reachable.
         if (lifeline == null) {
-            lifeline = new ShellServer(this, BuildConfig.LIFELINE_PORT, BuildConfig.CONTROL_TOKEN);
+            ShellServer server = new ShellServer(this, BuildConfig.LIFELINE_PORT, BuildConfig.CONTROL_TOKEN);
             try {
-                lifeline.start(0, true);
+                server.start(LIFELINE_READ_TIMEOUT_MS, true);
+                lifeline = server;
                 ShellLog.note("SHELL", "lifeline on :" + BuildConfig.LIFELINE_PORT);
             } catch (Exception e) {
+                // lifeline stays null, so the next onStartCommand (the keep-alive alarm) tries again.
                 Log.e(TAG, "lifeline failed to start", e);
                 ShellLog.note("SHELL", "lifeline FAILED: " + e.getMessage());
+                try { server.stop(); } catch (Throwable ignored) { }
             }
         }
         if (loader == null) {
-            loader = new PayloadLoader(this, new Shell());
-            loader.boot();
+            PayloadLoader l = new PayloadLoader(this, new Shell(), versionCode());
+            loader = l;
+            // Queued on the loader's own thread: a payload's start() never runs on the main thread.
+            l.boot();
         }
         return START_STICKY;
     }
@@ -93,7 +109,9 @@ public class ShellService extends Service {
     @Override
     public void onDestroy() {
         ShellLog.note("SHELL", "service destroying");
-        if (loader != null) { loader.shutdown(); loader = null; }
+        PayloadLoader l = loader;
+        loader = null;
+        if (l != null) l.shutdown();
         if (lifeline != null) { lifeline.stop(); lifeline = null; }
         ShellComponents.setListener(null);
         INSTANCE = null;
@@ -102,9 +120,9 @@ public class ShellService extends Service {
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
-    PayloadLoader loaderOrNull() { return loader; }
+    @Override public PayloadLoader loaderOrNull() { return loader; }
 
-    int versionCode() {
+    @Override public int versionCode() {
         try {
             android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
             // getLongVersionCode() arrived in API 28. Below that the call is a NoSuchMethodError,
@@ -135,7 +153,8 @@ public class ShellService extends Service {
         @Override public int shellVersionCode() { return versionCode(); }
         @Override public String controlToken() { return BuildConfig.CONTROL_TOKEN; }
         @Override public File payloadDir() {
-            return loader == null ? new File(getFilesDir(), "payloads") : loader.store().dir();
+            PayloadLoader l = loader;
+            return l == null ? new File(getFilesDir(), "payloads") : l.store().dir();
         }
         @Override public Object component(String name) { return ShellComponents.get(name); }
         @Override public void updateNotification(String text) {
@@ -143,13 +162,16 @@ public class ShellService extends Service {
             postNotification();
         }
         @Override public String requestPayloadSwap(String url, String sha256) {
-            return loader == null ? "refused: loader not ready" : loader.requestSwap(url, sha256);
+            PayloadLoader l = loader;
+            return l == null ? "refused: loader not ready" : l.requestSwap(url, sha256);
         }
         @Override public String requestPayloadRollback() {
-            return loader == null ? "refused: loader not ready" : loader.requestRollback();
+            PayloadLoader l = loader;
+            return l == null ? "refused: loader not ready" : l.requestRollback();
         }
         @Override public String payloadStatusJson() {
-            return loader == null ? "{\"ok\":false,\"error\":\"loader not ready\"}" : loader.status().toString();
+            PayloadLoader l = loader;
+            return l == null ? "{\"ok\":false,\"error\":\"loader not ready\"}" : l.status().toString();
         }
         @Override public void note(String kind, String message) { ShellLog.note(kind, message); }
     }

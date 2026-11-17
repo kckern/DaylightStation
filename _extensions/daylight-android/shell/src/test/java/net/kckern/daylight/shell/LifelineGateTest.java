@@ -53,4 +53,18 @@ public class LifelineGateTest {
     public void unknownRoutesAreLeftToTheServer() {
         assertNull(LifelineGate.check("/nope", false, "GET", false, false));
     }
+
+    @Test
+    public void aRefusalFromTheLoaderIs409WithItsReason() {
+        refused(409, "no previous payload", LifelineGate.refusalOf("refused: no previous payload"));
+        refused(409, "no current payload", LifelineGate.refusalOf("refused: no current payload"));
+        refused(409, "sha256 must be 64 hex characters", LifelineGate.refusalOf("refused: sha256 must be 64 hex characters"));
+        refused(409, "refused", LifelineGate.refusalOf(null));
+    }
+
+    @Test
+    public void anAcceptedRequestIsNotARefusal() {
+        assertNull(LifelineGate.refusalOf("accepted: rolling back to p0-baked-v1.jar"));
+        assertNull(LifelineGate.refusalOf("accepted: fetching http://192.0.2.10/refused: x.jar"));
+    }
 }

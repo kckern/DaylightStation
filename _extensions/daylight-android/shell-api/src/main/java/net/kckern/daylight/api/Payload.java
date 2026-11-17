@@ -7,9 +7,18 @@ package net.kckern.daylight.api;
  * If start() throws, the shell treats the payload as broken and rolls back.
  */
 public interface Payload {
+    /**
+     * Runs on a thread of the shell's loader, never the main thread, and must return
+     * within the shell's start deadline (20 seconds). A start() that throws or runs
+     * past the deadline makes the shell give up on this payload and roll back.
+     */
     void start(ShellServices shell);
 
-    /** Tear down. Called before a swap or shell shutdown. Must not throw. */
+    /**
+     * Tear down. Called before a swap or shell shutdown. Must not throw, and must be
+     * safe to call more than once: after a missed start deadline the shell calls it
+     * while start() may still be running, and again when start() returns.
+     */
     void stop();
 
     /** For example "p1-foundation". */
