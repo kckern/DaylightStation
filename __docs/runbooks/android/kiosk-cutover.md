@@ -11,6 +11,54 @@ Reference: `__docs/reference/android/kiosk.md` for the kiosk routes, settings,
 page bridge and grants; `__docs/reference/android/README.md` for the rest.
 Building: `_extensions/daylight-android/README.md`.
 
+## If the kiosk is dark or unreachable
+
+Read this page before stage 2. It is the way back from every later stage, in the
+order to try things. `dd` is the fleet CLI for the device (see Placeholders).
+
+1. **Does the lifeline answer?** `dd lifeline status`. The lifeline is the shell's
+   own port and answers when the payload is broken.
+   - It answers and `payload.active` is null or `lastError` is set:
+     `dd lifeline rollback` (the previous payload), then `dd lifeline restart`.
+   - The payload cannot start with the stored settings: `dd lifeline reset-settings`.
+     This deletes every stored override and its backup. Secrets (`lockdown.exitPin`,
+     `presence.token`, `lease.credential`) must be set again afterwards, and every
+     coexistence switch goes back to the device file's value. On a device built with
+     `lockdown.required: true` lockdown stays enforced through the reset.
+   - `dd lifeline log | tail -40` says what the shell did last.
+2. **The lifeline answers and the screen is held by lockdown.**
+   - `dd lockdown unlock 30` (control port). It relocks by itself.
+   - No control port: on a touch device, seven quick taps in the top-left corner
+     and the exit PIN. Owner mode does not lock without a PIN, so a Portal in
+     owner mode always has this.
+   - This app is device owner and the payload is broken: `dd lifeline owner-release`.
+     The shell clears the home preference, the lock-task list, the status-bar and
+     keyguard policies and leaves lock task, with no payload involved.
+3. **Nothing answers on either port.**
+   - Is the device on the network at all? Check the router's client list. The
+     Portal drops off the network with its display off unless this app holds its
+     locks; a dark Portal that does not answer may only need its screen touched.
+   - ADB, where it is still up (`adb connect {device-address}:5555`):
+     `adb -s <serial> shell am broadcast -n <package>/net.kckern.daylight.shell.BootReceiver -a net.kckern.daylight.KEEPALIVE`
+     starts the shell service without starting an Activity. Then go to 1.
+   - ADB over WiFi does **not** survive a reboot on the Portal. After a reboot
+     there the lifeline and the app's own `POST /update` are the only remote ways
+     in. That is why stage 8 proves both before any reboot with lockdown on.
+4. **Give the device back to Fully.** Stage 11, from its step 1. If only ADB is
+   left: `adb -s <serial> shell am force-stop <package>`, then start Fully
+   (`adb -s <serial> shell am start -n <fully-home>`). With this app stopped
+   nothing recalls. A force-stopped app does not start at boot, so the device
+   stays with Fully across reboots until this app is opened again.
+5. **Someone at the device, nothing else works.** Power-cycle it. On a device not
+   yet switched (stages 1 to 9) Fully is still the home app and comes up as it
+   always did; this app has changed nothing it can strand the device with:
+   installing adds no home candidate, lockdown is off, and every coexistence
+   switch is off.
+
+What cannot be recovered remotely, and so must not be reached without the proofs
+in stage 8: a device rebooted with lockdown on, no ADB after the reboot, and a
+lifeline that does not come back.
+
 ## How to use this
 
 One device at a time, in this order: **Portal, then the piano tablet, then the
@@ -18,8 +66,19 @@ Shield**. Finish a device, leave it running for a few days, then start the next.
 
 Each device goes through the same stages. Stages 1 to 9 run with the new app
 installed **beside** Fully: Fully stays the home app, lockdown stays off, and the
-household keeps using the kiosk as before. Stage 10 is the switch. Stage 11 is the
-way back, and it must be read before stage 10 is started.
+household keeps using the kiosk as before. Three things make that safe, and each
+is checked in stage 2:
+
+- **Installing changes no home candidate.** The HOME filter is on an
+  activity-alias that is installed disabled. Only `dd lockdown home on` enables it.
+- **The old helpers keep their hardware.** Every coexistence switch in the device
+  file is off (`hid.enabled`, `volumeKeys.enabled`, `presence.enabled` on the
+  Portal; `midi.enabled`, `speaker.enabled` on the piano tablet; `mic.enabled`,
+  `lease.enabled` on the Shield). They are turned on in stage 10, one at a time.
+- **Lockdown is off**, and with it the watcher that would recall this app over Fully.
+
+Stage 10 is the switch. Stage 11 is the way back, and it must be read before
+stage 10 is started. The first section of this file is the short form of it.
 
 | Stage | What | Fully still runs the device |
 |---|---|---|
@@ -30,9 +89,9 @@ way back, and it must be read before stage 10 is started.
 | 5 | Route by route | yes |
 | 6 | Page bridge | yes |
 | 7 | Page behavior and self-healing | yes |
-| 8 | Reboot, payload push, rollback, bad payload | yes |
+| 8 | Self-update, reboot, payload push, rollback, bad payload | yes |
 | 9 | Device-specific checks | yes |
-| 10 | Switch the home app, lock down, escape attempts | no |
+| 10 | Hand the hardware over, switch the home app, lock down, escape attempts, make it permanent | no |
 | 11 | Rollback to Fully | |
 
 Mark every line `ok <date>`, or write the failure seen. A line that cannot be run
@@ -73,6 +132,58 @@ paste a token into a command, a note or this file.
 - [ ] The page's bridge wrapper that works on either bridge is deployed. Until it
       is, leave `webview.backButton` at `reload`.
 - [ ] Someone can reach the device with ADB for stages 2, 3 and 11.
+- [ ] **Portal only: the ownership prerequisite is done** (the section below).
+      It comes before stage 10 on that device and needs its own go-ahead.
+
+### Portal: device ownership, before stage 10
+
+The Portal's device owner today is the old helper (`net.kckern.portalkeys`). Owner
+mode in this app needs ownership to be moved to it, with
+`DevicePolicyManager.transferOwnership` (Android 9, API 28). **That call has never
+been made on this firmware.** Until it has been made in both directions, with
+lockdown off, this device is cut over in `app` mode and the old helper keeps
+ownership.
+
+The old helper must be at shell `versionCode` 34 with payload `p9-owner-transfer`
+or later (its README, "Handing device ownership"). Its payload half carries the
+outgoing transfer and is pushed with no tap; its shell half is needed only for the
+way back, and replacing it needs a tap on the panel or ADB.
+
+Rehearsal, with lockdown off on both apps' sides and someone at the panel:
+
+1. [ ] Record `adb -s <serial> shell dumpsys device_policy | head -40` and
+       `dd lockdown` (`deviceOwner: false`, `ownerHold: null`).
+2. [ ] **Out.** `node _extensions/portal-keys/pkctl.mjs transfer-owner`. The old
+       helper releases its own policy (its home preference for Fully, lock task,
+       restrictions, hidden packages) and then transfers. Expected: `ok: true`,
+       `transferred: true`.
+3. [ ] `dd lockdown`: `deviceOwner: true`, `mode: app`, and `ownerHold` reads
+       "device ownership was transferred to this app". Arriving ownership applies
+       nothing: `lockTaskActive: false`, the status bar works, Fully is still home.
+4. [ ] **Back.** `dd settings set lockdown.ownerTransferTarget net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`,
+       then `dd lockdown owner transfer net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`.
+       Expected: `transferred: true`, `deviceOwner: false`. Then
+       `dd settings reset lockdown.ownerTransferTarget`: with the setting empty
+       every transfer from this app is refused.
+5. [ ] `node _extensions/portal-keys/pkctl.mjs resume-policy`, then
+       `pkctl kiosk-verify`: the old helper holds the device as in step 1.
+6. [ ] Reboot once and repeat step 5's check.
+
+If a transfer is refused (the answer carries the exception's class and message):
+
+- **Out refused.** The old helper is still the owner with its policy released and
+  held. `pkctl resume-policy` puts it back. This device is cut over in `app` mode:
+  leave `lockdown.mode` at `auto` (it resolves to `app` while this app is not the
+  owner), and expect no lock task, no hidden packages and no remote reboot.
+- **Back refused.** This app is still the owner with its policy released and the
+  hold set. `dd lockdown owner resume` applies owner policy again when wanted.
+  The old helper then has no owner authority; decide whether to stay on this app.
+- Record the firmware build, the exception and which direction, in the Record
+  table. Do not retry in a loop.
+
+For the cutover itself, ownership is moved out once more (step 2) just before
+stage 10's lock step, and `dd lockdown owner resume` is what makes this app act
+as owner.
 
 ## Stage 1. Pre-flight
 
@@ -99,24 +210,27 @@ Nothing here changes the device.
 - [ ] Note the old apps' version names, and that the kiosk page is working, with
       a screenshot: `fkb shot`.
 
-### The home chooser. Read this before installing on a kiosk in use
+### Installing changes no home candidate. Verify it
 
-A build that lists `lockdown` declares a HOME filter, so installing it gives the
-device a second home-app candidate. Whether Android then forgets that Fully is the
-default, and asks which home app to use at the next Home press or the next boot,
-**has not been checked on any of these devices.** A chooser on an unattended
-kiosk is an outage.
+A build that lists `lockdown` carries its HOME filter on an activity-alias
+(`net.kckern.daylight.cap.lockdown.shell.KioskHome`) that is declared disabled.
+A disabled component is not a home candidate, so installing must leave the
+device's home resolution exactly as it was. The build checks the merged manifest
+for this and `verify-build` checks the APK; this is the check on the device.
 
-- [ ] Install (stage 2) at a time when the kiosk is not needed and someone is at
-      the device.
-- [ ] Straight after the install, run the resolve command above again. If the
-      answer is no longer `<fully-home>`, set it back at once:
-      `adb -s <serial> shell cmd package set-home-activity <fully-home>`
-      and run the resolve command a third time.
-- [ ] Press Home on the device. Record: nothing changed / a chooser appeared.
-- [ ] Reboot once (stage 8 does this anyway) and record the same.
-- [ ] Write the result for this device and Android version here before the next
-      device is started.
+- [ ] **Before installing**, record both:
+      `adb -s <serial> shell cmd package resolve-activity -c android.intent.category.HOME -a android.intent.action.MAIN`
+      (the component is `<fully-home>`), and the list of candidates:
+      `adb -s <serial> shell cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.HOME`
+- [ ] **After installing** (stage 2), run both again. The answers are identical:
+      the same default, and this app's package is in neither.
+- [ ] `adb -s <serial> shell dumpsys package <package> | grep -B2 -A6 KioskHome`
+      shows the alias; `dd lockdown` reads `homeAlias: disabled`,
+      `homeIsKiosk: false`.
+- [ ] Press Home on the device: Fully, with no chooser.
+- [ ] If the candidate list did change, stop. Uninstall this app
+      (`adb -s <serial> uninstall <package>`), confirm the two commands answer as
+      before, and record what was seen: the build is wrong for this device.
 
 ## Stage 2. Install
 
@@ -125,7 +239,11 @@ kiosk is an outage.
       `node tools/verify-build.mjs <device> --legacy`.
 - [ ] Install beside the existing apps:
       `adb -s <serial> install -r shell/build/outputs/apk/<device>/debug/shell-<device>-debug.apk`
-- [ ] Do the home-chooser check above.
+- [ ] Do the home-candidate check above (stage 1's last section).
+- [ ] The coexistence switches are off, so nothing was taken from the old helper:
+      after stage 4's start, `dd status` lists each one under `switches` with
+      `setting: false`, `active: false`. Check the old helper still works (its own
+      status route; a key, a note, the microphone).
 - [ ] The old apps are untouched: `adb -s <serial> shell pm list packages | grep -E "fully|<old-helper>"`.
 
 ## Stage 3. One-time grants
@@ -143,11 +261,32 @@ block for every device, then the device's own lines.
       (`dpm set-active-admin <package>/net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver`).
       On the piano tablet Fully holds a device admin too; both may be active.
 - [ ] The location permission the device's Bluetooth capability scans with.
-- [ ] **Not yet:** the home activity. That is stage 10.
+- [ ] **Not yet:** the home alias and the home activity. That is stage 10.
 
 ## Stage 4. Start and first answers
 
-- [ ] Start the app by hand:
+- [ ] Start the service without an Activity. This works on every device, also
+      where another app's kiosk mode refuses or kills a new Activity:
+      `adb -s <serial> shell am broadcast -n <package>/net.kckern.daylight.shell.BootReceiver -a net.kckern.daylight.KEEPALIVE`
+      `dd lifeline status` then answers. Everything in this stage that does not
+      need the page can be checked from here.
+- [ ] **Where Fully's kiosk mode is on** (it brings itself back over other apps,
+      or ends them): put this app on Fully's whitelist for the length of the test,
+      and take it off afterwards.
+      `fkb get kioskAppWhitelist` (record the value as `<fully-whitelist>`), then
+      `fkb set kioskAppWhitelist "<fully-whitelist>,<package>"`.
+      When the stages that need the page are done:
+      `fkb set kioskAppWhitelist "<fully-whitelist>"`, and `fkb get kioskAppWhitelist`
+      to confirm it reads as recorded.
+- [ ] **Portal: do not expect the Activity yet.** The old helper holds the Portal
+      in lock task with only Fully on the list, and Android refuses to start any
+      other activity there (seen: `am start` answers error 101). Start the service
+      with the broadcast above and run every check that needs no page. The stages
+      that need this app's window (parts of 5, all of 6 and 7) wait until ownership
+      has been transferred to this app, or until the old helper's lock task is
+      relaxed for the test (`pkctl transfer-owner` in the prerequisite's rehearsal
+      leaves exactly that state between its steps 2 and 4).
+- [ ] Where an Activity can be started, start it by hand:
       `adb -s <serial> shell am start -n <package>/net.kckern.daylight.cap.webviewhost.shell.KioskActivity`
       The start page appears. Fully is still the home app; pressing Home goes back
       to it.
@@ -158,8 +297,11 @@ block for every device, then the device's own lines.
 - [ ] `dd capabilities`: every route of the contract's kiosk tables is listed.
 - [ ] `dd settings`: no value holds an unresolved `{placeholder}`; secrets read
       `(set)` or empty.
-- [ ] `dd lockdown`: `enabled: false`, `locked: false`, `a11yBound: true`,
-      `overlayGranted: true`, `adminActive` as granted, `homeIsKiosk: false`.
+- [ ] `dd lockdown`: `enabled: false`, `required: false`, `locked: false`,
+      `a11yBound: true`, `overlayGranted: true`, `adminActive` as granted,
+      `homeIsKiosk: false`, `homeAlias: disabled`, `ownerHold: null`.
+- [ ] `dd status`: `settingsProblem: null`, and every coexistence switch of this
+      device under `switches` with `active: false`.
 - [ ] A request without the token: `curl -s -o /dev/null -w "%{http_code}" http://{device-address}:8780/status`
       prints `401`.
 
@@ -175,15 +317,19 @@ recalls it; if Fully comes back to the front, start the Activity again.
       battery, memory and WiFi fields present. `wifiSsid` is expected to be null.
 - [ ] `dd load <a page on the app's origin>`: answers `loaded: true` with
       `loadTimeMs` and a `loadId` after the page shows.
-- [ ] `dd load https://unreachable.invalid/`: `ok: false` with the network error,
-      and the local error page with a countdown appears. Then `dd load-start`.
+- [ ] `dd load https://www.example.org/`: `400`, `origin_not_allowed`. The kiosk
+      loads its start URL's origin and `webview.allowedOrigins` and nothing else.
+- [ ] Stop the app server, `dd load-start`: `ok: false` with the network error, and
+      the local error page with a countdown appears. Start the server again.
 - [ ] `dd load <url> --no-wait`: answers `accepted: true` at once with a `loadId`;
       `dd kiosk` then shows `loading: true`, and afterwards `lastLoad` with that
-      `loadId`.
+      `loadId`. With no kiosk Activity up the answer also reads `queued: true`,
+      and the page is the one that shows when the Activity appears.
 - [ ] `dd load-start`, `dd reload`, each with and without `--no-wait`.
 - [ ] `dd foreground` from behind another app: `kioskInForeground: true`, and the
       kiosk is visibly in front. Run it once with the accessibility service
-      disabled and record whether the plain start is refused (Android 10 and 11).
+      disabled and record whether the plain start is refused (Android 10 and 11):
+      the answer is then HTTP 409 `not_in_foreground`.
 - [ ] `dd renderer-reset`: the page comes back; `rendererAlive: true`.
 - [ ] `dd restart`: `restarting: true`, "Daylight is restarting…" shows briefly,
       the page returns, `dd status` answers, stored settings are intact.
@@ -249,11 +395,16 @@ recalls it; if Fully comes back to the front, start the Activity again.
 In the page, through `dd eval`.
 
 - [ ] `dd eval 'typeof window.daylight'`: `object` on the start URL.
-- [ ] `dd load <a page on another origin>`, then the same eval: `undefined`.
-      `dd load-start`.
-- [ ] `dd lifeline log | grep shimAtDocumentStart`: which way this WebView gets
-      the bridge. With `false`, check that the page's startup code saw
-      `window.daylight`.
+- [ ] A page on another origin cannot be loaded at all (`dd load` answers 400), so
+      there is no page of another origin to get the bridge. From the page, try to
+      leave: `dd eval 'location.href = "https://www.example.org/"'`. The page stays;
+      `dd lifeline log | tail` has "refused a main-frame navigation" with the origin
+      only.
+- [ ] `dd kiosk`: `bridge: available`. The bridge exists only where the WebView
+      can inject a script at document start. `bridge: unavailable` with a
+      `bridgeReason` means this device's WebView cannot: update Android System
+      WebView, and do not go on to stage 10 without the bridge. Record the WebView
+      version (`dd exec` is off; `adb -s <serial> shell dumpsys webviewupdate | head`).
 - [ ] `dd eval 'daylight.version + " " + daylight.deviceId'`.
 - [ ] `dd eval 'daylight.capabilities()'`: a JSON array.
 - [ ] `dd eval 'daylight.volume(3)'`: `{level, index, maxIndex}`.
@@ -288,17 +439,41 @@ In the page, through `dd eval`.
       `lastLoad.loadId` as before).
 - [ ] **Network loss, failed page.** With the error page showing, WiFi on: the
       page is reloaded at once.
-- [ ] **Renderer gone.** `dd load chrome://crash` (or, with exec enabled, kill
-      the renderer process): the page comes back; the log has "renderer gone".
+- [ ] **Renderer gone.** With exec enabled, kill the renderer process: the page
+      comes back at once; the log has "renderer gone" and `dd kiosk` reads
+      `rendererLosses: 1`. Kill it again within five minutes: the local error page
+      shows with a countdown, and the page returns after it. A third time: the
+      wait is `recovery.maxRetrySec`. `dd renderer-reset` is not counted as a loss.
+- [ ] **A dead address.** `dd eval 'location.href = "/no-such-page-" + Date.now()'`
+      on a server that answers 404 for it: after three failed tries the kiosk
+      loads its start page by itself.
 - [ ] **Renderer stuck.** `dd eval 'for(;;){}'`: the eval times out; after
       `recovery.rendererUnresponsiveSec` the renderer is ended and the page
       returns. On the Portal record whether that callback exists at all.
 
-## Stage 8. Reboot, payload push, rollback, bad payload
+## Stage 8. Self-update, reboot, payload push, rollback, bad payload
 
-- [ ] **Reboot survival.** Reboot the device. With no ADB and no touch:
+Lockdown is off throughout this stage. **Never reboot a device with lockdown on
+until every line of this stage is marked ok on that device.**
+
+- [ ] **`POST /update`, end to end, before any reboot.** This is the only remote
+      way to replace the shell on a device with no ADB (the Portal after a
+      reboot). Bump `shell.versionCode`, rebuild, serve the APK, and
+      `dd update http://{build-host}:{port}/shell-<device>-debug.apk <sha256>`.
+      With the sha256 and accessibility bound the app confirms its own dialog.
+      `dd update` reads `sha256Verified: true`, `confirming: true` while it waits,
+      and afterwards `dd status` shows the new version code. Do it twice. On the
+      Shield (`update.autoConfirm` off) a person confirms on the TV; record that
+      this device has no tap-free update.
+- [ ] **Reboot survival, lockdown off.** Reboot the device. With no ADB and no touch:
       `dd lifeline status` answers, then `dd status`. Fully is the home app and
       shows as before. Record how long each took.
+- [ ] **What survives a reboot on this device.** Record: does ADB over WiFi come
+      back (`adb connect {device-address}:5555`)? On the Portal it does not. Then
+      the lifeline and `dd update` are the whole way back in, and both were just
+      proven.
+- [ ] Reboot a second time, and a third. The lifeline answers each time. A device
+      whose lifeline came back two times out of three is not ready for stage 10.
 - [ ] **Payload push.** Build the payload (`./gradlew :payload:payload<Device>`),
       serve its directory from `{build-host}`, then
       `dd payload push http://{build-host}:{port}/<device>-p3-kiosk.jar <sha256 from the .sha256 file>`.
@@ -316,12 +491,9 @@ In the page, through `dd eval`.
 - [ ] **A stored setting that breaks the start.** Only if one is found: the
       control port stays down, `dd lifeline reset-settings` clears the overrides
       and the payload starts on its defaults. Secrets must be set again after it.
-- [ ] **Shell update.** Bump `shell.versionCode`, rebuild, serve the APK:
-      `dd update http://{build-host}:{port}/shell-<device>-debug.apk <sha256>`.
-      With accessibility bound the dialog is confirmed by the app; `dd status`
-      shows the new version code afterwards, and `dd update` reads `idle`.
-      Without a sha256 a person has to tap. Dismiss one on purpose: 90 seconds
-      later `dd update` reads `failed`, `not_confirmed`.
+- [ ] **A shell update nobody confirms.** `dd update` with no sha256: a person has
+      to tap. Dismiss the dialog on purpose: 90 seconds later `dd update` reads
+      `failed`, `not_confirmed`. A wrong sha256 answers HTTP 409.
 
 ## Stage 9. Device-specific checks
 
@@ -344,13 +516,16 @@ In the page, through `dd eval`.
 - [ ] Presence: `dd get /presence` shows the connected devices, and the backend
       receives the report (after `presence.endpoint` and `presence.token` are set).
 - [ ] The display off for an hour: `dd status` still answers.
-- [ ] **Ownership transfer.** The old helper is device owner. Ownership moves to
-      this app with `DevicePolicyManager.transferOwnership` from the old helper,
-      which is its own step with its own go-ahead; it cannot be undone without a
-      second transfer. Afterwards `dd lockdown` reads `deviceOwner: true`, and
-      with the kiosk locked `mode: owner`, `lockTaskActive: true`. Check that
-      `dd reboot` reboots, and that the packages in `lockdown.ownerHidePackages`
-      are hidden while the WebView's own package is not.
+- [ ] **Ownership.** The prerequisite section in stage 0 was rehearsed in both
+      directions on this panel, and its result is in the Record table. With
+      ownership here and `dd lockdown owner resume` run (stage 10): `dd lockdown`
+      reads `deviceOwner: true`, `mode: owner`, `lockTaskActive: true`. Check that
+      `dd reboot` reboots (only after stage 8), and that the packages in
+      `lockdown.ownerHidePackages` are hidden while the WebView's own package is not.
+- [ ] `dd lockdown owner release`: the status bar and the keyguard are back, lock
+      task ends, the hidden packages show, `mode: app`. `dd lockdown owner resume`
+      puts it all back. `dd lifeline owner-release` does the short form with the
+      payload stopped.
 
 ### Piano tablet
 
@@ -408,29 +583,69 @@ In the page, through `dd eval`.
 
 ## Stage 10. Switch the home app and lock down
 
-Read stage 11 first. Do this with someone at the device and time to spare.
+Read stage 11 and the first section of this file first. Do this with someone at
+the device and time to spare. Stage 8 is complete on this device.
 
 1. [ ] Set the allowlists from stage 1's whitelist:
        `dd settings set lockdown.allowedApps "<rules>"` and, where the page
        launches apps, `dd settings set launcher.allowed "<rules>"`.
        `dd lockdown` shows them under `allowedApps` with no `allowedAppsError`.
-2. [ ] If the device is to have an exit gesture: `dd settings set lockdown.exitPin <pin>`.
-       The answer shows `(set)`, never the PIN. The Shield has no touch screen and
-       gets none.
+       If the page must navigate to another origin (a sign-in page), add it:
+       `dd settings set webview.allowedOrigins "<origins>"`.
+2. [ ] Set the exit PIN on a device with a touch screen:
+       `dd settings set lockdown.exitPin <pin>`. The answer shows `(set)`, never
+       the PIN. **Owner mode will not lock without it** (`dd lockdown` then reads
+       `ownerRefused` with the reason): a locked Portal with no network and no PIN
+       would have no exit. The Shield has no touch screen and gets none.
 3. [ ] Point the backend at the new app: `provider: daylight-android` for this
        device, and reload the backend's config. The admin console's actions now
        go to this app.
-4. [ ] Make this app the home app:
-       `adb -s <serial> shell cmd package set-home-activity <package>/net.kckern.daylight.cap.webviewhost.shell.KioskActivity`
-       Resolve HOME again (stage 1's command): it names this app. Press Home: this
-       app's kiosk. `dd lockdown`: `homeIsKiosk: true`.
-5. [ ] Stop Fully so two kiosks do not compete: `adb -s <serial> shell am force-stop de.ozerov.fully`.
-       Do **not** uninstall it. Stop the old helper the same way once its
-       capability is confirmed here; do not uninstall it either.
-6. [ ] Lock down: `dd settings set lockdown.enabled true`. `dd lockdown`:
-       `locked: true`, `watcher: running`, `mode` as expected for the device.
-7. [ ] Reboot. With no touch: the kiosk page is showing, `dd status` answers,
-       `dd lockdown` reads `locked: true`, `homeIsKiosk: true`.
+4. [ ] **Hand the hardware over, one part at a time.** For each coexistence switch
+       of this device: stop the old helper's use of that part, turn the switch on,
+       and check the part works here before the next one.
+       - Portal: `dd settings set hid.enabled true` (a key on the USB keyboard
+         arrives), `dd settings set volumeKeys.enabled true`,
+         `dd settings set presence.enabled true`.
+       - Piano tablet: `dd settings set midi.enabled true` (`dd post /loopback`
+         echoes), `dd settings set speaker.enabled true` (`dd get /speaker`).
+       - Shield: `dd settings set mic.enabled true` (`dd get /mic/status`:
+         `running: true`), `dd settings set lease.enabled true`.
+       `dd status` shows each under `switches` with `active: true`. A switch that
+       reads `setting: true`, `active: false` carries an `error`: the old helper
+       still holds the part.
+       Stop the old helper once every part it had is confirmed here
+       (`adb -s <serial> shell am force-stop <old-helper>`). Do **not** uninstall it.
+5. [ ] Portal: move ownership out of the old helper (`pkctl transfer-owner`, as
+       rehearsed). `dd lockdown`: `deviceOwner: true`, `mode: app`, `ownerHold` set.
+6. [ ] Make this app a home candidate, then the home app:
+       `dd lockdown home on` (`homeAlias: enabled`), then
+       `adb -s <serial> shell cmd package set-home-activity <package>/net.kckern.daylight.cap.lockdown.shell.KioskHome`
+       Resolve HOME again (stage 1's command): it names this app's alias. Press
+       Home: this app's kiosk. `dd lockdown`: `homeIsKiosk: true`.
+7. [ ] Stop Fully so two kiosks do not compete: `adb -s <serial> shell am force-stop de.ozerov.fully`.
+       Do **not** uninstall it.
+8. [ ] Lock down: `dd settings set lockdown.enabled true`. It is applied at once.
+       `dd lockdown`: `locked: true`, `watcher: running`.
+       Portal: `dd lockdown owner resume`; then `mode: owner`, `lockTaskActive: true`.
+9. [ ] Run the escape attempts and the unlock checks below, with lockdown on and
+       **without rebooting**.
+10. [ ] Only now, reboot. Stage 8 proved the lifeline returns on this device. With
+        no touch: the kiosk page is showing, `dd lifeline status` and `dd status`
+        answer, `dd lockdown` reads `locked: true`, `homeIsKiosk: true`.
+        If the lifeline does not answer within five minutes, go to the first
+        section of this file.
+11. [ ] Leave it for a day (the checks under "A day later").
+12. [ ] **Last: make it permanent in the device file.** Everything above lives in
+        stored overrides, which a lifeline settings reset deletes. In
+        `devices/<device>.yml` set `lockdown.required: true`, set this device's
+        coexistence switches to `true`, and copy `lockdown.allowedApps`,
+        `launcher.allowed` and `webview.allowedOrigins` in as defaults. Bump
+        `shell.versionCode`, rebuild, `verify-build`, and install with
+        `dd update <apk-url> <sha256>`. Afterwards `dd lockdown` reads
+        `required: true`; `dd settings set lockdown.enabled false` answers 400;
+        `dd lifeline reset-settings` leaves the device locked (set the secrets
+        again after it). From here lockdown is relaxed only by an unlock, which
+        always ends.
 
 **Escape attempts.** Each one should end with the kiosk back in front within
 about two seconds, `recallsSinceBoot` one higher, and `lastRecall` naming what was
@@ -448,8 +663,11 @@ in front. Record each.
 - [ ] A launched app (`dd launch`) stays in front; Home returns to the kiosk;
       opening the same app again by other means is recalled.
 - [ ] Disable the accessibility service in Settings during an unlock, then
-      `dd lockdown lock`: the kiosk is recalled anyway, and the service is back
-      within 30 seconds.
+      `dd lockdown lock`: a recall is attempted (`lastRecall.how` reads
+      `service-start-unverified`, `a11yBound: false`: Android may ignore a start
+      from the background, and the app says so), recalls back off instead of
+      repeating every second (`recallsHeldBack` rises), and the service is back
+      within 30 seconds, after which the recall takes.
 
 **Unlocking.**
 
@@ -457,6 +675,10 @@ in front. Record each.
       opened; it relocks by itself.
 - [ ] `dd lockdown unlock`: relocks after `lockdown.maxUnlockMin`.
       `dd lockdown lock`: at once.
+- [ ] Split screen and picture-in-picture cannot be entered with the kiosk: the
+      Activity is not resizable. If another app's window does end up active beside
+      it, the watcher recalls (`lastRecall.reason` starts "not allowed beside the
+      kiosk").
 - [ ] Seven quick taps in the top-left corner raise the PIN prompt. The right PIN
       unlocks for `lockdown.pinUnlockMin` minutes. Five wrong PINs lock the
       prompt for five minutes, and `dd get /log` has one `lockdown.pin.lockout`
@@ -474,41 +696,75 @@ in front. Record each.
 ## Stage 11. Rollback to Fully
 
 Works from any point in stage 10. Fully and the old helper were stopped, never
-uninstalled, and their settings were never changed.
+uninstalled, and their settings were never changed. Every step is needed; a
+rollback that skips one leaves two apps holding one device.
 
-1. [ ] Unlock, so nothing is recalled while switching:
-       `dd settings set lockdown.enabled false` (or `dd lockdown unlock 30`).
-       If the control port does not answer, go on to step 2 over ADB: with Fully
-       as home and this app stopped, nothing recalls.
-2. [ ] Make Fully the home app again:
+1. [ ] Unlock, so nothing is recalled while switching.
+       - Before stage 10's step 12: `dd settings set lockdown.enabled false`. It
+         is applied at once (owner mode leaves lock task and gives the status bar
+         back).
+       - After step 12 (`lockdown.required: true` is compiled in):
+         `dd lockdown unlock 60` for the time being, and for a rollback that is to
+         last, build with `lockdown.required: false`, bump the version code and
+         install it (`dd update`, or ADB). The setting cannot be changed on the
+         device, and that is its purpose.
+       - If the control port does not answer: `dd lifeline owner-release` where
+         this app is the owner, and go on over ADB. With Fully as home and this
+         app stopped, nothing recalls.
+2. [ ] Portal, if this app is device owner: release its policy,
+       `dd lockdown owner release` (`mode: app`; the home preference, lock task,
+       restrictions and hidden packages are undone), then move ownership back:
+       `dd settings set lockdown.ownerTransferTarget net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`
+       and `dd lockdown owner transfer net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`.
+       If the transfer back is refused, this app stays the owner with nothing
+       applied; the old helper then runs without owner authority (no lock task).
+3. [ ] Turn the coexistence switches back off, so this app lets go of the hardware
+       before the old helper is started: each one with
+       `dd settings set <key> false`. `dd status`: every one `active: false`.
+4. [ ] Stop being a home candidate: `dd lockdown home off` (`homeAlias: disabled`).
+       Then make Fully the home app again:
        `adb -s <serial> shell cmd package set-home-activity <fully-home>`
        and resolve HOME to confirm.
-3. [ ] Start Fully: `adb -s <serial> shell am start -n <fully-home>`. Its start
-       page loads.
-4. [ ] Start the old helper again (its launcher activity or its service, as it
-       was started before), and check its own status route.
-5. [ ] Point the backend back: `provider: fully-kiosk` for this device, and reload
+5. [ ] Start Fully: `adb -s <serial> shell am start -n <fully-home>`. Its start
+       page loads. A force-stopped app does not start by itself, at boot or
+       otherwise, until it is opened once: this start is that once.
+6. [ ] **Restore Fully's accessibility grant.** A force-stop removes an app's
+       service from the enabled list on some Android versions. Read
+       `adb -s <serial> shell settings get secure enabled_accessibility_services`
+       and compare with stage 1's value; put back what is missing by writing the
+       whole stage 1 value plus anything added since:
+       `adb -s <serial> shell settings put secure enabled_accessibility_services "<value>"`
+       and `adb -s <serial> shell settings put secure accessibility_enabled 1`.
+7. [ ] Start the old helper again (its launcher activity or its service, as it
+       was started before; it too was force-stopped and will not start at boot
+       until opened), and check its own status route. Portal:
+       `pkctl resume-policy` and `pkctl kiosk-verify`.
+8. [ ] Point the backend back: `provider: fully-kiosk` for this device, and reload
        the backend's config.
-6. [ ] Stop this app so it holds nothing the old apps need (the microphone on the
-       Shield, the MIDI link on the piano tablet):
+9. [ ] Stop this app so it holds nothing the old apps need:
        `adb -s <serial> shell am force-stop <package>`.
-       A force-stopped app stays stopped until it is opened or the device reboots,
-       so also keep it from starting at boot if the rollback is to last:
+       A force-stopped app stays stopped across reboots until it is opened. If
+       the rollback is to last, also disable it:
        `adb -s <serial> shell pm disable-user --user 0 <package>`
        (`pm enable <package>` undoes it).
-7. [ ] Portal, if ownership was transferred: it stays with this app until it is
-       transferred back. Decide that separately; with this app disabled the old
-       helper has no owner policy.
-8. [ ] Restore anything stage 1 saved that has changed: the accessibility
-       services list, the old helper's config.
-9. [ ] Confirm with `fkb info` and `fkb shot` that the kiosk is as it was in
-       stage 1, and reboot once to see it come back by itself.
-10. [ ] Write down what failed and at which line of this runbook.
+10. [ ] Restore anything else stage 1 saved that has changed: the old helper's
+        config, Fully's whitelist (`fkb get kioskAppWhitelist` reads as recorded).
+11. [ ] Confirm with `fkb info` and `fkb shot` that the kiosk is as it was in
+        stage 1, and reboot once to see Fully, the old helper and their
+        accessibility services come back by themselves.
+12. [ ] Write down what failed and at which line of this runbook.
 
 ## Record
 
-| Device | Android | Stage reached | Date | Home chooser on install | Open failures |
-|---|---|---|---|---|---|
-| Portal | | | | | |
-| Piano tablet | | | | | |
-| Shield | | | | | |
+| Device | Android | Stage reached | Date | Home candidates unchanged by install | Lifeline back after reboot (n of 3) | ADB back after reboot | Open failures |
+|---|---|---|---|---|---|---|---|
+| Portal | | | | | | | |
+| Piano tablet | | | | | | | |
+| Shield | | | | | | | |
+
+Portal ownership transfer (`transferOwnership`, API 28, untested on this firmware):
+
+| Direction | Date | Result | Exception, if refused | Firmware build |
+|---|---|---|---|---|
+| Old helper to this app | | | | |
+| This app to old helper | | | | |
