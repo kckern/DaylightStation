@@ -16,22 +16,37 @@ public class PinnedMediaTest {
         assertFalse("the id does not spell the content", id.contains("12345"));
     }
 
-    @Test public void atMostTwentyFourAreKeptAndTheOldestGoesFirst() {
+    /** Full is full: a new pin is refused, and no pin the owner made is pushed out for it. */
+    @Test public void atTwentyFourANewPinIsRefusedAndNothingIsEvicted() {
         PinnedMedia p = new PinnedMedia();
-        for (int i = 0; i < 24; i++) assertTrue(p.add("plex:" + i, "L" + i, i).isEmpty());
-        List<PinnedMedia.Entry> evicted = p.add("plex:new", "New", 100);
-        assertEquals(1, evicted.size());
-        assertEquals("plex:0", evicted.get(0).contentId);
+        for (int i = 0; i < 24; i++) assertTrue(p.add("plex:" + i, "L" + i, i));
+        assertTrue(p.full());
+        assertFalse(p.add("plex:new", "New", 100));
         assertEquals(24, p.all().size());
-        assertEquals("plex:1", p.all().get(0).contentId);
-        assertEquals("plex:new", p.all().get(23).contentId);
+        assertEquals("plex:0", p.all().get(0).contentId);
+        assertNull(p.find(PinnedMedia.idFor("plex:new")));
+        assertTrue("an existing pin can still be renamed", p.add("plex:3", "Three", 101));
+        assertEquals(24, p.all().size());
+    }
+
+    /** A shortcut the owner removed from the home screen frees its slot. */
+    @Test public void entriesWhoseShortcutIsNoLongerPinnedAreDropped() {
+        PinnedMedia p = new PinnedMedia();
+        p.add("plex:1", "One", 1);
+        p.add("plex:2", "Two", 2);
+        java.util.Set<String> stillPinned = new java.util.HashSet<>(java.util.Collections.singletonList(PinnedMedia.idFor("plex:2")));
+        List<PinnedMedia.Entry> dropped = p.retainOnly(stillPinned);
+        assertEquals(1, dropped.size());
+        assertEquals("plex:1", dropped.get(0).contentId);
+        assertEquals(1, p.all().size());
+        assertTrue(p.retainOnly(stillPinned).isEmpty());
     }
 
     @Test public void pinningTheSameContentAgainRenamesItAndMakesItTheNewest() {
         PinnedMedia p = new PinnedMedia();
         p.add("plex:1", "One", 1);
         p.add("plex:2", "Two", 2);
-        assertTrue(p.add("plex:1", "Uno", 3).isEmpty());
+        assertTrue(p.add("plex:1", "Uno", 3));
         assertEquals(2, p.all().size());
         assertEquals("plex:2", p.all().get(0).contentId);
         assertEquals("Uno", p.all().get(1).label);

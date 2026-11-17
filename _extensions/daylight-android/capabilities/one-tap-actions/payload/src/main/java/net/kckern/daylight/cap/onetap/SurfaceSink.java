@@ -22,6 +22,12 @@ interface SurfaceSink {
     /** Whether the launcher can pin shortcuts at all. */
     default boolean canPin() { return true; }
 
-    /** Ask the launcher to pin one action, under SurfacePlan.pinId. Throw UnsupportedException when it cannot. */
-    void pin(Action action, String uri);
+    /**
+     * Ask the launcher to pin one action, under SurfacePlan.pinId. Throw
+     * UnsupportedException when it cannot.
+     *
+     * @param confirmToken when not null, the launcher is to confirm the pin by sending
+     *                     this token to the app's non-exported PinResultReceiver
+     */
+    void pin(Action action, String uri, String confirmToken);
 }

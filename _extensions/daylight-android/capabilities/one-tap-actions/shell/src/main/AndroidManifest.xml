@@ -25,5 +25,11 @@
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
+        <!-- Not exported: the system sends it the immutable PendingIntent the payload gave
+             requestPinShortcut, once the owner has pinned a media shortcut. It hands the
+             request's single-use token to the payload, which then records the pin. -->
+        <receiver
+            android:name="net.kckern.daylight.cap.onetap.shell.PinResultReceiver"
+            android:exported="false" />
     </application>
 </manifest>

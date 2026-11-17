@@ -141,7 +141,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             Object id = Requests.body(req).opt("id");
             Action a = id instanceof String ? catalog(null).find((String) id) : null;
             if (a == null) throw new IllegalArgumentException("unknown action");
-            requireSink().pin(a, uri(a));       // UnsupportedException becomes 501 with the reason
+            requireSink().pin(a, uri(a), null);       // UnsupportedException becomes 501 with the reason
             return Router.Response.json(200, Replies.ok().put("requested", a.id));
         });
     }
@@ -162,6 +162,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             if (context == null) return;
             sink = new AndroidSurfaces((Context) context);
         }
+        pinPort.attach(onPinConfirmed);
         List<String> problems = new ArrayList<>();
         try {
             publish(problems);
@@ -173,6 +174,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
 
     /** May be called twice. */
     @Override public void stop() {
+        pinPort.detach(onPinConfirmed);
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -214,8 +216,26 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     // ── pinned media actions ──────────────────────────────────────────────────
 
     private static final String PIN_FILE = "pinned-media.json";
+    /** The PayloadPort the launcher's confirmation reaches (the shell half's PinResultReceiver spells it the same). */
+    static final String PIN_PORT = "pins";
+    /** How long a pin request's token is good for. */
+    static final long PIN_CONFIRM_MS = 10 * 60_000L;
+    /** Accepted pin requests a minute, in this process, whatever document asks. */
+    static final int PINS_PER_MINUTE = 3;
+    static final String LIMIT_REACHED = "limit_reached";
+    static final String RATE_LIMITED = "rate_limited";
+    private static final int MAX_PENDING = 16;
     private final Object pinLock = new Object();
     private PinnedMedia pinned;
+    private final java.util.LinkedHashMap<String, PendingPin> pendingPins = new java.util.LinkedHashMap<>();
+    private final java.util.ArrayDeque<Long> acceptedAt = new java.util.ArrayDeque<>();
+    volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
+    private final net.kckern.daylight.api.PayloadPort pinPort = net.kckern.daylight.api.PayloadPort.named(PIN_PORT);
+    private final net.kckern.daylight.api.PayloadPort.Handler onPinConfirmed = request -> {
+        JSONObject r = new JSONObject(request);
+        if ("confirmed".equals(r.optString("op"))) confirmPin(r.optString("token", ""));
+        return "{}";
+    };
 
     /** The configured actions and, after them, the pinned media actions. */
     private ActionCatalog everything() {
@@ -241,11 +261,19 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     }
 
     /**
-     * Asks the launcher to pin a shortcut that plays this content (Android's own dialog
-     * is the confirmation) and, once the launcher has taken the request, records the
-     * pinned action so a one-action button can be given it too. The shortcut launches
-     * the action by its id, keyed like every action link; the content id is never in a
-     * link. The answer is {accepted, reason?} and nothing else.
+     * Asks the launcher to pin a shortcut that plays this content. Android's dialog is
+     * the owner's decision, and requestPinShortcut answering true means only that the
+     * dialog was shown. So nothing is recorded here: the request carries a single-use
+     * token, the launcher sends the app's own non-exported receiver an immutable
+     * PendingIntent with it once the shortcut is pinned, and confirmPin records the
+     * entry then. A dismissed dialog records nothing.
+     *
+     * Refused: with MAX pins kept, a new one (limit_reached; no pin is pushed out for
+     * it); more than PINS_PER_MINUTE accepted requests in a minute in this process,
+     * whatever page or document asks (rate_limited). The shortcut launches the action by
+     * its id, keyed like every action link; the content id is never in a link. The
+     * answer is {accepted, reason?} and nothing else; accepted means the dialog was
+     * asked for.
      */
     private JSONObject pinMedia(String contentId, String label) throws Exception {
         SurfaceSink s = sink;
@@ -254,36 +282,110 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         Action a = new Action(PinnedMedia.idFor(contentId), label, "play", Kind.MEDIA, contentId);
         Action configured = catalog(null).find(a.id);
         if (configured != null) return refusal("failed");
-        try {
-            s.pin(a, uri(a));
-        } catch (UnsupportedException launcher) {
-            return refusal("launcher_refused");
-        } catch (RuntimeException launcher) {
-            return refusal("launcher_refused");
-        }
+        String token;
         synchronized (pinLock) {
+            pruneUnpinned(s);
             PinnedMedia p = pinned();
-            List<PinnedMedia.Entry> dropped = p.add(contentId, label, System.currentTimeMillis());
-            try {
-                File f = pinFile();
-                File dir = f.getParentFile();
-                if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("no state directory");
-                File part = new File(f.getPath() + ".part");
-                Files.write(part.toPath(), p.toJson().getBytes(StandardCharsets.UTF_8));
-                if (!part.renameTo(f)) throw new IOException("rename failed");
-            } catch (IOException disk) {
-                core.shell().note("ACTION", "could not save the pinned media actions: " + disk.getClass().getSimpleName());
-            }
-            core.shell().note("ACTION", "pinned " + a.id + (dropped.isEmpty() ? "" : "; dropped the oldest, " + dropped.get(0).id));
+            if (p.find(a.id) == null && p.full()) return refusal(LIMIT_REACHED);
+            long now = clock.getAsLong();
+            while (!acceptedAt.isEmpty() && now - acceptedAt.peekFirst() >= 60_000) acceptedAt.pollFirst();
+            if (acceptedAt.size() >= PINS_PER_MINUTE) return refusal(RATE_LIMITED);
+            token = newToken();
+            pendingPins.put(token, new PendingPin(contentId, label, now));
+            while (pendingPins.size() > MAX_PENDING) pendingPins.remove(pendingPins.keySet().iterator().next());
         }
-        // The widgets redraw (the chooser lists the new action) and a dropped action's
-        // pinned shortcut is disabled.
+        try {
+            s.pin(a, uri(a), token);
+        } catch (RuntimeException launcher) {
+            synchronized (pinLock) { pendingPins.remove(token); }
+            return refusal("launcher_refused");
+        }
+        synchronized (pinLock) { acceptedAt.addLast(clock.getAsLong()); }
+        core.shell().note("ACTION", "asked the launcher to pin " + a.id);
+        return new JSONObject().put("accepted", true);
+    }
+
+    /**
+     * The launcher confirmed a pin: its token, from the non-exported receiver over the
+     * PIN_PORT port. A token is good once, for its own request, for PIN_CONFIRM_MS.
+     */
+    private void confirmPin(String token) {
+        String id;
+        synchronized (pinLock) {
+            PendingPin req = token == null ? null : pendingPins.remove(token);
+            if (req == null || clock.getAsLong() - req.atMs > PIN_CONFIRM_MS) {
+                core.shell().note("ACTION", "a pin confirmation matched no request");
+                return;
+            }
+            PinnedMedia p = pinned();
+            id = PinnedMedia.idFor(req.contentId);
+            if (!p.add(req.contentId, req.label, clock.getAsLong())) {
+                core.shell().note("ACTION", "pinned " + id + " but the list is full; not recorded");
+                return;
+            }
+            savePinned(p);
+            core.shell().note("ACTION", "pinned " + id);
+        }
+        // The widgets redraw: the chooser lists the new action.
         try {
             publish(new ArrayList<String>());
         } catch (RuntimeException launcher) {
             core.shell().note("ACTION", "could not publish after a pin: " + launcher.getClass().getSimpleName());
         }
-        return new JSONObject().put("accepted", true);
+    }
+
+    /** Drops the entries whose pinned shortcut the launcher no longer holds, so its slot is free. */
+    private void pruneUnpinned(SurfaceSink s) {
+        synchronized (pinLock) {
+            java.util.Set<String> held = new java.util.HashSet<>();
+            try {
+                if (!s.canPin()) return;
+                for (String pinId : s.pinnedIds()) {
+                    if (pinId.startsWith(SurfacePlan.PIN_PREFIX)) held.add(pinId.substring(SurfacePlan.PIN_PREFIX.length()));
+                }
+            } catch (RuntimeException launcher) {
+                // The launcher did not say: keep everything.
+                return;
+            }
+            PinnedMedia p = pinned();
+            List<PinnedMedia.Entry> dropped = p.retainOnly(held);
+            if (dropped.isEmpty()) return;
+            savePinned(p);
+            core.shell().note("ACTION", dropped.size() + " pinned media action(s) dropped: their shortcut was removed");
+        }
+    }
+
+    private void savePinned(PinnedMedia p) {
+        try {
+            File f = pinFile();
+            File dir = f.getParentFile();
+            if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("no state directory");
+            File part = new File(f.getPath() + ".part");
+            Files.write(part.toPath(), p.toJson().getBytes(StandardCharsets.UTF_8));
+            if (!part.renameTo(f)) throw new IOException("rename failed");
+        } catch (IOException disk) {
+            core.shell().note("ACTION", "could not save the pinned media actions: " + disk.getClass().getSimpleName());
+        }
+    }
+
+    private static String newToken() {
+        byte[] b = new byte[16];
+        new java.security.SecureRandom().nextBytes(b);
+        StringBuilder hex = new StringBuilder();
+        for (byte x : b) hex.append(String.format("%02x", x));
+        return hex.toString();
+    }
+
+    private static final class PendingPin {
+        final String contentId;
+        final String label;
+        final long atMs;
+
+        PendingPin(String contentId, String label, long atMs) {
+            this.contentId = contentId;
+            this.label = label;
+            this.atMs = atMs;
+        }
     }
 
     private static JSONObject refusal(String reason) throws Exception {
@@ -400,6 +502,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         s.publish(plan.shortcuts, this::uri, plan.tileCache);
         // The launcher keeps a pinned shortcut's intent, key and all. Each is rewritten
         // under the key now in force, so none outlives the run it was written in.
+        pruneUnpinned(s);
         try {
             s.refreshPinned(SurfacePlan.pins(everything(), s.pinnedIds()), this::uri);
         } catch (RuntimeException launcher) {

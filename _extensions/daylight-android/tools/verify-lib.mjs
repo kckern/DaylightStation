@@ -296,6 +296,9 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3': { exported: true, permission: BIND_TILE },
   'service net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4': { exported: true, permission: BIND_TILE },
+  // Reached only through the immutable PendingIntent the payload gives requestPinShortcut:
+  // the system sends it when the owner has pinned a media shortcut, with a single-use token.
+  'receiver net.kckern.daylight.cap.onetap.shell.PinResultReceiver': { exported: false, permission: null },
   // Exported with no permission: a car (Android Auto), the system's media controls and
   // Bluetooth reach it by binding it, and no permission exists that only they hold. Who is
   // accepted is decided per connection (ControllerPolicy), and a controller hands over

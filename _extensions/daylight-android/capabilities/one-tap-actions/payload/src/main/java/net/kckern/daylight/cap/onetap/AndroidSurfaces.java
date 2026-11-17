@@ -1,7 +1,9 @@
 package net.kckern.daylight.cap.onetap;
 
 import android.content.Context;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
@@ -51,10 +53,23 @@ final class AndroidSurfaces implements SurfaceSink {
         return m != null && m.isRequestPinShortcutSupported();
     }
 
-    @Override public void pin(Action action, String uri) {
+    /** The shell half's receiver of a pin confirmation (not exported). By name: the payload cannot reference it. */
+    static final String PIN_RESULT_RECEIVER = "net.kckern.daylight.cap.onetap.shell.PinResultReceiver";
+    /** The extra that carries the request's token (PinResultReceiver.EXTRA_TOKEN). */
+    static final String EXTRA_TOKEN = "token";
+
+    @Override public void pin(Action action, String uri, String confirmToken) {
         ShortcutManager m = manager();
         if (m == null || !m.isRequestPinShortcutSupported()) throw new UnsupportedException("this launcher does not pin shortcuts");
-        if (!m.requestPinShortcut(info(action, uri, SurfacePlan.pinId(action)), null)) {
+        IntentSender confirm = null;
+        if (confirmToken != null) {
+            // Sent by the system once the owner has pinned the shortcut. Immutable: nothing
+            // can be added to it; the receiver is not exported; the token is single-use.
+            Intent result = new Intent().setClassName(context, PIN_RESULT_RECEIVER).putExtra(EXTRA_TOKEN, confirmToken);
+            confirm = PendingIntent.getBroadcast(context, confirmToken.hashCode(), result,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT).getIntentSender();
+        }
+        if (!m.requestPinShortcut(info(action, uri, SurfacePlan.pinId(action)), confirm)) {
             throw new UnsupportedException("the launcher refused the pin request");
         }
     }

@@ -148,6 +148,13 @@ test('the car screen added one exported gate, its closed car service, three clos
   assert.ok(capabilities['car-actions'].requires.includes('quick-input'));
 });
 
+test('a pinned media shortcut is recorded through one closed receiver, and one-tap-actions exports only its tiles', () => {
+  const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.onetap.'));
+  assert.deepEqual(own.filter(([, row]) => !row.exported).map(([key, row]) => `${key} permission=${row.permission}`),
+    ['receiver net.kckern.daylight.cap.onetap.shell.PinResultReceiver permission=null']);
+  assert.equal(own.filter(([, row]) => row.exported).length, 4);
+});
+
 test('playing with no window adds one service of media-service, not exported, and no permission', () => {
   assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService']);
   assert.deepEqual(capabilities['media-service'].permissions, ['android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',

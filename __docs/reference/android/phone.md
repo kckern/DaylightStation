@@ -726,9 +726,10 @@ document is the top frame, and the launcher supports pinning shortcuts
 including in a frame and on a launcher that cannot pin.
 
 `pinMedia` answers at once. `accepted: true` means the launcher took the request and
-Android's own "Add to home screen" dialog is showing; whether the owner then adds
-the shortcut is not reported (nothing is pinned without the owner's tap there). The
-web side says something like "Confirm on the dialog", never "Added".
+Android's own "Add to home screen" dialog is showing. Nothing is recorded then: the
+pin is recorded only when the launcher confirms that the owner added the shortcut
+(see "What a pin does"), and that confirmation is not reported to the page. The web
+side says something like "Confirm on the dialog", never "Added".
 
 `accepted: false` comes with one `reason`:
 
@@ -736,7 +737,8 @@ web side says something like "Confirm on the dialog", never "Added".
 |---|---|
 | `refused` | No answer from the native side: the token is not this document's (an old document, a guessed token), the main frame is on another origin, or the bridge is gone. Built by the shim |
 | `not_top_frame` | The calling document is a frame, not the top frame |
-| `rate_limited` | A second request from the same document within five seconds of its last request that was let through. Counted (`pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process) |
+| `rate_limited` | A second request from the same document within five seconds of its last request that was let through (counted: `pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process); or a fourth accepted request within a minute in the app's process, whatever document or reload asks |
+| `limit_reached` | 24 pinned media actions are kept already. No pin is pushed out for a new one; the owner removes a pinned media shortcut from the home screen first, which frees its slot. The web side shows "Too many home screen shortcuts; remove one first" |
 | `bad_request` | Not a JSON object, or `contentId` or `label` missing or not a string |
 | `invalid_content_id` | Fails the media service's content id rule: a URL, a source named like a URL scheme (`http`, `javascript`, `intent`, ...), an empty, `.` or `..` segment, a backslash, a bar or a control character, a modifier segment (`shuffle`, `playable`, `launchable`, `recent_on_top`, `expand`), or longer than 400 characters |
 | `invalid_label` | After trimming, empty or longer than 40 characters (counted as code points), or holding a control character, a format character (every bidi override and isolate, the direction marks, zero-width characters), a line or paragraph separator, a lone surrogate, a private-use or unassigned character |
@@ -759,12 +761,27 @@ must be one lower-case word; whatever else the native side holds is dropped.
 3. It asks the launcher to pin a shortcut with the id `pin-<action id>`, whose link
    is `daylight://action/<action id>#k=<key>`, keyed like every action link. The
    content id is never in a link from outside.
-4. Only when the launcher took the request is the action recorded, in the app's
-   private state (`files/payloads/state/pinned-media.json`), newest last. At most 24
-   are kept: a 25th drops the oldest, and the oldest one's pinned shortcut is
-   disabled ("This action is no longer set up"). Pinning the same content again
-   renames it and makes it the newest.
-5. The surfaces are published again: the "Daylight button" chooser lists the
+4. The request carries a single-use token (16 random bytes, held in the payload's
+   memory for ten minutes) inside an immutable `PendingIntent` to the app's own
+   non-exported `PinResultReceiver`, passed as `requestPinShortcut`'s result intent.
+   `requestPinShortcut` returning true means only that the dialog was shown, so
+   nothing is recorded then.
+5. Android sends that intent once the owner has added the shortcut. The receiver
+   hands the token to the payload (`pins` port, in process), and only then is the
+   action recorded, in the app's private state
+   (`files/payloads/state/pinned-media.json`), newest last. A dismissed dialog never
+   sends it; a token that matches no request of the last ten minutes, or was used
+   already, records nothing. If the app's process was restarted between the dialog
+   and the confirmation, the token is gone and the pin is not recorded (its
+   shortcut is then disabled at the next publish, as for any pinned shortcut with no
+   action).
+6. At most 24 are kept. A new pin when 24 are kept is refused before the dialog
+   (`limit_reached`); nothing is pushed out and no shortcut is disabled for it.
+   Pinning the same content again renames it and makes it the newest. At every
+   publish, and before every request, an entry whose `pin-<id>` shortcut the launcher
+   no longer holds (`getPinnedShortcuts()`) is dropped, so removing a shortcut from
+   the home screen frees its slot.
+7. The surfaces are published again: the "Daylight button" chooser lists the
    pinned action after the configured ones, and a button bound to it plays with no
    window (the play service asks the payload for an action id, and the pinned
    actions are among those it answers for). The pinned shortcut is rewritten under
@@ -772,9 +789,8 @@ must be one lower-case word; whatever else the native side holds is dropped.
 
 A pinned action is not a launcher (long-press) shortcut, a tile or one of the
 four-button widget's buttons unless a settings line names it. A configured action
-of the same id wins. There is no way to remove a pinned action from the chooser
-other than letting it age out; removing the pinned shortcut from the home screen is
-the owner's, as for every pinned shortcut.
+of the same id wins. A pinned action leaves the chooser when its shortcut is removed
+from the home screen (at the next publish).
 
 ### Threat cases, each a test
 
@@ -785,7 +801,8 @@ the owner's, as for every pinned shortcut.
 | A call after navigation with an old document's token | No answer | `threat_aCallAfterNavigationWithAnOldToken...` |
 | A hostile label (bidi override, control character, separator, too long) | `invalid_label` | `PinRequestTest.aHostileLabelIsRefused`, `MediaServiceCapabilityTest.aBadContentIdOrLabel...` |
 | A content id that is a URL, holds `..` or a modifier segment | `invalid_content_id` | `PinRequestTest.aContentIdThatIsAUrl...`, `ContentPathTest.aSourceThatIsAUrlSchemeIsRefused` |
-| A flood | One request per document per five seconds; the rest `rate_limited` and counted; one dialog | `threat_aFloodIsRefused...`, `theLimitIsPerDocument` |
+| A flood | One request per document per five seconds, and three accepted requests a minute in the whole process across documents and reloads; the rest `rate_limited`; one dialog | `threat_aFloodIsRefused...`, `theLimitIsPerDocument`, `SurfaceRoutesTest.atMostThreeRequestsAMinuteAreAcceptedInTheProcess` |
+| A page filling the list to push the owner's pins out | Nothing is recorded without the owner's confirmation in the launcher's dialog; at 24 a new pin is `limit_reached` and no shortcut is disabled | `SurfaceRoutesTest.aPinIsRecordedOnlyWhenTheLauncherConfirmsIt`, `aConfirmationTokenIsSingleUseBoundToItsRequestAndExpires`, `atTheLimitANewPinIsRefusedAndNoShortcutIsDisabled` |
 | The page trying to learn the key, a link or the pinned list | The answer is `{accepted, reason?}` only; an unexpected reason becomes `failed` | `threat_thePageCannotLearnTheKey...`, `MediaServiceCapabilityTest.theAnswerHoldsAcceptedAndAReason...`, `SurfaceRoutesTest.theAnswerNeverHoldsALink...` |
 | A kiosk build | No member at all | `DeviceDefaultsTest.onlyADeviceWithMediaServiceOffersThePageToPinMedia`, `BridgeScriptTest.withoutPinningTheShimHasNoPinMembers` |
 
@@ -793,7 +810,8 @@ What is not covered: an allowed-origin frame can call its parent's
 `window.daylight.pinMedia` (same origin, so the browser allows it), and that call is
 the top frame's. Such a frame is the household site itself. Script in the top
 frame of the site can call `pinMedia` without the owner having tapped anything;
-the five-second limit and Android's dialog are what stand between that and a pin.
+the five-second and per-minute limits and Android's dialog are what stand between
+that and a pin, and only the owner's confirmation in that dialog records one.
 
 Unproven on a phone: that `requestPinShortcut` shows its dialog when called from
 the WebView's bridge thread, that the launcher accepts a shortcut id and a long

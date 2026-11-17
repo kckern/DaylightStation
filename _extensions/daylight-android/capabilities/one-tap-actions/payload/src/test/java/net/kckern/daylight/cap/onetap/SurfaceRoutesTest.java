@@ -28,9 +28,12 @@ public class SurfaceRoutesTest {
     private final RecordingSink sink = new RecordingSink();
     private final List<String> events = new ArrayList<>();
 
+    private long now = 1_000_000;
+
     @Before public void setUp() throws Exception {
         core = TestCore.create(tmp.newFolder());
         cap = new OneTapActionsCapability(null, sink);
+        cap.clock = () -> now;
         core.add(cap);
         core.prepare(new JSONObject());
         core.services().provide(LinkKeySource.class, () -> KEY);
@@ -155,7 +158,22 @@ public class SurfaceRoutesTest {
         return p;
     }
 
-    @Test public void aPinIsAskedOfTheLauncherUnderAnIdOfItsOwnAndRecordedWhenTheLauncherTakesTheRequest() throws Exception {
+    /** What the launcher's confirmation does: the non-exported receiver hands its request's token to the payload. */
+    private static String confirm(String token) throws Exception {
+        return net.kckern.daylight.api.PayloadPort.named(OneTapActionsCapability.PIN_PORT)
+                .call(new JSONObject().put("op", "confirmed").put("token", token).toString(), 0);
+    }
+
+    /** One pin, asked for and confirmed by the owner; the clock moves on past the process-wide limit. */
+    private void pinAndConfirm(String contentId, String label) throws Exception {
+        JSONObject r = pinner().pinMedia(contentId, label);
+        assertTrue(r.toString(), r.getBoolean("accepted"));
+        confirm(sink.token);
+        now += 21_000;
+    }
+
+    /** The launcher showing its dialog is not the owner pinning: nothing is recorded until the launcher confirms. */
+    @Test public void aPinIsRecordedOnlyWhenTheLauncherConfirmsIt() throws Exception {
         cap.start();
         JSONObject r = pinner().pinMedia("plex:12345", "Morning music");
         assertTrue(r.toString(), r.getBoolean("accepted"));
@@ -163,13 +181,82 @@ public class SurfaceRoutesTest {
         assertEquals("the shortcut launches the pinned action by its id, keyed like every action link",
                 id + " daylight://action/" + id + "#k=" + KEY, sink.pinned);
         assertFalse("the content id never travels in a link", sink.pinned.contains("12345"));
+        assertNotNull("the request carries a token for its confirmation", sink.token);
+        assertNull("asked, not pinned: nothing recorded", core.services().find(ActionList.class).mediaContentId(id));
+        events.clear();
+        confirm(sink.token);
         assertEquals("plex:12345", core.services().find(ActionList.class).mediaContentId(id));
+        assertTrue("the widgets are told to redraw", events.contains(ActionList.PUBLISHED));
+    }
+
+    /** A dismissed dialog never confirms; a token is good for its own request, once, and not after ten minutes. */
+    @Test public void aConfirmationTokenIsSingleUseBoundToItsRequestAndExpires() throws Exception {
+        cap.start();
+        pinner().pinMedia("plex:1", "One");
+        String first = sink.token;
+        now += 21_000;
+        pinner().pinMedia("plex:2", "Two");
+        String second = sink.token;
+        assertNotEquals(first, second);
+        confirm("not-a-token");
+        confirm("");
+        assertNull(core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:1")));
+        confirm(second);
+        assertNull("the second token records the second request only",
+                core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:1")));
+        assertEquals("plex:2", core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:2")));
+        now += OneTapActionsCapability.PIN_CONFIRM_MS + 1;
+        confirm(first);
+        assertNull("too late", core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:1")));
+        now += 21_000;
+        pinner().pinMedia("plex:3", "Three");
+        String third = sink.token;
+        confirm(third);
+        sink.pinnedIds.remove("pin-" + PinnedMedia.idFor("plex:3"));
+        cap.stop();
+        cap.start();
+        assertNull("its shortcut is gone, so its entry went at the publish",
+                core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:3")));
+        sink.pinnedIds.add("pin-" + PinnedMedia.idFor("plex:3"));
+        confirm(third);
+        assertNull("a used token does nothing", core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:3")));
+    }
+
+    /** Full: a new pin is refused with limit_reached, and none of the owner's pinned shortcuts is disabled. */
+    @Test public void atTheLimitANewPinIsRefusedAndNoShortcutIsDisabled() throws Exception {
+        cap.start();
+        for (int i = 0; i < PinnedMedia.MAX; i++) pinAndConfirm("plex:" + i, "L" + i);
+        JSONObject r = pinner().pinMedia("plex:new", "New");
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("limit_reached", r.getString("reason"));
+        assertEquals(OneTapActionsCapability.LIMIT_REACHED, "limit_reached");
+        assertTrue(sink.disabled.toString(), sink.disabled.isEmpty());
+        for (int i = 0; i < PinnedMedia.MAX; i++) {
+            assertEquals("plex:" + i, core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:" + i)));
+        }
+        // Removing one shortcut from the home screen frees its slot.
+        sink.pinnedIds.remove("pin-" + PinnedMedia.idFor("plex:0"));
+        now += 61_000;
+        r = pinner().pinMedia("plex:new", "New");
+        assertTrue(r.toString(), r.getBoolean("accepted"));
+        assertNull(core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:0")));
+    }
+
+    /** Across documents: three accepted requests a minute in the whole process, whatever reloads the page. */
+    @Test public void atMostThreeRequestsAMinuteAreAcceptedInTheProcess() throws Exception {
+        cap.start();
+        for (int i = 0; i < 3; i++) assertTrue(pinner().pinMedia("plex:" + i, "L").getBoolean("accepted"));
+        JSONObject r = pinner().pinMedia("plex:9", "L");
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("rate_limited", r.getString("reason"));
+        now += 61_000;
+        assertTrue(pinner().pinMedia("plex:9", "L").getBoolean("accepted"));
     }
 
     /** The pinned action is offered to the one-action button's chooser (through ActionList) and plays with no window. */
     @Test public void aPinnedActionIsListedForTheButtonChooserAndIsPlayableDirectly() throws Exception {
         cap.start();
-        pinner().pinMedia("plex:12345", "Morning music");
+        pinAndConfirm("plex:12345", "Morning music");
         String id = PinnedMedia.idFor("plex:12345");
         org.json.JSONArray actions = core.services().find(ActionList.class).actions();
         JSONObject last = actions.getJSONObject(actions.length() - 1);
@@ -177,7 +264,6 @@ public class SurfaceRoutesTest {
         assertEquals("Morning music", last.getString("label"));
         assertEquals("daylight://action/" + id + "#k=" + KEY, last.getString("uri"));
         assertEquals(id, last.getString("direct"));
-        assertTrue("the widgets are told to redraw", events.contains(ActionList.PUBLISHED));
         assertFalse("not a launcher (long-press) shortcut unless the settings list it", sink.published.contains(id));
     }
 
@@ -191,7 +277,7 @@ public class SurfaceRoutesTest {
             }
         });
         cap.start();
-        pinner().pinMedia("plex:12345", "Morning music");
+        pinAndConfirm("plex:12345", "Morning music");
         TestCore.call(core, "POST", "/actions/run", null, new JSONObject().put("id", PinnedMedia.idFor("plex:12345")).toString());
         assertEquals(java.util.Collections.singletonList("play {id=plex:12345}"), handled);
     }
@@ -220,19 +306,16 @@ public class SurfaceRoutesTest {
         assertEquals("not_available", p.pinMedia("plex:1", "Radio").getString("reason"));
     }
 
-    @Test public void thePinnedActionsOutliveTheRunAndTheOldestGoesAtTwentyFiveWithItsShortcutDisabled() throws Exception {
+    @Test public void thePinnedActionsOutliveTheRun() throws Exception {
         cap.start();
-        for (int i = 0; i < 25; i++) pinner().pinMedia("plex:" + i, "L" + i);
-        String first = PinnedMedia.idFor("plex:0");
-        assertNull("the oldest is gone", core.services().find(ActionList.class).mediaContentId(first));
-        assertTrue("its pinned shortcut is disabled", sink.disabled.contains("pin-" + first));
-
+        pinAndConfirm("plex:1", "One");
+        pinAndConfirm("plex:2", "Two");
         OneTapActionsCapability again = new OneTapActionsCapability(null, new RecordingSink());
         CoreRuntime next = TestCore.create(core.shell().payloadDir());
         next.add(again);
         next.prepare(new JSONObject());
-        assertEquals("plex:24", next.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:24")));
         assertEquals("plex:1", next.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:1")));
+        assertEquals("plex:2", next.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:2")));
     }
 
     @Test public void aConfiguredActionKeepsItsIdOverAPinnedOne() throws Exception {
@@ -240,12 +323,13 @@ public class SurfaceRoutesTest {
         core.settings().set("actions.3", id + "|Configured|play|open:/media");
         cap.start();
         pinner().pinMedia("plex:12345", "Pinned");
+        if (sink.token != null) confirm(sink.token);
         assertNull("the configured action is not a media action", core.services().find(ActionList.class).mediaContentId(id));
     }
 
     @Test public void theAnswerNeverHoldsALinkTheKeyOrThePinnedList() throws Exception {
         cap.start();
-        pinner().pinMedia("plex:1", "One");
+        pinAndConfirm("plex:1", "One");
         JSONObject r = pinner().pinMedia("plex:2", "Two");
         assertEquals(1, r.length());
         assertFalse(r.toString().contains(KEY));

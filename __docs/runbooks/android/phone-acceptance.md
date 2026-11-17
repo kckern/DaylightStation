@@ -211,8 +211,11 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
    the playlist (through the invisible play screen).
 3. Add a "Daylight button": the chooser lists the label after the configured
    actions. Bind it; a tap plays with no window (as D2).
-4. Cancel the dialog on a second pin: no shortcut; record whether the chooser lists
-   it (it does: the action is recorded when the launcher takes the request).
+4. Cancel the dialog on a second pin: no shortcut, and the chooser does not list it
+   (a pin is recorded only when the launcher confirms the owner added it). Then pin
+   again and add it: the chooser lists it within a moment. If the chooser never lists
+   a pin that was added, the launcher did not send the confirmation: record the
+   launcher and `adb logcat -s Daylight-Action`.
 5. Call `pinMedia` twice within five seconds: the second answers
    `rate_limited`, and only one dialog shows.
 6. `pinMedia({contentId: "https://evil.example/x", label: "x"})` answers
@@ -224,6 +227,12 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
    plays (it was rewritten under the new key).
 9. The answer never holds a link: `JSON.stringify(daylight.pinMedia(...))` has only
    `accepted` and `reason`.
+10. Reload the page between calls and call `pinMedia` four times within a minute
+    (waiting five seconds between them): the fourth answers `rate_limited`.
+11. Remove a pinned media shortcut from the home screen, then reopen the app: the
+    chooser no longer lists it.
+12. With 24 pinned media shortcuts (once, if practical), a 25th answers
+    `limit_reached` and none of the 24 is disabled.
 
 ## E. Android Auto, on the Desktop Head Unit
 

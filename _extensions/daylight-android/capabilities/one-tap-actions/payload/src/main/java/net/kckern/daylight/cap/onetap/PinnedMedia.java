@@ -10,8 +10,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * The media actions pinned at a page's request (the page bridge's pinMedia), oldest
- * first, at most MAX. Pure: the capability persists toJson() in the app's private
+ * The media actions pinned at a page's request (the page bridge's pinMedia) and
+ * confirmed by the owner in the launcher's dialog, oldest first, at most MAX. Pure: the capability persists toJson() in the app's private
  * state directory and reads it back with fromJson().
  *
  * A pinned action's id is derived from its content id ("media-" and twelve hex digits
@@ -57,17 +57,37 @@ final class PinnedMedia {
         return null;
     }
 
+    boolean full() { return entries.size() >= MAX; }
+
     /**
-     * Adds a pin, or renames an existing one and makes it the newest.
+     * Adds a pin, or renames an existing one and makes it the newest. A new pin when
+     * MAX are already kept is refused: no pin the owner made is pushed out for it.
      *
-     * @return the entries dropped to stay within MAX, oldest first
+     * @return whether the pin is now kept
      */
-    List<Entry> add(String contentId, String label, long nowMs) {
+    boolean add(String contentId, String label, long nowMs) {
         Entry existing = find(idFor(contentId));
+        if (existing == null && full()) return false;
         if (existing != null) entries.remove(existing);
         entries.add(new Entry(contentId, label, nowMs));
+        return true;
+    }
+
+    /**
+     * Keeps the entries whose action id is in the set (the ones whose shortcut the
+     * launcher still holds), so a shortcut the owner removed frees its slot.
+     *
+     * @return the entries dropped
+     */
+    List<Entry> retainOnly(java.util.Set<String> actionIds) {
         List<Entry> dropped = new ArrayList<>();
-        while (entries.size() > MAX) dropped.add(entries.remove(0));
+        for (java.util.Iterator<Entry> it = entries.iterator(); it.hasNext(); ) {
+            Entry e = it.next();
+            if (!actionIds.contains(e.id)) {
+                dropped.add(e);
+                it.remove();
+            }
+        }
         return dropped;
     }
 
@@ -87,7 +107,9 @@ final class PinnedMedia {
         if (json == null) return p;
         try {
             JSONArray pins = new JSONObject(json).optJSONArray("pins");
-            for (int i = 0; pins != null && i < pins.length(); i++) {
+            // A file written by an earlier build may hold more than MAX: the newest are kept.
+            int from = pins == null ? 0 : Math.max(0, pins.length() - MAX);
+            for (int i = from; pins != null && i < pins.length(); i++) {
                 JSONObject o = pins.optJSONObject(i);
                 if (o == null) continue;
                 String contentId = o.optString("contentId", "");
