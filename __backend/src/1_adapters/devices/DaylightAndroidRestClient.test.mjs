@@ -160,6 +160,16 @@ describe('DaylightAndroidRestClient', () => {
     expect(result).toMatchObject({ ok: false, code });
   });
 
+  it.each([
+    ['ECONNREFUSED', true], ['EHOSTUNREACH', true], ['ENETUNREACH', true], ['ENOTFOUND', true], ['EAI_AGAIN', true],
+    ['ECONNRESET', false], ['EPIPE', false], ['ECONNABORTED', false],
+  ])('says whether %s means the request never reached the device (%s)', async (code, neverSent) => {
+    const { client } = build(() => { throw Object.assign(new Error(`transport ${code}`), { code }); });
+    const result = await client.post('/device/reboot');
+    expect(result.ok).toBe(false);
+    expect(result.neverSent === true).toBe(neverSent);
+  });
+
   it('maps a thrown error that carries an HTTP response by its status', async () => {
     const error = Object.assign(new Error('Request failed with status code 401'), {
       response: { status: 401, data: { ok: false, error: 'unauthorized' } },

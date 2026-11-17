@@ -166,6 +166,37 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
       await expect(adapter.executeAction('tablet', 'refresh')).rejects.toMatchObject({ code });
     });
 
+    it('carries the device reason for an unsupported action in the message and on the error', async () => {
+      const { adapter } = build({ 'POST /device/reboot': { status: 501, data: { ok: false, error: 'unsupported', reason: 'device owner required' } } });
+      const error = await adapter.executeAction('tablet', 'reboot').catch(e => e);
+      expect(error.code).toBe('DAYLIGHT_ANDROID_UNSUPPORTED');
+      expect(error.reason).toBe('device owner required');
+      expect(error.message).toContain('device owner required');
+    });
+
+    it.each([
+      ['restart-app', '/kiosk/restart', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
+      ['restart-app', '/kiosk/restart', Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' })],
+      ['reboot', '/device/reboot', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
+      ['reboot', '/device/reboot', Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' })],
+    ])('%s: a connection dropped after the request went out is the device doing as asked', async (action, _route, error) => {
+      const { adapter, httpClient } = build();
+      httpClient.post.mockRejectedValue(error);
+      await expect(adapter.executeAction('tablet', action)).resolves.toMatchObject({ accepted: true });
+    });
+
+    it.each(['restart-app', 'reboot'])('%s: a connection that was never made is still a failure', async (action) => {
+      const { adapter, httpClient } = build();
+      httpClient.post.mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+      await expect(adapter.executeAction('tablet', action)).rejects.toMatchObject({ code: 'DAYLIGHT_ANDROID_UNREACHABLE' });
+    });
+
+    it('a dropped connection on any other action is a failure', async () => {
+      const { adapter, httpClient } = build();
+      httpClient.post.mockRejectedValue(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+      await expect(adapter.executeAction('tablet', 'refresh')).rejects.toMatchObject({ code: 'DAYLIGHT_ANDROID_UNREACHABLE' });
+    });
+
     it('error messages never carry the token', async () => {
       const { adapter, httpClient } = build();
       httpClient.post.mockRejectedValue(new Error(`connect ECONNREFUSED ${TOKEN}`));
@@ -348,6 +379,21 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
     it('fails when the kiosk status route fails', async () => {
       const { adapter } = build({ 'GET /kiosk/status': { status: 401, data: { ok: false, error: 'unauthorized' } } });
       await expect(adapter.readStatus('tablet')).rejects.toMatchObject({ code: 'DAYLIGHT_ANDROID_AUTH_REJECTED' });
+    });
+
+    it('blanks credential-like fields at any depth', async () => {
+      const { adapter } = build({
+        ...table,
+        'GET /status': json({
+          device: 'piano-tablet',
+          payload: { version: '1.4.0', updateToken: 'abc', source: { url: 'https://x.test/p.apk', password: 'pw' } },
+          peers: [{ name: 'a', secret: 's' }, 'plain'],
+        }),
+      });
+      const { details } = await adapter.readStatus('tablet');
+      expect(details.payload).toEqual({ version: '1.4.0', updateToken: null, source: { url: 'https://x.test/p.apk', password: null } });
+      expect(details.peers).toEqual([{ name: 'a', secret: null }, 'plain']);
+      expect(JSON.stringify(details)).not.toMatch(/abc|"pw"|"s"/);
     });
 
     it('blanks detail fields whose names look like credentials', async () => {

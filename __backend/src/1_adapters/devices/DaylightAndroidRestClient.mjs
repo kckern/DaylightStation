@@ -27,6 +27,8 @@
 
 const TOKEN_HEADER = 'X-Daylight-Token';
 const DEFAULT_PORT = 8780;
+/** Transport errors raised before a request leaves this host. */
+const NEVER_CONNECTED = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN']);
 
 export class DaylightAndroidRestClient {
   #host;
@@ -112,7 +114,11 @@ export class DaylightAndroidRestClient {
       const message = this.#redact(error?.message || 'Request failed');
       const timedOut = /abort|timeout|ETIMEDOUT|ECONNABORTED/i
         .test(`${error?.code || ''} ${error?.name || ''} ${message}`);
-      return this.#failure(timedOut ? 'TIMEOUT' : 'UNREACHABLE', message, context);
+      // A connection that was never made means the device never saw the
+      // request. A caller that expects the device to drop the connection (a
+      // restart, a reboot) needs to tell that apart from a drop afterwards.
+      const neverSent = !timedOut && NEVER_CONNECTED.has(error?.code);
+      return this.#failure(timedOut ? 'TIMEOUT' : 'UNREACHABLE', message, { ...context, neverSent });
     }
     return this.#interpret(response, binary, context);
   }
@@ -160,7 +166,7 @@ export class DaylightAndroidRestClient {
    * `unsupported`, ...) and `reason` its explanation. Both are appended to the
    * message, since the generic code cannot tell a caller which refusal it was.
    */
-  #failure(code, error, { method, route, status, startedAt, payload } = {}) {
+  #failure(code, error, { method, route, status, startedAt, payload, neverSent } = {}) {
     const deviceError = typeof payload?.error === 'string' ? payload.error : undefined;
     const reason = typeof payload?.reason === 'string' ? payload.reason : undefined;
     const detail = [deviceError, reason].filter(Boolean).join(' - ');
@@ -180,6 +186,7 @@ export class DaylightAndroidRestClient {
       ...(status ? { status } : {}),
       ...(deviceError ? { deviceError } : {}),
       ...(reason ? { reason } : {}),
+      ...(neverSent ? { neverSent: true } : {}),
     };
   }
 

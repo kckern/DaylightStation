@@ -72,9 +72,16 @@ export function createAdminDeviceRemoteRouter({ service, logger = console } = {}
 
   router.use((error, req, res, _next) => {
     const status = STATUS_BY_CODE[error?.code] || (error?.name === 'ValidationError' ? 400 : 500);
-    const safeMessage = status < 500
+    let safeMessage = status < 500
       ? error.message
       : (SAFE_MESSAGE_BY_CODE[error?.code] || 'Internal server error');
+    // The device's own reason for not supporting an action is a fixed phrase
+    // ("device owner required"), so the operator gets to see it. Anything
+    // that does not look like one short line is left out.
+    const reason = error?.code === 'DAYLIGHT_ANDROID_UNSUPPORTED' ? error.reason : null;
+    if (typeof reason === 'string' && /^[\w ,.'()/-]{1,120}$/.test(reason)) {
+      safeMessage = `${safeMessage.replace(/\.$/, '')}: ${reason}.`;
+    }
     const level = status >= 500 ? 'error' : 'warn';
     logger[level]?.('admin.deviceRemote.httpError', {
       deviceId: req.params.deviceId,

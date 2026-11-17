@@ -1,6 +1,6 @@
 import { IDeviceRemoteAdministrationGateway } from '#apps/admin/ports/IDeviceRemoteAdministrationGateway.mjs';
 import { DaylightAndroidRestClient } from './DaylightAndroidRestClient.mjs';
-import { DeviceRemoteGatewayError } from './FullyKioskRemoteAdministrationAdapter.mjs';
+import { DeviceRemoteGatewayError } from './DeviceRemoteGatewayError.mjs';
 
 export const DAYLIGHT_ANDROID_PROVIDER = 'daylight-android';
 
@@ -56,9 +56,19 @@ const SETTING_TYPES = Object.freeze({
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function fail(message, code) {
-  throw new DeviceRemoteGatewayError(message, code);
+function fail(message, code, extra) {
+  throw new DeviceRemoteGatewayError(message, code, extra);
 }
+
+/**
+ * Actions the device carries out by going away: the app restarts, or the
+ * device reboots. A connection that drops or times out once the request has
+ * gone out is how that looks from here.
+ */
+const DROPS_CONNECTION = Object.freeze({
+  'restart-app': 'Restart sent; the kiosk app dropped the connection as it restarted.',
+  reboot: 'Reboot sent; allow about a minute for the device to return.',
+});
 
 /**
  * Fleet-aware implementation of the remote administration port for devices
@@ -164,7 +174,12 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
     const mapping = Object.hasOwn(ACTION_ROUTES, action) ? ACTION_ROUTES[action] : null;
     if (!mapping) fail('Remote action is not supported', 'INVALID_ACTION');
     const [route, mapParams = () => ({}), options] = mapping;
-    return this.#data(await target.client.post(route, mapParams(params || {}, target), options));
+    const response = await target.client.post(route, mapParams(params || {}, target), options);
+    if (Object.hasOwn(DROPS_CONNECTION, action) && !response.ok && !response.neverSent
+      && ['TIMEOUT', 'UNREACHABLE'].includes(response.code)) {
+      return { accepted: true, message: DROPS_CONNECTION[action] };
+    }
+    return this.#data(response);
   }
 
   async writeSetting(deviceId, key, value) {
@@ -231,8 +246,14 @@ export class DaylightAndroidRemoteAdministrationAdapter extends IDeviceRemoteAdm
     })[code];
     // `reason` and `deviceError` are the device's own short words
     // ("device owner required", "not_installed"); they hold no credentials.
+    // The reason of an unsupported action also rides on the error, so the API
+    // layer can tell the operator why the device cannot do it.
     const detail = response?.reason || response?.deviceError;
-    fail(detail ? `${message}: ${detail}` : message, code);
+    fail(
+      detail ? `${message}: ${detail}` : message,
+      code,
+      code === 'DAYLIGHT_ANDROID_UNSUPPORTED' && response?.reason ? { reason: response.reason } : undefined,
+    );
   }
 }
 
@@ -283,10 +304,13 @@ function normalizeSummary(data) {
   };
 }
 
-function sanitizeDetails(details) {
-  return Object.fromEntries(Object.entries(details).map(([key, value]) => [
+/** Blank credential-like fields at every depth: `/status` nests objects (`payload{}`). */
+function sanitizeDetails(value) {
+  if (Array.isArray(value)) return value.map(sanitizeDetails);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [
     key,
-    /(password|secret|token|credential)/i.test(key) ? null : value,
+    /(password|secret|token|credential)/i.test(key) ? null : sanitizeDetails(inner),
   ]));
 }
 

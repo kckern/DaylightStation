@@ -37,4 +37,29 @@ describe('admin device remote router: daylight-android gateway errors', () => {
       expect(response.body.error).not.toMatch(/Fully/);
     }
   });
+
+  it('tells the operator why the device cannot do it, using the device reason and nothing else', async () => {
+    const error = Object.assign(new Error('private upstream details'), {
+      code: 'DAYLIGHT_ANDROID_UNSUPPORTED', reason: 'device owner required',
+    });
+    const response = await request(build(error)).get('/devices/tablet/fully-kiosk/status').expect(501);
+    expect(response.body.error).toBe('This device cannot perform that action: device owner required.');
+    expect(response.body.error).not.toContain('private upstream details');
+  });
+
+  it.each([
+    ['a long reason', 'x'.repeat(500)],
+    ['a multi-line reason', 'device owner required\nstack trace here'],
+    ['a non-string reason', { nested: true }],
+  ])('ignores %s', async (_label, reason) => {
+    const error = Object.assign(new Error('private upstream details'), { code: 'DAYLIGHT_ANDROID_UNSUPPORTED', reason });
+    const response = await request(build(error)).get('/devices/tablet/fully-kiosk/status').expect(501);
+    expect(response.body.error).toBe('This device cannot perform that action.');
+  });
+
+  it('does not add a reason to any other code', async () => {
+    const error = Object.assign(new Error('x'), { code: 'FKB_UNREACHABLE', reason: 'device owner required' });
+    const response = await request(build(error)).get('/devices/tablet/fully-kiosk/status').expect(502);
+    expect(response.body.error).toBe('The Fully Kiosk device is unreachable.');
+  });
 });
