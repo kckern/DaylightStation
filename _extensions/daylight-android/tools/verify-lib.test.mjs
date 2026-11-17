@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
-  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure, componentAttributeFailures, generatedComponents, isKiosk, kioskBasePermissions, permissionFailures as permissionFailuresAgain, HOME_ALIAS, homeAliasFailures, parseXmlTree, foregroundTypeMask, FOREGROUND_TYPE_BITS, carDeclarationFailures,
 } from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
@@ -389,4 +389,34 @@ test('the play screen is not exported', () => {
   assert.deepEqual(componentAttributeFailures(tree(component('activity', PLAY, 'false', null))), []);
   assert.deepEqual(componentAttributeFailures(tree(component('activity', PLAY, 'true', null))),
     [`activity ${PLAY} is exported=true, expected exported=false`]);
+});
+
+// ── Android Auto ──────────────────────────────────────────────────────────
+
+const metaData = (name) => [
+  '        E: meta-data (line=30)',
+  `          A: ${NS}:name(0x01010003)="${name}" (Raw: "${name}")`,
+  `          A: ${NS}:resource(0x01010025)=@0x7f100000`,
+];
+const CAR = 'com.google.android.gms.car.application';
+const AUTO_CAPS = ['media-service', 'android-auto'];
+const CAR_XML = ['res/xml/automotive_app_desc.xml'];
+
+test('a build that lists android-auto declares itself to the car, with its description resource', () => {
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), AUTO_CAPS, CAR_XML), []);
+  assert.deepEqual(carDeclarationFailures(tree(), AUTO_CAPS, CAR_XML),
+    [`capability 'android-auto' is listed but the manifest has no ${CAR} meta-data`]);
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), AUTO_CAPS, []),
+    ["capability 'android-auto' is listed but the APK has no automotive_app_desc resource"]);
+});
+
+test('a build that does not list android-auto is not offered to a car', () => {
+  assert.deepEqual(carDeclarationFailures(tree(), ['media-service'], []), []);
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), ['webview-host'], CAR_XML),
+    [`the manifest declares ${CAR} but the device does not list android-auto`]);
+});
+
+test('a car declaration without the media service it points at fails', () => {
+  assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), ['android-auto'], CAR_XML),
+    ["capability 'android-auto' is listed without media-service: the car would find no media library service"]);
 });

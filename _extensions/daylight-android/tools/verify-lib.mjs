@@ -341,3 +341,26 @@ export function isKiosk(device) {
 export function kioskBasePermissions(device) {
   return isKiosk(device) ? KIOSK_BASE_PERMISSIONS : [];
 }
+
+const CAR_META = 'com.google.android.gms.car.application';
+
+/**
+ * Android Auto lists an app as a media app when its manifest carries this meta-data
+ * and the resource it names. A build has both exactly when its device lists
+ * android-auto, and then it also has the media library service the car binds.
+ */
+export function carDeclarationFailures(xmltree, capabilities, apkEntries) {
+  const failures = [];
+  const declared = parseXmlTree(xmltree).some((n) => n.name === 'meta-data' && n.attrs.name === CAR_META);
+  const resource = apkEntries.some((e) => /^res\/.*automotive_app_desc.*\.xml$/.test(e));
+  if (!capabilities.includes('android-auto')) {
+    if (declared) failures.push(`the manifest declares ${CAR_META} but the device does not list android-auto`);
+    return failures;
+  }
+  if (!capabilities.includes('media-service')) {
+    failures.push("capability 'android-auto' is listed without media-service: the car would find no media library service");
+  }
+  if (!declared) failures.push(`capability 'android-auto' is listed but the manifest has no ${CAR_META} meta-data`);
+  if (!resource) failures.push("capability 'android-auto' is listed but the APK has no automotive_app_desc resource");
+  return failures;
+}

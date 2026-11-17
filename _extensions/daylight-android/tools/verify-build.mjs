@@ -17,7 +17,7 @@ import {
   bakedPayloadFailure, buildTypeLine, componentAttributeFailures, componentFailures, declaredComponents, expectedPermission, generatedComponents,
   homeAliasFailures, kioskBasePermissions, newestVersion,
   parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
-  foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE,
+  foregroundTypeMask, FOREGROUND_TYPE_BITS, SHELL_SERVICE, carDeclarationFailures,
 } from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -116,6 +116,8 @@ failures.push(...homeAliasFailures(tree, device.capabilities));
 
 // A capability with native code must ship a library for every ABI of the device.
 const entries = execFileSync('unzip', ['-Z1', apk], { encoding: 'utf8' }).split('\n');
+// Only a device that lists android-auto is offered to a car as a media app.
+failures.push(...carDeclarationFailures(tree, device.capabilities, entries));
 for (const name of device.capabilities) {
   if (!capabilities[name]?.native) continue;
   for (const abi of device.abis || []) {
