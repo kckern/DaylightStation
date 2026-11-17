@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Needed for a microphone foreground service from target 34; declared now so a
+         later target bump is a config change. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application>
+        <!-- Not exported: started by this app only, when the payload has accepted a keyed
+             memo link, or from the recording's own notification. Opening it is what starts
+             a recording, so nothing outside this app may open it. -->
+        <activity
+            android:name="net.kckern.daylight.cap.voicememo.shell.RecordActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Voice memo"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
+
+        <!-- Not exported: started and stopped by this app only. A foreground service of
+             type microphone, with a notification for as long as it records. -->
+        <service
+            android:name="net.kckern.daylight.cap.voicememo.shell.MemoRecorderService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+    </application>
+</manifest>

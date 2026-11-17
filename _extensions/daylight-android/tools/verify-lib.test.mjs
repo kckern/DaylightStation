@@ -420,3 +420,15 @@ test('a car declaration without the media service it points at fails', () => {
   assert.deepEqual(carDeclarationFailures(tree(metaData(CAR)), ['android-auto'], CAR_XML),
     ["capability 'android-auto' is listed without media-service: the car would find no media library service"]);
 });
+
+test('the recorder and its screen are not exported, and the recorder is a microphone foreground service', () => {
+  const REC = 'net.kckern.daylight.cap.voicememo.shell.MemoRecorderService';
+  const SCREEN = 'net.kckern.daylight.cap.voicememo.shell.RecordActivity';
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'false', null, '0x00000080'), component('activity', SCREEN, 'false', null))), []);
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'true', null, '0x00000080'))),
+    [`service ${REC} is exported=true, expected exported=false`]);
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', SCREEN, 'true', null))),
+    [`activity ${SCREEN} is exported=true, expected exported=false`]);
+  assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'false', null, null))),
+    [`service ${REC} has foregroundServiceType mask 0, expected 128 (microphone)`]);
+});

@@ -273,6 +273,10 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService': { exported: true, permission: null, foregroundServiceType: ['mediaPlayback'] },
   // Started by this app only, when the payload has accepted a keyed media link.
   'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity': { exported: false, permission: null },
+  // Opening the record screen starts a recording, so only this app can: the payload on a
+  // keyed memo link, and the recording's own notification.
+  'activity net.kckern.daylight.cap.voicememo.shell.RecordActivity': { exported: false, permission: null },
+  'service net.kckern.daylight.cap.voicememo.shell.MemoRecorderService': { exported: false, permission: null, foregroundServiceType: ['microphone'] },
 };
 
 /** The bits of android:foregroundServiceType, as aapt2 prints the attribute's mask. */
