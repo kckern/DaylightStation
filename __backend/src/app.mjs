@@ -3820,6 +3820,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   }
 
+  // Drain only committed Fitness transport incidents through the same
+  // production scheduler lifecycle as the existing voice-memo retry worker.
+  if (agentsServices.scheduler && v1Routers.fitness?.transportIncidentRetryWorker) {
+    v1Routers.fitness.transportIncidentRetryWorker.register(agentsServices.scheduler);
+  }
+
   // Strava reconciliation sweep — propagates LOCAL session corrections (splits,
   // edited primary media, late voice memos) back to Strava without waiting for
   // the next workout's webhook to opportunistically trigger reconcile(). The

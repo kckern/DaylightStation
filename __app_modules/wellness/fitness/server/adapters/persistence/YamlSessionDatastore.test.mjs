@@ -85,3 +85,38 @@ test('deriveHasVideo: false when no timelapse block at all', () => {
   assert.equal(deriveHasVideo({}), false);
   assert.equal(deriveHasVideo(null), false);
 });
+
+import { YamlSessionDatastore } from './YamlSessionDatastore.mjs';
+import { FitnessTransportIncidentService } from '../../application/services/FitnessTransportIncidentService.mjs';
+import { mkdtemp, rm, readFile as readRawFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+test('transport retry sidecar survives reopen, stays household scoped and never enters session history', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'fitness-transport-store-'));
+  const configService = { getHouseholdPath: (relative, household) => path.join(root, household, relative) };
+  const create = () => new YamlSessionDatastore({ configService, mediaRoot: path.join(root, 'media') });
+  try {
+    const store = create();
+    const session = { sessionId: '20261116120000', startTime: 1000, timeline: { series: {}, events: [] } };
+    await store.save(session, 'home');
+    const historyFile = path.join(root, 'home/fitness/log/2026-11-16/20261116120000.yml');
+    const original = await readRawFile(historyFile, 'utf8');
+    await store.writeTransportIncidents('home', { version: 1, incidents: { incident1: {
+      metadata: { type: 'lost', incidentId: 'incident1', state: 'lost', reason: 'delivery-gap', bootId: 'bridge-a', silenceMs: 60000, timestamp: '2026-11-16T12:00:00Z' },
+      status: 'pending', attempts: 0, delivered: 'unknown',
+    } } });
+    const reopened = create();
+    assert.equal((await reopened.readTransportIncidents('home')).incidents.incident1.status, 'pending');
+    assert.deepEqual((await reopened.readTransportIncidents('other')).incidents, {});
+    assert.deepEqual(await reopened.listDates('home'), ['2026-11-16']);
+    assert.equal(await readRawFile(historyFile, 'utf8'), original);
+    let pushed = 0;
+    await new FitnessTransportIncidentService({ store: reopened, allowedHouseholdId: 'home', sendPush: async () => { pushed++; return { accepted: true }; } }).tick();
+    assert.equal(pushed, 1);
+    assert.equal((await create().readTransportIncidents('home')).incidents.incident1.status, 'accepted');
+    await reopened.save(session, 'home');
+    assert.equal((await create().readTransportIncidents('home')).incidents.incident1.status, 'accepted');
+    assert.equal(await readRawFile(historyFile, 'utf8'), original);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

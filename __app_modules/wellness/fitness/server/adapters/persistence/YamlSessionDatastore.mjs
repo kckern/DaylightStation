@@ -11,7 +11,9 @@ import {
   ensureDir,
   dirExists,
   loadYamlSafe,
+  loadYaml,
   saveYaml,
+  saveYamlToPathAtomic,
   listYamlFiles,
   listDirsMatching,
   deleteYaml,
@@ -119,6 +121,17 @@ export class YamlSessionDatastore extends ISessionDatastore {
     this.configService = config.configService;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
     this.logger = config.logger || null;
+  }
+
+  // Server-owned delivery metadata, outside session/day files and browser saves.
+  readTransportIncidents(householdId) {
+    const file = path.join(this.configService.getHouseholdPath('fitness/log', householdId), '_transport', 'incidents.yml');
+    return loadYaml(file) || { version: 1, incidents: {} };
+  }
+
+  writeTransportIncidents(householdId, records) {
+    const file = path.join(this.configService.getHouseholdPath('fitness/log', householdId), '_transport', 'incidents.yml');
+    saveYamlToPathAtomic(file, records, { durable: true });
   }
 
   /**

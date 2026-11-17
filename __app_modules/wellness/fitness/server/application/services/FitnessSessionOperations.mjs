@@ -4,9 +4,10 @@ import { endedPayloadFor } from './sessionEndedPayload.mjs';
 export class FitnessSessionOperations {
   constructor({
     sessions, grouping = null, timelapse = null, renderReceipt = null,
-    config = null, onSessionsChanged = null, publications = null, logger = console,
+    config = null, onSessionsChanged = null, publications = null, transportIncidents = null, logger = console,
   }) {
     this.sessions = sessions;
+    this.transportIncidents = transportIncidents;
     this.grouping = grouping;
     this.timelapse = timelapse;
     this.renderReceipt = renderReceipt;
@@ -109,6 +110,15 @@ export class FitnessSessionOperations {
     const was = (before && before.endTime) ? { endTime: before.endTime, finalized: before.finalized === true } : null;
     const news = !was || String(was.endTime) !== String(after?.endTime) || (after?.finalized === true && !was.finalized);
     if (news) this.publishEnded(after, sessionData?.sessionId);
+    if (after && this.transportIncidents) {
+      try {
+        await this.transportIncidents.recordCommitted(after, this.sessions.resolveHouseholdId?.(householdId) ?? householdId);
+      } catch {
+        // The workout write has already committed; surface the alert failure
+        // without representing it as a failed workout save.
+        this.logger.warn?.('fitness.transport.alert_record_failed', { householdId });
+      }
+    }
     return { kind: 'saved', ...value };
   }
 }

@@ -1,3 +1,4 @@
+import { FitnessTransportIncidentService } from '../application/services/FitnessTransportIncidentService.mjs';
 import moment from 'moment-timezone';
 import { PlaybackBudgetService } from '../application/PlaybackBudgetService.mjs';
 import { YamlPlaybackBudgetStore } from '../adapters/persistence/YamlPlaybackBudgetStore.mjs';
@@ -409,7 +410,21 @@ export function createFitnessApiRouter(config) {
     logger,
   });
   new FitnessCoinsRelay({ eventBus, logger }).start();
+  const transportIncidentRetryWorker = new FitnessTransportIncidentService({
+    store: fitnessServices.sessionStore,
+    allowedHouseholdId: householdId,
+    logger,
+    sendPush: async (push, selectedHouseholdId) => {
+      if (selectedHouseholdId !== householdId) return { accepted: false };
+      const recipient = configService?.getHeadOfHousehold?.(selectedHouseholdId);
+      const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
+      if (!garageHumanActivityGateway?.callService || !notifyService) return { accepted: false };
+      await garageHumanActivityGateway.callService('notify', notifyService, push);
+      return { accepted: true }; // Gateway acceptance cannot prove phone delivery.
+    },
+  });
   const fitnessSessionOperations = new FitnessSessionOperations({
+    transportIncidents: transportIncidentRetryWorker,
     sessions: fitnessServices.sessionService,
     grouping: fitnessServices.sessionGroupingService,
     timelapse: generateSessionTimelapse,
@@ -509,6 +524,7 @@ export function createFitnessApiRouter(config) {
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
   fitnessRouter.voiceMemoRetryWorker = voiceMemoRetryWorker;
+  fitnessRouter.transportIncidentRetryWorker = transportIncidentRetryWorker;
   // Shared with School's lifecycle composition: these are the already-wired
   // Fitness authorities, not second instances with drifting config/caches.
   fitnessRouter.fitnessPlayableService = fitnessPlayableService;
