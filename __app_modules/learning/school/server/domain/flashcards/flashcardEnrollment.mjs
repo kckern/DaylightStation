@@ -55,6 +55,10 @@ export function validateFlashcardEnrollment(raw) {
     // made the same study set silently mean different tests for different
     // learners, and coupled card ids to quiz ids in the original design.
     if (policy.linkedQuizBankId !== undefined) errors.push('policy.linkedQuizBankId is no longer supported; set deck.assessment.bankId instead');
+    if (policy.order !== undefined) {
+      if (mode !== CARD_LADDER_MODE) errors.push('policy.order is only used by card-ladder');
+      else if (!['deck', 'random'].includes(policy.order)) errors.push('policy.order must be deck or random');
+    }
     if (mode === CARD_LADDER_MODE) {
       FSRS_ONLY.filter((field) => policy[field] !== undefined).forEach((field) => errors.push(`policy.${field} is not used by card-ladder`));
     }

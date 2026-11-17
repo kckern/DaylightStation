@@ -24,6 +24,7 @@ import { currentDictation, dictationState } from "../domain/cardLadder/dictation
  * recordings sink (a discarding one in test mode) and never touches status.
  */
 import { isCardLadderPolicy } from "../domain/flashcards/index.mjs";
+
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from "../domain/errors.mjs";
 import { offsetMinutesFor, studyDayForInstant } from "../domain/studyDay.mjs";
@@ -34,6 +35,9 @@ import {
   quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, dayAnswers, daySummary, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget, unreleasedWords,
 } from "../domain/cardLadder/index.mjs";
+
+/** A card-ladder program may set its own new-word order (`policy.order`). */
+const NEW_WORD_ORDERS = Object.freeze(['random', 'deck']);
 
 const FOLD_LOOKBACK_DAYS = 60;
 
@@ -383,14 +387,16 @@ export class CardLadderSittingService {
 
   /**
    * Words still new, across every deck the learner has seen plus this one, in
-   * the order they will be introduced: `batch.order` (config; random by
-   * default — a stable per-learner shuffle within each deck).
+   * the order they will be introduced: the program's `policy.order` when it
+   * sets one, else `batch.order` (config; random by default — a stable
+   * per-learner shuffle within each deck).
    */
   async #pool(status, deck, learnerId) {
-    const order = this.#settings().batch?.order ?? 'random';
     let groups = await this.#deckGroups(status, deck);
+    const enrollments = await this.#enrollments(learnerId);
+    const programOrder = enrollments.find((row) => (row.deckId ?? row.corpusId) === deck.id)?.policy?.order;
+    const order = NEW_WORD_ORDERS.includes(programOrder) ? programOrder : (this.#settings().batch?.order ?? 'random');
     if (this.#mode !== 'test') {
-      const enrollments = await this.#enrollments(learnerId);
       // Learned words stay in status for ordinary spaced review. Only unseen
       // cards need the lesson to remain unlocked after a correction or pause.
       const eligible = await Promise.all(groups.map(async (group) => {

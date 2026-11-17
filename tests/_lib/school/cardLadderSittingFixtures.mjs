@@ -30,7 +30,7 @@ export const lexicon = {
   entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
     ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
 };
-export function make({ realtime = null, judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon } = {}) {
+export function make({ realtime = null, judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon, settings = SETTINGS } = {}) {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
@@ -47,7 +47,7 @@ export function make({ realtime = null, judgementCache = null, recordings = null
     assets: { exists: typeof media === 'function' ? media : () => media },
     judge: { judge: judgeFn },
     teacherGate, recordings, judgementCache, realtime,
-    settings: () => SETTINGS, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
+    settings: () => settings, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
   });
   return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
 }
