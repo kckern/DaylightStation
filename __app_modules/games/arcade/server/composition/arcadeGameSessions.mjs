@@ -165,10 +165,14 @@ export function createArcadeGameSessionTracking(config) {
   const kioskByDevice = new Map();
   for (const [deviceId, device] of polledDevices) {
     // Fully's REST client, or the Android kiosk app's, by the device's provider.
-    kioskByDevice.set(deviceId, createArcadeKioskClient({
+    const client = createArcadeKioskClient({
       deviceId, control: device.content_control || {}, configService, httpClient, logger,
-    }));
+    });
+    if (client) kioskByDevice.set(deviceId, client);
   }
+  // A device with no client (already warned about as `arcade.kiosk.unconfigured`)
+  // is left unmetered. One mistyped device entry must not stop the others, or boot.
+  polledDevices = polledDevices.filter(([deviceId]) => kioskByDevice.has(deviceId));
 
   // The overlay is a SEPARATE declaration from observation: a device may be
   // metered without ever carrying a countdown. Only `arcade_session_overlay: true` devices
