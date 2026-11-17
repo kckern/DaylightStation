@@ -1,0 +1,42 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+def catalog = rootProject.ext.catalog
+
+android {
+    namespace 'net.kckern.daylight.payload'
+
+    flavorDimensions 'device'
+    productFlavors {
+        catalog.devices().each { d ->
+            create(d.id) { dimension 'device' }
+        }
+    }
+
+    // Each device variant compiles a DeviceConfig generated from its YAML.
+    libraryVariants.all { variant ->
+        def device = catalog.device(variant.flavorName)
+        def source = net.kckern.daylight.build.DeviceConfigSource.render(device, catalog, rootProject.ext.payloadVersion)
+        def outDir = new File(buildDir, "generated/daylight/${variant.name}")
+        def gen = tasks.create("generate${variant.name.capitalize()}DeviceConfig") {
+            inputs.property('source', source)
+            outputs.dir outDir
+            doLast {
+                def f = new File(outDir, 'net/kckern/daylight/generated/DeviceConfig.java')
+                f.parentFile.mkdirs()
+                f.text = source
+            }
+        }
+        variant.registerJavaGeneratingTask(gen, outDir)
+    }
+}
+
+dependencies {
+    implementation project(':core')
+    catalog.devices().each { d ->
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasPayload) {
+                add("${d.id}Implementation", project(":capabilities:${name}:payload"))
+            }
+        }
+    }
+}

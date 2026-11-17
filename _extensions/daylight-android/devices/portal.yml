@@ -1,0 +1,11 @@
+# Facebook Portal panel (Android 9). Phase 1 build: foundation only.
+id: portal
+package: net.kckern.daylight.portal
+android: { minSdk: 26, targetSdk: 28 }
+abis: []
+control: { port: 8780, lifelinePort: 8781 }
+shell: { versionCode: 1, versionName: "0.1-foundation" }
+capabilities:
+  - debug-tools
+defaults:
+  debug.execEnabled: false
