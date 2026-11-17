@@ -1,1 +1,72 @@
-// Replaced in Task 14.
+plugins { id 'com.android.application' }
+
+def catalog = rootProject.ext.catalog
+
+// Private per-device control tokens: -PcontrolTokens=<file>, or $DAYLIGHT_ANDROID_TOKENS.
+def tokensPath = project.findProperty('controlTokens') ?: System.getenv('DAYLIGHT_ANDROID_TOKENS')
+def tokens = net.kckern.daylight.build.ControlTokens.load(tokensPath ? new File(tokensPath.toString()) : null)
+
+android {
+    namespace 'net.kckern.daylight.shell'
+    compileSdk 33
+
+    defaultConfig { minSdk 26 }
+
+    flavorDimensions 'device'
+    productFlavors {
+        catalog.devices().each { d ->
+            create(d.id) {
+                dimension 'device'
+                applicationId d.packageName
+                minSdkVersion d.minSdk
+                targetSdkVersion d.targetSdk
+                versionCode d.shellVersionCode
+                versionName d.shellVersionName
+                buildConfigField 'String', 'DEVICE_ID', "\"${d.id}\""
+                buildConfigField 'int', 'LIFELINE_PORT', "${d.lifelinePort}"
+                buildConfigField 'String', 'CONTROL_TOKEN', "\"${tokens.tokenFor(d.id)}\""
+                if (!d.abis.isEmpty()) ndk { abiFilters(*d.abis) }
+            }
+        }
+    }
+
+    sourceSets {
+        catalog.devices().each { d ->
+            getByName(d.id).assets.srcDir new File(buildDir, "generated/baked/${d.id}")
+        }
+    }
+
+    buildTypes { release { minifyEnabled false } }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    testOptions { unitTests.returnDefaultValues = true }
+}
+
+// A device build without a control token would install an API nobody can reach.
+catalog.devices().each { d ->
+    tasks.matching { it.name ==~ "pre${d.id.capitalize()}(Debug|Release)Build" }.all {
+        doFirst {
+            if (!tokens.has(d.id)) {
+                throw new GradleException("no control token for device '${d.id}'. " +
+                        "Add it to the private tokens file and set DAYLIGHT_ANDROID_TOKENS or -PcontrolTokens.")
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation project(':shell-api')
+    // The shell ships NanoHTTPD; payloads link against this copy.
+    implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    catalog.devices().each { d ->
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasShell) add("${d.id}Implementation", project(":capabilities:${name}:shell"))
+        }
+    }
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
+}

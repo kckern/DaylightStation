@@ -87,6 +87,9 @@ gradle.projectsEvaluated {
                 new File(bakedDir, 'payload-baked.jar').bytes = jar.bytes
             }
         }
-        shellProject.tasks.matching { it.name ==~ "merge${cap}(Debug|Release)Assets" }.all { it.dependsOn bake }
+        // Lint reads the asset directories too, so it needs the same dependency as the merge.
+        shellProject.tasks.matching {
+            it.name ==~ "merge${cap}(Debug|Release)Assets" || it.name ==~ /(?i).*lint.*${cap}(Debug|Release).*/
+        }.all { it.dependsOn bake }
     }
 }
