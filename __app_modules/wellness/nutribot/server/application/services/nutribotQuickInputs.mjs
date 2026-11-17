@@ -55,15 +55,17 @@ function outcomeOf(routed) {
  * @param {(username: string) => string} deps.resolveConversationId
  * @param {() => number} [deps.clock]
  * @param {Object} [deps.logger]
- * @returns {{endpoints: {voice: QuickInputEndpoint, text: QuickInputEndpoint, photo: QuickInputEndpoint}}}
+ * @returns {{endpoints: {voice: QuickInputEndpoint, text: QuickInputEndpoint, photo: QuickInputEndpoint}, ledger: QuickInputLedger|null}}
  */
 export function createNutribotQuickInputs({
   available = true, inputRouter, ledgerStore, limits = {}, timezone = () => undefined,
   deviceConfig, resolveConversationId, clock = Date.now, logger = {},
 } = {}) {
-  // An input needs Nutribot's AI gateway, its input router and a ledger. Without them the routes answer 503.
-  const ready = Boolean(available && inputRouter && ledgerStore);
-  const ledger = ready ? new QuickInputLedger({ store: ledgerStore, limits, timezone, clock }) : null;
+  // The ledger is the user's Nutribot day. The direct-input routes count
+  // against it too, so it exists whenever there is somewhere to keep it.
+  const ledger = ledgerStore ? new QuickInputLedger({ store: ledgerStore, limits, timezone, clock }) : null;
+  // An input needs Nutribot's AI gateway, its input router and the ledger. Without them the routes answer 503.
+  const ready = Boolean(available && inputRouter && ledger);
 
   // A meal belongs to the day and the meal it was captured at, not to the
   // moment it was uploaded. `date` and `bucket` are the inputs the router
@@ -109,7 +111,7 @@ export function createNutribotQuickInputs({
     logger,
   })]));
 
-  return { endpoints };
+  return { endpoints, ledger };
 }
 
 export default createNutribotQuickInputs;

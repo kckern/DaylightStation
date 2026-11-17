@@ -75,7 +75,7 @@ const bareType = (header) => String(header || '').split(';')[0].trim().toLowerCa
  * not a browser and sends none. A request that carries one is let through
  * only when it is this app's own origin, that is, the host it was sent to.
  */
-function fromAnotherOrigin(req) {
+export function isCrossOriginRequest(req) {
   const origin = req.get('Origin');
   if (origin === undefined) return false;
   try {
@@ -83,6 +83,18 @@ function fromAnotherOrigin(req) {
   } catch {
     return true;
   }
+}
+
+/**
+ * A cross-site GET (an image tag, a link, a form) carries no `Origin`, but a
+ * browser still says where the request came from in `Sec-Fetch-Site`, a
+ * header page script cannot set. `same-origin` is this app's own page and
+ * `none` is an address typed by hand; a client that is not a browser sends
+ * neither. For a route that can be reached by GET.
+ */
+export function isCrossSiteFetch(req) {
+  const site = String(req.get('Sec-Fetch-Site') || '').toLowerCase();
+  return site === 'cross-site' || site === 'same-site';
 }
 
 /** Whether the bytes begin the way the declared image type does. */
@@ -105,14 +117,18 @@ function utf8(body) {
 /**
  * Whether a request is addressed to a quick-input route. For a path that an
  * earlier route already answers in another shape (Nutribot's `/text`), this
- * tells the two apart: a quick input is a POST that names a device or an
- * input id, or carries a body of one of the kind's types.
+ * tells the two apart: a quick input is a POST whose body is not JSON or a
+ * form, and that names a device or an input id or carries a body of one of
+ * the kind's types.
  */
 export function isQuickInputRequest(req, kind) {
   if (req.method !== 'POST') return false;
+  const type = bareType(req.get('Content-Type'));
+  // A JSON or form body is the earlier shape, whatever else the request carries.
+  if (type === 'application/json' || type === 'application/x-www-form-urlencoded') return false;
   if (req.get('X-Daylight-Device') !== undefined) return true;
   if (ID_HEADERS.some((name) => req.get(name) !== undefined)) return true;
-  return QUICK_INPUT_KINDS[kind].types.includes(bareType(req.get('Content-Type')));
+  return QUICK_INPUT_KINDS[kind].types.includes(type);
 }
 
 /**
@@ -204,7 +220,7 @@ export function quickInputRoute(endpoint, options = {}) {
   // Cheapest and least revealing first: nothing is said about a user to a
   // caller that may not write for them.
   const gate = (req, res, next) => {
-    if (fromAnotherOrigin(req)) return refuse(req, res, 403, 'cross_origin');
+    if (isCrossOriginRequest(req)) return refuse(req, res, 403, 'cross_origin');
     if (!endpoint.available()) return refuse(req, res, 503, 'unavailable');
 
     const username = typeof req.query.user === 'string' ? req.query.user.trim() : '';

@@ -17,6 +17,7 @@ import { createNutribotServices } from "./runtime.mjs";
 import { DailyReportImage } from "../application/DailyReportImage.mjs";
 import { NutribotApiService } from "../application/NutribotApiService.mjs";
 import { createNutribotQuickInputs } from "../application/services/nutribotQuickInputs.mjs";
+import { NutribotDirectInput } from "../application/services/NutribotDirectInput.mjs";
 import { quickInputLimits } from "../../../../../__capabilities/quick-input/server/public.mjs";
 import { YamlQuickInputLedgerStore } from "../../../../../__capabilities/quick-input/server/adapters/index.mjs";
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
@@ -123,6 +124,23 @@ export function createNutribotApiRouter(config) {
     logger,
   });
 
+  // The direct-input routes (/upc, /image, /pinhole, /text in its earlier
+  // shape): who may use them and for whom, counted against the same day.
+  const directInput = new NutribotDirectInput({
+    ledger: quickInputs.ledger,
+    deviceConfig: (deviceKey) => configService?.getDeviceConfig?.(deviceKey),
+    // `direct_input.allow_unbound.<route>: [<username>, ...]` in the nutribot app
+    // config opens one route to callers that cannot name a device. Off unless set.
+    unboundUsers: (route) => configService?.getAppConfig?.('nutribot')?.direct_input?.allow_unbound?.[route],
+    resolveIdentity: (username) => telegramIdentityAdapter.resolve('nutribot', { username }),
+    operations: {
+      upc: (command) => nutribotApi.logUpc(command),
+      image: (command) => nutribotApi.logImage(command),
+      text: (command) => nutribotApi.logText(command),
+    },
+    logger,
+  });
+
   const router = createNutribotRouter(nutribotApi, {
     webhookHandler,
     botId,
@@ -130,6 +148,7 @@ export function createNutribotApiRouter(config) {
     gateway,
     idempotencyStore,
     quickInput: quickInputs.endpoints,
+    directInput,
     dailyReportImage: new DailyReportImage({
       reports: nutribotServices.nutribotContainer.getGetReportAsJSON(),
       renderer: nutribotServices.nutribotContainer.getReportRenderer?.() || null,

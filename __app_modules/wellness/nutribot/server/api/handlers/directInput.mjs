@@ -7,6 +7,33 @@
  */
 
 import { nowTs } from '#system/utils/index.mjs';
+import { refuseForToday } from './directInputGuard.mjs';
+
+/**
+ * Who the request acts for. Behind the guard (the router always mounts it)
+ * that is what the guard decided. A handler used on its own, with no guard
+ * in front, falls back to the service's own user context.
+ */
+function callerOf(req, nutribotApi) {
+  return req.directInput || nutribotApi.userContext(req.body?.user || req.query?.user || null);
+}
+
+/**
+ * Run the route's operation. Behind the guard it is counted against the
+ * user's day and, when the caller sent an input id, runs once for that id.
+ * @returns {Promise<{result: any}|{answered: true}>} `answered` when the response has been sent
+ */
+async function perform(req, res, operation, command) {
+  if (!req.directInput?.run) return { result: await operation(command) };
+  const outcome = await req.directInput.run(command);
+  if (outcome.kind === 'accepted') return { result: outcome.result };
+  if (outcome.kind === 'daily_limit') {
+    refuseForToday(res, outcome);
+    return { answered: true };
+  }
+  res.status(200).json({ ok: true, duplicate: true });
+  return { answered: true };
+}
 
 /**
  * Create direct UPC handler
@@ -79,7 +106,7 @@ export function directUPCHandler(nutribotApi, options = {}) {
       });
     }
 
-    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
+    const { userId, conversationId } = callerOf(req, nutribotApi);
 
     logger.info?.('direct.upc.received', {
       traceId,
@@ -91,12 +118,14 @@ export function directUPCHandler(nutribotApi, options = {}) {
     // Call use case
     let result;
     try {
-      result = await nutribotApi.logUpc({
+      const performed = await perform(req, res, (command) => nutribotApi.logUpc(command), {
         userId,
         conversationId,
         upc: cleanUPC,
         messageId: null, // No Telegram message
       });
+      if (performed.answered) return;
+      result = performed.result;
     } catch (error) {
       // Not a food barcode (bad check digit, an ISBN): the caller sent a bad
       // code, and the message is the sentence to show them.
@@ -163,7 +192,7 @@ export function directImageHandler(nutribotApi, options = {}) {
       });
     }
 
-    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
+    const { userId, conversationId } = callerOf(req, nutribotApi);
 
     logger.info?.('direct.image.received', {
       ...requestMetadata,
@@ -174,12 +203,14 @@ export function directImageHandler(nutribotApi, options = {}) {
     });
 
     // Call use case
-    const result = await nutribotApi.logImage({
+    const performed = await perform(req, res, (command) => nutribotApi.logImage(command), {
       userId,
       conversationId,
       imageData: { url: imgUrl },
       messageId: null, // No Telegram message
     });
+    if (performed.answered) return;
+    const { result } = performed;
 
     const duration = Date.now() - startTime;
     logger.info?.('direct.image.processed', {
@@ -225,7 +256,7 @@ export function directTextHandler(nutribotApi, options = {}) {
       });
     }
 
-    const { userId, conversationId } = nutribotApi.userContext(req.body?.user || req.query?.user || null);
+    const { userId, conversationId } = callerOf(req, nutribotApi);
 
     logger.info?.('direct.text.received', {
       traceId,
@@ -236,13 +267,15 @@ export function directTextHandler(nutribotApi, options = {}) {
     });
 
     // Call use case
-    const result = await nutribotApi.logText({
+    const performed = await perform(req, res, (command) => nutribotApi.logText(command), {
       userId,
       conversationId,
       text,
       date,
       messageId: null, // No Telegram message
     });
+    if (performed.answered) return;
+    const { result } = performed;
 
     const duration = Date.now() - startTime;
     logger.info?.('direct.text.processed', { traceId, durationMs: duration, success: result?.success });

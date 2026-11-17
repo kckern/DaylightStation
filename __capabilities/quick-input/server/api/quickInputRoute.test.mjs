@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
-import { quickInputRoute, quickInputPreflight, isQuickInputRequest, QUICK_INPUT_KINDS } from './quickInputRoute.mjs';
+import {
+  quickInputRoute, quickInputPreflight, isQuickInputRequest, isCrossOriginRequest, isCrossSiteFetch, QUICK_INPUT_KINDS,
+} from './quickInputRoute.mjs';
 
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('not really a photo, and never logged')]);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('png body')]);
@@ -266,11 +268,31 @@ test('a quick input is told apart from another shape of request on the same path
     return { method, get: (name) => lower[name.toLowerCase()] };
   };
   assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'text/plain; charset=utf-8' }), 'text'), true);
-  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/json', 'X-Daylight-Input-Id': 'a' }), 'text'), true);
-  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/json', 'X-Daylight-Memo-Id': 'a' }), 'text'), true);
+  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'audio/ogg', 'X-Daylight-Input-Id': 'a' }), 'text'), true);
+  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'image/jpeg', 'X-Daylight-Memo-Id': 'a' }), 'text'), true);
   assert.equal(isQuickInputRequest(req('POST', { 'X-Daylight-Device': 'fleet:phone' }), 'text'), true);
+  // A JSON or form body is the earlier shape, whatever else the request carries.
+  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/json', 'X-Daylight-Input-Id': 'a', 'X-Daylight-Device': 'fleet:phone' }), 'text'), false);
+  assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8', 'X-Daylight-Device': 'fleet:phone' }), 'text'), false);
   assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/json' }), 'text'), false);
   assert.equal(isQuickInputRequest(req('POST', { 'Content-Type': 'application/x-www-form-urlencoded' }), 'text'), false);
   assert.equal(isQuickInputRequest(req('GET', { 'Content-Type': 'text/plain' }), 'text'), false);
   assert.equal(isQuickInputRequest(req('POST', {}), 'text'), false);
+});
+
+test('a request from another site is recognised by its Origin or by the browser\'s fetch metadata', () => {
+  const req = (headers) => {
+    const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    return { get: (name) => lower[name.toLowerCase()] };
+  };
+  assert.equal(isCrossOriginRequest(req({ Host: 'station.example' })), false);
+  assert.equal(isCrossOriginRequest(req({ Host: 'station.example', Origin: 'https://station.example' })), false);
+  assert.equal(isCrossOriginRequest(req({ Host: 'station.example', Origin: 'https://elsewhere.example' })), true);
+  assert.equal(isCrossOriginRequest(req({ Host: 'station.example', Origin: 'null' })), true);
+  // A cross-site GET (an image tag, a link) carries no Origin; the browser still says where it came from.
+  assert.equal(isCrossSiteFetch(req({ 'Sec-Fetch-Site': 'cross-site' })), true);
+  assert.equal(isCrossSiteFetch(req({ 'Sec-Fetch-Site': 'same-site' })), true);
+  assert.equal(isCrossSiteFetch(req({ 'Sec-Fetch-Site': 'same-origin' })), false);
+  assert.equal(isCrossSiteFetch(req({ 'Sec-Fetch-Site': 'none' })), false);
+  assert.equal(isCrossSiteFetch(req({})), false);
 });

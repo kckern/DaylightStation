@@ -558,10 +558,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     '/api/v1/journalist/memo',
     '/api/v1/journalist/text',
     '/api/v1/nutribot/voice',
-    // /nutribot/text also answers an earlier shape of request; its router
-    // applies CORS and the body parsers to that one itself.
     '/api/v1/nutribot/text',
     '/api/v1/nutribot/photo',
+    // The Nutribot direct-input routes log food and can call paid models on
+    // a plain request by any method. They sit behind a guard of their own
+    // (/text also answers the quick-input shape), and the router brings its
+    // own small body parsers. __docs/reference/nutrition/README.md.
+    '/api/v1/nutribot/upc',
+    '/api/v1/nutribot/image',
+    '/api/v1/nutribot/pinhole',
   ]);
   app.use(selfGuarded(cors()));
   app.use(selfGuarded(express.json({ limit: '50mb' })));

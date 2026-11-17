@@ -170,7 +170,15 @@ describe('explicit application operations at API handlers', () => {
       logUpc: vi.fn(async () => ({ success: true })),
       report: vi.fn(async () => ({ calories: 10 })),
     };
-    const app = mount('/nutribot', createNutribotRouter(nutribotApi, { logger }));
+    // The direct routes sit behind a guard; this stands in for a caller it lets through.
+    const directInput = {
+      available: () => true,
+      authorize: ({ requestedUser }) => ({ allowed: true, username: requestedUser, via: 'device' }),
+      context: () => nutribotApi.userContext(),
+      admission: () => ({ allowed: true }),
+      run: async ({ command }) => ({ kind: 'accepted', result: await nutribotApi.logUpc(command) }),
+    };
+    const app = mount('/nutribot', createNutribotRouter(nutribotApi, { logger, directInput }));
     const upc = await request(app).post('/nutribot/upc').send({ upc: '016000275287', user: 'alice' });
     expect(upc.status).toBe(200);
     expect(upc.body).toMatchObject({ ok: true, result: { success: true } });

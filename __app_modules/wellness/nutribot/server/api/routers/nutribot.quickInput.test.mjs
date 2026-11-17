@@ -14,6 +14,7 @@ import request from 'supertest';
 import { createNutribotRouter } from './nutribot.mjs';
 import { NutribotInputRouter } from '../../application/services/NutribotInputRouter.mjs';
 import { createNutribotQuickInputs } from '../../application/services/nutribotQuickInputs.mjs';
+import { NutribotDirectInput } from '../../application/services/NutribotDirectInput.mjs';
 import { LogFoodFromText } from '../../application/usecases/LogFoodFromText.mjs';
 import { LogFoodFromVoice } from '../../application/usecases/LogFoodFromVoice.mjs';
 import { LogFoodFromImage } from '../../application/usecases/LogFoodFromImage.mjs';
@@ -117,8 +118,15 @@ function build({ items = ITEMS, transcript = NOTE, aiFails = 0, limits, logger =
     logUpc: async () => ({ success: true }),
     report: async () => ({}),
   };
+  const directInput = new NutribotDirectInput({
+    ledger: quick.ledger,
+    deviceConfig: (deviceKey) => devices[deviceKey],
+    resolveIdentity: (username) => ({ username, conversationIdString: CHAT }),
+    operations: { upc: nutribotApi.logUpc, image: nutribotApi.logImage, text: nutribotApi.logText },
+    logger,
+  });
   const app = express();
-  app.use('/api/v1/nutribot', createNutribotRouter(nutribotApi, { logger, quickInput: quick.endpoints }));
+  app.use('/api/v1/nutribot', createNutribotRouter(nutribotApi, { logger, quickInput: quick.endpoints, directInput }));
   return { app, telegram, ai, logs, legacy, receipts };
 }
 
@@ -174,25 +182,25 @@ describe('POST /api/v1/nutribot/text', () => {
     expect(logs.size).toBe(1);
   });
 
-  it('still answers the earlier shapes of /text: JSON, a form and a query string', async () => {
+  it('leaves a JSON or form body to the earlier /text, behind that route\'s own guard', async () => {
     const { app, legacy, logs } = build();
-    const json = await request(app).post('/api/v1/nutribot/text').send({ text: 'an apple', user: 'user_1' });
+    // No device: the earlier shape is refused too.
+    const bare = await request(app).post('/api/v1/nutribot/text').send({ text: 'an apple', user: 'user_1' });
+    expect(bare.status).toBe(403);
+    // A bound device may use it; the meal goes to the earlier handler, not the quick-input path.
+    const json = await request(app).post('/api/v1/nutribot/text').set('X-Daylight-Device', 'fleet:phone')
+      .set('X-Daylight-Input-Id', 'i1').send({ text: 'an apple', user: 'user_1' });
     expect(json.status).toBe(200);
-    expect(json.body.ok).toBe(true);
     expect(json.body.result).toEqual({ success: true });
-    const form = await request(app).post('/api/v1/nutribot/text').type('form').send({ text: 'a pear' });
-    expect(form.status).toBe(200);
-    const query = await request(app).get('/api/v1/nutribot/text').query({ text: 'a plum', date: '2026-11-16' });
-    expect(query.status).toBe(200);
-    expect(legacy.text.map((c) => c.text)).toEqual(['an apple', 'a pear', 'a plum']);
-    expect(legacy.text[2].date).toBe('2026-11-16');
+    expect(legacy.text.map((c) => c.text)).toEqual(['an apple']);
     expect(logs.size).toBe(0);
   });
 
-  it('holds a JSON body that names an input id to the quick-input rules', async () => {
+  it('holds any other body that names a device to the quick-input rules', async () => {
     const { app, legacy } = build();
     const res = await request(app).post('/api/v1/nutribot/text').query({ user: 'user_1' })
-      .set('X-Daylight-Device', 'fleet:phone').set('X-Daylight-Input-Id', 'i1').send({ text: 'an apple' });
+      .set('X-Daylight-Device', 'fleet:phone').set('X-Daylight-Input-Id', 'i1')
+      .set('Content-Type', 'audio/ogg').send(Buffer.from('opus'));
     expect(res.status).toBe(415);
     expect(legacy.text).toHaveLength(0);
   });
@@ -286,7 +294,9 @@ describe('every Nutribot quick-input route', () => {
       expect((await send(app, kind, { device: 'fleet:kitchen-tablet' })).status).toBe(403);
       expect((await send(app, kind, { user: 'stranger' })).body.error).toBe('unknown_user');
       expect((await send(app, kind, { id: 'bad id' })).body.error).toBe('invalid_input_id');
-      expect((await send(app, kind, { type: 'application/json', body: '{}' })).status).toBe(415);
+      // On /text a JSON body is the earlier shape of that route, so another type stands in for it.
+      const wrongType = kind === 'text' ? 'text/html' : 'application/json';
+      expect((await send(app, kind, { type: wrongType, body: '{}' })).status).toBe(415);
       expect((await send(app, kind).set('Origin', 'https://elsewhere.example')).body.error).toBe('cross_origin');
       const preflight = await request(app).options(`/api/v1/nutribot/${kind}`)
         .set('Origin', 'https://elsewhere.example').set('Access-Control-Request-Method', 'POST');

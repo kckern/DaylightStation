@@ -7,10 +7,10 @@
  */
 
 import express, { Router } from 'express';
-import cors from 'cors';
 import { nutribotReportHandler } from "../handlers/report.mjs";
 import { nutribotReportImgHandler } from "../handlers/reportImg.mjs";
 import { directUPCHandler, directImageHandler, directTextHandler } from "../handlers/directInput.mjs";
+import { directInputGuard, DIRECT_INPUT_MAX_BYTES } from "../handlers/directInputGuard.mjs";
 
 import {
   quickInputRoute, quickInputPreflight, isQuickInputRequest,
@@ -33,12 +33,14 @@ import { idempotencyMiddleware } from "#api/v1/middleware/messagingWebhookIdempo
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {{voice?: Object, text?: Object, photo?: Object}} [options.quickInput] - Quick-input endpoints by kind
+ * @param {Object} [options.directInput] - Who may use the direct-input routes (NutribotDirectInput).
+ *   Left out, those routes refuse every request.
  * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
 export function createNutribotRouter(nutribotApi, options = {}) {
   const router = Router();
-  const { webhookHandler, dailyReportImage, botId, secretToken, idempotencyStore, quickInput = {}, logger = console } = options;
+  const { webhookHandler, dailyReportImage, botId, secretToken, idempotencyStore, quickInput = {}, directInput = null, logger = console } = options;
 
   // Apply middleware
   router.use(tracingMiddleware());
@@ -69,32 +71,43 @@ export function createNutribotRouter(nutribotApi, options = {}) {
     router.options(`/${kind}`, quickInputPreflight(route));
     router.post(
       `/${kind}`,
-      // /text was here first, in another shape (see below). Only a request
-      // that is a quick input takes this route; any other falls through.
-      (req, res, next) => (isQuickInputRequest(req, kind) ? next() : next('route')),
+      // /text was here first, in another shape (see below): a JSON or form
+      // body falls through to it. /voice and /photo have no earlier shape.
+      (req, res, next) => (kind !== 'text' || isQuickInputRequest(req, kind) ? next() : next('route')),
       ...quickInputRoute(quickInput[kind], route),
     );
   }
 
-  // Direct input endpoints (programmatic API access)
+  // Direct input endpoints (programmatic API access): a barcode, an image
+  // address, or `text` in a JSON body, a form or the query string, by any
+  // method. They log food and can call paid models, so each sits behind the
+  // direct-input guard: no request from another web origin or site, a caller
+  // that is a bound device, a signed-in user of the app, or (only where the
+  // household has opened the route) anyone, and the user's daily allowance.
+  // app.mjs keeps the app-wide CORS handler and body parsers off these paths,
+  // so the guard's first check runs before a body is read and each route
+  // brings its own small parsers.
   const handlerOpts = { logger };
-  router.all('/upc', asyncHandler(directUPCHandler(nutribotApi, handlerOpts)));
-  router.all('/image', asyncHandler(directImageHandler(nutribotApi, handlerOpts)));
-  // The earlier /text: `text` in a JSON body, a form or the query string. Its
-  // path is kept off the app-wide CORS handler and body parsers for the
-  // quick-input route above, so this route brings its own, with the same
-  // settings the app uses everywhere else.
-  router.all(
-    '/text',
-    cors(),
-    express.json({ limit: '50mb' }),
-    express.urlencoded({ limit: '50mb', extended: true }),
-    asyncHandler(directTextHandler(nutribotApi, handlerOpts)),
-  );
-
-  // Pinhole endpoint - public access for IFTTT/external integrations
-  // Uses same handler as /image, but with dedicated Cloudflare Access bypass
-  router.all('/pinhole', asyncHandler(directImageHandler(nutribotApi, handlerOpts)));
+  const directHandlers = {
+    upc: directUPCHandler(nutribotApi, handlerOpts),
+    image: directImageHandler(nutribotApi, handlerOpts),
+    text: directTextHandler(nutribotApi, handlerOpts),
+    // Pinhole endpoint - public access for IFTTT/external integrations.
+    // Uses same handler as /image, but with dedicated Cloudflare Access bypass.
+    pinhole: directImageHandler(nutribotApi, handlerOpts),
+  };
+  for (const [route, handler] of Object.entries(directHandlers)) {
+    const guard = directInputGuard(directInput, { route, logger });
+    router.options(`/${route}`, guard.preflight);
+    router.all(
+      `/${route}`,
+      guard.before,
+      express.json({ limit: DIRECT_INPUT_MAX_BYTES }),
+      express.urlencoded({ limit: DIRECT_INPUT_MAX_BYTES, extended: true }),
+      guard.after,
+      asyncHandler(handler),
+    );
+  }
 
   // Report endpoints
   router.get('/report', asyncHandler(nutribotReportHandler(nutribotApi, { logger })));
