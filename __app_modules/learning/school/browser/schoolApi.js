@@ -403,7 +403,8 @@ export const schoolApi = {
   selfServicePreview: (link) => req(`/self-service/preview/${encodeURIComponent(link)}`),
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
-  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action, mountProtocol: 1 }),
+  selfServiceMountAck: ({ receipt, mounted }) => req('/self-service/mount-ack', { receipt, mounted }),
   companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
   // "Can the printer print right now?" — polled ONLY while the panel is asking
   // a child "Did it print?", so it can name a jam or an empty tray instead of

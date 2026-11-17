@@ -317,11 +317,12 @@ export function createTokenRecord({
  * @param {object} record the registry record
  * @returns {boolean}
  */
-export function isAccessCodeSpent(record) {
+export function isAccessCodeSpent(record, { now } = {}) {
   const cap = record?.maxUses;
   if (!Number.isInteger(cap) || cap <= 0) return false;
   const used = record?.useCount;
-  return Number.isInteger(used) && used >= cap;
+  const pending = Object.values(record?.mountUses ?? {}).filter(use => use.state === 'pending' && Date.parse(use.expiresAt) > Date.parse(now)).length;
+  return (Number.isInteger(used) ? used : 0) + pending >= cap;
 }
 
 export function isAccessCodeLive(record, { now } = {}) {

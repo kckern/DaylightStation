@@ -13,13 +13,14 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const h = vi.hoisted(() => ({ act: vi.fn(), resolve: vi.fn() }));
+const h = vi.hoisted(() => ({ act: vi.fn(), resolve: vi.fn(), ack: vi.fn() }));
 
 vi.mock("../schoolApi.js", () => ({
   schoolApi: {
     selfServiceResolve: (...args) => h.resolve(...args),
     selfServiceAct: (...args) => h.act(...args),
     selfServicePrinterStatus: vi.fn(),
+    selfServiceMountAck: (...args) => h.ack(...args),
   },
 }));
 
@@ -213,4 +214,38 @@ describe('reading code goes directly through the authenticated action', () => {
     await act(async () => { await result.current.submit('123456'); });
     expect(result.current.view).toBe('card'); expect(h.act).not.toHaveBeenCalled(); expect(onLaunch).not.toHaveBeenCalled();
   });
+});
+
+describe('mount acknowledgement protocol', () => {
+  beforeEach(() => { sessionStorage.clear(); h.ack.mockReset(); h.ack.mockResolvedValue({ ok: true, data: { ok: true } }); });
+  it('awaits the actual onLaunch result and settles even after expected hook unmount', async () => {
+    let finish;
+    const onLaunch = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    h.resolve.mockResolvedValue({ ok: true, data: { ...CARD, actions: [{ kind: 'program', target: 'gratitude' }] } });
+    h.act.mockResolvedValue({ ok: true, data: { ...mount({ kind: 'program', programId: 'gratitude' }).data, mountProtocol: 1, mountReceipt: 'opaque-receipt', mountExpiresAt: new Date(Date.now()+120000).toISOString() } });
+    const { result, unmount } = renderHook(() => useSelfService({ idleTimeoutSeconds: 0, onLaunch }));
+    await act(async () => { await result.current.submit('123456'); });
+    let run;
+    await act(async () => { run = result.current.runAction({ kind: 'program', target: 'gratitude' }); });
+    expect(h.ack).not.toHaveBeenCalled();
+    unmount();
+    await act(async () => { finish(true); await run; });
+    expect(h.ack).toHaveBeenCalledWith({ receipt: 'opaque-receipt', mounted: true });
+  });
+});
+it('exit cancels an uncommitted launch and releases its reservation', async () => {
+  sessionStorage.clear(); h.ack.mockReset().mockResolvedValue({ ok: true, data: { ok: true } });
+  let finish;
+  const onLaunch = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+  const onCancelLaunch = vi.fn(() => finish?.(false));
+  h.resolve.mockResolvedValue({ ok: true, data: { ...CARD, actions: [{ kind: 'program', target: 'gratitude' }] } });
+  h.act.mockResolvedValue({ ok: true, data: { ...mount({ kind: 'program', programId: 'gratitude' }).data, mountProtocol: 1, mountReceipt: 'exit-receipt', mountExpiresAt: new Date(Date.now()+120000).toISOString() } });
+  const { result } = renderHook(() => useSelfService({ idleTimeoutSeconds: 0, onLaunch, onCancelLaunch }));
+  await act(async () => { await result.current.submit('123456'); });
+  let run;
+  await act(async () => { run = result.current.runAction({ kind: 'program', target: 'gratitude' }); });
+  await act(async () => { result.current.exit(); });
+  expect(onCancelLaunch).toHaveBeenCalled();
+  await act(async () => { await run; });
+  expect(h.ack).toHaveBeenCalledWith({ receipt: 'exit-receipt', mounted: false });
 });

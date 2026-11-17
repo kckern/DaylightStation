@@ -85,6 +85,7 @@ try {
     const worksheetPlatforms = await buildWorksheetPlatforms({ configService, rootLogger, logger: schoolLifecycleLogger });
     dependencies.schoolLifecycle = await createSchoolLifecycle({
       authorizeKioskAction: dependencies.authorizeKioskAction ?? null,
+      mountReceiptKey: dependencies.mountReceiptKey ?? null,
       // The printed-activity program's page sources. Empty when unconfigured:
       // the program still registers and answers "Worksheets are unavailable".
       worksheetPlatforms,

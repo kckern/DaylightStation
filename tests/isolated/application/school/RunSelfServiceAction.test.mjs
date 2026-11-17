@@ -897,3 +897,29 @@ describe('the response shape', () => {
     }
   });
 });
+
+it('resolve is read-only and successful print keeps its existing use count', async () => {
+  await build({ units: bankOnly(), canIssueBank: () => true });
+  const before = await tokens.lookupAccessCode(CODE);
+  const snapshots = [];
+  for (let i=0;i<3;i++) { await card.execute({ code: CODE }); snapshots.push(await tokens.lookupAccessCode(CODE)); }
+  const resolveWrites = snapshots.filter(record => JSON.stringify(record) !== JSON.stringify(before));
+  expect(resolveWrites).toHaveLength(0);
+  const runner = new RunSelfServiceAction({ resolveAccessCode: card, sessions, tokens, ...spies, clock: clock.now, logger: silentLogger, mountAcknowledgements: true });
+  const result = await runner.execute({ code: CODE, action: 'print' });
+  expect(result.outcome).toBe('done');
+  const printUseCount = (await tokens.get(before.record.token)).useCount;
+  expect(printUseCount).toBe(1);
+});
+
+it('resolve subtracts live reservations without persisting expiry cleanup', async () => {
+  await build();
+  const { record } = await tokens.lookupAccessCode(CODE);
+  await tokens.put({ ...record, maxUses: 1, mountUses: { pending: { state: 'pending', expiresAt: new Date(clock.epoch()+120000).toISOString() } } });
+  const before = await tokens.get(record.token);
+  expect((await card.execute({ code: CODE })).reason).toBe('used_up');
+  expect(await tokens.get(record.token)).toEqual(before);
+  clock.advanceMs(120000);
+  expect((await card.execute({ code: CODE })).ok).toBe(true);
+  expect(await tokens.get(record.token)).toEqual(before);
+});

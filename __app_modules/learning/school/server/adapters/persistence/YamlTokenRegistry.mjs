@@ -11,8 +11,9 @@
  * keeps one token to one file however it was scanned (with prefix, without, or
  * with the trailing whitespace a scanner appends).
  *
- * One token is one whole-file write, so there is no read-modify-write to lose —
- * except `revoke`, which is queued behind the same chain as every other write.
+ * Each token is replaced atomically and durably. Reservation, settlement,
+ * ordinary use and revocation share one serialized read-modify-write queue;
+ * metadata puts preserve runtime mutation fields from the current record.
  *
  * EXPIRED FILES ARE PRUNED, ON A GRACE PERIOD. Every mint is a new file and
  * nothing else ever deleted one, so the directory grew without bound. A sweep
@@ -48,7 +49,7 @@ import { ITokenRegistry } from "../../application/ports/ITokenRegistry.mjs";
 import { TOKEN_PREFIX, isAccessCodeLive, isAccessCodeExpired } from "../../domain/sessions/tokens.mjs";
 import { normalizeAccessCode } from "../../domain/sessions/accessCode.mjs";
 import {
-  deleteFileStrictAsync, ensureDirAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
+  deleteFileStrictAsync, readDirectoryAsync, readTextFromPathAsync, writeBinaryAtomic,
 } from '#system/utils/FileIO.mjs';
 
 // The mint charset is [A-Z0-9]; the bound is wide enough for a future format and
@@ -148,8 +149,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
   }
 
   async #write(body, record) {
-    await ensureDirAsync(this.#root());
-    await writeTextFileAsync(this.#fileFor(body), dumpYaml(record));
+    writeBinaryAtomic(this.#fileFor(body), Buffer.from(dumpYaml(record)), { durable: true });
     this.#index(body, record);
   }
 
@@ -200,12 +200,19 @@ export class YamlTokenRegistry extends ITokenRegistry {
     const body = bodyOf(record.token);
     if (!body) throw new Error(`YamlTokenRegistry: not a school token: ${record.token}`);
     return this.#enqueue(async () => {
-      await this.#write(body, record);
+      // Metadata updates may carry an older snapshot. Runtime settlement and
+      // revocation are monotonic and remain owned by their serialized methods.
+      const current = await this.get(record.token);
+      const persisted = { ...record };
+      for (const key of ['mountUses', 'useCount', 'lastUsedAt', 'revokedAt']) {
+        if (current && Object.hasOwn(current, key)) persisted[key] = current[key];
+      }
+      await this.#write(body, persisted);
       // Housekeeping rides the mint: agendas print daily, so the directory is
       // swept regularly without a scheduler — but at most once per interval,
       // and inside the same chain task so it can never race a write.
       if (this.#now() - this.#lastSweepMs >= SWEEP_INTERVAL_MS) await this.#sweep();
-      return record;
+      return persisted;
     });
   }
 
@@ -441,6 +448,49 @@ export class YamlTokenRegistry extends ITokenRegistry {
       const revoked = { ...record, revokedAt: at };
       await this.#write(body, revoked);
       return revoked;
+    });
+  }
+
+  /** The same queue owns reservation, settlement, revocation and ordinary uses. */
+  async reserveMountUse(token, { useId, deviceId, learnerId, action, at, expiresAt } = {}) {
+    const body = bodyOf(token);
+    if (!body || ![useId, deviceId, learnerId, action].every(v => typeof v === 'string' && v && v.length <= 256)
+      || !Number.isFinite(Date.parse(at)) || !(Date.parse(expiresAt) > Date.parse(at))
+      || Date.parse(expiresAt) > Date.parse(at) + 120_000) return { reserved: false, reason: 'invalid' };
+    return this.#enqueue(async () => {
+      const record = await this.get(token);
+      if (!this.#mountLive(record, learnerId, at)) return { reserved: false, reason: 'expired' };
+      const mountUses = Object.fromEntries(Object.entries(record.mountUses ?? {}).filter(([, use]) => use.state === 'committed' || Date.parse(use.expiresAt) > Date.parse(at)));
+      if (Object.hasOwn(mountUses, useId)) return { reserved: false, reason: 'duplicate' };
+      const pending = Object.values(mountUses).filter(use => use.state === 'pending').length;
+      if (Number.isInteger(record.maxUses) && record.maxUses > 0 && (record.useCount ?? 0) + pending >= record.maxUses) return { reserved: false, reason: 'used_up' };
+      mountUses[useId] = { deviceId, learnerId, action, at, expiresAt, state: 'pending' };
+      await this.#write(body, { ...record, mountUses });
+      return { reserved: true };
+    });
+  }
+
+  #mountLive(record, learnerId, at) {
+    return isAccessCodeLive(record, { now: at }) && record.subject?.learnerId === learnerId
+      && (!record.expiresAt || Date.parse(record.expiresAt) > Date.parse(at));
+  }
+
+  async settleMountUse(token, { useId, mounted, at, deviceId, learnerId, action } = {}) {
+    const invalid = { ok: false, committed: false, replayed: false };
+    const body = bodyOf(token);
+    if (!body || typeof mounted !== 'boolean' || !Number.isFinite(Date.parse(at))) return invalid;
+    return this.#enqueue(async () => {
+      const record = await this.get(token);
+      if (!this.#mountLive(record, learnerId, at)) return invalid;
+      const use = record.mountUses?.[useId];
+      if (!use || use.deviceId !== deviceId || use.learnerId !== learnerId || use.action !== action || Date.parse(use.expiresAt) <= Date.parse(at)) return invalid;
+      if (use.state !== 'pending') return { ok: true, committed: use.state === 'committed', replayed: true };
+      const committed = mounted === true;
+      await this.#write(body, { ...record,
+        ...(committed ? { useCount: (record.useCount ?? 0) + 1, lastUsedAt: at } : {}),
+        mountUses: { ...record.mountUses, [useId]: { ...use, state: committed ? 'committed' : 'released', settledAt: at } },
+      });
+      return { ok: true, committed, replayed: false };
     });
   }
 

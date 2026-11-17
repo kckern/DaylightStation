@@ -410,7 +410,7 @@ export class ResolveAccessCode {
     // Spent, and refused with words rather than by vanishing. `record` is in
     // hand here and `/resolve` still writes nothing — the count is bumped by
     // `/act`, after a button has actually opened something.
-    if (isAccessCodeSpent(record)) {
+    if (isAccessCodeSpent(record, { now: this.#clock().toISOString() })) {
       this.#logger.info?.('school.selfservice.code.rejected', {
         reason: 'used_up',
         learnerId: record?.subject?.learnerId ?? null,

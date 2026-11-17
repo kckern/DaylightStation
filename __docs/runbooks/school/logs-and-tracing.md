@@ -96,12 +96,60 @@ profile's declared `capabilities:` against the bank's item types.
 ### Keypad program launch: prepared versus opened
 
 A successful `/act` response with `outcome: mount` prepares a local launch.
-The backend's existing `school.selfservice.program.mounted` event describes
-that preparation; it does **not** confirm that the browser opened the activity.
-Follow the frontend outcome too: `school.selfservice.mount.refused` means
-SchoolApp declined the target. A runner's mounted event establishes that its
-component rendered, but an API authorization refusal can still leave it on
-an error screen without opening an authorized activity.
+`school.selfservice.program.mount-prepared` records that preparation, with
+`mountProtocol`, authenticated device/session identity and an offset-aware time.
+`school.selfservice.program.mount-confirmed` is emitted only after a signed
+browser ACK commits the reserved code use. The browser waits for the matching
+local runner shell to commit in React; a queued navigation, suspended target,
+throwing render or overridden launch is insufficient. Follow the frontend
+outcome too: `school.selfservice.mount.refused` means SchoolApp declined the
+target. A committed shell can still show an API authorization error; this ACK
+never awards program completion or learning credit. Historical
+`school.selfservice.program.mounted` events described preparation only.
+
+The additive protocol uses `mountProtocol: 1`, an opaque `mountReceipt`, and
+`mountExpiresAt` on local `/act` responses. A reservation holds capacity for
+120,000 ms. Only `mounted: true` commits a use; false releases it. Pending
+reservations expire without a cleanup write from `/resolve`. Reservation,
+settlement, revocation and ordinary use writes share the token registry queue
+and durable atomic file replacement. One household backend owns that registry.
+Duplicate successful ACKs replay their result, including after restart and at
+the cap. Revocation, token expiry, learner and reservation identity are checked
+again at settlement. Receipts are household-, action-, learner- and
+kiosk-bound; legacy panels use a purpose-separated server-issued HttpOnly
+SameSite=Strict session cookie. A body/query device label or proxy IP grants
+no settlement authority. Never log receipts, access codes or program grants.
+
+The browser retains at most eight pending opaque receipts in session storage,
+retries transport failures every three seconds until expiry, and settles after
+awaiting the launch promise even if navigation unmounts the keypad. Reload
+replays a known mount result; an interrupted result that never reached the
+commit boundary is released conservatively. Lost ACK responses replay safely.
+
+**Staged rollout:** deploy browser support and the additive endpoint first,
+leaving the boot-cached household School configuration disabled:
+
+```yaml
+selfService:
+  mountAcknowledgements: false
+```
+
+After reviewing the browser/API identity and commit evidence on the selected
+kiosk, change only `mountAcknowledgements` to `true` in the existing
+`selfService` mapping and restart the single household backend through the
+approved deployment workflow. Preserve the other mapping keys. Signing uses
+the existing household authentication material; missing material refuses local
+preparation, without generating an ephemeral authority. Old browser bundles
+receive a refresh/retry sentence before reservation or grant issuance.
+
+**Rollback:** disable that flag while retaining this version's settlement
+endpoint, receipt verifier and durable token fields. Existing reservations
+remain visible to `/resolve`; their ACKs can settle until expiry. Committed
+uses remain spent. Do not restore older token snapshots or remove the ACK
+handler while receipts are live. A code rollback must retain these settlement
+compatibility changes. Unit/browser evidence does not establish physical kiosk
+recovery or enforcement; native/device validation and production activation
+remain separate rollout gates.
 
 For Gratitude, the keypad must forward `gratitudeGrant`, `learnerId` and
 `today` from the launcher effect. A missing grant is refused by SchoolApp;

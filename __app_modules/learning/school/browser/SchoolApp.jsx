@@ -9,6 +9,7 @@ import {stopAudio as stopCardLadderAudio} from './Programs/Flashcards/CardLadder
  * unclaimed opens the ProfilePicker with the launch pending (spec §6 — claim
  * prompt on tracked work; browsing never prompts).
  */
+import { LocalMountCommit, useLocalMountConfirmation } from './selfService/LocalMountCommit.jsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from "../../../../frontend/src/lib/identity/ProfilePicker.jsx";
 import ProfileAvatar from "../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
@@ -359,7 +360,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // immediately wiping out the notice its own transition just created.
   const justSetNoticeRef = useRef(false);
 
-  const start = useCallback(async (bankSummary, mode, asGuest) => {
+  const { begin: beginLocalMount, confirm: confirmLocalMount, cancel: cancelLocalMount } = useLocalMountConfirmation();
+  const start = useCallback(async (bankSummary, mode, asGuest, mountRequest = null) => {
     if (asGuest && bankSummary.audience !== 'generic') {
       justSetNoticeRef.current = true;
       setNotice('Sign in to take this one — guests get the practice sets.');
@@ -369,7 +371,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // setRunFresh(false): a new launch is never a restart — cleared here (not
     // only in the active-change effect) so correctness never rides on
     // parent/child effect ordering.
-    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode }); }
+    if (mountRequest && !mountRequest.isCurrent()) return false;
+    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode, mountRequestId: mountRequest?.id }); }
     // Reports whether a runner actually mounted. The keypad path needs this:
     // it must keep its card up and say something when the mount misses,
     // rather than closing to a bare keypad. Callers that ignore it (the
@@ -484,12 +487,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (window.location.pathname !== path) window.history.pushState({}, '', path);
   }, [urlBase]);
 
-  const openSection = useCallback((id) => {
+  const openSection = useCallback((id, mountRequest = null) => {
+    if (!mountRequest) cancelLocalMount();
     setSection(id);
     setMaterialPath([]);
     syncUrl(id, []);
     schoolLog.nav('section', { section: id });
-  }, [syncUrl]);
+  }, [syncUrl, cancelLocalMount]);
 
   // Portal-launch subscription (design §4.3): a scan resolves to on-screen
   // work and the backend hands it to whichever screen has School mounted.
@@ -507,9 +511,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // a screen nobody is watching should stay inert. The KEYPAD caller does not:
   // a child who just pressed a button and got nothing needs words, so
   // `useSelfService` keeps the card up unless this answers `true`.
-  const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
+  const preparePortalLaunch = useCallback(async (target, launchedLearnerId = null, mountRequest) => {
     if (target?.kind === 'companion' && target.presentation === 'readalong') {
-      setActive({ mode: 'lesson_companion', descriptor: target });
+      setActive({ mountRequestId: mountRequest.id, mode: 'lesson_companion', descriptor: target });
       return true;
     }
     if (target?.kind === 'program' && ['sentence-ladder', 'language'].includes(target.program)) {
@@ -519,8 +523,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bank('program-unavailable', { program: target.program });
         return false;
       }
-      setStudyLaunch({ learnerId, corpusId: courseId, studyGrant: target.studyGrant });
-      openSection(`sentence-ladder:${courseId}`);
+      setStudyLaunch({ mountRequestId: mountRequest.id, learnerId, corpusId: courseId, studyGrant: target.studyGrant });
+      openSection(`sentence-ladder:${courseId}`, mountRequest);
       return true;
     }
     if (target?.kind === 'program' && target.program === 'language-reels') {
@@ -529,29 +533,29 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bank('program-unavailable', { program: target.program });
         return false;
       }
-      setReelLaunch({ learnerId, reelId: target.reelId, reelGrant: target.reelGrant });
+      setReelLaunch({ mountRequestId: mountRequest.id, learnerId, reelId: target.reelId, reelGrant: target.reelGrant });
       setStudyLaunch(null);
-      openSection('language-reels');
+      openSection('language-reels', mountRequest);
       return true;
     }
     if (target?.kind === 'program' && target.program === 'rubiks-cube') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.courseId || !target.cubeGrant || !learnerId) return false;
-      setCubeLaunch({ learnerId, courseId: target.courseId, cubeGrant: target.cubeGrant });
-      openSection('rubiks-cube');
+      setCubeLaunch({ mountRequestId: mountRequest.id, learnerId, courseId: target.courseId, cubeGrant: target.cubeGrant });
+      openSection('rubiks-cube', mountRequest);
       return true;
     }
     if (target?.kind === 'program' && target.program === 'gratitude') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.gratitudeGrant || !learnerId) return false;
-      setGratitudeLaunch({learnerId,gratitudeGrant:target.gratitudeGrant,today:target.today});
-      openSection('gratitude'); return true;
+      setGratitudeLaunch({ mountRequestId: mountRequest.id,learnerId,gratitudeGrant:target.gratitudeGrant,today:target.today});
+      openSection('gratitude', mountRequest); return true;
     }
     if (target?.kind === 'program' && target.program === 'school-debrief') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.debriefGrant || !learnerId) { schoolLog.bank('program-unavailable', { program: target.program }); return false; }
-      setDebriefLaunch({ learnerId, debriefGrant: target.debriefGrant, lateDay: target.lateDay ?? null, today: target.today ?? null });
-      openSection('school-debrief');
+      setDebriefLaunch({ mountRequestId: mountRequest.id, learnerId, debriefGrant: target.debriefGrant, lateDay: target.lateDay ?? null, today: target.today ?? null });
+      openSection('school-debrief', mountRequest);
       return true;
     }
     // The reading shelf (book-shelf UI design §2): the grant is the shelf's
@@ -563,9 +567,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bookShelf('launch-refused', { reason: !target.bookGrant ? 'no-grant' : 'no-learner' });
         return false;
       }
-      setBookLaunch({ learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null, openAdd: target.openAdd === true });
+      setBookLaunch({ mountRequestId: mountRequest.id, learnerId, bookGrant: target.bookGrant, bookEntry: target.bookEntry ?? null, openAdd: target.openAdd === true });
       schoolLog.bookShelf('launch', { learnerId });
-      openSection('book-shelf');
+      openSection('book-shelf', mountRequest);
       return true;
     }
     // The coin bank screen. NOT `kind: 'bank'`, which is a question bank (the
@@ -582,8 +586,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         schoolLog.bank('economy-bank-refused', { reason: mismatch ? 'learner-mismatch' : 'no-learner' });
         return false;
       }
-      setBankLaunch({ learnerId });
-      openSection('bank');
+      setBankLaunch({ mountRequestId: mountRequest.id, learnerId });
+      openSection('bank', mountRequest);
       return true;
     }
     // A card-ladder enrollment is still program `flashcards`; its mode rides
@@ -592,29 +596,41 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (target?.kind === 'program' && target.program === 'flashcards' && isCardLadderPolicy(target.policy)) {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
-      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null, entry: target.entry ?? null } });
-      openSection('flashcards');
+      setActive({ mountRequestId: mountRequest.id, mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null, entry: target.entry ?? null } });
+      openSection('flashcards', mountRequest);
       return true;
     }
     if (target?.kind === 'program' && target.program === 'flashcards') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
       const { ok, data } = await schoolApi.flashcardDeck(target.deckId);
+      if (!mountRequest.isCurrent()) return false;
       if (!ok || !data?.deck) return false;
       const assessment = await schoolApi.flashcardAssessment(target.deckId, { userId: learnerId });
+      if (!mountRequest.isCurrent()) return false;
       const bank = assessment.ok ? assessment.data?.bank ?? null : null;
-      setActive({ mode: 'flashcard_program', descriptor: { deck: data.deck, bank, policy: target.policy ?? {}, userId: learnerId }, learning: null });
-      openSection('flashcards');
+      setActive({ mountRequestId: mountRequest.id, mode: 'flashcard_program', descriptor: { deck: data.deck, bank, policy: target.policy ?? {}, userId: learnerId }, learning: null });
+      openSection('flashcards', mountRequest);
       return true;
     }
     if (target?.kind === 'bank') {
       const bankSummary = banks.find((b) => b.id === target.bankId);
       if (!bankSummary) { schoolLog.bank('not-found', { bankId: target.bankId }); return false; }
-      return (await start(bankSummary, 'quiz', false)) === true;
+      return (await start(bankSummary, 'quiz', false, mountRequest)) === true;
     }
     schoolLog.bank('launch-unroutable', { kind: target?.kind ?? null });
     return false;
   }, [courses, banks, openSection, start]);
+
+  const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
+    const request = beginLocalMount();
+    if (!request.isCurrent()) return request.promise;
+    try {
+      const accepted = await preparePortalLaunch(target, launchedLearnerId, request);
+      if (accepted !== true) request.refuse();
+    } catch { request.refuse(); }
+    return request.promise;
+  }, [beginLocalMount, preparePortalLaunch]);
 
   /**
    * The code-free door: `/school/go/<learner>/<program>[/<instance>][/test]`.
@@ -724,6 +740,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     idleTimeoutSeconds: lock.idleTimeoutSeconds,
     claim,
     onLaunch: onPortalLaunch,
+    onCancelLaunch: cancelLocalMount,
     // The browser surface is the dev/preview identity, not a panel — sending it would
     // put every developer's tab in one shared throttle bucket.
     deviceId: deviceIdFor(screenId),
@@ -862,6 +879,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
+    cancelLocalMount();
     setSection(null);
     setStudyLaunch(null);
     setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
@@ -873,7 +891,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     setMaterialPath([]);
     syncUrl(null, []);
     schoolLog.nav('home', {});
-  }, [syncUrl, closeBankDoor]);
+  }, [syncUrl, closeBankDoor, cancelLocalMount]);
 
   // MaterialsSection reports its live nav chain (collection → work → track ids)
   // here so the URL tracks the breadcrumb all the way down to a playing track.
@@ -1275,12 +1293,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
         {section === 'chess' && !active && <ChessLessons />}
         {section === 'rubiks-cube' && !active && (
-          <RubiksCubeProgram
-            userId={cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null}
-            courseId={cubeLaunch?.courseId ?? 'beginner-v1'}
-            cubeGrant={cubeLaunch?.cubeGrant ?? null}
-            onExit={goHome}
-          />
+          <LocalMountCommit requestId={cubeLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <RubiksCubeProgram
+              userId={cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null}
+              courseId={cubeLaunch?.courseId ?? 'beginner-v1'}
+              cubeGrant={cubeLaunch?.cubeGrant ?? null}
+              onExit={goHome}
+            />
+          </LocalMountCommit>
         )}
         {section === 'banks' && !active && <><FlashcardDeckBrowser onLaunch={onFlashcardDeckLaunch} /><BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} /></>}
         {subjectId && !active && (
@@ -1313,53 +1333,59 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             `PortalSurface.occupancy()` reads. Exiting one lands back on the
             keypad. */}
         {active?.mode === 'quiz' && (
-          <QuizRunner
-            key={`quiz:${active.bank.id}:${runNonce}`}
-            bank={active.bank}
-            learning={active.learning}
-            purpose={active.purpose ?? null}
-            deckId={active.deckId ?? null}
-            testPlan={active.testPlan ?? null}
-            fresh={runFresh}
-            onExit={() => setActive(null)}
-            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
-            onReview={onReviewLesson}
-            onTutor={onOpenTutor}
-          />
+          <LocalMountCommit requestId={active?.mountRequestId} confirm={confirmLocalMount}>
+            <QuizRunner
+              key={`quiz:${active.bank.id}:${runNonce}`}
+              bank={active.bank}
+              learning={active.learning}
+              purpose={active.purpose ?? null}
+              deckId={active.deckId ?? null}
+              testPlan={active.testPlan ?? null}
+              fresh={runFresh}
+              onExit={() => setActive(null)}
+              onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
+              onReview={onReviewLesson}
+              onTutor={onOpenTutor}
+            />
+          </LocalMountCommit>
         )}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard_program' && (
-          <FlashcardProgram
-            descriptor={active.descriptor}
-            onEvent={async (event) => {
-              schoolLog.session('flashcard-program-event', { ...event, learning: active.learning });
-              if (event.type === 'start_test' && active.descriptor.bank && active.learning) {
-                const plan = event.testPlan ?? null;
-                const eligible = plan
-                  ? active.descriptor.bank.items.filter((item) => plan.types.includes(item.type)).slice(0, plan.count)
-                  : active.descriptor.bank.items;
-                setRunFresh(false);
-                setActive({ mode: 'quiz', bank: { ...active.descriptor.bank, items: eligible }, learning: active.learning, purpose: 'flashcard_test', testPlan: plan });
-              } else if (event.type === 'start_test' && active.descriptor.userId) {
-                const plan = event.testPlan ?? null;
-                const { ok, data } = await schoolApi.flashcardAssessment(active.descriptor.deck.id, { userId: active.descriptor.userId, testPlan: plan });
-                if (!ok || !data?.bank) return { ok: false };
-                setRunFresh(false);
-                setActive({ mode: 'quiz', bank: data.bank, learning: null, purpose: 'flashcard_assessment', deckId: active.descriptor.deck.id, testPlan: plan });
-              }
-              return { ok: true };
-            }}
-            studyApi={{ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary }}
-            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
-            onExit={() => setActive(null)}
-          />
+          <LocalMountCommit requestId={active?.mountRequestId} confirm={confirmLocalMount}>
+            <FlashcardProgram
+              descriptor={active.descriptor}
+              onEvent={async (event) => {
+                schoolLog.session('flashcard-program-event', { ...event, learning: active.learning });
+                if (event.type === 'start_test' && active.descriptor.bank && active.learning) {
+                  const plan = event.testPlan ?? null;
+                  const eligible = plan
+                    ? active.descriptor.bank.items.filter((item) => plan.types.includes(item.type)).slice(0, plan.count)
+                    : active.descriptor.bank.items;
+                  setRunFresh(false);
+                  setActive({ mode: 'quiz', bank: { ...active.descriptor.bank, items: eligible }, learning: active.learning, purpose: 'flashcard_test', testPlan: plan });
+                } else if (event.type === 'start_test' && active.descriptor.userId) {
+                  const plan = event.testPlan ?? null;
+                  const { ok, data } = await schoolApi.flashcardAssessment(active.descriptor.deck.id, { userId: active.descriptor.userId, testPlan: plan });
+                  if (!ok || !data?.bank) return { ok: false };
+                  setRunFresh(false);
+                  setActive({ mode: 'quiz', bank: data.bank, learning: null, purpose: 'flashcard_assessment', deckId: active.descriptor.deck.id, testPlan: plan });
+                }
+                return { ok: true };
+              }}
+              studyApi={{ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary }}
+              resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
+              onExit={() => setActive(null)}
+            />
+          </LocalMountCommit>
         )}
         {active?.mode === 'card_ladder' && (
-          <CardLadderProgram
-            descriptor={active.descriptor}
-            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
-            onExit={() => setActive(null)}
-          />
+          <LocalMountCommit requestId={active?.mountRequestId} confirm={confirmLocalMount}>
+            <CardLadderProgram
+              descriptor={active.descriptor}
+              resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
+              onExit={() => setActive(null)}
+            />
+          </LocalMountCommit>
         )}
         {/* Same remount-by-key restart as the quiz mount above (2026-10-21:
             on-screen quizzes retake until passed) — without onRestart a failed
@@ -1397,29 +1423,31 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           />
         )}
         {active?.mode === 'lesson_companion' && active.descriptor.presentation === 'readalong' && (
-          <ReadalongPlaylistPlayer
-            title={active.descriptor.title}
-            parts={active.descriptor.parts}
-            progress={active.descriptor.state}
-            // Whether this companion gates a worksheet. It rides the backend
-            // handler's `open()` effect and `useSelfService`'s `launchTarget`
-            // already carries it onto the descriptor; this is the last hop. The
-            // player clamps rate and forward seeking only when it is 'required',
-            // so dropping it here would silently give every gated companion the
-            // optional affordances back.
-            participation={active.descriptor.participation}
-            // Answers with the VERDICT BODY, not `schoolApi`'s `{ok, status,
-            // data}` envelope: the player renders its completion card from what
-            // this resolves to, and an envelope has no `gate` on it — the card
-            // would never appear and nothing would say why. A transport failure
-            // resolves to null, which the player reads as "nothing is known"
-            // and leaves the last good verdict standing.
-            onProgress={async (payload) => {
-              const { ok, data } = await schoolApi.companionProgress(active.descriptor.companionId, payload);
-              return ok ? data : null;
-            }}
-            onExit={() => setActive(null)}
-          />
+          <LocalMountCommit requestId={active?.mountRequestId} confirm={confirmLocalMount}>
+            <ReadalongPlaylistPlayer
+              title={active.descriptor.title}
+              parts={active.descriptor.parts}
+              progress={active.descriptor.state}
+              // Whether this companion gates a worksheet. It rides the backend
+              // handler's `open()` effect and `useSelfService`'s `launchTarget`
+              // already carries it onto the descriptor; this is the last hop. The
+              // player clamps rate and forward seeking only when it is 'required',
+              // so dropping it here would silently give every gated companion the
+              // optional affordances back.
+              participation={active.descriptor.participation}
+              // Answers with the VERDICT BODY, not `schoolApi`'s `{ok, status,
+              // data}` envelope: the player renders its completion card from what
+              // this resolves to, and an envelope has no `gate` on it — the card
+              // would never appear and nothing would say why. A transport failure
+              // resolves to null, which the player reads as "nothing is known"
+              // and leaves the last good verdict standing.
+              onProgress={async (payload) => {
+                const { ok, data } = await schoolApi.companionProgress(active.descriptor.companionId, payload);
+                return ok ? data : null;
+              }}
+              onExit={() => setActive(null)}
+            />
+          </LocalMountCommit>
         )}
         {/* A program mounted from the keypad has no header behind it (lock
             mode omits the whole header, apple included), so without this there
@@ -1455,15 +1483,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {courseId && studyLaunch
           && studyLaunch.corpusId === courseId
           && studyLaunch.learnerId === currentUser?.id && (
-          <SentenceLadderProgram
-            userId={studyLaunch.learnerId}
-            corpusId={courseId}
-            languages={courses.find((course) => course.id === courseId)?.languages ?? null}
-            studyGrant={studyLaunch.studyGrant}
-            onSignIn={lock.locked ? goHome : openPicker}
-            onExit={lock.locked ? goHome : null}
-            locked={lock.locked}
-          />
+          <LocalMountCommit requestId={studyLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <SentenceLadderProgram
+              userId={studyLaunch.learnerId}
+              corpusId={courseId}
+              languages={courses.find((course) => course.id === courseId)?.languages ?? null}
+              studyGrant={studyLaunch.studyGrant}
+              onSignIn={lock.locked ? goHome : openPicker}
+              onExit={lock.locked ? goHome : null}
+              locked={lock.locked}
+            />
+          </LocalMountCommit>
         )}
         {previewCourseId && courses.some((course) => course.id === previewCourseId) && (
           <SentenceLadderProgram
@@ -1474,28 +1504,34 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           />
         )}
         {section === 'language-reels' && reelLaunch && reelLaunch.learnerId === currentUser?.id && (
-          <LanguageReelsProgram
-            userId={reelLaunch.learnerId}
-            reelId={reelLaunch.reelId}
-            reelGrant={reelLaunch.reelGrant}
-            onExit={goHome}
-          />
+          <LocalMountCommit requestId={reelLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <LanguageReelsProgram
+              userId={reelLaunch.learnerId}
+              reelId={reelLaunch.reelId}
+              reelGrant={reelLaunch.reelGrant}
+              onExit={goHome}
+            />
+          </LocalMountCommit>
         )}
         {/* The debrief sits out here with the reels: the Portal mounts it from
             the agenda code, LOCKED, so the `!lock.locked` wrapper never paints.
             With no launch (a grown-up opening it from /school) it shows its
             own no-grant state; a launch claimed by another learner never paints. */}
         {section === 'gratitude' && (!gratitudeLaunch || gratitudeLaunch.learnerId === currentUser?.id) && (
-          <GratitudeProgram learnerId={gratitudeLaunch?.learnerId??null} gratitudeGrant={gratitudeLaunch?.gratitudeGrant??null} today={gratitudeLaunch?.today??null} onExit={()=>{setGratitudeLaunch(null);goHome();}}/>
+          <LocalMountCommit requestId={gratitudeLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <GratitudeProgram learnerId={gratitudeLaunch?.learnerId??null} gratitudeGrant={gratitudeLaunch?.gratitudeGrant??null} today={gratitudeLaunch?.today??null} onExit={()=>{setGratitudeLaunch(null);goHome();}}/>
+          </LocalMountCommit>
         )}
         {section === 'school-debrief' && (!debriefLaunch || debriefLaunch.learnerId === currentUser?.id) && (
-          <SchoolDebriefProgram
-            learnerId={debriefLaunch?.learnerId ?? null}
-            debriefGrant={debriefLaunch?.debriefGrant ?? null}
-            lateDay={debriefLaunch?.lateDay ?? null}
-            today={debriefLaunch?.today ?? null}
-            onExit={() => { setDebriefLaunch(null); goHome(); }}
-          />
+          <LocalMountCommit requestId={debriefLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <SchoolDebriefProgram
+              learnerId={debriefLaunch?.learnerId ?? null}
+              debriefGrant={debriefLaunch?.debriefGrant ?? null}
+              lateDay={debriefLaunch?.lateDay ?? null}
+              today={debriefLaunch?.today ?? null}
+              onExit={() => { setDebriefLaunch(null); goHome(); }}
+            />
+          </LocalMountCommit>
         )}
         {/* The reading shelf sits out here with the ladder and the reels, not
             beside the cube: the wall panel mounts it LOCKED, from the reading
@@ -1503,31 +1539,35 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             mode. The idle knob is the panel's own lock config — the same
             source the keypad's card timer reads — never a constant here. */}
         {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
-          <BookShelf
-            // ONE MOUNT PER CHILD. A scan claimed while the shelf is open is
-            // handed in as `initialBookEntry` (keyed by its intentId) and the
-            // mounted shelf queues it; keying the mount on the scan remounted
-            // and reloaded the shelf on every scan, throwing away an Add the
-            // child had just started (2026-11-05).
-            key={bookLaunch.learnerId}
-            learnerId={bookLaunch.learnerId}
-            grant={bookLaunch.bookGrant}
-            initialBookEntry={bookLaunch.bookEntry}
-            openAdd={bookLaunch.openAdd}
-            idleTimeoutSeconds={lock.idleTimeoutSeconds}
-            onScanReadyChange={setShelfScanReady}
-            scanStatus={shelfScanStatus}
-            onExit={goHome}
-          />
+          <LocalMountCommit requestId={bookLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <BookShelf
+              // ONE MOUNT PER CHILD. A scan claimed while the shelf is open is
+              // handed in as `initialBookEntry` (keyed by its intentId) and the
+              // mounted shelf queues it; keying the mount on the scan remounted
+              // and reloaded the shelf on every scan, throwing away an Add the
+              // child had just started (2026-11-05).
+              key={bookLaunch.learnerId}
+              learnerId={bookLaunch.learnerId}
+              grant={bookLaunch.bookGrant}
+              initialBookEntry={bookLaunch.bookEntry}
+              openAdd={bookLaunch.openAdd}
+              idleTimeoutSeconds={lock.idleTimeoutSeconds}
+              onScanReadyChange={setShelfScanReady}
+              scanStatus={shelfScanStatus}
+              onExit={goHome}
+            />
+          </LocalMountCommit>
         )}
         {/* The coin bank: out here with the shelf for the same reason (the
             panel mounts it LOCKED), with its own Back and no Done overlay. */}
         {section === 'bank' && !active && bankLaunch && bankLaunch.learnerId === currentUser?.id && (
-          <BankScreen
-            learner={currentUser}
-            idleTimeoutSeconds={lock.idleTimeoutSeconds}
-            onExit={goHome}
-          />
+          <LocalMountCommit requestId={bankLaunch?.mountRequestId} confirm={confirmLocalMount}>
+            <BankScreen
+              learner={currentUser}
+              idleTimeoutSeconds={lock.idleTimeoutSeconds}
+              onExit={goHome}
+            />
+          </LocalMountCommit>
         )}
       </main>
       {/* No picker on a locked panel: the code already named the learner, and
