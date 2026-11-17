@@ -23,6 +23,7 @@ public final class CoreRuntime implements CoreContext {
     private final Components components;
     private final StatusBoard status = new StatusBoard();
     private final NoteBus notes = new NoteBus();
+    private final EventBus events = new EventBus();
     private final EventLog log = new EventLog();
     private final Auth auth;
     private final SocketHub socket;
@@ -66,6 +67,13 @@ public final class CoreRuntime implements CoreContext {
     @Override public Components components() { return components; }
     @Override public StatusBoard status() { return status; }
     @Override public NoteBus notes() { return notes; }
+    @Override public EventBus events() { return events; }
+    @Override public String payloadVersion() { return payloadVersion; }
+    @Override public List<String> capabilityNames() {
+        List<String> out = new ArrayList<>();
+        for (Capability c : capabilities) out.add(c.name());
+        return out;
+    }
     @Override public EventLog log() { return log; }
     @Override public SocketHub socket() { return socket; }
     @Override public AccessibilityHub accessibility() { return accessibility; }
@@ -285,6 +293,17 @@ public final class CoreRuntime implements CoreContext {
         }
     }
 
+    /** The installed shell's versionName, or JSON null when there is no Android context (JVM tests). */
+    private Object appVersion() {
+        try {
+            android.content.Context c = (android.content.Context) shell.context();
+            String name = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+            return name == null ? JSONObject.NULL : name;
+        } catch (Throwable t) {
+            return JSONObject.NULL;
+        }
+    }
+
     private JSONArray names() {
         JSONArray a = new JSONArray();
         for (Capability c : capabilities) a.put(c.name());
@@ -310,6 +329,7 @@ public final class CoreRuntime implements CoreContext {
         return status.collect(StatusBoard.Surface.STATUS, body
                 .put("payloadVersion", payloadVersion)
                 .put("shellVersionCode", shell.shellVersionCode())
+                .put("appVersion", appVersion())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
                 .put("capabilities", names())
                 .put("wsClients", socket.clients())

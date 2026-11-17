@@ -29,6 +29,13 @@ public final class ServiceRegistry {
         return list == null || list.isEmpty() ? null : type.cast(list.get(0));
     }
 
+    /** For a route that cannot work without it: answers 501 naming the missing capability. */
+    public <T> T require(Class<T> type, String capability) {
+        T t = find(type);
+        if (t == null) throw new UnsupportedException("capability '" + capability + "' is not in this build");
+        return t;
+    }
+
     public <T> List<T> all(Class<T> type) {
         List<T> out = new ArrayList<>();
         List<Object> list = byType.get(type);

@@ -174,6 +174,34 @@ public class ControlServerTest {
         }
     }
 
+    /**
+     * POST /kiosk/load waits for a page, up to webview.loadTimeoutSec. The read timeout
+     * bounds how long the server waits for the CLIENT to send; a handler that takes
+     * longer than it to answer must still be answered on the same connection.
+     */
+    @Test public void aHandlerSlowerThanTheReadTimeoutStillAnswers() throws Exception {
+        Auth auth = new Auth(TOKEN);
+        Router router = new Router(auth);
+        final long handlerMs = ControlServer.SOCKET_READ_TIMEOUT_MS + 1500L;
+        router.route("POST", "/slow", req -> {
+            Thread.sleep(handlerMs);
+            return Router.Response.json(200, new JSONObject().put("ok", true).put("body", req.body));
+        });
+        ControlServer started = ControlServer.startWithRetry(() -> new ControlServer(0, router), 1);
+        assertNotNull(started);
+        try {
+            long began = System.currentTimeMillis();
+            String[] r = http("POST", "http://127.0.0.1:" + started.getListeningPort() + "/slow", TOKEN, "{\"url\":\"https://kiosk.example/\"}");
+            assertEquals("200", r[0]);
+            assertTrue(new JSONObject(r[1]).getBoolean("ok"));
+            assertEquals("{\"url\":\"https://kiosk.example/\"}", new JSONObject(r[1]).getString("body"));
+            assertTrue("the handler really outlasted the read timeout",
+                    System.currentTimeMillis() - began >= handlerMs);
+        } finally {
+            started.stop();
+        }
+    }
+
     @Test public void aConnectionThatSendsNothingIsClosedAfterTheReadTimeout() throws Exception {
         assertEquals(5000, ControlServer.SOCKET_READ_TIMEOUT_MS);
         Auth auth = new Auth(TOKEN);

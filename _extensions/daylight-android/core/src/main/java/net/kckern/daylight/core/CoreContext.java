@@ -19,6 +19,15 @@ public interface CoreContext {
 
     NoteBus notes();
 
+    /** Notifications between capabilities that are not notes: screen, network, key, kiosk focus. */
+    EventBus events();
+
+    /** The names of this build's capabilities, in device-file order. */
+    java.util.List<String> capabilityNames();
+
+    /** For example "p3-kiosk". The page bridge reports it as daylight.version. */
+    String payloadVersion();
+
     /** A short ring of recent events, returned by GET /log. */
     EventLog log();
 
