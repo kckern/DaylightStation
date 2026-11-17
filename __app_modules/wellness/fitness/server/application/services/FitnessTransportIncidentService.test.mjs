@@ -80,4 +80,16 @@ describe('fitness transport alerts from committed session metadata', () => {
     await expect(ops.save(request)).rejects.toThrow('disk failure');
     expect(reporter.recordCommitted).toHaveBeenCalledTimes(1);
   });
+  it('preserves validated bridge identity across report persistence and rejects unsafe provenance', async () => {
+    const { make, data, sendPush } = fixture();
+    const identity = { service: 'fitness-controller', version: '1.2.3', buildId: 'build-test', deviceId: 'unknown' };
+    const report = { ...event(), data: { ...event().data, ...identity } };
+    await make().recordCommitted({ events: [report] }, 'home');
+    expect(data.get('home')?.incidents['incident-1']?.metadata).toMatchObject(identity);
+    await make().recordCommitted({ events: [{ ...report, data: { ...report.data, incidentId: 'bad-build', buildId: { token: 'no' } } }, { ...report, data: { ...report.data, incidentId: 'bad-field', serviceId: 'invented' } }] }, 'home');
+    expect(sendPush).toHaveBeenCalledTimes(1);
+    expect(data.get('home').incidents['bad-build']).toBeUndefined();
+    expect(data.get('home').incidents['bad-field']).toBeUndefined();
+  });
+
 });

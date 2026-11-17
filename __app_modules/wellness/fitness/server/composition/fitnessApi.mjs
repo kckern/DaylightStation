@@ -410,18 +410,9 @@ export function createFitnessApiRouter(config) {
     logger,
   });
   new FitnessCoinsRelay({ eventBus, logger }).start();
-  const transportIncidentRetryWorker = new FitnessTransportIncidentService({
-    store: fitnessServices.sessionStore,
-    allowedHouseholdId: householdId,
-    logger,
-    sendPush: async (push, selectedHouseholdId) => {
-      if (selectedHouseholdId !== householdId) return { accepted: false };
-      const recipient = configService?.getHeadOfHousehold?.(selectedHouseholdId);
-      const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
-      if (!garageHumanActivityGateway?.callService || !notifyService) return { accepted: false };
-      await garageHumanActivityGateway.callService('notify', notifyService, push);
-      return { accepted: true }; // Gateway acceptance cannot prove phone delivery.
-    },
+  const transportIncidentRetryWorker = createFitnessTransportIncidentReporter({
+    store: fitnessServices.sessionStore, householdId, logger, configService,
+    userService, garageHumanActivityGateway,
   });
   const fitnessSessionOperations = new FitnessSessionOperations({
     transportIncidents: transportIncidentRetryWorker,
@@ -586,4 +577,23 @@ export function createFitnessSchoolCourseOperation({ attemptStore, sessionServic
 export function createFitnessUserHydrator({profileReader,peopleDirectory,householdId,schoolLearnerDirectory,logger}) {
   const guestResolver=peopleDirectory ? id=>peopleDirectory.resolve({householdId,person:{kind:'guest',id}}) : null;
   return new FitnessUserHydrator({profileReader,guestResolver,schoolLearnerDirectory,logger});
+}
+
+/** Production transport-report binding, shared with isolated composition tests. */
+export function createFitnessTransportIncidentReporter({
+  store, householdId, logger, configService, userService, garageHumanActivityGateway, now, wallNow,
+}) {
+  return new FitnessTransportIncidentService({
+    store,
+    allowedHouseholdId: householdId,
+    logger, now, wallNow,
+    sendPush: async (push, selectedHouseholdId) => {
+      if (selectedHouseholdId !== householdId) return { accepted: false };
+      const recipient = configService?.getHeadOfHousehold?.(selectedHouseholdId);
+      const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
+      if (!garageHumanActivityGateway?.callService || !notifyService) return { accepted: false };
+      const result = await garageHumanActivityGateway.callService('notify', notifyService, push);
+      return { accepted: result?.ok === true }; // Gateway acceptance cannot prove phone delivery.
+    },
+  });
 }

@@ -102,18 +102,20 @@ test('transport retry sidecar survives reopen, stays household scoped and never 
     await store.save(session, 'home');
     const historyFile = path.join(root, 'home/fitness/log/2026-11-16/20261116120000.yml');
     const original = await readRawFile(historyFile, 'utf8');
-    await store.writeTransportIncidents('home', { version: 1, incidents: { incident1: {
-      metadata: { type: 'lost', incidentId: 'incident1', state: 'lost', reason: 'delivery-gap', bootId: 'bridge-a', silenceMs: 60000, timestamp: '2026-11-16T12:00:00Z' },
-      status: 'pending', attempts: 0, delivered: 'unknown',
-    } } });
+    const provenance = { service: 'fitness-controller', version: '1.2.3', buildId: 'build-test', deviceId: 'unknown' };
+    const metadata = { type: 'lost', incidentId: 'incident1', state: 'lost', reason: 'delivery-gap', bootId: 'bridge-a', silenceMs: 60000, timestamp: '2026-11-16T12:00:00Z', ...provenance };
+    await new FitnessTransportIncidentService({ store, allowedHouseholdId: 'home', sendPush: async () => ({ accepted: false }), now: () => 0, wallNow: () => 0 })
+      .recordCommitted({ events: [{ type: 'fitness_transport', data: metadata }] }, 'home');
     const reopened = create();
-    assert.equal((await reopened.readTransportIncidents('home')).incidents.incident1.status, 'pending');
+    assert.equal((await reopened.readTransportIncidents('home')).incidents.incident1.status, 'failed');
+    assert.deepEqual((await reopened.readTransportIncidents('home')).incidents.incident1.metadata, metadata);
     assert.deepEqual((await reopened.readTransportIncidents('other')).incidents, {});
     assert.deepEqual(await reopened.listDates('home'), ['2026-11-16']);
     assert.equal(await readRawFile(historyFile, 'utf8'), original);
     let pushed = 0;
-    await new FitnessTransportIncidentService({ store: reopened, allowedHouseholdId: 'home', sendPush: async () => { pushed++; return { accepted: true }; } }).tick();
+    await new FitnessTransportIncidentService({ store: reopened, allowedHouseholdId: 'home', sendPush: async () => { pushed++; return { accepted: true }; }, now: () => 60000, wallNow: () => 60000 }).tick();
     assert.equal(pushed, 1);
+    assert.deepEqual((await create().readTransportIncidents('home')).incidents.incident1.metadata, metadata);
     assert.equal((await create().readTransportIncidents('home')).incidents.incident1.status, 'accepted');
     await reopened.save(session, 'home');
     assert.equal((await create().readTransportIncidents('home')).incidents.incident1.status, 'accepted');

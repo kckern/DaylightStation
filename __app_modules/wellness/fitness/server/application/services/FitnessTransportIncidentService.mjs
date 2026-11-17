@@ -1,6 +1,6 @@
 import { composeFitnessTransportPush } from '../../domain/notifications/fitnessTransportPush.mjs';
 
-const FIELDS = new Set(['type', 'incidentId', 'state', 'reason', 'bootId', 'silenceMs', 'timestamp']);
+const FIELDS = new Set(['type', 'incidentId', 'state', 'reason', 'bootId', 'silenceMs', 'timestamp', 'service', 'version', 'buildId', 'deviceId']);
 function metadata(event) {
   const d = event?.type === 'fitness_transport' ? event.data : null;
   if (!d || Object.keys(d).some(key => !FIELDS.has(key))) return null;
@@ -10,7 +10,14 @@ function metadata(event) {
   if (!['delivery-gap', 'health-missing', 'sample-delivered', 'source-quiet', 'inactive', 'stopped'].includes(d.reason)) return null;
   if (!Number.isFinite(d.silenceMs) || d.silenceMs < 0 || d.silenceMs > 86400000) return null;
   if (typeof d.timestamp !== 'string' || !/(Z|[+-]\d{2}:\d{2})$/.test(d.timestamp) || !Number.isFinite(Date.parse(d.timestamp))) return null;
-  return { ...d };
+  const identity = {};
+  for (const field of ['service', 'version', 'buildId', 'deviceId']) {
+    // Legacy committed incidents have no provenance; never invent it.
+    const value = d[field] === undefined ? 'unknown' : d[field];
+    if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,127}$/.test(value)) return null;
+    identity[field] = value;
+  }
+  return { ...d, ...identity };
 }
 
 /** Durable metadata queue. Only accepted session saves can enqueue work. */

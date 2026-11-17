@@ -111,4 +111,14 @@ describe('fitness browser transport recovery', () => {
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves actual bridge provenance and uses explicit unknown identity after a boot change', () => {
+    const { recovery, tick, onEscalate } = setup();
+    recovery.observeHealth(health(2, { service: 'fitness-controller', version: '1.2.3', buildId: 'build-test' }));
+    tick(15000); tick(60000);
+    expect(onEscalate.mock.calls[0][0]).toMatchObject({ service: 'fitness-controller', version: '1.2.3', buildId: 'build-test', bootId: 'a', deviceId: 'unknown' });
+    recovery.observeSample({ bootId: 'b', seq: 1 });
+    tick(75000); tick(120000);
+    expect(onEscalate.mock.calls[1][0]).toMatchObject({ service: 'unknown', version: 'unknown', buildId: 'unknown', bootId: 'b', deviceId: 'unknown' });
+  });
+
 });

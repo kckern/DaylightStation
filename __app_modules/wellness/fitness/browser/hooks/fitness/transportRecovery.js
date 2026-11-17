@@ -10,6 +10,8 @@ export function createTransportRecovery({
   let sampleSeq = -1;
   const retiredBoots = new Set();
   let health = null;
+  let sourceIdentity = { service: 'unknown', version: 'unknown', buildId: 'unknown' };
+  const identityField = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,127}$/.test(value) ? value : 'unknown';
   let incident = null;
   let attempts = [];
   let cancelReconnect = null;
@@ -26,7 +28,7 @@ export function createTransportRecovery({
   }
   const event = (type, silenceMs) => ({
     type, incidentId: incident.id, state: snapshot.state, reason: snapshot.reason,
-    bootId, silenceMs, timestamp: new Date().toISOString(),
+    bootId, ...sourceIdentity, deviceId: 'unknown', silenceMs, timestamp: new Date().toISOString(),
   });
   function acceptBoot(next) {
     if (!next) return bootId === null; // legacy samples work until a versioned bridge is observed
@@ -36,6 +38,7 @@ export function createTransportRecovery({
       bootId = next;
       sampleSeq = -1;
       health = null;
+      sourceIdentity = { service: 'unknown', version: 'unknown', buildId: 'unknown' };
     }
     return true;
   }
@@ -52,6 +55,9 @@ export function createTransportRecovery({
       if (disposed || packet?.protocol !== 1 || !packet.bootId || !Number.isSafeInteger(packet.sourceSeq) || packet.sourceSeq < 0) return false;
       if (!acceptBoot(packet.bootId)) return false;
       if (health && packet.sourceSeq < health.sourceSeq) return false;
+      sourceIdentity = {
+        service: identityField(packet.service), version: identityField(packet.version), buildId: identityField(packet.buildId),
+      };
       health = { sourceSeq: packet.sourceSeq, lastSourceAgeMs: packet.lastSourceAgeMs, at: now() };
       return true;
     },
