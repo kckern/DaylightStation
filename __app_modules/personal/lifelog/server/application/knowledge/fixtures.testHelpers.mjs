@@ -14,6 +14,7 @@ export function memoryStore(over = {}) {
    for(const object of batch.upserts??[])current.objects[object.id]=structuredClone(object);
    current.state={...current.state,...structuredClone(batch.statePatch??{})};
    if(batch.statePatch?.asks)current.asks=structuredClone(batch.statePatch.asks);
+   if(batch.statePatch?.quiz)current.quiz=structuredClone(batch.statePatch.quiz);
    current.health.lastSweepAt=current.state.lastSweepAt??current.health.lastSweepAt;
    current.revision++;applied.add(username+':'+runId);store.inMutation=false;
    return {revision:current.revision,applied:true};

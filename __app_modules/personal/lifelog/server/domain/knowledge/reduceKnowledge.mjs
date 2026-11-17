@@ -33,6 +33,7 @@ export function reduceKnowledge({ snapshot, proposals, evidence, asOf, timezone,
     if (!reason && p.op === 'alias_candidate' && (original.kind !== 'person' || !normalizeQuote(p.quote).includes(normalizeQuote(f.alias)))) reason = 'alias_not_quoted';
     if (p?.id) processed.add(p.id);
     if (reason) { rejected.push({ proposalId: p?.id, reason }); event(p ?? {}, 'proposal.rejected', { reason }); continue; }
+    if (p.op === 'propose_entity' && original && !(original.names ?? []).includes(f.name)) { queue(p, 'ambiguous_person_name'); continue; }
     const sensitivity = f.sensitivity ?? original?.sensitivity ?? 'normal';
     if (p.op === 'open_loop' && (sensitivity !== 'normal' || (f.links ?? []).some(id => objects[id].sensitivity !== 'normal'))) {
       queue({ ...p, fields: { ...f, ask_policy: 'never' } }, 'sensitive'); continue;

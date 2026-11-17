@@ -6,10 +6,25 @@ import { buildQuestion } from './questionForms.mjs';
 export function scoreLoop({ stakes = 1, overdueDays = 0, evidenceMoved = false, unansweredAsks: ignored = 0 }) {
   return stakes * 3 + Math.min(7, Math.max(0, overdueDays)) + (evidenceMoved ? 2 : 0) - ignored * 2;
 }
+function linkedLoopConcerns(snapshot) {
+  const loops=objectsOf(snapshot).filter(object=>object.kind==='loop');
+  const parents=new Map(loops.map(object=>[object.id,object.id]));
+  const find=id=>{
+    const visited=[];let current=id;
+    while(parents.get(current)!==current){visited.push(current);current=parents.get(current);}
+    for(const item of visited)parents.set(item,current);
+    return current;
+  };
+  for(const object of loops)for(const link of object.links??[])if(parents.has(link)) {
+    const roots=[find(object.id),find(link)].sort();parents.set(roots[1],roots[0]);
+  }
+  return id=>find(id);
+}
 export function selectQuestions({ snapshot, askDate, asOf, timezone, max = 2 }) {
   localDateFor(asOf, timezone);
   const health = snapshot.health ?? {};
-  if (!health.available || health.conflicted || health.recovering || !Number.isFinite(health.lastSweepAt) || asOf - health.lastSweepAt > REPLY_WINDOW_MS) return { questions: [], quizCandidates: [], reason: 'unavailable' };
+  if (!health.available || health.conflicted || health.recovering || !Number.isFinite(health.lastSweepAt) || health.lastSweepAt > asOf || asOf - health.lastSweepAt > REPLY_WINDOW_MS) return { questions: [], quizCandidates: [], reason: 'unavailable' };
+  const concernFor=linkedLoopConcerns(snapshot);
   const asks = deliveredAsks(snapshot); const candidates = [];
   for (const object of objectsOf(snapshot)) {
     if (object.kind !== 'loop' || !['open','waiting'].includes(object.status) || !['normal','user_initiated'].includes(object.ask_policy)) continue;
@@ -33,7 +48,7 @@ export function selectQuestions({ snapshot, askDate, asOf, timezone, max = 2 }) 
   const limit = inBackoff ? (weekend ? Math.min(1,max) : 0) : Math.min(2,max);
   for (const c of candidates) {
     if (questions.length >= limit || c.object.ask_policy === 'user_initiated') continue;
-    const linked = (c.object.links ?? []).filter(id => id.startsWith('concern.'));
+    const linked = [concernFor(c.object.id),...(c.object.links ?? []).filter(id => id.startsWith('concern.'))];
     if (linked.some(id => concerns.has(id)) || (sensitive && c.object.sensitivity !== 'normal')) continue;
     questions.push(c.question); linked.forEach(id => concerns.add(id)); sensitive ||= c.object.sensitivity !== 'normal';
   }

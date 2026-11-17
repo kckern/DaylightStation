@@ -90,3 +90,29 @@ Drop-it and human review/back-off events are counted separately. Historical
 reports use completed ledger images when present, and identify the current-view
 fallback when no committed image exists. These are measurements, not claims that
 an improvement target has been achieved.
+
+## Durable questions and reviews
+
+Question selection reserves no delivered asks. Delivery preparation writes opaque,
+short callback tokens before transport; only an acknowledged Telegram message ID
+binds tokens and counts the ask. Repeated preparation never authorizes a second
+send. Known failures allow one bounded retry; uncertain sends remain quarantined
+until expiry. Stale sweep health prevents preparing new questions.
+
+Replies require a request-local verified private sender capability, the configured
+conversation, an acknowledged bot message and its matching token. Forwarded input
+cannot make decisions. A consumed token or receipt cannot change a loop twice.
+Free text and voice prefer explicit reply linkage; an unambiguous recent ask may
+supply window attribution. Ambiguous windows stay unattributed.
+
+Monday reviews begin after 05:00 in the user's timezone, in one deterministic batch
+of at most five proposals. Remaining proposals wait for a later weekly batch.
+Confirmation applies to the individual person or alias; ambiguous identity changes
+never merge records. Supporting evidence is revalidated, including retractions.
+Accepting sensitive storage retains `ask_policy: never`. Rejection removes the
+pending proposal without deleting an existing person or loop.
+
+Echoes contain at most three validated normal loop titles and a generic private
+review notice. Their Looks right token confirms the echo only; it cannot approve
+pending people, aliases or sensitive proposals. Runtime and Journalist wiring
+remain separate from these delivery services; production participation stays off.

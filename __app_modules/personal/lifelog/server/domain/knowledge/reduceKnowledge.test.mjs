@@ -113,3 +113,10 @@ it('attributes closure to the user-local closure date rather than the old eviden
  const result=reduce({snapshot:snapshot({[original.id]:original}),asOf,proposals:[proposal({op:'close_loop',fields:{status:'answered'}})]});
  expect(result.batch.upserts[0].closedOn).toBe('2026-12-31');
 });
+it('cannot bypass alias confirmation by proposing a new name on an existing person',()=>{
+ const person={...loop(),id:'person.sample',kind:'person',status:'active',names:['Sample'],aliases:[]};delete person.loop;
+ const result=reduce({snapshot:snapshot({[person.id]:person}),evidence:[evidence({content:'I met Reviewer at the office.'})],proposals:[proposal({op:'propose_entity',target:person.id,quote:'I met Reviewer at the office.',fields:{kind:'person',name:'Reviewer'}})]});
+ expect(result.batch.upserts).toEqual([]);
+ expect(result.batch.statePatch.pendingReviews).toEqual([expect.objectContaining({reason:'ambiguous_person_name'})]);
+ expect(person.names).toEqual(['Sample']);
+});

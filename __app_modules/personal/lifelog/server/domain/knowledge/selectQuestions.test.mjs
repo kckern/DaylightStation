@@ -63,3 +63,12 @@ describe('morning delivery policy', () => {
     expect(select(s).reason).toBe('unavailable');
   });
 });
+it('treats linked loop tasks as one concern without grouping unrelated person links',()=>{
+ const a=loop({id:'loop.first',title:'First task',links:['loop.second']}),b=loop({id:'loop.second',title:'Related task'}),c=loop({id:'loop.third',title:'Independent task'});
+ const result=selectQuestions({snapshot:snapshot({[a.id]:a,[b.id]:b,[c.id]:c}),askDate:'2026-11-03',asOf:AS_OF,timezone:TZ});
+ expect(result.questions.map(q=>q.objectId)).toEqual(['loop.first','loop.third']);
+});
+it('does not select using a sweep timestamp from after the requested as-of',()=>{
+ const item=loop(),state=snapshot({[item.id]:item});state.health.lastSweepAt=AS_OF+1;
+ expect(selectQuestions({snapshot:state,askDate:'2026-11-03',asOf:AS_OF,timezone:TZ}).reason).toBe('unavailable');
+});
