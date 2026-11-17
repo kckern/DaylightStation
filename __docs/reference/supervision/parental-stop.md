@@ -50,17 +50,50 @@ writer:
   writer_host: <hostname> # optional; omit for the prod container
 ```
 
-With no `writer` block the writer is the prod container: `DAYLIGHT_ENV` unset
-or `docker` (`docker/entrypoint.sh` exports `docker`) on Linux, any hostname,
-since a container's hostname is its id and changes on every deploy. Prod needs
-no new configuration. A configured writer may run on any platform. Every other
-backend fails closed with `SUPERVISION_WRITER_HOST_REFUSED`, whose message names
-the configured writer and the refused backend's env, host and platform: the
-supervision runtime aborts initialization instead of disabling a retained Stop,
-and the shutdown incident reporter records nothing. The read-only bootstrap
-probe is not gated, so a never-configured installation stays in legacy mode on
-any host. To move the writer (for example to test on a laptop), set the block on
-both ledgers' configs; prod is then refused until it is removed.
+With no `writer` block the writer is the prod container, and all three must
+hold: `DAYLIGHT_ENV` is exactly `docker` (`docker/entrypoint.sh` exports it;
+unset does not count, or any Linux backend started without a `.env` would
+qualify), the platform is Linux, and `/.dockerenv` exists (the marker `app.mjs`
+already uses for the prod container). Any hostname is accepted there, since a
+container's hostname is its id and changes on every deploy. Prod needs no new
+configuration. A configured writer may run on any platform. The `writer` block
+lives in the supervision config itself, so if that config is removed while the
+ledger is kept, the writer falls back to the prod container.
+
+**What a refused backend looks like.** Every other backend, and prod itself if
+a `writer` block is malformed, is refused (`SUPERVISION_WRITER_HOST_REFUSED`).
+It still boots and every other household feature keeps working:
+
+- The read-only bootstrap probe is not gated: a never-configured installation
+  with no ledger stays in legacy mode on any host.
+- Otherwise supervision comes up **refused**: `enabled: true` so callers treat
+  it as active, every guarded action and every Stop, release or approval is
+  denied, status reads as stopped, `verifyScan` accepts no scan, every
+  `/api/v1/supervision` route answers 503 with the gate message (kiosks pointed
+  at this backend stay on "Checking access"), and health reports
+  `writer: 'refused'` with the configured writer and this host. No reconciler,
+  actuator, approval producer or Home Assistant call runs, and the ledger and its
+  `.lock` are never touched. Boot logs one `supervision.writer.refused` error
+  naming the configured writer and the refused backend's env, host, platform
+  and container marker.
+- The shutdown incident reporter is not built: boot logs one
+  `shutdown.incidents.not_writer` info event, and shutdown status/diagnostics
+  report `enforcement.incidentReporting: 'not-writer'`.
+
+**Moving the writer: there is no safe in-place move.** The configs are shared
+through Dropbox and each backend builds its gate once at boot. A running prod
+keeps writing after the config changes, so starting the new writer while prod
+runs makes two writers. In this order:
+
+1. Stop the prod backend (the `daylight-station` container).
+2. In the shared data tree, set the same `writer` block in the supervision
+   config and in `shutdown/config.yml`, naming the new writer's `DAYLIGHT_ENV`
+   (and `writer_host` if more than one backend shares that env).
+3. Start the new writer and confirm its health reports no `writer: 'refused'`.
+4. If prod is started while the block names another writer, it boots refused as
+   above (deny-all supervision, no incident reporting); it does not exit.
+
+To move back, stop the other writer, remove both `writer` blocks, then start prod.
 
 See `__docs/configuration/supervision.yml` for the configuration template. The actual inventory includes Garage (`garage-tv`), school Portal (`portal`), piano tablet (`yellow-room-tablet`) and arcade/media Shield (`livingroom-tv`). This is reviewed inventory, not a claim that every consumer has passed live acceptance. Deploy only through the activity-aware rollout gate and record the parent-operated drill, including per-device ACKs and real actuator observations. A persistent idle latch alone is not an active human; recent verified parent intervention/release still protects against deployment.
 

@@ -25,7 +25,7 @@ async function bootstrap({enabled=false,persisted,lockHeld=true,writer=WRITER,en
   import {createSupervisionRuntime} from ${JSON.stringify(new URL('../../../__backend/src/5_composition/modules/supervision.mjs',import.meta.url).href)};
   try {
    const runtime=await createSupervisionRuntime({configuration:{enabled:${enabled},writer:${JSON.stringify(writer)}},environment:${JSON.stringify(environment)},hostId:'bootstrap-host',householdId:'home',configService:{getHouseholdPath:()=>${JSON.stringify(path)}}});
-   process.stdout.write(JSON.stringify({enabled:runtime.enabled}));runtime.dispose();
+   process.stdout.write(JSON.stringify({enabled:runtime.enabled,...(runtime.refused?{writer:(await runtime.health()).writer}:{})}));runtime.dispose();
   } catch(error){process.stdout.write(JSON.stringify({error:error.code??error.message}));}
  `],emptyPath?{env:{...process.env,PATH:root}}:undefined);
  return {result:JSON.parse(stdout),path,root};
@@ -51,10 +51,10 @@ describe('supervision bootstrap when the writer lock is unavailable',()=>{
 });
 
 describe('supervision bootstrap on a host that is not the configured writer',()=>{
- it('refuses a retained stop before any lock or write, rather than disabling it',async()=>{
+ it('boots refused with a retained stop, before any lock or write, rather than disabling it or exiting',async()=>{
   const persisted=JSON.stringify({...emptySupervisionState(),epoch:1});
   const {result,path}=await bootstrap({persisted,lockHeld:false,environment:'laptop-dev'});
-  expect(result).toEqual({error:'SUPERVISION_WRITER_HOST_REFUSED'});
+  expect(result).toEqual({enabled:true,writer:'refused'});
   expect(await readFile(path,'utf8')).toBe(persisted);
   await expect(access(`${path}.lock`)).rejects.toMatchObject({code:'ENOENT'});
  });

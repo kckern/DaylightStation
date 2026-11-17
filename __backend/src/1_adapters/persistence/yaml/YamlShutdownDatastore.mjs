@@ -9,10 +9,14 @@ export class YamlShutdownDatastore {
     if (!configService?.getHouseholdPath) throw new Error('YamlShutdownDatastore: configService required');
     this.#config = configService; this.#load = load; this.#save = save;
   }
-  /** `writer` is shutdown config's `writer` block; see LedgerWriterGate.mjs. */
-  incidentRepository({writer,environment,hostId,platform}={}){
-    const writerGate=createLedgerWriterGate({ledger:'The shutdown incident ledger',writer,environment,hostId,platform});
-    return new JsonSupervisionRepository({path:`${this.#config.getHouseholdPath('shutdown')}/enforcement-incidents.json`,writerGate});
+  /**
+   * Who may write the incident ledger. `gateOptions` takes shutdown config's
+   * `writer` block plus the runtime facts (environment, hostId, platform,
+   * isDocker); keys left out are read from this process. See LedgerWriterGate.mjs.
+   */
+  incidentWriterGate(gateOptions={}){return createLedgerWriterGate({...gateOptions,ledger:'The shutdown incident ledger'});}
+  incidentRepository({writerGate,...gateOptions}={}){
+    return new JsonSupervisionRepository({path:`${this.#config.getHouseholdPath('shutdown')}/enforcement-incidents.json`,writerGate:writerGate??this.incidentWriterGate(gateOptions)});
   }
   path() { return `${this.#config.getHouseholdPath('shutdown')}/lockdown.yml`; }
   async read() {

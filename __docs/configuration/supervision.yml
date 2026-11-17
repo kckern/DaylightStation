@@ -2,7 +2,8 @@
 # Secrets belong in household auth/supervision.yml, never in this document.
 enabled: false
 # Which backend may write the ledger (see reference/supervision/parental-stop.md).
-# Omit for the prod container (DAYLIGHT_ENV docker on Linux).
+# Omit for the prod container (DAYLIGHT_ENV exactly docker, Linux, /.dockerenv).
+# Moving it means stopping prod first; see the doc.
 # writer:
 #   writer_env: docker
 #   writer_host: <hostname>
