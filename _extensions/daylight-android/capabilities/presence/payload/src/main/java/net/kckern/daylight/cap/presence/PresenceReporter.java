@@ -11,6 +11,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import net.kckern.daylight.core.EventLog;
+import net.kckern.daylight.core.Json;
+
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -70,6 +73,8 @@ public class PresenceReporter {
     private final Context ctx;
     private final PresenceConfig config;
     private final EventLog eventLog;
+    /** The installed app's version name: what BuildConfig.VERSION_NAME was in portal-keys. */
+    private final String version;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final Map<Integer, BluetoothProfile> proxies = new HashMap<>();
@@ -85,10 +90,11 @@ public class PresenceReporter {
     private BroadcastReceiver receiver;
     private Runnable heartbeat;
 
-    public PresenceReporter(Context ctx, PresenceConfig config, EventLog eventLog) {
+    public PresenceReporter(Context ctx, PresenceConfig config, EventLog eventLog, String version) {
         this.ctx = ctx;
         this.config = config;
         this.eventLog = eventLog;
+        this.version = version;
     }
 
     public void start() {
@@ -137,6 +143,8 @@ public class PresenceReporter {
             }
         };
         handler.post(heartbeat);
+        // Said once: with no endpoint every report stops at "no-endpoint".
+        if (config.gateEndpoint().isEmpty()) eventLog.add("presence-not-configured (presence.endpoint is empty)");
         eventLog.add("presence-started");
     }
 
@@ -209,7 +217,7 @@ public class PresenceReporter {
                 + "\"at\":\"" + Json.escape(iso(now)) + "\","
                 + "\"seq\":" + (++seq) + ","
                 + "\"uptimeMs\":" + (now - startedAt) + ","
-                + "\"version\":\"" + Json.escape(BuildConfig.VERSION_NAME) + "\","
+                + "\"version\":\"" + Json.escape(version) + "\","
                 + "\"heartbeatMs\":" + config.gateHeartbeatMs() + ","
                 + "\"btEnabled\":" + (adapter != null && adapter.isEnabled()) + ","
                 + "\"devices\":[" + devices + "]"

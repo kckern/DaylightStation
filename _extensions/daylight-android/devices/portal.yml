@@ -4,11 +4,19 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 4, versionName: "0.2-helpers" }
+shell: { versionCode: 5, versionName: "0.2-helpers" }
 capabilities:
   - debug-tools
   - accessibility
   - volume-keys
   - hid-input
+  - presence
 defaults:
   debug.execEnabled: false
+  # Where the Portal reports Bluetooth presence. Household-specific, so it is not in this
+  # file. Empty means not configured: the capability logs that once and sends nothing.
+  # To compile it in, add `portal_presence_endpoint` under `placeholders:` in the private
+  # tokens file and set this to "{portal_presence_endpoint}"; or set it on the device with
+  # `settings set presence.endpoint`. The token is a secret setting, set on the device
+  # with `settings set presence.token`, never compiled in.
+  presence.endpoint: ""
