@@ -66,7 +66,7 @@ The router, enrichment service interface, and webhook routes remain unchanged.
 | Layer | Component | File | Purpose |
 |-------|-----------|------|---------|
 | Adapter | `StravaWebhookAdapter` | `1_adapters/strava/StravaWebhookAdapter.mjs` | Strava webhook protocol: challenge validation, event parsing, verify token |
-| Adapter | `StravaClientAdapter` | `1_adapters/fitness/StravaClientAdapter.mjs` | HTTP client for Strava API (getActivity, updateActivity, refreshToken) |
+| Adapter | `StravaClientAdapter` | `1_adapters/fitness/StravaClientAdapter.mjs` | HTTP client for Strava API (getActivity, updateActivity, refreshToken); parses with `stravaJsonReviver` |
 | Adapter | `StravaWebhookJobStore` | `1_adapters/strava/StravaWebhookJobStore.mjs` | Durable YAML-backed job queue for crash recovery |
 | Application | `FitnessActivityEnrichmentService` | `3_applications/fitness/FitnessActivityEnrichmentService.mjs` | Orchestration: matching, enrichment, retries, circuit breakers |
 | Adapter | `buildStravaDescription` | `1_adapters/fitness/buildStravaDescription.mjs` | Pure function: session data → Strava title + description |
@@ -75,6 +75,30 @@ The router, enrichment service interface, and webhook routes remain unchanged.
 
 - **`GET /api/v1/fitness/provider/webhook`** — Subscription validation. Provider sends a challenge; we echo it back.
 - **`POST /api/v1/fitness/provider/webhook`** — Event receiver. Returns 200 immediately; enrichment is async.
+
+### Strava ids are 64-bit
+
+From 2027-06-01 Strava issues activity and athlete ids above 2^53, past what a
+JavaScript number holds exactly. Plain `JSON.parse` rounds such an id to a
+**different** activity, with no error. Every Strava body is therefore parsed
+with `stravaJsonReviver` (`__app_modules/wellness/fitness/server/adapters/strava/stravaJson.mjs`):
+
+- An integer too large to be exact keeps its digits as a **string**. This uses
+  the reviver's source text (Node 21+), so it also covers fields with no `_str`
+  twin, such as a webhook's `object_id` and `owner_id`.
+- Any `x` whose `x_str` sibling disagrees with it takes the `x_str` value
+  (`id`/`id_str`, `upload_id`/`upload_id_str`).
+- Ids that fit stay **numbers**, so every id already on disk keeps comparing
+  equal to the same id fetched again. Code should treat an activity id as
+  `number|string`: compare with `===`, or `BigInt` for ordering, and never
+  `Number()`.
+
+It is wired in at three places. `StravaClientAdapter` passes it as the
+`HttpClient` `jsonReviver` option. `app.mjs` mounts a dedicated
+`express.json({ reviver })` on `/api/v1/fitness/provider/webhook`, ahead of the
+general body parser. The fitness CLI (`stravaApi`, `push`) parses with
+`parseStravaJson`. A new Strava call site must use one of these, not
+`res.json()`.
 
 ---
 

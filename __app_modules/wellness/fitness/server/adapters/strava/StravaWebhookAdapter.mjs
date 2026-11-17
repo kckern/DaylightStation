@@ -16,10 +16,12 @@
  * @typedef {Object} FitnessProviderEvent
  * @property {string} provider - 'strava'
  * @property {string} objectType - 'activity' | 'athlete'
- * @property {string|number} objectId - Activity or athlete ID
+ * @property {string|number} objectId - Activity or athlete ID. A number while it
+ *   fits 2^53; above that (Strava, from 2027-06-01) the exact digits as a string,
+ *   kept by the stravaJsonReviver body parser on the webhook route
  * @property {string} aspectType - 'create' | 'update' | 'delete'
  * @property {Object} updates - Changed fields on an update event (e.g. { title })
- * @property {number} ownerId - Athlete ID
+ * @property {string|number} ownerId - Athlete ID (same rule as objectId)
  * @property {number} eventTime - Unix timestamp
  * @property {number} subscriptionId - Webhook subscription ID
  */

@@ -23,6 +23,7 @@ import yaml from 'js-yaml';
 import { parseArgs, bool, str } from "./argv.mjs";
 import { CliError } from "./context.mjs";
 import { stravaApi, getAccessToken, STRAVA_BASE } from "./stravaAuth.mjs";
+import { parseStravaJson } from "../../server/adapters/strava/stravaJson.mjs";
 
 export const spec = {
   name: 'push',
@@ -269,7 +270,7 @@ async function upload({ tcx, name, session, token }) {
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
-  const body = await res.json();
+  const body = parseStravaJson(await res.text());
   if (!res.ok) throw new CliError(`Upload failed: ${res.status} ${JSON.stringify(body)}`);
   console.log(`  upload id=${body.id} status=${body.status}`);
   return body;
@@ -283,7 +284,7 @@ async function pollUpload(uploadId, token, maxSec = 60) {
     const res = await fetch(`${STRAVA_BASE}/api/v3/uploads/${uploadId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const body = await res.json();
+    const body = parseStravaJson(await res.text());
     console.log(`  poll: status="${body.status}" activity_id=${body.activity_id} error=${body.error || ''}`);
     if (body.activity_id) return body;
     if (body.error) throw new CliError(`Upload error: ${body.error}`);
