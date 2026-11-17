@@ -21,8 +21,9 @@ final class MidiConfig {
         s.declare("midi.targetName", SettingsRegistry.Type.STRING, "");
         // Comma-separated MAC addresses never to connect to.
         s.declare("midi.blocklistMacs", SettingsRegistry.Type.STRING, "");
-        s.declare("midi.scanTimeoutMs", SettingsRegistry.Type.INTEGER, 15000);
-        s.declare("midi.reconnectDelayMs", SettingsRegistry.Type.INTEGER, 3000);
+        // Both feed Handler.postDelayed: zero or less would make a scan or a retry loop spin.
+        s.declare("midi.scanTimeoutMs", SettingsRegistry.Type.INTEGER, 15000, SettingsRegistry.range(1000, 120000));
+        s.declare("midi.reconnectDelayMs", SettingsRegistry.Type.INTEGER, 3000, SettingsRegistry.range(250, 600000));
         // An explicit disconnect survives watchdog ticks, setting changes and payload swaps.
         s.declare("midi.enabled", SettingsRegistry.Type.BOOLEAN, true);
     }

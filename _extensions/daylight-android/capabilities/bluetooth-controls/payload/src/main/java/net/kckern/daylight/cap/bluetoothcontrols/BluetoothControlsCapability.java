@@ -4,9 +4,11 @@ import android.content.Context;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.Diag;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.SettingsRegistry;
+import net.kckern.daylight.core.StatusBoard;
 import net.kckern.daylight.core.spi.PairingDialogExemption;
 
 import org.json.JSONObject;
@@ -14,7 +16,11 @@ import org.json.JSONObject;
 public final class BluetoothControlsCapability implements Capability {
     private static final String[] ACTIONS = { "scan", "scan/stop", "pair", "unpair", "connect", "disconnect", "pairing", "power" };
 
+    static final String MODE_ROLES = "roles", MODE_GAMEPAD = "gamepad";
+
     private CoreContext core;
+    /** Why the controls are not running although the capability started. Null when they are, or before start. */
+    private volatile String unavailable;
     private volatile BluetoothController controller;
     private volatile RoleBluetoothPort roles;
     private volatile boolean gamepad;
@@ -24,7 +30,8 @@ public final class BluetoothControlsCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
-        core.settings().declare("bluetooth.mode", SettingsRegistry.Type.STRING, "roles");
+        core.settings().declare("bluetooth.mode", SettingsRegistry.Type.STRING, MODE_ROLES,
+                SettingsRegistry.oneOf(MODE_ROLES, MODE_GAMEPAD));
         // Opt in only after the kiosk permits the exact Bluetooth pairing dialog component.
         core.settings().declare("bluetooth.systemPairingDialog", SettingsRegistry.Type.BOOLEAN, false);
 
@@ -32,6 +39,13 @@ public final class BluetoothControlsCapability implements Capability {
         for (final String action : ACTIONS) {
             core.router().route("POST", "/bluetooth/" + action, req -> respond(request("POST", action, req.body), true));
         }
+        core.status().add(StatusBoard.Surface.STATUS, name(), o -> {
+            String why = unavailable;
+            o.put("bluetooth", new JSONObject()
+                    .put("available", controller != null)
+                    .put("mode", core.settings().get("bluetooth.mode"))
+                    .put("error", why == null ? JSONObject.NULL : why));
+        });
         core.services().provide(PairingDialogExemption.class, () -> {
             RoleBluetoothPort p = roles;
             return p != null && p.isSystemPairingDialogAllowed();
@@ -40,7 +54,10 @@ public final class BluetoothControlsCapability implements Capability {
 
     private JSONObject request(String method, String action, String body) {
         BluetoothController c = controller;
-        if (c == null) return BluetoothController.error("unavailable", "Bluetooth controls are starting");
+        if (c == null) {
+            String why = unavailable;
+            return BluetoothController.error("unavailable", why == null ? "Bluetooth controls are starting" : why);
+        }
         return c.request(method, action, body);
     }
 
@@ -60,28 +77,41 @@ public final class BluetoothControlsCapability implements Capability {
     }
 
     @Override public void start() {
-        Context ctx = (Context) core.shell().context();
+        startIn((String) core.settings().get("bluetooth.mode"), (Context) core.shell().context());
+    }
+
+    /**
+     * The registry refuses any other mode when it is set, so the last branch is not
+     * expected to run. It reports and returns all the same: a capability that threw
+     * here would take the control port down with it, and with the port gone the
+     * setting could not be corrected.
+     */
+    void startIn(String mode, Context ctx) {
+        unavailable = null;
+        if (!MODE_ROLES.equals(mode) && !MODE_GAMEPAD.equals(mode)) {
+            unavailable = "bluetooth.mode must be 'roles' or 'gamepad' (got '" + mode + "')";
+            Diag.log("Daylight-Bluetooth", "not started: " + unavailable);
+            return;
+        }
         // JVM tests boot every capability with no Android context: no adapter to manage.
         if (ctx == null) return;
-        String mode = (String) core.settings().get("bluetooth.mode");
-        if ("roles".equals(mode)) {
+        if (MODE_ROLES.equals(mode)) {
             RoleBluetoothPort port = new RoleBluetoothPort(ctx, core);
             port.start();
             roles = port;
             closer = port::close;
             controller = port.controller();
-        } else if ("gamepad".equals(mode)) {
+        } else {
             GamepadBluetoothPort port = new GamepadBluetoothPort(ctx);
             port.start();
             closer = port::close;
             gamepad = true;
             controller = new BluetoothController(port, System::currentTimeMillis);
-        } else {
-            throw new IllegalArgumentException("bluetooth.mode must be 'roles' or 'gamepad' (got '" + mode + "')");
         }
     }
 
     @Override public void stop() {
+        unavailable = null;
         controller = null;
         roles = null;
         gamepad = false;

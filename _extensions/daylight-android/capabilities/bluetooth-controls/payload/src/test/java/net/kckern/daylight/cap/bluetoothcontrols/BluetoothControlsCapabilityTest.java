@@ -40,4 +40,30 @@ public class BluetoothControlsCapabilityTest {
         cap.stop();
         cap.stop();
     }
+
+    @Test public void aModeOutsideTheTwoIsRefusedWhenSet() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.add(new BluetoothControlsCapability());
+        core.prepare(new JSONObject());
+        JSONObject refused = TestCore.call(core, "POST", "/settings", null, "{\"key\":\"bluetooth.mode\",\"value\":\"gamepads\"}");
+        assertEquals(400, refused.getInt("_status"));
+        assertEquals("invalid_setting", refused.getString("error"));
+        assertEquals("roles", core.settings().get("bluetooth.mode"));
+        assertEquals(200, TestCore.call(core, "POST", "/settings", null, "{\"key\":\"bluetooth.mode\",\"value\":\"gamepad\"}").getInt("_status"));
+    }
+
+    @Test public void anUnusableModeLeavesThePayloadUpAndIsReportedInStatus() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        BluetoothControlsCapability cap = new BluetoothControlsCapability();
+        core.add(cap);
+        core.prepare(new JSONObject());
+        cap.startIn("gamepads", null);    // must not throw: a throw here takes the control port down
+        JSONObject bt = TestCore.get(core, "/status").getJSONObject("bluetooth");
+        assertFalse(bt.getBoolean("available"));
+        assertTrue(bt.getString("error"), bt.getString("error").contains("gamepads"));
+        JSONObject state = TestCore.get(core, "/bluetooth");
+        assertEquals("unavailable", state.getString("code"));
+        cap.stop();
+        assertTrue(TestCore.get(core, "/status").getJSONObject("bluetooth").isNull("error"));
+    }
 }

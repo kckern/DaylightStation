@@ -181,4 +181,73 @@ public class CoreRuntimeTest {
                 Collections.singletonMap("key", "vault.key"), null);
         assertEquals("", new JSONObject(new String(reset.body, StandardCharsets.UTF_8)).getString("value"));
     }
+
+    // ── a start() the loader gave up on ─────────────────────────────────────
+
+    /** Records its start and stop, and can hold start() open until released. */
+    private final class Tracked implements Capability {
+        final String id;
+        final java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        final boolean blocks;
+        Tracked(String id, boolean blocks) { this.id = id; this.blocks = blocks; }
+        @Override public String name() { return id; }
+        @Override public void register(CoreContext core) { }
+        @Override public void start() {
+            synchronized (events) { events.add("start " + id); }
+            entered.countDown();
+            if (!blocks) return;
+            boolean waiting = true;
+            while (waiting) {
+                try { release.await(); waiting = false; } catch (InterruptedException stillStuck) { }
+            }
+        }
+        @Override public void stop() { synchronized (events) { events.add("stop " + id); } }
+    }
+
+    @Test public void aStopDuringAStalledStartStopsThatCapabilityAndStartsNoLaterOne() throws Exception {
+        final CoreRuntime core = new CoreRuntime(shell, "test", "p-test", new java.io.File(shell.dir, "state"));
+        Tracked first = new Tracked("first", false), stalled = new Tracked("stalled", true), later = new Tracked("later", false);
+        core.add(first);
+        core.add(stalled);
+        core.add(later);
+        final Throwable[] thrown = { null };
+        Thread starter = new Thread(() -> {
+            try { core.start(new JSONObject()); } catch (Throwable t) { thrown[0] = t; }
+        });
+        starter.start();
+        assertTrue(stalled.entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        core.stop();                       // what the loader's stopper does after the deadline
+        synchronized (events) { assertEquals(java.util.Arrays.asList("start first", "start stalled", "stop first"), events); }
+
+        stalled.release.countDown();       // the stuck start() finally returns
+        starter.join(5000);
+        assertFalse(starter.isAlive());
+        synchronized (events) {
+            assertEquals(java.util.Arrays.asList("start first", "start stalled", "stop first", "stop stalled"), events);
+        }
+        assertTrue(String.valueOf(thrown[0]), thrown[0] instanceof IllegalStateException);
+        assertTrue(thrown[0].getMessage(), thrown[0].getMessage().contains("stopped"));
+        core.stop();                       // twice is safe and stops nothing again
+        synchronized (events) { assertEquals(4, events.size()); }
+    }
+
+    @Test public void aRuntimeStoppedBeforeItStartsStartsNothing() throws Exception {
+        CoreRuntime core = new CoreRuntime(shell, "test", "p-test", new java.io.File(shell.dir, "state"));
+        Tracked only = new Tracked("only", false);
+        core.add(only);
+        core.stop();
+        try {
+            core.start(new JSONObject());
+            fail("a stopped runtime started");
+        } catch (IllegalStateException expected) { }
+        assertEquals(1, only.entered.getCount());
+    }
+
+    @Test public void theOverridesFileIsWhereTheShellLooksForIt() throws Exception {
+        CoreRuntime core = runtime(new Sample(false), "{}");
+        core.settings().set("sample.level", 3);
+        assertTrue(net.kckern.daylight.api.PayloadState.settingsOverrides(shell.dir).isFile());
+    }
 }

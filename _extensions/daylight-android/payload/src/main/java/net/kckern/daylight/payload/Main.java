@@ -18,6 +18,12 @@ public final class Main implements Payload {
     /** Written on the loader's thread, read by onShellComponent on whichever thread Android binds a component. */
     private volatile CoreRuntime core;
     private volatile ControlServer server;
+    /**
+     * Set by stop() and never cleared: the loader builds a new Main for every start.
+     * It may call stop() while start() is still running, on another thread, after
+     * giving up on it; start() then must not leave a server or a core behind.
+     */
+    private volatile boolean stopped;
 
     @Override public void start(ShellServices shell) {
         start(shell, DeviceConfig.CONTROL_PORT, BIND_ATTEMPTS);
@@ -27,8 +33,9 @@ public final class Main implements Payload {
     void start(ShellServices shell, final int port, int bindAttempts) {
         try {
             final CoreRuntime c = new CoreRuntime(shell, DeviceConfig.DEVICE_ID, DeviceConfig.PAYLOAD_VERSION,
-                    new File(shell.payloadDir(), "state"));
+                    net.kckern.daylight.api.PayloadState.dir(shell.payloadDir()));
             core = c;
+            if (stopped) throw new IllegalStateException("stopped before start");
             for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
                 c.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
             }
@@ -40,6 +47,8 @@ public final class Main implements Payload {
                 shell.note("CONTROL", "control server failed to bind :" + port);
                 throw new IllegalStateException("control port " + port + " could not be bound");
             }
+            // stop() ran while the port was being bound and saw no server to stop.
+            if (stopped) throw new IllegalStateException("stopped during start");
             shell.updateNotification(DeviceConfig.DEVICE_ID + " " + DeviceConfig.PAYLOAD_VERSION);
         } catch (Throwable e) {
             // Throwable: a missing class or method is an Error, and what already started must still be stopped.
@@ -50,6 +59,7 @@ public final class Main implements Payload {
     }
 
     @Override public void stop() {
+        stopped = true;
         ControlServer s = server;
         server = null;
         if (s != null) { try { s.stop(); } catch (Throwable ignored) { } }

@@ -70,7 +70,7 @@ public final class MicBridgeCapability implements Capability {
     @Override public void register(CoreContext core) {
         this.core = core;
         // audio-bridge's port. A device that still runs audio-bridge beside this app sets another.
-        core.settings().declare("mic.port", SettingsRegistry.Type.INTEGER, 8765);
+        core.settings().declare("mic.port", SettingsRegistry.Type.INTEGER, 8765, SettingsRegistry.range(1024, 65535));
 
         core.router().route("GET", "/mic/status", req -> Replies.json(status().put("ok", true)));
         core.router().route("POST", "/mic/restart", req -> {

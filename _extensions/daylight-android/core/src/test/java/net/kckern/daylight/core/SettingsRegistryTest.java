@@ -192,4 +192,80 @@ public class SettingsRegistryTest {
         s.declareSecret("presence.token");
         s.applyDefaults(new JSONObject("{\"presence.token\":\"in-a-public-repo\"}"));
     }
+
+    // ── rules: allowed values and ranges ────────────────────────────────────
+
+    private SettingsRegistry ruled() {
+        SettingsRegistry s = new SettingsRegistry(file);
+        s.declare("bluetooth.mode", Type.STRING, "roles", SettingsRegistry.oneOf("roles", "gamepad"));
+        s.declare("keys.doublePressMs", Type.INTEGER, 450, SettingsRegistry.range(150, 2000));
+        return s;
+    }
+
+    @Test public void aValueOutsideTheAllowedSetIsRefusedAtSetAndNothingIsStored() {
+        SettingsRegistry s = ruled();
+        try {
+            s.set("bluetooth.mode", "gamepads");
+            fail("a value outside the allowed set was stored");
+        } catch (InvalidSettingException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("bluetooth.mode"));
+        }
+        assertEquals("roles", s.get("bluetooth.mode"));
+        assertFalse(file.exists());
+        s.set("bluetooth.mode", "gamepad");
+        assertEquals("gamepad", s.get("bluetooth.mode"));
+    }
+
+    @Test public void aNumberOutsideTheRangeIsRefusedAtSet() {
+        SettingsRegistry s = ruled();
+        for (Object bad : new Object[] { 149, 2001, "100000", -1 }) {
+            try { s.set("keys.doublePressMs", bad); fail("accepted " + bad); } catch (InvalidSettingException expected) { }
+        }
+        s.set("keys.doublePressMs", 150);
+        s.set("keys.doublePressMs", "2000");
+        assertEquals(2000, s.get("keys.doublePressMs"));
+    }
+
+    @Test(expected = InvalidSettingException.class)
+    public void aDeviceDefaultOutsideTheAllowedSetIsRefused() throws Exception {
+        ruled().applyDefaults(new JSONObject("{\"bluetooth.mode\":\"gamepads\"}"));
+    }
+
+    @Test(expected = InvalidSettingException.class)
+    public void aDeviceDefaultOutsideTheRangeIsRefused() throws Exception {
+        ruled().applyDefaults(new JSONObject("{\"keys.doublePressMs\":5}"));
+    }
+
+    @Test(expected = InvalidSettingException.class)
+    public void aFallbackMustSatisfyItsOwnRule() {
+        new SettingsRegistry(file).declare("bluetooth.mode", Type.STRING, "neither", SettingsRegistry.oneOf("roles", "gamepad"));
+    }
+
+    @Test public void aStoredOverrideThatBreaksTheRuleIsIgnoredNotThrownAndLoggedOnce() throws Exception {
+        // What an older payload, with no rule on the setting, left on disk.
+        java.nio.file.Files.write(file.toPath(),
+                "{\"bluetooth.mode\":\"gamepads\",\"keys.doublePressMs\":9}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        SettingsRegistry s = ruled();
+        assertEquals("roles", s.get("bluetooth.mode"));
+        assertEquals("roles", s.get("bluetooth.mode"));
+        assertEquals(450, s.get("keys.doublePressMs"));
+        for (int i = 0; i < s.describe().length(); i++) {
+            JSONObject row = s.describe().getJSONObject(i);
+            assertFalse(row.getString("key"), row.getBoolean("overridden"));
+        }
+        int reports = 0;
+        org.json.JSONArray log = Diag.recent();
+        for (int i = 0; i < log.length(); i++) {
+            if (log.getString(i).contains("'bluetooth.mode' is no longer valid")) reports++;
+            assertFalse("the stored value is not logged", log.getString(i).contains("gamepads"));
+        }
+        assertEquals(1, reports);
+    }
+
+    @Test public void describeListsWhatARuleAllows() throws Exception {
+        org.json.JSONArray rows = ruled().describe();
+        assertEquals("[\"roles\",\"gamepad\"]", rows.getJSONObject(0).getJSONArray("allowed").toString());
+        assertEquals(150, rows.getJSONObject(1).getInt("min"));
+        assertEquals(2000, rows.getJSONObject(1).getInt("max"));
+    }
 }

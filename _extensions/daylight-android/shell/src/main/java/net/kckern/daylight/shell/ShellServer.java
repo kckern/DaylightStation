@@ -30,6 +30,14 @@ import fi.iki.elonen.NanoHTTPD;
  *   POST /payload/rollback
  *   GET  /log              tail of shell.log
  *   POST /restart          stop and restart the current payload in place
+ *   POST /settings/reset   delete the payload's stored settings overrides, then start the payload
+ *
+ * The last one is for a stored setting that stops the payload from starting. The
+ * control port, where settings are normally changed, is then down, and every payload
+ * in the store reads the same overrides file, so a rollback does not help. The shell
+ * does not read or edit settings: it removes the one file whose path it shares with
+ * the payload through {@link net.kckern.daylight.api.PayloadState}, and the device
+ * comes back on its compiled defaults.
  *
  * Every request needs the device token (401 otherwise), checked before anything
  * else. Refusals carry a real status, decided by {@link LifelineGate}: 503 while
@@ -111,6 +119,8 @@ public final class ShellServer extends NanoHTTPD {
                     return requested(loader.requestRollback());
                 case "/restart":
                     return requested(loader.requestRestart());
+                case "/settings/reset":
+                    return requested(loader.requestSettingsReset());
                 case "/log": {
                     File f = ShellLog.file();
                     if (f == null || !f.isFile()) return new Reply(200, "text/plain", "(no shell.log)");
@@ -118,7 +128,7 @@ public final class ShellServer extends NanoHTTPD {
                     return new Reply(200, "text/plain", s.length() > LOG_TAIL_CHARS ? s.substring(s.length() - LOG_TAIL_CHARS) : s);
                 }
                 default:
-                    return error(404, "not_found: " + uri + " (shell routes: / /payload /payload/rollback /restart /log)");
+                    return error(404, "not_found: " + uri + " (shell routes: / /payload /payload/rollback /restart /settings/reset /log)");
             }
         } catch (Exception e) {
             Log.w(TAG, "shell route " + uri + " failed", e);

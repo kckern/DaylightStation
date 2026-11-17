@@ -56,8 +56,11 @@ final class KeyRouter {
         return out;
     }
 
+    /** What webview.backButton may be. The setting is declared with this list, so no other value is stored. */
+    static final String[] BACK_MODES = { "page", "reload", "ignore" };
+
     static boolean validBackMode(String mode) {
-        return "page".equals(mode) || "reload".equals(mode) || "ignore".equals(mode);
+        return java.util.Arrays.asList(BACK_MODES).contains(mode);
     }
 
     static Decision route(int keyCode, boolean down, String backMode, Set<String> intercept) {

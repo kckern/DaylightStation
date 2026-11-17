@@ -12,7 +12,8 @@ public final class CoreConfig {
 
     static void declare(SettingsRegistry s) {
         s.declare("heartbeat.enabled", SettingsRegistry.Type.BOOLEAN, true);
-        s.declare("heartbeat.intervalMs", SettingsRegistry.Type.INTEGER, 60000);
+        // The heartbeat never ran faster than every 10 s; a shorter period is refused when it is set.
+        s.declare("heartbeat.intervalMs", SettingsRegistry.Type.INTEGER, 60000, SettingsRegistry.range(10_000, 86_400_000));
         // Empty: the device id from the device file.
         s.declare("heartbeat.deviceId", SettingsRegistry.Type.STRING, "");
         // Empty: nothing is shipped. Device files set "{log_store_insert_url}".
@@ -21,7 +22,7 @@ public final class CoreConfig {
         // Empty: "daylight-<deviceId>". The context.app of every line this device ships.
         s.declare("logstore.app", SettingsRegistry.Type.STRING, "");
         s.declare("wifi.telemetryEnabled", SettingsRegistry.Type.BOOLEAN, true);
-        s.declare("wifi.sampleIntervalMs", SettingsRegistry.Type.INTEGER, 10000);
+        s.declare("wifi.sampleIntervalMs", SettingsRegistry.Type.INTEGER, 10000, SettingsRegistry.range(2_000, 3_600_000));
         s.declare("wifi.degradedRssiDbm", SettingsRegistry.Type.INTEGER, WifiLinkPolicy.DEFAULT_DEGRADED_RSSI_DBM);
         s.declare("wifi.degradedLinkMbps", SettingsRegistry.Type.INTEGER, WifiLinkPolicy.DEFAULT_DEGRADED_LINK_MBPS);
         s.declare("accessibility.selfEnable", SettingsRegistry.Type.BOOLEAN, false);

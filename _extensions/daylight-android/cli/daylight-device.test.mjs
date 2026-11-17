@@ -110,3 +110,11 @@ test('a raw path must start with a slash', () => {
 test('a raw JSON body that does not parse is an error before anything is sent', () => {
   assert.throws(() => parseArgs(['post', '/bluetooth/scan', '{durationMs']), /JSON body/);
 });
+
+test('lifeline reset-settings posts to the lifeline port, where a stranded device still answers', () => {
+  const r = buildRequest(resolveDevice(fleet, 'portal'), ports, parseArgs(['lifeline', 'reset-settings']));
+  assert.equal(r.method, 'POST');
+  assert.equal(r.url, `http://${fleet.portal.host}:8781/settings/reset`);
+  assert.equal(r.headers['X-Daylight-Token'], fleet.portal.token);
+  assert.equal(r.body, undefined);
+});

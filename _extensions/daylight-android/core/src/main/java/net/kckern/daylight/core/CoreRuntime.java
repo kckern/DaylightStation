@@ -32,6 +32,15 @@ public final class CoreRuntime implements CoreContext {
     /** The context-bound services. Null in JVM tests and whenever the payload is not started. */
     private volatile CoreServices device;
     private boolean prepared;
+    /**
+     * Set by stop() and never cleared: a runtime is started once. The payload loader
+     * gives up on a start() that overruns its deadline and calls stop() while that
+     * start() is still inside a capability; without this flag the loop would go on to
+     * start the remaining capabilities, which nothing would ever stop.
+     */
+    private volatile boolean stopped;
+    /** Guards `started` and the moment a capability joins it, against a concurrent stop(). */
+    private final Object lifecycle = new Object();
     /** idle, downloading, awaiting_confirmation or failed. */
     private volatile String updateState = "idle";
     private volatile String updateError;
@@ -55,7 +64,7 @@ public final class CoreRuntime implements CoreContext {
         this.router = new Router(auth);
         this.components = new Components(shell);
         this.socket = new SocketHub(deviceId, status);
-        this.settings = new SettingsRegistry(new File(stateDir, "settings-overrides.json"));
+        this.settings = new SettingsRegistry(net.kckern.daylight.api.PayloadState.settingsOverridesIn(stateDir));
         this.config = new CoreConfig(settings, deviceId);
     }
 
@@ -127,28 +136,53 @@ public final class CoreRuntime implements CoreContext {
                 return bytes;
             };
             d.start();
+            // stop() ran while the services were starting and may not have seen them.
+            if (stopped) { try { d.stop(); } catch (Throwable ignored) { } }
         }
         for (Capability c : capabilities) {
+            if (stopped) throw stoppedDuringStart("before capability '" + c.name() + "' started");
             try {
                 c.start();
-                started.add(c);
             } catch (Throwable e) {
                 // Throwable: a missing class or native library is an Error, and it must
                 // still stop what already started and fail the payload the same way.
                 stop();
                 throw new IllegalStateException("capability '" + c.name() + "' cannot start: " + e.getMessage(), e);
             }
+            boolean late;
+            synchronized (lifecycle) {
+                late = stopped;
+                if (!late) started.add(c);
+            }
+            if (late) {
+                // stop() ran during this start() and so did not know about this capability.
+                try { c.stop(); } catch (Throwable ignored) { }
+                throw stoppedDuringStart("while capability '" + c.name() + "' was starting");
+            }
         }
         socket.start();
+        if (stopped) {
+            socket.stop();
+            throw stoppedDuringStart("after the capabilities started");
+        }
         shell.note("CORE", "started " + payloadVersion + " with " + capabilities.size() + " capabilities");
     }
 
+    private static IllegalStateException stoppedDuringStart(String when) {
+        return new IllegalStateException("the payload was stopped " + when);
+    }
+
     public void stop() {
-        accessibility.bind(null);
-        for (int i = started.size() - 1; i >= 0; i--) {
-            try { started.get(i).stop(); } catch (Throwable ignored) { }
+        List<Capability> toStop;
+        synchronized (lifecycle) {
+            stopped = true;
+            toStop = new ArrayList<>(started);
+            started.clear();
         }
-        started.clear();
+        accessibility.bind(null);
+        for (int i = toStop.size() - 1; i >= 0; i--) {
+            try { toStop.get(i).stop(); } catch (Throwable ignored) { }
+        }
         CoreServices d = device;
         device = null;
         updateInstaller = null;

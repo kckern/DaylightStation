@@ -5,7 +5,7 @@
 //   daylight-device <device> capabilities
 //   daylight-device <device> info
 //   daylight-device <device> settings [list | set <key> <value> | reset <key>]
-//   daylight-device <device> lifeline [status | rollback | restart | log]
+//   daylight-device <device> lifeline [status | rollback | restart | reset-settings | log]
 //   daylight-device <device> get <path> [k=v …]                 any GET route on the control port
 //   daylight-device <device> post <path> [k=v …] ['{json}']     any POST route; k=v becomes the query
 //
@@ -28,6 +28,8 @@ const LIFELINE = {
   status: { method: 'GET', path: '/status' },
   rollback: { method: 'POST', path: '/payload/rollback' },
   restart: { method: 'POST', path: '/restart' },
+  // For a stored setting that keeps the payload from starting: the control port is down then.
+  'reset-settings': { method: 'POST', path: '/settings/reset' },
   log: { method: 'GET', path: '/log' },
 };
 

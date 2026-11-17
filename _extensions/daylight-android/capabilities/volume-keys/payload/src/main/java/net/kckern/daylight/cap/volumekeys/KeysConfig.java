@@ -13,11 +13,11 @@ final class KeysConfig {
         s.declare("keys.screenToggleEnabled", SettingsRegistry.Type.BOOLEAN, false);
         // false hands the keys back to Android: the escape hatch when the page breaks.
         s.declare("keys.consumeVolume", SettingsRegistry.Type.BOOLEAN, true);
-        s.declare("keys.doublePressMs", SettingsRegistry.Type.INTEGER, 450);
+        // portal-keys refused values outside 150 to 2000 at write time; so does the registry.
+        s.declare("keys.doublePressMs", SettingsRegistry.Type.INTEGER, 450, SettingsRegistry.range(150, 2000));
     }
 
     boolean screenToggleEnabled() { return (Boolean) s.get("keys.screenToggleEnabled"); }
     boolean consumeVolume() { return (Boolean) s.get("keys.consumeVolume"); }
-    /** portal-keys refused values outside 150 to 2000 at write time. The registry has no ranges, so clamp at read. */
-    int doublePressMs() { return Math.max(150, Math.min(2000, (Integer) s.get("keys.doublePressMs"))); }
+    int doublePressMs() { return (Integer) s.get("keys.doublePressMs"); }
 }

@@ -34,6 +34,9 @@ public class LifelineGateTest {
         refused(405, "POST only", LifelineGate.check("/restart", true, "DELETE", false, false));
         assertNull(LifelineGate.check("/payload/rollback", true, "POST", false, false));
         assertNull(LifelineGate.check("/restart", true, "POST", false, false));
+        refused(503, "loader not ready", LifelineGate.check("/settings/reset", false, "POST", false, false));
+        refused(405, "POST only", LifelineGate.check("/settings/reset", true, "GET", false, false));
+        assertNull(LifelineGate.check("/settings/reset", true, "POST", false, false));
     }
 
     @Test

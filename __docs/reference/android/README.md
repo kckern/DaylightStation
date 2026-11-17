@@ -284,8 +284,42 @@ A setting's value comes from three layers. The highest one present wins:
 3. **Capability fallback.** The value the capability declares in code.
 
 `GET /settings` shows the effective `value`, the `default` (layer 2 or 3) and
-whether an override is in effect. A stored override that no longer fits the
-setting's type is ignored and the default applies.
+whether an override is in effect.
+
+Some settings also carry a rule: a fixed set of values (`allowed` in
+`GET /settings`) or a number range (`min` and `max`). A value outside the rule is
+refused with `400 invalid_setting` when it is set, and a device file whose default
+breaks a rule fails the build's tests. Settings with a rule today:
+
+| Key | Rule |
+|-----|------|
+| `bluetooth.mode` | `roles` or `gamepad` |
+| `webview.backButton` | `page`, `reload` or `ignore` |
+| `webview.loadTimeoutSec` | 1 to 600 |
+| `recovery.reloadOnPageFailureSec`, `recovery.rendererUnresponsiveSec` | 0 to 3600 |
+| `recovery.maxRetrySec` | 0 to 86400 |
+| `heartbeat.intervalMs` | 10000 to 86400000 |
+| `wifi.sampleIntervalMs` | 2000 to 3600000 |
+| `keys.doublePressMs` | 150 to 2000 |
+| `presence.heartbeatMs` | 5000 to 600000 |
+| `midi.scanTimeoutMs` | 1000 to 120000 |
+| `midi.reconnectDelayMs` | 250 to 600000 |
+| `mic.port` | 1024 to 65535 |
+
+A stored override that no longer fits the setting's type or rule (left by an older
+payload, for example) is ignored: the default applies, `overridden` reads false,
+and the device log notes the key once. It is never an error at start.
+
+A capability does not fail the payload over a setting value. If it cannot run with
+what it reads, it logs that, reports itself unavailable in `GET /status`
+(`bluetooth.available` and `bluetooth.error` for `bluetooth-controls`) and the rest
+of the payload, the control port included, stays up so the setting can be
+corrected.
+
+If a stored setting does stop the payload from starting, the control port is down
+and every payload in the store reads the same overrides. Use the lifeline's
+`POST /settings/reset` (below): it deletes all stored overrides and starts the
+payload on its compiled defaults.
 
 Settings the core declares on every device:
 
@@ -654,9 +688,10 @@ Served by the shell on `control.lifelinePort`.
 | POST | `/payload?url=<jar-url>&sha256=<64 hex>` | Fetch the jar, verify it, activate it; falls back if it fails to start |
 | POST | `/payload/rollback` | Go back to the previous payload |
 | POST | `/restart` | Stop and start the current payload in place |
+| POST | `/settings/reset` | Stop the payload, delete every stored settings override, start the payload again (the baked one when none is current) |
 | GET | `/log` | The tail of the shell's log, as plain text |
 
-Swap, rollback and restart are accepted and then run in the background. An
+Swap, rollback, restart and settings reset are accepted and then run in the background. An
 accepted request answers `200` with `{"ok":true,"result":"accepted: ..."}`; check
 `/payload` afterwards for the outcome. When the loader cannot do what was asked,
 the answer is `409` with `{"ok":false,"error":"<reason>"}` and nothing is queued:
@@ -674,12 +709,19 @@ Lifeline errors are `{"ok":false,"error":"<text>"}`:
 | 400 | A swap without both `url` and `sha256` |
 | 401 | Missing or wrong token |
 | 404 | Unknown path |
-| 405 | Rollback or restart with a method other than POST |
+| 405 | Rollback, restart or settings reset with a method other than POST |
 | 409 | The loader refused the action; `error` holds the reason |
 | 500 | The route threw |
 | 503 | The payload loader is not ready yet |
 
 The lifeline has no route that runs commands. It is kept small on purpose.
+
+`POST /settings/reset` is the way out when a stored setting keeps the payload from
+starting. It removes all overrides, secrets included (`presence.token`,
+`lease.credential`), so those have to be set again afterwards. The shell does not
+read settings; it deletes one file, whose path it shares with the payload through
+`PayloadState` in `shell-api`. A payload built from this revision therefore needs
+a shell built from this revision or later.
 
 ## The fleet CLI
 
@@ -698,6 +740,7 @@ node cli/daylight-device.cli.mjs <device> settings reset <key>
 node cli/daylight-device.cli.mjs <device> lifeline status
 node cli/daylight-device.cli.mjs <device> lifeline rollback
 node cli/daylight-device.cli.mjs <device> lifeline restart
+node cli/daylight-device.cli.mjs <device> lifeline reset-settings
 node cli/daylight-device.cli.mjs <device> lifeline log
 node cli/daylight-device.cli.mjs <device> get <path> [key=value ...]
 node cli/daylight-device.cli.mjs <device> post <path> [key=value ...] ['{json}']

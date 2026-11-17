@@ -46,6 +46,7 @@ final class LifelineGate {
                 return null;
             case "/payload/rollback":
             case "/restart":
+            case "/settings/reset":
                 if (!loaderReady) return new Refusal(503, "loader not ready");
                 if (!post) return new Refusal(405, "POST only");
                 return null;

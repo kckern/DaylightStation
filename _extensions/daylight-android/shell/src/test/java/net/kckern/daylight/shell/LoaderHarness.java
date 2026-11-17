@@ -31,8 +31,19 @@ final class LoaderHarness {
 
         FakePayload(String jar, String behavior) { this.jar = jar; this.behavior = behavior; }
 
+        /** Whether the settings overrides file existed each time this payload started. */
+        final List<Boolean> overridesSeenAtStart = Collections.synchronizedList(new ArrayList<>());
+
         @Override public void start(ShellServices shell) {
             starts.incrementAndGet();
+            if (shell.payloadDir() != null) {
+                overridesSeenAtStart.add(net.kckern.daylight.api.PayloadState.settingsOverrides(shell.payloadDir()).isFile());
+            }
+            // A payload that cannot run with the stored settings, as bluetooth-controls once could not.
+            if (behavior.equals("needs-clean-settings") && shell.payloadDir() != null
+                    && net.kckern.daylight.api.PayloadState.settingsOverrides(shell.payloadDir()).isFile()) {
+                throw new IllegalStateException("bad stored setting");
+            }
             entered.countDown();
             if (behavior.equals("throw")) throw new IllegalStateException("cannot run");
             if (behavior.equals("hang")) {
@@ -50,12 +61,14 @@ final class LoaderHarness {
     }
 
     static final class Shell implements ShellServices {
+        /** The real shell answers with the payload store's directory. */
+        File payloadDir;
         final List<String> notes = Collections.synchronizedList(new ArrayList<>());
         @Override public Object context() { return null; }
         @Override public String deviceId() { return "test"; }
         @Override public int shellVersionCode() { return 1; }
         @Override public String controlToken() { return "0123456789abcdef0123456789abcdef"; }
-        @Override public File payloadDir() { return null; }
+        @Override public File payloadDir() { return payloadDir; }
         @Override public Object component(String name) { return null; }
         @Override public void updateNotification(String text) { }
         @Override public String requestPayloadSwap(String url, String sha256) { return "refused: test"; }
@@ -74,7 +87,7 @@ final class LoaderHarness {
     /** Content of the payload baked into the "APK". Null means the APK has none. */
     String baked = "good:baked";
 
-    LoaderHarness(File dir) { this.dir = dir; }
+    LoaderHarness(File dir) { this.dir = dir; shell.payloadDir = dir; }
 
     PayloadLoader loader(String shellStamp) {
         return new PayloadLoader(dir, shell,

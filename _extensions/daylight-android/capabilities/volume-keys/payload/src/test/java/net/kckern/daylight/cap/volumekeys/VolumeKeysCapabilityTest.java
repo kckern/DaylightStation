@@ -25,13 +25,18 @@ public class VolumeKeysCapabilityTest {
         assertEquals("beep guard unavailable", TestCore.post(core, "/accessibility/silence-beep").getString("error"));
     }
 
-    @Test public void theDoublePressWindowIsClampedAsTheOldConfigRouteDid() throws Exception {
+    @Test public void aDoublePressWindowOutsideTheRangeIsRefusedAsTheOldConfigRouteDid() throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
-        new VolumeKeysCapability().register(core);
+        core.add(new VolumeKeysCapability());
+        core.prepare(new JSONObject());
         KeysConfig config = new KeysConfig(core.settings());
-        core.settings().set("keys.doublePressMs", 5);
-        assertEquals(150, config.doublePressMs());
-        core.settings().set("keys.doublePressMs", 99999);
+        for (int bad : new int[] { 5, 149, 2001, 99999 }) {
+            JSONObject refused = TestCore.call(core, "POST", "/settings", null, "{\"key\":\"keys.doublePressMs\",\"value\":" + bad + "}");
+            assertEquals(400, refused.getInt("_status"));
+            assertEquals("invalid_setting", refused.getString("error"));
+        }
+        assertEquals(450, config.doublePressMs());
+        core.settings().set("keys.doublePressMs", 2000);
         assertEquals(2000, config.doublePressMs());
     }
 

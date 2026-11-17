@@ -63,4 +63,18 @@ public class MainTest {
     @Test public void theCoreFieldIsSafelyPublishedToOtherThreads() throws Exception {
         assertTrue(Modifier.isVolatile(Main.class.getDeclaredField("core").getModifiers()));
     }
+
+    @Test public void aPayloadStoppedBeforeStartReturnsDoesNotComeUp() throws Exception {
+        Main main = new Main();
+        int port = freePort();
+        main.stop();                       // the loader's stopper, ahead of a start() it gave up on
+        try {
+            main.start(new FakeShell(tmp.newFolder()), port, 1);
+            fail("a stopped payload reported a clean start");
+        } catch (IllegalStateException expected) { }
+        long deadline = System.currentTimeMillis() + 2000;
+        while (heartbeatRunning() && System.currentTimeMillis() < deadline) Thread.sleep(20);
+        assertFalse("the core was left running", heartbeatRunning());
+        try (ServerSocket free = new ServerSocket(port)) { assertTrue(free.isBound()); }
+    }
 }

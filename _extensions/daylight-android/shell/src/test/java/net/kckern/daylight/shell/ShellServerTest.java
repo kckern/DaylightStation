@@ -20,7 +20,7 @@ public class ShellServerTest {
     private static final String[][] ROUTES = {
         { "GET", "/" }, { "GET", "/status" }, { "GET", "/payload" }, { "POST", "/payload" },
         { "POST", "/payload/rollback" }, { "POST", "/restart" }, { "GET", "/log" }, { "GET", "/nope" },
-        { "DELETE", "/payload" }, { "GET", "/restart" },
+        { "DELETE", "/payload" }, { "GET", "/restart" }, { "POST", "/settings/reset" }, { "GET", "/settings/reset" },
     };
 
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
@@ -132,5 +132,59 @@ public class ShellServerTest {
         } finally {
             server.stop();
         }
+    }
+
+    private java.io.File overrides() throws Exception {
+        java.io.File f = net.kckern.daylight.api.PayloadState.settingsOverrides(h.dir);
+        f.getParentFile().mkdirs();
+        java.nio.file.Files.write(f.toPath(), "{\"bluetooth.mode\":\"gamepads\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return f;
+    }
+
+    @Test public void settingsResetDeletesTheOverridesAndRestartsThePayload() throws Exception {
+        java.io.File f = overrides();
+        ShellServer.Reply r = server().handle("POST", "/settings/reset", TOKEN, null, null);
+        assertEquals(200, r.status);
+        assertTrue(body(r).getString("result").startsWith("accepted: "));
+        loader.awaitIdle(5000);
+        assertFalse("the overrides file is gone", f.exists());
+        assertEquals("the payload was started again", 2, h.opened.size());
+        assertEquals(1, h.opened.get(0).stops.get());
+        assertEquals(java.util.Collections.singletonList(false), h.opened.get(1).overridesSeenAtStart);
+        assertTrue(h.shell.notes.toString(), h.shell.notes.toString().contains("settings reset"));
+    }
+
+    @Test public void settingsResetNeedsTheTokenAndPostAndALoader() throws Exception {
+        java.io.File f = overrides();
+        assertEquals(401, server().handle("POST", "/settings/reset", "wrong", null, null).status);
+        assertEquals(401, server().handle("POST", "/settings/reset", null, null, null).status);
+        assertEquals(405, server().handle("GET", "/settings/reset", TOKEN, null, null).status);
+        PayloadLoader keep = loader;
+        loader = null;
+        assertEquals(503, server().handle("POST", "/settings/reset", TOKEN, null, null).status);
+        loader = keep;
+        loader.awaitIdle(5000);
+        assertTrue("a refused request deletes nothing", f.isFile());
+        assertEquals(1, h.opened.size());
+    }
+
+    /**
+     * The case the route exists for: a stored setting stops every payload from
+     * starting, so the control port never comes up and only the lifeline answers.
+     */
+    @Test public void settingsResetRecoversADeviceWhoseEveryPayloadRefusesTheStoredSettings() throws Exception {
+        LoaderHarness stranded = new LoaderHarness(tmp.newFolder("stranded"));
+        stranded.baked = "needs-clean-settings";
+        java.io.File f = net.kckern.daylight.api.PayloadState.settingsOverrides(stranded.dir);
+        f.getParentFile().mkdirs();
+        java.nio.file.Files.write(f.toPath(), "{\"bluetooth.mode\":\"gamepads\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        loader = stranded.loader("3");
+        loader.boot().get(5, TimeUnit.SECONDS);
+        assertTrue("nothing is running", body(server().handle("GET", "/status", TOKEN, null, null)).getJSONObject("payload").isNull("active"));
+
+        assertEquals(200, server().handle("POST", "/settings/reset", TOKEN, null, null).status);
+        loader.awaitIdle(5000);
+        assertFalse(f.exists());
+        assertEquals("p0-baked-v3.jar", body(server().handle("GET", "/status", TOKEN, null, null)).getJSONObject("payload").getString("active"));
     }
 }

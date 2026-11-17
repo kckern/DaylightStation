@@ -217,6 +217,29 @@ public final class PayloadLoader {
         return "accepted: restarting " + cur;
     }
 
+    /**
+     * Stop the payload, delete its stored settings overrides, and start a payload again:
+     * the current one, or the baked one when there is none. For a stored setting that
+     * keeps every payload from starting. The file is deleted between stop and start,
+     * on the worker thread, so no running payload can write it back.
+     */
+    public String requestSettingsReset() {
+        if (submit(() -> {
+            unloadActive();
+            File dir = shell.payloadDir();
+            boolean gone = net.kckern.daylight.api.PayloadState.deleteSettingsOverrides(dir == null ? store.dir() : dir);
+            shell.note("PAYLOAD", "settings reset: overrides " + (gone ? "deleted" : "could NOT be deleted"));
+            String now = store.current();
+            if (now == null) {
+                now = ensureBakedFile();
+                if (now == null) return;
+                try { store.activate(now); } catch (Exception e) { lastError = "baked payload unavailable: " + e.getMessage(); return; }
+            }
+            startOrFallBack(now);
+        }) == null) return "refused: loader is shut down";
+        return "accepted: resetting settings and restarting";
+    }
+
     public String requestRollback() {
         String prev = store.previous();
         if (prev == null) return "refused: no previous payload";

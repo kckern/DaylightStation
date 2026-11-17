@@ -12,6 +12,7 @@ import net.kckern.daylight.core.Requests;
 import net.kckern.daylight.core.MainThread;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
+import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.SettingsRegistry.Type;
 import net.kckern.daylight.core.spi.KioskSurface;
 import net.kckern.daylight.core.spi.LockdownControl;
@@ -47,18 +48,20 @@ public final class WebViewHostCapability implements Capability {
 
         core.settings().declare("webview.startUrl", Type.STRING, "");
         core.settings().declare("webview.bridgeOrigins", Type.STRING, "");
-        core.settings().declare("webview.backButton", Type.STRING, KioskSession.DEFAULT_BACK_MODE);
+        core.settings().declare("webview.backButton", Type.STRING, KioskSession.DEFAULT_BACK_MODE,
+                SettingsRegistry.oneOf(KeyRouter.BACK_MODES));
         core.settings().declare("webview.interceptKeys", Type.STRING, "");
-        core.settings().declare("webview.loadTimeoutSec", Type.INTEGER, 20);
+        core.settings().declare("webview.loadTimeoutSec", Type.INTEGER, 20, SettingsRegistry.range(1, 600));
         core.settings().declare("webview.allowMic", Type.BOOLEAN, true);
         core.settings().declare("webview.allowCamera", Type.BOOLEAN, true);
         core.settings().declare("webview.allowMixedContent", Type.BOOLEAN, false);
         core.settings().declare("webview.debugging", Type.BOOLEAN, false);
         core.settings().declare("webview.launchOnBoot", Type.BOOLEAN, false);
-        core.settings().declare("recovery.reloadOnPageFailureSec", Type.INTEGER, 30);
-        core.settings().declare("recovery.maxRetrySec", Type.INTEGER, 300);
+        // 0 turns the retry off.
+        core.settings().declare("recovery.reloadOnPageFailureSec", Type.INTEGER, 30, SettingsRegistry.range(0, 3600));
+        core.settings().declare("recovery.maxRetrySec", Type.INTEGER, 300, SettingsRegistry.range(0, 86400));
         core.settings().declare("recovery.reloadOnNetworkReturn", Type.BOOLEAN, true);
-        core.settings().declare("recovery.rendererUnresponsiveSec", Type.INTEGER, 30);
+        core.settings().declare("recovery.rendererUnresponsiveSec", Type.INTEGER, 30, SettingsRegistry.range(0, 3600));
 
         core.services().provide(KioskSurface.class, session);
 
