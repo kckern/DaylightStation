@@ -27,6 +27,53 @@ const input = {
   asOf: now
 };
 describe('host-bound import capability', () => {
+  it('rechecks current policy both on capability use and after awaiting the writer lease', async () => {
+    let allowed = true,
+      release;
+    const pending = new Promise(resolve => {
+      release = resolve;
+    });
+    let attempts = 0;
+    const authority = new KnowledgeImportAuthority({
+      configuration: configuration(),
+      clock: () => now,
+      verifyPolicy: () => allowed
+    });
+    const operatorReceipt = authority.captureOperatorReceipt({
+        manifest
+      }),
+      capability = authority.authorize({
+        ...input,
+        operatorReceipt
+      });
+    allowed = false;
+    expect(authority.verify({
+      ...input,
+      capability
+    })).toBe(false);
+    allowed = true;
+    const writer = authority.bindWriter({
+      assertWriter: async () => {
+        attempts++;
+        await pending;
+      },
+      close: async () => {}
+    });
+    const waiting = writer.assertWriter({
+      root: '/fixture'
+    });
+    allowed = false;
+    release();
+    await expect(waiting).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_DENIED'
+    });
+    await expect(writer.assertWriter({
+      root: '/fixture'
+    })).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_DENIED'
+    });
+    expect(attempts).toBe(1);
+  });
   it('binds a nonserializable operator receipt and capability to the exact job and artifact', () => {
     const authority = new KnowledgeImportAuthority({
       configuration: configuration(),

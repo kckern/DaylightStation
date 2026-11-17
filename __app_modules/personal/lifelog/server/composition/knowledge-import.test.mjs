@@ -80,8 +80,10 @@ it('previews without data writes, then uses actual operator authority and KB lea
   const caches = new Map(),
     checkpoints = new Map();
   const checkpoint = {
-    read: async () => ({
-      chunks: Object.fromEntries(checkpoints)
+    read: async ({
+      jobId
+    }) => ({
+      chunks: Object.fromEntries([...checkpoints.values()].filter(row => row.jobId === jobId).map(row => [row.chunkId, row]))
     }),
     append: async row => {
       checkpoints.set(row.jobId + ':' + row.chunkId, row);

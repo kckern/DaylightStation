@@ -24,13 +24,51 @@ const query = {
   asOf
 };
 describe('bounded historical journal evidence', () => {
-  it('keeps import proof stable across CLI/live identity metadata and row key ordering',async()=>{
-    const original=row('entry',asOf);
-    const initial=await make([original]).read(query);
-    const reordered=Object.fromEntries(Object.entries(original).reverse());
-    const live=new HistoricalJournalEvidence({loadJournal:async()=>({messages:[reordered]}),identityForUser:async()=>({username:'sample',senderId:'author',conversationId:'private',extra:'runtime-only'}),timezoneForUser:()=> 'America/Los_Angeles'});
-    const later=await live.read(query);
-    expect(later.messages[0].ref).toBe(initial.messages[0].ref);expect(later.sourceHashes).toEqual(initial.sourceHashes);
+  it('hashes the selected authored row even when an assistant reuses its message ID', async () => {
+    const user = row('shared-id', asOf),
+      assistant = {
+        ...row('shared-id', asOf, 'Assistant summary'),
+        role: 'assistant'
+      };
+    const reader = make([user, assistant]),
+      before = await reader.read(query);
+    user.content = 'I finished the letter.';
+    const after = await reader.read(query);
+    expect(after.messages[0].content).toBe(user.content);
+    expect(after.messages[0].sourceHash).not.toBe(before.messages[0].sourceHash);
+    expect(after.messages[0].ref).not.toBe(before.messages[0].ref);
+  });
+  it('ignores out-of-window conflicts and undatable rows before authored identity validation', async () => {
+    const result = await make([row('old-duplicate', from - 86400000, 'Old version'), row('old-duplicate', from - 86400000, 'Conflicting old version'), {
+      ...row('undated', asOf),
+      timestamp: 'not a date',
+      senderId: 'other'
+    }, row('selected', asOf)]).read(query);
+    expect(result.messages.map(message => message.messageId)).toEqual(['selected']);
+    expect(result.rejected).toEqual([]);
+  });
+  it('still refuses conflicting authored rows inside the bounded window', async () => {
+    await expect(make([row('duplicate', asOf, 'One'), row('duplicate', asOf, 'Another')]).read(query)).rejects.toThrow(/conflict/i);
+  });
+  it('keeps import proof stable across CLI/live identity metadata and row key ordering', async () => {
+    const original = row('entry', asOf);
+    const initial = await make([original]).read(query);
+    const reordered = Object.fromEntries(Object.entries(original).reverse());
+    const live = new HistoricalJournalEvidence({
+      loadJournal: async () => ({
+        messages: [reordered]
+      }),
+      identityForUser: async () => ({
+        username: 'sample',
+        senderId: 'author',
+        conversationId: 'private',
+        extra: 'runtime-only'
+      }),
+      timezoneForUser: () => 'America/Los_Angeles'
+    });
+    const later = await live.read(query);
+    expect(later.messages[0].ref).toBe(initial.messages[0].ref);
+    expect(later.sourceHashes).toEqual(initial.sourceHashes);
   });
   it('includes the exact rolling boundary across DST and never fabricates verification', async () => {
     const result = await make([row('old', from - 1), row('boundary', from), row('recent', asOf), row('future', asOf + 1)]).read(query);

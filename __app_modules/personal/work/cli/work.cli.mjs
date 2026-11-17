@@ -2,7 +2,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import * as FileIO from '#system/utils/FileIO.mjs';
 import { createWorkRuntime } from '../server/runtime.mjs';
-import { createKnowledgeImportRuntime } from '../../lifelog/server/knowledge-runtime.mjs';
+import { createKnowledgeImportRuntime, createJournalKnowledgeSource } from '../../lifelog/server/knowledge-runtime.mjs';
 const HELP = `work — inspect configured tasks or run a quiet bounded journal import
   inspect --username USER
   backfill prepare --username USER --days 90 --as-of ISO --output-dir PRIVATE
@@ -148,6 +148,9 @@ async function defaultDependencies({
       username
     }).conversationIdString
   });
+  const loadJournal = createJournalKnowledgeSource({
+    userDirForUser: username => config.getUserDir(username)
+  });
   const runtime = createWorkRuntime({
     configuration: () => config.getHouseholdAppConfig(null, 'work') ?? {},
     dataDir: config.getDataDir(),
@@ -161,7 +164,8 @@ async function defaultDependencies({
       openJob: async ({
         policy,
         checkpoint,
-        workContext
+        workContext,
+        verifyPolicy
       }) => {
         const model = config.getHouseholdAppConfig(config.getUserHouseholdId(policy.username), 'lifelog')?.knowledge?.model;
         const kb = createKnowledgeImportRuntime({
@@ -181,9 +185,10 @@ async function defaultDependencies({
           rootForUser: username => path.join(config.getUserDir(username), 'lifelog/knowledge'),
           checkpoint,
           workContext,
+          verifyPolicy,
           userTimezone: timezone,
           identityForUser,
-          loadJournal: async username => read(username, 'lifelog/journalist/messages'),
+          loadJournal,
           logger,
           gatewayFactory: async () => {
             const apiKey = config.getSystemAuth('openai', 'api_key');

@@ -52,6 +52,7 @@ it('prepares and resumes a private 90-day job, rejects crossed artifacts, then i
       modelVersion: 'fixture'
     }))
   };
+  let sourceGate = null;
   const configuration = {
     work: {
       enabled: true,
@@ -79,7 +80,8 @@ it('prepares and resumes a private 90-day job, rejects crossed artifacts, then i
       openJob: async ({
         policy,
         checkpoint,
-        workContext
+        workContext,
+        verifyPolicy
       }) => {
         const kb = createKnowledgeImportRuntime({
           configuration: {
@@ -97,9 +99,18 @@ it('prepares and resumes a private 90-day job, rejects crossed artifacts, then i
           clock: () => asOf,
           userTimezone: () => 'America/Los_Angeles',
           workContext,
+          verifyPolicy,
           extractor,
-          loadJournal: async username => username === 'sample' ? JSON.parse(fs.readFileSync(journalPath, 'utf8')) : {
-            messages: []
+          loadJournal: async username => {
+            if (sourceGate) {
+              const gate = sourceGate;
+              sourceGate = null;
+              gate.entered();
+              await gate.wait;
+            }
+            return username === 'sample' ? JSON.parse(fs.readFileSync(journalPath, 'utf8')) : {
+              messages: []
+            };
           },
           identityForUser: async () => ({
             senderId: 'author',
@@ -140,6 +151,32 @@ it('prepares and resumes a private 90-day job, rejects crossed artifacts, then i
     });
     expect(repeated.artifactPath).toBe(preview.artifactPath);
     expect(extractor.extract).toHaveBeenCalledTimes(1);
+    const cacheFile = path.join(outputDir, 'job-1.chunk-1.result.json'),
+      checkpointFile = path.join(outputDir, 'job-1.checkpoints.jsonl'),
+      cacheBytes = fs.readFileSync(cacheFile),
+      checkpointBytes = fs.readFileSync(checkpointFile);
+    const attempts = () => fs.readdirSync(outputDir).filter(name => name.startsWith('knowledge-budget-')).length;
+    expect(attempts()).toBe(1);
+    fs.unlinkSync(cacheFile);
+    await expect(runtime.backfill.preview({
+      manifestPath: prepared.manifestPath,
+      usageDir: outputDir
+    })).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT'
+    });
+    expect(attempts()).toBe(1);
+    expect(extractor.extract).toHaveBeenCalledTimes(1);
+    fs.writeFileSync(cacheFile, cacheBytes, {
+      mode: 0o600
+    });
+    fs.appendFileSync(checkpointFile, '{"torn":');
+    await expect(runtime.backfill.preview({
+      manifestPath: prepared.manifestPath,
+      usageDir: outputDir
+    })).rejects.toThrow(/corrupt checkpoint/i);
+    expect(attempts()).toBe(1);
+    expect(extractor.extract).toHaveBeenCalledTimes(1);
+    fs.writeFileSync(checkpointFile, checkpointBytes);
     const invalid = JSON.parse(fs.readFileSync(prepared.manifestPath, 'utf8'));
     invalid.username = 'other';
     const crossed = path.join(outputDir, 'crossed.manifest.json');
@@ -150,6 +187,32 @@ it('prepares and resumes a private 90-day job, rejects crossed artifacts, then i
     })).rejects.toMatchObject({
       code: 'WORK_BACKFILL_DENIED'
     });
+    for (const revoke of ['import', 'enrollment']) {
+      let enter, release;
+      const entered = new Promise(resolve => {
+          enter = resolve;
+        }),
+        wait = new Promise(resolve => {
+          release = resolve;
+        });
+      sourceGate = {
+        entered: enter,
+        wait
+      };
+      const applying = runtime.backfill.apply({
+        manifestPath: prepared.manifestPath,
+        artifactPath: preview.artifactPath
+      });
+      await entered;
+      if (revoke === 'import') configuration.work.importWrites = false;else delete configuration.work.users.sample;
+      release();
+      await expect(applying).rejects.toMatchObject({
+        code: 'KNOWLEDGE_IMPORT_DENIED'
+      });
+      expect(snapshotFiles()).toEqual(beforeData);
+      configuration.work.importWrites = true;
+      configuration.work.users.sample = {};
+    }
     await expect(runtime.backfill.apply({
       manifestPath: prepared.manifestPath,
       artifactPath: preview.artifactPath,

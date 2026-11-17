@@ -40,7 +40,11 @@ export class WorkBackfillJob {
     const job = await this.#open.openJob({
       policy,
       checkpoint: files.checkpoint,
-      workContext: this.#context
+      workContext: this.#context,
+      verifyPolicy: () => {
+        const current = this.#policy(policy.username);
+        return !this.#closed && current?.enabled === true && current.revision === policy.revision && current.importWrites === true && current.writer.write === true;
+      }
     });
     this.#jobs.add(job);
     try {

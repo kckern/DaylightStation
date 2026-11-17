@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-import { JournalKnowledgeEvidence } from './JournalKnowledgeEvidence.mjs';
-import { importDigest } from '../../domain/knowledge/importManifest.mjs';
+import { JournalKnowledgeEvidence, journalInstant } from './JournalKnowledgeEvidence.mjs';
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 /** Read-only import candidates. Legacy authorship is not a Telegram attestation. */
@@ -31,8 +30,13 @@ export class HistoricalJournalEvidence {
     if (cursor != null && (cursor.binding !== binding || !cursor.inner || cursor.inner.since !== from || !Array.isArray(cursor.inner.seen))) throw new TypeError('Invalid historical cursor');
     // Capture once: pagination and source hashes must describe the same read.
     const journal = structuredClone(await this.#load(username));
+    if (journal == null) throw new Error('Historical journal source unavailable');
     const identity = structuredClone(await this.#identity(username));
     const timezone = this.#timezone(username);
+    if (Array.isArray(journal?.messages)) journal.messages = journal.messages.filter(row => {
+      const at = journalInstant(row?.timestamp, timezone);
+      return Number.isFinite(at) && at >= from && at <= asOf;
+    });
     const reader = new JournalKnowledgeEvidence({
       loadJournal: async () => journal,
       identityForUser: async () => identity,
@@ -51,10 +55,9 @@ export class HistoricalJournalEvidence {
       through: asOf,
       preview: true
     });
-    const rows = new Map((journal?.messages ?? []).map(row => [String(row?.id), row]));
     const sourceHashes = {};
     const messages = page.messages.filter(row => row.at >= from && row.at <= asOf).map(row => {
-      const sourceHash = importDigest([username,{senderId:String(identity.senderId),conversationId:String(identity.conversationId)},timezone,rows.get(row.messageId)]);
+      const sourceHash = row.sourceHash;
       sourceHashes[row.ref] = sourceHash;
       const sourceId = hash([row.sourceId, sourceHash]);
       return {

@@ -8,16 +8,44 @@ export class KnowledgeImportAuthority {
   #receipts = new WeakMap();
   #capabilities = new WeakMap();
   #closed = false;
+  #verifyPolicy;
   constructor({
     configuration,
-    clock = Date.now
+    clock = Date.now,
+    verifyPolicy = () => true
   }) {
     this.#configuration = structuredClone(configuration);
     this.#clock = clock;
+    this.#verifyPolicy = verifyPolicy;
   }
   get canImport() {
     const c = this.#configuration;
-    return !this.#closed && c.enabled === true && c.write === true && c.importWrites === true && process.platform === 'linux' && c.writer_host === os.hostname() && c.writer_env === (process.env.DAYLIGHT_ENV || 'docker') && Number.isInteger(c.operator_uid) && c.operator_uid === process.getuid?.();
+    let current = false;
+    try {
+      current = this.#verifyPolicy() === true;
+    } catch {
+      return false;
+    }
+    return current && !this.#closed && c.enabled === true && c.write === true && c.importWrites === true && process.platform === 'linux' && c.writer_host === os.hostname() && c.writer_env === (process.env.DAYLIGHT_ENV || 'docker') && Number.isInteger(c.operator_uid) && c.operator_uid === process.getuid?.();
+  }
+  bindWriter(writer) {
+    const authority = this,
+      denied = () => {
+        throw Object.assign(new Error('KNOWLEDGE_IMPORT_DENIED'), {
+          code: 'KNOWLEDGE_IMPORT_DENIED'
+        });
+      };
+    return Object.freeze({
+      get leaseLost() {
+        return writer.leaseLost;
+      },
+      async assertWriter(input) {
+        if (!authority.canImport) denied();
+        await writer.assertWriter(input);
+        if (!authority.canImport) denied();
+      },
+      close: () => writer.close?.()
+    });
   }
   captureOperatorReceipt({
     manifest

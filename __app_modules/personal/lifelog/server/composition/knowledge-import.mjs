@@ -32,9 +32,10 @@ export function createKnowledgeImportRuntime(options) {
   };
   const authority = new KnowledgeImportAuthority({
     configuration,
-    clock
+    clock,
+    verifyPolicy: options.verifyPolicy
   });
-  const writer = new KnowledgeWriteAuthority({
+  const writer = authority.bindWriter(new KnowledgeWriteAuthority({
     configuration: {
       ...configuration,
       enabled: authority.canImport,
@@ -43,7 +44,7 @@ export function createKnowledgeImportRuntime(options) {
     environment: process.env.DAYLIGHT_ENV || 'docker',
     hostId: os.hostname(),
     logger
-  });
+  }));
   const rootForUser = username => {
     assertUsername(username);
     return options.rootForUser(username);

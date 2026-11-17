@@ -275,3 +275,21 @@ hash; changed or missing evidence is revoked. Imported evidence does not enter
 the live-message extraction stream. Optional purpose, resource references and
 work-domain context must appear verbatim in quoted evidence; referenced files
 are not fetched or ingested by this mechanism.
+
+CLI and live KB use the same strict journal-file reader. Unavailable, malformed
+or temporarily missing journal bytes pause evidence resolution; a valid journal
+document with a removed entry revokes that entry. Proofs bind the validated
+authored row and its canonical timestamp, so a reused assistant message ID or
+equivalent YAML timestamp formatting cannot hide an edit or invalidate valid
+memory. Rows outside the range are filtered before historical identity checks.
+
+Apply rechecks current enrollment/import policy when using its capability and
+when acquiring the durable writer. Resume validates checkpoint history and
+completed/saturated result files before spending another attempt. Inconsistent
+private artifacts stop the job rather than silently re-extracting paid chunks.
+
+Reports retain scoped provider corroboration separately from journal evidence.
+Only an unambiguous, exact later completion on a confirmed `same_commitment`
+link is reported as a corroborated outcome. Child/context links retain the parent
+candidate; stale, estimated, reopened and ambiguous matches remain explicit.
+Corroboration does not itself change KB status or create user-authored text.

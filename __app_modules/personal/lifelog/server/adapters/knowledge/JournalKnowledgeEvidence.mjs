@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import moment from 'moment-timezone';
 import { IKnowledgeEvidence } from '../../application/knowledge/ports/IKnowledgeEvidence.mjs';
+import { importDigest } from '../../domain/knowledge/importManifest.mjs';
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const journalSourceId=(username,conversationId,messageId,revision)=>hash(revision?[username,conversationId,messageId,revision]:[username,conversationId,messageId]);
 const MAX_BATCH = 100;
 const MAX_MESSAGE_CHARS=20000,MAX_BATCH_CHARS=100000;
 const text = value => value == null ? '' : String(value);
-function instant(value, timezone) {
+export function journalInstant(value, timezone) {
   if (typeof value !== 'string') return NaN;
   if (/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)) {
     return moment.parseZone(value, moment.ISO_8601, true).valueOf();
@@ -42,12 +43,6 @@ export class JournalKnowledgeEvidence extends IKnowledgeEvidence {
       const canonicalId=journalSourceId(username,conversationId,messageId);
       const sourceId = journalSourceId(username,conversationId,messageId,source?.revision);
       if (!messageId || typeof row.content !== 'string' || !row.content.trim()) { refuse(sourceId, 'invalid_evidence'); continue; }
-      const fingerprint = hash([row.id, row.content, row.timestamp, row.senderId, source ?? null]);
-      if (known.has(canonicalId)) {
-        if (known.get(canonicalId) !== fingerprint) throw new Error('Conflicting receipts for one journal message identity');
-        continue;
-      }
-      known.set(canonicalId, fingerprint);
       if (text(row.senderId) !== text(identity.senderId) || (source && (text(source.senderId) !== text(identity.senderId)
         || conversationId !== text(identity.conversationId) || messageId !== text(row.id)))) {
         refuse(sourceId, 'identity_mismatch'); continue;
@@ -62,10 +57,17 @@ export class JournalKnowledgeEvidence extends IKnowledgeEvidence {
         refuse(sourceId, 'edited_evidence'); continue;
       }
       if(source?.revision&&(source.edited!==true||!Number.isFinite(source.observedAt)||source.revision!==hash([source.contentHash,source.editDate??null,source.updateId??null,source.observedAt]))){refuse(sourceId,'invalid_revision');continue;}
-      const at = instant(row.timestamp, timezone);
+      const at = journalInstant(row.timestamp, timezone);
       if (!Number.isFinite(at)) { refuse(sourceId, 'invalid_timestamp'); continue; }
+      const fingerprint = hash([row.id, row.content, row.timestamp, row.senderId, source ?? null]);
+      if (known.has(canonicalId)) {
+        if (known.get(canonicalId) !== fingerprint) throw new Error('Conflicting receipts for one journal message identity');
+        continue;
+      }
+      known.set(canonicalId, fingerprint);
       if(row.content.length>MAX_MESSAGE_CHARS){rejected.push({sourceId,reason:'oversized_message',at,observedAt:source?.observedAt??at});continue;}
       messages.push({ ref: `journalist:msg:${sourceId}`, sourceId, conversationId, messageId, at,...(source?.revision?{observedAt:source.observedAt}:{}),
+        sourceHash:importDigest([username,{senderId:text(identity.senderId),conversationId:text(identity.conversationId)},timezone,{...row,timestamp:at}]),
         localDate: moment.tz(at, timezone).format('YYYY-MM-DD'), content: row.content,
         senderId: text(row.senderId), verified, previewOnly: !verified,
         senderMatchesConfiguredUser: true, source: 'user' });

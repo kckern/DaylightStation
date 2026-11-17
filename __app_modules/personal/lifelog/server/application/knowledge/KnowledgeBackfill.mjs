@@ -1,6 +1,7 @@
 import { importDigest, validImportManifest } from '../../domain/knowledge/importManifest.mjs';
 import { reduceKnowledge } from '../../domain/knowledge/reduceKnowledge.mjs';
 import { localDateFor } from '../../domain/knowledge/calendar.mjs';
+import { corroborateWork } from '../../domain/knowledge/workCorroboration.mjs';
 const fail = code => {
   throw Object.assign(new Error(code), {
     code
@@ -59,24 +60,35 @@ export class KnowledgeBackfill {
   #active() {
     if (this.#closed) fail('KNOWLEDGE_IMPORT_STOPPED');
   }
-  async #workCoverage(manifest) {
-    let coverage = {
-      complete: false,
-      reason: 'work_context_unavailable',
-      sources: []
+  async #workFacts(manifest) {
+    const unavailable = {
+      items: [],
+      links: [],
+      events: [],
+      coverage: {
+        complete: false,
+        reason: 'work_context_unavailable',
+        sources: []
+      }
     };
+    let facts = unavailable;
     try {
-      if (this.#workContext?.execute) coverage = (await this.#workContext.execute({
+      if (this.#workContext?.execute) facts = await this.#workContext.execute({
         username: manifest.username,
         asOf: manifest.asOf
-      })).coverage;
+      });
     } catch {/* Corroboration failure never becomes user evidence. */}
     this.#active();
-    return coverage?.sources?.length === 0 ? {
-      ...coverage,
-      complete: false,
-      reason: coverage.reason ?? 'no_work_sources'
-    } : coverage;
+    if (!facts?.coverage || !['items', 'links', 'events'].every(field => Array.isArray(facts[field]))) return unavailable;
+    if (facts.coverage.sources?.length === 0) facts = {
+      ...facts,
+      coverage: {
+        ...facts.coverage,
+        complete: false,
+        reason: facts.coverage.reason ?? 'no_work_sources'
+      }
+    };
+    return facts;
   }
   async #sources({
     username,
@@ -179,12 +191,18 @@ export class KnowledgeBackfill {
     manifest.sourceHashes = sources.sourceHashes;
     manifest.chunks = chunks;
     manifest.excludedRefs = sources.messages.filter(m => !selected.includes(m)).map(m => m.ref);
+    const work = await this.#workFacts(manifest);
     return {
       manifest,
       chunks,
       report: {
         complete: true,
-        workCoverage: await this.#workCoverage(manifest),
+        workCoverage: work.coverage,
+        providerCorroboration: corroborateWork({
+          ...manifest,
+          objects: Object.values(snapshot.objects),
+          work
+        }),
         selected: selected.length,
         excluded: manifest.excludedRefs.length,
         rejected: sources.rejected
@@ -206,6 +224,41 @@ export class KnowledgeBackfill {
   }
   async #resume(manifest, usageDir) {
     const current = await this.#current(manifest);
+    const recorded = await this.#checkpoint.read({
+      jobId: manifest.jobId
+    });
+    if (!Array.isArray(manifest.chunks)) fail('KNOWLEDGE_IMPORT_INVALID_MANIFEST');
+    const expected = new Map();
+    const register = chunk => {
+      if (expected.has(chunk.chunkId)) fail('KNOWLEDGE_IMPORT_INVALID_MANIFEST');
+      const messages = this.#chunkMessages(chunk, current.messages);
+      expected.set(chunk.chunkId, chunk);
+      if (messages.length > 1) {
+        const middle = Math.ceil(messages.length / 2);
+        for (const [suffix, rows] of [['a', messages.slice(0, middle)], ['b', messages.slice(middle)]]) register({
+          chunkId: chunk.chunkId + '-' + suffix,
+          refs: rows.map(m => m.ref),
+          sourceDigest: sourceDigest(rows)
+        });
+      }
+    };
+    for (const chunk of manifest.chunks) register(chunk);
+    for (const [chunkId, row] of Object.entries(recorded.chunks)) {
+      if (!expected.has(chunkId) || row.sourceDigest !== expected.get(chunkId).sourceDigest) fail('KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT');
+      if (['complete', 'saturated'].includes(row.status)) {
+        let cached;
+        try {
+          cached = await this.#checkpoint.readChunk({
+            jobId: manifest.jobId,
+            chunkId,
+            sourceDigest: row.sourceDigest
+          });
+        } catch {
+          fail('KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT');
+        }
+        if (!cached || cached.resultDigest !== row.resultDigest || importDigest(cached.result) !== row.resultDigest || !Array.isArray(cached.result.proposals) || cached.result.proposals.length > 20 || row.status === 'saturated' !== (cached.result.proposals.length === 20)) fail('KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT');
+      }
+    }
     let snapshot = await this.#store.read({
       username: manifest.username
     });
@@ -223,6 +276,7 @@ export class KnowledgeBackfill {
       };
       let cached = await this.#checkpoint.readChunk(key);
       if (!cached) {
+        if (['complete', 'saturated'].includes(recorded.chunks[chunk.chunkId]?.status)) fail('KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT');
         try {
           await this.#reserve({
             usageDir,
@@ -332,13 +386,23 @@ export class KnowledgeBackfill {
       status,
       sourceAt: created.sourceAt
     }));
+    const work = await this.#workFacts(manifest),
+      corroboration = corroborateWork({
+        ...manifest,
+        objects: [...targets].map(id => snapshot.objects[id]).filter(Boolean),
+        work
+      }),
+      completedIds = new Set(corroboration.completed.map(row => row.objectId));
     const report = {
       supportedOutcomes: summarized.filter(o => ['answered', 'dropped'].includes(o.status)),
-      unresolvedCandidates: summarized.filter(o => ['open', 'waiting'].includes(o.status)),
-      ambiguousMatches: snapshot.state.pendingReviews.filter(r => ['ambiguous_person_name', 'person_confirmation', 'alias_confirmation'].includes(r.reason)),
+      corroboratedOutcomes: corroboration.completed,
+      relatedWork: corroboration.related,
+      providerCorroboration: corroboration,
+      unresolvedCandidates: summarized.filter(o => ['open', 'waiting'].includes(o.status) && !completedIds.has(o.id)),
+      ambiguousMatches: [...snapshot.state.pendingReviews.filter(r => ['ambiguous_person_name', 'person_confirmation', 'alias_confirmation'].includes(r.reason)), ...corroboration.ambiguous],
       unsupportedDates: snapshot.state.pendingReviews.filter(r => r.reason === 'unsupported_due_text'),
       skippedEvidence: current.rejected,
-      workCoverage: await this.#workCoverage(manifest),
+      workCoverage: work.coverage,
       complete: reason === null,
       reason,
       completedChunks: entries.length,

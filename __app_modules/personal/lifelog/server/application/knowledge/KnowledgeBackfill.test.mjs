@@ -106,6 +106,7 @@ function fixture(count = 1, contentLength) {
   return {
     service,
     workContext,
+    checkpoint,
     prepare,
     store,
     messages,
@@ -119,6 +120,171 @@ function fixture(count = 1, contentLength) {
   };
 }
 describe('bounded quiet knowledge backfill', () => {
+  const workFacts = () => {
+    const ref = {
+      provider: 'todoist',
+      accountId: 'personal',
+      kind: 'task',
+      id: 'task-1'
+    };
+    return {
+      coverage: {
+        complete: true,
+        sources: [{
+          provider: 'todoist',
+          accountId: 'personal',
+          complete: true
+        }]
+      },
+      items: [],
+      links: [{
+        id: 'link-1',
+        username: 'sample',
+        kbObjectId: 'loop.item-import-0',
+        workRef: ref,
+        relation: 'same_commitment',
+        confirmedAt: AS_OF - 86400000,
+        basisRefs: []
+      }],
+      events: [{
+        id: 'completed-1',
+        username: 'sample',
+        ref,
+        type: 'completed',
+        origin: 'provider',
+        occurredAt: AS_OF - 3600000,
+        occurredAtEstimated: false
+      }]
+    };
+  };
+  it('reports a scoped later completion as corroboration rather than another unresolved intention', async () => {
+    const h = fixture();
+    h.workContext.execute.mockResolvedValue(workFacts());
+    const {
+        manifest
+      } = await h.prepare(),
+      result = await h.service.resume({
+        manifest,
+        usageDir: 'private'
+      });
+    expect(result.report.corroboratedOutcomes).toEqual([expect.objectContaining({
+      objectId: 'loop.item-import-0',
+      eventId: 'completed-1',
+      kbStatus: 'open'
+    })]);
+    expect(result.report.unresolvedCandidates).toEqual([]);
+    expect(h.store.commit).not.toHaveBeenCalled();
+    expect(h.extractor.extract.mock.calls[0][0].messages.every(m => m.origin === 'historical_import')).toBe(true);
+  });
+  it.each(['action_for', 'context_for'])('keeps the parent unresolved when completed work is only %s', async relation => {
+    const h = fixture(),
+      facts = workFacts();
+    facts.links[0].relation = relation;
+    h.workContext.execute.mockResolvedValue(facts);
+    const {
+        manifest
+      } = await h.prepare(),
+      result = await h.service.resume({
+        manifest,
+        usageDir: 'private'
+      });
+    expect(result.report.corroboratedOutcomes).toEqual([]);
+    expect(result.report.unresolvedCandidates).toHaveLength(1);
+    expect(result.report.relatedWork).toHaveLength(1);
+  });
+  it.each(['stale', 'estimated', 'wrong_user', 'predates', 'multiple_links', 'reopened'])('never treats %s work evidence as a confirmed historical outcome', async mode => {
+    const h = fixture(),
+      facts = workFacts();
+    if (mode === 'stale') facts.coverage.sources[0].complete = false;
+    if (mode === 'estimated') facts.events[0].occurredAtEstimated = true;
+    if (mode === 'wrong_user') facts.events[0].username = 'other';
+    if (mode === 'predates') facts.events[0].occurredAt = AS_OF - 2 * 86400000;
+    if (mode === 'multiple_links') facts.links.push({
+      ...facts.links[0],
+      id: 'link-2',
+      workRef: {
+        ...facts.links[0].workRef,
+        id: 'task-2'
+      }
+    });
+    if (mode === 'reopened') facts.events.push({
+      ...facts.events[0],
+      id: 'reopened-1',
+      type: 'reopened',
+      occurredAt: AS_OF - 1000
+    });
+    h.workContext.execute.mockResolvedValue(facts);
+    const {
+        manifest
+      } = await h.prepare(),
+      result = await h.service.resume({
+        manifest,
+        usageDir: 'private'
+      });
+    expect(result.report.corroboratedOutcomes).toEqual([]);
+    expect(result.report.unresolvedCandidates).toHaveLength(1);
+    if (['estimated', 'multiple_links', 'reopened'].includes(mode)) expect(result.report.ambiguousMatches).toHaveLength(1);
+  });
+  it('rejects a completed checkpoint whose result was lost before reserving another paid attempt', async () => {
+    const h = fixture(),
+      {
+        manifest
+      } = await h.prepare();
+    await h.service.resume({
+      manifest,
+      usageDir: 'private'
+    });
+    h.cache.clear();
+    h.reserveAttempt.mockClear();
+    h.extractor.extract.mockClear();
+    await expect(h.service.resume({
+      manifest,
+      usageDir: 'private'
+    })).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT'
+    });
+    expect(h.reserveAttempt).not.toHaveBeenCalled();
+    expect(h.extractor.extract).not.toHaveBeenCalled();
+  });
+  it('validates torn checkpoint history before the first model call', async () => {
+    const h = fixture(),
+      {
+        manifest
+      } = await h.prepare();
+    h.checkpoint.read = async () => {
+      throw new Error('Corrupt checkpoint tail');
+    };
+    await expect(h.service.resume({
+      manifest,
+      usageDir: 'private'
+    })).rejects.toThrow('Corrupt checkpoint tail');
+    expect(h.reserveAttempt).not.toHaveBeenCalled();
+    expect(h.extractor.extract).not.toHaveBeenCalled();
+  });
+  it('validates later completed chunks before calling the model for an earlier missing chunk', async () => {
+    const h = fixture(11),
+      {
+        manifest
+      } = await h.prepare(),
+      chunk = manifest.chunks[1];
+    h.records.set(chunk.chunkId, {
+      jobId: manifest.jobId,
+      ...chunk,
+      status: 'complete',
+      resultDigest: importDigest({
+        proposals: [],
+        modelVersion: 'fixture'
+      })
+    });
+    await expect(h.service.resume({
+      manifest,
+      usageDir: 'private'
+    })).rejects.toMatchObject({
+      code: 'KNOWLEDGE_IMPORT_ARTIFACT_INCONSISTENT'
+    });
+    expect(h.reserveAttempt).not.toHaveBeenCalled();
+    expect(h.extractor.extract).not.toHaveBeenCalled();
+  });
   it('recovers a prepared KB transaction only after import authorization, so crash resume remains usable', async () => {
     const h = fixture(),
       {

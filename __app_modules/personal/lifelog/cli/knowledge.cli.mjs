@@ -4,8 +4,6 @@ import {KnowledgeMetrics} from '../server/application/knowledge/KnowledgeMetrics
 /** Phase 0: local previews only. No writer, scheduler, delivery or activation door. */
 import path from 'node:path';
 import moment from 'moment-timezone';
-import yaml from 'js-yaml';
-import * as FileIO from '#system/utils/FileIO.mjs';
 import { createAiUsageLedger } from '#adapters/ai/AiUsageLedger.mjs';
 import { reduceKnowledge } from '../server/domain/knowledge/reduceKnowledge.mjs';
 import { selectQuestions } from '../server/domain/knowledge/selectQuestions.mjs';
@@ -105,6 +103,7 @@ async function defaultDependencies() {
     import('#domains/messaging/services/UserIdentityService.mjs'),import('#adapters/messaging/TelegramIdentityAdapter.mjs'),
     import('#adapters/ai/OpenAIAdapter.mjs'),import('#system/services/HttpClient.mjs'),
   ]);
+  const {createJournalKnowledgeSource}=await import('../server/knowledge-runtime.mjs');
   const configService = await getConfigService();
   const diagnostic=createLogger({source:'cli',app:'lifelog',context:{module:'knowledge-preview'}});
   const logger={...diagnostic,info(){},debug(){}}; // Keep stdout machine-readable; usage has its own durable ledger.
@@ -117,7 +116,7 @@ async function defaultDependencies() {
   const ledger = new JsonlKnowledgeLedger({rootForUser,hostId:'readonly-cli',authority,logger});
   const store = new YamlKnowledgeStore({rootForUser,ledger,authority,clock:()=>Date.now(),logger});
   const evidence = new JournalKnowledgeEvidence({logger,
-    loadJournal:async username=>{assertUsername(username);try{return yaml.load(FileIO.readTextFromPath(path.join(configService.getUserDir(username),'lifelog/journalist/messages.yml')),{schema:yaml.JSON_SCHEMA});}catch(error){if(error.code==='ENOENT')return null;throw error;}},
+    loadJournal:createJournalKnowledgeSource({userDirForUser:username=>configService.getUserDir(username)}),
     identityForUser:async username=>({senderId:identityService.resolvePlatformId('telegram',username),conversationId:identities.resolve('journalist',{username}).conversationIdString}),
     timezoneForUser:username=>timezoneFor(configService,username),
   });
