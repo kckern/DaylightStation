@@ -629,15 +629,14 @@ for POST; a PUT body goes to a temp file named in `content`. Every authenticated
 `lockdownActive` stayed false (measured on the live Portal, 2026-11-17).
 `RequestBody.of` reads both.
 
-**The live lock is served by the payload until shell 35 is installed.** A shell
-needs an APK signed with the key that signed the installed one (the laptop's
-debug key); a payload swap needs only a SHA-256. So `LockdownRoute` serves the
-same contract on the payload port, `PUT :8773/lockdown`, authenticated by
-`X-Lockdown-Token` rather than the admin token, and writes the `lockdownUntil`
-preference the shell's key filter reads. `shutdown/config.yml`'s
-`portal_keys.base_url` points at `:8773`. Deployed 2026-11-17 as payload
-`p7.1-lockdown-route` = `04ed630a44` (the running p7) plus `LockdownRoute.java`
-and its `OpsServer` dispatch; `p7` is the rollback (`pkctl rollback`). Verify a lock after any shell change with a short
+**Shell 35 is installed (2026-11-17) and `shutdown/config.yml` points at `:8771`.**
+Shell APKs must be signed with the key that signed the installed app (the laptop's
+debug key, SHA-256 `3663e947…0fb4`). The payload also serves the same legacy
+contract, `PUT :8773/lockdown` (`LockdownRoute`), writing the `lockdownUntil`
+preference the shell's key filter reads; it carried the live lock before shell 35
+and remains a fallback (payload `p7.1-lockdown-route` = `04ed630a44` plus that route).
+Verified after install: a 15 s lock on `:8771` read `lockdownActive: true` and
+cleared at its deadline. Verify a lock after any shell change with a short
 deadline: `PUT /lockdown {"locked":true,"lockedUntil":<now+15s>}` must answer
 `lockdownActive: true`, then read false after the deadline.
 
