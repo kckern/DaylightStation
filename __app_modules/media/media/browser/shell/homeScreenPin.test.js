@@ -150,6 +150,11 @@ describe('pinOutcomeMessage', () => {
       .toBe("This phone's home screen can't add shortcuts");
   });
 
+  it('names the limit on pinned shortcuts', () => {
+    expect(pinOutcomeMessage({ accepted: false, reason: 'limit_reached' }))
+      .toBe('Too many home screen shortcuts; remove one first');
+  });
+
   it.each([
     'refused', 'not_top_frame', 'bad_request', 'invalid_content_id', 'invalid_label',
     'not_available', 'launcher_refused', 'failed', 'something_new', undefined,

@@ -113,5 +113,7 @@ export function pinOutcomeMessage(result) {
   if (result?.accepted === true) return "Confirm on your phone's dialog";
   if (result?.reason === 'rate_limited') return 'One moment, then try again';
   if (result?.reason === 'launcher_cannot_pin') return "This phone's home screen can't add shortcuts";
+  // The phone keeps at most 24 pinned media actions.
+  if (result?.reason === 'limit_reached') return 'Too many home screen shortcuts; remove one first';
   return "Couldn't add to home screen";
 }

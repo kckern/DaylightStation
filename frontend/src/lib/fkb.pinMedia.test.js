@@ -10,7 +10,7 @@ vi.mock('./logging/Logger.js', () => ({
 const REQUEST = { contentId: 'plex:4242', label: 'Road trip' };
 const REASONS = [
   'refused', 'not_top_frame', 'rate_limited', 'bad_request', 'invalid_content_id',
-  'invalid_label', 'not_available', 'launcher_cannot_pin', 'launcher_refused', 'failed',
+  'invalid_label', 'not_available', 'launcher_cannot_pin', 'launcher_refused', 'failed', 'limit_reached',
 ];
 
 let fkb;

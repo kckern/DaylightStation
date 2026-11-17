@@ -106,6 +106,7 @@ describe('AddToHomeScreenButton', () => {
     [{ accepted: true }, "Confirm on your phone's dialog", 'confirmed'],
     [{ accepted: false, reason: 'rate_limited' }, 'One moment, then try again', 'failed'],
     [{ accepted: false, reason: 'launcher_cannot_pin' }, "This phone's home screen can't add shortcuts", 'failed'],
+    [{ accepted: false, reason: 'limit_reached' }, 'Too many home screen shortcuts; remove one first', 'failed'],
     [{ accepted: false, reason: 'invalid_label' }, "Couldn't add to home screen", 'failed'],
     [{ accepted: false, reason: 'refused' }, "Couldn't add to home screen", 'failed'],
     [{ accepted: false, reason: 'failed' }, "Couldn't add to home screen", 'failed'],

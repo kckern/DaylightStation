@@ -604,7 +604,7 @@ export function canPinMedia() {
  * confirms it is never reported. The answer holds `accepted` and, on a refusal,
  * one `reason` word (`refused`, `not_top_frame`, `rate_limited`, `bad_request`,
  * `invalid_content_id`, `invalid_label`, `not_available`, `launcher_cannot_pin`,
- * `launcher_refused`, `failed`). A missing member reads `not_available`; a throw,
+ * `launcher_refused`, `limit_reached`, `failed`). A missing member reads `not_available`; a throw,
  * an unparseable answer or an answer of another shape reads `failed`. Never
  * throws. The log line carries the outcome only, never the content id or label.
  *

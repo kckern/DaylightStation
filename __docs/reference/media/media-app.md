@@ -125,6 +125,7 @@ points without splitting a grapheme. A raw id is never used as a label.
 | `accepted: true` (Android's own dialog is showing) | "Confirm on your phone's dialog" (a brief row; it never says "Added", because the phone does not report whether the owner confirmed) |
 | `rate_limited` | "One moment, then try again" |
 | `launcher_cannot_pin` | "This phone's home screen can't add shortcuts" |
+| `limit_reached` (the phone already keeps 24 pinned media actions) | "Too many home screen shortcuts; remove one first" |
 | any other reason | "Couldn't add to home screen" |
 
 A refusal stays until dismissed, like every problem row. The button is

@@ -196,8 +196,15 @@ above, so these two read `window.daylight` directly instead of through the
 | `canPinMedia()` | `true` only when `daylight.pinMedia` is a function and `daylight.canPinMedia()` returns exactly `true`. `false` when either member is missing, when it throws, or for any other answer. Does not log |
 | `pinMedia({contentId, label})` | Sends `{"contentId","label"}` as JSON text and answers `{accepted: true}` or `{accepted: false, reason}`. A missing member answers `reason: 'not_available'`; a throw, unparseable text or an answer of another shape answers `reason: 'failed'`. A JSON-text answer is parsed. A refusal without a one-word lower-case reason reads `failed`, and any other field the native side sends is dropped |
 
+The refusal reasons are `refused`, `not_top_frame`, `rate_limited`,
+`bad_request`, `invalid_content_id`, `invalid_label`, `not_available`,
+`launcher_cannot_pin`, `launcher_refused`, `limit_reached` (the phone already
+keeps 24 pinned media actions; one has to be removed from the home screen
+first) and `failed`; `fkb.js` passes each through unchanged.
+
 `accepted: true` means Android's own pin dialog is showing; whether the owner
-confirmed is never reported. Each call logs `fkb.pinMedia.result` with
+confirmed is never reported (the phone records the pin only once the owner
+confirms). Each call logs `fkb.pinMedia.result` with
 `accepted` and `reason` only, never the content id or the label (a thrown
 error's text is not logged either, since it could repeat them). Media's Now
 Playing is the one caller; see "Pinning to the home screen on the phone app" in
