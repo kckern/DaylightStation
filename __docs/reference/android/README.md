@@ -21,7 +21,8 @@ working helper code out of the old helper apps into this codebase. So far the
 heartbeat, log shipping, Wi-Fi link telemetry, diagnostics, self-update and payload
 routes listed below, and the piano build carries `audio-guard` (speaker routes
 under `/speaker` and `/audio-guard`), `synth` (the native sfizz sampler) and
-`midi-bridge` (the BLE-MIDI link); see "Capabilities". The old helper apps still run every device.
+`midi-bridge` (the BLE-MIDI link) and `bluetooth-controls` (the Bluetooth panel);
+see "Capabilities". The old helper apps still run every device.
 
 ## Shell and payload
 
@@ -284,6 +285,35 @@ Settings: `midi.targetMac`, `midi.targetName`, `midi.blocklistMacs`
 (comma-separated), `midi.scanTimeoutMs` (15000), `midi.reconnectDelayMs` (3000),
 `midi.enabled` (true), `midi.serviceUuid`. Changing any of them except the name
 rebuilds the link. It offers the `midi` role to `bluetooth-controls`.
+
+### `bluetooth-controls`
+
+Bluetooth settings for a kiosk page: adapter state, discovery, pairing, connect
+and disconnect. `bluetooth.mode` picks what it manages.
+
+| Method | Path | Body | What it does |
+|---|---|---|---|
+| GET | `/bluetooth` | | Adapter, known devices, the pairing in progress, `lastError`, `capabilities` |
+| POST | `/bluetooth/scan` | `{durationMs}` (1000 to 30000, default 12000) | Start discovery for that long |
+| POST | `/bluetooth/scan/stop` | `{}` | Stop discovery |
+| POST | `/bluetooth/pair`, `/bluetooth/unpair` | `{address}` | Bond with, or forget, a device |
+| POST | `/bluetooth/connect`, `/bluetooth/disconnect` | `{address, profile}` | Use, or stop using, a device for a profile |
+| POST | `/bluetooth/pairing` | `{address, accept, pin?}` | Answer the pairing request this app started |
+| POST | `/bluetooth/power` | `{enabled}` | Turn the adapter on or off (role mode only) |
+
+Every action needs a JSON object body of 1 to 8192 bytes. An answer is
+`{ok: true, accepted: true}` or `{ok: false, code, error}` with `code` one of
+`invalid_request`, `action_rejected`, `action_failed`, `pairing_expired`,
+`unsupported_device`, `unavailable`.
+
+`bluetooth.mode: roles` (the piano) manages the links other capabilities own: the
+profiles are `audio` (the speaker, from `audio-guard`) and `midi` (the instrument,
+from `midi-bridge`). Connecting a device to a profile re-points that capability's
+link; connecting the device already configured only nudges it. Every answer is
+HTTP 200 with the result in the body. While a pairing the page started waits on
+Android's own pairing dialog, the capability tells the lockdown (phase 3) not to
+recall the kiosk over that dialog; `bluetooth.systemPairingDialog` (default false)
+allows that route.
 
 ## Lifeline
 

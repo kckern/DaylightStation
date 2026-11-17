@@ -5,8 +5,8 @@ import org.junit.Test;
 
 public class ConnectPlanTest {
 
-    static final String SPK = "64:49:A5:8B:9B:75";
-    static final String JAM = "10:65:36:36:62:66";
+    static final String SPK = "00:00:5E:00:53:01";
+    static final String JAM = "00:00:5E:00:53:02";
 
     @Test public void sameSpeakerAlreadyConnected_isANoOp() {
         // 2026-10-23 18:04: this exact tap rebuilt every connector and dropped a working speaker.

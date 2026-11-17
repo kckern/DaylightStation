@@ -18,6 +18,10 @@ import android.location.LocationManager;
 import android.os.Handler;
 import android.os.Looper;
 
+import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.Diag;
+import net.kckern.daylight.core.spi.BluetoothRole;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -30,7 +34,7 @@ import java.util.Map;
 /** Android Bluetooth boundary owned by one payload, including discovery and pairing receivers. */
 public final class RoleBluetoothPort implements BluetoothController.Port {
     private static final long PAIRING_WINDOW_MS = 60000L;
-    private final BridgeCore bridge;
+    private final CoreContext core;
     private final Context ctx;
     private final BluetoothAdapter adapter;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -45,17 +49,23 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
     private boolean scanRequested;
     private String requestedPairAddress;
     private long requestedPairUntil;
-    private BleMidiConnector pairingPausedConnector;
+    private BluetoothRole pairingPausedRole;
     private JSONObject pairing;
     private String delegatedPairAddress;
     private long delegatedPairUntil;
     private String lastError;
 
-    public RoleBluetoothPort(BridgeCore bridge) {
-        this.bridge = bridge;
-        ctx = bridge.getContext().getApplicationContext();
+    public RoleBluetoothPort(Context context, CoreContext core) {
+        this.core = core;
+        ctx = context.getApplicationContext();
         adapter = BluetoothAdapter.getDefaultAdapter();
         controller = new BluetoothController(this, System::currentTimeMillis);
+    }
+
+    /** The link another capability offers under this profile ("audio", "midi"), or null. */
+    private BluetoothRole role(String profile) {
+        for (BluetoothRole r : core.services().all(BluetoothRole.class)) if (profile.equals(r.profile())) return r;
+        return null;
     }
 
     public BluetoothController controller() { return controller; }
@@ -113,18 +123,15 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
         if (adapter != null) {
             for (BluetoothDevice device : adapter.getBondedDevices()) remember(device, null);
         }
-        DeviceConfig cfg = bridge.getConfig();
-        if (adapter != null && cfg != null) {
-            rememberTarget(cfg.speakerMac());
-            rememberTarget(cfg.targetMac());
+        BluetoothRole audioRole = role("audio"), midiRole = role("midi");
+        if (adapter != null) {
+            if (audioRole != null) rememberTarget(audioRole.address());
+            if (midiRole != null) rememberTarget(midiRole.address());
         }
         List<BluetoothDevice> audioDevices = audio != null && enabled
                 ? audio.getConnectedDevices() : Collections.emptyList();
         for (BluetoothDevice device : audioDevices) remember(device, null);
-        BleMidiConnector ble = bridge.getBleConnector();
-        JSONObject midi = ble != null ? ble.status() : null;
-        String midiAddress = midi != null && "CONNECTED".equals(midi.optString("state"))
-                ? midi.optString("connectedMac", "") : "";
+        String midiAddress = midiRole == null ? "" : midiRole.connectedAddress();
         if (!midiAddress.isEmpty()) rememberTarget(midiAddress);
         JSONArray devices = new JSONArray();
         for (BluetoothDevice device : seen.values()) {
@@ -134,12 +141,12 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
                 if (address.equals(connected.getAddress())) { profiles.put("audio"); break; }
             }
             if (enabled && address.equals(midiAddress)) profiles.put("midi");
-            String role = cfg != null && address.equals(cfg.speakerMac()) ? "audio"
-                    : cfg != null && address.equals(cfg.targetMac()) ? "midi" : null;
+            String role = audioRole != null && address.equals(audioRole.address()) ? "audio"
+                    : midiRole != null && address.equals(midiRole.address()) ? "midi" : null;
             String name = device.getName();
-            if (name == null && cfg != null) {
-                if ("audio".equals(role)) name = cfg.speakerName();
-                else if ("midi".equals(role)) name = cfg.targetName();
+            if (name == null) {
+                if ("audio".equals(role)) name = audioRole.name();
+                else if ("midi".equals(role)) name = midiRole.name();
             }
             int type = device.getType();
             JSONObject value = new JSONObject().put("address", address)
@@ -172,7 +179,12 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
     @Override public synchronized boolean scan(int durationMs) {
         if (durationMs < 1000 || durationMs > 30000 || !ready()) return false;
         LocationManager location = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
-        if (location == null || !location.isLocationEnabled())
+        // isLocationEnabled() arrived in API 28; before that, ask the providers.
+        boolean locationOn = location != null && (android.os.Build.VERSION.SDK_INT >= 28
+                ? location.isLocationEnabled()
+                : location.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                        || location.isProviderEnabled(LocationManager.NETWORK_PROVIDER));
+        if (!locationOn)
             return fail("Location services must be enabled for Bluetooth discovery on Android 10");
         stopScan();
         lastError = null;
@@ -239,13 +251,13 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
         remember(device, null);
         if (device.getBondState() == BluetoothDevice.BOND_BONDED) return true;
         if (address.equals(requestedPairAddress) && device.getBondState() == BluetoothDevice.BOND_BONDING) return true;
-        BleMidiConnector ble = bridge.getBleConnector();
-        if (ble != null) {
-            if (!ble.pauseDiscoveryForPairing()) {
-                ble.resumeDiscoveryAfterPairing();
+        BluetoothRole midi = role("midi");
+        if (midi != null) {
+            if (!midi.pauseDiscovery()) {
+                midi.resumeDiscovery();
                 return fail("MIDI discovery could not stop before pairing");
             }
-            pairingPausedConnector = ble;
+            pairingPausedRole = midi;
         }
         requestedPairAddress = address;
         requestedPairUntil = System.currentTimeMillis() + PAIRING_WINDOW_MS;
@@ -281,43 +293,22 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
         BluetoothDevice device = adapter.getRemoteDevice(address);
         if ("audio".equals(profile) && device.getBondState() != BluetoothDevice.BOND_BONDED)
             return fail("Pair the audio device before connecting");
-        // Same device, same role: never rebuild the connectors (that drops a working
-        // speaker AND BLE-MIDI). See ConnectPlan.
-        DeviceConfig current = bridge.getConfig();
-        boolean audioRole = "audio".equals(profile);
-        A2dpConnector spk = bridge.getA2dpConnector();
-        BleMidiConnector ble = bridge.getBleConnector();
-        boolean connectedNow;
-        if (audioRole) connectedNow = spk != null && spk.isTargetConnected();
-        else {
-            JSONObject st = ble != null ? ble.status() : null;
-            connectedNow = st != null && "CONNECTED".equals(st.optString("state"))
-                    && address.equalsIgnoreCase(st.optString("connectedMac", ""));
-        }
-        ConnectPlan.Action plan = current == null ? ConnectPlan.Action.RELOAD : ConnectPlan.decide(profile, address,
-                audioRole ? current.speakerMac() : current.targetMac(),
-                audioRole ? current.bluetoothAudioEnabled() : current.bluetoothMidiEnabled(),
-                connectedNow, audioRole ? spk != null : ble != null);
+        BluetoothRole target = role(profile);
+        if (target == null) return fail("This device has no " + profile + " connection to configure");
+        // Same device, same role: never rebuild the connector (that drops a working
+        // link). See ConnectPlan.
+        ConnectPlan.Action plan = ConnectPlan.decide(profile, address, target.address(), target.enabled(),
+                target.connectedTo(address), target.present());
+        String freshName = safeConfigName(device.getName());
         if (plan != ConnectPlan.Action.RELOAD) {
-            if (plan == ConnectPlan.Action.NUDGE) {
-                if (audioRole) spk.connectNow();
-                else ble.connectNow();
-            }
+            if (plan == ConnectPlan.Action.NUDGE) target.nudge();
             // A renamed device is persisted, but without the teardown a reload would cost.
-            String freshName = safeConfigName(device.getName());
-            String knownName = audioRole ? current.speakerName() : current.targetName();
-            if (!freshName.isEmpty() && !freshName.equals(knownName))
-                DeviceConfig.writeOverride(ctx, (audioRole ? "speakerName: " : "targetName: ") + freshName + "\n");
+            if (!freshName.isEmpty() && !freshName.equals(target.name())) target.rename(freshName);
             lastError = null;
             Diag.log("PianoBridge-Bluetooth", profile + " connect for " + address + " → " + plan + " (no teardown)");
             return true;
         }
-        String name = safeConfigName(device.getName());
-        String update = "audio".equals(profile)
-                ? "speakerMac: " + address + "\nspeakerName: " + name + "\nbluetoothAudioEnabled: true\n"
-                : "targetMac: " + address + "\ntargetName: " + name + "\nbluetoothMidiEnabled: true\n";
-        DeviceConfig.writeOverride(ctx, update);
-        bridge.reloadConfigAndReconnect();
+        target.assign(address, freshName);
         lastError = null;
         Diag.log("PianoBridge-Bluetooth", profile + " connection requested for " + address);
         return true;
@@ -341,17 +332,14 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
     }
 
     private boolean disableConfiguredRoles(String address, String onlyProfile) throws Exception {
-        DeviceConfig cfg = bridge.getConfig();
-        if (cfg == null) return false;
-        String update = "";
-        if ((onlyProfile == null || "audio".equals(onlyProfile)) && address.equals(cfg.speakerMac()))
-            update += "bluetoothAudioEnabled: false\n";
-        if ((onlyProfile == null || "midi".equals(onlyProfile)) && address.equals(cfg.targetMac()))
-            update += "bluetoothMidiEnabled: false\n";
-        if (update.isEmpty()) return false;
-        DeviceConfig.writeOverride(ctx, update);
-        bridge.reloadConfigAndReconnect();
-        return true;
+        boolean changed = false;
+        for (BluetoothRole r : core.services().all(BluetoothRole.class)) {
+            if ((onlyProfile == null || onlyProfile.equals(r.profile())) && address.equals(r.address())) {
+                r.disable();
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     @Override public synchronized boolean setEnabled(boolean enabled) {
@@ -472,9 +460,9 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
         pairing = null;
         delegatedPairAddress = null;
         delegatedPairUntil = 0;
-        if (pairingPausedConnector != null) {
-            pairingPausedConnector.resumeDiscoveryAfterPairing();
-            pairingPausedConnector = null;
+        if (pairingPausedRole != null) {
+            pairingPausedRole.resumeDiscovery();
+            pairingPausedRole = null;
         }
     }
 
@@ -499,9 +487,9 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
     private boolean hasAdmin() { return ctx.checkCallingOrSelfPermission(Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED; }
     private boolean canConfirm() { return adapter != null && ctx.checkCallingOrSelfPermission("android.permission.BLUETOOTH_PRIVILEGED") == PackageManager.PERMISSION_GRANTED; }
     private String confirmationMode() {
-        DeviceConfig config = bridge.getConfig();
         return SystemPairingPolicy.confirmationMode(canConfirm(),
-                adapter != null && config != null && config.bluetoothSystemPairingDialogEnabled(), A11y.isConnected());
+                adapter != null && (Boolean) core.settings().get("bluetooth.systemPairingDialog"),
+                core.accessibility().isBound());
     }
 
     /** Transient guard exception: a live explicit delegation AND matching active dialog evidence. */
@@ -510,7 +498,7 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
                 || !SystemPairingPolicy.ownsDelegatedRequest(requestedPairAddress, requestedPairUntil,
                         delegatedPairAddress, delegatedPairUntil, System.currentTimeMillis())) return false;
         String name = pairing.isNull("name") ? null : pairing.optString("name", null);
-        return A11y.isMatchingBluetoothPairingDialog(name, requestedPairAddress);
+        return PairingDialogMatcher.matches(core.accessibility().service(), name, requestedPairAddress);
     }
     private boolean fail(String message) { lastError = message; return false; }
     private boolean pairingError(String message) {
@@ -528,7 +516,7 @@ public final class RoleBluetoothPort implements BluetoothController.Port {
     }
     private static Object nullable(String value) { return value == null ? JSONObject.NULL : value; }
     private static String safeConfigName(String value) {
-        // DeviceConfig deliberately uses flat YAML: remote names must not inject keys/comments.
+        // The name is stored as a setting and shown in the panel: no control characters or quoting marks.
         if (value == null) return "Bluetooth device";
         return value.replaceAll("[\\p{Cntrl}#\"']", " ").trim();
     }
