@@ -17,3 +17,18 @@ ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVers
 // The NDK that builds native capability code and strips its libraries when the APK is packaged.
 ext.ndkVersion = '26.1.10909125'
 apply from: 'gradle/payload-dex.gradle'
+
+// The root project has no code of its own. It gets the lifecycle tasks so that
+// `./gradlew build` also runs the checks that span modules.
+apply plugin: 'base'
+
+// tools/port-map.tsv says which files were moved unchanged from the old helpers and
+// which were adapted. A moved file that has drifted from its source, or an adapted
+// one that is in fact identical, fails the build here.
+tasks.register('portCheck', Exec) {
+    group = 'verification'
+    description = 'Compares ported files with their sources (tools/port-check.mjs).'
+    workingDir rootDir
+    commandLine 'node', 'tools/port-check.mjs'
+}
+tasks.named('check') { dependsOn 'portCheck' }

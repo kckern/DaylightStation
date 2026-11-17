@@ -833,10 +833,14 @@ directly.
 
 `node _extensions/daylight-android/tools/verify-build.mjs <device>` compares a built
 APK with its device file: package, SDK levels, version code, the exact permission
-set, and that the baked payload holds the entry classes of the listed capabilities
-and no others. It also compares the sha256 of the payload baked into the APK with
-the `.sha256` file the payload build wrote, and fails when the APK holds a
-different payload than the one just built. It also checks that the shell
+set (a permission declared as `uses-permission-sdk-23` or with a `maxSdkVersion`
+must be stated that way in the capability's file), the declared activities,
+services, receivers and providers (exactly those of the base shell and of the
+listed capabilities' shell halves), and that the baked payload holds the entry
+classes of the listed capabilities and no others. It also compares the sha256 of
+the payload baked into the APK with the `.sha256` file the payload build wrote,
+and fails when the APK holds a different payload than the one just built, or when
+that file is missing. Its last line says what kind of build it checked. It also checks that the shell
 service's foreground service types are exactly the device file's, and that a
 capability with native code ships a library for every ABI of the device. For a
 device that lists `synth` it reads the synth library out of the APK for each ABI
@@ -855,6 +859,12 @@ eight, all of them shared core features.
 
 ## Known limits
 
+- **Only a debug build exists.** Every APK is debuggable and signed with the
+  Android debug key; no release signing is configured. Accepted, with this
+  consequence: where ADB is enabled, `run-as <package>` reads the app's private
+  storage, which holds the control token and the stored settings, secret ones
+  included. ADB is enabled on these devices by design, so ADB access to a device
+  is access to its token. `verify-build.mjs` prints the build type it checked.
 - No kiosk or WebView. Fully Kiosk Browser and the old helpers still run every device.
 - Nothing from phase 2 has run on a device.
 - Old state does not move by itself: on-device overrides, the presence token, the

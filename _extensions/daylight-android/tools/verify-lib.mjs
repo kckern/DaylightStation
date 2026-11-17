@@ -24,11 +24,13 @@ export function sha256Hex(bytes) {
 
 /**
  * Compares the payload baked into the APK with the payload build's .sha256 file.
- * Returns null when they agree or when there is no .sha256 text to compare with,
- * otherwise the failure message.
+ * Returns null when they agree, otherwise the failure message. A missing .sha256
+ * file is a failure: with nothing to compare against, a stale payload would pass.
  */
 export function bakedPayloadFailure(bakedJarBytes, shaFileText) {
-  if (shaFileText == null) return null;
+  if (shaFileText == null) {
+    return 'the payload .sha256 file is missing, so the baked payload cannot be checked against the built one (build the payload first)';
+  }
   const expected = shaFileText.trim().split(/\s+/)[0]?.toLowerCase() || '';
   if (!/^[0-9a-f]{64}$/.test(expected)) return 'the payload .sha256 file does not hold a sha256';
   const actual = sha256Hex(bakedJarBytes);
@@ -65,4 +67,98 @@ export function synthLibraryFailure(bytes, homeDir) {
   }
   if (homeDir && bytes.includes(homeDir)) return 'the synth library names source paths on the build machine';
   return null;
+}
+
+/**
+ * The permission entries of `aapt2 dump badging`: each as {name, sdk23, maxSdkVersion}.
+ * `uses-permission-sdk-23` (asked for only on API 23 and up) and `maxSdkVersion`
+ * (asked for only up to that API) change what a device is granted, so they are part
+ * of the entry and not left aside.
+ */
+export function parsePermissions(badging) {
+  const out = [];
+  for (const m of badging.matchAll(/^uses-permission(-sdk-23)?: name='([^']+)'(.*)$/gm)) {
+    const max = /maxSdkVersion='(\d+)'/.exec(m[3]);
+    out.push({ name: m[2], sdk23: Boolean(m[1]), maxSdkVersion: max ? Number(max[1]) : null });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A permission as a capability.yml or device file states it: a name, or {name, sdk23, maxSdkVersion}. */
+export function expectedPermission(entry) {
+  if (typeof entry === 'string') return { name: entry, sdk23: false, maxSdkVersion: null };
+  return { name: String(entry.name), sdk23: Boolean(entry.sdk23), maxSdkVersion: entry.maxSdkVersion == null ? null : Number(entry.maxSdkVersion) };
+}
+
+const describePermission = (p) => `${p.sdk23 ? 'uses-permission-sdk-23' : 'uses-permission'} ${p.name}${p.maxSdkVersion == null ? '' : ` maxSdkVersion=${p.maxSdkVersion}`}`;
+
+/** Every way the APK's permissions differ from the expected ones, as messages. Empty when they agree. */
+export function permissionFailures(apkPermissions, expectedPermissions) {
+  const failures = [];
+  const expected = new Map(expectedPermissions.map((p) => [p.name, p]));
+  const seen = new Set();
+  for (const p of apkPermissions) {
+    const want = expected.get(p.name);
+    if (seen.has(p.name)) { failures.push(`permission declared twice in the APK: ${p.name}`); continue; }
+    seen.add(p.name);
+    if (!want) { failures.push(`unexpected permission: ${describePermission(p)}`); continue; }
+    if (p.sdk23 !== want.sdk23 || p.maxSdkVersion !== want.maxSdkVersion) {
+      failures.push(`permission ${p.name} is declared as "${describePermission(p)}" in the APK, expected "${describePermission(want)}"`);
+    }
+  }
+  for (const want of expectedPermissions) {
+    if (!seen.has(want.name)) failures.push(`missing permission: ${describePermission(want)}`);
+  }
+  return failures;
+}
+
+const COMPONENT_KINDS = ['activity', 'activity-alias', 'service', 'receiver', 'provider'];
+
+/** The components an APK declares, from `aapt2 dump xmltree --file AndroidManifest.xml`, as "kind name". */
+export function parseApkComponents(xmltree) {
+  const out = [];
+  const lines = xmltree.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const element = /^\s*E: ([a-z-]+) /.exec(lines[i]);
+    if (!element || !COMPONENT_KINDS.includes(element[1])) continue;
+    // The element's attributes follow it, up to the next element.
+    for (let j = i + 1; j < lines.length && !/^\s*E: /.test(lines[j]); j++) {
+      const name = /android:name\(0x01010003\)="([^"]+)"/.exec(lines[j]);
+      if (name) { out.push(`${element[1]} ${name[1]}`); break; }
+    }
+  }
+  return out.sort();
+}
+
+/** The components a source AndroidManifest.xml declares, as "kind name"; a leading dot is the module's namespace. */
+export function declaredComponents(manifestXml, namespace) {
+  const out = [];
+  const withoutComments = manifestXml.replace(/<!--[\s\S]*?-->/g, '');
+  for (const m of withoutComments.matchAll(/<(activity-alias|activity|service|receiver|provider)\b([^>]*)>/g)) {
+    const name = /android:name="([^"]+)"/.exec(m[2]);
+    if (!name) continue;
+    out.push(`${m[1]} ${name[1].startsWith('.') ? namespace + name[1] : name[1]}`);
+  }
+  return out.sort();
+}
+
+/**
+ * A component in the APK that neither the base shell nor a listed capability's shell
+ * half declares is code from somewhere it should not be (an unlisted capability's
+ * service, a library's provider nobody decided on). One that is declared and absent
+ * is a capability that will not work.
+ */
+export function componentFailures(apkComponents, expectedComponents) {
+  const failures = [];
+  for (const c of apkComponents) if (!expectedComponents.includes(c)) failures.push(`unexpected component in the APK: ${c}`);
+  for (const c of expectedComponents) if (!apkComponents.includes(c)) failures.push(`component missing from the APK: ${c}`);
+  return failures;
+}
+
+/** What kind of build was verified, for the last line of the output. */
+export function buildTypeLine(badging, signerText) {
+  const debuggable = /^application-debuggable/m.test(badging);
+  const signer = signerText == null ? 'signer not checked'
+    : /CN=Android Debug/.test(signerText) ? 'signed with the Android debug key' : 'signed with a key that is not the Android debug key';
+  return `${debuggable ? 'debug build (debuggable)' : 'not debuggable'}, ${signer}`;
 }

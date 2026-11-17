@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Asserts a built device APK matches its devices/<id>.yml: package, SDK levels,
-// exact permission set, a baked payload whose sha256 equals the built payload's
-// .sha256 file (when that file exists), and exactly the listed capabilities.
+// exact permission set (uses-permission-sdk-23 and maxSdkVersion included), the
+// declared components, a baked payload whose sha256 equals the built payload's
+// .sha256 file (a missing file fails), and exactly the listed capabilities.
+// The last line says what kind of build was checked.
 //
 //   node tools/verify-build.mjs portal
 //   node tools/verify-build.mjs piano --legacy   (also compare with tools/legacy-permissions.yml)
@@ -11,7 +13,10 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
-import { bakedPayloadFailure, newestVersion, sha256Hex, synthLibraryFailure } from './verify-lib.mjs';
+import {
+  bakedPayloadFailure, buildTypeLine, componentFailures, declaredComponents, expectedPermission, newestVersion,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
+} from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const id = process.argv[2];
@@ -54,22 +59,29 @@ const pkg = /package: name='([^']+)'/.exec(badging)?.[1];
 const minSdk = Number(/sdkVersion:'(\d+)'/.exec(badging)?.[1]);
 const targetSdk = Number(/targetSdkVersion:'(\d+)'/.exec(badging)?.[1]);
 const versionCode = Number(/versionCode='(\d+)'/.exec(badging)?.[1]);
-const permissions = [...badging.matchAll(/uses-permission: name='([^']+)'/g)].map((m) => m[1]).sort();
+const apkPermissions = parsePermissions(badging);
+const permissions = apkPermissions.map((p) => p.name);
 
 check(pkg === device.package, `package is ${pkg}, expected ${device.package}`);
 check(minSdk === device.android.minSdk, `minSdk is ${minSdk}, expected ${device.android.minSdk}`);
 check(targetSdk === device.android.targetSdk, `targetSdk is ${targetSdk}, expected ${device.android.targetSdk}`);
 check(versionCode === device.shell.versionCode, `versionCode is ${versionCode}, expected ${device.shell.versionCode}`);
 
-const expectedPermissions = [...new Set([
+// One entry per name. A capability.yml or device file states a permission as a name,
+// or as {name, sdk23, maxSdkVersion} when the manifest declares it that way.
+const expectedByName = new Map();
+for (const entry of [
   ...BASE_PERMISSIONS,
   ...device.capabilities.flatMap((name) => capabilities[name]?.permissions || []),
   ...(device.permissions || []),
-])].sort();
-const extra = permissions.filter((p) => !expectedPermissions.includes(p));
-const missing = expectedPermissions.filter((p) => !permissions.includes(p));
-check(extra.length === 0, `unexpected permissions: ${extra.join(', ')}`);
-check(missing.length === 0, `missing permissions: ${missing.join(', ')}`);
+]) {
+  const p = expectedPermission(entry);
+  const earlier = expectedByName.get(p.name);
+  check(!earlier || (earlier.sdk23 === p.sdk23 && earlier.maxSdkVersion === p.maxSdkVersion),
+    `permission ${p.name} is stated two different ways in the capability and device files`);
+  expectedByName.set(p.name, p);
+}
+failures.push(...permissionFailures(apkPermissions, [...expectedByName.values()]));
 
 // The shell service's foreground types must be exactly the device file's.
 // aapt2 prints the flags attribute as a hex mask, for example
@@ -81,6 +93,19 @@ const typeMatch = /foregroundServiceType\(0x[0-9a-f]+\)=(?:\(type 0x[0-9a-f]+\))
 const builtTypes = typeMatch ? Number(typeMatch[1]) : 0;
 const wantedTypes = (device.foregroundServiceTypes || []).reduce((mask, t) => mask | TYPE_BITS[t], 0);
 check(builtTypes === wantedTypes, `foregroundServiceType mask is ${builtTypes}, expected ${wantedTypes}`);
+
+// The APK's activities, services, receivers and providers must be exactly those of
+// the base shell and of the listed capabilities' shell halves.
+const namespaceOf = (moduleDir) => /namespace '([^']+)'/.exec(readFileSync(join(moduleDir, 'build.gradle'), 'utf8'))?.[1] || '';
+const componentsOf = (moduleDir) => {
+  const manifest = join(moduleDir, 'src/main/AndroidManifest.xml');
+  return existsSync(manifest) ? declaredComponents(readFileSync(manifest, 'utf8'), namespaceOf(moduleDir)) : [];
+};
+const expectedComponents = [...new Set([
+  ...componentsOf(join(root, 'shell')),
+  ...device.capabilities.flatMap((name) => componentsOf(join(root, 'capabilities', name, 'shell'))),
+])].sort();
+failures.push(...componentFailures(parseApkComponents(tree), expectedComponents));
 
 // A capability with native code must ship a library for every ABI of the device.
 const entries = execFileSync('unzip', ['-Z1', apk], { encoding: 'utf8' }).split('\n');
@@ -157,4 +182,11 @@ if (failures.length) {
   for (const f of failures) console.error(`✗ ${f}`);
   process.exit(1);
 }
-console.log(`✓ ${id}: ${pkg}, sdk ${minSdk}-${targetSdk}, ${permissions.length} permissions, capabilities [${device.capabilities.join(', ')}], baked payload ${bakedSha.slice(0, 12)}`);
+// What was verified is a debug build: the only kind this project builds. Said here so
+// that nobody reads a pass as a statement about a release build.
+let signer = null;
+try {
+  signer = execFileSync(join(sdk, 'build-tools', buildTools, 'apksigner'), ['verify', '--print-certs', apk], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+} catch { /* apksigner needs a Java runtime; without one the signer is reported as not checked */ }
+console.log(`✓ ${id}: ${pkg}, sdk ${minSdk}-${targetSdk}, ${permissions.length} permissions, ${expectedComponents.length} components, capabilities [${device.capabilities.join(', ')}], baked payload ${bakedSha.slice(0, 12)}`);
+console.log(`  build type: ${buildTypeLine(badging, signer)}`);

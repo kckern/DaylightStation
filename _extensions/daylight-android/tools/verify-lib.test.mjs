@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bakedPayloadFailure, byVersion, newestVersion, sha256Hex, synthLibraryFailure } from './verify-lib.mjs';
+import {
+  bakedPayloadFailure, buildTypeLine, byVersion, componentFailures, declaredComponents, expectedPermission, newestVersion,
+  parseApkComponents, parsePermissions, permissionFailures, sha256Hex, synthLibraryFailure,
+} from './verify-lib.mjs';
 
 test('build-tools versions order by number, not by text', () => {
   assert.ok(byVersion('9.0.0', '33.0.2') < 0);
@@ -34,9 +37,9 @@ test('a baked payload that differs from the built payload fails and says it is s
   assert.match(message, /stale payload/);
 });
 
-test('no .sha256 file means nothing to compare', () => {
-  assert.equal(bakedPayloadFailure(Buffer.from('x'), null), null);
-  assert.equal(bakedPayloadFailure(Buffer.from('x'), undefined), null);
+test('a missing .sha256 file is a failure, not a pass', () => {
+  assert.match(bakedPayloadFailure(Buffer.from('x'), null), /\.sha256 file is missing/);
+  assert.match(bakedPayloadFailure(Buffer.from('x'), undefined), /\.sha256 file is missing/);
 });
 
 test('a .sha256 file without a digest is a failure, not a pass', () => {
@@ -88,4 +91,138 @@ test('a synth library that names the build machine home directory is refused', (
   assert.match(synthLibraryFailure(lib, '/home/builder'), /build machine/);
   assert.equal(synthLibraryFailure(lib, '/home/someone-else'), null);
   assert.equal(synthLibraryFailure(lib), null);
+});
+
+// ── permissions ───────────────────────────────────────────────────────────
+
+const BADGING = [
+  "package: name='net.kckern.daylight.example' versionCode='3' versionName='0.1'",
+  "sdkVersion:'26'",
+  "uses-permission: name='android.permission.INTERNET'",
+  "uses-permission: name='android.permission.BLUETOOTH' maxSdkVersion='30'",
+  "uses-permission: name='android.permission.BLUETOOTH_SCAN' usesPermissionFlags='neverForLocation'",
+  "uses-permission-sdk-23: name='android.permission.ACCESS_FINE_LOCATION'",
+  'application-debuggable',
+].join('\n');
+
+test('badging permissions are read with their sdk-23 and maxSdkVersion forms', () => {
+  assert.deepEqual(parsePermissions(BADGING), [
+    { name: 'android.permission.ACCESS_FINE_LOCATION', sdk23: true, maxSdkVersion: null },
+    { name: 'android.permission.BLUETOOTH', sdk23: false, maxSdkVersion: 30 },
+    { name: 'android.permission.BLUETOOTH_SCAN', sdk23: false, maxSdkVersion: null },
+    { name: 'android.permission.INTERNET', sdk23: false, maxSdkVersion: null },
+  ]);
+});
+
+test('an expected permission is a name or a name with its form', () => {
+  assert.deepEqual(expectedPermission('a.b.C'), { name: 'a.b.C', sdk23: false, maxSdkVersion: null });
+  assert.deepEqual(expectedPermission({ name: 'a.b.C', maxSdkVersion: 30 }), { name: 'a.b.C', sdk23: false, maxSdkVersion: 30 });
+  assert.deepEqual(expectedPermission({ name: 'a.b.C', sdk23: true }), { name: 'a.b.C', sdk23: true, maxSdkVersion: null });
+});
+
+test('the same permissions in the same form pass', () => {
+  const expected = ['android.permission.INTERNET', { name: 'android.permission.BLUETOOTH', maxSdkVersion: 30 },
+    'android.permission.BLUETOOTH_SCAN', { name: 'android.permission.ACCESS_FINE_LOCATION', sdk23: true }].map(expectedPermission);
+  assert.deepEqual(permissionFailures(parsePermissions(BADGING), expected), []);
+});
+
+test('a permission the APK asks for only from API 23 is not the plain permission', () => {
+  const apk = parsePermissions("uses-permission-sdk-23: name='a.b.C'");
+  const failures = permissionFailures(apk, [expectedPermission('a.b.C')]);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /uses-permission-sdk-23 a\.b\.C/);
+});
+
+test('an sdk-23 permission nobody declared is unexpected, where the old check never saw it', () => {
+  const failures = permissionFailures(parsePermissions("uses-permission-sdk-23: name='a.b.Hidden'"), []);
+  assert.deepEqual(failures, ['unexpected permission: uses-permission-sdk-23 a.b.Hidden']);
+});
+
+test('a maxSdkVersion that differs, appears or disappears is a failure', () => {
+  const capped = parsePermissions("uses-permission: name='a.b.C' maxSdkVersion='30'");
+  assert.equal(permissionFailures(capped, [expectedPermission('a.b.C')]).length, 1);
+  assert.equal(permissionFailures(capped, [expectedPermission({ name: 'a.b.C', maxSdkVersion: 28 })]).length, 1);
+  assert.equal(permissionFailures(parsePermissions("uses-permission: name='a.b.C'"), [expectedPermission({ name: 'a.b.C', maxSdkVersion: 30 })]).length, 1);
+  assert.deepEqual(permissionFailures(capped, [expectedPermission({ name: 'a.b.C', maxSdkVersion: 30 })]), []);
+});
+
+test('missing and unexpected permissions are both reported', () => {
+  const failures = permissionFailures(parsePermissions("uses-permission: name='a.b.Extra'"), [expectedPermission('a.b.Wanted')]);
+  assert.deepEqual(failures, ['unexpected permission: uses-permission a.b.Extra', 'missing permission: uses-permission a.b.Wanted']);
+});
+
+// ── components ────────────────────────────────────────────────────────────
+
+const XMLTREE = `
+N: android=http://schemas.android.com/apk/res/android (line=2)
+  E: manifest (line=2)
+      E: application (line=70)
+        A: http://schemas.android.com/apk/res/android:label(0x01010001)="Daylight" (Raw: "Daylight")
+          E: service (line=73)
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=false
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="net.example.shell.ShellService" (Raw: "net.example.shell.ShellService")
+          E: activity (line=78)
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="net.example.shell.MainActivity" (Raw: "net.example.shell.MainActivity")
+              E: intent-filter (line=80)
+                  E: action (line=81)
+                    A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.intent.action.MAIN" (Raw: "android.intent.action.MAIN")
+          E: provider (line=126)
+            A: http://schemas.android.com/apk/res/android:authorities(0x01010018)="net.example.mic" (Raw: "net.example.mic")
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="net.example.cap.mic.shell.MicAnchorProvider" (Raw: "net.example.cap.mic.shell.MicAnchorProvider")
+`;
+
+test('the components of an APK are read from its manifest tree, intent actions left aside', () => {
+  assert.deepEqual(parseApkComponents(XMLTREE), [
+    'activity net.example.shell.MainActivity',
+    'provider net.example.cap.mic.shell.MicAnchorProvider',
+    'service net.example.shell.ShellService',
+  ]);
+});
+
+const SHELL_MANIFEST = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:label="Daylight">
+    <!-- <service android:name=".Removed" /> -->
+    <activity android:name=".MainActivity" android:exported="true">
+      <intent-filter><action android:name="android.intent.action.MAIN" /></intent-filter>
+    </activity>
+    <service
+        android:name=".ShellService"
+        android:exported="false" />
+  </application>
+</manifest>`;
+
+test('a source manifest names its components, a leading dot resolved against the namespace', () => {
+  assert.deepEqual(declaredComponents(SHELL_MANIFEST, 'net.example.shell'), [
+    'activity net.example.shell.MainActivity',
+    'service net.example.shell.ShellService',
+  ]);
+  assert.deepEqual(declaredComponents('<manifest><application><provider android:name="net.example.cap.mic.shell.MicAnchorProvider" /></application></manifest>', 'ignored'),
+    ['provider net.example.cap.mic.shell.MicAnchorProvider']);
+});
+
+test('the APK of a device that lists the capability passes', () => {
+  const expected = [...declaredComponents(SHELL_MANIFEST, 'net.example.shell'), 'provider net.example.cap.mic.shell.MicAnchorProvider'];
+  assert.deepEqual(componentFailures(parseApkComponents(XMLTREE), expected), []);
+});
+
+test('a component from a capability the device does not list fails', () => {
+  const expected = declaredComponents(SHELL_MANIFEST, 'net.example.shell');
+  assert.deepEqual(componentFailures(parseApkComponents(XMLTREE), expected),
+    ['unexpected component in the APK: provider net.example.cap.mic.shell.MicAnchorProvider']);
+});
+
+test('a declared component that is not in the APK fails', () => {
+  const expected = [...parseApkComponents(XMLTREE), 'service net.example.cap.a11y.shell.Service'];
+  assert.deepEqual(componentFailures(parseApkComponents(XMLTREE), expected),
+    ['component missing from the APK: service net.example.cap.a11y.shell.Service']);
+});
+
+// ── build type ────────────────────────────────────────────────────────────
+
+test('the build type line says what was verified', () => {
+  assert.equal(buildTypeLine(BADGING, 'Signer #1 certificate DN: C=US, O=Android, CN=Android Debug'),
+    'debug build (debuggable), signed with the Android debug key');
+  assert.equal(buildTypeLine(BADGING, null), 'debug build (debuggable), signer not checked');
+  assert.equal(buildTypeLine("package: name='x'", 'Signer #1 certificate DN: CN=Example Release'),
+    'not debuggable, signed with a key that is not the Android debug key');
 });

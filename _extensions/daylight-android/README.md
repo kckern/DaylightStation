@@ -76,7 +76,7 @@ export DAYLIGHT_ANDROID_TOKENS={private-tokens-file}
 Run from this directory:
 
 ```bash
-./gradlew build                                # all unit tests and lint, all devices
+./gradlew build                                # all unit tests, lint and the port check, all devices
 ./gradlew :shell:assemble<Device>Debug         # one device's APK, payload baked in
 ./gradlew :payload:payload<Device>             # one device's payload jar + sha256
 node tools/verify-build.mjs <device>
@@ -98,11 +98,27 @@ The payload version defaults to `p2-helpers`. Override it with
 
 `tools/verify-build.mjs` reads the built APK and fails with exit code 1 when the
 package, SDK levels, version code, permission set or the capability classes in the
-baked payload differ from the device file. It also compares the sha256 of the
+baked payload differ from the device file. A permission is compared in the form it
+is declared: `uses-permission-sdk-23` and a `maxSdkVersion` are part of it, and a
+`capability.yml` that needs one states the permission as
+`{name: ..., sdk23: true}` or `{name: ..., maxSdkVersion: 30}`. The APK's
+activities, services, receivers and providers must be exactly those the base shell
+and the listed capabilities' shell halves declare, so a component from a
+capability the device does not list fails. It also compares the sha256 of the
 APK's `assets/payload-baked.jar` with the payload build's `.jar.sha256` file (the
-most recently written one, when any exists) and fails when they differ, which
-means the APK holds a stale payload. Run it after building and before installing.
-It needs `ANDROID_HOME` and the repo's `node_modules`.
+most recently written one) and fails when they differ, which means the APK holds a
+stale payload, or when there is no such file to compare with. Its last line names
+the kind of build it checked. Run it after building and before installing. It
+needs `ANDROID_HOME` and the repo's `node_modules`; with a Java runtime on hand it
+also reads the signing certificate.
+
+Only a debug build exists. Every APK this project produces is debuggable and
+signed with the Android debug key; there is no release signing configuration.
+That is an accepted limit, and what it means is this: on a device with ADB
+enabled, `run-as <package>` opens the app's private storage, so anyone with ADB
+access can read the device's control token and the stored settings, secret ones
+(`presence.token`, `lease.credential`) included. ADB is enabled on these devices
+by design, so ADB access to a device is to be treated as access to its token.
 
 Tests: `./gradlew build` runs the Java unit tests of every module. The payload
 module's tests run once per device, against that device's generated configuration:
@@ -282,8 +298,11 @@ are in the shell half, and `tools/verify-build.mjs` checks the built APK.
 `bash tools/port.sh <move|adapt> <source.java> <dest-dir> <new.package> [Old=New ...]`
 copies one file, rewrites its package, applies class renames and records the pair
 in `tools/port-map.tsv`. `node tools/port-check.mjs` then compares every `move` row
-with its source (package, imports and added `public` aside) and lists the `adapt`
-rows. A move and a behavior change never share a commit; a file that is edited
+with its source (package and imports aside, and a declaration that was made
+`public`) and lists the `adapt` rows. It fails for a `move` row that differs and
+for an `adapt` row that is identical to its source, so the labels stay true.
+`./gradlew build` runs it (the root project's `portCheck` task, part of `check`).
+A move and a behavior change never share a commit; a file that is edited
 after its move has its row changed to `adapt`. The script does not rewrite imports
 of nested classes from the old package; fix those by hand in the move commit.
 Before committing a move, search the copied files for addresses, device names and
@@ -296,8 +315,10 @@ such an identifier is moved and scrubbed in the same commit, with its row set to
 - Never commit an APK, a payload jar, `local.properties`, or anything under
   `build/` or `.gradle/`. The only tracked jar is the Gradle wrapper; `.gitignore`
   ignores every other `*.jar`.
-- `devices/` holds device files only. Files there whose name contains `secret`,
-  `token` or `auth` are ignored by git, so do not name a device that way.
+- `devices/` holds device files only. Git tracks a file there only when its name
+  is a device id followed by `.yml` (lower-case letters and digits, starting with
+  a letter) or is `_example.yml`; every other name is ignored, and so is a name
+  containing `secret`, `token` or `auth`, so do not name a device that way.
 - No addresses, tokens or household paths in this directory. Device files hold
   package names, SDK levels, ports, permission names and setting defaults; a
   default that is an address or a device identity is a `{placeholder}`.
