@@ -231,6 +231,10 @@ view. Until it exists, the calls can be made from Chrome's remote inspector
     (waiting five seconds between them): the fourth answers `rate_limited`.
 11. Remove a pinned media shortcut from the home screen, then reopen the app: the
     chooser no longer lists it.
+13. Ask for a pin, force-stop the app while the dialog is open, then add the shortcut.
+    The chooser does not list it, the shortcut stays enabled after the app is opened
+    again, and a tap on it shows "This shortcut was not saved. Remove it and pin it
+    again from the Media page".
 12. With 24 pinned media shortcuts (once, if practical), a 25th answers
     `limit_reached` and none of the 24 is disabled.
 

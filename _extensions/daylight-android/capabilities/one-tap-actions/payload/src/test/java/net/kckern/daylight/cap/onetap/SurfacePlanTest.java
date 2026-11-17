@@ -102,6 +102,23 @@ public class SurfacePlanTest {
         assertTrue(SurfacePlan.pins(CATALOG, java.util.Collections.<String>emptyList()).update.isEmpty());
     }
 
+    /**
+     * A pinned media shortcut the owner confirmed but the app did not record (the app
+     * restarted while the dialog was open, a late confirmation) is left pinned: never
+     * disabled, and kept under the current key so a tap reaches the app and says why.
+     * Only the shape a pinned media action has (media- and twelve hex digits) is spared.
+     */
+    @Test public void anUnrecordedPinnedMediaShortcutIsKeptAndNotDisabled() {
+        String orphan = "pin-media-0123456789ab";
+        SurfacePlan.Pins pins = SurfacePlan.pins(CATALOG, java.util.Arrays.asList(orphan, "pin-media-notahash", "pin-gone"));
+        assertEquals(java.util.Collections.singletonMap(orphan, "media-0123456789ab"), pins.unrecorded);
+        assertFalse(pins.disable.contains(orphan));
+        assertEquals(java.util.Arrays.asList("pin-media-notahash", "pin-gone"), pins.disable);
+        assertTrue(SurfacePlan.unrecordedMediaId("media-0123456789ab"));
+        assertFalse(SurfacePlan.unrecordedMediaId("media-0123456789aB"));
+        assertFalse(SurfacePlan.unrecordedMediaId("memo"));
+    }
+
     /** A tile whose action plays household media names that action for the play service; no other tile does. */
     @Test public void aTileOfAMediaActionIsMarkedForDirectPlay() {
         ActionCatalog withMedia = ActionCatalog.parse(Arrays.asList("memo|New memo|mic|memo:new", "radio|Radio|play|media:plex:12345"));

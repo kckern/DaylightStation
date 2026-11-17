@@ -242,6 +242,53 @@ public class SurfaceRoutesTest {
         assertNull(core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:0")));
     }
 
+    /** A shortcut the owner pinned but the app never recorded stays pinned, and a tap says what to do. */
+    @Test public void aPinConfirmedTooLateStaysPinnedAndATapSaysToPinItAgain() throws Exception {
+        cap.start();
+        pinner().pinMedia("plex:7", "Seven");
+        String token = sink.token;
+        String id = PinnedMedia.idFor("plex:7");
+        now += OneTapActionsCapability.PIN_CONFIRM_MS + 1;
+        confirm(token);
+        assertNull(core.services().find(ActionList.class).mediaContentId(id));
+        assertEquals(200, post("/actions/publish", null).getInt("_status"));
+        assertFalse("never disabled", sink.disabled.contains("pin-" + id));
+        assertTrue("kept under the current key", sink.kept.contains("pin-" + id));
+        net.kckern.daylight.core.spi.LinkHandler link = null;
+        for (net.kckern.daylight.core.spi.LinkHandler h : core.services().all(net.kckern.daylight.core.spi.LinkHandler.class)) {
+            if ("action".equals(h.kind())) link = h;
+        }
+        JSONObject r = link.handle(id, java.util.Collections.<String, String>emptyMap());
+        assertEquals("toast", r.getString("effect"));
+        assertEquals(OneTapActionsCapability.UNRECORDED_PIN, r.getString("message"));
+        assertEquals("This shortcut was not saved. Remove it and pin it again from the Media page", OneTapActionsCapability.UNRECORDED_PIN);
+    }
+
+    /** A pending request holds a slot: a confirmation is never refused because the list filled meanwhile. */
+    @Test public void aPendingRequestReservesItsSlot() throws Exception {
+        cap.start();
+        for (int i = 0; i < PinnedMedia.MAX - 2; i++) pinAndConfirm("plex:" + i, "L" + i);
+        pinner().pinMedia("plex:a", "A");
+        String a = sink.token;
+        now += 21_000;
+        pinner().pinMedia("plex:b", "B");
+        String b = sink.token;
+        now += 21_000;
+        JSONObject r = pinner().pinMedia("plex:c", "C");
+        assertFalse("two kept slots are held by the two open dialogs", r.getBoolean("accepted"));
+        assertEquals("limit_reached", r.getString("reason"));
+        confirm(b);
+        confirm(a);
+        assertEquals("plex:a", core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:a")));
+        assertEquals("plex:b", core.services().find(ActionList.class).mediaContentId(PinnedMedia.idFor("plex:b")));
+        // A request whose dialog was never answered frees its slot when it expires.
+        sink.pinnedIds.remove("pin-" + PinnedMedia.idFor("plex:0"));
+        now += 61_000;
+        assertTrue(pinner().pinMedia("plex:d", "D").getBoolean("accepted"));
+        now += OneTapActionsCapability.PIN_CONFIRM_MS + 61_000;
+        assertTrue(pinner().pinMedia("plex:e", "E").getBoolean("accepted"));
+    }
+
     /** Across documents: three accepted requests a minute in the whole process, whatever reloads the page. */
     @Test public void atMostThreeRequestsAMinuteAreAcceptedInTheProcess() throws Exception {
         cap.start();

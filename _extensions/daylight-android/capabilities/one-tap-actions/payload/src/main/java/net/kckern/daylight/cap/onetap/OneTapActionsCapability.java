@@ -224,7 +224,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     static final int PINS_PER_MINUTE = 3;
     static final String LIMIT_REACHED = "limit_reached";
     static final String RATE_LIMITED = "rate_limited";
-    private static final int MAX_PENDING = 16;
+    /** What a tap on a pinned media shortcut the app never recorded answers. */
+    static final String UNRECORDED_PIN = "This shortcut was not saved. Remove it and pin it again from the Media page";
     private final Object pinLock = new Object();
     private PinnedMedia pinned;
     private final java.util.LinkedHashMap<String, PendingPin> pendingPins = new java.util.LinkedHashMap<>();
@@ -286,13 +287,16 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         synchronized (pinLock) {
             pruneUnpinned(s);
             PinnedMedia p = pinned();
-            if (p.find(a.id) == null && p.full()) return refusal(LIMIT_REACHED);
             long now = clock.getAsLong();
+            // Each open dialog holds a slot, so its confirmation is never refused for a full list.
+            for (java.util.Iterator<PendingPin> it = pendingPins.values().iterator(); it.hasNext(); ) {
+                if (now - it.next().atMs > PIN_CONFIRM_MS) it.remove();
+            }
+            if (p.find(a.id) == null && p.all().size() + reservedSlots(p, a.id) >= PinnedMedia.MAX) return refusal(LIMIT_REACHED);
             while (!acceptedAt.isEmpty() && now - acceptedAt.peekFirst() >= 60_000) acceptedAt.pollFirst();
             if (acceptedAt.size() >= PINS_PER_MINUTE) return refusal(RATE_LIMITED);
             token = newToken();
             pendingPins.put(token, new PendingPin(contentId, label, now));
-            while (pendingPins.size() > MAX_PENDING) pendingPins.remove(pendingPins.keySet().iterator().next());
         }
         try {
             s.pin(a, uri(a), token);
@@ -332,6 +336,16 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         } catch (RuntimeException launcher) {
             core.shell().note("ACTION", "could not publish after a pin: " + launcher.getClass().getSimpleName());
         }
+    }
+
+    /** Open requests for content not yet in the list, other than this action: the slots they hold. */
+    private int reservedSlots(PinnedMedia p, String exceptId) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (PendingPin r : pendingPins.values()) {
+            String id = PinnedMedia.idFor(r.contentId);
+            if (!id.equals(exceptId) && p.find(id) == null) ids.add(id);
+        }
+        return ids.size();
     }
 
     /** Drops the entries whose pinned shortcut the launcher no longer holds, so its slot is free. */
@@ -422,6 +436,13 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     /** ActionList: the one path every surface's run takes (a keyed link, POST /actions/run, the car screen). */
     @Override public JSONObject run(String id) throws Exception {
         final Action a = everything().find(id == null ? "" : id);
+        if (a == null && SurfacePlan.unrecordedMediaId(id)) {
+            // A pinned media shortcut the owner added but the app did not record (the app
+            // restarted while the dialog was open, or the confirmation came too late). Its
+            // content is not known here: only a hash of it is in the id.
+            core.shell().note("ACTION", id + " is a pinned shortcut that was not saved");
+            return LinkEffect.toast(UNRECORDED_PIN);
+        }
         if (a == null) throw new IllegalArgumentException("unknown action");
         if (a.kind == Kind.API) {
             String outcome = callApi(a);

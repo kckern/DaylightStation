@@ -87,6 +87,19 @@ final class AndroidSurfaces implements SurfaceSink {
         if (m == null) return;
         List<ShortcutInfo> infos = new ArrayList<>();
         for (Map.Entry<String, Action> e : pins.update.entrySet()) infos.add(info(e.getValue(), linker.uri(e.getValue()), e.getKey()));
+        if (!pins.unrecorded.isEmpty()) {
+            // A pinned media shortcut the app did not record keeps the label the launcher
+            // shows and is rewritten under the current key, so a tap reaches the app and is
+            // told the shortcut was not saved, instead of being refused as a stale link.
+            for (ShortcutInfo held : m.getPinnedShortcuts()) {
+                String actionId = pins.unrecorded.get(held.getId());
+                if (actionId == null) continue;
+                CharSequence shown = held.getShortLabel();
+                String label = shown == null || shown.length() == 0 ? "Media" : shown.toString();
+                Action placeholder = new Action(actionId, label, "play", ActionCatalog.Kind.MEDIA, "");
+                infos.add(info(placeholder, linker.uri(placeholder), held.getId()));
+            }
+        }
         if (!infos.isEmpty()) m.updateShortcuts(infos);
         if (!pins.disable.isEmpty()) m.disableShortcuts(pins.disable, "This action is no longer set up");
     }

@@ -93,7 +93,18 @@ final class SurfacePlan {
         final Map<String, Action> update = new LinkedHashMap<>();
         /** Shortcut ids whose action is gone: nothing they could launch would be honoured. */
         final List<String> disable = new ArrayList<>();
+        /**
+         * Pinned media shortcuts the owner confirmed but the app did not record (shortcut
+         * id to action id). Never disabled: rewritten under the current key so a tap
+         * reaches the app, which says the shortcut was not saved.
+         */
+        final Map<String, String> unrecorded = new LinkedHashMap<>();
     }
+
+    private static final java.util.regex.Pattern MEDIA_ID = java.util.regex.Pattern.compile("media-[0-9a-f]{12}");
+
+    /** An id of the shape a pinned media action has (PinnedMedia.idFor). */
+    static boolean unrecordedMediaId(String actionId) { return actionId != null && MEDIA_ID.matcher(actionId).matches(); }
 
     /**
      * A pinned shortcut is found by its shortcut id ("pin-<action>", or the action's own
@@ -102,8 +113,11 @@ final class SurfacePlan {
     static Pins pins(ActionCatalog catalog, List<String> pinnedIds) {
         Pins pins = new Pins();
         for (String id : pinnedIds) {
-            Action a = catalog.find(id.startsWith(PIN_PREFIX) ? id.substring(PIN_PREFIX.length()) : id);
-            if (a == null) pins.disable.add(id); else pins.update.put(id, a);
+            String actionId = id.startsWith(PIN_PREFIX) ? id.substring(PIN_PREFIX.length()) : id;
+            Action a = catalog.find(actionId);
+            if (a != null) pins.update.put(id, a);
+            else if (id.startsWith(PIN_PREFIX) && unrecordedMediaId(actionId)) pins.unrecorded.put(id, actionId);
+            else pins.disable.add(id);
         }
         return pins;
     }

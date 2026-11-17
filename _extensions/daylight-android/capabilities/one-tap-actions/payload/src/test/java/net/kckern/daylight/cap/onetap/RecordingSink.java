@@ -30,6 +30,8 @@ final class RecordingSink implements SurfaceSink {
 
     final List<String> refreshed = new ArrayList<>();
     final List<String> disabled = new ArrayList<>();
+    /** Unrecorded pinned media shortcuts, kept under the current key. */
+    final List<String> kept = new ArrayList<>();
     /** The shortcut ids the launcher holds as pinned. */
     List<String> pinnedIds = new ArrayList<>();
 
@@ -40,6 +42,8 @@ final class RecordingSink implements SurfaceSink {
         disabled.clear();
         for (Map.Entry<String, Action> e : pins.update.entrySet()) refreshed.add(e.getKey() + " " + linker.uri(e.getValue()));
         disabled.addAll(pins.disable);
+        kept.clear();
+        kept.addAll(pins.unrecorded.keySet());
     }
 
     boolean refuse;

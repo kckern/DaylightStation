@@ -738,7 +738,7 @@ side says something like "Confirm on the dialog", never "Added".
 | `refused` | No answer from the native side: the token is not this document's (an old document, a guessed token), the main frame is on another origin, or the bridge is gone. Built by the shim |
 | `not_top_frame` | The calling document is a frame, not the top frame |
 | `rate_limited` | A second request from the same document within five seconds of its last request that was let through (counted: `pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process); or a fourth accepted request within a minute in the app's process, whatever document or reload asks |
-| `limit_reached` | 24 pinned media actions are kept already. No pin is pushed out for a new one; the owner removes a pinned media shortcut from the home screen first, which frees its slot. The web side shows "Too many home screen shortcuts; remove one first" |
+| `limit_reached` | 24 pinned media actions are kept already, counting the requests whose dialog is still open. No pin is pushed out for a new one; the owner removes a pinned media shortcut from the home screen first, which frees its slot. The web side shows "Too many home screen shortcuts; remove one first" |
 | `bad_request` | Not a JSON object, or `contentId` or `label` missing or not a string |
 | `invalid_content_id` | Fails the media service's content id rule: a URL, a source named like a URL scheme (`http`, `javascript`, `intent`, ...), an empty, `.` or `..` segment, a backslash, a bar or a control character, a modifier segment (`shuffle`, `playable`, `launchable`, `recent_on_top`, `expand`), or longer than 400 characters |
 | `invalid_label` | After trimming, empty or longer than 40 characters (counted as code points), or holding a control character, a format character (every bidi override and isolate, the direction marks, zero-width characters), a line or paragraph separator, a lone surrogate, a private-use or unassigned character |
@@ -771,17 +771,23 @@ must be one lower-case word; whatever else the native side holds is dropped.
    action recorded, in the app's private state
    (`files/payloads/state/pinned-media.json`), newest last. A dismissed dialog never
    sends it; a token that matches no request of the last ten minutes, or was used
-   already, records nothing. If the app's process was restarted between the dialog
-   and the confirmation, the token is gone and the pin is not recorded (its
-   shortcut is then disabled at the next publish, as for any pinned shortcut with no
-   action).
-6. At most 24 are kept. A new pin when 24 are kept is refused before the dialog
+   already, records nothing. Pending requests are held in memory only.
+6. A shortcut the owner added that was not recorded (the app restarted while the
+   dialog was open, the confirmation came after ten minutes, or the receiver could not
+   reach the payload) stays pinned and is never disabled. At each publish it is
+   rewritten under the current key with the label the launcher shows, so a tap
+   reaches the app, which answers "This shortcut was not saved. Remove it and pin it
+   again from the Media page" and plays nothing: only a hash of the content is in its
+   id. It holds no slot in the list.
+7. At most 24 are kept, and each open dialog holds a slot until it is confirmed or
+   its ten minutes run out, so a confirmation is never refused for a full list. A new
+   pin when the kept and held slots reach 24 is refused before the dialog
    (`limit_reached`); nothing is pushed out and no shortcut is disabled for it.
    Pinning the same content again renames it and makes it the newest. At every
    publish, and before every request, an entry whose `pin-<id>` shortcut the launcher
    no longer holds (`getPinnedShortcuts()`) is dropped, so removing a shortcut from
    the home screen frees its slot.
-7. The surfaces are published again: the "Daylight button" chooser lists the
+8. The surfaces are published again: the "Daylight button" chooser lists the
    pinned action after the configured ones, and a button bound to it plays with no
    window (the play service asks the payload for an action id, and the pinned
    actions are among those it answers for). The pinned shortcut is rewritten under
@@ -936,9 +942,17 @@ So the check sits at the binder boundary:
   uid.
 - **A transaction that is let through** goes to the library's binder in
   `DaylightCarAppService`, which is not exported and has no intent filter. The gate
-  binds it in process, with the host's own intent (the `SessionInfo` is in its
-  extras), on the first transaction let through, and unbinds when the host does
-  (`onUnbind`, which Android also calls when the host dies). The forward is a local
+  binds it in process on the first transaction let through, with an intent it builds
+  itself: the component and the session the binding names in its identifier
+  (Android 10 and later) or data path (`"<display type>/<session id>"`, what the
+  library's `SessionInfoIntentEncoder` writes there and `Intent.filterEquals`
+  compares), encoded again with the library's own encoder. A client's extras, which
+  Android does not compare between clients, are never passed on, so the first app to
+  bind cannot choose the session Android Auto gets. With no readable key the library's
+  default session applies. The gate unbinds when the clients do (`onUnbind`, which
+  Android also calls when the host dies), and binds again on the next let-through
+  call if Android hands the same gate binder back (it keeps a service's binder for an
+  intent while the service lives). The forward is a local
   `Binder.transact` on the same binder thread, with the parcels as they came, so the
   descriptor is the library's own (`androidx.car.app.ICarApp`) and the library still
   reads the host's uid at its handshake.
