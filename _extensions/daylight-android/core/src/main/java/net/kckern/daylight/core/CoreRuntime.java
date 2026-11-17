@@ -56,7 +56,7 @@ public final class CoreRuntime implements CoreContext {
     private volatile UpdateInstaller updateInstaller;
 
     /** The download and install behind POST /update. sha256 is null when the caller gave none. */
-    interface UpdateInstaller { UpdateFlow.Result fetchAndInstall(String url, String sha256) throws Exception; }
+    interface UpdateInstaller { UpdateFlow.Result fetchAndInstall(String url, String sha256, Runnable verified) throws Exception; }
 
     /** Test seam: POST /update needs an Android context otherwise. */
     void useUpdateInstallerForTest(UpdateInstaller installer) { updateInstaller = installer; }
@@ -132,8 +132,8 @@ public final class CoreRuntime implements CoreContext {
         if (shell.context() != null) {
             CoreServices d = new CoreServices(this, config);
             device = d;
-            updateInstaller = (url, sha256) -> UpdateFlow.run(url, sha256, new File(d.ctx.getCacheDir(), "update.apk"),
-                    (from, dest) -> Downloads.to(from, dest, Downloads.MAX_UPDATE_BYTES, "apk"), d.updateDevice());
+            updateInstaller = (url, sha256, verified) -> UpdateFlow.run(url, sha256, new File(d.ctx.getCacheDir(), "update.apk"),
+                    (from, dest) -> Downloads.to(from, dest, Downloads.MAX_UPDATE_BYTES, "apk"), d.updateDevice(), verified);
             d.start();
             // stop() ran while the services were starting and may not have seen them.
             if (stopped) { try { d.stop(); } catch (Throwable ignored) { } }
@@ -244,8 +244,7 @@ public final class CoreRuntime implements CoreContext {
                 Diag.log("Daylight-Core", "/update from " + req.remote + " url=" + url);
                 updateError = null;
                 updateState = "downloading";
-                exemptInstallerFromRecall();
-                UpdateFlow.Result result = installer.fetchAndInstall(url, sha);
+                UpdateFlow.Result result = installer.fetchAndInstall(url, sha, this::exemptInstallerFromRecall);
                 // The session is committed. Without device owner Android now shows a confirm
                 // dialog; the result lands in the shell log (lifeline GET /log), not here.
                 updateCommittedAtMs = updateClock.getAsLong();
@@ -259,10 +258,12 @@ public final class CoreRuntime implements CoreContext {
             } catch (UpdateFlow.Refused e) {
                 updateState = "failed";
                 updateError = e.getMessage();
+                endInstallerExemption();
                 return Replies.json(Replies.err(updateError).put("state", updateState));
             } catch (Exception e) {
                 updateState = "failed";
                 updateError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                endInstallerExemption();
                 return Replies.json(Replies.err(updateError).put("state", updateState));
             } finally {
                 updateInFlight.set(false);
@@ -332,14 +333,26 @@ public final class CoreRuntime implements CoreContext {
 
     /**
      * A locked kiosk recalls itself over anything that is not allowed in front, and the
-     * installer's confirm dialog is not. For the length of one update the installer's
-     * packages are exempt; the exemption is timed and ends by itself.
+     * installer's confirm dialog is not. Once an update's APK is staged and verified the
+     * installer's packages are exempt, until the update ends: it failed, nobody confirmed
+     * it in time, or it was installed (which replaces this process and with it the
+     * exemption, which is held in memory only). A download or a check that fails never
+     * gets this far, so it opens nothing. The grant is timed as well and ends by itself.
      */
     private void exemptInstallerFromRecall() {
         net.kckern.daylight.core.spi.LockdownControl lockdown = services.find(net.kckern.daylight.core.spi.LockdownControl.class);
         if (lockdown == null) return;
         for (String installer : UpdateConfirmRule.installerPackages()) {
             try { lockdown.allowFor(installer, UpdatePolicy.INSTALLER_EXEMPT_MS); } catch (Throwable ignored) { }
+        }
+    }
+
+    /** The update reached an end that is not an install: the installer has no more business in front. */
+    private void endInstallerExemption() {
+        net.kckern.daylight.core.spi.LockdownControl lockdown = services.find(net.kckern.daylight.core.spi.LockdownControl.class);
+        if (lockdown == null) return;
+        for (String installer : UpdateConfirmRule.installerPackages()) {
+            try { lockdown.revoke(installer); } catch (Throwable ignored) { }
         }
     }
 
@@ -354,6 +367,7 @@ public final class CoreRuntime implements CoreContext {
         updateError = "not_confirmed: the install was not confirmed within "
                 + (UpdatePolicy.CONFIRM_WINDOW_MS / 1000) + " s (dismissed or failed; see the lifeline GET /log)";
         updateState = "failed";
+        endInstallerExemption();
         CoreServices d = device;
         if (d != null) {
             try { d.updateConfirmation.finish(); } catch (Throwable ignored) { }

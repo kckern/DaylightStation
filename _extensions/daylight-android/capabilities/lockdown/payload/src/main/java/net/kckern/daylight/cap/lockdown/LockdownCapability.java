@@ -16,6 +16,7 @@ import net.kckern.daylight.core.AccessibilityHub;
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.EventBus;
+import net.kckern.daylight.core.LogEvents;
 import net.kckern.daylight.core.MainThread;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Requests;
@@ -174,6 +175,8 @@ public final class LockdownCapability implements Capability, LockdownControl {
         s.declare("lockdown.recallGraceMs", Type.INTEGER, 0, SettingsRegistry.range(0, 60_000));
         // The ceiling and the default length of an unlock. It cannot be switched off.
         s.declare("lockdown.maxUnlockMin", Type.INTEGER, MAX_UNLOCK_MIN, SettingsRegistry.range(1, MAX_UNLOCK_MIN));
+        // How long the PIN gesture unlocks for. Shorter than an API unlock, and never past the ceiling.
+        s.declare("lockdown.pinUnlockMin", Type.INTEGER, 10, SettingsRegistry.range(1, MAX_UNLOCK_MIN));
         // A secret: never returned, never compiled in. Empty means the gesture is off.
         s.declareSecret("lockdown.exitPin");
         s.declare("lockdown.immersive", Type.BOOLEAN, true);
@@ -202,6 +205,9 @@ public final class LockdownCapability implements Capability, LockdownControl {
             return Router.Response.json(200, Replies.ok().put("locked", true).put("mode", mode()));
         });
         router.route("POST", "/lockdown/unlock", req -> {
+            // With lockdown off there is nothing to unlock, and an unlock recorded now would
+            // be waiting, with its window, for the moment lockdown is switched on.
+            if (!bool("lockdown.enabled")) throw new UnsupportedException("lockdown.enabled is false");
             JSONObject body = Requests.body(req);
             Long forMs = null;
             if (body.has("forMs")) {
@@ -564,7 +570,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         if (sh != null) sh.set(locked && bool("lockdown.statusBarShield"));
     }
 
-    /** Every unlock ends: with no duration it gets the ceiling, and a longer one is cut to it. */
+    /** Every unlock ends: with no duration it gets the ceiling, and a longer one is cut to it. The PIN gesture asks for lockdown.pinUnlockMin. */
     private long unlock(Long forMs, String why) {
         long relockAt;
         synchronized (lockGuard) {
@@ -587,10 +593,26 @@ public final class LockdownCapability implements Capability, LockdownControl {
         surface.promptPin("Enter PIN", entered -> {
             pinPromptAtMs = 0;
             // The PIN is read when it is checked, and neither it nor what was typed is logged.
+            long lockedOutBefore = gesture.lockedOutUntilMs();
             ExitGesture.Pin result = gesture.attempt(entered, str("lockdown.exitPin"), System.currentTimeMillis());
             note("exit gesture: " + result);
-            if (result == ExitGesture.Pin.OK) unlock(null, "PIN");
+            long lockedOutUntil = gesture.lockedOutUntilMs();
+            if (lockedOutUntil != lockedOutBefore) warnPinLockout(lockedOutUntil);
+            if (result == ExitGesture.Pin.OK) unlock(integer("lockdown.pinUnlockMin") * 60_000L, "PIN");
         });
+    }
+
+    /**
+     * Five wrong PINs in a row: someone is guessing at the kiosk. Said once, as a warning,
+     * in the event log, on the event bus and to the log store. Never the PIN or what was typed.
+     */
+    private void warnPinLockout(long untilMs) {
+        try {
+            JSONObject data = new JSONObject().put("wrongAttempts", ExitGesture.MAX_WRONG).put("untilMs", untilMs);
+            core.log().add("lockdown.pin.lockout " + data);
+            core.events().publish("lockdown", new JSONObject().put("event", "lockdown.pin.lockout").put("level", "warn").put("data", data));
+            LogEvents.emit("lockdown.pin.lockout", "warn", data);
+        } catch (Throwable ignored) { }
     }
 
     /** Caller holds lockGuard. */
@@ -710,6 +732,13 @@ public final class LockdownCapability implements Capability, LockdownControl {
         exemptions.allowFor(rule, System.currentTimeMillis(), durationMs);
         if (owner != null && ownerMode() && locked()) enforceOwner();
         note("allowed for " + Math.min(durationMs, Exemptions.MAX_MS) + " ms: " + rule);
+    }
+
+    @Override public void revoke(String rule) {
+        exemptions.revoke(rule);
+        // The lock-task list was widened for the rule; narrow it again.
+        if (owner != null && ownerMode() && locked()) enforceOwner();
+        note("exemption ended: " + rule);
     }
 
     @Override public boolean recall(long waitMs) {

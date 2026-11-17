@@ -30,7 +30,7 @@ public class UpdateRouteTest {
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
         final AtomicInteger runs = new AtomicInteger();
-        core.useUpdateInstallerForTest((url, sha) -> {
+        core.useUpdateInstallerForTest((url, sha, verified) -> {
             runs.incrementAndGet();
             entered.countDown();
             if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("never released");
@@ -64,7 +64,7 @@ public class UpdateRouteTest {
     @Test public void aFailedUpdateReleasesTheGuard() throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         core.prepare(new JSONObject("{}"));
-        core.useUpdateInstallerForTest((url, sha) -> { throw new IOException("apk is larger than 5 bytes"); });
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new IOException("apk is larger than 5 bytes"); });
         JSONObject failed = TestCore.call(core, "POST", "/update", null, BODY);
         assertEquals("IOException: apk is larger than 5 bytes", failed.getString("error"));
         assertEquals("failed", failed.getString("state"));
@@ -131,7 +131,7 @@ public class UpdateRouteTest {
 
     private String refusalOf(String sha, FakeDevice device, File staged) throws Exception {
         try {
-            UpdateFlow.run("http://192.0.2.1/a.apk", sha, staged, APK_BYTES, device);
+            UpdateFlow.run("http://192.0.2.1/a.apk", sha, staged, APK_BYTES, device, () -> device.calls.add("verified"));
             return null;
         } catch (UpdateFlow.Refused refused) {
             return refused.getMessage();
@@ -178,17 +178,20 @@ public class UpdateRouteTest {
         String sha = UpdateFlow.sha256Of(probe);
         FakeDevice device = new FakeDevice();
         File staged = new File(dir, "update.apk");
-        UpdateFlow.Result r = UpdateFlow.run("http://192.0.2.1/a.apk", sha.toUpperCase(), staged, APK_BYTES, device);
+        UpdateFlow.Result r = UpdateFlow.run("http://192.0.2.1/a.apk", sha.toUpperCase(), staged, APK_BYTES, device,
+                () -> device.calls.add("verified"));
         assertTrue(r.confirming);
-        assertEquals(java.util.Arrays.asList("inspect", "commit exists=true", "confirm 31"), device.calls);
+        // "verified" is where the installer exemption is armed: after the checks, before the commit.
+        assertEquals(java.util.Arrays.asList("inspect", "verified", "commit exists=true", "confirm 31"), device.calls);
         assertFalse("the staged file is not kept after the commit", staged.exists());
     }
 
     @Test public void withoutAHashTheInstallIsCommittedAndNeverConfirmedForTheUser() throws Exception {
         FakeDevice device = new FakeDevice();     // update.autoConfirm is on
-        UpdateFlow.Result r = UpdateFlow.run("http://192.0.2.1/a.apk", null, new File(tmp.newFolder(), "update.apk"), APK_BYTES, device);
+        UpdateFlow.Result r = UpdateFlow.run("http://192.0.2.1/a.apk", null, new File(tmp.newFolder(), "update.apk"), APK_BYTES, device,
+                () -> device.calls.add("verified"));
         assertFalse(r.confirming);
-        assertEquals(java.util.Arrays.asList("inspect", "commit exists=true"), device.calls);
+        assertEquals(java.util.Arrays.asList("inspect", "verified", "commit exists=true"), device.calls);
     }
 
     @Test public void theDecisionsOnTheirOwn() {
@@ -214,7 +217,7 @@ public class UpdateRouteTest {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         core.prepare(new JSONObject("{}"));
         final java.util.List<String> seen = new java.util.ArrayList<>();
-        core.useUpdateInstallerForTest((url, sha) -> { seen.add(url + " " + sha); return new UpdateFlow.Result(5, sha != null); });
+        core.useUpdateInstallerForTest((url, sha, verified) -> { seen.add(url + " " + sha); return new UpdateFlow.Result(5, sha != null); });
 
         JSONObject withSha = TestCore.call(core, "POST", "/update", null,
                 "{\"url\":\"http://192.0.2.1/a.apk\",\"sha256\":\"" + SHA_OF_APK + "\"}");
@@ -238,7 +241,7 @@ public class UpdateRouteTest {
     @Test public void aRefusalIsTheRoutesErrorAndLeavesTheStateFailed() throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         core.prepare(new JSONObject("{}"));
-        core.useUpdateInstallerForTest((url, sha) -> { throw new UpdateFlow.Refused("wrong_package: the APK is a, this app is b"); });
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new UpdateFlow.Refused("wrong_package: the APK is a, this app is b"); });
         JSONObject refused = TestCore.call(core, "POST", "/update", null, BODY);
         assertFalse(refused.getBoolean("ok"));
         assertEquals("wrong_package: the APK is a, this app is b", refused.getString("error"));
@@ -252,7 +255,7 @@ public class UpdateRouteTest {
         core.prepare(new JSONObject("{}"));
         final long[] now = { 1_000_000L };
         core.useUpdateClockForTest(() -> now[0]);
-        core.useUpdateInstallerForTest((url, sha) -> new UpdateFlow.Result(5, false));
+        core.useUpdateInstallerForTest((url, sha, verified) -> new UpdateFlow.Result(5, false));
         assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
 
         now[0] += 90_000L;
@@ -273,34 +276,107 @@ public class UpdateRouteTest {
 
     // ── an update under lockdown ──────────────────────────────────────────────
 
-    @Test public void theInstallersDialogIsExemptFromRecallWhileAnUpdateWaitsForIt() throws Exception {
+    /** Lockdown, as far as an update uses it: what is exempt right now, and every grant ever made. */
+    private static final class FakeLockdown implements net.kckern.daylight.core.spi.LockdownControl {
+        final java.util.List<String> grants = new java.util.ArrayList<>();
+        final java.util.Set<String> inForce = new java.util.TreeSet<>();
+        @Override public boolean locked() { return true; }
+        @Override public String front() { return null; }
+        @Override public String frontActivity() { return null; }
+        @Override public String lastAway() { return null; }
+        @Override public void allowWhileInFront(String packageName) { }
+        @Override public void allowFor(String rule, long durationMs) { grants.add(rule + " " + durationMs); inForce.add(rule); }
+        @Override public void revoke(String rule) { inForce.remove(rule); }
+        @Override public boolean recall(long waitMs) { return true; }
+    }
+
+    private static final java.util.Set<String> INSTALLERS = new java.util.TreeSet<>(
+            java.util.Arrays.asList("com.android.packageinstaller", "com.google.android.packageinstaller"));
+
+    private CoreRuntime lockedDown(FakeLockdown lockdown) throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         core.prepare(new JSONObject("{}"));
-        final java.util.List<String> grants = new java.util.ArrayList<>();
-        final java.util.List<String> atInstall = new java.util.ArrayList<>();
-        core.services().provide(net.kckern.daylight.core.spi.LockdownControl.class, new net.kckern.daylight.core.spi.LockdownControl() {
-            @Override public boolean locked() { return true; }
-            @Override public String front() { return null; }
-            @Override public String frontActivity() { return null; }
-            @Override public String lastAway() { return null; }
-            @Override public void allowWhileInFront(String packageName) { }
-            @Override public void allowFor(String rule, long durationMs) { grants.add(rule + " " + durationMs); }
-            @Override public boolean recall(long waitMs) { return true; }
+        core.services().provide(net.kckern.daylight.core.spi.LockdownControl.class, lockdown);
+        return core;
+    }
+
+    @Test public void theInstallersDialogIsExemptFromRecallWhileAnUpdateWaitsForIt() throws Exception {
+        final FakeLockdown lockdown = new FakeLockdown();
+        CoreRuntime core = lockedDown(lockdown);
+        final java.util.List<String> beforeVerified = new java.util.ArrayList<>();
+        final java.util.List<String> atCommit = new java.util.ArrayList<>();
+        core.useUpdateInstallerForTest((url, sha, verified) -> {
+            beforeVerified.addAll(lockdown.inForce);      // the download and the checks
+            verified.run();
+            atCommit.addAll(lockdown.inForce);            // the session is committed here
+            return new UpdateFlow.Result(5, false);
         });
-        core.useUpdateInstallerForTest((url, sha) -> { atInstall.addAll(grants); return new UpdateFlow.Result(5, false); });
         assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+        assertTrue("nothing is exempt while the APK is only being fetched and checked", beforeVerified.isEmpty());
         // In place before the session is committed: the dialog appears at the commit, and
         // a watcher that recalled the kiosk over it would leave the install unconfirmed.
-        assertTrue(atInstall.contains("com.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
-        assertTrue(atInstall.contains("com.google.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
-        assertEquals("nothing but the two installer packages", 2, new java.util.HashSet<>(grants).size());
-        assertTrue("timed: the exemption ends by itself", UpdatePolicy.INSTALLER_EXEMPT_MS <= 10 * 60_000L);
+        assertEquals(INSTALLERS, new java.util.TreeSet<>(atCommit));
+        assertTrue(lockdown.grants.contains("com.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
+        assertTrue(lockdown.grants.contains("com.google.android.packageinstaller " + UpdatePolicy.INSTALLER_EXEMPT_MS));
+        assertEquals("nothing but the two installer packages", 2, new java.util.HashSet<>(lockdown.grants).size());
+        assertEquals("still exempt while the dialog waits", INSTALLERS, lockdown.inForce);
+        assertTrue("timed: the exemption ends by itself, soon after the confirmation window",
+                UpdatePolicy.INSTALLER_EXEMPT_MS >= UpdatePolicy.CONFIRM_WINDOW_MS
+                        && UpdatePolicy.INSTALLER_EXEMPT_MS <= UpdatePolicy.CONFIRM_WINDOW_MS + 60_000L);
+    }
+
+    @Test public void aDownloadOrACheckThatFailsExemptsNothing() throws Exception {
+        final FakeLockdown lockdown = new FakeLockdown();
+        CoreRuntime core = lockedDown(lockdown);
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new IOException("connection refused"); });
+        assertEquals("failed", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+        core.useUpdateInstallerForTest((url, sha, verified) -> { throw new UpdateFlow.Refused("sha256_mismatch: expected a, the download is b"); });
+        assertEquals("failed", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+        assertTrue("the installer was never allowed in front", lockdown.grants.isEmpty());
+    }
+
+    @Test public void aCommitThatFailsEndsTheExemption() throws Exception {
+        final FakeLockdown lockdown = new FakeLockdown();
+        CoreRuntime core = lockedDown(lockdown);
+        core.useUpdateInstallerForTest((url, sha, verified) -> { verified.run(); throw new IllegalStateException("session refused"); });
+        assertEquals("failed", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
+        assertEquals("armed once the APK was verified", 2, lockdown.grants.size());
+        assertTrue("and cleared when the update failed", lockdown.inForce.isEmpty());
+    }
+
+    @Test public void anUpdateNobodyConfirmedEndsTheExemption() throws Exception {
+        final FakeLockdown lockdown = new FakeLockdown();
+        CoreRuntime core = lockedDown(lockdown);
+        final long[] now = { 1_000_000L };
+        core.useUpdateClockForTest(() -> now[0]);
+        core.useUpdateInstallerForTest((url, sha, verified) -> { verified.run(); return new UpdateFlow.Result(5, false); });
+        TestCore.call(core, "POST", "/update", null, BODY);
+        assertEquals(INSTALLERS, lockdown.inForce);
+        now[0] += UpdatePolicy.CONFIRM_WINDOW_MS + 1;
+        assertEquals("failed", TestCore.get(core, "/update").getString("state"));
+        assertTrue(lockdown.inForce.isEmpty());
+    }
+
+    @Test public void theFlowSignalsVerifiedOnlyAfterEveryCheckPassed() throws Exception {
+        File staged = new File(tmp.newFolder(), "update.apk");
+        FakeDevice mismatch = new FakeDevice();
+        refusalOf(SHA_OF_APK, mismatch, staged);
+        assertFalse(mismatch.calls.contains("verified"));
+        FakeDevice other = new FakeDevice();
+        other.apk = new UpdateFlow.ApkInfo("com.example.other", 99);
+        refusalOf(null, other, staged);
+        assertFalse(other.calls.contains("verified"));
+        try {
+            UpdateFlow.run("http://192.0.2.1/a.apk", null, staged, (url, dest) -> { throw new IOException("no route"); },
+                    new FakeDevice(), () -> fail("a failed download is not verified"));
+            fail("expected IOException");
+        } catch (IOException expected) { }
     }
 
     @Test public void anUpdateWithNoLockdownInTheBuildNeedsNoExemption() throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         core.prepare(new JSONObject("{}"));
-        core.useUpdateInstallerForTest((url, sha) -> new UpdateFlow.Result(5, false));
+        core.useUpdateInstallerForTest((url, sha, verified) -> new UpdateFlow.Result(5, false));
         assertEquals("awaiting_confirmation", TestCore.call(core, "POST", "/update", null, BODY).getString("state"));
     }
 }

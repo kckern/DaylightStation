@@ -13,11 +13,14 @@ final class UpdatePolicy {
     static final long CONFIRM_WINDOW_MS = 90_000L;
 
     /**
-     * How long the system installer may be in front of a locked kiosk for one update:
-     * the download, then the confirmation window. Granted before the download starts,
-     * because the dialog appears the moment the session is committed.
+     * The longest the system installer may be in front of a locked kiosk for one update:
+     * writing the verified APK into the install session, then the confirmation window.
+     * Granted only once the download is staged and verified, because the dialog appears
+     * the moment the session is committed, and withdrawn as soon as the update fails or
+     * the window runs out. The time limit is the backstop for an update whose end
+     * nobody asks about.
      */
-    static final long INSTALLER_EXEMPT_MS = 5 * 60_000L;
+    static final long INSTALLER_EXEMPT_MS = CONFIRM_WINDOW_MS + 30_000L;
 
     private static final Pattern SHA256 = Pattern.compile("[0-9a-fA-F]{64}");
 

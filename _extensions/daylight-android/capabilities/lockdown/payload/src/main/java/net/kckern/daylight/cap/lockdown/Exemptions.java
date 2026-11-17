@@ -11,7 +11,8 @@ import java.util.TreeSet;
 /**
  * Temporary additions to the allowlist. Pure Java.
  *
- *   allowFor          a rule for a limited time, capped at one hour (pairing dialog, installer)
+ *   allowFor          a rule for a limited time, capped at one hour (pairing dialog, installer);
+ *                     revoke ends it early
  *   allowWhileInFront a package until it has been in front and left (an app the kiosk launched)
  */
 final class Exemptions {
@@ -50,6 +51,20 @@ final class Exemptions {
         }
         for (Iterator<WhileFront> it = fronts.iterator(); it.hasNext(); ) if (it.next().pkg.equals(packageName)) it.remove();
         fronts.add(new WhileFront(packageName, nowMs));
+    }
+
+    /** Ends every timed exemption granted for exactly this rule. A rule that is not in force, or not a rule, is ignored. */
+    synchronized void revoke(String rule) {
+        if (rule == null) return;
+        String text;
+        try {
+            AllowRules parsed = AllowRules.parse(rule);
+            if (parsed.describe().size() != 1) return;
+            text = parsed.describe().get(0);
+        } catch (IllegalArgumentException notARule) {
+            return;
+        }
+        for (Iterator<Timed> it = timed.iterator(); it.hasNext(); ) if (it.next().text.equals(text)) it.remove();
     }
 
     /** Feed the package in front (null when unknown) every tick. */

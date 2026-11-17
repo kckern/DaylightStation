@@ -19,6 +19,9 @@ public interface LockdownControl {
     /** Allow a rule (AllowRules syntax) for a limited time. Capped at one hour. */
     void allowFor(String rule, long durationMs);
 
+    /** End every timed exemption granted for exactly this rule, before its time is up. Unknown rules are ignored. */
+    void revoke(String rule);
+
     /** Bring the kiosk to the front and wait up to waitMs. True when the kiosk Activity is resumed. */
     boolean recall(long waitMs);
 }

@@ -59,6 +59,7 @@ public class AppLauncherCapabilityTest {
         @Override public String lastAway() { return null; }
         @Override public void allowWhileInFront(String packageName) { order.add("allow " + packageName); }
         @Override public void allowFor(String rule, long durationMs) { }
+        @Override public void revoke(String rule) { }
         @Override public boolean recall(long waitMs) { return true; }
     }
 

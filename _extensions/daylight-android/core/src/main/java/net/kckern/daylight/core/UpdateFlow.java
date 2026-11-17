@@ -48,10 +48,12 @@ final class UpdateFlow {
 
     /**
      * @param sha256 what the caller says the APK hashes to, already checked to be 64 hex characters, or null
+     * @param verified run once the download passed every check, just before it is handed to the
+     *                 installer. Never run for a download that failed or was refused.
      * The staged file is deleted on every path: once committed its bytes are in the
      * install session, and a refused download has no reason to stay on disk.
      */
-    static Result run(String url, String sha256, File staged, Fetcher fetcher, Device device) throws Exception {
+    static Result run(String url, String sha256, File staged, Fetcher fetcher, Device device, Runnable verified) throws Exception {
         try {
             long bytes = fetcher.fetch(url, staged);
             String refusal = UpdatePolicy.shaRefusal(sha256, sha256 == null ? null : sha256Of(staged));
@@ -61,6 +63,7 @@ final class UpdateFlow {
                         device.ownPackage(), device.installedVersionCode());
             }
             if (refusal != null) throw new Refused(refusal);
+            verified.run();
             int sessionId = device.commit(staged);
             // After the commit, so the confirmation knows which session it is waiting on.
             boolean confirming = UpdatePolicy.mayAutoConfirm(device.autoConfirmSetting(), sha256 != null);

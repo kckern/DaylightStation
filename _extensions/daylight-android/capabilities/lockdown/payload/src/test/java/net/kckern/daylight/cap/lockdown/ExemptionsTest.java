@@ -62,6 +62,19 @@ public class ExemptionsTest {
         assertEquals(java.util.Arrays.asList("com.c.d while in front"), e.describe(6_000));
     }
 
+    @Test public void aTimedExemptionCanBeRevokedBeforeItExpires() {
+        Exemptions e = new Exemptions();
+        e.allowFor("com.a.b", 0, 60_000);
+        e.allowFor("com.a.b", 10, 60_000);       // granted twice: one revoke ends both
+        e.allowFor("com.c.d", 0, 60_000);
+        e.revoke("com.a.b");
+        assertFalse(e.allows("com.a.b", null, 1_000));
+        assertTrue("another rule is left alone", e.allows("com.c.d", null, 1_000));
+        e.revoke("com.never.granted");           // nothing to do, nothing thrown
+        e.revoke(null);
+        assertEquals(java.util.Arrays.asList("com.c.d until 60000"), e.describe(1_000));
+    }
+
     @Test public void rejectsBadGrants() {
         Exemptions e = new Exemptions();
         for (Runnable bad : new Runnable[] {

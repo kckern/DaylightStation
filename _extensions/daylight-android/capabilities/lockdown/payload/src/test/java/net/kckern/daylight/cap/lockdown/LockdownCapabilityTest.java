@@ -94,6 +94,7 @@ public class LockdownCapabilityTest {
         assertEquals("", core.settings().get("lockdown.allowedApps"));
         assertEquals(0, core.settings().get("lockdown.recallGraceMs"));
         assertEquals(60, core.settings().get("lockdown.maxUnlockMin"));
+        assertEquals(10, core.settings().get("lockdown.pinUnlockMin"));
         assertEquals("", core.settings().get("lockdown.exitPin"));
         assertEquals(Boolean.TRUE, core.settings().get("lockdown.immersive"));
         assertEquals(Boolean.TRUE, core.settings().get("lockdown.statusBarShield"));
@@ -151,6 +152,28 @@ public class LockdownCapabilityTest {
         JSONObject r = call("POST", "/lockdown/lock", null);
         assertEquals(501, r.getInt("_status"));
         assertEquals("lockdown.enabled is false", r.getString("reason"));
+    }
+
+    @Test public void disabledLockdownRefusesToUnlockForTheSameReason() throws Exception {
+        core.settings().set("lockdown.enabled", false);
+        for (String body : new String[] { null, "{}", "{\"forMs\":60000}" }) {
+            JSONObject r = call("POST", "/lockdown/unlock", body);
+            assertEquals(501, r.getInt("_status"));
+            assertEquals("unsupported", r.getString("error"));
+            assertEquals("lockdown.enabled is false", r.getString("reason"));
+        }
+        // Nothing was unlocked behind the refusal: switching lockdown on finds it locked.
+        core.settings().set("lockdown.enabled", true);
+        assertTrue(core.services().find(LockdownControl.class).locked());
+        assertFalse(call("GET", "/lockdown", null).has("relockAtMs"));
+    }
+
+    @Test public void aTimedExemptionCanBeRevoked() throws Exception {
+        LockdownControl control = core.services().find(LockdownControl.class);
+        control.allowFor("com.example.installer", 60_000);
+        assertEquals(1, call("GET", "/lockdown", null).getJSONArray("exemptions").length());
+        control.revoke("com.example.installer");
+        assertEquals(0, call("GET", "/lockdown", null).getJSONArray("exemptions").length());
     }
 
     @Test public void rebootWithoutDeviceOwnerIsUnsupported() {
@@ -400,6 +423,49 @@ public class LockdownCapabilityTest {
         }
     }
 
+    @Test public void aPinUnlockIsShorterThanAnApiUnlock() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        core.settings().set("lockdown.exitPin", "2468");
+        long before = System.currentTimeMillis();
+        sevenTaps(surface);
+        surface.prompt.onPin("2468");
+        long relockAt = call("GET", "/lockdown", null).getLong("relockAtMs");
+        assertTrue("ten minutes by default, not the hour an API unlock gets",
+                relockAt >= before + 10 * 60_000L && relockAt <= System.currentTimeMillis() + 10 * 60_000L);
+
+        // The API unlock keeps its own length, up to the ceiling.
+        call("POST", "/lockdown/lock", null);
+        long api = call("POST", "/lockdown/unlock", "{\"forMs\":" + (45 * 60_000L) + "}").getLong("relockAtMs");
+        assertTrue(api >= before + 45 * 60_000L);
+        assertTrue(call("POST", "/lockdown/unlock", null).getLong("relockAtMs") >= before + HOUR);
+    }
+
+    @Test public void thePinUnlockLengthIsASettingHeldToOneToSixtyMinutesAndToTheCeiling() throws Exception {
+        for (String bad : new String[] { "0", "61", "-1" }) {
+            JSONObject refused = call("POST", "/settings", "{\"key\":\"lockdown.pinUnlockMin\",\"value\":" + bad + "}");
+            assertEquals("value " + bad, 400, refused.getInt("_status"));
+            assertEquals("invalid_setting", refused.getString("error"));
+        }
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        core.settings().set("lockdown.exitPin", "2468");
+        core.settings().set("lockdown.pinUnlockMin", 3);
+        long before = System.currentTimeMillis();
+        sevenTaps(surface);
+        surface.prompt.onPin("2468");
+        long relockAt = call("GET", "/lockdown", null).getLong("relockAtMs");
+        assertTrue(relockAt >= before + 3 * 60_000L && relockAt <= System.currentTimeMillis() + 3 * 60_000L);
+
+        // A PIN unlock never outlasts the ceiling, whatever the two settings say.
+        call("POST", "/lockdown/lock", null);
+        core.settings().set("lockdown.pinUnlockMin", 30);
+        core.settings().set("lockdown.maxUnlockMin", 2);
+        sevenTaps(surface);
+        surface.prompt.onPin("2468");
+        assertTrue(call("GET", "/lockdown", null).getLong("relockAtMs") <= System.currentTimeMillis() + 2 * 60_000L);
+    }
+
     @Test public void fiveWrongPinsLockThePromptOut() throws Exception {
         File dir = tmp.newFolder();
         FakeSurface surface = startForReal(new FakeContext(dir), dir);
@@ -408,6 +474,33 @@ public class LockdownCapabilityTest {
         for (int i = 0; i < ExitGesture.MAX_WRONG; i++) surface.prompt.onPin("0000");
         surface.prompt.onPin("2468");
         assertTrue("the right PIN is refused during the lockout", cap.locked());
+    }
+
+    @Test public void thePinLockoutIsLoggedAsAWarningOnceAndNeverWithThePin() throws Exception {
+        File dir = tmp.newFolder();
+        FakeSurface surface = startForReal(new FakeContext(dir), dir);
+        core.settings().set("lockdown.exitPin", "2468");
+        final java.util.List<JSONObject> warnings = new java.util.ArrayList<>();
+        core.events().subscribe((topic, detail) -> {
+            if ("lockdown".equals(topic) && "warn".equals(detail.optString("level"))) warnings.add(detail);
+        });
+        sevenTaps(surface);
+        for (int i = 0; i < ExitGesture.MAX_WRONG - 1; i++) surface.prompt.onPin("0000");
+        assertTrue("four wrong PINs are not a lockout", warnings.isEmpty());
+        surface.prompt.onPin("0000");
+        assertEquals(1, warnings.size());
+        assertEquals("lockdown.pin.lockout", warnings.get(0).getString("event"));
+        JSONObject data = warnings.get(0).getJSONObject("data");
+        assertEquals(ExitGesture.MAX_WRONG, data.getInt("wrongAttempts"));
+        assertTrue(data.getLong("untilMs") > System.currentTimeMillis());
+        surface.prompt.onPin("2468");           // refused: locked out
+        surface.prompt.onPin("0000");
+        assertEquals("attempts during the lockout add no second warning", 1, warnings.size());
+
+        String events = call("GET", "/log", null).getJSONArray("events").toString();
+        assertTrue("the lockout is in the event log", events.contains("lockdown.pin.lockout"));
+        String everything = events + warnings + ((FakeShell) core.shell()).notes;
+        assertFalse("neither the PIN nor what was typed is logged", everything.contains("2468") || everything.contains("0000"));
     }
 
     // ── the package gate (lease-gate) ─────────────────────────────────────────

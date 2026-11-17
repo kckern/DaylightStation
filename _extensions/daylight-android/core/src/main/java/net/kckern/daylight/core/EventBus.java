@@ -9,7 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Fire-and-forget notifications between capabilities, by topic. The note bus carries
  * live instrument notes and nothing else; this carries everything that is not a note.
  * Topics used by the kiosk: "screen" {on}, "network" {connected}, "key" {code, action},
- * "kiosk-focus" {focused}, "foreground" {event, ...}.
+ * "kiosk-focus" {focused}, "foreground" {event, ...}, "lockdown" {event, level, data}.
  * Listeners run on the publisher's thread and must return quickly.
  */
 public final class EventBus {

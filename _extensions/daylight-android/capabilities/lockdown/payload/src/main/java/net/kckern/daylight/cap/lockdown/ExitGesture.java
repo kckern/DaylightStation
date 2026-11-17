@@ -29,6 +29,9 @@ final class ExitGesture {
         return false;
     }
 
+    /** When the current lockout ends, or 0 when there has been none. Wrong attempts are counted in memory only. */
+    synchronized long lockedOutUntilMs() { return lockedOutUntilMs; }
+
     /** The PIN is never logged, here or by the caller: only the result is. */
     synchronized Pin attempt(String entered, String pin, long nowMs) {
         if (pin == null || pin.isEmpty()) return Pin.DISABLED;
