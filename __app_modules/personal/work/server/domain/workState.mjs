@@ -19,7 +19,8 @@ export function emptyWorkState() {
     snapshots: {},
     commands: {},
     activities: {},
-    decisions: {}
+    decisions: {},
+    baselines: {}
   };
 }
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -62,6 +63,71 @@ export function applyWorkEvents(before, events, {
       const old = state.links[link.id];
       if (old && stableWorkJson(old) !== stableWorkJson(link)) throw workError('WORK_LINK_CONFLICT');
       state.links[link.id] = structuredClone(link);
+    } else if (event.type === 'command.queued') {
+      const r = event.record,
+        c = r?.command;
+      if (!c || c.username !== username || typeof c.id !== 'string' || !/^command\.[a-f0-9]{64}$/.test(c.id) || r.status !== 'queued' || typeof r.requiresConfirmation !== 'boolean' || typeof r.policyRevision !== 'string' || !r.policyRevision || typeof c.expectedVersion !== 'string' || !c.expectedVersion || typeof c.sourceReceipt !== 'string' || !c.sourceReceipt || !finite(c.createdAt) || !['complete', 'reopen', 'transition', 'create_task', 'update_task', 'archive_task', 'delete_task', 'create_container', 'rename_container', 'archive_container'].includes(c.operation) || !c.payload || typeof c.payload !== 'object' || Array.isArray(c.payload) || typeof c.domainId !== 'string' || !c.domainId) throw workError('INVALID_WORK_EVENT');
+      if (c.ref !== null) validateWorkRef(c.ref);
+      if (state.commands[c.id] && stableWorkJson(state.commands[c.id]) !== stableWorkJson(r)) throw workError('WORK_COMMAND_CONFLICT');
+      state.commands[c.id] = structuredClone(r);
+    } else if (event.type === 'command.dispatched') {
+      const r = state.commands[event.commandId];
+      if (!r || r.status !== 'queued' || !finite(event.at) || r.requiresConfirmation && (typeof event.confirmationId !== 'string' || !event.confirmationId)) throw workError('INVALID_WORK_COMMAND_TRANSITION');
+      r.command.confirmationId = event.confirmationId ?? null;
+      r.status = 'dispatching';
+      r.dispatchedAt = event.at;
+    } else if (event.type === 'command.quarantined') {
+      const r = state.commands[event.commandId];
+      if (!r || r.status !== 'dispatching' || !finite(event.at)) throw workError('INVALID_WORK_COMMAND_TRANSITION');
+      r.status = 'uncertain';
+      r.result = {
+        outcome: 'uncertain',
+        ref: r.command.ref,
+        item: null,
+        observation: null,
+        reason: 'recovery_required',
+        retryAfter: null
+      };
+    } else if (event.type === 'command.finished') {
+      const r = state.commands[event.commandId],
+        result = event.result;
+      if (!r || !['dispatching', 'uncertain'].includes(r.status) || !result || !['applied', 'already_applied', 'uncertain', 'conflict', 'denied', 'failed'].includes(result.outcome) || result.ref !== null && !result.ref || result.item !== null && !result.item || result.reason !== null && typeof result.reason !== 'string' || result.retryAfter !== null && !finite(result.retryAfter)) throw workError('INVALID_WORK_COMMAND_TRANSITION');
+      if (result.ref !== null) validateWorkRef(result.ref);
+      if (result.item !== null) validateWorkItem(result.item);
+      r.status = result.outcome === 'already_applied' ? 'applied' : result.outcome;
+      r.result = structuredClone(result);
+    } else if (event.type === 'activity.observed') {
+      const a = event.event;
+      if (!a || a.username !== username || typeof a.id !== 'string' || !a.id.startsWith('work:') || !['created', 'updated', 'completed', 'reopened', 'archived', 'deleted'].includes(a.type) || !finite(a.occurredAt) || !finite(a.observedAt) || a.occurredAt > a.observedAt || a.occurredAtEstimated === true || typeof a.occurrenceId !== 'string' || !a.occurrenceId || !Array.isArray(a.sourceRefs)) throw workError('INVALID_WORK_EVENT');
+      validateWorkRef(a.ref);
+      validateWorkRef(a.containerRef);
+      const old = state.activities[a.id];
+      if (old) {
+        const stable = x => {
+          const {
+            observedAt,
+            ...rest
+          } = x;
+          return rest;
+        };
+        if (stableWorkJson(stable(old.event)) !== stableWorkJson(stable(a))) throw workError('WORK_ACTIVITY_CONFLICT');
+      } else state.activities[a.id] = {
+        event: structuredClone(a),
+        projected: false,
+        knowledgeApplied: false
+      };
+    } else if (event.type === 'observation.baseline') {
+      const key = accountKey(event);
+      validateWorkRef({
+        provider: event.provider,
+        accountId: event.accountId,
+        kind: 'container',
+        id: 'validation'
+      });
+      if (!finite(event.at) || state.baselines[key]) throw workError('INVALID_WORK_EVENT');
+      state.baselines[key] = {
+        at: event.at
+      };
     } else if (event.type === 'recovery.tail') {
       if (!Number.isSafeInteger(event.bytes) || event.bytes < 1 || typeof event.digest !== 'string' || !/^[a-f0-9]{64}$/.test(event.digest)) throw workError('INVALID_WORK_EVENT');
     } else throw workError('INVALID_WORK_EVENT');

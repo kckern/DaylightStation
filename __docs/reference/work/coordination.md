@@ -120,3 +120,24 @@ Readback checks requested fields and detects changes in other represented task
 fields. This is best effort concurrency detection, not an atomic conditional
 write. An updated timestamp without a native completion timestamp remains
 unknown completion time and creates no attributed completion event.
+
+## Durable command boundary
+
+A command intent and its dispatch reservation are separate canonical Work
+transactions. Only the transaction that actually created the reservation may
+send the provider request; a replayed transaction is not another dispatch grant.
+Concurrent duplicate requests therefore share one command and one attempt.
+
+Results and exact canonical observations are committed together. A lost result
+leaves the attempted command uncertain. Recovery reconciles provider state
+without another mutation; an unknown create is never resolved by equal titles.
+Source validity, configured routing and a trusted bound confirmation are checked
+again at dispatch. The command service defaults to deny when those verifiers are
+not wired, and an arbitrary confirmation string grants no authority.
+
+Inbound reconciliation seeds a complete baseline without accomplishments, then
+records distinct actual occurrences after that baseline. Disappearance, partial
+coverage, imported history and estimated timestamps cannot fabricate completion.
+A provider actor stays explicitly attributed; shared project changes do not
+silently become the journal owner's actions. Incoming events never dispatch
+commands or reactivate the relevance overlay.
