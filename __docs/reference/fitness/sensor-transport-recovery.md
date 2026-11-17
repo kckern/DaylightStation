@@ -55,7 +55,9 @@ A diagnosed global loss lasting 180,000 ms checkpoints the current session inste
 of ending it as an empty room. The session keeps its identity and continues
 observing real packets. The checkpoint includes the transport incident event and
 waits behind any earlier save. Autosave suspends only after a successful checkpoint;
-a failed save stays visible in structured logs and remains retryable. The server's
+a failed save stays visible in structured logs and remains retryable. Forced End
+and Stop snapshots queue immutably behind pending writes, so a late checkpoint
+cannot overwrite finalization. The server's
 existing notification outbox continues independently after collection pauses.
 
 The canonical durable fields are additive session metadata:
