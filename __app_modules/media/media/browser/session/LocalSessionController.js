@@ -41,6 +41,7 @@ function itemFromQueueEntry(entry) {
     // here keeps a future refactor that reads currentItem from silently
     // dropping the context line (the round-2 whitelist bug, third copy).
     ...(entry.containerTitle != null ? { containerTitle: entry.containerTitle } : {}),
+    ...(entry.containerContentId != null ? { containerContentId: entry.containerContentId } : {}),
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
     ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
