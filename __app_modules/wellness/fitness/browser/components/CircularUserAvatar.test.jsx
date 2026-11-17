@@ -115,6 +115,35 @@ describe('CircularUserAvatar zone ring laps on a zone crossing', () => {
     expect(angles.at(-1)).toBeCloseTo(342, 5);
   });
 
+  it('a new reading mid-lap moves the landing without stalling the sweep', async () => {
+    const { container, rerender } = render(ring({ zoneId: 'warm', zoneColor: 'yellow', progress: 0.97 }));
+    rerender(ring({ zoneId: 'hot', zoneColor: 'orange', progress: 0.1 }));
+    for (let i = 0; i < 4; i += 1) { await run(16); angles.push(angleOf(container)); }
+    rerender(ring({ zoneId: 'hot', zoneColor: 'orange', progress: 0.15 }));
+    for (let i = 0; i < 30; i += 1) { await run(16); angles.push(angleOf(container)); }
+    const lap = lapPart();
+    // Never backwards, and no stall: every frame through the bottom gains ground.
+    const bottom = lap.filter((a) => a > 380 && a < 520);
+    bottom.slice(1).forEach((a, i) => expect(a - bottom[i]).toBeGreaterThan(3));
+    expect(angles.at(-1)).toBeCloseTo(207, 5);
+  });
+
+  it('a second crossing mid-lap turns back from where the dot is, without a jump', async () => {
+    const { container, rerender } = render(ring({ zoneId: 'warm', zoneColor: 'yellow', progress: 0.97 }));
+    rerender(ring({ zoneId: 'hot', zoneColor: 'orange', progress: 0.1 }));
+    for (let i = 0; i < 5; i += 1) await run(16);
+    const before = angleOf(container) % 360;
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(180);
+    rerender(ring({ zoneId: 'warm', zoneColor: 'yellow', progress: 0.9 }));
+    await run(16);
+    const after = angleOf(container);
+    expect(Math.abs(after - before)).toBeLessThan(30);
+    expect(container.querySelector('.gauge-arc-previous').style.stroke).toBe('orange');
+    for (let i = 0; i < 30; i += 1) await run(16);
+    expect(angleOf(container)).toBeCloseTo(342, 5);
+  });
+
   it('a progress change inside a zone just glides, no lap', async () => {
     const { container, rerender } = render(ring({ zoneId: 'warm', zoneColor: 'yellow', progress: 0.2 }));
     rerender(ring({ zoneId: 'warm', zoneColor: 'yellow', progress: 0.6 }));

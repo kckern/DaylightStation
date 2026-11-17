@@ -403,9 +403,15 @@ export class ZoneProfileStore {
     }
     const zoneTrusted = this._trustedUsers.has(userId);
     const previousZone = this._hysteresis.get(userId)?.committedZoneId ?? null;
+    // A resume lands on the CURRENT reading's zone at once — except Fire, which
+    // must still be held: a rider whose evidence was below Fire starts from that
+    // zone and climbs through the normal Fire hold.
+    const resumeFloorZoneId = resumed && rawZoneId === FIRE_ZONE_ID && resumed.evidence?.zoneId !== FIRE_ZONE_ID
+      ? (resumed.evidence?.zoneId ?? null)
+      : null;
     const stabilized = this.#applyHysteresis(
       userId, zoneTrusted ? rawZoneId : null, committedLadder || [],
-      zoneTrusted && eligible ? heartRate : null, sampleAt
+      zoneTrusted && eligible ? heartRate : null, sampleAt, resumeFloorZoneId
     );
     // Keep raw display/progress available before trust, without publishing it as
     // earned state. Only an accepted reading can justify a newly committed zone.
@@ -657,7 +663,7 @@ export class ZoneProfileStore {
    * @param {Array} zoneConfig - normalized zone config for name/color lookup
    * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null, rawZoneId: string|null, rawZoneName: string|null, rawZoneColor: string|null }}
    */
-  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null) {
+  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null, seedZoneId = null) {
     const ts = now();
     const lookupZone = (id) => {
       if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
@@ -698,6 +704,20 @@ export class ZoneProfileStore {
     // whatever we have, no delay. Both entries into trust already passed
     // their own plausibility rule.
     if (!state) {
+      // Resumed straight into Fire from evidence below it: commit the evidence
+      // zone and let Fire earn its hold (FIRE_UPWARD_CONFIRM_MS) like any climb.
+      if (seedZoneId && seedZoneId !== rawZoneId && getZoneRank(seedZoneId) >= 0
+          && getZoneRank(seedZoneId) < getZoneRank(rawZoneId)) {
+        this._hysteresis.set(userId, {
+          committedZoneId: seedZoneId,
+          lastCommitTs: ts,
+          rawZoneId,
+          rawZoneStableSince: ts,
+          rawSamples: 1,
+          lastSampleAt: sampleAt
+        });
+        return { ...lookupZone(seedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'resume-below-fire', rawSamples: 1, rawStableMs: 0 };
+      }
       this._hysteresis.set(userId, {
         committedZoneId: rawZoneId,
         lastCommitTs: ts,

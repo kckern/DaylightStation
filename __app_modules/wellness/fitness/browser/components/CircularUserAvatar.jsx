@@ -70,7 +70,7 @@ const CircularUserAvatar = ({
   statusBadge = null,
   weakSignal = false
 }) => {
-  const isFireZone = zoneId === 'fire';
+  const isFireZone = String(zoneId || '').toLowerCase() === 'fire';
   //if fire, showIndicator is false
   if (isFireZone) {
     showIndicator = false;
@@ -99,7 +99,7 @@ const CircularUserAvatar = ({
     }
     const { current, previous } = ringArcs(m.angle, m.lap);
     paintArc(currentArcRef.current, current);
-    paintArc(previousArcRef.current, previous, m.prevColor);
+    paintArc(previousArcRef.current, previous, m.prevColor || 'rgba(255, 255, 255, 0.4)');
     orbitRef.current?.style.setProperty('--indicator-angle', `${m.angle}deg`);
   };
 
@@ -116,7 +116,7 @@ const CircularUserAvatar = ({
     if (m.frame) cancelAnimationFrame(m.frame);
     m.from = m.angle;
     m.to = to;
-    m.duration = duration;
+    m.duration = Math.max(1, duration);
     m.startedAt = 0;
     const step = (ts) => {
       if (!m.startedAt) m.startedAt = ts;
@@ -139,8 +139,17 @@ const CircularUserAvatar = ({
       return;
     }
     if (zoneKey !== m.zoneId) {
-      if (m.lap) land();
+      if (m.lap) {
+        // A lap cut short by another crossing carries on from where the dot IS
+        // (folded to one turn), never from where it was headed: the arcs either
+        // side of it already wear the two colours the new lap starts from.
+        if (m.frame) cancelAnimationFrame(m.frame);
+        m.frame = 0;
+        m.angle = ((m.angle % 360) + 360) % 360;
+        m.lap = 0;
+      }
       const dir = lapDirection(m.zoneId, zoneKey);
+      if (dir > 0 && m.angle < 180) m.angle += 360;
       if (dir) logger().debug('zone-ring.lap', { name, from: m.zoneId, to: zoneKey, direction: dir > 0 ? 'up' : 'down' });
       Object.assign(m, { prevColor: m.color, zoneId: zoneKey, color: zoneColor, lap: dir });
       tween(targetAngle + 360 * dir, dir ? RING_LAP_MS : RING_TWEEN_MS, dir ? easeOut : easeInOut);
@@ -148,7 +157,10 @@ const CircularUserAvatar = ({
     }
     m.color = zoneColor;
     const to = targetAngle + 360 * m.lap;
-    if (m.frame ? to !== m.to : to !== m.angle) tween(to, RING_TWEEN_MS);
+    // A new reading mid-lap moves the lap's end, not its pace: restarting the
+    // tween there would stall the dot at the bottom of the quick sweep.
+    if (m.frame && m.lap) m.to = to;
+    else if (m.frame ? to !== m.to : to !== m.angle) tween(to, RING_TWEEN_MS);
   }, [targetAngle, zoneKey, zoneColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Repaint after every render: the gauge remounts when HR returns.

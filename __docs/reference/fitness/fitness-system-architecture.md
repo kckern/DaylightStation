@@ -889,20 +889,18 @@ their zone outranks** a rider at **127 BPM who is only 1/3 through the same zone
 The lower absolute BPM is the higher relative effort, and relative effort is what
 the roster is ranking.
 
-### Sorting ranks the DISPLAYED zone, not the committed zone
+### Sorting ranks the DISPLAYED zone
 
 The comparator reads `displayZoneId` — the zone of the rider's display record
 (`lib/displayZone.js`, see governance-system-architecture.md "The display
 record") — falling back to the committed zone, then `rawZoneId`, when a rider
 has no record.
-The hysteresis-smoothed **committed** zone (see [Zone Hysteresis](#zone-hysteresis-zoneprofilestore))
-remains in force for **governance** and coin awards, and is unaffected by this.
 
 The reason is coherence: **card color, progress bar fill, and sort order must track
-together.** All three read the display record. If the sort ranked the
-committed zone instead, a rider's card would visibly turn `hot` while they stayed
-sorted among the `warm` riders for several seconds — reading as a broken sort
-rather than as deliberate smoothing.
+together.** All three read the display record. Since 2026-11-17 that record's
+zone *is* the hysteresis-smoothed committed zone (see [Zone Hysteresis](#zone-hysteresis-zoneprofilestore))
+whenever the rider has one, so sort, cards, governance and coin awards agree;
+the record only differs before anything is committed.
 
 ### Progress lookup: `zoneProgressIndex`
 

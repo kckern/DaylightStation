@@ -402,7 +402,8 @@ Things to know when reading the table:
 - **Layer 1 governs, and the display shows its zone.** Governance, challenges,
   TreasureBox, the garage zone LEDs and the Fire ceremony read the *committed*
   zone, and so does the zone a rider *sees* (the **display record**, next
-  section), so card, ring and room agree. Only the progress bar is live.
+  section), so card, ring and room agree (the LEDs follow the same commit
+  after their own ~1s debounce). Only the progress bar is live.
 - **The exit margin is per zone floor, for every downgrade.** It is measured
   from the floor of the zone the rider is *committed to*: Hot → Warm, Warm →
   Active and Active → Cool all need HR 5 BPM under the floor being left. A drop
@@ -411,7 +412,11 @@ Things to know when reading the table:
   must be **held** 5s at or above its floor (owner, 2026-11-17: a rider sat at
   exactly 160 on a 160 floor for under 4s and got the full ceremony; his real
   Fire that day held the line ~13s). The replay is pinned in
-  `ZoneProfileStore.fireHold.test.js`.
+  `ZoneProfileStore.fireHold.test.js`. A rider resuming after a strap dropout
+  lands on the current reading's zone at once, except Fire when the evidence
+  was below it: they start from the evidence zone and Fire earns its hold
+  (`commitPath: 'resume-below-fire'`). A kiosk reload with no evidence
+  (`restored: 'no-evidence'`) still resumes whatever zone it reads.
 - **Unlocking is never damped** (Layer 2 below). Only the way down has grace.
 - Logs: `zoneprofilestore.exit_margin_suppressed` (sampled, 3/min),
   `fitness.zone_state.transition` with `commitPath`,
@@ -433,8 +438,8 @@ sort/grouping, and the zone colour and progress on governance overlay chips.
 
 - **The zone is the committed zone** (Layer 1), whenever the rider has one on
   the ladder. A rider hovering on a line does not flip colour on every packet,
-  and the ring turns red exactly when the garage does (owner, 2026-11-17: "a
-  little bit of stickiness").
+  and the ring turns red with the same commit that turns the garage red (the
+  LEDs add a ~1s debounce) (owner, 2026-11-17: "a little bit of stickiness").
 - **The bar is live**: the BPM the surface prints (rounded, as printed) on the
   rider's **validated ladder** (`ZoneProfileStore.getDisplayLadder`), measured on
   the committed zone's band. A reading past the band pins it: full while a climb
@@ -460,7 +465,8 @@ dot at its tip. A zone change is a **lap, never a reversal** (owner,
 2026-11-17): up a zone the dot carries on clockwise from 3 o'clock down through
 6 to 9, repainting the bottom in the new colour behind it, then climbs to the
 new progress; down a zone it runs counter-clockwise through 9, 6 and 3 in the
-lower colour. The bottom half is a brief in-between (~200ms of a 380ms
+lower colour. A reading mid-lap moves where the lap lands, not its pace; a
+second crossing mid-lap turns back from where the dot is. The bottom half is a brief in-between (~200ms of a 380ms
 fast-out lap). Into Fire there is no lap: the dot goes away, the ring fills red
 and the sunbeams start. The motion is pure (`components/zoneRingMotion.js`:
 unwrapped angle, arcs per angle) and run frame by frame onto the SVG; the

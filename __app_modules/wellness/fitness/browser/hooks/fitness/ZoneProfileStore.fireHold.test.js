@@ -87,4 +87,36 @@ describe('ZoneProfileStore — Fire must be held, not touched', () => {
     vi.setSystemTime(Date.now() + 1000);
     expect(sample(125).currentZoneId).toBe('warm');
   });
+
+  describe('a rider coming back from a strap dropout', () => {
+    const syncAt = (hr) => {
+      store.syncFromUsers([{ id: 'rider', name: 'rider', zoneConfig: LADDER, currentData: { heartRate: hr },
+        zoneReadingAt: Date.now(), zoneReadingDeviceId: '40475' }]);
+      return store.getProfile('rider');
+    };
+    const tickTo = (hr) => { vi.setSystemTime(Date.now() + 1000); return syncAt(hr); };
+    const loseStrap = () => { vi.setSystemTime(Date.now() + 1000); store.resetZoneState('rider', 'confirmed-loss'); vi.setSystemTime(Date.now() + 10_000); };
+    const settleAt = (hr) => {
+      syncAt(90);
+      vi.setSystemTime(Date.now() + 6000);
+      for (const h of [110, 120, 130, 140, 145, 150, 150, 150, hr, hr, hr, hr, hr, hr, hr]) tickTo(h);
+    };
+
+    it('evidence below Fire: returning at 161 is Hot until Fire is held 5s', () => {
+      settleAt(150);
+      expect(store.getProfile('rider').currentZoneId).toBe('hot');
+      loseStrap();
+      expect(syncAt(161)).toMatchObject({ zoneTrusted: true, currentZoneId: 'hot' });
+      expect([tickTo(161), tickTo(162), tickTo(161), tickTo(161)].map((p) => p.currentZoneId)).toEqual(['hot', 'hot', 'hot', 'hot']);
+      expect(tickTo(161).currentZoneId).toBe('fire');
+    });
+
+    it('evidence in Fire: resumes Fire at once, as before, with no new ceremony', () => {
+      settleAt(150);
+      for (let i = 0; i < 8; i += 1) tickTo(165);
+      expect(store.getProfile('rider').currentZoneId).toBe('fire');
+      loseStrap();
+      expect(syncAt(166)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire', zoneEntry: { resumed: true } });
+    });
+  });
 });
