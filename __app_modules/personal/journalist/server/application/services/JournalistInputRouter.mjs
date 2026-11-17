@@ -22,6 +22,7 @@ export class JournalistInputRouter {
   #userIdentityService;
   #aiGatewayAvailable;
   #knowledgeCompanion;
+  #workCompanion;
 
 
   /**
@@ -42,6 +43,7 @@ export class JournalistInputRouter {
     this.#aiGatewayAvailable = options.aiGatewayAvailable !== false;
     this.#logger = options.logger || console;
     this.#knowledgeCompanion=options.knowledgeCompanion??null;
+    this.#workCompanion=options.workCompanion??null;
   }
 
   /**
@@ -72,7 +74,7 @@ export class JournalistInputRouter {
   async route(event, responseContext = null, requestContext = {}) {
     const { type, conversationId, messageId, payload, metadata } = event;
 
-    const context=Object.freeze({responseContext,userId:this.#resolveUserId(event),knowledgePrincipal:requestContext.knowledgePrincipal??null});
+    const context=Object.freeze({responseContext,userId:this.#resolveUserId(event),knowledgePrincipal:requestContext.knowledgePrincipal??null,workPrincipal:requestContext.workPrincipal??null});
 
     this.#logger.debug?.('router.event', { type, conversationId, messageId });
 
@@ -130,6 +132,8 @@ export class JournalistInputRouter {
   async #handleText(conversationId, text, messageId, metadata, context) {
     this.#logger.debug?.('router.text', { conversationId, textLength: text?.length });
 
+    const workFlows={'Work':'tasks','My tasks':'tasks','To-dos':'tasks','Complete task':'tasks','Projects':'projects','Project work':'projects','Create task':'create_task','Create project':'create_container'};
+    if(this.#workCompanion&&context.workPrincipal&&Object.hasOwn(workFlows,text))return this.#workCompanion.open({principal:context.workPrincipal,flow:workFlows[text],responseContext:context.responseContext});
     // Check for special starts (🎲, ❌)
     if (this.#isSpecialStart(text)) {
       // 🎲 starts a new AI-generated prompt; ❌ only clears state and remains
@@ -198,7 +202,7 @@ export class JournalistInputRouter {
 
   async #processText(conversationId,text,messageId,metadata,context){
     // Regular text entry - route to ProcessTextEntry
-    if (!this.#aiGatewayAvailable && !context.knowledgePrincipal && !metadata?.edited) return this.#unavailable(conversationId, 'text', context);
+    if (!this.#aiGatewayAvailable && !context.knowledgePrincipal && !context.workPrincipal && !metadata?.edited) return this.#unavailable(conversationId, 'text', context);
     const useCase = this.#container.getProcessTextEntry();
     return useCase.execute({
       chatId: conversationId,
@@ -209,6 +213,7 @@ export class JournalistInputRouter {
       senderName: this.#extractSenderName(metadata),
       journalEdit:metadata?.edited&&metadata.chatType==='private'&&String(metadata.chatId)===this.#extractSenderId(metadata)?{edited:true,editDate:metadata.editDate,updateId:metadata.updateId}:undefined,
       knowledgePrincipal:context.knowledgePrincipal,
+      workPrincipal:context.workPrincipal,
       aiAvailable:this.#aiGatewayAvailable,
       responseContext: context.responseContext,
     });
@@ -262,6 +267,7 @@ export class JournalistInputRouter {
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
       knowledgePrincipal:context.knowledgePrincipal,
+      workPrincipal:context.workPrincipal,
       aiAvailable:this.#aiGatewayAvailable,
       responseContext: context.responseContext,
     });
@@ -272,6 +278,8 @@ export class JournalistInputRouter {
    * @private
    */
   async #handleCommand(conversationId, command, args, messageId, metadata, context) {
+    const workFlows={work:'tasks',todos:'tasks',projects:'projects'};
+    if(this.#workCompanion&&context.workPrincipal&&Object.hasOwn(workFlows,command))return this.#workCompanion.open({principal:context.workPrincipal,flow:workFlows[command],responseContext:context.responseContext});
     this.#logger.debug?.('router.command', { conversationId, command });
 
     // Delete the slash command message to keep chat clean
@@ -310,7 +318,11 @@ export class JournalistInputRouter {
    * @private
    */
   async #handleCallback(conversationId, payload, messageId, metadata, context) {
-    this.#logger.debug?.('router.callback', { conversationId, kind:payload.data?.startsWith('kb1:')?'knowledge':'legacy' });
+    this.#logger.debug?.('router.callback', { conversationId, kind:payload.data?.startsWith('w1:')?'work':payload.data?.startsWith('kb1:')?'knowledge':'legacy' });
+    if(payload.data?.startsWith('w1:')){
+      try{return await this.#workCompanion?.handleCallback({principal:context.workPrincipal,callbackData:payload.data,conversationId,botMessageId:messageId,responseContext:context.responseContext})??{handled:true,status:'denied'};}
+      catch{this.#logger.warn?.('journalist.work.callback-unavailable');return {handled:true,status:'uncertain'};}
+    }
     if(payload.data?.startsWith('kb1:')||payload.data==='debrief:ask'||['journal:change','journal:skip','journal:done'].includes(payload.data)){
       const result=await this.#knowledgeCompanion?.handleCallback({principal:context.knowledgePrincipal,callbackData:payload.data,conversationId,botMessageId:messageId,responseContext:context.responseContext});
       if(result?.handled)return result;

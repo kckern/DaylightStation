@@ -56,3 +56,10 @@ it('rejects multiple harvested accounts of one provider for the same user instea
 it('accepts an enrolled dotted username supported by the existing KB user namespace',()=>{
  const c=base();c.work.users['sample.user']={};expect(resolve(c,'sample.user').enabled).toBe(true);
 });
+
+it('rejects an ambiguous ClickUp List/Folder identifier while allowing a Todoist project parent',()=>{
+ const c=base();c.work.domains.personal.creationParentId=c.work.domains.personal.containerId;
+ expect(resolve(c).enabled).toBe(true);
+ c.work.providers.personal.type='clickup';
+ expect(resolve(c)).toMatchObject({enabled:false,reason:'ambiguous_work_container_kind'});
+});

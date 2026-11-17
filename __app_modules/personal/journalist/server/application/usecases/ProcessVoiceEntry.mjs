@@ -118,6 +118,7 @@ export class ProcessVoiceEntry {
         senderId,
         senderName,
         knowledgePrincipal:input.knowledgePrincipal,
+        workPrincipal:input.workPrincipal,
         aiAvailable:input.aiAvailable,
         responseContext,
       });

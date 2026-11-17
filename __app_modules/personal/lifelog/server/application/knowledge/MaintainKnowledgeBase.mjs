@@ -5,12 +5,12 @@ import { mutateKnowledge, stateBatch } from './knowledgeMutation.mjs';
 
 /** One model job per user; storage mutations are short and revision checked. */
 export class MaintainKnowledgeBase {
-  #store; #evidence; #extractor; #clock; #timezone; #id; #logger; #enabled; #minChars; #inFlight = new Map(); #preview; #maxRuns;
-  constructor({store,evidence,extractor,clock,userTimezone,nextId,logger,enabled=false,minEntryChars=200,maxRunsPerDay=4,previewRunner=null}) {
+  #store; #evidence; #extractor; #clock; #timezone; #id; #logger; #enabled; #minChars; #inFlight = new Map(); #preview; #maxRuns; #callBudget;
+  constructor({store,evidence,extractor,clock,userTimezone,nextId,logger,enabled=false,minEntryChars=200,maxRunsPerDay=4,previewRunner=null,callBudget=null}) {
     if (!store?.commit || !evidence?.readByRefs || !extractor?.extract || typeof clock !== 'function' || typeof userTimezone !== 'function' || typeof nextId !== 'function') throw new TypeError('Invalid knowledge maintenance dependencies');
     if(!Number.isInteger(maxRunsPerDay)||maxRunsPerDay<1||maxRunsPerDay>4)throw new TypeError('Knowledge daily cap must be between one and four');
     this.#maxRuns=maxRunsPerDay;
-    this.#store=store;this.#evidence=evidence;this.#extractor=extractor;this.#clock=clock;this.#timezone=userTimezone;this.#id=nextId;this.#logger=logger;this.#enabled=enabled;this.#minChars=minEntryChars;this.#preview=previewRunner;
+    this.#store=store;this.#evidence=evidence;this.#extractor=extractor;this.#clock=clock;this.#timezone=userTimezone;this.#id=nextId;this.#logger=logger;this.#enabled=enabled;this.#minChars=minEntryChars;this.#preview=previewRunner;this.#callBudget=callBudget;
   }
   async initialize({username,asOf}) {
     if (!this.#enabled) return {status:'disabled'};
@@ -44,6 +44,10 @@ export class MaintainKnowledgeBase {
       const messages=selected.messages.filter(row=>row.content.length>=this.#minChars||answers.has(row.sourceId));
       let extraction={proposals:[],modelVersion:null};
       if (messages.length) {
+        if(this.#callBudget){
+          const shared=await this.#callBudget.reserve({username,receiptId:JSON.stringify(messages.map(row=>[row.ref,row.sourceHash??row.sourceId])),scope:'knowledge-extraction',asOf:this.#clock()});
+          if(!shared.allowed){await this.#deferFailed({username,generation:capturedGeneration,runId,asOf,reason:shared.reason??'budget_exhausted'});return {status:'budget_exhausted',runId};}
+        }
         let permitted=false;
         const day=localDateFor(this.#clock(),timezone);
         await mutateKnowledge({store:this.#store,username,runId:runId+':budget',build:snapshot=>{

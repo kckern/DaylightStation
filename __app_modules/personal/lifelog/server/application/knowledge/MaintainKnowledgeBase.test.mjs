@@ -101,3 +101,4 @@ it('honors a configured lower daily extraction cap',async()=>{
  expect((await d.service.execute({username:'sample',trigger:'post-entry',asOf:AS_OF+1})).status).toBe('budget_exhausted');
  expect(d.extractor.extract).toHaveBeenCalledTimes(1);
 });
+it('honors an injected shared budget before reserving its own attempt or calling the model',async()=>{const shared={reserve:vi.fn(async()=>({allowed:false,reason:'budget_exhausted'}))};const x=setup({callBudget:shared});expect((await x.service.execute({username:'sample',trigger:'post-entry',asOf:AS_OF})).status).toBe('budget_exhausted');expect(x.extractor.extract).not.toHaveBeenCalled();expect((await x.store.read({username:'sample'})).state.budgets).toBeUndefined();expect(shared.reserve).toHaveBeenCalledWith(expect.objectContaining({username:'sample',scope:'knowledge-extraction'}));});

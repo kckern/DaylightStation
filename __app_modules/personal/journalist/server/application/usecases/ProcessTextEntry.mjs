@@ -39,6 +39,7 @@ export class ProcessTextEntry {
   #conversationStateStore;
   #logger;
   #knowledgeCompanion;
+  #workCompanion;
   #clock;
 
   constructor(deps) {
@@ -46,6 +47,7 @@ export class ProcessTextEntry {
     if (!deps.aiGateway) throw new Error('aiGateway is required');
 
     this.#knowledgeCompanion=deps.knowledgeCompanion;
+    this.#workCompanion=deps.workCompanion;
     this.#clock=deps.clock??Date.now;
     this.#messagingGateway = deps.messagingGateway;
     this.#aiGateway = deps.aiGateway;
@@ -102,15 +104,21 @@ export class ProcessTextEntry {
       });
 
       let savedMessage;
-      const source=this.#knowledgeCompanion?.sourceForEntry({principal:input.knowledgePrincipal,chatId,messageId,senderId});
+      const knowledgeSource=this.#knowledgeCompanion?.sourceForEntry({principal:input.knowledgePrincipal,chatId,messageId,senderId});
+      let workSource=null;try{workSource=this.#workCompanion?.sourceForEntry({principal:input.workPrincipal,chatId,messageId,senderId})??null;}catch{this.#logger.warn?.('journalist.work.source-unavailable');}
+      const sameSource=!knowledgeSource||!workSource||['platform','conversationId','messageId','senderId','revision','edited','editDate','updateId'].every(key=>(knowledgeSource[key]??null)===(workSource[key]??null));
+      const source=sameSource?(knowledgeSource??workSource):null;
+      if(!sameSource)this.#logger.warn?.('journalist.provenance.mismatch');
       const receipt=source||input.journalEdit?{messageId:userMessage.messageId,chatId:userMessage.chatId,text:userMessage.text,timestamp:userMessage.timestamp,senderId:userMessage.senderId,senderName:userMessage.senderName,role:'user',...(source?{source}:{}),...(input.journalEdit?{edit:input.journalEdit}:{})}:userMessage;
       if (this.#journalEntryRepository) {
         savedMessage=await this.#journalEntryRepository.saveMessage?.(receipt);
       }
       if(savedMessage?.ignoredEdit){await status?.cancel?.();return {success:true,ignoredEdit:true};}
-      if(source&&savedMessage){
+      const suppressByPolicy=this.#knowledgeCompanion?.shouldSuppressFollowUp?.({principal:input.knowledgePrincipal,length:(savedMessage?.content??savedMessage?.text??text).length})===true;
+      let workResult=null;
+      if(source&&workSource&&savedMessage){try{workResult=await this.#workCompanion.onEntrySaved({principal:input.workPrincipal,message:savedMessage,asOf:this.#clock()});}catch{this.#logger.warn?.('journalist.work.entry-unavailable');}}
+      if(source&&knowledgeSource&&savedMessage){
         let knowledge;
-        const suppressByPolicy=this.#knowledgeCompanion.shouldSuppressFollowUp?.({principal:input.knowledgePrincipal,length:(savedMessage.content??savedMessage.text??text).length})===true;
         try{knowledge=await this.#knowledgeCompanion.onEntrySaved({principal:input.knowledgePrincipal,message:savedMessage,replyToMessageId:source.replyToMessageId,asOf:this.#clock()});}
         catch{this.#logger.warn?.('journalist.knowledge.entry-unavailable');}
         if(knowledge?.suppressFollowUp||suppressByPolicy){
@@ -119,6 +127,14 @@ export class ProcessTextEntry {
           }else await status?.cancel?.();
           return {success:true,knowledgeScheduled:!!knowledge?.scheduled,suppressedFollowUp:true};
         }
+      }
+      if(workResult?.suppressFollowUp){
+        if(workResult.ackHandled)await status?.cancel?.();else if(status)await status.finish('📝 Noted.');else await messaging.sendMessage('📝 Noted.',{});
+        return {success:true,suppressedFollowUp:true,workHandled:true};
+      }
+      if(savedMessage&&suppressByPolicy){
+        if(status)await status.finish('📝 Noted.');else await messaging.sendMessage('📝 Noted.',{});
+        return {success:true,suppressedFollowUp:true};
       }
       if(input.aiAvailable===false){
         if(status)await status.finish('📝 Noted.');else await messaging.sendMessage('📝 Noted.',{});

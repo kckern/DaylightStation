@@ -18,7 +18,7 @@ Work references include provider, account, object kind and opaque string ID. Nev
 
 ## Implementation status
 
-The context/backfill increment supplies per-user configuration, read-only provider context, durable links/relevance, and explicit quiet historical import jobs. Provider command execution and conversational attention workflows are separate increments. Starting the runtime does not extract journal history. The server has no operator import endpoint; the CLI constructs the separate job capability.
+The context/backfill increment supplies per-user configuration, read-only provider context, durable links/relevance, and explicit quiet historical import jobs. The two-way increment adds guarded provider commands, journal interpretation and bound Telegram decisions. Proactive attention and housekeeping remain a separate increment. Starting the runtime does not extract journal history. The server has no operator import endpoint; the CLI constructs the separate job capability.
 
 
 ## Provider collection and completeness
@@ -163,3 +163,45 @@ Only `same_commitment` can close a matching loop after owner-side checks of its
 current authored evidence, pins, sensitivity and status. `action_for` and
 `context_for` leave the broader outcome open. Provider events never become user
 journal prose or user evidence, and closure does not relax asking policies.
+
+## Journal and Telegram task coordination
+
+Work can verify authored journal evidence independently when the KB is disabled.
+A saved entry normally waits 15 minutes before interpretation; explicit task or
+project requests take an immediate path. The original journal entry remains the
+user's record. Provider activity is a separate attributed lifelog observation.
+
+Automatic completion requires a current verified affirmative statement, an exact
+single task match, a confirmed `same_commitment` link and an enabled
+`linked_explicit` task domain. Negative, tentative, quoted and third-party
+statements do not propose completion. Project check-in is progress: a configured
+`code_checked_in` transition asks for confirmation and does not accept a project.
+
+Telegram Work choices use opaque expiring callback tokens, bound to the user,
+conversation, delivered bot message, configuration and current source. Matching
+pages show at most three items. Selection is followed by a named action and
+destination confirmation. Typed keyboard labels open flows; they grant no write
+authority. Creation, deletion and container changes always require confirmation.
+Delivery failures disable the corresponding controls. An uncertain provider
+result requires readback or manual reconciliation rather than another write.
+
+A journal edit invalidates queued actions. After an external completion, an edit
+records a reconciliation need and can offer a separately confirmed correction;
+it does not automatically reopen the task. Pending interpretation after a
+restart requires fresh authenticated interaction rather than restoring a
+serialized Telegram capability.
+
+Live KB extraction, Work intent extraction and optional workflow ranking share a
+durable maximum of four attempts per user-local day, including failed attempts.
+Repeated receipts do not spend again. Ordinary unrelated journal entries skip
+Work extraction. KB-only installations retain the existing KB cap; historical
+import jobs retain their separate operator usage ledger.
+
+Task/project CRUD is limited to supported operations intersected with configured
+permissions. Project creation needs an explicit `creationParentId`. ClickUp
+creation uses a Folder parent; it must differ from the configured List ID because
+untyped equal IDs cannot safely distinguish those native objects. Todoist uses
+Project parents. ClickUp List archive is unsupported; archive never means delete.
+Flags in the example remain off. Source installation alone enables no provider
+writes or proactive messages. Commission destinations and transition mappings
+with reversible samples before enabling `providerWrites`.

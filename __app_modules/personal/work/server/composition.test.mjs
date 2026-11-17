@@ -359,3 +359,4 @@ describe('Work runtime composition', () => {
     }
   });
 });
+it('allows the legacy KB cap on a read-only Work host but never grants an unrecorded Work model attempt',async()=>{const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'work-budget-role-'));const runtime=createWorkRuntime({configuration:configuration(),environment:'test',hostId:'fixture-host',rootForUser:u=>path.join(tmp,u),userTimezone:()=> 'America/Los_Angeles',readCurrent:async()=>current(),readHistory:async()=>({}),clock:()=>AS_OF});try{expect((await runtime.callBudget.reserve({username:'sample',scope:'journal-intent',receiptId:'attempt',asOf:AS_OF})).allowed).toBe(false);expect((await runtime.callBudget.reserve({username:'sample',scope:'knowledge-extraction',receiptId:'attempt',asOf:AS_OF})).allowed).toBe(true);expect(fs.readdirSync(tmp)).toEqual([]);}finally{await runtime.dispose();fs.rmSync(tmp,{recursive:true,force:true});}});

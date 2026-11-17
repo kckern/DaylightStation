@@ -1,5 +1,5 @@
 import {hostname} from 'node:os';
-import {createKnowledgeRuntime} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
+import {createKnowledgeRuntime,createAuthoredJournalEvidence,createJournalKnowledgeSource} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
@@ -1285,9 +1285,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'entropy' })
   });
 
+  const workConfiguration=()=>configService.getHouseholdAppConfig(householdId,'work')??{};
+  const workTimezone=username=>configService.getUserProfile(username)?.timezone??configService.getHouseholdTimezone(configService.getUserHouseholdId(username));
+  let workRuntime=null;
+  const workActivityReader=workConfiguration()?.work?.enabled===true?{read:input=>workRuntime?.activities?.read(input)??Promise.resolve([])}:null;
   // Lifelog domain
   const lifelogServices = createLifelogServices({
-    userLoadFile,
+    userLoadFile,workActivityReader,userTimezone:workTimezone,
     logger: rootLogger.child({ module: 'lifelog' })
   });
 
@@ -1648,8 +1652,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveAuth: (username, service, data) => dataService.user.write(`auth/${service}`, data, username),
   };
 
-  const workConfiguration=()=>configService.getHouseholdAppConfig(householdId,'work')??{};
-  const workTimezone=username=>configService.getUserProfile(username)?.timezone??configService.getHouseholdTimezone(configService.getUserHouseholdId(username));
   const harvesterServices = createHarvesterServices({
     io: harvesterIo,
     httpClient: axios,
@@ -3428,29 +3430,38 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   );
   const knowledgeTimezone=username=>configService.getUserProfile(username)?.timezone
     ??configService.getHouseholdTimezone(configService.getUserHouseholdId(username));
-  const knowledgeRuntime=createKnowledgeRuntime({
+  let knowledgeRuntime=null;
+  const workIdentityForUser=username=>({username,senderId:String(userIdentityService.resolvePlatformId('telegram',username)),conversationId:telegramIdentityAdapter.resolve('journalist',{username}).conversationIdString});
+  const workEvidence=createAuthoredJournalEvidence({loadJournal:createJournalKnowledgeSource({userDirForUser:username=>configService.getUserDir(username)}),identityForUser:workIdentityForUser,timezoneForUser:workTimezone,logger:rootLogger.child({app:'work',module:'journal-evidence'})});
+  workRuntime=createWorkRuntime({
+    configuration:workConfiguration,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),dataDir:configService.getDataDir(),
+    rootForUser:username=>path.join(configService.getUserDir(username),'work'),activityRootForUser:username=>path.join(configService.getUserDir(username),'lifelog'),userTimezone:workTimezone,clock:Date.now,scheduler:new NodeApplicationScheduler(),
+    readCurrent:(username,provider)=>dataService.user.read(`current/${provider}`,username),readHealth:(username,provider)=>dataService.user.read(`current/${provider}-health`,username),readHistory:(username,provider)=>dataService.user.read(`lifelog/${provider}`,username),
+    journalEvidence:workEvidence,gateway:sharedAiGateway,httpClient:new HttpClient({logger:rootLogger.child({app:'work',module:'http'})}),
+    getUserAuth:(service,username)=>configService.getUserAuth(service,username),getHouseholdAuth:service=>configService.getHouseholdAuth(service,householdId),send:knowledgeSend,
+    knowledgeBridge:{applyProviderEvent:input=>knowledgeRuntime?.workBridge?knowledgeRuntime.workBridge.applyProviderEvent(input):Promise.resolve({applied:false,reason:knowledgeRuntime?'kb_disabled':'kb_starting',pending:!knowledgeRuntime})},
+    harvesterService:harvesterServices.harvesterService,webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
+    identityForSender:senderId=>{const username=userIdentityService.resolveUsername('telegram',senderId);if(!username)return null;try{return workIdentityForUser(username);}catch{return null;}},
+    logger:rootLogger.child({app:'work',module:'coordination'}),
+  });
+  knowledgeRuntime=createKnowledgeRuntime({
     configuration:configService.getHouseholdAppConfig(householdId,'lifelog')??{},
     environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),
     configService,dataService,userIdentityService,telegramIdentityAdapter,gateway:sharedAiGateway,
     webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
     scheduler:new NodeApplicationScheduler(),clock:Date.now,send:knowledgeSend,
+    callBudget:workRuntime.callBudget,
+    verifyProviderEvent:input=>workRuntime.activities?.verifyProviderEvent(input)??Promise.resolve({valid:false,closureAllowed:false}),
     logger:rootLogger.child({app:'lifelog',module:'knowledge'}),
   });
-  await knowledgeRuntime.start();
-  process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
-  const workRuntime=createWorkRuntime({
-    configuration:workConfiguration,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),dataDir:configService.getDataDir(),
-    rootForUser:username=>path.join(configService.getUserDir(username),'work'),userTimezone:workTimezone,clock:Date.now,scheduler:new NodeApplicationScheduler(),
-    readCurrent:(username,provider)=>dataService.user.read(`current/${provider}`,username),readHealth:(username,provider)=>dataService.user.read(`current/${provider}-health`,username),readHistory:(username,provider)=>dataService.user.read(`lifelog/${provider}`,username),
-    harvesterService:harvesterServices.harvesterService,webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
-    identityForSender:senderId=>{const username=userIdentityService.resolveUsername('telegram',senderId);if(!username)return null;try{return {username,senderId:String(userIdentityService.resolvePlatformId('telegram',username)),conversationId:telegramIdentityAdapter.resolve('journalist',{username}).conversationIdString};}catch{return null;}},
-    logger:rootLogger.child({app:'work',module:'coordination'}),
-  });
   await workRuntime.start().catch(error=>rootLogger.warn?.('work.start.failed',{reason:error.code??'startup_failed'}));
+  await knowledgeRuntime.start();
+  for(const username of Object.keys(workConfiguration()?.work?.users??{}))await workRuntime.activities?.flush({username,asOf:Date.now()}).catch(error=>rootLogger.warn?.('work.activity.start-pending',{reason:error.code??'projection_failed'}));
+  process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
   process.once('SIGTERM',()=>{void workRuntime.dispose().catch(error=>rootLogger.warn?.('work.dispose.failed',{reason:error.code??'shutdown_failed'}));});
 
   const journalistServices = createJournalistServices({
-    knowledgeRuntime,knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,
+    knowledgeRuntime,knowledgeSend,workRuntime,workSend:knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,
     dataService,
     configService,
     telegramAdapter: journalistTelegramAdapter,

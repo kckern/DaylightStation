@@ -137,7 +137,7 @@ export class WorkCommands {
         id: intent.operation === 'create_task' ? domain.containerId : domain.creationParentId
       } : intent.ref;
     const found = [...context.items, ...context.containers].find(item => keyOf(item.ref) === keyOf(target));
-    if (!found) throw workError('WORK_REF_NOT_AVAILABLE');
+    if (!found&&!(intent.operation==='create_container'&&target.id===domain.creationParentId)) throw workError('WORK_REF_NOT_AVAILABLE');
     const item = await provider.getItem({
       username,
       ref: target,
@@ -162,6 +162,7 @@ export class WorkCommands {
       intent: structuredClone(intent),
       sourceActorReceipt: actor.receiptId,
       destination: structuredClone(target),
+      display:{title:item.title,destinationTitle:create?item.title:context.containers.find(row=>row.ref.id===domain.containerId&&row.ref.provider===binding.type&&row.ref.accountId===binding.accountId)?.title??intent.domainId},
       recurring: item.due?.recurring === true,
       expectedOccurrenceId: item.due?.occurrenceId ?? null,
       result: null

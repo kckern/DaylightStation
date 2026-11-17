@@ -20,7 +20,9 @@ export function emptyWorkState() {
     commands: {},
     activities: {},
     decisions: {},
-    baselines: {}
+    baselines: {},
+    calls: {},
+    sources: {}
   };
 }
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -132,6 +134,26 @@ export function applyWorkEvents(before, events, {
       state.baselines[key] = {
         at: event.at
       };
+    } else if(event.type==='call.reserved'){
+      const call=event.call;if(!call||call.username!==username||typeof call.id!=='string'||!/^call\.[a-f0-9]{64}$/.test(call.id)||!['knowledge-extraction','journal-intent','workflow-rank'].includes(call.scope)||!/^\d{4}-\d{2}-\d{2}$/.test(call.day??'')||!finite(call.at))throw workError('INVALID_WORK_EVENT');if(state.calls[call.id])throw workError('WORK_CALL_ALREADY_RESERVED');state.calls[call.id]=structuredClone(call);
+    } else if(event.type==='decision.prepared'){
+      const d=event.decision;if(!d||d.username!==username||typeof d.id!=='string'||!d.id.startsWith('decision.')||state.decisions[d.id]||d.status!=='prepared'||typeof d.senderId!=='string'||typeof d.conversationId!=='string'||typeof d.policyRevision!=='string'||!finite(d.createdAt)||!finite(d.expiresAt)||d.expiresAt-d.createdAt>86400000||d.expiresAt<=d.createdAt||!Array.isArray(d.choices)||d.choices.length<1||d.choices.length>6||d.choices.some(c=>!/^([a-f0-9]{64})$/.test(c.tokenHash??'')||!['confirm','cancel','choose','next','back','none'].includes(c.action)||Object.hasOwn(c,'callback_data')))throw workError('INVALID_WORK_EVENT');state.decisions[d.id]=structuredClone(d);
+    } else if(event.type==='decision.delivered'){
+      const d=state.decisions[event.decisionId];if(!d||d.status!=='prepared'||!finite(event.at)||typeof event.botMessageId!=='string'||!/^[1-9][0-9]*$/.test(event.botMessageId))throw workError('INVALID_WORK_EVENT');d.status='delivered';d.botMessageId=event.botMessageId;d.deliveredAt=event.at;
+    } else if(event.type==='decision.failed'){
+      const d=state.decisions[event.decisionId];if(!d||!['prepared','delivered','uncertain','failed'].includes(d.status)||!finite(event.at))throw workError('INVALID_WORK_EVENT');d.status=event.uncertain?'uncertain':'failed';
+    } else if(event.type==='decision.claimed'){
+      const d=state.decisions[event.decisionId];if(!d||d.status!=='delivered'||!d.choices.some(c=>c.tokenHash===event.tokenHash)||!finite(event.at))throw workError('INVALID_WORK_EVENT');d.status='claimed';d.claimed={tokenHash:event.tokenHash,at:event.at};
+    } else if(event.type==='decision.resolved'){
+      const d=state.decisions[event.decisionId];if(!d||d.status!=='claimed'||!event.result||typeof event.result.status!=='string'||!finite(event.at))throw workError('INVALID_WORK_EVENT');d.status='resolved';d.result=structuredClone(event.result);
+    } else if(event.type==='source.observed'){
+      const source=event.source;if(!source||source.username!==username||!/^source\.[a-f0-9]{64}$/.test(source.id??'')||!['journal','interactive'].includes(source.kind)||typeof source.authRevision!=='string'||typeof source.senderId!=='string'||typeof source.conversationId!=='string'||typeof source.messageId!=='string'||!finite(source.at)||!finite(source.observedAt)||!finite(source.deadline)||source.deadline<source.observedAt||!Array.isArray(source.intents)||typeof source.valid!=='boolean'||!['pending','processed'].includes(source.status)||source.kind==='journal'&&(typeof source.ref!=='string'||!/^journalist:msg:[a-f0-9]{64}$/.test(source.ref)||!/^([a-f0-9]{64})$/.test(source.sourceHash??'')))throw workError('INVALID_WORK_EVENT');
+      if(state.sources[source.id])throw workError('WORK_SOURCE_CONFLICT');
+      if(source.kind==='journal')for(const old of Object.values(state.sources))if(old.kind==='journal'&&old.conversationId===source.conversationId&&old.messageId===source.messageId&&old.valid){old.valid=false;old.status='invalidated';for(const record of Object.values(state.commands))if(record.command.sourceReceipt===old.id){if(record.status==='queued'){record.status='denied';record.result={outcome:'denied',ref:record.command.ref,item:null,observation:null,reason:'source_superseded',retryAfter:null};}else if(['dispatching','uncertain','applied'].includes(record.status))record.reconciliationNeeded=true;}}
+      state.sources[source.id]={...structuredClone(source),ordinal:Object.keys(state.sources).length+1};
+      if(source.status==='pending'&&source.deadline>source.observedAt)for(const old of Object.values(state.sources))if(old.valid&&old.status==='pending')old.deadline=source.deadline;
+    } else if(event.type==='source.interpreted'){
+      const source=state.sources[event.sourceId];if(!source||!source.valid||!['processed','deferred'].includes(event.status)||!Array.isArray(event.intents)||event.intents.length>5||!finite(event.at))throw workError('INVALID_WORK_EVENT');source.status=event.status;source.intents=structuredClone(event.intents);source.reason=event.reason??null;
     } else if (event.type === 'recovery.tail') {
       if (!Number.isSafeInteger(event.bytes) || event.bytes < 1 || typeof event.digest !== 'string' || !/^[a-f0-9]{64}$/.test(event.digest)) throw workError('INVALID_WORK_EVENT');
     } else throw workError('INVALID_WORK_EVENT');

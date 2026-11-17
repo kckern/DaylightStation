@@ -35,7 +35,10 @@ export function resolveWorkPolicy({configuration={},username,timezone}){
   if(!validate(merged)||merged.write&&(!merged.writer_env||!merged.writer_host))return inert('invalid_work_config');
   const accounts=new Map();
   for(const p of Object.values(merged.providers)){if(accounts.has(p.type)&&accounts.get(p.type)!==JSON.stringify([p.accountId,p.authScope]))return inert('ambiguous_provider_account');accounts.set(p.type,JSON.stringify([p.accountId,p.authScope]));}
-  for(const d of Object.values(merged.domains))if(!Object.hasOwn(merged.providers,d.provider))return inert('invalid_work_config');
+  for(const d of Object.values(merged.domains)){
+   if(!Object.hasOwn(merged.providers,d.provider))return inert('invalid_work_config');
+   if(merged.providers[d.provider].type==='clickup'&&d.creationParentId===d.containerId)return inert('ambiguous_work_container_kind');
+  }
   const result=policy(merged,username,timezone,invalidAttention?'invalid_attention_policy':null);
   if(invalidAttention)result.revision=revision({merged,rawAttention},username,timezone);
   return result;

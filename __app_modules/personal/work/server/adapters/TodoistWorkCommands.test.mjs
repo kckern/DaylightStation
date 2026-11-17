@@ -355,3 +355,4 @@ it.each([['complete', true], ['reopen', false]])('does not dispatch %s when the 
   })).outcome).toBe('already_applied');
   expect(x.requests.filter(r => r.method !== 'GET')).toEqual([]);
 });
+it('does not claim creation succeeded as requested when readback omits requested fields',async()=>{const x=setup();const command=await x.command('create_task',{title:'New task',containerId:'sample-project',description:'Requested description',dueDate:'2026-11-20'});expect((await x.p.execute({username:'sample',command,asOf:AS_OF})).outcome).toBe('uncertain');expect(x.requests.filter(r=>r.method!=='GET')).toHaveLength(1);});

@@ -42,7 +42,7 @@ export function createKnowledgeRuntime(options={}){
  }catch{logger?.warn?.('lifelog.knowledge.disabled',{reason:'invalid_runtime_dependencies'});return inert('invalid_runtime_dependencies');}
  const authority=createKnowledgePrincipalAuthority({identityForSender,webhookSecret,clock}),tokens=createKnowledgeCallbackTokens();
  const questions=injectedQuestions??new KnowledgeQuestions({enabled:true,store,evidence,tokens,verifyPrincipal:authority.verify,identityForUser,userTimezone,nextId});
- const maintenance=new MaintainKnowledgeBase({enabled:true,store,evidence,extractor,clock,userTimezone,nextId,logger,maxRunsPerDay:c.max_runs_per_day,minEntryChars:c.min_entry_chars});
+ const maintenance=new MaintainKnowledgeBase({enabled:true,store,evidence,extractor,clock,userTimezone,nextId,logger,maxRunsPerDay:c.max_runs_per_day,minEntryChars:c.min_entry_chars,callBudget:options.callBudget});
  let stopped=false,startPromise=null;const ready=new Set(),timers=new Map(),active=new Set();
  const track=work=>{const promise=Promise.resolve().then(work);active.add(promise);promise.finally(()=>active.delete(promise)).catch(()=>{});return promise;};
  async function deliver(username,delivery){

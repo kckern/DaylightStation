@@ -214,6 +214,7 @@ export class JournalistContainer {
 
   // ==================== Use Case Getters ====================
 
+  getWorkCompanion(){return this.#options.workCompanion??null;}
   getKnowledgeCompanion(){return this.#options.knowledgeCompanion??null;}
 
   getProcessTextEntry() {
@@ -222,6 +223,7 @@ export class JournalistContainer {
         messagingGateway: this.getMessagingGateway(),
         aiGateway: this.#aiGateway?this.#aiFor('text-entry'):{chat:async()=>{throw new Error('AI_UNAVAILABLE');}},
         knowledgeCompanion:this.#options.knowledgeCompanion,
+        workCompanion:this.#options.workCompanion,
         clock:this.#options.clock,
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,

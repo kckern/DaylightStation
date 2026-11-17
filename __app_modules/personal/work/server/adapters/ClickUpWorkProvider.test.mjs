@@ -150,7 +150,7 @@ function commands() {
       }
     };
   const writes = [];
-  let afterWrite = null;
+  let afterWrite = null,onListRead=null;
   const httpClient = {
     requestRaw: async (method, url, options) => {
       const pathname = new URL(url).pathname;
@@ -208,6 +208,7 @@ function commands() {
           data = task;
         }
       }
+      if(method==='GET'&&pathname.includes('/list/')&&onListRead){const change=onListRead;onListRead=null;change();}
       if (data == null) status = 404;
       return {
         ok: status === 200,
@@ -296,6 +297,7 @@ function commands() {
     setList: value => {
       list = value;
     },
+    setOnListRead:fn=>{onListRead=fn;},
     setAfter: value => {
       afterWrite = value;
     },
@@ -481,3 +483,5 @@ it('keeps equal titles in two configured Lists as separate source identities', a
   expect(r.items.map(item => item.ref.id)).toEqual(['other-task', 'sample-task']);
   expect(r.items[0].title).toBe(r.items[1].title);
 });
+it('does not claim a created task matches an ignored requested description',async()=>{const x=commands();const command=await x.command('create_task',{title:'Created',containerId:'sample-list',assigneeIds:['123'],description:'Requested description'});expect((await x.p.execute({username:'sample',command,asOf:AS_OF})).outcome).toBe('conflict');expect(x.writes).toHaveLength(1);});
+it('refetches task version after List definitions so concurrent acceptance is not moved back to review',async()=>{const x=commands(),command=await x.command();x.setOnListRead(()=>x.setTask(clickTask({team_id:'workspace',status:{status:'accepted',type:'closed'},date_updated:String(AS_OF)})));expect((await x.p.execute({username:'sample',command,asOf:AS_OF})).outcome).toBe('conflict');expect(x.writes).toHaveLength(0);});

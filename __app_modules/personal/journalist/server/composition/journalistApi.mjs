@@ -43,6 +43,7 @@ export function createJournalistApiRouter(config) {
     userIdentityService,
     aiGatewayAvailable,
     knowledgeCompanion:journalistServices.journalistContainer.getKnowledgeCompanion?.(),
+    workCompanion:journalistServices.journalistContainer.getWorkCompanion?.(),
     logger,
   });
 
@@ -57,7 +58,9 @@ export function createJournalistApiRouter(config) {
           const companion=journalistServices.journalistContainer.getKnowledgeCompanion?.();
           const message=req.body?.message??req.body?.edited_message??req.body?.callback_query?.message;
           const knowledgePrincipal=companion?.capturePrincipal({event:journalEvent,webhookSecret:req.get?.('X-Telegram-Bot-Api-Secret-Token')??req.headers?.['x-telegram-bot-api-secret-token'],forwarded:!!(message?.forward_origin||message?.forward_from||message?.forward_date)});
-          return inputRouter.route(journalEvent,responseContext,{knowledgePrincipal});
+          const work=journalistServices.journalistContainer.getWorkCompanion?.();
+          const workPrincipal=work?.capturePrincipal({event:journalEvent,webhookSecret:req.get?.('X-Telegram-Bot-Api-Secret-Token')??req.headers?.['x-telegram-bot-api-secret-token'],forwarded:!!(message?.forward_origin||message?.forward_from||message?.forward_date)});
+          return inputRouter.route(journalEvent,responseContext,{knowledgePrincipal,workPrincipal});
         }},
         gateway,
         logger,

@@ -271,7 +271,8 @@ export class TodoistWorkProvider extends IWorkProvider {
         route: readRoute
       });
       if (create) {
-        const valid = !after.failure && after.item.title === command.payload.title && (command.operation !== 'create_container' || after.row.parent_id === route.domain.creationParentId);
+        const taskFields=Object.fromEntries(Object.entries(command.payload).filter(([key])=>key!=='containerId'));
+        const valid = !after.failure && after.item.title === command.payload.title && (command.operation==='create_task'?this.#readback({...command,operation:'update_task',payload:taskFields},after):after.row.parent_id===route.domain.creationParentId);
         return valid ? result('applied', null, {
           ref: createdRef,
           item: (createdRef??ref).kind==='container'?null:after.item

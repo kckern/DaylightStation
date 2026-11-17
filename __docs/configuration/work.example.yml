@@ -30,6 +30,9 @@ work:
       containerId: sample-project
       role: projects
       autoComplete: never
+      # creationParentId: sample-parent # Explicit parent for project creation.
+      # ClickUp projects can map code_checked_in to a live review status:
+      # transitions: {code_checked_in: review, complete: closed, reopen: open}
   # Enroll each known user explicitly. Override maps replace the full base map.
   users:
     sample: {}
