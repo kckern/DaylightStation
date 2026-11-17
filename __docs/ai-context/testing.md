@@ -33,6 +33,17 @@ none of them — 89 files executed by nothing, which is how it accumulated 18
 vitest failures, 28 node:test failures, two files importing an alias that never
 existed, and one testing a deleted module.
 
+One more trap, for browser suites: **flags and Solar icons are generated, not
+tracked.** A checkout that never ran the frontend prebuild (every fresh
+worktree, and any checkout started with plain `npx vite`) has no
+`geography/flags/` or `icons/svg/generated/` folders, so suites that draw an
+icon or a flag (`LaunchCard.structure`, `portal/migration`, …) fail on a missing
+`<svg>`. The vitest config's global setup (`vitest.generatedAssets.mjs`) prints
+which folders are missing at the start and end of the run; it warns and never
+fails. Fix it with `npm run prepare:assets` in `frontend/` (or
+`node scripts/prepare-public-assets.mjs --only=icons,flags` for just those),
+which writes only gitignored files. Never commit them.
+
 ## Quick Reference
 
 | Category | Harness | Data Source |
