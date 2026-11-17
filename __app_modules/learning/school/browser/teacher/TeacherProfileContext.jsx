@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * Teacher identity container.
  *
@@ -7,7 +8,7 @@
  * the server checks that id against the listed teachers.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { teacherLog } from "./teacherLog.js";
 
 const STORAGE_KEY = 'school-teacher-claim';
@@ -22,6 +23,7 @@ const claimStore = {
 const TeacherProfileContext = createContext(null);
 
 export function TeacherProfileProvider({ children }) {
+  const schoolApi = useSchoolApi();
   const [status, setStatus] = useState('loading');
   const [configured, setConfigured] = useState(false);
   const [teachers, setTeachers] = useState([]);
@@ -52,7 +54,7 @@ export function TeacherProfileProvider({ children }) {
       setStatus('ready');
     });
     return () => { alive = false; };
-  }, []);
+  }, [schoolApi]);
 
   const claim = useCallback((id) => {
     setCurrentId(id);

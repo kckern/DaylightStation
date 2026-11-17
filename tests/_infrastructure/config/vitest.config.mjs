@@ -174,6 +174,8 @@ export default {
       '**/rubiksCube/courseCatalog.test.mjs',
       '**/rubiksCube/physicalCube.test.mjs',
       '**/rubiksCube/RubiksCubeCourseService.test.mjs',
+      // Also a node:test worker integration; verified with node --test.
+      '**/rubiksCube/KociembaCubeRecoverySolver.test.mjs',
       //
       // NOT EXCLUDED, deliberately: `pianoGames.test.mjs` is a sibling
       // `node:test` file with the same "no test suite found" symptom, but

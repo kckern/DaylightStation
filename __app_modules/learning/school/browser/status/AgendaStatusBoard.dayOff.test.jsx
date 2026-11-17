@@ -137,3 +137,8 @@ describe('Saturday catch-up on the board', () => {
     expect(screen.getByRole('img', { name: /optional catch-up for Mon/ })).toBeInTheDocument();
   });
 });
+
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});

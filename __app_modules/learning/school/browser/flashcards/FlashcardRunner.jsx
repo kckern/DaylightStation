@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Flashcard drill (spec §3, R4.3): prompt -> reveal -> self-grade. A missed
  * card requeues at the end of the deck until got — resurfacing belongs to
@@ -17,7 +19,7 @@
  *    guarded by sessionOpenedRef so no path can open a second session.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 
@@ -26,6 +28,7 @@ const answerText = (item) => (item.type === 'matching'
   : item.answer);
 
 export default function FlashcardRunner({ bank, learning = null, onExit }) {
+  const schoolApi = useSchoolApi();
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [queue, setQueue] = useState(bank.items);
@@ -86,7 +89,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, identityKey]);
+  }, [status, identityKey, schoolApi]);
 
   const card = queue[0];
 
@@ -164,7 +167,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
             {unrecordedCount} card{unrecordedCount === 1 ? '' : 's'} didn&rsquo;t save — tell a grown-up.
           </p>
         )}
-        <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Done</SchoolButton>
       </div>
     );
   }
@@ -176,7 +179,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
       <div className="school-runner school-runner--error" data-testid="session-lost">
         <h2>{bank.title}</h2>
         <p>Your cards took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -186,7 +189,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
       <div className="school-runner school-runner--error" data-testid="cards-open-failed">
         <h2>{bank.title}</h2>
         <p>That one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -222,14 +225,14 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
         {revealed && <p className="school-card__answer" style={{ whiteSpace: 'pre-line' }}>{answerText(card)}</p>}
       </div>
       {!revealed
-        ? <button type="button" className="school-runner__next" onClick={() => setRevealed(true)}>Show answer</button>
+        ? <SchoolButton variant="plain" type="button" className="school-runner__next" onClick={() => setRevealed(true)}>Show answer</SchoolButton>
         : (
           <div className="school-runner__grades">
-            <button type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Not yet</button>
-            <button type="button" className="school-runner__again-later" disabled={grading} onClick={showAgain}>
+            <SchoolButton variant="plain" type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Not yet</SchoolButton>
+            <SchoolButton variant="plain" type="button" className="school-runner__again-later" disabled={grading} onClick={showAgain}>
               Show me again <span>(doesn&rsquo;t count)</span>
-            </button>
-            <button type="button" className="school-runner__got" disabled={grading} onClick={() => grade(true)}>Got it</button>
+            </SchoolButton>
+            <SchoolButton variant="plain" type="button" className="school-runner__got" disabled={grading} onClick={() => grade(true)}>Got it</SchoolButton>
           </div>
         )}
     </div>

@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * DaysOffPanel — the household calendar's breaks, edited from the console.
  *
@@ -13,7 +16,7 @@
  * no sliders, no drag.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -61,6 +64,7 @@ function BreakRow({ brk, activity }) {
 }
 
 export default function DaysOffPanel({ kids = [] }) {
+  const schoolApi = useSchoolApi();
   const logger = useMemo(() => getLogger().child({ component: 'days-off-panel' }), []);
   const calendar = usePanelFetch(() => schoolApi.calendar(), {
     panel: 'days-off',
@@ -158,9 +162,9 @@ export default function DaysOffPanel({ kids = [] }) {
           ) : <p className="teacher-panel__empty">No days off coming up.</p>}
           {past.length > 0 && (
             <>
-              <button type="button" className="teacher-daysoff__fold" aria-expanded={showPast} onClick={() => setShowPast((v) => !v)}>
+              <SchoolButton variant="plain" type="button" className="teacher-daysoff__fold" aria-expanded={showPast} onClick={() => setShowPast((v) => !v)}>
                 {showPast ? 'Hide past breaks' : `Past breaks (${past.length})`}
-              </button>
+              </SchoolButton>
               {showPast && (
                 <ul className="teacher-daysoff__list" data-past="">
                   {past.map((b) => <BreakRow key={`${b.from}-${b.label}`} brk={b} activity={data?.activities?.[b.assignment]} />)}
@@ -169,8 +173,8 @@ export default function DaysOffPanel({ kids = [] }) {
             </>
           )}
           <div className="teacher-daysoff__actions">
-            <button type="button" onClick={() => start('edit')} disabled={!data}>Edit days off</button>
-            <button type="button" onClick={() => start('trip')} disabled={!data}>Add an away trip</button>
+            <SchoolButton variant="plain" type="button" onClick={() => start('edit')} disabled={!data}>Edit days off</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={() => start('trip')} disabled={!data}>Add an away trip</SchoolButton>
           </div>
         </div>
       )}
@@ -185,8 +189,8 @@ export default function DaysOffPanel({ kids = [] }) {
             <label className="teacher-daysoff__wide">Name <input aria-label="Trip name" value={trip.label} placeholder="Away" onChange={(e) => setTrip((t) => ({ ...t, label: e.target.value }))} /></label>
           </div>
           <div className="teacher-daysoff__actions">
-            <button type="button" className="teacher-daysoff__primary" disabled={busy === 'save'} onClick={saveTrip}>Save trip</button>
-            <button type="button" onClick={cancel}>Cancel</button>
+            <SchoolButton variant="plain" type="button" className="teacher-daysoff__primary" disabled={busy === 'save'} onClick={saveTrip}>Save trip</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={cancel}>Cancel</SchoolButton>
           </div>
           {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
         </div>
@@ -208,15 +212,15 @@ export default function DaysOffPanel({ kids = [] }) {
                 {started && <p className="teacher-daysoff__help">Already under way — only its end can move, and not before yesterday.</p>}
                 <div className="teacher-daysoff__tiers" role="group" aria-label={`Kind of day for ${brk.label || 'new break'}`}>
                   {TIERS.map((tier) => (
-                    <button key={tier} type="button" data-tier={tier} aria-pressed={brk.tier === tier} disabled={started} onClick={() => setTier(brk, tier)}>{TIER_LABELS[tier]}</button>
+                    <SchoolButton variant="plain" key={tier} type="button" data-tier={tier} aria-pressed={brk.tier === tier} disabled={started} onClick={() => setTier(brk, tier)}>{TIER_LABELS[tier]}</SchoolButton>
                   ))}
                 </div>
                 {brk.tier === 'enrichment' && (
                   <label className="teacher-daysoff__fields">Replaces
-                    <select aria-label={`Subject replaced on ${brk.label || 'new break'}`} value={brk.replaces} onChange={(e) => patch(brk.key, { replaces: e.target.value })}>
+                    <SchoolSelect aria-label={`Subject replaced on ${brk.label || 'new break'}`} value={brk.replaces} onChange={(e) => patch(brk.key, { replaces: e.target.value })}>
                       <option value="">pick a subject</option>
                       {(data?.subjects ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    </SchoolSelect>
                   </label>
                 )}
                 {hasActivity && brk.activity?.editable === false && (
@@ -235,10 +239,10 @@ export default function DaysOffPanel({ kids = [] }) {
                         {kids.map((kid) => {
                           const on = (brk.assignTo ?? []).includes(kid.id);
                           return (
-                            <button key={kid.id} type="button" aria-pressed={on}
+                            <SchoolButton variant="plain" key={kid.id} type="button" aria-pressed={on}
                               onClick={() => patch(brk.key, { assignTo: on ? brk.assignTo.filter((id) => id !== kid.id) : [...(brk.assignTo ?? []), kid.id] })}>
                               {kid.name}
-                            </button>
+                            </SchoolButton>
                           );
                         })}
                       </div>
@@ -248,20 +252,20 @@ export default function DaysOffPanel({ kids = [] }) {
                 {!started && (removeArm === brk.key ? (
                   <span className="teacher-daysoff__confirm">
                     <span>Remove this break?</span>
-                    <button type="button" onClick={() => { setDraft((d) => ({ ...d, breaks: d.breaks.filter((b) => b.key !== brk.key) })); setRemoveArm(null); }}>Remove</button>
-                    <button type="button" onClick={() => setRemoveArm(null)}>Keep</button>
+                    <SchoolButton variant="plain" type="button" onClick={() => { setDraft((d) => ({ ...d, breaks: d.breaks.filter((b) => b.key !== brk.key) })); setRemoveArm(null); }}>Remove</SchoolButton>
+                    <SchoolButton variant="plain" type="button" onClick={() => setRemoveArm(null)}>Keep</SchoolButton>
                   </span>
                 ) : (
-                  <button type="button" className="teacher-daysoff__remove" onClick={() => setRemoveArm(brk.key)}>Remove…</button>
+                  <SchoolButton variant="plain" type="button" className="teacher-daysoff__remove" onClick={() => setRemoveArm(brk.key)}>Remove…</SchoolButton>
                 ))}
               </fieldset>
             );
           })}
-          <button type="button" className="teacher-daysoff__add" onClick={() => setDraft((d) => ({ ...d, breaks: [...d.breaks, blankBreak(today)] }))}>Add a break</button>
+          <SchoolButton variant="plain" type="button" className="teacher-daysoff__add" onClick={() => setDraft((d) => ({ ...d, breaks: [...d.breaks, blankBreak(today)] }))}>Add a break</SchoolButton>
 
-          <button type="button" className="teacher-daysoff__fold" aria-expanded={showKeep} onClick={() => setShowKeep((v) => !v)}>
+          <SchoolButton variant="plain" type="button" className="teacher-daysoff__fold" aria-expanded={showKeep} onClick={() => setShowKeep((v) => !v)}>
             {showKeep ? 'Hide what a day off keeps' : 'What a day off keeps…'}
-          </button>
+          </SchoolButton>
           {showKeep && (
             <div className="teacher-daysoff__keep">
               <p className="teacher-daysoff__help">Applies from today. Days already on the term grid keep their colour.</p>
@@ -274,19 +278,19 @@ export default function DaysOffPanel({ kids = [] }) {
                     <TierChip tier={tier} />
                     <span className="teacher-daysoff__chips">
                       {keep.length ? keep.map((s) => (
-                        <button key={selectorKey(s)} type="button" className="teacher-daysoff__chip"
+                        <SchoolButton variant="plain" key={selectorKey(s)} type="button" className="teacher-daysoff__chip"
                           aria-label={`Stop keeping ${selectorLabel(s)} on ${TIER_LABELS[tier]} days`}
                           onClick={() => setKeep(tier, keep.filter((x) => selectorKey(x) !== selectorKey(s)))}>
                           {selectorLabel(s)} <span aria-hidden>×</span>
-                        </button>
+                        </SchoolButton>
                       )) : <span className="teacher-daysoff__note">nothing</span>}
                     </span>
                     {addable.length > 0 && (
-                      <select aria-label={`Keep on ${TIER_LABELS[tier]} days`} value=""
+                      <SchoolSelect aria-label={`Keep on ${TIER_LABELS[tier]} days`} value=""
                         onChange={(e) => e.target.value && setKeep(tier, [...keep, selectorFrom(e.target.value)])}>
                         <option value="">add…</option>
                         {addable.map((k) => <option key={k} value={k}>{k.replace(':', ' · ')}</option>)}
-                      </select>
+                      </SchoolSelect>
                     )}
                   </div>
                 );
@@ -295,8 +299,8 @@ export default function DaysOffPanel({ kids = [] }) {
           )}
 
           <div className="teacher-daysoff__actions">
-            <button type="button" className="teacher-daysoff__primary" disabled={busy === 'save'} onClick={() => save(draft)}>Save</button>
-            <button type="button" onClick={cancel}>Cancel</button>
+            <SchoolButton variant="plain" type="button" className="teacher-daysoff__primary" disabled={busy === 'save'} onClick={() => save(draft)}>Save</SchoolButton>
+            <SchoolButton variant="plain" type="button" onClick={cancel}>Cancel</SchoolButton>
           </div>
           {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
         </div>

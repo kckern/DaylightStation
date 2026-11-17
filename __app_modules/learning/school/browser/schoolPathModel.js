@@ -1,3 +1,4 @@
+import { programRequestForSection } from './activities/activityManifest.js';
 // schoolPathModel.js — URL parsing/building for SchoolApp.jsx's section and
 // materials-chain routing, split out so Fast Refresh can hot-reload the app
 // shell on its own.
@@ -55,6 +56,10 @@ export function parseSchoolPath(urlBase) {
   if (!seg.length) return empty;
   if (seg[0] === 'subject' && seg[1]) return { section: `subject:${seg[1]}`, materialPath: seg.slice(2).map(restoreSource) };
   if (seg[0] === 'library') return { section: 'library', materialPath: seg.slice(1).map(restoreSource) };
+  if (seg[0] === 'program' && seg[1]) {
+    const section = `program:${seg[1]}:${encodeURIComponent(seg.slice(2).join('/'))}`;
+    return programRequestForSection(section) ? {section, materialPath: []} : empty;
+  }
   if (seg[0] === 'catalog') return { section: 'catalog', materialPath: [] };
   if (seg[0] === 'progress') return { section: 'progress', materialPath: [] };
   if (seg[0] === 'practice') return { section: 'banks', materialPath: [] };
@@ -94,6 +99,8 @@ export function parseSchoolPath(urlBase) {
 
 function sectionPathFor(urlBase, section) {
   if (section === null) return urlBase;
+  const program = programRequestForSection(section);
+  if (program) return `${urlBase}/program/${encodeURIComponent(program.programId)}/${encodeURIComponent(program.instanceId ?? '')}`;
   if (section.startsWith('subject:')) return `${urlBase}/subject/${encodeURIComponent(section.slice(8))}`;
   if (section === 'library') return `${urlBase}/library`;
   if (section === 'catalog') return `${urlBase}/catalog`;

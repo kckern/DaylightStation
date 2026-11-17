@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useSchoolCommands } from '../../portal/useSchoolCommands.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { useCallback, useState } from 'react';
 
 /**
  * A menu anchored to its trigger, dismissible by tapping away.
@@ -18,16 +20,11 @@ export default function Popover({ label, ariaLabel, children, align = 'right' })
 
   // A hardware keyboard is not guaranteed here, so Escape is a convenience for
   // the desktop case — never the primary path.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, close]);
+  useSchoolCommands({ escape: close }, { enabled: open, priority: 50, allowInInput: true });
 
   return (
     <div className="lang-popover">
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="lang-popover__trigger"
         onClick={() => setOpen((o) => !o)}
@@ -36,12 +33,12 @@ export default function Popover({ label, ariaLabel, children, align = 'right' })
         aria-label={ariaLabel}
       >
         {label}
-      </button>
+      </SchoolButton>
       {open && (
         <>
           {/* Covers the viewport beneath the panel so any tap outside closes
               it. Rendered before the panel so the panel stacks above. */}
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="lang-popover__backdrop"
             aria-label="Close menu"

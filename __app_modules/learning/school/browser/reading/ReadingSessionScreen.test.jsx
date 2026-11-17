@@ -36,7 +36,7 @@ vi.mock("../selfService/scanCeremonySound.js", () => ({
 }));
 
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
+  default: () => { const logger = { debug() {}, info() {}, warn() {}, error() {}, child: () => logger }; return logger; },
 }));
 
 import { ReadingSessionScreen, Ceremony, clockTime, recentDayLabel } from "./ReadingSessionScreen.jsx";

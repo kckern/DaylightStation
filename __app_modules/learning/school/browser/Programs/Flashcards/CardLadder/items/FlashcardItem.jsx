@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../../../portal/SchoolButton.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from "../../../../../../../../frontend/src/lib/ui/index.js";
 import Icon from "../../../../home/icons/Icon.jsx";
@@ -93,12 +94,12 @@ export default function FlashcardItem({ item, langs, resolveAssetUrl, onRespond,
   const cardClass = ['wl-card', flipped && 'is-flipped', flipping && 'is-flipping', still && 'wl-card--still'].filter(Boolean).join(' ');
   return (
     <section className="wl-item wl-flashcard" aria-label={sorts ? 'Flashcard' : 'New word'}>
-      <button type="button" className={cardClass} onClick={flip} aria-label={flipped ? 'Flip back' : 'Flip the card'} data-term-showing={termShowing}>
+      <SchoolButton variant="plain" type="button" className={cardClass} onClick={flip} aria-label={flipped ? 'Flip back' : 'Flip the card'} data-term-showing={termShowing}>
         <span className="wl-card__inner" onTransitionEnd={flipEnded} onTransitionCancel={flipEnded}>
           <span className="wl-card__side wl-card__side--up" aria-hidden={flipped}>{upFace}</span>
           <span className="wl-card__side wl-card__side--down" aria-hidden={!flipped}>{downFace}</span>
         </span>
-      </button>
+      </SchoolButton>
       <div className="wl-controls">
         {soundOk && <TouchButton variant="secondary" keyHint="Tab" onClick={hear}><Icon name="volume" /> Hear it</TouchButton>}
         {!flipped && <TouchButton variant="primary" keyHint="Space" onClick={flip}>Flip</TouchButton>}

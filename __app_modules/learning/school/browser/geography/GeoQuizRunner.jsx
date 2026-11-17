@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * Geography drill: server-graded (like QuizRunner) AND resurfacing (like
  * FlashcardRunner). Correct -> drop; wrong -> show the answer, requeue at the
@@ -87,7 +88,7 @@ export default function GeoQuizRunner({ bank, onExit }) {
       <div className="school-runner school-runner--error" data-testid="geo-open-failed">
         <h2>{bank.title}</h2>
         <p>That one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -98,7 +99,7 @@ export default function GeoQuizRunner({ bank, onExit }) {
       <div className="school-runner school-runner--error" data-testid="session-lost">
         <h2>{bank.title}</h2>
         <p>Your drill took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -117,7 +118,7 @@ export default function GeoQuizRunner({ bank, onExit }) {
         <p className="school-runner__score">Mastered {mastered} / {total}</p>
         <p className="school-runner__hint">first try {firstTry}</p>
         {skipped > 0 && <p className="school-runner__skipped" data-testid="geo-skipped">{skipped} skipped for now</p>}
-        <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Done</SchoolButton>
       </div>
     );
   }
@@ -137,8 +138,8 @@ export default function GeoQuizRunner({ bank, onExit }) {
       <div className="school-runner school-runner--error" data-testid="geo-bad-item">
         <h2>{bank.title}</h2>
         <p>This one won&rsquo;t load right. Tell a grown-up what happened.</p>
-        <button type="button" className="school-runner__done" onClick={skip}>Skip it</button>
-        <button type="button" className="school-runner__done" onClick={onExit}>Stop</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={skip}>Skip it</SchoolButton>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Stop</SchoolButton>
       </div>
     );
   }
@@ -152,7 +153,7 @@ export default function GeoQuizRunner({ bank, onExit }) {
       )}
       <div className="school-runner__progress">
         <span>{queue.length} left</span>
-        <button type="button" className="school-runner__stop" data-testid="geo-stop" onClick={onExit}>Stop</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__stop" data-testid="geo-stop" onClick={onExit}>Stop</SchoolButton>
       </div>
       {unrecorded && (
         <div className="school-runner__unrecorded" data-testid="unrecorded">
@@ -160,11 +161,11 @@ export default function GeoQuizRunner({ bank, onExit }) {
         </div>
       )}
       <ItemComponent key={`${card.id}:${missCount.current.get(card.id) ?? 0}`} item={card} onSubmit={onItemSubmit} verdict={verdict} />
-      {verdict && <button type="button" className="school-runner__next" onClick={next}>Next</button>}
+      {verdict && <SchoolButton variant="plain" type="button" className="school-runner__next" onClick={next}>Next</SchoolButton>}
       {canSkip && !verdict && (
-        <button type="button" className="school-runner__skip" data-testid="geo-skip" onClick={skip}>
+        <SchoolButton variant="plain" type="button" className="school-runner__skip" data-testid="geo-skip" onClick={skip}>
           Skip this one for now
-        </button>
+        </SchoolButton>
       )}
     </div>
   );

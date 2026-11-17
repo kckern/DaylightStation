@@ -316,3 +316,26 @@ describe('the coin ceremony on the board', () => {
     expect(h.cues).toEqual([{ sound: 'school/_ux/coin.mp3', volume: 0.8 }]);
   });
 });
+
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});
+
+import { wsService } from '../../../../../frontend/src/services/WebSocketService.js';
+it('repairs projection changes after reconnect without replaying an already observed earning ceremony', async () => {
+  schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12))); mint({ 'test-learner': 12 });
+  render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+  await waitFor(() => expect(silverShown(12)).toBeTruthy());
+  schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 15))); mint({ 'test-learner': 15 });
+  await poke();
+  const pop = await screen.findByTestId('coin-ceremony');
+  fireEvent.click(within(pop).getByRole('button', { name: /Dismiss/ }));
+  expect(h.cues).toHaveLength(1);
+  schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 18)));
+  act(() => { wsService.status(false); wsService.status(true); });
+  await waitFor(() => expect(silverShown(18)).toBeTruthy());
+  await settle();
+  expect(screen.queryByTestId('coin-ceremony')).toBeNull();
+  expect(h.cues).toHaveLength(1);
+});

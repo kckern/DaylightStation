@@ -1,26 +1,22 @@
 /** /api/v1/school/debrief client. Status-aware and never throws. */
 import { schoolDebriefLog } from "./schoolDebriefLog.js";
-import { schoolDeviceHeaders } from "../../schoolDevice.js";
+import { createSchoolEndpointClient } from '../../runtime/schoolEndpointClient.js';
 
 const enc = encodeURIComponent;
-export function createSchoolDebriefApi({ learnerId, grant }) {
+export function createSchoolDebriefApi({ learnerId, grant, ...options }) {
   const BASE = `/api/v1/school/debrief/${enc(learnerId)}/day`;
+  const client = createSchoolEndpointClient({ ...options, base: BASE });
   async function call(day, path, { method = 'GET', body, raw = false, contentType = null } = {}) {
-    try {
-      const init = { method, credentials: 'same-origin', headers: schoolDeviceHeaders({ 'X-School-Debrief-Grant': grant }) };
-      if (body !== undefined) {
-        if (raw) { init.body = body; if (contentType) init.headers['Content-Type'] = contentType; }
-        else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; }
-      }
-      const r = await fetch(`${BASE}/${enc(day)}${path}`, init);
-      const data = await r.json().catch(() => null);
-      if (!r.ok) schoolDebriefLog.apiRejected({ path, method, status: r.status, error: data?.error ?? null });
-      return { ok: r.ok, status: r.status, data };
-    } catch (error) {
-      schoolDebriefLog.apiFailed({ path, method, error: error?.message ?? String(error) });
-      return { ok: false, status: 0, data: null };
+    const result = await client.request(`/${enc(day)}${path}`, {
+      method, body, raw, headers: { 'X-School-Debrief-Grant': grant, ...(contentType ? { 'Content-Type': contentType } : {}) },
+    });
+    if (!result.ok) {
+      const detail = { path, method, status: result.status, kind: result.error?.kind };
+      if (result.status) schoolDebriefLog.apiRejected(detail); else schoolDebriefLog.apiFailed(detail);
     }
+    return client.finish(result);
   }
+
   return {
     day: (d) => call(d, ''),
     open: (d) => call(d, '/open', { method: 'POST' }),

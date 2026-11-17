@@ -258,8 +258,10 @@ child.
 **Coins are preview only.** The rules sit in `earn-rules.yml` and mint when
 weekly payout ships. Until the economy is live, kid surfaces show
 **"Coins start soon"** and never a silver figure. The summary reads the bank
-once; only `mode: live` shows earned lines (from the weekly preview, 2-second
-limit, any failure shows no coin line).
+at entry and completion; only `mode: live` can show the weekly total under
+**"Weekly earnings preview"** (2-second limit, any failure shows no coin line).
+The summary never subtracts before/after previews to claim a debrief payout:
+unrelated work can change the same weekly projection.
 
 ## Screens and keys
 

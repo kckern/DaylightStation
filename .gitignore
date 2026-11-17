@@ -99,6 +99,7 @@ config.app-local.yml
 !scripts/probe-printer-jobstate.mjs
 !scripts/audit-ui-tokens.mjs
 !scripts/audit-ui-tokens.baseline.json
+!scripts/audit-ui-school.baseline.json
 !scripts/audit-ui-tokens.test.mjs
 !scripts/audit-css-ownership.mjs
 !scripts/audit-css-ownership.baseline.json

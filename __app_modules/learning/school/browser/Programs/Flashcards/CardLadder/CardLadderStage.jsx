@@ -1,47 +1,31 @@
-import { useEffect, useState } from 'react';
-import { AppThemeProvider } from "../../../../../../../frontend/src/lib/ui/index.js";
-import { schoolApi } from "../../../schoolApi.js";
-import { schoolDeviceHeaders } from "../../../schoolDevice.js";
-import { cardLadderLog } from "./cardLadderLog.js";
+import { useEffect, useRef, useState } from 'react';
+import { useSchoolSurface } from '../../../portal/SchoolSurface.jsx';
 
-/**
- * The fixed stage (spec §6 Stage): the target screen's resolution, from config,
- * centred and uniformly scaled — what a grown-up sees is what the child sees.
- */
-export default function CardLadderStage({ children }) {
-  const [size, setSize] = useState(null);
-  const [scale, setScale] = useState(1);
+const DEFAULT_REFERENCE_SIZE = Object.freeze({ width: 1280, height: 800 });
+
+/** Declared teaching canvas uniformly fitted to its actual containing surface. */
+export default function CardLadderStage({ children, referenceSize = DEFAULT_REFERENCE_SIZE }) {
+  const { bounds } = useSchoolSurface();
+  const frameRef = useRef(null);
+  const [frameBounds, setFrameBounds] = useState(null);
   useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const stage = await fetch('/api/v1/school/card-ladder/stage', { headers: schoolDeviceHeaders() }).then((r) => r.json());
-        const { ok, data } = stage?.screen ? await schoolApi.screenSchoolConfig(stage.screen) : { ok: false };
-        const res = ok ? data?.resolution : null;
-        if (!res?.width || !res?.height) throw new Error('no resolution');
-        if (live) setSize({ width: res.width, height: res.height });
-      } catch (error) {
-        cardLadderLog.stageFailed({ error: error.message });
-        if (live) setSize({ width: window.innerWidth, height: window.innerHeight });
-      }
-    })();
-    return () => { live = false; };
-  }, []);
-  useEffect(() => {
-    if (!size) return undefined;
-    const fit = () => setScale(Math.min(window.innerWidth / size.width, window.innerHeight / size.height, 1));
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, [size]);
-  if (!size) return null;
-  return (
-    <AppThemeProvider pack="school">
-      <div className="wl-stage-frame">
-        <div className="wl-stage" style={{ width: size.width, height: size.height, transform: `scale(${scale})` }}>
-          {children}
-        </div>
-      </div>
-    </AppThemeProvider>
-  );
+    const frame = frameRef.current;
+    const measure = rect => {
+      const next = { width: Math.max(0, rect.width || 0), height: Math.max(0, rect.height || 0) };
+      setFrameBounds(previous => previous?.width === next.width && previous?.height === next.height ? previous : next);
+    };
+    measure(frame.getBoundingClientRect());
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+      const entry = entries.find(item => item.target === frame);
+      if (entry) measure(entry.contentRect);
+    }) : null;
+    observer?.observe(frame);
+    return () => observer?.disconnect();
+  }, [bounds.width, bounds.height]);
+  // The activity may reserve room for its own header/actions inside the host.
+  const available = frameBounds ?? bounds;
+  const width = Number.isFinite(referenceSize.width) && referenceSize.width > 0 ? referenceSize.width : DEFAULT_REFERENCE_SIZE.width;
+  const height = Number.isFinite(referenceSize.height) && referenceSize.height > 0 ? referenceSize.height : DEFAULT_REFERENCE_SIZE.height;
+  const scale = available.width > 0 && available.height > 0 ? Math.min(available.width / width, available.height / height, 1) : 0;
+  return <div ref={frameRef} className="wl-stage-frame"><div className="wl-stage" style={{ width, height, transform: `scale(${scale})` }}>{children}</div></div>;
 }

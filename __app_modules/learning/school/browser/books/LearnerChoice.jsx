@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 
 /**
@@ -15,7 +16,7 @@ export default function LearnerChoice({ roster = [], busy = false, onChoose }) {
   return (
     <div className="school-book-scan__learners">
       {roster.map((learner) => (
-        <button
+        <SchoolButton variant="plain"
           type="button"
           key={learner.id}
           disabled={busy}
@@ -24,7 +25,7 @@ export default function LearnerChoice({ roster = [], busy = false, onChoose }) {
         >
           <ProfileAvatar id={learner.id} name={learner.name || learner.id} size={256} />
           <span className="school-book-scan__learner-name">{learner.name || learner.id}</span>
-        </button>
+        </SchoolButton>
       ))}
     </div>
   );

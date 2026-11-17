@@ -22,7 +22,7 @@ vi.mock("../../../../../__capabilities/playback/browser/sessions.mjs", async (im
   usePlayerSessionBinding: (getHandle) => { bindings.push(getHandle); },
 }));
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
-  default: () => ({ child: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }),
+  default: () => { const logger = { debug() {}, info() {}, warn() {}, error() {}, child: () => logger }; return logger; },
 }));
 
 import { ReadingStage } from './ReadingSessionScreen.jsx';

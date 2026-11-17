@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * FrozenHistory — the learner's closed periods (FROZEN records with
  * closedBy/closedAt). Tapping a row fetches and expands that one frozen
@@ -12,7 +14,7 @@
  * home per thing.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
@@ -21,6 +23,7 @@ import { teacherSectionPath } from "../teacherUrl.js";
 import { useActorName } from "../useActorName.js";
 
 function FrozenRecord({ learnerId, periodId, titles }) {
+  const schoolApi = useSchoolApi();
   const record = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'frozen-record',
@@ -30,7 +33,7 @@ function FrozenRecord({ learnerId, periodId, titles }) {
     return (
       <p className="teacher-panel__error">
         Couldn&rsquo;t load the frozen record.
-        <button type="button" className="teacher-panel__retry" onClick={record.retry}>Retry</button>
+        <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={record.retry}>Retry</SchoolButton>
       </p>
     );
   }
@@ -54,6 +57,7 @@ function FrozenRecord({ learnerId, periodId, titles }) {
 }
 
 export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
+  const schoolApi = useSchoolApi();
   const [openPeriodId, setOpenPeriodId] = useState(null);
   const actorName = useActorName();
   const frozen = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId }), {
@@ -69,7 +73,7 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
         <ul className="teacher-frozen">
           {(Array.isArray(frozen.data) ? frozen.data : []).map((rec) => (
             <li key={rec.periodId} className="teacher-frozen__row">
-              <button
+              <SchoolButton variant="plain"
                 type="button"
                 className="teacher-frozen__toggle"
                 onClick={() => setOpenPeriodId((cur) => (cur === rec.periodId ? null : rec.periodId))}
@@ -78,7 +82,7 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
                 <span className="teacher-frozen__meta">
                   FROZEN — Closed by {actorName(rec.closedBy)}{rec.closedAt ? ` on ${teacherDate(rec.closedAt)}` : ''}
                 </span>
-              </button>
+              </SchoolButton>
               {openPeriodId === rec.periodId && <FrozenRecord learnerId={learnerId} periodId={rec.periodId} titles={titles} />}
             </li>
           ))}

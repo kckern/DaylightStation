@@ -1,6 +1,8 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useMemo, useState } from 'react';
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
-import { schoolApi } from "../schoolApi.js";
+
 
 const ASSESSMENTS = Object.freeze([
   ['not_yet', 'Not yet'], ['uncertain', 'Unsure'], ['ready', 'Ready'],
@@ -11,6 +13,7 @@ const STRATEGIES = Object.freeze([
 
 /** Optional, score-independent reflection usable after any learning module. */
 export default function LearningReflectionPrompt({ activity, learning = {}, onDone, continueLabel = 'Continue lesson' }) {
+  const schoolApi = useSchoolApi();
   const { currentUser } = useSchoolProfile();
   const [selfAssessment, setSelfAssessment] = useState(null);
   const [confidence, setConfidence] = useState(null);
@@ -22,7 +25,7 @@ export default function LearningReflectionPrompt({ activity, learning = {}, onDo
     [activity.id, activity.sessionId],
   );
 
-  if (!currentUser) return <button type="button" className="school-runner__done" onClick={onDone}>{continueLabel}</button>;
+  if (!currentUser) return <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onDone}>{continueLabel}</SchoolButton>;
 
   const toggleStrategy = (id) => setStrategyIds((current) => (
     current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
@@ -50,22 +53,22 @@ export default function LearningReflectionPrompt({ activity, learning = {}, onDo
       <div><p>Optional reflection</p><h3>How does this feel now?</h3></div>
       <div className="school-reflection__choices" aria-label="Self assessment">
         {ASSESSMENTS.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={selfAssessment === id} onClick={() => setSelfAssessment(id)}>{label}</button>
+          <SchoolButton variant="plain" key={id} type="button" aria-pressed={selfAssessment === id} onClick={() => setSelfAssessment(id)}>{label}</SchoolButton>
         ))}
       </div>
       <div className="school-reflection__confidence">
         <span>Confidence</span>
-        {[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-pressed={confidence === value} onClick={() => setConfidence(value)}>{value}</button>)}
+        {[1, 2, 3, 4, 5].map((value) => <SchoolButton variant="plain" key={value} type="button" aria-pressed={confidence === value} onClick={() => setConfidence(value)}>{value}</SchoolButton>)}
       </div>
       <div className="school-reflection__strategies" aria-label="Strategies used">
         {STRATEGIES.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={strategyIds.includes(id)} onClick={() => toggleStrategy(id)}>{label}</button>
+          <SchoolButton variant="plain" key={id} type="button" aria-pressed={strategyIds.includes(id)} onClick={() => toggleStrategy(id)}>{label}</SchoolButton>
         ))}
       </div>
       {error && <p role="alert" className="school-reflection__error">{error}</p>}
       <div className="school-reflection__actions">
-        <button type="button" onClick={onDone}>Skip</button>
-        <button type="button" disabled={saving || (!selfAssessment && confidence === null && strategyIds.length === 0)} onClick={save}>Save &amp; continue</button>
+        <SchoolButton variant="plain" type="button" onClick={onDone}>Skip</SchoolButton>
+        <SchoolButton variant="plain" type="button" disabled={saving || (!selfAssessment && confidence === null && strategyIds.length === 0)} onClick={save}>Save &amp; continue</SchoolButton>
       </div>
     </section>
   );

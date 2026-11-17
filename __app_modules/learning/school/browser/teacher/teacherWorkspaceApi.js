@@ -1,38 +1,21 @@
-/** Status-aware client for the additive teacher-workspace endpoints. */
+/** Status-aware teacher endpoints share School's transport and causal read generation. */
+import { createSchoolTransport } from '../runtime/schoolTransport.js';
+import { schoolApi } from '../schoolApi.js';
+import { schoolDeviceHeaders } from '../schoolDevice.js';
+
 const BASE = '/api/v1/school/teacher';
-const byQuery = (by) => (by ? `?by=${encodeURIComponent(by)}` : '');
+const byQuery = by => by ? `?by=${encodeURIComponent(by)}` : '';
 
-async function request(path, { method = 'GET', body, headers = {} } = {}) {
-  try {
-    const response = await fetch(`${BASE}${path}`, {
-      method,
-      credentials: 'same-origin',
-      headers: body === undefined ? headers : { 'Content-Type': 'application/json', ...headers },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+function buildTeacherWorkspaceApi(transport, legacy = false) {
+  const request = (path, options = {}) => {
+    const promise = transport.request(`${BASE}${path}`, {
+      ...options, headers: legacy ? schoolDeviceHeaders(options.headers) : (options.headers ?? {}),
     });
-    const data = await response.json().catch(() => null);
-    return { ok: response.ok, status: response.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  }
-}
+    return legacy ? promise.then(({ ok, status, data }) => ({ ok, status, data })) : promise;
+  };
+  const requestBlob = (path, options = {}) => request(path, { ...options, responseType: 'blob' });
 
-async function requestBlob(path, { headers = {} } = {}) {
-  try {
-    const response = await fetch(`${BASE}${path}`, {
-      method: 'GET', credentials: 'same-origin', headers,
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      return { ok: false, status: response.status, data };
-    }
-    return { ok: true, status: response.status, data: await response.blob() };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  }
-}
-
-export const teacherWorkspaceApi = {
+  return {
   timeline: (learnerId, { limit = 100, before = null, unitId = null } = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
@@ -148,4 +131,11 @@ export const teacherWorkspaceApi = {
   ),
 };
 
+}
+
+export function createTeacherWorkspaceApi({ transport, ...options } = {}) {
+  return buildTeacherWorkspaceApi(transport ?? createSchoolTransport(options));
+}
+
+export const teacherWorkspaceApi = buildTeacherWorkspaceApi(schoolApi.transport ?? createSchoolTransport(), true);
 export default teacherWorkspaceApi;

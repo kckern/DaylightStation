@@ -1,3 +1,4 @@
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Badge, Button, Card, Chip, Code, Group, Loader, NumberInput,
@@ -189,14 +190,14 @@ export default function VirtualConsole() {
     list.includes(itemId) ? list.filter((x) => x !== itemId) : [...list, itemId],
   );
 
-  if (loading) return <Loader p="md" />;
+  if (loading) return <SchoolSurfaceProvider surfaceId="admin-virtual" density="compact"><Loader p="md" /></SchoolSurfaceProvider>;
 
   if (!enabled) {
     return (
-      <Alert color="yellow" title="Virtual device console is off" m="md">
+      <SchoolSurfaceProvider surfaceId="admin-virtual" density="compact"><Alert color="yellow" title="Virtual device console is off" m="md">
         The virtual doubles are not wired. Set <Code>virtualDevices: true</Code> in{' '}
         <Code>school.yml</Code> and restart the backend; the routes do not exist until then.
-      </Alert>
+      </Alert></SchoolSurfaceProvider>
     );
   }
 
@@ -207,7 +208,7 @@ export default function VirtualConsole() {
     : null;
 
   return (
-    <Stack gap="md" p="md" className="school-virtual-console">
+    <SchoolSurfaceProvider surfaceId="admin-virtual" density="compact"><Stack gap="md" p="md" className="school-virtual-console">
       <Group justify="space-between">
         <Title order={3}>School Virtual Device Console</Title>
         <Button variant="subtle" size="xs" onClick={refresh}>Refresh</Button>
@@ -441,6 +442,6 @@ export default function VirtualConsole() {
           </Stack>
         )}
       </Card>
-    </Stack>
+    </Stack></SchoolSurfaceProvider>
   );
 }

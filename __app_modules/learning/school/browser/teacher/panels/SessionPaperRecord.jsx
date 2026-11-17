@@ -1,3 +1,5 @@
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * The paper trail for ONE lesson, folded shut until asked for.
  *
@@ -9,19 +11,20 @@
  */
 import { useState } from 'react';
 import { usePanelFetch } from "../usePanelFetch.js";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 import IssuedArtifactCard from "./IssuedArtifactCard.jsx";
 
 const isReceipt = (artifact) => artifact.kind === 'result-receipt' || artifact.role === 'result-receipt';
 
 function PaperBody({ sessionId, lessonTitle }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const detail = usePanelFetch(() => teacherWorkspaceApi.session(sessionId), {
     deps: [sessionId], panel: `paper-${sessionId}`, notFoundAs: 'unavailable',
   });
   if (detail.state === 'loading') return <p className="teacher-panel__empty">Loading the issued files…</p>;
   if (detail.state === 'error') {
     return <p className="teacher-panel__error">Couldn&rsquo;t load this lesson&rsquo;s paper record.
-      <button type="button" className="teacher-panel__retry" onClick={detail.retry}>Retry</button></p>;
+      <SchoolButton variant="plain" type="button" className="teacher-panel__retry" onClick={detail.retry}>Retry</SchoolButton></p>;
   }
   if (detail.state === 'unavailable') return <p className="teacher-panel__empty">Paper records are not kept on this install.</p>;
   const artifacts = detail.data?.artifacts ?? [];

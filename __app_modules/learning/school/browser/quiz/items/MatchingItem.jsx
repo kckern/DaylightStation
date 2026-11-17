@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * Pair the left column with the right. Two gestures, one mechanism:
  *  - tap a left chip (selects it), then tap a right chip -> pair
@@ -63,31 +64,31 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
       <div className="school-item__columns">
         <div className="school-item__col">
           {item.pairs.map(({ left }) => (
-            <button key={left} type="button"
+            <SchoolButton variant="plain" key={left} type="button"
               className={`school-item__chip${selected === left ? ' school-item__chip--selected' : ''}${pairs[left] ? ' school-item__chip--paired' : ''}`}
               disabled={!!verdict}
               aria-label={left}
               onPointerDown={(e) => downLeft(e, left)}>
               {left}{pairs[left] ? ` → ${pairs[left]}` : ''}
-            </button>
+            </SchoolButton>
           ))}
         </div>
         <div className="school-item__col">
           {rights.map((right) => (
-            <button key={right} type="button"
+            <SchoolButton variant="plain" key={right} type="button"
               className={`school-item__chip${pairedRights.has(right) ? ' school-item__chip--paired' : ''}`}
               disabled={!!verdict}
               onPointerUp={() => upRight(right)}>
               {right}
-            </button>
+            </SchoolButton>
           ))}
         </div>
       </div>
       {!verdict && (
-        <button type="button" className="school-item__check" disabled={!complete}
+        <SchoolButton variant="plain" type="button" className="school-item__check" disabled={!complete}
           onClick={submit}>
           Check
-        </button>
+        </SchoolButton>
       )}
       {verdict && !verdict.correct && verdict.expected && (
         <div className="school-item__expected">

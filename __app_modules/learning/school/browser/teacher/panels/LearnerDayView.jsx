@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * One child, one study day: what was planned, what was done, what was skipped
  * and why — plus anything graded today that belongs to an earlier day.
@@ -10,7 +12,7 @@
  */
 import { useMemo, useState } from 'react';
 import { DateStepper, Sheet } from "../../../../../../frontend/src/lib/ui/index.js";
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { joinLearnerDay, DAY_STATUS_LABEL } from "../learnerDay.js";
 import { humanDate, teacherDate, teacherTime, localDay } from "../teacherDates.js";
@@ -54,9 +56,9 @@ export function PrintedAgenda({ learnerId, studyDay }) {
   const src = agendaPreviewSrc(learnerId, studyDay);
   return (
     <>
-      <button type="button" className="teacher-btn" onClick={() => setOpen(true)}>
+      <SchoolButton variant="plain" type="button" className="teacher-btn" onClick={() => setOpen(true)}>
         Preview printable agenda
-      </button>
+      </SchoolButton>
       <Sheet open={open} onClose={() => setOpen(false)} title="Printable agenda preview">
         <p className="teacher-printed-agenda__promise">
           This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.
@@ -121,7 +123,7 @@ function DayRow({ row, learnerId, isToday, onOpenSession }) {
       <div className="teacher-day-row__right">
         {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
         <div className="teacher-day-row__actions">
-          {session?.sessionId && <button type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</button>}
+          {session?.sessionId && <SchoolButton variant="plain" type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</SchoolButton>}
           {/* The launch card is what the child would open NOW, so it only
               answers a question on today's rows; on a past day it would show
               today's lesson under yesterday's row. */}
@@ -136,6 +138,7 @@ function DayRow({ row, learnerId, isToday, onOpenSession }) {
 }
 
 export default function LearnerDayView({ learnerId, learnerName, studyDay, onChangeStudyDay, onOpenSession }) {
+  const schoolApi = useSchoolApi();
   const agenda = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
     deps: [learnerId, studyDay], panel: 'learner-day-agenda', notFoundAs: 'unavailable',
   });
@@ -255,13 +258,13 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
                 <div className="teacher-day-row__right">
                   {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
                   <div className="teacher-day-row__actions">
-                    <button type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</button>
+                    <SchoolButton variant="plain" type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</SchoolButton>
                     <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
                       teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
                     }} />
                     {session.remediation?.activeSessionId && (
-                      <button type="button" className="teacher-btn teacher-btn--quiet"
-                        onClick={() => onOpenSession(session.remediation.activeSessionId)}>Open active retry →</button>
+                      <SchoolButton variant="plain" type="button" className="teacher-btn teacher-btn--quiet"
+                        onClick={() => onOpenSession(session.remediation.activeSessionId)}>Open active retry →</SchoolButton>
                     )}
                   </div>
                 </div>

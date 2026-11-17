@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * useReadingSession — the living-room reading screen's whole state machine,
  * driven by one WebSocket topic and four callbacks.
@@ -47,7 +48,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
-import { schoolApi } from "../schoolApi.js";
+
 import { readingLog } from "./readingLog.js";
 import { readRecentlyTitle } from './readRecentlyTitle.js';
 
@@ -174,6 +175,7 @@ export function useReadingSession({
   presentationObscured = false,
   resolveAdoption = null,
 } = {}) {
+  const schoolApi = useSchoolApi();
   const [view, setView] = useState('idle');
   const [learner, setLearner] = useState(null);      // { id, name }
   const [summary, setSummary] = useState(null);      // count/target/recent
@@ -320,7 +322,7 @@ export function useReadingSession({
       cancelAnimationFrame(firstFrame);
       cancelAnimationFrame(secondFrame);
     };
-  }, [presentation, presentationObscured, view]);
+  }, [presentation, presentationObscured, view, schoolApi]);
 
   /** Today's count, the target, and their recent reads. Never throws. */
   const loadSummary = useCallback(async (learnerId) => {
@@ -339,7 +341,7 @@ export function useReadingSession({
       learnerId, count: res.data.count, target: res.data.target, error: res.data.error,
     });
     return res.data;
-  }, []);
+  }, [schoolApi]);
 
   /** The cover and the title, so the confirm screen shows the BOOK, not an id. */
   const loadBook = useCallback(async (contentId) => {
@@ -392,7 +394,7 @@ export function useReadingSession({
         setOnDeck(named);
       }
     }
-  }, []);
+  }, [schoolApi]);
 
   /**
    * The waiting book takes the stage. A FRESH attribution — that child's id,
@@ -508,7 +510,7 @@ export function useReadingSession({
       // child who is listening to a book.
       readingLog.warn('playing-report-failed', { status: res.status, pickId: attribution.pickId });
     }
-  }, []);
+  }, [schoolApi]);
 
   /** The story finished. The ONLY moment a read is credited. */
   const notePlaybackCompleted = useCallback(async () => {
@@ -584,7 +586,7 @@ export function useReadingSession({
       // — a child who wants a third book only has to touch the screen.
       setView(dayDone ? 'winding-down' : 'open');
     }, dayDone ? CELEBRATE_MS : BOOK_DONE_MS);
-  }, [commitNext, cue, loadSummary, rememberPresentation, say]);
+  }, [commitNext, cue, loadSummary, rememberPresentation, say, schoolApi]);
 
   /**
    * THE ROOM WINDS DOWN. Twenty seconds after the closing ceremony, unless
@@ -608,7 +610,7 @@ export function useReadingSession({
         .catch((error) => readingLog.warn('wind-down-end-failed', { location, error: error?.message }));
     }, WIND_DOWN_MS);
     return () => clearTimeout(timer);
-  }, [view, location]);
+  }, [view, location, schoolApi]);
 
   const notePlaybackProgress = useCallback((media) => {
     const attribution = attributionRef.current;
@@ -620,7 +622,7 @@ export function useReadingSession({
       location: attribution.location, sessionId: attribution.sessionId, pickId: attribution.pickId,
       positionSec: media.currentTime, durationSec: media.duration, paused: media.paused,
     }).catch?.(() => {});
-  }, []);
+  }, [schoolApi]);
 
   /**
    * The Player went away. If its natural-end callback never arrived, the story
@@ -699,7 +701,7 @@ export function useReadingSession({
     }
     loadSummary(attribution.learnerId);
     loadBook(attribution.contentId);
-  }, [cue, loadBook, loadSummary, location, say]);
+  }, [cue, loadBook, loadSummary, location, say, schoolApi]);
 
   const handle = useCallback((payload) => {
     switch (payload?.event) {
@@ -995,7 +997,7 @@ export function useReadingSession({
       cancelled = true;
       clearTimeout(retryTimer);
     };
-  }, [handle, location]);
+  }, [handle, location, schoolApi]);
 
   return {
     view,

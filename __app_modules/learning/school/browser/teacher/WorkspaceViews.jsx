@@ -1,8 +1,13 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { useTeacherWorkspaceApi } from '../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../portal/SchoolSelect.jsx';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
-import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
+
+
 import { usePanelFetch } from "./usePanelFetch.js";
 import { useTeacherWrite } from "./useTeacherWrite.js";
+import { useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { labelize } from "./labelize.js";
 import DebriefsPanel from "./panels/DebriefsPanel.jsx";
 import PanelFrame from "./panels/PanelFrame.jsx";
@@ -103,6 +108,8 @@ function groupSessionsByDay(rows) {
  * that view now, so History is the only caller and the only mode.
  */
 function SessionList({ learnerId, onOpenSession }) {
+  const schoolApi = useSchoolApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const authorizedRead = useAuthorizedTeacherRead();
   const [additional, setAdditional] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
@@ -139,7 +146,7 @@ function SessionList({ learnerId, onOpenSession }) {
               const id = sessionIdOf(session);
               return (
                 <li key={id ?? index}>
-                  <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
+                  <SchoolButton variant="plain" type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
                     <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle}
                       moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? 'Lesson title unavailable'}
                       posterUrl={session.posterUrl} compact />
@@ -147,14 +154,14 @@ function SessionList({ learnerId, onOpenSession }) {
                       {scoreLine(session) && <small>{scoreLine(session)}</small>}</span>
                     <span className={`teacher-status teacher-status--${stateOf(session)}`}>
                       {presentSessionState(session).label}</span>
-                  </button>
+                  </SchoolButton>
                 </li>
               );
             })}
           </ul>
         </section>
       ))}
-      {nextCursor && <button type="button" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load older sessions'}</button>}
+      {nextCursor && <SchoolButton variant="plain" type="button" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load older sessions'}</SchoolButton>}
     </PanelFrame>
   );
 }
@@ -182,6 +189,7 @@ export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog
  * dismiss here re-reads the badge count at once instead of on the next poll.
  */
 export function QueueView({ kids, onChanged }) {
+  const schoolApi = useSchoolApi();
   const review = usePanelFetch(() => schoolApi.lifecycleReview(), { panel: 'queue-review', notFoundAs: 'unavailable', isEmpty: (d) => !(d?.items ?? []).length });
   // Rows name their lesson. No catalog (or an unknown unit) leaves the row's
   // link reading "Open the lesson" rather than a placeholder title.
@@ -233,6 +241,7 @@ export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay()
 }
 
 function CourseContext({ courseId, lessonId = null, learnerId = null }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const authorizedRead = useAuthorizedTeacherRead();
   const context = usePanelFetch(() => authorizedRead(() => (learnerId
@@ -280,6 +289,8 @@ function CourseContext({ courseId, lessonId = null, learnerId = null }) {
 }
 
 function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', learnerId = '' }) {
+  const schoolApi = useSchoolApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const authorizedRead = useAuthorizedTeacherRead();
   const [refresh, setRefresh] = useState(0);
   const exceptions = usePanelFetch(() => authorizedRead(() => teacherWorkspaceApi.curriculumExceptions()), {
@@ -349,23 +360,23 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
     { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
   return <div id="curriculum-exceptions"><PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
-    <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
-    {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
-    <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
-    <label>{form.targetType === 'lesson' ? 'Lesson' : 'Unit / module'}<select value={form.targetId} onChange={change('targetId')}><option value="">Choose…</option>{form.targetType === 'lesson' ? units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>) : modules.map((module) => <option key={module} value={module}>{labelize(module)}</option>)}</select></label>
-    <label>Course<select value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</select></label>
-    {form.kind === 'replaced' && <label>Replacement lesson<select value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</select></label>}
-    <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="">Choose…</option><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
-  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
+    <label>Decision<SchoolSelect value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></SchoolSelect></label>
+    {form.kind !== 'paused' && <label>Student<SchoolSelect value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</SchoolSelect></label>}
+    <label>Target<SchoolSelect value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></SchoolSelect></label>
+    <label>{form.targetType === 'lesson' ? 'Lesson' : 'Unit / module'}<SchoolSelect value={form.targetId} onChange={change('targetId')}><option value="">Choose…</option>{form.targetType === 'lesson' ? units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>) : modules.map((module) => <option key={module} value={module}>{labelize(module)}</option>)}</SchoolSelect></label>
+    <label>Course<SchoolSelect value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</SchoolSelect></label>
+    {form.kind === 'replaced' && <label>Replacement lesson<SchoolSelect value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</SchoolSelect></label>}
+    <label>Reason{form.kind === 'paused' ? <SchoolSelect value={form.reason} onChange={change('reason')}><option value="">Choose…</option><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></SchoolSelect> : <input value={form.reason} onChange={change('reason')} />}</label>
+  </div><div className="teacher-action-row"><SchoolButton variant="plain" type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</SchoolButton>{preview && !preview.applied && <SchoolButton variant="plain" type="button" disabled={busy} onClick={() => save(true)}>Apply exception</SchoolButton>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
   <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ? (kids.find((kid) => kid.id === exception.learnerId)?.name ?? exception.learnerId) : 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
     ? <span className="teacher-action-row">
       <input aria-label={`Retraction reason for ${exception.exceptionId}`} maxLength={240} placeholder="Why retract this?" value={retractReason} onChange={(event) => setRetractReason(event.target.value)} />
-      <button type="button" disabled={busy || !retractReason.trim()} onClick={() => retract(exception)}>Confirm retraction</button>
-      <button type="button" onClick={() => { setRetracting(null); setRetractReason(''); }}>Cancel</button>
+      <SchoolButton variant="plain" type="button" disabled={busy || !retractReason.trim()} onClick={() => retract(exception)}>Confirm retraction</SchoolButton>
+      <SchoolButton variant="plain" type="button" onClick={() => { setRetracting(null); setRetractReason(''); }}>Cancel</SchoolButton>
     </span>
-    : <button type="button" disabled={busy} onClick={() => { setRetracting(exception.exceptionId); setRetractReason(''); }}>Retract</button>}</li>)}</ul>
+    : <SchoolButton variant="plain" type="button" disabled={busy} onClick={() => { setRetracting(exception.exceptionId); setRetractReason(''); }}>Retract</SchoolButton>}</li>)}</ul>
   </div></PanelFrame></div>;
 }
 
@@ -482,6 +493,7 @@ export function ReadingView({ learnerId, learnerName, kids = [] }) {
  * `policy.mode` is `card-ladder`, each carrying its own `deckId` and `title`.
  */
 export function WordsView({ learnerId, learnerName }) {
+  const schoolApi = useSchoolApi();
   const assignment = usePanelFetch(() => schoolApi.assignments(learnerId), {
     deps: [learnerId], panel: 'card-ladder-words-enrollments', notFoundAs: 'empty',
     isEmpty: (d) => !cardLadderEnrollments(d?.programs).length,
@@ -659,9 +671,9 @@ export function OperationsView({ kids }) {
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Fix</p><h2>What went wrong?</h2></div></div>
       <div className="teacher-fix-picker" role="group" aria-label="For which child?">
         <span>For</span>
-        <button type="button" aria-pressed={!chosen} onClick={() => pick('')}>the whole school</button>
+        <SchoolButton variant="plain" type="button" aria-pressed={!chosen} onClick={() => pick('')}>the whole school</SchoolButton>
         {kids.map((kid) => (
-          <button key={kid.id} type="button" aria-pressed={chosen?.id === kid.id} onClick={() => pick(kid.id)}>{kid.name}</button>
+          <SchoolButton variant="plain" key={kid.id} type="button" aria-pressed={chosen?.id === kid.id} onClick={() => pick(kid.id)}>{kid.name}</SchoolButton>
         ))}
       </div>
       <InterventionsIndex learnerId={chosen?.id ?? null} />
@@ -684,6 +696,7 @@ export function OperationsView({ kids }) {
 }
 
 function BulkRegradePanel() {
+  const schoolApi = useSchoolApi();
   const today = localDay();
   // A systematic regrade is about work already done: default to the last 30
   // days, not to an empty range ending today. A linked `?bank=` arrives filled
@@ -716,8 +729,8 @@ function BulkRegradePanel() {
       </div>
       {preview && <div className="teacher-action-preview"><strong>{preview.applied ? 'Regrade applied' : 'Impact preview'}</strong><p>{preview.checked} attempts checked; {preview.changed?.length ?? 0} corrections; {preview.sessionsAffected?.length ?? 0} sessions affected.</p></div>}
       <div className="teacher-action-row">
-        <button type="button" disabled={!valid || busy === key} onClick={previewRegrade}>Preview regrade</button>
-        {preview && !preview.applied && <button type="button" className="teacher-danger-btn" disabled={busy === key} onClick={applyRegrade}>Apply {preview.changed?.length ?? 0} corrections</button>}
+        <SchoolButton variant="plain" type="button" disabled={!valid || busy === key} onClick={previewRegrade}>Preview regrade</SchoolButton>
+        {preview && !preview.applied && <SchoolButton variant="plain" type="button" className="teacher-danger-btn" disabled={busy === key} onClick={applyRegrade}>Apply {preview.changed?.length ?? 0} corrections</SchoolButton>}
       </div>
       {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
     </section>
@@ -725,6 +738,7 @@ function BulkRegradePanel() {
 }
 
 function GradeCorrection({ sessionId, revision, currentPercent, items = [], onApplied }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [open, setOpen] = useState(false);
   const [percent, setPercent] = useState(currentPercent == null ? '' : String(Math.round(currentPercent)));
   const [reason, setReason] = useState('');
@@ -744,17 +758,17 @@ function GradeCorrection({ sessionId, revision, currentPercent, items = [], onAp
   const applyChange = () => run(key, (auth) => teacherWorkspaceApi.adjustGrade(sessionId, body(auth, true)), {
     onSuccess: () => { setPreview(null); setOpen(false); onApplied?.(); },
   });
-  if (!open) return <button type="button" className="teacher-btn teacher-btn--primary" onClick={() => setOpen(true)}>Fix a marked answer</button>;
+  if (!open) return <SchoolButton variant="plain" type="button" className="teacher-btn teacher-btn--primary" onClick={() => setOpen(true)}>Fix a marked answer</SchoolButton>;
   return (
     <div className="teacher-grade-correction">
       {!itemLevel && <label>Effective percent <input aria-label="Effective percent" type="number" min="0" max="100" value={percent} onChange={(event) => { setPercent(event.target.value); setPreview(null); }} /></label>}
       <label>Reason <input aria-label="Grade correction reason" maxLength="240" placeholder="What did the machine get wrong?" value={reason} onChange={(event) => { setReason(event.target.value); setPreview(null); }} /></label>
-      {itemLevel && <fieldset className="teacher-item-verdicts"><legend>Printed questions</legend>{items.map((item, index) => <label key={item.itemId}><span>Question {item.questionNumber ?? index + 1}<small>Machine: {labelize(item.verdict ?? 'unresolved')}</small></span><select aria-label={`Verdict for ${item.itemId}`} value={verdicts[item.itemId] ?? 'unchanged'} onChange={(event) => { setVerdicts((current) => ({ ...current, [item.itemId]: event.target.value })); setPreview(null); }}><option value="unchanged">Unchanged</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>)}</fieldset>}
+      {itemLevel && <fieldset className="teacher-item-verdicts"><legend>Printed questions</legend>{items.map((item, index) => <label key={item.itemId}><span>Question {item.questionNumber ?? index + 1}<small>Machine: {labelize(item.verdict ?? 'unresolved')}</small></span><SchoolSelect aria-label={`Verdict for ${item.itemId}`} value={verdicts[item.itemId] ?? 'unchanged'} onChange={(event) => { setVerdicts((current) => ({ ...current, [item.itemId]: event.target.value })); setPreview(null); }}><option value="unchanged">Unchanged</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></SchoolSelect></label>)}</fieldset>}
       {preview && <p className="teacher-action-preview"><strong>Impact preview:</strong> {preview.previousEffectiveGrade?.percent ?? 'ungraded'}% → {preview.effectiveGrade?.percent ?? Number(percent)}%; outcome {labelize(preview.outcome?.result ?? preview.outcome ?? 'unchanged')}. {preview.rewardChanged ? 'The reward reconciliation will change.' : 'Rewards remain unchanged.'}</p>}
       <div className="teacher-action-row">
-        {!preview && <button type="button" disabled={!valid || busy === key} onClick={previewChange}>Preview correction</button>}
-        {preview && <button type="button" disabled={busy === key} onClick={applyChange}>Apply correction</button>}
-        <button type="button" onClick={() => { setOpen(false); setPreview(null); }}>Cancel</button>
+        {!preview && <SchoolButton variant="plain" type="button" disabled={!valid || busy === key} onClick={previewChange}>Preview correction</SchoolButton>}
+        {preview && <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={applyChange}>Apply correction</SchoolButton>}
+        <SchoolButton variant="plain" type="button" onClick={() => { setOpen(false); setPreview(null); }}>Cancel</SchoolButton>
       </div>
       {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
     </div>
@@ -762,6 +776,7 @@ function GradeCorrection({ sessionId, revision, currentPercent, items = [], onAp
 }
 
 function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState(null);
@@ -780,15 +795,15 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
     onSuccess: () => { setOpen(false); setPreview(null); onApplied?.(); },
   });
   if (adjustment.retracted) return <span className="teacher-muted">Retracted</span>;
-  if (!open) return <button type="button" onClick={() => setOpen(true)}>Retract…</button>;
+  if (!open) return <SchoolButton variant="plain" type="button" onClick={() => setOpen(true)}>Retract…</SchoolButton>;
   return (
     <div className="teacher-grade-correction">
       <label>Retraction reason<input aria-label={`Retraction reason for ${adjustment.adjustmentId}`} value={reason} onChange={(event) => { setReason(event.target.value); setPreview(null); }} maxLength="240" /></label>
       {preview && <p className="teacher-action-preview"><strong>Impact preview:</strong> effective grade becomes {preview.effectiveGrade?.percent ?? 'ungraded'}%. The original correction remains in history.</p>}
       <div className="teacher-action-row">
-        {!preview && <button type="button" disabled={!reason.trim() || busy === key} onClick={previewRetraction}>Preview retraction</button>}
-        {preview && <button type="button" className="teacher-danger-btn" disabled={busy === key} onClick={applyRetraction}>Apply retraction</button>}
-        <button type="button" onClick={() => { setOpen(false); setPreview(null); }}>Cancel</button>
+        {!preview && <SchoolButton variant="plain" type="button" disabled={!reason.trim() || busy === key} onClick={previewRetraction}>Preview retraction</SchoolButton>}
+        {preview && <SchoolButton variant="plain" type="button" className="teacher-danger-btn" disabled={busy === key} onClick={applyRetraction}>Apply retraction</SchoolButton>}
+        <SchoolButton variant="plain" type="button" onClick={() => { setOpen(false); setPreview(null); }}>Cancel</SchoolButton>
       </div>
       {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
     </div>
@@ -855,6 +870,7 @@ const saidBy = (response, fallback) => {
  * settle that got partway is never announced as a settle.
  */
 function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSettled }) {
+  const schoolApi = useSchoolApi();
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState(false);
   // Whether this SESSION's note is already on record — keyed to the session id,
@@ -914,10 +930,10 @@ function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSet
         </div>
       )}
       <div className="teacher-action-row">
-        {!preview && <button type="button" disabled={!valid || busy === key}
-          onClick={() => setPreview(true)}>Preview settlement</button>}
-        {preview && <button type="button" disabled={!valid || busy === key} onClick={settle}>Settle it</button>}
-        {preview && <button type="button" onClick={() => setPreview(false)}>Cancel</button>}
+        {!preview && <SchoolButton variant="plain" type="button" disabled={!valid || busy === key}
+          onClick={() => setPreview(true)}>Preview settlement</SchoolButton>}
+        {preview && <SchoolButton variant="plain" type="button" disabled={!valid || busy === key} onClick={settle}>Settle it</SchoolButton>}
+        {preview && <SchoolButton variant="plain" type="button" onClick={() => setPreview(false)}>Cancel</SchoolButton>}
       </div>
       {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
     </section>
@@ -925,6 +941,7 @@ function SettleByHand({ sessionId, learnerId, learnerName, currentPercent, onSet
 }
 
 function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-reprint' });
@@ -939,7 +956,7 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
   const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Result receipt' : 'Worksheet';
-  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
+  return <>{!preview ? <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={prepare}>Print another copy…</SchoolButton> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><SchoolButton variant="plain" type="button" disabled={busy === key} onClick={print}>Print now</SchoolButton><SchoolButton variant="plain" type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</SchoolButton></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
 /**
@@ -963,35 +980,55 @@ const MARKED_SHEET_ERRORS = {
 };
 
 function MarkedSheet({ artifactId }) {
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
+  const actorId = useTeacherProfile().currentTeacher?.id ?? null;
   const [url, setUrl] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-postview' });
   const key = `postview:${artifactId}`;
-  // A fetch can outlive the inspector (the teacher navigates away while the
-  // PDF renders); its blob URL is then revoked, never put into state.
-  const mountedRef = useRef(true);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
-  useEffect(() => () => { if (url) URL.revokeObjectURL?.(url); }, [url]);
+  // The read owns its URL even if useTeacherWrite suppresses its success
+  // callback after exit or a teacher change. Each scope has its own lifetime.
+  const lifetimeRef = useRef(null);
+  useEffect(() => {
+    const lifetime = { active: true, url: null };
+    lifetimeRef.current = lifetime;
+    setUrl(null);
+    return () => {
+      lifetime.active = false;
+      if (lifetime.url) URL.revokeObjectURL?.(lifetime.url);
+      lifetime.url = null;
+    };
+  }, [artifactId, actorId, teacherWorkspaceApi]);
   if (url) return <a href={url} target="_blank" rel="noreferrer">Open the marked sheet (PDF)</a>;
-  const fetchSheet = async ({ actorId }) => {
-    const response = await teacherWorkspaceApi.artifactPostview(artifactId, actorId);
+  const fetchSheet = async ({ actorId: requestedActor }) => {
+    const lifetime = lifetimeRef.current;
+    const response = await teacherWorkspaceApi.artifactPostview(artifactId, requestedActor);
     const copy = !response.ok && MARKED_SHEET_ERRORS[response.status];
-    return copy ? { ...response, data: { error: copy } } : response;
+    if (!response.ok) return copy ? { ...response, data: { error: copy } } : response;
+    const next = URL.createObjectURL(response.data);
+    if (!lifetime?.active) {
+      URL.revokeObjectURL?.(next);
+      return { ...response, data: null };
+    }
+    if (lifetime.url) URL.revokeObjectURL?.(lifetime.url);
+    lifetime.url = next;
+    return { ...response, data: { url: next, lifetime } };
   };
-  const opened = (blob) => {
-    const next = URL.createObjectURL(blob);
-    if (!mountedRef.current) { URL.revokeObjectURL?.(next); return; }
-    setUrl(next);
+  const opened = (sheet) => {
+    if (!sheet?.lifetime.active || sheet.lifetime !== lifetimeRef.current) return;
+    setUrl(sheet.url);
     teacherLog.nav('postview-open', { artifactId });
   };
   return <>
-    <button type="button" disabled={busy === key} onClick={() => run(key, fetchSheet, { onSuccess: opened })}>
+    <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={() => run(key, fetchSheet, { onSuccess: opened })}>
       See the marked sheet
-    </button>
+    </SchoolButton>
     {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
   </>;
 }
 
 export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel = 'Back' }) {
+  const schoolApi = useSchoolApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -1017,7 +1054,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
       setResult(next);
     }).catch(() => alive && setResult({ state: 'error', session: null, ownerId: learnerId }));
     return () => { alive = false; };
-  }, [learnerId, sessionId, kids, attempt]);
+  }, [learnerId, sessionId, kids, attempt, teacherWorkspaceApi, schoolApi]);
 
   const session = result.session;
   const sessionState = session?.schema?.startsWith('school.teacher-session/') ? session.state : session;
@@ -1075,10 +1112,10 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
 
   return (
     <div className="teacher-view teacher-session-inspector">
-      <button type="button" className="teacher-back" onClick={onBack}>← {backLabel}</button>
+      <SchoolButton variant="plain" type="button" className="teacher-back" onClick={onBack}>← {backLabel}</SchoolButton>
       <div className="teacher-session-heading"><LessonIdentity subject={session?.taxonomy?.subject} courseTitle={session?.taxonomy?.courseTitle} moduleTitle={session?.taxonomy?.moduleTitle} lessonTitle={session?.taxonomy?.lessonTitle ?? sessionState?.title} posterUrl={session?.taxonomy?.posterUrl} heading /><p>{ownerName ? `${ownerName}’s lesson record` : ''}</p></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
-      {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
+      {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <SchoolButton variant="plain" type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</SchoolButton></p>}
       {result.state === 'empty' && <CapabilityNotice>This session is not present in the available learner-history window. A dedicated session read endpoint is required to inspect older records.</CapabilityNotice>}
       {result.state === 'unavailable' && <CapabilityNotice>Session inspection is not enabled on this install.</CapabilityNotice>}
       {session && (
@@ -1103,8 +1140,8 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               {canPreviewLaunch && <LaunchPreviewAction learnerId={settleLearnerId} subject={previewSubject} />}
               {canCorrectGrade && <GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade}
                 items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} />}
-              {canOfferRetake && <button type="button" className="teacher-btn" disabled={busy === sessionId}
-                onClick={offerRetake}>Offer another try</button>}
+              {canOfferRetake && <SchoolButton variant="plain" type="button" className="teacher-btn" disabled={busy === sessionId}
+                onClick={offerRetake}>Offer another try</SchoolButton>}
             </div>
             {(result.ownerId ?? learnerId) && (
               <details className="teacher-session-more-actions">

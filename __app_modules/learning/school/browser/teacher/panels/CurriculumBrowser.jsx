@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { useLanguageApi, useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * CurriculumBrowser — the published catalog, read-only for structure
  * (authoring stays YAML), plus the wave-3 pass-criteria overrides
@@ -6,16 +9,17 @@
  * audit trail; the authored curriculum is never edited here.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
-import { languageApi } from "../../Programs/SentenceLadder/languageApi.js";
+
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { teacherBaseFor } from "../teacherUrl.js";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
+
 import { LessonIdentity } from "../CurriculumIdentity.jsx";
 
 function PassOverride({ unit, override, onSaved }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override' });
   const [value, setValue] = useState('');
   const effective = override ?? unit.passingPercent;
@@ -50,8 +54,8 @@ function PassOverride({ unit, override, onSaved }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="button" disabled={busy === key || !value} onClick={set}>Set</button>
-      {override != null && <button type="button" disabled={busy === key} onClick={clear}>Clear</button>}
+      <SchoolButton variant="plain" type="button" disabled={busy === key || !value} onClick={set}>Set</SchoolButton>
+      {override != null && <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={clear}>Clear</SchoolButton>}
       {(localError || errors[key]) && <span className="teacher-panel__error">{localError ?? errors[key]}</span>}
     </span>
   );
@@ -63,6 +67,7 @@ function PassOverride({ unit, override, onSaved }) {
  * new concept), behind the module's arm→confirm.
  */
 function CourseBulkPassBar({ courseId, units, onSaved }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override-bulk' });
   const [value, setValue] = useState('');
   const [armed, setArmed] = useState(false);
@@ -85,11 +90,11 @@ function CourseBulkPassBar({ courseId, units, onSaved }) {
         <input aria-label={`Course pass bar for ${courseId}`} inputMode="numeric" placeholder="%" value={value} onChange={(event) => { setValue(event.target.value); setArmed(false); }} />
       </label>
       {!armed
-        ? <button type="button" disabled={!valid || busy === key} onClick={() => setArmed(true)}>Set all {units.length} lessons</button>
+        ? <SchoolButton variant="plain" type="button" disabled={!valid || busy === key} onClick={() => setArmed(true)}>Set all {units.length} lessons</SchoolButton>
         : <span className="teacher-close-period__confirm">
           <span>Set the pass bar to {percent}% on all {units.length} lessons?</span>
-          <button type="button" disabled={busy === key} onClick={apply}>Confirm</button>
-          <button type="button" onClick={() => setArmed(false)}>Cancel</button>
+          <SchoolButton variant="plain" type="button" disabled={busy === key} onClick={apply}>Confirm</SchoolButton>
+          <SchoolButton variant="plain" type="button" onClick={() => setArmed(false)}>Cancel</SchoolButton>
         </span>}
       {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
     </div>
@@ -97,6 +102,9 @@ function CourseBulkPassBar({ courseId, units, onSaved }) {
 }
 
 export default function CurriculumBrowser({ courseId = null }) {
+  const schoolApi = useSchoolApi();
+  const languageApi = useLanguageApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
     panel: 'curriculum',

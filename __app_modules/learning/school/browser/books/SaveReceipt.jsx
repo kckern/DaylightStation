@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import BookCover from "./BookCover.jsx";
 import { presentBook } from "./bookPresentation.js";
 import { shortDay } from "./ShelfTile.jsx";
@@ -51,11 +52,11 @@ export default function SaveReceipt({ receipt, onBack, onHistory, onUndo, busy =
         </div>
       </div>
       <div className="school-books-receipt__actions">
-        {!inline && <button type="button" className="school-books-receipt__back" disabled={busy} onClick={() => { if (!busy) onBack?.(); }}>Back to my books</button>}
+        {!inline && <SchoolButton variant="plain" type="button" className="school-books-receipt__back" disabled={busy} onClick={() => { if (!busy) onBack?.(); }}>Back to my books</SchoolButton>}
         {receipt?.kind === 'finished' && (
           <>
-            {!inline && <button type="button" className="school-books-receipt__history" disabled={busy} onClick={() => { if (!busy) onHistory?.(); }}>See History</button>}
-            <button type="button" className="school-books-receipt__undo" disabled={busy} onClick={() => { if (!busy) onUndo?.(); }}>Undo finish</button>
+            {!inline && <SchoolButton variant="plain" type="button" className="school-books-receipt__history" disabled={busy} onClick={() => { if (!busy) onHistory?.(); }}>See History</SchoolButton>}
+            <SchoolButton variant="plain" type="button" className="school-books-receipt__undo" disabled={busy} onClick={() => { if (!busy) onUndo?.(); }}>Undo finish</SchoolButton>
           </>
         )}
       </div>

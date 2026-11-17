@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../portal/useSchoolCommands.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * NumberPad — the reading shelf's number entry: a page, a count of minutes,
  * or a 13-digit ISBN.
@@ -171,8 +173,9 @@ export default function NumberPad({
   // The wall panel has a paired HID keyboard, and a barcode scanner presents
   // as one. Keep the handler scoped to the mounted pad; never steal typing
   // from a future real input embedded in the same screen.
-  useEffect(() => {
-    const onKeyDown = (event) => {
+  useSchoolCommandListener((event) => {
+
+
       const { disabled, press, backspace, clear, allowX, submittable, submit } = keyboardRef.current;
       if (disabled || event.metaKey || event.ctrlKey || event.altKey) return;
       const tag = event.target?.tagName?.toLowerCase?.();
@@ -193,10 +196,8 @@ export default function NumberPad({
         event.preventDefault();
         submit();
       }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+
+});
 
   const slots = Array.from({ length: maxLength }, (_, i) => entry[i] ?? '');
 
@@ -224,7 +225,7 @@ export default function NumberPad({
 
       <div className="school-books-pad__keys">
         {DIGITS.map((digit) => (
-          <button
+          <SchoolButton variant="plain"
             key={digit}
             type="button"
             className="school-books-pad__key"
@@ -232,9 +233,9 @@ export default function NumberPad({
             {...tap(() => press(digit))}
           >
             {digit}
-          </button>
+          </SchoolButton>
         ))}
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className={`school-books-pad__key school-books-pad__key--back${holding ? ' is-holding' : ''}`}
           aria-label="Backspace — hold to clear the whole number"
@@ -251,24 +252,24 @@ export default function NumberPad({
           }}
         >
           ⌫
-        </button>
-        <button
+        </SchoolButton>
+        <SchoolButton variant="plain"
           type="button"
           className="school-books-pad__key"
           disabled={disabled}
           {...tap(() => press('0'))}
         >
           0
-        </button>
+        </SchoolButton>
         {allowX ? (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-books-pad__key"
             disabled={disabled}
             {...tap(() => press('X'))}
           >
             X
-          </button>
+          </SchoolButton>
         ) : (
           // Keeps the bottom row's shape (⌫ | 0 | _) so `0` sits under `8`
           // whether or not there is an X.
@@ -277,14 +278,14 @@ export default function NumberPad({
       </div>
 
       {showSubmit && (
-        <button
+        <SchoolButton variant="plain"
           type="button"
           className="school-books-pad__submit"
           disabled={!submittable}
           {...tap(submit)}
         >
           {submitLabel}
-        </button>
+        </SchoolButton>
       )}
 
       {hint && (

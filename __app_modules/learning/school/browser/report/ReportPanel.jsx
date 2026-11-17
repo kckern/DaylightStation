@@ -1,5 +1,8 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolSelect } from '../portal/SchoolSelect.jsx';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import { useEffect, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import MetricTile from "./MetricTile.jsx";
 import CurriculumHistoryOverview from "../progress/CurriculumHistoryOverview.jsx";
@@ -178,19 +181,19 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
       <div className="school-progress__filters">
         <label>
           Period
-          <select aria-label="Academic period" value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
+          <SchoolSelect aria-label="Academic period" value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
             <option value="">All time</option>
             {(options?.periods ?? []).map((period) => (
               <option key={period.periodId} value={period.periodId}>{period.label}</option>
             ))}
-          </select>
+          </SchoolSelect>
         </label>
         <label>
           Subject
-          <select aria-label="Subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)}>
+          <SchoolSelect aria-label="Subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)}>
             <option value="">All subjects</option>
             {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.id}</option>)}
-          </select>
+          </SchoolSelect>
         </label>
         <label className="school-progress__check">
           <input type="checkbox" checked={coreOnly} onChange={(event) => setCoreOnly(event.target.checked)} />
@@ -210,7 +213,7 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
       {snapshot.followUps.length > 0 && (
         <div className="school-progress__actions" aria-label="Follow-up actions">
           {snapshot.followUps.map((action) => (
-            <button
+            <SchoolButton variant="plain"
               key={action.actionId}
               type="button"
               disabled={action.availability !== 'ready' || !focus || !onFollowUp}
@@ -218,7 +221,7 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
               title={action.reason ?? action.label}
             >
               {action.label}
-            </button>
+            </SchoolButton>
           ))}
         </div>
       )}
@@ -255,6 +258,7 @@ function ProgressFigure({ label, value, pending = false }) {
 }
 
 export default function ReportPanel({ userId = null, onFollowUp = null, kidMode = false }) {
+  const schoolApi = useSchoolApi();
   const [data, setData] = useState(null);
   const [progress, setProgress] = useState(null);
   const [insights, setInsights] = useState(null);
@@ -276,7 +280,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
       if (alive && ok && body) setOptions(body);
     });
     return () => { alive = false; };
-  }, []);
+  }, [schoolApi]);
 
   useEffect(() => {
     let alive = true;
@@ -309,7 +313,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
       setStatus(hasReports || hasEvidence || hasFlashcards ? 'ready' : 'empty');
     });
     return () => { alive = false; };
-  }, [focus, periodId, subjectId, coreOnly]);
+  }, [focus, periodId, subjectId, coreOnly, schoolApi]);
 
   // Household reporting remains server-scoped per learner: the same endpoint
   // that drives a child's report is called for roster ids returned by the
@@ -329,7 +333,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
           .map(([id, response]) => [id, response.data])));
       });
     return () => { alive = false; };
-  }, [focus, data]);
+  }, [focus, data, schoolApi]);
 
   useEffect(() => {
     let alive = true;
@@ -342,7 +346,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
         if (alive) setInsights(ok ? body : null);
       });
     return () => { alive = false; };
-  }, [focus]);
+  }, [focus, schoolApi]);
 
   if (status === 'loading') return <p className="school-report__status">Loading…</p>;
   if (status === 'error') return <p className="school-report__status">Could not load progress.</p>;
@@ -351,9 +355,9 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
   return (
     <div className="school-report">
       {focus && !kidMode && (
-        <button type="button" className="school-report__all" onClick={() => setFocus(null)}>
+        <SchoolButton variant="plain" type="button" className="school-report__all" onClick={() => setFocus(null)}>
           ‹ Everyone
-        </button>
+        </SchoolButton>
       )}
 
       <ProgressOverview
@@ -378,14 +382,14 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
         <section key={learner.id} className="school-report__learner">
           <header className="school-report__learner-head">
             {/* Drilling in is the same endpoint filtered, not a second view. */}
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className="school-report__learner-name"
               onClick={kidMode ? undefined : () => setFocus(focus ? null : learner.id)}
               disabled={kidMode}
             >
               {learner.name}
-            </button>
+            </SchoolButton>
             {learner.needsAttention && !kidMode && (
               <span className="school-report__flag">Needs attention</span>
             )}

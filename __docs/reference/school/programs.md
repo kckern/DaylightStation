@@ -37,6 +37,18 @@ non-empty string; an unknown name falls back to the shelf icon on the board.
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
+## Language Reels evidence
+
+Language Reel writes derive learner and reel identity exclusively from the launch
+grant. The server grades cloze and comprehension answers against authored items,
+and each assessed stage requires persisted correct attempts for every item before
+advancing in sequence. The browser waits for an acknowledged answer, retains a
+failed submission for retry, and offers an exit when recording is unavailable.
+Listening, watching, and speaking remain participation steps; speaking may be
+skipped and does not certify pronunciation mastery. Reels uses the shared guarded
+take recorder; exiting releases late microphone permission, pauses preview and
+replacement audio, and revokes the recorded preview URL.
+
 ## Every launcher must report `servedWork` — the rule, and why
 
 `AgendaStatusBoard` draws one disc per assignment from PLAN ∪ EVIDENCE. A

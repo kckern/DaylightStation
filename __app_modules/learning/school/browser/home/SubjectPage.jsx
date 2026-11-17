@@ -1,10 +1,11 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 import { useEffect, useState } from 'react';
 import MaterialsSection from "../materials/MaterialsSection.jsx";
 import SubjectShelves from "./SubjectShelves.jsx";
 import { KINDS, groupByKind } from "./kinds.js";
 import { subjectLabel } from "./subjects.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
-import { schoolApi } from "../schoolApi.js";
+
 import { rankWithin, gradeFromBirthyear } from "./ranking.js";
 import EmptyState from "./EmptyState.jsx";
 
@@ -40,6 +41,7 @@ const SUBJECT_PROGRAMS = {
 };
 
 export default function SubjectPage({ subjectId, shelf, guestOnly: _guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
+  const schoolApi = useSchoolApi();
   // SubjectPage owns the per-subject progress fetch because `materialProgress`
   // fans out a Plex read per material on the backend — expensive. The fetched
   // list feeds the ranking (started work floats to the front of its shelf) and
@@ -57,7 +59,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly: _guestOnly, o
       setProgress(ok && Array.isArray(data) ? data : []);
     });
     return () => { alive = false; };
-  }, [userId, subjectId]);
+  }, [userId, subjectId, schoolApi]);
 
   const studentGrade = currentUser?.birthyear
     ? gradeFromBirthyear(currentUser.birthyear, new Date().getFullYear())

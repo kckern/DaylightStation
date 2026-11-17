@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLearnerFeedback } from "./useLearnerFeedback.js";
 
 const reviewLearnerMock = vi.fn();
@@ -58,4 +58,33 @@ describe('useLearnerFeedback', () => {
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.items).toEqual([]);
   });
+});
+
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});
+import { wsService } from '../../../../../frontend/src/services/WebSocketService.js';
+
+it('refreshes mounted feedback after a correction without waiting for a poll', async () => {
+  reviewLearnerMock.mockResolvedValue({ ok: true, status: 200, data: [item()] });
+  const { result } = renderHook(() => useLearnerFeedback('kid1'));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  reviewLearnerMock.mockResolvedValue({ ok: true, status: 200, data: [item({ verdict: 'correct', note: 'Rechecked' })] });
+  act(() => wsService.emit({ topic: 'school', event: 'session-grade-changed', learnerId: 'kid1' }));
+  await waitFor(() => expect(result.current.items[0]?.note).toBe('Rechecked'));
+  expect(result.current.hasNew).toBe(false);
+});
+it('retains feedback verification time and exposes a failed refresh separately', async () => {
+  reviewLearnerMock.mockResolvedValue({ ok: true, status: 200, data: [item()] });
+  const { result } = renderHook(() => useLearnerFeedback('kid1'));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  const verified = result.current.lastSuccessAt;
+  expect(verified).toEqual(expect.any(Number));
+  reviewLearnerMock.mockResolvedValue({ ok: false, status: 503, data: null });
+  act(() => result.current.retry());
+  await waitFor(() => expect(result.current.error).toMatchObject({ status: 503 }));
+  expect(result.current.items).toEqual([item()]);
+  expect(result.current.lastSuccessAt).toBe(verified);
+  expect(result.current.stale).toBe(true);
 });

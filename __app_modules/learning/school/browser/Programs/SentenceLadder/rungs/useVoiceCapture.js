@@ -31,6 +31,8 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const startedAtRef = useRef(0);
+  const generationRef = useRef(0);
+  const mountedRef = useRef(true);
   // Set by `cancel`: the take being stopped is thrown away rather than handed
   // back, so a Tab-to-hear-it-again never judges or plays a half-said answer.
   const cancelledRef = useRef(false);
@@ -46,6 +48,7 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
   handlers.current = { onTake, onDenied };
 
   const release = useCallback(() => {
+    generationRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     recorderRef.current = null;
@@ -58,8 +61,14 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
    * called by then, so a caller that only needs the boolean can ignore it.
    */
   const start = useCallback(async () => {
+    release();
+    const generation = ++generationRef.current;
     try {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current || generation !== generationRef.current) {
+        mic.getTracks().forEach((track) => track.stop());
+        return false;
+      }
       streamRef.current = mic;
       chunksRef.current = [];
       cancelledRef.current = false;
@@ -68,6 +77,7 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
       recorderRef.current = recorder;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
+        if (!mountedRef.current || generation !== generationRef.current) return;
         if (cancelledRef.current) {
           cancelledRef.current = false;
           chunksRef.current = [];
@@ -88,6 +98,7 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
       setStream(mic);
       return true;
     } catch (err) {
+      if (!mountedRef.current || generation !== generationRef.current) return false;
       // MediaRecorder construction or start can fail AFTER getUserMedia
       // succeeded, so the already-open stream is released on every failure
       // path rather than only on a denied permission.
@@ -119,7 +130,10 @@ export default function useVoiceCapture({ onTake, onDenied } = {}) {
   );
 
   // A rung unmounted mid-take must not leave the mic open behind it.
-  useEffect(() => () => release(), [release]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; release(); };
+  }, [release]);
 
   return { start, stop, cancel, release, isRecording, stream };
 }

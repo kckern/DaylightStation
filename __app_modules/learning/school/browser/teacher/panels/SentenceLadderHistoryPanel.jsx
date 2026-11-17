@@ -1,3 +1,5 @@
+import { useLanguageApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * SentenceLadderHistoryPanel — a grown-up's read of one learner's sentence
  * ladder: every course they have started, and for the chosen one, every day's
@@ -12,7 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import ReviewPanel from "../../Programs/SentenceLadder/ReviewPanel.jsx";
-import { languageApi } from "../../Programs/SentenceLadder/languageApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
@@ -22,6 +24,7 @@ const PANEL = 'sentence-ladder-history';
 const STATE_LABEL = { active: 'Active', satisfied: 'Done for today', idle: 'Idle', complete: 'Complete' };
 
 function Loaded({ learnerId, learnerName, actorId }) {
+  const languageApi = useLanguageApi();
   const courses = usePanelFetch(() => languageApi.teacherCourses(learnerId, actorId), {
     deps: [learnerId, actorId], panel: PANEL, notFoundAs: 'unavailable',
     // A course the learner never opened has no history to read.
@@ -40,7 +43,7 @@ function Loaded({ learnerId, learnerName, actorId }) {
   const source = useMemo(() => (chosen ? {
     history: () => languageApi.teacherHistory(learnerId, chosen.id, actorId),
     recording: (seq) => languageApi.teacherRecordingBlob(learnerId, chosen.id, seq, actorId),
-  } : null), [learnerId, chosen?.id, actorId]); // eslint-disable-line react-hooks/exhaustive-deps -- chosen.id is the identity
+  } : null), [learnerId, chosen?.id, actorId, languageApi]); // eslint-disable-line react-hooks/exhaustive-deps -- chosen.id is the identity
 
   return (
     <PanelFrame title="Sentence ladder" state={courses.state} retry={courses.retry}
@@ -49,8 +52,8 @@ function Loaded({ learnerId, learnerName, actorId }) {
       {started.length > 1 && (
         <div className="teacher-sentences__courses" role="tablist" aria-label="Courses">
           {started.map((course) => (
-            <button key={course.id} type="button" role="tab" aria-selected={course.id === chosen?.id}
-              onClick={() => setCorpusId(course.id)}>{course.label ?? course.id}</button>
+            <SchoolButton variant="plain" key={course.id} type="button" role="tab" aria-selected={course.id === chosen?.id}
+              onClick={() => setCorpusId(course.id)}>{course.label ?? course.id}</SchoolButton>
           ))}
         </div>
       )}

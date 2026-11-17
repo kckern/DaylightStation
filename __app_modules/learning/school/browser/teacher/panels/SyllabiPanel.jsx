@@ -1,3 +1,6 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * SyllabiPanel — publish and edit syllabi (teacher.syllabi.edit): the saved,
  * named, reusable arguments a course enrollment materializes from
@@ -42,7 +45,7 @@
  * invented around.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -55,6 +58,7 @@ const idFromLabel = (label) => label.trim().toLowerCase().replace(/[^a-z0-9]+/g,
 function SyllabusEditor({
   mode, original, courseIds, titles, onCancel, onSaved,
 }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'syllabi' });
   const [checkingId, setCheckingId] = useState(false);
   const [draft, setDraft] = useState(() => ({
@@ -171,24 +175,24 @@ function SyllabusEditor({
           disabled={mode === 'edit'}
           onChange={(e) => setDraft((d) => ({ ...d, syllabusId: e.target.value, idTouched: true }))}
         />
-        <select aria-label="Course" value={draft.courseId} onChange={(e) => patch('courseId', e.target.value)}>
+        <SchoolSelect aria-label="Course" value={draft.courseId} onChange={(e) => patch('courseId', e.target.value)}>
           <option value="">choose a course</option>
           {courseOptions.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}
-        </select>
+        </SchoolSelect>
       </div>
       <div className="teacher-periods__editrow">
         <input aria-label="Profile" placeholder="Profile (optional)" value={draft.profile} onChange={(e) => patch('profile', e.target.value)} />
         <input aria-label="Term" placeholder="Term (optional)" value={draft.term} onChange={(e) => patch('term', e.target.value)} />
       </div>
       <div className="teacher-periods__editrow">
-        <select aria-label="Module order" value={draft.moduleOrder} onChange={(e) => patch('moduleOrder', e.target.value)}>
+        <SchoolSelect aria-label="Module order" value={draft.moduleOrder} onChange={(e) => patch('moduleOrder', e.target.value)}>
           <option value="">module order: course default</option>
           {ORDERINGS.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select aria-label="Lesson order" value={draft.lessonOrder} onChange={(e) => patch('lessonOrder', e.target.value)}>
+        </SchoolSelect>
+        <SchoolSelect aria-label="Lesson order" value={draft.lessonOrder} onChange={(e) => patch('lessonOrder', e.target.value)}>
           <option value="">lesson order: course default</option>
           {ORDERINGS.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        </SchoolSelect>
         <input
           aria-label="Required opening module"
           placeholder="Required opening module (optional)"
@@ -215,8 +219,8 @@ function SyllabusEditor({
         </label>
       </div>
       <div className="teacher-assignments__actions">
-        <button type="button" disabled={busy === 'save' || checkingId} onClick={save}>Save</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
+        <SchoolButton variant="plain" type="button" disabled={busy === 'save' || checkingId} onClick={save}>Save</SchoolButton>
+        <SchoolButton variant="plain" type="button" onClick={onCancel}>Cancel</SchoolButton>
       </div>
       {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
     </div>
@@ -226,6 +230,7 @@ function SyllabusEditor({
 function SyllabusSummary({
   record, titles, armed, onEdit, onArm, onDisarm, onArchived,
 }) {
+  const schoolApi = useSchoolApi();
   const { run, busy, errors } = useTeacherWrite({ panel: 'syllabi' });
   const archive = () => run('archive', ({ actorId }) => schoolApi.archiveSyllabus(record.syllabusId, {
     archivedBy: actorId,
@@ -254,13 +259,13 @@ function SyllabusSummary({
           <span>
             Archive &ldquo;{record.title}&rdquo;? It will materialize no new enrollments; existing enrollments keep their snapshot.
           </span>
-          <button type="button" disabled={busy === 'archive'} onClick={archive}>Confirm</button>
-          <button type="button" onClick={onDisarm}>Cancel</button>
+          <SchoolButton variant="plain" type="button" disabled={busy === 'archive'} onClick={archive}>Confirm</SchoolButton>
+          <SchoolButton variant="plain" type="button" onClick={onDisarm}>Cancel</SchoolButton>
         </div>
       ) : (
         <div className="teacher-assignments__actions">
-          <button type="button" onClick={onEdit}>Edit</button>
-          <button type="button" onClick={onArm}>Archive</button>
+          <SchoolButton variant="plain" type="button" onClick={onEdit}>Edit</SchoolButton>
+          <SchoolButton variant="plain" type="button" onClick={onArm}>Archive</SchoolButton>
         </div>
       )}
       {errors.archive && <p className="teacher-panel__error">{errors.archive}</p>}
@@ -269,6 +274,7 @@ function SyllabusSummary({
 }
 
 export default function SyllabiPanel() {
+  const schoolApi = useSchoolApi();
   const syllabi = usePanelFetch(() => schoolApi.syllabi(), {
     panel: 'syllabi',
     isEmpty: (d) => !(d?.syllabi ?? []).length,
@@ -337,7 +343,7 @@ export default function SyllabiPanel() {
             </div>
           )}
           {catalog.state === 'ok' && editingId === null && (
-            <button type="button" className="teacher-assignments__edit" onClick={() => setEditingId('new')}>Add syllabus</button>
+            <SchoolButton variant="plain" type="button" className="teacher-assignments__edit" onClick={() => setEditingId('new')}>Add syllabus</SchoolButton>
           )}
         </div>
       )}

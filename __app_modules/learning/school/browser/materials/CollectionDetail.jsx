@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * CollectionDetail — an audio anthology (Shakespeare Tales, I Survived) opened
  * from the shelf. The anthology is ONE tile; here it fans out into its works
@@ -9,10 +11,11 @@
  * breadcrumb; this component only fetches and renders the works.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { sizedPlexImage, ART_BOX } from "../plexImage.js";
 
 export default function CollectionDetail({ collection, onOpenWork, initialWorkId = null }) {
+  const schoolApi = useSchoolApi();
   const [works, setWorks] = useState(null);
 
   useEffect(() => {
@@ -23,7 +26,7 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
       setWorks(ok && Array.isArray(data) ? data : []);
     });
     return () => { alive = false; };
-  }, [collection.id]);
+  }, [collection.id, schoolApi]);
 
   // Deep-link restore: once the works resolve, auto-open the one the URL named
   // (one-shot per requested id) so a leaf URL descends past the works browser.
@@ -70,7 +73,7 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
             <ul className="school-material-detail__works">
               {works.map((w) => (
                 <li key={w.id}>
-                  <button type="button" className="school-materials__tile school-materials__tile--square" onClick={() => onOpenWork(w)}>
+                  <SchoolButton variant="plain" type="button" className="school-materials__tile school-materials__tile--square" onClick={() => onOpenWork(w)}>
                     {w.poster ? (
                       <img className="school-materials__poster" src={sizedPlexImage(w.poster, ...ART_BOX.gridSquare)} alt="" loading="lazy" decoding="async" />
                     ) : (
@@ -78,7 +81,7 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
                     )}
                     <h3 className="school-materials__title">{w.title}</h3>
                     {w.unitCount != null && <p className="school-materials__meta">{w.unitCount} chapters</p>}
-                  </button>
+                  </SchoolButton>
                 </li>
               ))}
             </ul>

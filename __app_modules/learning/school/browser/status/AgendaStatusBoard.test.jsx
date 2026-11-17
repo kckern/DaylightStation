@@ -1845,3 +1845,8 @@ describe('AgendaStatusBoard gold', () => {
     logged.mockRestore();
   });
 });
+
+vi.mock('../../../../../frontend/src/services/WebSocketService.js', async () => {
+  const { createSchoolRealtimeSource } = await import('#testlib/school/realtimeSource.mjs');
+  return { wsService: createSchoolRealtimeSource() };
+});

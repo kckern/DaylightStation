@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * useBookShelf — the reading shelf's state machine (book-shelf UI design
  * §2–§5, §7).
@@ -38,7 +39,7 @@
  *    from that. This hook never puts a learner in a body.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { checkIsbn, hintFor, COPY } from "./isbn.js";
 import { recentFinishes } from "./readingHistory.js";
@@ -118,6 +119,7 @@ function compact(obj) {
  *   waited on the server)? Marks its `scan.visible` as `queued`.
  */
 export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null, openAdd = false, wasWaiting = null }) {
+  const schoolApi = useSchoolApi();
   const wasWaitingRef = useRef(wasWaiting);
   wasWaitingRef.current = wasWaiting;
   // The panel door opens the shelf to TYPE a number, so the pad is the landing
@@ -273,7 +275,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       const me = rosterRes?.ok ? members.find((m) => m?.id === learnerId) : null;
       setLearner({ id: learnerId, name: me?.name || learnerId });
     });
-  }, [learnerId, setNeedsRefresh]);
+  }, [learnerId, setNeedsRefresh, schoolApi]);
 
   /** Show persisted success immediately, then refresh the shelf beneath it. */
   const refetch = useCallback(async ({ receipt: nextReceipt = null } = {}) => {
@@ -303,7 +305,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setReceipt(nextReceipt);
     viewRef.current = 'shelf';
     setView('shelf');
-  }, [learnerId, setNeedsRefresh]);
+  }, [learnerId, setNeedsRefresh, schoolApi]);
 
   useEffect(() => {
     genRef.current += 1;
@@ -620,7 +622,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     }
     setAdd((a) => ({ ...a, lookupHint, canRetry }));
     setStep('number');
-  }, [touch]);
+  }, [touch, schoolApi]);
 
   const retryLookup = useCallback(() => lookup(), [lookup]);
 
@@ -671,7 +673,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       }).catch(() => {});
     }, SPECULATIVE_QUIET_MS);
     return () => { live = false; clearTimeout(timer); };
-  }, [view, step, busy, add.entry, add.lookupHint, lookup]);
+  }, [view, step, busy, add.entry, add.lookupHint, lookup, schoolApi]);
 
   const confirmCover = useCallback((yes) => {
     if (viewRef.current !== 'add' || stepRef.current !== 'cover') return;
@@ -741,7 +743,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     await refetch({ receipt: nextReceipt });
     if (genRef.current !== gen) return; // rule 1 (close() already released)
     release();
-  }, [learnerId, grant, refetch, release]);
+  }, [learnerId, grant, refetch, release, schoolApi]);
 
   const choose = useCallback(async (where, finishedOn) => {
     if (viewRef.current !== 'add' || !['where', 'cover'].includes(stepRef.current) || workRef.current) return;
@@ -831,7 +833,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     await refetch({ receipt: nextReceipt });
     if (genRef.current !== gen) return; // rule 1 (close() already released)
     release();
-  }, [learnerId, grant, refetch, release, touch]);
+  }, [learnerId, grant, refetch, release, touch, schoolApi]);
 
   const submitProgress = useCallback(async ({ page, minutes } = {}) => {
     if (viewRef.current !== 'update') return;
@@ -882,7 +884,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     await refetch({ receipt: { kind: 'reopened', book: currentReceipt.book } });
     if (genRef.current !== gen) return;
     release();
-  }, [learnerId, grant, refetch, release, touch]);
+  }, [learnerId, grant, refetch, release, touch, schoolApi]);
 
   const setMode = useCallback(async (progressMode) => {
     if (viewRef.current !== 'update') return;
@@ -905,7 +907,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     await refetch();
     if (genRef.current !== gen) return; // rule 1 (close() already released)
     release();
-  }, [learnerId, grant, refetch, release, touch]);
+  }, [learnerId, grant, refetch, release, touch, schoolApi]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 

@@ -1,3 +1,7 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { useTeacherWorkspaceApi } from '../../runtime/useSchoolFeatureApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
+import { SchoolSelect } from '../../portal/SchoolSelect.jsx';
 /**
  * ReadingDetailPanel — the console a grown-up corrects one child's reading
  * from (teacher reading admin design §2's sketch, and every verb in §3).
@@ -42,8 +46,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
-import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
-import { schoolApi } from "../../schoolApi.js";
+
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherLog } from "../teacherLog.js";
@@ -114,6 +118,8 @@ export default function ReadingDetailPanel({
   learnerId, learnerName = null, readingId, kids = [],
   onClose = null, onChanged = null,
 }) {
+  const schoolApi = useSchoolApi();
+  const teacherWorkspaceApi = useTeacherWorkspaceApi();
   const child = learnerName ?? learnerId;
   // usePanelFetch reports the STATE; the sentence a refusal came with is kept
   // here so the error can name what happened rather than only that it did.
@@ -134,7 +140,7 @@ export default function ReadingDetailPanel({
     }
     faultRef.current = null;
     return response;
-  }, [learnerId, readingId, actorId]);
+  }, [learnerId, readingId, actorId, teacherWorkspaceApi]);
 
   const detail = usePanelFetch(fetcher, {
     deps: [learnerId, readingId, actorId],
@@ -413,18 +419,18 @@ export default function ReadingDetailPanel({
             )}
           </div>
         </div>
-        <button type="button" className="teacher-reading-detail__done" onClick={() => onClose?.()}>Done</button>
+        <SchoolButton variant="plain" type="button" className="teacher-reading-detail__done" onClick={() => onClose?.()}>Done</SchoolButton>
       </div>
 
       {stale && (
         <div className="teacher-reading-detail__stale" role="alert">
           <p>{stale}</p>
-          <button
+          <SchoolButton variant="plain"
             type="button"
             onClick={() => { setStale(null); detail.retry(); }}
           >
             Reload this reading
-          </button>
+          </SchoolButton>
         </div>
       )}
 
@@ -446,7 +452,7 @@ export default function ReadingDetailPanel({
                 disabled={locked}
                 onChange={(event) => { setIsbn(event.target.value); setLookup(null); }}
               />
-              <button type="button" disabled={locked || blank(isbn)} onClick={relookup}>Re-look-up</button>
+              <SchoolButton variant="plain" type="button" disabled={locked || blank(isbn)} onClick={relookup}>Re-look-up</SchoolButton>
             </div>
             {lookup?.book && (
               <p className="teacher-reading-detail__lookup" role="status">
@@ -491,13 +497,13 @@ export default function ReadingDetailPanel({
               required={false}
               disabled={locked}
             />
-            <button
+            <SchoolButton variant="plain"
               type="button"
               disabled={locked || !identityChanged || pageCountBroken || busy === 'identity'}
               onClick={saveIdentity}
             >
               Save the book
-            </button>
+            </SchoolButton>
             {pageCountBroken && <p className="teacher-panel__empty">A page count is a whole number of pages, or nothing at all.</p>}
             {fault('identity') && <p className="teacher-panel__error">{fault('identity')}</p>}
           </Band>
@@ -513,22 +519,22 @@ export default function ReadingDetailPanel({
                       <span className="teacher-reading-detail__entry-day">{day}</span>
                       <span className="teacher-reading-detail__entry-value">{entryValue(entry)}</span>
                       {entry.source === 'teacher' && <span className="teacher-reading-detail__entry-source">added by a grown-up</span>}
-                      <button
+                      <SchoolButton variant="plain"
                         type="button"
                         aria-label={`Edit ${day}`}
                         disabled={locked}
                         onClick={() => setForm({ kind: 'edit', entryId: entry.id, on: entry.on ?? '', value: Number.isFinite(entry.page) ? String(entry.page) : (Number.isFinite(entry.minutes) ? String(entry.minutes) : ''), note: entry.note ?? '', reason: '' })}
                       >
                         Edit
-                      </button>
-                      <button
+                      </SchoolButton>
+                      <SchoolButton variant="plain"
                         type="button"
                         aria-label={`Delete ${day}`}
                         disabled={locked}
                         onClick={() => setForm({ kind: 'delete', entryId: entry.id, reason: '' })}
                       >
                         Delete
-                      </button>
+                      </SchoolButton>
                     </li>
                   );
                 })}
@@ -570,7 +576,7 @@ export default function ReadingDetailPanel({
                   required={redates}
                   disabled={locked}
                 />
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   disabled={locked || busy === 'entry-edit'
                     || Object.keys(entryPatch()).length === 0
@@ -578,8 +584,8 @@ export default function ReadingDetailPanel({
                   onClick={saveEntry}
                 >
                   Save this day
-                </button>
-                <button type="button" onClick={() => setForm(null)}>Cancel</button>
+                </SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => setForm(null)}>Cancel</SchoolButton>
                 {fault('entry-edit') && <p className="teacher-panel__error">{fault('entry-edit')}</p>}
               </div>
             )}
@@ -594,14 +600,14 @@ export default function ReadingDetailPanel({
                   required
                   disabled={locked}
                 />
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   disabled={locked || blank(form.reason) || busy === 'entry-delete'}
                   onClick={removeEntry}
                 >
                   Remove this day
-                </button>
-                <button type="button" onClick={() => setForm(null)}>Cancel</button>
+                </SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => setForm(null)}>Cancel</SchoolButton>
                 {fault('entry-delete') && <p className="teacher-panel__error">{fault('entry-delete')}</p>}
               </div>
             )}
@@ -638,19 +644,19 @@ export default function ReadingDetailPanel({
                   required={false}
                   disabled={locked}
                 />
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   disabled={locked || blank(form.on) || busy === 'entry-add'
                     || (savedMode !== 'check' && !wholeNumber(form.value))}
                   onClick={addEntry}
                 >
                   Add this day
-                </button>
-                <button type="button" onClick={() => setForm(null)}>Cancel</button>
+                </SchoolButton>
+                <SchoolButton variant="plain" type="button" onClick={() => setForm(null)}>Cancel</SchoolButton>
                 {fault('entry-add') && <p className="teacher-panel__error">{fault('entry-add')}</p>}
               </div>
             ) : (
-              <button type="button" disabled={locked} onClick={openAdd}>Add a day they read</button>
+              <SchoolButton variant="plain" type="button" disabled={locked} onClick={openAdd}>Add a day they read</SchoolButton>
             )}
           </Band>
 
@@ -691,14 +697,14 @@ export default function ReadingDetailPanel({
               required={stateShrinks}
               disabled={locked}
             />
-            <button
+            <SchoolButton variant="plain"
               type="button"
               disabled={locked || !stateChanged || needsFinishDay || busy === 'state'
                 || (stateShrinks && blank(stateReason))}
               onClick={saveState}
             >
               Save the state
-            </button>
+            </SchoolButton>
             {needsFinishDay && <p className="teacher-panel__empty">A finished book needs the day it was finished.</p>}
             {fault('state') && <p className="teacher-panel__error">{fault('state')}</p>}
           </Band>
@@ -707,7 +713,7 @@ export default function ReadingDetailPanel({
             <div className="teacher-reading-detail__danger">
               <div className="teacher-reading-detail__field">
                 <label htmlFor="reading-move-to">Move to</label>
-                <select
+                <SchoolSelect
                   id="reading-move-to"
                   value={target}
                   disabled={locked}
@@ -715,7 +721,7 @@ export default function ReadingDetailPanel({
                 >
                   <option value="">Another child…</option>
                   {siblings.map((kid) => <option key={kid.id} value={kid.id}>{kid.name}</option>)}
-                </select>
+                </SchoolSelect>
               </div>
               <Reason
                 label="Reason for moving this reading"
@@ -728,18 +734,18 @@ export default function ReadingDetailPanel({
               {armed === 'move' ? (
                 <div className="teacher-reading-detail__confirm" role="alert">
                   <span>{`Move ${book} to ${targetName}? It leaves ${child}’s reading year and both children are told why.`}</span>
-                  <button type="button" disabled={busy === 'move'} onClick={move}>Confirm the move</button>
-                  <button type="button" onClick={() => setArmed(null)}>Cancel</button>
+                  <SchoolButton variant="plain" type="button" disabled={busy === 'move'} onClick={move}>Confirm the move</SchoolButton>
+                  <SchoolButton variant="plain" type="button" onClick={() => setArmed(null)}>Cancel</SchoolButton>
                 </div>
               ) : (
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   className="teacher-danger-btn"
                   disabled={locked || !target || blank(moveReason)}
                   onClick={() => setArmed('move')}
                 >
                   Move to another child
-                </button>
+                </SchoolButton>
               )}
               {fault('move') && <p className="teacher-panel__error">{fault('move')}</p>}
             </div>
@@ -756,18 +762,18 @@ export default function ReadingDetailPanel({
               {armed === 'delete' ? (
                 <div className="teacher-reading-detail__confirm" role="alert">
                   <span>{`Delete ${book} and the ${record?.entries?.length ?? 0} day${(record?.entries?.length ?? 0) === 1 ? '' : 's'} logged against it? Its history goes with it, so this cannot be undone.`}</span>
-                  <button type="button" disabled={busy === 'delete'} onClick={destroy}>Confirm the deletion</button>
-                  <button type="button" onClick={() => setArmed(null)}>Cancel</button>
+                  <SchoolButton variant="plain" type="button" disabled={busy === 'delete'} onClick={destroy}>Confirm the deletion</SchoolButton>
+                  <SchoolButton variant="plain" type="button" onClick={() => setArmed(null)}>Cancel</SchoolButton>
                 </div>
               ) : (
-                <button
+                <SchoolButton variant="plain"
                   type="button"
                   className="teacher-danger-btn"
                   disabled={locked || blank(deleteReason)}
                   onClick={() => setArmed('delete')}
                 >
                   Delete this reading
-                </button>
+                </SchoolButton>
               )}
               {fault('delete') && <p className="teacher-panel__error">{fault('delete')}</p>}
             </div>
@@ -813,24 +819,24 @@ export default function ReadingDetailPanel({
                             required={shrinks}
                             disabled={locked}
                           />
-                          <button
+                          <SchoolButton variant="plain"
                             type="button"
                             disabled={locked || busy === `undo:${revision.id}` || (shrinks && blank(undoing.reason))}
                             onClick={() => undo(revision)}
                           >
                             Confirm the undo
-                          </button>
-                          <button type="button" onClick={() => setUndoing(null)}>Cancel</button>
+                          </SchoolButton>
+                          <SchoolButton variant="plain" type="button" onClick={() => setUndoing(null)}>Cancel</SchoolButton>
                         </div>
                       ) : (
-                        <button
+                        <SchoolButton variant="plain"
                           type="button"
                           aria-label={`Undo ${phrase}, ${humanDateTime(revision.at) ?? 'time unrecorded'}`}
                           disabled={locked}
                           onClick={() => setUndoing({ revisionId: revision.id, reason: '' })}
                         >
                           Undo
-                        </button>
+                        </SchoolButton>
                       ))}
                     {fault(`undo:${revision.id}`) && <p className="teacher-panel__error">{fault(`undo:${revision.id}`)}</p>}
                   </li>

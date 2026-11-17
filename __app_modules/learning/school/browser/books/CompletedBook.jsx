@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 import BookCover from "./BookCover.jsx";
 import { presentBook } from "./bookPresentation.js";
 import FinishContext from "./FinishContext.jsx";
@@ -19,9 +20,9 @@ export default function CompletedBook({ item, actions, canReadAgain = true }) {
       </div>
       <div className="school-books-task__controls">
       {canReadAgain ? (
-        <button type="button" className="school-books-add__door school-books-completed__again" onClick={actions.readAgain}>
+        <SchoolButton variant="plain" type="button" className="school-books-add__door school-books-completed__again" onClick={actions.readAgain}>
           <Icon name="book-starting" className="school-books-add__door-icon" /><span>Read again</span>
-        </button>
+        </SchoolButton>
       ) : (
         <p className="school-books-add__prompt" data-testid="scan-to-read-again">Reading it again? Scan its barcode.</p>
       )}

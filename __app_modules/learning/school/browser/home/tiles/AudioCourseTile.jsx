@@ -1,3 +1,4 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 // Audio course tile: square art (1/1), a headphones chip, clamped title, and
 // a null-safe "N works" / "N chapters" meta line. Pure/presentational.
 // Kind colour (var(--kind-audio)) appears only on the chip.
@@ -13,7 +14,7 @@ export default function AudioCourseTile({ item, onOpen }) {
   const meta = formatMeta(item);
   return (
     <li className="school-tile school-tile--audio">
-      <button type="button" className="school-tile__button" onClick={() => onOpen(item)}>
+      <SchoolButton variant="plain" type="button" className="school-tile__button" onClick={() => onOpen(item)}>
         <span className="school-tile__poster-wrap">
           {item.poster ? (
             <PosterImg src={item.poster} alt={item.title} />
@@ -28,7 +29,7 @@ export default function AudioCourseTile({ item, onOpen }) {
         </span>
         <h3 className="school-tile__title">{item.title}</h3>
         {meta && <p className="school-tile__meta">{meta}</p>}
-      </button>
+      </SchoolButton>
     </li>
   );
 }

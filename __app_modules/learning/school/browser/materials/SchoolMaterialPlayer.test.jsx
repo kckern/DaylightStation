@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import SchoolMaterialPlayer from "./SchoolMaterialPlayer.jsx";
 
 const unitProgressMock = vi.fn();
@@ -46,13 +46,14 @@ function playerApi() {
 vi.mock("../../../../../__capabilities/playback/browser/player/Player.jsx", async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
   return {
-    default: forwardRef(({ play, clear, onProgress }, ref) => {
+    default: forwardRef(({ play, clear, onProgress, onPlaybackCompleted }, ref) => {
       useImperativeHandle(ref, () => playerApi(), []);
       return (
         <div data-testid="player-stub">
           <span data-testid="content-id">{play?.contentId}</span>
           <button type="button" onClick={() => onProgress({ currentTime: 5, duration: 100, percent: '5.0' })}>tick</button>
-          <button type="button" onClick={() => clear()}>simulate-end</button>
+          <button type="button" onClick={() => { onPlaybackCompleted?.({ reason: 'natural-end', assetId: play?.contentId }); clear(); }}>simulate-end</button>
+          <button type="button" onClick={() => clear()}>simulate-clear</button>
         </div>
       );
     }),
@@ -282,4 +283,33 @@ describe('SchoolMaterialPlayer', () => {
     expect(materialsErrorMock).toHaveBeenCalledWith('quiz-bank-load-failed', { bankId: 'bank_1' });
     expect(screen.queryByTestId('quiz-runner')).toBeNull();
   });
+});
+
+
+it('dismissal through clear never starts the gate quiz', async () => {
+  const onExit = vi.fn();
+  render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={onExit} />);
+  await findPlayer(); fireEvent.click(screen.getByText('simulate-clear'));
+  await waitFor(() => expect(onExit).toHaveBeenCalledWith({ refetch: true }));
+  expect(bankMock).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('quiz-runner')).toBeNull();
+});
+it('does not exit the player when natural completion is followed by Player cleanup', async () => {
+  let finishBank;
+  bankMock.mockReturnValue(new Promise(resolve => { finishBank = resolve; }));
+  const onExit = vi.fn();
+  render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={onExit} />);
+  await findPlayer(); fireEvent.click(screen.getByText('simulate-end'));
+  expect(onExit).not.toHaveBeenCalled();
+  await act(async () => { finishBank({ ok: true, status: 200, data: { id: 'bank_1', items: [] } }); });
+  expect(await screen.findByTestId('quiz-runner')).toBeInTheDocument();
+});
+it('discards a quiz-bank response after leaving the unit', async () => {
+  let finishBank;
+  bankMock.mockReturnValue(new Promise(resolve => { finishBank = resolve; }));
+  const onExit = vi.fn();
+  const view = render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={onExit} />);
+  await findPlayer(); fireEvent.click(screen.getByText('simulate-end')); view.unmount();
+  await act(async () => { finishBank({ ok: false, status: 503, data: null }); });
+  expect(onExit).not.toHaveBeenCalled();
 });

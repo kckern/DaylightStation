@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../../../portal/useSchoolCommands.js';
+import { SchoolButton } from '../../../portal/SchoolButton.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from "../useSentenceAudio.js";
 import { languageLog } from "../languageLog.js";
@@ -187,7 +189,7 @@ const SPEAK_KEY = 'F2';
  */
 function QuietButton({ icon, word, caption, captionTone = null, onClick }) {
   return (
-    <button type="button" className="lang-btn lang-btn--quiet" onClick={onClick}>
+    <SchoolButton variant="plain" type="button" className="lang-btn lang-btn--quiet" onClick={onClick}>
       {icon && <Icon name={icon} className="lang-btn__glyph" />}
       {/* The accessible name, kept off screen: the caption beside it says the
           shortcut, and a control called "Tab plays" is not called "Play". */}
@@ -202,7 +204,7 @@ function QuietButton({ icon, word, caption, captionTone = null, onClick }) {
       >
         {caption}
       </span>
-    </button>
+    </SchoolButton>
   );
 }
 
@@ -783,9 +785,9 @@ export default function TypedRung({
    * its handler is too): Space or Enter goes on — commits what they wrote —
    * and Tab plays the sentence again. Nothing here can change the answer.
    */
-  useEffect(() => {
-    if (!checked || submitted) return undefined;
-    const onKey = (e) => {
+  useSchoolCommandListener((e) => {
+if (!checked || submitted) return undefined;
+
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'Tab') { e.preventDefault(); play(); return; }
       // A focused control keeps its own keys (the shell's rule) — except the
@@ -796,10 +798,8 @@ export default function TypedRung({
         e.preventDefault();
         submit(e.key === ' ' ? 'key:Space' : 'key:Enter');
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [checked, submitted, play, submit]);
+
+}, { allowInInput: true });
 
   const onKeyDown = useCallback((e) => {
     if (e.key === 'Tab') {
@@ -862,9 +862,9 @@ export default function TypedRung({
               {/* The meaning, small, above the strip — reinforcement, heard only
                   when asked for (a tap, or Shift+Tab). */}
               {meaningText && (
-                <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={hearMeaning}>
+                <SchoolButton variant="plain" type="button" tabIndex={-1} className="lang-rung__say lang-rung__source" onClick={hearMeaning}>
                   {meaningText}
-                </button>
+                </SchoolButton>
               )}
               {/* The wrapper exists for the refusal flash: the strip renders what
                   `columnsFor` decided and holds no state, so "this keystroke was
@@ -883,9 +883,9 @@ export default function TypedRung({
             </>
           )
           : (
-            <button type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={play}>
+            <SchoolButton variant="plain" type="button" tabIndex={-1} className="lang-rung__say lang-rung__target" onClick={play}>
               {targetText}
-            </button>
+            </SchoolButton>
           )}
 
         {/* THE ANSWER, IN PLACE OF THE FIELD — not above it. Rendering both put
@@ -1052,7 +1052,7 @@ export default function TypedRung({
             />
           )}
           {canSpeak && speaking === 'recording' && (
-            <button
+            <SchoolButton variant="plain"
               type="button"
               className="lang-btn lang-btn--quiet lang-btn--live"
               onClick={stopSpeaking}
@@ -1060,7 +1060,7 @@ export default function TypedRung({
               <Icon name="stop" className="lang-btn__glyph" />
               <span className="lang-btn__word">{SPEAK_STOP_WORD}</span>
               <span className="lang-btn__key" aria-hidden="true">{showShortcuts ? 'F2 or Enter stops' : 'Stop'}</span>
-            </button>
+            </SchoolButton>
           )}
           {/* IN FLIGHT, and deliberately not a button. The round trip is a
               model call taking seconds; there is nothing useful to press, and
@@ -1073,7 +1073,7 @@ export default function TypedRung({
               <span className="lang-btn__key">Writing it down…</span>
             </span>
           )}
-          <button
+          <SchoolButton variant="plain"
             type="button"
             ref={commitRef}
             className="lang-btn lang-btn--primary"
@@ -1084,7 +1084,7 @@ export default function TypedRung({
                 is nothing to hand in, so the button says what actually happens
                 next. */}
             {saving ? 'Saving…' : (revealed || checked) ? 'Continue' : 'Submit'}
-          </button>
+          </SchoolButton>
         </div>
       </div>
       {showShortcuts && meaningText && (

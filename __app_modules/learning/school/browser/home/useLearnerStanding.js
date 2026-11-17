@@ -1,5 +1,6 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 import { useEffect, useMemo, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { labelize } from "../teacher/labelize.js";
 import { schoolLog } from "../schoolLog.js";
 
@@ -49,6 +50,7 @@ export function deriveStanding(report) {
  *   status: 'loading'|'ready'|'empty'|'error', periodId: string|null}}
  */
 export function useLearnerStanding(learnerId) {
+  const schoolApi = useSchoolApi();
   const [periods, setPeriods] = useState(null);
   const [report, setReport] = useState(null);
   const [status, setStatus] = useState('loading');
@@ -60,7 +62,7 @@ export function useLearnerStanding(learnerId) {
       setPeriods(ok && Array.isArray(data) ? data : []);
     });
     return () => { alive = false; };
-  }, []);
+  }, [schoolApi]);
 
   const currentPeriod = useMemo(() => currentPeriodFor(periods), [periods]);
 
@@ -94,7 +96,7 @@ export function useLearnerStanding(learnerId) {
       schoolLog.standing('loaded', { learnerId, periodId: currentPeriod.periodId, courses: found.length });
     });
     return () => { alive = false; };
-  }, [learnerId, periods, currentPeriod]);
+  }, [learnerId, periods, currentPeriod, schoolApi]);
 
   const courses = useMemo(() => deriveStanding(report), [report]);
 

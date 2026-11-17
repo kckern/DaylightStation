@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * BookShelfDoor — "I want to log a book", asked from the panel's resting state.
  *
@@ -20,12 +22,13 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import Icon from "../home/icons/Icon.jsx";
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import LearnerChoice from "./LearnerChoice.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 
 export default function BookShelfDoor({ screenId, roster = [], onLaunch }) {
+  const schoolApi = useSchoolApi();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -63,11 +66,11 @@ export default function BookShelfDoor({ screenId, roster = [], onLaunch }) {
     // `openAdd` is the whole point of this door: the child came to type a
     // number, so the shelf must not make them find `Add a book` first.
     onLaunch({ ...result.data.launchTarget, bookEntry: null, openAdd: true }, learnerId);
-  }, [screenId, onLaunch]);
+  }, [screenId, onLaunch, schoolApi]);
 
   if (!asking) {
     return (
-      <button
+      <SchoolButton variant="plain"
         type="button"
         className="school-book-door"
         data-testid="book-shelf-door"
@@ -75,7 +78,7 @@ export default function BookShelfDoor({ screenId, roster = [], onLaunch }) {
       >
         <Icon name="english" className="school-book-door__icon" />
         <span className="school-book-door__label">Log a book</span>
-      </button>
+      </SchoolButton>
     );
   }
 

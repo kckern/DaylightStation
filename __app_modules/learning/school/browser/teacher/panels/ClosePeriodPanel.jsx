@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../../runtime/useSchoolApi.js';
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 /**
  * ClosePeriodPanel — freeze the selected period's report card (wave 4,
  * teacher.period.close). Two-tap confirm; an already-frozen period offers
@@ -5,11 +7,12 @@
  * The write carries the teacher stamp; refresh is server-authoritative.
  */
 import { useState } from 'react';
-import { schoolApi } from "../../schoolApi.js";
+
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 
 export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = null, onClosed }) {
+  const schoolApi = useSchoolApi();
   // A 404 here simply means "not closed yet" — the empty state, never an error.
   const frozen = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
     deps: [learnerId, periodId],
@@ -37,9 +40,9 @@ export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = nu
       {!armed ? (
         // Consequence wears a costume (design audit): the records-freezing
         // verb must not dress like 'Edit milestones'.
-        <button type="button" className="teacher-danger-btn" onClick={() => setArmed(true)}>
+        <SchoolButton variant="plain" type="button" className="teacher-danger-btn" onClick={() => setArmed(true)}>
           {alreadyClosed ? 'Supersede & re-close this period' : 'Close this period'}
-        </button>
+        </SchoolButton>
       ) : (
         <span className="teacher-close-period__confirm">
           <span>
@@ -50,8 +53,8 @@ export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = nu
               ` ${live.data.pendingReview} item${live.data.pendingReview === 1 ? '' : 's'} still await a mark.`
             )}
           </span>
-          <button type="button" disabled={busy === 'close'} onClick={close}>Confirm</button>
-          <button type="button" onClick={() => setArmed(false)}>Cancel</button>
+          <SchoolButton variant="plain" type="button" disabled={busy === 'close'} onClick={close}>Confirm</SchoolButton>
+          <SchoolButton variant="plain" type="button" onClick={() => setArmed(false)}>Cancel</SchoolButton>
         </span>
       )}
       {errors.close && <p className="teacher-panel__error">{errors.close}</p>}

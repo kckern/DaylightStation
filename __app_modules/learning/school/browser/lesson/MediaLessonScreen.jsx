@@ -1,3 +1,4 @@
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 /**
  * MediaLessonScreen — the `school-lesson` widget on the living-room TV, and the
  * composition the whole hard-gated-media-lesson feature resolves to.
@@ -273,7 +274,7 @@ export function LessonStage({ store, api, play, getMediaEl, onMediaRef, onPlayba
     || (state.view === 'celebrating' && state.celebration === 'checkpoint');
 
   return (
-    <div className="media-lesson-stage" data-testid="media-lesson-stage">
+    <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson-stage" data-testid="media-lesson-stage">
       <SurroundFrame
         active={framed}
         data={surround}
@@ -302,7 +303,7 @@ export function LessonStage({ store, api, play, getMediaEl, onMediaRef, onPlayba
           learnerName={state.learner?.name ?? state.learner?.displayName ?? null}
         />
       ) : null}
-    </div>
+    </div></SchoolSurfaceProvider>
   );
 }
 
@@ -519,16 +520,16 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
   if (view === 'idle') {
     if (!notice) return null;
     return (
-      <div className="media-lesson media-lesson--idle" data-testid="media-lesson" data-view="idle">
+      <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className="media-lesson media-lesson--idle" data-testid="media-lesson" data-view="idle">
         <Notice notice={notice} />
-      </div>
+      </div></SchoolSurfaceProvider>
     );
   }
   if (view === 'playing' || view === 'checkpoint') return null;
   if (view === 'celebrating' && celebration === 'checkpoint') return null;
 
   return (
-    <div className={`media-lesson media-lesson--${view}`} data-testid="media-lesson" data-view={view}>
+    <SchoolSurfaceProvider surfaceId="lesson" density="touch"><div className={`media-lesson media-lesson--${view}`} data-testid="media-lesson" data-view={view}>
       <Notice notice={notice} />
 
       {view === 'open' ? (
@@ -551,7 +552,7 @@ export function MediaLessonScreen({ location = 'livingroom', checkpointCelebrate
           {lesson?.title ? <p className="media-lesson__hint">{lesson.title}</p> : null}
         </div>
       ) : null}
-    </div>
+    </div></SchoolSurfaceProvider>
   );
 }
 

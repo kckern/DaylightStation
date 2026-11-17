@@ -4,34 +4,25 @@
  * the program must tell 403 from 404 from 0.
  */
 import { cardLadderLog } from "./cardLadderLog.js";
-import { schoolDeviceHeaders } from "../../../schoolDevice.js";
+import { createSchoolEndpointClient } from '../../../runtime/schoolEndpointClient.js';
 
 const enc = encodeURIComponent;
 
-export function createCardLadderApi({ test = false } = {}) {
+export function createCardLadderApi({ test = false, ...options } = {}) {
   const BASE = `/api/v1/school/card-ladder${test ? '/test' : ''}`;
 
-  async function call(path, { method = 'GET', body, raw = false, contentType = null } = {}) {
+  const client = createSchoolEndpointClient({ ...options, base: BASE });
+  async function call(path, { method = 'GET', body, raw = false, contentType = null, ...requestOptions } = {}) {
     const startedAt = Date.now();
-    try {
-      const init = { method, credentials: 'same-origin', headers: schoolDeviceHeaders() };
-      if (body !== undefined) {
-        if (raw) {
-          init.body = body;
-          if (contentType) init.headers['Content-Type'] = contentType;
-        } else {
-          init.body = JSON.stringify(body);
-          init.headers['Content-Type'] = 'application/json';
-        }
-      }
-      const r = await fetch(`${BASE}${path}`, init);
-      const data = await r.json().catch(() => null);
-      if (!r.ok) cardLadderLog.apiRejected({ path: path.split('?')[0], method, status: r.status, ms: Date.now() - startedAt, error: data?.error ?? null, test });
-      return { ok: r.ok, status: r.status, data };
-    } catch (error) {
-      cardLadderLog.apiFailed({ path: path.split('?')[0], method, error: error?.message ?? String(error), test });
-      return { ok: false, status: 0, data: null };
+    const result = await client.request(path, {
+      ...requestOptions, method, body, raw, headers: contentType ? { 'Content-Type': contentType } : {},
+    });
+    if (!result.ok) {
+      const detail = { path: path.split('?')[0], method, status: result.status, ms: Date.now() - startedAt, kind: result.error?.kind, test };
+      if (result.status) cardLadderLog.apiRejected(detail);
+      else cardLadderLog.apiFailed(detail);
     }
+    return client.finish(result);
   }
 
   return {

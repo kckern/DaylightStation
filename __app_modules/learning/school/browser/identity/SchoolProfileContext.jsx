@@ -1,3 +1,4 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * School identity container (spec §6). Soft pick + idle lapse: identity is
  * claimable by a tap, persisted per-device under the flat key 'school:user',
@@ -8,7 +9,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useIdleGap } from "../../../../../frontend/src/lib/identity/useIdleGap.js";
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 
 const STORAGE_KEY = 'school:user';
@@ -17,6 +18,7 @@ const LAPSE_MINUTES = 10;
 const SchoolProfileContext = createContext(null);
 
 export function SchoolProfileProvider({ children }) {
+  const schoolApi = useSchoolApi();
   const [status, setStatus] = useState('loading');
   const [roster, setRoster] = useState([]);
   const [currentId, setCurrentId] = useState(null);
@@ -44,7 +46,7 @@ export function SchoolProfileProvider({ children }) {
       setStatus('ready');
     });
     return () => { alive = false; };
-  }, []);
+  }, [schoolApi]);
 
   const claim = useCallback((id) => {
     setCurrentId(id);

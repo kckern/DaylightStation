@@ -53,39 +53,152 @@ const companionProgressMock = vi.fn();
 const materialsMock = vi.fn();
 const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
-vi.mock("./schoolApi.js", () => ({
+vi.mock("./schoolApi.js", () => {const endpoints = {
   schoolApi: {
     bookScans: {
-      pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn(), open: vi.fn(),
-      pile: vi.fn(async () => ({ ok: true, data: { pile: { screenId: 'portal', cards: [], reader: null, live: false, quietGapMs: 120000, lastScanAt: null } } })),
-      filePile: vi.fn(), moveCard: vi.fn(), removeCard: vi.fn(),
+      pending: vi.fn(async () => ({
+        ok: true,
+        data: {
+          intent: null
+        }
+      })),
+      claim: vi.fn(),
+      dismiss: vi.fn(),
+      open: vi.fn(),
+      pile: vi.fn(async () => ({
+        ok: true,
+        data: {
+          pile: {
+            screenId: 'portal',
+            cards: [],
+            reader: null,
+            live: false,
+            quietGapMs: 120000,
+            lastScanAt: null
+          }
+        }
+      })),
+      filePile: vi.fn(),
+      moveCard: vi.fn(),
+      removeCard: vi.fn()
     },
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
-    banks: (...a) => banksMock(...a),
-    bank: vi.fn(async (id) => ({
-      ok: true, status: 200,
-      data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] },
+    roster: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: [{
+        id: 'kid1',
+        name: 'Alpha',
+        birthyear: 2016
+      }]
     })),
-    openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
-    answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
+    banks: (...a) => banksMock(...a),
+    bank: vi.fn(async id => ({
+      ok: true,
+      status: 200,
+      data: {
+        id,
+        title: 'Caps',
+        audience: 'assigned',
+        items: [{
+          id: 'q1',
+          type: 'multiple_choice',
+          prompt: 'WA?',
+          answer: 'Olympia',
+          choices: ['Seattle', 'Olympia']
+        }]
+      }
+    })),
+    openSession: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sessionId: 'ses_1'
+      }
+    })),
+    answer: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        correct: true,
+        expected: 'Olympia',
+        attemptId: 'att_1'
+      }
+    })),
     materials: (...a) => materialsMock(...a),
     materialUnits: (...a) => materialUnitsMock(...a),
     unitProgress: (...a) => unitProgressMock(...a),
-    quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
-    report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
-    results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    surfaceProfile: vi.fn(async () => ({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } })),
-    certification: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    quizRequests: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    requestQuiz: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        requested: true,
+        duplicate: false
+      }
+    })),
+    report: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: [{
+          id: 'kid1',
+          name: 'Alpha',
+          reports: []
+        }]
+      }
+    })),
+    results: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    materialProgress: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    surfaceProfile: vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      data: {
+        error: 'surface-profile-unresolved'
+      }
+    })),
+    certification: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Feedback delivery + kid-visible standing (Task 9) — the student panel
     // fetches these unconditionally once a learner is claimed.
-    periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
-    reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    periods: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
+    reportCard: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: null
+    })),
+    reviewLearner: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Today's dry-run plan (debt W7a) — the student panel fetches this
     // unconditionally once a learner is claimed.
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
+    agendaPreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sections: []
+      }
+    })),
     companionProgress: (...a) => companionProgressMock(...a),
     // The locked wall panel: keypad resolve/act, and what the status board
     // beside it asks for.
@@ -95,18 +208,53 @@ vi.mock("./schoolApi.js", () => ({
     selfServicePrinterStatus: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     earningsRoster: (...a) => earningsRosterMock(...a),
-    earningsPreview: vi.fn(async learnerId => ({ ok: true, data: { learnerId, totals: { silver: 24 }, lines: [] } })),
-    gems: vi.fn(async () => ({ ok: true, data: { mode: 'live', learners: [{ learnerId: 'kid1', name: 'Alpha' }], categories: [], cells: {} } })),
-    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
+    earningsPreview: vi.fn(async learnerId => ({
+      ok: true,
+      data: {
+        learnerId,
+        totals: {
+          silver: 24
+        },
+        lines: []
+      }
+    })),
+    gems: vi.fn(async () => ({
+      ok: true,
+      data: {
+        mode: 'live',
+        learners: [{
+          learnerId: 'kid1',
+          name: 'Alpha'
+        }],
+        categories: [],
+        cells: {}
+      }
+    })),
+    teacherDay: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: []
+      }
+    })),
     directLaunch: (...a) => directLaunchMock(...a),
     // The coin bank door and screen (economy slice 1, C3), and the strip.
     bankOpen: (...a) => bankOpenMock(...a),
     economyBank: (...a) => economyBankMock(...a),
-    nextItem: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+    nextItem: vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      data: null
+    })),
     // The live FSRS flashcards mount; a /test door must never reach it.
-    flashcardDeck: vi.fn(async () => ({ ok: false, status: 404, data: null })),
-  },
-}));
+    flashcardAssessment: vi.fn(async () => ({ok:true,status:200,data:{bank:null}})),
+    flashcardDeck: vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      data: null
+    }))
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
 const directLaunchMock = vi.fn();
 const bankOpenMock = vi.fn();
 // What prices the board's coin cell, the door to a kid's bank. A wide window
@@ -122,7 +270,7 @@ const actMock = vi.fn();
 
 const coursesMock = vi.fn();
 const dayMock = vi.fn();
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => { const endpoints = {
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: (...a) => dayMock(...a),
@@ -130,7 +278,7 @@ vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },
-}));
+}; return {...endpoints, createLanguageApi: () => endpoints.languageApi}; });
 
 vi.mock("../../../../__capabilities/playback/browser/player/Player.jsx", () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
@@ -1070,3 +1218,57 @@ for (const stop of ['unmount', 'deadline']) {
     } finally { view.unmount(); vi.useRealTimers(); }
   });
 }
+
+describe('School surface activity lifetime', () => {
+  it('renders a granted cube on the locked Portal', async () => {
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    let mounted;
+    await act(async () => {
+      launchHook.claim('kid1');
+      mounted = launchHook.onLaunch({kind:'program',program:'rubiks-cube',courseId:'beginner-v1',cubeGrant:'g'},'kid1');
+    });
+    expect(await mounted).toBe(true);
+    expect(screen.getByTestId('cube-stub')).toBeInTheDocument();
+  });
+
+  it('discards a pending tracked deck after its learner changes', async () => {
+    const roster = schoolApi.roster.getMockImplementation();
+    schoolApi.roster.mockResolvedValue({ok:true,status:200,data:[{id:'kid1',name:'Alpha'},{id:'kid2',name:'Beta'}]});
+    let resolveDeck;
+    schoolApi.flashcardDeck.mockImplementationOnce(() => new Promise(resolve => { resolveDeck=resolve; }));
+    try {
+      render(<SchoolApp mode="locked" />);
+      await screen.findByTestId('selfservice-keypad');
+      let pending;
+      await act(async () => {
+        launchHook.claim('kid1');
+        pending=launchHook.onLaunch({kind:'program',program:'flashcards',deckId:'deck-a'},'kid1');
+      });
+      await act(async () => { launchHook.claim('kid2'); });
+      let mounted;
+      await act(async () => {
+        resolveDeck({ok:true,status:200,data:{deck:{id:'deck-a',cards:[]}}});
+        mounted=await pending;
+      });
+      expect(mounted).toBe(false);
+      expect(screen.getByTestId('selfservice-keypad')).toBeInTheDocument();
+    } finally { schoolApi.roster.mockImplementation(roster); }
+  });
+
+  it('closes an active learner-scoped card ladder after an identity lapse', async () => {
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    let mounted;
+    await act(async () => {
+      launchHook.claim('kid1');
+      mounted = launchHook.onLaunch({kind:'program',program:'flashcards',deckId:'deck-a',policy:{mode:'card-ladder'}},'kid1');
+    });
+    expect(await mounted).toBe(true);
+    expect(screen.getByTestId('card-ladder-stub')).toBeInTheDocument();
+    const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+11*60_000);
+    try { await act(async () => { fireEvent.pointerDown(window); }); } finally { clock.mockRestore(); }
+    expect(screen.queryByTestId('card-ladder-stub')).toBeNull();
+    expect(screen.getByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+});

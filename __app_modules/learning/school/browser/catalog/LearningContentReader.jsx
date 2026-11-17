@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /** Generic reader for authored notes and worked examples. */
 export default function LearningContentReader({ module, onExit }) {
   const blocks = module.type === 'lecture_notes'
@@ -12,7 +13,7 @@ export default function LearningContentReader({ module, onExit }) {
       <div className="school-learning-reader__body">
         {blocks.map((block) => <LearningBlock key={block.blockId} block={block} />)}
       </div>
-      <button type="button" className="school-runner__done" onClick={onExit}>Continue lesson</button>
+      <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Continue lesson</SchoolButton>
     </article>
   );
 }

@@ -1,3 +1,4 @@
+import { createSchoolEndpointClient } from '../runtime/schoolEndpointClient.js';
 /**
  * Status-aware client for the card-ladder "grown-up word controls" routes
  * (`__docs/reference/school/card-ladder.md` — Grown-up word controls). Mounted
@@ -12,22 +13,11 @@
  */
 const BASE = '/api/v1/school/card-ladder/admin';
 
-async function request(path, { method = 'GET', body } = {}) {
-  try {
-    const response = await fetch(`${BASE}${path}`, {
-      method,
-      credentials: 'same-origin',
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    const data = await response.json().catch(() => null);
-    return { ok: response.ok, status: response.status, data };
-  } catch {
-    return { ok: false, status: 0, data: null };
-  }
-}
+export function createCardLadderAdminApi(options = {}) {
+  const client = createSchoolEndpointClient({ ...options, base: BASE });
+  const request = async (path, requestOptions = {}) => client.finish(await client.request(path, requestOptions));
 
-export const cardLadderAdminApi = {
+  return {
   // Every word the learner can meet, its ladder state, and its judged typed
   // answers from the last 14 study days (card-ladder.md "Grown-up word
   // controls"). A GET, so `actorId` rides the query string.
@@ -71,4 +61,6 @@ export const cardLadderAdminApi = {
   undoTuning: (body) => request('/tuning/undo', { method: 'POST', body }),
 };
 
+}
+export const cardLadderAdminApi = createCardLadderAdminApi();
 export default cardLadderAdminApi;

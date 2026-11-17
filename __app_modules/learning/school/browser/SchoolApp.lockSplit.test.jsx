@@ -2,25 +2,98 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import SchoolApp from "./SchoolApp.jsx";
 
-vi.mock("./schoolApi.js", () => ({
+vi.mock("./schoolApi.js", () => {const endpoints = {
   schoolApi: {
-    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner3', name: 'Learner3', birthyear: 2016 }] })),
-    wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
-    surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),
-    materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
-    banks: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    bookScans: {
+      pending: vi.fn(async () => ({
+        ok: true,
+        data: {
+          intent: null
+        }
+      })),
+      claim: vi.fn(),
+      dismiss: vi.fn()
+    },
+    roster: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: [{
+        id: 'learner3',
+        name: 'Learner3',
+        birthyear: 2016
+      }]
+    })),
+    wallet: vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      data: null
+    })),
+    surfaceProfile: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        surfaceId: 'screen-browser'
+      }
+    })),
+    materials: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        materials: []
+      }
+    })),
+    banks: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: []
+    })),
     // Discs are per-ASSIGNMENT now, so the fixture has to carry unit ids.
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: {
-      sections: [{ subject: 'math', next: { unitId: 'math.01' } }, { subject: 'reading', next: { unitId: 'read.01' } }],
-      entries: [{ unitId: 'math.01', subject: 'math' }, { unitId: 'read.01', subject: 'reading' }],
-    } })),
-    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ learnerId: 'learner3', sessions: [{ unitId: 'math.01', subject: 'math', outcome: { result: 'passed' } }] }] } })),
-  },
-}));
-vi.mock("./Programs/SentenceLadder/languageApi.js", () => ({
-  languageApi: { courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })) },
-}));
+    agendaPreview: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        sections: [{
+          subject: 'math',
+          next: {
+            unitId: 'math.01'
+          }
+        }, {
+          subject: 'reading',
+          next: {
+            unitId: 'read.01'
+          }
+        }],
+        entries: [{
+          unitId: 'math.01',
+          subject: 'math'
+        }, {
+          unitId: 'read.01',
+          subject: 'reading'
+        }]
+      }
+    })),
+    teacherDay: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {
+        learners: [{
+          learnerId: 'learner3',
+          sessions: [{
+            unitId: 'math.01',
+            subject: 'math',
+            outcome: {
+              result: 'passed'
+            }
+          }]
+        }]
+      }
+    }))
+  }
+}; return {...endpoints, createSchoolApi: () => endpoints.schoolApi};});
+vi.mock("./Programs/SentenceLadder/languageApi.js", () => {
+  const languageApi = { courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })) };
+  return { languageApi, createLanguageApi: () => languageApi };
+});
 vi.mock("./useSchoolLaunch.js", () => ({ useSchoolLaunch: vi.fn() }));
 vi.mock("./selfService/useScanCeremony.js", () => ({ useScanCeremony: () => ({ current: null, clear: vi.fn() }) }));
 vi.mock("./selfService/useSelfService.js", () => ({

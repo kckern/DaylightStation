@@ -1,3 +1,5 @@
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * One-pass quiz (spec §3): each item asked exactly once, POST per answer,
  * verdict shown, summary at the end. Deliberately NO resurfacing — a quiz is
@@ -6,7 +8,7 @@
  * session (spec §6): the session is pinned server-side to whoever opened it.
  */
 import { useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
+
 import { schoolLog } from "../schoolLog.js";
 import { useSchoolProfile } from "../identity/SchoolProfileContext.jsx";
 import MultipleChoiceItem from "./items/MultipleChoiceItem.jsx";
@@ -28,6 +30,7 @@ const ITEM_COMPONENTS = {
  * screens get a voice without the child needing a grown-up standing there.
  */
 function FlagAsk({ userId, bankId, sessionId, title }) {
+  const schoolApi = useSchoolApi();
   const [state, setState] = useState('idle'); // idle | sent | failed
   const flag = async () => {
     const { ok } = await schoolApi.flagConcern({ userId, bankId, sessionId, title });
@@ -36,9 +39,9 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
   if (state === 'sent') return <p className="school-runner__flag" data-testid="flag-sent">Told them — a grown-up will take a look.</p>;
   return (
     <>
-      <button type="button" className="school-runner__flag-btn" data-testid="flag-ask" onClick={flag}>
+      <SchoolButton variant="plain" type="button" className="school-runner__flag-btn" data-testid="flag-ask" onClick={flag}>
         Something seem wrong? Tell a grown-up
-      </button>
+      </SchoolButton>
       {state === 'failed' && <p className="school-runner__unrecorded-summary">That didn’t send — try again.</p>}
     </>
   );
@@ -50,6 +53,7 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
  * durable answers, exact Catalog lesson, and authored remediation policy.
  */
 function TutorOffer({ userId, sessionId, onOpen }) {
+  const schoolApi = useSchoolApi();
   const [state, setState] = useState({ kind: 'loading', sessionId: null });
   useEffect(() => {
     let alive = true;
@@ -62,14 +66,14 @@ function TutorOffer({ userId, sessionId, onOpen }) {
       } else setState({ kind: 'failed', sessionId: null });
     });
     return () => { alive = false; };
-  }, [sessionId, userId]);
+  }, [sessionId, userId, schoolApi]);
 
   if (state.kind === 'loading') return <p className="school-runner__tutor-status">Checking for tutor help…</p>;
   if (state.kind === 'ready') return (
-    <button type="button" className="school-runner__tutor-btn" data-testid="open-tutor"
+    <SchoolButton variant="plain" type="button" className="school-runner__tutor-btn" data-testid="open-tutor"
       onClick={() => onOpen(state.sessionId)}>
       Get tutor help
-    </button>
+    </SchoolButton>
   );
   if (state.kind === 'failed') return <p className="school-runner__tutor-status">Tutor help couldn&rsquo;t open right now.</p>;
   return null;
@@ -83,6 +87,7 @@ function TutorOffer({ userId, sessionId, onOpen }) {
  * on to the next chapter.
  */
 export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpose = null, deckId = null, testPlan = null, fresh = false, onExit, onRestart = null, retakeAfterPass = true, onReview = null, onTutor = null }) {
+  const schoolApi = useSchoolApi();
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -153,7 +158,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, identityKey]);
+  }, [status, identityKey, schoolApi]);
 
   const item = bank.items[index];
   const unsaved = (currentUser?.id ?? null) === null;
@@ -243,14 +248,14 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
             and on `onReview` actually being wired, since a bank-practice run
             or the materials gate quiz (SchoolMaterialPlayer) has neither. */}
         {passed === false && learning?.unitId && onReview && (
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="school-runner__review-lesson-btn"
             data-testid="review-lesson"
             onClick={() => onReview(learning)}
           >
             Review this lesson
-          </button>
+          </SchoolButton>
         )}
         {currentUser?.id && (
           <FlagAsk userId={currentUser.id} bankId={bank.id} sessionId={sessionId} title={bank.title} />
@@ -270,7 +275,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
               // a module with no pass bar leaves `passed` null, and nothing
               // has said it was passed.
               <div className="school-runner__summary-actions">
-                <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>
+                <SchoolButton variant="plain" type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</SchoolButton>
               </div>
             )}
             <LearningReflectionPrompt
@@ -285,9 +290,9 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
             {onRestart && (retakeAfterPass || passed !== true) && (
               // A deliberate restart: fresh wipes the persisted sitting so the
               // new run starts at q1 instead of resuming this finished one.
-              <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>
+              <SchoolButton variant="plain" type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</SchoolButton>
             )}
-            <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+            <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Done</SchoolButton>
           </div>
         )}
       </div>
@@ -306,9 +311,9 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
             // NOT fresh: this card promises "your finished answers are saved —
             // start again to keep going", and the sitting is what keeps that
             // promise — the reopened run resumes where the timeout cut it off.
-            <button type="button" className="school-runner__again" onClick={() => restart({ fresh: false })}>Start again</button>
+            <SchoolButton variant="plain" type="button" className="school-runner__again" onClick={() => restart({ fresh: false })}>Start again</SchoolButton>
           )}
-          <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+          <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
         </div>
       </div>
     );
@@ -320,7 +325,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
       <div className="school-runner school-runner--error" data-testid="quiz-open-failed">
         <h2>{bank.title}</h2>
         <p className="school-runner__unrecorded-summary">That one wouldn’t open. Tell a grown-up, or try again in a minute.</p>
-        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        <SchoolButton variant="plain" type="button" className="school-runner__done" onClick={onExit}>Back</SchoolButton>
       </div>
     );
   }
@@ -354,7 +359,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
       </div>
       {unrecorded && <div className="school-runner__unrecorded" data-testid="unrecorded">That answer didn’t save — it won’t count as wrong. Tell a grown-up if this keeps happening.</div>}
       <ItemComponent key={item.id} item={item} onSubmit={submit} verdict={verdict} />
-      {verdict && <button type="button" className="school-runner__next" onClick={next}>Next</button>}
+      {verdict && <SchoolButton variant="plain" type="button" className="school-runner__next" onClick={next}>Next</SchoolButton>}
     </div>
   );
 }

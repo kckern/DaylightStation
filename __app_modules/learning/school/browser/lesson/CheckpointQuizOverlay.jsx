@@ -1,3 +1,4 @@
+import { SchoolButton } from '../portal/SchoolButton.jsx';
 /**
  * CheckpointQuizOverlay — the thing a child actually sees when a lesson stops.
  *
@@ -481,7 +482,7 @@ export default function CheckpointQuizOverlay({
             (decision 3), and ONE press — a child who is stuck must not have to
             work out a two-step gesture to get help. */}
         <div className="checkpoint-quiz__rewind-zone">
-          <button
+          <SchoolButton variant="plain"
             type="button"
             className="checkpoint-quiz__rewind"
             data-checkpoint-rewind="true"
@@ -490,7 +491,7 @@ export default function CheckpointQuizOverlay({
           >
             <span className="checkpoint-quiz__rewind-glyph" aria-hidden="true">↺</span>
             Watch that part again
-          </button>
+          </SchoolButton>
         </div>
 
         {escapeBlocked && (

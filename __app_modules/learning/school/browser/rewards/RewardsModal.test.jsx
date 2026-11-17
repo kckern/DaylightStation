@@ -2,9 +2,11 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RewardsModal from './RewardsModal.jsx';
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
+import { useSchoolCommands } from '../portal/useSchoolCommands.js';
 import { schoolApi } from '../schoolApi.js';
 
-vi.mock('../schoolApi.js', () => ({ schoolApi: { earningsRoster: vi.fn(), wallet: vi.fn(), gems: vi.fn(), stateGates: vi.fn() } }));
+vi.mock('../schoolApi.js', () => { const endpoints = { schoolApi: { earningsRoster: vi.fn(), wallet: vi.fn(), gems: vi.fn(), stateGates: vi.fn() } }; return { ...endpoints, createSchoolApi: () => ({ ...endpoints.schoolApi }) }; });
 const learner = { id: 'one', name: 'Learner One' };
 const snapshot = {
   learnerId: 'one', week: '2026-11-09', mode: 'live', silver: 24, gold: 3, rings: 1260,
@@ -21,6 +23,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('prepared personal Gem Board', () => {
+  it('contains scoped rewards in the host and blocks background commands until close', () => {
+    const action = vi.fn(), close = vi.fn();
+    function Background() { useSchoolCommands({ enter: action }); return null; }
+    const view = render(<SchoolSurfaceProvider surfaceId="small"><Background /><RewardsModal learner={learner} snapshot={snapshot} onClose={close} idleMs={0} /></SchoolSurfaceProvider>);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.closest('[data-school-overlay="small"]')).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('data-scoped', 'true');
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(action).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
   it('renders immediately from memory: no requests, loaders, prose list or progress bars', () => {
     const { container } = render(<RewardsModal learner={learner} snapshot={snapshot} onClose={vi.fn()} />);
     expect(screen.getByText('24')).toBeTruthy(); expect(screen.getByText('3')).toBeTruthy();

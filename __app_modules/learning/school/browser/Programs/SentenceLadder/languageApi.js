@@ -1,112 +1,15 @@
-/**
- * Status-aware fetch client for the canonical Sentence Ladder endpoint.
- * NOT DaylightAPI: the rungs must distinguish 403 (guest — no records kept)
- * from 500 (attempt unrecorded), and DaylightAPI hides status codes.
- * Never throws.
- *
- * Never throwing used to mean never telling anyone: a dropped WiFi, a 500 and
- * a malformed JSON body all collapsed into `{ok:false, status:0}` in a bare
- * `catch {}`, indistinguishable from each other and from a genuine status 0.
- * Every path through this file now leaves a record. `status: 0` still means
- * "nothing came back", but there is an `error`-level event beside it saying
- * what did not come back and why.
- *
- * PRIVACY: request bodies and response payloads are NEVER logged. They carry
- * the learner's own sentences and their typed answers. Paths, methods,
- * statuses, durations and byte counts only.
+/** Sentence Ladder endpoints retain run correlation, status codes and raw recording bodies.
+ * Transport diagnostics never include grants, response payloads or exception text.
  */
-import languageLog from "./languageLog.js";
-import { schoolDeviceHeaders } from "../../schoolDevice.js";
+import languageLog from './languageLog.js';
+import { createSchoolEndpointClient } from '../../runtime/schoolEndpointClient.js';
 
 const BASE = '/api/v1/school/sentence-ladder';
 const GRANT_HEADER = 'X-School-Study-Grant';
 const RUN_HEADER = 'X-School-Run-Id';
+const enc = encodeURIComponent;
+const clock = () => typeof performance?.now === 'function' ? performance.now() : Date.now();
 
-/** Query strings carry only capability flags, but drop them anyway: the path
- *  is the thing you group by in the log store. */
-function logPath(path) {
-  const q = path.indexOf('?');
-  return q === -1 ? path : path.slice(0, q);
-}
-
-function clock() {
-  return (typeof performance !== 'undefined' && typeof performance.now === 'function')
-    ? performance.now()
-    : Date.now();
-}
-
-/** The run id rides on every request so the backend can stamp its own events
- *  with it — one `context.runId` query then returns both sides of a session. */
-function withRun(headers = {}) {
-  const runId = languageLog.currentRun();
-  return schoolDeviceHeaders(runId ? { ...headers, [RUN_HEADER]: runId } : headers);
-}
-
-/** One place decides how a settled response is reported, so `recording` and
- *  `recordingBlob` cannot drift from `req`. */
-function reportSettled(path, method, status, ok, startedAt, extra = {}) {
-  const ms = Math.round(clock() - startedAt);
-  const record = { path: logPath(path), method, status, ms, ...extra };
-  if (ok) languageLog.api('ok', record);
-  else languageLog.apiWarn('rejected', record);
-}
-
-/** An aborted request is a cancel, not a fault — a rung unmounting mid-flight
- *  is routine, and logging it at error would train us to ignore errors. */
-function reportThrown(path, method, startedAt, err, extra = {}) {
-  const ms = Math.round(clock() - startedAt);
-  const record = {
-    path: logPath(path), method, status: 0, ms,
-    error: err?.message || String(err), name: err?.name || 'Error', ...extra,
-  };
-  if (err?.name === 'AbortError') languageLog.api('aborted', record);
-  else languageLog.apiError('failed', record);
-}
-
-async function req(path, body, method, studyGrant = null, signal = undefined) {
-  const verb = method || (body === undefined ? 'GET' : 'POST');
-  const startedAt = clock();
-  try {
-    const headers = withRun(studyGrant ? { [GRANT_HEADER]: studyGrant } : {});
-    const opts = body === undefined
-      ? { method: verb, headers, signal }
-      : {
-        method: verb,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal,
-      };
-    const r = await fetch(BASE + path, opts);
-    // A body that will not parse is not a transport failure, but it IS a
-    // failure the rungs cannot see: `data` goes null under an ok status.
-    let parsed = null;
-    let parseError = null;
-    try {
-      parsed = await r.json();
-    } catch (err) {
-      // A request aborted while its body was still arriving is an ABORT — a
-      // newer load or an unmount asked for it — not a body that will not parse.
-      // It was logged as `unparseable` on every Portal launch until 2026-09-14.
-      if (err?.name === 'AbortError') throw err;
-      parseError = err?.message || String(err);
-    }
-    reportSettled(path, verb, r.status, r.ok, startedAt,
-      parseError ? { parseError } : {});
-    if (parseError && r.ok) {
-      languageLog.apiWarn('unparseable', { path: logPath(path), method: verb, status: r.status, parseError });
-    }
-    return { ok: r.ok, status: r.status, data: parsed };
-  } catch (err) {
-    reportThrown(path, verb, startedAt, err);
-    return { ok: false, status: 0, data: null };
-  }
-}
-
-/**
- * Capabilities describe the device in the learner's hands, so they ride along
- * on every request. `textInput` is a list of language codes, not a boolean:
- * typing Hangul and typing English are different capabilities.
- */
 function capabilityQuery(capabilities = {}) {
   const params = new URLSearchParams();
   if (capabilities.microphone) params.set('microphone', 'true');
@@ -114,23 +17,47 @@ function capabilityQuery(capabilities = {}) {
   return params;
 }
 
-const enc = encodeURIComponent;
-
-/** A recording's bytes. Same reporting as `req`; never throws. */
-async function blobAt(path, headers = {}) {
-  const startedAt = clock();
-  try {
-    const r = await fetch(`${BASE}${path}`, { headers: withRun(headers) });
-    const blob = r.ok ? await r.blob() : null;
-    reportSettled(path, 'GET', r.status, r.ok, startedAt, { bytes: blob?.size ?? null });
-    return { ok: r.ok, status: r.status, data: blob };
-  } catch (err) {
-    reportThrown(path, 'GET', startedAt, err);
-    return { ok: false, status: 0, data: null };
-  }
+function withRun(headers = {}) {
+  const runId = languageLog.currentRun();
+  return runId ? { ...headers, [RUN_HEADER]: runId } : headers;
 }
 
-export const languageApi = {
+function report(path, method, result, startedAt, extra = {}) {
+  const record = { path: path.split('?')[0], method, status: result.status, ms: Math.round(clock() - startedAt), ...extra };
+  if (result.error?.kind === 'aborted') languageLog.api('aborted', record);
+  else if (!result.status) languageLog.apiError('failed', { ...record, error: result.error?.kind ?? 'network' });
+  else if (!result.ok) languageLog.apiWarn('rejected', record);
+  else languageLog.api('ok', record);
+  if (result.error?.kind === 'invalid-json') languageLog.apiWarn('unparseable', record);
+}
+
+export function createLanguageApi(options = {}) {
+  const client = createSchoolEndpointClient({ ...options, base: BASE });
+  async function req(path, body, method, studyGrant = null, signal) {
+    const verb = method || (body === undefined ? 'GET' : 'POST');
+    const startedAt = clock();
+    const result = await client.request(path, { body, method: verb, signal, headers: withRun(studyGrant ? { [GRANT_HEADER]: studyGrant } : {}) });
+    report(path, verb, result, startedAt);
+    return client.finish(result);
+  }
+  async function blobAt(path, headers = {}) {
+    const startedAt = clock();
+    const result = await client.request(path, { headers: withRun(headers), responseType: 'blob' });
+    if (!result.ok) result.data = null;
+    report(path, 'GET', result, startedAt, { bytes: result.data?.size ?? null });
+    return client.finish(result);
+  }
+  async function audioPost(path, blob, studyGrant) {
+    const startedAt = clock();
+    const result = await client.request(path, {
+      method: 'POST', body: blob, raw: true,
+      headers: withRun({ 'Content-Type': blob.type || 'audio/webm', [GRANT_HEADER]: studyGrant }),
+    });
+    report(path, 'POST', result, startedAt, { bytes: blob?.size ?? null, type: blob?.type || null });
+    return client.finish(result);
+  }
+
+  return {
   courses: () => req('/courses'),
 
   previewDay: (corpus, capabilities, signal) => {
@@ -160,32 +87,9 @@ export const languageApi = {
 
   /** Raw audio body rather than multipart — one file, no fields. */
   async recording(userId, corpus, seq, blob, capabilities, studyGrant) {
-    const path = `/users/${enc(userId)}/recording`;
-    const startedAt = clock();
-    // The child's voice itself is never logged; its size is, because "the
-    // upload was 0 bytes" is the difference between a broken mic and a
-    // broken route.
-    const shape = { bytes: blob?.size ?? null, type: blob?.type || null };
-    try {
-      const type = blob.type || '';
-      const ext = type.includes('ogg') ? 'ogg'
-        : type.includes('mp4') ? 'm4a'
-          : type.includes('wav') ? 'wav' : 'webm';
-      const r = await fetch(
-        `${BASE}/users/${enc(userId)}/recording?corpus=${enc(corpus)}&seq=${enc(seq)}&ext=${ext}&${capabilityQuery(capabilities)}`,
-        {
-          method: 'POST',
-          headers: withRun({ 'Content-Type': blob.type || 'audio/webm', [GRANT_HEADER]: studyGrant }),
-          body: blob,
-        },
-      );
-      const data = await r.json().catch(() => null);
-      reportSettled(path, 'POST', r.status, r.ok, startedAt, shape);
-      return { ok: r.ok, status: r.status, data };
-    } catch (err) {
-      reportThrown(path, 'POST', startedAt, err, shape);
-      return { ok: false, status: 0, data: null };
-    }
+    const type = blob.type || '';
+    const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : type.includes('wav') ? 'wav' : 'webm';
+    return audioPost(`/users/${enc(userId)}/recording?corpus=${enc(corpus)}&seq=${enc(seq)}&ext=${ext}&${capabilityQuery(capabilities)}`, blob, studyGrant);
   },
 
   /**
@@ -201,25 +105,7 @@ export const languageApi = {
    * sentence is sent, and nothing here is in a position to send it.
    */
   async transcribe(userId, corpus, seq, lang, blob, capabilities, studyGrant) {
-    const path = `/users/${enc(userId)}/transcribe`;
-    const startedAt = clock();
-    const shape = { bytes: blob?.size ?? null, type: blob?.type || null };
-    try {
-      const r = await fetch(
-        `${BASE}${path}?corpus=${enc(corpus)}&seq=${enc(seq)}&lang=${enc(lang)}&${capabilityQuery(capabilities)}`,
-        {
-          method: 'POST',
-          headers: withRun({ 'Content-Type': blob.type || 'audio/webm', [GRANT_HEADER]: studyGrant }),
-          body: blob,
-        },
-      );
-      const data = await r.json().catch(() => null);
-      reportSettled(path, 'POST', r.status, r.ok, startedAt, shape);
-      return { ok: r.ok, status: r.status, data };
-    } catch (err) {
-      reportThrown(path, 'POST', startedAt, err, shape);
-      return { ok: false, status: 0, data: null };
-    }
+    return audioPost(`/users/${enc(userId)}/transcribe?corpus=${enc(corpus)}&seq=${enc(seq)}&lang=${enc(lang)}&${capabilityQuery(capabilities)}`, blob, studyGrant);
   },
 
   audioUrl: (corpus, seq, lang) => `${BASE}/audio/${enc(corpus)}/${enc(seq)}/${enc(lang)}`,
@@ -239,6 +125,9 @@ export const languageApi = {
   ),
 };
 
-export const sentenceLadderApi = languageApi;
+}
 
+export const createSentenceLadderApi = createLanguageApi;
+export const languageApi = createLanguageApi();
+export const sentenceLadderApi = languageApi;
 export default languageApi;

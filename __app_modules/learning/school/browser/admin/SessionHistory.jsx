@@ -1,3 +1,5 @@
+import { useSchoolAdminApi } from '../runtime/useSchoolFeatureApi.js';
+import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
 /**
  * SessionHistory — what a learner has actually done, per unit, as threads.
  *
@@ -22,7 +24,7 @@ import {
   Alert, Badge, Button, Card, Code, Divider, Group, Loader, Select, Stack, Text, Title,
 } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { schoolAdminApi } from "./schoolAdminApi.js";
+
 import { useRoster } from "./useRoster.js";
 import { deriveSession, buildThreads } from "./sessionLineage.js";
 import "./SchoolAdmin.scss";
@@ -51,6 +53,7 @@ const OUTCOMES = {
 const stateOf = (state) => STATES[state] ?? { color: 'gray', label: state || 'Not started' };
 
 export default function SessionHistory() {
+  const schoolAdminApi = useSchoolAdminApi();
   const logger = useMemo(() => getLogger().child({ component: 'school-session-history' }), []);
 
   const { roster, error: rosterError, nameFor } = useRoster();
@@ -111,7 +114,7 @@ export default function SessionHistory() {
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [logger]);
+  }, [logger, schoolAdminApi]);
 
   useEffect(() => {
     logger.info('mounted', {});
@@ -121,7 +124,7 @@ export default function SessionHistory() {
   useEffect(() => { load(learnerId); }, [learnerId, load]);
 
   return (
-    <Stack gap="md" p="md" className="school-admin">
+    <SchoolSurfaceProvider surfaceId="admin-history" density="compact"><Stack gap="md" p="md" className="school-admin">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <Stack gap={2}>
           <Title order={3}>Work sessions</Title>
@@ -257,6 +260,6 @@ export default function SessionHistory() {
           );
         })}
       </Stack>
-    </Stack>
+    </Stack></SchoolSurfaceProvider>
   );
 }

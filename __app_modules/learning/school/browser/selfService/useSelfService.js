@@ -1,3 +1,5 @@
+import { useSchoolCommandListener } from '../portal/useSchoolCommands.js';
+import { useSchoolApi } from '../runtime/useSchoolApi.js';
 /**
  * useSelfService — the locked wall panel's state machine (self-service access
  * codes design, §3).
@@ -48,7 +50,6 @@
  *    to yes, and why the poll can never become a precondition.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { schoolApi } from "../schoolApi.js";
 import { rememberMount, settleMount, resumeMountAcknowledgements } from './mountAcknowledgements.js';
 import { schoolLog } from "../schoolLog.js";
 
@@ -277,6 +278,7 @@ export function useSelfService({
   printConfirmTimeoutMs = PRINT_CONFIRM_TIMEOUT_MS,
   printerPollMs = PRINTER_POLL_MS,
 } = {}) {
+  const schoolApi = useSchoolApi();
   // 'keypad' is the lock screen; every other view is a card on top of it.
   const [view, setView] = useState('keypad');
   const [card, setCard] = useState(null);
@@ -464,7 +466,7 @@ export function useSelfService({
     // ends on the sentence, verbatim. It is the only thing that knows whether
     // a grown-up has to say yes first, or which room the work just started in.
     say(said);
-  }, [beginWork, endWork, onLaunch, say, toLock]);
+  }, [beginWork, endWork, onLaunch, say, toLock, schoolApi]);
 
   /**
    * @returns {Promise<{resolved: boolean, sentence: string|null, skipped?: boolean, degraded?: boolean}>}
@@ -552,7 +554,7 @@ export function useSelfService({
       : res.data.actions?.find(action => action.kind === 'program' && action.target === 'book-log');
     if (readingAction) await runAction(readingAction);
     return { resolved: true, sentence: null, degraded: false };
-  }, [beginWork, claim, endWork, deviceId, runAction]);
+  }, [beginWork, claim, endWork, deviceId, runAction, schoolApi]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
   const retry = useCallback(() => submit(lastTriedRef.current), [submit]);
@@ -697,7 +699,7 @@ export function useSelfService({
     check();
     const timer = setInterval(check, ms);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [view, printerPollMs]);
+  }, [view, printerPollMs, schoolApi]);
 
   // Idle timeout. Armed only while a card is open — the lock screen IS the
   // resting state, so there is nothing to time out to from there.
@@ -717,12 +719,10 @@ export function useSelfService({
   // maps idle escape to `reload`, the kiosk's only refresh affordance since
   // FKB has no address bar. Swallowing it would strand the panel on a bad
   // deploy with no way to pick up the next one.
-  useEffect(() => {
-    if (view === 'keypad') return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') toLock(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [view, toLock]);
+  useSchoolCommandListener((e) => {
+if (view === 'keypad') return undefined;
+ if (e.key === 'Escape') toLock();
+});
 
   /**
    * The first digit of the next code. A refusal's sentence captions the code

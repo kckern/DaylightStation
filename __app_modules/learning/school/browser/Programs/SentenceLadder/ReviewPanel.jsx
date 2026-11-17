@@ -1,6 +1,7 @@
+import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bindMediaToMaster } from "../../../../../../frontend/src/lib/volume/bindMediaToMaster.js";
-import { languageApi } from "./languageApi.js";
+import { useLanguageApi } from '../../runtime/useSchoolFeatureApi.js';
 import { languageLog } from "./languageLog.js";
 import { diffChars } from "./textDiff.js";
 import { typeableText } from "../../../portable/contracts/language/typeableText.mjs";
@@ -136,7 +137,7 @@ function Item({ item, languages, loadRecording }) {
  * `source` (the same history behind the teacher gate), so both read one
  * rendering of the record rather than two that can disagree.
  */
-function learnerSource(userId, corpusId, studyGrant) {
+function learnerSource(languageApi, userId, corpusId, studyGrant) {
   return {
     history: () => languageApi.history(userId, corpusId, studyGrant),
     recording: (seq) => languageApi.recordingBlob(userId, corpusId, seq, studyGrant),
@@ -152,10 +153,11 @@ function workedOn(items) {
 }
 
 export default function ReviewPanel({ userId, corpusId, studyGrant, source = null, showDates = false }) {
+  const languageApi = useLanguageApi();
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState('loading');
   const [reloadKey, setReloadKey] = useState(0);
-  const read = useMemo(() => source ?? learnerSource(userId, corpusId, studyGrant), [source, userId, corpusId, studyGrant]);
+  const read = useMemo(() => source ?? learnerSource(languageApi, userId, corpusId, studyGrant), [source, languageApi, userId, corpusId, studyGrant]);
 
   useEffect(() => {
     let alive = true;
@@ -179,9 +181,9 @@ export default function ReviewPanel({ userId, corpusId, studyGrant, source = nul
     return (
       <div className="lang-review__status">
         <p>Could not load history.</p>
-        <button type="button" className="lang-btn" onClick={() => setReloadKey((key) => key + 1)}>
+        <SchoolButton variant="plain" type="button" className="lang-btn" onClick={() => setReloadKey((key) => key + 1)}>
           Try again
-        </button>
+        </SchoolButton>
       </div>
     );
   }
