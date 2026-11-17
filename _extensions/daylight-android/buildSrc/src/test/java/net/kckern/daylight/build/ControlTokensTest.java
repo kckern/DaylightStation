@@ -56,4 +56,13 @@ public class ControlTokensTest {
         try { ControlTokens.load(f); fail("expected CatalogException"); }
         catch (CatalogException e) { assertTrue(e.getMessage().contains("may only contain")); }
     }
+
+    @Test public void theTokensFileCannotInstantiateArbitraryJavaTypes() throws Exception {
+        File f = file("portal:\n  token: " + GOOD + "\n  extra: !!java.io.File /nonexistent\n");
+        try { ControlTokens.load(f); fail("expected CatalogException"); }
+        catch (CatalogException e) {
+            assertTrue(e.getMessage().contains("cannot read control tokens file"));
+            assertFalse("the message must not contain the token", e.getMessage().contains(GOOD));
+        }
+    }
 }

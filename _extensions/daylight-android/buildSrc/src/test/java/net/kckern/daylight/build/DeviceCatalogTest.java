@@ -116,4 +116,48 @@ public class DeviceCatalogTest {
         write(new File(root, "devices/portal.yml"), PORTAL.replace("debug.execEnabled: false", "debug.execEnabled: [1]"));
         assertTrue(message(() -> DeviceCatalog.load(root)).contains("defaults 'debug.execEnabled' must be a string, boolean or integer"));
     }
+
+    @Test public void rejectsAVersionNameThatCouldBreakOutOfGeneratedJava() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("versionName: \"0.1\"", "versionName: '0.1\"; int x = 1; //'"));
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("shell.versionName"));
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("versionName: \"0.1\"", "versionName: \"0.1 beta\""));
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("must match [A-Za-z0-9._-]+"));
+        write(new File(root, "devices/portal.yml"), PORTAL.replace("versionName: \"0.1\"", "versionName: \"0.1-foundation_2\""));
+        assertEquals("0.1-foundation_2", DeviceCatalog.load(root).device("portal").shellVersionName);
+    }
+
+    @Test public void rejectsAnIdThatIsAnAndroidSourceSetName() throws Exception {
+        for (String reserved : new String[] { "debug", "release", "main", "test" }) {
+            File root = tmp.newFolder("reserved-" + reserved);
+            write(new File(root, "capabilities/debug-tools/capability.yml"),
+                  "entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability\n");
+            write(new File(root, "capabilities/debug-tools/payload/build.gradle"), "");
+            write(new File(root, "devices/" + reserved + ".yml"), PORTAL.replace("id: portal", "id: " + reserved));
+            assertTrue(reserved, message(() -> DeviceCatalog.load(root)).contains("id '" + reserved + "' is reserved"));
+        }
+        assertTrue(DeviceCatalog.RESERVED_IDS.contains("androidTest"));
+    }
+
+    @Test public void rejectsTwoDevicesWithTheSamePackage() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL);
+        write(new File(root, "devices/shield.yml"), PORTAL.replace("id: portal", "id: shield"));
+        String m = message(() -> DeviceCatalog.load(root));
+        assertTrue(m, m.contains("package 'net.kckern.daylight.portal' is used by both"));
+        assertTrue(m, m.contains("portal") && m.contains("shield"));
+    }
+
+    @Test public void aDeviceFileCannotInstantiateArbitraryJavaTypes() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL + "extra: !!java.io.File /nonexistent\n");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("portal.yml: not valid YAML"));
+    }
+
+    @Test public void aCapabilityFileCannotInstantiateArbitraryJavaTypes() throws Exception {
+        File root = root();
+        write(new File(root, "capabilities/debug-tools/capability.yml"),
+              "entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability\nextra: !!java.io.File /nonexistent\n");
+        assertTrue(message(() -> DeviceCatalog.load(root)).contains("capability 'debug-tools': not valid YAML"));
+    }
 }

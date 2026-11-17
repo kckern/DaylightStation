@@ -1,6 +1,7 @@
 package net.kckern.daylight.build;
 
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -37,7 +38,7 @@ public final class ControlTokens {
         if (file == null || !file.isFile()) return new ControlTokens(out);
         Object doc;
         try {
-            doc = new Yaml().load(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            doc = new Yaml(new SafeConstructor()).load(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new CatalogException("cannot read control tokens file: " + e.getClass().getSimpleName());
         }

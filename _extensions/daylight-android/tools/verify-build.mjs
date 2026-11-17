@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Asserts a built device APK matches its devices/<id>.yml: package, SDK levels,
-// exact permission set, a baked payload, and exactly the listed capabilities.
+// exact permission set, a baked payload whose sha256 equals the built payload's
+// .sha256 file (when that file exists), and exactly the listed capabilities.
 //
 //   node tools/verify-build.mjs portal
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { bakedPayloadFailure, newestVersion, sha256Hex } from './verify-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const id = process.argv[2];
@@ -37,17 +39,8 @@ if (!existsSync(apk)) { console.error(`✗ not built: ${apk}`); process.exit(1);
 const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 if (!sdk) { console.error('✗ ANDROID_HOME is not set'); process.exit(2); }
 // Newest build-tools by numeric version, so 9.0.0 sorts below 33.0.2.
-const versionParts = (name) => name.split(/[^0-9]+/).filter(Boolean).map(Number);
-const byVersion = (a, b) => {
-  const x = versionParts(a), y = versionParts(b);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const c = (x[i] || 0) - (y[i] || 0);
-    if (c !== 0) return c;
-  }
-  return a.localeCompare(b);
-};
-const buildTools = readdirSync(join(sdk, 'build-tools'), { withFileTypes: true })
-  .filter((e) => e.isDirectory()).map((e) => e.name).sort(byVersion).pop();
+const buildTools = newestVersion(readdirSync(join(sdk, 'build-tools'), { withFileTypes: true })
+  .filter((e) => e.isDirectory()).map((e) => e.name));
 const badging = execFileSync(join(sdk, 'build-tools', buildTools, 'aapt2'), ['dump', 'badging', apk], { encoding: 'utf8' });
 
 const pkg = /package: name='([^']+)'/.exec(badging)?.[1];
@@ -72,11 +65,22 @@ check(missing.length === 0, `missing permissions: ${missing.join(', ')}`);
 
 // The baked payload must define exactly the listed capabilities' entry classes.
 let dex = Buffer.alloc(0);
+let bakedSha = '';
 try {
   const jar = execFileSync('unzip', ['-p', apk, 'assets/payload-baked.jar'], { maxBuffer: 256 * 1024 * 1024 });
   const tmp = join(root, 'shell/build', `verify-${id}.jar`);
   writeFileSync(tmp, jar);
   dex = execFileSync('unzip', ['-p', tmp, 'classes.dex'], { maxBuffer: 256 * 1024 * 1024 });
+  // The baked payload must be the payload that was just built, not one left from an earlier build.
+  // With several payload versions built, compare with the most recently written .sha256.
+  const payloadDir = join(root, 'payload/build/payload', id);
+  const shaFile = existsSync(payloadDir)
+    ? readdirSync(payloadDir).filter((name) => name.endsWith('.jar.sha256')).map((name) => join(payloadDir, name))
+      .sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs).pop()
+    : undefined;
+  const stale = bakedPayloadFailure(jar, shaFile ? readFileSync(shaFile, 'utf8') : null);
+  if (stale) failures.push(stale);
+  bakedSha = sha256Hex(jar);
 } catch {
   failures.push('assets/payload-baked.jar is missing or has no classes.dex');
 }
@@ -94,4 +98,4 @@ if (failures.length) {
   for (const f of failures) console.error(`✗ ${f}`);
   process.exit(1);
 }
-console.log(`✓ ${id}: ${pkg}, sdk ${minSdk}-${targetSdk}, ${permissions.length} permissions, capabilities [${device.capabilities.join(', ')}]`);
+console.log(`✓ ${id}: ${pkg}, sdk ${minSdk}-${targetSdk}, ${permissions.length} permissions, capabilities [${device.capabilities.join(', ')}], baked payload ${bakedSha.slice(0, 12)}`);

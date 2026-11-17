@@ -5,8 +5,15 @@ build/
 !**/src/**/build/
 local.properties
 *.apk
+# Payload jars are build output. The Gradle wrapper is the only tracked jar.
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
 # The repo root ignores *.yml. Device files and capability manifests are source.
 !devices/*.yml
+# The re-include above must never pick up a secrets file dropped beside the device files.
+devices/*secret*
+devices/*token*
+devices/*auth*
 !capabilities/*/capability.yml
 # The repo root ignores *.sh. The port script is source.
 !tools/*.sh

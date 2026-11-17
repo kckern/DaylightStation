@@ -1,18 +1,22 @@
 package net.kckern.daylight.build;
 
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
@@ -20,6 +24,11 @@ import java.util.regex.Pattern;
 public final class DeviceCatalog {
     private static final Pattern ID = Pattern.compile("[a-z][a-z0-9]*");
     private static final Pattern PACKAGE = Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+");
+    /** versionName is written into generated Java (BuildConfig), so it may not hold a quote or a backslash. */
+    private static final Pattern VERSION_NAME = Pattern.compile("[A-Za-z0-9._-]+");
+    /** The Android Gradle Plugin's own source-set names. A product flavor with one of these names collides. */
+    static final Set<String> RESERVED_IDS = Collections.unmodifiableSet(
+            new LinkedHashSet<>(Arrays.asList("debug", "release", "main", "test", "androidTest")));
     private static final int LOWEST_SDK = 26;
 
     private final Map<String, CapabilitySpec> capabilities;
@@ -55,7 +64,7 @@ public final class DeviceCatalog {
                 String name = dir.getName();
                 boolean hasPayload = new File(dir, "payload/build.gradle").isFile();
                 boolean hasShell = new File(dir, "shell/build.gradle").isFile();
-                Object entry = asMap(new Yaml().load(read(meta)), "capability '" + name + "'").get("entry");
+                Object entry = asMap(parseYaml(read(meta), "capability '" + name + "'"), "capability '" + name + "'").get("entry");
                 if (entry != null && !(entry instanceof String)) {
                     throw new CatalogException("capability '" + name + "': 'entry' must be a string");
                 }
@@ -73,15 +82,26 @@ public final class DeviceCatalog {
                 devices.put(fileId, parseDevice(fileId, read(f), caps));
             }
         }
+        // Two APKs with one application id would replace each other on a device.
+        Map<String, String> owners = new TreeMap<>();
+        for (DeviceSpec d : devices.values()) {
+            String other = owners.put(d.packageName, d.id);
+            if (other != null) {
+                throw new CatalogException("package '" + d.packageName + "' is used by both '" + other + "' and '" + d.id + "'");
+            }
+        }
         return new DeviceCatalog(caps, devices);
     }
 
     static DeviceSpec parseDevice(String fileId, String yaml, Map<String, CapabilitySpec> caps) {
         String where = fileId + ".yml";
-        Map<String, Object> doc = asMap(new Yaml().load(yaml), where);
+        Map<String, Object> doc = asMap(parseYaml(yaml, where), where);
 
         String id = string(doc, "id", where);
         if (!ID.matcher(id).matches()) throw new CatalogException(where + ": id '" + id + "' must match [a-z][a-z0-9]*");
+        if (RESERVED_IDS.contains(id)) {
+            throw new CatalogException(where + ": id '" + id + "' is reserved (it is an Android source-set name)");
+        }
         if (!id.equals(fileId)) throw new CatalogException(where + ": id '" + id + "' must match file name '" + fileId + "'");
 
         String pkg = string(doc, "package", where);
@@ -105,6 +125,9 @@ public final class DeviceCatalog {
         int versionCode = integer(shell, "versionCode", where);
         if (versionCode < 1) throw new CatalogException(where + ": shell.versionCode must be 1 or higher");
         String versionName = string(shell, "versionName", where);
+        if (!VERSION_NAME.matcher(versionName).matches()) {
+            throw new CatalogException(where + ": shell.versionName must match [A-Za-z0-9._-]+");
+        }
 
         List<String> abis = strings(doc.get("abis"), where + " abis");
         List<String> capabilities = strings(required(doc, "capabilities", where), where + " capabilities");
@@ -130,6 +153,15 @@ public final class DeviceCatalog {
 
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
                 Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults));
+    }
+
+    /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */
+    private static Object parseYaml(String text, String where) {
+        try {
+            return new Yaml(new SafeConstructor()).load(text);
+        } catch (YAMLException e) {
+            throw new CatalogException(where + ": not valid YAML for a device or capability file");
+        }
     }
 
     private static Object required(Map<String, Object> m, String key, String where) {

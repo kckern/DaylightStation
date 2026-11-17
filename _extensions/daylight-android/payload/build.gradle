@@ -23,7 +23,7 @@ android {
             doLast {
                 def f = new File(outDir, 'net/kckern/daylight/generated/DeviceConfig.java')
                 f.parentFile.mkdirs()
-                f.text = source
+                f.setText(source, 'UTF-8')
             }
         }
         variant.registerJavaGeneratingTask(gen, outDir)

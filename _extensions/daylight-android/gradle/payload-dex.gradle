@@ -72,6 +72,8 @@ gradle.projectsEvaluated {
 
         def shaTask = payloadProject.tasks.create("payloadSha${cap}") {
             dependsOn dex
+            // Same rule as the bake below: with no input the .sha256 goes stale after a payload change.
+            inputs.file jar
             outputs.file sha
             doLast {
                 def md = java.security.MessageDigest.getInstance('SHA-256')
@@ -86,15 +88,16 @@ gradle.projectsEvaluated {
             dependsOn shaTask
         }
 
-        // The shell reads assets/payload-baked.jar when it has no current payload.
+        // The shell extracts assets/payload-baked.jar on a fresh install and after a shell update.
+        // The dex jar is this task's input: without it the task has outputs only, Gradle
+        // reports it UP-TO-DATE after a payload change, and the APK keeps the old payload.
         def bakedDir = new File(shellProject.buildDir, "generated/baked/${d.id}")
-        def bake = shellProject.tasks.create("bakePayload${cap}") {
-            dependsOn dex
-            outputs.dir bakedDir
-            doLast {
-                bakedDir.mkdirs()
-                new File(bakedDir, 'payload-baked.jar').bytes = jar.bytes
-            }
+        def bake = shellProject.tasks.create("bakePayload${cap}", Copy) {
+            // The sha task too, so the .sha256 beside the jar always describes the baked payload.
+            dependsOn dex, shaTask
+            from jar
+            into bakedDir
+            rename { 'payload-baked.jar' }
         }
         // Lint reads the asset directories too, so it needs the same dependency as the merge.
         shellProject.tasks.matching {
