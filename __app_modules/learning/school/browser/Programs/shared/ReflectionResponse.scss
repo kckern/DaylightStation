@@ -3,3 +3,5 @@
 .reflection-response__field { font-size: 1.6rem; line-height: 1.4; padding: 0.9rem 1rem; border-radius: 12px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); resize: none; }
 .reflection-response__notice { font-size: 1.3rem; color: var(--ds-warning); }
 .reflection-controls { display: flex; gap: 1rem; justify-content: flex-end; }
+.reflection-response__status, .reflection-response__hint { font-size: 1.3rem; margin: 0; color: var(--ds-text-mid); }
+.reflection-response__hint { color: var(--ds-text-high); }
